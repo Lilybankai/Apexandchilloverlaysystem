@@ -33,10 +33,17 @@ if errorlevel 1 (
 )
 
 rem --- Parse the optional argument ------------------------------------------
+rem  "sim" forces the demo feed; a bare number sets the port. Anything else is
+rem  rejected with a warning so the banner never advertises an invalid port.
 if /i "%~1"=="sim" (
   set "APEX_FORCE_SIM=1"
 ) else if not "%~1"=="" (
-  set "APEX_HTTP_PORT=%~1"
+  echo(%~1|findstr /r "^[0-9][0-9]*$" >nul
+  if errorlevel 1 (
+    echo [WARN] Ignoring argument "%~1" ^(expected "sim" or a numeric port^); using the default port.
+  ) else (
+    set "APEX_HTTP_PORT=%~1"
+  )
 )
 
 rem Default port for the banner + server if not otherwise provided.
