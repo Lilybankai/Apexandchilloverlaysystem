@@ -23,6 +23,7 @@ import { frameIntervalMs, loadConfig, type ServerConfig } from './config';
 import { TelemetryWsServer } from './wsServer';
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
+import { RF2Provider } from '../telemetry/rf2Provider';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -46,19 +47,18 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 /**
  * Selects the telemetry provider to run.
  *
- * Task C ships only the {@link SimulatorProvider}. Task E extends this to try the
- * rF2/LMU shared-memory provider first and fall back to the simulator when the
- * game (or its plugin) is not present — the server therefore always has a
- * working provider and never crashes on a missing sim.
+ * With `APEX_FORCE_SIM` set, the demo {@link SimulatorProvider} is used
+ * regardless of what is installed. Otherwise the {@link RF2Provider} is chosen:
+ * it reads live rF2/LMU shared memory when the game and plugin are present and
+ * transparently falls back to the simulator otherwise — so the server always
+ * has a working provider and never crashes on a missing sim.
  *
  * @param config - Runtime configuration.
  * @returns The provider the telemetry loop will poll.
  */
 export function selectProvider(config: ServerConfig): TelemetryProvider {
-  // `forceSimulator` short-circuits to the demo feed regardless of what is
-  // installed; Task E adds the real-provider branch here.
-  void config.forceSimulator;
-  return new SimulatorProvider();
+  if (config.forceSimulator) return new SimulatorProvider();
+  return new RF2Provider(config);
 }
 
 /**
