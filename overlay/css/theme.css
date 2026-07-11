@@ -1,0 +1,255 @@
+/* =========================================================================
+ * theme.css — Apex & Chill Racing League overlay design tokens
+ * -------------------------------------------------------------------------
+ * Central design system for the Apex Overlay System. Defines colour tokens,
+ * the signature cyan -> purple -> magenta gradient, typography and reusable
+ * panel/badge/bar primitives shared by every widget.
+ *
+ * PERFORMANCE NOTE: Fonts are Windows-native system fonts (Bahnschrift,
+ * Consolas) so nothing is downloaded at runtime — this keeps the overlay
+ * lightweight inside an OBS Browser Source. We deliberately avoid
+ * backdrop-filter / heavy blur, which are expensive to composite live.
+ * ========================================================================= */
+
+:root {
+  /* --- Brand gradient stops (Apex & Chill) --------------------------- */
+  --ac-cyan: #22d3ee;
+  --ac-blue: #4f8bff;
+  --ac-purple: #8b5cf6;
+  --ac-magenta: #ec4899;
+  --ac-pink: #f65fb0;
+
+  /* Signature gradient used for headings, accent bars and highlights. */
+  --ac-gradient: linear-gradient(
+    90deg,
+    var(--ac-cyan) 0%,
+    var(--ac-blue) 32%,
+    var(--ac-purple) 64%,
+    var(--ac-magenta) 100%
+  );
+  --ac-gradient-vertical: linear-gradient(
+    180deg,
+    var(--ac-cyan) 0%,
+    var(--ac-purple) 55%,
+    var(--ac-magenta) 100%
+  );
+
+  /* --- Surfaces (all SOLID/opaque so we sit over the sim's overlays) - */
+  --bg-stage: transparent;          /* page background stays clear for OBS  */
+  --bg-panel: #0c0e18;              /* solid panel base                     */
+  --bg-panel-2: #10131f;            /* raised rows / inner cells            */
+  --bg-panel-3: #161a29;            /* hover / player-highlight row         */
+  --bg-header: #090a12;             /* panel header strip                   */
+
+  /* --- Text ---------------------------------------------------------- */
+  --text-primary: #f4f6fb;
+  --text-secondary: #aeb6c8;
+  --text-muted: #6b7387;
+  --text-invert: #0a0b12;
+
+  /* --- Status / data colours ---------------------------------------- */
+  --pos-gain: #35d07f;   /* gaining / green sector / faster */
+  --pos-loss: #ff5470;   /* losing / red / hotter          */
+  --warn: #ffb020;       /* caution / marginal fuel         */
+  --purple-fastest: #b06bff; /* overall fastest (purple)    */
+
+  /* Pedal trace colours */
+  --pedal-throttle: #35d07f;
+  --pedal-brake: #ff5470;
+  --pedal-clutch: #4f8bff;
+
+  /* Tyre temperature ramp (cold -> optimal -> hot) */
+  --tyre-cold: #4f8bff;
+  --tyre-optimal: #35d07f;
+  --tyre-warm: #ffb020;
+  --tyre-hot: #ff5470;
+
+  /* --- Borders & lines ---------------------------------------------- */
+  --border-soft: #232838;
+  --border-strong: #313850;
+
+  /* --- Typography --------------------------------------------------- */
+  /* Condensed uppercase display face — Bahnschrift ships with Windows.  */
+  --font-display: "Bahnschrift", "Arial Narrow", "Segoe UI Semibold",
+    system-ui, sans-serif;
+  /* Monospace data face — Consolas/Cascadia ship with Windows.          */
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, "Roboto Mono",
+    monospace;
+  --font-ui: "Segoe UI", system-ui, sans-serif;
+
+  /* --- Geometry ----------------------------------------------------- */
+  --radius: 8px;
+  --radius-sm: 5px;
+  --panel-pad: 10px;
+  --accent-bar-w: 3px;
+}
+
+/* -------------------------------------------------------------------------
+ * Reset — minimal, scoped to the overlay.
+ * ---------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-stage);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  /* Crisp text over busy race footage. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* =========================================================================
+ * PANEL PRIMITIVE
+ * Every widget is a .panel with a SOLID background so it fully occludes the
+ * sim's native overlay underneath.
+ * ========================================================================= */
+.panel {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* Single cheap shadow for separation from footage — no blur filters. */
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* Left accent bar carrying the brand gradient. */
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--accent-bar-w);
+  background: var(--ac-gradient-vertical);
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px 5px calc(var(--panel-pad) + var(--accent-bar-w));
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.panel__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+/* Small meta text on the right of a header (e.g. lap count, session). */
+.panel__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.panel__body {
+  padding: var(--panel-pad);
+  padding-left: calc(var(--panel-pad) + var(--accent-bar-w));
+}
+
+/* Body with no padding (tables manage their own spacing). */
+.panel__body--flush {
+  padding: 0;
+  padding-left: var(--accent-bar-w);
+}
+
+/* =========================================================================
+ * TEXT / DATA HELPERS
+ * ========================================================================= */
+.heading {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Gradient text for the brand wordmark and key numbers. */
+.gradient-text {
+  background: var(--ac-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Tabular numbers everywhere data is displayed keeps columns from jittering. */
+.data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted { color: var(--text-muted); }
+.secondary { color: var(--text-secondary); }
+.pos { color: var(--pos-gain); }
+.neg { color: var(--pos-loss); }
+.warn { color: var(--warn); }
+
+/* =========================================================================
+ * BADGE / CHIP — angled corner accent used for class/session tags.
+ * ========================================================================= */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 7px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-invert);
+  background: var(--ac-cyan);
+  /* Clipped top-right corner echoes the brand's angled chips. */
+  clip-path: polygon(0 0, 100% 0, 100% 70%, calc(100% - 5px) 100%, 0 100%);
+}
+.chip--purple { background: var(--ac-purple); color: #fff; }
+.chip--magenta { background: var(--ac-magenta); color: #fff; }
+.chip--live {
+  background: var(--pos-loss);
+  color: #fff;
+}
+
+/* =========================================================================
+ * BAR PRIMITIVE — shared by pedal fills, fuel gauge, tyre wear, etc.
+ * Animate width via transform where possible; here width is fine as it is
+ * updated at telemetry rate (~30Hz) on a tiny element.
+ * ========================================================================= */
+.bar {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--ac-gradient);
+  border-radius: 3px;
+}
