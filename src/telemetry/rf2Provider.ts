@@ -49,9 +49,11 @@ import {
   type RelativeEntry,
   type SessionPhase,
   type SessionType,
+  type SkyState,
   type StandingEntry,
   type TelemetryFrame,
   type TyreState,
+  type WeatherForecastSlot,
 } from './types';
 import type { ServerConfig } from '../server/config';
 
@@ -498,18 +500,32 @@ export class RF2Provider implements TelemetryProvider {
         ambientTempC: round1(ambientC),
         rainIntensity: round2(raining),
         trackWetness: round2(wetness),
-        forecast: [
-          {
-            minutesAhead: 0,
-            rainChance: raining > 0 ? 1 : 0,
-            rainIntensity: round2(raining),
-            trackTempC: round1(trackTempC),
-            sky: raining > 0.5 ? 'rain' : raining > 0.05 ? 'lightRain' : 'partlyCloudy',
-          },
-        ],
+        forecast: this.buildLiveForecast(raining, trackTempC),
       },
       fuel: fuelState,
     };
+  }
+
+  /**
+   * Builds the weather forecast timeline for the live path.
+   *
+   * The rF2/LMU **Scoring** buffer only exposes *current* conditions, so until
+   * the true multi-slot forecast in the Weather/Extended buffer is parsed and
+   * validated on hardware, we project current conditions forward as a steady
+   * ("no change expected") timeline at the same 0/15/30/45/60-minute cadence the
+   * widget and simulator use. This gives the widget a proper multi-slot strip
+   * instead of a single now-slot; wire real lookahead in here once the Weather
+   * buffer offsets are validated on a live build.
+   */
+  private buildLiveForecast(raining: number, trackTempC: number): WeatherForecastSlot[] {
+    const sky: SkyState = raining > 0.5 ? 'rain' : raining > 0.05 ? 'lightRain' : 'partlyCloudy';
+    return [0, 15, 30, 45, 60].map((minutesAhead) => ({
+      minutesAhead,
+      rainChance: raining > 0 ? 1 : 0,
+      rainIntensity: round2(raining),
+      trackTempC: round1(trackTempC),
+      sky,
+    }));
   }
 
   private readTyre(buf: Buffer, base: number): TyreState {
