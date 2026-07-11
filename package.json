@@ -1,0 +1,38 @@
+{
+  "name": "apex-overlay-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays).",
+  "type": "commonjs",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build",
+    "start": "node dist/server/index.js",
+    "dev": "tsc -w -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "rfactor2",
+    "le-mans-ultimate",
+    "telemetry",
+    "overlay",
+    "obs",
+    "sim-racing",
+    "websocket"
+  ],
+  "author": "Apex & Chill Racing League",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}
