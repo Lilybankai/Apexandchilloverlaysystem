@@ -30,6 +30,9 @@
   "dependencies": {
     "ws": "^8.18.0"
   },
+  "optionalDependencies": {
+    "koffi": "^2.9.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
