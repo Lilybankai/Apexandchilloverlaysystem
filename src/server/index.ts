@@ -24,6 +24,7 @@ import { TelemetryWsServer } from './wsServer';
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
+import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -47,18 +48,24 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 /**
  * Selects the telemetry provider to run.
  *
- * With `APEX_FORCE_SIM` set, the demo {@link SimulatorProvider} is used
- * regardless of what is installed. Otherwise the {@link RF2Provider} is chosen:
- * it reads live rF2/LMU shared memory when the game and plugin are present and
- * transparently falls back to the simulator otherwise — so the server always
- * has a working provider and never crashes on a missing sim.
+ * `forceSimulator` (demo mode) always wins and returns the {@link SimulatorProvider}.
+ * Otherwise the configured `provider` is honoured:
+ * - `lmu` (default) — {@link LmuRestProvider}, reading Le Mans Ultimate's REST API
+ *   and falling back to the simulator when the game/API is not up.
+ * - `rf2` — {@link RF2Provider}, reading rF2/LMU shared memory (physics for the
+ *   locally-driven car), also falling back to the simulator.
+ * - `simulator` — always synthetic demo data.
+ *
+ * Every provider degrades to the simulator internally, so the server always has
+ * a working source and never crashes on a missing sim.
  *
  * @param config - Runtime configuration.
  * @returns The provider the telemetry loop will poll.
  */
 export function selectProvider(config: ServerConfig): TelemetryProvider {
-  if (config.forceSimulator) return new SimulatorProvider();
-  return new RF2Provider(config);
+  if (config.forceSimulator || config.provider === 'simulator') return new SimulatorProvider();
+  if (config.provider === 'rf2') return new RF2Provider(config);
+  return new LmuRestProvider(config);
 }
 
 /**
@@ -124,9 +131,29 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const provider = selectProvider(config);
   await provider.start();
 
-  await new Promise<void>((resolveListen) => {
-    httpServer.listen(config.httpPort, config.host, resolveListen);
-  });
+  // Bind the port, rejecting cleanly if it fails (e.g. the port is already in
+  // use). Without an `error` handler the listen callback simply never fires and
+  // the caller hangs; a desktop UI needs a real error to show the operator.
+  try {
+    await new Promise<void>((resolveListen, rejectListen) => {
+      const onError = (err: Error): void => {
+        httpServer.removeListener('listening', onListening);
+        rejectListen(err);
+      };
+      const onListening = (): void => {
+        httpServer.removeListener('error', onError);
+        resolveListen();
+      };
+      httpServer.once('error', onError);
+      httpServer.once('listening', onListening);
+      httpServer.listen(config.httpPort, config.host);
+    });
+  } catch (err) {
+    // Roll back the pieces already started so a failed bind leaks nothing.
+    await provider.stop();
+    await wsServer.close();
+    throw err;
+  }
 
   const intervalMs = frameIntervalMs(config);
   let lastPollMs = Date.now();

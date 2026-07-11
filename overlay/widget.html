@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex &amp; Chill — Single Overlay</title>
+
+  <!--
+    Standalone single-widget overlay page.
+    Renders exactly ONE widget (chosen with ?w=<name>) on a transparent
+    background so it can be added to OBS as its own Browser Source and
+    positioned independently. The all-in-one page is still at "/".
+
+    Examples:
+      /widget.html?w=standings
+      /widget.html?w=fuel
+      /widget.html?w=pedals&port=8080     (override WS port if needed)
+
+    Valid names: standings, relative, weather, fuel, tyres, pedals
+
+    It reuses the exact same widget runtime (client.js) and widget modules as
+    the combined page. client.js binds a widget only if its section is present,
+    so including a single section renders just that one widget.
+  -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/overlay.css" />
+  <link rel="stylesheet" href="css/single.css" />
+</head>
+<body>
+  <!-- The single widget section is injected here synchronously (below). -->
+  <div class="single-page" id="single-page"></div>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // Inject the requested widget's section shell BEFORE the deferred runtime
+    // scripts run, so client.js finds and binds it on boot. This inline script
+    // executes during parsing (not deferred), guaranteeing correct ordering.
+    // -----------------------------------------------------------------------
+    (function () {
+      "use strict";
+
+      // Per-widget panel shells — mirror the sections in index.html. The widget
+      // JS modules build their own body content into [data-role="mount"].
+      var SHELLS = {
+        standings:
+          '<section class="widget panel" id="widget-standings" data-widget="standings" aria-label="Race standings">' +
+          '<header class="panel__header"><span class="panel__title">Standings</span>' +
+          '<span class="panel__meta" data-role="session">— / —</span></header>' +
+          '<div class="panel__body panel__body--flush standings" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+        weather:
+          '<section class="widget panel" id="widget-weather" data-widget="weather" aria-label="Weather forecast">' +
+          '<header class="panel__header"><span class="panel__title">Weather</span>' +
+          '<span class="panel__meta" data-role="track-state">TRACK —</span></header>' +
+          '<div class="panel__body" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+        relative:
+          '<section class="widget panel" id="widget-relative" data-widget="relative" aria-label="Relative timing">' +
+          '<header class="panel__header"><span class="panel__title">Relative</span>' +
+          '<span class="panel__meta" data-role="laps">LAP —/—</span></header>' +
+          '<div class="panel__body panel__body--flush" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+        fuel:
+          '<section class="widget panel" id="widget-fuel" data-widget="fuel" aria-label="Fuel calculator">' +
+          '<header class="panel__header"><span class="panel__title">Fuel</span>' +
+          '<span class="panel__meta" data-role="tank">— L</span></header>' +
+          '<div class="panel__body" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+        tyres:
+          '<section class="widget panel" id="widget-tyres" data-widget="tyres" aria-label="Tyre temperatures">' +
+          '<header class="panel__header"><span class="panel__title">Tyre Temps</span>' +
+          '<span class="panel__meta" data-role="compound">—</span></header>' +
+          '<div class="panel__body" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+        pedals:
+          '<section class="widget panel" id="widget-pedals" data-widget="pedals" aria-label="Pedal inputs">' +
+          '<header class="panel__header"><span class="panel__title">Inputs</span>' +
+          '<span class="panel__meta" data-role="gear">N · — kph</span></header>' +
+          '<div class="panel__body" data-role="mount">' +
+          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+      };
+
+      var params = new URLSearchParams(window.location.search);
+      var name = (params.get("w") || "").trim().toLowerCase();
+      var mount = document.getElementById("single-page");
+      var shell = SHELLS[name];
+
+      if (shell) {
+        mount.innerHTML = shell;
+        document.title = "Apex & Chill — " + name;
+      } else {
+        // Unknown/missing widget name — show the valid options instead of blank.
+        mount.innerHTML =
+          '<pre class="single-error">Unknown overlay "' +
+          (name ? name.replace(/[<>&]/g, "") : "(none)") +
+          '".\nUse ?w=&lt;name&gt; where name is one of:\n  ' +
+          Object.keys(SHELLS).join(", ") +
+          "</pre>";
+      }
+    })();
+  </script>
+
+  <!-- Same runtime + widget modules as the combined page. client.js only binds
+       the one section present above; the rest are inert. -->
+  <script src="js/client.js" defer></script>
+  <script src="js/widgets/standings.js" defer></script>
+  <script src="js/widgets/relative.js" defer></script>
+  <script src="js/widgets/weather.js" defer></script>
+  <script src="js/widgets/fuel.js" defer></script>
+  <script src="js/widgets/tyres.js" defer></script>
+  <script src="js/widgets/pedals.js" defer></script>
+</body>
+</html>

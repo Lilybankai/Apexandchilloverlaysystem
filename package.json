@@ -1,17 +1,20 @@
 {
   "name": "apex-overlay-system",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays).",
+  "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays), with an optional Electron desktop control panel + installer.",
   "type": "commonjs",
-  "main": "dist/server/index.js",
+  "main": "electron/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prestart": "npm run build",
     "start": "node dist/server/index.js",
     "dev": "tsc -w -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "app": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "app:dist": "npm run build && electron-builder --win",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\""
   },
   "engines": {
     "node": ">=18"
@@ -23,7 +26,8 @@
     "overlay",
     "obs",
     "sim-racing",
-    "websocket"
+    "websocket",
+    "electron"
   ],
   "author": "Apex & Chill Racing League",
   "license": "UNLICENSED",
@@ -36,6 +40,37 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.apexandchill.overlaysystem",
+    "productName": "Apex Overlay System",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "overlay/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/koffi/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Apex Overlay System"
+    }
   }
 }

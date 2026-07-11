@@ -1,0 +1,48 @@
+/* =========================================================================
+ * single.css — standalone single-widget overlay page
+ * -------------------------------------------------------------------------
+ * Loaded only by widget.html. Each overlay widget is served on its own
+ * transparent page so it can be added to OBS as a SEPARATE Browser Source
+ * and dragged into position inside OBS.
+ *
+ * The shared overlay.css positions widgets absolutely inside a fixed
+ * 1920x1080 `.stage`. On a standalone page there is no stage, so we neutralise
+ * that absolute positioning and let the single panel sit at its natural size in
+ * the top-left, with a small margin. The OBS source is then sized to the panel
+ * and moved wherever the operator wants it.
+ * ========================================================================= */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* Transparent so only the opaque widget panel shows over the sim in OBS. */
+  background: transparent !important;
+}
+
+/* The one widget on the page: cancel the stage's absolute anchoring. */
+.single-page {
+  display: inline-block;
+  padding: 6px; /* breathing room so drop shadows/borders are not clipped */
+}
+
+.single-page .widget {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  margin: 0;
+}
+
+/* Unknown / bad ?w= value: show a readable hint instead of a blank page. */
+.single-error {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: #fff;
+  background: rgba(180, 30, 40, 0.92);
+  border-radius: 6px;
+}

@@ -39,6 +39,16 @@ export interface ServerConfig {
    * demos and for building overlays without the game open.
    */
   forceSimulator: boolean;
+  /**
+   * Which live telemetry source to use:
+   * - `lmu` — Le Mans Ultimate REST API (default; robust, whole-field data).
+   * - `rf2` — rF2/LMU shared-memory reader (physics for the local car).
+   * - `simulator` — always synthetic demo data.
+   * {@link forceSimulator} overrides this to `simulator`.
+   */
+  provider: 'lmu' | 'rf2' | 'simulator';
+  /** Localhost port of the LMU REST API (used when `provider` is `lmu`). */
+  lmuApiPort: number;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -52,6 +62,8 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   updateRateHz: 30,
   overlayDir: 'overlay',
   forceSimulator: false,
+  provider: 'lmu',
+  lmuApiPort: 6397,
   verbose: false,
 });
 
@@ -82,6 +94,13 @@ function envStr(name: string, fallback: string): string {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
   return raw.trim();
+}
+
+/** Parses the provider selector env var, falling back on any unknown value. */
+function envProvider(name: string, fallback: ServerConfig['provider']): ServerConfig['provider'] {
+  const raw = (process.env[name] ?? '').trim().toLowerCase();
+  if (raw === 'lmu' || raw === 'rf2' || raw === 'simulator') return raw;
+  return fallback;
 }
 
 /** Clamps `value` into the inclusive `[min, max]` range. */
@@ -119,6 +138,8 @@ export function loadConfig(): ServerConfig {
     ),
     overlayDir: envStr('APEX_OVERLAY_DIR', DEFAULT_CONFIG.overlayDir),
     forceSimulator: envBool('APEX_FORCE_SIM', DEFAULT_CONFIG.forceSimulator),
+    provider: envProvider('APEX_PROVIDER', DEFAULT_CONFIG.provider),
+    lmuApiPort: envInt('APEX_LMU_PORT', DEFAULT_CONFIG.lmuApiPort),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

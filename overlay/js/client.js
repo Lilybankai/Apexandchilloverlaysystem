@@ -326,11 +326,27 @@
     fmt: fmt,
   };
 
-  // Widgets register between this file and DOMContentLoaded (defer order),
-  // so initialise on DOMContentLoaded when all sections + widgets are ready.
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
+  // Boot scheduling.
+  // The widget modules are sibling `defer` scripts that execute AFTER this file
+  // but BEFORE DOMContentLoaded, registering themselves as they run. During that
+  // deferred-execution window document.readyState is already "interactive", so
+  // booting synchronously here would run before any widget has registered —
+  // leaving every widget unbound (root = null) and its body stuck on
+  // "Awaiting telemetry…" even though the socket connects. So we always wait for
+  // DOMContentLoaded (which fires once every deferred widget script has run) and
+  // only boot synchronously when the document is already fully loaded (e.g. this
+  // script was injected late). A guard makes boot idempotent.
+  var booted = false;
+  function bootOnce() {
+    if (booted) return;
+    booted = true;
     boot();
+  }
+  if (document.readyState === "complete") {
+    bootOnce();
+  } else {
+    document.addEventListener("DOMContentLoaded", bootOnce);
+    // Safety net in case DOMContentLoaded already fired while "interactive".
+    window.addEventListener("load", bootOnce);
   }
 })();

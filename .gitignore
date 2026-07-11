@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Electron installer output
+release/
+
 # Logs
 logs/
 *.log
@@ -20,3 +23,6 @@ Thumbs.db
 .env
 .env.local
 config.local.json
+
+# Local screenshots / scratch
+/Screenshot*.png

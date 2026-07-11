@@ -13,13 +13,47 @@ are added to OBS as **Browser Sources** and positioned over the sim's own HUD.
                                                                                   weather, tyres, fuel)
 ```
 
-## Why it stays light
+## Two ways to run it
 
-Overlay tools are notorious for being heavy. This system deliberately avoids
-Electron: the only always-on process is a small Node server. Rendering happens
-inside the Chromium instance **OBS already runs** for Browser Sources, so there
-is no second browser/renderer. Telemetry is broadcast as compact JSON at a
-configurable rate (default 30 Hz).
+- **Desktop app (recommended for streamers)** — a Windows installer (`Setup.exe`)
+  that installs a small control-panel app. Open it, tick the overlays you want,
+  set the port / update rate / demo mode, and copy each overlay's URL into OBS.
+  No terminal, no commands. See [Desktop app](#desktop-app).
+- **Headless server (developers)** — run the Node server directly with
+  `npm start`. See [Getting started](#getting-started).
+
+The telemetry engine is identical in both; the desktop app just wraps the same
+server in an Electron window for people who don't want a command line. Overlays
+still render inside the Chromium instance **OBS already runs** for Browser
+Sources, so there is no extra renderer on stream. Telemetry is broadcast as
+compact JSON at a configurable rate (default 30 Hz).
+
+## Desktop app
+
+Build the installer:
+
+```bash
+npm install
+npm run app:dist     # -> release/Apex Overlay System Setup <version>.exe
+```
+
+Run the app in development (no packaging):
+
+```bash
+npm run app          # builds the server, then launches the Electron window
+```
+
+The control panel:
+
+- **Overlays** — tick the ones you want; each has its own URL + **Copy** and
+  **Preview** buttons. Add each as a **separate OBS Browser Source** and drag it
+  into position inside OBS.
+- **Settings** — server port, update rate (1–120 Hz), and a **Demo mode** toggle
+  that forces simulated data (no sim/plugin needed).
+- **Status pill** — shows LIVE / DEMO DATA / NO DATA / STOPPED at a glance.
+
+Settings are saved to `%APPDATA%/apex-overlay-system/config.json` and restored on
+next launch. The server starts automatically when the app opens.
 
 ## Overlays
 
@@ -32,12 +66,34 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
 
+## Live telemetry sources
+
+The server can read live data three ways (set `APEX_PROVIDER`, default `lmu`):
+
+| Provider     | Source                                   | Best for                                  |
+| ------------ | ---------------------------------------- | ----------------------------------------- |
+| `lmu` (default) | **Le Mans Ultimate REST API** on `http://localhost:6397` | Broadcasting/directing — whole-field standings, gaps, timing, weather, fuel. Robust across LMU updates. |
+| `rf2`        | rF2/LMU **shared-memory** plugin         | Showing the **locally-driven** car's pedals, gear, RPM, tyres. |
+| `simulator`  | Built-in synthetic data                  | Demos / building overlays with no sim open. |
+
+Any provider that can't reach its source falls back to the **simulator** so the
+overlays keep running (flagged as demo) instead of freezing.
+
+**LMU REST API (recommended):** no plugin needed — it's LMU's own built-in web
+API (the one behind `http://localhost:6397/swagger`). Just have LMU running.
+Because the API exposes the *whole field*, it drives standings, relative/timing,
+weather and fuel for a broadcast. It does **not** expose pedal inputs or tyre
+temps for a spectated car (those are physics for the locally-driven car only) —
+use the `rf2` provider, or hide those two overlays, for a directing setup.
+
+**Shared-memory (`rf2`):** requires the **rF2 Shared Memory Map Plugin**
+(`rFactor2SharedMemoryMapPlugin64.dll`) in the sim's `Bin64/Plugins/` folder.
+Note: LMU changes its struct layout between updates, so shared-memory field
+offsets are version-sensitive.
+
 ## Requirements
 
-- **Node.js 18+** (server runtime)
-- **rF2 Shared Memory Map Plugin** (`rFactor2SharedMemoryMapPlugin64.dll`)
-  installed in the sim's `Plugins/` folder for live data. Without it, the server
-  automatically falls back to a built-in **simulator** so the overlays still run.
+- **Node.js 18+** (server runtime), or just run the desktop app.
 
 ## Getting started
 
@@ -70,6 +126,8 @@ All settings are environment variables with lightweight defaults
 | `APEX_UPDATE_HZ`   | `30`        | Telemetry broadcast rate (1–120 Hz)           |
 | `APEX_OVERLAY_DIR` | `overlay`   | Static overlay asset directory                |
 | `APEX_FORCE_SIM`   | `false`     | Force the simulator provider (demo mode)      |
+| `APEX_PROVIDER`    | `lmu`       | Live source: `lmu` / `rf2` / `simulator`      |
+| `APEX_LMU_PORT`    | `6397`      | LMU REST API port (when `provider` is `lmu`)  |
 | `APEX_VERBOSE`     | `false`     | Verbose logging                               |
 
 ## Project layout
@@ -87,6 +145,12 @@ src/
     wsServer.ts          # WebSocket broadcast server
     index.ts             # HTTP static server + telemetry loop entrypoint
 overlay/                 # browser overlays (HTML/CSS/JS) — OBS Browser Source
+  index.html             #   all-in-one page (every widget, fixed 1080p canvas)
+  widget.html            #   standalone single-widget page (?w=<name>) per source
+electron/                # desktop control-panel app (Electron)
+  main.js                #   runs the dist/server in-process; persists settings
+  preload.js             #   safe IPC bridge to the renderer
+  control-panel/         #   the window UI (choose overlays, copy URLs, status)
 docs/                    # OBS setup + architecture notes
 scripts/                 # Windows launcher
 ```

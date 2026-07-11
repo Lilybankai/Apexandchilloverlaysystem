@@ -170,6 +170,12 @@ interface Win32 {
   CloseHandle: (handle: unknown) => boolean;
   /** Copies `len` bytes from a native address into a Node Buffer. */
   read: (addr: unknown, len: number) => Buffer;
+  /**
+   * Returns the size in bytes of the committed memory region at `addr` (via
+   * `VirtualQuery`), or 0 if it cannot be determined. Used to clamp reads to the
+   * plugin's actual buffer size, which is smaller than our worst-case struct.
+   */
+  regionSize: (addr: unknown) => number;
 }
 
 /**
@@ -200,12 +206,28 @@ function loadWin32(): Win32 | null {
       'bool __stdcall UnmapViewOfFile(void*)',
     ) as Win32['UnmapViewOfFile'];
     const CloseHandle = k32.func('bool __stdcall CloseHandle(void*)') as Win32['CloseHandle'];
+    const VirtualQuery = k32.func(
+      'size_t __stdcall VirtualQuery(void*, void*, size_t)',
+    ) as (addr: unknown, mbi: Buffer, len: number) => number;
     const read = (addr: unknown, len: number): Buffer => {
       // koffi.decode of a uint8 array yields a plain JS array; copy to Buffer.
       const bytes = koffi.decode(addr, koffi.array('uint8', len)) as number[];
       return Buffer.from(bytes);
     };
-    return { OpenFileMappingW, MapViewOfFile, UnmapViewOfFile, CloseHandle, read };
+    // MEMORY_BASIC_INFORMATION is 48 bytes on x64; RegionSize (SIZE_T) is at
+    // byte offset 24. VirtualQuery writes it into the caller's buffer.
+    const MBI_BYTES = 48;
+    const REGION_SIZE_OFFSET = 24;
+    const regionSize = (addr: unknown): number => {
+      try {
+        const mbi = Buffer.alloc(MBI_BYTES);
+        if (VirtualQuery(addr, mbi, MBI_BYTES) === 0) return 0;
+        return Number(mbi.readBigUInt64LE(REGION_SIZE_OFFSET));
+      } catch {
+        return 0;
+      }
+    };
+    return { OpenFileMappingW, MapViewOfFile, UnmapViewOfFile, CloseHandle, read, regionSize };
   } catch {
     return null;
   }
@@ -215,6 +237,8 @@ function loadWin32(): Win32 | null {
 interface MappedBuffer {
   handle: unknown;
   view: unknown;
+  /** Number of bytes safe to read from `view` (the plugin's actual region). */
+  size: number;
 }
 
 /* ------------------------------ the provider ------------------------------ */
@@ -289,18 +313,26 @@ export class RF2Provider implements TelemetryProvider {
     if (this.scoring === null) this.scoring = this.open(MMF_SCORING, SCORING_COPY_BYTES);
   }
 
-  private open(name: string, bytes: number): MappedBuffer | null {
+  private open(name: string, maxBytes: number): MappedBuffer | null {
     const w = this.win32;
     if (w === null) return null;
     try {
       const handle = w.OpenFileMappingW(FILE_MAP_READ, false, name);
       if (!handle) return null;
-      const view = w.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, bytes);
+      // Map the WHOLE region (length 0). The plugin sizes its buffer to the
+      // real max grid, which is often SMALLER than our worst-case struct size;
+      // requesting more bytes than exist makes MapViewOfFile fail outright and
+      // looks (wrongly) like "no sim running".
+      const view = w.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
       if (!view) {
         w.CloseHandle(handle);
         return null;
       }
-      return { handle, view };
+      // Clamp all future reads to the actual mapped bytes so a fixed-size read
+      // can never run past the end of the region.
+      const region = w.regionSize(view);
+      const size = region > 0 ? Math.min(region, maxBytes) : maxBytes;
+      return { handle, view, size };
     } catch (err) {
       this.log(`open(${name}) failed: ${(err as Error).message}`);
       return null;
@@ -323,12 +355,12 @@ export class RF2Provider implements TelemetryProvider {
    * retry budget is exhausted.
    * @returns A consistent snapshot Buffer, or `null` if it could not get one.
    */
-  private readConsistent(buf: MappedBuffer, bytes: number): Buffer | null {
+  private readConsistent(buf: MappedBuffer): Buffer | null {
     const w = this.win32;
     if (w === null) return null;
     try {
       for (let attempt = 0; attempt < TORN_READ_RETRIES; attempt++) {
-        const snapshot = w.read(buf.view, bytes);
+        const snapshot = w.read(buf.view, buf.size);
         const begin = snapshot.readUInt32LE(HDR.versionBegin);
         const end = snapshot.readUInt32LE(HDR.versionEnd);
         if (begin === end) return snapshot;
@@ -347,8 +379,8 @@ export class RF2Provider implements TelemetryProvider {
    */
   private tryReadReal(nowMs: number): TelemetryFrame | null {
     if (this.telemetry === null || this.scoring === null) return null;
-    const scoring = this.readConsistent(this.scoring, SCORING_COPY_BYTES);
-    const telem = this.readConsistent(this.telemetry, TELEMETRY_COPY_BYTES);
+    const scoring = this.readConsistent(this.scoring);
+    const telem = this.readConsistent(this.telemetry);
     if (scoring === null || telem === null) return null;
 
     try {
