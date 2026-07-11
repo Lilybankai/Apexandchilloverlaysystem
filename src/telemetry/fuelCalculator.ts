@@ -40,6 +40,15 @@ export interface FuelUpdate {
 const DEFAULT_SAMPLE_WINDOW = 5;
 
 /**
+ * Absolute upper bound (litres) on a single lap's recorded burn when tank
+ * capacity is unknown. A lap can never consume more than the tank holds, so
+ * when capacity is known that is used instead; this guards the unknown case
+ * against an implausible reading that slips the provider's frame gate on a lap
+ * boundary and would otherwise skew the average for a full window of laps.
+ */
+const MAX_PLAUSIBLE_LAP_BURN_L = 100;
+
+/**
  * Stateful fuel-usage tracker. One instance per player car / session; call
  * {@link reset} when the session or car changes.
  */
@@ -110,8 +119,12 @@ export class FuelCalculator {
       this.fuelAtLapStart = fuel;
     } else if (u.lapsCompleted > this.lastLapsCompleted) {
       const burn = this.fuelAtLapStart - fuel;
-      // Only count plausible consumption (ignore refuel/telemetry noise).
-      if (burn > 0 && Number.isFinite(burn)) {
+      // A lap cannot burn more than the tank holds; fall back to an absolute
+      // ceiling when capacity is unknown.
+      const maxBurn = u.capacityLiters > 0 ? u.capacityLiters : MAX_PLAUSIBLE_LAP_BURN_L;
+      // Only count plausible consumption (ignore refuel/telemetry noise and any
+      // implausibly large spike that would poison the rolling average).
+      if (burn > 0 && burn <= maxBurn && Number.isFinite(burn)) {
         this.burns.push(burn);
         while (this.burns.length > this.window) this.burns.shift();
       }
