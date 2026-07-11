@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex &amp; Chill — Race Overlay</title>
+
+  <!--
+    Apex Overlay System — broadcast overlay shell.
+    Design canvas is a fixed 1920x1080 stage (see overlay.css .stage) so the
+    six widgets keep pixel-consistent LMU-matching positions. Add this page to
+    OBS as a Browser Source at 1920x1080. Every widget panel is fully opaque so
+    it occludes the sim's native overlay underneath.
+  -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/overlay.css" />
+</head>
+<body>
+  <!-- Fixed 1080p design canvas; JS scales it to fit any source/window size. -->
+  <div class="stage" id="stage">
+
+    <!-- Connection status pill (updated by client.js). -->
+    <div class="conn-status" id="conn-status" data-state="connecting" role="status">
+      <span class="conn-status__dot"></span>
+      <span class="conn-status__text">CONNECTING</span>
+    </div>
+
+    <!-- ===================== STANDINGS (top-left) ===================== -->
+    <section class="widget panel" id="widget-standings" data-widget="standings"
+             aria-label="Race standings">
+      <header class="panel__header">
+        <span class="panel__title">Standings</span>
+        <span class="panel__meta" data-role="session">— / —</span>
+      </header>
+      <div class="panel__body panel__body--flush standings" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ===================== WEATHER (top-centre) ==================== -->
+    <section class="widget panel" id="widget-weather" data-widget="weather"
+             aria-label="Weather forecast">
+      <header class="panel__header">
+        <span class="panel__title">Weather</span>
+        <span class="panel__meta" data-role="track-state">TRACK —</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ================= RELATIVE / TIMING (top-right) =============== -->
+    <section class="widget panel" id="widget-relative" data-widget="relative"
+             aria-label="Relative timing">
+      <header class="panel__header">
+        <span class="panel__title">Relative</span>
+        <span class="panel__meta" data-role="laps">LAP —/—</span>
+      </header>
+      <div class="panel__body panel__body--flush" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ===================== FUEL (mid-right) ======================== -->
+    <section class="widget panel" id="widget-fuel" data-widget="fuel"
+             aria-label="Fuel calculator">
+      <header class="panel__header">
+        <span class="panel__title">Fuel</span>
+        <span class="panel__meta" data-role="tank">— L</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ===================== TYRES (bottom-right) ==================== -->
+    <section class="widget panel" id="widget-tyres" data-widget="tyres"
+             aria-label="Tyre temperatures">
+      <header class="panel__header">
+        <span class="panel__title">Tyre Temps</span>
+        <span class="panel__meta" data-role="compound">—</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ===================== PEDALS (bottom-centre) ================= -->
+    <section class="widget panel" id="widget-pedals" data-widget="pedals"
+             aria-label="Pedal inputs">
+      <header class="panel__header">
+        <span class="panel__title">Inputs</span>
+        <span class="panel__meta" data-role="gear">N · — kph</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ===================== BRAND WORDMARK ========================= -->
+    <div class="brand" aria-hidden="true">
+      <span class="brand__mark"></span>
+      <span>APEX <span class="brand__amp">&amp;</span> CHILL</span>
+    </div>
+
+  </div>
+
+  <!--
+    Stage scaler — keeps the 1920x1080 design canvas fitted to the window/OBS
+    source. Inlined (tiny) so the shell renders standalone even before the
+    widget scripts load. client.js also calls fitStage() but this covers the
+    no-JS-widgets case.
+  -->
+  <script>
+    (function () {
+      "use strict";
+      var stage = document.getElementById("stage");
+      function fitStage() {
+        var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        stage.style.setProperty("--stage-scale", scale);
+      }
+      window.addEventListener("resize", fitStage, { passive: true });
+      fitStage();
+      // Expose for client.js to reuse after DOM swaps.
+      window.__apexFitStage = fitStage;
+    })();
+  </script>
+
+  <!-- WebSocket client + widget renderers (see Overlay-widgets task). -->
+  <script src="js/client.js" defer></script>
+  <script src="js/widgets/standings.js" defer></script>
+  <script src="js/widgets/relative.js" defer></script>
+  <script src="js/widgets/weather.js" defer></script>
+  <script src="js/widgets/fuel.js" defer></script>
+  <script src="js/widgets/tyres.js" defer></script>
+  <script src="js/widgets/pedals.js" defer></script>
+</body>
+</html>
