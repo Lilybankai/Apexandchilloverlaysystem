@@ -38,6 +38,7 @@ import http from 'node:http';
 import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator } from './fuelCalculator';
+import { LmuLocalCarReader, type LocalCarPhysics } from './lmuLocalCar';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
@@ -124,6 +125,10 @@ export class LmuRestProvider implements TelemetryProvider {
 
   private readonly fallback = new SimulatorProvider();
   private readonly fuel = new FuelCalculator();
+  /** Separate calculator fed real litres from shared memory (local car). */
+  private readonly localFuel = new FuelCalculator();
+  /** Reads the locally-driven car's inputs + fuel from shared memory. */
+  private readonly localCar = new LmuLocalCarReader();
   private readonly port: number;
   private readonly verbose: boolean;
 
@@ -140,6 +145,7 @@ export class LmuRestProvider implements TelemetryProvider {
 
   public async start(): Promise<void> {
     this.fallback.start();
+    this.localCar.start(); // best-effort shared-memory reader for the driven car
     await this.refresh(); // prime the cache before the first poll
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
@@ -147,6 +153,9 @@ export class LmuRestProvider implements TelemetryProvider {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
     } else {
       console.log(`[lmu] LMU REST API not answering on :${this.port} — using simulator.`);
+    }
+    if (this.localCar.available) {
+      console.log('[lmu] shared-memory reader active for local-car inputs + fuel.');
     }
   }
 
@@ -160,6 +169,7 @@ export class LmuRestProvider implements TelemetryProvider {
       this.timer = null;
     }
     this.fallback.stop();
+    this.localCar.stop();
     this.live = false;
   }
 
@@ -237,12 +247,16 @@ export class LmuRestProvider implements TelemetryProvider {
       cars.find((c) => c.hasFocus || c.focus) ?? cars.find((c) => c.player) ?? cars[0];
     const focusId = focus ? focus.slotID : UNKNOWN_VALUE;
 
+    // The locally-driven car's physics (inputs + fuel in litres) from shared
+    // memory, if someone is driving on this PC. null otherwise.
+    const local = this.localCar.read();
+
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus);
     const weather = this.buildWeather(si);
-    const fuel = this.buildFuel(focus, session);
-    const player = this.buildPlayer(focus, standings);
+    const fuel = this.buildFuel(focus, session, local);
+    const player = this.buildPlayer(focus, standings, local);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -398,7 +412,24 @@ export class LmuRestProvider implements TelemetryProvider {
    * numbers that matter to a director — laps of fuel left and the pit window —
    * and leave the litre readouts unknown.
    */
-  private buildFuel(focus: RestStanding | undefined, session: SessionState) {
+  private buildFuel(
+    focus: RestStanding | undefined,
+    session: SessionState,
+    local: LocalCarPhysics | null,
+  ) {
+    // Prefer the locally-driven car's real litres from shared memory: gives the
+    // full fuel widget (per-lap, to-finish, margin) instead of laps-only.
+    if (local && local.capacityLiters > 0) {
+      return this.localFuel.update({
+        currentFuelLiters: local.fuelLiters,
+        capacityLiters: local.capacityLiters,
+        lapsCompleted: local.lapNumber,
+        totalRaceLaps: session.totalLaps,
+        timeRemainingSec: session.timeRemainingSec,
+        avgLapTimeSec: focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90,
+      });
+    }
+
     const frac = focus && typeof focus.fuelFraction === 'number' ? clamp01(focus.fuelFraction) : -1;
     if (frac < 0) {
       return {
@@ -443,9 +474,15 @@ export class LmuRestProvider implements TelemetryProvider {
    * not publish physics channels for a car that is only being spectated (they
    * exist in shared memory only for a car driven on this PC).
    */
-  private buildPlayer(focus: RestStanding | undefined, standings: StandingEntry[]) {
+  private buildPlayer(
+    focus: RestStanding | undefined,
+    standings: StandingEntry[],
+    local: LocalCarPhysics | null,
+  ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
-    const speedKph =
+    // Inputs, gear, RPM and speed come from the locally-driven car's shared
+    // memory when available (real pedal trace); otherwise REST gives speed only.
+    const restSpeed =
       focus && focus.carVelocity && typeof focus.carVelocity.velocity === 'number'
         ? Math.round(Math.abs(focus.carVelocity.velocity) * 3.6)
         : UNKNOWN_VALUE;
@@ -453,11 +490,13 @@ export class LmuRestProvider implements TelemetryProvider {
     return {
       slotId: focus ? focus.slotID : UNKNOWN_VALUE,
       position: row ? row.position : UNKNOWN_VALUE,
-      pedals: { throttle: 0, brake: 0, clutch: 0, steer: 0 },
-      gear: UNKNOWN_VALUE,
-      speedKph,
-      rpm: UNKNOWN_VALUE,
-      maxRpm: UNKNOWN_VALUE,
+      pedals: local
+        ? { throttle: local.throttle, brake: local.brake, clutch: local.clutch, steer: local.steer }
+        : { throttle: 0, brake: 0, clutch: 0, steer: 0 },
+      gear: local ? local.gear : UNKNOWN_VALUE,
+      speedKph: local ? local.speedKph : restSpeed,
+      rpm: local ? local.rpm : UNKNOWN_VALUE,
+      maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
         current: UNKNOWN_VALUE,
         last: row ? row.lastLapSec : UNKNOWN_VALUE,

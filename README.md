@@ -82,9 +82,18 @@ overlays keep running (flagged as demo) instead of freezing.
 **LMU REST API (recommended):** no plugin needed — it's LMU's own built-in web
 API (the one behind `http://localhost:6397/swagger`). Just have LMU running.
 Because the API exposes the *whole field*, it drives standings, relative/timing,
-weather and fuel for a broadcast. It does **not** expose pedal inputs or tyre
-temps for a spectated car (those are physics for the locally-driven car only) —
-use the `rf2` provider, or hide those two overlays, for a directing setup.
+weather and fuel for the whole grid.
+
+For the **locally-driven car**, the `lmu` provider additionally reads shared
+memory (when the plugin is present) to add that car's **pedal inputs** and
+**fuel in litres** — so a driver-streamer gets a live pedal trace and the full
+fuel calculator on top of the REST timing. This is automatic and best-effort: no
+local car (pure spectating) simply means those come from REST (fuel) or stay
+empty (pedals).
+
+**Tyre temps on LMU:** not available. LMU restructured its per-wheel shared-memory
+layout away from the documented rF2 `rF2Wheel` struct, so there is no reliable
+offset for tyre temperatures on current builds; the tyres overlay is best hidden.
 
 **Shared-memory (`rf2`):** requires the **rF2 Shared Memory Map Plugin**
 (`rFactor2SharedMemoryMapPlugin64.dll`) in the sim's `Bin64/Plugins/` folder.
