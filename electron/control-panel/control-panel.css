@@ -281,6 +281,37 @@ body {
 .help-steps li { margin: 4px 0; }
 .help-steps strong { color: var(--text-0); }
 
+/* ------------------------------------------------------------------ UPDATE */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(38, 214, 230, 0.12);
+  border: 1px solid var(--ac-cyan);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-size: 13px;
+}
+.update-banner[hidden] { display: none; }
+.update-banner__icon {
+  flex: none;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--ac-cyan);
+  color: #04222a;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+.update-banner__text { flex: 1; }
+.btn--update {
+  background: linear-gradient(160deg, var(--ac-cyan), #1aa7b5);
+  color: #04222a;
+  font-weight: 700;
+}
+.btn--update:disabled { opacity: 0.6; cursor: default; }
+
 /* ------------------------------------------------------------------ ERROR */
 .error-banner {
   display: flex;

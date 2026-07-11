@@ -23,6 +23,7 @@ const { app, BrowserWindow, ipcMain, shell, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const WebSocket = require('ws');
+const { autoUpdater } = require('electron-updater');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — the six widgets, each addable to OBS as its own source. */
@@ -377,6 +378,99 @@ function registerIpc() {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Auto-update (via electron-updater + GitHub Releases)                       */
+/* -------------------------------------------------------------------------- */
+
+/** Latest known update state, mirrored to the control panel. */
+const updateState = {
+  status: 'idle', // idle | checking | available | downloading | ready | none | error
+  version: null,
+  percent: 0,
+  error: null,
+};
+
+function pushUpdate() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:state', { ...updateState });
+  }
+}
+
+/**
+ * Wires electron-updater to the GitHub Releases feed and relays progress to the
+ * renderer so the panel can show a "new version available" banner. We do NOT
+ * auto-download — the operator clicks to update, so a stream is never disrupted.
+ */
+function setupAutoUpdate() {
+  // Only meaningful in a packaged, installed app; a dev run has no update feed.
+  if (!app.isPackaged) {
+    updateState.status = 'idle';
+    return;
+  }
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    updateState.status = 'checking';
+    updateState.error = null;
+    pushUpdate();
+  });
+  autoUpdater.on('update-available', (info) => {
+    updateState.status = 'available';
+    updateState.version = info && info.version ? info.version : null;
+    pushUpdate();
+  });
+  autoUpdater.on('update-not-available', () => {
+    updateState.status = 'none';
+    pushUpdate();
+  });
+  autoUpdater.on('download-progress', (p) => {
+    updateState.status = 'downloading';
+    updateState.percent = Math.round((p && p.percent) || 0);
+    pushUpdate();
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    updateState.status = 'ready';
+    updateState.version = info && info.version ? info.version : updateState.version;
+    pushUpdate();
+  });
+  autoUpdater.on('error', (err) => {
+    updateState.status = 'error';
+    updateState.error = err == null ? 'unknown error' : String(err.message || err);
+    pushUpdate();
+  });
+
+  ipcMain.handle('update:check', () => {
+    if (!app.isPackaged) return { ...updateState };
+    autoUpdater.checkForUpdates().catch((e) => {
+      updateState.status = 'error';
+      updateState.error = String(e.message || e);
+      pushUpdate();
+    });
+    return { ...updateState };
+  });
+  ipcMain.handle('update:download', () => {
+    autoUpdater.downloadUpdate().catch((e) => {
+      updateState.status = 'error';
+      updateState.error = String(e.message || e);
+      pushUpdate();
+    });
+    return { ...updateState };
+  });
+  ipcMain.handle('update:install', () => {
+    // Quit and run the freshly-downloaded installer.
+    autoUpdater.quitAndInstall();
+  });
+  ipcMain.handle('update:getState', () => ({ ...updateState }));
+
+  // Check once shortly after launch (don't block startup).
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {
+      /* offline / no releases yet — stay idle */
+    });
+  }, 3000);
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Window + app lifecycle                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -409,6 +503,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   registerIpc();
   createWindow();
+  setupAutoUpdate();
   // Auto-start the server so overlays are live as soon as the app opens.
   await startServer();
 

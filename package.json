@@ -1,6 +1,6 @@
 {
   "name": "apex-overlay-system",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays), with an optional Electron desktop control panel + installer.",
   "type": "commonjs",
@@ -14,6 +14,7 @@
     "app": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
     "app:dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\""
   },
   "engines": {
@@ -32,6 +33,7 @@
   "author": "Apex & Chill Racing League",
   "license": "UNLICENSED",
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
@@ -47,6 +49,12 @@
   "build": {
     "appId": "com.apexandchill.overlaysystem",
     "productName": "Apex Overlay System",
+    "publish": {
+      "provider": "github",
+      "owner": "Lilybankai",
+      "repo": "Apexandchilloverlaysystem",
+      "releaseType": "release"
+    },
     "directories": {
       "output": "release"
     },

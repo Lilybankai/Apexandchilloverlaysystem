@@ -28,6 +28,9 @@
   const toast = $('#toast');
   const errorBanner = $('#error-banner');
   const errorText = $('#error-text');
+  const updateBanner = $('#update-banner');
+  const updateText = $('#update-text');
+  const updateAction = $('#update-action');
 
   // Human-readable label + dot colour per feed state.
   const FEED_LABEL = {
@@ -203,6 +206,47 @@
 
   // Live status pushes from the main process.
   window.apex.onStatus((status) => renderStatus(status));
+
+  // --- App updates ---------------------------------------------------------
+
+  function renderUpdate(u) {
+    if (!u) return;
+    // Show the banner only when there's something actionable to report.
+    switch (u.status) {
+      case 'available':
+        updateBanner.hidden = false;
+        updateText.textContent = `Version ${u.version} is available.`;
+        updateAction.hidden = false;
+        updateAction.disabled = false;
+        updateAction.textContent = 'Download & install';
+        updateAction.onclick = () => window.apex.downloadUpdate();
+        break;
+      case 'downloading':
+        updateBanner.hidden = false;
+        updateText.textContent = `Downloading update… ${u.percent}%`;
+        updateAction.disabled = true;
+        updateAction.textContent = 'Downloading…';
+        break;
+      case 'ready':
+        updateBanner.hidden = false;
+        updateText.textContent = `Version ${u.version} is ready to install.`;
+        updateAction.hidden = false;
+        updateAction.disabled = false;
+        updateAction.textContent = 'Restart & update';
+        updateAction.onclick = () => window.apex.installUpdate();
+        break;
+      case 'error':
+        // Stay quiet on background errors (offline, no releases yet).
+        updateBanner.hidden = true;
+        break;
+      default:
+        // idle / checking / none → keep the banner hidden.
+        updateBanner.hidden = true;
+    }
+  }
+
+  window.apex.onUpdate(renderUpdate);
+  window.apex.getUpdateState().then(renderUpdate);
 
   // --- Boot ----------------------------------------------------------------
   window.apex.getState().then(renderAll);

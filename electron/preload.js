@@ -35,4 +35,21 @@ contextBridge.exposeInMainWorld('apex', {
     ipcRenderer.on('status:update', listener);
     return () => ipcRenderer.removeListener('status:update', listener);
   },
+
+  /* ---- App updates (electron-updater via GitHub Releases) ---- */
+
+  /** Current update state (idle/checking/available/downloading/ready/none/error). */
+  getUpdateState: () => ipcRenderer.invoke('update:getState'),
+  /** Manually check GitHub Releases for a newer version. */
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  /** Download the available update. */
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  /** Quit and install the downloaded update. */
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  /** Subscribe to update-state pushes. Returns an unsubscribe function. */
+  onUpdate: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('update:state', listener);
+    return () => ipcRenderer.removeListener('update:state', listener);
+  },
 });

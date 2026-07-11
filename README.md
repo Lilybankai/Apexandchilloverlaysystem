@@ -55,6 +55,24 @@ The control panel:
 Settings are saved to `%APPDATA%/apex-overlay-system/config.json` and restored on
 next launch. The server starts automatically when the app opens.
 
+### Auto-update
+
+The app checks GitHub Releases on launch (via `electron-updater`). When a newer
+version is published, a banner appears in the control panel: **Download &
+install** fetches it, then **Restart & update** applies it. Updates are never
+auto-installed, so a live stream is not interrupted.
+
+To publish a new version:
+
+```bash
+# bump "version" in package.json, then:
+GH_TOKEN=$(gh auth token) npm run release   # builds + uploads to GitHub Releases
+```
+
+Existing installs (v0.4.0+) will offer the update automatically. Note: builds are
+unsigned, so Windows SmartScreen shows an "unknown publisher" prompt on first
+install and on each update ("More info → Run anyway").
+
 ## Overlays
 
 Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:

@@ -28,6 +28,13 @@
   </header>
 
   <main class="app-main">
+    <!-- Update banner (hidden unless a new version is available) -->
+    <div class="update-banner" id="update-banner" hidden>
+      <span class="update-banner__icon">⬆</span>
+      <span class="update-banner__text" id="update-text"></span>
+      <button class="btn btn--update" id="update-action" type="button"></button>
+    </div>
+
     <!-- Error banner (hidden unless the server fails to start) -->
     <div class="error-banner" id="error-banner" hidden>
       <span class="error-banner__icon">!</span>
