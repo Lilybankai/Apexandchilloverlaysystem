@@ -56,6 +56,12 @@ shows data.
    | **Shutdown source when not visible** | ✅ recommended (saves resources) |
    | **Refresh browser when scene becomes active** | ✅ recommended |
 
+   > **Note:** *Shutdown when not visible* is ideal for **scene-based** use — the
+   > server replays the latest frame on connect and the overlay reconnects in
+   > well under a second, so switching scenes repopulates instantly. If instead
+   > you frequently toggle the **overlay source's own visibility** mid-scene,
+   > turn this **off** to avoid a brief reconnect/repopulate flash each time.
+
 4. Leave the custom CSS box **empty** — the overlay ships its own styling.
 5. Click **OK**.
 
@@ -97,7 +103,7 @@ peeks out at the edges, nudge that widget by tweaking its position in
   should see the six branded panels.
 - The small pill at the top-centre shows the link state: **LIVE** (connected),
   **CONNECTING**, or **RECONNECTING**.
-- A magenta **DEMO DATA** badge appears when the feed is simulated (game not
+- A coral/red **DEMO DATA** badge appears when the feed is simulated (game not
   running or `launch.bat sim`); it disappears once a real sim is detected.
 
 ---
