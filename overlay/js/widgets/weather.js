@@ -93,11 +93,14 @@
       wetEl.className = rainPct > 2 || wetPct > 20 ? "neg" : "";
     }
 
-    // Forecast strip — rebuild only when the signature changes.
+    // Forecast strip — rebuild only when the signature changes. `sky` is part
+    // of the signature so a pure sky change (at unchanged rain %) still refreshes
+    // the "now" sky label below.
     var slots = w.forecast || [];
     var sig = "";
     for (var i = 0; i < slots.length; i++) {
-      sig += slots[i].minutesAhead + ":" + Math.round(fmt.pct(slots[i].rainChance)) + "|";
+      sig += slots[i].minutesAhead + ":" + Math.round(fmt.pct(slots[i].rainChance)) +
+        ":" + slots[i].sky + "|";
     }
     if (cache.sig === sig) return;
     cache.sig = sig;
