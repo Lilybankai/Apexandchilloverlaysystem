@@ -45,7 +45,10 @@ import { FuelCalculator } from './fuelCalculator';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
+  type FlagState,
   type RelativeEntry,
+  type SessionPhase,
+  type SessionType,
   type StandingEntry,
   type TelemetryFrame,
   type TyreState,
@@ -419,6 +422,8 @@ export class RF2Provider implements TelemetryProvider {
 
     // --- session --------------------------------------------------------
     const maxLaps = scoring.readInt32LE(SI.base + SI.mMaxLaps);
+    const sessionCode = scoring.readInt32LE(SI.base + SI.mSession);
+    const gamePhase = scoring.readUInt8(SI.base + SI.mGamePhase);
     const endET = scoring.readDoubleLE(SI.base + SI.mEndET);
     const currentET = scoring.readDoubleLE(SI.base + SI.mCurrentET);
     const timeRemaining = endET > 0 ? Math.max(0, endET - currentET) : UNKNOWN_VALUE;
@@ -453,9 +458,9 @@ export class RF2Provider implements TelemetryProvider {
       timestamp: nowMs,
       connected: true,
       session: {
-        type: 'race',
-        phase: 'green',
-        flag: 'green',
+        type: mapSessionType(sessionCode),
+        phase: mapSessionPhase(gamePhase),
+        flag: mapFlag(gamePhase),
         track: readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown',
         timeRemainingSec: timeRemaining,
         totalLaps: maxLaps > 0 ? maxLaps : 0,
@@ -592,6 +597,68 @@ export class RF2Provider implements TelemetryProvider {
   /** Verbose-only diagnostic (per-poll failures would otherwise spam at 30 Hz). */
   private log(msg: string): void {
     if (this.verbose) console.log(`[rf2] ${msg}`);
+  }
+}
+
+/* --------------------------- session-code maps ---------------------------- */
+
+/**
+ * Maps rF2/LMU `rF2ScoringInfo.mSession` to a {@link SessionType}. rF2 groups
+ * sessions into bands: `0` test day, `1..4` practice, `5..8` qualifying, `9`
+ * warm-up, `10..13` race.
+ */
+function mapSessionType(code: number): SessionType {
+  if (code <= 0) return 'testday';
+  if (code <= 4) return 'practice';
+  if (code <= 8) return 'qualifying';
+  if (code === 9) return 'warmup';
+  if (code <= 13) return 'race';
+  return 'unknown';
+}
+
+/**
+ * Maps rF2/LMU `rF2ScoringInfo.mGamePhase` to a {@link SessionPhase}.
+ * (0 garage, 1 warm-up, 2 grid walk, 3 formation, 4 countdown, 5 green,
+ * 6 full-course yellow, 7 session stopped, 8 session over.)
+ */
+function mapSessionPhase(phase: number): SessionPhase {
+  switch (phase) {
+    case 0:
+      return 'garage';
+    case 1:
+      return 'green'; // warm-up — cars are circulating
+    case 2:
+      return 'gridwalk';
+    case 3:
+      return 'formation';
+    case 4:
+      return 'countdown';
+    case 5:
+      return 'green';
+    case 6:
+      return 'fullCourseYellow';
+    case 7:
+      return 'redFlag';
+    case 8:
+      return 'checkered';
+    default:
+      return 'unknown';
+  }
+}
+
+/** Derives the global {@link FlagState} shown to the field from the game phase. */
+function mapFlag(phase: number): FlagState {
+  switch (phase) {
+    case 5:
+      return 'green';
+    case 6:
+      return 'yellow';
+    case 7:
+      return 'red';
+    case 8:
+      return 'checkered';
+    default:
+      return 'none';
   }
 }
 
