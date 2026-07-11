@@ -68,7 +68,9 @@ const MMF_SCORING = '$rFactor2SMMP_Scoring$';
 const TORN_READ_RETRIES = 6;
 /** Bytes of each buffer we copy per poll (enough to cover the fields we read). */
 const TELEMETRY_COPY_BYTES = 16 + 128 * 2880; // header + full vehicle array
-const SCORING_COPY_BYTES = 12 + 560 + 128 * 616; // header + scoringInfo + vehicles
+// header(12) + rF2ScoringInfo(548) + 128 * rF2VehicleScoring(616). Matches the
+// SI/VS offset constants below; the earlier 560 double-counted the 12B header.
+const SCORING_COPY_BYTES = 12 + 548 + 128 * 616;
 
 /* ---------------------------------------------------------------------------
  * PROVISIONAL struct offsets (bytes), rF2State.h with #pragma pack(4), x64.
