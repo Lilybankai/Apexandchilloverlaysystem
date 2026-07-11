@@ -40,13 +40,21 @@ export interface FuelUpdate {
 const DEFAULT_SAMPLE_WINDOW = 5;
 
 /**
- * Absolute upper bound (litres) on a single lap's recorded burn when tank
- * capacity is unknown. A lap can never consume more than the tank holds, so
- * when capacity is known that is used instead; this guards the unknown case
- * against an implausible reading that slips the provider's frame gate on a lap
- * boundary and would otherwise skew the average for a full window of laps.
+ * Absolute upper bound (litres) on a single lap's recorded burn. A lap can
+ * never consume more than the tank holds, so the known tank capacity is used
+ * when available and this is only the fallback when capacity is unknown.
  */
 const MAX_PLAUSIBLE_LAP_BURN_L = 100;
+
+/**
+ * Once a rolling average exists, reject a new per-lap sample larger than this
+ * multiple of it. Real per-lap fuel use is very stable within a stint, so a
+ * sample several times the running average is almost certainly a bad reading
+ * that slipped the provider's frame gate on a lap boundary; recording it would
+ * skew the average for a full window of laps. Bootstrapping samples (before any
+ * average exists) are always accepted.
+ */
+const BURN_OUTLIER_FACTOR = 3;
 
 /**
  * Stateful fuel-usage tracker. One instance per player car / session; call
@@ -122,9 +130,14 @@ export class FuelCalculator {
       // A lap cannot burn more than the tank holds; fall back to an absolute
       // ceiling when capacity is unknown.
       const maxBurn = u.capacityLiters > 0 ? u.capacityLiters : MAX_PLAUSIBLE_LAP_BURN_L;
-      // Only count plausible consumption (ignore refuel/telemetry noise and any
-      // implausibly large spike that would poison the rolling average).
-      if (burn > 0 && burn <= maxBurn && Number.isFinite(burn)) {
+      // Reject a spike well above the established average (a bad reading on a lap
+      // boundary) so it cannot poison the rolling average; the first samples,
+      // before any average exists, are always accepted to bootstrap it.
+      const avg = this.perLapAverage;
+      const isOutlier = avg > 0 && burn > avg * BURN_OUTLIER_FACTOR;
+      // Only count plausible consumption (ignore refuel/telemetry noise, values
+      // beyond the tank, and outlier spikes).
+      if (burn > 0 && burn <= maxBurn && !isOutlier && Number.isFinite(burn)) {
         this.burns.push(burn);
         while (this.burns.length > this.window) this.burns.shift();
       }
