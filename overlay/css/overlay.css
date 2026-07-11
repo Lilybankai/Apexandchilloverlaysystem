@@ -94,7 +94,8 @@
   background: var(--ac-gradient-vertical);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
-.brand__amp { color: var(--ac-magenta); }
+/* "&" rendered in brand cyan to match the Apex & Chill wordmark. */
+.brand__amp { color: var(--ac-cyan); }
 
 /* =========================================================================
  * STANDINGS WIDGET (top-left)
