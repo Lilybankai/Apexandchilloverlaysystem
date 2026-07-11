@@ -86,6 +86,7 @@ const SI = {
   mCurrentET: 68,
   mEndET: 76,
   mMaxLaps: 84,
+  mLapDist: 88, // double — length of the track lap in metres
   mNumVehicles: 104,
   mGamePhase: 108,
   mRaining: 220,
@@ -537,6 +538,13 @@ export class RF2Provider implements TelemetryProvider {
     const playerDist = scoring.readDoubleLE(playerScoringOff + VS.mLapDist);
     const playerBest = scoring.readDoubleLE(playerScoringOff + VS.mBestLapTime);
     const lapTime = playerBest > 0 ? playerBest : 90;
+    // On-track gaps are a fraction of a *full lap*, so normalize the distance
+    // delta by the TRACK LENGTH — not by any one car's lap distance (which would
+    // distort gaps and mis-order cars near the start/finish line).
+    const trackLenRaw = scoring.readDoubleLE(SI.base + SI.mLapDist);
+    const trackLength = trackLenRaw > 1 ? trackLenRaw : 0;
+    const player = standings.find((s) => s.slotId === playerId);
+    const playerLaps = player?.lapsCompleted ?? 0;
 
     const rows = [] as Array<{ entry: StandingEntry; gap: number }>;
     for (let i = 0; i < numVehicles; i++) {
@@ -545,9 +553,17 @@ export class RF2Provider implements TelemetryProvider {
       const std = standings.find((s) => s.slotId === id);
       if (std === undefined || id === playerId) continue;
       const dist = scoring.readDoubleLE(off + VS.mLapDist);
-      // Approximate signed on-track gap in seconds (distance delta / speed).
-      const distDelta = dist - playerDist;
-      rows.push({ entry: std, gap: (distDelta / Math.max(1, dist || 1)) * lapTime });
+      // Signed on-track distance delta, wrapped into ±half a lap so cars on
+      // either side of the start/finish line order correctly.
+      let distDelta = dist - playerDist;
+      if (trackLength > 0) {
+        const half = trackLength / 2;
+        if (distDelta > half) distDelta -= trackLength;
+        else if (distDelta < -half) distDelta += trackLength;
+      }
+      // Distance gap → time gap: (fraction of a lap) × lap time.
+      const denom = trackLength > 0 ? trackLength : Math.max(1, Math.abs(dist) || 1);
+      rows.push({ entry: std, gap: (distDelta / denom) * lapTime });
     }
     rows.sort((a, b) => a.gap - b.gap);
 
@@ -557,12 +573,12 @@ export class RF2Provider implements TelemetryProvider {
       driverName: std.driverName,
       carClass: std.carClass,
       relativeGapSec: round2(gap),
-      lapsDifference: 0,
+      // Whole-lap difference vs the player (negative = lapped by the player).
+      lapsDifference: isPlayer ? 0 : std.lapsCompleted - playerLaps,
       inPit: std.inPit,
       isPlayer,
     });
 
-    const player = standings.find((s) => s.slotId === playerId);
     const ahead = rows.filter((r) => r.gap > 0).slice(0, 3);
     const behind = rows.filter((r) => r.gap <= 0).slice(-3);
     const result: RelativeEntry[] = [
