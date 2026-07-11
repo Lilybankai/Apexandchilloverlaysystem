@@ -1,0 +1,435 @@
+/* =========================================================================
+ * overlay.css — layout & widget component styling
+ * -------------------------------------------------------------------------
+ * Positions the six widgets to mirror a typical LMU / RaceLab overlay so an
+ * Apex & Chill broadcast can drop these directly over (and fully occlude)
+ * the sim's native overlays:
+ *
+ *   +-------------------------------------------------------------+
+ *   | STANDINGS (TL)        WEATHER (TC)        RELATIVE/TIMING(TR)|
+ *   |                                                   FUEL (MR)  |
+ *   |                                                             |
+ *   |                                                   TYRES (BR) |
+ *   |                       PEDALS (BC)                            |
+ *   +-------------------------------------------------------------+
+ *
+ * The stage is a fixed 1920x1080 design canvas scaled to fit the browser /
+ * OBS source, so widget positions stay pixel-consistent at any source size.
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * STAGE — fixed 1080p design canvas, centre-scaled to the viewport.
+ * ---------------------------------------------------------------------- */
+.stage {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 1920px;
+  height: 1080px;
+  transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
+  transform-origin: center center;
+}
+
+/* Absolute widget anchors. */
+.widget { position: absolute; }
+
+#widget-standings { top: 24px;    left: 24px;   width: 420px; }
+#widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
+#widget-relative  { top: 24px;    right: 24px;  width: 400px; }
+#widget-fuel      { top: 250px;   right: 24px;  width: 400px; }
+#widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
+#widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
+
+/* =========================================================================
+ * CONNECTION STATUS PILL (top-centre, above weather)
+ * ========================================================================= */
+.conn-status {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  background: var(--bg-header);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  z-index: 10;
+}
+.conn-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.conn-status[data-state="open"] .conn-status__dot { background: var(--pos-gain); }
+.conn-status[data-state="connecting"] .conn-status__dot { background: var(--warn); }
+.conn-status[data-state="closed"] .conn-status__dot { background: var(--pos-loss); }
+
+/* =========================================================================
+ * BRAND WORDMARK (small, corner) — Apex & Chill lockup.
+ * ========================================================================= */
+.brand {
+  position: absolute;
+  bottom: 22px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 15px;
+}
+.brand__mark {
+  width: 22px;
+  height: 22px;
+  /* Triangular apex mark rendered in pure CSS (no image asset). */
+  background: var(--ac-gradient-vertical);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.brand__amp { color: var(--ac-magenta); }
+
+/* =========================================================================
+ * STANDINGS WIDGET (top-left)
+ * ========================================================================= */
+.standings { max-height: 360px; }
+.standings__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.standings__row {
+  border-bottom: 1px solid var(--border-soft);
+}
+.standings__row:last-child { border-bottom: none; }
+.standings__row--player {
+  background: var(--bg-panel-3);
+  box-shadow: inset 3px 0 0 var(--ac-cyan);
+}
+.standings__cell {
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.standings__pos {
+  width: 26px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.standings__driver {
+  font-family: var(--font-ui);
+  max-width: 170px;
+  text-overflow: ellipsis;
+}
+.standings__gap {
+  width: 68px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.standings__last {
+  width: 74px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Small coloured class tag before the driver name. */
+.standings__class {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--ac-purple);
+}
+.lap-purple { color: var(--purple-fastest) !important; }
+.lap-green { color: var(--pos-gain) !important; }
+
+/* =========================================================================
+ * RELATIVE / TIMING WIDGET (top-right)
+ * ========================================================================= */
+.timing__strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.timing__cell {
+  background: var(--bg-panel);
+  padding: 5px 8px;
+  text-align: center;
+}
+.timing__label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.timing__value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-top: 1px;
+}
+.relative__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.relative__row { border-bottom: 1px solid var(--border-soft); }
+.relative__row:last-child { border-bottom: none; }
+.relative__row--player {
+  background: var(--bg-panel-3);
+  box-shadow: inset 3px 0 0 var(--ac-magenta);
+}
+.relative__cell { padding: 4px 8px; white-space: nowrap; }
+.relative__pos {
+  width: 26px; text-align: center;
+  font-family: var(--font-display); font-weight: 700;
+  color: var(--text-secondary);
+}
+.relative__driver { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.relative__delta {
+  width: 70px; text-align: right;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+ * WEATHER WIDGET (top-centre) — now + forecast timeline.
+ * ========================================================================= */
+.weather__now {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.weather__temp {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  color: var(--text-primary);
+}
+.weather__temp small { font-size: 12px; color: var(--text-muted); }
+.weather__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.weather__forecast {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+.weather__slot {
+  text-align: center;
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  padding: 5px 3px;
+}
+.weather__slot-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.weather__slot-rain {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  margin-top: 2px;
+}
+/* Rain-chance intensity is signalled by the slot's top border colour. */
+.weather__slot[data-rain="dry"]   { border-top: 2px solid var(--pos-gain); }
+.weather__slot[data-rain="low"]   { border-top: 2px solid var(--warn); }
+.weather__slot[data-rain="high"]  { border-top: 2px solid var(--pos-loss); }
+
+/* =========================================================================
+ * FUEL WIDGET (mid-right) — calculator readout.
+ * ========================================================================= */
+.fuel__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fuel__stat {
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+.fuel__stat-label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fuel__stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  margin-top: 2px;
+}
+.fuel__stat-value small { font-size: 11px; color: var(--text-muted); }
+.fuel__margin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+/* Fuel-to-finish margin state colour on the value. */
+.fuel__stat-value[data-state="ok"] { color: var(--pos-gain); }
+.fuel__stat-value[data-state="marginal"] { color: var(--warn); }
+.fuel__stat-value[data-state="short"] { color: var(--pos-loss); }
+
+/* =========================================================================
+ * TYRES WIDGET (bottom-right) — 4-corner temps.
+ * ========================================================================= */
+.tyres__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tyre {
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  text-align: center;
+  border: 1px solid var(--border-soft);
+}
+.tyre__pos {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.tyre__temp {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  margin: 2px 0;
+}
+/* Colour band showing thermal state; set via data-heat by the widget. */
+.tyre__band { height: 4px; border-radius: 2px; background: var(--tyre-optimal); }
+.tyre[data-heat="cold"] .tyre__band { background: var(--tyre-cold); }
+.tyre[data-heat="cold"] .tyre__temp { color: var(--tyre-cold); }
+.tyre[data-heat="optimal"] .tyre__band { background: var(--tyre-optimal); }
+.tyre[data-heat="optimal"] .tyre__temp { color: var(--tyre-optimal); }
+.tyre[data-heat="warm"] .tyre__band { background: var(--tyre-warm); }
+.tyre[data-heat="warm"] .tyre__temp { color: var(--tyre-warm); }
+.tyre[data-heat="hot"] .tyre__band { background: var(--tyre-hot); }
+.tyre[data-heat="hot"] .tyre__temp { color: var(--tyre-hot); }
+
+/* =========================================================================
+ * PEDALS WIDGET (bottom-centre) — rolling trace + current bars.
+ * ========================================================================= */
+.pedals__wrap {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.pedals__trace {
+  flex: 1;
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.pedals__trace canvas { display: block; width: 100%; height: 90px; }
+.pedals__bars {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.pedal-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 30px;
+}
+.pedal-bar__track {
+  position: relative;
+  width: 12px;
+  height: 74px;
+  background: var(--bg-panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pedal-bar__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  border-radius: 3px;
+}
+.pedal-bar__fill--throttle { background: var(--pedal-throttle); }
+.pedal-bar__fill--brake { background: var(--pedal-brake); }
+.pedal-bar__fill--clutch { background: var(--pedal-clutch); }
+.pedal-bar__label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.pedal-bar__val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Steering readout under the trace. */
+.pedals__steer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pedals__steer-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  background: var(--bg-panel-2);
+  border-radius: 2px;
+}
+.pedals__steer-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ac-cyan);
+  transform: translate(-50%, -50%);
+}
+
+/* =========================================================================
+ * PLACEHOLDER / EMPTY STATE — shown before the first frame arrives so the
+ * shell renders meaningfully standalone in a plain browser.
+ * ========================================================================= */
+.placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 2px;
+  text-align: center;
+}
