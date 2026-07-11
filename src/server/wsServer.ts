@@ -25,6 +25,14 @@ import type { ServerConfig } from './config';
 /** How often to ping clients to detect dead connections (ms). */
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
+/**
+ * Skip broadcasting to a client whose send buffer has grown beyond this many
+ * bytes: it is not draining fast enough (a stalled/slow consumer), so piling on
+ * more frames would only grow memory. At ~1–2 KB/frame and 30 Hz this tolerates
+ * roughly a second of backlog before shedding frames for that client only.
+ */
+const MAX_BUFFERED_BYTES = 64 * 1024;
+
 /** Extends the socket with liveness tracking for the heartbeat. */
 interface TrackedSocket extends WebSocket {
   isAlive?: boolean;
@@ -74,9 +82,17 @@ export class TelemetryWsServer {
     const json = JSON.stringify(frame);
     this.lastFrameJson = json;
     for (const client of this.wss.clients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(json);
+      if (client.readyState !== WebSocket.OPEN) continue;
+      // Backpressure guard: if this client hasn't drained its buffer, drop the
+      // frame for it rather than growing memory. Telemetry is latest-wins, so a
+      // slow client simply resyncs on the next frame it can accept.
+      if (client.bufferedAmount > MAX_BUFFERED_BYTES) {
+        if (this.verbose) {
+          console.warn(`[ws] skipping frame for slow client (buffered ${client.bufferedAmount}B)`);
+        }
+        continue;
       }
+      client.send(json);
     }
   }
 
