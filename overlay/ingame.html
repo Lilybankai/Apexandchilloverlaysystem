@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex &amp; Chill — In-game Overlays</title>
+
+  <!--
+    In-game overlay layer.
+    Loaded ONLY by the desktop app into a transparent, click-through,
+    always-on-top window covering the screen, so overlays render directly over
+    the sim (no OBS involved). Widgets to show are passed by the app as
+    ?widgets=standings,relative,… — every widget lives in a movable/scalable
+    .ig-item wrapper managed by js/ingame.js (drag + resize in edit mode,
+    placement persisted through the window.apexIngame bridge).
+
+    Opened in a normal browser it still works (demo of the layer), it just
+    cannot persist layout (no bridge) — positions then live in localStorage.
+  -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/overlay.css" />
+  <link rel="stylesheet" href="css/ingame.css" />
+</head>
+<body class="ingame">
+  <!-- Widget wrappers injected here synchronously by the inline script. -->
+  <div id="ig-stage"></div>
+
+  <!-- Edit-mode chrome (hidden while locked). -->
+  <div class="ig-toolbar" id="ig-toolbar" hidden>
+    <span class="ig-toolbar__brand"></span>
+    <span class="ig-toolbar__text">Editing overlays — drag to move, corner handle to resize</span>
+    <button class="ig-btn ig-btn--ghost" id="ig-reset" type="button">Reset</button>
+    <button class="ig-btn" id="ig-done" type="button">Done</button>
+  </div>
+
+  <!-- Shared widget shells + injector (synchronous so the deferred runtime
+       finds the sections at boot, same pattern as widget.html). -->
+  <script src="js/shells.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      var params = new URLSearchParams(window.location.search);
+      var wanted = (params.get("widgets") || "")
+        .split(",")
+        .map(function (s) { return s.trim().toLowerCase(); })
+        .filter(function (s) { return !!window.ApexShells[s]; });
+      if (wanted.length === 0) wanted = Object.keys(window.ApexShells);
+
+      var stage = document.getElementById("ig-stage");
+      var html = "";
+      for (var i = 0; i < wanted.length; i++) {
+        html +=
+          '<div class="ig-item" data-id="' + wanted[i] + '">' +
+          window.ApexShells[wanted[i]] +
+          '<div class="ig-item__handle" title="Drag to resize"></div>' +
+          "</div>";
+      }
+      stage.innerHTML = html;
+    })();
+  </script>
+
+  <!-- Same runtime + widget modules as every other overlay page. -->
+  <script src="js/client.js" defer></script>
+  <script src="js/widgets/standings.js" defer></script>
+  <script src="js/widgets/relative.js" defer></script>
+  <script src="js/widgets/weather.js" defer></script>
+  <script src="js/widgets/fuel.js" defer></script>
+  <script src="js/widgets/tyres.js" defer></script>
+  <script src="js/widgets/pedals.js" defer></script>
+  <!-- Layout + edit-mode manager (after the runtime; operates on wrappers). -->
+  <script src="js/ingame.js" defer></script>
+</body>
+</html>

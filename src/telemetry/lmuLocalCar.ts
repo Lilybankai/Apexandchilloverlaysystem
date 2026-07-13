@@ -44,10 +44,10 @@ const VT = {
   mFuelCapacity: 608,
 } as const;
 
-const HDR_BODY = 12; // mNumVehicles lives here; records start at VT.base
+const HDR_NUM_VEHICLES = 12; // mNumVehicles lives here; records start at VT.base
 const MMF_TELEMETRY = '$rFactor2SMMP_Telemetry$';
 const FILE_MAP_READ = 0x0004;
-const TORN_READ_RETRIES = 8;
+const TORN_READ_RETRIES = 4;
 /** Worst-case bytes we might need (clamped to the real region on open). */
 const MAX_BYTES = VT.base + 128 * VT.stride;
 
@@ -73,7 +73,14 @@ interface Win32 {
   MapViewOfFile: (h: unknown, a: number, hi: number, lo: number, bytes: number) => unknown;
   UnmapViewOfFile: (addr: unknown) => boolean;
   CloseHandle: (h: unknown) => boolean;
-  read: (addr: unknown, len: number) => Buffer;
+  /** Decode `len` bytes at `addr + offset` into a Buffer (no full-region copy). */
+  readBytes: (addr: unknown, offset: number, len: number) => Buffer;
+  /** Decode a single little-endian uint32 at `addr + offset`. */
+  readU32: (addr: unknown, offset: number) => number;
+  /** Decode a single little-endian int32 at `addr + offset`. */
+  readI32: (addr: unknown, offset: number) => number;
+  /** Decode a single double at `addr + offset`. */
+  readF64: (addr: unknown, offset: number) => number;
   regionSize: (addr: unknown) => number;
 }
 
@@ -94,8 +101,17 @@ function loadWin32(): Win32 | null {
     const UnmapViewOfFile = k32.func('bool __stdcall UnmapViewOfFile(void*)');
     const CloseHandle = k32.func('bool __stdcall CloseHandle(void*)');
     const VirtualQuery = k32.func('size_t __stdcall VirtualQuery(void*, void*, size_t)');
-    const read = (addr: unknown, len: number): Buffer =>
-      Buffer.from(koffi.decode(addr, koffi.array('uint8', len)) as number[]);
+    // Offset decodes read just the bytes asked for — the previous whole-region
+    // copy (~368 KB through a JS number[] up to 8×/poll at 30 Hz) blocked the
+    // event loop long enough to lag the pedal feed by whole seconds.
+    const readBytes = (addr: unknown, offset: number, len: number): Buffer =>
+      Buffer.from(koffi.decode(addr, offset, koffi.array('uint8', len)) as number[]);
+    const readU32 = (addr: unknown, offset: number): number =>
+      koffi.decode(addr, offset, 'uint32') as number;
+    const readI32 = (addr: unknown, offset: number): number =>
+      koffi.decode(addr, offset, 'int32') as number;
+    const readF64 = (addr: unknown, offset: number): number =>
+      koffi.decode(addr, offset, 'double') as number;
     const regionSize = (addr: unknown): number => {
       try {
         const mbi = Buffer.alloc(48);
@@ -110,7 +126,10 @@ function loadWin32(): Win32 | null {
       MapViewOfFile,
       UnmapViewOfFile,
       CloseHandle,
-      read,
+      readBytes,
+      readU32,
+      readI32,
+      readF64,
       regionSize,
     };
   } catch {
@@ -128,6 +147,8 @@ export class LmuLocalCarReader {
   private handle: unknown = null;
   private view: unknown = null;
   private size = 0;
+  /** Record index of the driven car found last poll — probed first next poll. */
+  private cachedIdx = -1;
 
   public constructor() {
     this.win32 = loadWin32();
@@ -155,6 +176,7 @@ export class LmuLocalCarReader {
     this.view = null;
     this.handle = null;
     this.size = 0;
+    this.cachedIdx = -1;
   }
 
   private open(): void {
@@ -181,6 +203,11 @@ export class LmuLocalCarReader {
   /**
    * Returns the driven car's physics, or `null` when unavailable (no koffi, sim
    * closed, nobody driving locally, or a torn read). Never throws.
+   *
+   * Cost per call is a handful of scalar decodes plus one 2 880-byte record
+   * copy — never a copy of the whole (~368 KB) region. Consistency comes from
+   * checking the writer's version counters before and after the record copy and
+   * retrying on mismatch instead of snapshotting everything.
    */
   public read(): LocalCarPhysics | null {
     const w = this.win32;
@@ -189,66 +216,87 @@ export class LmuLocalCarReader {
       this.open();
       if (!this.view) return null;
     }
-    const buf = this.readConsistent();
-    if (buf === null) {
-      // Mapping may have gone away (sim closed); drop it so we re-open later.
-      this.stop();
-      return null;
-    }
-    try {
-      return this.parseDrivenCar(buf);
-    } catch {
-      return null;
-    }
-  }
-
-  /** Re-copies the buffer until the version counters agree (writer idle). */
-  private readConsistent(): Buffer | null {
-    const w = this.win32;
-    if (w === null || !this.view) return null;
     try {
       for (let attempt = 0; attempt < TORN_READ_RETRIES; attempt++) {
-        const snapshot = w.read(this.view, this.size);
-        if (snapshot.readUInt32LE(0) === snapshot.readUInt32LE(4)) return snapshot;
+        const v1 = w.readU32(this.view, 0);
+        if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
+
+        const idx = this.findDrivenCar(w);
+        if (idx < 0) return null; // nobody driving locally
+
+        const offset = VT.base + idx * VT.stride;
+        if (offset + VT.stride > this.size) return null;
+        const rec = w.readBytes(this.view, offset, VT.stride);
+
+        // Reject the copy if the writer touched the buffer while we read it.
+        if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
+
+        const car = parseRecord(rec);
+        if (car === null) {
+          this.cachedIdx = -1; // slot went stale (driver left the car)
+          continue;
+        }
+        this.cachedIdx = idx;
+        return car;
       }
       return null;
     } catch {
+      // Mapping may have gone away (sim closed); drop it so we re-open later.
+      this.stop();
       return null;
     }
   }
 
   /**
-   * Finds the locally-driven car — the only telemetry record populated with
-   * plausible physics (valid throttle 0..1 and a running engine); remote cars'
-   * records are zeroed/garbage — and maps its fields.
+   * Finds the record index of the locally-driven car — the only telemetry
+   * record populated with plausible physics (valid throttle 0..1 and a running
+   * engine); remote cars' records are zeroed/garbage. The last known index is
+   * probed first so steady-state polls cost two scalar decodes, not a scan.
    */
-  private parseDrivenCar(buf: Buffer): LocalCarPhysics | null {
-    const n = clampInt(buf.readInt32LE(HDR_BODY), 0, 128);
-    for (let i = 0; i < n; i++) {
-      const o = VT.base + i * VT.stride;
-      if (o + VT.stride > buf.length) break;
-      const throttle = buf.readDoubleLE(o + VT.mUnfilteredThrottle);
-      const rpm = buf.readDoubleLE(o + VT.mEngineRPM);
-      // The driven car is the one actually running: valid pedal + live engine.
-      if (throttle < -0.05 || throttle > 1.05 || rpm < 200 || rpm > 20000) continue;
-
-      const fwdVel = buf.readDoubleLE(o + VT.mLocalVelZ);
-      return {
-        throttle: clamp01(throttle),
-        brake: clamp01(buf.readDoubleLE(o + VT.mUnfilteredBrake)),
-        clutch: clamp01(buf.readDoubleLE(o + VT.mUnfilteredClutch)),
-        steer: clamp(buf.readDoubleLE(o + VT.mUnfilteredSteering), -1, 1),
-        gear: buf.readInt32LE(o + VT.mGear),
-        rpm: Math.round(rpm),
-        maxRpm: Math.round(buf.readDoubleLE(o + VT.mEngineMaxRPM)) || 8000,
-        speedKph: Math.round(Math.abs(fwdVel) * 3.6),
-        fuelLiters: round1(buf.readDoubleLE(o + VT.mFuel)),
-        capacityLiters: round1(buf.readDoubleLE(o + VT.mFuelCapacity)),
-        lapNumber: Math.max(0, buf.readInt32LE(o + VT.mLapNumber)),
-      };
+  private findDrivenCar(w: Win32): number {
+    const n = clampInt(w.readI32(this.view, HDR_NUM_VEHICLES), 0, 128);
+    if (this.cachedIdx >= 0 && this.cachedIdx < n && this.probe(w, this.cachedIdx)) {
+      return this.cachedIdx;
     }
-    return null; // nobody driving locally
+    for (let i = 0; i < n; i++) {
+      if (VT.base + (i + 1) * VT.stride > this.size) break;
+      if (this.probe(w, i)) return i;
+    }
+    return -1;
   }
+
+  /** Whether record `i` looks like a locally-driven car (live pedal + engine). */
+  private probe(w: Win32, i: number): boolean {
+    const o = VT.base + i * VT.stride;
+    const throttle = w.readF64(this.view, o + VT.mUnfilteredThrottle);
+    if (throttle < -0.05 || throttle > 1.05) return false;
+    const rpm = w.readF64(this.view, o + VT.mEngineRPM);
+    return rpm >= 200 && rpm <= 20000;
+  }
+}
+
+/** Maps one raw `rF2VehicleTelemetry` record to {@link LocalCarPhysics}. */
+function parseRecord(rec: Buffer): LocalCarPhysics | null {
+  const throttle = rec.readDoubleLE(VT.mUnfilteredThrottle);
+  const rpm = rec.readDoubleLE(VT.mEngineRPM);
+  // Re-validate on the copied bytes: the probe read the live buffer, which may
+  // have changed between the probe and the copy.
+  if (throttle < -0.05 || throttle > 1.05 || rpm < 200 || rpm > 20000) return null;
+
+  const fwdVel = rec.readDoubleLE(VT.mLocalVelZ);
+  return {
+    throttle: clamp01(throttle),
+    brake: clamp01(rec.readDoubleLE(VT.mUnfilteredBrake)),
+    clutch: clamp01(rec.readDoubleLE(VT.mUnfilteredClutch)),
+    steer: clamp(rec.readDoubleLE(VT.mUnfilteredSteering), -1, 1),
+    gear: rec.readInt32LE(VT.mGear),
+    rpm: Math.round(rpm),
+    maxRpm: Math.round(rec.readDoubleLE(VT.mEngineMaxRPM)) || 8000,
+    speedKph: Math.round(Math.abs(fwdVel) * 3.6),
+    fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
+    capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
+    lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
+  };
 }
 
 function clamp(v: number, min: number, max: number): number {

@@ -29,6 +29,15 @@ contextBridge.exposeInMainWorld('apex', {
   /** Open an overlay URL in the default browser (for previewing). */
   openInBrowser: (url) => ipcRenderer.invoke('overlay:openInBrowser', url),
 
+  /* ---- In-game overlay layer ---- */
+
+  /** Unlock the in-game layer for on-screen drag/resize editing. */
+  ingameEditStart: () => ipcRenderer.invoke('ingame:editStart'),
+  /** Re-lock the in-game layer (click-through again). */
+  ingameEditStop: () => ipcRenderer.invoke('ingame:editStop'),
+  /** Reset every in-game widget to its default position. */
+  ingameLayoutReset: () => ipcRenderer.invoke('ingame:layoutReset'),
+
   /** Subscribe to live status pushes. Returns an unsubscribe function. */
   onStatus: (callback) => {
     const listener = (_evt, payload) => callback(payload);

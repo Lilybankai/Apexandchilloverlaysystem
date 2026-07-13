@@ -30,6 +30,9 @@
   <!-- The single widget section is injected here synchronously (below). -->
   <div class="single-page" id="single-page"></div>
 
+  <!-- Shared per-widget shell markup (synchronous — used by the inline
+       injector below before the deferred runtime scripts run). -->
+  <script src="js/shells.js"></script>
   <script>
     // -----------------------------------------------------------------------
     // Inject the requested widget's section shell BEFORE the deferred runtime
@@ -39,52 +42,7 @@
     (function () {
       "use strict";
 
-      // Per-widget panel shells — mirror the sections in index.html. The widget
-      // JS modules build their own body content into [data-role="mount"].
-      var SHELLS = {
-        standings:
-          '<section class="widget panel" id="widget-standings" data-widget="standings" aria-label="Race standings">' +
-          '<header class="panel__header"><span class="panel__title">Standings</span>' +
-          '<span class="panel__meta" data-role="session">— / —</span></header>' +
-          '<div class="panel__body panel__body--flush standings" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-
-        weather:
-          '<section class="widget panel" id="widget-weather" data-widget="weather" aria-label="Weather forecast">' +
-          '<header class="panel__header"><span class="panel__title">Weather</span>' +
-          '<span class="panel__meta" data-role="track-state">TRACK —</span></header>' +
-          '<div class="panel__body" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-
-        relative:
-          '<section class="widget panel" id="widget-relative" data-widget="relative" aria-label="Relative timing">' +
-          '<header class="panel__header"><span class="panel__title">Relative</span>' +
-          '<span class="panel__meta" data-role="laps">LAP —/—</span></header>' +
-          '<div class="panel__body panel__body--flush" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-
-        fuel:
-          '<section class="widget panel" id="widget-fuel" data-widget="fuel" aria-label="Fuel calculator">' +
-          '<header class="panel__header"><span class="panel__title">Fuel</span>' +
-          '<span class="panel__meta" data-role="tank">— L</span></header>' +
-          '<div class="panel__body" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-
-        tyres:
-          '<section class="widget panel" id="widget-tyres" data-widget="tyres" aria-label="Tyre temperatures">' +
-          '<header class="panel__header"><span class="panel__title">Tyre Temps</span>' +
-          '<span class="panel__meta" data-role="compound">—</span></header>' +
-          '<div class="panel__body" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-
-        pedals:
-          '<section class="widget panel" id="widget-pedals" data-widget="pedals" aria-label="Pedal inputs">' +
-          '<header class="panel__header"><span class="panel__title">Inputs</span>' +
-          '<span class="panel__meta" data-role="gear">N · — kph</span></header>' +
-          '<div class="panel__body" data-role="mount">' +
-          '<div class="placeholder">Awaiting telemetry…</div></div></section>',
-      };
-
+      var SHELLS = window.ApexShells;
       var params = new URLSearchParams(window.location.search);
       var name = (params.get("w") || "").trim().toLowerCase();
       var mount = document.getElementById("single-page");

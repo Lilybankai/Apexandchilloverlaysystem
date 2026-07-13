@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const WebSocket = require('ws');
@@ -55,7 +55,11 @@ const MAX_HZ = 120;
 /** Default settings for a fresh install (all overlays enabled). */
 function defaultSettings() {
   const enabledOverlays = {};
-  for (const o of OVERLAY_CATALOG) enabledOverlays[o.id] = true;
+  const ingameOverlays = {};
+  for (const o of OVERLAY_CATALOG) {
+    enabledOverlays[o.id] = true;
+    ingameOverlays[o.id] = true;
+  }
   return {
     httpPort: 8080,
     updateRateHz: 30,
@@ -63,6 +67,12 @@ function defaultSettings() {
     provider: 'lmu', // 'lmu' | 'rf2' | 'simulator'
     lmuApiPort: 6397,
     enabledOverlays,
+    // In-game display: overlays rendered over the sim itself (transparent
+    // click-through window) instead of / as well as OBS Browser Sources.
+    ingameEnabled: false,
+    ingameOverlays,
+    // Saved widget placement in the in-game layer: { [id]: {x, y, scale} }.
+    ingameLayout: {},
   };
 }
 
@@ -87,10 +97,25 @@ function loadSettings() {
     stored = {}; // first run or unreadable — use defaults
   }
   const enabledOverlays = { ...defaults.enabledOverlays };
-  if (stored.enabledOverlays && typeof stored.enabledOverlays === 'object') {
+  const ingameOverlays = { ...defaults.ingameOverlays };
+  for (const o of OVERLAY_CATALOG) {
+    if (stored.enabledOverlays && typeof stored.enabledOverlays[o.id] === 'boolean') {
+      enabledOverlays[o.id] = stored.enabledOverlays[o.id];
+    }
+    if (stored.ingameOverlays && typeof stored.ingameOverlays[o.id] === 'boolean') {
+      ingameOverlays[o.id] = stored.ingameOverlays[o.id];
+    }
+  }
+  const ingameLayout = {};
+  if (stored.ingameLayout && typeof stored.ingameLayout === 'object') {
     for (const o of OVERLAY_CATALOG) {
-      if (typeof stored.enabledOverlays[o.id] === 'boolean') {
-        enabledOverlays[o.id] = stored.enabledOverlays[o.id];
+      const l = stored.ingameLayout[o.id];
+      if (l && Number.isFinite(l.x) && Number.isFinite(l.y)) {
+        ingameLayout[o.id] = {
+          x: Math.round(l.x),
+          y: Math.round(l.y),
+          scale: Number.isFinite(l.scale) ? Math.min(3, Math.max(0.4, l.scale)) : 1,
+        };
       }
     }
   }
@@ -105,6 +130,10 @@ function loadSettings() {
         : defaults.provider,
     lmuApiPort: clamp(stored.lmuApiPort, MIN_PORT, MAX_PORT, defaults.lmuApiPort),
     enabledOverlays,
+    ingameEnabled:
+      typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
+    ingameOverlays,
+    ingameLayout,
   };
 }
 
@@ -177,6 +206,7 @@ async function startServer() {
     status.port = config.httpPort;
     status.error = null;
     connectStatusFeed(config.httpPort, config.wsPath);
+    syncOverlayWindow();
     console.log(`[app] server started on port ${config.httpPort}`);
   } catch (err) {
     status.running = false;
@@ -194,6 +224,7 @@ async function startServer() {
 
 /** Stop the telemetry server if running. */
 async function stopServer() {
+  destroyOverlayWindow();
   disconnectStatusFeed();
   if (shutdownFn) {
     try {
@@ -280,10 +311,15 @@ function disconnectStatusFeed() {
   }
 }
 
+/** Status snapshot for the UI, including the in-game edit state. */
+function statusForUi() {
+  return { ...status, ingameEditing };
+}
+
 /** Push the current status object to the renderer (if the window is open). */
 function pushStatus() {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('status:update', { ...status });
+    mainWindow.webContents.send('status:update', statusForUi());
   }
 }
 
@@ -303,8 +339,117 @@ function overlaysForUi() {
   return OVERLAY_CATALOG.map((o) => ({
     ...o,
     enabled: settings.enabledOverlays[o.id] !== false,
+    ingame: settings.ingameOverlays[o.id] !== false,
     url: `${base}/widget.html?w=${o.id}`,
   }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  In-game overlay layer                                                      */
+/* -------------------------------------------------------------------------- */
+/*
+ * ONE transparent, frameless, always-on-top window spanning the primary
+ * display hosts every in-game widget (a single renderer process — far lighter
+ * than a window per widget). While locked it is fully click-through
+ * (setIgnoreMouseEvents) and non-focusable, so the game never loses input.
+ * "Edit layout" re-enables mouse events so the operator can drag/resize
+ * widgets on screen; placement is persisted to settings.ingameLayout.
+ * The window is destroyed whenever it is not needed, freeing its renderer.
+ *
+ * Note: the game must run Borderless/Windowed (normal for sim racing) — an
+ * exclusive-fullscreen game draws over every OS window, including this one.
+ */
+
+let overlayWin = null;
+let ingameEditing = false;
+
+/** URL of the in-game layer page, carrying the enabled widget list. */
+function ingameUrl(settings) {
+  const ids = OVERLAY_CATALOG.filter((o) => settings.ingameOverlays[o.id] !== false).map(
+    (o) => o.id,
+  );
+  return `${baseUrl()}/ingame.html?widgets=${ids.join(',')}`;
+}
+
+/** Creates/reloads/destroys the in-game window to match settings + status. */
+function syncOverlayWindow() {
+  const settings = loadSettings();
+  const wanted =
+    status.running &&
+    settings.ingameEnabled &&
+    OVERLAY_CATALOG.some((o) => settings.ingameOverlays[o.id] !== false);
+
+  if (!wanted) {
+    destroyOverlayWindow();
+    return;
+  }
+
+  const url = ingameUrl(settings);
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    if (overlayWin.ingameUrl !== url) {
+      overlayWin.ingameUrl = url;
+      void overlayWin.loadURL(url);
+    }
+    return;
+  }
+
+  const bounds = screen.getPrimaryDisplay().bounds;
+  overlayWin = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    // Never steal focus from the game — mouse still works in edit mode.
+    focusable: false,
+    alwaysOnTop: true,
+    title: 'Apex Overlays (in-game)',
+    webPreferences: {
+      preload: path.join(__dirname, 'ingame-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      // Keep telemetry painting while the game window has focus.
+      backgroundThrottling: false,
+    },
+  });
+  // 'screen-saver' level floats above borderless-fullscreen game windows.
+  overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  overlayWin.setIgnoreMouseEvents(true);
+  overlayWin.ingameUrl = url;
+  void overlayWin.loadURL(url);
+  overlayWin.on('closed', () => {
+    overlayWin = null;
+    if (ingameEditing) setIngameEdit(false);
+  });
+}
+
+function destroyOverlayWindow() {
+  if (ingameEditing) setIngameEdit(false);
+  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
+  overlayWin = null;
+}
+
+/** Locks/unlocks the layer for on-screen editing and tells both windows. */
+function setIngameEdit(editing) {
+  ingameEditing = !!editing;
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    if (ingameEditing) {
+      overlayWin.setIgnoreMouseEvents(false);
+    } else {
+      overlayWin.setIgnoreMouseEvents(true);
+    }
+    overlayWin.webContents.send('ingame:edit', ingameEditing);
+  }
+  pushStatus();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -316,7 +461,7 @@ function registerIpc() {
     settings: loadSettings(),
     overlays: overlaysForUi(),
     combinedUrl: `${baseUrl()}/`,
-    status: { ...status },
+    status: statusForUi(),
   }));
 
   ipcMain.handle('settings:update', async (_evt, partial) => {
@@ -335,6 +480,12 @@ function registerIpc() {
       if (partial.enabledOverlays && typeof partial.enabledOverlays === 'object') {
         next.enabledOverlays = { ...current.enabledOverlays, ...partial.enabledOverlays };
       }
+      if (typeof partial.ingameEnabled === 'boolean') {
+        next.ingameEnabled = partial.ingameEnabled;
+      }
+      if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
+        next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
+      }
     }
     saveSettings(next);
 
@@ -345,23 +496,73 @@ function registerIpc() {
         next.updateRateHz !== current.updateRateHz ||
         next.forceSimulator !== current.forceSimulator);
     if (needsRestart) await startServer();
+    // Reflect in-game display choices immediately (create/reload/close layer).
+    syncOverlayWindow();
 
     return {
       settings: next,
       overlays: overlaysForUi(),
       combinedUrl: `${baseUrl()}/`,
-      status: { ...status },
+      status: statusForUi(),
     };
   });
 
   ipcMain.handle('server:start', async () => {
     await startServer();
-    return { ...status };
+    return statusForUi();
   });
 
   ipcMain.handle('server:stop', async () => {
     await stopServer();
-    return { ...status };
+    return statusForUi();
+  });
+
+  /* ---- In-game overlay layer ---- */
+
+  ipcMain.handle('ingame:editStart', () => {
+    syncOverlayWindow(); // make sure the layer exists before unlocking it
+    setIngameEdit(true);
+    return statusForUi();
+  });
+
+  ipcMain.handle('ingame:editStop', () => {
+    setIngameEdit(false);
+    return statusForUi();
+  });
+
+  /** Called by the in-game page itself (Done button in the edit toolbar). */
+  ipcMain.handle('ingame:editDone', () => {
+    setIngameEdit(false);
+    return true;
+  });
+
+  ipcMain.handle('ingame:layoutGet', () => loadSettings().ingameLayout);
+
+  ipcMain.handle('ingame:layoutSave', (_evt, layout) => {
+    if (!layout || typeof layout !== 'object') return false;
+    const settings = loadSettings();
+    const merged = { ...settings.ingameLayout };
+    for (const o of OVERLAY_CATALOG) {
+      const l = layout[o.id];
+      if (l && Number.isFinite(l.x) && Number.isFinite(l.y)) {
+        merged[o.id] = {
+          x: Math.round(l.x),
+          y: Math.round(l.y),
+          scale: Number.isFinite(l.scale) ? Math.min(3, Math.max(0.4, l.scale)) : 1,
+        };
+      }
+    }
+    saveSettings({ ...settings, ingameLayout: merged });
+    return true;
+  });
+
+  ipcMain.handle('ingame:layoutReset', () => {
+    const settings = loadSettings();
+    saveSettings({ ...settings, ingameLayout: {} });
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      overlayWin.webContents.send('ingame:layout-reset');
+    }
+    return true;
   });
 
   ipcMain.handle('clipboard:write', (_evt, text) => {
@@ -401,9 +602,15 @@ function pushUpdate() {
  * auto-download — the operator clicks to update, so a stream is never disrupted.
  */
 function setupAutoUpdate() {
-  // Only meaningful in a packaged, installed app; a dev run has no update feed.
+  // The IPC surface must exist even in a dev run (the panel always calls
+  // update:getState on boot); only the updater wiring needs a packaged app.
+  ipcMain.handle('update:getState', () => ({ ...updateState }));
+
   if (!app.isPackaged) {
     updateState.status = 'idle';
+    ipcMain.handle('update:check', () => ({ ...updateState }));
+    ipcMain.handle('update:download', () => ({ ...updateState }));
+    ipcMain.handle('update:install', () => {});
     return;
   }
   autoUpdater.autoDownload = false;
@@ -460,7 +667,6 @@ function setupAutoUpdate() {
     // Quit and run the freshly-downloaded installer.
     autoUpdater.quitAndInstall();
   });
-  ipcMain.handle('update:getState', () => ({ ...updateState }));
 
   // Check once shortly after launch (don't block startup).
   setTimeout(() => {
@@ -478,12 +684,13 @@ let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 940,
-    height: 760,
-    minWidth: 720,
+    width: 1000,
+    height: 800,
+    minWidth: 760,
     minHeight: 560,
-    backgroundColor: '#0e1116',
+    backgroundColor: '#060a12',
     title: 'Apex Overlay System',
+    icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -497,7 +704,43 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // The in-game layer must not outlive the control panel (it would also keep
+    // 'window-all-closed' from firing, leaving a ghost process).
+    destroyOverlayWindow();
   });
+}
+
+/* Dev-only hooks (no effect unless the env vars are set):
+ * APEX_USERDATA — use an alternate settings dir, keeping a dev run's config
+ *                 away from the real installation's.
+ * APEX_SHOT     — after startup, capture every window as PNGs into this
+ *                 directory and quit (visual smoke-test of the UI). */
+if (process.env.APEX_USERDATA) {
+  app.setPath('userData', process.env.APEX_USERDATA);
+}
+
+async function captureWindowsAndQuit(dir) {
+  const shots = [
+    ['panel', mainWindow],
+    ['ingame', overlayWin],
+  ];
+  const snap = async (name, win) => {
+    if (!win || win.isDestroyed()) return;
+    try {
+      const img = await win.webContents.capturePage();
+      fs.writeFileSync(path.join(dir, `shot-${name}.png`), img.toPNG());
+    } catch (err) {
+      console.error(`[dev] capture ${name} failed:`, err.message);
+    }
+  };
+  for (const [name, win] of shots) await snap(name, win);
+  // Also exercise edit mode on the in-game layer, if it is up.
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    setIngameEdit(true);
+    await new Promise((r) => setTimeout(r, 600));
+    await snap('ingame-edit', overlayWin);
+  }
+  app.quit();
 }
 
 app.whenReady().then(async () => {
@@ -506,6 +749,10 @@ app.whenReady().then(async () => {
   setupAutoUpdate();
   // Auto-start the server so overlays are live as soon as the app opens.
   await startServer();
+
+  if (process.env.APEX_SHOT) {
+    setTimeout(() => void captureWindowsAndQuit(process.env.APEX_SHOT), 3500);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

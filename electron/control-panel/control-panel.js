@@ -23,6 +23,9 @@
   const rateRange = $('#rate-range');
   const rateEcho = $('#rate-echo');
   const demoToggle = $('#demo-toggle');
+  const ingameToggle = $('#ingame-toggle');
+  const igEditBtn = $('#ig-edit-btn');
+  const igResetBtn = $('#ig-reset-btn');
   const overlayList = $('#overlay-list');
   const combinedUrl = $('#combined-url');
   const toast = $('#toast');
@@ -50,7 +53,21 @@
 
   // --- Rendering -----------------------------------------------------------
 
+  // Latest known status/settings — the in-game buttons depend on both.
+  let lastStatus = { running: false };
+  let lastIngameEnabled = false;
+
+  function syncIngameControls() {
+    // Editing needs a live in-game layer: server running + display enabled.
+    const canEdit = !!lastStatus.running && lastIngameEnabled;
+    const editing = !!lastStatus.ingameEditing;
+    igEditBtn.disabled = !canEdit;
+    igEditBtn.textContent = editing ? 'Finish editing' : 'Edit layout';
+    igEditBtn.setAttribute('data-active', String(editing));
+  }
+
   function renderStatus(status) {
+    lastStatus = status;
     const feed = status.running ? status.feed || 'no-data' : 'stopped';
     feedPill.setAttribute('data-feed', feed);
     feedText.textContent = FEED_LABEL[feed] || feed.toUpperCase();
@@ -64,6 +81,7 @@
     } else {
       errorBanner.hidden = true;
     }
+    syncIngameControls();
   }
 
   function renderSettings(settings) {
@@ -72,6 +90,9 @@
     rateRange.value = settings.updateRateHz;
     rateEcho.textContent = settings.updateRateHz;
     demoToggle.checked = !!settings.forceSimulator;
+    ingameToggle.checked = !!settings.ingameEnabled;
+    lastIngameEnabled = !!settings.ingameEnabled;
+    syncIngameControls();
   }
 
   function renderOverlays(overlays, combined) {
@@ -96,6 +117,23 @@
       info.querySelector('.overlay-row__label').textContent = o.label;
       info.querySelector('.overlay-row__desc').textContent = o.description;
 
+      // Per-widget "show in game" toggle (takes effect when the in-game
+      // display master switch is on).
+      const ig = document.createElement('label');
+      ig.className = 'overlay-row__ig';
+      ig.setAttribute('data-on', String(!!o.ingame));
+      const igCb = document.createElement('input');
+      igCb.type = 'checkbox';
+      igCb.checked = !!o.ingame;
+      igCb.addEventListener('change', async () => {
+        ig.setAttribute('data-on', String(igCb.checked));
+        await window.apex.updateSettings({ ingameOverlays: { [o.id]: igCb.checked } });
+      });
+      const igText = document.createElement('span');
+      igText.textContent = 'In game';
+      ig.appendChild(igCb);
+      ig.appendChild(igText);
+
       const urlWrap = document.createElement('div');
       urlWrap.className = 'overlay-row__url url-box';
       const urlInput = document.createElement('input');
@@ -119,6 +157,7 @@
 
       li.appendChild(check);
       li.appendChild(info);
+      li.appendChild(ig);
       li.appendChild(urlWrap);
       overlayList.appendChild(li);
     }
@@ -183,6 +222,28 @@
   demoToggle.addEventListener('change', async () => {
     const state = await window.apex.updateSettings({ forceSimulator: demoToggle.checked });
     renderStatus(state.status);
+  });
+
+  ingameToggle.addEventListener('change', async () => {
+    const state = await window.apex.updateSettings({ ingameEnabled: ingameToggle.checked });
+    renderSettings(state.settings);
+    renderStatus(state.status);
+    if (ingameToggle.checked && !state.status.running) {
+      showToast('Press Start to show the overlays');
+    }
+  });
+
+  igEditBtn.addEventListener('click', async () => {
+    const editing = !!lastStatus.ingameEditing;
+    const status = editing
+      ? await window.apex.ingameEditStop()
+      : await window.apex.ingameEditStart();
+    renderStatus(status);
+  });
+
+  igResetBtn.addEventListener('click', async () => {
+    await window.apex.ingameLayoutReset();
+    showToast('In-game layout reset');
   });
 
   powerBtn.addEventListener('click', async () => {

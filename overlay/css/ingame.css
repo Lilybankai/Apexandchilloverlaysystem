@@ -1,0 +1,127 @@
+/* =========================================================================
+ * ingame.css — in-game overlay layer (ingame.html)
+ * -------------------------------------------------------------------------
+ * The page fills a transparent, click-through window over the sim. Each
+ * widget sits in an absolutely-positioned .ig-item wrapper that ingame.js
+ * moves (left/top) and scales (transform) — the widgets themselves are
+ * untouched, so they render identically to the OBS pages.
+ *
+ * PERFORMANCE: while locked there is zero extra work — no listeners firing,
+ * no repaint beyond the widgets' own updates. Edit chrome (outlines, handles,
+ * toolbar) exists in the DOM but is display:none until body.ig-editing.
+ * ========================================================================= */
+
+html,
+body.ingame {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* display:flex on the toolbar would defeat the `hidden` attribute without
+   this (the toolbar must stay gone while the layer is locked). */
+[hidden] { display: none !important; }
+
+/* Neutralise the fixed 1920×1080 stage positioning from overlay.css: the
+   wrapper decides placement, the widget just fills it. */
+.ig-item .widget {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: 100% !important;
+}
+
+.ig-item {
+  position: absolute;
+  /* Width per widget matches the OBS combined page (set inline by ingame.js).
+     Scaling is done with transform so widget internals never reflow. */
+  transform-origin: top left;
+}
+
+/* --------------------------- edit mode chrome --------------------------- */
+
+body.ig-editing .ig-item {
+  cursor: move;
+  outline: 1px dashed rgba(38, 187, 244, 0.85);
+  outline-offset: 3px;
+}
+
+body.ig-editing .ig-item:hover {
+  outline-style: solid;
+}
+
+.ig-item__handle {
+  display: none;
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #26bbf4, #6a2fd6);
+  border: 1px solid #fff;
+  cursor: nwse-resize;
+  z-index: 2;
+}
+
+body.ig-editing .ig-item__handle {
+  display: block;
+}
+
+/* ------------------------------- toolbar -------------------------------- */
+
+.ig-toolbar {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #0c0e18;
+  border: 1px solid #313850;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  z-index: 10;
+  font-family: var(--font-ui);
+}
+
+.ig-toolbar__brand {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #26bbf4, #6a2fd6);
+}
+
+.ig-toolbar__text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.ig-btn {
+  padding: 5px 14px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, #309be1, #6a2fd6);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ig-btn--ghost {
+  background: transparent;
+  border: 1px solid #313850;
+  color: var(--text-secondary);
+}
+
+.ig-btn:hover {
+  filter: brightness(1.15);
+}
