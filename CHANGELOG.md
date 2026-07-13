@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.1 — 2026-07-13
+
+### Fixed
+- **Inputs/fuel showed another car's data** — the shared-memory reader could
+  pick P1's record instead of yours (every locally-simulated car has one).
+  It now matches the record against your player slot from the game's own
+  standings feed, so pedal inputs and fuel litres are always your car's.
+
+### Added
+- **Live TC / ABS indicators** in the Inputs widget: the throttle bar turns
+  yellow while traction control cuts power and the brake bar turns orange
+  while ABS releases pressure; TC/ABS chips glow with intervention strength;
+  and the trace draws the post-aid line so you can read modulation depth.
+- `scripts/scan-lmu-wheels.js` — diagnostic to locate LMU's tyre-temperature
+  memory offsets (groundwork for live tyre temps).
+
 ## 0.5.0 — 2026-07-13
 
 ### Added
