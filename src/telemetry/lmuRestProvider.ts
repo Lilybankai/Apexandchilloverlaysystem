@@ -69,6 +69,15 @@ const REFRESH_INTERVAL_MS = 150;
 const STALE_AFTER_MS = 2000;
 /** Per-request HTTP timeout (ms). */
 const HTTP_TIMEOUT_MS = 1500;
+/**
+ * How often to pull the pit-menu screen (ms). It carries the player car's
+ * tyre/brake wear — the only live per-corner data LMU exposes (temps are
+ * published nowhere: the shared-memory wheel fields read zero and no REST
+ * endpoint carries them). Wear moves slowly, so a gentle poll is plenty.
+ */
+const GARAGE_REFRESH_INTERVAL_MS = 3000;
+/** Treat wear data older than this as gone (left session / in menus). */
+const GARAGE_STALE_AFTER_MS = 10_000;
 
 /** A car entry from `/rest/watch/standings` (only the fields we consume). */
 interface RestStanding {
@@ -137,6 +146,10 @@ export class LmuRestProvider implements TelemetryProvider {
   private lastOkAt = 0;
   private timer: NodeJS.Timeout | null = null;
   private live = false;
+  /** Player-car tyre wear [FL, FR, RL, RR], `1` fresh → `0` gone. */
+  private tyreWear: number[] | null = null;
+  private lastGarageOkAt = 0;
+  private garageTimer: NodeJS.Timeout | null = null;
 
   public constructor(config: LmuRestConfig) {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
@@ -149,6 +162,9 @@ export class LmuRestProvider implements TelemetryProvider {
     await this.refresh(); // prime the cache before the first poll
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
+    void this.refreshGarage();
+    this.garageTimer = setInterval(() => void this.refreshGarage(), GARAGE_REFRESH_INTERVAL_MS);
+    this.garageTimer.unref?.();
     if (this.lastOkAt > 0) {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
     } else {
@@ -167,6 +183,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.garageTimer) {
+      clearInterval(this.garageTimer);
+      this.garageTimer = null;
     }
     this.fallback.stop();
     this.localCar.stop();
@@ -205,6 +225,27 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch (err) {
       // Leave the cache in place; the staleness check flips us to the simulator.
       if (this.verbose) console.error('[lmu] refresh failed:', (err as Error).message);
+    }
+  }
+
+  /** Pulls the player car's tyre wear from the pit-menu screen. */
+  private async refreshGarage(): Promise<void> {
+    try {
+      const data = await this.getJson<{ wearables?: { tires?: unknown } }>(
+        '/rest/garage/UIScreen/RepairAndRefuel',
+      );
+      const tires = data && data.wearables ? data.wearables.tires : null;
+      if (
+        Array.isArray(tires) &&
+        tires.length >= 4 &&
+        tires.every((v) => typeof v === 'number' && v >= 0 && v <= 1)
+      ) {
+        this.tyreWear = tires.slice(0, 4) as number[];
+        this.lastGarageOkAt = Date.now();
+      }
+    } catch (err) {
+      // Endpoint is only alive inside a session; keep the last data until stale.
+      if (this.verbose) console.error('[lmu] garage refresh failed:', (err as Error).message);
     }
   }
 
@@ -490,7 +531,17 @@ export class LmuRestProvider implements TelemetryProvider {
       focus && focus.carVelocity && typeof focus.carVelocity.velocity === 'number'
         ? Math.round(Math.abs(focus.carVelocity.velocity) * 3.6)
         : UNKNOWN_VALUE;
-    const unknownTyre: TyreState = { tempC: UNKNOWN_VALUE, wear: UNKNOWN_VALUE };
+    // Tyre wear for the player's own car from the pit-menu screen. Temps stay
+    // unknown — LMU publishes them nowhere (shared memory reads zero, no REST
+    // endpoint carries them).
+    const wear =
+      this.tyreWear !== null && Date.now() - this.lastGarageOkAt < GARAGE_STALE_AFTER_MS
+        ? this.tyreWear
+        : null;
+    const tyre = (i: number): TyreState => ({
+      tempC: UNKNOWN_VALUE,
+      wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
+    });
     return {
       slotId: focus ? focus.slotID : UNKNOWN_VALUE,
       position: row ? row.position : UNKNOWN_VALUE,
@@ -516,10 +567,10 @@ export class LmuRestProvider implements TelemetryProvider {
         sector: UNKNOWN_VALUE,
       },
       tyres: {
-        frontLeft: { ...unknownTyre },
-        frontRight: { ...unknownTyre },
-        rearLeft: { ...unknownTyre },
-        rearRight: { ...unknownTyre },
+        frontLeft: tyre(0),
+        frontRight: tyre(1),
+        rearLeft: tyre(2),
+        rearRight: tyre(3),
       },
     };
   }

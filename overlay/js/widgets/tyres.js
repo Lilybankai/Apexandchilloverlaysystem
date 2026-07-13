@@ -49,15 +49,20 @@
       temp.className = "tyre__temp";
       temp.textContent = "—";
 
+      var wear = document.createElement("div");
+      wear.className = "tyre__wear";
+      wear.textContent = "";
+
       var band = document.createElement("div");
       band.className = "tyre__band";
 
       cell.appendChild(pos);
       cell.appendChild(temp);
+      cell.appendChild(wear);
       cell.appendChild(band);
       grid.appendChild(cell);
 
-      cells[c.key] = { cell: cell, temp: temp };
+      cells[c.key] = { cell: cell, temp: temp, wear: wear };
     });
 
     mount.appendChild(grid);
@@ -84,6 +89,13 @@
       if (ref.heat !== heat) {
         ref.heat = heat;
         ref.cell.setAttribute("data-heat", heat);
+      }
+
+      // Remaining tread as a percentage (LMU exposes wear but not temps).
+      var wearStr = fmt.has(t.wear) ? Math.round(t.wear * 100) + "%" : "";
+      if (ref.wearCache !== wearStr) {
+        ref.wearCache = wearStr;
+        ref.wear.textContent = wearStr;
       }
       if (!compound && t.compound) compound = t.compound;
     }

@@ -329,6 +329,15 @@
   font-size: 17px;
   margin: 2px 0;
 }
+/* Remaining tread % — small line under the temperature (empty when unknown). */
+.tyre__wear {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-height: 12px;
+  margin-bottom: 2px;
+}
 /* Colour band showing thermal state; set via data-heat by the widget. */
 .tyre__band { height: 4px; border-radius: 2px; background: var(--tyre-optimal); }
 .tyre[data-heat="cold"] .tyre__band { background: var(--tyre-cold); }

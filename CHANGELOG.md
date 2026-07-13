@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.2 — 2026-07-13
+
+### Fixed
+- **Inputs really are yours now.** Live debugging against a running online
+  session showed LMU publishes physics for exactly ONE car — whichever car
+  the game camera is watching — so v0.5.1's fallback could still pick up the
+  spectated car (P1). The reader now only accepts the record whose ID matches
+  *your* player slot: your inputs, fuel, TC and ABS when you're driving;
+  blank (never someone else's) when you're spectating.
+
+### Added
+- **Tyre wear** per corner in the Tyre Temps widget (remaining tread %),
+  fed live from the game for your own car. Verified against a live session.
+- Tyre **temperatures** are confirmed unavailable from LMU on current builds
+  (published neither in shared memory nor the REST API) — the widget shows
+  wear now and will pick up temps if a future LMU build exposes them.
+
 ## 0.5.1 — 2026-07-13
 
 ### Fixed

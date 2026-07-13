@@ -264,10 +264,16 @@ export class LmuLocalCarReader {
   }
 
   /**
-   * Finds the record index of the player's car. Prefers an exact `mID` match
-   * against the REST slot id; falls back to the plausibility probe (valid
-   * throttle + running engine) when no id is available. The last known index
-   * is checked first so steady-state polls cost two scalar decodes, not a scan.
+   * Finds the record index of the player's car.
+   *
+   * LMU publishes telemetry for exactly ONE car — whichever car the game
+   * camera is focused on (verified live: record 0 carries the focus car's
+   * `mID`, every other record is uninitialised noise). While you drive, that
+   * is your car; while you spectate, it is someone else's. So when a slot id
+   * is known the match must be STRICT: returning any other record would show
+   * the spectated car's pedals as if they were the player's (the "it's
+   * showing P1's inputs" bug). The plausibility probe survives only for the
+   * no-id case (rf2 provider / offline diagnostics).
    */
   private findDrivenCar(w: Win32, expectedSlotId?: number): number {
     const n = clampInt(w.readI32(this.view, HDR_NUM_VEHICLES), 0, 128);
@@ -280,16 +286,15 @@ export class LmuLocalCarReader {
       if (cachedOk) return this.cachedIdx;
     }
 
-    let fallback = -1;
     for (let i = 0; i < n; i++) {
       if (VT.base + (i + 1) * VT.stride > this.size) break;
-      if (wantId && this.slotIdAt(w, i) === expectedSlotId) return i;
-      if (fallback < 0 && this.probe(w, i)) fallback = i;
+      if (wantId) {
+        if (this.slotIdAt(w, i) === expectedSlotId) return i;
+      } else if (this.probe(w, i)) {
+        return i;
+      }
     }
-    // No id match (different id namespace, or spectating): use the first
-    // plausible record so behaviour degrades to the old heuristic, not to
-    // nothing.
-    return fallback;
+    return -1; // the player's car is not in shared memory (spectating)
   }
 
   /** The `mID` (slot id) of record `i`. */
