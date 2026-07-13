@@ -58,6 +58,10 @@
   --pedal-brake: #ff5470;
   --pedal-clutch: #4f8bff;
 
+  /* Driver-aid intervention colours (TC on throttle, ABS on brake) */
+  --aid-tc: #ffd23e;
+  --aid-abs: #ff9f1a;
+
   /* Tyre temperature ramp (cold -> optimal -> hot) */
   --tyre-cold: #4f8bff;
   --tyre-optimal: #35d07f;

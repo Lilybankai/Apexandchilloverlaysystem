@@ -99,6 +99,10 @@ function wrapHalf(d: number): number {
 }
 
 /** Small symmetric jitter in [-amp, amp]. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 function jitter(amp: number): number {
   return (Math.random() * 2 - 1) * amp;
 }
@@ -330,11 +334,27 @@ export class SimulatorProvider implements TelemetryProvider {
 
     // Smooth toward the target inputs (first-order response) + tiny jitter.
     const resp = clamp(dt * 12, 0, 1);
+    const smThrottle = clamp01(lerp(this.pedals.throttle, throttle, resp) + jitter(0.01));
+    const smBrake = clamp01(lerp(this.pedals.brake, brake, resp) + jitter(0.01));
+    const smSteer = clamp(lerp(this.pedals.steer, steer, resp), -1, 1);
+
+    // Synthetic driver aids so the TC/ABS indicators can be seen in demo mode:
+    // ABS pulses under heavy braking; TC trims the throttle when power goes
+    // down mid-corner. Pulsing mimics the modulation a real system shows.
+    const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 45);
+    const abs = smBrake > 0.72 ? clamp01((smBrake - 0.72) * 2.4) * pulse : 0;
+    const tc =
+      smThrottle > 0.35 && smThrottle < 0.95 && Math.abs(smSteer) > 0.18
+        ? clamp01(Math.abs(smSteer) * 1.4) * clamp01((smThrottle - 0.35) * 2) * pulse * 0.6
+        : 0;
+
     this.pedals = {
-      throttle: clamp01(lerp(this.pedals.throttle, throttle, resp) + jitter(0.01)),
-      brake: clamp01(lerp(this.pedals.brake, brake, resp) + jitter(0.01)),
+      throttle: smThrottle,
+      brake: smBrake,
       clutch: 0,
-      steer: clamp(lerp(this.pedals.steer, steer, resp), -1, 1),
+      steer: smSteer,
+      tc: round2(tc),
+      abs: round2(abs),
     };
   }
 

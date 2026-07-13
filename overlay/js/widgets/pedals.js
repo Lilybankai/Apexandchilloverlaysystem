@@ -18,21 +18,33 @@
   var CAP = 300; // trace history length in samples (~10s @30Hz)
   var thr = new Float32Array(CAP);
   var brk = new Float32Array(CAP);
+  // Driver-aid intervention per sample (what TC/ABS took off the pedal).
+  var thrCut = new Float32Array(CAP);
+  var brkCut = new Float32Array(CAP);
   var head = 0;
   var count = 0;
+  // Frames left to keep drawing the aid lines after the last intervention
+  // (avoids per-frame full-ring scans just to know if anything is visible).
+  var tcHot = 0;
+  var absHot = 0;
 
   var canvas, gctx, dpr = 1;
   var fillThrottle, fillBrake, fillClutch;
   var valThrottle, valBrake, valClutch;
   var steerDot, headerGear;
+  var chipTc, chipAbs;
   var cssW = 0, cssH = 0;
   var cache = {};
 
-  function pushSample(t, b) {
+  function pushSample(t, b, tc, abs) {
     thr[head] = t;
     brk[head] = b;
+    thrCut[head] = tc;
+    brkCut[head] = abs;
     head = (head + 1) % CAP;
     if (count < CAP) count++;
+    if (tc > 0.02) tcHot = CAP; else if (tcHot > 0) tcHot--;
+    if (abs > 0.02) absHot = CAP; else if (absHot > 0) absHot--;
   }
 
   function sizeCanvas() {
@@ -78,6 +90,19 @@
     trace.className = "pedals__trace";
     canvas = document.createElement("canvas");
     trace.appendChild(canvas);
+
+    // TC / ABS chips, lit while the aid is actively intervening.
+    var aids = document.createElement("div");
+    aids.className = "pedals__aids";
+    chipTc = document.createElement("span");
+    chipTc.className = "pedals__aid pedals__aid--tc";
+    chipTc.textContent = "TC";
+    chipAbs = document.createElement("span");
+    chipAbs.className = "pedals__aid pedals__aid--abs";
+    chipAbs.textContent = "ABS";
+    aids.appendChild(chipTc);
+    aids.appendChild(chipAbs);
+    trace.appendChild(aids);
 
     var bars = document.createElement("div");
     bars.className = "pedals__bars";
@@ -152,12 +177,45 @@
     ctx2d.stroke();
   }
 
+  /**
+   * Draws the post-aid ("what the car actually got") line in the aid colour,
+   * only over the stretches where the aid was cutting — so TC/ABS activity
+   * shows up as coloured notches under the pedal lines.
+   */
+  function drawAidLine(ctx2d, arr, cut, color) {
+    if (count < 2) return;
+    var start = (head - count + CAP) % CAP;
+    var stepX = cssW / (CAP - 1);
+    var open = false;
+    ctx2d.beginPath();
+    for (var i = 0; i < count; i++) {
+      var idx = (start + i) % CAP;
+      var c = cut[idx];
+      if (c > 0.01) {
+        var v = arr[idx] - c;
+        if (v < 0) v = 0;
+        var x = i * stepX;
+        var y = cssH - v * cssH;
+        if (open) ctx2d.lineTo(x, y);
+        else { ctx2d.moveTo(x, y); open = true; }
+      } else {
+        open = false;
+      }
+    }
+    ctx2d.strokeStyle = color;
+    ctx2d.lineWidth = 1.5;
+    ctx2d.stroke();
+  }
+
   function drawTrace() {
     if (!gctx || cssW === 0) { sizeCanvas(); if (cssW === 0) return; }
     gctx.clearRect(0, 0, cssW, cssH);
     // Brake under throttle so throttle line stays readable during overlap.
     drawArea(gctx, brk, "#ff5470", 0.18);
     drawArea(gctx, thr, "#35d07f", 0.16);
+    // Aid lines only while there's something to show in the window.
+    if (absHot > 0) drawAidLine(gctx, brk, brkCut, "#ff9f1a");
+    if (tcHot > 0) drawAidLine(gctx, thr, thrCut, "#ffd23e");
   }
 
   function setFill(el, cacheKey, value) {
@@ -174,9 +232,11 @@
     var p = frame.player;
     if (!p || !p.pedals) return;
     var ped = p.pedals;
+    var tc = typeof ped.tc === "number" ? ped.tc : 0;
+    var abs = typeof ped.abs === "number" ? ped.abs : 0;
 
     // Trace history at full rate.
-    pushSample(ped.throttle, ped.brake);
+    pushSample(ped.throttle, ped.brake, tc, abs);
     drawTrace();
 
     // Live bars.
@@ -186,6 +246,23 @@
     if (cache.thrv !== tp) { cache.thrv = tp; valThrottle.textContent = tp; }
     if (cache.brkv !== bp) { cache.brkv = bp; valBrake.textContent = bp; }
     if (cache.cluv !== cp) { cache.cluv = cp; valClutch.textContent = cp; }
+
+    // TC/ABS: recolour the affected bar and light the chip, with the chip's
+    // brightness following intervention strength.
+    var tcOn = tc > 0.02;
+    var absOn = abs > 0.02;
+    if (cache.tcOn !== tcOn) {
+      cache.tcOn = tcOn;
+      fillThrottle.setAttribute("data-aid", String(tcOn));
+      chipTc.setAttribute("data-on", String(tcOn));
+    }
+    if (tcOn) chipTc.style.opacity = String(0.45 + 0.55 * Math.min(1, tc * 2.5));
+    if (cache.absOn !== absOn) {
+      cache.absOn = absOn;
+      fillBrake.setAttribute("data-aid", String(absOn));
+      chipAbs.setAttribute("data-on", String(absOn));
+    }
+    if (absOn) chipAbs.style.opacity = String(0.45 + 0.55 * Math.min(1, abs * 2.5));
 
     // Steering dot: -1..1 -> 0%..100% across the track.
     var steer = typeof ped.steer === "number" ? ped.steer : 0;

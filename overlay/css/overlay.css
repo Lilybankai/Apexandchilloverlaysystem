@@ -349,12 +349,39 @@
   align-items: stretch;
 }
 .pedals__trace {
+  position: relative; /* anchors the TC/ABS chips */
   flex: 1;
   background: var(--bg-panel-2);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .pedals__trace canvas { display: block; width: 100%; height: 90px; }
+
+/* TC / ABS intervention chips — lit only while the aid is actually working;
+   brightness follows intervention strength (set inline as opacity). */
+.pedals__aids {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+.pedals__aid {
+  display: none;
+  align-items: center;
+  height: 14px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #0a0b12;
+}
+.pedals__aid[data-on="true"] { display: inline-flex; }
+.pedals__aid--tc { background: var(--aid-tc); }
+.pedals__aid--abs { background: var(--aid-abs); }
 .pedals__bars {
   display: flex;
   gap: 6px;
@@ -386,6 +413,9 @@
 .pedal-bar__fill--throttle { background: var(--pedal-throttle); }
 .pedal-bar__fill--brake { background: var(--pedal-brake); }
 .pedal-bar__fill--clutch { background: var(--pedal-clutch); }
+/* Bars recolour while an aid is cutting that channel. */
+.pedal-bar__fill--throttle[data-aid="true"] { background: var(--aid-tc); }
+.pedal-bar__fill--brake[data-aid="true"] { background: var(--aid-abs); }
 .pedal-bar__label {
   font-family: var(--font-display);
   font-size: 9px;

@@ -248,8 +248,12 @@ export class LmuRestProvider implements TelemetryProvider {
     const focusId = focus ? focus.slotID : UNKNOWN_VALUE;
 
     // The locally-driven car's physics (inputs + fuel in litres) from shared
-    // memory, if someone is driving on this PC. null otherwise.
-    const local = this.localCar.read();
+    // memory, if someone is driving on this PC. null otherwise. The PLAYER
+    // entry's slot id (not the broadcast-focus car's) picks the right record:
+    // every locally-simulated car (all AI in single player) has a populated
+    // record, so without the id the reader used to grab P1's inputs.
+    const playerCar = cars.find((c) => c.player);
+    const local = this.localCar.read(playerCar ? playerCar.slotID : undefined);
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
@@ -491,7 +495,14 @@ export class LmuRestProvider implements TelemetryProvider {
       slotId: focus ? focus.slotID : UNKNOWN_VALUE,
       position: row ? row.position : UNKNOWN_VALUE,
       pedals: local
-        ? { throttle: local.throttle, brake: local.brake, clutch: local.clutch, steer: local.steer }
+        ? {
+            throttle: local.throttle,
+            brake: local.brake,
+            clutch: local.clutch,
+            steer: local.steer,
+            tc: local.tc,
+            abs: local.abs,
+          }
         : { throttle: 0, brake: 0, clutch: 0, steer: 0 },
       gear: local ? local.gear : UNKNOWN_VALUE,
       speedKph: local ? local.speedKph : restSpeed,

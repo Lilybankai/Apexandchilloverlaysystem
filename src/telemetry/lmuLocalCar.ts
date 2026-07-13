@@ -39,6 +39,11 @@ const VT = {
   mUnfilteredBrake: 396,
   mUnfilteredSteering: 404,
   mUnfilteredClutch: 412,
+  // Filtered inputs = what actually reaches the car AFTER driver aids. The
+  // gap between unfiltered and filtered is live TC (throttle) / ABS (brake)
+  // intervention. They sit directly after the unfiltered block in the struct.
+  mFilteredThrottle: 420,
+  mFilteredBrake: 428,
   mFuel: 524,
   mEngineMaxRPM: 532,
   mFuelCapacity: 608,
@@ -57,6 +62,10 @@ export interface LocalCarPhysics {
   brake: number; // 0..1
   clutch: number; // 0..1
   steer: number; // -1..1
+  /** Live traction-control intervention (unfiltered − filtered throttle), 0..1. */
+  tc: number;
+  /** Live ABS intervention (unfiltered − filtered brake), 0..1. */
+  abs: number;
   gear: number; // -1 reverse, 0 neutral, 1..n
   rpm: number;
   maxRpm: number;
@@ -204,12 +213,19 @@ export class LmuLocalCarReader {
    * Returns the driven car's physics, or `null` when unavailable (no koffi, sim
    * closed, nobody driving locally, or a torn read). Never throws.
    *
+   * `expectedSlotId` — the player's slot id from the REST standings (`mID` in
+   * the telemetry record). Records exist for EVERY locally-simulated car (all
+   * AI in single player), so matching the id is the only reliable way to pick
+   * the driver's own car rather than whoever happens to occupy record 0 (which
+   * used to show P1's inputs instead of the player's). The plausibility scan
+   * remains as a fallback when no slot id is known.
+   *
    * Cost per call is a handful of scalar decodes plus one 2 880-byte record
    * copy — never a copy of the whole (~368 KB) region. Consistency comes from
    * checking the writer's version counters before and after the record copy and
    * retrying on mismatch instead of snapshotting everything.
    */
-  public read(): LocalCarPhysics | null {
+  public read(expectedSlotId?: number): LocalCarPhysics | null {
     const w = this.win32;
     if (w === null) return null;
     if (!this.view) {
@@ -221,7 +237,7 @@ export class LmuLocalCarReader {
         const v1 = w.readU32(this.view, 0);
         if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
 
-        const idx = this.findDrivenCar(w);
+        const idx = this.findDrivenCar(w, expectedSlotId);
         if (idx < 0) return null; // nobody driving locally
 
         const offset = VT.base + idx * VT.stride;
@@ -248,21 +264,37 @@ export class LmuLocalCarReader {
   }
 
   /**
-   * Finds the record index of the locally-driven car — the only telemetry
-   * record populated with plausible physics (valid throttle 0..1 and a running
-   * engine); remote cars' records are zeroed/garbage. The last known index is
-   * probed first so steady-state polls cost two scalar decodes, not a scan.
+   * Finds the record index of the player's car. Prefers an exact `mID` match
+   * against the REST slot id; falls back to the plausibility probe (valid
+   * throttle + running engine) when no id is available. The last known index
+   * is checked first so steady-state polls cost two scalar decodes, not a scan.
    */
-  private findDrivenCar(w: Win32): number {
+  private findDrivenCar(w: Win32, expectedSlotId?: number): number {
     const n = clampInt(w.readI32(this.view, HDR_NUM_VEHICLES), 0, 128);
-    if (this.cachedIdx >= 0 && this.cachedIdx < n && this.probe(w, this.cachedIdx)) {
-      return this.cachedIdx;
+    const wantId = typeof expectedSlotId === 'number' && expectedSlotId >= 0;
+
+    if (this.cachedIdx >= 0 && this.cachedIdx < n) {
+      const cachedOk = wantId
+        ? this.slotIdAt(w, this.cachedIdx) === expectedSlotId
+        : this.probe(w, this.cachedIdx);
+      if (cachedOk) return this.cachedIdx;
     }
+
+    let fallback = -1;
     for (let i = 0; i < n; i++) {
       if (VT.base + (i + 1) * VT.stride > this.size) break;
-      if (this.probe(w, i)) return i;
+      if (wantId && this.slotIdAt(w, i) === expectedSlotId) return i;
+      if (fallback < 0 && this.probe(w, i)) fallback = i;
     }
-    return -1;
+    // No id match (different id namespace, or spectating): use the first
+    // plausible record so behaviour degrades to the old heuristic, not to
+    // nothing.
+    return fallback;
+  }
+
+  /** The `mID` (slot id) of record `i`. */
+  private slotIdAt(w: Win32, i: number): number {
+    return w.readI32(this.view, VT.base + i * VT.stride + VT.mID);
   }
 
   /** Whether record `i` looks like a locally-driven car (live pedal + engine). */
@@ -284,11 +316,24 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
   if (throttle < -0.05 || throttle > 1.05 || rpm < 200 || rpm > 20000) return null;
 
   const fwdVel = rec.readDoubleLE(VT.mLocalVelZ);
+  const brake = clamp01(rec.readDoubleLE(VT.mUnfilteredBrake));
+
+  // TC/ABS intervention = driver input minus what the aids let through. A
+  // filtered channel stuck at exactly 0 while the pedal is pressed means the
+  // sim isn't populating it — report no intervention rather than a full cut.
+  const fltThrottle = rec.readDoubleLE(VT.mFilteredThrottle);
+  const fltBrake = rec.readDoubleLE(VT.mFilteredBrake);
+  const tc =
+    fltThrottle > 0 && fltThrottle <= 1.05 ? clamp01(clamp01(throttle) - fltThrottle) : 0;
+  const abs = fltBrake > 0 && fltBrake <= 1.05 ? clamp01(brake - fltBrake) : 0;
+
   return {
     throttle: clamp01(throttle),
-    brake: clamp01(rec.readDoubleLE(VT.mUnfilteredBrake)),
+    brake,
     clutch: clamp01(rec.readDoubleLE(VT.mUnfilteredClutch)),
     steer: clamp(rec.readDoubleLE(VT.mUnfilteredSteering), -1, 1),
+    tc,
+    abs,
     gear: rec.readInt32LE(VT.mGear),
     rpm: Math.round(rpm),
     maxRpm: Math.round(rec.readDoubleLE(VT.mEngineMaxRPM)) || 8000,

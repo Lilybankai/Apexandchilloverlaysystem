@@ -124,6 +124,18 @@ export interface PedalInputs {
   clutch: number;
   /** Steering, `-1` (full left) .. `0` (centre) .. `1` (full right). */
   steer: number;
+  /**
+   * Traction-control intervention strength, `0` (none) .. `1` (fully cut):
+   * how much throttle TC is currently taking away from the driver's input
+   * (unfiltered − filtered). Omitted/`0` when the sim doesn't expose it.
+   */
+  tc?: number;
+  /**
+   * ABS intervention strength, `0` (none) .. `1` (fully released): how much
+   * brake ABS is currently bleeding off the driver's input. Omitted/`0` when
+   * the sim doesn't expose it.
+   */
+  abs?: number;
 }
 
 /** Player lap-timing readouts, all times in seconds. */
