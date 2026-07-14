@@ -267,34 +267,50 @@ export class LmuLocalCarReader {
    * Finds the record index of the player's car.
    *
    * LMU publishes telemetry for exactly ONE car — whichever car the game
-   * camera is focused on (verified live: record 0 carries the focus car's
-   * `mID`, every other record is uninitialised noise). While you drive, that
-   * is your car; while you spectate, it is someone else's. So when a slot id
-   * is known the match must be STRICT: returning any other record would show
-   * the spectated car's pedals as if they were the player's (the "it's
-   * showing P1's inputs" bug). The plausibility probe survives only for the
-   * no-id case (rf2 provider / offline diagnostics).
+   * camera is following (verified live at Interlagos: record 0 carries that
+   * car's name/track/physics, every other record is uninitialised noise).
+   *
+   * Crucially, LMU's telemetry `mID` is a DIFFERENT id namespace from the REST
+   * `slotID` (verified live: the driven car's record reads `mID=4` while its
+   * REST slot id is `54`). So a strict `mID === slotID` match can never succeed
+   * and returning `-1` on a miss kills the pedal trace and litre-fuel entirely
+   * (the v0.5.2 regression). We therefore prefer an exact id match when the
+   * namespaces happen to line up (a future LMU build / the rf2 path) but ALWAYS
+   * fall back to the first record that looks like a live, running car.
+   *
+   * The "am I driving or spectating?" decision is made by the caller from the
+   * REST focus/player flags (see LmuRestProvider) — the reader is only asked to
+   * read when the player IS the camera focus, so the plausible record is the
+   * player's own car.
    */
   private findDrivenCar(w: Win32, expectedSlotId?: number): number {
     const n = clampInt(w.readI32(this.view, HDR_NUM_VEHICLES), 0, 128);
     const wantId = typeof expectedSlotId === 'number' && expectedSlotId >= 0;
 
-    if (this.cachedIdx >= 0 && this.cachedIdx < n) {
-      const cachedOk = wantId
-        ? this.slotIdAt(w, this.cachedIdx) === expectedSlotId
-        : this.probe(w, this.cachedIdx);
-      if (cachedOk) return this.cachedIdx;
-    }
-
-    for (let i = 0; i < n; i++) {
-      if (VT.base + (i + 1) * VT.stride > this.size) break;
-      if (wantId) {
-        if (this.slotIdAt(w, i) === expectedSlotId) return i;
-      } else if (this.probe(w, i)) {
-        return i;
+    // Fast path: re-check the record we used last poll (two scalar decodes).
+    if (
+      this.cachedIdx >= 0 &&
+      this.cachedIdx < n &&
+      VT.base + (this.cachedIdx + 1) * VT.stride <= this.size
+    ) {
+      if (
+        (wantId && this.slotIdAt(w, this.cachedIdx) === expectedSlotId) ||
+        this.probe(w, this.cachedIdx)
+      ) {
+        return this.cachedIdx;
       }
     }
-    return -1; // the player's car is not in shared memory (spectating)
+
+    let plausible = -1;
+    for (let i = 0; i < n; i++) {
+      if (VT.base + (i + 1) * VT.stride > this.size) break;
+      if (wantId && this.slotIdAt(w, i) === expectedSlotId) return i;
+      if (plausible < 0 && this.probe(w, i)) plausible = i;
+    }
+    // No id match (LMU's namespaces differ): the first live-looking record is
+    // the driven/focus car. `-1` only when nothing is running (parked, engine
+    // off, in menus) → caller falls back to REST speed.
+    return plausible;
   }
 
   /** The `mID` (slot id) of record `i`. */

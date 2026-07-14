@@ -323,31 +323,32 @@
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
-.tyre__temp {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 17px;
-  margin: 2px 0;
-}
-/* Remaining tread % — small line under the temperature (empty when unknown). */
+/* Primary readout: remaining tread %. */
 .tyre__wear {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
-  color: var(--text-secondary);
+  font-size: 18px;
+  margin: 2px 0 0;
+}
+/* Sub-line: temperature when known, else the "TREAD" label. */
+.tyre__temp {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
   min-height: 12px;
   margin-bottom: 2px;
 }
-/* Colour band showing thermal state; set via data-heat by the widget. */
+/* Colour band + value by remaining tread; set via data-wear by the widget. */
 .tyre__band { height: 4px; border-radius: 2px; background: var(--tyre-optimal); }
-.tyre[data-heat="cold"] .tyre__band { background: var(--tyre-cold); }
-.tyre[data-heat="cold"] .tyre__temp { color: var(--tyre-cold); }
-.tyre[data-heat="optimal"] .tyre__band { background: var(--tyre-optimal); }
-.tyre[data-heat="optimal"] .tyre__temp { color: var(--tyre-optimal); }
-.tyre[data-heat="warm"] .tyre__band { background: var(--tyre-warm); }
-.tyre[data-heat="warm"] .tyre__temp { color: var(--tyre-warm); }
-.tyre[data-heat="hot"] .tyre__band { background: var(--tyre-hot); }
-.tyre[data-heat="hot"] .tyre__temp { color: var(--tyre-hot); }
+.tyre[data-wear="unknown"] .tyre__band { background: var(--border-soft); }
+.tyre[data-wear="unknown"] .tyre__wear { color: var(--text-secondary); }
+.tyre[data-wear="good"] .tyre__band { background: var(--pos-gain); }
+.tyre[data-wear="good"] .tyre__wear { color: var(--pos-gain); }
+.tyre[data-wear="low"] .tyre__band { background: var(--warn); }
+.tyre[data-wear="low"] .tyre__wear { color: var(--warn); }
+.tyre[data-wear="crit"] .tyre__band { background: var(--pos-loss); }
+.tyre[data-wear="crit"] .tyre__wear { color: var(--pos-loss); }
 
 /* =========================================================================
  * PEDALS WIDGET (bottom-centre) — rolling trace + current bars.

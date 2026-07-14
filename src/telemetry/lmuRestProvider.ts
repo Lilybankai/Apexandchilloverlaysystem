@@ -288,13 +288,19 @@ export class LmuRestProvider implements TelemetryProvider {
       cars.find((c) => c.hasFocus || c.focus) ?? cars.find((c) => c.player) ?? cars[0];
     const focusId = focus ? focus.slotID : UNKNOWN_VALUE;
 
-    // The locally-driven car's physics (inputs + fuel in litres) from shared
-    // memory, if someone is driving on this PC. null otherwise. The PLAYER
-    // entry's slot id (not the broadcast-focus car's) picks the right record:
-    // every locally-simulated car (all AI in single player) has a populated
-    // record, so without the id the reader used to grab P1's inputs.
+    // The locally-driven car's physics (inputs + fuel in litres) come from
+    // shared memory, where LMU publishes exactly ONE car: whichever the game
+    // camera is following. That record is the player's own car only while the
+    // player HAS focus (driving in-car); while spectating another car it is the
+    // spectated car, whose pedals must not be shown as the player's. REST tells
+    // us focus vs. player reliably, so we gate on it here. (The reader can't
+    // decide this itself: LMU's telemetry mID is a different id namespace from
+    // the REST slotID, so it cannot match a record to the player by id.)
     const playerCar = cars.find((c) => c.player);
-    const local = this.localCar.read(playerCar ? playerCar.slotID : undefined);
+    const focusCar = cars.find((c) => c.hasFocus || c.focus);
+    const playerIsFocus =
+      playerCar != null && (focusCar == null || focusCar.slotID === playerCar.slotID);
+    const local = playerIsFocus ? this.localCar.read(playerCar!.slotID) : null;
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.3 — 2026-07-14
+
+### Fixed
+- **Pedal trace and fuel are back.** v0.5.2's "strict slot match" assumed LMU's
+  telemetry `mID` shares the REST `slotID` namespace. Live debugging at
+  Interlagos proved it does not — the driven car reads `mID=4` while its REST
+  slot id is `54`, so the strict match could never succeed and always returned
+  *nothing*: no throttle/brake trace, no litre-based fuel (only the REST speed
+  survived, which is why the speedo still matched). The reader again falls back
+  to the first live-looking record (the one car LMU actually publishes), so your
+  inputs, TC/ABS and fuel litres come through while driving.
+- **Still yours, not the spectated car's.** The anti-"P1's inputs" guard now
+  lives where it belongs: the provider only reads local physics when the REST
+  feed says *you* currently have camera focus (driving in-car). Spectate another
+  car and the trace/fuel go blank rather than showing their data.
+
+### Changed
+- **Tyre widget leads with wear.** Since LMU publishes no tyre temperatures,
+  each corner now shows remaining tread % as the primary readout, colour-coded
+  green → amber → red as it wears, instead of a large blank "—" over a tiny wear
+  line. Temperature reappears as a sub-line automatically if a future build
+  exposes it.
+
 ## 0.5.2 — 2026-07-13
 
 ### Fixed

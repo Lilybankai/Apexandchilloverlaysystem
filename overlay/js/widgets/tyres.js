@@ -1,9 +1,12 @@
 /**
- * widgets/tyres.js — four-corner tyre temperatures (bottom-right).
+ * widgets/tyres.js — four-corner tyre wear (bottom-right).
  * -----------------------------------------------------------------------------
- * Renders `frame.player.tyres` (TyreSet). Each corner shows its representative
- * temperature (°C) with a colour band signalling thermal state (cold → optimal
- * → warm → hot). Corner cells are created once and updated in place.
+ * Renders `frame.player.tyres` (TyreSet). LMU exposes per-corner remaining
+ * tread (wear) but publishes no tyre temperatures anywhere, so wear is the
+ * primary readout: each corner shows its remaining tread % with a colour band
+ * (fresh → worn → low). Temperature is shown as a small sub-line only when a
+ * provider actually supplies it. Corner cells are created once, updated in
+ * place.
  */
 (function () {
   "use strict";
@@ -16,13 +19,12 @@
     { key: "rearRight", label: "RR" },
   ];
 
-  // Thermal buckets (°C) — reasonable slick window; colour only, not advice.
-  function heatBucket(t) {
-    if (typeof t !== "number" || t < 0) return "optimal";
-    if (t < 70) return "cold";
-    if (t <= 95) return "optimal";
-    if (t <= 110) return "warm";
-    return "hot";
+  // Wear buckets (remaining tread fraction 1..0) — colour only, not advice.
+  function wearBucket(w) {
+    if (typeof w !== "number" || w < 0) return "unknown";
+    if (w > 0.4) return "good";
+    if (w > 0.15) return "low";
+    return "crit";
   }
 
   var header, cells = {};
@@ -39,26 +41,28 @@
     CORNERS.forEach(function (c) {
       var cell = document.createElement("div");
       cell.className = "tyre";
-      cell.setAttribute("data-heat", "optimal");
+      cell.setAttribute("data-wear", "unknown");
 
       var pos = document.createElement("div");
       pos.className = "tyre__pos";
       pos.textContent = c.label;
 
-      var temp = document.createElement("div");
-      temp.className = "tyre__temp";
-      temp.textContent = "—";
-
+      // Primary readout: remaining tread %.
       var wear = document.createElement("div");
       wear.className = "tyre__wear";
-      wear.textContent = "";
+      wear.textContent = "—";
+
+      // Sub-line: temperature when a provider supplies it, else a label.
+      var temp = document.createElement("div");
+      temp.className = "tyre__temp";
+      temp.textContent = "TREAD";
 
       var band = document.createElement("div");
       band.className = "tyre__band";
 
       cell.appendChild(pos);
-      cell.appendChild(temp);
       cell.appendChild(wear);
+      cell.appendChild(temp);
       cell.appendChild(band);
       grid.appendChild(cell);
 
@@ -80,22 +84,24 @@
       var ref = cells[c.key];
       if (!t || !ref) continue;
 
-      var tempStr = fmt.tempC(t.tempC);
-      if (ref.cache !== tempStr) {
-        ref.cache = tempStr;
-        ref.temp.textContent = tempStr;
-      }
-      var heat = heatBucket(t.tempC);
-      if (ref.heat !== heat) {
-        ref.heat = heat;
-        ref.cell.setAttribute("data-heat", heat);
-      }
-
-      // Remaining tread as a percentage (LMU exposes wear but not temps).
-      var wearStr = fmt.has(t.wear) ? Math.round(t.wear * 100) + "%" : "";
+      // Primary: remaining tread %.
+      var wearStr = fmt.has(t.wear) ? Math.round(t.wear * 100) + "%" : "—";
       if (ref.wearCache !== wearStr) {
         ref.wearCache = wearStr;
         ref.wear.textContent = wearStr;
+      }
+      var bucket = wearBucket(fmt.has(t.wear) ? t.wear : -1);
+      if (ref.bucket !== bucket) {
+        ref.bucket = bucket;
+        ref.cell.setAttribute("data-wear", bucket);
+      }
+
+      // Sub-line: real temperature if a provider carries it, else a static
+      // label so the corner never reads as an empty/broken cell.
+      var tempStr = fmt.has(t.tempC) ? fmt.tempC(t.tempC) : "TREAD";
+      if (ref.cache !== tempStr) {
+        ref.cache = tempStr;
+        ref.temp.textContent = tempStr;
       }
       if (!compound && t.compound) compound = t.compound;
     }
