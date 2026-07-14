@@ -72,6 +72,11 @@
     return has(c) ? Math.round(c) + "°" : "—";
   }
 
+  /** Format a temperature in °C to one decimal with a degree suffix. */
+  function tempC1(c) {
+    return has(c) ? c.toFixed(1) + "°" : "—";
+  }
+
   /** Format litres to one decimal (or em dash). */
   function liters(l) {
     return has(l) ? l.toFixed(1) : "—";
@@ -103,6 +108,7 @@
     delta: delta,
     relGap: relGap,
     tempC: tempC,
+    tempC1: tempC1,
     liters: liters,
     intVal: intVal,
     pct: pct,

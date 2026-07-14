@@ -158,8 +158,14 @@ export interface LapTiming {
 
 /** State of a single tyre/corner. */
 export interface TyreState {
-  /** Representative (surface/core avg) temperature in °C. */
+  /**
+   * Primary/representative temperature in °C — the **inner-liner** temp when the
+   * provider has it, which is the number LMU's in-game HUD shows. Falls back to
+   * the surface average or `UNKNOWN_VALUE` when unavailable.
+   */
   tempC: number;
+  /** Surface (contact-patch) average temperature in °C, when available. */
+  surfaceTempC?: number;
   /** Inner-shoulder temperature in °C, when available. */
   innerC?: number;
   /** Centre temperature in °C, when available. */

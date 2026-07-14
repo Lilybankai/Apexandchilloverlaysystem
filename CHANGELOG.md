@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.5 — 2026-07-14
+
+### Added
+- **Live tyre temperatures are here.** The long-standing "LMU publishes no tyre
+  temps" conclusion was wrong on two counts: the per-car record stride was
+  mis-set (the same 2880-vs-1888 bug behind the pedal saga), and any check made
+  in the garage reads absolute zero because LMU reports **0 K for a car not
+  running on track**. With the correct stride, the whole rF2 wheel struct lines
+  up (the brake-disc temp at wheel-start +24 pins it), exposing the channels the
+  reader now surfaces for your own driven car:
+  - **Inner-liner temp** — the mean of the `mTireInnerLayerTemperature[3]` bands
+    at record offset `976 + wheel*260 + 84`. This is the number LMU's **in-game
+    HUD** shows — verified against the game's own tyre MFD, matching within a few
+    tenths of a degree across all four corners.
+  - **Surface (contact-patch) temp** — the mean of the `mTemperature[3]`
+    inner/centre/outer bands at `976 + wheel*260`.
+
+  Surface offsets were pinned live against a SimHub reference (matched to
+  0.01 °C) and the HUD channel against the game's own MFD; SimHub was only a
+  calibration oracle — nothing at runtime depends on it.
+- **Tyre widget shows both temps.** Each corner leads with the **inner-liner**
+  temp (matches the game HUD) and shows the **surface** temp on the sub-line as
+  `surf NN°`, to one decimal. It falls back to tread-% when no temperature is
+  available (spectating, or the car in the garage).
+
+### Fixed
+- **No brake-disc contamination.** Each tyre band is clamped to a plausible tyre
+  range (−20…200 °C), so a torn/misaligned read that slid onto a brake-disc
+  channel (hundreds of °C, packed 104 bytes before each tyre block) or a 0 K
+  garage value can never leak into a corner's number.
+- **No tread-depth flicker.** A single missed shared-memory poll no longer blanks
+  the pedals/temps to "unknown" for one frame (which read as flashing); the last
+  good local-car physics is held for 0.5 s to bridge the gap.
+- `scripts/scan-lmu-wheels.js` used the old 2880 stride (so it could never find
+  the temps it was built to find); corrected to 1888 and given a known-offset
+  confirmation line.
+
 ## 0.5.4 — 2026-07-14
 
 ### Fixed

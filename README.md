@@ -109,9 +109,12 @@ fuel calculator on top of the REST timing. This is automatic and best-effort: no
 local car (pure spectating) simply means those come from REST (fuel) or stay
 empty (pedals).
 
-**Tyre temps on LMU:** not available. LMU restructured its per-wheel shared-memory
-layout away from the documented rF2 `rF2Wheel` struct, so there is no reliable
-offset for tyre temperatures on current builds; the tyres overlay is best hidden.
+**Tyre temps on LMU:** available for the locally-driven car. LMU publishes the
+per-wheel `mTemperature[3]` bands (inner/centre/outer, in Kelvin) in shared
+memory; the reader averages the three into a per-corner °C. They read absolute
+zero (0 K) whenever the car isn't running on track (garage/pits), which is
+reported as unknown so the widget falls back to tread %. As with pedals, this is
+the *driven* car only — a purely spectated remote car has no tyre temps.
 
 **Shared-memory (`rf2`):** requires the **rF2 Shared Memory Map Plugin**
 (`rFactor2SharedMemoryMapPlugin64.dll`) in the sim's `Bin64/Plugins/` folder.

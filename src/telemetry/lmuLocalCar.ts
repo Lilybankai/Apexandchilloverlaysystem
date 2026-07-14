@@ -24,7 +24,19 @@
  * live against Le Mans Ultimate (throttle, brake, gear, RPM, fuel and capacity
  * all read correct values). Everything degrades to `null` when koffi/Win32 is
  * unavailable, the platform is not Windows, or the sim/plugin is not running.
+ *
+ * ## Tyre temperatures — found after all
+ * The earlier "LMU publishes no tyre temps" conclusion was wrong on two counts:
+ * the record stride was mis-set (see {@link VT.stride}), and any check made in
+ * the garage reads absolute zero because LMU reports 0 K for a car not running
+ * on track. With the correct 1888 stride, the per-wheel `mTemperature[3]`
+ * (inner/centre/outer, in KELVIN) is right where the rF2 struct says it is. The
+ * offset below was pinned live against a SimHub reference: all twelve bands
+ * matched to 0.01 °C while driving, and both read 0 K in the pits. SimHub is
+ * only the calibration oracle — nothing here depends on it at runtime.
  */
+
+import { UNKNOWN_VALUE } from './types';
 
 /* Verified rF2VehicleTelemetry field offsets (bytes), x64, #pragma pack(4). */
 const VT = {
@@ -59,7 +71,30 @@ const VT = {
   mFuel: 524,
   mEngineMaxRPM: 532,
   mFuelCapacity: 608,
+  // mWheels[4] (FL, FR, RL, RR). Each LMU rF2Wheel record is 260 bytes; its
+  // mTemperature[3] band array (inner/centre/outer, in KELVIN) sits at the
+  // wheel base +0/+8/+16. Verified live vs SimHub — all 12 bands matched to
+  // 0.01 °C driving; both read 0 K in the garage (→ reported as unknown).
+  mWheelTempBase: 976,
+  mWheelStride: 260,
+  // mTireInnerLayerTemperature[3] — the tyre *inner-liner* temps, three doubles
+  // per wheel at +84/+92/+100 from the surface base (wheel-start +212 in the
+  // rF2Wheel struct; the brake-disc temp at wheel-start +24, i.e. −104 here,
+  // pins the struct start). Their mean is the channel LMU's in-game tyre HUD
+  // shows — verified against the game's own MFD, matching within a few tenths
+  // across all four corners (the carcass core at +76 reads ~0.8 °C higher).
+  mWheelInnerRel: 84,
 } as const;
+
+/** Kelvin → Celsius. LMU stores tyre temps in Kelvin. */
+const KELVIN = 273.15;
+/**
+ * Plausible tyre-surface range in °C. Anything outside is not a tyre reading:
+ * ≈ −273 is a car not on track (0 K), and hundreds of °C is a brake disc the
+ * read may have slid onto. Bands outside this window are discarded per corner.
+ */
+const TYRE_MIN_C = -20;
+const TYRE_MAX_C = 200;
 
 // NB: the header's mNumVehicles (offset 12) undercounts LMU's telemetry buffer,
 // so the record scan is bounded by how many records fit the region, not by it.
@@ -85,6 +120,19 @@ export interface LocalCarPhysics {
   speedKph: number;
   fuelLiters: number;
   capacityLiters: number;
+  /**
+   * Per-corner tyre **surface** temperature in °C `[FL, FR, RL, RR]`, each the
+   * mean of the inner/centre/outer bands. `UNKNOWN_VALUE` (-1) when the car
+   * isn't running on track (LMU reports 0 K in the garage) or a band reads
+   * implausibly.
+   */
+  tyreTempsC: [number, number, number, number];
+  /**
+   * Per-corner tyre **inner-liner** temperature in °C `[FL, FR, RL, RR]` — the
+   * mean of the three inner-layer bands, which is the channel LMU's in-game HUD
+   * shows. `UNKNOWN_VALUE` when unavailable.
+   */
+  tyreHudTempsC: [number, number, number, number];
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
   /** Racing number parsed from the record's vehicle name (e.g. "79"), or "". */
@@ -362,6 +410,41 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     fltThrottle > 0 && fltThrottle <= 1.05 ? clamp01(clamp01(throttle) - fltThrottle) : 0;
   const abs = fltBrake > 0 && fltBrake <= 1.05 ? clamp01(brake - fltBrake) : 0;
 
+  // Per-corner tyre temp = mean of the three (Kelvin) bands, converted to °C —
+  // but only over bands that fall in a plausible *tyre* range. This rejects:
+  //   • a car not running on track (LMU reports 0 K ≈ −273 °C for every band);
+  //   • a torn/misaligned read that slid onto a brake-disc channel (300-800 °C
+  //     while driving — the record packs those just 104 bytes before each tyre
+  //     block) or other garbage.
+  // Averaging only the surviving bands means one bad band can't drag the corner
+  // to a wrong number; fewer than two good bands → unknown (widget shows tread).
+  // A single Kelvin double → °C, or NaN if outside the plausible tyre range.
+  const tyreC = (absOffset: number): number => {
+    const c = rec.readDoubleLE(absOffset) - KELVIN;
+    return c >= TYRE_MIN_C && c <= TYRE_MAX_C ? c : NaN;
+  };
+  // Mean of a wheel's three temperature bands at a given relative offset, over
+  // only the bands that pass the tyre-range guard. Used for both the surface
+  // (rel 0) and inner-liner (rel +84) triplets.
+  const bandMeanC = (wheel: number, rel: number): number => {
+    const b = VT.mWheelTempBase + wheel * VT.mWheelStride + rel;
+    const bands = [tyreC(b), tyreC(b + 8), tyreC(b + 16)].filter((c) => !Number.isNaN(c));
+    if (bands.length < 2) return UNKNOWN_VALUE;
+    return round1(bands.reduce((s, c) => s + c, 0) / bands.length);
+  };
+  const tyreTempsC: [number, number, number, number] = [
+    bandMeanC(0, 0),
+    bandMeanC(1, 0),
+    bandMeanC(2, 0),
+    bandMeanC(3, 0),
+  ];
+  const tyreHudTempsC: [number, number, number, number] = [
+    bandMeanC(0, VT.mWheelInnerRel),
+    bandMeanC(1, VT.mWheelInnerRel),
+    bandMeanC(2, VT.mWheelInnerRel),
+    bandMeanC(3, VT.mWheelInnerRel),
+  ];
+
   return {
     throttle: clamp01(throttle),
     brake,
@@ -375,6 +458,8 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     speedKph: Math.round(Math.abs(fwdVel) * 3.6),
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
+    tyreTempsC,
+    tyreHudTempsC,
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
     carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
   };

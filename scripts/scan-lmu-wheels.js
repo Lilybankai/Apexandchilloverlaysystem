@@ -1,19 +1,17 @@
 /**
- * scripts/scan-lmu-wheels.js — find LMU's real tyre-temperature offsets.
+ * scripts/scan-lmu-wheels.js — find/verify LMU's tyre-temperature offsets.
  * -----------------------------------------------------------------------------
- * LMU restructured the per-wheel telemetry away from the documented rF2Wheel
- * struct, so the overlay deliberately leaves tyre temps blank instead of
- * showing wrong values. This scanner finds where the temps actually live on
- * the current game build:
+ * The tyre temps were located (see src/telemetry/lmuLocalCar.ts): per-wheel
+ * mTemperature[3] (inner/centre/outer, KELVIN) at record offset 976 + wheel*260.
+ * This scanner is kept for re-verification if a future LMU build shifts the
+ * layout again:
  *
- *   1. Start LMU, get in the car and DRIVE A LAP OR TWO (tyres must heat up
- *      so the values move — that's what separates temps from constants).
+ *   1. Start LMU, get in the car and DRIVE A LAP OR TWO (tyres must heat up so
+ *      the values move — a car in the garage reports 0 K / absolute zero).
  *   2. In another terminal:  node scripts/scan-lmu-wheels.js
- *   3. Watch the output while driving: real tyre temps are the rows whose
- *      values sit in the 40–120 °C (or ~310–390 K) range, CHANGE slowly as
- *      you drive, and appear as a *quadruplet* — four offsets with an equal
- *      stride (front-left/front-right/rear-left/rear-right records).
- *   4. Paste the output back so the offsets can be wired into the overlay.
+ *   3. Real tyre temps sit ~310–390 K, CHANGE while driving, and appear as a
+ *      *quadruplet* — four offsets with an equal stride (the four wheels).
+ *   4. Paste the output back if the offsets need re-wiring.
  *
  * Read-only and safe to run while racing; it samples once per second.
  */
@@ -25,8 +23,13 @@ const koffi = require('koffi');
 const MMF = '$rFactor2SMMP_Telemetry$';
 const FILE_MAP_READ = 0x0004;
 const BASE = 16; // records start after header(12) + mNumVehicles(4)
-const STRIDE = 2880;
+// Corrected per-vehicle record stride (was mis-set to 2880, which misaligned
+// every record after the first and made the temps look absent). Verified live.
+const STRIDE = 1888;
 const HDR_NUM_VEHICLES = 12;
+// Known-good tyre-temp block, for a quick confirm line.
+const WHEEL_TEMP_BASE = 976;
+const WHEEL_STRIDE = 260;
 
 // Verified scalar offsets, used to pick the driven car's record.
 const OFF_RPM = 356;
@@ -84,6 +87,14 @@ function main() {
       console.log('(no driven car found — get in the car / pass --slot <id>)');
       return;
     }
+
+    // Confirm the known-good block first (0 K in the garage → "in garage").
+    const corner = (w) => {
+      const b = rec + WHEEL_TEMP_BASE + w * WHEEL_STRIDE;
+      const avgK = (readF64(b) + readF64(b + 8) + readF64(b + 16)) / 3;
+      return avgK > 200 ? (avgK - 273.15).toFixed(1) + '°C' : 'in garage';
+    };
+    console.log(`  known offsets → FL ${corner(0)}  FR ${corner(1)}  RL ${corner(2)}  RR ${corner(3)}`);
     // Scan the whole record for plausible temperatures at 4-byte alignment.
     const hits = [];
     for (let off = 448; off <= STRIDE - 8; off += 4) {

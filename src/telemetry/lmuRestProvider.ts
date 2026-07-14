@@ -78,6 +78,13 @@ const HTTP_TIMEOUT_MS = 1500;
 const GARAGE_REFRESH_INTERVAL_MS = 3000;
 /** Treat wear data older than this as gone (left session / in menus). */
 const GARAGE_STALE_AFTER_MS = 10_000;
+/**
+ * How long to keep showing the last good local-car physics after a read returns
+ * nothing. The shared-memory reader occasionally misses a single poll (a torn
+ * read it couldn't reconcile); without this hold the pedals and tyre temps blink
+ * to their "unknown" state for one frame, which reads as flicker on the overlay.
+ */
+const LOCAL_HOLD_MS = 500;
 
 /** A car entry from `/rest/watch/standings` (only the fields we consume). */
 interface RestStanding {
@@ -138,6 +145,9 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly localFuel = new FuelCalculator();
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
   private readonly localCar = new LmuLocalCarReader();
+  /** Last good local physics + when, to bridge single missed reads (flicker). */
+  private lastLocal: LocalCarPhysics | null = null;
+  private lastLocalAt = 0;
   private readonly port: number;
   private readonly verbose: boolean;
 
@@ -294,7 +304,16 @@ export class LmuRestProvider implements TelemetryProvider {
     // player's slot id makes the reader return this car's own inputs (and never
     // another car's — car numbers can repeat across classes, ids can't).
     const playerCar = cars.find((c) => c.player);
-    const local = playerCar ? this.localCar.read(playerCar.slotID) : null;
+    const rawLocal = playerCar ? this.localCar.read(playerCar.slotID) : null;
+    // Bridge an occasional single missed read so pedals/temps don't flicker to
+    // "unknown" for one frame; a genuine drop (spectating) outlasts the hold.
+    let local = rawLocal;
+    if (rawLocal) {
+      this.lastLocal = rawLocal;
+      this.lastLocalAt = Date.now();
+    } else if (this.lastLocal && Date.now() - this.lastLocalAt < LOCAL_HOLD_MS) {
+      local = this.lastLocal;
+    }
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
@@ -531,15 +550,20 @@ export class LmuRestProvider implements TelemetryProvider {
       focus && focus.carVelocity && typeof focus.carVelocity.velocity === 'number'
         ? Math.round(Math.abs(focus.carVelocity.velocity) * 3.6)
         : UNKNOWN_VALUE;
-    // Tyre wear for the player's own car from the pit-menu screen. Temps stay
-    // unknown — LMU publishes them nowhere (shared memory reads zero, no REST
-    // endpoint carries them).
+    // Tyre wear for the player's own car from the pit-menu screen (REST), and
+    // live tyre temperatures from the driven car's shared memory. Both are the
+    // player's own car; temps are °C per corner [FL, FR, RL, RR] or unknown
+    // (spectating, or the car isn't running on track — LMU reports 0 K there).
     const wear =
       this.tyreWear !== null && Date.now() - this.lastGarageOkAt < GARAGE_STALE_AFTER_MS
         ? this.tyreWear
         : null;
+    const surfaceTemps = local ? local.tyreTempsC : null;
+    const hudTemps = local ? local.tyreHudTempsC : null;
     const tyre = (i: number): TyreState => ({
-      tempC: UNKNOWN_VALUE,
+      // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
+      tempC: hudTemps ? (hudTemps[i] as number) : UNKNOWN_VALUE,
+      surfaceTempC: surfaceTemps ? (surfaceTemps[i] as number) : UNKNOWN_VALUE,
       wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
     });
     return {
