@@ -29,9 +29,21 @@
 /* Verified rF2VehicleTelemetry field offsets (bytes), x64, #pragma pack(4). */
 const VT = {
   base: 16, // records start after header(12) + mNumVehicles(4)
-  stride: 2880,
+  // Per-vehicle record size. LMU's rF2VehicleTelemetry is 1888 bytes, NOT the
+  // 2880 an old rF2 header would suggest. This was the root cause of the
+  // "reads another car's inputs" saga: at stride 2880 only record 0 landed on a
+  // real record boundary and every other car decoded as garbage, so the mID
+  // match below could never find the player unless they happened to sit at
+  // index 0. Derived + verified live: vehicle-name strings recur exactly every
+  // 1888 bytes across all 30 records, and each record's `mID` then matches its
+  // REST `slotID` (e.g. player slot 31 == record mID 31).
+  stride: 1888,
   mID: 0,
   mLapNumber: 20, // long: mID(0)+mDeltaTime(4..12)+mElapsedTime(12..20)
+  // char mVehicleName[64]: livery + racing number, e.g. "Iron Lynx 2026 #79:W"
+  // (kept for logging/diagnostics; the player is matched by mID, since car
+  // numbers can repeat across classes — e.g. two #21s in one field).
+  mVehicleName: 32,
   mLocalVelZ: 200, // rF2Vec3 mLocalVel.z (forward component)
   mGear: 352,
   mEngineRPM: 356,
@@ -49,7 +61,8 @@ const VT = {
   mFuelCapacity: 608,
 } as const;
 
-const HDR_NUM_VEHICLES = 12; // mNumVehicles lives here; records start at VT.base
+// NB: the header's mNumVehicles (offset 12) undercounts LMU's telemetry buffer,
+// so the record scan is bounded by how many records fit the region, not by it.
 const MMF_TELEMETRY = '$rFactor2SMMP_Telemetry$';
 const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
@@ -74,6 +87,8 @@ export interface LocalCarPhysics {
   capacityLiters: number;
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
+  /** Racing number parsed from the record's vehicle name (e.g. "79"), or "". */
+  carNumber: string;
 }
 
 /** Minimal koffi-bound Win32 surface (see {@link loadWin32}). */
@@ -211,19 +226,19 @@ export class LmuLocalCarReader {
 
   /**
    * Returns the driven car's physics, or `null` when unavailable (no koffi, sim
-   * closed, nobody driving locally, or a torn read). Never throws.
+   * closed, the player's car isn't in the buffer, or a torn read). Never throws.
    *
-   * `expectedSlotId` — the player's slot id from the REST standings (`mID` in
-   * the telemetry record). Records exist for EVERY locally-simulated car (all
-   * AI in single player), so matching the id is the only reliable way to pick
-   * the driver's own car rather than whoever happens to occupy record 0 (which
-   * used to show P1's inputs instead of the player's). The plausibility scan
-   * remains as a fallback when no slot id is known.
+   * `expectedSlotId` — the player's slot id from the REST standings, which
+   * equals the telemetry record's `mID` (verified live: REST slot 31 == record
+   * mID 31). LMU publishes a record for EVERY car in the field, so matching the
+   * id is the reliable way to pick the driver's own car — and it's necessary,
+   * because a car NUMBER can repeat across classes (two #21s in one field). When
+   * no id is given (rf2 path / diagnostics) we fall back to the first record
+   * with a live, running engine.
    *
-   * Cost per call is a handful of scalar decodes plus one 2 880-byte record
-   * copy — never a copy of the whole (~368 KB) region. Consistency comes from
-   * checking the writer's version counters before and after the record copy and
-   * retrying on mismatch instead of snapshotting everything.
+   * Cost per call is a handful of scalar decodes plus one record copy — never a
+   * copy of the whole region. Consistency comes from checking the writer's
+   * version counters before and after the record copy and retrying on mismatch.
    */
   public read(expectedSlotId?: number): LocalCarPhysics | null {
     const w = this.win32;
@@ -238,7 +253,7 @@ export class LmuLocalCarReader {
         if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
 
         const idx = this.findDrivenCar(w, expectedSlotId);
-        if (idx < 0) return null; // nobody driving locally
+        if (idx < 0) return null; // player's car not in the buffer this frame
 
         const offset = VT.base + idx * VT.stride;
         if (offset + VT.stride > this.size) return null;
@@ -249,7 +264,15 @@ export class LmuLocalCarReader {
 
         const car = parseRecord(rec);
         if (car === null) {
-          this.cachedIdx = -1; // slot went stale (driver left the car)
+          this.cachedIdx = -1; // record went stale (parked / engine off)
+          continue;
+        }
+        // Identity guard on the COPIED bytes: with a slot id known, the record's
+        // mID must match it. Guards against a torn read that slid us onto an
+        // adjacent car's record between the probe and the copy.
+        const wantId = typeof expectedSlotId === 'number' && expectedSlotId >= 0;
+        if (wantId && rec.readInt32LE(VT.mID) !== expectedSlotId) {
+          this.cachedIdx = -1;
           continue;
         }
         this.cachedIdx = idx;
@@ -264,38 +287,30 @@ export class LmuLocalCarReader {
   }
 
   /**
-   * Finds the record index of the player's car.
+   * Finds the record index of the player's car by matching its `mID` to the
+   * REST slot id. LMU publishes a record for every car in the field (all 30 at
+   * once, each with live physics), so an exact id match uniquely picks the
+   * driver's own car. Returns `-1` when the id isn't present (player's car not
+   * in the buffer → caller shows nothing rather than another car's inputs).
    *
-   * LMU publishes telemetry for exactly ONE car — whichever car the game
-   * camera is following (verified live at Interlagos: record 0 carries that
-   * car's name/track/physics, every other record is uninitialised noise).
-   *
-   * Crucially, LMU's telemetry `mID` is a DIFFERENT id namespace from the REST
-   * `slotID` (verified live: the driven car's record reads `mID=4` while its
-   * REST slot id is `54`). So a strict `mID === slotID` match can never succeed
-   * and returning `-1` on a miss kills the pedal trace and litre-fuel entirely
-   * (the v0.5.2 regression). We therefore prefer an exact id match when the
-   * namespaces happen to line up (a future LMU build / the rf2 path) but ALWAYS
-   * fall back to the first record that looks like a live, running car.
-   *
-   * The "am I driving or spectating?" decision is made by the caller from the
-   * REST focus/player flags (see LmuRestProvider) — the reader is only asked to
-   * read when the player IS the camera focus, so the plausible record is the
-   * player's own car.
+   * With no id (rf2 path / diagnostics) it falls back to the first record with a
+   * running engine. The last matched index is checked first so steady-state
+   * polls cost a couple of scalar decodes, not a full scan.
    */
   private findDrivenCar(w: Win32, expectedSlotId?: number): number {
-    const n = clampInt(w.readI32(this.view, HDR_NUM_VEHICLES), 0, 128);
     const wantId = typeof expectedSlotId === 'number' && expectedSlotId >= 0;
+    // The header's mNumVehicles undercounts LMU's telemetry buffer (it lists ~24
+    // while 30 records are populated), so bound the scan by how many records
+    // physically fit rather than trusting it.
+    const maxFit = Math.floor((this.size - VT.base) / VT.stride);
+    const n = clampInt(maxFit, 0, 128);
 
-    // Fast path: re-check the record we used last poll (two scalar decodes).
-    if (
-      this.cachedIdx >= 0 &&
-      this.cachedIdx < n &&
-      VT.base + (this.cachedIdx + 1) * VT.stride <= this.size
-    ) {
+    // Fast path: re-check the record we used last poll.
+    if (this.cachedIdx >= 0 && this.cachedIdx < n) {
       if (
-        (wantId && this.slotIdAt(w, this.cachedIdx) === expectedSlotId) ||
-        this.probe(w, this.cachedIdx)
+        wantId
+          ? this.slotIdAt(w, this.cachedIdx) === expectedSlotId
+          : this.probe(w, this.cachedIdx)
       ) {
         return this.cachedIdx;
       }
@@ -303,14 +318,13 @@ export class LmuLocalCarReader {
 
     let plausible = -1;
     for (let i = 0; i < n; i++) {
-      if (VT.base + (i + 1) * VT.stride > this.size) break;
-      if (wantId && this.slotIdAt(w, i) === expectedSlotId) return i;
-      if (plausible < 0 && this.probe(w, i)) plausible = i;
+      if (wantId) {
+        if (this.slotIdAt(w, i) === expectedSlotId) return i;
+      } else if (plausible < 0 && this.probe(w, i)) {
+        plausible = i;
+      }
     }
-    // No id match (LMU's namespaces differ): the first live-looking record is
-    // the driven/focus car. `-1` only when nothing is running (parked, engine
-    // off, in menus) → caller falls back to REST speed.
-    return plausible;
+    return wantId ? -1 : plausible;
   }
 
   /** The `mID` (slot id) of record `i`. */
@@ -362,7 +376,40 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
+    carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
   };
+}
+
+/** Decodes a NUL-terminated ASCII run from a byte buffer. */
+function bufToAscii(buf: Buffer): string {
+  let s = '';
+  for (const c of buf) {
+    if (c === 0) break;
+    if (c >= 32 && c < 127) s += String.fromCharCode(c);
+  }
+  return s;
+}
+
+/**
+ * Extracts the racing number from a vehicle name like `"Iron Lynx 2026 #79:W"`
+ * → `"79"`. Returns "" when there's no `#NN` token. Uses the last `#` so team
+ * names containing a `#` don't confuse it.
+ */
+function carNumberFromName(name: string): string {
+  const hash = name.lastIndexOf('#');
+  if (hash < 0) return '';
+  let s = '';
+  for (let i = hash + 1; i < name.length; i++) {
+    const ch = name.charCodeAt(i);
+    if (ch >= 48 && ch <= 57) s += name[i];
+    else break;
+  }
+  return stripLeadingZeros(s);
+}
+
+/** "091" → "91"; keeps a lone "0"; "" → "". */
+function stripLeadingZeros(digits: string): string {
+  return digits.replace(/^0+(?=\d)/, '');
 }
 
 function clamp(v: number, min: number, max: number): number {

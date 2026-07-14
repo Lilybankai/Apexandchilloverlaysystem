@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.4 — 2026-07-14
+
+### Fixed
+- **The pedal trace is finally, correctly YOURS.** Root cause of the entire
+  "shows another car's inputs" saga was a single wrong constant: the
+  shared-memory per-car record stride was **2880 bytes; it's actually 1888**. At
+  the wrong stride only the very first record ever aligned, so every other car
+  (including yours whenever you weren't in slot 0) decoded as garbage — which
+  masqueraded as "LMU only publishes one car", "mID is a foreign namespace", and
+  "the record rotates through pit cars". None of that was real. With the correct
+  stride, LMU publishes the **whole field** (all ~30 cars, live physics), and
+  the player's record is matched by exact `mID === REST slotID`. Verified live:
+  shared-memory speed matches the REST speed to the km/h, so it is provably your
+  car — real throttle/brake/TC/ABS/gear/rpm and litre fuel.
+- Player is now identified by **id, not car number** — racing numbers repeat
+  across classes (a field can contain two #21s), ids don't.
+
+### Notes
+- Tyre **temperatures** remain unavailable: re-checked on the correct car at the
+  correct stride while driving — LMU simply doesn't publish per-wheel temps to
+  shared memory. The tyre widget stays on remaining-tread **wear** (from REST).
+
 ## 0.5.3 — 2026-07-14
 
 ### Fixed

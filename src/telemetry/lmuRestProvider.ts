@@ -289,18 +289,12 @@ export class LmuRestProvider implements TelemetryProvider {
     const focusId = focus ? focus.slotID : UNKNOWN_VALUE;
 
     // The locally-driven car's physics (inputs + fuel in litres) come from
-    // shared memory, where LMU publishes exactly ONE car: whichever the game
-    // camera is following. That record is the player's own car only while the
-    // player HAS focus (driving in-car); while spectating another car it is the
-    // spectated car, whose pedals must not be shown as the player's. REST tells
-    // us focus vs. player reliably, so we gate on it here. (The reader can't
-    // decide this itself: LMU's telemetry mID is a different id namespace from
-    // the REST slotID, so it cannot match a record to the player by id.)
+    // shared memory. LMU publishes a telemetry record for every car in the
+    // field, keyed by `mID`, which equals the REST `slotID`. Passing the
+    // player's slot id makes the reader return this car's own inputs (and never
+    // another car's — car numbers can repeat across classes, ids can't).
     const playerCar = cars.find((c) => c.player);
-    const focusCar = cars.find((c) => c.hasFocus || c.focus);
-    const playerIsFocus =
-      playerCar != null && (focusCar == null || focusCar.slotID === playerCar.slotID);
-    const local = playerIsFocus ? this.localCar.read(playerCar!.slotID) : null;
+    const local = playerCar ? this.localCar.read(playerCar.slotID) : null;
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
