@@ -156,9 +156,20 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   }
 
   const intervalMs = frameIntervalMs(config);
+  // Windows coalesces JS timers to ~15.6 ms multiples, so a plain setInterval
+  // at the target rate silently halves anything above ~32 Hz (a 17 ms request
+  // fires every 31 ms → 60 Hz delivered as 32). Instead tick at a fast, fixed
+  // cadence and broadcast only when a frame is due — the wake-ups between due
+  // frames are single timestamp compares, so the cost is negligible and the
+  // delivered rate tracks the configured one up to the host's timer floor.
+  const tickMs = Math.max(1, Math.min(intervalMs, 8));
   let lastPollMs = Date.now();
+  let nextDueMs = Date.now();
   const loop = setInterval(() => {
     const now = Date.now();
+    if (now < nextDueMs) return;
+    // Fixed cadence; if we fall behind, resume from now rather than bursting.
+    nextDueMs = Math.max(nextDueMs + intervalMs, now);
     const dt = now - lastPollMs;
     lastPollMs = now;
     try {
@@ -168,7 +179,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       // A provider must never take down the loop; log and keep broadcasting.
       console.error('[loop] provider poll failed:', (err as Error).message);
     }
-  }, intervalMs);
+  }, tickMs);
   loop.unref?.();
 
   const url = `http://${config.host}:${config.httpPort}/`;

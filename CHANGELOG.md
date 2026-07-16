@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.5 — 2026-07-16
+
+### Changed
+- **Delta rebuilt on the real lap clock.** For the car you're driving, the delta
+  now runs off the sim's shared-memory lap clock (`mElapsedTime − mLapStartET`):
+  exact, physics-rate, and immune to the REST `timeIntoLap` quirk where the
+  clock pauses while the car is stationary (proven to lag real lap time by tens
+  of seconds). It does exactly the intuitive thing — record your fastest lap's
+  trace, compare the current lap against it live, adopt a new trace when you go
+  quicker — arming on your first flying lap. Spectated cars keep the REST-based
+  tracker. The "Current" lap time in the Relative strip uses the exact clock too.
+- **Relative widget latency cut.** Every car's road position is now
+  dead-reckoned forward by its own velocity between REST snapshots (which are up
+  to 150 ms stale), so gaps move smoothly at the full frame rate instead of
+  stepping ~7×/second; the widget also redraws every 60 ms (was 120 ms).
+
+### Fixed
+- **Update-rate slider now works above 30 Hz.** Windows coalesces JS timers to
+  ~15.6 ms multiples, so the broadcast loop silently capped at ~32 fps no matter
+  how high the slider was set (60 Hz delivered 32). The loop now ticks on a fast
+  cadence and broadcasts when a frame is due — measured 59 fps at the 60 Hz
+  setting (was 32), 10 fps at 10 Hz. Below ~30 Hz behaviour is unchanged.
+
 ## 0.6.4 — 2026-07-16
 
 ### Fixed
