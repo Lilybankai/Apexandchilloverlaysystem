@@ -5,14 +5,23 @@
  * consumption per lap, laps remaining on current fuel, litres to the finish and
  * the margin at the flag (colour-coded surplus/short), plus refuel-to-finish
  * and the pit window. Values are display-ready; this widget only formats them.
+ *
+ * When the car runs a **virtual energy** budget (LMU), the widget rotates every
+ * 20 s between the FUEL view and an ENERGY view (remaining %, % per lap, laps
+ * left on energy, margin at the flag) — energy is the resource that actually
+ * limits an LMU stint. Cars without VE just show the fuel view permanently.
  */
 (function () {
   "use strict";
 
-  var header;
+  /** How long each view is shown before rotating (ms). */
+  var ROTATE_MS = 20000;
+
+  var header, modeChip;
   var stats = {};
   var refuelEl, pitEl;
   var cache = {};
+  var grids = {};
 
   function makeStat(grid, key, label) {
     var wrap = document.createElement("div");
@@ -34,13 +43,32 @@
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
-    var grid = document.createElement("div");
-    grid.className = "fuel__grid";
-    makeStat(grid, "perLap", "Per Lap");
-    makeStat(grid, "lapsLeft", "Laps Left");
-    makeStat(grid, "toFinish", "To Finish");
-    makeStat(grid, "margin", "Margin");
-    mount.appendChild(grid);
+    // Mode chip: names the view currently shown (FUEL / ENERGY).
+    modeChip = document.createElement("div");
+    modeChip.className = "fuel__mode";
+    modeChip.textContent = "FUEL";
+    modeChip.style.display = "none"; // only shown once rotation is active
+    mount.appendChild(modeChip);
+
+    var fuelGrid = document.createElement("div");
+    fuelGrid.className = "fuel__grid";
+    makeStat(fuelGrid, "perLap", "Per Lap");
+    makeStat(fuelGrid, "lapsLeft", "Laps Left");
+    makeStat(fuelGrid, "toFinish", "To Finish");
+    makeStat(fuelGrid, "margin", "Margin");
+    mount.appendChild(fuelGrid);
+    grids.fuel = fuelGrid;
+
+    // Energy view: same grid shape, VE-denominated stats.
+    var energyGrid = document.createElement("div");
+    energyGrid.className = "fuel__grid";
+    energyGrid.style.display = "none";
+    makeStat(energyGrid, "veRemain", "Remaining");
+    makeStat(energyGrid, "vePerLap", "Per Lap");
+    makeStat(energyGrid, "veLapsLeft", "Laps Left");
+    makeStat(energyGrid, "veMargin", "Margin");
+    mount.appendChild(energyGrid);
+    grids.energy = energyGrid;
 
     var margin = document.createElement("div");
     margin.className = "fuel__margin";
@@ -63,43 +91,84 @@
     return el;
   }
 
+  /** Signed margin readout with colour state; shared by fuel (L) and VE (%). */
+  function setMargin(key, delta, perLap, fmt, unit) {
+    var el = stats[key];
+    if (!el) return;
+    var str, state;
+    if (typeof delta !== "number" || delta === fmt.UNKNOWN) {
+      str = "—";
+      state = "";
+    } else {
+      str = (delta >= 0 ? "+" : "−") + Math.abs(delta).toFixed(1);
+      var oneLap = typeof perLap === "number" && perLap > 0 ? perLap : 1;
+      state = delta < 0 ? "short" : delta < oneLap ? "marginal" : "ok";
+    }
+    var html = str + (str !== "—" ? "<small> " + unit + "</small>" : "");
+    if (cache[key] !== html) {
+      cache[key] = html;
+      el.innerHTML = html;
+    }
+    if (cache[key + "State"] !== state) {
+      cache[key + "State"] = state;
+      if (state) el.setAttribute("data-state", state);
+      else el.removeAttribute("data-state");
+    }
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var f = frame.fuel;
     if (!f) return;
 
+    var hasEnergy = typeof f.virtualEnergyPct === "number";
+    // Rotate between views every ROTATE_MS while energy data exists.
+    var mode = hasEnergy && Math.floor(Date.now() / ROTATE_MS) % 2 === 1 ? "energy" : "fuel";
+    if (cache.mode !== mode || cache.hasEnergy !== hasEnergy) {
+      cache.mode = mode;
+      cache.hasEnergy = hasEnergy;
+      grids.fuel.style.display = mode === "fuel" ? "" : "none";
+      grids.energy.style.display = mode === "energy" ? "" : "none";
+      modeChip.style.display = hasEnergy ? "" : "none";
+      modeChip.textContent = mode === "energy" ? "VIRTUAL ENERGY" : "FUEL";
+      modeChip.setAttribute("data-mode", mode);
+    }
+
+    // Header readout follows the view: tank litres vs energy %.
     if (header) {
-      var tank = fmt.liters(f.levelLiters) + " L";
-      if (cache.tank !== tank) { cache.tank = tank; header.textContent = tank; }
+      var hdr =
+        mode === "energy"
+          ? Math.round(f.virtualEnergyPct) + "%"
+          : fmt.liters(f.levelLiters) + " L";
+      if (cache.tank !== hdr) { cache.tank = hdr; header.textContent = hdr; }
+    }
+
+    if (mode === "energy") {
+      setStat("veRemain", f.virtualEnergyPct.toFixed(1), "%");
+      setStat(
+        "vePerLap",
+        typeof f.virtualEnergyPerLapPct === "number" ? f.virtualEnergyPerLapPct.toFixed(1) : "—",
+        typeof f.virtualEnergyPerLapPct === "number" ? "%" : null
+      );
+      setStat(
+        "veLapsLeft",
+        typeof f.virtualEnergyLapsRemaining === "number"
+          ? f.virtualEnergyLapsRemaining.toFixed(1)
+          : "—",
+        null
+      );
+      setMargin("veMargin", f.virtualEnergyDeltaPct, f.virtualEnergyPerLapPct, fmt, "%");
+
+      var eLine = "Virtual energy · rotates 20s";
+      if (cache.refuel !== eLine) { cache.refuel = eLine; refuelEl.textContent = eLine; }
+      if (cache.pit !== "") { cache.pit = ""; pitEl.textContent = ""; }
+      return;
     }
 
     setStat("perLap", fmt.liters(f.perLapAvgLiters), "L");
     setStat("lapsLeft", fmt.intVal(f.lapsRemaining), null);
     setStat("toFinish", fmt.liters(f.fuelToFinishLiters), "L");
-
-    // Margin: signed litres at the flag, colour-coded.
-    var marginEl = stats.margin;
-    var d = f.fuelDeltaLiters;
-    var marginStr;
-    var state;
-    if (typeof d !== "number" || d === fmt.UNKNOWN) {
-      marginStr = "—";
-      state = "";
-    } else {
-      marginStr = (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
-      var oneLap = fmt.has(f.perLapAvgLiters) ? f.perLapAvgLiters : 1;
-      state = d < 0 ? "short" : d < oneLap ? "marginal" : "ok";
-    }
-    var marginHtml = marginStr + (marginStr !== "—" ? '<small> L</small>' : "");
-    if (cache.margin !== marginHtml) {
-      cache.margin = marginHtml;
-      marginEl.innerHTML = marginHtml;
-    }
-    if (cache.marginState !== state) {
-      cache.marginState = state;
-      if (state) marginEl.setAttribute("data-state", state);
-      else marginEl.removeAttribute("data-state");
-    }
+    setMargin("margin", f.fuelDeltaLiters, f.perLapAvgLiters, fmt, "L");
 
     // Bottom line: refuel-to-finish + pit window.
     var refuel = fmt.has(f.refuelToFinishLiters)

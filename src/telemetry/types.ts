@@ -386,6 +386,20 @@ export interface FuelState {
   refuelToFinishLiters: number;
   /** Earliest lap the pit window opens (enough fuel to finish); optional. */
   pitWindowOpenLap?: number;
+  /**
+   * Player car's remaining **virtual energy** as a percentage `0`..`100` (LMU's
+   * per-car energy budget). Omitted when the car/class doesn't run one.
+   */
+  virtualEnergyPct?: number;
+  /** Average virtual energy used per lap, percentage points; omitted until known. */
+  virtualEnergyPerLapPct?: number;
+  /** Estimated laps remaining on the current virtual energy; omitted until known. */
+  virtualEnergyLapsRemaining?: number;
+  /**
+   * Virtual-energy margin at the finish in percentage points: positive =
+   * surplus, negative = short. Omitted until it can be estimated.
+   */
+  virtualEnergyDeltaPct?: number;
 }
 
 /* -------------------------------------------------------------------------- */

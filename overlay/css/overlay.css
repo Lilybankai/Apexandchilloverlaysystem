@@ -462,6 +462,18 @@
 /* =========================================================================
  * FUEL WIDGET (mid-right) — calculator readout.
  * ========================================================================= */
+/* View chip: names the rotating view (FUEL / VIRTUAL ENERGY). */
+.fuel__mode {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.fuel__mode[data-mode="energy"] {
+  color: var(--ac-cyan);
+}
 .fuel__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

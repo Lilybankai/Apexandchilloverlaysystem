@@ -43,6 +43,7 @@ import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
   type FlagState,
+  type FuelState,
   type RelativeEntry,
   type SessionPhase,
   type SessionState,
@@ -191,6 +192,12 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly lapDelta = new LapDeltaTracker();
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
+  /**
+   * Virtual-energy strategy for the focused car, run in **percent** units
+   * (0..100, capacity 100) so per-lap burns keep useful precision through the
+   * calculator's rounding.
+   */
+  private readonly energyCalc = new FuelCalculator();
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
   private readonly localCar = new LmuLocalCarReader();
   /** Last good local physics + when, to bridge single missed reads (flicker). */
@@ -442,9 +449,26 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
-   * Cars physically nearest the focused car on track, with a signed time gap.
-   * Uses each car's on-track lap distance normalised by the track length, times
-   * the focused car's estimated lap time — the same model as the sim reader.
+   * Cars physically nearest the focused car on track, with a signed time gap
+   * (positive = ahead of the focus car on the road, negative = behind).
+   *
+   * The gap is the wrapped on-track distance between the two cars, converted to
+   * time at the focus car's own lap pace — the standard relative-display model.
+   *
+   * Two models were compared against a live multiclass session:
+   * - `timeIntoLap` clock difference: rejected. A car's clock only resets at the
+   *   line, so a different-pace car's "gap" freezes mid-lap and jumps by a whole
+   *   lap time whenever it crosses the line (its clock wraps on a different
+   *   period than the focus car's) — structurally wrong across classes.
+   * - Distance × pace (this one): tracks the physical road gap continuously.
+   *
+   * NOTE `estimatedLapTime` is a session-wide pace figure (observed identical
+   * across classes), NOT this car's own pace — using it scaled every gap by the
+   * fastest class's pace (~20% short for a GT3). The focus car's own sane
+   * bestLapTime is required first.
+   *
+   * Cars parked in their garage stall are excluded: they aren't on the road, and
+   * would otherwise pin phantom entries near the pit straight.
    */
   private buildRelative(
     cars: RestStanding[],
@@ -453,15 +477,24 @@ export class LmuRestProvider implements TelemetryProvider {
   ): RelativeEntry[] {
     if (!focus || typeof focus.lapDistance !== 'number') return [];
     const trackLength = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
+    // The focus car's own lap time, for converting road distance → seconds.
+    // Guard bestLapTime against junk (LMU can report hundreds of seconds before
+    // a clean lap), fall back to the session estimate, then a safe constant.
     const lapTime =
-      (focus.estimatedLapTime && focus.estimatedLapTime > 0 ? focus.estimatedLapTime : 0) ||
-      (focus.bestLapTime > 0 ? focus.bestLapTime : 90);
+      focus.bestLapTime > 5 && focus.bestLapTime < 600
+        ? focus.bestLapTime
+        : focus.estimatedLapTime && focus.estimatedLapTime > 0
+          ? focus.estimatedLapTime
+          : 90;
     const focusDist = focus.lapDistance;
     const focusLaps = focus.lapsCompleted | 0;
 
     const rows: Array<{ c: RestStanding; gap: number }> = [];
     for (const c of cars) {
       if (c.slotID === focus.slotID || typeof c.lapDistance !== 'number') continue;
+      if (c.inGarageStall === true) continue; // parked in the garage, not on the road
+      // Wrapped road distance to the nearest way round, so a car just across the
+      // line reads as a small gap, not a whole lap.
       let d = c.lapDistance - focusDist;
       if (trackLength > 0) {
         const half = trackLength / 2;
@@ -471,7 +504,9 @@ export class LmuRestProvider implements TelemetryProvider {
       const denom = trackLength > 0 ? trackLength : Math.max(1, Math.abs(c.lapDistance) || 1);
       rows.push({ c, gap: (d / denom) * lapTime });
     }
-    rows.sort((a, b) => a.gap - b.gap);
+    // Descending: physically furthest ahead first, furthest behind last — the
+    // top-to-bottom order a relative display reads in.
+    rows.sort((a, b) => b.gap - a.gap);
 
     const toEntry = (c: RestStanding, gap: number, isPlayer: boolean): RelativeEntry => ({
       slotId: c.slotID,
@@ -485,8 +520,10 @@ export class LmuRestProvider implements TelemetryProvider {
       isPlayer,
     });
 
-    const ahead = rows.filter((r) => r.gap > 0).slice(0, 3);
-    const behind = rows.filter((r) => r.gap <= 0).slice(-3);
+    // Nearest 3 each way, keeping road order: the rows read furthest-ahead →
+    // nearest-ahead → YOU → nearest-behind → furthest-behind.
+    const ahead = rows.filter((r) => r.gap > 0).slice(-3);
+    const behind = rows.filter((r) => r.gap <= 0).slice(0, 3);
     return [
       ...ahead.map((r) => toEntry(r.c, r.gap, false)),
       toEntry(focus, 0, true),
@@ -634,10 +671,13 @@ export class LmuRestProvider implements TelemetryProvider {
     session: SessionState,
     local: LocalCarPhysics | null,
   ) {
+    // Virtual-energy strategy rides along with whichever fuel path applies.
+    const energy = this.buildEnergy(focus, session);
+
     // Prefer the locally-driven car's real litres from shared memory: gives the
     // full fuel widget (per-lap, to-finish, margin) instead of laps-only.
     if (local && local.capacityLiters > 0) {
-      return this.localFuel.update({
+      const s = this.localFuel.update({
         currentFuelLiters: local.fuelLiters,
         capacityLiters: local.capacityLiters,
         lapsCompleted: local.lapNumber,
@@ -645,6 +685,7 @@ export class LmuRestProvider implements TelemetryProvider {
         timeRemainingSec: session.timeRemainingSec,
         avgLapTimeSec: focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90,
       });
+      return { ...s, ...energy };
     }
 
     const frac = focus && typeof focus.fuelFraction === 'number' ? clamp01(focus.fuelFraction) : -1;
@@ -658,6 +699,7 @@ export class LmuRestProvider implements TelemetryProvider {
         fuelToFinishLiters: UNKNOWN_VALUE,
         fuelDeltaLiters: UNKNOWN_VALUE,
         refuelToFinishLiters: 0,
+        ...energy,
       };
     }
     const laps = focus ? focus.lapsCompleted | 0 : 0;
@@ -682,7 +724,56 @@ export class LmuRestProvider implements TelemetryProvider {
       fuelDeltaLiters: UNKNOWN_VALUE,
       refuelToFinishLiters: 0,
       pitWindowOpenLap: s.pitWindowOpenLap,
+      ...energy,
     };
+  }
+
+  /**
+   * Virtual-energy strategy for the focused car (LMU's per-car energy budget,
+   * the resource that actually limits an LMU stint). Runs a fuel calculator in
+   * percent units over `veFraction`: remaining %, average % per lap, laps left
+   * on energy and the margin at the flag. Empty when the car/class doesn't run
+   * a VE budget (the field reads a flat 0 — see {@link buildStandings}).
+   */
+  private buildEnergy(
+    focus: RestStanding | undefined,
+    session: SessionState,
+  ): Partial<
+    Pick<
+      FuelState,
+      | 'virtualEnergyPct'
+      | 'virtualEnergyPerLapPct'
+      | 'virtualEnergyLapsRemaining'
+      | 'virtualEnergyDeltaPct'
+    >
+  > {
+    const ve =
+      focus && typeof focus.veFraction === 'number' && focus.veFraction > 0
+        ? clamp01(focus.veFraction)
+        : -1;
+    if (ve < 0 || !focus) return {};
+    const avgLap = focus.bestLapTime > 5 && focus.bestLapTime < 600 ? focus.bestLapTime : 90;
+    const s = this.energyCalc.update({
+      currentFuelLiters: ve * 100, // percent units
+      capacityLiters: 100,
+      lapsCompleted: focus.lapsCompleted | 0,
+      totalRaceLaps: session.totalLaps,
+      timeRemainingSec: session.timeRemainingSec,
+      avgLapTimeSec: avgLap,
+    });
+    const out: Partial<
+      Pick<
+        FuelState,
+        | 'virtualEnergyPct'
+        | 'virtualEnergyPerLapPct'
+        | 'virtualEnergyLapsRemaining'
+        | 'virtualEnergyDeltaPct'
+      >
+    > = { virtualEnergyPct: round1(ve * 100) };
+    if (s.perLapAvgLiters !== UNKNOWN_VALUE) out.virtualEnergyPerLapPct = s.perLapAvgLiters;
+    if (s.lapsRemaining !== UNKNOWN_VALUE) out.virtualEnergyLapsRemaining = s.lapsRemaining;
+    if (s.fuelDeltaLiters !== UNKNOWN_VALUE) out.virtualEnergyDeltaPct = s.fuelDeltaLiters;
+    return out;
   }
 
   /**
@@ -918,6 +1009,8 @@ interface CarDeltaState {
   samples: DeltaSample[];
   ref: DeltaSample[] | null;
   refBest: number;
+  /** Whether the reference trace covers the whole lap (captured flag-to-flag). */
+  refIsFull: boolean;
 }
 
 class LapDeltaTracker {
@@ -939,31 +1032,44 @@ class LapDeltaTracker {
 
     let st = this.cars.get(focus.slotID);
     if (!st) {
-      st = { laps: focus.lapsCompleted | 0, samples: [], ref: null, refBest: Infinity };
+      st = {
+        laps: focus.lapsCompleted | 0,
+        samples: [],
+        ref: null,
+        refBest: Infinity,
+        refIsFull: false,
+      };
       this.cars.set(focus.slotID, st);
     }
 
-    // Lap boundary: adopt the just-completed lap as the reference when it's a new
-    // personal best and we captured a trace spanning the WHOLE lap. The span
-    // check must cover both ends: requiring only the finish (last.d > 0.9) lets a
-    // lap we joined half-way through become the reference, and then interpolating
-    // at low distance returns that partial trace's earliest time — yielding a
-    // huge bogus delta (e.g. −78 s) for the rest of the lap. Requiring the start
-    // too (first.d < 0.1) means we only trust a lap watched flag-to-flag.
+    // Lap boundary: consider adopting the just-completed lap's trace as the
+    // reference. A PARTIAL trace (we started watching mid-lap) is still valid —
+    // its (distance, timeIntoLap) pairs come from the sim, not from when we
+    // began observing — but only *within the span it covers*; interpolation is
+    // gated to that span below, so the first observed lap already arms the
+    // delta for the covered part of the track instead of waiting another lap.
     const laps = focus.lapsCompleted | 0;
     if (laps !== st.laps) {
       const lastLap = typeof focus.lastLapTime === 'number' ? focus.lastLapTime : -1;
       const first = st.samples[0];
       const last = st.samples[st.samples.length - 1];
-      const complete =
-        st.samples.length >= 8 &&
-        first !== undefined &&
-        first.d < 0.1 &&
-        last !== undefined &&
-        last.d > 0.9;
-      if (lastLap > 0 && lastLap < st.refBest && complete) {
+      // The trace must at least END at the line so its samples belong to the lap
+      // whose time we just received.
+      const usable = st.samples.length >= 8 && last !== undefined && last.d > 0.9;
+      const isFull = usable && first !== undefined && first.d < 0.1;
+      // Reject out-laps / crawls: a real flying lap is within ~40% of the car's
+      // own best. Without a sane best yet (first ever lap), accept anything sane.
+      const best = focus.bestLapTime;
+      const plausible =
+        lastLap > 5 &&
+        lastLap < 600 &&
+        (!(best > 5 && best < 600) || lastLap < best * 1.4);
+      // Adopt when faster than the current reference, or to upgrade a partial
+      // reference to full coverage (even at a slightly slower time).
+      if (usable && plausible && (lastLap < st.refBest || (isFull && !st.refIsFull))) {
         st.ref = st.samples.slice().sort((a, b) => a.d - b.d);
         st.refBest = lastLap;
+        st.refIsFull = isFull;
       }
       st.samples = [];
       st.laps = laps;
@@ -990,9 +1096,17 @@ class LapDeltaTracker {
 /** Beyond this |delta| (seconds) we assume a bad reference and report unknown. */
 const DELTA_SANE_LIMIT_SEC = 30;
 
-/** Linear-interpolate the reference lap's time at distance fraction `d`. */
+/**
+ * Linear-interpolate the reference lap's time at distance fraction `d`.
+ * Returns `-1` (unknown) when `d` falls OUTSIDE the trace's covered span —
+ * clamping there instead would compare against the span edge's time and produce
+ * wildly wrong deltas whenever the reference is a partial lap.
+ */
 function interpTime(ref: DeltaSample[], d: number): number {
   const n = ref.length;
+  // Tolerance for float noise right at the span edges (~0.5% of a lap).
+  const EDGE = 0.005;
+  if (d < ref[0]!.d - EDGE || d > ref[n - 1]!.d + EDGE) return -1;
   if (d <= ref[0]!.d) return ref[0]!.t;
   if (d >= ref[n - 1]!.d) return ref[n - 1]!.t;
   for (let i = 1; i < n; i++) {

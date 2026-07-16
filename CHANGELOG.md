@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.6.4 — 2026-07-16
+
+### Fixed
+- **Relative widget now shows the right cars, in the right order.** Three bugs
+  compounded (verified against a live multiclass session):
+  - gaps were scaled by LMU's *session-wide* pace estimate (the fastest class's
+    lap time) instead of **your car's own** lap time, reading ~20% short for
+    slower classes;
+  - the display order was inverted — the nearest car ahead was printed at the
+    *top* of the ahead group and the farthest shown car behind sat right under
+    your row (it now reads furthest-ahead → nearest-ahead → YOU → nearest-behind
+    → furthest-behind, like the in-game display);
+  - cars parked in their garage stalls appeared as phantom entries near the pit
+    straight (now excluded).
+- **Lap delta now arms after your first flying lap.** Previously it silently
+  needed two full laps (one thrown away, one to build the reference) before
+  showing anything. A partial first lap is now used as a valid reference for the
+  part of the track it covered — the delta appears as soon as it can be honest,
+  shows "—" elsewhere, and upgrades to full-lap coverage at the next line
+  crossing. Out-laps/crawls are rejected as references (must be within ~40% of
+  the car's best), and this feeds both the Delta pill and the Relative widget's
+  Δ cell.
+
+### Added
+- **Virtual energy in the fuel widget.** When the car runs an LMU virtual-energy
+  budget, the widget rotates every **20 s** between the FUEL view and a new
+  **VIRTUAL ENERGY** view — remaining %, average % per lap, laps left on energy,
+  and the margin at the flag (colour-coded like fuel) — with a small header chip
+  naming the active view. Cars without VE keep the plain fuel view.
+
 ## 0.6.3 — 2026-07-16
 
 ### Added
