@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-07-16
+
+### Fixed
+- **Delta widget is now in the control panel.** The new Delta overlay was missing
+  from the app's widget catalog, so it couldn't be switched on/off, wasn't added
+  to the in-game layer, and didn't appear in the app's widget list. It's now a
+  first-class overlay alongside the others (enabled by default, and its own
+  `?w=delta` OBS Browser Source), so it shows with live **and** demo data.
+
 ## 0.6.0 — 2026-07-16
 
 ### Added
