@@ -99,8 +99,10 @@
     var slots = w.forecast || [];
     var sig = "";
     for (var i = 0; i < slots.length; i++) {
-      sig += slots[i].minutesAhead + ":" + Math.round(fmt.pct(slots[i].rainChance)) +
-        ":" + slots[i].sky + "|";
+      var fs = slots[i];
+      var ftemp = typeof fs.airTempC === "number" ? fs.airTempC : fs.trackTempC;
+      sig += (fs.label || fs.minutesAhead) + ":" + Math.round(fmt.pct(fs.rainChance)) +
+        ":" + Math.round(ftemp) + ":" + fs.sky + "|";
     }
     if (cache.sig === sig) return;
     cache.sig = sig;
@@ -118,16 +120,25 @@
       var cell = document.createElement("div");
       cell.className = "weather__slot";
       cell.setAttribute("data-rain", rainBucket(s.rainChance));
+      cell.setAttribute("data-sky", s.sky || "");
 
       var time = document.createElement("div");
       time.className = "weather__slot-time";
-      time.textContent = s.minutesAhead === 0 ? "NOW" : "+" + s.minutesAhead + "m";
+      // Prefer the session-phase label (START/25%/…); fall back to a minute offset.
+      time.textContent = s.label ? s.label : s.minutesAhead === 0 ? "NOW" : "+" + s.minutesAhead + "m";
+
+      // Temperature forecast for this slot (air temp when present).
+      var tempC = typeof s.airTempC === "number" ? s.airTempC : s.trackTempC;
+      var temp = document.createElement("div");
+      temp.className = "weather__slot-temp";
+      temp.textContent = fmt.has(tempC) ? Math.round(tempC) + "°" : "—";
 
       var rain = document.createElement("div");
       rain.className = "weather__slot-rain";
       rain.textContent = Math.round(fmt.pct(s.rainChance)) + "%";
 
       cell.appendChild(time);
+      cell.appendChild(temp);
       cell.appendChild(rain);
       forecastEl.appendChild(cell);
     }

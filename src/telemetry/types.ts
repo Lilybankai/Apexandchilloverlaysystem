@@ -99,6 +99,12 @@ export interface SessionState {
   timeRemainingSec: number;
   /** Total laps for a lap-based session; `0` when the session is timed. */
   totalLaps: number;
+  /**
+   * Estimated laps still to run, for a **timed** race — LMU only gives a clock,
+   * so this is derived from the time remaining and the leader's lap pace.
+   * {@link UNKNOWN_VALUE} for lap-based sessions or when pace isn't known yet.
+   */
+  lapsRemaining: number;
   /** Race leader's current lap number (1-based); {@link UNKNOWN_VALUE} if unknown. */
   currentLap: number;
   /** Number of cars/entries in the session. */
@@ -307,12 +313,25 @@ export interface RelativeEntry {
 export interface WeatherForecastSlot {
   /** Minutes from now this slot describes (`0` = now). */
   minutesAhead: number;
+  /**
+   * Short label for the slot when it is keyed to session progress rather than a
+   * minute offset (e.g. `"START"`, `"25%"`, `"50%"`, `"75%"`, `"END"`). LMU's
+   * forecast is published per session phase, not on a wall-clock, so the widget
+   * prefers this label over {@link minutesAhead} when present.
+   */
+  label?: string;
   /** Probability of rain, `0`..`1`. */
   rainChance: number;
   /** Expected precipitation intensity, `0` (dry) .. `1` (heavy). */
   rainIntensity: number;
   /** Expected track temperature in °C. */
   trackTempC: number;
+  /** Expected air/ambient temperature in °C, when the forecast gives it. */
+  airTempC?: number;
+  /** Expected relative humidity as a percentage `0`..`100`, when available. */
+  humidityPct?: number;
+  /** Expected wind speed in km/h, when available. */
+  windKph?: number;
   /** Coarse sky descriptor. */
   sky: SkyState;
 }

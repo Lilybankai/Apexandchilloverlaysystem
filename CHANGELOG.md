@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.3 — 2026-07-16
+
+### Added
+- **Estimated laps-to-go in the standings.** Timed races (LMU only publishes a
+  countdown clock) now also show an estimated **"~N laps left"** in the session
+  strip, derived from the time remaining and the leader's lap pace — so the tower
+  reads both the clock *and* how many laps that works out to.
+- **Real weather forecast.** The weather widget now reads LMU's actual per-session
+  forecast (`START → 25% → 50% → 75% → FINISH`) instead of projecting the current
+  conditions forward. Each slot shows its **temperature** and rain chance (plus
+  humidity/wind under the hood), so the strip is a genuine look-ahead rather than
+  a flat repeat of "now".
+
+### Fixed
+- **Virtual energy no longer shows a false red "0%".** Cars/classes that don't run
+  a virtual-energy budget (e.g. LMP2) report a flat `0` all race; that now reads
+  as **"—"** (not applicable) instead of a critical-red `0%` that looked like a
+  car out of energy. Classes that do use VE (Hypercar, GT3) are unaffected.
+- **Live lap delta now works.** The predictive delta bar was adopting a *partial*
+  lap as its reference whenever the overlay started (or focus switched to a car)
+  mid-lap, which produced wild bogus values (e.g. −78 s) for the rest of each lap.
+  The reference is now only trusted when a lap was captured flag-to-flag, is kept
+  **per car** so it survives broadcast camera cuts, and is sanity-clamped.
+
 ## 0.6.2 — 2026-07-16
 
 ### Added

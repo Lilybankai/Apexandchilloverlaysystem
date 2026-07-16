@@ -500,6 +500,7 @@ export class RF2Provider implements TelemetryProvider {
         track: readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown',
         timeRemainingSec: timeRemaining,
         totalLaps: maxLaps > 0 ? maxLaps : 0,
+        lapsRemaining: UNKNOWN_VALUE,
         currentLap: leaderLaps + 1,
         numCars: numVehicles,
       },

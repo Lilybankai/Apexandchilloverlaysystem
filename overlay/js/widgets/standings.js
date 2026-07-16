@@ -81,7 +81,7 @@
   /** How long a new personal-best lap flashes green (ms). */
   var PB_FLASH_MS = 5000;
 
-  var mount, sessionStrip, sessLap, sessClock, tbody;
+  var mount, sessionStrip, sessLap, sessClock, sessToGo, tbody;
   /** @type {Map<number, object>} slotId -> cached row element + last values. */
   var rows = new Map();
   /** @type {Map<number, object>} slotId -> { laps, best, flashUntil }. */
@@ -186,8 +186,13 @@
     sessClock = document.createElement("span");
     sessClock.className = "standings__session-clock";
     sessClock.hidden = true;
+    // Estimated laps-to-go for a timed race (LMU only gives a clock).
+    sessToGo = document.createElement("span");
+    sessToGo.className = "standings__session-togo";
+    sessToGo.hidden = true;
     sessionStrip.appendChild(sessLap);
     sessionStrip.appendChild(sessClock);
+    sessionStrip.appendChild(sessToGo);
     mount.appendChild(sessionStrip);
 
     var table = document.createElement("table");
@@ -233,6 +238,16 @@
         sessClock.classList.toggle("is-urgent", urgent);
     } else if (!sessClock.hidden) {
       sessClock.hidden = true;
+    }
+
+    // Estimated laps remaining for a timed race, shown next to the clock.
+    var lr = s.lapsRemaining;
+    if (timed && fmt.has(lr) && lr > 0) {
+      var togo = "~" + fmt.intVal(lr) + (lr === 1 ? " LAP LEFT" : " LAPS LEFT");
+      if (sessToGo.textContent !== togo) sessToGo.textContent = togo;
+      if (sessToGo.hidden) sessToGo.hidden = false;
+    } else if (!sessToGo.hidden) {
+      sessToGo.hidden = true;
     }
   }
 

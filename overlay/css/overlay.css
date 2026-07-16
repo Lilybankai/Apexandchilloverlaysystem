@@ -140,6 +140,16 @@
   animation: standings-clock-pulse 1s steps(2, jump-none) infinite;
 }
 @keyframes standings-clock-pulse { 50% { opacity: 0.45; } }
+/* Estimated laps-to-go for a timed race, beside the countdown clock. */
+.standings__session-togo {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 
 .standings__table {
   width: 100%;
@@ -422,11 +432,27 @@
   font-size: 10px;
   color: var(--text-muted);
 }
+.weather__slot-temp {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  line-height: 1.1;
+  margin-top: 3px;
+  color: var(--text-primary);
+}
 .weather__slot-rain {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  margin-top: 2px;
+  font-size: 11px;
+  margin-top: 1px;
+  color: var(--text-secondary);
+}
+/* A tiny raindrop hint before the rain-chance number. */
+.weather__slot-rain::before {
+  content: "☂ ";
+  font-size: 9px;
+  color: var(--text-muted);
 }
 /* Rain-chance intensity is signalled by the slot's top border colour. */
 .weather__slot[data-rain="dry"]   { border-top: 2px solid var(--pos-gain); }

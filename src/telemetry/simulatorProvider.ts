@@ -234,6 +234,7 @@ export class SimulatorProvider implements TelemetryProvider {
         trackConfig: 'Grand Prix',
         timeRemainingSec: UNKNOWN_VALUE,
         totalLaps: RACE_LAPS,
+        lapsRemaining: UNKNOWN_VALUE,
         currentLap: Math.min(RACE_LAPS, leader.lapsCompleted + 1),
         numCars: this.cars.length,
         serverName: 'Apex & Chill — Midweek Endurance',

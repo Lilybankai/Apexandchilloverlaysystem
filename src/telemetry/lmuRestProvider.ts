@@ -79,6 +79,13 @@ const GARAGE_REFRESH_INTERVAL_MS = 3000;
 /** Treat wear data older than this as gone (left session / in menus). */
 const GARAGE_STALE_AFTER_MS = 10_000;
 /**
+ * How often to pull the weather forecast (ms). LMU publishes a per-session
+ * forecast (START → 25/50/75% → FINISH) that evolves slowly, so a lazy poll is
+ * plenty. Kept separate from the fast standings poll to avoid the extra request
+ * every 150 ms.
+ */
+const WEATHER_REFRESH_INTERVAL_MS = 15_000;
+/**
  * How long to keep showing the last good local-car physics after a read returns
  * nothing. The shared-memory reader occasionally misses a single poll (a torn
  * read it couldn't reconcile); without this hold the pedals and tyre temps blink
@@ -144,6 +151,37 @@ interface RestSession {
   yellowFlagState?: unknown;
 }
 
+/** One forecast metric node, e.g. `{ currentValue: 51, stringValue: "51%" }`. */
+interface WeatherValue {
+  currentValue?: number;
+  stringValue?: string;
+}
+
+/** A single forecast point (one session phase) from `/rest/sessions/weather`. */
+interface WeatherNode {
+  WNV_RAIN_CHANCE?: WeatherValue;
+  WNV_TEMPERATURE?: WeatherValue;
+  WNV_SKY?: WeatherValue;
+  WNV_HUMIDITY?: WeatherValue;
+  WNV_WINDSPEED?: WeatherValue;
+}
+
+/**
+ * `/rest/sessions/weather` payload: forecast per session (`PRACTICE`/`QUALIFY`/
+ * `RACE`), each a map of phase → {@link WeatherNode}. Phases are `START`,
+ * `NODE_25`, `NODE_50`, `NODE_75`, `FINISH`.
+ */
+type RestWeather = Record<string, Record<string, WeatherNode>>;
+
+/** Forecast phases in chronological order, with the label the widget shows. */
+const WEATHER_PHASES: Array<{ key: string; label: string }> = [
+  { key: 'START', label: 'START' },
+  { key: 'NODE_25', label: '25%' },
+  { key: 'NODE_50', label: '50%' },
+  { key: 'NODE_75', label: '75%' },
+  { key: 'FINISH', label: 'END' },
+];
+
 export class LmuRestProvider implements TelemetryProvider {
   public readonly name = 'lmu';
 
@@ -170,6 +208,9 @@ export class LmuRestProvider implements TelemetryProvider {
   private tyreWear: number[] | null = null;
   private lastGarageOkAt = 0;
   private garageTimer: NodeJS.Timeout | null = null;
+  /** Raw per-session weather forecast from `/rest/sessions/weather`. */
+  private weatherForecast: RestWeather | null = null;
+  private weatherTimer: NodeJS.Timeout | null = null;
 
   public constructor(config: LmuRestConfig) {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
@@ -185,6 +226,9 @@ export class LmuRestProvider implements TelemetryProvider {
     void this.refreshGarage();
     this.garageTimer = setInterval(() => void this.refreshGarage(), GARAGE_REFRESH_INTERVAL_MS);
     this.garageTimer.unref?.();
+    void this.refreshWeather();
+    this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
+    this.weatherTimer.unref?.();
     if (this.lastOkAt > 0) {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
     } else {
@@ -207,6 +251,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.garageTimer) {
       clearInterval(this.garageTimer);
       this.garageTimer = null;
+    }
+    if (this.weatherTimer) {
+      clearInterval(this.weatherTimer);
+      this.weatherTimer = null;
     }
     this.fallback.stop();
     this.localCar.stop();
@@ -269,6 +317,17 @@ export class LmuRestProvider implements TelemetryProvider {
     }
   }
 
+  /** Pulls the per-session weather forecast (START → 25/50/75% → FINISH). */
+  private async refreshWeather(): Promise<void> {
+    try {
+      const data = await this.getJson<RestWeather>('/rest/sessions/weather');
+      if (data && typeof data === 'object') this.weatherForecast = data;
+    } catch (err) {
+      // Endpoint is only alive inside a session; keep the last forecast.
+      if (this.verbose) console.error('[lmu] weather refresh failed:', (err as Error).message);
+    }
+  }
+
   private getJson<T>(path: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const req = http.get(
@@ -328,7 +387,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus);
-    const weather = this.buildWeather(si);
+    const weather = this.buildWeather(si, session.type);
     const fuel = this.buildFuel(focus, session, local);
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running).
@@ -368,9 +427,13 @@ export class LmuRestProvider implements TelemetryProvider {
       inPit: isInPit(c),
       pitStops: typeof c.pitstops === 'number' ? c.pitstops : undefined,
       // LMU publishes a 0..1 energy fraction per car (its overlay shows this to
-      // the cars ahead); leave unknown when the field is absent.
+      // the cars ahead), but a car/class that isn't running a virtual-energy
+      // budget reports a flat 0 all race (seen on LMP2). That must read as "not
+      // applicable" (—), NOT a red "0%" that looks like a car out of energy. So
+      // treat a positive fraction as a real reading and anything <= 0 (or the
+      // field being absent) as unknown.
       virtualEnergy:
-        typeof c.veFraction === 'number' && c.veFraction >= 0 ? clamp01(c.veFraction) : undefined,
+        typeof c.veFraction === 'number' && c.veFraction > 0 ? clamp01(c.veFraction) : undefined,
       // Highlight the car currently in broadcast focus.
       isPlayer: c.slotID === focusId,
     }));
@@ -456,6 +519,24 @@ export class LmuRestProvider implements TelemetryProvider {
       typeof si.maximumLaps === 'number' && si.maximumLaps > 0 && si.maximumLaps < 100000
         ? si.maximumLaps
         : 0;
+    // For a timed race LMU only gives a clock, not laps-to-go. Estimate it from
+    // the time left and the leader's lap pace (their estimated/best lap), so the
+    // standings can show "~N laps left" alongside the countdown. The race ends
+    // when the leader next crosses the line after the clock hits zero, so round
+    // up and keep at least one lap while the clock is running.
+    const leader = cars.find((c) => c.position === 1);
+    const leaderPace =
+      leader && typeof leader.estimatedLapTime === 'number' && leader.estimatedLapTime > 0
+        ? leader.estimatedLapTime
+        : leader && leader.bestLapTime > 0
+          ? leader.bestLapTime
+          : focus && focus.bestLapTime > 0
+            ? focus.bestLapTime
+            : 0;
+    const lapsRemaining =
+      maxLaps === 0 && timeRemaining > 0 && leaderPace > 0
+        ? Math.max(1, Math.ceil(timeRemaining / leaderPace))
+        : UNKNOWN_VALUE;
     // Prefer the focused car's flag/phase strings (reliable); sessionInfo's
     // gamePhase can be numeric, so fall back to it only as a string.
     const phaseStr = focus?.gamePhase ?? si.gamePhase;
@@ -466,12 +547,16 @@ export class LmuRestProvider implements TelemetryProvider {
       track: si.trackName || 'Unknown',
       timeRemainingSec: timeRemaining,
       totalLaps: maxLaps,
+      lapsRemaining,
       currentLap: leaderLaps + 1,
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
     };
   }
 
-  private buildWeather(si: RestSession): {
+  private buildWeather(
+    si: RestSession,
+    sessionType: SessionType,
+  ): {
     trackTempC: number;
     ambientTempC: number;
     rainIntensity: number;
@@ -482,22 +567,59 @@ export class LmuRestProvider implements TelemetryProvider {
     const rain = clamp01(num(si.raining));
     const wet = clamp01(num(si.maxPathWetness));
     const sky: SkyState = rain > 0.5 ? 'rain' : rain > 0.05 ? 'lightRain' : 'partlyCloudy';
-    // The sessionInfo endpoint exposes current conditions only; project them
-    // forward as a steady timeline so the widget shows its multi-slot strip.
-    const forecast: WeatherForecastSlot[] = [0, 15, 30, 45, 60].map((minutesAhead) => ({
-      minutesAhead,
-      rainChance: rain > 0 ? 1 : 0,
-      rainIntensity: round2(rain),
-      trackTempC: trackT,
-      sky,
-    }));
     return {
       trackTempC: trackT,
       ambientTempC: round1(num(si.ambientTemp)),
       rainIntensity: round2(rain),
       trackWetness: round2(wet),
-      forecast,
+      forecast: this.buildForecast(sessionType, trackT, rain, sky),
     };
+  }
+
+  /**
+   * Real forecast timeline from `/rest/sessions/weather` for the running session
+   * (`START → 25/50/75% → FINISH`), each slot carrying rain chance, temperature,
+   * humidity, wind and sky. Falls back to a flat projection of the current
+   * conditions when the forecast endpoint hasn't answered yet (e.g. in menus).
+   */
+  private buildForecast(
+    sessionType: SessionType,
+    nowTempC: number,
+    nowRain: number,
+    nowSky: SkyState,
+  ): WeatherForecastSlot[] {
+    const block = this.weatherForecast ? pickWeatherBlock(this.weatherForecast, sessionType) : null;
+    if (block) {
+      const slots: WeatherForecastSlot[] = [];
+      for (const { key, label } of WEATHER_PHASES) {
+        const node = block[key];
+        if (!node) continue;
+        const chance = clamp01(num(node.WNV_RAIN_CHANCE?.currentValue) / 100);
+        const temp = round1(num(node.WNV_TEMPERATURE?.currentValue));
+        const skyState = mapSky(node.WNV_SKY);
+        slots.push({
+          minutesAhead: UNKNOWN_VALUE,
+          label,
+          rainChance: round2(chance),
+          rainIntensity: skyRainIntensity(skyState, chance),
+          trackTempC: temp,
+          airTempC: temp,
+          humidityPct: Math.round(num(node.WNV_HUMIDITY?.currentValue)),
+          windKph: Math.round(num(node.WNV_WINDSPEED?.currentValue)),
+          sky: skyState,
+        });
+      }
+      if (slots.length > 0) return slots;
+    }
+    // Fallback: project current conditions forward so the strip still renders.
+    return [0, 15, 30, 45, 60].map((minutesAhead) => ({
+      minutesAhead,
+      rainChance: nowRain > 0 ? round2(nowRain) : 0,
+      rainIntensity: round2(nowRain),
+      trackTempC: nowTempC,
+      airTempC: nowTempC,
+      sky: nowSky,
+    }));
   }
 
   /**
@@ -703,6 +825,49 @@ function mapFlag(phase: unknown): FlagState {
   }
 }
 
+/**
+ * Selects the forecast block for the running session from the weather payload.
+ * Keys are `PRACTICE` / `QUALIFY` / `RACE`; warmup shares the race forecast.
+ * Falls back to the first available block so something always renders.
+ */
+function pickWeatherBlock(
+  raw: RestWeather,
+  type: SessionType,
+): Record<string, WeatherNode> | null {
+  const want =
+    type === 'race' || type === 'warmup'
+      ? 'RACE'
+      : type === 'qualifying'
+        ? 'QUALIFY'
+        : type === 'practice' || type === 'testday'
+          ? 'PRACTICE'
+          : '';
+  if (want && raw[want]) return raw[want]!;
+  const keys = Object.keys(raw);
+  return keys.length ? raw[keys[0]!]! : null;
+}
+
+/** Maps LMU's WNV_SKY node (0..N index + label) to our coarse {@link SkyState}. */
+function mapSky(v: WeatherValue | undefined): SkyState {
+  const s = (v?.stringValue ?? '').toLowerCase();
+  if (/storm|thunder/.test(s)) return 'storm';
+  if (/heavy rain|rain/.test(s)) return 'rain';
+  if (/drizzle|light rain|shower/.test(s)) return 'lightRain';
+  if (/overcast|mostly cloud/.test(s)) return 'overcast';
+  if (/cloud/.test(s)) return 'partlyCloudy';
+  if (/clear|sun|fair/.test(s)) return 'clear';
+  return 'partlyCloudy';
+}
+
+/** A representative precipitation intensity for a forecast slot's sky/chance. */
+function skyRainIntensity(sky: SkyState, chance: number): number {
+  if (sky === 'storm') return 1;
+  if (sky === 'rain') return 0.7;
+  if (sky === 'lightRain') return 0.3;
+  // Dry sky but a non-trivial chance → hint of possible light rain.
+  return chance >= 0.5 ? 0.1 : 0;
+}
+
 /** Coerces any value to an upper-cased string (numbers, undefined → safe). */
 function asUpper(v: unknown): string {
   return typeof v === 'string' ? v.toUpperCase() : v == null ? '' : String(v).toUpperCase();
@@ -747,12 +912,23 @@ interface DeltaSample {
  * lap, or a best set before the overlay started — its trace was never seen), and
  * resets cleanly when broadcast focus moves to a different car.
  */
+/** Per-car lap-delta state: the in-progress trace and the adopted reference. */
+interface CarDeltaState {
+  laps: number;
+  samples: DeltaSample[];
+  ref: DeltaSample[] | null;
+  refBest: number;
+}
+
 class LapDeltaTracker {
-  private slotId = -1;
-  private laps = -1;
-  private samples: DeltaSample[] = [];
-  private ref: DeltaSample[] | null = null;
-  private refBest = Infinity;
+  /**
+   * State per car (keyed by slotID) rather than for a single focused car. A
+   * broadcast director constantly switches which car has focus; keeping the
+   * reference lap per-car means a car's delta keeps working the instant focus
+   * returns to it, instead of resetting to "—" and needing a fresh lap every
+   * time the camera cuts away and back.
+   */
+  private readonly cars = new Map<number, CarDeltaState>();
 
   public update(focus: RestStanding | undefined, trackLen: number): number {
     if (!focus || trackLen <= 0) return UNKNOWN_VALUE;
@@ -761,41 +937,58 @@ class LapDeltaTracker {
     if (typeof t !== 'number' || typeof dist !== 'number' || t < 0) return UNKNOWN_VALUE;
     const d = clamp01(dist / trackLen);
 
-    // Focus moved to a different car → the delta is about THIS car's own best.
-    if (focus.slotID !== this.slotId) {
-      this.slotId = focus.slotID;
-      this.laps = focus.lapsCompleted | 0;
-      this.samples = [];
-      this.ref = null;
-      this.refBest = Infinity;
+    let st = this.cars.get(focus.slotID);
+    if (!st) {
+      st = { laps: focus.lapsCompleted | 0, samples: [], ref: null, refBest: Infinity };
+      this.cars.set(focus.slotID, st);
     }
 
     // Lap boundary: adopt the just-completed lap as the reference when it's a new
-    // personal best and we captured a near-complete trace of it.
+    // personal best and we captured a trace spanning the WHOLE lap. The span
+    // check must cover both ends: requiring only the finish (last.d > 0.9) lets a
+    // lap we joined half-way through become the reference, and then interpolating
+    // at low distance returns that partial trace's earliest time — yielding a
+    // huge bogus delta (e.g. −78 s) for the rest of the lap. Requiring the start
+    // too (first.d < 0.1) means we only trust a lap watched flag-to-flag.
     const laps = focus.lapsCompleted | 0;
-    if (laps !== this.laps) {
+    if (laps !== st.laps) {
       const lastLap = typeof focus.lastLapTime === 'number' ? focus.lastLapTime : -1;
-      const last = this.samples[this.samples.length - 1];
-      const complete = this.samples.length >= 8 && last !== undefined && last.d > 0.9;
-      if (lastLap > 0 && lastLap < this.refBest && complete) {
-        this.ref = this.samples.slice().sort((a, b) => a.d - b.d);
-        this.refBest = lastLap;
+      const first = st.samples[0];
+      const last = st.samples[st.samples.length - 1];
+      const complete =
+        st.samples.length >= 8 &&
+        first !== undefined &&
+        first.d < 0.1 &&
+        last !== undefined &&
+        last.d > 0.9;
+      if (lastLap > 0 && lastLap < st.refBest && complete) {
+        st.ref = st.samples.slice().sort((a, b) => a.d - b.d);
+        st.refBest = lastLap;
       }
-      this.samples = [];
-      this.laps = laps;
+      st.samples = [];
+      st.laps = laps;
     }
 
     // Record only forward progress (ignore pit resets / going backwards). Between
     // REST updates d is unchanged, so this naturally de-dupes to ~one point per
     // real update rather than per 30 Hz frame.
-    const last = this.samples[this.samples.length - 1];
-    if (last === undefined || (d > last.d && t >= last.t)) this.samples.push({ d, t });
+    const last = st.samples[st.samples.length - 1];
+    if (last === undefined || (d > last.d && t >= last.t)) st.samples.push({ d, t });
 
-    if (!this.ref || this.ref.length < 2) return UNKNOWN_VALUE;
-    const refT = interpTime(this.ref, d);
-    return refT < 0 ? UNKNOWN_VALUE : round2(t - refT);
+    if (!st.ref || st.ref.length < 2) return UNKNOWN_VALUE;
+    const refT = interpTime(st.ref, d);
+    if (refT < 0) return UNKNOWN_VALUE;
+    const delta = t - refT;
+    // Safety net: a lap delta is realistically only a few seconds; anything
+    // wilder means the reference is unusable (bad/partial trace), so hide it
+    // rather than show nonsense on the bar.
+    if (Math.abs(delta) > DELTA_SANE_LIMIT_SEC) return UNKNOWN_VALUE;
+    return round2(delta);
   }
 }
+
+/** Beyond this |delta| (seconds) we assume a bad reference and report unknown. */
+const DELTA_SANE_LIMIT_SEC = 30;
 
 /** Linear-interpolate the reference lap's time at distance fraction `d`. */
 function interpTime(ref: DeltaSample[], d: number): number {
