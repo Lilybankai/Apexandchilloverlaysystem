@@ -190,6 +190,14 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly fuel = new FuelCalculator();
   /** Live predictive lap-delta for the focused car vs. its own best lap. */
   private readonly lapDelta = new LapDeltaTracker();
+  /**
+   * High-rate delta for the DRIVEN car, built on the shared-memory lap clock
+   * (`mElapsedTime − mLapStartET`) — exact, physics-rate, and immune to the
+   * REST `timeIntoLap` quirks (that clock pauses while the car is stationary).
+   * Used whenever the focused car is the locally-driven one; the REST-based
+   * tracker above remains the fallback for spectated cars.
+   */
+  private readonly localDelta = new LocalLapDeltaTracker();
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
   /**
@@ -397,10 +405,36 @@ export class LmuRestProvider implements TelemetryProvider {
     const weather = this.buildWeather(si, session.type);
     const fuel = this.buildFuel(focus, session, local);
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
-    // reference lap has been driven while the overlay is running).
+    // reference lap has been driven while the overlay is running). When the
+    // focused car is the one driven on this PC, the shared-memory lap clock
+    // drives a high-rate exact tracker; spectated cars use the REST tracker.
     const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
-    const deltaSec = this.lapDelta.update(focus, trackLen);
-    const player = this.buildPlayer(focus, standings, local, deltaSec);
+    const localIsFocus =
+      local !== null && playerCar !== undefined && focus !== undefined &&
+      playerCar.slotID === focus.slotID;
+    let deltaSec: number;
+    if (
+      localIsFocus &&
+      local!.lapTimeSec >= 0 &&
+      trackLen > 0 &&
+      typeof playerCar!.lapDistance === 'number'
+    ) {
+      // Player road position: REST lapDistance dead-reckoned with the (fresher)
+      // shared-memory speed over the snapshot's age; wrap just past the line.
+      const age = Math.min(0.5, Math.max(0, (Date.now() - this.lastOkAt) / 1000));
+      let frac = (playerCar!.lapDistance + (local!.speedKph / 3.6) * age) / trackLen;
+      if (frac >= 1) frac -= 1;
+      deltaSec = this.localDelta.update(
+        local!.lapNumber,
+        local!.lapStartET,
+        local!.lapTimeSec,
+        clamp01(frac),
+        focus!.bestLapTime,
+      );
+    } else {
+      deltaSec = this.lapDelta.update(focus, trackLen);
+    }
+    const player = this.buildPlayer(focus, standings, local, deltaSec, localIsFocus);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -486,8 +520,24 @@ export class LmuRestProvider implements TelemetryProvider {
         : focus.estimatedLapTime && focus.estimatedLapTime > 0
           ? focus.estimatedLapTime
           : 90;
-    const focusDist = focus.lapDistance;
     const focusLaps = focus.lapsCompleted | 0;
+
+    // Dead-reckoning: the REST snapshot is up to one refresh old (~150 ms), and
+    // rendering it as-is makes the widget visibly lag the in-game relative. Each
+    // car's road position is extrapolated forward by its own velocity times the
+    // snapshot's age, so the 30 Hz frames move smoothly between REST refreshes.
+    // Pure per-car arithmetic — no extra polling or I/O.
+    const ageSec = Math.min(0.5, Math.max(0, (Date.now() - this.lastOkAt) / 1000));
+    const roadDist = (c: RestStanding): number => {
+      const v =
+        c.carVelocity &&
+        typeof c.carVelocity.velocity === 'number' &&
+        Number.isFinite(c.carVelocity.velocity)
+          ? Math.min(150, Math.max(0, c.carVelocity.velocity)) // m/s, forward only
+          : 0;
+      return (c.lapDistance as number) + v * ageSec;
+    };
+    const focusDist = roadDist(focus);
 
     const rows: Array<{ c: RestStanding; gap: number }> = [];
     for (const c of cars) {
@@ -495,7 +545,7 @@ export class LmuRestProvider implements TelemetryProvider {
       if (c.inGarageStall === true) continue; // parked in the garage, not on the road
       // Wrapped road distance to the nearest way round, so a car just across the
       // line reads as a small gap, not a whole lap.
-      let d = c.lapDistance - focusDist;
+      let d = roadDist(c) - focusDist;
       if (trackLength > 0) {
         const half = trackLength / 2;
         if (d > half) d -= trackLength;
@@ -787,6 +837,7 @@ export class LmuRestProvider implements TelemetryProvider {
     standings: StandingEntry[],
     local: LocalCarPhysics | null,
     deltaSec: number,
+    localIsFocus: boolean,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -829,11 +880,15 @@ export class LmuRestProvider implements TelemetryProvider {
       rpm: local ? local.rpm : UNKNOWN_VALUE,
       maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
-        // Live elapsed time on the current lap, from the focused car's REST row.
+        // Live elapsed time on the current lap. For the driven car prefer the
+        // exact shared-memory lap clock (REST's timeIntoLap pauses while the
+        // car is stationary and can lag the real lap time by tens of seconds).
         current:
-          focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
-            ? round2(focus.timeIntoLap)
-            : UNKNOWN_VALUE,
+          localIsFocus && local && local.lapTimeSec >= 0
+            ? round2(local.lapTimeSec)
+            : focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
+              ? round2(focus.timeIntoLap)
+              : UNKNOWN_VALUE,
         last: row ? row.lastLapSec : UNKNOWN_VALUE,
         best: row ? row.bestLapSec : UNKNOWN_VALUE,
         delta: deltaSec,
@@ -1095,6 +1150,95 @@ class LapDeltaTracker {
 
 /** Beyond this |delta| (seconds) we assume a bad reference and report unknown. */
 const DELTA_SANE_LIMIT_SEC = 30;
+
+/**
+ * High-rate lap delta for the **locally-driven** car, built on the shared-memory
+ * lap clock: `lapTimeSec = mElapsedTime − mLapStartET` is exact and ticks at
+ * physics rate, lap boundaries are `mLapNumber` / `mLapStartET` steps, and the
+ * completed lap's time is the exact difference of successive `mLapStartET`
+ * values — no reliance on REST's pause-prone `timeIntoLap`.
+ *
+ * This is precisely "record my fastest lap's distance→time trace, compare the
+ * current lap against it live, and adopt a new trace whenever I go faster".
+ * Same partial-coverage rules as {@link LapDeltaTracker}: the first observed
+ * (even partial) lap arms the delta for the span it covered; interpolation is
+ * gated to that span; a full flag-to-flag lap upgrades the coverage.
+ */
+export class LocalLapDeltaTracker {
+  private lapNumber = -1;
+  private lapStartET = -1;
+  private samples: DeltaSample[] = [];
+  private ref: DeltaSample[] | null = null;
+  private refBest = Infinity;
+  private refIsFull = false;
+
+  private reset(): void {
+    this.lapNumber = -1;
+    this.lapStartET = -1;
+    this.samples = [];
+    this.ref = null;
+    this.refBest = Infinity;
+    this.refIsFull = false;
+  }
+
+  /**
+   * @param lapNumber   - Shared-memory `mLapNumber`.
+   * @param lapStartET  - Shared-memory `mLapStartET` (sim clock at lap start).
+   * @param t           - Exact seconds into the current lap.
+   * @param d           - Road position as a lap fraction `0..1`.
+   * @param restBest    - The car's REST bestLapTime, as an out-lap plausibility
+   *                      cross-check (junk values are guarded).
+   */
+  public update(lapNumber: number, lapStartET: number, t: number, d: number, restBest: number): number {
+    if (t < 0 || d < 0 || d > 1) return UNKNOWN_VALUE;
+
+    // Session restart / return-to-garage rewinds → hard reset (never compare
+    // across resets).
+    if (lapNumber < this.lapNumber || (this.lapStartET >= 0 && lapStartET + 0.5 < this.lapStartET)) {
+      this.reset();
+    }
+    if (this.lapNumber === -1) {
+      this.lapNumber = lapNumber;
+      this.lapStartET = lapStartET;
+    }
+
+    // Lap boundary: `mLapStartET` stepping forward is the authoritative signal
+    // (and yields the exact completed-lap time); the lap counter rides along.
+    if (lapNumber !== this.lapNumber || lapStartET > this.lapStartET + 0.001) {
+      const lapTime = lapStartET - this.lapStartET; // exact
+      const first = this.samples[0];
+      const last = this.samples[this.samples.length - 1];
+      const usable = this.samples.length >= 8 && last !== undefined && last.d > 0.95;
+      const isFull = usable && first !== undefined && first.d < 0.05;
+      // Reject out-laps/crawls: a flying lap is within ~40% of the car's best
+      // when a sane best exists; always require a sane absolute range.
+      const plausible =
+        lapTime > 5 &&
+        lapTime < 3600 &&
+        (!(restBest > 5 && restBest < 600) || lapTime < restBest * 1.4);
+      if (usable && plausible && (lapTime < this.refBest || (isFull && !this.refIsFull))) {
+        this.ref = this.samples.slice().sort((a, b) => a.d - b.d);
+        this.refBest = lapTime;
+        this.refIsFull = isFull;
+      }
+      this.samples = [];
+      this.lapNumber = lapNumber;
+      this.lapStartET = lapStartET;
+    }
+
+    // Record forward progress, decimated to ~0.2% of a lap between samples
+    // (≈500 points max per lap at any poll rate).
+    const last = this.samples[this.samples.length - 1];
+    if (last === undefined || (d > last.d + 0.002 && t >= last.t)) this.samples.push({ d, t });
+
+    if (!this.ref || this.ref.length < 2) return UNKNOWN_VALUE;
+    const refT = interpTime(this.ref, d);
+    if (refT < 0) return UNKNOWN_VALUE;
+    const delta = t - refT;
+    if (Math.abs(delta) > DELTA_SANE_LIMIT_SEC) return UNKNOWN_VALUE;
+    return round2(delta);
+  }
+}
 
 /**
  * Linear-interpolate the reference lap's time at distance fraction `d`.

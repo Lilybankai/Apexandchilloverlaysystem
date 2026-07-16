@@ -51,7 +51,17 @@ const VT = {
   // REST `slotID` (e.g. player slot 31 == record mID 31).
   stride: 1888,
   mID: 0,
+  // double mElapsedTime — the sim's running clock (seconds). Layout is pinned by
+  // the verified neighbours: mID(0..4) + mDeltaTime(4..12) + mElapsedTime(12..20)
+  // + mLapNumber(20..24) + mLapStartET(24..32) + mVehicleName(32..96).
+  mElapsedTime: 12,
   mLapNumber: 20, // long: mID(0)+mDeltaTime(4..12)+mElapsedTime(12..20)
+  // double mLapStartET — mElapsedTime at the moment this lap started. So
+  // (mElapsedTime − mLapStartET) is the EXACT time into the current lap, at
+  // physics rate, and lapStartET(new) − lapStartET(old) is the exact completed
+  // lap time. This is the real lap clock the REST `timeIntoLap` only
+  // approximates (that one pauses while the car is stationary).
+  mLapStartET: 24,
   // char mVehicleName[64]: livery + racing number, e.g. "Iron Lynx 2026 #79:W"
   // (kept for logging/diagnostics; the player is matched by mID, since car
   // numbers can repeat across classes — e.g. two #21s in one field).
@@ -135,6 +145,18 @@ export interface LocalCarPhysics {
   tyreHudTempsC: [number, number, number, number];
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
+  /**
+   * Exact seconds into the current lap (`mElapsedTime − mLapStartET`), at
+   * physics rate. `UNKNOWN_VALUE` when the clock reads implausibly (no lap
+   * running yet / between sessions).
+   */
+  lapTimeSec: number;
+  /**
+   * The sim clock (`mElapsedTime`, seconds) at which the current lap started.
+   * Two successive values differ by the exact completed-lap time. May be `0`
+   * before the first lap.
+   */
+  lapStartET: number;
   /** Racing number parsed from the record's vehicle name (e.g. "79"), or "". */
   carNumber: string;
 }
@@ -445,6 +467,16 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     bandMeanC(3, VT.mWheelInnerRel),
   ];
 
+  // Exact lap clock: elapsed − lapStart. Guard against pre-session junk (both
+  // zero, negative spans, absurd values) — report unknown rather than wrong.
+  const elapsed = rec.readDoubleLE(VT.mElapsedTime);
+  const lapStart = rec.readDoubleLE(VT.mLapStartET);
+  const lapTime = elapsed - lapStart;
+  const lapTimeSec =
+    Number.isFinite(lapTime) && lapTime >= 0 && lapTime < 7200 && elapsed > 0
+      ? lapTime
+      : UNKNOWN_VALUE;
+
   return {
     throttle: clamp01(throttle),
     brake,
@@ -461,6 +493,8 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     tyreTempsC,
     tyreHudTempsC,
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
+    lapTimeSec,
+    lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,
     carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
   };
 }

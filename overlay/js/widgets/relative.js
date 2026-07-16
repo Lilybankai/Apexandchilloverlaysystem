@@ -139,7 +139,7 @@
   }
 
   window.ApexOverlay.registerWidget("relative", {
-    throttleMs: 120,
+    throttleMs: 60, // snappy — gaps are dead-reckoned server-side at 30 Hz
     init: init,
     update: update,
   });
