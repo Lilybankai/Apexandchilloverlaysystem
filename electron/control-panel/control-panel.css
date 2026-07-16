@@ -265,6 +265,53 @@ html, body {
 
 .hero__buttons { display: flex; gap: 8px; }
 
+/* Global toggle-hotkey chip. */
+.hotkey {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hotkey__label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.hotkey__key {
+  appearance: none;
+  min-width: 56px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: filter 120ms ease, border-color 120ms ease;
+}
+.hotkey__key:hover { filter: brightness(1.2); }
+.hotkey__key[data-empty="true"] { color: var(--text-2); }
+.hotkey__key[data-capturing="true"] {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.hotkey__clear {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.hotkey__clear:hover { color: var(--bad); }
+
 .ingame-switch {
   display: inline-flex;
   align-items: center;

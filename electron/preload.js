@@ -45,6 +45,16 @@ contextBridge.exposeInMainWorld('apex', {
     return () => ipcRenderer.removeListener('status:update', listener);
   },
 
+  /**
+   * Subscribe to settings pushes from the main process (e.g. when the global
+   * hotkey toggles "Show in game"). Returns an unsubscribe function.
+   */
+  onSettings: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('settings:changed', listener);
+    return () => ipcRenderer.removeListener('settings:changed', listener);
+  },
+
   /* ---- App updates (electron-updater via GitHub Releases) ---- */
 
   /** Current update state (idle/checking/available/downloading/ready/none/error). */

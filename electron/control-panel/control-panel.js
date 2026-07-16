@@ -26,6 +26,8 @@
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
+  const igHotkeyBtn = $('#ig-hotkey');
+  const igHotkeyClear = $('#ig-hotkey-clear');
   const overlayList = $('#overlay-list');
   const combinedUrl = $('#combined-url');
   const toast = $('#toast');
@@ -92,7 +94,50 @@
     demoToggle.checked = !!settings.forceSimulator;
     ingameToggle.checked = !!settings.ingameEnabled;
     lastIngameEnabled = !!settings.ingameEnabled;
+    if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
+  }
+
+  // --- In-game toggle hotkey capture --------------------------------------
+
+  let capturingHotkey = false;
+  let lastShortcut = 'F8';
+
+  function renderHotkey(accel) {
+    lastShortcut = accel || '';
+    igHotkeyBtn.textContent = accel || 'Click to set';
+    igHotkeyBtn.setAttribute('data-empty', String(!accel));
+  }
+
+  // Map a keydown event to an Electron accelerator string, or null if the key
+  // is only a modifier / not bindable on its own.
+  function eventToAccelerator(e) {
+    const mods = [];
+    if (e.ctrlKey) mods.push('Ctrl');
+    if (e.altKey) mods.push('Alt');
+    if (e.shiftKey) mods.push('Shift');
+    if (e.metaKey) mods.push('Super');
+
+    let key = e.key;
+    if (key === 'Control' || key === 'Alt' || key === 'Shift' || key === 'Meta') {
+      return null; // a bare modifier — wait for the real key
+    }
+    if (key === ' ' || key === 'Spacebar') key = 'Space';
+    else if (key === '+') key = 'Plus';
+    else if (/^F\d{1,2}$/.test(key)) {
+      /* function keys pass through as-is */
+    } else if (key.length === 1) {
+      key = key.toUpperCase();
+    } else {
+      // Named keys (ArrowUp, Escape, Tab, …) — Electron accepts most verbatim.
+      key = key.charAt(0).toUpperCase() + key.slice(1);
+    }
+    return [...mods, key].join('+');
+  }
+
+  async function commitHotkey(accel) {
+    const state = await window.apex.updateSettings({ ingameToggleShortcut: accel });
+    renderHotkey(state.settings.ingameToggleShortcut);
   }
 
   function renderOverlays(overlays, combined) {
@@ -246,6 +291,49 @@
     showToast('In-game layout reset');
   });
 
+  // Click the hotkey chip, then press a combination to bind it.
+  igHotkeyBtn.addEventListener('click', () => {
+    capturingHotkey = true;
+    igHotkeyBtn.textContent = 'Press a key…';
+    igHotkeyBtn.setAttribute('data-capturing', 'true');
+    igHotkeyBtn.focus();
+  });
+
+  function stopCapture() {
+    capturingHotkey = false;
+    igHotkeyBtn.removeAttribute('data-capturing');
+  }
+
+  igHotkeyBtn.addEventListener('keydown', (e) => {
+    if (!capturingHotkey) return;
+    e.preventDefault();
+    if (e.key === 'Escape') {
+      stopCapture();
+      renderHotkey(lastShortcut);
+      return;
+    }
+    const accel = eventToAccelerator(e);
+    if (!accel) return; // still holding only modifiers
+    stopCapture();
+    lastShortcut = accel;
+    void commitHotkey(accel);
+    showToast('Hotkey set to ' + accel);
+  });
+
+  igHotkeyBtn.addEventListener('blur', () => {
+    if (capturingHotkey) {
+      stopCapture();
+      renderHotkey(lastShortcut);
+    }
+  });
+
+  igHotkeyClear.addEventListener('click', async () => {
+    stopCapture();
+    lastShortcut = '';
+    await commitHotkey('');
+    showToast('Hotkey cleared');
+  });
+
   powerBtn.addEventListener('click', async () => {
     const running = powerBtn.getAttribute('data-running') === 'true';
     powerBtn.disabled = true;
@@ -267,6 +355,12 @@
 
   // Live status pushes from the main process.
   window.apex.onStatus((status) => renderStatus(status));
+
+  // Settings pushes — e.g. the global hotkey flipped "Show in game" while the
+  // panel was open. Keep the toggle and controls in sync without a reload.
+  window.apex.onSettings((settings) => {
+    if (settings) renderSettings(settings);
+  });
 
   // --- App updates ---------------------------------------------------------
 

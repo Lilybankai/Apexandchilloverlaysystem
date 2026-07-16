@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2 — 2026-07-16
+
+### Added
+- **Global hotkey for "Show in game".** Toggle the in-game overlay without
+  alt-tabbing out of the sim. Defaults to **F8** and is rebindable from the
+  control panel — click the **Toggle hotkey** chip and press any combination
+  (e.g. `Ctrl+Alt+O`), or clear it with the `×` to unbind. The key works while
+  the sim has focus; flipping it updates the control-panel switch live.
+
+  (A middle-mouse double-click trigger is planned as a follow-up — it needs a
+  low-level Windows mouse hook, so it ships separately once verified in-game.)
+
 ## 0.6.1 — 2026-07-16
 
 ### Fixed
@@ -47,7 +59,6 @@
 ### Changed
 - Standings driver names use the broadcast-style `T. Pereira` format and the
   panel is slightly wider so names don't truncate against the new columns.
-
 ## 0.5.5 — 2026-07-14
 
 ### Added

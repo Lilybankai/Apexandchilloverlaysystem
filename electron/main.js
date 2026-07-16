@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, clipboard, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, screen, globalShortcut } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const WebSocket = require('ws');
@@ -74,6 +74,9 @@ function defaultSettings() {
     ingameOverlays,
     // Saved widget placement in the in-game layer: { [id]: {x, y, scale} }.
     ingameLayout: {},
+    // Global hotkey that toggles the in-game overlay (Show in game). An Electron
+    // accelerator string; '' means unbound. Rebindable from the control panel.
+    ingameToggleShortcut: 'F8',
   };
 }
 
@@ -86,6 +89,17 @@ function clamp(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+/**
+ * Normalize a global-shortcut accelerator from disk or the UI. Accepts any
+ * string (validity is enforced at register time, wrapped in try/catch); an
+ * empty string is the explicit "unbound" state. Non-strings fall back.
+ */
+function normalizeShortcut(value, fallback) {
+  if (value === '') return '';
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return fallback;
 }
 
 /** Load settings, merged over defaults so missing/old keys are filled in. */
@@ -135,6 +149,10 @@ function loadSettings() {
       typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
     ingameOverlays,
     ingameLayout,
+    ingameToggleShortcut: normalizeShortcut(
+      stored.ingameToggleShortcut,
+      defaults.ingameToggleShortcut,
+    ),
   };
 }
 
@@ -324,6 +342,44 @@ function pushStatus() {
   }
 }
 
+/** Push the current settings to the renderer so its controls stay in sync. */
+function pushSettings(settings) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings:changed', settings);
+  }
+}
+
+/**
+ * Flip the "Show in game" setting and reflect it everywhere: persist, re-sync
+ * the overlay window, and update the control panel. Invoked by the global
+ * hotkey (and reusable elsewhere).
+ */
+function toggleIngame() {
+  const settings = loadSettings();
+  const next = { ...settings, ingameEnabled: !settings.ingameEnabled };
+  saveSettings(next);
+  syncOverlayWindow();
+  pushStatus();
+  pushSettings(next);
+}
+
+/**
+ * (Re)register the global hotkey that toggles the in-game overlay. Clears any
+ * previous binding first; an empty accelerator leaves it unbound. Registration
+ * is wrapped so an invalid/occupied accelerator can never crash startup.
+ */
+function applyToggleShortcut(settings) {
+  globalShortcut.unregisterAll();
+  const accel = (settings || loadSettings()).ingameToggleShortcut;
+  if (!accel) return;
+  try {
+    const ok = globalShortcut.register(accel, toggleIngame);
+    if (!ok) console.warn(`[app] could not register hotkey "${accel}" (in use?)`);
+  } catch (err) {
+    console.warn(`[app] invalid hotkey "${accel}": ${err.message}`);
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Overlay URL helpers                                                        */
 /* -------------------------------------------------------------------------- */
@@ -487,8 +543,19 @@ function registerIpc() {
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
       }
+      if (typeof partial.ingameToggleShortcut === 'string') {
+        next.ingameToggleShortcut = normalizeShortcut(
+          partial.ingameToggleShortcut,
+          current.ingameToggleShortcut,
+        );
+      }
     }
     saveSettings(next);
+
+    // Re-bind the global hotkey if it changed.
+    if (next.ingameToggleShortcut !== current.ingameToggleShortcut) {
+      applyToggleShortcut(next);
+    }
 
     // Port or rate or demo changes require a server restart to take effect.
     const needsRestart =
@@ -748,6 +815,7 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   setupAutoUpdate();
+  applyToggleShortcut(loadSettings());
   // Auto-start the server so overlays are live as soon as the app opens.
   await startServer();
 
@@ -763,6 +831,10 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', async () => {
   await stopServer();
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('before-quit', () => {
