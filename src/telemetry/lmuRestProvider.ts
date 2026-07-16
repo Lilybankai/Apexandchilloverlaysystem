@@ -90,6 +90,10 @@ const LOCAL_HOLD_MS = 500;
 interface RestStanding {
   slotID: number;
   position: number;
+  /** Grid / qualifying position (1-based) — drives positions gained/lost. */
+  qualification?: number;
+  /** Virtual-energy fraction remaining, 0..1 (LMU energy budget). */
+  veFraction?: number;
   driverName: string;
   fullTeamName?: string;
   carNumber?: string;
@@ -103,6 +107,8 @@ interface RestStanding {
   estimatedLapTime?: number;
   fuelFraction?: number;
   lapDistance?: number;
+  /** Seconds elapsed since this car crossed the line on its current lap. */
+  timeIntoLap?: number;
   pitState?: string;
   pitting?: boolean;
   pitstops?: number;
@@ -130,6 +136,8 @@ interface RestSession {
   gamePhase?: string;
   currentEventTime?: number;
   endEventTime?: number;
+  /** Seconds left in the current game phase — the live countdown during green. */
+  timeRemainingInGamePhase?: number;
   maximumLaps?: number;
   numberOfVehicles?: number;
   sectorFlag?: unknown;
@@ -141,6 +149,8 @@ export class LmuRestProvider implements TelemetryProvider {
 
   private readonly fallback = new SimulatorProvider();
   private readonly fuel = new FuelCalculator();
+  /** Live predictive lap-delta for the focused car vs. its own best lap. */
+  private readonly lapDelta = new LapDeltaTracker();
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
@@ -320,7 +330,11 @@ export class LmuRestProvider implements TelemetryProvider {
     const session = this.buildSession(cars, si, focus);
     const weather = this.buildWeather(si);
     const fuel = this.buildFuel(focus, session, local);
-    const player = this.buildPlayer(focus, standings, local);
+    // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
+    // reference lap has been driven while the overlay is running).
+    const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
+    const deltaSec = this.lapDelta.update(focus, trackLen);
+    const player = this.buildPlayer(focus, standings, local, deltaSec);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -343,6 +357,8 @@ export class LmuRestProvider implements TelemetryProvider {
       driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
       carNumber: c.carNumber || undefined,
       carClass: c.carClass || undefined,
+      gridPosition:
+        typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
       gapToAheadSec: posOrUnknown(c.timeBehindNext),
       lapsBehind: Math.max(0, c.lapsBehindLeader | 0),
@@ -351,6 +367,10 @@ export class LmuRestProvider implements TelemetryProvider {
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),
       pitStops: typeof c.pitstops === 'number' ? c.pitstops : undefined,
+      // LMU publishes a 0..1 energy fraction per car (its overlay shows this to
+      // the cars ahead); leave unknown when the field is absent.
+      virtualEnergy:
+        typeof c.veFraction === 'number' && c.veFraction >= 0 ? clamp01(c.veFraction) : undefined,
       // Highlight the car currently in broadcast focus.
       isPlayer: c.slotID === focusId,
     }));
@@ -419,7 +439,18 @@ export class LmuRestProvider implements TelemetryProvider {
     const leaderLaps = cars.reduce((m, c) => Math.max(m, c.lapsCompleted | 0), 0);
     const endET = typeof si.endEventTime === 'number' ? si.endEventTime : 0;
     const curET = typeof si.currentEventTime === 'number' ? si.currentEventTime : 0;
-    const timeRemaining = endET > 0 ? Math.max(0, endET - curET) : UNKNOWN_VALUE;
+    // Prefer LMU's own "time left in the current phase" — during a green timed
+    // race this is the authoritative countdown to the checker, and it stays
+    // sane when the event-time clock has drifted past endEventTime. Fall back to
+    // end − current when the phase field is missing.
+    const phaseRemain =
+      typeof si.timeRemainingInGamePhase === 'number' ? si.timeRemainingInGamePhase : -1;
+    const timeRemaining =
+      phaseRemain > 0 && phaseRemain < 100000
+        ? Math.round(phaseRemain)
+        : endET > 0
+          ? Math.max(0, endET - curET)
+          : UNKNOWN_VALUE;
     // maximumLaps is a large sentinel (uint max) for timed races.
     const maxLaps =
       typeof si.maximumLaps === 'number' && si.maximumLaps > 0 && si.maximumLaps < 100000
@@ -542,6 +573,7 @@ export class LmuRestProvider implements TelemetryProvider {
     focus: RestStanding | undefined,
     standings: StandingEntry[],
     local: LocalCarPhysics | null,
+    deltaSec: number,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -584,10 +616,14 @@ export class LmuRestProvider implements TelemetryProvider {
       rpm: local ? local.rpm : UNKNOWN_VALUE,
       maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
-        current: UNKNOWN_VALUE,
+        // Live elapsed time on the current lap, from the focused car's REST row.
+        current:
+          focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
+            ? round2(focus.timeIntoLap)
+            : UNKNOWN_VALUE,
         last: row ? row.lastLapSec : UNKNOWN_VALUE,
         best: row ? row.bestLapSec : UNKNOWN_VALUE,
-        delta: UNKNOWN_VALUE,
+        delta: deltaSec,
         sector: UNKNOWN_VALUE,
       },
       tyres: {
@@ -687,4 +723,92 @@ function round1(v: number): number {
 }
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/* ----------------------------- lap-delta tracker -------------------------- */
+
+/** One point on a lap's distance→time curve (distance as a 0..1 fraction). */
+interface DeltaSample {
+  d: number;
+  t: number;
+}
+
+/**
+ * Computes a **predictive live lap delta** for the focused car against its own
+ * fastest lap, the way a sim's on-screen delta bar does.
+ *
+ * It records the car's `(distanceFraction, timeIntoLap)` trace over each lap.
+ * When the car completes a new personal-best lap (and we captured a reasonably
+ * complete trace), that trace becomes the **reference**. Thereafter the delta at
+ * any moment is `currentTimeIntoLap − referenceTimeAt(currentDistance)`:
+ * negative means ahead of the best lap (faster), positive means behind.
+ *
+ * Returns {@link UNKNOWN_VALUE} until a reference lap exists (e.g. the opening
+ * lap, or a best set before the overlay started — its trace was never seen), and
+ * resets cleanly when broadcast focus moves to a different car.
+ */
+class LapDeltaTracker {
+  private slotId = -1;
+  private laps = -1;
+  private samples: DeltaSample[] = [];
+  private ref: DeltaSample[] | null = null;
+  private refBest = Infinity;
+
+  public update(focus: RestStanding | undefined, trackLen: number): number {
+    if (!focus || trackLen <= 0) return UNKNOWN_VALUE;
+    const t = focus.timeIntoLap;
+    const dist = focus.lapDistance;
+    if (typeof t !== 'number' || typeof dist !== 'number' || t < 0) return UNKNOWN_VALUE;
+    const d = clamp01(dist / trackLen);
+
+    // Focus moved to a different car → the delta is about THIS car's own best.
+    if (focus.slotID !== this.slotId) {
+      this.slotId = focus.slotID;
+      this.laps = focus.lapsCompleted | 0;
+      this.samples = [];
+      this.ref = null;
+      this.refBest = Infinity;
+    }
+
+    // Lap boundary: adopt the just-completed lap as the reference when it's a new
+    // personal best and we captured a near-complete trace of it.
+    const laps = focus.lapsCompleted | 0;
+    if (laps !== this.laps) {
+      const lastLap = typeof focus.lastLapTime === 'number' ? focus.lastLapTime : -1;
+      const last = this.samples[this.samples.length - 1];
+      const complete = this.samples.length >= 8 && last !== undefined && last.d > 0.9;
+      if (lastLap > 0 && lastLap < this.refBest && complete) {
+        this.ref = this.samples.slice().sort((a, b) => a.d - b.d);
+        this.refBest = lastLap;
+      }
+      this.samples = [];
+      this.laps = laps;
+    }
+
+    // Record only forward progress (ignore pit resets / going backwards). Between
+    // REST updates d is unchanged, so this naturally de-dupes to ~one point per
+    // real update rather than per 30 Hz frame.
+    const last = this.samples[this.samples.length - 1];
+    if (last === undefined || (d > last.d && t >= last.t)) this.samples.push({ d, t });
+
+    if (!this.ref || this.ref.length < 2) return UNKNOWN_VALUE;
+    const refT = interpTime(this.ref, d);
+    return refT < 0 ? UNKNOWN_VALUE : round2(t - refT);
+  }
+}
+
+/** Linear-interpolate the reference lap's time at distance fraction `d`. */
+function interpTime(ref: DeltaSample[], d: number): number {
+  const n = ref.length;
+  if (d <= ref[0]!.d) return ref[0]!.t;
+  if (d >= ref[n - 1]!.d) return ref[n - 1]!.t;
+  for (let i = 1; i < n; i++) {
+    const b = ref[i]!;
+    if (b.d >= d) {
+      const a = ref[i - 1]!;
+      const span = b.d - a.d;
+      return span <= 0 ? a.t : a.t + (b.t - a.t) * ((d - a.d) / span);
+    }
+  }
+  return ref[n - 1]!.t;
 }

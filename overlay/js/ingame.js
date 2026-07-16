@@ -24,8 +24,9 @@
   /** Default placement per widget id (px, for a generic 16:9 screen). */
   function defaultsFor(id, vw, vh) {
     var D = {
-      standings: { x: 24, y: 24, w: 420 },
+      standings: { x: 24, y: 24, w: 474 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
+      delta: { x: Math.round(vw / 2 - 150), y: 196, w: 300 },
       relative: { x: vw - 424, y: 24, w: 400 },
       fuel: { x: vw - 424, y: 250, w: 400 },
       tyres: { x: vw - 324, y: vh - 260, w: 300 },

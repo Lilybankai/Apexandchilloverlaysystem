@@ -114,6 +114,12 @@ interface SimCar {
   slotId: number;
   name: string;
   carNumber: string;
+  /** Class label — the field is a two-class grid (Hypercar + GT3). */
+  carClass: string;
+  /** Grid / start position (1-based) so positions gained/lost has a reference. */
+  gridPosition: number;
+  /** Remaining virtual-energy fraction, 0..1. */
+  virtualEnergy: number;
   /** Lap-time this car is currently running to (seconds). */
   lapSec: number;
   /** Position around the current lap, 0..1. */
@@ -167,6 +173,13 @@ export class SimulatorProvider implements TelemetryProvider {
         slotId: i + 1,
         name: DRIVER_NAMES[i] ?? `Driver ${i + 1}`,
         carNumber: String(3 + i * 4),
+        // Two-class field: front runners are Hypercars, the rest GT3 — so the
+        // grouped standings + class colours are exercised in demo mode.
+        carClass: i < 4 ? 'Hypercar' : 'GT3',
+        // Scrambled grid vs current pace order → non-zero positions gained/lost.
+        gridPosition: ((i + 3) % FIELD_SIZE) + 1,
+        // Seed energy high with a per-car spread; it ticks down as laps run.
+        virtualEnergy: clamp01(0.92 - i * 0.015 + jitter(0.03)),
         lapSec: BASE_LAP_SEC + paceOffset,
         progress: ((progress % 1) + 1) % 1,
         lapsCompleted: START_LAPS,
@@ -237,7 +250,15 @@ export class SimulatorProvider implements TelemetryProvider {
           current: player.progress * player.lapSec,
           last: player.lastLapSec,
           best: player.bestLapSec,
-          delta: player.progress * player.lapSec - player.progress * player.bestLapSec,
+          // Wandering live delta vs. best: swings a few tenths either side of zero
+          // through the lap (green when up, red when down) so the delta bar reads
+          // like a real predictive delta rather than a one-way drift.
+          delta:
+            Math.round(
+              (Math.sin(player.progress * Math.PI * 3) * 0.35 +
+                (player.lapSec - player.bestLapSec) * (player.progress - 0.5)) *
+                100,
+            ) / 100,
           sector: Math.min(3, Math.floor(player.progress * 3) + 1),
         },
         tyres: this.buildTyres(),
@@ -270,6 +291,9 @@ export class SimulatorProvider implements TelemetryProvider {
         const lap = BASE_LAP_SEC + (car.slotId - 1) * 0.35 + jitter(0.6);
         car.lastLapSec = lap;
         if (lap < car.bestLapSec) car.bestLapSec = lap;
+        // Burn a lap's worth of virtual energy (a touch faster for Hypercars).
+        const drain = car.carClass === 'Hypercar' ? 0.055 : 0.04;
+        car.virtualEnergy = clamp01(car.virtualEnergy - drain + jitter(0.005));
         // Occasional pit stop for cars other than the player.
         if (car.slotId !== this.player().slotId && Math.random() < 0.02) {
           car.inPit = true;
@@ -435,9 +459,11 @@ export class SimulatorProvider implements TelemetryProvider {
       return {
         slotId: car.slotId,
         position: idx + 1,
+        gridPosition: car.gridPosition,
         driverName: car.name,
         carNumber: car.carNumber,
-        carClass: 'LMGT3',
+        carClass: car.carClass,
+        virtualEnergy: round2(car.virtualEnergy),
         gapToLeaderSec: lapsBehind >= 1 ? UNKNOWN_VALUE : behindTotal * refLap,
         gapToAheadSec: Math.max(0, gapToAheadSec),
         lapsBehind,
@@ -480,7 +506,7 @@ export class SimulatorProvider implements TelemetryProvider {
       position: this.positionOf(car),
       driverName: car.name,
       carNumber: car.carNumber,
-      carClass: 'LMGT3',
+      carClass: car.carClass,
       relativeGapSec: Math.round(gapSec * 100) / 100,
       lapsDifference: car.lapsCompleted - player.lapsCompleted,
       inPit: car.inPit,

@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.6.0 — 2026-07-16
+
+### Added
+- **Standings grouped by class.** The tower now splits the field into class
+  groups (Hypercar, LMP2, LMP3, GT3, GT4, …) under a bold subheader showing the
+  class name, a class colour dot and the car count, so it's instantly clear which
+  category each block of cars belongs to. Classes are ordered by their leader's
+  position; colours are stable per class.
+- **Positions gained / lost column.** A new `±` column shows each car's movement
+  vs. the grid — green ▲ for places gained, red ▼ for places lost — computed from
+  LMU's `qualification` (grid) field.
+- **Virtual energy column.** Every car shows its remaining **virtual energy** as
+  a percentage over a colour-coded fill bar (healthy → low → critical), from
+  LMU's real per-car `veFraction` — the same figure LMU's native overlay shows
+  for the cars ahead. The leader running low on energy now reads at a glance.
+- **Fastest-lap highlighting.** The holder of the race's fastest lap is shown in
+  **purple** (with a purple row accent); any car that sets a new personal-best
+  lap **flashes green** for a few seconds, then fades.
+- **Bigger lap counter + countdown clock.** A prominent session strip tops the
+  standings: an enlarged `LAP x/y` counter, plus a live ⏱ countdown clock for
+  timed sessions (from LMU's `timeRemainingInGamePhase`) that flashes red inside
+  the final minute.
+- **New Delta widget — live predictive lap delta.** A centre-anchored delta bar
+  (green/left when up on your best lap, red/right when down) with a signed value
+  pill, mirroring a sim's on-screen delta. The provider builds it predictively
+  from the focused car's distance→time trace against its own reference lap.
+
+### Fixed
+- **Relative widget now shows Current lap time and Delta.** Both were hard-wired
+  to the unknown sentinel on the LMU path, so the CURRENT and Δ cells always read
+  "—". The provider now feeds the live current-lap time (from `timeIntoLap`) and
+  the predictive delta. (Δ populates once a clean reference lap has been driven
+  while the overlay is running — a predictive delta needs a captured lap; REST
+  exposes no trace of a lap set before the overlay started.)
+
+### Changed
+- Standings driver names use the broadcast-style `T. Pereira` format and the
+  panel is slightly wider so names don't truncate against the new columns.
+
 ## 0.5.5 — 2026-07-14
 
 ### Added

@@ -49,6 +49,18 @@
       </div>
     </section>
 
+    <!-- ===================== DELTA (top-centre, below weather) ======= -->
+    <section class="widget panel" id="widget-delta" data-widget="delta"
+             aria-label="Live lap delta">
+      <header class="panel__header">
+        <span class="panel__title">Delta</span>
+        <span class="panel__meta" data-role="ref">vs BEST</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
     <!-- ================= RELATIVE / TIMING (top-right) =============== -->
     <section class="widget panel" id="widget-relative" data-widget="relative"
              aria-label="Relative timing">
@@ -129,6 +141,7 @@
   <!-- WebSocket client + widget renderers (see Overlay-widgets task). -->
   <script src="js/client.js" defer></script>
   <script src="js/widgets/standings.js" defer></script>
+  <script src="js/widgets/delta.js" defer></script>
   <script src="js/widgets/relative.js" defer></script>
   <script src="js/widgets/weather.js" defer></script>
   <script src="js/widgets/fuel.js" defer></script>

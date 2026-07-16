@@ -20,6 +20,13 @@
       '<div class="panel__body panel__body--flush standings" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    delta:
+      '<section class="widget panel" id="widget-delta" data-widget="delta" aria-label="Live lap delta">' +
+      '<header class="panel__header"><span class="panel__title">Delta</span>' +
+      '<span class="panel__meta" data-role="ref">vs BEST</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     weather:
       '<section class="widget panel" id="widget-weather" data-widget="weather" aria-label="Weather forecast">' +
       '<header class="panel__header"><span class="panel__title">Weather</span>' +

@@ -33,8 +33,9 @@
 /* Absolute widget anchors. */
 .widget { position: absolute; }
 
-#widget-standings { top: 24px;    left: 24px;   width: 420px; }
+#widget-standings { top: 24px;    left: 24px;   width: 474px; }
 #widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
+#widget-delta     { top: 196px;   left: 50%; transform: translateX(-50%); width: 300px; }
 #widget-relative  { top: 24px;    right: 24px;  width: 400px; }
 #widget-fuel      { top: 250px;   right: 24px;  width: 400px; }
 #widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
@@ -100,11 +101,51 @@
 /* =========================================================================
  * STANDINGS WIDGET (top-left)
  * ========================================================================= */
-.standings { max-height: 360px; }
+.standings { max-height: 700px; }
+
+/* --- Session strip: prominent lap counter + timed-race countdown clock ---- */
+.standings__session {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 10px 6px calc(10px + var(--accent-bar-w));
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--bg-header);
+}
+.standings__session-lap {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  /* The "a bit bigger" lap counter. */
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+.standings__session-clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ac-cyan);
+}
+.standings__session-clock::before {
+  content: "⏱ ";
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.standings__session-clock.is-urgent {
+  color: var(--pos-loss);
+  animation: standings-clock-pulse 1s steps(2, jump-none) infinite;
+}
+@keyframes standings-clock-pulse { 50% { opacity: 0.45; } }
+
 .standings__table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed;
 }
 .standings__row {
   border-bottom: 1px solid var(--border-soft);
@@ -114,32 +155,110 @@
   background: var(--bg-panel-3);
   box-shadow: inset 3px 0 0 var(--ac-cyan);
 }
+/* Race-fastest-lap holder: a subtle purple left accent on the row. */
+.standings__row--fastest {
+  box-shadow: inset 3px 0 0 var(--purple-fastest);
+}
+.standings__row--player.standings__row--fastest {
+  box-shadow: inset 3px 0 0 var(--ac-cyan), inset 6px 0 0 var(--purple-fastest);
+}
 .standings__cell {
-  padding: 4px 8px;
+  padding: 4px 6px;
   white-space: nowrap;
   overflow: hidden;
 }
+
+/* --- Class group subheader ----------------------------------------------- */
+.standings__grouprow { background: var(--bg-header); }
+.standings__group {
+  padding: 3px 8px 3px calc(8px + var(--accent-bar-w));
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-soft);
+  /* Thin coloured lead-in echoing the class colour. */
+  box-shadow: inset 3px 0 0 var(--class-color, var(--ac-purple));
+}
+.standings__group-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 7px;
+  vertical-align: middle;
+  background: var(--ac-purple);
+}
+.standings__group-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.standings__group-count {
+  float: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
 .standings__pos {
-  width: 26px;
+  width: 22px;
   text-align: center;
   font-family: var(--font-display);
   font-weight: 700;
   color: var(--text-secondary);
 }
+/* Positions gained (green) / lost (red) vs. the grid. */
+.standings__delta {
+  width: 30px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.standings__delta[data-state="gain"] { color: var(--pos-gain); }
+.standings__delta[data-state="loss"] { color: var(--pos-loss); }
+.standings__delta[data-state="flat"] { color: var(--text-muted); }
 .standings__driver {
   font-family: var(--font-ui);
-  max-width: 170px;
   text-overflow: ellipsis;
 }
+/* Virtual-energy cell: a % readout over a thin fill bar. */
+.standings__ve {
+  position: relative;
+  width: 44px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.standings__ve-bar {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--pos-gain);
+  opacity: 0.5;
+  transition: width 0.4s ease;
+}
+.standings__ve[data-ve="low"]  .standings__ve-bar { background: var(--warn); }
+.standings__ve[data-ve="crit"] .standings__ve-bar { background: var(--pos-loss); }
+.standings__ve[data-ve="none"] .standings__ve-bar { background: transparent; }
+.standings__ve-text { position: relative; color: var(--text-secondary); }
+.standings__ve[data-ve="low"]  .standings__ve-text { color: var(--warn); }
+.standings__ve[data-ve="crit"] .standings__ve-text { color: var(--pos-loss); }
 .standings__gap {
-  width: 68px;
+  width: 62px;
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
 .standings__last {
-  width: 74px;
+  width: 68px;
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -154,8 +273,60 @@
   vertical-align: middle;
   background: var(--ac-purple);
 }
-.lap-purple { color: var(--purple-fastest) !important; }
+.lap-purple { color: var(--purple-fastest) !important; font-weight: 700; }
 .lap-green { color: var(--pos-gain) !important; }
+
+/* =========================================================================
+ * DELTA WIDGET (top-centre) — live predictive lap delta bar.
+ * ========================================================================= */
+.delta { padding: 2px 0; }
+.delta__track {
+  position: relative;
+  height: 30px;
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+/* Centre-anchored fill: recoloured + repositioned by the widget per sign. */
+.delta__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0%;
+  background: var(--text-muted);
+  transition: left 0.12s linear, width 0.12s linear;
+}
+#widget-delta[data-delta="ahead"] .delta__fill { background: var(--pos-gain); }
+#widget-delta[data-delta="behind"] .delta__fill { background: var(--pos-loss); }
+/* Centre reference tick. */
+.delta__center {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--border-strong);
+}
+/* Signed value pill, always centred and legible over the fill. */
+.delta__value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+#widget-delta[data-delta="ahead"] .delta__value { color: #eafff4; }
+#widget-delta[data-delta="behind"] .delta__value { color: #ffeef1; }
+#widget-delta[data-delta="none"] .delta__value { color: var(--text-muted); }
 
 /* =========================================================================
  * RELATIVE / TIMING WIDGET (top-right)

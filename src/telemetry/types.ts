@@ -226,12 +226,24 @@ export interface StandingEntry {
   slotId: number;
   /** Race position, 1-based. */
   position: number;
+  /**
+   * Grid / qualifying position, 1-based, when known. Combined with
+   * {@link position} this yields positions gained (grid − current, positive) or
+   * lost (negative) in the race. Omitted when the sim doesn't expose a grid.
+   */
+  gridPosition?: number;
   /** Driver display name. */
   driverName: string;
   /** Car number as shown on the car, when available. */
   carNumber?: string;
   /** Car class label (e.g. `"LMGT3"`, `"Hypercar"`), when available. */
   carClass?: string;
+  /**
+   * Remaining **virtual energy** as a fraction, `0`..`1`, when the sim exposes
+   * it (LMU's per-car energy budget — what its native overlay shows to the
+   * cars ahead). Omitted when unknown.
+   */
+  virtualEnergy?: number;
   /** Gap to the leader in seconds; {@link UNKNOWN_VALUE} if lapped/unknown. */
   gapToLeaderSec: number;
   /** Gap to the car directly ahead in seconds; {@link UNKNOWN_VALUE} if unknown. */
