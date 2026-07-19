@@ -27,6 +27,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    pacedelta:
+      '<section class="widget panel" id="widget-pacedelta" data-widget="pacedelta" aria-label="Pace delta (Delta T and Delta V)">' +
+      '<header class="panel__header"><span class="panel__title">Pace Delta</span>' +
+      '<span class="panel__meta" data-role="ref">vs BEST</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     weather:
       '<section class="widget panel" id="widget-weather" data-widget="weather" aria-label="Weather forecast">' +
       '<header class="panel__header"><span class="panel__title">Weather</span>' +

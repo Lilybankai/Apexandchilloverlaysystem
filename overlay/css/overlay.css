@@ -36,6 +36,7 @@
 #widget-standings { top: 24px;    left: 24px;   width: 474px; }
 #widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
 #widget-delta     { top: 196px;   left: 50%; transform: translateX(-50%); width: 300px; }
+#widget-pacedelta { top: 280px;   left: 50%; transform: translateX(-50%); width: 348px; }
 #widget-relative  { top: 24px;    right: 24px;  width: 400px; }
 #widget-fuel      { top: 250px;   right: 24px;  width: 400px; }
 #widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
@@ -337,6 +338,53 @@
 #widget-delta[data-delta="ahead"] .delta__value { color: #eafff4; }
 #widget-delta[data-delta="behind"] .delta__value { color: #ffeef1; }
 #widget-delta[data-delta="none"] .delta__value { color: var(--text-muted); }
+
+/* =========================================================================
+ * PACE DELTA WIDGET — Pacelogic-style Δt + Δv vs session/all-time/last.
+ * A 2×3 grid: rows are the two delta flavours, columns the three references.
+ * ========================================================================= */
+.pacedelta {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: 4px 6px;
+  align-items: stretch;
+}
+.pacedelta__corner { }
+.pacedelta__colhead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-align: center;
+  align-self: end;
+}
+.pacedelta__rowhead {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+}
+.pacedelta__val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-align: center;
+  padding: 5px 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text-muted);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.pacedelta__val[data-state="ahead"] { color: var(--pos-gain); }
+.pacedelta__val[data-state="behind"] { color: var(--pos-loss); }
+.pacedelta__val[data-state="flat"]  { color: var(--text-primary); }
+.pacedelta__val[data-state="none"]  { color: var(--text-muted); }
 
 /* =========================================================================
  * RELATIVE / TIMING WIDGET (top-right)

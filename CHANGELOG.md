@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.6.6 — 2026-07-19
+
+### Added
+- **New "Pace Delta" widget — Pacelogic-style Δt + Δv.** Replicates the two
+  delta readouts of SimHub's "Pacelogic Intro Dash" for the car you're driving,
+  shown as a compact 2×3 grid so every value is visible at once:
+  - **Δt (Delta T)** — time delta at the same **track position** (`t_now −
+    t_ref(d)`); the classic predictive delta bar. Matches SimHub
+    `…LiveDeltaSeconds`.
+  - **Δv (Delta V)** — progress delta at the same **elapsed time**: how far
+    ahead/behind in track progress right now, converted to seconds via the
+    reference pace. Matches SimHub `…LiveDeltaProgressSeconds`.
+
+  Each is shown against three references — **SESSION** best, **ALL-TIME** best
+  (persisted per track under `~/.apex-overlay/pb` so it survives restarts), and
+  **LAST** lap. Signed **4-decimal** readout (`0.0000`, matching LMU); green when
+  ahead, red when behind; each cell reads "—" until its reference lap exists. Add
+  it as its own `?w=pacedelta` OBS Browser Source or via the in-game layer;
+  `?rows=t|v|both` narrows it to a single flavour.
+
+### Fixed
+- **Lap delta now works for the driven car.** The delta engine's **time axis is
+  the sim's real-time clock `mElapsedTime`** (shared memory), with lap distance
+  from the REST feed and lap boundaries detected by the distance fraction
+  wrapping past the line. Two dead ends were ruled out along the way:
+  - the shared-memory **`mLapStartET`** reports wrong, irregular lap durations on
+    current LMU builds (176 s / 252 s for real ~109 s laps), so lap timing can't
+    be derived from it;
+  - REST **`timeIntoLap`** is a *position-derived estimate* — identical at a
+    given distance on every lap — so comparing laps against it always yields ~0
+    (the delta looked "stuck at 0.00"). LMU exposes no live delta-to-best of its
+    own in the REST API, so the delta has to be built from the real clock.
+
+  `mElapsedTime` genuinely differs between fast and slow laps, so the delta now
+  tracks pace correctly. The "current lap time" readout uses REST `timeIntoLap`.
+- **Delta bar direction matches LMU.** The single Delta widget's fill now grows
+  **right when ahead** (green) and **left when behind** (red), the reverse of
+  before, to match the on-screen LMU delta.
+
 ## 0.6.5 — 2026-07-16
 
 ### Changed

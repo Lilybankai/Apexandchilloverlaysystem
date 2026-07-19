@@ -157,6 +157,14 @@ export interface LocalCarPhysics {
    * before the first lap.
    */
   lapStartET: number;
+  /**
+   * Raw sim session clock `mElapsedTime` (seconds) — a monotonic real-time clock
+   * (ticks 1:1 with wall time, pauses when the game pauses). Reliable even though
+   * `mLapStartET` is not, so it's used as the delta engine's time axis (REST
+   * `timeIntoLap` is a position-derived estimate, useless for a live delta).
+   * `UNKNOWN_VALUE` when it reads implausibly.
+   */
+  elapsedSec: number;
   /** Racing number parsed from the record's vehicle name (e.g. "79"), or "". */
   carNumber: string;
 }
@@ -495,6 +503,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
     lapTimeSec,
     lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,
+    elapsedSec: Number.isFinite(elapsed) && elapsed > 0 ? elapsed : UNKNOWN_VALUE,
     carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
   };
 }

@@ -38,6 +38,7 @@ const OVERLAY_CATALOG = [
   { id: 'standings', label: 'Standings', description: 'Full field, gaps, pit status' },
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
+  { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
   { id: 'weather', label: 'Weather', description: 'Current conditions + forecast' },
   { id: 'fuel', label: 'Fuel Calculator', description: 'Per-lap use, laps left, pit window' },
   { id: 'tyres', label: 'Tyre Temps', description: 'Four-corner temperatures' },

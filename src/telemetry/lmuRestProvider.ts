@@ -48,12 +48,14 @@ import {
   type SessionPhase,
   type SessionState,
   type SessionType,
+  type PaceDeltas,
   type SkyState,
   type StandingEntry,
   type TelemetryFrame,
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
+import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
 
 /** Config subset this provider needs. */
 export interface LmuRestConfig {
@@ -197,7 +199,12 @@ export class LmuRestProvider implements TelemetryProvider {
    * Used whenever the focused car is the locally-driven one; the REST-based
    * tracker above remains the fallback for spectated cars.
    */
-  private readonly localDelta = new LocalLapDeltaTracker();
+  /**
+   * Pacelogic-style dual delta engine (Delta T + Delta V vs session-best,
+   * all-time-best and last laps) for the driven car — feeds the pace-delta
+   * widget and the single-value Delta widget. Built on the REST watch feed.
+   */
+  private readonly paceDelta = new LocalPaceDeltaTracker();
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
   /**
@@ -413,28 +420,34 @@ export class LmuRestProvider implements TelemetryProvider {
       local !== null && playerCar !== undefined && focus !== undefined &&
       playerCar.slotID === focus.slotID;
     let deltaSec: number;
+    let paceDeltas: PaceDeltas | undefined;
     if (
       localIsFocus &&
-      local!.lapTimeSec >= 0 &&
       trackLen > 0 &&
-      typeof playerCar!.lapDistance === 'number'
+      typeof focus!.lapDistance === 'number' &&
+      local!.elapsedSec > 0
     ) {
-      // Player road position: REST lapDistance dead-reckoned with the (fresher)
-      // shared-memory speed over the snapshot's age; wrap just past the line.
-      const age = Math.min(0.5, Math.max(0, (Date.now() - this.lastOkAt) / 1000));
-      let frac = (playerCar!.lapDistance + (local!.speedKph / 3.6) * age) / trackLen;
-      if (frac >= 1) frac -= 1;
-      deltaSec = this.localDelta.update(
-        local!.lapNumber,
-        local!.lapStartET,
-        local!.lapTimeSec,
-        clamp01(frac),
+      // Position (d) from REST lap distance; time axis from the sim's real-time
+      // clock (mElapsedTime, shared memory). REST timeIntoLap is a position-
+      // derived estimate — identical every lap — so it can't produce a delta;
+      // the sim clock genuinely differs between fast and slow laps.
+      const d = clamp01(focus!.lapDistance / trackLen);
+      paceDeltas = this.paceDelta.update(
+        d,
+        local!.elapsedSec,
         focus!.bestLapTime,
+        trackKeyOf(si.trackName || '', trackLen),
       );
+      // The single-value Delta widget mirrors the pace widget's session-best
+      // Delta T so both agree; fall back to the REST tracker until it arms.
+      deltaSec =
+        paceDeltas.tSession !== UNKNOWN_VALUE
+          ? paceDeltas.tSession
+          : this.lapDelta.update(focus, trackLen);
     } else {
       deltaSec = this.lapDelta.update(focus, trackLen);
     }
-    const player = this.buildPlayer(focus, standings, local, deltaSec, localIsFocus);
+    const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -837,7 +850,7 @@ export class LmuRestProvider implements TelemetryProvider {
     standings: StandingEntry[],
     local: LocalCarPhysics | null,
     deltaSec: number,
-    localIsFocus: boolean,
+    paceDeltas: PaceDeltas | undefined,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -880,15 +893,14 @@ export class LmuRestProvider implements TelemetryProvider {
       rpm: local ? local.rpm : UNKNOWN_VALUE,
       maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
-        // Live elapsed time on the current lap. For the driven car prefer the
-        // exact shared-memory lap clock (REST's timeIntoLap pauses while the
-        // car is stationary and can lag the real lap time by tens of seconds).
+        // Live elapsed time on the current lap, from the REST watch feed. (An
+        // earlier build used the shared-memory lap clock mElapsedTime−mLapStartET,
+        // but mLapStartET proved unreliable on current LMU builds — wrong,
+        // irregular lap durations — so REST timeIntoLap is the trustworthy source.)
         current:
-          localIsFocus && local && local.lapTimeSec >= 0
-            ? round2(local.lapTimeSec)
-            : focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
-              ? round2(focus.timeIntoLap)
-              : UNKNOWN_VALUE,
+          focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
+            ? round2(focus.timeIntoLap)
+            : UNKNOWN_VALUE,
         last: row ? row.lastLapSec : UNKNOWN_VALUE,
         best: row ? row.bestLapSec : UNKNOWN_VALUE,
         delta: deltaSec,
@@ -900,6 +912,7 @@ export class LmuRestProvider implements TelemetryProvider {
         rearLeft: tyre(2),
         rearRight: tyre(3),
       },
+      ...(paceDeltas ? { paceDeltas } : {}),
     };
   }
 }

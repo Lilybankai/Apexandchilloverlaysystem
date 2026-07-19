@@ -162,6 +162,41 @@ export interface LapTiming {
   sector: number;
 }
 
+/**
+ * Pacelogic-style dual lap deltas (all seconds; negative = ahead / faster,
+ * {@link UNKNOWN_VALUE} until the relevant reference lap exists).
+ *
+ * - **Delta T** — time delta at the same track position (`t_now − t_ref(d)`);
+ *   the classic predictive delta bar.
+ * - **Delta V** — progress delta at the same elapsed time; how far ahead/behind
+ *   in track progress right now, converted to seconds via the reference pace.
+ *
+ * Each is provided against three references: the **session** best lap, the
+ * **all-time** best lap (persisted across sessions), and the **last** lap.
+ */
+export interface PaceDeltas {
+  /** Delta T vs the session-best lap. */
+  tSession: number;
+  /** Delta T vs the all-time-best lap. */
+  tAllTime: number;
+  /** Delta T vs the last completed lap. */
+  tLast: number;
+  /** Delta V vs the session-best lap. */
+  vSession: number;
+  /** Delta V vs the all-time-best lap. */
+  vAllTime: number;
+  /** Delta V vs the last completed lap. */
+  vLast: number;
+  /** Best-based projected time for the current lap (`sessionBest + tSession`). */
+  predictedLapSec: number;
+  /** Adopted session-best lap time (s), or {@link UNKNOWN_VALUE}. */
+  refSessionSec: number;
+  /** Adopted all-time-best lap time (s), or {@link UNKNOWN_VALUE}. */
+  refAllTimeSec: number;
+  /** Last completed lap time (s), or {@link UNKNOWN_VALUE}. */
+  lastLapSec: number;
+}
+
 /** State of a single tyre/corner. */
 export interface TyreState {
   /**
@@ -217,6 +252,13 @@ export interface PlayerState {
   lap: LapTiming;
   /** Four-corner tyre state. */
   tyres: TyreSet;
+  /**
+   * Pacelogic-style dual lap deltas for the **driven** car — Delta T (time,
+   * at-position) and Delta V (progress, at-time), each vs the session-best,
+   * all-time-best and last laps. Omitted when spectating (no shared-memory
+   * physics for a car not driven on this PC). See {@link PaceDeltas}.
+   */
+  paceDeltas?: PaceDeltas;
 }
 
 /* -------------------------------------------------------------------------- */

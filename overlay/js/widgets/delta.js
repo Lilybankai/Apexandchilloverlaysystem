@@ -72,12 +72,14 @@
     var mag = Math.min(1, Math.abs(d) / CAP_SEC);
     var half = mag * 50; // % of the half-track
 
-    // Centre-anchored fill: grow left when ahead, right when behind.
+    // Centre-anchored fill, matching LMU's on-screen delta: when AHEAD (faster,
+    // negative) the green fill grows RIGHT; when BEHIND (slower) the red fill
+    // grows LEFT.
     if (ahead) {
-      fillEl.style.left = 50 - half + "%";
+      fillEl.style.left = "50%";
       fillEl.style.width = half + "%";
     } else if (behind) {
-      fillEl.style.left = "50%";
+      fillEl.style.left = 50 - half + "%";
       fillEl.style.width = half + "%";
     } else {
       fillEl.style.left = "50%";
@@ -87,7 +89,7 @@
     setState(ahead ? "ahead" : behind ? "behind" : "flat");
 
     var sign = d > 0 ? "+" : d < 0 ? "−" : "";
-    var txt = sign + Math.abs(d).toFixed(2);
+    var txt = sign + Math.abs(d).toFixed(4);
     if (valueEl.textContent !== txt) valueEl.textContent = txt;
   }
 
