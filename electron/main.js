@@ -52,6 +52,8 @@ const OVERLAY_CATALOG = [
   { id: 'fuel', label: 'Fuel Calculator', description: 'Per-lap use, laps left, pit window' },
   { id: 'tyres', label: 'Tyre Temps', description: 'Four-corner temperatures' },
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
+  { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
+  { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
 ];
 
 /* -------------------------------------------------------------------------- */

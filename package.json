@@ -1,6 +1,6 @@
 {
   "name": "apex-overlay-system",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": true,
   "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays), with an optional Electron desktop control panel + installer.",
   "type": "commonjs",
@@ -19,7 +19,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\"",
     "test:delta": "node scripts/test-pacedelta.js",
     "test:multiclass": "node scripts/test-multiclass.js",
-    "test": "npm run build && npm run test:delta && npm run test:multiclass"
+    "test:motion": "node scripts/test-motion.js",
+    "test": "npm run build && npm run test:delta && npm run test:multiclass && npm run test:motion"
   },
   "engines": {
     "node": ">=18"

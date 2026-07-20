@@ -16,7 +16,8 @@
       /widget.html?w=fuel
       /widget.html?w=pedals&port=8080     (override WS port if needed)
 
-    Valid names: standings, relative, weather, fuel, tyres, pedals
+    Valid names: standings, relative, delta, pacedelta, weather, fuel, tyres,
+                 pedals, pedalsv, motion
 
     It reuses the exact same widget runtime (client.js) and widget modules as
     the combined page. client.js binds a widget only if its section is present,
@@ -74,5 +75,7 @@
   <script src="js/widgets/fuel.js" defer></script>
   <script src="js/widgets/tyres.js" defer></script>
   <script src="js/widgets/pedals.js" defer></script>
+  <script src="js/widgets/pedalsv.js" defer></script>
+  <script src="js/widgets/motion.js" defer></script>
 </body>
 </html>

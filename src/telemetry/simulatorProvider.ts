@@ -19,6 +19,7 @@ import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
   type FuelState,
+  type MotionState,
   type PedalInputs,
   type RelativeEntry,
   type StandingEntry,
@@ -289,6 +290,7 @@ export class SimulatorProvider implements TelemetryProvider {
         slotId: player.slotId,
         position: this.positionOf(player),
         pedals: { ...this.pedals },
+        motion: this.motionFor(this.pedals),
         gear: this.gearFor(this.pedals),
         speedKph: this.speedFor(this.pedals),
         rpm: this.rpmFor(this.pedals),
@@ -452,6 +454,54 @@ export class SimulatorProvider implements TelemetryProvider {
 
   private rpmFor(pedals: PedalInputs): number {
     return Math.round(lerp(4200, 8400, clamp01(pedals.throttle)) - pedals.brake * 800);
+  }
+
+  /* -------------------------------- motion ------------------------------- */
+
+  /**
+   * Synthesises G-force / rotation / attitude from the inputs already being
+   * simulated, so the motion widget can be previewed without a sim.
+   *
+   * It is derived from the same physics identity the real signs are checked
+   * against — `latAccel = speed × yawRate` — rather than made up independently.
+   * That means demo mode cannot accidentally look self-consistent while the
+   * live decode is inverted: both obey the same relation, so a sign error shows
+   * up as the two disagreeing.
+   */
+  private motionFor(pedals: PedalInputs): MotionState {
+    const speedMs = this.speedFor(pedals) / 3.6;
+    // Steering to yaw rate via a plausible constant lock-to-rate gain. Real
+    // cars vary with speed and load; a demo does not need to.
+    const yawRate = round2(pedals.steer * 0.42);
+    const latG = round2((speedMs * yawRate) / 9.80665);
+    // Braking dominates longitudinal G, as it does in a real car — and is
+    // POSITIVE here, matching the display convention decodeMotion() applies.
+    const lonG = round2(pedals.brake * 1.65 - pedals.throttle * 0.55);
+    // Vertical is ZERO-centred, matching what LMU actually publishes (gravity
+    // is cancelled by the normal force, so flat ground reads ~0 — verified live
+    // at 200 kph). An earlier version sat this at 1 g, which made demo mode
+    // disagree with the sim and would have hidden a real regression.
+    const vertG = round2(Math.sin(this.weatherPhase * 7) * 0.18);
+    // Attitude follows load transfer: nose dives under brakes, body rolls away
+    // from the corner. Both lag the input slightly in reality; not modelled.
+    const pitch = round2(pedals.throttle * 0.4 - pedals.brake * 1.9);
+    const roll = round2(-pedals.steer * 2.2);
+    // A little more slip than the yaw implies, so the readout is not pinned to
+    // zero — a demo showing 0.0° forever looks broken rather than neutral.
+    const slipAngle = round2(pedals.steer * 2.6 + jitter(0.15));
+    return {
+      latG,
+      lonG,
+      vertG,
+      yawRate,
+      pitchRate: round2(-pedals.brake * 0.05),
+      rollRate: round2(-pedals.steer * 0.06),
+      pitch,
+      roll,
+      heading: round2(((this.weatherPhase * 40) % 360) - 180),
+      slipAngle,
+      speedMs: round2(speedMs),
+    };
   }
 
   /* -------------------------------- tyres -------------------------------- */

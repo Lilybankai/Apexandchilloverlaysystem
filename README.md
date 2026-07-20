@@ -80,9 +80,40 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
 - **Standings** (top-left) — full field, gaps, pit status
 - **Relative / timing** (top-right) — nearest cars on track, live delta
 - **Pedal inputs** (bottom-center) — throttle/brake trace, trail-braking style
+- **Pedal inputs (vertical)** — the same channels a quarter-turn round: pedals as
+  levels rising from the bottom, steering as a needle sweeping an arc from a
+  fixed centre-bottom pivot. An alternate to the above, not a replacement.
+- **Motion** — G-force, rotation and attitude, in three independently
+  switchable modes (see below)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
+
+### Motion widget modes
+
+Each mode is switched from the Browser Source URL and defaults **on**; append
+`=off` to drop one. Turning all three off renders a message rather than an empty
+panel.
+
+| Param      | Mode         | Shows                                                        |
+| ---------- | ------------ | ------------------------------------------------------------ |
+| `?g=off`   | **G-meter**  | Traction circle with a fading trail and a decaying peak ring |
+| `?rot=off` | **Rotation** | Yaw rate vs slip angle, plus an understeer/oversteer chip    |
+| `?att=off` | **Attitude** | Pitch and roll as a horizon under a fixed car reference      |
+
+A disabled mode costs no height — the canvas is sized from the enabled set.
+
+Hovering the widget reveals an **opacity slider**, so it can sit over the track
+as a see-through practice HUD; below 100% the panel background and border are
+dropped entirely. The choice persists per browser, and `?opacity=0.4` sets it
+from the URL — the only route that works in OBS and in the locked in-game layer,
+where the pointer never reaches the widget and hover can never fire.
+
+Longitudinal G is reported with **braking positive**, so the G-meter dot moves
+forward under brakes the way the driver is thrown, while lateral follows the
+direction the acceleration points (the dot sits on the side of the corner you
+are turning into). That pairing is deliberate and was chosen from real laps; the
+textbook g-g convention read backwards at speed. See `src/telemetry/motion.ts`.
 
 ## Live telemetry sources
 

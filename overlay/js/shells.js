@@ -68,5 +68,19 @@
       '<span class="panel__meta" data-role="gear">N · — kph</span></header>' +
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    pedalsv:
+      '<section class="widget panel" id="widget-pedalsv" data-widget="pedalsv" aria-label="Pedal inputs, vertical">' +
+      '<header class="panel__header"><span class="panel__title">Inputs V</span>' +
+      '<span class="panel__meta" data-role="gear">N · — kph</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    motion:
+      '<section class="widget panel" id="widget-motion" data-widget="motion" aria-label="G-force, rotation and attitude">' +
+      '<header class="panel__header"><span class="panel__title">Motion</span>' +
+      '<span class="panel__meta" data-role="meta">— kph</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
   };
 })();

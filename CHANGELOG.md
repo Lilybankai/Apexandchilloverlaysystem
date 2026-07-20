@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.8.0 — 2026-07-20 "Attitude"
+
+Two new overlays, and the first new **telemetry channels** since the tyre temps:
+the vehicle motion block — G-force, rotation rate and orientation — was sitting
+in the shared-memory record all along, being read past every frame.
+
+### Added
+
+- **Inputs V**, an alternate pedal-inputs widget. The original is untouched and
+  neither replaces the other. Where that one scrolls throttle and brake along a
+  time axis, this is the same widget a quarter-turn round: the pedals become
+  full-width levels rising from the bottom of the readout, and steering stops
+  being a line on a time axis and becomes what it physically is — an angle. The
+  needle is pinned at the centre-bottom and only its tip moves, sweeping a ±70°
+  arc, so the wheel is read the way you read the wheel itself.
+
+  Losing the time axis costs the trail-braking overlap history, so both levels
+  are drawn translucent in one box: where they overlap you are on both pedals,
+  which is the reading the scrolling trace existed to give. A fan of ten fading
+  ghosts trails the needle, because a bare needle shows where the wheel *is* and
+  nothing about how it got there — the exact failing that retired the original
+  steering dot in 0.7.0.
+
+- **Motion**, a new widget with three independently switchable modes: a
+  **G-meter** (traction circle, fading trail, decaying peak ring), **rotation**
+  (yaw rate against slip angle, with an understeer/oversteer chip) and
+  **attitude** (pitch and roll as a horizon under a fixed car reference). Each
+  is toggled from the Browser Source URL and a disabled mode costs no height —
+  the canvas is sized from whichever modes are enabled, and turning all three
+  off says so rather than rendering an empty panel.
+
+  Deliberately **not** a calibrated understeer/oversteer number: that needs
+  wheelbase and steering ratio per car, which LMU does not publish. Two honest
+  channels beat one fabricated one, so it shows yaw rate and slip angle and only
+  calls a verdict past 4° of slip. Slip angle comes from the velocity vector
+  alone, so it needs no per-car calibration and reads the same in any car.
+
+- **A hover opacity slider on the Motion widget**, so it can sit over the track
+  as a see-through HUD while learning a circuit. Below 100% the panel background
+  and border are dropped entirely rather than faded — a translucent dark
+  rectangle over a track still reads as a rectangle. The value persists per
+  browser, and `?opacity=` sets it from the URL, which is the only route that
+  works in OBS and in the locked in-game layer where hover can never fire.
+
+- **Vehicle motion telemetry** — `mLocalAccel`, `mOri[3]` and `mLocalRot`, all
+  decoded through one new module (`telemetry/motion.ts`) that owns every sign
+  decision, since both providers read the same struct and a flipped sign
+  produces a readout that looks plausible and is backwards.
+
+  These offsets were not scanned for. `mLocalVel.z = 200` and `mGear = 352` were
+  already verified live, and the three vectors plus the 3×24-byte orientation
+  matrix fill 184→352 exactly — the block is bracketed on both sides by
+  known-good offsets, which is stronger evidence than a scan could give.
+
+- `npm run test:motion` — 30 checks over the axis convention, each asserting a
+  situation with only one correct answer (braking, a right-hander, a nose-up
+  car), plus the `latAccel = speed × yawRate` identity that makes an inverted
+  lateral detectable rather than merely suspected.
+
+- `scripts/probe-lmu-motion.js`, a read-only live probe for re-verifying the
+  motion offsets if a future build shifts the layout.
+
+### Notes on the axis convention
+
+Two decisions here are counter-intuitive on purpose and are the kind of thing a
+later tidy-up would quietly undo, so both are pinned by tests:
+
+- **Braking is POSITIVE longitudinal.** A textbook g-g diagram would put it
+  below the origin, which is what was built first and what read backwards on
+  track. The dot now moves forward under brakes, the way the driver is thrown,
+  while lateral still follows the direction the acceleration points so the dot
+  sits on the side of the corner being turned into. The pairing is mixed by
+  intent.
+- **Vertical G is zero-centred, not 1 g.** LMU cancels gravity against the
+  normal force, so flat ground reads ~0.00 at any speed (measured: ±0.06 at
+  200 kph). It is a deviation channel — positive over a compression, negative
+  over a crest. The first implementation assumed an accelerometer convention and
+  the demo provider synthesised ~1 g to match; the first live probe disproved
+  both, and demo mode was corrected so it cannot disagree with the sim.
+
 ## 0.7.1 — 2026-07-20
 
 ### Added

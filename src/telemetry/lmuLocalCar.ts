@@ -37,6 +37,9 @@
  */
 
 import { UNKNOWN_VALUE } from './types';
+import type { MotionState } from './types';
+import { decodeMotion } from './motion';
+import type { Vec3 } from './motion';
 
 /* Verified rF2VehicleTelemetry field offsets (bytes), x64, #pragma pack(4). */
 const VT = {
@@ -67,6 +70,20 @@ const VT = {
   // numbers can repeat across classes — e.g. two #21s in one field).
   mVehicleName: 32,
   mLocalVelZ: 200, // rF2Vec3 mLocalVel.z (forward component)
+  // The motion block. These are NOT scanned-for offsets — they are bracketed on
+  // both sides by offsets already verified live, which is stronger evidence
+  // than a scan could give. mLocalVel.z=200 fixes mLocalVel at 184, and the ISI
+  // struct order from there is fixed:
+  //   mLocalVel(184) mLocalAccel(208) mOri[3](232) mLocalRot(304)
+  //   mLocalRotAccel(328) -> mGear(352)
+  // and mGear=352 is verified. The block lands exactly in the gap, with no
+  // slack: three rF2Vec3 (24 B each) plus the 3x24 B matrix fill 184..352
+  // precisely. A wrong offset here would have to be wrong by a whole multiple
+  // of 24 AND still leave mGear where it demonstrably is.
+  mLocalVel: 184, // rF2Vec3, m/s
+  mLocalAccel: 208, // rF2Vec3, m/s^2
+  mOri: 232, // rF2Vec3[3] — rows of the local->world matrix
+  mLocalRot: 304, // rF2Vec3, rad/s
   mGear: 352,
   mEngineRPM: 356,
   mUnfilteredThrottle: 388,
@@ -167,6 +184,11 @@ export interface LocalCarPhysics {
   elapsedSec: number;
   /** Racing number parsed from the record's vehicle name (e.g. "79"), or "". */
   carNumber: string;
+  /**
+   * G-force / rotation / attitude, normalised out of ISI's axis convention.
+   * `null` when the motion block fails its plausibility guards.
+   */
+  motion: MotionState | null;
 }
 
 /** Minimal koffi-bound Win32 surface (see {@link loadWin32}). */
@@ -485,6 +507,20 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
       ? lapTime
       : UNKNOWN_VALUE;
 
+  // Motion block. Read as raw vectors and handed to decodeMotion(), which owns
+  // every sign decision — nothing here should reason about ISI's axes.
+  const vec = (off: number): Vec3 => ({
+    x: rec.readDoubleLE(off),
+    y: rec.readDoubleLE(off + 8),
+    z: rec.readDoubleLE(off + 16),
+  });
+  const motion = decodeMotion({
+    accel: vec(VT.mLocalAccel),
+    rot: vec(VT.mLocalRot),
+    vel: vec(VT.mLocalVel),
+    ori: [vec(VT.mOri), vec(VT.mOri + 24), vec(VT.mOri + 48)],
+  });
+
   return {
     throttle: clamp01(throttle),
     brake,
@@ -505,6 +541,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,
     elapsedSec: Number.isFinite(elapsed) && elapsed > 0 ? elapsed : UNKNOWN_VALUE,
     carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
+    motion,
   };
 }
 

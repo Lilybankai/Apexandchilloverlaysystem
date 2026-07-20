@@ -144,6 +144,54 @@ export interface PedalInputs {
   abs?: number;
 }
 
+/**
+ * Vehicle **motion** channels for the player's car — G-forces, rotation rates
+ * and attitude. Drives the motion widget's three modes.
+ *
+ * All values are already normalised out of ISI's axis convention into a
+ * driver-facing one by {@link decodeMotion}; see `telemetry/motion.ts` for the
+ * sign definitions, which is the only place they should be reasoned about.
+ */
+export interface MotionState {
+  /** Lateral G; positive = acceleration toward the car's RIGHT. */
+  latG: number;
+  /**
+   * Longitudinal G; positive = **braking**, negative = accelerating. This is a
+   * deliberate display convention (the dot moves forward under brakes, the way
+   * the driver is thrown), not the physics sign — see `telemetry/motion.ts`.
+   */
+  lonG: number;
+  /**
+   * Vertical G, **zero-centred**: the sim cancels gravity against the normal
+   * force, so flat ground reads ~`0` at any speed. Positive over a compression,
+   * negative over a crest. Verified live — see `telemetry/motion.ts`.
+   */
+  vertG: number;
+  /** Yaw rate, rad/s; positive = nose swinging RIGHT. */
+  yawRate: number;
+  /** Pitch rate, rad/s; positive = nose rising. */
+  pitchRate: number;
+  /** Roll rate, rad/s; positive = right side rising. */
+  rollRate: number;
+  /** Pitch attitude, degrees; positive = nose UP. */
+  pitch: number;
+  /** Roll attitude, degrees; positive = right side UP. */
+  roll: number;
+  /** World heading, degrees. Only meaningful as a rate of change. */
+  heading: number;
+  /**
+   * Angle between where the nose points and where the car is actually
+   * travelling, degrees; positive = travelling to the RIGHT of the nose.
+   * {@link UNKNOWN_VALUE} below walking pace, where direction-of-travel is
+   * noise. Needs no per-car calibration — unlike a true understeer/oversteer
+   * figure, which would require wheelbase and steering ratio.
+   */
+  slipAngle: number;
+  /** Ground-plane speed, m/s. Carried because the yaw/lat consistency check
+   * and the slip-angle floor both need it alongside the other channels. */
+  speedMs: number;
+}
+
 /** Player lap-timing readouts, all times in seconds. */
 export interface LapTiming {
   /** Elapsed time on the current lap; {@link UNKNOWN_VALUE} if unknown. */
@@ -259,6 +307,12 @@ export interface PlayerState {
    * physics for a car not driven on this PC). See {@link PaceDeltas}.
    */
   paceDeltas?: PaceDeltas;
+  /**
+   * G-force / rotation / attitude channels. Omitted when spectating or when
+   * shared memory is unavailable — the motion block is only populated for the
+   * car driven on this PC, exactly like {@link pedals}.
+   */
+  motion?: MotionState;
 }
 
 /* -------------------------------------------------------------------------- */

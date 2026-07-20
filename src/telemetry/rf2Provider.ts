@@ -57,6 +57,8 @@ import {
 } from './types';
 import type { ServerConfig } from '../server/config';
 import { assignClassPositions, normalizeClass } from './carClass';
+import { decodeMotion } from './motion';
+import type { Vec3 } from './motion';
 
 /* ------------------------- Win32 / shared-memory ------------------------- */
 
@@ -131,6 +133,14 @@ const VT = {
   stride: 2880,
   mID: 0,
   mLocalVelZ: 184 + 16, // rF2Vec3 mLocalVel.z (forward), offset+2*double
+  // Motion block — identical field layout to LMU (only the record STRIDE
+  // differs between the two sims), so these are the same offsets documented in
+  // lmuLocalCar.ts: mLocalVel(184) mLocalAccel(208) mOri[3](232) mLocalRot(304)
+  // mLocalRotAccel(328) -> mGear(352).
+  mLocalVel: 184,
+  mLocalAccel: 208,
+  mOri: 232,
+  mLocalRot: 304,
   mGear: 352,
   mEngineRPM: 356,
   mUnfilteredThrottle: 388,
@@ -451,6 +461,19 @@ export class RF2Provider implements TelemetryProvider {
     const fwdVel = telem.readDoubleLE(t + VT.mLocalVelZ);
     const speedKph = Math.round(Math.abs(fwdVel) * 3.6);
 
+    // Motion block, via the shared decoder that owns the axis convention.
+    const vec = (off: number): Vec3 => ({
+      x: telem.readDoubleLE(off),
+      y: telem.readDoubleLE(off + 8),
+      z: telem.readDoubleLE(off + 16),
+    });
+    const motion = decodeMotion({
+      accel: vec(t + VT.mLocalAccel),
+      rot: vec(t + VT.mLocalRot),
+      vel: vec(t + VT.mLocalVel),
+      ori: [vec(t + VT.mOri), vec(t + VT.mOri + 24), vec(t + VT.mOri + 48)],
+    });
+
     const tyres = {
       frontLeft: this.readTyre(telem, t + VT.mWheels + 0 * WH.stride),
       frontRight: this.readTyre(telem, t + VT.mWheels + 1 * WH.stride),
@@ -515,6 +538,7 @@ export class RF2Provider implements TelemetryProvider {
           clutch: clamp01(clutch),
           steer: clamp(steer, -1, 1),
         },
+        ...(motion ? { motion } : {}),
         gear: telem.readInt32LE(t + VT.mGear),
         speedKph,
         rpm: Math.round(rpm),

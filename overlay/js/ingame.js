@@ -35,6 +35,11 @@
       fuel: { x: vw - 424, y: 250, w: 400 },
       tyres: { x: vw - 324, y: vh - 260, w: 300 },
       pedals: { x: Math.round(vw / 2 - 180), y: vh - 220, w: 360 },
+      // Clear of `pedals` on purpose: the two are alternates and get compared
+      // side by side, so spawning them on the same centre line would stack one
+      // on the other and read as a widget that failed to load.
+      pedalsv: { x: 24, y: vh - 270, w: 300 },
+      motion: { x: vw - 260, y: vh - 420, w: 236 },
     };
     return D[id] || { x: 24, y: 24, w: 400 };
   }

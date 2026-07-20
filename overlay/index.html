@@ -121,6 +121,30 @@
       </div>
     </section>
 
+    <!-- ============ PEDALS V (alternate inputs readout) ============= -->
+    <section class="widget panel" id="widget-pedalsv" data-widget="pedalsv"
+             aria-label="Pedal inputs, vertical">
+      <header class="panel__header">
+        <span class="panel__title">Inputs V</span>
+        <span class="panel__meta" data-role="gear">N · — kph</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+    <!-- ============ MOTION (G / rotation / attitude) ================ -->
+    <section class="widget panel" id="widget-motion" data-widget="motion"
+             aria-label="G-force, rotation and attitude">
+      <header class="panel__header">
+        <span class="panel__title">Motion</span>
+        <span class="panel__meta" data-role="meta">— kph</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
     <!-- ===================== BRAND WORDMARK ========================= -->
     <div class="brand" aria-hidden="true">
       <span class="brand__mark"></span>
@@ -160,5 +184,7 @@
   <script src="js/widgets/fuel.js" defer></script>
   <script src="js/widgets/tyres.js" defer></script>
   <script src="js/widgets/pedals.js" defer></script>
+  <script src="js/widgets/pedalsv.js" defer></script>
+  <script src="js/widgets/motion.js" defer></script>
 </body>
 </html>

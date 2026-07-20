@@ -1078,6 +1078,10 @@ export class LmuRestProvider implements TelemetryProvider {
         rearRight: tyre(3),
       },
       ...(paceDeltas ? { paceDeltas } : {}),
+      // Only present with live shared memory: the motion block is populated for
+      // the driven car alone, so spectating omits it entirely rather than
+      // sending a frozen or zeroed one.
+      ...(local && local.motion ? { motion: local.motion } : {}),
     };
   }
 }

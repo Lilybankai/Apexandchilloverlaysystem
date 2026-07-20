@@ -41,6 +41,10 @@
 #widget-fuel      { top: 250px;   right: 24px;  width: 400px; }
 #widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
 #widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
+/* The alternate inputs readout sits clear of the original so both can be up at
+   once while they are being compared. */
+#widget-pedalsv   { bottom: 24px; left: 24px; width: 300px; }
+#widget-motion    { bottom: 300px; right: 24px; width: 236px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
@@ -828,6 +832,163 @@
   border-radius: 50%;
   background: var(--ac-cyan);
   transform: translate(-50%, -50%);
+}
+
+/* =========================================================================
+ * PEDALS-V WIDGET — the alternate inputs readout: pedals as rising levels,
+ * steering as a needle sweeping an arc from a fixed centre-bottom pivot.
+ * The bar column reuses `.pedal-bar` from the original widget verbatim.
+ * ========================================================================= */
+.pedalsv__wrap {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.pedalsv__readout {
+  position: relative; /* anchors the TC/ABS chips */
+  flex: 1;
+  background: var(--bg-panel-2);
+  /* Unlike the scrolling trace, this box needs a visible edge. A level is read
+     against its 0% and 100% ends, and `--bg-panel-2` alone is close enough to
+     the panel that the box has no discernible top — so a half-pressed pedal and
+     a fully pressed one look the same. */
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+/* Taller than the scrolling trace: the needle needs vertical room for a sweep
+   wide enough to read, and the pedal levels get their resolution from height
+   rather than from length along a time axis. */
+.pedalsv__readout canvas { display: block; width: 100%; height: 140px; }
+
+/* =========================================================================
+ * MOTION WIDGET — G-meter / rotation / attitude. The canvas height is set in
+ * JS from whichever modes are enabled, so a disabled mode costs no space.
+ * ========================================================================= */
+.motion__wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.motion__canvas {
+  display: block;
+  width: 100%;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+/* Wraps rather than shrinking. With all three modes on there are seven cells,
+   which at this widget's width squeezes each to ~33px — narrower than the
+   "-1.30g" it has to hold, so the last cells were clipped off the edge
+   entirely. Three per row keeps every value fully readable at any mode
+   combination. */
+.motion__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.motion__stat {
+  flex: 1 1 28%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 0;
+  background: var(--bg-panel-2);
+  border-radius: 3px;
+}
+.motion__stat-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.motion__stat-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+/* Balance verdict. Amber/blue rather than the green/red the pedals own — this
+   is not a good/bad reading, it is which end is letting go. */
+.motion__balance {
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 3px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  background: var(--bg-panel-2);
+}
+.motion__balance[data-state="understeer"] { background: var(--aid-abs); color: #0a0b12; }
+.motion__balance[data-state="oversteer"] { background: var(--ac-cyan); color: #0a0b12; }
+
+/* --- Hover opacity control: the widget as a see-through practice HUD ------
+   The fade is on the panel CONTENTS, never on the section, so the slider (a
+   sibling of those contents) keeps full opacity — a control inside a 20%-faded
+   box would be one you have to find before you can undo it. */
+#widget-motion .panel__header,
+#widget-motion .panel__body {
+  opacity: var(--motion-op, 1);
+}
+/* Below full opacity the panel chrome goes entirely rather than fading with the
+   contents: a translucent dark rectangle over a track still reads as a
+   rectangle, and losing it is what makes this a HUD instead of a window. */
+#widget-motion[data-transparent="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+/* Zero-height positioning context (see buildOpacityControl) — the widget
+   section can't serve as one on the single-widget and in-game pages. */
+.motion__opacity-anchor {
+  position: relative;
+  height: 0;
+}
+.motion__opacity {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-header);
+  border: 1px solid var(--border-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+/* Revealed by hovering the widget OR by keyboard focus, so the slider is still
+   reachable without a mouse once it has been tabbed to. */
+#widget-motion:hover .motion__opacity,
+.motion__opacity:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.motion__opacity-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.motion__opacity-range {
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  accent-color: var(--ac-cyan);
+  cursor: pointer;
+}
+.motion__opacity-val {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
 }
 
 /* =========================================================================
