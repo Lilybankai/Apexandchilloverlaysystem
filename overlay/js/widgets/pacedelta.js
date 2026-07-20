@@ -77,12 +77,16 @@
     return d;
   }
 
-  /** Signed 4-decimal value (matches LMU's `0.0000`); em dash when unknown. */
+  /**
+   * Signed 2-decimal value; em dash when unknown. Two decimals is what every
+   * sim's delta reads: the third and fourth digits churn constantly even on a
+   * perfectly stable delta, which the eye reads as flicker rather than detail.
+   */
   function fmtVal(sec, fmt) {
     if (!fmt.has(sec)) return { text: "—", state: "none" };
     var sign = sec > 0.005 ? "+" : sec < -0.005 ? "−" : "";
     var state = sec < -0.005 ? "ahead" : sec > 0.005 ? "behind" : "flat";
-    return { text: sign + Math.abs(sec).toFixed(4), state: state };
+    return { text: sign + Math.abs(sec).toFixed(2), state: state };
   }
 
   function paintCell(key, sec, fmt) {

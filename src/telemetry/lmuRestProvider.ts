@@ -205,6 +205,8 @@ export class LmuRestProvider implements TelemetryProvider {
    * widget and the single-value Delta widget. Built on the REST watch feed.
    */
   private readonly paceDelta = new LocalPaceDeltaTracker();
+  /** `lastOkAt` of the newest REST snapshot already fed to {@link paceDelta}. */
+  private paceDeltaSnapshotAt = 0;
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
   /**
@@ -431,12 +433,32 @@ export class LmuRestProvider implements TelemetryProvider {
       // clock (mElapsedTime, shared memory). REST timeIntoLap is a position-
       // derived estimate — identical every lap — so it can't produce a delta;
       // the sim clock genuinely differs between fast and slow laps.
-      const d = clamp01(focus!.lapDistance / trackLen);
+      //
+      // The two axes tick at very different rates: the clock is fresh every
+      // frame (~30-60 Hz) but the REST position only every REFRESH_INTERVAL_MS.
+      // Feeding a stale position against a live clock makes `t − t_ref(d)` climb
+      // at 1.0 s/s between packets and snap back on arrival — a visible sawtooth
+      // of up to ~0.2 s. So extrapolate the position forward by the snapshot's
+      // age × the car's own velocity, exactly as buildRelative() does, and wrap
+      // it at the start/finish line. Both axes then advance together and the
+      // delta is smooth; `fresh` tells the tracker which samples are real
+      // measurements it may store as reference-lap points.
+      const snapshotAt = this.lastOkAt;
+      const fresh = snapshotAt !== this.paceDeltaSnapshotAt;
+      this.paceDeltaSnapshotAt = snapshotAt;
+      const ageSec = Math.min(0.5, Math.max(0, (Date.now() - snapshotAt) / 1000));
+      const vel = focus!.carVelocity?.velocity;
+      const speedMps =
+        typeof vel === 'number' && Number.isFinite(vel) ? Math.min(150, Math.max(0, vel)) : 0;
+      const distM = focus!.lapDistance + speedMps * ageSec;
+      const laps = distM / trackLen;
+      const d = clamp01(laps - Math.floor(laps));
       paceDeltas = this.paceDelta.update(
         d,
         local!.elapsedSec,
         focus!.bestLapTime,
         trackKeyOf(si.trackName || '', trackLen),
+        fresh,
       );
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.

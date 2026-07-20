@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.6.7 — 2026-07-20
+
+### Fixed
+- **A part-lap could be adopted as your best lap, and overwrite your PB.** This
+  was the real cause of the delta reading nonsense or "—" for a whole lap. When
+  the overlay attached part-way round a lap — starting it mid-session, leaving
+  the pits, a track reset — the tracker timed from wherever the car happened to
+  be, and the moment you crossed the line it recorded that **fragment as a
+  completed lap**. A half lap timed 48 s, which then beat a genuine 94 s best on
+  a plain `lapSec <` comparison and was adopted as session best, as all-time
+  best, and **persisted over the real PB** in `~/.apex-overlay/pb`. Every delta
+  afterwards read unknown: a fragment's trace only covers part of the lap, and
+  its times are measured from a start line it never crossed. Nothing could ever
+  displace it either, because no real lap can beat an impossible time. Now:
+  - only a lap that **began at an observed start/finish crossing** can become a
+    reference — the first part-lap after attaching is used for display and then
+    discarded;
+  - laps that are implausibly **fast** are rejected as well as implausibly slow
+    (previously only the slow side was checked, which is exactly how a 48 s
+    half-lap got through);
+  - a trace with a hole in it (car recovered to the track, or a feed dropout) is
+    rejected rather than interpolated across;
+  - a **persisted PB is re-validated on load**, so an already-corrupted file
+    written by an earlier build is ignored instead of poisoning the session.
+
+  If a bad PB was already saved for a track, delete that track's file in
+  `~/.apex-overlay/pb` — it re-records on your next clean lap.
+- Added `npm run test:delta` — regression checks for the above, plus delta
+  stability, runnable without a test framework.
+- **Lap delta no longer jumps around.** The delta was sawtoothing by up to
+  **±0.15 s** several times a second — it would read a genuine three tenths, then
+  snap to zero and climb again. Cause: the delta's two inputs tick at very
+  different rates. The time axis (`mElapsedTime`, shared memory) is fresh every
+  frame at ~30-60 Hz, but the position axis (REST `lapDistance`) only refreshes
+  every 150 ms. With the position frozen between REST packets, `t − t_ref(d)`
+  climbed at a full second per second and snapped back the instant a new packet
+  landed. The sawtooth amplitude was exactly the poll interval. Three changes:
+  - **The position is now dead-reckoned forward** by the snapshot's age × the
+    car's own velocity (the same extrapolation the relative widget already used),
+    so both axes advance together. Measured on a simulated 100 s lap at 60 fps
+    against a 150 ms feed, this alone cuts the worst frame-to-frame movement from
+    **0.1496 s to 0.0002 s**.
+  - **Lap boundaries are interpolated to the sub-poll moment of the line
+    crossing** instead of being stamped at whichever frame first noticed the wrap.
+    That frame is up to one poll late, at random, which shifted each lap's whole
+    time axis by a different 0-150 ms — a constant per-lap offset that made the
+    delta read a tenth or two wrong from the moment a lap started.
+  - **The readout is slew-limited and low-pass filtered** (max 1.5 s of delta per
+    second of driving, 0.25 s time constant) to absorb what's left — REST
+    distance quantisation, poll jitter, packet latency. The filter resets at each
+    lap boundary, so the legitimate snap back to ~0 on a new lap is instant.
+
+  Only genuine REST samples are stored as reference-lap points now; extrapolated
+  positions are used for display but never baked into the lap you compare against.
+
+### Changed
+- **Delta and Pace Delta now read to 2 decimals** (`+0.30`) instead of 4
+  (`+0.3021`) — what every sim's delta shows. The third and fourth digits churn
+  constantly even on a perfectly stable delta, which reads as flicker rather than
+  detail. The wire value keeps its 4-decimal precision, since the smoothing
+  filters integrate across frames and would step if fed display-rounded input.
+
 ## 0.6.6 — 2026-07-19
 
 ### Added

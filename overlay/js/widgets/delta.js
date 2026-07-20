@@ -88,8 +88,10 @@
 
     setState(ahead ? "ahead" : behind ? "behind" : "flat");
 
+    // Two decimals, as every sim's delta reads: the finer digits churn even on a
+    // perfectly stable delta and read as flicker rather than detail.
     var sign = d > 0 ? "+" : d < 0 ? "−" : "";
-    var txt = sign + Math.abs(d).toFixed(4);
+    var txt = sign + Math.abs(d).toFixed(2);
     if (valueEl.textContent !== txt) valueEl.textContent = txt;
   }
 
