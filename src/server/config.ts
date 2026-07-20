@@ -49,6 +49,18 @@ export interface ServerConfig {
   provider: 'lmu' | 'rf2' | 'simulator';
   /** Localhost port of the LMU REST API (used when `provider` is `lmu`). */
   lmuApiPort: number;
+  /**
+   * Absolute path of the directory holding the operator's sponsor logo images,
+   * served read-only under `/sponsors/`. Empty when no sponsor branding is
+   * configured, in which case that route 404s.
+   *
+   * This is a **second** static root, separate from {@link overlayDir}: the
+   * images live in the app's user-data directory (they are user content, and
+   * must survive an app update), not inside the shipped overlay assets.
+   */
+  sponsorDir: string;
+  /** Seconds each sponsor logo is shown before cross-fading to the next. */
+  sponsorIntervalSec: number;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -64,6 +76,8 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   forceSimulator: false,
   provider: 'lmu',
   lmuApiPort: 6397,
+  sponsorDir: '',
+  sponsorIntervalSec: 12,
   verbose: false,
 });
 
@@ -80,6 +94,11 @@ function envInt(name: string, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Parses a TCP port from an env var, clamped into the valid 1..65535 range. */
+function envPort(name: string, fallback: number): number {
+  return clamp(envInt(name, fallback), 1, 65535);
 }
 
 /** Parses a boolean env var. Truthy values: `1`, `true`, `yes`, `on`. */
@@ -113,23 +132,30 @@ function clamp(value: number, min: number, max: number): number {
  * over {@link DEFAULT_CONFIG}. Recognised variables:
  *
  * - `APEX_HOST` — bind host (default `127.0.0.1`)
- * - `APEX_HTTP_PORT` — HTTP/overlay port (default `8080`)
- * - `APEX_WS_PORT` — WebSocket port (default = HTTP port)
+ * - `APEX_HTTP_PORT` — HTTP/overlay port, clamped to 1..65535 (default `8080`)
+ * - `APEX_WS_PORT` — WebSocket port, clamped to 1..65535 (default = HTTP port)
  * - `APEX_WS_PATH` — WebSocket path (default `/ws`)
  * - `APEX_UPDATE_HZ` — broadcast rate, clamped to 1..120 (default `30`)
  * - `APEX_OVERLAY_DIR` — static overlay directory (default `overlay`)
  * - `APEX_FORCE_SIM` — force simulator provider (default `false`)
+ * - `APEX_PROVIDER` — `lmu` | `rf2` | `simulator` (default `lmu`)
+ * - `APEX_LMU_PORT` — LMU REST API port, clamped to 1..65535 (default `6397`)
+ * - `APEX_SPONSOR_DIR` — sponsor logo directory served at `/sponsors/` (default none)
+ * - `APEX_SPONSOR_SEC` — seconds per sponsor logo, clamped to 3..120 (default `12`)
  * - `APEX_VERBOSE` — verbose logging (default `false`)
  *
  * @returns A fully-resolved, ready-to-use configuration object.
  */
 export function loadConfig(): ServerConfig {
-  const httpPort = envInt('APEX_HTTP_PORT', DEFAULT_CONFIG.httpPort);
+  // Ports are clamped here, matching what the Electron path already does when it
+  // builds a config from config.json — otherwise `APEX_HTTP_PORT=99999` reached
+  // `server.listen()` unvalidated and failed with an opaque range error.
+  const httpPort = envPort('APEX_HTTP_PORT', DEFAULT_CONFIG.httpPort);
   return {
     host: envStr('APEX_HOST', DEFAULT_CONFIG.host),
     httpPort,
     // WS shares the HTTP port unless explicitly overridden.
-    wsPort: envInt('APEX_WS_PORT', httpPort),
+    wsPort: envPort('APEX_WS_PORT', httpPort),
     wsPath: envStr('APEX_WS_PATH', DEFAULT_CONFIG.wsPath),
     updateRateHz: clamp(
       envInt('APEX_UPDATE_HZ', DEFAULT_CONFIG.updateRateHz),
@@ -139,7 +165,13 @@ export function loadConfig(): ServerConfig {
     overlayDir: envStr('APEX_OVERLAY_DIR', DEFAULT_CONFIG.overlayDir),
     forceSimulator: envBool('APEX_FORCE_SIM', DEFAULT_CONFIG.forceSimulator),
     provider: envProvider('APEX_PROVIDER', DEFAULT_CONFIG.provider),
-    lmuApiPort: envInt('APEX_LMU_PORT', DEFAULT_CONFIG.lmuApiPort),
+    lmuApiPort: envPort('APEX_LMU_PORT', DEFAULT_CONFIG.lmuApiPort),
+    sponsorDir: envStr('APEX_SPONSOR_DIR', DEFAULT_CONFIG.sponsorDir),
+    sponsorIntervalSec: clamp(
+      envInt('APEX_SPONSOR_SEC', DEFAULT_CONFIG.sponsorIntervalSec),
+      3,
+      120,
+    ),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

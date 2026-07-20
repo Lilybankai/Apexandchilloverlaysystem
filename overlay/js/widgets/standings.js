@@ -81,7 +81,7 @@
   /** How long a new personal-best lap flashes green (ms). */
   var PB_FLASH_MS = 5000;
 
-  var mount, sessionStrip, sessLap, sessClock, sessToGo, tbody;
+  var mount, sessionStrip, sessLap, sessClock, sessToGo, sessFastest, tbody;
   /** @type {Map<number, object>} slotId -> cached row element + last values. */
   var rows = new Map();
   /** @type {Map<number, object>} slotId -> { laps, best, flashUntil }. */
@@ -121,6 +121,9 @@
     var gapTd = document.createElement("td");
     gapTd.className = "standings__cell standings__gap";
 
+    var bestTd = document.createElement("td");
+    bestTd.className = "standings__cell standings__best";
+
     var lastTd = document.createElement("td");
     lastTd.className = "standings__cell standings__last";
 
@@ -129,6 +132,7 @@
     tr.appendChild(driverTd);
     tr.appendChild(veTd);
     tr.appendChild(gapTd);
+    tr.appendChild(bestTd);
     tr.appendChild(lastTd);
 
     return {
@@ -141,6 +145,7 @@
       veBar: veBar,
       veText: veText,
       gapTd: gapTd,
+      bestTd: bestTd,
       lastTd: lastTd,
       cache: {},
     };
@@ -152,7 +157,7 @@
     tr.className = "standings__grouprow";
     var td = document.createElement("td");
     td.className = "standings__group";
-    td.colSpan = 6;
+    td.colSpan = 7;
     var dot = document.createElement("span");
     dot.className = "standings__group-dot";
     var label = document.createElement("span");
@@ -195,6 +200,13 @@
     sessionStrip.appendChild(sessToGo);
     mount.appendChild(sessionStrip);
 
+    // Fastest-lap-of-the-race banner: who holds it and what it is. Sits on its
+    // own line under the session strip so it never squeezes the lap counter.
+    sessFastest = document.createElement("div");
+    sessFastest.className = "standings__fastest";
+    sessFastest.hidden = true;
+    mount.appendChild(sessFastest);
+
     var table = document.createElement("table");
     table.className = "standings__table";
     // Explicit column widths via <colgroup> so table-layout:fixed sizes columns
@@ -202,7 +214,11 @@
     // the browser split the table into equal columns and starve the driver name.
     // The driver column has no width, so it absorbs the remaining space.
     var colgroup = document.createElement("colgroup");
-    var widths = [30, 34, 0, 50, 66, 72]; // pos, ±, driver(rest), VE, gap, last
+    // pos, ±, driver(rest), VE, gap, best, last. The six fixed columns total
+    // 298px of the panel's 474px, leaving ~176px for the driver name. The three
+    // time columns are sized for a full "1:58.492" at the 12px mono size the CSS
+    // gives them — undersize them and the tenths silently clip off the right.
+    var widths = [26, 28, 0, 42, 62, 70, 70];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = widths[c] + "px";
@@ -212,6 +228,84 @@
     tbody = document.createElement("tbody");
     table.appendChild(tbody);
     mount.appendChild(table);
+
+    initSponsors(mount);
+  }
+
+  /* ------------------------------ sponsor strip ---------------------------- */
+
+  /**
+   * Rotating sponsor logo strip under the tower, the way a real broadcast
+   * timing graphic carries its partners.
+   *
+   * The list comes from `/sponsors/index.json` (operator configuration served by
+   * our own server), NOT from the telemetry frame — branding is static, and
+   * putting it on the wire would repeat the same payload 30 times a second.
+   * Rotation is a CSS opacity transition driven by one timer, so the widget
+   * costs nothing per telemetry frame.
+   */
+  var sponsorStrip, sponsorImgA, sponsorImgB;
+  var sponsorLogos = [];
+  var sponsorIdx = 0;
+  var sponsorShowingA = true;
+  var sponsorTimer = null;
+
+  function initSponsors(root) {
+    sponsorStrip = document.createElement("div");
+    sponsorStrip.className = "standings__sponsors";
+    sponsorStrip.hidden = true;
+    // Two stacked images cross-fade between them; swapping the src of a single
+    // <img> would flash white while the next file decodes.
+    sponsorImgA = document.createElement("img");
+    sponsorImgA.className = "standings__sponsor is-on";
+    sponsorImgA.alt = "";
+    sponsorImgB = document.createElement("img");
+    sponsorImgB.className = "standings__sponsor";
+    sponsorImgB.alt = "";
+    sponsorStrip.appendChild(sponsorImgA);
+    sponsorStrip.appendChild(sponsorImgB);
+    root.appendChild(sponsorStrip);
+    loadSponsors();
+  }
+
+  function loadSponsors() {
+    fetch("/sponsors/index.json", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (cfg) {
+        if (!cfg || !Array.isArray(cfg.logos) || cfg.logos.length === 0) {
+          sponsorStrip.hidden = true;
+          return;
+        }
+        sponsorLogos = cfg.logos.map(function (n) {
+          return "/sponsors/" + encodeURIComponent(n);
+        });
+        var everySec = typeof cfg.intervalSec === "number" && cfg.intervalSec >= 3
+          ? cfg.intervalSec
+          : 12;
+        sponsorIdx = 0;
+        sponsorImgA.src = sponsorLogos[0];
+        sponsorStrip.hidden = false;
+        if (sponsorTimer) clearInterval(sponsorTimer);
+        // A single logo has nothing to rotate to — show it and stop.
+        if (sponsorLogos.length > 1) {
+          sponsorTimer = setInterval(rotateSponsor, everySec * 1000);
+        }
+      })
+      .catch(function () {
+        // No server route / no sponsors configured: stay hidden. This is the
+        // normal case for most users, not an error worth logging.
+        sponsorStrip.hidden = true;
+      });
+  }
+
+  function rotateSponsor() {
+    sponsorIdx = (sponsorIdx + 1) % sponsorLogos.length;
+    var incoming = sponsorShowingA ? sponsorImgB : sponsorImgA;
+    var outgoing = sponsorShowingA ? sponsorImgA : sponsorImgB;
+    incoming.src = sponsorLogos[sponsorIdx];
+    incoming.classList.add("is-on");
+    outgoing.classList.remove("is-on");
+    sponsorShowingA = !sponsorShowingA;
   }
 
   /** Render the LAP x/y counter and the timed-race countdown clock. */
@@ -270,16 +364,28 @@
 
     updateSession(frame, fmt);
 
-    // Overall fastest lap of the race (min valid best) -> purple holder.
+    // Fastest lap of the race (purple) and fastest lap per class (green). In a
+    // multiclass field only one car can hold the purple, so without the
+    // per-class pass the GT3 and LMP2 benchmarks are invisible.
     var fastestSlot = -1;
     var fastestSec = Infinity;
+    var fastestEntry = null;
+    /** @type {Object<string, {sec: number, slot: number}>} */
+    var classFastest = {};
     for (var f = 0; f < list.length; f++) {
       var b = list[f].bestLapSec;
-      if (fmt.has(b) && b < fastestSec) {
+      if (!fmt.has(b)) continue;
+      if (b < fastestSec) {
         fastestSec = b;
         fastestSlot = list[f].slotId;
+        fastestEntry = list[f];
+      }
+      var ck = list[f].carClass || "—";
+      if (!classFastest[ck] || b < classFastest[ck].sec) {
+        classFastest[ck] = { sec: b, slot: list[f].slotId };
       }
     }
+    updateFastestBanner(fastestEntry, fastestSec, fmt);
 
     // Group entries by class, preserving position order within a class and
     // ordering the classes by their best (lowest) position.
@@ -317,8 +423,9 @@
       tbody.appendChild(grp.tr);
 
       // Member rows.
+      var clsFastestSlot = classFastest[cls] ? classFastest[cls].slot : -1;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, fastestSlot);
+        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot);
         seen.add(members[m].slotId);
       }
     }
@@ -340,7 +447,24 @@
     });
   }
 
-  function renderRow(e, fmt, now, fastestSlot) {
+  /**
+   * Fastest-lap-of-the-race banner. Persists once set — a fastest lap is a race
+   * fact, not a transient state, so it stays visible after the holder pits or
+   * retires (which is exactly when a viewer most wants to be reminded of it).
+   */
+  function updateFastestBanner(entry, sec, fmt) {
+    if (!entry || !fmt.has(sec)) {
+      if (!sessFastest.hidden) sessFastest.hidden = true;
+      return;
+    }
+    var who = shortName(entry.driverName);
+    if (entry.carNumber) who = "#" + entry.carNumber + " " + who;
+    var txt = "FASTEST LAP · " + who + " · " + fmt.lapTime(sec);
+    if (sessFastest.textContent !== txt) sessFastest.textContent = txt;
+    if (sessFastest.hidden) sessFastest.hidden = false;
+  }
+
+  function renderRow(e, fmt, now, fastestSlot, classFastestSlot) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -370,7 +494,15 @@
     if (isFastest) cls += " standings__row--fastest";
     set(row, "cls", row.tr, "className", cls);
 
-    set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));
+    // Rows are grouped under a class subheader, so the number that belongs in
+    // the position column is the position IN CLASS — that is what the driver is
+    // actually racing for in a multiclass field. The overall position is kept on
+    // the title attribute rather than dropped.
+    var hasClassPos = fmt.has(e.classPosition) && e.classPosition > 0;
+    set(row, "pos", row.posTd, "textContent",
+      fmt.intVal(hasClassPos ? e.classPosition : e.position));
+    set(row, "posTitle", row.posTd, "title",
+      hasClassPos ? "P" + e.position + " overall" : "");
 
     // Positions gained/lost vs. the grid.
     var dTxt = "";
@@ -417,20 +549,48 @@
       row.veTd.setAttribute("data-ve", veState);
     }
 
-    // Gap: laps-behind takes precedence, then seconds; leader shows a dash.
+    // Gap to the leader OF THIS CLASS, matching the in-class position beside it —
+    // an overall gap under a class subheader reads as a contradiction (a GT3 P1
+    // showing +2 laps). Falls back to the overall gap when the class is unknown.
+    // Laps-behind takes precedence over seconds; a class leader shows a dash.
     var gapText;
-    if (e.position === 1) gapText = "—";
-    else if (e.lapsBehind && e.lapsBehind > 0) gapText = "+" + e.lapsBehind + "L";
-    else gapText = fmt.gap(e.gapToLeaderSec);
+    var useClass = hasClassPos && fmt.has(e.gapToClassLeaderSec);
+    var lapsBehind = useClass ? e.classLapsBehind : e.lapsBehind;
+    if (useClass ? e.classPosition === 1 : e.position === 1) gapText = "—";
+    else if (lapsBehind && lapsBehind > 0) gapText = "+" + lapsBehind + "L";
+    else gapText = fmt.gap(useClass ? e.gapToClassLeaderSec : e.gapToLeaderSec);
     set(row, "gap", row.gapTd, "textContent", gapText);
+    set(row, "gapTitle", row.gapTd, "title",
+      useClass && e.position !== 1
+        ? "to race leader " + (e.lapsBehind > 0 ? "+" + e.lapsBehind + "L" : fmt.gap(e.gapToLeaderSec))
+        : "");
+
+    // BEST: purple for the fastest lap of the race, green for the fastest lap of
+    // this class (the benchmark that is otherwise invisible in a multiclass
+    // field, since only one car can hold the purple).
+    set(row, "best", row.bestTd, "textContent", fmt.lapTime(e.bestLapSec));
+    var bestState = !fmt.has(e.bestLapSec)
+      ? ""
+      : isFastest
+        ? "fastest"
+        : e.slotId === classFastestSlot
+          ? "classbest"
+          : "";
+    if (row.cache.bestState !== bestState) {
+      row.cache.bestState = bestState;
+      row.bestTd.classList.toggle("lap-purple", bestState === "fastest");
+      row.bestTd.classList.toggle("lap-green", bestState === "classbest");
+    }
 
     set(row, "last", row.lastTd, "textContent", fmt.lapTime(e.lastLapSec));
-    // Last-lap colour: purple for the race's fastest lap, green flash for a
-    // fresh personal best, otherwise the default text colour.
-    var lastState = isFastest ? "fastest" : flashing ? "pb" : "";
+    // Last-lap colour: a green flash for a freshly-set personal best, otherwise
+    // the default text colour. The purple deliberately lives on BEST only — it
+    // marks the fastest lap of the race, which is a *best* lap. Painting LAST
+    // purple too (as this did before the BEST column existed) claimed the
+    // holder's most recent lap was the fastest one, which it usually isn't.
+    var lastState = flashing ? "pb" : "";
     if (row.cache.lastState !== lastState) {
       row.cache.lastState = lastState;
-      row.lastTd.classList.toggle("lap-purple", lastState === "fastest");
       row.lastTd.classList.toggle("lap-green", lastState === "pb");
     }
 

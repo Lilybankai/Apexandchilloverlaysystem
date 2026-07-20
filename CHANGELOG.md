@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.7.0 — 2026-07-20 "On track"
+
+First slice of the Carl + Scot roadmap: the items that are visible on stream and
+need no new infrastructure.
+
+### Added
+- **Position in class, and the gap to your class leader.** The standings tower
+  already grouped cars by category, but every number in the row was still an
+  *overall* number — a GT3 leading its class read "P7, +2 laps", which is a
+  contradiction under a GT3 header. The position column now counts within the
+  class and the gap column measures to that class's leader; the overall figures
+  move to the cell tooltips rather than being dropped.
+- **A BEST lap column**, with the fastest lap of the race in purple and each
+  class's fastest in green. In a multiclass field only one car can hold the
+  purple, so without the per-class colour the LMP2 and GT3 benchmarks were
+  invisible.
+- **A fastest-lap-of-the-race banner** under the lap counter, naming the holder
+  and the time. It persists once set — a fastest lap is a race fact, so it stays
+  up after the holder pits or retires, which is when a viewer most wants it.
+- **Blue-flag / backmarker alert in the relative widget.** A pulsing banner and a
+  highlighted row when a car that is *behind you on the road but ahead of you in
+  the race* is inside three seconds: either a lap up (an unambiguous blue flag,
+  alerted regardless of closing rate) or in a faster class **and actually
+  closing**. That last test is what stops the banner latching on to a Hypercar
+  that is merely circulating at your pace and never arrives.
+- **Virtual-energy overlap readout** — "⚡ 2 of 5 ahead pit first · +1.9 laps in
+  hand" in the fuel widget. Each of those cars is a position that comes back on
+  strategy alone. It sits *outside* the widget's 20-second FUEL/ENERGY rotation,
+  because a strategy call you can only see for half the time is not much use.
+  The comparison is restricted to cars in your own class and reports how many it
+  drew from: LMU publishes every car's remaining energy but not its burn rate, so
+  a car's remaining *laps* has to be estimated from someone else's burn, and that
+  only holds within a class. Cross-class cars are excluded rather than guessed at.
+- **The steering trace is now a trace.** Steering was a dot on a strip — it told
+  you where the wheel was *right now* and nothing about how it got there. It is
+  now a centre-anchored line drawn through the pedal trace on the same time axis,
+  so turn-in rate, corrections and how much lock is still wound on when the
+  throttle comes back are all one glance. `?steer=dot` restores the old readout,
+  `?steer=off` removes it.
+- **Rotating sponsor logos** under the standings tower, the way a broadcast
+  timing graphic carries its partners. Add images in the control panel (they are
+  copied into the app's data folder, so moving or deleting the originals later
+  can't break a race) and set the seconds per logo. Two stacked images cross-fade
+  on a CSS opacity transition, so the strip costs nothing per telemetry frame.
+- `npm run test:multiclass` — 30 checks over the class normalisation, the
+  position-in-class/class-gap derivation and the blue-flag rule. All are pure
+  functions, so they run without the sim.
+
+### Changed
+- **Car classes are normalised before anything sees them.** LMU spells the same
+  category several ways depending on the entry list (`Hypercar`, `HYPER`, `LMH`,
+  `LMDh`, `GTP`; `LMGT3` vs `GT3`), which split one category into several groups
+  in the tower. They now collapse onto a canonical set with a known speed order —
+  which is also what lets the relative widget reason about "a faster car is
+  coming" without hardcoding class names. An unrecognised class is passed through
+  rather than discarded, and is never ranked as faster or slower than a known one,
+  so a mod entry can't fire a false blue flag.
+- **Demo mode is now a realistic multiclass field.** The simulator's three
+  classes were cosmetic labels over a field that was covered by four seconds, so
+  no faster car ever actually caught a slower one and nothing keyed on real
+  multiclass behaviour — the blue flag, the energy overlap, lapping — could be
+  seen without the game running. The classes now run WEC-shaped pace (~11 s from
+  Hypercar to GT3), start interleaved on track rather than sorted by class, and
+  the player is no longer the fastest car in its own class by construction.
+- The LAST column no longer paints purple. The purple marks the fastest lap of
+  the race, which is a *best* lap and now has its own column; painting LAST purple
+  as well claimed the holder's most recent lap was the fastest one, which it
+  usually isn't. The green flash for a freshly-set personal best is unchanged.
+
+### Fixed
+- **Pace Delta spawned on top of Standings** in the in-game layer. It had no
+  entry in the default-position table, so it fell through to the same corner as
+  the tower and looked like the overlay had failed to load.
+- **The standings table clipped the tenths off its lap times.** Adding a column
+  pushed the fixed widths past the panel; the time columns are now sized for a
+  full `1:58.492` at the size the CSS actually gives them.
+- **The control panel re-rendered once a second, forever.** The feed watchdog
+  pushed its status unconditionally on a 1 Hz timer instead of only when the
+  live/demo/no-data state changed. The push now happens on the transition, from
+  both directions.
+- **The simulator reset every car's pace on every completed lap**, re-deriving it
+  from the slot id and throwing away the car's class offset — so a GT3's lap time
+  snapped to Hypercar pace the moment it crossed the line and the tower disagreed
+  with its own gaps.
+- Environment-supplied ports (`APEX_HTTP_PORT`, `APEX_WS_PORT`, `APEX_LMU_PORT`)
+  are clamped to 1..65535 on the `npm start` path, matching what the desktop app
+  already did. `APEX_PROVIDER` and `APEX_LMU_PORT` were also missing from the
+  documented list despite being implemented.
+- Removed `LocalLapDeltaTracker`, superseded by the pace-delta engine and unused
+  since; its stale offline test went with it (`npm run test:delta` covers the
+  live engine).
+
 ## 0.6.7 — 2026-07-20
 
 ### Fixed

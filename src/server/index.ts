@@ -68,22 +68,80 @@ export function selectProvider(config: ServerConfig): TelemetryProvider {
   return new LmuRestProvider(config);
 }
 
+/** URL prefix the operator's sponsor logos are served under. */
+const SPONSOR_PREFIX = '/sponsors/';
+/** Image extensions accepted as sponsor logos. */
+const SPONSOR_EXTS = new Set(['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp']);
+
+/**
+ * Serves `/sponsors/index.json` — the list of logo filenames the overlay should
+ * rotate through, plus the configured interval.
+ *
+ * The overlay fetches this rather than receiving it in the telemetry frame:
+ * branding is operator configuration, not telemetry, and putting it on the wire
+ * at 30 Hz would repeat a static payload 30 times a second for no reason.
+ */
+async function serveSponsorManifest(
+  res: ServerResponse,
+  sponsorRoot: string,
+  intervalSec: number,
+): Promise<void> {
+  let logos: string[] = [];
+  try {
+    const entries = await fs.readdir(sponsorRoot, { withFileTypes: true });
+    logos = entries
+      .filter((e) => e.isFile() && SPONSOR_EXTS.has(extname(e.name).toLowerCase()))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    /* no sponsor directory yet — an empty list is the correct answer */
+  }
+  const body = JSON.stringify({ intervalSec, logos });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-cache',
+  });
+  res.end(body);
+}
+
 /**
  * Resolves and serves a static file from the overlay directory, guarding
  * against path traversal outside that root.
+ *
+ * Requests under {@link SPONSOR_PREFIX} are served from the operator's sponsor
+ * directory instead, with the same containment guard applied to that root.
  */
 async function serveStatic(
   req: IncomingMessage,
   res: ServerResponse,
   overlayRoot: string,
+  sponsorRoot: string,
+  sponsorIntervalSec: number,
 ): Promise<void> {
   // Strip query string and decode; default to index.html.
   const rawPath = decodeURIComponent((req.url ?? '/').split('?')[0] ?? '/');
   const relPath = rawPath === '/' ? '/index.html' : rawPath;
 
-  // Normalize and confine to the overlay root (prevents ../ escapes).
-  const candidate = resolve(overlayRoot, '.' + normalize(relPath));
-  if (candidate !== overlayRoot && !candidate.startsWith(overlayRoot + sep)) {
+  let root = overlayRoot;
+  let subPath = relPath;
+  if (relPath.startsWith(SPONSOR_PREFIX)) {
+    if (!sponsorRoot) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found');
+      return;
+    }
+    if (relPath === `${SPONSOR_PREFIX}index.json`) {
+      await serveSponsorManifest(res, sponsorRoot, sponsorIntervalSec);
+      return;
+    }
+    root = sponsorRoot;
+    subPath = relPath.slice(SPONSOR_PREFIX.length - 1); // keep the leading '/'
+  }
+
+  // Normalize and confine to the chosen root (prevents ../ escapes).
+  const candidate = resolve(root, '.' + normalize(subPath));
+  if (candidate !== root && !candidate.startsWith(root + sep)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return;
@@ -121,9 +179,10 @@ async function serveStatic(
  */
 export async function start(config: ServerConfig = loadConfig()): Promise<() => Promise<void>> {
   const overlayRoot = resolve(process.cwd(), config.overlayDir);
+  const sponsorRoot = config.sponsorDir ? resolve(config.sponsorDir) : '';
 
   const httpServer = createServer((req, res) => {
-    void serveStatic(req, res, overlayRoot);
+    void serveStatic(req, res, overlayRoot, sponsorRoot, config.sponsorIntervalSec);
   });
 
   const wsServer = new TelemetryWsServer(httpServer, config);

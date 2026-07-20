@@ -26,6 +26,8 @@ import {
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
+import { assignClassPositions, isFasterClass } from './carClass';
+import { shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
 
@@ -37,6 +39,40 @@ const RACE_LAPS = 16;
 const START_LAPS = 3;
 /** Nominal lap time in seconds before per-car pace offset and noise. */
 const BASE_LAP_SEC = 118;
+/**
+ * Class definitions for the synthetic field: how many cars, and how much slower
+ * than {@link BASE_LAP_SEC} that class runs.
+ *
+ * The pace **spread between classes is the point**. It used to be a flat
+ * `i * 0.35`, which put the whole 12-car field inside 4 seconds — so the classes
+ * were cosmetic labels and no faster-class car ever actually caught a slower one.
+ * Anything keyed on real multiclass behaviour (the blue-flag alert, class gaps,
+ * lapping) therefore never triggered in demo mode and could not be seen without
+ * the sim running. These offsets are roughly WEC-shaped: ~11 s from Hypercar to
+ * GT3 on a ~2-minute lap.
+ */
+const SIM_CLASSES: Array<{ name: string; count: number; lapOffsetSec: number }> = [
+  { name: 'HYPERCAR', count: 4, lapOffsetSec: 0 },
+  { name: 'LMP2', count: 4, lapOffsetSec: 5.5 },
+  { name: 'GT3', count: 4, lapOffsetSec: 11 },
+];
+/**
+ * Within-class pace spread, indexed by the car's position inside its class.
+ * Deliberately **not** ascending: the player is always the first car of its
+ * class (`PLAYER_INDEX`), so an ascending spread made the player the fastest car
+ * in its class by construction — permanently class leader, with nobody of the
+ * same class ahead. Anything that compares the player against the cars ahead
+ * *in their own class* (the virtual-energy overlap readout) then had nothing to
+ * compare and stayed blank in demo mode.
+ */
+const WITHIN_CLASS_SPREAD = [0.7, 0, 1.05, 0.35];
+/**
+ * Starting on-track order, front to back, as car indices. Classes are
+ * interleaved — a real endurance grid is mixed on track, not sorted by class —
+ * and the player (index 4) starts sixth with two same-class cars ahead, so the
+ * multiclass readouts have something real to show from the first frame.
+ */
+const START_ORDER = [0, 5, 1, 7, 8, 4, 2, 9, 6, 3, 10, 11];
 /** Index (0-based) of the player within the field. */
 const PLAYER_INDEX = 4;
 /** Tank capacity in litres. */
@@ -164,18 +200,28 @@ export class SimulatorProvider implements TelemetryProvider {
     this.lapsBurned = 0;
 
     this.cars = [];
+    // Expand SIM_CLASSES into a per-car class lookup: [HC,HC,HC,HC,LMP2,…].
+    const classOf: Array<{ name: string; lapOffsetSec: number }> = [];
+    for (const c of SIM_CLASSES) {
+      for (let n = 0; n < c.count; n++) {
+        classOf.push({ name: c.name, lapOffsetSec: c.lapOffsetSec });
+      }
+    }
+
     for (let i = 0; i < FIELD_SIZE; i++) {
-      // Cars ahead in the grid have a small pace advantage; add per-car noise.
-      const paceOffset = i * 0.35 + jitter(0.15);
-      // Stagger starting positions so the field is spread around the lap.
-      const progress = 1 - i / FIELD_SIZE + jitter(0.01);
+      // Pace = the car's class offset, plus a small within-class spread so the
+      // order inside a class still moves around, plus per-car noise.
+      const cls = classOf[i] ?? { name: 'GT3', lapOffsetSec: 11 };
+      const paceOffset = cls.lapOffsetSec + (WITHIN_CLASS_SPREAD[i % 4] ?? 0) + jitter(0.15);
+      // Spread the field around the lap in START_ORDER, so the on-track order is
+      // a mixed-class grid rather than every class in a block.
+      const rank = START_ORDER.indexOf(i);
+      const progress = 1 - (rank < 0 ? i : rank) / FIELD_SIZE + jitter(0.01);
       this.cars.push({
         slotId: i + 1,
         name: DRIVER_NAMES[i] ?? `Driver ${i + 1}`,
         carNumber: String(3 + i * 4),
-        // Two-class field: front runners are Hypercars, the rest GT3 — so the
-        // grouped standings + class colours are exercised in demo mode.
-        carClass: i < 4 ? 'Hypercar' : 'GT3',
+        carClass: cls.name,
         // Scrambled grid vs current pace order → non-zero positions gained/lost.
         gridPosition: ((i + 3) % FIELD_SIZE) + 1,
         // Seed energy high with a per-car spread; it ticks down as laps run.
@@ -288,12 +334,17 @@ export class SimulatorProvider implements TelemetryProvider {
       if (car.progress >= 1) {
         car.progress -= 1;
         car.lapsCompleted += 1;
-        // Fresh lap time with a little variance; keep the best.
-        const lap = BASE_LAP_SEC + (car.slotId - 1) * 0.35 + jitter(0.6);
+        // Fresh lap time with a little variance, around THIS car's own pace.
+        // (It used to re-derive the pace from the slot id, which threw away the
+        // class offset the car was actually running — so every completed lap
+        // reset a GT3's time to Hypercar pace and the tower disagreed with the
+        // gaps.)
+        const lap = car.lapSec + jitter(0.6);
         car.lastLapSec = lap;
         if (lap < car.bestLapSec) car.bestLapSec = lap;
-        // Burn a lap's worth of virtual energy (a touch faster for Hypercars).
-        const drain = car.carClass === 'Hypercar' ? 0.055 : 0.04;
+        // Burn a lap's worth of virtual energy — faster in the quicker classes,
+        // which is what makes the energy-overlap readout meaningful.
+        const drain = car.carClass === 'HYPERCAR' ? 0.055 : car.carClass === 'LMP2' ? 0.048 : 0.04;
         car.virtualEnergy = clamp01(car.virtualEnergy - drain + jitter(0.005));
         // Occasional pit stop for cars other than the player.
         if (car.slotId !== this.player().slotId && Math.random() < 0.02) {
@@ -451,7 +502,7 @@ export class SimulatorProvider implements TelemetryProvider {
     const playerId = this.player().slotId;
     const refLap = BASE_LAP_SEC;
 
-    return ordered.map((car, idx) => {
+    const rows: StandingEntry[] = ordered.map((car, idx) => {
       const behindTotal = leaderTotal - this.total(car);
       const lapsBehind = Math.floor(behindTotal + 1e-6);
       const ahead = ordered[idx - 1];
@@ -477,6 +528,10 @@ export class SimulatorProvider implements TelemetryProvider {
         isPlayer: car.slotId === playerId,
       };
     });
+    // Same derivation the live providers use, so demo mode exercises the
+    // position-in-class / class-gap columns instead of leaving them blank.
+    assignClassPositions(rows);
+    return rows;
   }
 
   /* ------------------------------- relative ------------------------------ */
@@ -502,17 +557,40 @@ export class SimulatorProvider implements TelemetryProvider {
       .sort((a, b) => b.frac - a.frac)
       .slice(0, RELATIVE_BEHIND);
 
-    const toEntry = (car: SimCar, gapSec: number, isPlayer: boolean): RelativeEntry => ({
-      slotId: car.slotId,
-      position: this.positionOf(car),
-      driverName: car.name,
-      carNumber: car.carNumber,
-      carClass: car.carClass,
-      relativeGapSec: Math.round(gapSec * 100) / 100,
-      lapsDifference: car.lapsCompleted - player.lapsCompleted,
-      inPit: car.inPit,
-      isPlayer,
-    });
+    const toEntry = (car: SimCar, gapSec: number, isPlayer: boolean): RelativeEntry => {
+      const lapsDifference = car.lapsCompleted - player.lapsCompleted;
+      const entry: RelativeEntry = {
+        slotId: car.slotId,
+        position: this.positionOf(car),
+        driverName: car.name,
+        carNumber: car.carNumber,
+        carClass: car.carClass,
+        relativeGapSec: Math.round(gapSec * 100) / 100,
+        lapsDifference,
+        inPit: car.inPit,
+        isPlayer,
+      };
+      if (isPlayer) return entry;
+
+      // The live provider samples the closing rate over a window because its gap
+      // is noisy; here the pace difference is exact, so it is computed directly.
+      // Rate the raw gap changes: (car's lap fraction per second − the player's)
+      // scaled back into seconds of gap.
+      const gapRate = refLap * (1 / car.lapSec - 1 / player.lapSec);
+      // Closing = the ABSOLUTE gap shrinking, which flips sign either side of us.
+      const closing = gapSec >= 0 ? -gapRate : gapRate;
+      const faster = isFasterClass(car.carClass, player.carClass);
+      entry.isFasterClass = faster;
+      entry.closingRateSec = Math.round(closing * 100) / 100;
+      entry.yieldTo = shouldYield({
+        gapSec,
+        lapsDifference,
+        fasterClass: faster,
+        closingRateSec: closing,
+        inPit: car.inPit,
+      });
+      return entry;
+    };
 
     return [
       ...ahead.map((x) => toEntry(x.car, x.gapSec, false)),
@@ -530,6 +608,31 @@ export class SimulatorProvider implements TelemetryProvider {
    * dependency on Task E.)
    */
   private buildFuel(player: SimCar): FuelState {
+    // Virtual energy, so demo mode exercises the fuel widget's ENERGY view and
+    // the energy-overlap readout rather than leaving both permanently blank.
+    // The per-lap burn mirrors the drain applied in `advance()`.
+    const vePerLapPct = player.carClass === 'HYPERCAR' ? 5.5 : player.carClass === 'LMP2' ? 4.8 : 4;
+    const vePct = player.virtualEnergy * 100;
+    const veLapsLeft = Math.round((vePct / vePerLapPct) * 10) / 10;
+    const lapsToGo = Math.max(0, RACE_LAPS - player.lapsCompleted);
+    // Same rule as the live provider: only cars AHEAD, in the player's own
+    // class, running an energy budget. See `buildEnergyOverlap` for why the
+    // comparison cannot cross classes.
+    let compared = 0;
+    let pittingFirst = 0;
+    let bestMargin = -1;
+    for (const c of this.cars) {
+      if (c.slotId === player.slotId) continue;
+      if (this.positionOf(c) >= this.positionOf(player)) continue;
+      if (c.carClass !== player.carClass) continue;
+      compared++;
+      const margin = veLapsLeft - (c.virtualEnergy * 100) / vePerLapPct;
+      if (margin > 0) {
+        pittingFirst++;
+        if (margin > bestMargin) bestMargin = margin;
+      }
+    }
+
     // Burn fuel once per completed player lap. `lapsBurned` (not the capped
     // 5-entry `recentBurns` window) is the authoritative counter, so this stays
     // correct past the 5th lap instead of burning every frame.
@@ -564,6 +667,17 @@ export class SimulatorProvider implements TelemetryProvider {
         fuelDelta === UNKNOWN_VALUE ? 0 : Math.round(Math.max(0, -fuelDelta) * 10) / 10,
       pitWindowOpenLap:
         lapsRemaining > 0 ? player.lapsCompleted + Math.floor(lapsRemaining) : undefined,
+      virtualEnergyPct: Math.round(vePct * 10) / 10,
+      virtualEnergyPerLapPct: vePerLapPct,
+      virtualEnergyLapsRemaining: veLapsLeft,
+      virtualEnergyDeltaPct: Math.round((vePct - lapsToGo * vePerLapPct) * 10) / 10,
+      ...(compared > 0
+        ? {
+            veCarsAheadPittingFirst: pittingFirst,
+            veCarsAheadCompared: compared,
+            ...(bestMargin > 0 ? { veLapsInHandVsNext: Math.round(bestMargin * 10) / 10 } : {}),
+          }
+        : {}),
     };
   }
 

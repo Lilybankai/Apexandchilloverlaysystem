@@ -17,8 +17,7 @@
  *       Reacts differently through corners than Delta T. Negative = ahead.
  *
  * Both are computed off the exact shared-memory lap clock the driven car
- * already exposes (`lapTimeSec = mElapsedTime − mLapStartET`), the same basis
- * as {@link LocalLapDeltaTracker}.
+ * already exposes (`lapTimeSec = mElapsedTime − mLapStartET`).
  *
  * The all-time-best reference is persisted per track under the user's home dir
  * so it survives restarts (SimHub's "all time best" is likewise cross-session).

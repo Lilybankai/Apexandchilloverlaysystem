@@ -18,11 +18,27 @@
   var CAP = 300; // trace history length in samples (~10s @30Hz)
   var thr = new Float32Array(CAP);
   var brk = new Float32Array(CAP);
+  // Steering history (-1..1), for the centre-anchored steering trace.
+  var str = new Float32Array(CAP);
   // Driver-aid intervention per sample (what TC/ABS took off the pedal).
   var thrCut = new Float32Array(CAP);
   var brkCut = new Float32Array(CAP);
   var head = 0;
   var count = 0;
+
+  /**
+   * How the steering is drawn, from `?steer=` on the Browser Source URL:
+   *   trace — a centre-anchored line through the pedal trace (default). The
+   *           steering scrolls with the pedals on the same time axis, so a
+   *           corner reads as one shape: brake, turn-in, unwind, throttle.
+   *   dot   — the original left/right dot on a strip under the bars.
+   *   off   — neither.
+   * The line is the point of the change: a dot shows where the wheel is NOW but
+   * carries no history, so you cannot see the turn-in rate or a correction.
+   */
+  var steerMode = "trace";
+  /** Fraction of the canvas half-height a full lock deflects the trace. */
+  var STEER_GAIN = 0.9;
   // Frames left to keep drawing the aid lines after the last intervention
   // (avoids per-frame full-ring scans just to know if anything is visible).
   var tcHot = 0;
@@ -36,9 +52,10 @@
   var cssW = 0, cssH = 0;
   var cache = {};
 
-  function pushSample(t, b, tc, abs) {
+  function pushSample(t, b, s, tc, abs) {
     thr[head] = t;
     brk[head] = b;
+    str[head] = s;
     thrCut[head] = tc;
     brkCut[head] = abs;
     head = (head + 1) % CAP;
@@ -83,6 +100,10 @@
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
+    var params = new URLSearchParams(window.location.search);
+    var sm = (params.get("steer") || "trace").toLowerCase();
+    steerMode = sm === "dot" || sm === "off" ? sm : "trace";
+
     var wrap = document.createElement("div");
     wrap.className = "pedals__wrap";
 
@@ -116,22 +137,27 @@
     wrap.appendChild(trace);
     wrap.appendChild(bars);
 
-    // Steering readout.
-    var steer = document.createElement("div");
-    steer.className = "pedals__steer";
-    var stLabel = document.createElement("span");
-    stLabel.className = "pedal-bar__label";
-    stLabel.textContent = "STEER";
-    var stTrack = document.createElement("div");
-    stTrack.className = "pedals__steer-track";
-    steerDot = document.createElement("div");
-    steerDot.className = "pedals__steer-dot";
-    stTrack.appendChild(steerDot);
-    steer.appendChild(stLabel);
-    steer.appendChild(stTrack);
-
     mount.appendChild(wrap);
-    mount.appendChild(steer);
+
+    // Legacy dot readout, only when explicitly asked for: the trace mode draws
+    // the steering inside the canvas, so the strip would be redundant height.
+    if (steerMode === "dot") {
+      var steer = document.createElement("div");
+      steer.className = "pedals__steer";
+      var stLabel = document.createElement("span");
+      stLabel.className = "pedal-bar__label";
+      stLabel.textContent = "STEER";
+      var stTrack = document.createElement("div");
+      stTrack.className = "pedals__steer-track";
+      steerDot = document.createElement("div");
+      steerDot.className = "pedals__steer-dot";
+      stTrack.appendChild(steerDot);
+      steer.appendChild(stLabel);
+      steer.appendChild(stTrack);
+      mount.appendChild(steer);
+    } else {
+      steerDot = null;
+    }
 
     gctx = canvas.getContext("2d");
     sizeCanvas();
@@ -207,6 +233,52 @@
     ctx2d.stroke();
   }
 
+  /**
+   * Centre-anchored steering trace: a line whose neutral is the canvas
+   * mid-height, deflecting UP for right lock and DOWN for left.
+   *
+   * Reading it against the pedal areas underneath is the whole point — turn-in
+   * while still on the brakes, and how much lock is still wound on when the
+   * throttle comes back, are both single glances. A dashed centre line marks
+   * straight-ahead so a small correction is still legible.
+   */
+  function drawSteerTrace(ctx2d) {
+    if (count < 2) return;
+    var mid = cssH / 2;
+    var amp = mid * STEER_GAIN;
+    var start = (head - count + CAP) % CAP;
+    var stepX = cssW / (CAP - 1);
+
+    // Centre reference.
+    ctx2d.save();
+    ctx2d.setLineDash([3, 4]);
+    ctx2d.globalAlpha = 0.28;
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, mid);
+    ctx2d.lineTo(cssW, mid);
+    ctx2d.strokeStyle = "#aeb6c8";
+    ctx2d.lineWidth = 1;
+    ctx2d.stroke();
+    ctx2d.restore();
+
+    ctx2d.beginPath();
+    for (var i = 0; i < count; i++) {
+      var v = str[(start + i) % CAP];
+      if (v < -1) v = -1; else if (v > 1) v = 1;
+      var x = i * stepX;
+      var y = mid - v * amp;
+      if (i === 0) ctx2d.moveTo(x, y);
+      else ctx2d.lineTo(x, y);
+    }
+    // Pale blue-white, deliberately NOT the clutch blue (#4f8bff) — the clutch
+    // bar sits inches away in the same widget and the two lines would read as
+    // the same channel. Neutral also keeps it from competing with the
+    // green/red/amber the pedals and aids already own.
+    ctx2d.strokeStyle = "#dbe4ff";
+    ctx2d.lineWidth = 1.75;
+    ctx2d.stroke();
+  }
+
   function drawTrace() {
     if (!gctx || cssW === 0) { sizeCanvas(); if (cssW === 0) return; }
     gctx.clearRect(0, 0, cssW, cssH);
@@ -216,6 +288,9 @@
     // Aid lines only while there's something to show in the window.
     if (absHot > 0) drawAidLine(gctx, brk, brkCut, "#ff9f1a");
     if (tcHot > 0) drawAidLine(gctx, thr, thrCut, "#ffd23e");
+    // Steering on top: it is the thinnest line and must stay readable over the
+    // filled pedal areas.
+    if (steerMode === "trace") drawSteerTrace(gctx);
   }
 
   function setFill(el, cacheKey, value) {
@@ -235,8 +310,11 @@
     var tc = typeof ped.tc === "number" ? ped.tc : 0;
     var abs = typeof ped.abs === "number" ? ped.abs : 0;
 
+    var steer = typeof ped.steer === "number" ? ped.steer : 0;
+    if (steer < -1) steer = -1; else if (steer > 1) steer = 1;
+
     // Trace history at full rate.
-    pushSample(ped.throttle, ped.brake, tc, abs);
+    pushSample(ped.throttle, ped.brake, steer, tc, abs);
     drawTrace();
 
     // Live bars.
@@ -264,14 +342,14 @@
     }
     if (absOn) chipAbs.style.opacity = String(0.45 + 0.55 * Math.min(1, abs * 2.5));
 
-    // Steering dot: -1..1 -> 0%..100% across the track.
-    var steer = typeof ped.steer === "number" ? ped.steer : 0;
-    if (steer < -1) steer = -1; else if (steer > 1) steer = 1;
-    var leftPct = (0.5 + steer * 0.5) * 100;
-    var leftRounded = Math.round(leftPct);
-    if (cache.steer !== leftRounded) {
-      cache.steer = leftRounded;
-      steerDot.style.left = leftRounded + "%";
+    // Steering dot: -1..1 -> 0%..100% across the track. Only present in the
+    // legacy `?steer=dot` mode; the trace mode draws it on the canvas instead.
+    if (steerDot) {
+      var leftRounded = Math.round((0.5 + steer * 0.5) * 100);
+      if (cache.steer !== leftRounded) {
+        cache.steer = leftRounded;
+        steerDot.style.left = leftRounded + "%";
+      }
     }
 
     // Header: gear + speed.

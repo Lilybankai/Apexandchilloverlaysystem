@@ -17,7 +17,7 @@
   /** How long each view is shown before rotating (ms). */
   var ROTATE_MS = 20000;
 
-  var header, modeChip;
+  var header, modeChip, overlapEl;
   var stats = {};
   var refuelEl, pitEl;
   var cache = {};
@@ -70,6 +70,15 @@
     mount.appendChild(energyGrid);
     grids.energy = energyGrid;
 
+    // Energy-overlap chip. Deliberately OUTSIDE the rotating grids: "how many
+    // cars ahead have to pit before me" is a strategy call the driver may need
+    // at any moment, and hiding it behind a 20-second rotation would mean the
+    // answer is absent exactly when they look for it.
+    overlapEl = document.createElement("div");
+    overlapEl.className = "fuel__overlap";
+    overlapEl.hidden = true;
+    mount.appendChild(overlapEl);
+
     var margin = document.createElement("div");
     margin.className = "fuel__margin";
     refuelEl = document.createElement("span");
@@ -116,10 +125,43 @@
     }
   }
 
+  /**
+   * "N of M cars ahead pit before you" — each one is a position that comes back
+   * on strategy alone. M is shown because the comparison only covers cars in
+   * your own class that run an energy budget (see `buildEnergyOverlap`), and
+   * implying it covered the whole field would overstate it.
+   */
+  function updateOverlap(f) {
+    var n = f.veCarsAheadPittingFirst;
+    var m = f.veCarsAheadCompared;
+    if (typeof n !== "number" || typeof m !== "number" || m <= 0) {
+      if (!overlapEl.hidden) overlapEl.hidden = true;
+      return;
+    }
+    var txt = "⚡ " + n + " of " + m + " ahead pit first";
+    if (typeof f.veLapsInHandVsNext === "number" && f.veLapsInHandVsNext > 0) {
+      txt += " · +" + f.veLapsInHandVsNext.toFixed(1) + " laps in hand";
+    }
+    if (cache.overlap !== txt) {
+      cache.overlap = txt;
+      overlapEl.textContent = txt;
+    }
+    // Nothing to gain is a legitimate answer, but a flat "0 of 5" shouldn't read
+    // as an opportunity — dim it.
+    var state = n > 0 ? "gain" : "none";
+    if (cache.overlapState !== state) {
+      cache.overlapState = state;
+      overlapEl.setAttribute("data-state", state);
+    }
+    if (overlapEl.hidden) overlapEl.hidden = false;
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var f = frame.fuel;
     if (!f) return;
+
+    updateOverlap(f);
 
     var hasEnergy = typeof f.virtualEnergyPct === "number";
     // Rotate between views every ROTATE_MS while energy data exists.

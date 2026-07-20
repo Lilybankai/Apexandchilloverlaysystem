@@ -152,6 +152,22 @@
   white-space: nowrap;
 }
 
+/* Fastest-lap-of-the-race banner, under the session strip. */
+.standings__fastest {
+  padding: 3px 10px 3px calc(10px + var(--accent-bar-w));
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--bg-header);
+  box-shadow: inset 3px 0 0 var(--purple-fastest);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--purple-fastest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .standings__table {
   width: 100%;
   border-collapse: collapse;
@@ -174,7 +190,9 @@
   box-shadow: inset 3px 0 0 var(--ac-cyan), inset 6px 0 0 var(--purple-fastest);
 }
 .standings__cell {
-  padding: 4px 6px;
+  /* 5px sides, not 6: with seven columns the extra pixel per side is 14px off
+     the driver name, and the time columns have none to spare. */
+  padding: 4px 5px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -261,19 +279,19 @@
 .standings__ve-text { position: relative; color: var(--text-secondary); }
 .standings__ve[data-ve="low"]  .standings__ve-text { color: var(--warn); }
 .standings__ve[data-ve="crit"] .standings__ve-text { color: var(--pos-loss); }
-.standings__gap {
-  width: 62px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-}
+/* The three numeric time columns. 12px (not the table's 13px) so a full
+   "1:58.492" fits the 60px of content the colgroup leaves them. */
+.standings__gap,
+.standings__best,
 .standings__last {
-  width: 68px;
   text-align: right;
   font-family: var(--font-mono);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+.standings__gap { width: 62px; color: var(--text-secondary); }
+.standings__best { width: 70px; color: var(--text-secondary); }
+.standings__last { width: 70px; }
 /* Small coloured class tag before the driver name. */
 .standings__class {
   display: inline-block;
@@ -284,6 +302,28 @@
   vertical-align: middle;
   background: var(--ac-purple);
 }
+/* Rotating sponsor strip under the tower. Two stacked images cross-fade; only
+   opacity animates, so the compositor handles it with no layout or paint. */
+.standings__sponsors {
+  position: relative;
+  height: 46px;
+  border-top: 1px solid var(--border-strong);
+  background: var(--bg-header);
+}
+.standings__sponsor {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: calc(100% - 24px);
+  max-height: 34px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.standings__sponsor.is-on { opacity: 1; }
+
 .lap-purple { color: var(--purple-fastest) !important; font-weight: 700; }
 .lap-green { color: var(--pos-gain) !important; }
 
@@ -415,6 +455,26 @@
   color: var(--text-primary);
   margin-top: 1px;
 }
+/* Blue-flag banner: a car behind on the road but ahead on the race. Pulses so
+   it registers in peripheral vision while the driver is looking at the corner,
+   with a 2-step animation (no interpolation) — cheap to composite live. */
+.relative__alert {
+  padding: 4px 10px;
+  margin-bottom: 2px;
+  background: color-mix(in srgb, var(--flag-blue) 22%, transparent);
+  box-shadow: inset 3px 0 0 var(--flag-blue);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--flag-blue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: relative-alert-pulse 1s steps(2, jump-none) infinite;
+}
+@keyframes relative-alert-pulse { 50% { opacity: 0.55; } }
+
 .relative__table {
   width: 100%;
   border-collapse: collapse;
@@ -426,6 +486,12 @@
   background: var(--bg-panel-3);
   box-shadow: inset 3px 0 0 var(--ac-magenta);
 }
+/* The car we owe a move to, called out in the table as well as the banner. */
+.relative__row--yield {
+  background: color-mix(in srgb, var(--flag-blue) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--flag-blue);
+}
+.relative__row--yield .relative__delta { color: var(--flag-blue); }
 .relative__cell { padding: 4px 8px; white-space: nowrap; }
 .relative__pos {
   width: 26px; text-align: center;
@@ -547,6 +613,23 @@
   margin-top: 2px;
 }
 .fuel__stat-value small { font-size: 11px; color: var(--text-muted); }
+/* Energy-overlap chip: shown in both views, never hidden by the rotation. */
+.fuel__overlap {
+  margin: 6px 0 4px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fuel__overlap[data-state="gain"] { color: var(--pos-gain); }
+.fuel__overlap[data-state="none"] { color: var(--text-muted); }
+
 .fuel__margin {
   display: flex;
   align-items: center;

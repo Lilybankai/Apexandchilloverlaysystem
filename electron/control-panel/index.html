@@ -98,6 +98,41 @@
       </div>
     </section>
 
+    <!-- ===================== SPONSORS ===================== -->
+    <section class="card">
+      <div class="card__head">
+        <h2 class="card__title">Sponsor logos</h2>
+        <p class="card__desc">
+          Rotate partner logos in a strip under the standings tower, like a broadcast graphic.
+        </p>
+      </div>
+      <div class="settings-grid">
+        <label class="field field--toggle">
+          <span class="field__label">Show sponsors</span>
+          <span class="switch">
+            <input type="checkbox" id="sponsors-toggle" />
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+          </span>
+          <span class="field__hint">Adds a logo strip below the standings widget</span>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Seconds per logo</span>
+          <div class="rate-row">
+            <input class="field__range" id="sponsor-range" type="range" min="3" max="60" step="1" />
+            <span class="rate-value"><span id="sponsor-echo">12</span> s</span>
+          </div>
+          <span class="field__hint">How long each logo shows before cross-fading</span>
+        </label>
+      </div>
+
+      <ul class="sponsor-list" id="sponsor-list"></ul>
+      <div class="sponsor-actions">
+        <button class="btn btn--ghost" id="sponsor-add">Add logos…</button>
+        <span class="field__hint">PNG or SVG with a transparent background works best.</span>
+      </div>
+    </section>
+
     <div class="two-col">
       <!-- ===================== SETTINGS ===================== -->
       <section class="card">

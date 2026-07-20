@@ -284,8 +284,28 @@ export interface StandingEntry {
   driverName: string;
   /** Car number as shown on the car, when available. */
   carNumber?: string;
-  /** Car class label (e.g. `"LMGT3"`, `"Hypercar"`), when available. */
+  /**
+   * Car class label, normalized to a canonical spelling (`"HYPERCAR"`, `"LMP2"`,
+   * `"LMP3"`, `"GT3"`, …) by `telemetry/carClass`. Unrecognised classes are
+   * passed through upper-cased. Omitted when the sim doesn't expose one.
+   */
   carClass?: string;
+  /**
+   * Position **within {@link carClass}**, 1-based — what a multiclass field
+   * actually races for. Omitted when the class is unknown.
+   */
+  classPosition?: number;
+  /**
+   * Gap in seconds to the leader **of this car's class**; `0` for a class
+   * leader. {@link UNKNOWN_VALUE} when it can't be derived (either car lapped,
+   * or no gap published). Omitted when the class is unknown.
+   */
+  gapToClassLeaderSec?: number;
+  /**
+   * Whole laps behind the **class** leader (`0` when on the class leader's lap).
+   * Omitted when the class is unknown.
+   */
+  classLapsBehind?: number;
   /**
    * Remaining **virtual energy** as a fraction, `0`..`1`, when the sim exposes
    * it (LMU's per-car energy budget — what its native overlay shows to the
@@ -338,6 +358,25 @@ export interface RelativeEntry {
   relativeGapSec: number;
   /** Whole laps difference vs the player (negative = lapped by player). */
   lapsDifference: number;
+  /**
+   * `true` when this car belongs to a genuinely **faster category** than the
+   * player's (e.g. a Hypercar behind a GT3). Only set when both classes are
+   * recognised, so an unknown mod class never triggers a false alert.
+   * See `telemetry/carClass`.
+   */
+  isFasterClass?: boolean;
+  /**
+   * `true` when the player should **yield** to this car: it is behind on the
+   * road but ahead on the race — either a lap up, or in a faster class and
+   * closing. This is the blue-flag condition the relative widget alerts on.
+   */
+  yieldTo?: boolean;
+  /**
+   * Rate the gap is closing, in seconds of gap per second, when it can be
+   * measured (positive = closing on the player, negative = pulling away).
+   * {@link UNKNOWN_VALUE} until two samples of this car exist.
+   */
+  closingRateSec?: number;
   /** Whether the car is in the pit lane. */
   inPit: boolean;
   /** `true` for the player's own row. */
@@ -442,6 +481,26 @@ export interface FuelState {
    * surplus, negative = short. Omitted until it can be estimated.
    */
   virtualEnergyDeltaPct?: number;
+  /**
+   * How many cars **ahead on the road, in the player's own class**, are
+   * projected to run out of virtual energy — and therefore pit — **before the
+   * player does**. Each one is a position that comes back on strategy alone.
+   * Omitted when no comparable car ahead is running an energy budget.
+   */
+  veCarsAheadPittingFirst?: number;
+  /**
+   * How many cars ahead were comparable at all (same class, running an energy
+   * budget). Lets the widget read "2 of 5" rather than implying the count was
+   * taken over the whole field. Omitted alongside
+   * {@link veCarsAheadPittingFirst}.
+   */
+  veCarsAheadCompared?: number;
+  /**
+   * Laps of energy the player has in hand over the **nearest** car ahead that
+   * must pit first — i.e. how much earlier that car is forced in. Omitted when
+   * there is no such car.
+   */
+  veLapsInHandVsNext?: number;
 }
 
 /* -------------------------------------------------------------------------- */

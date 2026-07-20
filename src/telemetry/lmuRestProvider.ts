@@ -56,6 +56,8 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
+import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
+import { shouldYield } from './yieldAlert';
 
 /** Config subset this provider needs. */
 export interface LmuRestConfig {
@@ -95,6 +97,16 @@ const WEATHER_REFRESH_INTERVAL_MS = 15_000;
  * to their "unknown" state for one frame, which reads as flicker on the overlay.
  */
 const LOCAL_HOLD_MS = 500;
+/**
+ * Window over which the relative closing rate is measured (ms).
+ *
+ * Differencing the gap frame-to-frame at 30 Hz measures nothing but noise: the
+ * gap is dead-reckoned between 150 ms REST refreshes, so consecutive frames
+ * differ by extrapolation error, not by real closing speed. Over ~0.8 s a real
+ * closing rate dominates that error. The last computed rate is held between
+ * windows so the readout doesn't flicker.
+ */
+const CLOSING_WINDOW_MS = 800;
 
 /** A car entry from `/rest/watch/standings` (only the fields we consume). */
 interface RestStanding {
@@ -217,6 +229,13 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly energyCalc = new FuelCalculator();
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
   private readonly localCar = new LmuLocalCarReader();
+  /**
+   * Per-car relative-gap history, for the closing-rate derivation that drives
+   * the backmarker / blue-flag alert. Keyed by slot id. See
+   * {@link CLOSING_WINDOW_MS} for why this is sampled rather than differenced
+   * every frame.
+   */
+  private readonly gapHistory = new Map<number, { gap: number; at: number; rate: number }>();
   /** Last good local physics + when, to bridge single missed reads (flicker). */
   private lastLocal: LocalCarPhysics | null = null;
   private lastLocalAt = 0;
@@ -412,7 +431,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus);
     const weather = this.buildWeather(si, session.type);
-    const fuel = this.buildFuel(focus, session, local);
+    const fuel = this.buildFuel(focus, session, local, cars);
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running). When the
     // focused car is the one driven on this PC, the shared-memory lap clock
@@ -491,7 +510,7 @@ export class LmuRestProvider implements TelemetryProvider {
       position: c.position,
       driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
       carNumber: c.carNumber || undefined,
-      carClass: c.carClass || undefined,
+      carClass: normalizeClass(c.carClass),
       gridPosition:
         typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
@@ -514,6 +533,7 @@ export class LmuRestProvider implements TelemetryProvider {
       isPlayer: c.slotID === focusId,
     }));
     rows.sort((a, b) => a.position - b.position);
+    assignClassPositions(rows);
     return rows;
   }
 
@@ -593,17 +613,48 @@ export class LmuRestProvider implements TelemetryProvider {
     // top-to-bottom order a relative display reads in.
     rows.sort((a, b) => b.gap - a.gap);
 
-    const toEntry = (c: RestStanding, gap: number, isPlayer: boolean): RelativeEntry => ({
-      slotId: c.slotID,
-      position: c.position,
-      driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
-      carNumber: c.carNumber || undefined,
-      carClass: c.carClass || undefined,
-      relativeGapSec: round2(gap),
-      lapsDifference: isPlayer ? 0 : (c.lapsCompleted | 0) - focusLaps,
-      inPit: isInPit(c),
-      isPlayer,
-    });
+    const focusClass = normalizeClass(focus.carClass);
+    const now = Date.now();
+
+    const toEntry = (c: RestStanding, gap: number, isPlayer: boolean): RelativeEntry => {
+      const carClass = normalizeClass(c.carClass);
+      const lapsDifference = isPlayer ? 0 : (c.lapsCompleted | 0) - focusLaps;
+      const inPit = isInPit(c);
+      const entry: RelativeEntry = {
+        slotId: c.slotID,
+        position: c.position,
+        driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
+        carNumber: c.carNumber || undefined,
+        carClass,
+        relativeGapSec: round2(gap),
+        lapsDifference,
+        inPit,
+        isPlayer,
+      };
+      if (isPlayer) return entry;
+
+      const faster = isFasterClass(carClass, focusClass);
+      const closing = this.closingRate(c.slotID, gap, now);
+      entry.isFasterClass = faster;
+      entry.closingRateSec = closing;
+      entry.yieldTo = shouldYield({
+        gapSec: gap,
+        lapsDifference,
+        fasterClass: faster,
+        closingRateSec: closing,
+        inPit,
+      });
+      return entry;
+    };
+
+    // Forget cars that have left the session, so the history can't grow without
+    // bound across a long stream with rolling grids.
+    if (this.gapHistory.size > cars.length + 8) {
+      const live = new Set(cars.map((c) => c.slotID));
+      for (const slot of this.gapHistory.keys()) {
+        if (!live.has(slot)) this.gapHistory.delete(slot);
+      }
+    }
 
     // Nearest 3 each way, keeping road order: the rows read furthest-ahead →
     // nearest-ahead → YOU → nearest-behind → furthest-behind.
@@ -614,6 +665,34 @@ export class LmuRestProvider implements TelemetryProvider {
       toEntry(focus, 0, true),
       ...behind.map((r) => toEntry(r.c, r.gap, false)),
     ];
+  }
+
+  /**
+   * How fast a car is closing on the player, in seconds of gap per second.
+   * Positive = the gap is shrinking (closing), negative = opening.
+   *
+   * Measured on the **absolute** gap so it means the same thing for a car ahead
+   * as for one behind. Sampled over {@link CLOSING_WINDOW_MS} rather than
+   * differenced per frame — see that constant for why — and the previous result
+   * is held between windows so the value is stable to display.
+   *
+   * @returns The rate, or {@link UNKNOWN_VALUE} until a full window has elapsed.
+   */
+  private closingRate(slotId: number, gap: number, nowMs: number): number {
+    const prev = this.gapHistory.get(slotId);
+    if (!prev) {
+      this.gapHistory.set(slotId, { gap, at: nowMs, rate: UNKNOWN_VALUE });
+      return UNKNOWN_VALUE;
+    }
+    const dtMs = nowMs - prev.at;
+    if (dtMs < CLOSING_WINDOW_MS) return prev.rate;
+
+    // A car that laps the player (or is lapped) wraps its gap through a whole
+    // lap; that step is not closing speed, so the window is discarded.
+    const jumped = Math.abs(Math.abs(gap) - Math.abs(prev.gap)) > 10;
+    const rate = jumped ? UNKNOWN_VALUE : round2(((Math.abs(prev.gap) - Math.abs(gap)) * 1000) / dtMs);
+    this.gapHistory.set(slotId, { gap, at: nowMs, rate });
+    return rate;
   }
 
   private buildSession(
@@ -755,9 +834,10 @@ export class LmuRestProvider implements TelemetryProvider {
     focus: RestStanding | undefined,
     session: SessionState,
     local: LocalCarPhysics | null,
+    cars: RestStanding[],
   ) {
     // Virtual-energy strategy rides along with whichever fuel path applies.
-    const energy = this.buildEnergy(focus, session);
+    const energy = this.buildEnergy(focus, session, cars);
 
     // Prefer the locally-driven car's real litres from shared memory: gives the
     // full fuel widget (per-lap, to-finish, margin) instead of laps-only.
@@ -823,6 +903,7 @@ export class LmuRestProvider implements TelemetryProvider {
   private buildEnergy(
     focus: RestStanding | undefined,
     session: SessionState,
+    cars: RestStanding[],
   ): Partial<
     Pick<
       FuelState,
@@ -858,6 +939,65 @@ export class LmuRestProvider implements TelemetryProvider {
     if (s.perLapAvgLiters !== UNKNOWN_VALUE) out.virtualEnergyPerLapPct = s.perLapAvgLiters;
     if (s.lapsRemaining !== UNKNOWN_VALUE) out.virtualEnergyLapsRemaining = s.lapsRemaining;
     if (s.fuelDeltaLiters !== UNKNOWN_VALUE) out.virtualEnergyDeltaPct = s.fuelDeltaLiters;
+    Object.assign(out, this.buildEnergyOverlap(focus, cars, s.perLapAvgLiters, s.lapsRemaining));
+    return out;
+  }
+
+  /**
+   * "How many cars ahead of me have to pit before I do?" — the energy-overlap
+   * readout. Each such car is a position that comes back on strategy alone,
+   * without having to pass anyone on track.
+   *
+   * ### Why this is restricted to the player's own class
+   * LMU publishes every car's remaining energy **fraction**, but not its burn
+   * rate, so a car's remaining *laps* has to be estimated from someone else's
+   * burn. That estimate only holds for cars running the same energy allocation
+   * at a similar pace — i.e. the same class. Applying the player's GT3 burn to a
+   * Hypercar's fraction would invent a number, so cross-class cars are excluded
+   * from the count rather than guessed at, and {@link FuelState.veCarsAheadCompared}
+   * reports how many cars the answer was actually drawn from.
+   *
+   * @param perLapPct - The player's average energy burn, percentage points per
+   *                   lap. The whole readout is unavailable until this is known,
+   *                   which takes a couple of green laps.
+   * @param playerLapsLeft - The player's own laps-remaining-on-energy.
+   */
+  private buildEnergyOverlap(
+    focus: RestStanding,
+    cars: RestStanding[],
+    perLapPct: number,
+    playerLapsLeft: number,
+  ): Partial<Pick<FuelState, 'veCarsAheadPittingFirst' | 'veCarsAheadCompared' | 'veLapsInHandVsNext'>> {
+    if (perLapPct === UNKNOWN_VALUE || perLapPct <= 0 || playerLapsLeft === UNKNOWN_VALUE) return {};
+    const playerClass = normalizeClass(focus.carClass);
+    if (!playerClass) return {};
+
+    let compared = 0;
+    let pittingFirst = 0;
+    // Laps in hand over the car that is forced in soonest — that is the one
+    // whose stop the player can respond to first.
+    let bestMargin = -1;
+
+    for (const c of cars) {
+      if (c.slotID === focus.slotID) continue;
+      if (c.position >= focus.position) continue; // only cars AHEAD
+      if (normalizeClass(c.carClass) !== playerClass) continue;
+      if (typeof c.veFraction !== 'number' || c.veFraction <= 0) continue;
+
+      compared++;
+      const lapsLeft = (clamp01(c.veFraction) * 100) / perLapPct;
+      const margin = playerLapsLeft - lapsLeft;
+      if (margin > 0) {
+        pittingFirst++;
+        if (margin > bestMargin) bestMargin = margin;
+      }
+    }
+
+    if (compared === 0) return {};
+    const out: Partial<
+      Pick<FuelState, 'veCarsAheadPittingFirst' | 'veCarsAheadCompared' | 'veLapsInHandVsNext'>
+    > = { veCarsAheadPittingFirst: pittingFirst, veCarsAheadCompared: compared };
+    if (bestMargin > 0) out.veLapsInHandVsNext = round1(bestMargin);
     return out;
   }
 
@@ -1185,96 +1325,6 @@ class LapDeltaTracker {
 
 /** Beyond this |delta| (seconds) we assume a bad reference and report unknown. */
 const DELTA_SANE_LIMIT_SEC = 30;
-
-/**
- * High-rate lap delta for the **locally-driven** car, built on the shared-memory
- * lap clock: `lapTimeSec = mElapsedTime − mLapStartET` is exact and ticks at
- * physics rate, lap boundaries are `mLapNumber` / `mLapStartET` steps, and the
- * completed lap's time is the exact difference of successive `mLapStartET`
- * values — no reliance on REST's pause-prone `timeIntoLap`.
- *
- * This is precisely "record my fastest lap's distance→time trace, compare the
- * current lap against it live, and adopt a new trace whenever I go faster".
- * Same partial-coverage rules as {@link LapDeltaTracker}: the first observed
- * (even partial) lap arms the delta for the span it covered; interpolation is
- * gated to that span; a full flag-to-flag lap upgrades the coverage.
- */
-export class LocalLapDeltaTracker {
-  private lapNumber = -1;
-  private lapStartET = -1;
-  private samples: DeltaSample[] = [];
-  private ref: DeltaSample[] | null = null;
-  private refBest = Infinity;
-  private refIsFull = false;
-
-  private reset(): void {
-    this.lapNumber = -1;
-    this.lapStartET = -1;
-    this.samples = [];
-    this.ref = null;
-    this.refBest = Infinity;
-    this.refIsFull = false;
-  }
-
-  /**
-   * @param lapNumber   - Shared-memory `mLapNumber`.
-   * @param lapStartET  - Shared-memory `mLapStartET` (sim clock at lap start).
-   * @param t           - Exact seconds into the current lap.
-   * @param d           - Road position as a lap fraction `0..1`.
-   * @param restBest    - The car's REST bestLapTime, as an out-lap plausibility
-   *                      cross-check (junk values are guarded).
-   */
-  public update(lapNumber: number, lapStartET: number, t: number, d: number, restBest: number): number {
-    if (t < 0 || d < 0 || d > 1) return UNKNOWN_VALUE;
-
-    // Session restart / return-to-garage rewinds → hard reset (never compare
-    // across resets).
-    if (lapNumber < this.lapNumber || (this.lapStartET >= 0 && lapStartET + 0.5 < this.lapStartET)) {
-      this.reset();
-    }
-    if (this.lapNumber === -1) {
-      this.lapNumber = lapNumber;
-      this.lapStartET = lapStartET;
-    }
-
-    // Lap boundary: `mLapStartET` stepping forward is the authoritative signal
-    // (and yields the exact completed-lap time); the lap counter rides along.
-    if (lapNumber !== this.lapNumber || lapStartET > this.lapStartET + 0.001) {
-      const lapTime = lapStartET - this.lapStartET; // exact
-      const first = this.samples[0];
-      const last = this.samples[this.samples.length - 1];
-      const usable = this.samples.length >= 8 && last !== undefined && last.d > 0.95;
-      const isFull = usable && first !== undefined && first.d < 0.05;
-      // Reject out-laps/crawls: a flying lap is within ~40% of the car's best
-      // when a sane best exists; always require a sane absolute range.
-      const plausible =
-        lapTime > 5 &&
-        lapTime < 3600 &&
-        (!(restBest > 5 && restBest < 600) || lapTime < restBest * 1.4);
-      if (usable && plausible && (lapTime < this.refBest || (isFull && !this.refIsFull))) {
-        this.ref = this.samples.slice().sort((a, b) => a.d - b.d);
-        this.refBest = lapTime;
-        this.refIsFull = isFull;
-      }
-      this.samples = [];
-      this.lapNumber = lapNumber;
-      this.lapStartET = lapStartET;
-    }
-
-    // Record forward progress, decimated to ~0.2% of a lap between samples
-    // (≈500 points max per lap at any poll rate).
-    const last = this.samples[this.samples.length - 1];
-    if (last === undefined || (d > last.d + 0.002 && t >= last.t)) this.samples.push({ d, t });
-
-    if (!this.ref || this.ref.length < 2) return UNKNOWN_VALUE;
-    const refT = interpTime(this.ref, d);
-    if (refT < 0) return UNKNOWN_VALUE;
-    const delta = t - refT;
-    if (Math.abs(delta) > DELTA_SANE_LIMIT_SEC) return UNKNOWN_VALUE;
-    return round2(delta);
-  }
-}
-
 /**
  * Linear-interpolate the reference lap's time at distance fraction `d`.
  * Returns `-1` (unknown) when `d` falls OUTSIDE the trace's covered span —

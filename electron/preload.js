@@ -29,6 +29,15 @@ contextBridge.exposeInMainWorld('apex', {
   /** Open an overlay URL in the default browser (for previewing). */
   openInBrowser: (url) => ipcRenderer.invoke('overlay:openInBrowser', url),
 
+  /* ---- Sponsor logos ---- */
+
+  /** Filenames of the installed sponsor logos, in rotation order. */
+  sponsorsList: () => ipcRenderer.invoke('sponsors:list'),
+  /** Open a file picker and copy the chosen images in; returns the new list. */
+  sponsorsAdd: () => ipcRenderer.invoke('sponsors:add'),
+  /** Delete one logo by filename; returns the new list. */
+  sponsorsRemove: (name) => ipcRenderer.invoke('sponsors:remove', name),
+
   /* ---- In-game overlay layer ---- */
 
   /** Unlock the in-game layer for on-screen drag/resize editing. */

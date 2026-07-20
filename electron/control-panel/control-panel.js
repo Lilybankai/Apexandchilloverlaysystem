@@ -28,6 +28,11 @@
   const igResetBtn = $('#ig-reset-btn');
   const igHotkeyBtn = $('#ig-hotkey');
   const igHotkeyClear = $('#ig-hotkey-clear');
+  const sponsorsToggle = $('#sponsors-toggle');
+  const sponsorRange = $('#sponsor-range');
+  const sponsorEcho = $('#sponsor-echo');
+  const sponsorList = $('#sponsor-list');
+  const sponsorAdd = $('#sponsor-add');
   const overlayList = $('#overlay-list');
   const combinedUrl = $('#combined-url');
   const toast = $('#toast');
@@ -92,6 +97,9 @@
     rateRange.value = settings.updateRateHz;
     rateEcho.textContent = settings.updateRateHz;
     demoToggle.checked = !!settings.forceSimulator;
+    sponsorsToggle.checked = !!settings.sponsorsEnabled;
+    sponsorRange.value = settings.sponsorIntervalSec;
+    sponsorEcho.textContent = settings.sponsorIntervalSec;
     ingameToggle.checked = !!settings.ingameEnabled;
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
@@ -269,6 +277,64 @@
     renderStatus(state.status);
   });
 
+  // --- Sponsor logos -------------------------------------------------------
+
+  /**
+   * Render the installed logo list. Empty is the normal state for most users,
+   * so it gets a plain explanatory row rather than looking like a failure.
+   */
+  function renderSponsors(names) {
+    sponsorList.innerHTML = '';
+    if (!names || names.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'sponsor-list__empty';
+      li.textContent = 'No logos added yet.';
+      sponsorList.appendChild(li);
+      return;
+    }
+    names.forEach((name) => {
+      const li = document.createElement('li');
+      li.className = 'sponsor-list__item';
+      const label = document.createElement('span');
+      label.className = 'sponsor-list__name';
+      label.textContent = name;
+      const remove = document.createElement('button');
+      remove.className = 'btn btn--ghost btn--sm';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', async () => {
+        remove.disabled = true;
+        renderSponsors(await window.apex.sponsorsRemove(name));
+      });
+      li.appendChild(label);
+      li.appendChild(remove);
+      sponsorList.appendChild(li);
+    });
+  }
+
+  sponsorsToggle.addEventListener('change', async () => {
+    const state = await window.apex.updateSettings({ sponsorsEnabled: sponsorsToggle.checked });
+    renderStatus(state.status);
+  });
+
+  const commitSponsorInterval = debounce(async (value) => {
+    const state = await window.apex.updateSettings({ sponsorIntervalSec: value });
+    renderStatus(state.status);
+  }, 350);
+
+  sponsorRange.addEventListener('input', () => {
+    sponsorEcho.textContent = sponsorRange.value;
+    commitSponsorInterval(parseInt(sponsorRange.value, 10));
+  });
+
+  sponsorAdd.addEventListener('click', async () => {
+    sponsorAdd.disabled = true;
+    try {
+      renderSponsors(await window.apex.sponsorsAdd());
+    } finally {
+      sponsorAdd.disabled = false;
+    }
+  });
+
   ingameToggle.addEventListener('change', async () => {
     const state = await window.apex.updateSettings({ ingameEnabled: ingameToggle.checked });
     renderSettings(state.settings);
@@ -405,4 +471,6 @@
 
   // --- Boot ----------------------------------------------------------------
   window.apex.getState().then(renderAll);
+  // The logo list lives on disk, not in settings, so it is fetched separately.
+  window.apex.sponsorsList().then(renderSponsors);
 })();

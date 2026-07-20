@@ -56,6 +56,7 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import type { ServerConfig } from '../server/config';
+import { assignClassPositions, normalizeClass } from './carClass';
 
 /* ------------------------- Win32 / shared-memory ------------------------- */
 
@@ -407,7 +408,7 @@ export class RF2Provider implements TelemetryProvider {
         slotId: scoring.readInt32LE(off + VS.mID),
         position: place,
         driverName: readCString(scoring, off + VS.mDriverName, 32),
-        carClass: readCString(scoring, off + VS.mVehicleClass, 32) || undefined,
+        carClass: normalizeClass(readCString(scoring, off + VS.mVehicleClass, 32)),
         gapToLeaderSec: nonNeg(scoring.readDoubleLE(off + VS.mTimeBehindLeader)),
         gapToAheadSec: nonNeg(scoring.readDoubleLE(off + VS.mTimeBehindNext)),
         lapsBehind: Math.max(0, scoring.readInt32LE(off + VS.mLapsBehindLeader)),
@@ -424,6 +425,7 @@ export class RF2Provider implements TelemetryProvider {
       }
     }
     standings.sort((a, b) => a.position - b.position);
+    assignClassPositions(standings);
 
     // --- player telemetry (match by mID within the telemetry array) ------
     const telemVehicles = clampInt(telem.readInt32LE(HDR.body + 0), 0, 128);

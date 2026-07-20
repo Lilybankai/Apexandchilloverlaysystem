@@ -19,7 +19,16 @@
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, clipboard, screen, globalShortcut } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  clipboard,
+  screen,
+  globalShortcut,
+  dialog,
+} = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const WebSocket = require('ws');
@@ -78,7 +87,33 @@ function defaultSettings() {
     // Global hotkey that toggles the in-game overlay (Show in game). An Electron
     // accelerator string; '' means unbound. Rebindable from the control panel.
     ingameToggleShortcut: 'F8',
+    // Rotating sponsor logos under the standings tower. Images are copied into
+    // <userData>/sponsors/ and served by our own server at /sponsors/ — see
+    // `sponsorDir` in the server config for why they live outside overlay/.
+    sponsorsEnabled: false,
+    sponsorIntervalSec: 12,
   };
+}
+
+/** Directory holding the operator's copied-in sponsor logo images. */
+function sponsorDir() {
+  return path.join(app.getPath('userData'), 'sponsors');
+}
+
+/** Image extensions accepted as sponsor logos (mirrors the server's list). */
+const SPONSOR_EXTS = ['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp'];
+
+/** Sponsor logo filenames currently installed, sorted (= their display order). */
+function listSponsors() {
+  try {
+    return fs
+      .readdirSync(sponsorDir(), { withFileTypes: true })
+      .filter((e) => e.isFile() && SPONSOR_EXTS.includes(path.extname(e.name).toLowerCase()))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return []; // no directory yet — nothing configured
+  }
 }
 
 function settingsPath() {
@@ -154,6 +189,11 @@ function loadSettings() {
       stored.ingameToggleShortcut,
       defaults.ingameToggleShortcut,
     ),
+    sponsorsEnabled:
+      typeof stored.sponsorsEnabled === 'boolean'
+        ? stored.sponsorsEnabled
+        : defaults.sponsorsEnabled,
+    sponsorIntervalSec: clamp(stored.sponsorIntervalSec, 3, 120, defaults.sponsorIntervalSec),
   };
 }
 
@@ -195,6 +235,10 @@ function buildServerConfig(settings) {
       ? settings.provider
       : 'lmu',
     lmuApiPort: Number.isFinite(settings.lmuApiPort) ? settings.lmuApiPort : 6397,
+    // Empty when sponsors are off, which makes the server 404 the whole
+    // /sponsors/ route rather than serving a directory nobody asked for.
+    sponsorDir: settings.sponsorsEnabled ? sponsorDir() : '',
+    sponsorIntervalSec: settings.sponsorIntervalSec,
     verbose: false,
   };
 }
@@ -292,8 +336,17 @@ function connectStatusFeed(port, wsPath) {
     try {
       const frame = JSON.parse(data.toString());
       // client.js treats connected === false as the demo/simulator feed.
-      status.demo = frame && frame.connected === false;
-      status.feed = status.demo ? 'demo' : 'live';
+      const demo = !!(frame && frame.connected === false);
+      const feed = demo ? 'demo' : 'live';
+      // Push only on a genuine transition. Frames arrive at the broadcast rate
+      // (up to 120/s) and the feed flag changes perhaps twice a session, so an
+      // unconditional push here would be far worse than the 1 Hz churn this
+      // replaced. The watchdog below owns the opposite transition (→ no-data).
+      if (demo !== status.demo || feed !== status.feed) {
+        status.demo = demo;
+        status.feed = feed;
+        pushStatus();
+      }
     } catch {
       /* ignore malformed frame */
     }
@@ -303,15 +356,19 @@ function connectStatusFeed(port, wsPath) {
   });
 
   // Watchdog: if frames stop arriving, reflect "no data" in the panel.
+  //
+  // Only pushes when something actually changed. It used to send unconditionally
+  // every second, which re-rendered the whole panel once a second for the entire
+  // time the app was open — pure churn, since the live/demo/no-data flag is the
+  // only thing this timer can alter, and the socket's own message handler
+  // already pushes when the feed state flips the other way.
   feedWatchTimer = setInterval(() => {
     if (!status.running) return;
-    if (lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS) {
-      if (status.feed !== 'no-data') {
-        status.feed = 'no-data';
-        pushStatus();
-      }
+    const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
+    if (stale && status.feed !== 'no-data') {
+      status.feed = 'no-data';
+      pushStatus();
     }
-    pushStatus();
   }, 1000);
   feedWatchTimer.unref?.();
 }
@@ -550,6 +607,12 @@ function registerIpc() {
           current.ingameToggleShortcut,
         );
       }
+      if (typeof partial.sponsorsEnabled === 'boolean') {
+        next.sponsorsEnabled = partial.sponsorsEnabled;
+      }
+      if (partial.sponsorIntervalSec !== undefined) {
+        next.sponsorIntervalSec = clamp(partial.sponsorIntervalSec, 3, 120, current.sponsorIntervalSec);
+      }
     }
     saveSettings(next);
 
@@ -558,12 +621,16 @@ function registerIpc() {
       applyToggleShortcut(next);
     }
 
-    // Port or rate or demo changes require a server restart to take effect.
+    // Port, rate, demo and sponsor changes require a server restart to take
+    // effect — the sponsor route and interval are baked into the ServerConfig at
+    // boot, so without this the /sponsors/ endpoint keeps its old behaviour.
     const needsRestart =
       status.running &&
       (next.httpPort !== current.httpPort ||
         next.updateRateHz !== current.updateRateHz ||
-        next.forceSimulator !== current.forceSimulator);
+        next.forceSimulator !== current.forceSimulator ||
+        next.sponsorsEnabled !== current.sponsorsEnabled ||
+        next.sponsorIntervalSec !== current.sponsorIntervalSec);
     if (needsRestart) await startServer();
     // Reflect in-game display choices immediately (create/reload/close layer).
     syncOverlayWindow();
@@ -574,6 +641,56 @@ function registerIpc() {
       combinedUrl: `${baseUrl()}/`,
       status: statusForUi(),
     };
+  });
+
+  // --- Sponsor logos ------------------------------------------------------
+  // Images are COPIED into <userData>/sponsors/ rather than referenced where the
+  // user picked them: the overlay is served over HTTP, so an arbitrary path on
+  // disk is not reachable, and a copy also survives the user moving or deleting
+  // the original mid-season.
+
+  ipcMain.handle('sponsors:list', () => listSponsors());
+
+  ipcMain.handle('sponsors:add', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Add sponsor logos',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp'] }],
+    });
+    if (result.canceled) return listSponsors();
+    try {
+      fs.mkdirSync(sponsorDir(), { recursive: true });
+    } catch (err) {
+      console.error('[app] cannot create sponsor dir:', err.message);
+      return listSponsors();
+    }
+    for (const src of result.filePaths) {
+      // Keep the original name where possible, but never let a picked file
+      // overwrite one already in place — suffix instead.
+      const ext = path.extname(src);
+      const stem = path.basename(src, ext);
+      let name = stem + ext;
+      let n = 2;
+      while (fs.existsSync(path.join(sponsorDir(), name))) name = `${stem}-${n++}${ext}`;
+      try {
+        fs.copyFileSync(src, path.join(sponsorDir(), name));
+      } catch (err) {
+        console.error('[app] failed to copy sponsor logo:', err.message);
+      }
+    }
+    return listSponsors();
+  });
+
+  ipcMain.handle('sponsors:remove', (_evt, name) => {
+    // Only ever delete a plain filename inside our own directory — never a path
+    // the renderer supplies verbatim.
+    if (typeof name !== 'string' || name !== path.basename(name)) return listSponsors();
+    try {
+      fs.unlinkSync(path.join(sponsorDir(), name));
+    } catch {
+      /* already gone */
+    }
+    return listSponsors();
   });
 
   ipcMain.handle('server:start', async () => {

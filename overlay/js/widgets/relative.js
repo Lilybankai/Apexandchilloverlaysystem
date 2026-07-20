@@ -10,10 +10,19 @@
 (function () {
   "use strict";
 
-  var mount, tbody;
+  var mount, tbody, alertEl;
   var cellLast, cellBest, cellCur, cellDelta;
   var stripCache = {};
+  var alertCache = {};
   var rows = new Map();
+
+  /**
+   * Once the alert has fired for a car it stays up for this long even if the
+   * yield condition flickers off — a car dipping in and out of the threshold
+   * while it lines up a pass would otherwise strobe the banner. Cleared as soon
+   * as a different car takes over the alert.
+   */
+  var ALERT_HOLD_MS = 2000;
 
   function makeTimingCell(label) {
     var cell = document.createElement("div");
@@ -67,12 +76,57 @@
     strip.appendChild(cellDelta.parentNode);
     mount.appendChild(strip);
 
+    // Blue-flag / backmarker alert, between the timing strip and the table so it
+    // pushes nothing off-screen when it appears.
+    alertEl = document.createElement("div");
+    alertEl.className = "relative__alert";
+    alertEl.hidden = true;
+    mount.appendChild(alertEl);
+
     // Relative table.
     var table = document.createElement("table");
     table.className = "relative__table";
     tbody = document.createElement("tbody");
     table.appendChild(tbody);
     mount.appendChild(table);
+  }
+
+  /**
+   * Show/hide the yield banner for the nearest car we owe a move to. Picks the
+   * closest such car (there can be more than one in a multiclass train) so the
+   * driver is told about the one arriving first.
+   */
+  function updateAlert(list, fmt, now) {
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (!e.yieldTo) continue;
+      if (!best || Math.abs(e.relativeGapSec) < Math.abs(best.relativeGapSec)) best = e;
+    }
+
+    if (!best) {
+      // Hold the last alert briefly rather than dropping it the instant the
+      // condition blinks off.
+      if (alertCache.slot != null && now < alertCache.until) return;
+      if (!alertEl.hidden) {
+        alertEl.hidden = true;
+        alertCache = {};
+      }
+      return;
+    }
+
+    var who = best.driverName || "—";
+    if (best.carNumber) who = "#" + best.carNumber + " " + who;
+    var why = best.lapsDifference > 0 ? "LAPPING YOU" : (best.carClass || "FASTER CLASS");
+    var txt = "⚑ BLUE · " + who + " · " + why + " · " + Math.abs(best.relativeGapSec).toFixed(1) + "s";
+
+    if (alertCache.text !== txt) {
+      alertCache.text = txt;
+      alertEl.textContent = txt;
+    }
+    alertCache.slot = best.slotId;
+    alertCache.until = now + ALERT_HOLD_MS;
+    if (alertEl.hidden) alertEl.hidden = false;
   }
 
   function update(frame, ctx) {
@@ -106,6 +160,7 @@
     // Relative table.
     var list = frame.relative || [];
     var seen = new Set();
+    updateAlert(list, fmt, Date.now());
     for (var i = 0; i < list.length; i++) {
       var e = list[i];
       var row = rows.get(e.slotId);
@@ -116,7 +171,9 @@
       seen.add(e.slotId);
 
       set(row, "cls", row.tr, "className",
-        "relative__row" + (e.isPlayer ? " relative__row--player" : ""));
+        "relative__row" +
+          (e.isPlayer ? " relative__row--player" : "") +
+          (e.yieldTo ? " relative__row--yield" : ""));
       set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));
 
       var name = e.driverName || "—";

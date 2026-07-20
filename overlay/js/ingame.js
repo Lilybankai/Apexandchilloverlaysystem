@@ -27,6 +27,10 @@
       standings: { x: 24, y: 24, w: 474 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
       delta: { x: Math.round(vw / 2 - 150), y: 196, w: 300 },
+      // Below the delta pill, on the same centre line. Without an entry here it
+      // fell through to the {24, 24} fallback and spawned exactly on top of
+      // standings, where it looked like the overlay had failed to load.
+      pacedelta: { x: Math.round(vw / 2 - 170), y: 280, w: 340 },
       relative: { x: vw - 424, y: 24, w: 400 },
       fuel: { x: vw - 424, y: 250, w: 400 },
       tyres: { x: vw - 324, y: vh - 260, w: 300 },
