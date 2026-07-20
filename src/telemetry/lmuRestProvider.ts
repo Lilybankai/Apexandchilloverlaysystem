@@ -57,7 +57,7 @@ import {
 } from './types';
 import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
-import { shouldYield } from './yieldAlert';
+import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /** Config subset this provider needs. */
 export interface LmuRestConfig {
@@ -637,13 +637,16 @@ export class LmuRestProvider implements TelemetryProvider {
       const closing = this.closingRate(c.slotID, gap, now);
       entry.isFasterClass = faster;
       entry.closingRateSec = closing;
-      entry.yieldTo = shouldYield({
+      const traffic = {
         gapSec: gap,
         lapsDifference,
         fasterClass: faster,
+        slowerClass: isFasterClass(focusClass, carClass),
         closingRateSec: closing,
         inPit,
-      });
+      };
+      entry.yieldTo = shouldYield(traffic);
+      entry.trafficAhead = shouldWarnTraffic(traffic);
       return entry;
     };
 

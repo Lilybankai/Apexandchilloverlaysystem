@@ -38,6 +38,40 @@
     return v;
   }
 
+  /**
+   * The backmarker ghost, as inline SVG rather than the 👻 emoji.
+   *
+   * Three reasons the glyph was the wrong call: it renders in whatever colour
+   * Segoe UI Emoji decides (so it can't be tinted to match the row state or the
+   * brand), its size and baseline vary between the OBS Browser Source and the
+   * in-game layer, and the in-game layer scales widgets with a CSS transform —
+   * where a bitmap-backed colour emoji goes soft but a vector stays crisp. The
+   * overlay also deliberately ships no web fonts, so leaning on an emoji font
+   * being present is exactly the dependency the rest of the design avoids.
+   */
+  function ghostSvg() {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("class", "relative__ghost");
+    svg.setAttribute("aria-hidden", "true");
+    // Dome + the classic scalloped hem, then two eyes knocked out of it.
+    var body = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    body.setAttribute(
+      "d",
+      "M8 1a5.5 5.5 0 0 0-5.5 5.5V14a.6.6 0 0 0 1.05.4L5 13.1l1.45 1.3a.6.6 0 0 0 .8 0L8 13.6l.75.8a.6.6 0 0 0 .8 0L11 13.1l1.45 1.3A.6.6 0 0 0 13.5 14V6.5A5.5 5.5 0 0 0 8 1z"
+    );
+    body.setAttribute("fill", "currentColor");
+    var eyes = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    eyes.setAttribute(
+      "d",
+      "M6.1 5.6a1.15 1.35 0 1 1 0 2.7 1.15 1.35 0 0 1 0-2.7zm3.8 0a1.15 1.35 0 1 1 0 2.7 1.15 1.35 0 0 1 0-2.7z"
+    );
+    eyes.setAttribute("fill", "var(--bg-panel)");
+    svg.appendChild(body);
+    svg.appendChild(eyes);
+    return svg;
+  }
+
   function createRow() {
     var tr = document.createElement("tr");
     tr.className = "relative__row";
@@ -45,12 +79,30 @@
     posTd.className = "relative__cell relative__pos";
     var driverTd = document.createElement("td");
     driverTd.className = "relative__cell relative__driver";
+    // The ghost lives in its own span before the name, so toggling it never
+    // rewrites the name text node (which the reconciler diffs).
+    var ghostWrap = document.createElement("span");
+    ghostWrap.className = "relative__ghost-wrap";
+    ghostWrap.hidden = true;
+    ghostWrap.title = "Backmarker ahead — you are catching this car";
+    ghostWrap.appendChild(ghostSvg());
+    var nameSpan = document.createElement("span");
+    driverTd.appendChild(ghostWrap);
+    driverTd.appendChild(nameSpan);
     var deltaTd = document.createElement("td");
     deltaTd.className = "relative__cell relative__delta";
     tr.appendChild(posTd);
     tr.appendChild(driverTd);
     tr.appendChild(deltaTd);
-    return { tr: tr, posTd: posTd, driverTd: driverTd, deltaTd: deltaTd, cache: {} };
+    return {
+      tr: tr,
+      posTd: posTd,
+      driverTd: driverTd,
+      ghostWrap: ghostWrap,
+      nameSpan: nameSpan,
+      deltaTd: deltaTd,
+      cache: {},
+    };
   }
 
   function set(row, key, el, prop, value) {
@@ -173,13 +225,21 @@
       set(row, "cls", row.tr, "className",
         "relative__row" +
           (e.isPlayer ? " relative__row--player" : "") +
-          (e.yieldTo ? " relative__row--yield" : ""));
+          (e.yieldTo ? " relative__row--yield" : "") +
+          (e.trafficAhead ? " relative__row--traffic" : ""));
       set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));
+
+      // Ghost on the backmarker you're arriving on.
+      var ghost = !!e.trafficAhead;
+      if (row.cache.ghost !== ghost) {
+        row.cache.ghost = ghost;
+        row.ghostWrap.hidden = !ghost;
+      }
 
       var name = e.driverName || "—";
       if (e.carNumber) name = "#" + e.carNumber + " " + name;
       if (e.inPit) name = name + " ·PIT";
-      set(row, "name", row.driverTd, "textContent", name);
+      set(row, "name", row.nameSpan, "textContent", name);
 
       var gapText = e.isPlayer ? "—" : fmt.relGap(e.relativeGapSec);
       set(row, "delta", row.deltaTd, "textContent", gapText);

@@ -372,6 +372,13 @@ export interface RelativeEntry {
    */
   yieldTo?: boolean;
   /**
+   * `true` when this car is a **backmarker the player is arriving on**: ahead on
+   * the road, behind on the race (a lap down or a slower class), and being
+   * caught. The mirror of {@link yieldTo} — traffic the player has to get past,
+   * rather than traffic the player must let past.
+   */
+  trafficAhead?: boolean;
+  /**
    * Rate the gap is closing, in seconds of gap per second, when it can be
    * measured (positive = closing on the player, negative = pulling away).
    * {@link UNKNOWN_VALUE} until two samples of this car exist.

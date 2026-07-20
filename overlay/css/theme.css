@@ -53,6 +53,7 @@
   --warn: #ffb020;       /* caution / marginal fuel         */
   --purple-fastest: #b06bff; /* overall fastest (purple)    */
   --flag-blue: #3d8bff;  /* blue flag / yield to faster car */
+  --traffic-amber: #ffb347; /* backmarker ahead you're catching */
 
   /* Pedal trace colours */
   --pedal-throttle: #35d07f;

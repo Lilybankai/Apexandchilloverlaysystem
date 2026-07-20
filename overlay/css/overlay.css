@@ -492,6 +492,33 @@
   box-shadow: inset 3px 0 0 var(--flag-blue);
 }
 .relative__row--yield .relative__delta { color: var(--flag-blue); }
+
+/* The backmarker we're arriving on. Amber, NOT blue: the two cases are mirror
+   images and must never be confused at a glance — blue means "let them past",
+   amber means "you have to get past them". */
+.relative__row--traffic {
+  background: color-mix(in srgb, var(--traffic-amber) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--traffic-amber);
+}
+.relative__row--traffic .relative__delta { color: var(--traffic-amber); }
+
+.relative__ghost-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.relative__ghost {
+  width: 12px;
+  height: 12px;
+  color: var(--traffic-amber);
+  /* A slow bob, so it reads as "incoming" in peripheral vision without the
+     hard strobe the blue-flag banner uses — this is a heads-up, not an order. */
+  animation: relative-ghost-bob 1.6s ease-in-out infinite;
+}
+@keyframes relative-ghost-bob {
+  50% { transform: translateY(-1.5px); }
+}
 .relative__cell { padding: 4px 8px; white-space: nowrap; }
 .relative__pos {
   width: 26px; text-align: center;

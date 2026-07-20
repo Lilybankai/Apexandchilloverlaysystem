@@ -14,7 +14,7 @@
 const path = require('path');
 const dist = (m) => require(path.join(__dirname, '..', 'dist', 'telemetry', m));
 const { normalizeClass, classRank, isFasterClass, assignClassPositions } = dist('carClass.js');
-const { shouldYield } = dist('yieldAlert.js');
+const { shouldYield, shouldWarnTraffic } = dist('yieldAlert.js');
 
 const UNKNOWN = -1;
 let pass = 0,
@@ -96,7 +96,8 @@ check('the genuinely lapped GT3 reads 1 lap down in class',
 console.log('\n4) Blue-flag / backmarker yield rule');
 
 const y = (o) => shouldYield({
-  gapSec: -1.5, lapsDifference: 0, fasterClass: false, closingRateSec: 0.2, inPit: false, ...o,
+  gapSec: -1.5, lapsDifference: 0, fasterClass: false, slowerClass: false,
+  closingRateSec: 0.2, inPit: false, ...o,
 });
 
 check('faster class closing from behind fires', y({ fasterClass: true }));
@@ -114,6 +115,55 @@ check('unmeasured closing rate does not fire', !y({ fasterClass: true, closingRa
 // A car in the pit lane is off the racing line; its road gap means nothing.
 check('a car in the pits never fires', !y({ fasterClass: true, inPit: true }));
 check('a lapped car in the pits never fires', !y({ lapsDifference: 1, inPit: true }));
+
+/* -------------------------------------------------------------------------- */
+console.log('\n5) Backmarker-ahead (ghost) rule — the mirror of the blue flag');
+
+const t = (o) => shouldWarnTraffic({
+  gapSec: 1.5, lapsDifference: 0, fasterClass: false, slowerClass: false,
+  closingRateSec: 0.2, inPit: false, ...o,
+});
+
+check('a lapped car ahead that we are catching fires', t({ lapsDifference: -1 }));
+check('a slower class ahead that we are catching fires', t({ slowerClass: true }));
+// The direction test, and the one that matters most: this rule and the blue
+// flag must never both fire on the same car, or the row would claim we owe a
+// car a move AND have to pass it.
+check('a car BEHIND us does not fire', !t({ gapSec: -1.5, lapsDifference: -1 }));
+check('too far ahead does not fire', !t({ lapsDifference: -1, gapSec: 3.0 }));
+// Unlike the blue flag, closing is required even for a lapped car: one holding
+// station ahead of you is not a problem you are about to have.
+check('a lapped car we are NOT closing on does not fire',
+  !t({ lapsDifference: -1, closingRateSec: 0 }));
+check('a lapped car pulling away does not fire',
+  !t({ lapsDifference: -1, closingRateSec: -0.3 }));
+check('unmeasured closing rate does not fire',
+  !t({ lapsDifference: -1, closingRateSec: UNKNOWN }));
+check('same class, same lap, ahead does not fire', !t({}));
+// A faster car ahead of us is not traffic — it is simply gone.
+check('a FASTER class ahead does not fire', !t({ fasterClass: true }));
+check('an unknown class ahead does not fire (slowerClass false)', !t({}));
+check('a car in the pits never fires', !t({ lapsDifference: -1, inPit: true }));
+
+// Mutual exclusivity across the full sign range: no single car may ever be both
+// a blue flag and a backmarker.
+let bothFired = 0;
+for (const gapSec of [-3, -2, -1, -0.5, 0.5, 1, 2, 3]) {
+  for (const lapsDifference of [-1, 0, 1]) {
+    for (const fasterClass of [true, false]) {
+      for (const closingRateSec of [-0.3, 0, 0.2]) {
+        const input = {
+          gapSec, lapsDifference, fasterClass,
+          slowerClass: !fasterClass && lapsDifference === 0 ? true : false,
+          closingRateSec, inPit: false,
+        };
+        if (shouldYield(input) && shouldWarnTraffic(input)) bothFired++;
+      }
+    }
+  }
+}
+check('no car is ever both a blue flag and a backmarker', bothFired === 0,
+  bothFired + ' collisions');
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${pass} passed, ${fail} failed`);

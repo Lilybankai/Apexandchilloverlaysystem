@@ -27,7 +27,7 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { assignClassPositions, isFasterClass } from './carClass';
-import { shouldYield } from './yieldAlert';
+import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
 
@@ -582,13 +582,16 @@ export class SimulatorProvider implements TelemetryProvider {
       const faster = isFasterClass(car.carClass, player.carClass);
       entry.isFasterClass = faster;
       entry.closingRateSec = Math.round(closing * 100) / 100;
-      entry.yieldTo = shouldYield({
+      const traffic = {
         gapSec,
         lapsDifference,
         fasterClass: faster,
+        slowerClass: isFasterClass(player.carClass, car.carClass),
         closingRateSec: closing,
         inPit: car.inPit,
-      });
+      };
+      entry.yieldTo = shouldYield(traffic);
+      entry.trafficAhead = shouldWarnTraffic(traffic);
       return entry;
     };
 

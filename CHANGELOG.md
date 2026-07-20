@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.1 — 2026-07-20
+
+### Added
+- **Backmarker ghost in the relative widget** — the mirror of 0.7.0's blue flag.
+  A 👻 marks a slower car **ahead of you on the road** that you are arriving on:
+  either a lap down, or in a slower class, and being caught. Where the blue flag
+  says *let this car past*, the ghost says *you have to get past this one*, so
+  the two are deliberately different colours — blue for yield, amber for traffic.
+  They are also provably mutually exclusive: no car can ever show both.
+
+  Unlike the blue flag, the ghost requires that you are **actually closing**,
+  even on a car a lap down. One holding station ahead of you is not a problem you
+  are about to have, and without that test the icon would sit lit for most of a
+  stint on anything you never reach.
+
+  Drawn as inline SVG rather than the emoji glyph: an emoji renders in whatever
+  colour the system emoji font decides (so it can't be tinted to the row state),
+  its size and baseline drift between the OBS Browser Source and the in-game
+  layer, and the in-game layer scales widgets with a CSS transform — where a
+  bitmap-backed emoji goes soft but a vector stays crisp. The overlay also ships
+  no web fonts by design, so depending on an emoji font being installed is
+  exactly the dependency the rest of the theme avoids.
+
 ## 0.7.0 — 2026-07-20 "On track"
 
 First slice of the Carl + Scot roadmap: the items that are visible on stream and
