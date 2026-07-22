@@ -40,10 +40,6 @@
       // on the other and read as a widget that failed to load.
       pedalsv: { x: 24, y: vh - 270, w: 300 },
       motion: { x: vw - 260, y: vh - 420, w: 236 },
-      // Bottom-left, immediately right of `pedalsv` rather than above it: the
-      // car diagram plus its suspension table runs ~400px tall, so stacking it
-      // in that column would have pushed it up into the standings list.
-      chassis: { x: 340, y: vh - 480, w: 260 },
     };
     return D[id] || { x: 24, y: 24, w: 400 };
   }

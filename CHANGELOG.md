@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **The Chassis widget.** It rendered, but a wireframe car with load columns
+  turned out not to earn its screen space next to the data a driver actually
+  acts on. Removed from the catalog, both overlay pages, the shell registry,
+  the in-game defaults and the stylesheet — `overlay/js/widgets/chassis.js` is
+  deleted with them.
+
+  **The telemetry it fed is kept**: `src/telemetry/chassis.ts`, the load and
+  suspension channels on both providers, the `chassis` block on `PlayerState`
+  and all 29 tests. Those are provider-level, verified, and the natural input
+  to a damage or suspension readout later. Restoring the widget itself is
+  `git checkout v0.9.1 -- overlay/js/widgets/chassis.js` plus the six
+  registration points listed in the 0.9.1 notes.
+
 ## 0.9.1 — 2026-07-22
 
 Fixes 0.9.0, in which the Chassis widget shipped complete and could not be

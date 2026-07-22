@@ -54,7 +54,6 @@ const OVERLAY_CATALOG = [
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
-  { id: 'chassis', label: 'Chassis (Load / Suspension)', description: 'Corner loads, roll + pitch attitude, suspension travel' },
 ];
 
 /* -------------------------------------------------------------------------- */
