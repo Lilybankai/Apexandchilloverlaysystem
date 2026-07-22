@@ -622,12 +622,20 @@ export class SimulatorProvider implements TelemetryProvider {
             currentSetting: 2,
             settings: [{ text: 'Do Not Repair' }, { text: 'Repair Body' }, { text: 'Repair All' }],
           },
+          // Two corners selected, so the tyre line is exercised too — and at a
+          // count that resolves to TwoTireChange rather than the four-tyre one.
+          { name: 'FL TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
+          { name: 'FR TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
+          { name: 'RL TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
+          { name: 'RR TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
         ],
       },
       pitStopTimes: {
         times: {
           FixAllDamage: round2(30 + 5.1 * ramp),
           FixAeroDamage: 30,
+          TwoTireChange: 4.5,
+          FourTireChange: 12,
         },
       },
     });

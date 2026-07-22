@@ -146,6 +146,101 @@ console.log('\nthe driver declined repairs\n');
   check('body-only selection is distinguished', d.repairSelection === 'body', d.repairSelection);
 }
 
+console.log('\ntyre change — priced separately, never summed into the repair figure\n');
+{
+  /** The four per-corner entries, with `selected` of them set to change. */
+  const tyreMenu = (selected) =>
+    ['FL', 'FR', 'RL', 'RR'].map((c, i) => ({
+      name: c + ' TIRE:',
+      currentSetting: i < selected ? 1 : 0,
+      settings: [{ text: 'No Change' }, { text: 'New Medium' }],
+    }));
+  const TIMES = { FixAllDamage: 35.098, TwoTireChange: 4.5, FourTireChange: 12 };
+  const withTyres = (selected) =>
+    decodeDamage({
+      wearables: DAMAGED.wearables,
+      pitStopTimes: { times: TIMES },
+      pitMenu: { pitMenu: menuDamaged(2).concat(tyreMenu(selected)) },
+    });
+
+  const none = withTyres(0);
+  check('no tyres selected costs nothing', none.tyreChangeSeconds === 0, none.tyreChangeSeconds);
+  check('and counts zero corners', none.tyreCornersSelected === 0);
+
+  // The game showed "Tyres: 5 sec" for a single corner against a published
+  // TwoTireChange of 4.5 — so one tyre really is priced as two.
+  const one = withTyres(1);
+  check('one corner is priced as TwoTireChange', one.tyreChangeSeconds === 4.5, one.tyreChangeSeconds);
+  check('and counts one corner', one.tyreCornersSelected === 1);
+
+  const two = withTyres(2);
+  check('two corners, same price', two.tyreChangeSeconds === 4.5, two.tyreChangeSeconds);
+
+  const three = withTyres(3);
+  check('three corners crosses to FourTireChange', three.tyreChangeSeconds === 12, three.tyreChangeSeconds);
+
+  const four = withTyres(4);
+  check('all four', four.tyreChangeSeconds === 12, four.tyreChangeSeconds);
+  check('and counts four corners', four.tyreCornersSelected === 4);
+
+  // The whole point of keeping them apart: the repair figure must be untouched
+  // by whatever the tyres cost.
+  check('repair time is NOT summed with tyres', four.repairSeconds === 35.1, four.repairSeconds);
+
+  // `TIRES:` is the all-four shortcut; counting it as a corner would inflate
+  // the count to five and push a two-tyre stop into the four-tyre price.
+  const withShortcut = decodeDamage({
+    wearables: DAMAGED.wearables,
+    pitStopTimes: { times: TIMES },
+    pitMenu: {
+      pitMenu: menuDamaged(2)
+        .concat([{ name: 'TIRES:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'All' }] }])
+        .concat(tyreMenu(2)),
+    },
+  });
+  check('the TIRES: shortcut is not double-counted', withShortcut.tyreCornersSelected === 2, withShortcut.tyreCornersSelected);
+  check('so the price stays at two', withShortcut.tyreChangeSeconds === 4.5, withShortcut.tyreChangeSeconds);
+}
+{
+  // A clean car can still be stopping for tyres, and that stop still has a
+  // length worth knowing.
+  const d = decodeDamage(
+    payload({
+      pitStopTimes: { times: { TwoTireChange: 4.5, FourTireChange: 12 } },
+      pitMenu: {
+        pitMenu: MENU_CLEAN.concat(
+          ['FL', 'FR', 'RL', 'RR'].map((c) => ({
+            name: c + ' TIRE:',
+            currentSetting: 1,
+            settings: [{ text: 'No Change' }, { text: 'New Medium' }],
+          })),
+        ),
+      },
+    }),
+  );
+  check('an undamaged car still prices its tyre stop', d.tyreChangeSeconds === 12, d.tyreChangeSeconds);
+  check('while reporting no damage', d.hasDamage === false);
+  check('and no repair estimate', d.repairSeconds === -1, d.repairSeconds);
+}
+{
+  const d = decodeDamage(
+    payload({
+      pitMenu: {
+        pitMenu: MENU_CLEAN.concat([
+          { name: 'FL TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
+        ]),
+      },
+      pitStopTimes: { times: {} },
+    }),
+  );
+  check('tyres selected but no published time is UNKNOWN', d.tyreChangeSeconds === -1, d.tyreChangeSeconds);
+}
+{
+  const d = decodeDamage(payload({ pitMenu: {} }));
+  check('no pit menu means unknown tyre time', d.tyreChangeSeconds === -1);
+  check('and unknown corner count', d.tyreCornersSelected === -1);
+}
+
 console.log('\nabsent and malformed payloads — must be null, never zeros\n');
 {
   check('null payload', decodeDamage(null) === null);

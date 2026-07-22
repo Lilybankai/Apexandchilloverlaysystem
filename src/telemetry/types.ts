@@ -401,6 +401,18 @@ export interface DamageState {
   repairSelection: RepairSelection;
   /** The live `DAMAGE:` menu options, e.g. `["Do Not Repair", …]`. */
   repairOptions: string[];
+  /**
+   * Seconds to change the tyres currently selected in the pit menu — `0` when
+   * none are, {@link UNKNOWN_VALUE} when the sim publishes no figure.
+   *
+   * Reported **alongside** {@link repairSeconds}, never summed with it. The
+   * sim's `TireTimeConcurrent` flag decides whether the two overlap, and that
+   * flag has not been verified against a real stop; two honest figures the
+   * driver can add up beat one total that may be wrong by the whole tyre time.
+   */
+  tyreChangeSeconds: number;
+  /** How many corners have a tyre change selected, `0..4`. */
+  tyreCornersSelected: number;
 }
 
 /**

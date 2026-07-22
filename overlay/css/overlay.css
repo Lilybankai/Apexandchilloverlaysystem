@@ -1046,7 +1046,40 @@
    sets `display` outspecifies the UA's `[hidden]` rule, so without these two
    both states render at once — "NO DAMAGE" directly under "+32.7 SEC". */
 .damage__hero[hidden],
+.damage__tyre[hidden],
 .damage__clean[hidden] { display: none; }
+
+/* Tyre time. Deliberately quieter than the repair figure and on its own line:
+   it is a second, separate cost, not part of the headline number, and the two
+   are never summed here. */
+.damage__tyre {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-soft);
+}
+.damage__tyre-key {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.damage__tyre-note {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.damage__tyre-val {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- the clean state, which replaces the figure entirely ---------------- */
 .damage__clean {

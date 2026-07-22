@@ -67,6 +67,9 @@
   var elHeroTag = null;
   var elClean = null;
   var elSel = null;
+  var elTyre = null;
+  var elTyreVal = null;
+  var elTyreNote = null;
   var rowsDmg = []; // { fill, val } for aero + 4 corners
   var rowsBrake = [];
   var cache = {};
@@ -266,6 +269,28 @@
       elClean.appendChild(dot);
       elClean.appendChild(txt);
       wrap.appendChild(elClean);
+
+      // Tyre time sits BESIDE the repair figure, never added to it. Whether the
+      // two overlap is decided by the sim's TireTimeConcurrent flag, which has
+      // not been verified against a real stop — so the widget shows both and
+      // lets the driver add them rather than publishing a total that could be
+      // wrong by the whole tyre time.
+      elTyre = document.createElement("div");
+      elTyre.className = "damage__tyre";
+      elTyre.hidden = true;
+      var tk = document.createElement("span");
+      tk.className = "damage__tyre-key";
+      tk.textContent = "TYRES";
+      elTyreVal = document.createElement("span");
+      elTyreVal.className = "damage__tyre-val";
+      elTyreVal.textContent = "—";
+      elTyreNote = document.createElement("span");
+      elTyreNote.className = "damage__tyre-note";
+      elTyreNote.textContent = "";
+      elTyre.appendChild(tk);
+      elTyre.appendChild(elTyreNote);
+      elTyre.appendChild(elTyreVal);
+      wrap.appendChild(elTyre);
     }
 
     if (modeDmg) {
@@ -343,6 +368,7 @@
       setText(headerMeta, "meta", "NO DATA");
       if (elHeroNum) setText(elHeroNum, "hero", "—");
       if (elClean) elClean.hidden = true;
+      if (elTyre) elTyre.hidden = true;
       if (elHeroTag) setText(elHeroTag, "herotag", "TO REPAIR");
       for (var n = 0; n < rowsDmg.length; n++) {
         paintDamageRow(rowsDmg[n], "d" + n, 0);
@@ -363,6 +389,20 @@
         // unknowns this is instead of leaving a bare dash under "TO REPAIR".
         setText(elHeroTag, "herotag", hasTime ? "TO REPAIR" : "NO ESTIMATE");
       }
+      // Shown whenever tyres are actually selected — including on a clean car,
+      // where a tyre stop is still a stop worth knowing the length of.
+      var tyreOn = d.tyreCornersSelected > 0 && d.tyreChangeSeconds !== -1;
+      if (elTyre) elTyre.hidden = !tyreOn;
+      if (tyreOn) {
+        setText(elTyreVal, "tyreval", d.tyreChangeSeconds.toFixed(1) + "s");
+        setText(
+          elTyreNote,
+          "tyrenote",
+          d.tyreCornersSelected === 4 ? "all four" : d.tyreCornersSelected + " corner" +
+            (d.tyreCornersSelected === 1 ? "" : "s"),
+        );
+      }
+
       setText(elSel, "sel", selectionLabel(d.repairSelection));
       setAttr(
         elSel,

@@ -139,12 +139,22 @@ nothing to look at. `Do Not Repair` selected while the car is damaged is flagged
 amber, because that is a deliberate choice rather than the default.
 
 The repair figure is **the sim's own live estimate**, read straight through from
-`FixAllDamage` (measured moving from 30 to 35.1 s for real damage). Nothing here
-models, scales or calibrates it, and there is deliberately **no "total stop
-time"** — folding tyre and fuel time in would mean trusting concurrency flags
-nobody has verified against a real stop, and a wrong guess produces a confident
-total that is twenty seconds out. When the sim publishes no figure the widget
-says `NO ESTIMATE` rather than showing a plausible zero.
+`FixAllDamage`, and it scales with severity (measured: 35.1 s at 9.5% aero /
+19.5% FR, 93.7 s at 35.7% / 52.1%). Nothing here models, scales or calibrates
+it. When the sim publishes no figure the widget says `NO ESTIMATE` rather than
+showing a plausible zero.
+
+If tyres are selected in the pit menu, a **separate tyre line** appears under it
+— priced from the sim's `TwoTireChange` / `FourTireChange` against the corners
+actually selected. The two are shown **side by side and never summed**: whether
+they overlap is decided by `TireTimeConcurrent`, which has not been verified
+against a real stop, so a total could be wrong by the whole tyre time. Two
+honest figures the driver adds up beat one that might be wrong.
+
+> The game rounds its own pit message **up to the nearest 5 s** — it showed
+> `Damage 95 sec` against a published `93.7`, and `Tyres: 5 sec` against `4.5`.
+> The widget shows the precise value, so expect it to read slightly under the
+> in-game message.
 
 Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to a
 "car health" percentage, because that curve would be ours rather than the sim's.

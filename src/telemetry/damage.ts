@@ -152,6 +152,44 @@ function readRepairSelection(items: unknown): {
   return { selection: 'none', options };
 }
 
+/**
+ * Counts how many corners have a tyre change selected, and prices it from the
+ * sim's own published change times.
+ *
+ * The per-corner menu entries (`FL TIRE:` … `RR TIRE:`) read `No Change` at
+ * index 0 and a compound name otherwise, so "selected" is simply "not the
+ * no-change option".
+ *
+ * The 1-or-2 / 3-or-4 split is what the sim publishes: there is a
+ * `TwoTireChange` and a `FourTireChange` and nothing between or below. Checked
+ * against the game's own pit message with a single tyre selected, which read
+ * `Tyres: 5 sec` against a published `TwoTireChange` of 4.5 — the game rounds
+ * its display up, so one tyre really is priced as two.
+ */
+function readTyreChange(
+  items: unknown,
+  times: Record<string, unknown> | undefined,
+): { seconds: number; corners: number } {
+  if (!Array.isArray(items)) return { seconds: UNKNOWN_VALUE, corners: UNKNOWN_VALUE };
+
+  let corners = 0;
+  for (const it of items as RawPitMenuItem[]) {
+    const name = typeof it?.name === 'string' ? it.name.toUpperCase() : '';
+    // The per-corner entries only. `TIRES:` is the all-four shortcut and would
+    // double-count against the corners it drives.
+    if (!/^(FL|FR|RL|RR) TIRE/.test(name)) continue;
+    if (!Array.isArray(it.settings)) continue;
+    const idx = finite(it.currentSetting) ? it.currentSetting : 0;
+    const chosen = (it.settings as { text?: unknown }[])[idx];
+    const text = typeof chosen?.text === 'string' ? chosen.text.toLowerCase() : '';
+    if (text !== '' && !text.includes('no change')) corners++;
+  }
+
+  if (corners === 0) return { seconds: 0, corners: 0 };
+  const key = corners <= 2 ? 'TwoTireChange' : 'FourTireChange';
+  return { seconds: repairTime(times, key), corners };
+}
+
 /** Reads one named entry out of `pitStopTimes.times`, in seconds. */
 function repairTime(times: Record<string, unknown> | undefined, key: string): number {
   if (!times) return UNKNOWN_VALUE;
@@ -198,6 +236,7 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
 
   const times = payload.pitStopTimes?.times;
   const { selection, options } = readRepairSelection(payload.pitMenu?.pitMenu);
+  const tyres = readTyreChange(payload.pitMenu?.pitMenu, times);
 
   const worst = Math.max(aero, ...suspension);
 
@@ -212,6 +251,8 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     repairBodySeconds: repairTime(times, 'FixAeroDamage'),
     repairSelection: selection,
     repairOptions: options,
+    tyreChangeSeconds: tyres.seconds,
+    tyreCornersSelected: tyres.corners,
   };
 }
 

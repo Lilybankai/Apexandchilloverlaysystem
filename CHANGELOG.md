@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.10.1 — 2026-07-22
+
+### Added
+
+- **A separate tyre line on the Damage widget** — `TYRES · 2 corners · 4.5s`,
+  under the repair figure and above the component bars. Priced from the sim's
+  own `TwoTireChange` / `FourTireChange` against the corners actually selected
+  in the pit menu, and shown even on an undamaged car, where a tyre stop still
+  has a length worth knowing.
+
+  It is reported **beside** the repair figure and **never summed with it**. The
+  sim's `TireTimeConcurrent` flag decides whether the two overlap and that flag
+  is still unverified against a real stop, so two honest figures the driver can
+  add up beat one total that could be wrong by the whole tyre time.
+
+  One selected corner is priced as `TwoTireChange`, because that is what the sim
+  publishes — there is no one-tyre figure. Confirmed against the game's own pit
+  message, which read `Tyres: 5 sec` for a single corner against a published
+  `TwoTireChange` of `4.5`. The `TIRES:` all-four shortcut is explicitly not
+  counted as a fifth corner, which would push a two-tyre stop into the four-tyre
+  price.
+
+### Notes from testing in-game
+
+- **`FixAllDamage` scales properly with severity.** At 9.5% aero / 19.5% FR it
+  read 35.1 s; at 35.7% aero / 52.1% FR it read 93.7 s. The one open question
+  from 0.10.0 is closed — the widget reads the figure rather than modelling it,
+  and the figure moves.
+- **The game rounds its own display up to the nearest 5 s.** Its pit message
+  read `Damage 95 sec` against a published `93.7`, and `Tyres: 5 sec` against a
+  published `4.5`. The widget shows the precise published value rather than the
+  rounded one, so a small disagreement with the in-game message is expected and
+  is the game being pessimistic, not the widget being wrong.
+
 ## 0.10.0 — 2026-07-22 "Contact"
 
 A new widget that answers the question a driver actually asks after contact —
