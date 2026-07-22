@@ -427,6 +427,18 @@ export interface DamageState {
    * figure.
    */
   stopLengthSeconds: number;
+  /**
+   * The largest **unpublished** delay the sim can add to this stop, in seconds —
+   * `FixRandomDelay` plus `RandomTireDelay`, counted only for the work actually
+   * booked in. {@link UNKNOWN_VALUE} when the sim publishes neither.
+   *
+   * {@link stopLengthSeconds} is a floor, not a prediction: the draw happens
+   * when the stop does and appears nowhere beforehand. Measured — a stop with a
+   * published total of 184.5 s finished at 187.7 s, a 3.2 s residual against a
+   * 6 s cap. This is what lets the widget quote a range instead of a number that
+   * is always a few seconds optimistic.
+   */
+  randomDelayMaxSeconds: number;
 }
 
 /**

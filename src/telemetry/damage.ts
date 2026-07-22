@@ -256,7 +256,57 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     tyreChangeSeconds: tyres.seconds,
     tyreCornersSelected: tyres.corners,
     stopLengthSeconds: stopLength(payload.pitStopLength),
+    randomDelayMaxSeconds: randomDelayMax(times, selection, tyres.corners),
   };
+}
+
+/**
+ * The largest **unpublished** delay the sim can add to this stop, in seconds.
+ *
+ * The published total is a floor, not a prediction. LMU draws a random delay
+ * when the stop actually happens — `FixRandomDelay` for repairs, and
+ * `RandomTireDelay` for a tyre change — and neither draw appears anywhere in
+ * the payload beforehand. Only the caps do.
+ *
+ * This is the residual that made the widget look wrong for three releases, and
+ * it is measurable. Three stops, each with the published repair figure against
+ * the number the game quoted in the cockpit:
+ *
+ *   93.7  -> 95    (+1.3)
+ *   102.75 -> 107  (+4.25)
+ *   180.0 -> 182   (+2.0)
+ *
+ * Every one inside `FixRandomDelay: 5`. The third of those stops was then timed
+ * to completion: published total 184.5, actual 187.7 — a 3.2 s residual against
+ * a 6 s cap (5 for repairs plus 1 for the tyre). So the widget cannot ever match
+ * the game's quoted number, and should not try; it can only say honestly how
+ * much slack the sim has left itself.
+ *
+ * Only the components actually booked in are counted — no tyre change means no
+ * tyre delay — so the range narrows as the stop gets simpler.
+ */
+function randomDelayMax(
+  times: Record<string, unknown> | undefined,
+  selection: RepairSelection,
+  tyreCorners: number,
+): number {
+  if (!times) return UNKNOWN_VALUE;
+  let total = 0;
+  // Whether the sim publishes these caps at all, which is a different question
+  // from whether any of them apply to this stop. A stop with nothing booked has
+  // a delay of exactly zero, not an unknown one — so `known` tracks the fields
+  // being present, and `applies` decides only whether they are counted.
+  let known = false;
+  const add = (key: string, applies: boolean): void => {
+    const v = times[key];
+    if (!finite(v) || v < 0 || v > 120) return;
+    known = true;
+    if (applies) total += v;
+  };
+  // Repairs only draw a delay when repairs are actually being done.
+  add('FixRandomDelay', selection === 'all' || selection === 'body');
+  add('RandomTireDelay', tyreCorners > 0);
+  return known ? Math.round(total * 10) / 10 : UNKNOWN_VALUE;
 }
 
 /**

@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.10.4 — 2026-07-22
+
+### Added
+
+- **An expected-range line under the headline** — `expect 184.5–190.5s`. The
+  published total is a **floor, not a prediction**: LMU draws a random delay when
+  the stop actually happens (`FixRandomDelay` ≤5 s, `RandomTireDelay` ≤1 s) and
+  publishes only the caps. The range counts only the work actually booked, so
+  declining repairs or skipping tyres narrows it rather than quoting a blanket
+  6 s.
+
+  This is what was behind every "the widget is ~2 s out" report. Three stops,
+  published repair figure against the number the game quoted in the cockpit:
+
+  ```
+   93.7 -> 95    (+1.3)
+  102.75 -> 107  (+4.25)
+  180.0 -> 182   (+2.0)
+  ```
+
+  Every residual inside `FixRandomDelay: 5`. The third was then timed to
+  completion — published total 184.5 s, car released at 187.7 s, a 3.2 s
+  residual against a 6 s cap. The widget cannot match the game's quoted number
+  because that number contains a draw published nowhere; it can only be honest
+  about how much slack the sim has left itself.
+
+  A test asserts the real 187.7 s stop falls inside the range the widget would
+  have quoted for it.
+
+### Notes
+
+- This also corrects 0.10.3's claim that `pitStopLength` is "the figure the game
+  quotes in the cockpit". It is not — the game's figure includes the random draw.
+  `pitStopLength` is the deterministic work time, which is the right thing to
+  show, but the two are different quantities and the earlier note conflated them.
+
 ## 0.10.3 — 2026-07-22
 
 ### Changed

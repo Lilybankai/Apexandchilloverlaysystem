@@ -198,6 +198,58 @@ console.log('\ntotal stop length — read from the sim, never derived\n');
   check('a NaN total is rejected', nan.stopLengthSeconds === -1, nan.stopLengthSeconds);
 }
 
+console.log('\nrandom delay — the published total is a floor, not a prediction\n');
+{
+  const TIMES = {
+    FixAllDamage: 180,
+    TwoTireChange: 4.5,
+    FourTireChange: 12,
+    FixRandomDelay: 5,
+    RandomTireDelay: 1,
+  };
+  const build = (sel, corners) =>
+    decodeDamage({
+      wearables: DAMAGED.wearables,
+      pitStopTimes: { times: TIMES },
+      pitStopLength: { timeInSeconds: 184.5 },
+      pitMenu: {
+        pitMenu: menuDamaged(sel).concat(
+          ['FL', 'FR', 'RL', 'RR'].map((c, i) => ({
+            name: c + ' TIRE:',
+            currentSetting: i < corners ? 1 : 0,
+            settings: [{ text: 'No Change' }, { text: 'New Medium' }],
+          })),
+        ),
+      },
+    });
+
+  // The measured stop: published total 184.5, actual 187.7 when the car
+  // dropped. A 3.2 s residual has to fall inside the quoted range, or the range
+  // is a lie of exactly the kind this widget exists to avoid.
+  const both = build(2, 1);
+  check('repairs + one tyre caps at 6s', both.randomDelayMaxSeconds === 6, both.randomDelayMaxSeconds);
+  check('the published total is the floor', both.stopLengthSeconds === 184.5, both.stopLengthSeconds);
+  check(
+    'the quoted range covers the real 187.7s stop',
+    187.7 >= both.stopLengthSeconds &&
+      187.7 <= both.stopLengthSeconds + both.randomDelayMaxSeconds,
+    both.stopLengthSeconds + '–' + (both.stopLengthSeconds + both.randomDelayMaxSeconds),
+  );
+
+  // Only the work actually booked draws a delay, so a simpler stop quotes a
+  // tighter range rather than a blanket 6 s.
+  const repairsOnly = build(2, 0);
+  check('repairs alone cap at 5s', repairsOnly.randomDelayMaxSeconds === 5, repairsOnly.randomDelayMaxSeconds);
+  const tyresOnly = build(0, 2);
+  check('declining repairs drops the repair delay', tyresOnly.randomDelayMaxSeconds === 1, tyresOnly.randomDelayMaxSeconds);
+  const nothing = build(0, 0);
+  check('no work booked, no delay', nothing.randomDelayMaxSeconds === 0, nothing.randomDelayMaxSeconds);
+}
+{
+  const d = decodeDamage(DAMAGED);
+  check('unpublished caps give UNKNOWN, not 0', d.randomDelayMaxSeconds === -1, d.randomDelayMaxSeconds);
+}
+
 console.log('\ntyre change — priced separately, never summed into the repair figure\n');
 {
   /** The four per-corner entries, with `selected` of them set to change. */

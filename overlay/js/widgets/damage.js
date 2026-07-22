@@ -75,6 +75,7 @@
   var elClean = null;
   var elSel = null;
   var elTyre = null;
+  var elRange = null;
   var elRepair = null;
   var elRepairVal = null;
   var elTyreVal = null;
@@ -267,6 +268,15 @@
       hero.appendChild(elHeroTag);
       wrap.appendChild(hero);
 
+      // The honest range. The headline is a floor: the sim draws a random delay
+      // when the stop happens and publishes only its cap, so this says how much
+      // slack it has left itself rather than pretending the floor is a
+      // prediction.
+      elRange = document.createElement("div");
+      elRange.className = "damage__range";
+      elRange.hidden = true;
+      wrap.appendChild(elRange);
+
       elClean = document.createElement("div");
       elClean.className = "damage__clean";
       elClean.hidden = true;
@@ -395,6 +405,7 @@
       if (elClean) elClean.hidden = true;
       if (elTyre) elTyre.hidden = true;
       if (elRepair) elRepair.hidden = true;
+      if (elRange) elRange.hidden = true;
       if (elHeroTag) setText(elHeroTag, "herotag", "TO REPAIR");
       for (var n = 0; n < rowsDmg.length; n++) {
         paintDamageRow(rowsDmg[n], "d" + n, 0);
@@ -429,6 +440,19 @@
           elHeroTag,
           "herotag",
           !hasTime ? "NO ESTIMATE" : hasStop ? "PIT STOP" : "TO REPAIR",
+        );
+      }
+
+      // "expect 184.5-190.5s" — the published floor through to the floor plus
+      // the sim's own cap on the delay it has not told us about.
+      var slack = d.randomDelayMaxSeconds;
+      var rangeOn = anyWork && hasTime && slack !== -1 && slack > 0;
+      if (elRange) elRange.hidden = !rangeOn;
+      if (rangeOn) {
+        setText(
+          elRange,
+          "range",
+          "expect " + heroSec.toFixed(1) + "–" + (heroSec + slack).toFixed(1) + "s",
         );
       }
       // The breakdown beneath: what the total is made of. Repairs first.

@@ -638,6 +638,11 @@ export class SimulatorProvider implements TelemetryProvider {
           FixAeroDamage: 30,
           TwoTireChange: 4.5,
           FourTireChange: 12,
+          // The caps on the delays the sim draws at stop time. Published here
+          // so demo mode exercises the range line, which is the only part of
+          // the widget describing something the sim will NOT tell us up front.
+          FixRandomDelay: 5,
+          RandomTireDelay: 1,
         },
       },
       // The sim publishes the total already summed — verified equal to

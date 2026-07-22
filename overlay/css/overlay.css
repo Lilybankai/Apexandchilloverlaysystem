@@ -1047,7 +1047,20 @@
    both states render at once — "NO DAMAGE" directly under "+32.7 SEC". */
 .damage__hero[hidden],
 .damage__tyre[hidden],
+.damage__range[hidden],
 .damage__clean[hidden] { display: none; }
+
+/* The expected range. Deliberately small and muted directly under the headline:
+   it qualifies that number rather than competing with it, and it is the only
+   line here that describes something the sim has not published. */
+.damage__range {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: -1px;
+  margin-bottom: 3px;
+}
 
 /* Tyre time. Deliberately quieter than the repair figure and on its own line:
    it is a second, separate cost, not part of the headline number, and the two
