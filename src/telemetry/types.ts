@@ -354,6 +354,56 @@ export interface ChassisState {
 }
 
 /**
+ * What the driver has selected on the sim's `DAMAGE:` pit-menu entry.
+ *
+ * `'unavailable'` and `'none'` are deliberately distinct: the first means the
+ * car is clean so the sim offers nothing to repair, the second means there IS
+ * damage and the driver has chosen to drive on with it.
+ */
+export type RepairSelection = 'none' | 'body' | 'all' | 'unavailable';
+
+/**
+ * Chassis **damage** and what the sim says it costs to repair.
+ *
+ * Sourced from LMU's repair screen over REST, not shared memory — the inherited
+ * ISI damage block is present in the struct but LMU does not populate it. See
+ * `telemetry/damage.ts` for the probe evidence.
+ */
+export interface DamageState {
+  /** Bodywork/aero damage severity, `0..1`, raw from the sim. */
+  aero: number;
+  /** Per-corner suspension damage `[FL, FR, RL, RR]`, each `0..1`. */
+  suspension: [number, number, number, number];
+  /**
+   * Brake disc thickness per corner `[FL, FR, RL, RR]` in **mm** (the sim
+   * reports metres). {@link UNKNOWN_VALUE} per corner when unpublished.
+   */
+  brakeThicknessMm: [number, number, number, number];
+  /** Count of bodywork parts that have come off, or {@link UNKNOWN_VALUE}. */
+  partsDetached: number;
+  /** The worst severity across every component, `0..1`. */
+  worst: number;
+  /** Whether anything is damaged beyond the noise floor. */
+  hasDamage: boolean;
+  /**
+   * Seconds to repair everything — the sim's own live figure
+   * (`pitStopTimes.times.FixAllDamage`), which tracks actual damage rather than
+   * being a static config value. {@link UNKNOWN_VALUE} when unpublished.
+   *
+   * Deliberately NOT a whole-stop estimate: tyre and fuel time are not folded
+   * in, because that total depends on concurrency flags this codebase has not
+   * verified against a real stop.
+   */
+  repairSeconds: number;
+  /** Seconds to repair bodywork only (`FixAeroDamage`), or unknown. */
+  repairBodySeconds: number;
+  /** What the pit menu currently has selected. */
+  repairSelection: RepairSelection;
+  /** The live `DAMAGE:` menu options, e.g. `["Do Not Repair", …]`. */
+  repairOptions: string[];
+}
+
+/**
  * State specific to the **player's** car (the spectated/driven entry).
  * Standings for the whole field live in {@link TelemetryFrame.standings}.
  */
@@ -395,6 +445,13 @@ export interface PlayerState {
    * car driven on this PC, exactly like {@link pedals}.
    */
   motion?: MotionState;
+  /**
+   * Damage and its repair cost, from LMU's repair screen over REST. Omitted —
+   * absent, not zeroed — outside a session (the endpoint 404s), when
+   * spectating, or on any provider without that endpoint (rF2). A zeroed block
+   * would be indistinguishable from a pristine car. See {@link DamageState}.
+   */
+  damage?: DamageState;
 }
 
 /* -------------------------------------------------------------------------- */

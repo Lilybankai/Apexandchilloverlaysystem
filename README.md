@@ -85,9 +85,8 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
   fixed centre-bottom pivot. An alternate to the above, not a replacement.
 - **Motion** — G-force, rotation and attitude, in three independently
   switchable modes (see below)
-- **Chassis** — a wireframe GT3 seen from behind and above, pivoting about its
-  centre on live pitch and roll, with per-corner load columns, overload and
-  wheel-lift flags and a suspension readout (see below)
+- **Damage & Repair** — component damage and the sim's own repair time, so the
+  pit decision can be made from the overlay (see below; LMU only)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
@@ -118,47 +117,46 @@ direction the acceleration points (the dot sits on the side of the corner you
 are turning into). That pairing is deliberate and was chosen from real laps; the
 textbook g-g convention read backwards at speed. See `src/telemetry/motion.ts`.
 
-### Chassis widget
+### Damage & Repair widget
 
-A wireframe GT3 drawn from the mid-point between directly behind and directly
-above, so roll is visible across the car and pitch along it. The **body** pivots
-about a point inside it at mid-wheelbase; the **wheels stay on the road** and
-move only by their own suspension travel, so the gap between body and wheel *is*
-the compression — the suspension is read off the picture, not just the numbers.
+What is broken, and what the sim says it costs to fix — the question you ask
+mid-stint and cannot answer from the cockpit.
 
-| Param       | Mode             | Shows                                                     |
-| ----------- | ---------------- | --------------------------------------------------------- |
-| `?car=off`  | **Car**          | The wireframe, corner load columns and state flags        |
-| `?susp=off` | **Suspension**   | Per-corner load, travel and ride height                   |
-| `?dist=off` | **Distribution** | Front/rear, left/right and cross-weight bars              |
+| Param          | Mode           | Shows                                                  |
+| -------------- | -------------- | ------------------------------------------------------ |
+| `?dmg=off`     | **Components** | Aero and the four suspension corners, as severity bars |
+| `?repair=off`  | **Repair**     | The sim's own repair seconds and the pit-menu choice   |
+| `?brakes=on`   | **Discs**      | Brake disc thickness per corner, mm                    |
 
-Two further knobs:
+Components and repair default **on**; discs default **off** — disc thickness is
+wear rather than damage, and it is the only channel here that is not about the
+pit decision. Hovering reveals the same **opacity slider** the Motion widget has,
+with the same `?opacity=` URL override.
 
-- `?gain=7` — how much body rotation is **exaggerated**. A GT3 rolls about 1.5°
-  and pitches under 2°; at true scale the car looks welded solid, so the picture
-  is amplified while the header always shows the **true** degrees. `?gain=1`
-  gives the honest angle.
-- `?yaw=0` — camera azimuth. `0` (the default) is exactly on the centreline,
-  which keeps roll as pure left/right and pitch as pure vertical. The cost is
-  geometric: on-axis, a wheel's circle is edge-on to the view and projects to a
-  bar. `?yaw=15` swings the camera off-axis and the wheels become ellipses, at
-  the price of a little perspective mixing into the attitude read.
+Bars split at 15% severity: below is amber, at or above is red, and an undamaged
+component stays the same muted grey as the "no data" text — at zero there is
+nothing to look at. `Do Not Repair` selected while the car is damaged is flagged
+amber, because that is a deliberate choice rather than the default.
 
-Corner colours: green normal, **amber** gone light, **cyan** airborne, **red**
-overloaded. Amber and cyan rather than a red/green pair because a wheel going
-light is information, not a fault — only genuine overload earns the alarm
-colour. Wheels are tinted by tyre surface temperature.
+The repair figure is **the sim's own live estimate**, read straight through from
+`FixAllDamage` (measured moving from 30 to 35.1 s for real damage). Nothing here
+models, scales or calibrates it, and there is deliberately **no "total stop
+time"** — folding tyre and fuel time in would mean trusting concurrency flags
+nobody has verified against a real stop, and a wrong guess produces a confident
+total that is twenty seconds out. When the sim publishes no figure the widget
+says `NO ESTIMATE` rather than showing a plausible zero.
 
-Load is reported two ways, because a corner load in Newtons means nothing
-without the car's mass and weight distribution, which no sim publishes. The
-**share of total** is instantaneous and exact and needs no calibration; the
-**ratio** is each corner's load against a slow average of *its own* load, so
-`1.0` is "normal for this corner, this car, this setup". Both self-calibrate,
-work in any car, and avoid inventing a mass. The header shows `CAL…` for the
-first few seconds while that reference converges. See `src/telemetry/chassis.ts`.
+Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to a
+"car health" percentage, because that curve would be ours rather than the sim's.
 
-> Needs shared memory — the load and suspension block is only published for the
-> **locally-driven** car, so the widget says `NO CHASSIS DATA` when spectating.
+> **LMU only.** Damage comes from LMU's repair screen over REST, not shared
+> memory: the inherited rF2 damage block is present in the struct but LMU does
+> not populate it (verified through a real impact — `mLastImpactET` never fires,
+> engine temps read 0 °C). rF2 has no equivalent endpoint, so the widget shows
+> `NO DATA` there, and between sessions where the endpoint 404s. The block is
+> **absent, not zeroed**, so "no data" can never be mistaken for an undamaged
+> car. See `src/telemetry/damage.ts` and `scripts/probe-lmu-damage.js`.
+
 
 ## Live telemetry sources
 

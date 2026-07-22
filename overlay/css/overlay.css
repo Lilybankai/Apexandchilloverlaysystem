@@ -45,6 +45,10 @@
    once while they are being compared. */
 #widget-pedalsv   { bottom: 24px; left: 24px; width: 300px; }
 #widget-motion    { bottom: 300px; right: 24px; width: 236px; }
+/* Mirrors `motion` on the left edge. Every .widget is position:absolute, so a
+   widget with no rule here lands at its static position behind whatever is
+   already drawn there and reads as one that failed to load. */
+#widget-damage    { bottom: 300px; left: 24px;  width: 268px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
@@ -991,6 +995,227 @@
   text-align: right;
 }
 
+/* =========================================================================
+ * DAMAGE WIDGET — component severity, repair cost, optional disc thickness.
+ *
+ * Colour is doing real work here, not decoration: a driver glances at this to
+ * decide whether to pit, so an undamaged component must recede and a heavy one
+ * must not be missable. Undamaged rows are deliberately the same muted grey as
+ * the "no data" text — at zero there is nothing to look at.
+ * ========================================================================= */
+.damage__wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- the headline repair figure ----------------------------------------- */
+.damage__hero {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.damage__hero-num {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--pos-loss);
+  font-variant-numeric: tabular-nums;
+}
+.damage__hero-unit {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+/* Pushed right and baseline-aligned to the unit, so the eye reads
+   "+35.1 sec" as one object and the qualifier as an aside. */
+.damage__hero-tag {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* The repair figure and the clean marker are alternates for the same slot, and
+   the widget toggles them with the `hidden` property. A class selector that
+   sets `display` outspecifies the UA's `[hidden]` rule, so without these two
+   both states render at once — "NO DAMAGE" directly under "+32.7 SEC". */
+.damage__hero[hidden],
+.damage__clean[hidden] { display: none; }
+
+/* --- the clean state, which replaces the figure entirely ---------------- */
+.damage__clean {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+.damage__clean-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos-gain);
+}
+.damage__clean-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pos-gain);
+}
+
+/* --- component rows ------------------------------------------------------ */
+.damage__row {
+  display: grid;
+  grid-template-columns: 52px 1fr 42px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.damage__row:last-child { margin-bottom: 0; }
+.damage__label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.damage__track {
+  height: 8px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.damage__fill {
+  display: block;
+  height: 100%;
+  /* Damage does not twitch — it steps on contact — so easing the width reads
+     as the car taking a hit rather than as a value glitching. */
+  transition: width 220ms ease-out;
+}
+.damage__fill[data-state="none"]  { background: var(--text-muted); opacity: 0.35; }
+.damage__fill[data-state="light"] { background: var(--warn); }
+.damage__fill[data-state="heavy"] { background: var(--pos-loss); }
+.damage__fill[data-state="wear"]  { background: var(--pos-gain); }
+.damage__val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.damage__val[data-state="none"] { color: var(--text-muted); }
+
+.damage__sep {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 8px 0;
+}
+
+.damage__subhead {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* --- what the pit menu has selected ------------------------------------- */
+.damage__sel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.damage__sel-key {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.damage__sel-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ac-cyan);
+}
+/* "Do Not Repair" with damage on the car is a deliberate choice, so it is
+   flagged amber rather than left looking like the default. */
+.damage__sel-val[data-state="off"] { color: var(--warn); }
+.damage__sel-val[data-state="na"]  { color: var(--text-muted); }
+
+/* --- header state -------------------------------------------------------- */
+#widget-damage .panel__meta[data-state="alarm"] {
+  color: var(--pos-loss);
+  font-weight: 700;
+}
+#widget-damage .panel__meta[data-state="ok"] { color: var(--text-muted); }
+
+/* --- Hover opacity control — same contract as the motion widget's --------- */
+#widget-damage .panel__header,
+#widget-damage .panel__body {
+  opacity: var(--damage-op, 1);
+}
+#widget-damage[data-transparent="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.damage__opacity-anchor {
+  position: relative;
+  height: 0;
+}
+.damage__opacity {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  background: var(--bg-header);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  z-index: 5;
+}
+#widget-damage:hover .damage__opacity,
+.damage__opacity:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.damage__opacity-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.damage__opacity-range {
+  width: 78px;
+  accent-color: var(--ac-cyan);
+}
+.damage__opacity-val {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+}
 
 /* =========================================================================
  * PLACEHOLDER / EMPTY STATE — shown before the first frame arrives so the

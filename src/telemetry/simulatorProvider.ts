@@ -19,6 +19,7 @@ import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
   type ChassisState,
+  type DamageState,
   type FuelState,
   type MotionState,
   type PedalInputs,
@@ -31,6 +32,7 @@ import {
 import { assignClassPositions, isFasterClass } from './carClass';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
+import { decodeDamage } from './damage';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -280,6 +282,7 @@ export class SimulatorProvider implements TelemetryProvider {
     // drifting apart if it ever gains any per-call state.
     const motion = this.motionFor(this.pedals);
     const chassis = this.buildChassis(motion);
+    const damage = this.buildDamage();
 
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
@@ -332,6 +335,7 @@ export class SimulatorProvider implements TelemetryProvider {
         // converges — the same shape the live path produces, so demo mode
         // exercises the widget's "waiting for data" branch too.
         ...(chassis ? { chassis } : {}),
+        ...(damage ? { damage } : {}),
       },
       standings,
       relative,
@@ -562,6 +566,71 @@ export class SimulatorProvider implements TelemetryProvider {
       rearLeft: mk(this.tyreTemps.rl, this.tyreWear.rl),
       rearRight: mk(this.tyreTemps.rr, this.tyreWear.rr),
     };
+  }
+
+  /* -------------------------------- damage -------------------------------- */
+
+  /**
+   * Synthesises a repair-screen payload and runs it through the **real**
+   * {@link decodeDamage}, exactly as {@link buildChassis} does with the chassis
+   * tracker. Only the raw JSON is invented; every threshold, guard and unit
+   * conversion the widget depends on is the live one.
+   *
+   * The demo cycles clean → damaged → clean on a slow phase so both states —
+   * and the transition the widget has to survive — are reachable without
+   * crashing a car into a wall. The damaged values are the ones actually
+   * measured from a real impact (9.5% aero, 19.5% FR, 12.2% RR), so the demo
+   * looks like the thing rather than like a designer's guess at it.
+   */
+  private buildDamage(): DamageState | null {
+    // ~40 s clean, ~40 s damaged. `weatherPhase` advances at 0.02/s (see
+    // advanceWeather), so the multiplier here is what sets the period:
+    // 2π / (3.9 × 0.02) ≈ 80 s. Slow enough to read, fast enough that nobody
+    // checking the widget has to wait minutes to see the other state.
+    const damaged = Math.sin(this.weatherPhase * 3.9) > 0;
+    if (!damaged) {
+      return decodeDamage({
+        wearables: {
+          body: { aero: 0, detachableParts: [true, true, true, true] },
+          suspension: [0, 0, 0, 0],
+          brakes: [0.0356, 0.0356, 0.032, 0.032],
+        },
+        // On a clean car the sim really does offer a lone "N/A" here.
+        pitMenu: { pitMenu: [{ name: 'DAMAGE:', currentSetting: 0, settings: [{ text: 'N/A' }] }] },
+        pitStopTimes: { times: { FixAllDamage: 30, FixAeroDamage: 30 } },
+      });
+    }
+    // Ramp the severity in over the damaged half so the bars move rather than
+    // snapping, and the repair seconds track them the way the sim's do.
+    //
+    // Rounded to 4dp, NOT with round2: severity is a 0..1 fraction, so two
+    // decimals is 1% granularity and the widget — which prints a tenth of a
+    // percent — would show the ramp stepping in whole percent jumps and the
+    // measured 9.5% arriving as 10.0%.
+    const ramp = Math.min(1, Math.sin(this.weatherPhase * 3.9) * 2.2);
+    const sev = (v: number): number => Math.round(v * ramp * 10000) / 10000;
+    return decodeDamage({
+      wearables: {
+        body: { aero: sev(0.095), detachableParts: [true, false, true, true] },
+        suspension: [0, sev(0.195), 0, sev(0.1215)],
+        brakes: [0.0356, 0.0356, 0.032, 0.032],
+      },
+      pitMenu: {
+        pitMenu: [
+          {
+            name: 'DAMAGE:',
+            currentSetting: 2,
+            settings: [{ text: 'Do Not Repair' }, { text: 'Repair Body' }, { text: 'Repair All' }],
+          },
+        ],
+      },
+      pitStopTimes: {
+        times: {
+          FixAllDamage: round2(30 + 5.1 * ramp),
+          FixAeroDamage: 30,
+        },
+      },
+    });
   }
 
   /* ------------------------------- chassis -------------------------------- */

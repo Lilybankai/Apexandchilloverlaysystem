@@ -40,6 +40,10 @@
       // on the other and read as a widget that failed to load.
       pedalsv: { x: 24, y: vh - 270, w: 300 },
       motion: { x: vw - 260, y: vh - 420, w: 236 },
+      // Bottom-left, right of `pedalsv` rather than above it: the repair figure
+      // plus five component rows runs ~230px tall, and stacking it in that
+      // column would push it up into the standings list.
+      damage: { x: 340, y: vh - 300, w: 268 },
     };
     return D[id] || { x: 24, y: 24, w: 400 };
   }

@@ -54,7 +54,9 @@ import {
   type TelemetryFrame,
   type TyreState,
   type WeatherForecastSlot,
+  type DamageState,
 } from './types';
+import { decodeDamage, type RawRepairPayload } from './damage';
 import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -250,6 +252,9 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Player-car tyre wear [FL, FR, RL, RR], `1` fresh → `0` gone. */
   private tyreWear: number[] | null = null;
   private lastGarageOkAt = 0;
+  /** Last decoded damage block, and when it last decoded cleanly. */
+  private damage: DamageState | null = null;
+  private lastDamageOkAt = 0;
   private garageTimer: NodeJS.Timeout | null = null;
   /** Raw per-session weather forecast from `/rest/sessions/weather`. */
   private weatherForecast: RestWeather | null = null;
@@ -339,12 +344,18 @@ export class LmuRestProvider implements TelemetryProvider {
     }
   }
 
-  /** Pulls the player car's tyre wear from the pit-menu screen. */
+  /**
+   * Pulls the player car's tyre wear **and damage** from the pit-menu screen.
+   *
+   * One fetch serves both: this endpoint is the repair screen, so the same
+   * payload that carries `wearables.tires` also carries per-component damage
+   * severities and the sim's own repair-time estimate. See
+   * {@link module:telemetry/damage} for why damage comes from here rather than
+   * from the (present but unpopulated) shared-memory damage block.
+   */
   private async refreshGarage(): Promise<void> {
     try {
-      const data = await this.getJson<{ wearables?: { tires?: unknown } }>(
-        '/rest/garage/UIScreen/RepairAndRefuel',
-      );
+      const data = await this.getJson<RawRepairPayload>('/rest/garage/UIScreen/RepairAndRefuel');
       const tires = data && data.wearables ? data.wearables.tires : null;
       if (
         Array.isArray(tires) &&
@@ -354,6 +365,10 @@ export class LmuRestProvider implements TelemetryProvider {
         this.tyreWear = tires.slice(0, 4) as number[];
         this.lastGarageOkAt = Date.now();
       }
+      // Decoded on arrival rather than at frame time so a malformed payload is
+      // rejected once, here, instead of every frame for the next ten seconds.
+      this.damage = decodeDamage(data);
+      if (this.damage) this.lastDamageOkAt = Date.now();
     } catch (err) {
       // Endpoint is only alive inside a session; keep the last data until stale.
       if (this.verbose) console.error('[lmu] garage refresh failed:', (err as Error).message);
@@ -1086,6 +1101,15 @@ export class LmuRestProvider implements TelemetryProvider {
       // absent (not zeroed) when the wheel struct fails its guards, so the
       // widget can distinguish "no data" from "a car sitting perfectly flat".
       ...(local && local.chassis ? { chassis: local.chassis } : {}),
+      // Damage comes from REST, not shared memory, so unlike the blocks above
+      // it does not need a locally-driven car — but it does need a live repair
+      // screen. Gated on the same staleness window as tyre wear: when the
+      // endpoint stops answering (menus, session end) the block is dropped
+      // rather than frozen, since a stale "no damage" is a lie the driver would
+      // act on.
+      ...(this.damage && Date.now() - this.lastDamageOkAt < GARAGE_STALE_AFTER_MS
+        ? { damage: this.damage }
+        : {}),
     };
   }
 }

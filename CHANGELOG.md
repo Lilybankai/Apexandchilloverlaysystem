@@ -1,6 +1,64 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-07-22 "Contact"
+
+A new widget that answers the question a driver actually asks after contact —
+*how hurt am I, and what does fixing it cost?* — and a probe that found where
+the answer lives.
+
+### Added
+
+- **Damage & Repair**, a new widget: aero and per-corner suspension severity as
+  bars, the sim's own repair time as the headline figure, and what the pit menu
+  currently has selected. Three modes (`?dmg` / `?repair` / `?brakes`), the last
+  defaulting off since disc thickness is wear rather than damage. The same hover
+  opacity control the Motion widget established.
+
+  The repair figure is **LMU's own live estimate**, read straight through. There
+  is deliberately **no "total stop time"**: folding tyre and fuel time in would
+  mean trusting `FixTimeConcurrent` / `TireTimeConcurrent` / `FuelTimeConcurrent`
+  to mean what they appear to, and a wrong reading there produces a confident
+  total twenty seconds out. Same restraint as 0.8.0's refusal to fabricate an
+  understeer number and 0.9.0's refusal to fabricate a calibrated corner load.
+
+- **Damage telemetry over REST**, via `telemetry/damage.ts`. `PlayerState` gains
+  an optional `damage` block — **absent, not zeroed**, when the endpoint is
+  stale, when spectating, or on rF2. A zeroed block renders identically to a
+  pristine car, and a driver would drive past the pits on it.
+
+- **`scripts/probe-lmu-damage.js`** — a read-only probe that watches both
+  candidate damage sources at once, and `npm run test:damage` (47 cases, most of
+  them about malformed payloads rather than arithmetic).
+
+### Where damage actually comes from, and where it does not
+
+The inherited rF2 damage block is present in the struct at offsets pinned
+exactly by the verified anchors either side of it — and **LMU does not populate
+it**. Through a real impact in a live session: `mLastImpactET` never fired,
+`mEngineWaterTemp` and `mEngineOilTemp` read 0 °C on a running engine,
+`mScheduledStops` read 255. Only `mDentSeverity[0]` moved, to a coarse `1`, then
+froze.
+
+`/rest/garage/UIScreen/RepairAndRefuel` reported the same impact as continuous
+per-component severities — `wearables.body.aero` `0 → 0.0950`,
+`wearables.suspension[1]` `0 → 0.1950` — with
+`pitStopTimes.times.FixAllDamage` moving `30 → 35.098` and the `DAMAGE:` pit
+menu transforming from a lone `"N/A"` into
+`["Do Not Repair", "Repair Body", "Repair All"]`.
+
+That endpoint was **already being polled every cycle** by `lmuRestProvider`,
+which read one field out of it (`wearables.tires`). The widget costs no
+additional request.
+
+### Fixed
+
+- Demo mode's damage cycle ran on a 15-minute period, not the ~80 s its comment
+  claimed — `weatherPhase` advances at 0.02/s, which the multiplier had not been
+  set against. Severity was also rounded with `round2`, quantising a `0..1`
+  fraction to 1% steps so the measured 9.5% rendered as 10.0%.
+- `.damage__clean` / `.damage__hero` now hide under `[hidden]`. A class selector
+  that sets `display` outspecifies the UA's `[hidden]` rule, so both states
+  rendered at once — "NO DAMAGE" directly beneath "+32.7 SEC".
 
 ### Removed
 

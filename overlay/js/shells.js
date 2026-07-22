@@ -82,5 +82,12 @@
       '<span class="panel__meta" data-role="meta">— kph</span></header>' +
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    damage:
+      '<section class="widget panel" id="widget-damage" data-widget="damage" aria-label="Chassis damage and repair cost">' +
+      '<header class="panel__header"><span class="panel__title">Damage</span>' +
+      '<span class="panel__meta" data-role="meta">— s</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
   };
 })();
