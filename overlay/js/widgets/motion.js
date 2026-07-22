@@ -92,15 +92,69 @@
     if (count < TRAIL) count++;
   }
 
+  /**
+   * Matches the canvas BITMAP to the element's current CSS size.
+   *
+   * This has to track the element, not the window. The in-game layer lets the
+   * operator drag a widget narrower without the window changing size at all,
+   * and a stale bitmap is then scaled to fit — by a different factor on each
+   * axis. The traction circle is drawn with `arc()`, so it is always a true
+   * circle in bitmap space; squash it 0.6 horizontally on the way to the screen
+   * and it renders as an ellipse, which is exactly what a resized widget shows.
+   *
+   * Idempotent on purpose: it returns early when nothing has changed, so a
+   * ResizeObserver watching an element whose height this function sets cannot
+   * feed itself.
+   */
   function sizeCanvas() {
     if (!canvas) return;
-    cssW = canvas.clientWidth || 240;
-    cssH = totalHeight();
+    var w = canvas.clientWidth || 240;
+    var h = totalHeight();
+    var d = window.devicePixelRatio || 1;
+    var bw = Math.round(w * d);
+    var bh = Math.round(h * d);
+    if (bw === canvas.width && bh === canvas.height && w === cssW) return;
+    cssW = w;
+    cssH = h;
+    dpr = d;
     canvas.style.height = cssH + "px";
-    dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    // theme.css sets `box-sizing: border-box` globally, so the canvas's 1px
+    // border comes OUT of the height just assigned — the content box ends up
+    // 2px shorter than the bitmap, which the browser then squashes to fit. Only
+    // ~0.8%, but it is the same defect as the horizontal one and just as easy to
+    // avoid: add the chrome back so the content box is exactly `cssH` tall.
+    var chrome = canvas.offsetHeight - canvas.clientHeight;
+    if (chrome > 0) canvas.style.height = cssH + chrome + "px";
+    canvas.width = bw;
+    canvas.height = bh;
     if (gctx) gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /**
+   * Frames since the canvas size was last re-checked. ResizeObserver does not
+   * deliver while a page is not producing frames — a background tab, or an OBS
+   * source that is not currently rendering — and a widget can be resized in
+   * exactly that state, so the observer alone is not enough. Verified: an
+   * observer attached to a hidden page's canvas never fired at all. This drives
+   * a cheap periodic re-check as the backstop.
+   */
+  var sizeTick = 0;
+  /** Frames between backstop size checks (~0.5 s at 30 Hz). */
+  var SIZE_CHECK_FRAMES = 15;
+
+  /**
+   * Keeps the bitmap in step with the element however it is resized — the
+   * in-game drag handles, the OBS source size, or the window. ResizeObserver
+   * covers all three when the page is rendering; the window listener and the
+   * per-frame backstop cover it when it is not.
+   */
+  function watchSize(el) {
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(function () {
+        sizeCanvas();
+      }).observe(el);
+    }
+    window.addEventListener("resize", sizeCanvas, { passive: true });
   }
 
   /** A labelled numeric cell in the readout strip under the canvas. */
@@ -273,7 +327,7 @@
     mount.appendChild(wrap);
     gctx = canvas.getContext("2d");
     sizeCanvas();
-    window.addEventListener("resize", sizeCanvas, { passive: true });
+    watchSize(canvas);
   }
 
   /* ------------------------------ G-METER -------------------------------- */
@@ -516,6 +570,9 @@
 
   function update(frame, ctx) {
     if (!canvas) return; // all modes off
+    // Backstop for a resize that arrived while nothing was rendering. Cheap:
+    // sizeCanvas() returns immediately unless the element has actually changed.
+    if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
     var p = frame.player;
     var m = p && p.motion;
     if (!m) {

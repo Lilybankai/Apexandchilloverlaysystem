@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.10.5 — 2026-07-22
+
+### Fixed
+
+- **The traction circle rendered as an ellipse, and the steering arc as a
+  flattened dome, on any widget that had been resized.** Both are drawn with
+  `arc()` and were always true circles in the bitmap — the distortion was the
+  bitmap being scaled to a differently-shaped element on its way to the screen.
+
+  The canvas bitmap was sized from the element but refreshed only on **window**
+  resize. Dragging a widget's corner handle in the in-game editor changes the
+  element without the window changing at all, so the bitmap stayed at its old
+  size and the browser squashed it to fit. Measured on a widget dragged from
+  209px to 125px wide: `xScale 0.598` against `yScale 1.000` — a circle 40%
+  narrower than it is tall, which is exactly what it looked like.
+
+  Fixed in `motion`, `pedals` and `pedalsv` with a `ResizeObserver` on the
+  canvas, plus a periodic re-check in the draw loop. The re-check is not
+  belt-and-braces: **ResizeObserver does not deliver while a page is not
+  producing frames**, which was verified here — an observer attached to a
+  canvas in a hidden page never fired once. An OBS source that is not currently
+  rendering, or a resize made while the overlay is in the background, would hit
+  exactly that. `sizeCanvas()` is idempotent, so the check costs a few property
+  reads when nothing has changed.
+
+- **A second, smaller squash in `motion`**: `theme.css` sets
+  `box-sizing: border-box` globally, so the canvas's 1px border came out of the
+  height the widget assigned, leaving the content box 2px shorter than the
+  bitmap — a 0.8% vertical compression at every size. Content scale is now
+  exactly 1.0000 on both axes at every width.
+
 ## 0.10.4 — 2026-07-22
 
 ### Added

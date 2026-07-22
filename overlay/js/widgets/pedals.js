@@ -64,14 +64,56 @@
     if (abs > 0.02) absHot = CAP; else if (absHot > 0) absHot--;
   }
 
+  /**
+   * Matches the canvas BITMAP to the element's current CSS size.
+   *
+   * Has to track the element, not the window: the in-game layer lets the
+   * operator drag a widget narrower without the window changing size, and a
+   * stale bitmap is then scaled to fit by a different factor on each axis,
+   * which distorts everything drawn in it.
+   *
+   * Idempotent, so a ResizeObserver watching the element cannot feed itself.
+   */
   function sizeCanvas() {
     if (!canvas) return;
-    cssW = canvas.clientWidth || 260;
-    cssH = canvas.clientHeight || 90;
-    dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    var w = canvas.clientWidth || 260;
+    var h = canvas.clientHeight || 90;
+    var d = window.devicePixelRatio || 1;
+    var bw = Math.round(w * d);
+    var bh = Math.round(h * d);
+    if (bw === canvas.width && bh === canvas.height && w === cssW && h === cssH) return;
+    cssW = w;
+    cssH = h;
+    dpr = d;
+    canvas.width = bw;
+    canvas.height = bh;
     if (gctx) gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /**
+   * Frames since the canvas size was last re-checked. ResizeObserver does not
+   * deliver while a page is not producing frames — a background tab, or an OBS
+   * source that is not currently rendering — and a widget can be resized in
+   * exactly that state, so the observer alone is not enough. Verified: an
+   * observer attached to a hidden page's canvas never fired at all.
+   */
+  var sizeTick = 0;
+  /** Frames between backstop size checks (~0.5 s at 30 Hz). */
+  var SIZE_CHECK_FRAMES = 15;
+
+  /**
+   * Keeps the bitmap in step however the element is resized — in-game drag
+   * handles, OBS source size, or the window. ResizeObserver covers all three
+   * when the page is rendering; the window listener and the per-frame backstop
+   * cover it when it is not.
+   */
+  function watchSize(el) {
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(function () {
+        sizeCanvas();
+      }).observe(el);
+    }
+    window.addEventListener("resize", sizeCanvas, { passive: true });
   }
 
   function makeBar(parent, label, fillClass) {
@@ -161,7 +203,7 @@
 
     gctx = canvas.getContext("2d");
     sizeCanvas();
-    window.addEventListener("resize", sizeCanvas, { passive: true });
+    watchSize(canvas);
   }
 
   function drawArea(ctx2d, arr, color, alpha) {
@@ -303,6 +345,9 @@
   }
 
   function update(frame, ctx) {
+    // Backstop for a resize that arrived while nothing was rendering. Cheap:
+    // sizeCanvas() returns immediately unless the element has actually changed.
+    if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
     var fmt = ctx.fmt;
     var p = frame.player;
     if (!p || !p.pedals) return;

@@ -105,6 +105,11 @@ panel.
 
 A disabled mode costs no height — the canvas is sized from the enabled set.
 
+The canvas bitmap tracks the element, so the traction circle stays a true circle
+at any widget width. Resizing a widget in the in-game editor used to leave the
+bitmap stale and the browser squashed it to fit, drawing the circle as an
+ellipse.
+
 Hovering the widget reveals an **opacity slider**, so it can sit over the track
 as a see-through practice HUD; below 100% the panel background and border are
 dropped entirely. The choice persists per browser, and `?opacity=0.4` sets it
