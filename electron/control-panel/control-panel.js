@@ -217,10 +217,21 @@
     combinedUrl.value = combined;
   }
 
+  /**
+   * The running build, in the top bar under the wordmark. Only rendered once,
+   * from the initial state — the version cannot change while the app is open.
+   */
+  function renderVersion(version) {
+    const el = $('#app-version');
+    if (!el) return;
+    el.textContent = version ? 'v' + version : '';
+  }
+
   function renderAll(state) {
     renderSettings(state.settings);
     renderOverlays(state.overlays, state.combinedUrl);
     renderStatus(state.status);
+    renderVersion(state.appVersion);
   }
 
   // --- Actions -------------------------------------------------------------

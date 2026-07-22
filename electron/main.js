@@ -35,7 +35,7 @@ const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 
 /* -------------------------------------------------------------------------- */
-/*  Overlay catalog — the six widgets, each addable to OBS as its own source. */
+/*  Overlay catalog — every widget, each addable to OBS as its own source.    */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -54,6 +54,7 @@ const OVERLAY_CATALOG = [
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
+  { id: 'chassis', label: 'Chassis (Load / Suspension)', description: 'Corner loads, roll + pitch attitude, suspension travel' },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -579,6 +580,10 @@ function registerIpc() {
     overlays: overlaysForUi(),
     combinedUrl: `${baseUrl()}/`,
     status: statusForUi(),
+    // The running build, straight from the packaged package.json. Shown in the
+    // top bar so a user reporting a bug can say which version they are on
+    // without hunting through Add/Remove Programs.
+    appVersion: app.getVersion(),
   }));
 
   ipcMain.handle('settings:update', async (_evt, partial) => {

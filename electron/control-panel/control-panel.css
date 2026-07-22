@@ -101,6 +101,14 @@ html, body {
   color: var(--text-3);
 }
 
+/* The running build. Sits beside "Overlay System", deliberately quieter than
+   it: tighter tracking so it reads as a number rather than more wordmark, and
+   empty until the renderer receives the version, so nothing shifts. */
+.brand__version {
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
 .topbar__right { display: flex; align-items: center; gap: 12px; }
 
 /* Feed status pill */

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.9.1 — 2026-07-22
+
+Fixes 0.9.0, in which the Chassis widget shipped complete and could not be
+seen. The widget itself was fine; it was never registered in the three places
+that decide where a widget goes and whether it is offered at all.
+
+### Fixed
+
+- **Chassis is now in the control panel's overlay catalog.** `OVERLAY_CATALOG`
+  in `electron/main.js` is the list the panel renders, the source of the
+  per-widget OBS URL, and what `defaultSettings()` walks to enable a widget on
+  a fresh install. Chassis was absent from it, so the installed app offered no
+  way to switch it on and no URL to add to OBS. Existing installs pick it up
+  enabled, because `loadSettings()` starts from the defaults and only overrides
+  keys the stored file actually contains.
+- **Chassis now has a position on the combined overlay page.** Every `.widget`
+  is `position: absolute`, and a widget with no rule in the layout block does
+  not fall back to a sensible corner — it lands at its static position, behind
+  whatever is already drawn there. It now mirrors Motion on the left edge.
+- **Chassis now has an in-game default position.** Without an entry in
+  `defaultsFor()` it fell through to the `{24, 24}` fallback and spawned on top
+  of standings — the same failure Pace Delta hit in 0.6.6. It opens bottom-left,
+  right of the vertical inputs readout, which clears its ~400px height.
+
+### Added
+
+- **The running version in the control panel's top bar**, under the wordmark,
+  from `app.getVersion()` so it is the packaged build's own number and cannot
+  drift from it. A bug report can now say which version it came from.
+
 ## 0.9.0 — 2026-07-22 "Corners"
 
 One new overlay, and the second batch of **telemetry channels** recovered from a

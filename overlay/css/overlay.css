@@ -45,6 +45,11 @@
    once while they are being compared. */
 #widget-pedalsv   { bottom: 24px; left: 24px; width: 300px; }
 #widget-motion    { bottom: 300px; right: 24px; width: 236px; }
+/* Mirrors `motion` on the left edge. Every .widget is position:absolute, so a
+   widget with no rule here does not fall back to a sensible corner — it lands
+   at its static position, behind whatever is already there, and reads as a
+   widget that failed to load. */
+#widget-chassis   { bottom: 300px; left: 24px;  width: 260px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
