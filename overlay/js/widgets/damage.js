@@ -17,24 +17,20 @@
  *                                 Default OFF: it is wear, not damage, and it
  *                                 is the only channel here that is not about
  *                                 the pit decision.
- *   ?exact=on        EXACT      — quote the precise published seconds instead
- *                                 of the game-rounded ones. Default OFF, i.e.
- *                                 the widget agrees with the in-game pit
- *                                 message by default (see below).
  *
- * ## The number this widget does not invent
- * The repair figure is `FixAllDamage` straight from LMU — a live estimate that
- * scales with severity (measured 35.1 s at 19.5%% FR, 93.7 s at 52.1%%). This
- * widget does not model it or fold tyre and fuel time into a "total stop" (that
- * would depend on concurrency flags nobody has verified). When the sim does not
- * publish a figure, the widget says so rather than showing a plausible zero.
+ * ## Every number here is read, not derived
+ * The headline is `pitStopLength.timeInSeconds` — the sim's OWN total stop
+ * length for whatever the pit menu currently has selected. It was verified equal
+ * to `FixAllDamage + TwoTireChange` to eleven decimal places on a live stop,
+ * which is also what settled that the sim ADDS repair and tyre time rather than
+ * overlapping them. Because the total is published, this widget does no
+ * arithmetic on it at all, and the repair and tyre lines beneath are the
+ * components rather than a sum being shown its working.
  *
- * ## Why the seconds are rounded by default
- * The game rounds its own pit message UP to the nearest 5 s — a published 93.7
- * is quoted in-cockpit as "Damage 95 sec". The widget matches that by default,
- * because an overlay that disagrees with the message on the driver's screen is
- * a bug report waiting to happen, and because the rounding is pessimistic in
- * the safe direction. `?exact=on` shows the precise published pair instead.
+ * The real stop runs a few seconds longer than the headline: `FixRandomDelay`
+ * (up to 5 s) and `RandomTireDelay` (up to 1 s) are drawn when the stop
+ * happens and are in nothing the sim publishes beforehand. A stop measured at
+ * 112 s against a published 107.3 is those delays, not an error.
  *
  * ## Why severity is shown raw
  * The sim reports `0..1` per component and the bars show exactly that. Remapping
@@ -73,13 +69,14 @@
   var modeDmg = true;
   var modeRepair = true;
   var modeBrakes = false;
-  var modeExact = false;
 
   var elHeroNum = null;
   var elHeroTag = null;
   var elClean = null;
   var elSel = null;
   var elTyre = null;
+  var elRepair = null;
+  var elRepairVal = null;
   var elTyreVal = null;
   var elTyreNote = null;
   var rowsDmg = []; // { fill, val } for aero + 4 corners
@@ -234,11 +231,6 @@
     modeDmg = !isOff("dmg");
     modeRepair = !isOff("repair");
     modeBrakes = isOn("brakes");
-    // Default: quote the same seconds the game's own pit message quotes, so the
-    // overlay and the cockpit never disagree in front of the driver. `?exact=on`
-    // shows the precise published value instead — lower, because the game
-    // rounds its estimate up.
-    modeExact = isOn("exact");
 
     buildOpacityControl(root, params);
 
@@ -307,6 +299,22 @@
       elTyre.appendChild(tk);
       elTyre.appendChild(elTyreNote);
       elTyre.appendChild(elTyreVal);
+
+      // Repairs line, above tyres — the two components of the total, in the
+      // order the driver thinks about them.
+      elRepair = document.createElement("div");
+      elRepair.className = "damage__tyre";
+      elRepair.hidden = true;
+      var rk = document.createElement("span");
+      rk.className = "damage__tyre-key";
+      rk.textContent = "REPAIRS";
+      elRepairVal = document.createElement("span");
+      elRepairVal.className = "damage__tyre-val";
+      elRepairVal.textContent = "—";
+      elRepair.appendChild(rk);
+      elRepair.appendChild(elRepairVal);
+
+      wrap.appendChild(elRepair);
       wrap.appendChild(elTyre);
     }
 
@@ -386,6 +394,7 @@
       if (elHeroNum) setText(elHeroNum, "hero", "—");
       if (elClean) elClean.hidden = true;
       if (elTyre) elTyre.hidden = true;
+      if (elRepair) elRepair.hidden = true;
       if (elHeroTag) setText(elHeroTag, "herotag", "TO REPAIR");
       for (var n = 0; n < rowsDmg.length; n++) {
         paintDamageRow(rowsDmg[n], "d" + n, 0);
@@ -394,25 +403,39 @@
       return;
     }
 
-    // Which pair of figures to quote. The game-matching pair is the default so
-    // the overlay agrees with the in-game pit message; ?exact=on drops to the
-    // precise published values.
-    var repairSec = modeExact ? d.repairSeconds : d.repairSecondsGame;
-    var tyreSec = modeExact ? d.tyreChangeSeconds : d.tyreChangeSecondsGame;
-    var hasTime = repairSec !== -1;
+    // The headline is the sim's OWN total stop length, which already includes
+    // the repair and tyre work the driver has selected — verified equal to
+    // FixAllDamage + TwoTireChange to eleven decimal places. Falling back to
+    // the repair figure alone keeps the widget useful on a build that stops
+    // publishing the total.
+    var hasStop = d.stopLengthSeconds !== -1;
+    var heroSec = hasStop ? d.stopLengthSeconds : d.repairSeconds;
+    var hasTime = heroSec !== -1;
+    var tyreSec = d.tyreChangeSeconds;
 
     if (modeRepair) {
       // Clean and damaged are mutually exclusive presentations of the same slot.
-      if (elClean) elClean.hidden = d.hasDamage;
-      if (elHeroNum) elHeroNum.parentElement.hidden = !d.hasDamage;
-      if (d.hasDamage) {
-        setText(elHeroNum, "hero", hasTime ? "+" + repairSec.toFixed(1) : "—");
-        // When the sim has damage but publishes no time, say which of the two
-        // unknowns this is instead of leaving a bare dash under "TO REPAIR".
-        setText(elHeroTag, "herotag", hasTime ? "TO REPAIR" : "NO ESTIMATE");
+      // A clean car with tyres selected still has a stop worth pricing, so the
+      // figure shows whenever there is any work booked in, not only on damage.
+      var anyWork = d.hasDamage || d.tyreCornersSelected > 0;
+      if (elClean) elClean.hidden = anyWork;
+      if (elHeroNum) elHeroNum.parentElement.hidden = !anyWork;
+      if (anyWork) {
+        setText(elHeroNum, "hero", hasTime ? heroSec.toFixed(1) : "—");
+        // Name what the number actually is. "PIT STOP" when it is the sim's
+        // total, "TO REPAIR" when we have fallen back to the repair figure —
+        // the two mean different things and must not be labelled alike.
+        setText(
+          elHeroTag,
+          "herotag",
+          !hasTime ? "NO ESTIMATE" : hasStop ? "PIT STOP" : "TO REPAIR",
+        );
       }
-      // Shown whenever tyres are actually selected — including on a clean car,
-      // where a tyre stop is still a stop worth knowing the length of.
+      // The breakdown beneath: what the total is made of. Repairs first.
+      var repairOn = d.hasDamage && d.repairSeconds !== -1 && hasStop;
+      if (elRepair) elRepair.hidden = !repairOn;
+      if (repairOn) setText(elRepairVal, "repval", d.repairSeconds.toFixed(1) + "s");
+
       var tyreOn = d.tyreCornersSelected > 0 && tyreSec !== -1;
       if (elTyre) elTyre.hidden = !tyreOn;
       if (tyreOn) {
@@ -462,13 +485,22 @@
       }
     }
 
-    // Header carries the answer even when the widget is trimmed to one mode.
-    if (!d.hasDamage) {
+    // Header carries the answer even when the widget is trimmed to one mode, so
+    // it quotes the same figure the hero does — the sim's total stop where it
+    // has one, the repair time where it does not.
+    if (!d.hasDamage && d.tyreCornersSelected <= 0) {
       setText(headerMeta, "meta", "CLEAN");
       setAttr(headerMeta, "metastate", "data-state", "ok");
+    } else if (!hasTime) {
+      setText(headerMeta, "meta", d.hasDamage ? "DAMAGED" : "STOP —");
+      setAttr(headerMeta, "metastate", "data-state", d.hasDamage ? "alarm" : "ok");
     } else {
-      setText(headerMeta, "meta", hasTime ? "REPAIR " + repairSec.toFixed(1) + "s" : "DAMAGED");
-      setAttr(headerMeta, "metastate", "data-state", "alarm");
+      setText(
+        headerMeta,
+        "meta",
+        (hasStop ? "STOP " : "REPAIR ") + heroSec.toFixed(1) + "s",
+      );
+      setAttr(headerMeta, "metastate", "data-state", d.hasDamage ? "alarm" : "ok");
     }
   }
 

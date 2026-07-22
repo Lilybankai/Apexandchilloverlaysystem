@@ -86,6 +86,8 @@ export interface RawRepairPayload {
   };
   pitStopTimes?: { times?: Record<string, unknown> };
   pitMenu?: { pitMenu?: unknown };
+  /** The sim's own total stop length for the current pit-menu selections. */
+  pitStopLength?: { timeInSeconds?: unknown };
 }
 
 /** A single entry in the sim's pit menu (`pitMenu.pitMenu[]`). */
@@ -253,39 +255,40 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     repairOptions: options,
     tyreChangeSeconds: tyres.seconds,
     tyreCornersSelected: tyres.corners,
-    // Both figures carried twice: the precise published value, and the value
-    // rounded the way the game's own pit message rounds it. The widget shows
-    // the game-matching one by default so the overlay and the cockpit agree,
-    // and `?exact=on` switches to the precise pair.
-    repairSecondsGame: gameRounded(repairTime(times, 'FixAllDamage')),
-    tyreChangeSecondsGame: gameRounded(tyres.seconds),
+    stopLengthSeconds: stopLength(payload.pitStopLength),
   };
 }
 
 /**
- * The sim's pit message rounds its times **up to the nearest 5 seconds**, and
- * this reproduces that so the widget can agree with what the driver reads in
- * the cockpit.
+ * The sim's **own total stop length**, from `pitStopLength.timeInSeconds`.
  *
- * Measured, both from one in-game screenshot with the widget and the game's own
- * message in frame together:
+ * This is the authoritative number and it is read, never derived. Verified
+ * against a live stop with `Repair All` and one tyre selected:
  *
- *   published 93.7 -> game showed "Damage 95 sec"
- *   published  4.5 -> game showed "Tyres: 5 sec"
+ *   FixAllDamage    102.75341796875
+ *   TwoTireChange     4.5
+ *   sum             107.25341796875
+ *   pitStopLength   107.25341796875   <- identical to eleven decimal places
  *
- * `ceil(x / 5) * 5` satisfies both. That is two data points, not a proof — but
- * a rounding rule is the kind of thing that is either exactly right or obviously
- * wrong on the third sample, and the precise value is kept alongside
- * ({@link DamageState.repairSeconds}) so nothing is lost if this needs changing.
+ * Two things fall out of that. First, the sim adds repair and tyre time rather
+ * than overlapping them, which is what `FixTimeConcurrent: 0` and
+ * `TireTimeConcurrent: 0` were saying — so the concurrency question that kept
+ * this widget from showing a total is answered, by the sim's own arithmetic
+ * rather than by our reading of a flag. Second, there is no need to do that
+ * arithmetic here at all: the total is published, it tracks whatever the driver
+ * has selected in the pit menu, and it is the figure the game shows in the
+ * cockpit.
  *
- * Rounding UP matters: the game is being pessimistic about the stop, and a
- * driver deciding whether to pit should not be handed an estimate that is
- * cheerier than the one the game will quote them.
+ * The actual stop runs a few seconds longer than this — `FixRandomDelay` (up to
+ * 5 s) and `RandomTireDelay` (up to 1 s) are drawn when the stop happens and
+ * are not in the published figure. A stop measured at 112 s against a published
+ * 107.25 is that, not an error in this number.
  */
-export function gameRounded(seconds: number): number {
-  if (seconds === UNKNOWN_VALUE || !Number.isFinite(seconds)) return UNKNOWN_VALUE;
-  if (seconds <= 0) return seconds;
-  return Math.ceil(seconds / 5) * 5;
+function stopLength(block: { timeInSeconds?: unknown } | undefined): number {
+  if (!block || !finite(block.timeInSeconds)) return UNKNOWN_VALUE;
+  const v = block.timeInSeconds;
+  if (v <= 0 || v > 3600) return UNKNOWN_VALUE;
+  return Math.round(v * 10) / 10;
 }
 
 /**

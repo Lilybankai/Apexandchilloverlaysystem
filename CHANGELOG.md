@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.10.3 — 2026-07-22
+
+### Changed
+
+- **The headline is now the sim's own total stop length**, with repairs and
+  tyres broken out beneath it — `pitStopLength.timeInSeconds`, read rather than
+  derived. It tracks whatever the driver has selected in the pit menu and is the
+  figure the game quotes in the cockpit.
+
+- **Repairs and tyres add — confirmed, not assumed.** From a live stop:
+
+  ```
+  FixAllDamage                 102.75341796875
+  TwoTireChange                  4.5
+  sum                          107.25341796875
+  pitStopLength.timeInSeconds  107.25341796875
+  ```
+
+  Identical to eleven decimal places. That is the concurrency question which
+  kept a total off this widget for three releases, answered by the sim's own
+  arithmetic rather than by our reading of `TireTimeConcurrent`.
+
+### Fixed
+
+- **Removed the 0.10.2 rounding rule, which was wrong.** `ceil(x / 5) * 5` was
+  fitted to two samples and a third refuted it: the game quoted `107`, which is
+  not a multiple of 5. The published figure was 102.75 and the game's 107 was
+  `pitStopLength` all along — the widget had been reading the wrong field, not
+  rounding the right one badly. `?exact=on` goes with it; there is no longer an
+  approximate figure to switch away from.
+
+- A stale `repairSec` reference threw a `ReferenceError` on every frame after
+  the body had rendered, which left the header stuck on its placeholder `— s`.
+
+### Notes
+
+- The real stop still runs a few seconds beyond the published total —
+  `FixRandomDelay` (≤5 s) and `RandomTireDelay` (≤1 s) are drawn when the stop
+  happens and appear in nothing published beforehand. A stop measured at 112 s
+  against a published 107.3 is those, not an error.
+
 ## 0.10.2 — 2026-07-22
 
 ### Changed

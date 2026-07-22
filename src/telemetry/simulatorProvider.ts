@@ -598,6 +598,8 @@ export class SimulatorProvider implements TelemetryProvider {
         // On a clean car the sim really does offer a lone "N/A" here.
         pitMenu: { pitMenu: [{ name: 'DAMAGE:', currentSetting: 0, settings: [{ text: 'N/A' }] }] },
         pitStopTimes: { times: { FixAllDamage: 30, FixAeroDamage: 30 } },
+        // Nothing selected, so the sim's bare stop length — measured at ~2 s.
+        pitStopLength: { timeInSeconds: 2 },
       });
     }
     // Ramp the severity in over the damaged half so the bars move rather than
@@ -638,6 +640,11 @@ export class SimulatorProvider implements TelemetryProvider {
           FourTireChange: 12,
         },
       },
+      // The sim publishes the total already summed — verified equal to
+      // FixAllDamage + TwoTireChange on a live stop — so the demo sums it here
+      // rather than leaving the field out, or the widget's headline would be
+      // exercised against a payload shape the game never sends.
+      pitStopLength: { timeInSeconds: round2(30 + 5.1 * ramp + 4.5) },
     });
   }
 

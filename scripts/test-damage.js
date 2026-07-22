@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { decodeDamage, isHeavy, isDamaged, gameRounded, HEAVY_SEVERITY } = require('../dist/telemetry/damage');
+const { decodeDamage, isHeavy, isDamaged, HEAVY_SEVERITY } = require('../dist/telemetry/damage');
 
 let passed = 0;
 let failed = 0;
@@ -146,27 +146,56 @@ console.log('\nthe driver declined repairs\n');
   check('body-only selection is distinguished', d.repairSelection === 'body', d.repairSelection);
 }
 
-console.log('\ngame rounding — the widget must quote what the cockpit quotes\n');
+console.log('\ntotal stop length — read from the sim, never derived\n');
 {
-  // The two measured pairs, from a screenshot with the widget and the game's
-  // own pit message in frame together.
-  check('93.7 rounds to the game\'s 95', gameRounded(93.7) === 95, gameRounded(93.7));
-  check('4.5 rounds to the game\'s 5', gameRounded(4.5) === 5, gameRounded(4.5));
-  // Rounds UP, never down: the game is pessimistic about the stop and a driver
-  // must not be handed a cheerier estimate than the one they will be quoted.
-  check('35.1 rounds up to 40, not down to 35', gameRounded(35.1) === 40, gameRounded(35.1));
-  check('an exact multiple is left alone', gameRounded(30) === 30, gameRounded(30));
-  check('12 rounds to 15', gameRounded(12) === 15, gameRounded(12));
-  check('UNKNOWN stays UNKNOWN, not 0', gameRounded(-1) === -1, gameRounded(-1));
-  check('zero stays zero', gameRounded(0) === 0, gameRounded(0));
-  check('NaN is UNKNOWN', gameRounded(NaN) === -1, gameRounded(NaN));
+  // The exact payload captured from a live stop with `Repair All` and one tyre
+  // selected. The arithmetic below is the evidence that the sim ADDS repair and
+  // tyre time rather than overlapping them — which is what let this widget show
+  // a total at all.
+  const LIVE = {
+    wearables: {
+      body: { aero: 0.2133752703666687, detachableParts: [true, true, true, true, false] },
+      suspension: [0, 0.5708523392677307, 0, 0.3849409818649292],
+      brakes: [0.0356, 0.0356, 0.032, 0.032],
+    },
+    pitStopTimes: { times: { FixAllDamage: 102.75341796875, TwoTireChange: 4.5, FourTireChange: 12 } },
+    pitStopLength: { timeInSeconds: 107.25341796875 },
+    pitMenu: {
+      pitMenu: menuDamaged(2).concat([
+        { name: 'FR TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Wet' }] },
+        { name: 'FL TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Wet' }] },
+        { name: 'RL TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Wet' }] },
+        { name: 'RR TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Wet' }] },
+      ]),
+    },
+  };
+  const d = decodeDamage(LIVE);
+  check('the live payload decodes', d !== null);
+  check('total is the sim figure', d.stopLengthSeconds === 107.3, d.stopLengthSeconds);
+  check('repairs are the component', d.repairSeconds === 102.8, d.repairSeconds);
+  check('tyres are the other component', d.tyreChangeSeconds === 4.5, d.tyreChangeSeconds);
+  check('one corner selected', d.tyreCornersSelected === 1, d.tyreCornersSelected);
+  // The relationship that settled the concurrency question. Checked on the raw
+  // values rather than the rounded ones, because the point is that they are
+  // identical to the bit, not merely close.
+  check(
+    'total EQUALS repairs + tyres, exactly',
+    Math.abs(102.75341796875 + 4.5 - 107.25341796875) < 1e-9,
+  );
+  check('heavy FR corner reads through', Math.abs(d.suspension[1] - 0.5709) < 0.001, d.suspension[1].toFixed(4));
+  check('and is flagged heavy', isHeavy(d.suspension[1]));
 }
 {
+  // A total the sim does not publish must be UNKNOWN, so the widget can fall
+  // back to the repair figure and label it as such rather than showing a zero
+  // stop.
   const d = decodeDamage(DAMAGED);
-  check('the precise figure is preserved', d.repairSeconds === 35.1, d.repairSeconds);
-  check('alongside the game-rounded one', d.repairSecondsGame === 40, d.repairSecondsGame);
-  // Nothing is lost: both are on the wire, and the widget picks.
-  check('they are different values', d.repairSeconds !== d.repairSecondsGame);
+  check('no pitStopLength gives UNKNOWN total', d.stopLengthSeconds === -1, d.stopLengthSeconds);
+  check('while repairs still read', d.repairSeconds === 35.1, d.repairSeconds);
+  const bad = decodeDamage(payload({ pitStopLength: { timeInSeconds: 0 } }));
+  check('a zero total is rejected', bad.stopLengthSeconds === -1, bad.stopLengthSeconds);
+  const nan = decodeDamage(payload({ pitStopLength: { timeInSeconds: NaN } }));
+  check('a NaN total is rejected', nan.stopLengthSeconds === -1, nan.stopLengthSeconds);
 }
 
 console.log('\ntyre change — priced separately, never summed into the repair figure\n');
@@ -194,7 +223,6 @@ console.log('\ntyre change — priced separately, never summed into the repair f
   // TwoTireChange of 4.5 — so one tyre really is priced as two.
   const one = withTyres(1);
   check('one corner is priced as TwoTireChange', one.tyreChangeSeconds === 4.5, one.tyreChangeSeconds);
-  check('and quoted to the driver as the game 5s', one.tyreChangeSecondsGame === 5, one.tyreChangeSecondsGame);
   check('and counts one corner', one.tyreCornersSelected === 1);
 
   const two = withTyres(2);

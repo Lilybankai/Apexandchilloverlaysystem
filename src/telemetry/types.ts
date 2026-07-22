@@ -414,18 +414,19 @@ export interface DamageState {
   /** How many corners have a tyre change selected, `0..4`. */
   tyreCornersSelected: number;
   /**
-   * {@link repairSeconds} rounded the way the sim's own pit message rounds it —
-   * **up to the nearest 5 s**. Measured: a published `93.7` was shown in-game as
-   * `Damage 95 sec`. This is what the widget displays by default, so the overlay
-   * and the cockpit quote the same number; the precise value stays available
-   * above and behind `?exact=on`.
+   * The sim's **own total stop length** in seconds for whatever the pit menu
+   * currently has selected (`pitStopLength.timeInSeconds`), or
+   * {@link UNKNOWN_VALUE}.
+   *
+   * Read, never derived. Verified equal to `FixAllDamage + TwoTireChange` to
+   * eleven decimal places on a live stop — which is also what settled that the
+   * sim **adds** repair and tyre time rather than overlapping them.
+   *
+   * The real stop runs a few seconds longer: `FixRandomDelay` (≤5 s) and
+   * `RandomTireDelay` (≤1 s) are drawn when it happens and are not in this
+   * figure.
    */
-  repairSecondsGame: number;
-  /**
-   * {@link tyreChangeSeconds} under the same rounding. Measured: a published
-   * `4.5` was shown in-game as `Tyres: 5 sec`.
-   */
-  tyreChangeSecondsGame: number;
+  stopLengthSeconds: number;
 }
 
 /**
