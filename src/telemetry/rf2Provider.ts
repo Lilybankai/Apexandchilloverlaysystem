@@ -59,6 +59,8 @@ import type { ServerConfig } from '../server/config';
 import { assignClassPositions, normalizeClass } from './carClass';
 import { decodeMotion } from './motion';
 import type { Vec3 } from './motion';
+import { ChassisTracker } from './chassis';
+import type { RawCorner, RawCornerSet } from './chassis';
 
 /* ------------------------- Win32 / shared-memory ------------------------- */
 
@@ -153,10 +155,22 @@ const VT = {
   mWheels: 848, // rF2Wheel mWheels[4]
 } as const;
 
-/** Offsets inside each `rF2Wheel` element (stride 344). Temps are KELVIN. */
+/**
+ * Offsets inside each `rF2Wheel` element (stride 344). Temps are KELVIN.
+ *
+ * The load/suspension group at the head of the struct is the standard ISI
+ * `TelemWheelV01` prefix; the four temperature/pressure/wear offsets below it
+ * were verified live and are what fix the field order, so the head offsets
+ * follow from the same layout rather than needing separate probing.
+ */
 const WH = {
   stride: 344,
+  mSuspensionDeflection: 0, // double, metres, positive = compressed
+  mRideHeight: 8, // double, metres
+  mSuspForce: 16, // double, Newtons (pushrod load)
   mBrakeTemp: 24,
+  mTireLoad: 104, // double, Newtons — vertical load through the contact patch
+  mGripFract: 112, // double, 0..1 fraction of the patch still gripping
   mPressure: 120,
   mTemperature: 128, // double[3] inner/centre/outer, KELVIN
   mWear: 152,
@@ -264,6 +278,11 @@ export class RF2Provider implements TelemetryProvider {
 
   private readonly fallback = new SimulatorProvider();
   private readonly fuel = new FuelCalculator();
+  /**
+   * Cross-frame state for the four-corner load channels — it learns a
+   * per-corner reference over ~25 s, so it must survive between polls.
+   */
+  private readonly chassisTracker = new ChassisTracker();
   private readonly win32: Win32 | null;
   private telemetry: MappedBuffer | null = null;
   private scoring: MappedBuffer | null = null;
@@ -481,6 +500,21 @@ export class RF2Provider implements TelemetryProvider {
       rearRight: this.readTyre(telem, t + VT.mWheels + 3 * WH.stride),
     };
 
+    // Wheel load/suspension block, read raw in the sim's own units. Every
+    // threshold and conversion belongs to telemetry/chassis.ts — the same
+    // division of labour the motion block uses with decodeMotion().
+    const readCorner = (wheel: number): RawCorner => {
+      const b = t + VT.mWheels + wheel * WH.stride;
+      return {
+        loadN: telem.readDoubleLE(b + WH.mTireLoad),
+        deflectionM: telem.readDoubleLE(b + WH.mSuspensionDeflection),
+        rideHeightM: telem.readDoubleLE(b + WH.mRideHeight),
+        suspForceN: telem.readDoubleLE(b + WH.mSuspForce),
+        gripFract: telem.readDoubleLE(b + WH.mGripFract),
+      };
+    };
+    const rawCorners: RawCornerSet = [readCorner(0), readCorner(1), readCorner(2), readCorner(3)];
+
     // --- session --------------------------------------------------------
     const maxLaps = scoring.readInt32LE(SI.base + SI.mMaxLaps);
     const sessionCode = scoring.readInt32LE(SI.base + SI.mSession);
@@ -488,6 +522,10 @@ export class RF2Provider implements TelemetryProvider {
     const endET = scoring.readDoubleLE(SI.base + SI.mEndET);
     const currentET = scoring.readDoubleLE(SI.base + SI.mCurrentET);
     const timeRemaining = endET > 0 ? Math.max(0, endET - currentET) : UNKNOWN_VALUE;
+    // Decoded here rather than beside the raw read because the tracker's
+    // reference average is advanced on the SIM clock, which only becomes
+    // available at this point in the parse.
+    const chassis = this.chassisTracker.update(rawCorners, currentET);
     const playerStanding =
       playerScoringOff >= 0 ? standings.find((s) => s.slotId === playerId) : undefined;
     const playerLaps = playerStanding?.lapsCompleted ?? 0;
@@ -553,6 +591,9 @@ export class RF2Provider implements TelemetryProvider {
           sector: UNKNOWN_VALUE,
         },
         tyres,
+        // Absent rather than zeroed when the wheel block fails its guards, so
+        // the widget can tell "no data" from "a car sitting perfectly flat".
+        ...(chassis ? { chassis } : {}),
       },
       standings,
       relative,

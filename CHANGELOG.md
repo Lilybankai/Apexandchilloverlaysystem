@@ -1,5 +1,77 @@
 # Changelog
 
+## 0.9.0 — 2026-07-22 "Corners"
+
+One new overlay, and the second batch of **telemetry channels** recovered from a
+struct we were already reading: the per-wheel load and suspension block was
+sitting in every wheel record, being skipped past to get to the tyre temps.
+
+### Added
+
+- **Chassis**, a new widget: a wireframe GT3 drawn from the mid-point between
+  directly behind and directly above, pivoting about a point inside the body at
+  mid-wheelbase, with per-corner load columns, overload and wheel-lift flags,
+  and a four-corner suspension readout. Three independently switchable modes
+  (`?car` / `?susp` / `?dist`), as the Motion widget established.
+
+  The **body rotates and the wheels do not**. They stay on the road and move
+  only by their own suspension travel, so the gap between body and wheel is the
+  compression. Rotating the wheels with the body would have made the car a rigid
+  model being waggled, and the suspension invisible — which is most of what the
+  widget exists to show.
+
+  Body rotation is **exaggerated** (`?gain`, default ×7) because a GT3 rolls
+  about 1.5° and pitches under 2°, and at true scale the car looks welded solid.
+  The header always carries the **true** degrees, and says `×7`, so the picture
+  is an amplifier and the numbers stay the instrument. `?gain=1` for the honest
+  angle.
+
+- **Four-corner load and suspension channels** — `mTireLoad`,
+  `mSuspensionDeflection`, `mRideHeight`, `mSuspForce` and `mGripFract`, for
+  both the LMU and rF2 providers. No offset probing was needed: the four
+  already-verified offsets in the same wheel record (brake temp +24, pressure
+  +120, temperature +128, wear +152) pin the standard ISI `TelemWheelV01` field
+  order, and the load/suspension group falls out of it. LMU's shorter 260-byte
+  record shares rF2's 848-byte wheel base, which the existing surface-temp and
+  brake-disc offsets independently confirm.
+
+### The calibration problem, and what was not done
+
+A corner load of 3200 N means nothing without the car's mass, weight
+distribution and aero — none of which LMU or rF2 publish. Hard-coding a GT3 mass
+and a 45/55 split would have produced a number that looks calibrated and is
+wrong in every car that is not the one it was tuned against.
+
+So the widget reports load two ways, both honest: **share of total**, which is
+instantaneous, exact and needs no calibration at all; and a **ratio** against a
+slow average of each corner's *own* load, which self-calibrates live and so
+reads the same in a GT3, a Hypercar or an LMP2. The header shows `CAL…` while
+that reference converges, and the flags stay off until it has. Same principle as
+0.8.0's refusal to fabricate an understeer/oversteer number.
+
+`expectedLeftShare()` cross-checks the load channel against the independent
+lateral-G channel — the chassis equivalent of `motionConsistency()`. It is used
+by the tests to catch an inverted or mis-offset load block, never to produce a
+displayed number.
+
+### Changed
+
+- `PlayerState` gains an optional `chassis` block. **Absent, not zeroed**, when
+  spectating or when the wheel block fails its guards, so the widget can tell
+  "no data" from "a car sitting perfectly flat" — the same contract `motion`
+  uses.
+- Demo mode synthesises a plausible load block and runs it through the **real**
+  decoder, so the thresholds, warm-up gate and reference average are exercised
+  without a sim running. Only the raw numbers are invented.
+
+### Notes
+
+- `?yaw` defaults to `0` — exactly on the car's centreline, as specified. The
+  cost is geometric and unavoidable: on-axis, a wheel's circle is edge-on to the
+  view and projects to a bar rather than a disc. `?yaw=15` trades a little
+  attitude purity for wheels that read as round.
+- `scripts/test-chassis.js` (29 cases) joins the suite.
+
 ## 0.8.0 — 2026-07-20 "Attitude"
 
 Two new overlays, and the first new **telemetry channels** since the tyre temps:

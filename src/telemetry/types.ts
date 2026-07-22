@@ -278,6 +278,82 @@ export interface TyreSet {
 }
 
 /**
+ * Vertical load and suspension state at a single corner.
+ *
+ * Every threshold and unit here is set in {@link module:telemetry/chassis} —
+ * nothing downstream decides what counts as overloaded or airborne.
+ */
+export interface CornerState {
+  /** Vertical tyre load through the contact patch, Newtons. `0` = airborne. */
+  loadN: number;
+  /**
+   * This corner's load as a fraction of all four, `0..1`. Instantaneous and
+   * exact — needs no calibration, so it is the channel to trust when
+   * {@link ChassisState.calibrated} is false.
+   */
+  shareOfTotal: number;
+  /**
+   * Load relative to this corner's own learned normal, where `1` is typical,
+   * `>1` loaded and `<1` light. {@link UNKNOWN_VALUE} before the reference has
+   * converged. See the calibration note in {@link module:telemetry/chassis}.
+   */
+  loadRatio: number;
+  /** The learned reference load this ratio is measured against, Newtons. */
+  referenceLoadN: number;
+  /** Suspension travel in mm, positive = compressed. */
+  deflectionMm: number;
+  /** Chassis height above the road at this corner, mm. */
+  rideHeightMm: number;
+  /** Pushrod/spring force, Newtons. {@link UNKNOWN_VALUE} when unavailable. */
+  suspForceN: number;
+  /** Fraction of the contact patch gripping rather than sliding, `0..1`. */
+  gripFract: number;
+  /** Load has effectively gone — the wheel is off the road. */
+  airborne: boolean;
+  /** Still touching, but carrying far less than its normal load. */
+  light: boolean;
+  /** Carrying substantially more than its normal load. */
+  overloaded: boolean;
+}
+
+/**
+ * Four-corner load distribution and suspension state for the player's car.
+ *
+ * Omitted from {@link PlayerState} when spectating or when the sim does not
+ * populate the wheel block — absent rather than zeroed, so a widget can tell
+ * "no data" from "a car sitting perfectly flat".
+ */
+export interface ChassisState {
+  frontLeft: CornerState;
+  frontRight: CornerState;
+  rearLeft: CornerState;
+  rearRight: CornerState;
+  /** Sum of all four corner loads, Newtons. Tracks downforce with speed. */
+  totalLoadN: number;
+  /** Front axle's share of total load, `0..1`. `0.5` is an even split. */
+  frontShare: number;
+  /** Rear axle's share, `0..1`. Always `1 - frontShare`. */
+  rearShare: number;
+  /** Left side's share of total load, `0..1`. Rises in a right-hand corner. */
+  leftShare: number;
+  /** Right side's share, `0..1`. Always `1 - leftShare`. */
+  rightShare: number;
+  /**
+   * The FL+RR diagonal's share of total load, `0..1`. `0.5` is a square car;
+   * away from it one diagonal is carrying the car.
+   */
+  crossShare: number;
+  /** How many corners are currently reading airborne, `0..4`. */
+  wheelsAirborne: number;
+  /**
+   * Whether the per-corner reference has converged. While `false`, `loadRatio`
+   * and the `light`/`overloaded` flags are not yet meaningful and consumers
+   * should fall back to {@link CornerState.shareOfTotal}.
+   */
+  calibrated: boolean;
+}
+
+/**
  * State specific to the **player's** car (the spectated/driven entry).
  * Standings for the whole field live in {@link TelemetryFrame.standings}.
  */
@@ -300,6 +376,12 @@ export interface PlayerState {
   lap: LapTiming;
   /** Four-corner tyre state. */
   tyres: TyreSet;
+  /**
+   * Four-corner vertical load and suspension state. Omitted when spectating
+   * (no shared-memory physics for a car not driven on this PC) or when the
+   * sim's wheel block fails its plausibility guards. See {@link ChassisState}.
+   */
+  chassis?: ChassisState;
   /**
    * Pacelogic-style dual lap deltas for the **driven** car — Delta T (time,
    * at-position) and Delta V (progress, at-time), each vs the session-best,

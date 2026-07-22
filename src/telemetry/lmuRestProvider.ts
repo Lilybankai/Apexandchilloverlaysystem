@@ -1082,6 +1082,10 @@ export class LmuRestProvider implements TelemetryProvider {
       // the driven car alone, so spectating omits it entirely rather than
       // sending a frozen or zeroed one.
       ...(local && local.motion ? { motion: local.motion } : {}),
+      // Same rule for the four-corner load block — absent when spectating, and
+      // absent (not zeroed) when the wheel struct fails its guards, so the
+      // widget can distinguish "no data" from "a car sitting perfectly flat".
+      ...(local && local.chassis ? { chassis: local.chassis } : {}),
     };
   }
 }

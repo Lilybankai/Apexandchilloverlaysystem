@@ -18,6 +18,7 @@ import type { TelemetryProvider } from './provider';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
+  type ChassisState,
   type FuelState,
   type MotionState,
   type PedalInputs,
@@ -28,6 +29,8 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { assignClassPositions, isFasterClass } from './carClass';
+import { ChassisTracker } from './chassis';
+import type { RawCorner, RawCornerSet } from './chassis';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -189,6 +192,14 @@ export class SimulatorProvider implements TelemetryProvider {
   private tyreWear = { fl: 1, fr: 1, rl: 1, rr: 1 };
   private rainIntensity = 0;
   private weatherPhase = 0;
+  /**
+   * Seconds of simulated session time. Demo mode has no sim clock of its own,
+   * but {@link ChassisTracker} advances its reference average on one, so the
+   * tick loop keeps a monotonic count here.
+   */
+  private clockSec = 0;
+  /** The real four-corner decoder, fed synthetic input. See buildChassis(). */
+  private readonly chassisTracker = new ChassisTracker();
   private started = false;
 
   public start(): void {
@@ -253,6 +264,7 @@ export class SimulatorProvider implements TelemetryProvider {
     if (!this.started) this.start();
     const dt = clamp(dtMs, 0, 250) / 1000; // seconds, guarded against long stalls
 
+    this.clockSec += dt;
     this.advanceField(dt);
     this.advanceWeather(dt);
 
@@ -263,6 +275,11 @@ export class SimulatorProvider implements TelemetryProvider {
     const standings = this.buildStandings();
     const relative = this.buildRelative();
     const fuel = this.buildFuel(player);
+    // Built once and shared: the chassis model is derived from the same motion
+    // state the frame reports, so calling motionFor() twice would risk the two
+    // drifting apart if it ever gains any per-call state.
+    const motion = this.motionFor(this.pedals);
+    const chassis = this.buildChassis(motion);
 
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
@@ -290,7 +307,7 @@ export class SimulatorProvider implements TelemetryProvider {
         slotId: player.slotId,
         position: this.positionOf(player),
         pedals: { ...this.pedals },
-        motion: this.motionFor(this.pedals),
+        motion,
         gear: this.gearFor(this.pedals),
         speedKph: this.speedFor(this.pedals),
         rpm: this.rpmFor(this.pedals),
@@ -311,6 +328,10 @@ export class SimulatorProvider implements TelemetryProvider {
           sector: Math.min(3, Math.floor(player.progress * 3) + 1),
         },
         tyres: this.buildTyres(),
+        // Absent for the first few seconds while the tracker's reference
+        // converges — the same shape the live path produces, so demo mode
+        // exercises the widget's "waiting for data" branch too.
+        ...(chassis ? { chassis } : {}),
       },
       standings,
       relative,
@@ -541,6 +562,80 @@ export class SimulatorProvider implements TelemetryProvider {
       rearLeft: mk(this.tyreTemps.rl, this.tyreWear.rl),
       rearRight: mk(this.tyreTemps.rr, this.tyreWear.rr),
     };
+  }
+
+  /* ------------------------------- chassis -------------------------------- */
+
+  /**
+   * Synthesises a plausible four-corner load block from the same pedal/steer
+   * state that drives {@link motionFor}, then puts it through the real
+   * {@link ChassisTracker} rather than hand-rolling the ratios.
+   *
+   * Running the genuine decoder on synthetic input is the point: demo mode then
+   * exercises the same thresholds, warm-up gate and reference average that the
+   * live path uses, so a regression in any of them shows up here instead of
+   * hiding until someone is on track. Only the *raw* numbers are invented.
+   *
+   * The model is deliberately simple — static weight, speed-squared downforce,
+   * and load transfer proportional to G. It is not a vehicle dynamics model and
+   * makes no claim to be; it exists so the widget has something honest-shaped
+   * to render.
+   */
+  private buildChassis(motion: MotionState): ChassisState | null {
+    /** Static wheel loads, N — a ~1300 kg GT3 plus driver, 45% on the front. */
+    const STATIC_TOTAL_N = 12750;
+    const FRONT_BIAS = 0.45;
+    /** Downforce at 200 km/h, N. Scaled by v² from there. */
+    const DOWNFORCE_AT_200_N = 4200;
+    /** Share of total load moved per g. Nominal, matching expectedLeftShare(). */
+    const LAT_TRANSFER_PER_G = 0.19;
+    const LON_TRANSFER_PER_G = 0.14;
+    /** Nominal wheel-rate, N/mm — turns a corner load into suspension travel. */
+    const WHEEL_RATE_N_PER_MM = 165;
+    /** Static ride height at rest, mm, before any deflection. */
+    const STATIC_RIDE_MM = 78;
+
+    const speedKph = motion.speedMs * 3.6;
+    const downforceN = DOWNFORCE_AT_200_N * Math.pow(speedKph / 200, 2);
+    const totalN = STATIC_TOTAL_N + downforceN;
+
+    // Longitudinal: braking is POSITIVE lonG here (see decodeMotion), and
+    // braking moves load onto the FRONT axle.
+    const frontShare = clamp(FRONT_BIAS + motion.lonG * LON_TRANSFER_PER_G, 0.05, 0.95);
+    // Lateral: positive latG is acceleration toward the car's RIGHT, i.e. a
+    // right-hand corner, which loads the LEFT (outside) wheels.
+    const leftShare = clamp(0.5 + motion.latG * LAT_TRANSFER_PER_G, 0.02, 0.98);
+
+    // A kerb strike every so often, so the airborne/light paths are reachable
+    // in demo mode instead of being dead code nobody ever sees run.
+    const kerb = Math.sin(this.weatherPhase * 3.1) > 0.985 ? 0.12 : 1;
+
+    const cornerN = (front: boolean, left: boolean): number => {
+      const axle = front ? frontShare : 1 - frontShare;
+      const side = left ? leftShare : 1 - leftShare;
+      // Axle share times side share is a separable approximation of the real
+      // 2-D distribution — exact only when the two transfers are independent,
+      // which is close enough for a demo and keeps the four corners summing to
+      // the total by construction.
+      const n = totalN * axle * side * 4 * 0.25;
+      return Math.max(0, n * (front && left ? kerb : 1));
+    };
+
+    const mk = (front: boolean, left: boolean): RawCorner => {
+      const loadN = cornerN(front, left);
+      const deflectionMm = loadN / WHEEL_RATE_N_PER_MM;
+      return {
+        loadN,
+        deflectionM: deflectionMm / 1000,
+        rideHeightM: Math.max(0, STATIC_RIDE_MM - deflectionMm * 0.55) / 1000,
+        suspForceN: loadN * 0.92,
+        // Grip falls away as the tyre is asked for more lateral force.
+        gripFract: clamp01(1 - Math.abs(motion.latG) * 0.09 - Math.abs(motion.lonG) * 0.05),
+      };
+    };
+
+    const raw: RawCornerSet = [mk(true, true), mk(true, false), mk(false, true), mk(false, false)];
+    return this.chassisTracker.update(raw, this.clockSec);
   }
 
   /* ------------------------------ standings ------------------------------ */

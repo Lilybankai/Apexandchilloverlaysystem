@@ -85,6 +85,9 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
   fixed centre-bottom pivot. An alternate to the above, not a replacement.
 - **Motion** — G-force, rotation and attitude, in three independently
   switchable modes (see below)
+- **Chassis** — a wireframe GT3 seen from behind and above, pivoting about its
+  centre on live pitch and roll, with per-corner load columns, overload and
+  wheel-lift flags and a suspension readout (see below)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
@@ -114,6 +117,48 @@ forward under brakes the way the driver is thrown, while lateral follows the
 direction the acceleration points (the dot sits on the side of the corner you
 are turning into). That pairing is deliberate and was chosen from real laps; the
 textbook g-g convention read backwards at speed. See `src/telemetry/motion.ts`.
+
+### Chassis widget
+
+A wireframe GT3 drawn from the mid-point between directly behind and directly
+above, so roll is visible across the car and pitch along it. The **body** pivots
+about a point inside it at mid-wheelbase; the **wheels stay on the road** and
+move only by their own suspension travel, so the gap between body and wheel *is*
+the compression — the suspension is read off the picture, not just the numbers.
+
+| Param       | Mode             | Shows                                                     |
+| ----------- | ---------------- | --------------------------------------------------------- |
+| `?car=off`  | **Car**          | The wireframe, corner load columns and state flags        |
+| `?susp=off` | **Suspension**   | Per-corner load, travel and ride height                   |
+| `?dist=off` | **Distribution** | Front/rear, left/right and cross-weight bars              |
+
+Two further knobs:
+
+- `?gain=7` — how much body rotation is **exaggerated**. A GT3 rolls about 1.5°
+  and pitches under 2°; at true scale the car looks welded solid, so the picture
+  is amplified while the header always shows the **true** degrees. `?gain=1`
+  gives the honest angle.
+- `?yaw=0` — camera azimuth. `0` (the default) is exactly on the centreline,
+  which keeps roll as pure left/right and pitch as pure vertical. The cost is
+  geometric: on-axis, a wheel's circle is edge-on to the view and projects to a
+  bar. `?yaw=15` swings the camera off-axis and the wheels become ellipses, at
+  the price of a little perspective mixing into the attitude read.
+
+Corner colours: green normal, **amber** gone light, **cyan** airborne, **red**
+overloaded. Amber and cyan rather than a red/green pair because a wheel going
+light is information, not a fault — only genuine overload earns the alarm
+colour. Wheels are tinted by tyre surface temperature.
+
+Load is reported two ways, because a corner load in Newtons means nothing
+without the car's mass and weight distribution, which no sim publishes. The
+**share of total** is instantaneous and exact and needs no calibration; the
+**ratio** is each corner's load against a slow average of *its own* load, so
+`1.0` is "normal for this corner, this car, this setup". Both self-calibrate,
+work in any car, and avoid inventing a mass. The header shows `CAL…` for the
+first few seconds while that reference converges. See `src/telemetry/chassis.ts`.
+
+> Needs shared memory — the load and suspension block is only published for the
+> **locally-driven** car, so the widget says `NO CHASSIS DATA` when spectating.
 
 ## Live telemetry sources
 

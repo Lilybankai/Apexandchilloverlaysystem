@@ -37,9 +37,11 @@
  */
 
 import { UNKNOWN_VALUE } from './types';
-import type { MotionState } from './types';
+import type { ChassisState, MotionState } from './types';
 import { decodeMotion } from './motion';
 import type { Vec3 } from './motion';
+import { ChassisTracker } from './chassis';
+import type { RawCorner, RawCornerSet } from './chassis';
 
 /* Verified rF2VehicleTelemetry field offsets (bytes), x64, #pragma pack(4). */
 const VT = {
@@ -104,6 +106,28 @@ const VT = {
   // 0.01 °C driving; both read 0 K in the garage (→ reported as unknown).
   mWheelTempBase: 976,
   mWheelStride: 260,
+  /**
+   * Start of `mWheels[0]` — i.e. `mWheelTempBase − 128`, since `mTemperature[3]`
+   * sits at +128 inside every ISI `rF2Wheel`.
+   *
+   * This is not a guess and was not scanned for. Two independently verified
+   * offsets pin it from opposite ends of the struct: the surface temp triplet at
+   * 976 (matched to 0.01 °C against SimHub on all twelve bands) and the
+   * brake-disc temp at 872, which is wheel-start +24. Both are satisfied only
+   * by a wheel base of 848 — the same base rF2 uses, which is the expected
+   * result since LMU inherits the struct and only shortens the record (260-byte
+   * stride vs rF2's 344).
+   */
+  mWheelBase: 848,
+  // Offsets INSIDE each wheel record, from the standard ISI TelemWheelV01
+  // layout. The four verified anchors in this same struct — brake temp +24,
+  // pressure +120, temperature +128, wear +152 — fix the field order, so these
+  // fall out of it rather than being probed independently.
+  mSuspensionDeflection: 0, // double, metres, positive = compressed
+  mRideHeight: 8, // double, metres
+  mSuspForce: 16, // double, Newtons (pushrod load)
+  mTireLoad: 104, // double, Newtons — vertical load through the contact patch
+  mGripFract: 112, // double, 0..1 fraction of the patch still gripping
   // mTireInnerLayerTemperature[3] — the tyre *inner-liner* temps, three doubles
   // per wheel at +84/+92/+100 from the surface base (wheel-start +212 in the
   // rF2Wheel struct; the brake-disc temp at wheel-start +24, i.e. −104 here,
@@ -189,6 +213,22 @@ export interface LocalCarPhysics {
    * `null` when the motion block fails its plausibility guards.
    */
   motion: MotionState | null;
+  /**
+   * The four wheels' load/suspension block exactly as shared memory holds it
+   * (metres and Newtons, no thresholds applied), in sim order FL, FR, RL, RR.
+   * `null` when a corner fails its plausibility guard.
+   *
+   * Raw rather than decoded because turning it into {@link ChassisState}
+   * requires the cross-frame reference average owned by {@link ChassisTracker},
+   * and {@link parseRecord} is deliberately stateless.
+   */
+  rawCorners: RawCornerSet | null;
+  /**
+   * Four-corner load and suspension state, thresholds applied. `null` when
+   * {@link rawCorners} is null or the tracker rejects the block. Populated by
+   * {@link LmuLocalCarReader}, which owns the tracker.
+   */
+  chassis: ChassisState | null;
 }
 
 /** Minimal koffi-bound Win32 surface (see {@link loadWin32}). */
@@ -273,6 +313,12 @@ export class LmuLocalCarReader {
   private size = 0;
   /** Record index of the driven car found last poll — probed first next poll. */
   private cachedIdx = -1;
+  /**
+   * Cross-frame state for the four-corner load channels. Lives here rather than
+   * in {@link parseRecord} because it learns a per-corner reference over ~25 s
+   * and so must survive between reads.
+   */
+  private readonly chassis = new ChassisTracker();
 
   public constructor() {
     this.win32 = loadWin32();
@@ -376,6 +422,13 @@ export class LmuLocalCarReader {
           continue;
         }
         this.cachedIdx = idx;
+        // Decode the wheel block only once the record has passed every torn-read
+        // and identity guard above. The tracker carries a learned reference
+        // across frames, so feeding it a record that later turns out to be the
+        // wrong car would poison that reference for the next 25 seconds.
+        if (car.rawCorners) {
+          car.chassis = this.chassis.update(car.rawCorners, car.elapsedSec);
+        }
         return car;
       }
       return null;
@@ -521,6 +574,26 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     ori: [vec(VT.mOri), vec(VT.mOri + 24), vec(VT.mOri + 48)],
   });
 
+  // Wheel load/suspension block. Read raw, in the sim's own units — every
+  // threshold and unit conversion belongs to telemetry/chassis.ts, for the same
+  // reason the motion block hands its axes to decodeMotion() untouched.
+  const readCorner = (wheel: number): RawCorner => {
+    const b = VT.mWheelBase + wheel * VT.mWheelStride;
+    return {
+      loadN: rec.readDoubleLE(b + VT.mTireLoad),
+      deflectionM: rec.readDoubleLE(b + VT.mSuspensionDeflection),
+      rideHeightM: rec.readDoubleLE(b + VT.mRideHeight),
+      suspForceN: rec.readDoubleLE(b + VT.mSuspForce),
+      gripFract: rec.readDoubleLE(b + VT.mGripFract),
+    };
+  };
+  // The record must actually be long enough to hold the last wheel; a short or
+  // torn buffer would otherwise throw out of readDoubleLE.
+  const wheelsFit = VT.mWheelBase + 4 * VT.mWheelStride <= rec.length;
+  const rawCorners: RawCornerSet | null = wheelsFit
+    ? [readCorner(0), readCorner(1), readCorner(2), readCorner(3)]
+    : null;
+
   return {
     throttle: clamp01(throttle),
     brake,
@@ -542,6 +615,9 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     elapsedSec: Number.isFinite(elapsed) && elapsed > 0 ? elapsed : UNKNOWN_VALUE,
     carNumber: carNumberFromName(bufToAscii(rec.subarray(VT.mVehicleName, VT.mVehicleName + 48))),
     motion,
+    rawCorners,
+    // Filled in by LmuLocalCarReader, which owns the cross-frame tracker.
+    chassis: null,
   };
 }
 

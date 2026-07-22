@@ -82,5 +82,12 @@
       '<span class="panel__meta" data-role="meta">— kph</span></header>' +
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    chassis:
+      '<section class="widget panel" id="widget-chassis" data-widget="chassis" aria-label="Chassis attitude, corner loads and suspension">' +
+      '<header class="panel__header"><span class="panel__title">Chassis</span>' +
+      '<span class="panel__meta" data-role="meta">— kN</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
   };
 })();
