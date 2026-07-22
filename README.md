@@ -127,6 +127,7 @@ mid-stint and cannot answer from the cockpit.
 | `?dmg=off`     | **Components** | Aero and the four suspension corners, as severity bars |
 | `?repair=off`  | **Repair**     | The sim's own repair seconds and the pit-menu choice   |
 | `?brakes=on`   | **Discs**      | Brake disc thickness per corner, mm                    |
+| `?exact=on`    | **Exact**      | Precise published seconds instead of the game-rounded ones |
 
 Components and repair default **on**; discs default **off** — disc thickness is
 wear rather than damage, and it is the only channel here that is not about the
@@ -151,10 +152,12 @@ they overlap is decided by `TireTimeConcurrent`, which has not been verified
 against a real stop, so a total could be wrong by the whole tyre time. Two
 honest figures the driver adds up beat one that might be wrong.
 
-> The game rounds its own pit message **up to the nearest 5 s** — it showed
-> `Damage 95 sec` against a published `93.7`, and `Tyres: 5 sec` against `4.5`.
-> The widget shows the precise value, so expect it to read slightly under the
-> in-game message.
+**Both figures are rounded to match the game.** LMU rounds its own pit message
+**up to the nearest 5 s** — it showed `Damage 95 sec` against a published `93.7`,
+and `Tyres: 5 sec` against `4.5` — so the widget does the same and the overlay
+never disagrees with the message on the driver's screen. The rounding is
+pessimistic, which is the safe direction for a pit decision. `?exact=on` shows
+the precise published values instead (they read lower).
 
 Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to a
 "car health" percentage, because that curve would be ours rather than the sim's.

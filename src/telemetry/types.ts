@@ -413,6 +413,19 @@ export interface DamageState {
   tyreChangeSeconds: number;
   /** How many corners have a tyre change selected, `0..4`. */
   tyreCornersSelected: number;
+  /**
+   * {@link repairSeconds} rounded the way the sim's own pit message rounds it —
+   * **up to the nearest 5 s**. Measured: a published `93.7` was shown in-game as
+   * `Damage 95 sec`. This is what the widget displays by default, so the overlay
+   * and the cockpit quote the same number; the precise value stays available
+   * above and behind `?exact=on`.
+   */
+  repairSecondsGame: number;
+  /**
+   * {@link tyreChangeSeconds} under the same rounding. Measured: a published
+   * `4.5` was shown in-game as `Tyres: 5 sec`.
+   */
+  tyreChangeSecondsGame: number;
 }
 
 /**

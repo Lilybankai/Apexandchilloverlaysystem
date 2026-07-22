@@ -17,13 +17,24 @@
  *                                 Default OFF: it is wear, not damage, and it
  *                                 is the only channel here that is not about
  *                                 the pit decision.
+ *   ?exact=on        EXACT      — quote the precise published seconds instead
+ *                                 of the game-rounded ones. Default OFF, i.e.
+ *                                 the widget agrees with the in-game pit
+ *                                 message by default (see below).
  *
  * ## The number this widget does not invent
  * The repair figure is `FixAllDamage` straight from LMU — a live estimate that
- * was measured moving from 30 to 35.098 s for real damage. This widget does not
- * model it, scale it, or fold tyre and fuel time into a "total stop" (that would
- * depend on concurrency flags nobody has verified). When the sim does not
+ * scales with severity (measured 35.1 s at 19.5%% FR, 93.7 s at 52.1%%). This
+ * widget does not model it or fold tyre and fuel time into a "total stop" (that
+ * would depend on concurrency flags nobody has verified). When the sim does not
  * publish a figure, the widget says so rather than showing a plausible zero.
+ *
+ * ## Why the seconds are rounded by default
+ * The game rounds its own pit message UP to the nearest 5 s — a published 93.7
+ * is quoted in-cockpit as "Damage 95 sec". The widget matches that by default,
+ * because an overlay that disagrees with the message on the driver's screen is
+ * a bug report waiting to happen, and because the rounding is pessimistic in
+ * the safe direction. `?exact=on` shows the precise published pair instead.
  *
  * ## Why severity is shown raw
  * The sim reports `0..1` per component and the bars show exactly that. Remapping
@@ -62,6 +73,7 @@
   var modeDmg = true;
   var modeRepair = true;
   var modeBrakes = false;
+  var modeExact = false;
 
   var elHeroNum = null;
   var elHeroTag = null;
@@ -222,6 +234,11 @@
     modeDmg = !isOff("dmg");
     modeRepair = !isOff("repair");
     modeBrakes = isOn("brakes");
+    // Default: quote the same seconds the game's own pit message quotes, so the
+    // overlay and the cockpit never disagree in front of the driver. `?exact=on`
+    // shows the precise published value instead — lower, because the game
+    // rounds its estimate up.
+    modeExact = isOn("exact");
 
     buildOpacityControl(root, params);
 
@@ -377,24 +394,29 @@
       return;
     }
 
-    var hasTime = d.repairSeconds !== -1;
+    // Which pair of figures to quote. The game-matching pair is the default so
+    // the overlay agrees with the in-game pit message; ?exact=on drops to the
+    // precise published values.
+    var repairSec = modeExact ? d.repairSeconds : d.repairSecondsGame;
+    var tyreSec = modeExact ? d.tyreChangeSeconds : d.tyreChangeSecondsGame;
+    var hasTime = repairSec !== -1;
 
     if (modeRepair) {
       // Clean and damaged are mutually exclusive presentations of the same slot.
       if (elClean) elClean.hidden = d.hasDamage;
       if (elHeroNum) elHeroNum.parentElement.hidden = !d.hasDamage;
       if (d.hasDamage) {
-        setText(elHeroNum, "hero", hasTime ? "+" + d.repairSeconds.toFixed(1) : "—");
+        setText(elHeroNum, "hero", hasTime ? "+" + repairSec.toFixed(1) : "—");
         // When the sim has damage but publishes no time, say which of the two
         // unknowns this is instead of leaving a bare dash under "TO REPAIR".
         setText(elHeroTag, "herotag", hasTime ? "TO REPAIR" : "NO ESTIMATE");
       }
       // Shown whenever tyres are actually selected — including on a clean car,
       // where a tyre stop is still a stop worth knowing the length of.
-      var tyreOn = d.tyreCornersSelected > 0 && d.tyreChangeSeconds !== -1;
+      var tyreOn = d.tyreCornersSelected > 0 && tyreSec !== -1;
       if (elTyre) elTyre.hidden = !tyreOn;
       if (tyreOn) {
-        setText(elTyreVal, "tyreval", d.tyreChangeSeconds.toFixed(1) + "s");
+        setText(elTyreVal, "tyreval", tyreSec.toFixed(1) + "s");
         setText(
           elTyreNote,
           "tyrenote",
@@ -445,7 +467,7 @@
       setText(headerMeta, "meta", "CLEAN");
       setAttr(headerMeta, "metastate", "data-state", "ok");
     } else {
-      setText(headerMeta, "meta", hasTime ? "REPAIR " + d.repairSeconds.toFixed(1) + "s" : "DAMAGED");
+      setText(headerMeta, "meta", hasTime ? "REPAIR " + repairSec.toFixed(1) + "s" : "DAMAGED");
       setAttr(headerMeta, "metastate", "data-state", "alarm");
     }
   }

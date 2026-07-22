@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.2 — 2026-07-22
+
+### Changed
+
+- **Both times now match the game's own pit message.** LMU rounds its quote
+  **up to the nearest 5 s**, and the widget now does the same, so the overlay
+  and the cockpit never disagree in front of the driver.
+
+  The rule is `ceil(x / 5) * 5`, derived from one screenshot with the widget and
+  the game's message in frame together: a published `93.7` was quoted as
+  `Damage 95 sec`, and a published `4.5` as `Tyres: 5 sec`. Both satisfy it.
+  That is two data points rather than a proof — so the **precise values are
+  kept** on `DamageState` alongside the rounded pair, and `?exact=on` displays
+  them. If a third sample contradicts the rule, only `gameRounded()` changes.
+
+  Rounding **up** is deliberate: the game is being pessimistic about the stop,
+  and a driver deciding whether to pit should never be handed a cheerier
+  estimate than the one the game will quote them.
+
+- New `?exact=on` mode on the Damage widget, for the precise published seconds.
+
 ## 0.10.1 — 2026-07-22
 
 ### Added

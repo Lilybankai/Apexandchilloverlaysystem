@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { decodeDamage, isHeavy, isDamaged, HEAVY_SEVERITY } = require('../dist/telemetry/damage');
+const { decodeDamage, isHeavy, isDamaged, gameRounded, HEAVY_SEVERITY } = require('../dist/telemetry/damage');
 
 let passed = 0;
 let failed = 0;
@@ -146,6 +146,29 @@ console.log('\nthe driver declined repairs\n');
   check('body-only selection is distinguished', d.repairSelection === 'body', d.repairSelection);
 }
 
+console.log('\ngame rounding — the widget must quote what the cockpit quotes\n');
+{
+  // The two measured pairs, from a screenshot with the widget and the game's
+  // own pit message in frame together.
+  check('93.7 rounds to the game\'s 95', gameRounded(93.7) === 95, gameRounded(93.7));
+  check('4.5 rounds to the game\'s 5', gameRounded(4.5) === 5, gameRounded(4.5));
+  // Rounds UP, never down: the game is pessimistic about the stop and a driver
+  // must not be handed a cheerier estimate than the one they will be quoted.
+  check('35.1 rounds up to 40, not down to 35', gameRounded(35.1) === 40, gameRounded(35.1));
+  check('an exact multiple is left alone', gameRounded(30) === 30, gameRounded(30));
+  check('12 rounds to 15', gameRounded(12) === 15, gameRounded(12));
+  check('UNKNOWN stays UNKNOWN, not 0', gameRounded(-1) === -1, gameRounded(-1));
+  check('zero stays zero', gameRounded(0) === 0, gameRounded(0));
+  check('NaN is UNKNOWN', gameRounded(NaN) === -1, gameRounded(NaN));
+}
+{
+  const d = decodeDamage(DAMAGED);
+  check('the precise figure is preserved', d.repairSeconds === 35.1, d.repairSeconds);
+  check('alongside the game-rounded one', d.repairSecondsGame === 40, d.repairSecondsGame);
+  // Nothing is lost: both are on the wire, and the widget picks.
+  check('they are different values', d.repairSeconds !== d.repairSecondsGame);
+}
+
 console.log('\ntyre change — priced separately, never summed into the repair figure\n');
 {
   /** The four per-corner entries, with `selected` of them set to change. */
@@ -171,6 +194,7 @@ console.log('\ntyre change — priced separately, never summed into the repair f
   // TwoTireChange of 4.5 — so one tyre really is priced as two.
   const one = withTyres(1);
   check('one corner is priced as TwoTireChange', one.tyreChangeSeconds === 4.5, one.tyreChangeSeconds);
+  check('and quoted to the driver as the game 5s', one.tyreChangeSecondsGame === 5, one.tyreChangeSecondsGame);
   check('and counts one corner', one.tyreCornersSelected === 1);
 
   const two = withTyres(2);

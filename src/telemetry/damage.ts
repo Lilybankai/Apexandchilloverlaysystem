@@ -253,7 +253,39 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     repairOptions: options,
     tyreChangeSeconds: tyres.seconds,
     tyreCornersSelected: tyres.corners,
+    // Both figures carried twice: the precise published value, and the value
+    // rounded the way the game's own pit message rounds it. The widget shows
+    // the game-matching one by default so the overlay and the cockpit agree,
+    // and `?exact=on` switches to the precise pair.
+    repairSecondsGame: gameRounded(repairTime(times, 'FixAllDamage')),
+    tyreChangeSecondsGame: gameRounded(tyres.seconds),
   };
+}
+
+/**
+ * The sim's pit message rounds its times **up to the nearest 5 seconds**, and
+ * this reproduces that so the widget can agree with what the driver reads in
+ * the cockpit.
+ *
+ * Measured, both from one in-game screenshot with the widget and the game's own
+ * message in frame together:
+ *
+ *   published 93.7 -> game showed "Damage 95 sec"
+ *   published  4.5 -> game showed "Tyres: 5 sec"
+ *
+ * `ceil(x / 5) * 5` satisfies both. That is two data points, not a proof — but
+ * a rounding rule is the kind of thing that is either exactly right or obviously
+ * wrong on the third sample, and the precise value is kept alongside
+ * ({@link DamageState.repairSeconds}) so nothing is lost if this needs changing.
+ *
+ * Rounding UP matters: the game is being pessimistic about the stop, and a
+ * driver deciding whether to pit should not be handed an estimate that is
+ * cheerier than the one the game will quote them.
+ */
+export function gameRounded(seconds: number): number {
+  if (seconds === UNKNOWN_VALUE || !Number.isFinite(seconds)) return UNKNOWN_VALUE;
+  if (seconds <= 0) return seconds;
+  return Math.ceil(seconds / 5) * 5;
 }
 
 /**
