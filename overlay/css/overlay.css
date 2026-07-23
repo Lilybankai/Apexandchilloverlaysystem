@@ -49,6 +49,9 @@
    widget with no rule here lands at its static position behind whatever is
    already drawn there and reads as one that failed to load. */
 #widget-damage    { bottom: 300px; left: 24px;  width: 268px; }
+/* Spotter radar — a narrow spatial strip, left edge mid-height, clear of the
+   standings tower above and the vertical-inputs widget below. */
+#widget-radar     { top: 264px;  left: 24px;  width: 188px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
@@ -1256,6 +1259,80 @@
   accent-color: var(--ac-cyan);
 }
 .damage__opacity-val {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* =========================================================================
+ * RADAR — spatial proximity strip (widgets/radar.js)
+ * ========================================================================= */
+.radar__wrap {
+  display: flex;
+  flex-direction: column;
+}
+.radar__canvas {
+  display: block;
+  width: 100%;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Hover opacity control — same contract as the motion/damage widgets:
+   fade the CONTENTS (not the section) so the slider stays visible, and drop the
+   panel chrome below full opacity so the radar reads as a HUD over the track. */
+#widget-radar .panel__header,
+#widget-radar .panel__body {
+  opacity: var(--radar-op, 1);
+}
+#widget-radar[data-transparent="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.radar__opacity-anchor {
+  position: relative;
+  height: 0;
+}
+.radar__opacity {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-header);
+  border: 1px solid var(--border-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+#widget-radar:hover .radar__opacity,
+.radar__opacity:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.radar__opacity-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.radar__opacity-range {
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  accent-color: var(--ac-cyan);
+  cursor: pointer;
+}
+.radar__opacity-val {
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--text-secondary);

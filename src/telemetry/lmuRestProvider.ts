@@ -39,11 +39,13 @@ import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator } from './fuelCalculator';
 import { LmuLocalCarReader, type LocalCarPhysics } from './lmuLocalCar';
+import { buildRadar, type RadarCar } from './radar';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
   type FlagState,
   type FuelState,
+  type RadarBlip,
   type RelativeEntry,
   type SessionPhase,
   type SessionState,
@@ -241,6 +243,9 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Last good local physics + when, to bridge single missed reads (flicker). */
   private lastLocal: LocalCarPhysics | null = null;
   private lastLocalAt = 0;
+  /** Last good radar blips + when, to bridge a single torn readField() (flicker). */
+  private lastRadar: RadarBlip[] | null = null;
+  private lastRadarAt = 0;
   private readonly port: number;
   private readonly verbose: boolean;
 
@@ -504,6 +509,10 @@ export class LmuRestProvider implements TelemetryProvider {
       deltaSec = this.lapDelta.update(focus, trackLen);
     }
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas);
+    // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
+    // it reads that car's world position + orientation from shared memory, which
+    // exists only for the car driven on this PC. Omitted when spectating.
+    const radar = this.buildRadarBlips(playerCar, cars);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -514,9 +523,54 @@ export class LmuRestProvider implements TelemetryProvider {
       player,
       standings,
       relative,
+      ...(radar ? { radar } : {}),
       weather,
       fuel,
     };
+  }
+
+  /**
+   * Car-relative radar blips for the driven car. Reads every car's world
+   * position + the driven car's orientation from shared memory (the only source
+   * of 2-D position — the REST feed's `lapDistance` is 1-D), then hands them to
+   * the shared {@link buildRadar} geometry. Class + number + faster-class come
+   * from the REST standings, joined by slot id.
+   *
+   * Returns `undefined` — omitted, not empty — when spectating or shared memory
+   * is unavailable, exactly like the motion/chassis blocks.
+   */
+  private buildRadarBlips(
+    playerCar: RestStanding | undefined,
+    cars: RestStanding[],
+  ): RadarBlip[] | undefined {
+    if (!playerCar) return undefined;
+    const field = this.localCar.readField(playerCar.slotID);
+    if (!field) {
+      // Bridge an occasional torn copy (the reader missed a single frame) so the
+      // radar doesn't blink to "NO RADAR DATA"; a genuine drop outlasts the hold.
+      if (this.lastRadar && Date.now() - this.lastRadarAt < LOCAL_HOLD_MS) return this.lastRadar;
+      return undefined;
+    }
+
+    const byId = new Map<number, RestStanding>();
+    for (const c of cars) byId.set(c.slotID, c);
+    const playerClass = normalizeClass(playerCar.carClass);
+
+    const radarCars: RadarCar[] = field.cars.map(({ slotId, pos }) => {
+      const c = byId.get(slotId);
+      const carClass = c ? normalizeClass(c.carClass) : undefined;
+      const car: RadarCar = { slotId, pos };
+      if (carClass) car.carClass = carClass;
+      if (c && c.carNumber) car.carNumber = c.carNumber;
+      if (isFasterClass(carClass, playerClass)) car.isFasterClass = true;
+      return car;
+    });
+
+    const blips = buildRadar({ playerPos: field.playerPos, ori: field.ori, cars: radarCars });
+    if (!blips) return undefined;
+    this.lastRadar = blips;
+    this.lastRadarAt = Date.now();
+    return blips;
   }
 
   private buildStandings(cars: RestStanding[], focusId: number): StandingEntry[] {

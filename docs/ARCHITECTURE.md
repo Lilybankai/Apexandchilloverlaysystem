@@ -55,7 +55,8 @@ that.
   │  css/         theme tokens + layout            │
   │  js/client.js WS connect → parse → dispatch     │
   │  js/widgets/  standings · relative · weather ·  │
-  │               tyres · fuel · pedals (Canvas)    │
+  │               tyres · fuel · pedals · radar     │
+  │               (Canvas)                          │
   └───────────────┬────────────────────────────────┘
                   │  rendered as an OBS Browser Source (Chromium/CEF)
                   ▼
@@ -166,6 +167,22 @@ in `rf2Provider.ts`, Task E.)
   `TELEMETRY_SCHEMA_VERSION` on any breaking change.
 - **New telemetry source:** implement `TelemetryProvider` and wire it into
   `selectProvider()`; nothing downstream changes.
+
+### The radar's spatial data (why it's different)
+Every other widget runs on normalized, largely 1-D channels (a gap in seconds, a
+lap distance). The **radar** is the exception: telling a car alongside on your
+*left* from one on your *right* needs true 2-D position, which no gap carries.
+So `telemetry/radar.ts` reads each car's **world position** (`mPos`) and the
+driven car's **orientation matrix** (`mOri`) straight from shared memory — the
+same block the motion widget uses — and projects every car into the player's own
+left/right–ahead/behind frame. It owns that axis convention the way
+`telemetry/motion.ts` owns its signs (a flipped sign would put a left-side pass
+on your right), and is unit-tested headless in `scripts/test-radar.js`. Both live
+providers feed it from the telemetry buffer they already map; the simulator
+places its synthetic field on an ellipse and runs the **real** projection, so a
+sign regression surfaces in demo mode rather than on track. The result rides the
+frame as the optional `radar` field — omitted, like `motion`, whenever there's no
+driven-car physics (spectating).
 
 ## Future work
 - A native (C#/.NET or Rust) shared-memory reader would idle even lighter than

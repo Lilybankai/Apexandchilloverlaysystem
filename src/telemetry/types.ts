@@ -622,6 +622,55 @@ export interface RelativeEntry {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Radar                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One nearby car as the **radar** widget sees it: a car-relative position on the
+ * player's own ground plane, computed from every car's world position and the
+ * player's orientation by `telemetry/radar.ts` (which owns the axis convention —
+ * nothing downstream reasons about the sim's axes).
+ *
+ * This is distinct from {@link RelativeEntry}: the relative widget orders cars by
+ * on-track *time* gap (1-D, how far round the lap), while a blip is a true 2-D
+ * offset — it is the only place lateral (left/right) separation exists, which is
+ * what a spatial-awareness radar needs and a lap-distance gap cannot provide.
+ */
+export interface RadarBlip {
+  /** Stable per-session slot/entry id. */
+  slotId: number;
+  /**
+   * Lateral offset in **metres**: negative = to the player's LEFT, positive =
+   * to the player's RIGHT.
+   */
+  lateralM: number;
+  /**
+   * Longitudinal offset in **metres**: positive = AHEAD of the player, negative
+   * = BEHIND.
+   */
+  longitudinalM: number;
+  /** Planar centre-to-centre distance in metres (always ≥ 0). */
+  distanceM: number;
+  /**
+   * `true` when the car overlaps the player longitudinally within a car length
+   * — i.e. it is drawing alongside, the condition the widget turns into a
+   * left/right proximity warning. Read the side from the sign of {@link lateralM}.
+   */
+  alongside: boolean;
+  /** Car class label, when known (drives the blip colour). */
+  carClass?: string;
+  /** Car number, when known. */
+  carNumber?: string;
+  /**
+   * `true` when this car belongs to a genuinely faster category than the
+   * player's — a Hypercar bearing down on a GT3. Only set when both classes are
+   * recognised, so an unknown mod class never triggers a false alert. Mirrors
+   * {@link RelativeEntry.isFasterClass}.
+   */
+  isFasterClass?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Weather                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -770,6 +819,15 @@ export interface TelemetryFrame {
   standings: StandingEntry[];
   /** Cars nearest the player on track, ordered by proximity. */
   relative: RelativeEntry[];
+  /**
+   * Car-relative positions of nearby cars for the spatial radar, nearest first.
+   * **Optional and omitted** — not an empty array — when the driven car's world
+   * position/orientation isn't available (spectating, or no shared-memory
+   * physics for a car not driven on this PC), exactly like {@link PlayerState.motion}.
+   * An empty array means "genuinely nobody within range", which is real
+   * information the widget renders differently from "no data". See {@link RadarBlip}.
+   */
+  radar?: RadarBlip[];
   /** Current weather plus forecast. */
   weather: WeatherState;
   /** Fuel state and strategy for the player's car. */

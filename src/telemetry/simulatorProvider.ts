@@ -23,6 +23,7 @@ import {
   type FuelState,
   type MotionState,
   type PedalInputs,
+  type RadarBlip,
   type RelativeEntry,
   type StandingEntry,
   type TelemetryFrame,
@@ -30,6 +31,8 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { assignClassPositions, isFasterClass } from './carClass';
+import { buildRadar, headingOri, type RadarCar } from './radar';
+import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
@@ -86,6 +89,20 @@ const FUEL_CAPACITY_L = 80;
 /** Rows to show in the relative widget (cars ahead + player + cars behind). */
 const RELATIVE_AHEAD = 3;
 const RELATIVE_BEHIND = 3;
+
+/**
+ * Half-axes (metres) of the ellipse the synthetic field is placed on to give the
+ * radar real 2-D world positions. Demo mode has no track geometry of its own, so
+ * a car's lap `progress` (0..1) is mapped to a point on this ellipse and its
+ * heading to the tangent. The size is deliberately small — perimeter ≈ 630 m —
+ * so the evenly-spread field lands a couple of cars inside radar range and the
+ * widget shows blips instead of an empty scope. Only the *raw* positions are
+ * invented; the projection is the real {@link buildRadar}.
+ */
+const SIM_TRACK_A = 120;
+const SIM_TRACK_B = 75;
+/** Two full turns of π. */
+const TAU = Math.PI * 2;
 
 /**
  * Synthetic corner layout as a fraction of the lap (0..1) plus braking effort.
@@ -276,6 +293,7 @@ export class SimulatorProvider implements TelemetryProvider {
 
     const standings = this.buildStandings();
     const relative = this.buildRelative();
+    const radar = this.buildRadarBlips(player);
     const fuel = this.buildFuel(player);
     // Built once and shared: the chassis model is derived from the same motion
     // state the frame reports, so calling motionFor() twice would risk the two
@@ -339,6 +357,7 @@ export class SimulatorProvider implements TelemetryProvider {
       },
       standings,
       relative,
+      ...(radar ? { radar } : {}),
       weather: {
         trackTempC: 30 + Math.sin(this.weatherPhase) * 1.5 - this.rainIntensity * 6,
         ambientTempC: 22 + Math.sin(this.weatherPhase * 0.7) * 0.8 - this.rainIntensity * 3,
@@ -834,6 +853,64 @@ export class SimulatorProvider implements TelemetryProvider {
       toEntry(player, 0, true),
       ...behind.map((x) => toEntry(x.car, x.gapSec, false)),
     ];
+  }
+
+  /* -------------------------------- radar -------------------------------- */
+
+  /**
+   * The car's forward (tangent) direction on the demo ellipse at its current lap
+   * progress. Increasing progress runs anticlockwise, so this is the direction
+   * of travel — what the player's radar treats as "ahead".
+   */
+  private forwardOf(progress: number): { x: number; z: number } {
+    const theta = progress * TAU;
+    // d/dtheta of (A·cosθ, B·sinθ) = (−A·sinθ, B·cosθ).
+    return { x: -SIM_TRACK_A * Math.sin(theta), z: SIM_TRACK_B * Math.cos(theta) };
+  }
+
+  /**
+   * A car's WORLD position on the demo ellipse. Each car is nudged off the
+   * centre-line by a small, stable per-car lateral offset so the blips spread
+   * left and right of the racing line instead of stacking on one axis — which is
+   * what exercises the lateral half of the {@link buildRadar} projection.
+   */
+  private worldPosOf(car: SimCar): Vec3 {
+    const theta = car.progress * TAU;
+    const cx = SIM_TRACK_A * Math.cos(theta);
+    const cz = SIM_TRACK_B * Math.sin(theta);
+    const f = this.forwardOf(car.progress);
+    const flen = Math.hypot(f.x, f.z) || 1;
+    // Right = up × forward projected onto the ground = (fz, −fx)/|f|, matching
+    // the LEFT-handed convention buildRadar() uses, so a positive offset shows up
+    // as a blip to the car's right rather than mirrored.
+    const rx = f.z / flen;
+    const rz = -f.x / flen;
+    // Stable ±~2.7 m offset from the slot id (0 for the player, on the line).
+    const off = car.slotId === this.player().slotId ? 0 : (((car.slotId * 37) % 7) - 3) * 0.9;
+    return { x: cx + rx * off, y: 0, z: cz + rz * off };
+  }
+
+  /**
+   * Car-relative radar blips for the player, built by running the synthetic
+   * field's world positions through the **real** {@link buildRadar} geometry —
+   * the same discipline {@link buildChassis} and {@link buildDamage} use, so a
+   * sign regression in the projection shows up in demo mode instead of hiding
+   * until someone is on track. Only the positions are invented.
+   */
+  private buildRadarBlips(player: SimCar): RadarBlip[] | undefined {
+    const ori = headingOri(this.forwardOf(player.progress));
+    if (!ori) return undefined;
+    const playerPos = this.worldPosOf(player);
+    const cars: RadarCar[] = this.cars
+      .filter((c) => c.slotId !== player.slotId)
+      .map((c) => {
+        const faster = isFasterClass(c.carClass, player.carClass);
+        const car: RadarCar = { slotId: c.slotId, pos: this.worldPosOf(c), carClass: c.carClass };
+        if (c.carNumber) car.carNumber = c.carNumber;
+        if (faster) car.isFasterClass = true;
+        return car;
+      });
+    return buildRadar({ playerPos, ori, cars }) ?? undefined;
   }
 
   /* --------------------------------- fuel -------------------------------- */

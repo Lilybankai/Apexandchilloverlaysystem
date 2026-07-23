@@ -46,6 +46,7 @@ import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
   type FlagState,
+  type RadarBlip,
   type RelativeEntry,
   type SessionPhase,
   type SessionType,
@@ -56,8 +57,9 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import type { ServerConfig } from '../server/config';
-import { assignClassPositions, normalizeClass } from './carClass';
+import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { decodeMotion } from './motion';
+import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
@@ -134,6 +136,10 @@ const VT = {
   base: 16, // rF2Telemetry.mVehicles starts after header(12)+mNumVehicles(4)
   stride: 2880,
   mID: 0,
+  // rF2Vec3 mPos — WORLD position (metres). mVehicleName[32..96] +
+  // mTrackName[96..160] put it at 160, three doubles before the verified
+  // mLocalVel at 184. The radar's only source of 2-D position.
+  mPos: 160,
   mLocalVelZ: 184 + 16, // rF2Vec3 mLocalVel.z (forward), offset+2*double
   // Motion block — identical field layout to LMU (only the record STRIDE
   // differs between the two sims), so these are the same offsets documented in
@@ -550,6 +556,7 @@ export class RF2Provider implements TelemetryProvider {
     });
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
+    const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -597,6 +604,7 @@ export class RF2Provider implements TelemetryProvider {
       },
       standings,
       relative,
+      ...(radar ? { radar } : {}),
       weather: {
         trackTempC: round1(trackTempC),
         ambientTempC: round1(ambientC),
@@ -710,6 +718,59 @@ export class RF2Provider implements TelemetryProvider {
       ...behind.map((r) => toEntry(r.entry, r.gap, false)),
     ];
     return result;
+  }
+
+  /**
+   * Car-relative radar blips from the telemetry buffer already in hand: every
+   * car's world `mPos` and the player's `mOri`, projected by the shared
+   * {@link buildRadar} geometry. Class + number + faster-class are joined from
+   * the standings by slot id.
+   *
+   * Returns `undefined` — omitted, not empty — when the player's telemetry
+   * record or orientation is unavailable, matching the motion/chassis contract.
+   */
+  private buildRadarBlips(
+    telem: Buffer,
+    telemVehicles: number,
+    playerTelemOff: number,
+    playerId: number,
+    standings: StandingEntry[],
+  ): RadarBlip[] | undefined {
+    if (playerTelemOff < 0) return undefined;
+    const vec = (off: number): Vec3 => ({
+      x: telem.readDoubleLE(off),
+      y: telem.readDoubleLE(off + 8),
+      z: telem.readDoubleLE(off + 16),
+    });
+    const playerPos = vec(playerTelemOff + VT.mPos);
+    const ori: [Vec3, Vec3, Vec3] = [
+      vec(playerTelemOff + VT.mOri),
+      vec(playerTelemOff + VT.mOri + 24),
+      vec(playerTelemOff + VT.mOri + 48),
+    ];
+
+    const byId = new Map<number, StandingEntry>();
+    for (const s of standings) byId.set(s.slotId, s);
+    const playerClass = byId.get(playerId)?.carClass;
+
+    const cars: RadarCar[] = [];
+    for (let i = 0; i < telemVehicles; i++) {
+      const off = VT.base + i * VT.stride;
+      const id = telem.readInt32LE(off + VT.mID);
+      if (id === playerId || id < 0) continue;
+      const pos = vec(off + VT.mPos);
+      // Skip records still at the world origin (uninitialised / not spawned).
+      if (pos.x === 0 && pos.y === 0 && pos.z === 0) continue;
+      const std = byId.get(id);
+      const car: RadarCar = { slotId: id, pos };
+      if (std?.carClass) car.carClass = std.carClass;
+      if (std?.carNumber) car.carNumber = std.carNumber;
+      if (isFasterClass(std?.carClass, playerClass)) car.isFasterClass = true;
+      cars.push(car);
+    }
+
+    const blips = buildRadar({ playerPos, ori, cars });
+    return blips ?? undefined;
   }
 
   /** Verbose-only diagnostic (per-poll failures would otherwise spam at 30 Hz). */

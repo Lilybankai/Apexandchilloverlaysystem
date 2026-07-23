@@ -71,6 +71,12 @@ const VT = {
   // (kept for logging/diagnostics; the player is matched by mID, since car
   // numbers can repeat across classes — e.g. two #21s in one field).
   mVehicleName: 32,
+  // rF2Vec3 mPos — the car's WORLD position (metres). Pinned by the same
+  // evidence as mLocalVel: mVehicleName[32..96] + mTrackName[96..160] put mPos at
+  // 160, and the verified mLocalVel at 184 (three doubles later) leaves no other
+  // possibility. This is the only spatial channel a radar can use — the REST
+  // feed's lapDistance is 1-D and cannot say left-of / right-of.
+  mPos: 160,
   mLocalVelZ: 200, // rF2Vec3 mLocalVel.z (forward component)
   // The motion block. These are NOT scanned-for offsets — they are bracketed on
   // both sides by offsets already verified live, which is stronger evidence
@@ -229,6 +235,21 @@ export interface LocalCarPhysics {
    * {@link LmuLocalCarReader}, which owns the tracker.
    */
   chassis: ChassisState | null;
+}
+
+/**
+ * A snapshot of **every car's world position** plus the driven car's
+ * orientation — the raw spatial state the radar's geometry ({@link
+ * module:telemetry/radar}) turns into car-relative blips. Read from the same
+ * Telemetry buffer as {@link LocalCarPhysics}, in one consistent pass.
+ */
+export interface RadarField {
+  /** The driven car's world position (`mPos`), metres. */
+  playerPos: Vec3;
+  /** The driven car's orientation matrix (`mOri[3]`, rows of local→world). */
+  ori: [Vec3, Vec3, Vec3];
+  /** Every OTHER car's world position, keyed by slot id (player excluded). */
+  cars: Array<{ slotId: number; pos: Vec3 }>;
 }
 
 /** Minimal koffi-bound Win32 surface (see {@link loadWin32}). */
@@ -434,6 +455,91 @@ export class LmuLocalCarReader {
       return null;
     } catch {
       // Mapping may have gone away (sim closed); drop it so we re-open later.
+      this.stop();
+      return null;
+    }
+  }
+
+  /**
+   * Reads **every car's world position** plus the driven car's orientation for
+   * the radar. Returns `null` when unavailable (no koffi, sim closed, the
+   * player's car isn't in the buffer, or the read is torn) — the same "no data,
+   * don't draw" contract as {@link read}.
+   *
+   * `playerSlotId` — the player's slot id (REST `slotID` == record `mID`),
+   * required so the returned field can exclude the player and pick the right
+   * orientation.
+   *
+   * ## Why there is no whole-sweep consistency gate
+   * The instinct is to version-check the buffer before and after reading every
+   * car and discard the lot on a mismatch — but LMU's physics writer updates at
+   * hundreds of Hz, so across the dozens of reads a full field needs the writer
+   * ALWAYS lands mid-sweep. That gate failed on essentially every frame and the
+   * radar showed nothing. It is also unnecessary here: `mID` and `mPos` for a car
+   * are read from that car's own fixed record offset, so there is no identity
+   * confusion (the failure the {@link read} gate guards against), and the worst a
+   * mid-read write can do is make one car's position a single physics tick stale
+   * — a few centimetres, invisible on a radar. So each car is read directly off
+   * the live mapping with no global gate; the reads are small and fast.
+   */
+  public readField(playerSlotId: number): RadarField | null {
+    const w = this.win32;
+    if (w === null || playerSlotId < 0) return null;
+    if (!this.view) {
+      this.open();
+      if (!this.view) return null;
+    }
+    try {
+      // Scan every populated record, exactly like findDrivenCar: a car's RECORD
+      // INDEX in the buffer is not its slot id, so the player (or a nearby car)
+      // can sit at any index. Bounding the scan to the field size — an earlier
+      // bug — missed the player whenever its record sat past that many slots, and
+      // the whole radar came back empty.
+      const maxFit = Math.floor((this.size - VT.base) / VT.stride);
+      const n = clampInt(maxFit, 0, 128);
+
+      const cars: Array<{ slotId: number; pos: Vec3 }> = [];
+      let playerPos: Vec3 | null = null;
+      let ori: [Vec3, Vec3, Vec3] | null = null;
+
+      for (let i = 0; i < n; i++) {
+        const off = VT.base + i * VT.stride;
+        if (off + VT.stride > this.size) break;
+        const id = w.readI32(this.view, off + VT.mID);
+        if (id < 0) continue;
+        // mID and mPos are 24 contiguous bytes from the same record, so one small
+        // copy per car keeps each position self-consistent (no global gate — see
+        // the method note on why that gate can't work at LMU's write rate).
+        const posBytes = w.readBytes(this.view, off + VT.mPos, 24);
+        const pos: Vec3 = {
+          x: posBytes.readDoubleLE(0),
+          y: posBytes.readDoubleLE(8),
+          z: posBytes.readDoubleLE(16),
+        };
+        // A record still at the world origin is uninitialised / not spawned. For
+        // an empty slot mID can also read 0, which would otherwise be mistaken for
+        // the real player when playerSlotId is 0 — so skip origin records for BOTH
+        // the player match and the other-cars list.
+        const atOrigin = pos.x === 0 && pos.y === 0 && pos.z === 0;
+        if (atOrigin) continue;
+        if (id === playerSlotId) {
+          if (playerPos !== null) continue; // already found the driven car
+          playerPos = pos;
+          const oriBytes = w.readBytes(this.view, off + VT.mOri, 72);
+          const vec = (b: number): Vec3 => ({
+            x: oriBytes.readDoubleLE(b),
+            y: oriBytes.readDoubleLE(b + 8),
+            z: oriBytes.readDoubleLE(b + 16),
+          });
+          ori = [vec(0), vec(24), vec(48)];
+        } else {
+          cars.push({ slotId: id, pos });
+        }
+      }
+
+      if (playerPos === null || ori === null) return null; // player not in buffer
+      return { playerPos, ori, cars };
+    } catch {
       this.stop();
       return null;
     }

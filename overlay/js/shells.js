@@ -48,6 +48,13 @@
       '<div class="panel__body panel__body--flush" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    radar:
+      '<section class="widget panel" id="widget-radar" data-widget="radar" aria-label="Proximity radar">' +
+      '<header class="panel__header"><span class="panel__title">Radar</span>' +
+      '<span class="panel__meta" data-role="meta">— m</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     fuel:
       '<section class="widget panel" id="widget-fuel" data-widget="fuel" aria-label="Fuel calculator">' +
       '<header class="panel__header"><span class="panel__title">Fuel</span>' +
