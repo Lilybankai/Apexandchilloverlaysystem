@@ -62,6 +62,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    fuelplan:
+      '<section class="widget panel" id="widget-fuelplan" data-widget="fuelplan" aria-label="Fuel planner and virtual-energy stint timer">' +
+      '<header class="panel__header"><span class="panel__title">Fuel Planner</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     tyres:
       '<section class="widget panel" id="widget-tyres" data-widget="tyres" aria-label="Tyre temperatures">' +
       '<header class="panel__header"><span class="panel__title">Tyre Temps</span>' +

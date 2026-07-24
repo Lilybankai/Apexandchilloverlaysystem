@@ -97,6 +97,18 @@
       </div>
     </section>
 
+    <!-- ============ FUEL PLANNER (pre-race plan + VE stint timer) ==== -->
+    <section class="widget panel" id="widget-fuelplan" data-widget="fuelplan"
+             aria-label="Fuel planner and virtual-energy stint timer">
+      <header class="panel__header">
+        <span class="panel__title">Fuel Planner</span>
+        <span class="panel__meta" data-role="meta">—</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
     <!-- ===================== TYRES (bottom-right) ==================== -->
     <section class="widget panel" id="widget-tyres" data-widget="tyres"
              aria-label="Tyre temperatures">
@@ -225,5 +237,8 @@
   <script src="js/widgets/damage.js" defer></script>
   <script src="js/widgets/radar.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
+  <!-- Fuel Planner: reference-data module must load before its widget. -->
+  <script src="js/data/racedata.js" defer></script>
+  <script src="js/widgets/fuelplan.js" defer></script>
 </body>
 </html>

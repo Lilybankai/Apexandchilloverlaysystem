@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld('apexIngame', {
     ipcRenderer.on('ingame:edit', (_evt, editing) => callback(!!editing));
   },
 
+  /** Interact-mode toggled (whole layer clickable) from the hotkey/main. */
+  onInteract: (callback) => {
+    ipcRenderer.on('ingame:interact', (_evt, on) => callback(!!on));
+  },
+
+  /** Leave interact mode from the page banner; re-locks the window. */
+  interactStop: () => ipcRenderer.invoke('ingame:interactStop'),
+
   /** Layout was reset from the control panel. */
   onLayoutReset: (callback) => {
     ipcRenderer.on('ingame:layout-reset', () => callback());

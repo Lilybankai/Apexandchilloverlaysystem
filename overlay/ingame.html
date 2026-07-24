@@ -33,6 +33,13 @@
     <button class="ig-btn" id="ig-done" type="button">Done</button>
   </div>
 
+  <!-- Interact-mode banner: shown when the layer is made clickable (F7). -->
+  <div class="ig-interact-hint" id="ig-interact-hint" hidden>
+    <span class="ig-toolbar__brand"></span>
+    <span class="ig-toolbar__text">Overlay interactive — click widgets to use them</span>
+    <button class="ig-btn" id="ig-interact-done" type="button">Done (F7)</button>
+  </div>
+
   <!-- Shared widget shells + injector (synchronous so the deferred runtime
        finds the sections at boot, same pattern as widget.html). -->
   <script src="js/shells.js"></script>
@@ -74,6 +81,9 @@
   <script src="js/widgets/damage.js" defer></script>
   <script src="js/widgets/radar.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
+  <!-- Fuel Planner: reference-data module must load before its widget. -->
+  <script src="js/data/racedata.js" defer></script>
+  <script src="js/widgets/fuelplan.js" defer></script>
   <!-- Layout + edit-mode manager (after the runtime; operates on wrappers). -->
   <script src="js/ingame.js" defer></script>
 </body>

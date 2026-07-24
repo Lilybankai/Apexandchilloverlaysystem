@@ -125,3 +125,28 @@ body.ig-editing .ig-item__handle {
 .ig-btn:hover {
   filter: brightness(1.15);
 }
+
+/* --------------------------- interact-mode chrome ---------------------- */
+/* Banner sits bottom-centre so it never clashes with the edit toolbar (top). */
+.ig-interact-hint {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #0c0e18;
+  border: 1px solid #313850;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  z-index: 10;
+  font-family: var(--font-ui);
+}
+/* A faint live-outline so it's clear which panels take clicks — deliberately
+   softer than edit mode's dashed move-outline so the two modes read apart. */
+body.ig-interact .ig-item {
+  outline: 1px solid rgba(38, 187, 244, 0.35);
+  outline-offset: 3px;
+}

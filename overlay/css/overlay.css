@@ -52,6 +52,9 @@
 /* Spotter radar — a narrow spatial strip, left edge mid-height, clear of the
    standings tower above and the vertical-inputs widget below. */
 #widget-radar     { top: 264px;  left: 24px;  width: 188px; }
+/* Fuel Planner — a taller widget (plan + stint timer + setup fields); left
+   column below the radar, clear of the standings tower. */
+#widget-fuelplan  { top: 470px;  left: 24px;  width: 340px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
@@ -679,6 +682,301 @@
 .fuel__stat-value[data-state="ok"] { color: var(--pos-gain); }
 .fuel__stat-value[data-state="marginal"] { color: var(--warn); }
 .fuel__stat-value[data-state="short"] { color: var(--pos-loss); }
+
+/* =========================================================================
+ * FUEL PLANNER WIDGET (left) — pre-race plan + VE stint timer + ratio control.
+ * ========================================================================= */
+.fuelplan__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.fuelplan__grid--3 { grid-template-columns: 1fr 1fr 1fr; }
+.fuelplan__stat {
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  padding: 5px 6px;
+}
+.fuelplan__stat-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fuelplan__stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  margin-top: 1px;
+}
+.fuelplan__stat-value[data-state="ok"] { color: var(--pos-gain); }
+.fuelplan__stat-value[data-state="marginal"] { color: var(--warn); }
+.fuelplan__stat-value[data-state="short"] { color: var(--pos-loss); }
+
+.fuelplan__sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fuelplan__breakdown {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Live stint timer ---------------------------------------------------- */
+.fuelplan__stint {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.fuelplan__stint-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.fuelplan__stint-mode {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.fuelplan__stint-mode[data-mode="energy"] { color: var(--ac-cyan); }
+.fuelplan__stint-big {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  color: var(--text-primary);
+}
+.fuelplan__bar { height: 7px; margin-bottom: 6px; }
+
+.fuelplan__margin {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.fuelplan__margin[data-state="ok"] { color: var(--pos-gain); }
+.fuelplan__margin[data-state="marginal"] { color: var(--warn); }
+.fuelplan__margin[data-state="short"] { color: var(--pos-loss); }
+
+/* --- Strategy hero: fuel to load + stop count ---------------------------- */
+.fuelplan__hero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fuelplan__load {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.fuelplan__load-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.fuelplan__load-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+.fuelplan__stops {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.fuelplan__stops[data-stops="0"] { color: var(--pos-gain); }
+.fuelplan__stops[data-stops="n"] { color: var(--warn); }
+
+/* --- Stint plan table ---------------------------------------------------- */
+.fuelplan__stints {
+  margin: 6px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fuelplan__stint-row {
+  display: grid;
+  grid-template-columns: 24px 60px 1fr 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+/* The stint the driver is currently in. */
+.fuelplan__stint-row[data-current="true"] {
+  background: var(--bg-panel-3);
+  box-shadow: inset 2px 0 0 var(--ac-cyan);
+}
+.fuelplan__st-n {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.fuelplan__st-laps { color: var(--text-secondary); }
+.fuelplan__st-cell { color: var(--text-primary); text-align: right; }
+.fuelplan__st-act {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+  text-align: right;
+  white-space: nowrap;
+}
+.fuelplan__st-act[data-fin="true"] { color: var(--pos-gain); }
+
+/* --- Live strip (remaining + predicted pit + save target) ---------------- */
+.fuelplan__live {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* --- Fuel-ratio control -------------------------------------------------- */
+.fuelplan__ratio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.fuelplan__ratio-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fuelplan__ratio-val {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--ac-cyan);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fuelplan__ratio-val[data-busy="true"] { opacity: 0.5; }
+.fuelplan__ratio-val[data-error="true"] { color: var(--pos-loss); }
+.fuelplan__ratio-ctrls { display: flex; gap: 4px; }
+.fuelplan__step {
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-panel-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.fuelplan__step:hover:not(:disabled) { background: var(--border-strong); }
+.fuelplan__step:disabled { opacity: 0.3; cursor: default; }
+
+/* --- Setup / inputs (collapsible) --------------------------------------- */
+.fuelplan__setup {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.fuelplan__setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fuelplan__setup-toggle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.fuelplan__setup-toggle::before { content: "▸ "; color: var(--text-muted); }
+.fuelplan__setup-toggle[data-open="true"]::before { content: "▾ "; }
+.fuelplan__auto {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fuelplan__setup[data-open="false"] .fuelplan__setup-body { display: none; }
+.fuelplan__setup-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 8px;
+  margin-top: 6px;
+}
+.fuelplan__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fuelplan__field-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fuelplan__select,
+.fuelplan__num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 3px 5px;
+  width: 100%;
+}
+.fuelplan__select { min-width: 0; }
+.fuelplan__num { -moz-appearance: textfield; }
 
 /* =========================================================================
  * TYRES WIDGET (bottom-right) — 4-corner temps.

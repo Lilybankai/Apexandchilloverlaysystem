@@ -33,6 +33,9 @@
       pacedelta: { x: Math.round(vw / 2 - 170), y: 280, w: 340 },
       relative: { x: vw - 424, y: 24, w: 400 },
       fuel: { x: vw - 424, y: 250, w: 400 },
+      // Wider than the readout widgets — it carries the setup fields. Left edge,
+      // clear of the standings tower, so its inputs are reachable in edit mode.
+      fuelplan: { x: 24, y: 300, w: 340 },
       tyres: { x: vw - 324, y: vh - 260, w: 300 },
       pedals: { x: Math.round(vw / 2 - 180), y: vh - 220, w: 360 },
       // Clear of `pedals` on purpose: the two are alternates and get compared
@@ -125,6 +128,26 @@
     }
   });
 
+  /* ------------------------------ interacting ---------------------------- */
+  // Interact mode makes the whole layer clickable (main sets the window mouse +
+  // focus state). Unlike edit mode there is no drag: onPointerDown bails when
+  // `editing` is false, so clicks fall through to each widget's own controls.
+
+  var interactBanner = document.getElementById("ig-interact-hint");
+
+  function setInteracting(on) {
+    document.body.classList.toggle("ig-interact", !!on);
+    if (interactBanner) interactBanner.hidden = !on;
+  }
+
+  var interactDone = document.getElementById("ig-interact-done");
+  if (interactDone) {
+    interactDone.addEventListener("click", function () {
+      if (bridge) bridge.interactStop(); // main re-locks + echoes onInteract(false)
+      else setInteracting(false);
+    });
+  }
+
   document.getElementById("ig-reset").addEventListener("click", function () {
     resetLayout();
     if (bridge) bridge.layoutReset();
@@ -192,6 +215,11 @@
     bridge.onEdit(function (on) {
       setEditing(on);
     });
+    if (bridge.onInteract) {
+      bridge.onInteract(function (on) {
+        setInteracting(on);
+      });
+    }
     bridge.onLayoutReset(function () {
       resetLayout();
     });

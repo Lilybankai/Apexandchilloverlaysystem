@@ -50,6 +50,15 @@ const OVERLAY_CATALOG = [
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
   { id: 'weather', label: 'Weather', description: 'Current conditions + forecast' },
   { id: 'fuel', label: 'Fuel Calculator', description: 'Per-lap use, laps left, pit window' },
+  // Interactive planner + fuel-ratio control: like the MFD it has clickable
+  // inputs, so it defaults out of the locked, click-through in-game layer and
+  // belongs in a browser tab / OBS source where the setup fields work.
+  {
+    id: 'fuelplan',
+    label: 'Fuel Planner',
+    description: 'Pre-race fuel/VE plan, live stint timer, fuel-ratio control (LMU only)',
+    ingameDefault: false,
+  },
   { id: 'tyres', label: 'Tyre Temps', description: 'Four-corner temperatures' },
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
@@ -100,6 +109,10 @@ function defaultSettings() {
     // Global hotkey that toggles the in-game overlay (Show in game). An Electron
     // accelerator string; '' means unbound. Rebindable from the control panel.
     ingameToggleShortcut: 'F8',
+    // Global hotkey for INTERACT mode: makes the whole in-game layer clickable +
+    // focusable so its widgets (Fuel Planner, MFD, etc.) can be operated over the
+    // game, then handed back to the sim. '' means unbound.
+    ingameInteractShortcut: 'F7',
     // Rotating sponsor logos under the standings tower. Images are copied into
     // <userData>/sponsors/ and served by our own server at /sponsors/ — see
     // `sponsorDir` in the server config for why they live outside overlay/.
@@ -201,6 +214,10 @@ function loadSettings() {
     ingameToggleShortcut: normalizeShortcut(
       stored.ingameToggleShortcut,
       defaults.ingameToggleShortcut,
+    ),
+    ingameInteractShortcut: normalizeShortcut(
+      stored.ingameInteractShortcut,
+      defaults.ingameInteractShortcut,
     ),
     sponsorsEnabled:
       typeof stored.sponsorsEnabled === 'boolean'
@@ -441,14 +458,18 @@ function toggleIngame() {
  */
 function applyToggleShortcut(settings) {
   globalShortcut.unregisterAll();
-  const accel = (settings || loadSettings()).ingameToggleShortcut;
-  if (!accel) return;
-  try {
-    const ok = globalShortcut.register(accel, toggleIngame);
-    if (!ok) console.warn(`[app] could not register hotkey "${accel}" (in use?)`);
-  } catch (err) {
-    console.warn(`[app] invalid hotkey "${accel}": ${err.message}`);
-  }
+  const s = settings || loadSettings();
+  const reg = (accel, fn, label) => {
+    if (!accel) return;
+    try {
+      const ok = globalShortcut.register(accel, fn);
+      if (!ok) console.warn(`[app] could not register ${label} hotkey "${accel}" (in use?)`);
+    } catch (err) {
+      console.warn(`[app] invalid ${label} hotkey "${accel}": ${err.message}`);
+    }
+  };
+  reg(s.ingameToggleShortcut, toggleIngame, 'show/hide');
+  reg(s.ingameInteractShortcut, toggleIngameInteract, 'interact');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -501,6 +522,7 @@ function overlaysForUi() {
 
 let overlayWin = null;
 let ingameEditing = false;
+let ingameInteractive = false;
 
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
@@ -560,33 +582,77 @@ function syncOverlayWindow() {
   });
   // 'screen-saver' level floats above borderless-fullscreen game windows.
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
-  overlayWin.setIgnoreMouseEvents(true);
+  applyIngameMouse(); // click-through unless edit/interact is already on
   overlayWin.ingameUrl = url;
   void overlayWin.loadURL(url);
   overlayWin.on('closed', () => {
     overlayWin = null;
+    ingameInteractive = false;
     if (ingameEditing) setIngameEdit(false);
   });
 }
 
 function destroyOverlayWindow() {
   if (ingameEditing) setIngameEdit(false);
+  ingameInteractive = false;
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;
+}
+
+/**
+ * Derives the window's mouse/focus state from the edit + interact flags. The
+ * layer captures the mouse (and becomes focusable, so text fields and dropdowns
+ * work) whenever either mode is active; otherwise it is fully click-through and
+ * non-focusable so the game keeps all input.
+ */
+function applyIngameMouse() {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const active = ingameEditing || ingameInteractive;
+  overlayWin.setIgnoreMouseEvents(!active);
+  try {
+    overlayWin.setFocusable(active);
+  } catch (e) {
+    /* setFocusable unsupported here — mouse capture still works */
+  }
 }
 
 /** Locks/unlocks the layer for on-screen editing and tells both windows. */
 function setIngameEdit(editing) {
   ingameEditing = !!editing;
   if (overlayWin && !overlayWin.isDestroyed()) {
-    if (ingameEditing) {
-      overlayWin.setIgnoreMouseEvents(false);
-    } else {
-      overlayWin.setIgnoreMouseEvents(true);
-    }
+    applyIngameMouse();
     overlayWin.webContents.send('ingame:edit', ingameEditing);
   }
   pushStatus();
+}
+
+/**
+ * Interact mode: make the whole in-game layer clickable + focusable so its
+ * widgets (Fuel Planner setup, fuel-ratio buttons, MFD…) can be operated over
+ * the running game, then handed back. Distinct from edit mode — no drag/resize,
+ * the widgets' own controls receive the clicks (see overlay/js/ingame.js).
+ */
+function setIngameInteract(on) {
+  ingameInteractive = !!on;
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    applyIngameMouse();
+    // Focus the layer so keyboard input (Race min, etc.) works; release on exit
+    // so the sim regains input.
+    try {
+      if (ingameInteractive) overlayWin.focus();
+      else overlayWin.blur();
+    } catch (e) {
+      /* best-effort focus handoff */
+    }
+    overlayWin.webContents.send('ingame:interact', ingameInteractive);
+  }
+  pushStatus();
+}
+
+/** Hotkey handler: ensure the layer exists, then flip interact mode. */
+function toggleIngameInteract() {
+  syncOverlayWindow();
+  setIngameInteract(!ingameInteractive);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -745,6 +811,16 @@ function registerIpc() {
   /** Called by the in-game page itself (Done button in the edit toolbar). */
   ipcMain.handle('ingame:editDone', () => {
     setIngameEdit(false);
+    return true;
+  });
+
+  /** Toggle/exit interact mode from a control-panel button or the page banner. */
+  ipcMain.handle('ingame:interactToggle', () => {
+    toggleIngameInteract();
+    return statusForUi();
+  });
+  ipcMain.handle('ingame:interactStop', () => {
+    setIngameInteract(false);
     return true;
   });
 
