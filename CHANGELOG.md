@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.3 — 2026-07-24
+
+### Changed
+
+- **Radar blips are now per-class car icons, ~3× larger.** Instead of one small
+  coloured dot for every car, each blip is a top-down silhouette drawn to its
+  class: a boxy GT car (GT3/GTE/GT4) with a cabin, and distinct Le Mans
+  prototype shapes for Hypercar (sharp nose + shark fin), LMP2 and LMP3 (smaller).
+  Class colour is unchanged.
+- **Backmarkers show as a Pac-Man-style ghost.** A car in a genuinely slower
+  class than you — traffic you're catching to lap — is drawn as a ghost (dome,
+  wavy skirt, eyes) in its class colour, so lappable traffic reads at a glance
+  and is instantly distinct from a same/faster-class car.
+- The faster-class marker is now a coloured **ring** around the car rather than a
+  filled disc, so the silhouette stays visible. Car numbers moved just below the
+  icon (outlined) to keep the shape clean.
+- Demo mode gained an **LMP3** class (now Hypercar / LMP2 / LMP3 / GT3) so all
+  four icons and the ghost marker are visible without a live session.
+
 ## 0.12.2 — 2026-07-24
 
 ### Changed

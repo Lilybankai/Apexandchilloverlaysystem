@@ -668,6 +668,13 @@ export interface RadarBlip {
    * {@link RelativeEntry.isFasterClass}.
    */
   isFasterClass?: boolean;
+  /**
+   * `true` when this car is a genuinely SLOWER category than the player's — a
+   * backmarker the player is catching. The mirror of {@link isFasterClass}, and
+   * likewise only set when both classes are recognised. The radar draws these as
+   * a distinct "ghost" marker so traffic to be lapped reads at a glance.
+   */
+  slowerClass?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

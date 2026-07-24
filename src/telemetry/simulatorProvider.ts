@@ -61,9 +61,10 @@ const BASE_LAP_SEC = 118;
  * GT3 on a ~2-minute lap.
  */
 const SIM_CLASSES: Array<{ name: string; count: number; lapOffsetSec: number }> = [
-  { name: 'HYPERCAR', count: 4, lapOffsetSec: 0 },
-  { name: 'LMP2', count: 4, lapOffsetSec: 5.5 },
-  { name: 'GT3', count: 4, lapOffsetSec: 11 },
+  { name: 'HYPERCAR', count: 3, lapOffsetSec: 0 },
+  { name: 'LMP2', count: 3, lapOffsetSec: 5.5 },
+  { name: 'LMP3', count: 3, lapOffsetSec: 8 },
+  { name: 'GT3', count: 3, lapOffsetSec: 11 },
 ];
 /**
  * Within-class pace spread, indexed by the car's position inside its class.
@@ -908,6 +909,7 @@ export class SimulatorProvider implements TelemetryProvider {
         const car: RadarCar = { slotId: c.slotId, pos: this.worldPosOf(c), carClass: c.carClass };
         if (c.carNumber) car.carNumber = c.carNumber;
         if (faster) car.isFasterClass = true;
+        else if (isFasterClass(player.carClass, c.carClass)) car.slowerClass = true;
         return car;
       });
     return buildRadar({ playerPos, ori, cars }) ?? undefined;

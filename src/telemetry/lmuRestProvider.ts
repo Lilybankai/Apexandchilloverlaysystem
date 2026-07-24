@@ -615,6 +615,7 @@ export class LmuRestProvider implements TelemetryProvider {
       if (carClass) car.carClass = carClass;
       if (c && c.carNumber) car.carNumber = c.carNumber;
       if (isFasterClass(carClass, playerClass)) car.isFasterClass = true;
+      else if (isFasterClass(playerClass, carClass)) car.slowerClass = true;
       return car;
     });
 

@@ -278,41 +278,187 @@
     }
   }
 
+  /**
+   * Half-length of a car icon, CSS px. ~3× the old 5 px dot, per request — big
+   * enough that the per-class silhouette reads at a glance.
+   */
+  var ICON = 12;
+
+  /** Shape family for a class label — GT box vs the prototype silhouettes. */
+  function carFamily(cls) {
+    var c = String(cls || "").toUpperCase();
+    if (/HYPER|LMH|LMDH|GTP/.test(c)) return "hyper";
+    if (/LMP2/.test(c)) return "lmp2";
+    if (/LMP3/.test(c)) return "lmp3";
+    if (/GT/.test(c)) return "gt"; // GT3, LMGT3, GTE, GT4
+    return "generic";
+  }
+
+  /** Rounded-rectangle sub-path (adds to the current path). */
+  function roundRect(x, y, w, h, r) {
+    gctx.moveTo(x + r, y);
+    gctx.arcTo(x + w, y, x + w, y + h, r);
+    gctx.arcTo(x + w, y + h, x, y + h, r);
+    gctx.arcTo(x, y + h, x, y, r);
+    gctx.arcTo(x, y, x + w, y, r);
+  }
+
+  /** A GT car from above: boxy body with a distinct cabin. Points up (−y). */
+  function drawGT(col) {
+    var hl = ICON, hw = ICON * 0.62;
+    gctx.fillStyle = col;
+    gctx.beginPath();
+    roundRect(-hw, -hl, hw * 2, hl * 2, hw * 0.55);
+    gctx.fill();
+    gctx.stroke();
+    // Cabin / greenhouse toward the rear — a darker inset.
+    gctx.fillStyle = "rgba(0,0,0,0.30)";
+    gctx.beginPath();
+    roundRect(-hw * 0.6, -hl * 0.1, hw * 1.2, hl * 0.9, hw * 0.35);
+    gctx.fill();
+  }
+
+  /** A Le Mans prototype from above: teardrop body + cockpit canopy. Points up. */
+  function drawProto(col, opts) {
+    var sc = opts.scale || 1;
+    var hl = ICON * sc;
+    var hw = ICON * 0.56 * sc * (opts.wide || 1);
+    gctx.fillStyle = col;
+    gctx.beginPath();
+    if (opts.sharp) {
+      gctx.moveTo(0, -hl); // sharp nose (hypercar)
+      gctx.lineTo(hw, -hl * 0.08);
+    } else {
+      gctx.moveTo(0, -hl);
+      gctx.quadraticCurveTo(hw, -hl, hw, -hl * 0.08); // rounded nose
+    }
+    gctx.lineTo(hw, hl * 0.78);
+    gctx.quadraticCurveTo(hw, hl, hw * 0.55, hl); // rear right
+    gctx.lineTo(-hw * 0.55, hl);
+    gctx.quadraticCurveTo(-hw, hl, -hw, hl * 0.78); // rear left
+    gctx.lineTo(-hw, -hl * 0.08);
+    if (opts.sharp) gctx.lineTo(0, -hl);
+    else gctx.quadraticCurveTo(-hw, -hl, 0, -hl);
+    gctx.closePath();
+    gctx.fill();
+    gctx.stroke();
+    // Cockpit canopy.
+    gctx.fillStyle = "rgba(0,0,0,0.32)";
+    gctx.beginPath();
+    gctx.ellipse(0, -hl * 0.02, hw * 0.44, hl * 0.34, 0, 0, Math.PI * 2);
+    gctx.fill();
+    // Shark fin down the spine (hypercar only).
+    if (opts.fin) {
+      gctx.beginPath();
+      gctx.moveTo(0, hl * 0.12);
+      gctx.lineTo(-1.3, hl * 0.92);
+      gctx.lineTo(1.3, hl * 0.92);
+      gctx.closePath();
+      gctx.fill();
+    }
+  }
+
+  /** A Pac-Man-style ghost for a backmarker (a slower-class car being lapped). */
+  function drawGhost(col) {
+    var w = ICON * 0.72, h = ICON * 1.7;
+    var top = -h / 2, bottom = h / 2, r = w;
+    gctx.fillStyle = col;
+    gctx.beginPath();
+    gctx.moveTo(-w, bottom);
+    gctx.lineTo(-w, top + r);
+    gctx.arc(0, top + r, r, Math.PI, 2 * Math.PI, false); // dome over the top
+    gctx.lineTo(w, bottom);
+    var feet = 3;
+    var fw = (2 * w) / feet;
+    for (var i = 0; i < feet; i++) {
+      var x0 = w - i * fw;
+      var x1 = x0 - fw;
+      gctx.quadraticCurveTo((x0 + x1) / 2, bottom - h * 0.15, x1, bottom);
+    }
+    gctx.closePath();
+    gctx.fill();
+    gctx.stroke();
+    // Eyes — the giveaway that it's a ghost.
+    var ey = top + r, ex = w * 0.42, er = w * 0.4;
+    gctx.fillStyle = "#ffffff";
+    gctx.beginPath();
+    gctx.arc(-ex, ey, er, 0, Math.PI * 2);
+    gctx.arc(ex, ey, er, 0, Math.PI * 2);
+    gctx.fill();
+    gctx.fillStyle = "#0a0c12";
+    var pr = er * 0.55;
+    gctx.beginPath();
+    gctx.arc(-ex, ey + er * 0.12, pr, 0, Math.PI * 2);
+    gctx.arc(ex, ey + er * 0.12, pr, 0, Math.PI * 2);
+    gctx.fill();
+  }
+
   function drawBlip(b) {
     // Longitudinal beyond the display range is dropped (the provider already
     // capped at 150 m); lateral beyond the strip clamps to the edge with a hint
     // so a car well off to the side still registers rather than vanishing.
     if (Math.abs(b.longitudinalM) > rangeM) return;
-    var pad = 8;
+    var pad = 10;
     var clampedLat = Math.max(-LATERAL_RANGE_M, Math.min(LATERAL_RANGE_M, b.lateralM));
     var xy = toXY(clampedLat, b.longitudinalM, pad);
     var col = classColor(b.carClass);
 
     gctx.save();
-    // Faster-class cars get a halo so a Hypercar bearing down reads instantly.
+    gctx.translate(xy[0], xy[1]);
+
+    // Faster-class cars get a halo RING so a Hypercar bearing down reads
+    // instantly — a ring rather than a filled disc, so the silhouette shows.
     if (b.isFasterClass) {
-      gctx.globalAlpha = 0.35;
+      gctx.save();
+      gctx.globalAlpha = 0.22;
       gctx.fillStyle = col;
       gctx.beginPath();
-      gctx.arc(xy[0], xy[1], 8, 0, Math.PI * 2);
+      gctx.arc(0, 0, ICON * 1.5, 0, Math.PI * 2);
       gctx.fill();
-      gctx.globalAlpha = 1;
+      gctx.globalAlpha = 0.95;
+      gctx.strokeStyle = col;
+      gctx.lineWidth = 1.6;
+      gctx.beginPath();
+      gctx.arc(0, 0, ICON * 1.5, 0, Math.PI * 2);
+      gctx.stroke();
+      gctx.restore();
     }
-    gctx.fillStyle = col;
-    gctx.strokeStyle = "rgba(0,0,0,0.6)";
-    gctx.lineWidth = 1;
-    gctx.beginPath();
-    gctx.arc(xy[0], xy[1], 5, 0, Math.PI * 2);
-    gctx.fill();
-    gctx.stroke();
 
-    // Car number, when we have one and there's room.
+    gctx.strokeStyle = "rgba(0,0,0,0.6)";
+    gctx.lineWidth = 1.2;
+
+    if (b.slowerClass) {
+      // A backmarker to be lapped — draw it as a ghost, not a car.
+      drawGhost(col);
+      gctx.restore();
+      return;
+    }
+
+    var fam = carFamily(b.carClass);
+    if (fam === "gt") drawGT(col);
+    else if (fam === "hyper") drawProto(col, { sharp: true, fin: true, wide: 1.05 });
+    else if (fam === "lmp2") drawProto(col, { sharp: false, wide: 0.92 });
+    else if (fam === "lmp3") drawProto(col, { sharp: false, wide: 0.85, scale: 0.82 });
+    else {
+      gctx.fillStyle = col;
+      gctx.beginPath();
+      gctx.arc(0, 0, ICON * 0.7, 0, Math.PI * 2);
+      gctx.fill();
+      gctx.stroke();
+    }
+
+    // Car number below the icon, when we have one — kept off the silhouette so
+    // the shape stays readable.
     if (b.carNumber) {
-      gctx.fillStyle = "#0a0c12";
-      gctx.font = "bold 7px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      gctx.fillStyle = "#e6ebf5";
+      gctx.strokeStyle = "rgba(0,0,0,0.85)";
+      gctx.lineWidth = 2.5;
+      gctx.font = "bold 8px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
       gctx.textAlign = "center";
       gctx.textBaseline = "middle";
-      gctx.fillText(String(b.carNumber).slice(0, 3), xy[0], xy[1] + 0.5);
+      var ny = ICON + 7;
+      gctx.strokeText(String(b.carNumber).slice(0, 3), 0, ny);
+      gctx.fillText(String(b.carNumber).slice(0, 3), 0, ny);
     }
     gctx.restore();
   }

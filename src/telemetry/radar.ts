@@ -77,6 +77,8 @@ export interface RadarCar {
   carNumber?: string;
   /** `true` when this car is a genuinely faster category than the player's. */
   isFasterClass?: boolean;
+  /** `true` when this car is a genuinely slower category (a backmarker). */
+  slowerClass?: boolean;
 }
 
 /** Everything {@link buildRadar} needs for one frame. */
@@ -171,6 +173,7 @@ export function buildRadar(input: RadarInputs): RadarBlip[] | null {
     if (car.carClass) blip.carClass = car.carClass;
     if (car.carNumber) blip.carNumber = car.carNumber;
     if (car.isFasterClass) blip.isFasterClass = true;
+    if (car.slowerClass) blip.slowerClass = true;
     blips.push(blip);
   }
 
