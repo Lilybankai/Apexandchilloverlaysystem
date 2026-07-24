@@ -181,22 +181,24 @@ Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to 
 ### MFD widget
 
 A **read-only readout** of the in-game Multi-Function Display for the player's
-car: two clearly headed sections, **PIT STRATEGY** and **DRIVING AIDS**, with
-every row colour-coded by category — tyres, pressures, ducts, aero, fuel, brakes,
-traction, engine, hybrid — so related lines read as a group at a glance. It
-mirrors what you've set in-game; it does not change anything.
+car: a **PIT STRATEGY** section (colour-coded by category — tyres, pressures,
+ducts, aero, fuel, brakes — so related lines read as a group) and a **DRIVING
+AIDS** section showing **live brake bias**. It mirrors what you've set in-game;
+it does not change anything.
 
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
 | `?pit=off`    | Hide the pit-strategy section (fuel, energy, tyres, wing, pressures, ducts, repairs) |
-| `?aids=off`   | Hide the driving-aids section (brake bias, ABS/TC maps, engine, regen) |
+| `?aids=off`   | Hide the driving-aids section (live brake bias)                       |
 | `?opacity=0.4`| Panel opacity, same contract as the Motion/Damage widgets             |
 
-The MFD state rides along in the telemetry frame like every other widget (read
-from LMU's REST garage API and projected in `src/telemetry/mfdControl.ts`), and
-is overlaid even before a session's timing feed is live, so it works at the
-garage/setup screen. **LMU only** — it shows "No MFD data" out of a session or on
-rF2.
+Pit strategy is read from LMU's REST garage API and projected in
+`src/telemetry/mfdControl.ts`. **Brake bias is read live from shared memory**
+(`mRearBrakeBias`) and updates as the driver shifts the balance — the REST garage
+data only reports the frozen *setup* value, so it can't show live aids. The other
+aids (TC/ABS/engine maps) aren't shown at all: LMU exposes no live value for them
+anywhere, and a frozen setup number that never moves reads as broken. **LMU
+only** — the widget shows "No MFD data" out of a session or on rF2.
 
 ## Live telemetry sources
 

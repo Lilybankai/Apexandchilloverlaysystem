@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.6 — 2026-07-24
+
+### Fixed
+
+- **The MFD driving-aids readout now shows LIVE brake bias.** It used to read the
+  aids from LMU's REST garage data, which only reports the frozen **setup** value
+  — so brake bias, TC/ABS maps and the rest never moved when you adjusted them
+  in-race and looked broken. Verified with two live tests that LMU exposes **no**
+  live value for the TC/ABS/engine maps anywhere, so those rows are removed.
+  Brake bias — the one aid with a live value — is now read from **shared memory**
+  (`mRearBrakeBias`, offset 664, verified live on the player's own record) and
+  updates in real time as you shift the balance, in the sim's own `front:rear`
+  format. Added `scripts/probe-lmu-brakebias.js` for re-verifying the offset if
+  an LMU update moves it.
+
 ## 0.12.5 — 2026-07-24
 
 ### Changed

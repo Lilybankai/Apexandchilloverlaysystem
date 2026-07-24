@@ -49,27 +49,6 @@ export interface RawGarageVal {
   available?: boolean;
 }
 
-/**
- * The driving aids the widget surfaces, in display order, with the label shown
- * on the overlay. Only the on-the-fly race adjustments a driver actually reaches
- * for — deliberately NOT the full setup (springs, gears, toe…), which is a
- * garage-only concern and would bury the useful controls. Any key absent or
- * `available: false` on the current car is simply skipped.
- */
-const AID_KEYS: ReadonlyArray<{ key: string; label: string }> = [
-  { key: 'VM_BRAKE_BALANCE', label: 'Brake Bias' },
-  { key: 'VM_BRAKE_MIGRATION', label: 'Brake Migration' },
-  { key: 'VM_ANTILOCKBRAKESYSTEMMAP', label: 'ABS Map' },
-  { key: 'VM_TRACTIONCONTROLMAP', label: 'TC Map' },
-  { key: 'VM_TRACTIONCONTROLPOWERCUTMAP', label: 'TC Power Cut' },
-  { key: 'VM_TRACTIONCONTROLSLIPANGLEMAP', label: 'TC Slip' },
-  { key: 'VM_ENGINE_MIXTURE', label: 'Engine Mixture' },
-  { key: 'VM_ENGINE_BRAKEMAP', label: 'Engine Braking' },
-  { key: 'VM_ENGINE_BOOST', label: 'Engine Boost' },
-  { key: 'VM_REGEN_LEVEL', label: 'Regen Level' },
-  { key: 'VM_ELECTRIC_MOTOR_MAP', label: 'Motor Map' },
-];
-
 /** Only `VM_`-prefixed setup keys are legal write targets — never anything else. */
 const VM_KEY = /^VM_[A-Z0-9_]+$/;
 
@@ -107,35 +86,61 @@ export function projectPitMenu(raw: RawPitRow[] | null | undefined): MfdPitRow[]
   return rows;
 }
 
-/** Projects the curated `VM_*` aids out of the raw garage-data map. */
-export function projectAids(raw: Record<string, RawGarageVal> | null | undefined): MfdAid[] {
-  if (!raw || typeof raw !== 'object') return [];
-  const aids: MfdAid[] = [];
-  for (const { key, label } of AID_KEYS) {
-    const v = raw[key];
-    if (!v || v.available === false) continue;
-    if (typeof v.value !== 'number') continue;
-    const min = typeof v.minValue === 'number' ? v.minValue : 0;
-    const maxCount = typeof v.maxValue === 'number' ? v.maxValue : v.value + 1;
-    aids.push({
-      key,
-      label,
-      value: v.value,
-      minValue: min,
-      // Normalized to the highest LEGAL value (inclusive); see inclusiveMax().
-      maxValue: inclusiveMax(min, maxCount),
-      text: typeof v.stringValue === 'string' ? v.stringValue.trim() : String(v.value),
-    });
+/**
+ * The driving aids the widget shows — just **brake bias**, the one aid LMU
+ * exposes a LIVE value for (via shared memory). The other aids (TC/ABS/engine
+ * maps) are deliberately omitted: LMU only reports their frozen SETUP value over
+ * REST, which never moves when the driver adjusts them in-race and so reads as
+ * broken. See {@link module:telemetry/lmuLocalCar} `mRearBrakeBias`.
+ *
+ * @param garageRaw - Raw garage data, for the setup-value fallback.
+ * @param liveRearBias - Live rear brake-bias fraction (0..1) from shared memory,
+ *                       when available; the driver's on-the-fly value.
+ */
+export function projectAids(
+  garageRaw: Record<string, RawGarageVal> | null | undefined,
+  liveRearBias?: number,
+): MfdAid[] {
+  // Live value from shared memory wins — the whole point of the section.
+  if (typeof liveRearBias === 'number' && liveRearBias > 0 && liveRearBias < 1) {
+    const rear = Math.round(liveRearBias * 1000) / 10; // %, one decimal
+    const front = Math.round((1 - liveRearBias) * 1000) / 10;
+    return [
+      {
+        key: 'BRAKE_BIAS',
+        label: 'Brake Bias',
+        value: Math.round(liveRearBias * 100),
+        minValue: 0,
+        maxValue: 100,
+        text: `${front.toFixed(1)}:${rear.toFixed(1)}`,
+      },
+    ];
   }
-  return aids;
+  // Fallback: the frozen setup value from the garage (better than nothing, but
+  // it won't move — shown only when there is no live value, e.g. spectating).
+  const v = garageRaw ? garageRaw['VM_BRAKE_BALANCE'] : undefined;
+  if (v && typeof v.value === 'number' && typeof v.stringValue === 'string') {
+    return [
+      {
+        key: 'BRAKE_BIAS',
+        label: 'Brake Bias',
+        value: v.value,
+        minValue: 0,
+        maxValue: typeof v.maxValue === 'number' ? inclusiveMax(0, v.maxValue) : v.value,
+        text: v.stringValue.trim(),
+      },
+    ];
+  }
+  return [];
 }
 
-/** Builds the frame's {@link MfdState} from both raw payloads. */
+/** Builds the frame's {@link MfdState} from the raw payloads + live brake bias. */
 export function buildMfdState(
   pitRaw: RawPitRow[] | null | undefined,
   garageRaw: Record<string, RawGarageVal> | null | undefined,
+  liveRearBias?: number,
 ): MfdState {
-  return { pit: projectPitMenu(pitRaw), aids: projectAids(garageRaw) };
+  return { pit: projectPitMenu(pitRaw), aids: projectAids(garageRaw, liveRearBias) };
 }
 
 /* ----------------------------- writes (control) --------------------------- */

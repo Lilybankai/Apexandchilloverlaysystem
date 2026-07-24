@@ -547,7 +547,9 @@ export class LmuRestProvider implements TelemetryProvider {
       deltaSec = this.lapDelta.update(focus, trackLen);
     }
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas);
-    const mfd = this.buildMfd();
+    // Live rear brake bias from shared memory (the driven car only); projectAids
+    // uses it as the one genuinely-live aid, falling back to the setup value.
+    const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined);
     // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
     // it reads that car's world position + orientation from shared memory, which
     // exists only for the car driven on this PC. Omitted when spectating.
@@ -575,10 +577,10 @@ export class LmuRestProvider implements TelemetryProvider {
    * staleness window as tyre wear / damage so the widget never drives the MFD
    * from a menu snapshot left over from a previous session.
    */
-  private buildMfd(): MfdState | undefined {
+  private buildMfd(liveRearBias?: number): MfdState | undefined {
     if (Date.now() - this.lastMfdOkAt >= GARAGE_STALE_AFTER_MS) return undefined;
     if (!this.pitMenuRaw && !this.garageDataRaw) return undefined;
-    return buildMfdState(this.pitMenuRaw, this.garageDataRaw);
+    return buildMfdState(this.pitMenuRaw, this.garageDataRaw, liveRearBias);
   }
 
   /**

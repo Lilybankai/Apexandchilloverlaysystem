@@ -106,6 +106,14 @@ const VT = {
   mFuel: 524,
   mEngineMaxRPM: 532,
   mFuelCapacity: 608,
+  // Live rear brake bias (fraction, 0..1 = share of braking on the rear) — the
+  // value the driver adjusts on the fly, and the one thing the REST garage API
+  // only ever reports at its frozen SETUP value. This is the ISI-standard offset,
+  // verified live on LMU v1.3000 FOR THE PLAYER'S OWN RECORD: it tracked an
+  // on-track front sweep (0.478 → 0.43). (A garage-menu preview value at 696
+  // moves in the pits but reads 0 on track and is not this.) Like every offset
+  // here it is version-sensitive and may shift on an LMU update.
+  mRearBrakeBias: 664,
   // mWheels[4] (FL, FR, RL, RR). Each LMU rF2Wheel record is 260 bytes; its
   // mTemperature[3] band array (inner/centre/outer, in KELVIN) sits at the
   // wheel base +0/+8/+16. Verified live vs SimHub — all 12 bands matched to
@@ -175,6 +183,13 @@ export interface LocalCarPhysics {
   rpm: number;
   maxRpm: number;
   speedKph: number;
+  /**
+   * Live rear brake-bias fraction `0..1` (share of braking on the rear) — the
+   * value the driver shifts on the fly. `UNKNOWN_VALUE` when it reads outside a
+   * plausible range. Read from shared memory because the REST garage API only
+   * reports the frozen setup value; see `VT.mRearBrakeBias`.
+   */
+  rearBrakeBias: number;
   fuelLiters: number;
   capacityLiters: number;
   /**
@@ -711,6 +726,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     rpm: Math.round(rpm),
     maxRpm: Math.round(rec.readDoubleLE(VT.mEngineMaxRPM)) || 8000,
     speedKph: Math.round(Math.abs(fwdVel) * 3.6),
+    rearBrakeBias: plausibleFraction(rec.readDoubleLE(VT.mRearBrakeBias)),
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
     tyreTempsC,
@@ -764,6 +780,11 @@ function clamp(v: number, min: number, max: number): number {
 }
 function clamp01(v: number): number {
   return clamp(v, 0, 1);
+}
+/** A fraction that must genuinely sit in `(0,1)`, else the unknown sentinel — so
+ *  a torn read or a wrong offset can't publish a nonsense brake bias. */
+function plausibleFraction(v: number): number {
+  return Number.isFinite(v) && v > 0 && v < 1 ? Math.round(v * 1000) / 1000 : UNKNOWN_VALUE;
 }
 function clampInt(v: number, min: number, max: number): number {
   return Math.round(clamp(v, min, max));
