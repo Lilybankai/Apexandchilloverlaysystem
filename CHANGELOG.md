@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.8 — 2026-07-24
+
+### Changed
+
+- **Radar proximity-reveal radius widened from 6 m to 12 m** — icons now fade in
+  a little earlier as a car approaches. Still overridable with `?reveal=<metres>`.
+
 ## 0.12.7 — 2026-07-24
 
 ### Changed

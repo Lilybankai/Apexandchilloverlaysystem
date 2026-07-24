@@ -77,7 +77,7 @@
    * `FADE_RATE` is the per-frame easing toward the target (radar runs every
    * frame, so ~0.15 gives a ~0.2–0.4 s fade).
    */
-  var REVEAL_RADIUS_M = 6;
+  var REVEAL_RADIUS_M = 12;
   var FADE_RATE = 0.15;
   var revealAlpha = 0;
 
