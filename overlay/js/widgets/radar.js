@@ -427,8 +427,11 @@
     gctx.strokeStyle = "rgba(0,0,0,0.6)";
     gctx.lineWidth = 1.2;
 
-    if (b.slowerClass) {
-      // A backmarker to be lapped — draw it as a ghost, not a car.
+    // A backmarker — a car you're lapping — draws as a ghost, not a car: either a
+    // genuinely slower class, or any car a lap or more down. A faster-class car is
+    // never ghosted (its ring warns you), even if it's temporarily a lap behind.
+    var backmarker = !b.isFasterClass && (b.slowerClass || (b.lapsDown || 0) >= 1);
+    if (backmarker) {
       drawGhost(col);
       gctx.restore();
       return;

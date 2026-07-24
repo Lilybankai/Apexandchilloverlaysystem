@@ -675,6 +675,13 @@ export interface RadarBlip {
    * a distinct "ghost" marker so traffic to be lapped reads at a glance.
    */
   slowerClass?: boolean;
+  /**
+   * How many laps this car is BEHIND the player (player laps − car laps), when
+   * ≥ 1 — i.e. a car the player has put a lap on, whatever its class. The radar
+   * ghosts these too, so a same-class car a lap down reads as lappable traffic.
+   * Omitted when the car is on the player's lap (or ahead).
+   */
+  lapsDown?: number;
 }
 
 /* -------------------------------------------------------------------------- */

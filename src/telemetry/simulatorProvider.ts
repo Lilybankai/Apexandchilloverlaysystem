@@ -910,6 +910,8 @@ export class SimulatorProvider implements TelemetryProvider {
         if (c.carNumber) car.carNumber = c.carNumber;
         if (faster) car.isFasterClass = true;
         else if (isFasterClass(player.carClass, c.carClass)) car.slowerClass = true;
+        const down = player.lapsCompleted - c.lapsCompleted;
+        if (down >= 1) car.lapsDown = down;
         return car;
       });
     return buildRadar({ playerPos, ori, cars }) ?? undefined;

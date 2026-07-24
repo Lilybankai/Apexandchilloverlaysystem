@@ -607,6 +607,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const byId = new Map<number, RestStanding>();
     for (const c of cars) byId.set(c.slotID, c);
     const playerClass = normalizeClass(playerCar.carClass);
+    const playerLaps = playerCar.lapsCompleted | 0;
 
     const radarCars: RadarCar[] = field.cars.map(({ slotId, pos }) => {
       const c = byId.get(slotId);
@@ -616,6 +617,12 @@ export class LmuRestProvider implements TelemetryProvider {
       if (c && c.carNumber) car.carNumber = c.carNumber;
       if (isFasterClass(carClass, playerClass)) car.isFasterClass = true;
       else if (isFasterClass(playerClass, carClass)) car.slowerClass = true;
+      // Laps the player has put on this car — a car a lap down is lappable
+      // traffic whatever its class, so the widget ghosts it too.
+      if (c) {
+        const down = playerLaps - (c.lapsCompleted | 0);
+        if (down >= 1) car.lapsDown = down;
+      }
       return car;
     });
 

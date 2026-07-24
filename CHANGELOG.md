@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.4 — 2026-07-24
+
+### Changed
+
+- **The radar now also ghosts same-class cars a lap down.** A car you've put a
+  lap on is lappable traffic whatever its class, so it draws as a Pac-Man ghost
+  too — not just genuinely slower classes. A faster-class car is never ghosted
+  (its ring still warns you) even if it's temporarily a lap behind. Adds a
+  `lapsDown` signal (player laps − car laps) through `RadarBlip` and both
+  providers.
+
 ## 0.12.3 — 2026-07-24
 
 ### Changed
