@@ -1276,22 +1276,35 @@
 .radar__canvas {
   display: block;
   width: 100%;
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
+  background: transparent;
 }
 
 /* --- Hover opacity control — same contract as the motion/damage widgets:
-   fade the CONTENTS (not the section) so the slider stays visible, and drop the
-   panel chrome below full opacity so the radar reads as a HUD over the track. */
+   fade the CONTENTS (not the section) so the slider stays visible. */
 #widget-radar .panel__header,
 #widget-radar .panel__body {
   opacity: var(--radar-op, 1);
 }
-#widget-radar[data-transparent="true"] {
+
+/* The radar is a pure HUD: totally transparent apart from the blips on the
+   canvas. The panel background, border and header are dropped so only the icons
+   composite over the game — in OBS and in the locked in-game layer alike. */
+#widget-radar {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+}
+#widget-radar .panel__header {
+  display: none;
+}
+/* …except in the in-game layout editor, where the panel border + header return
+   so the widget can be seen and positioned (the .ig-item outline marks it too). */
+body.ig-editing #widget-radar {
+  background: var(--bg-panel);
+  border-color: var(--border-soft);
+}
+body.ig-editing #widget-radar .panel__header {
+  display: flex;
 }
 .radar__opacity-anchor {
   position: relative;

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.5 — 2026-07-24
+
+### Changed
+
+- **The radar is now a pure HUD — totally transparent apart from the icons.** The
+  scope backdrop, distance gridlines, axes and the panel box/header are all gone,
+  so only the car blips and your own arrow composite over the game feed. In the
+  in-game **layout editor** the panel border and header return (plus the usual
+  dashed item outline) so the widget can still be found and positioned.
+- **Car icons are larger** (18 px half-length) so the per-class silhouettes and
+  ghosts read at a glance, and the player's own marker is a bigger, outlined
+  arrow that stays visible over any part of the track.
+
 ## 0.12.4 — 2026-07-24
 
 ### Changed

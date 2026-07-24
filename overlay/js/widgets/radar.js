@@ -191,56 +191,23 @@
     return [x, y];
   }
 
-  function drawScope() {
-    var cx = cssW / 2, cy = cssH / 2;
-    var pad = 6;
-
-    // Backdrop.
-    gctx.save();
-    gctx.fillStyle = "rgba(10,12,18,0.55)";
-    gctx.fillRect(0, 0, cssW, cssH);
-
-    // Longitudinal distance gridlines (dashed) at nice round metres, labelled.
-    gctx.strokeStyle = "#aeb6c8";
-    gctx.setLineDash([2, 3]);
-    gctx.lineWidth = 1;
-    gctx.font = "8px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    gctx.textBaseline = "middle";
-    var step = rangeM <= 40 ? 10 : rangeM <= 80 ? 20 : 40;
-    for (var d = step; d <= rangeM; d += step) {
-      var frac = d / rangeM;
-      var dy = (cy - pad) * frac;
-      gctx.globalAlpha = 0.16;
-      gctx.beginPath();
-      gctx.moveTo(pad, cy - dy); gctx.lineTo(cssW - pad, cy - dy);
-      gctx.moveTo(pad, cy + dy); gctx.lineTo(cssW - pad, cy + dy);
-      gctx.stroke();
-      gctx.globalAlpha = 0.4;
-      gctx.fillStyle = "#aeb6c8";
-      gctx.fillText(d + "", pad + 1, cy - dy - 5);
-    }
-    gctx.setLineDash([]);
-
-    // Centre axes.
-    gctx.globalAlpha = 0.22;
-    gctx.beginPath();
-    gctx.moveTo(cx, pad); gctx.lineTo(cx, cssH - pad);
-    gctx.moveTo(pad, cy); gctx.lineTo(cssW - pad, cy);
-    gctx.stroke();
-    gctx.restore();
-  }
-
-  /** The player's own car, a fixed chevron at the centre pointing forward. */
+  /** The player's own car: a fixed arrow at the centre pointing forward,
+   *  outlined so it stays visible over any part of the game feed. */
   function drawEgo() {
     var cx = cssW / 2, cy = cssH / 2;
+    var s = ICON * 0.6;
     gctx.save();
-    gctx.fillStyle = "#dbe4ff";
+    gctx.fillStyle = "#e9eefb";
+    gctx.strokeStyle = "rgba(0,0,0,0.75)";
+    gctx.lineWidth = 1.6;
     gctx.beginPath();
-    gctx.moveTo(cx, cy - 6);
-    gctx.lineTo(cx - 5, cy + 5);
-    gctx.lineTo(cx + 5, cy + 5);
+    gctx.moveTo(cx, cy - s); // nose
+    gctx.lineTo(cx - s * 0.78, cy + s * 0.72); // rear left
+    gctx.lineTo(cx, cy + s * 0.32); // tail notch
+    gctx.lineTo(cx + s * 0.78, cy + s * 0.72); // rear right
     gctx.closePath();
     gctx.fill();
+    gctx.stroke();
     gctx.restore();
   }
 
@@ -279,10 +246,11 @@
   }
 
   /**
-   * Half-length of a car icon, CSS px. ~3× the old 5 px dot, per request — big
-   * enough that the per-class silhouette reads at a glance.
+   * Half-length of a car icon, CSS px. Deliberately large — the blips are the
+   * whole point of the HUD (the scope backdrop is gone), so the per-class
+   * silhouette needs to read at a glance.
    */
-  var ICON = 12;
+  var ICON = 18;
 
   /** Shape family for a class label — GT box vs the prototype silhouettes. */
   function carFamily(cls) {
@@ -481,7 +449,6 @@
 
     var blips = frame.radar;
     gctx.clearRect(0, 0, cssW, cssH);
-    drawScope();
 
     if (!blips) {
       // Omitted entirely = no world position for the driven car (spectating, or
