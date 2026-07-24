@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.2 — 2026-07-24
+
+### Changed
+
+- **The MFD widget is now a clean read-only display.** Removed the interactive
+  ◀ ▶ / − + buttons — the MFD mirrors what you've set in-game rather than trying
+  to change it. The two sections (**PIT STRATEGY**, **DRIVING AIDS**) now have
+  prominent gradient-underlined headers, and every row is **colour-coded by
+  category** — tyres, pressures, ducts, aero, fuel, brakes, traction, engine,
+  hybrid — with a little air between colour blocks so related lines read as a
+  group. Same-category rows share a coloured left stripe and a faint tint.
+
+  The `?readonly` param is gone (the widget is always read-only now); `?pit`,
+  `?aids` and `?opacity` are unchanged. The server-side control endpoints remain
+  but are no longer used by the widget.
+
 ## 0.12.1 — 2026-07-24
 
 ### Fixed

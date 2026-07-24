@@ -90,8 +90,8 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
-- **MFD control** — read *and set* the in-game pit menu and live driving aids
-  from the overlay, over LMU's REST API (no keystrokes). See below; LMU only
+- **MFD** — a read-only, colour-grouped readout of the in-game pit menu and
+  driving aids. See below; LMU only
 
 ### Motion widget modes
 
@@ -178,49 +178,25 @@ Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to 
 > car. See `src/telemetry/damage.ts` and `scripts/probe-lmu-damage.js`.
 
 
-### MFD control widget
+### MFD widget
 
-The one widget that **writes back to the game**. It mirrors the in-game
-Multi-Function Display and lets you set your **pit strategy** from the overlay,
-closing the loop through Le Mans Ultimate's own REST API — no keystrokes, no game
-focus needed.
+A **read-only readout** of the in-game Multi-Function Display for the player's
+car: two clearly headed sections, **PIT STRATEGY** and **DRIVING AIDS**, with
+every row colour-coded by category — tyres, pressures, ducts, aero, fuel, brakes,
+traction, engine, hybrid — so related lines read as a group at a glance. It
+mirrors what you've set in-game; it does not change anything.
 
-| Param         | Section         | Shows / controls                                        |
-| ------------- | --------------- | ------------------------------------------------------- |
-| `?pit=off`    | **Pit strategy**| Fuel ratio, virtual energy, tyres + corners, wing, brake ducts, repairs — each a ◀ ▶ that cycles the row **live** |
-| `?aids=off`   | **Driving aids**| Brake bias, ABS/TC map, engine mixture, regen — readout + **setup-level** ± (see the note below) |
-| `?readonly=on`| —               | Hide the buttons: a pure live readout |
-| `?opacity=0.4`| —               | Panel opacity, same contract as the Motion/Damage widgets |
+| Param         | Shows                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| `?pit=off`    | Hide the pit-strategy section (fuel, energy, tyres, wing, pressures, ducts, repairs) |
+| `?aids=off`   | Hide the driving-aids section (brake bias, ABS/TC maps, engine, regen) |
+| `?opacity=0.4`| Panel opacity, same contract as the Motion/Damage widgets             |
 
-Both sections default **on**. Every write is clamped to the sim's own declared
-bounds, so a control can never post an out-of-range setting, and the readout
-confirms each change in a round-trip rather than waiting for the next poll.
-
-**How it works.** The overlay POSTs an *intent* to the server, which performs the
-write against LMU: `POST /rest/garage/PitMenu/loadPitMenu` for the pit menu,
-`POST /rest/garage/<VM_KEY>` for an aid. The current state rides along in the
-telemetry frame like every other widget. See `src/telemetry/mfdControl.ts` and
-`src/server/mfdRoutes.ts`.
-
-> **Clicking needs a real browser.** An OBS Browser Source is not interactive,
-> so to *drive* the MFD, open `widget.html?w=mfd` in a normal browser tab on the
-> sim PC. Added as an OBS source it still works as a live readout. **LMU only** —
-> the control endpoints are LMU's; the widget shows "No MFD data" out of a
-> session or on rF2.
->
-> **Pit strategy is live; driving aids are setup-level, not live-in-race.** The
-> `VM_*` aid writes change the car's **setup** (starting brake bias / maps), which
-> LMU applies when you go on track — they are *not* a live mid-race adjustment,
-> and LMU's own garage screen may not repaint them until you touch that control
-> in-game. **Live in-race aid changes cannot be driven from the overlay**: LMU
-> ignores software-injected keystrokes (it reads controls via DirectInput, which
-> filters non-hardware input — verified with a standard key at confirmed focus),
-> so no keystroke tool (this one, AutoHotkey, a Stream Deck hotkey) can move them.
-> The planned route for live aids is a **virtual HID controller** (vJoy) that LMU
-> trusts as real hardware. The keystroke scaffolding
-> (`src/server/keySender.ts`, `scripts/send-key.js`, `POST /api/mfd/aidkey`) is
-> retained for that work but is **not wired to the widget**. The REST surface was
-> mapped with `scripts/probe-lmu-mfd.js`.
+The MFD state rides along in the telemetry frame like every other widget (read
+from LMU's REST garage API and projected in `src/telemetry/mfdControl.ts`), and
+is overlaid even before a session's timing feed is live, so it works at the
+garage/setup screen. **LMU only** — it shows "No MFD data" out of a session or on
+rF2.
 
 ## Live telemetry sources
 

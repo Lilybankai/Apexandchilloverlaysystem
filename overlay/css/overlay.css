@@ -1341,27 +1341,32 @@
 }
 
 /* =========================================================================
- * MFD — pit menu + driving-aid control (widgets/mfd.js). The only widget that
- * writes back: rows carry ◀ ▶ / − + buttons that POST to the server.
+ * MFD — read-only pit-menu + driving-aid display (widgets/mfd.js). Two headed
+ * sections; each row is colour-coded by category (tyres, pressures, ducts,
+ * aero, fuel…) so related lines read as a group.
  * ========================================================================= */
 .mfd__wrap {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
+/* Prominent section headers with a branded gradient underline. */
 .mfd__group-title {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 4px;
+  color: var(--text-primary);
+  padding-bottom: 5px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid transparent;
+  border-image: var(--ac-gradient) 1;
 }
 .mfd__rows {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 /* Empty marker shows only when a group has no rows (out of session / not
    applicable to this car); the rows container is emptied in that state. */
@@ -1379,9 +1384,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 24px;
+  gap: 10px;
+  min-height: 22px;
+  padding: 2px 8px 2px 9px;
+  border-left: 3px solid var(--mfd-cat, var(--border-strong));
+  /* A whisper of the category colour tints the whole row so groups read as
+     blocks, not just a stripe. color-mix is supported by OBS's Chromium. */
+  background: color-mix(in srgb, var(--mfd-cat, transparent) 9%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+/* A little air where the category changes, separating the colour blocks. */
+.mfd__row--group-start { margin-top: 5px; }
+.mfd__rows > .mfd__row--group-start:first-child { margin-top: 0; }
+
 .mfd__label {
   font-family: var(--font-display);
   font-size: 12px;
@@ -1390,45 +1405,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mfd__ctl {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
 .mfd__value {
   font-family: var(--font-mono);
   font-size: 12px;
+  font-weight: 600;
   color: var(--text-primary);
-  min-width: 74px;
-  text-align: center;
+  text-align: right;
+  flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
-.mfd__btn {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1;
-  color: var(--text-primary);
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  width: 26px;
-  height: 22px;
-  cursor: pointer;
-  padding: 0;
-  transition: background 90ms ease-out, border-color 90ms ease-out;
-}
-.mfd__btn:hover:not(:disabled) {
-  background: var(--bg-panel-3);
-  border-color: var(--ac-cyan);
-}
-.mfd__btn:active:not(:disabled) { background: var(--ac-cyan); color: var(--text-invert); }
-.mfd__btn:disabled { opacity: 0.3; cursor: default; }
 
-/* A command in flight dims the value until the read-back confirms it; an error
-   flashes the row red so a rejected write is never silent. */
-.mfd__row[data-pending="true"] .mfd__value { opacity: 0.4; }
-.mfd__row[data-error="true"] .mfd__value { color: var(--pos-loss); }
+/* --- Category colours (the --mfd-cat the row border + tint read from) ------ */
+.mfd__row[data-cat="fuel"]     { --mfd-cat: var(--pos-gain); }
+.mfd__row[data-cat="tyre"]     { --mfd-cat: var(--ac-cyan); }
+.mfd__row[data-cat="pressure"] { --mfd-cat: var(--ac-blue); }
+.mfd__row[data-cat="aero"]     { --mfd-cat: var(--ac-purple); }
+.mfd__row[data-cat="duct"]     { --mfd-cat: var(--warn); }
+.mfd__row[data-cat="brake"]    { --mfd-cat: var(--ac-magenta); }
+.mfd__row[data-cat="traction"] { --mfd-cat: var(--ac-cyan); }
+.mfd__row[data-cat="engine"]   { --mfd-cat: var(--warn); }
+.mfd__row[data-cat="hybrid"]   { --mfd-cat: var(--pos-gain); }
+.mfd__row[data-cat="service"]  { --mfd-cat: var(--text-muted); }
+.mfd__row[data-cat="other"]    { --mfd-cat: var(--border-strong); }
 
 /* --- Hover opacity control — same contract as the damage/motion widgets ---- */
 #widget-mfd .panel__header,
