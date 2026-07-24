@@ -1297,6 +1297,10 @@
 #widget-radar .panel__header {
   display: none;
 }
+/* Drop the brand gradient accent bar on the left — the radar is a bare HUD. */
+#widget-radar::before {
+  display: none;
+}
 /* …except in the in-game layout editor, where the panel border + header return
    so the widget can be seen and positioned (the .ig-item outline marks it too). */
 body.ig-editing #widget-radar {

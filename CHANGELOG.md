@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.7 — 2026-07-24
+
+### Changed
+
+- **The radar is now a proximity alert.** Every icon — the car blips *and* the
+  player's own arrow — is invisible by default and **fades in only when a car
+  comes within 6 m**, then fades back out as the nearest car leaves that radius.
+  The fade is applied to the whole canvas so each icon keeps its own styling.
+  Override the trigger distance with `?reveal=<metres>`.
+- **Removed the brand gradient bar** on the left edge of the radar, so it is a
+  completely bare HUD — nothing but the icons over the game feed.
+
 ## 0.12.6 — 2026-07-24
 
 ### Fixed

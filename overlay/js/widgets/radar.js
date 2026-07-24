@@ -70,6 +70,17 @@
   var OPACITY_KEY = "apex-radar-opacity";
   var MIN_OPACITY = 0.15;
 
+  /**
+   * Proximity reveal: the HUD is invisible until a car is within this radius
+   * (metres), then fades in, and fades out again as it leaves. `?reveal=<m>`
+   * overrides it. `revealAlpha` is the current eased opacity of the whole canvas;
+   * `FADE_RATE` is the per-frame easing toward the target (radar runs every
+   * frame, so ~0.15 gives a ~0.2–0.4 s fade).
+   */
+  var REVEAL_RADIUS_M = 6;
+  var FADE_RATE = 0.15;
+  var revealAlpha = 0;
+
   /* ------------------------------- elements ------------------------------- */
 
   var canvas, gctx, cssW = 0, cssH = 0, dpr = 1;
@@ -166,6 +177,8 @@
     var params = new URLSearchParams(window.location.search);
     var r = parseFloat(params.get("range"));
     if (isFinite(r)) rangeM = Math.min(RANGE_MAX, Math.max(RANGE_MIN, r));
+    var rev = parseFloat(params.get("reveal"));
+    if (isFinite(rev) && rev > 0) REVEAL_RADIUS_M = Math.min(150, rev);
 
     buildOpacityControl(root, params);
 
@@ -173,6 +186,8 @@
     wrap.className = "radar__wrap";
     canvas = document.createElement("canvas");
     canvas.className = "radar__canvas";
+    // Start invisible — nothing shows until a car enters the reveal radius.
+    canvas.style.opacity = "0";
     wrap.appendChild(canvas);
     mount.appendChild(wrap);
 
@@ -447,32 +462,32 @@
     if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
     if (!gctx || cssW === 0) { sizeCanvas(); if (cssW === 0) return; }
 
-    var blips = frame.radar;
-    gctx.clearRect(0, 0, cssW, cssH);
+    var blips = frame.radar || [];
 
-    if (!blips) {
-      // Omitted entirely = no world position for the driven car (spectating, or
-      // no shared memory). Say why rather than drawing an empty scope, which
-      // would read as "nobody near you" — a very different, and dangerous, claim.
-      drawEgo();
-      gctx.save();
-      gctx.fillStyle = "#6b7387";
-      gctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      gctx.textAlign = "center";
-      gctx.fillText("NO RADAR DATA", cssW / 2, cssH - 10);
-      gctx.restore();
-      setMeta("— m");
+    // Proximity reveal: the whole HUD (every icon AND the player arrow) stays
+    // invisible until a car comes within REVEAL_RADIUS_M, then fades in, and
+    // fades back out as the nearest car leaves that radius. The fade is applied
+    // to the canvas element itself so each icon's own alphas are preserved.
+    var nearest = Infinity;
+    for (var i = 0; i < blips.length; i++) {
+      if (blips[i].distanceM < nearest) nearest = blips[i].distanceM;
+    }
+    var target = nearest <= REVEAL_RADIUS_M ? 1 : 0;
+    revealAlpha += (target - revealAlpha) * FADE_RATE;
+    if (target === 0 && revealAlpha < 0.003) revealAlpha = 0;
+    canvas.style.opacity = String(revealAlpha);
+
+    // Fully hidden — clear and skip the draw entirely.
+    if (revealAlpha <= 0.003) {
+      gctx.clearRect(0, 0, cssW, cssH);
       return;
     }
 
+    gctx.clearRect(0, 0, cssW, cssH);
     drawWarnings(blips);
     drawEgo();
     // Draw furthest first so the nearest blip sits on top of any overlap.
-    for (var i = blips.length - 1; i >= 0; i--) drawBlip(blips[i]);
-
-    // Header: range + the nearest car's distance (blips are nearest-first).
-    var nearest = blips.length ? Math.round(blips[0].distanceM) + " m" : "clear";
-    setMeta("±" + Math.round(rangeM) + " m · " + nearest);
+    for (var j = blips.length - 1; j >= 0; j--) drawBlip(blips[j]);
   }
 
   window.ApexOverlay.registerWidget("radar", {
