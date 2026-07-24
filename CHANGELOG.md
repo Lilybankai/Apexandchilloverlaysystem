@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.1 — 2026-07-24
+
+### Fixed
+
+- **The MFD widget was missing from the desktop app's overlay list.** It shipped
+  in the overlay pages (and worked at `widget.html?w=mfd`), but wasn't added to
+  the control panel's `OVERLAY_CATALOG`, so the app neither listed it nor gave it
+  a Copy/Preview URL. Added to the catalog. It defaults **out** of the transparent
+  in-game layer — it's a clickable control page, not a HUD graphic — and
+  `ingame.html` now loads its script so it still renders if enabled there. New
+  catalog entries added in a future update now take their catalog default rather
+  than being force-enabled in the in-game layer.
+
 ## 0.12.0 — 2026-07-24
 
 ### Added

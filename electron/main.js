@@ -56,6 +56,15 @@ const OVERLAY_CATALOG = [
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
   { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)" },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
+  // A clickable control page, not a HUD graphic: it belongs in a browser tab
+  // (or an OBS source as a readout), never the locked, click-through in-game
+  // layer — so it defaults out of the in-game set.
+  {
+    id: 'mfd',
+    label: 'MFD Control',
+    description: 'Set pit strategy from the overlay — open in a browser to click (LMU only)',
+    ingameDefault: false,
+  },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -73,7 +82,7 @@ function defaultSettings() {
   const ingameOverlays = {};
   for (const o of OVERLAY_CATALOG) {
     enabledOverlays[o.id] = true;
-    ingameOverlays[o.id] = true;
+    ingameOverlays[o.id] = o.ingameDefault !== false;
   }
   return {
     httpPort: 8080,
@@ -451,6 +460,17 @@ function baseUrl() {
   return `http://127.0.0.1:${port}`;
 }
 
+/**
+ * Whether an overlay is in the in-game layer: an explicit saved choice wins,
+ * otherwise the catalog default (all HUD widgets on; control pages like MFD off).
+ * A never-before-seen id (new in an update) therefore takes the catalog default
+ * rather than being force-enabled.
+ */
+function isIngame(settings, o) {
+  if (o.id in settings.ingameOverlays) return settings.ingameOverlays[o.id] !== false;
+  return o.ingameDefault !== false;
+}
+
 /** Full catalog with per-overlay OBS URLs and enabled state for the UI. */
 function overlaysForUi() {
   const settings = loadSettings();
@@ -458,7 +478,7 @@ function overlaysForUi() {
   return OVERLAY_CATALOG.map((o) => ({
     ...o,
     enabled: settings.enabledOverlays[o.id] !== false,
-    ingame: settings.ingameOverlays[o.id] !== false,
+    ingame: isIngame(settings, o),
     url: `${base}/widget.html?w=${o.id}`,
   }));
 }
@@ -484,9 +504,7 @@ let ingameEditing = false;
 
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
-  const ids = OVERLAY_CATALOG.filter((o) => settings.ingameOverlays[o.id] !== false).map(
-    (o) => o.id,
-  );
+  const ids = OVERLAY_CATALOG.filter((o) => isIngame(settings, o)).map((o) => o.id);
   return `${baseUrl()}/ingame.html?widgets=${ids.join(',')}`;
 }
 
