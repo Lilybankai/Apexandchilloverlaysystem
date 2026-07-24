@@ -57,8 +57,10 @@ import {
   type TyreState,
   type WeatherForecastSlot,
   type DamageState,
+  type MfdState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
+import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
 import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -260,6 +262,10 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Last decoded damage block, and when it last decoded cleanly. */
   private damage: DamageState | null = null;
   private lastDamageOkAt = 0;
+  /** Last raw pit menu + garage `VM_*` data, for the MFD-control block. */
+  private pitMenuRaw: RawPitRow[] | null = null;
+  private garageDataRaw: Record<string, RawGarageVal> | null = null;
+  private lastMfdOkAt = 0;
   private garageTimer: NodeJS.Timeout | null = null;
   /** Raw per-session weather forecast from `/rest/sessions/weather`. */
   private weatherForecast: RestWeather | null = null;
@@ -277,7 +283,11 @@ export class LmuRestProvider implements TelemetryProvider {
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
     void this.refreshGarage();
-    this.garageTimer = setInterval(() => void this.refreshGarage(), GARAGE_REFRESH_INTERVAL_MS);
+    void this.refreshMfd();
+    this.garageTimer = setInterval(() => {
+      void this.refreshGarage();
+      void this.refreshMfd();
+    }, GARAGE_REFRESH_INTERVAL_MS);
     this.garageTimer.unref?.();
     void this.refreshWeather();
     this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
@@ -329,7 +339,15 @@ export class LmuRestProvider implements TelemetryProvider {
       }
     }
     this.live = false;
-    return this.fallback.poll(nowMs, dtMs);
+    const frame = this.fallback.poll(nowMs, dtMs);
+    // The MFD (pit menu + aids) comes from the garage endpoints, which are alive
+    // in the garage BEFORE a session's watch/standings feed is — precisely when
+    // strategy is set. So overlay the real MFD block onto the demo frame rather
+    // than dropping it: the control widget must work at the setup screen, not
+    // only once green-flag standings exist.
+    const mfd = this.buildMfd();
+    if (mfd) frame.mfd = mfd;
+    return frame;
   }
 
   /* ----------------------------- HTTP polling ---------------------------- */
@@ -377,6 +395,26 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch (err) {
       // Endpoint is only alive inside a session; keep the last data until stale.
       if (this.verbose) console.error('[lmu] garage refresh failed:', (err as Error).message);
+    }
+  }
+
+  /**
+   * Pulls the controllable MFD (pit menu + live driving aids). Kept SEPARATE
+   * from {@link refreshGarage} on purpose: the repair, pit-menu and
+   * garage-setup screens have independent availability (any one can 404 while
+   * another answers — e.g. the pit menu exists on track but the repair screen
+   * may not), so sharing a `try` would let one screen's absence silently drop
+   * the others. The two reads here are also independent of each other.
+   */
+  private async refreshMfd(): Promise<void> {
+    const [pit, garage] = await Promise.all([
+      this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu').catch(() => null),
+      this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData').catch(() => null),
+    ]);
+    if (Array.isArray(pit)) this.pitMenuRaw = pit;
+    if (garage && typeof garage === 'object') this.garageDataRaw = garage;
+    if (Array.isArray(pit) || (garage && typeof garage === 'object')) {
+      this.lastMfdOkAt = Date.now();
     }
   }
 
@@ -509,6 +547,7 @@ export class LmuRestProvider implements TelemetryProvider {
       deltaSec = this.lapDelta.update(focus, trackLen);
     }
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas);
+    const mfd = this.buildMfd();
     // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
     // it reads that car's world position + orientation from shared memory, which
     // exists only for the car driven on this PC. Omitted when spectating.
@@ -526,7 +565,20 @@ export class LmuRestProvider implements TelemetryProvider {
       ...(radar ? { radar } : {}),
       weather,
       fuel,
+      ...(mfd ? { mfd } : {}),
     };
+  }
+
+  /**
+   * The controllable MFD block (pit menu + curated aids), or `undefined` when
+   * the garage/pit endpoints haven't answered recently. Gated on the same
+   * staleness window as tyre wear / damage so the widget never drives the MFD
+   * from a menu snapshot left over from a previous session.
+   */
+  private buildMfd(): MfdState | undefined {
+    if (Date.now() - this.lastMfdOkAt >= GARAGE_STALE_AFTER_MS) return undefined;
+    if (!this.pitMenuRaw && !this.garageDataRaw) return undefined;
+    return buildMfdState(this.pitMenuRaw, this.garageDataRaw);
   }
 
   /**

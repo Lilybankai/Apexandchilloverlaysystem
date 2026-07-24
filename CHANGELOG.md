@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.12.0 — 2026-07-24
+
+### Added
+
+- **MFD control widget** (`?w=mfd`) — a new overlay that reads *and writes* the
+  in-game Multi-Function Display for the player's car.
+
+  **Pit strategy** is fully live: fuel ratio, virtual energy, tyres and the four
+  corners, wing, grille, pressures, brake ducts and repairs, each a ◀ ▶ that
+  cycles the row through LMU's own REST garage API
+  (`POST /rest/garage/PitMenu/loadPitMenu`). Every change is read back so the
+  widget shows the sim's own value rather than a guess, and is clamped to the
+  sim's declared option list so it can never post an out-of-range setting.
+
+  **Driving aids** (brake bias, ABS/TC map, engine mixture, regen) are shown and
+  settable at the **setup** level (`POST /rest/garage/<VM_KEY>`) — a starting
+  value LMU applies on track, not a live in-race adjustment.
+
+  Opacity slider and `?pit` / `?aids` / `?readonly` / `?opacity` params like the
+  other widgets. The MFD block is overlaid onto the frame even before a session's
+  timing feed is live, so it works at the garage/setup screen. See
+  `src/telemetry/mfdControl.ts`, `src/server/mfdRoutes.ts` and the REST map probe
+  `scripts/probe-lmu-mfd.js`.
+
+### Notes
+
+- **Live in-race aid control cannot be driven from the overlay.** LMU ignores
+  software-injected keystrokes — it reads controls via DirectInput, which filters
+  non-hardware input (verified with a standard key fired at confirmed sim focus:
+  LMU never captured it). So no keystroke tool — this one, AutoHotkey, or a Stream
+  Deck hotkey — can move an aid mid-race. The keystroke scaffolding
+  (`src/server/keySender.ts`, `scripts/send-key.js`, `POST /api/mfd/aidkey`,
+  default F13–F24 map) is retained for a future **virtual HID controller** (vJoy)
+  approach — the only route LMU trusts as real hardware — but is **not wired to
+  the widget**.
+
+## 0.11.0 — 2026-07-23
+
+### Added
+
+- **Spatial proximity radar widget** (`?w=radar`) — a car-relative, spotter's-eye
+  radar of nearby cars, driven from the driven car's shared-memory world position.
+
 ## 0.10.5 — 2026-07-22
 
 ### Fixed

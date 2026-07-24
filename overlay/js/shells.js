@@ -96,5 +96,12 @@
       '<span class="panel__meta" data-role="meta">— s</span></header>' +
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    mfd:
+      '<section class="widget panel" id="widget-mfd" data-widget="mfd" aria-label="MFD control — pit menu and driving aids">' +
+      '<header class="panel__header"><span class="panel__title">MFD</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
   };
 })();

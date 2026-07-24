@@ -61,6 +61,12 @@ export interface ServerConfig {
   sponsorDir: string;
   /** Seconds each sponsor logo is shown before cross-fading to the next. */
   sponsorIntervalSec: number;
+  /**
+   * Path to a JSON file overriding the MFD widget's aid→keyboard-key map. Empty
+   * to use the built-in F13–F24 defaults (or a `mfd-keymap.json` in the working
+   * directory, if present). See {@link module:server/aidKeymap}.
+   */
+  aidKeymapPath: string;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -78,6 +84,7 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   lmuApiPort: 6397,
   sponsorDir: '',
   sponsorIntervalSec: 12,
+  aidKeymapPath: '',
   verbose: false,
 });
 
@@ -172,6 +179,7 @@ export function loadConfig(): ServerConfig {
       3,
       120,
     ),
+    aidKeymapPath: envStr('APEX_AID_KEYMAP', DEFAULT_CONFIG.aidKeymapPath),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

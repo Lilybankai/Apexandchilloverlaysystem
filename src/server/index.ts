@@ -25,6 +25,10 @@ import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
+import { MfdController } from '../telemetry/mfdControl';
+import { handleMfdCommand } from './mfdRoutes';
+import { KeySender } from './keySender';
+import { indexKeymap, loadAidKeymap } from './aidKeymap';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -181,7 +185,21 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const overlayRoot = resolve(process.cwd(), config.overlayDir);
   const sponsorRoot = config.sponsorDir ? resolve(config.sponsorDir) : '';
 
+  // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works
+  // even under provider `rf2` as long as the game's API is up); `aidkey` injects
+  // real keystrokes for the LIVE aids LMU does not expose to REST.
+  const mfdDeps = {
+    controller: new MfdController({ lmuApiPort: config.lmuApiPort, verbose: config.verbose }),
+    keys: new KeySender({ verbose: config.verbose }),
+    keymap: indexKeymap(loadAidKeymap(config.aidKeymapPath, config.verbose)),
+  };
+  if (!mfdDeps.keys.available) {
+    console.log('[apex-overlay] keystroke injection unavailable — live aid keys disabled.');
+  }
+
   const httpServer = createServer((req, res) => {
+    // MFD control requests are handled first; everything else is static assets.
+    if (handleMfdCommand(req, res, mfdDeps)) return;
     void serveStatic(req, res, overlayRoot, sponsorRoot, config.sponsorIntervalSec);
   });
 

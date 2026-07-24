@@ -791,6 +791,75 @@ export interface FuelState {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  MFD control (in-game Multi-Function Display)                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One row of the in-game **pit MFD**, mirrored from LMU's
+ * `GET /rest/garage/PitMenu/receivePitMenu`. Each row is a labelled setting the
+ * driver cycles in the cockpit (fuel, tyres, wing, repairs…); `currentSetting`
+ * indexes into the row's option list, and `settingCount` is that list's length.
+ *
+ * This block is **read/write**: the overlay renders it, and the MFD widget POSTs
+ * a changed `currentSetting` back through the server (`/api/mfd/pit` →
+ * `POST /rest/garage/PitMenu/loadPitMenu`). See `telemetry/mfdControl.ts`.
+ */
+export interface MfdPitRow {
+  /**
+   * The sim's stable identifier for the row (`"PMC Value"` from the API). Used
+   * as the write key so a row is targeted by identity, not by its display
+   * position, which shifts as rows appear/disappear (e.g. per-corner tyres).
+   */
+  pmcValue: number;
+  /** Display label exactly as the sim gives it, e.g. `"FUEL RATIO:"`. */
+  name: string;
+  /** Selected option index, `0..settingCount-1`. */
+  currentSetting: number;
+  /** Number of options this row can cycle through. */
+  settingCount: number;
+  /** The default option index (what a fresh menu resets to). */
+  defaultSetting: number;
+  /** Rendered text of the selected option, e.g. `"58% 19 laps"`. */
+  currentText: string;
+}
+
+/**
+ * One live **driving aid / setup value**, mirrored from a `VM_*` key of LMU's
+ * `GET /rest/garage/getPlayerGarageData`. Read/write like {@link MfdPitRow}: the
+ * widget POSTs a new `value` through `/api/mfd/aid` →
+ * `POST /rest/garage/<key> {value}`. `value` is an integer step index the sim
+ * clamps to `[minValue, maxValue]`; `text` is the sim's own rendering of it.
+ */
+export interface MfdAid {
+  /** The `VM_*` key, e.g. `"VM_BRAKE_BALANCE"` — the write target. */
+  key: string;
+  /** Short human label for the widget, e.g. `"Brake Bias"`. */
+  label: string;
+  /** Current integer step value. */
+  value: number;
+  /** Lowest legal value. */
+  minValue: number;
+  /** Highest legal value. */
+  maxValue: number;
+  /** The sim's rendered value, e.g. `"49.0:51.0"` or `"9 (Understeer)"`. */
+  text: string;
+}
+
+/**
+ * The controllable state of the in-game MFD for the player's car: the pit menu
+ * and a curated set of live driving aids. Present only on the `lmu` provider and
+ * only while the garage/pit endpoints answer (in a session); omitted otherwise,
+ * exactly like {@link DamageState}, so the widget can tell "no data" from a real
+ * empty menu rather than acting on a stale one.
+ */
+export interface MfdState {
+  /** The full pit MFD, in the sim's row order. */
+  pit: MfdPitRow[];
+  /** Curated live aids (brake bias, ABS/TC map, engine maps, regen…). */
+  aids: MfdAid[];
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Top-level frame                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -832,6 +901,13 @@ export interface TelemetryFrame {
   weather: WeatherState;
   /** Fuel state and strategy for the player's car. */
   fuel: FuelState;
+  /**
+   * Controllable in-game MFD state (pit menu + live driving aids) for the
+   * player's car. **Optional and omitted** — like {@link DamageState} — when the
+   * provider isn't `lmu` or the garage/pit endpoints aren't answering (out of a
+   * session, in menus), so the widget never drives the MFD from stale data.
+   */
+  mfd?: MfdState;
 }
 
 /**

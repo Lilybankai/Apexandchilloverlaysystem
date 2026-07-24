@@ -1341,6 +1341,151 @@
 }
 
 /* =========================================================================
+ * MFD — pit menu + driving-aid control (widgets/mfd.js). The only widget that
+ * writes back: rows carry ◀ ▶ / − + buttons that POST to the server.
+ * ========================================================================= */
+.mfd__wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mfd__group-title {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.mfd__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* Empty marker shows only when a group has no rows (out of session / not
+   applicable to this car); the rows container is emptied in that state. */
+.mfd__empty {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+.mfd__group[data-empty="true"] .mfd__rows { display: none; }
+.mfd__group[data-empty="true"] .mfd__empty { display: block; }
+
+.mfd__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+.mfd__label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mfd__ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.mfd__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 74px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.mfd__btn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  width: 26px;
+  height: 22px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 90ms ease-out, border-color 90ms ease-out;
+}
+.mfd__btn:hover:not(:disabled) {
+  background: var(--bg-panel-3);
+  border-color: var(--ac-cyan);
+}
+.mfd__btn:active:not(:disabled) { background: var(--ac-cyan); color: var(--text-invert); }
+.mfd__btn:disabled { opacity: 0.3; cursor: default; }
+
+/* A command in flight dims the value until the read-back confirms it; an error
+   flashes the row red so a rejected write is never silent. */
+.mfd__row[data-pending="true"] .mfd__value { opacity: 0.4; }
+.mfd__row[data-error="true"] .mfd__value { color: var(--pos-loss); }
+
+/* --- Hover opacity control — same contract as the damage/motion widgets ---- */
+#widget-mfd .panel__header,
+#widget-mfd .panel__body {
+  opacity: var(--mfd-op, 1);
+}
+#widget-mfd[data-transparent="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.mfd__opacity-anchor {
+  position: relative;
+  height: 0;
+}
+.mfd__opacity {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  background: var(--bg-header);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  z-index: 5;
+}
+#widget-mfd:hover .mfd__opacity,
+.mfd__opacity:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mfd__opacity-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mfd__opacity-range {
+  width: 78px;
+  accent-color: var(--ac-cyan);
+}
+.mfd__opacity-val {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* =========================================================================
  * PLACEHOLDER / EMPTY STATE — shown before the first frame arrives so the
  * shell renders meaningfully standalone in a plain browser.
  * ========================================================================= */
