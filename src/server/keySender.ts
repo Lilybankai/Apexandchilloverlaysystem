@@ -27,6 +27,8 @@
  * platform is not Windows, exactly like the shared-memory reader.
  */
 
+import type { ScanKey } from './lmuKeybinds';
+
 /** Virtual-key codes for the keys we can name. Resolved to scancodes at send. */
 const VK: Readonly<Record<string, number>> = {
   // Extended function keys — the default aid binds. No physical keyboard has
@@ -49,9 +51,19 @@ const VK: Readonly<Record<string, number>> = {
 
 /** Win32 constants. */
 const INPUT_KEYBOARD = 1;
+const KEYEVENTF_EXTENDEDKEY = 0x0001;
 const KEYEVENTF_KEYUP = 0x0002;
 const KEYEVENTF_SCANCODE = 0x0008;
 const MAPVK_VK_TO_VSC = 0;
+
+/**
+ * How long a key is held down by default.
+ *
+ * NOT cosmetic: a game samples input on its own loop, so a down+up issued in the
+ * same instant can fall between two polls and be missed entirely. Holding for a
+ * few frames makes the press reliable — verified live against LMU at 80 ms.
+ */
+const DEFAULT_HOLD_MS = 70;
 /** x64 INPUT is 40 bytes; KEYBDINPUT sits at +8. See probe-sendinput.js. */
 const INPUT_SIZE = 40;
 
@@ -151,6 +163,86 @@ export class KeySender {
     return { ok: true, foreground };
   }
 
+  /**
+   * Presses a key given directly as a **scancode**, the form LMU's own
+   * `keyboard.json` stores (see {@link module:server/lmuKeybinds}). This is the
+   * path the MFD aid controls use: no virtual-key lookup, no keyboard-layout
+   * dependence, and — unlike {@link press} — it can send **extended** keys, so
+   * the arrow-key binds (Pit Menu Up/Down) work.
+   *
+   * Held for {@link DEFAULT_HOLD_MS} so the game cannot poll straight past it,
+   * which makes this async where {@link press} was not.
+   */
+  public async pressScan(
+    key: ScanKey,
+    opts: { requireSim?: boolean; holdMs?: number } = {},
+  ): Promise<KeyPressResult> {
+    const foreground = this.foregroundTitle();
+    if (!this.win32) {
+      return { ok: false, foreground, error: 'keystroke injection unavailable on this host' };
+    }
+    const requireSim = opts.requireSim ?? true;
+    if (requireSim && !foreground.toLowerCase().includes(this.match)) {
+      return {
+        ok: false,
+        foreground,
+        error: `sim not focused (foreground: "${foreground || 'unknown'}") — key not sent`,
+      };
+    }
+
+    this.sendScan(key, false);
+    await delay(opts.holdMs ?? DEFAULT_HOLD_MS);
+    // The key-up is unconditional even if focus moved during the hold: skipping
+    // it would leave the key latched down in whatever window now has focus.
+    this.sendScan(key, true);
+
+    if (this.verbose) {
+      console.log(
+        `[keys] sent scancode 0x${key.scancode.toString(16)}${key.extended ? '+ext' : ''}`,
+      );
+    }
+    return { ok: true, foreground };
+  }
+
+  /**
+   * Presses a scancode `count` times, re-checking the foreground **before every
+   * press** and aborting the remainder if focus has moved.
+   *
+   * That re-check is the whole point. A sequence fired blind once put five
+   * keystrokes into an unrelated window because focus changed after the initial
+   * check — a repeat loop that only validates once is not safe.
+   */
+  public async pressScanTimes(
+    key: ScanKey,
+    count: number,
+    opts: { requireSim?: boolean; holdMs?: number; gapMs?: number } = {},
+  ): Promise<KeyPressResult & { sent: number }> {
+    const n = Math.max(1, Math.min(50, Math.round(count)));
+    let sent = 0;
+    let last: KeyPressResult = { ok: true, foreground: this.foregroundTitle() };
+    for (let i = 0; i < n; i++) {
+      last = await this.pressScan(key, opts);
+      if (!last.ok) return { ...last, sent };
+      sent++;
+      if (i < n - 1) await delay(opts.gapMs ?? 40);
+    }
+    return { ...last, sent };
+  }
+
+  private sendScan(key: ScanKey, keyUp: boolean): void {
+    if (!this.win32) return;
+    const buf = Buffer.alloc(INPUT_SIZE);
+    let flags = KEYEVENTF_SCANCODE;
+    if (key.extended) flags |= KEYEVENTF_EXTENDEDKEY;
+    if (keyUp) flags |= KEYEVENTF_KEYUP;
+    buf.writeUInt32LE(INPUT_KEYBOARD, 0); // type
+    buf.writeUInt16LE(0, 8); // wVk — 0, we are in scancode mode
+    buf.writeUInt16LE(key.scancode & 0xff, 10); // wScan
+    buf.writeUInt32LE(flags >>> 0, 12); // dwFlags
+    buf.writeUInt32LE(0, 16); // time
+    this.win32.SendInput(1, buf, INPUT_SIZE);
+  }
+
   private sendOne(vk: number, scan: number, keyUp: boolean): void {
     if (!this.win32) return;
     const buf = Buffer.alloc(INPUT_SIZE);
@@ -164,6 +256,11 @@ export class KeySender {
     buf.writeUInt32LE(0, 16); // time
     this.win32.SendInput(1, buf, INPUT_SIZE);
   }
+}
+
+/** Promise-based sleep for the key hold/gap timings. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function loadWin32(verbose: boolean): Win32 | null {

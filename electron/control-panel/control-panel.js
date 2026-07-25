@@ -446,6 +446,167 @@
     });
   });
 
+  // --- Bindings -------------------------------------------------------------
+  // Each row captures a key the same way the in-game hotkey chip does
+  // (eventToAccelerator above), so there is one capture behaviour in the app.
+
+  const bindingList = $('#binding-list');
+  /** The row currently capturing, so a second click elsewhere cancels it. */
+  let capturingBind = null;
+
+  function stopBindCapture() {
+    if (!capturingBind) return;
+    const { chip, previous } = capturingBind;
+    chip.removeAttribute('data-capturing');
+    chip.textContent = previous || 'Click to bind';
+    chip.setAttribute('data-empty', String(!previous));
+    capturingBind = null;
+  }
+
+  async function commitBinding(actionId, accel, chip) {
+    const res = await window.apex.actionBind(actionId, accel);
+    if (res && res.ok === false && res.error) {
+      // The key registered nowhere — almost always another app owning it.
+      chip.setAttribute('data-error', 'true');
+      showToast(`Could not bind: ${res.error}`);
+      setTimeout(() => chip.removeAttribute('data-error'), 1600);
+    } else {
+      showToast(accel ? `Bound to ${accel}` : 'Binding cleared');
+    }
+    await renderBindings();
+  }
+
+  function bindingRow(action) {
+    const li = document.createElement('li');
+    li.className = 'binding-row';
+
+    const info = document.createElement('div');
+    info.className = 'binding-row__info';
+    const label = document.createElement('div');
+    label.className = 'binding-row__label';
+    label.textContent = action.label;
+    const meta = document.createElement('div');
+    meta.className = 'binding-row__meta';
+    // A delta action is one an encoder can sweep; say so, it changes how you bind it.
+    meta.textContent = action.kind === 'delta' ? 'steps up / down' : 'single press';
+    info.appendChild(label);
+    info.appendChild(meta);
+
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'hotkey__key binding-row__key';
+    chip.textContent = action.binding || 'Click to bind';
+    chip.setAttribute('data-empty', String(!action.binding));
+    chip.addEventListener('click', () => {
+      stopBindCapture();
+      capturingBind = { chip, actionId: action.id, previous: action.binding };
+      chip.setAttribute('data-capturing', 'true');
+      chip.textContent = 'Press a key…';
+      chip.focus();
+    });
+    chip.addEventListener('keydown', (e) => {
+      if (!capturingBind || capturingBind.chip !== chip) return;
+      e.preventDefault();
+      if (e.key === 'Escape') return stopBindCapture();
+      const accel = eventToAccelerator(e);
+      if (!accel) return; // modifier held on its own — keep waiting
+      const id = capturingBind.actionId;
+      capturingBind = null;
+      chip.removeAttribute('data-capturing');
+      void commitBinding(id, accel, chip);
+    });
+    chip.addEventListener('blur', () => {
+      if (capturingBind && capturingBind.chip === chip) stopBindCapture();
+    });
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'hotkey__clear';
+    clear.title = 'Clear binding';
+    clear.innerHTML = '&times;';
+    clear.addEventListener('click', () => void commitBinding(action.id, '', chip));
+
+    // Wheel chips. A `delta` action gets two (an encoder's two directions); a
+    // `pulse` action gets one. Unlike a global hotkey, a wheel button is NOT
+    // consumed — the sim still receives it, so it can safely be a button LMU
+    // also uses.
+    const wheelWrap = document.createElement('div');
+    wheelWrap.className = 'binding-row__wheels';
+    const dirs = action.kind === 'delta' ? ['dec', 'inc'] : ['inc'];
+    for (const dir of dirs) {
+      const bound = action.wheel && action.wheel[dir];
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'hotkey__key binding-row__wheel';
+      const glyph = action.kind === 'delta' ? (dir === 'dec' ? '− ' : '+ ') : '';
+      chip.textContent = bound ? glyph + 'btn ' + bound.button : glyph + 'wheel';
+      chip.setAttribute('data-empty', String(!bound));
+      chip.title = bound ? `${bound.device} button ${bound.button}` : 'Click, then press a wheel button';
+      chip.addEventListener('click', async () => {
+        chip.setAttribute('data-capturing', 'true');
+        chip.textContent = 'press…';
+        const res = await window.apex.wheelCapture();
+        chip.removeAttribute('data-capturing');
+        if (!res || res.ok === false) {
+          showToast(res && res.error ? res.error : 'No button captured');
+          await renderBindings();
+          return;
+        }
+        await window.apex.wheelBind(action.id, dir, { device: res.device, button: res.button });
+        showToast(`Bound to ${res.device} button ${res.button}`);
+        await renderBindings();
+      });
+      // Right-click clears, keeping the row from growing a third control.
+      chip.addEventListener('contextmenu', async (e) => {
+        e.preventDefault();
+        await window.apex.wheelBind(action.id, dir, null);
+        showToast('Wheel binding cleared');
+        await renderBindings();
+      });
+      wheelWrap.appendChild(chip);
+    }
+
+    const test = document.createElement('button');
+    test.type = 'button';
+    test.className = 'btn btn--ghost btn--sm';
+    test.textContent = 'Test';
+    test.addEventListener('click', async () => {
+      const res = await window.apex.actionRun(action.id, 1);
+      // Aid actions legitimately refuse when the sim isn't focused; that is a
+      // useful answer, not a failure to hide.
+      showToast(res && res.ok === false ? res.error || 'Action failed' : 'Sent');
+    });
+
+    li.appendChild(info);
+    li.appendChild(chip);
+    li.appendChild(clear);
+    li.appendChild(wheelWrap);
+    li.appendChild(test);
+    return li;
+  }
+
+  async function renderBindings() {
+    const list = await window.apex.actionsList();
+    bindingList.innerHTML = '';
+    let group = null;
+    for (const action of list) {
+      if (action.group !== group) {
+        group = action.group;
+        const head = document.createElement('li');
+        head.className = 'binding-group';
+        head.textContent = group;
+        bindingList.appendChild(head);
+      }
+      bindingList.appendChild(bindingRow(action));
+    }
+    if (list.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'sponsor-list__empty';
+      li.textContent = 'No actions available.';
+      bindingList.appendChild(li);
+    }
+  }
+
   // Live status pushes from the main process.
   window.apex.onStatus((status) => renderStatus(status));
 
@@ -498,6 +659,7 @@
 
   // --- Boot ----------------------------------------------------------------
   window.apex.getState().then(renderAll);
+  void renderBindings();
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);
 })();

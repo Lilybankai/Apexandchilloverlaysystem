@@ -73,12 +73,6 @@ export interface ServerConfig {
    * server or interrupt a broadcast.
    */
   panelOpacity: number;
-  /**
-   * Path to a JSON file overriding the MFD widget's aid→keyboard-key map. Empty
-   * to use the built-in F13–F24 defaults (or a `mfd-keymap.json` in the working
-   * directory, if present). See {@link module:server/aidKeymap}.
-   */
-  aidKeymapPath: string;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -96,8 +90,7 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   lmuApiPort: 6397,
   sponsorDir: '',
   sponsorIntervalSec: 12,
-  panelOpacity: 100,
-  aidKeymapPath: '',
+  panelOpacity: 100,
   verbose: false,
 });
 
@@ -193,8 +186,7 @@ export function loadConfig(): ServerConfig {
       3,
       120,
     ),
-    panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
-    aidKeymapPath: envStr('APEX_AID_KEYMAP', DEFAULT_CONFIG.aidKeymapPath),
+    panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

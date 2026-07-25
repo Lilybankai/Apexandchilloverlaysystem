@@ -28,7 +28,6 @@ import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { handleMfdCommand } from './mfdRoutes';
 import { KeySender } from './keySender';
-import { indexKeymap, loadAidKeymap } from './aidKeymap';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -80,6 +79,17 @@ export function selectProvider(config: ServerConfig): TelemetryProvider {
 export interface Appearance {
   /** Widget panel-background opacity, 0..100 (see `ServerConfig.panelOpacity`). */
   panelOpacity: number;
+  /**
+   * Per-widget display mode, `{ [widgetId]: mode }` — e.g. `{ tyres: 'tread' }`
+   * to show remaining tread instead of temperature.
+   *
+   * Rides the same channel as the opacity rather than getting one of its own:
+   * both are operator look-and-feel that changes a handful of times a session,
+   * and the delivery (URL override → in-game IPC push → 1 s poll for OBS) is
+   * already solved. An unknown widget id or mode is simply ignored by the
+   * overlay, so a stale value can never break a widget.
+   */
+  widgetModes: Record<string, string>;
 }
 
 /** URL the overlays read their appearance from. */
@@ -92,21 +102,29 @@ const APPEARANCE_PATH = '/appearance.json';
  * `ServerConfig` alone would mean restarting the server — and dropping every
  * connected overlay — each time the operator nudged the slider.
  */
-const appearance: Appearance = { panelOpacity: 100 };
+const appearance: Appearance = { panelOpacity: 100, widgetModes: {} };
 
-/** Current appearance (a copy — callers must not mutate the live state). */
+/** Current appearance (a deep-enough copy — callers must not mutate the state). */
 export function getAppearance(): Appearance {
-  return { ...appearance };
+  return { ...appearance, widgetModes: { ...appearance.widgetModes } };
 }
 
 /**
  * Updates the appearance served to the overlays, effective immediately (they
  * re-read it within a second, or are pushed to directly by the app). Values are
- * clamped, so a bad caller cannot put nonsense on the wire.
+ * clamped and filtered, so a bad caller cannot put nonsense on the wire.
  */
 export function setAppearance(next: Partial<Appearance>): Appearance {
   if (typeof next?.panelOpacity === 'number' && Number.isFinite(next.panelOpacity)) {
     appearance.panelOpacity = Math.min(100, Math.max(0, Math.round(next.panelOpacity)));
+  }
+  if (next?.widgetModes && typeof next.widgetModes === 'object') {
+    for (const [widget, mode] of Object.entries(next.widgetModes)) {
+      // Ids/modes are short slugs; anything else is a caller bug, not data.
+      if (/^[a-z][a-z0-9]{0,23}$/i.test(widget) && /^[a-z][a-z0-9]{0,23}$/i.test(String(mode))) {
+        appearance.widgetModes[widget] = String(mode);
+      }
+    }
   }
   return getAppearance();
 }
@@ -251,7 +269,6 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const mfdDeps = {
     controller: new MfdController({ lmuApiPort: config.lmuApiPort, verbose: config.verbose }),
     keys: new KeySender({ verbose: config.verbose }),
-    keymap: indexKeymap(loadAidKeymap(config.aidKeymapPath, config.verbose)),
   };
   if (!mfdDeps.keys.available) {
     console.log('[apex-overlay] keystroke injection unavailable — live aid keys disabled.');

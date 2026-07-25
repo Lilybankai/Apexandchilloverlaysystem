@@ -1747,6 +1747,46 @@ body.ig-editing #widget-radar .panel__header {
 .mfd__row[data-cat="service"]  { --mfd-cat: var(--text-muted); }
 .mfd__row[data-cat="other"]    { --mfd-cat: var(--border-strong); }
 
+/* --- Row controls: ± steppers on adjustable rows -------------------------
+   Pit rows change over LMU's REST API; aid rows fire a keystroke. Both are
+   posted to our own server, which performs the change (see mfdRoutes). */
+.mfd__ctrls {
+  display: flex;
+  gap: 3px;
+  margin-left: 8px;
+  flex: 0 0 auto;
+}
+.mfd__step {
+  width: 20px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-primary);
+  /* Control tokens keep these clickable even with the panel background at 0% —
+     the whole point of interact mode is operating them over the game. */
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 0;
+}
+.mfd__step:hover { background: var(--border-control); }
+.mfd__step:active { filter: brightness(1.3); }
+
+/* A command in flight: dim the value rather than the row, so the buttons stay
+   readable and a second click is obviously still possible. */
+.mfd__value[data-busy="true"] { opacity: 0.45; }
+
+/* A refused command (usually "sim not focused"); the reason is in the title. */
+.mfd__row[data-error="true"] {
+  outline: 1px solid var(--pos-loss);
+  outline-offset: -1px;
+}
+
 /* --- Hover opacity control — same contract as the damage/motion widgets ---- */
 #widget-mfd .panel__header,
 #widget-mfd .panel__body {

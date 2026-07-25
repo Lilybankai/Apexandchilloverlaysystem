@@ -38,6 +38,24 @@ contextBridge.exposeInMainWorld('apex', {
   /** Delete one logo by filename; returns the new list. */
   sponsorsRemove: (name) => ipcRenderer.invoke('sponsors:remove', name),
 
+  /* ---- Bindable actions ---- */
+
+  /** Every bindable action with its current keyboard binding. */
+  actionsList: () => ipcRenderer.invoke('actions:list'),
+  /** Bind one action to an accelerator; '' clears it. Returns {ok, error?}. */
+  actionBind: (actionId, accelerator) => ipcRenderer.invoke('actions:bind', actionId, accelerator),
+  /** Trigger an action now (the per-row Test button). `dir` is ±1 for deltas. */
+  actionRun: (actionId, dir) => ipcRenderer.invoke('actions:run', actionId, dir),
+
+  /* ---- Wheel / controller bindings ---- */
+
+  /** Attached controllers + whether background reading works on this host. */
+  wheelDevices: () => ipcRenderer.invoke('wheel:devices'),
+  /** Wait for the next wheel button press (for binding capture). */
+  wheelCapture: () => ipcRenderer.invoke('wheel:capture'),
+  /** Bind one direction of an action to a wheel button; null binding clears. */
+  wheelBind: (actionId, dir, binding) => ipcRenderer.invoke('wheel:bind', actionId, dir, binding),
+
   /* ---- In-game overlay layer ---- */
 
   /** Unlock the in-game layer for on-screen drag/resize editing. */

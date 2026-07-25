@@ -1,5 +1,66 @@
 # Changelog
 
+## Unreleased
+
+Turns the MFD widget from a readout into a controller, and adds a binding layer
+so any input source can drive any action. Not yet released — shadow state for the
+unreadable aids and a single-instance lock are still outstanding.
+
+### Added
+
+- **`src/server/lmuKeybinds.ts` — read LMU's OWN key bindings** instead of
+  guessing them. `<LMU>/UserData/player/keyboard.json` stores `{function: DIK}`,
+  where the integers are DirectInput scancodes — exactly what `SendInput` sends.
+  Auto-locates the install via Steam's `libraryfolders.vdf`, decodes
+  `DIK >= 0x80` → extended key (verified: `Pit Menu Up` 200 → `0x48`+ext), and
+  re-reads on demand so a rebind in game is followed with no config change.
+- **`electron/actions.js` — a named-action registry.** One vocabulary that
+  keyboard, Stream Deck and wheel bindings all target: overlay toggle/interact/
+  layout/background, tyre readout, four driving aids, and pit fuel-ratio /
+  virtual-energy. `delta` actions take ±1 so an encoder detent maps to one step.
+  Aid actions are built from LMU's bind file, so unbound functions never appear.
+- **Keyboard + Stream Deck bindings**, with a Bindings card in the control panel.
+  Registered as global hotkeys so they fire while the sim has focus; a Stream
+  Deck "Hotkey" button therefore works with no Stream-Deck-specific code.
+  Duplicate accelerators are rejected rather than silently last-wins, and a key
+  another app owns reports why instead of looking bound.
+- **`electron/gamepad.js` — wheel/controller input via DirectInput 8**, reached
+  through the `koffi` already shipped (COM vtable dispatch; no native module, no
+  new dependency). `BACKGROUND | NONEXCLUSIVE` reads while the game is frontmost
+  without disturbing its own use of the device. **winmm was rejected on
+  measurement**: it caps at 32 buttons and a MOZA R9 reports 128, with real LMU
+  binds at ids 36–104. Polls only while something is bound.
+- **MFD widget is now interactive** — ± on all 18 pit rows (LMU REST, needs
+  neither focus nor a visible in-game MFD) and on brake bias (keystroke). ±
+  appears only where LMU actually has a binding.
+- **Switchable tyre readout** (`auto` / `temp` / `surface` / `tread`), delivered
+  on the existing appearance channel and bindable to any input. `?tyres=` pins an
+  OBS source. `auto` is the default and is byte-identical to previous behaviour.
+
+### Changed
+
+- `keySender` gains a scancode path with **extended-key support** (the old
+  virtual-key route could not send the arrow-bound pit-menu keys), a **70 ms
+  default hold** because a zero-length press can fall between a game's input
+  polls, and a foreground re-check **before every press in a repeat** — a
+  sequence validated only once put five keystrokes into an unrelated window.
+- `GET /api/mfd/keymap` now reports LMU's real binds and whether its keyboard
+  scheme is even enabled.
+
+### Removed
+
+- **`src/server/aidKeymap.ts` and `APEX_AID_KEYMAP`.** It defaulted to F13–F24,
+  half of which can never work: DirectInput's keyboard map stops at **F15**, so
+  `DIK_F16`..`DIK_F24` do not exist. Superseded by reading LMU's own binds.
+
+### Fixed
+
+- `?bg=` returned early and would have blocked widget-mode delivery entirely.
+  Pinning opacity is not a request to freeze the readout; they are independent.
+- The MFD aid lookup missed brake bias because the telemetry frame labels it
+  `BRAKE_BIAS` while the bind is keyed `VM_BRAKE_BALANCE` — aids now carry
+  aliases and match whichever name a row happens to hold.
+
 ## 0.13.0 — 2026-07-25
 
 ### Added

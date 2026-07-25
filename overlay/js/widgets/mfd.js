@@ -59,8 +59,105 @@
 
   /* ------------------------------- rendering ------------------------------ */
 
-  /** One read-only row: LABEL … VALUE. */
-  function makeRow() {
+  /* ------------------------------ control plane --------------------------- */
+
+  /**
+   * Which aids LMU has bound, keyed by the `VM_*` name the frame uses:
+   * `{ canInc, canDec }`. Fetched from /api/mfd/keymap, which reads LMU's own
+   * keyboard.json — so an aid the driver has not bound shows no ± at all rather
+   * than offering a button that could never work.
+   *
+   * Re-fetched periodically because the driver can rebind mid-session (LMU
+   * rewrites that file on exit), and because the game may not be running when
+   * the overlay first loads.
+   */
+  var aidBinds = {};
+
+  function loadAidBinds() {
+    fetch("/api/mfd/keymap", { cache: "no-store" })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (cfg) {
+        if (!cfg || !Array.isArray(cfg.aids)) return;
+        var next = {};
+        cfg.aids.forEach(function (a) {
+          var entry = { canInc: !!a.canInc, canDec: !!a.canDec };
+          // Index under every alias — the frame's key for an aid is not always
+          // the VM_ one (brake bias comes through as BRAKE_BIAS).
+          (a.keys || [a.vmKey]).forEach(function (k) {
+            if (k) next[k] = entry;
+          });
+        });
+        // Only rebuild rows if the offerable set actually changed.
+        if (JSON.stringify(next) !== JSON.stringify(aidBinds)) {
+          aidBinds = next;
+          aids.sig = ""; // force reconcile to rebuild with/without steppers
+        }
+      })
+      .catch(function () {
+        /* server not up / route absent — rows stay read-only */
+      });
+  }
+
+  /**
+   * POSTs a command and resolves to the parsed reply. The server performs the
+   * actual change — a browser can neither call LMU's API cross-origin nor send
+   * it keystrokes — so the widget only ever posts an intent.
+   */
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return { ok: r.ok };
+        });
+      })
+      .catch(function () {
+        return { ok: false, error: "request failed" };
+      });
+  }
+
+  /** Flash a row to show a command failed, with the reason in the title. */
+  function flashError(refs, message) {
+    refs.root.setAttribute("data-error", "true");
+    refs.root.title = message || "";
+    setTimeout(function () {
+      refs.root.removeAttribute("data-error");
+    }, 1600);
+  }
+
+  /**
+   * A ± stepper. Clicks are stopped from propagating because the in-game layer
+   * starts a widget drag on pointerdown anywhere inside a widget — without this,
+   * pressing + would drag the whole MFD across the screen instead.
+   */
+  function stepButton(glyph, onStep) {
+    var b = document.createElement("button");
+    b.className = "mfd__step";
+    b.type = "button";
+    b.textContent = glyph;
+    ["pointerdown", "mousedown", "touchstart"].forEach(function (evt) {
+      b.addEventListener(evt, function (e) {
+        e.stopPropagation();
+      });
+    });
+    b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      onStep();
+    });
+    return b;
+  }
+
+  /**
+   * One row: LABEL … VALUE, plus ± steppers when the row is adjustable.
+   * `onStep(dir)` is supplied per row by the pit/aid renderers; a row without
+   * one stays exactly as read-only as it was before.
+   */
+  function makeRow(onStep) {
     var row = document.createElement("div");
     row.className = "mfd__row";
     var label = document.createElement("span");
@@ -69,7 +166,25 @@
     value.className = "mfd__value";
     row.appendChild(label);
     row.appendChild(value);
-    return { root: row, label: label, value: value };
+    var refs = { root: row, label: label, value: value };
+    if (onStep) {
+      var ctrls = document.createElement("span");
+      ctrls.className = "mfd__ctrls";
+      ctrls.appendChild(
+        stepButton("−", function () {
+          onStep(-1, refs);
+        }),
+      );
+      ctrls.appendChild(
+        stepButton("+", function () {
+          onStep(1, refs);
+        }),
+      );
+      row.appendChild(ctrls);
+      row.setAttribute("data-adjustable", "true");
+      refs.ctrls = ctrls;
+    }
+    return refs;
   }
 
   /**
@@ -77,7 +192,7 @@
    * refreshes the label/value text in place. `catOf` also drives the colour
    * (data-cat) and a small gap at each category change (group-start).
    */
-  function reconcile(group, items, idOf, catOf, labelOf, textOf) {
+  function reconcile(group, items, idOf, catOf, labelOf, textOf, stepFor) {
     var sig = items
       .map(function (it) {
         return idOf(it) + ":" + catOf(it);
@@ -89,7 +204,7 @@
       group.rowsEl.textContent = "";
       var prevCat = null;
       items.forEach(function (it) {
-        var refs = makeRow();
+        var refs = makeRow(stepFor ? stepFor(it) : null);
         var cat = catOf(it);
         refs.root.setAttribute("data-cat", cat);
         if (cat !== prevCat) {
@@ -130,6 +245,21 @@
       function (r) {
         return r.currentText || "—";
       },
+      // Every pit row is adjustable: the change goes over LMU's REST API, which
+      // needs neither window focus nor a visible in-game MFD.
+      function (r) {
+        return function (dir, refs) {
+          var body = { delta: dir };
+          if (r.pmcValue != null) body.pmcValue = r.pmcValue;
+          if (r.name) body.name = r.name;
+          refs.value.setAttribute("data-busy", "true");
+          postJson("/api/mfd/pit", body).then(function (res) {
+            refs.value.removeAttribute("data-busy");
+            if (!res || res.ok === false) flashError(refs, (res && res.error) || "pit change failed");
+            // The next telemetry frame carries the new value; no manual refresh.
+          });
+        };
+      },
     );
   }
 
@@ -154,6 +284,28 @@
       },
       function (a) {
         return a.text || String(a.value);
+      },
+      // Aids are stepped with a KEYSTROKE, not REST — LMU's REST aid values are
+      // frozen setup values. Only offered for aids LMU actually has bound (from
+      // /api/mfd/keymap), since an unbound function cannot be triggered at all.
+      function (a) {
+        var bind = aidBinds[a.key];
+        if (!bind || (!bind.canInc && !bind.canDec)) return null;
+        return function (dir, refs) {
+          if ((dir > 0 && !bind.canInc) || (dir < 0 && !bind.canDec)) {
+            flashError(refs, "that direction is not bound to a key in LMU");
+            return;
+          }
+          refs.value.setAttribute("data-busy", "true");
+          postJson("/api/mfd/aidkey", { aid: a.key, dir: dir > 0 ? "inc" : "dec" }).then(
+            function (res) {
+              refs.value.removeAttribute("data-busy");
+              // The commonest failure is the sim not being frontmost, which the
+              // server reports verbatim — worth showing, not swallowing.
+              if (!res || res.ok === false) flashError(refs, (res && res.error) || "key not sent");
+            },
+          );
+        };
       },
     );
   }
@@ -312,6 +464,12 @@
     showAids = !isOff("aids");
 
     buildOpacityControl(root, params);
+
+    // Which aids are bound in LMU. Polled slowly (not per frame): it changes
+    // only when the driver rebinds or the game starts, and a 30 Hz check for a
+    // value that moves twice a session would be pure waste.
+    loadAidBinds();
+    setInterval(loadAidBinds, 10000);
 
     if (!showPit && !showAids) {
       disabled = true;

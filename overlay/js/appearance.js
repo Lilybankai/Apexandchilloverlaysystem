@@ -70,12 +70,47 @@
     if (!suspended) write(wanted);
   }
 
+  /* --------------------------- per-widget modes --------------------------- */
+
+  /** Current mode per widget id, and everyone who wants telling when it moves. */
+  var modes = {};
+  var modeListeners = [];
+
   /**
-   * The one control other overlay code has over this: the in-game layout editor
-   * forces panels back to solid while it is open, because you cannot drag,
-   * stretch or even find a widget you cannot see. Routed through here rather
-   * than written directly so this file stays the only writer — a slider change
-   * that lands mid-edit is remembered and shows the moment editing ends.
+   * Apply a `{ widgetId: mode }` map. Widgets subscribe rather than poll: a mode
+   * changes a handful of times a session, so re-reading it every frame would be
+   * pure waste in a loop that runs at the broadcast rate.
+   */
+  function applyModes(next) {
+    if (!next || typeof next !== "object") return;
+    var changed = false;
+    for (var id in next) {
+      if (!Object.prototype.hasOwnProperty.call(next, id)) continue;
+      var mode = String(next[id]);
+      if (modes[id] !== mode) {
+        modes[id] = mode;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    for (var i = 0; i < modeListeners.length; i++) {
+      try {
+        modeListeners[i](modes);
+      } catch (e) {
+        // A widget's own handler must never break the appearance channel.
+        if (window.console) console.error("[Apex] mode listener failed:", e);
+      }
+    }
+  }
+
+  /**
+   * The control surface other overlay code has over appearance.
+   *
+   * `suspend`/`resume` exist for the in-game layout editor, which forces panels
+   * back to solid while it is open — you cannot drag, stretch or even find a
+   * widget you cannot see. Routed through here rather than written directly so
+   * this file stays the only writer: a slider change that lands mid-edit is
+   * remembered and shows the moment editing ends.
    */
   window.ApexAppearance = {
     suspend: function () {
@@ -85,6 +120,15 @@
     resume: function () {
       suspended = false;
       write(wanted);
+    },
+    /** Current mode for a widget, or `dflt` when none has been set. */
+    mode: function (widgetId, dflt) {
+      return modes[widgetId] || dflt;
+    },
+    /** Subscribe to mode changes; called immediately with the current map. */
+    onModes: function (cb) {
+      modeListeners.push(cb);
+      cb(modes);
     },
   };
 
@@ -98,16 +142,19 @@
 
   /* ---------------------------- 1. URL override --------------------------- */
 
-  var fromUrl = null;
+  // `?bg=` pins the OPACITY only. Widget modes keep flowing, so a source with a
+  // fixed look still follows a readout switch — pinning one is not a request to
+  // freeze the other.
+  var alphaPinned = false;
   try {
     var raw = new URLSearchParams(window.location.search).get("bg");
-    if (raw !== null) fromUrl = toAlpha(raw);
+    var fromUrl = raw === null ? null : toAlpha(raw);
+    if (fromUrl !== null) {
+      apply(fromUrl);
+      alphaPinned = true;
+    }
   } catch (e) {
     /* no URLSearchParams / malformed query — fall through to the live routes */
-  }
-  if (fromUrl !== null) {
-    apply(fromUrl);
-    return; // pinned by the URL: no bridge, no polling
   }
 
   /* ------------------------- 2. In-game app bridge ------------------------ */
@@ -117,7 +164,8 @@
     bridge.onAppearance(function (appearance) {
       if (!appearance) return;
       var a = toAlpha(appearance.panelOpacity);
-      if (a !== null) apply(a);
+      if (a !== null && !alphaPinned) apply(a);
+      applyModes(appearance.widgetModes);
     });
     return; // the app pushes changes — nothing to poll
   }
@@ -132,7 +180,8 @@
       .then(function (cfg) {
         if (!cfg) return;
         var a = toAlpha(cfg.panelOpacity);
-        if (a !== null) apply(a);
+        if (a !== null && !alphaPinned) apply(a);
+        applyModes(cfg.widgetModes);
       })
       .catch(function () {
         // Served from somewhere without the route (or the server is down):

@@ -125,8 +125,45 @@ function defaultSettings() {
     // background, border and header from every widget so only the live data
     // floats over the game. Applied by overlay/js/appearance.js.
     panelOpacity: 100,
+    // Keyboard bindings, { [actionId]: accelerator } — see electron/actions.js
+    // for the action vocabulary. Registered as GLOBAL hotkeys, so they also fire
+    // while the sim has focus, and a Stream Deck "Hotkey" button (which just
+    // injects a keystroke) binds here with no Stream-Deck-specific code.
+    // The two overlay entries mirror the legacy single-purpose shortcut
+    // settings below, which the hero-section chip still edits.
+    actionBindings: {
+      'overlay.toggle': 'F8',
+      'overlay.interact': 'F7',
+    },
+    // Per-widget display mode, { [widgetId]: mode }. Empty means every widget
+    // uses its own default, so this stays out of the way until something is
+    // deliberately switched. Delivered with panelOpacity (see applyAppearance).
+    widgetModes: {},
+    // Wheel/controller bindings:
+    //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
+    // A `delta` action can take two buttons (an encoder's two directions); a
+    // `pulse` action uses `inc` alone. Kept separate from actionBindings because
+    // a wheel button is a device+number, not an accelerator string — and unlike
+    // a global hotkey it is NOT consumed, so the sim still sees it too.
+    wheelBindings: {},
   };
 }
+
+/**
+ * The modes each switchable widget cycles through, in order. The first entry is
+ * the default and must preserve the widget's original behaviour, so an operator
+ * who never touches this sees no change at all.
+ */
+const WIDGET_MODES = {
+  // 'auto' keeps the existing core-temp → surface → tread fallback.
+  tyres: ['auto', 'temp', 'surface', 'tread'],
+};
+
+/** Action ids whose binding is mirrored by a legacy single-purpose setting. */
+const LEGACY_SHORTCUT_ACTIONS = {
+  'overlay.toggle': 'ingameToggleShortcut',
+  'overlay.interact': 'ingameInteractShortcut',
+};
 
 /** Directory holding the operator's copied-in sponsor logo images. */
 function sponsorDir() {
@@ -254,7 +291,66 @@ function loadSettings() {
         : defaults.sponsorsEnabled,
     sponsorIntervalSec: clamp(stored.sponsorIntervalSec, 3, 120, defaults.sponsorIntervalSec),
     panelOpacity: clamp(stored.panelOpacity, 0, 100, defaults.panelOpacity),
+    actionBindings: normalizeBindings(stored, defaults),
+    widgetModes: normalizeWidgetModes(stored),
+    wheelBindings: normalizeWheelBindings(stored),
   };
+}
+
+/** Validate the wheel binding map; a malformed entry is dropped, not trusted. */
+function normalizeWheelBindings(stored) {
+  const out = {};
+  const from = stored && typeof stored.wheelBindings === 'object' ? stored.wheelBindings : null;
+  if (!from) return out;
+  for (const [actionId, entry] of Object.entries(from)) {
+    if (typeof actionId !== 'string' || !entry || typeof entry !== 'object') continue;
+    const clean = {};
+    for (const dir of ['inc', 'dec']) {
+      const b = entry[dir];
+      if (b && typeof b.device === 'string' && Number.isFinite(b.button) && b.button > 0) {
+        clean[dir] = { device: b.device, button: Math.round(b.button) };
+      }
+    }
+    if (clean.inc || clean.dec) out[actionId] = clean;
+  }
+  return out;
+}
+
+/** Keep only widget/mode pairs we still recognise, so a stale config is inert. */
+function normalizeWidgetModes(stored) {
+  const out = {};
+  const from = stored && typeof stored.widgetModes === 'object' ? stored.widgetModes : null;
+  if (!from) return out;
+  for (const [widget, mode] of Object.entries(from)) {
+    const allowed = WIDGET_MODES[widget];
+    if (allowed && allowed.includes(mode)) out[widget] = mode;
+  }
+  return out;
+}
+
+/**
+ * Resolve the action→accelerator map from disk.
+ *
+ * Migration matters here: installs predating the bindings map have only the two
+ * legacy shortcut fields, so those seed the corresponding actions rather than
+ * being silently dropped — an operator who set F9 for "show in game" keeps F9.
+ */
+function normalizeBindings(stored, defaults) {
+  const out = {};
+  const from = stored && typeof stored.actionBindings === 'object' ? stored.actionBindings : null;
+  if (from) {
+    for (const [id, accel] of Object.entries(from)) {
+      if (typeof id === 'string' && typeof accel === 'string') out[id] = accel.trim();
+    }
+  }
+  for (const [actionId, legacyKey] of Object.entries(LEGACY_SHORTCUT_ACTIONS)) {
+    if (out[actionId] === undefined) {
+      const legacy = stored ? stored[legacyKey] : undefined;
+      out[actionId] =
+        typeof legacy === 'string' ? legacy.trim() : defaults.actionBindings[actionId];
+    }
+  }
+  return out;
 }
 
 /** Persist settings to userData, tolerant of transient write failures. */
@@ -498,7 +594,7 @@ function toggleIngame() {
  */
 function applyAppearance(settings) {
   const s = settings || loadSettings();
-  const payload = { panelOpacity: s.panelOpacity };
+  const payload = { panelOpacity: s.panelOpacity, widgetModes: s.widgetModes || {} };
   try {
     requireServer().setAppearance(payload);
   } catch (err) {
@@ -509,25 +605,179 @@ function applyAppearance(settings) {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Action registry — the vocabulary every input source binds to               */
+/* -------------------------------------------------------------------------- */
+
+/** Lazily built so it sees a working dist/ and the current settings. */
+let actions = null;
+
 /**
- * (Re)register the global hotkey that toggles the in-game overlay. Clears any
- * previous binding first; an empty accelerator leaves it unbound. Registration
- * is wrapped so an invalid/occupied accelerator can never crash startup.
+ * Persist a partial settings change and reflect it everywhere, the same way the
+ * IPC handler does. Actions use this so a bound encoder turning the background
+ * opacity behaves identically to dragging the slider in the panel.
  */
-function applyToggleShortcut(settings) {
+function applySettings(partial) {
+  const current = loadSettings();
+  const next = { ...current, ...partial };
+  saveSettings(next);
+  // Both of these ride the appearance channel, so either changing means the
+  // overlays need re-telling.
+  if (
+    (partial.panelOpacity !== undefined && partial.panelOpacity !== current.panelOpacity) ||
+    partial.widgetModes !== undefined
+  ) {
+    applyAppearance(next);
+  }
+  pushSettings(next);
+  return next;
+}
+
+function getActions() {
+  if (!actions) {
+    const { createActions } = require('./actions');
+    actions = createActions({
+      loadSettings,
+      applySettings,
+      toggleIngame,
+      toggleIngameInteract,
+      resetLayout: () => {
+        const settings = loadSettings();
+        saveSettings({ ...settings, ingameLayout: {} });
+        if (overlayWin && !overlayWin.isDestroyed()) {
+          overlayWin.webContents.send('ingame:layout-reset');
+        }
+      },
+      /** Advance a widget to its next display mode and push it to the overlays. */
+      cycleWidgetMode: (widgetId) => {
+        const modes = WIDGET_MODES[widgetId];
+        if (!modes) return;
+        const settings = loadSettings();
+        const current = (settings.widgetModes || {})[widgetId] || modes[0];
+        const next = modes[(modes.indexOf(current) + 1) % modes.length];
+        applySettings({ widgetModes: { ...settings.widgetModes, [widgetId]: next } });
+      },
+    });
+  }
+  return actions;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Wheel / controller input                                                   */
+/* -------------------------------------------------------------------------- */
+
+let gamepad = null;
+/** Set while the bindings UI is waiting for the operator to press a button. */
+let wheelCapture = null;
+
+/**
+ * The reader, created on first use. Polling is only started when something is
+ * actually bound to a wheel button (or a capture is open), so an operator who
+ * binds nothing pays no cost at all.
+ */
+function getGamepad() {
+  if (!gamepad) {
+    const { GamepadReader } = require('./gamepad');
+    gamepad = new GamepadReader({
+      verbose: false,
+      onButton: (device, button, down) => onWheelButton(device, button, down),
+    });
+  }
+  return gamepad;
+}
+
+/** Start/stop polling to match whether any binding (or capture) needs it. */
+function syncGamepad(settings) {
+  const s = settings || loadSettings();
+  const wanted = wheelCapture !== null || Object.keys(s.wheelBindings || {}).length > 0;
+  if (!wanted && !gamepad) return; // never opened, nothing to do
+  getGamepad().setActive(wanted);
+}
+
+/**
+ * A wheel button changed. Only the press edge acts: a held button should fire
+ * once, and an encoder detent arrives as a rapid down/up pair, so acting on the
+ * release as well would double every step.
+ */
+function onWheelButton(device, button, down) {
+  if (!down) return;
+
+  if (wheelCapture) {
+    const capture = wheelCapture;
+    wheelCapture = null;
+    capture.resolve({ ok: true, device, button });
+    syncGamepad();
+    return;
+  }
+
+  const bindings = loadSettings().wheelBindings || {};
+  for (const [actionId, entry] of Object.entries(bindings)) {
+    for (const dir of ['inc', 'dec']) {
+      const b = entry[dir];
+      if (b && b.device === device && b.button === button) {
+        void runAction(actionId, dir === 'dec' ? -1 : 1);
+      }
+    }
+  }
+}
+
+/** Run an action by id, logging failures rather than letting them escape. */
+async function runAction(id, dir) {
+  const result = await getActions().run(id, dir);
+  if (result && result.ok === false) {
+    console.warn(`[action] ${id} failed: ${result.error}`);
+  }
+  return result;
+}
+
+/**
+ * (Re)register every keyboard binding as a GLOBAL hotkey, so it fires while the
+ * sim has focus — and so a Stream Deck button, which merely injects a keystroke,
+ * works through the same path with nothing Stream-Deck-specific in the app.
+ *
+ * Clears previous registrations first; an empty accelerator means unbound. Each
+ * registration is wrapped so one invalid or already-taken accelerator can never
+ * crash startup or block the rest.
+ *
+ * Note a global hotkey is CONSUMED: the key will not also reach LMU. Bindings
+ * should therefore use keys the sim does not itself bind — surfaced in the UI.
+ *
+ * @returns {{registered: string[], failed: {action: string, accel: string, reason: string}[]}}
+ */
+function applyBindings(settings) {
   globalShortcut.unregisterAll();
   const s = settings || loadSettings();
-  const reg = (accel, fn, label) => {
-    if (!accel) return;
-    try {
-      const ok = globalShortcut.register(accel, fn);
-      if (!ok) console.warn(`[app] could not register ${label} hotkey "${accel}" (in use?)`);
-    } catch (err) {
-      console.warn(`[app] invalid ${label} hotkey "${accel}": ${err.message}`);
+  const result = { registered: [], failed: [] };
+  const seen = new Map(); // accelerator -> first action that claimed it
+
+  for (const [actionId, accel] of Object.entries(s.actionBindings || {})) {
+    if (!accel) continue;
+    if (seen.has(accel)) {
+      result.failed.push({
+        action: actionId,
+        accel,
+        reason: `already bound to "${seen.get(accel)}"`,
+      });
+      continue;
     }
-  };
-  reg(s.ingameToggleShortcut, toggleIngame, 'show/hide');
-  reg(s.ingameInteractShortcut, toggleIngameInteract, 'interact');
+    try {
+      const ok = globalShortcut.register(accel, () => {
+        void runAction(actionId, 1);
+      });
+      if (ok) {
+        seen.set(accel, actionId);
+        result.registered.push(actionId);
+      } else {
+        result.failed.push({ action: actionId, accel, reason: 'in use by another app' });
+      }
+    } catch (err) {
+      result.failed.push({ action: actionId, accel, reason: err.message });
+    }
+  }
+  for (const f of result.failed) {
+    console.warn(`[app] hotkey "${f.accel}" for ${f.action} not registered: ${f.reason}`);
+  }
+  return result;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -770,6 +1020,25 @@ function registerIpc() {
       if (partial.panelOpacity !== undefined) {
         next.panelOpacity = clamp(partial.panelOpacity, 0, 100, current.panelOpacity);
       }
+      if (partial.actionBindings && typeof partial.actionBindings === 'object') {
+        next.actionBindings = { ...current.actionBindings };
+        for (const [id, accel] of Object.entries(partial.actionBindings)) {
+          if (typeof id !== 'string' || typeof accel !== 'string') continue;
+          next.actionBindings[id] = accel.trim();
+          // Keep the legacy single-purpose settings in step so the hero-section
+          // hotkey chip keeps showing the truth.
+          const legacyKey = LEGACY_SHORTCUT_ACTIONS[id];
+          if (legacyKey) next[legacyKey] = accel.trim();
+        }
+      }
+    }
+
+    // The legacy chip writes ingameToggleShortcut directly; mirror it back into
+    // the bindings map, which is what actually gets registered.
+    for (const [actionId, legacyKey] of Object.entries(LEGACY_SHORTCUT_ACTIONS)) {
+      if (partial && typeof partial[legacyKey] === 'string') {
+        next.actionBindings = { ...next.actionBindings, [actionId]: next[legacyKey] };
+      }
     }
     saveSettings(next);
 
@@ -777,9 +1046,11 @@ function registerIpc() {
     // it is deliberately NOT part of the restart check below.
     if (next.panelOpacity !== current.panelOpacity) applyAppearance(next);
 
-    // Re-bind the global hotkey if it changed.
-    if (next.ingameToggleShortcut !== current.ingameToggleShortcut) {
-      applyToggleShortcut(next);
+    // Re-register hotkeys whenever any binding changed. Compared as a whole map
+    // rather than per-key: a rebind, a clear and a brand-new binding all need
+    // the same re-registration pass.
+    if (JSON.stringify(next.actionBindings) !== JSON.stringify(current.actionBindings)) {
+      applyBindings(next);
     }
 
     // Port, rate, demo and sponsor changes require a server restart to take
@@ -916,6 +1187,117 @@ function registerIpc() {
       overlayWin.webContents.send('ingame:layout-reset');
     }
     return true;
+  });
+
+  /* ---- Bindable actions ---- */
+
+  /**
+   * The action catalog plus each one's current binding, for the Bindings card.
+   * Built fresh per call: the driving-aid actions come from LMU's own bind file,
+   * so the list changes when the driver rebinds in-game.
+   */
+  ipcMain.handle('actions:list', () => {
+    const settings = loadSettings();
+    return getActions()
+      .list()
+      .map((a) => ({
+        ...a,
+        binding: settings.actionBindings[a.id] || '',
+        wheel: settings.wheelBindings[a.id] || null,
+      }));
+  });
+
+  /** Bind (or clear, with an empty accelerator) one action. */
+  ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {
+    if (typeof actionId !== 'string' || typeof accelerator !== 'string') {
+      return { ok: false, error: 'bad arguments' };
+    }
+    const current = loadSettings();
+    const next = {
+      ...current,
+      actionBindings: { ...current.actionBindings, [actionId]: accelerator.trim() },
+    };
+    const legacyKey = LEGACY_SHORTCUT_ACTIONS[actionId];
+    if (legacyKey) next[legacyKey] = accelerator.trim();
+    saveSettings(next);
+    const applied = applyBindings(next);
+    pushSettings(next);
+    const failure = applied.failed.find((f) => f.action === actionId);
+    return { ok: !failure, error: failure ? failure.reason : undefined, settings: next };
+  });
+
+  /** Fire an action from the UI — used by the "test" button beside each row. */
+  ipcMain.handle('actions:run', async (_evt, actionId, dir) => {
+    if (typeof actionId !== 'string') return { ok: false, error: 'bad action id' };
+    return runAction(actionId, Number(dir) || 1);
+  });
+
+  /* ---- Wheel bindings ---- */
+
+  /** Attached controllers plus whether the reader works on this host. */
+  ipcMain.handle('wheel:devices', () => {
+    const g = getGamepad();
+    // Opening is idempotent; this also picks up a wheel plugged in since boot.
+    g.setActive(true);
+    const devices = g.list();
+    syncGamepad();
+    return { available: g.available, error: g.failed, devices };
+  });
+
+  /**
+   * Wait for the operator to press a wheel button, for binding capture.
+   * Resolves with the button, or after a timeout so a stuck capture cannot
+   * leave the reader polling forever.
+   */
+  ipcMain.handle('wheel:capture', async () => {
+    if (wheelCapture) {
+      wheelCapture.resolve({ ok: false, error: 'another capture is already open' });
+      wheelCapture = null;
+    }
+    const g = getGamepad();
+    if (!g.available) return { ok: false, error: g.failed || 'controller input unavailable' };
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (wheelCapture && wheelCapture.timer === timer) {
+          wheelCapture = null;
+          syncGamepad();
+          resolve({ ok: false, error: 'timed out — no button pressed' });
+        }
+      }, 10000);
+      timer.unref?.();
+      wheelCapture = {
+        timer,
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+      };
+      syncGamepad();
+    });
+  });
+
+  /** Bind (or clear, with a null button) one direction of one action. */
+  ipcMain.handle('wheel:bind', (_evt, actionId, dir, binding) => {
+    if (typeof actionId !== 'string' || (dir !== 'inc' && dir !== 'dec')) {
+      return { ok: false, error: 'bad arguments' };
+    }
+    const current = loadSettings();
+    const entry = { ...(current.wheelBindings[actionId] || {}) };
+    if (binding && typeof binding.device === 'string' && Number.isFinite(binding.button)) {
+      entry[dir] = { device: binding.device, button: Math.round(binding.button) };
+    } else {
+      delete entry[dir];
+    }
+    const wheelBindings = { ...current.wheelBindings };
+    if (entry.inc || entry.dec) wheelBindings[actionId] = entry;
+    else delete wheelBindings[actionId];
+
+    const next = { ...current, wheelBindings };
+    saveSettings(next);
+    syncGamepad(next);
+    pushSettings(next);
+    return { ok: true, settings: next };
   });
 
   ipcMain.handle('clipboard:write', (_evt, text) => {
@@ -1100,7 +1482,8 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   setupAutoUpdate();
-  applyToggleShortcut(loadSettings());
+  applyBindings(loadSettings());
+  syncGamepad();
   // Auto-start the server so overlays are live as soon as the app opens.
   await startServer();
 
@@ -1120,6 +1503,9 @@ app.on('window-all-closed', async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Release the DirectInput devices; leaving them acquired holds COM objects
+  // alive past process teardown.
+  if (gamepad) gamepad.close();
 });
 
 app.on('before-quit', () => {

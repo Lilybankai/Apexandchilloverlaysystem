@@ -320,6 +320,61 @@ html, body {
 }
 .hotkey__clear:hover { color: var(--bad); }
 
+/* ==========================================================================
+ * BINDINGS — one row per action, reusing the .hotkey__key chip above so key
+ * capture looks and behaves identically wherever it appears in the panel.
+ * ======================================================================== */
+.binding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Group heading (Overlay / Driving aids / Pit strategy …). */
+.binding-group {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 14px 2px 6px;
+  border-bottom: 1px solid var(--line-1);
+  margin-bottom: 4px;
+}
+.binding-group:first-child { padding-top: 2px; }
+
+.binding-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 2px;
+}
+.binding-row + .binding-row { border-top: 1px solid var(--line-1); }
+
+.binding-row__info {
+  flex: 1;
+  min-width: 0;
+}
+.binding-row__label {
+  font-size: 13px;
+  color: var(--text);
+}
+.binding-row__meta {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* The chip is wider here than in the hero: action names make rows tall enough
+   that a narrow chip looks lost. */
+.binding-row__key { min-width: 96px; }
+.binding-row__key[data-error="true"] {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.binding-note { margin-top: 12px; }
+
 .ingame-switch {
   display: inline-flex;
   align-items: center;
@@ -641,4 +696,20 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Wheel-button chips, one per bindable direction. Narrower than the key chip:
+   they hold "btn 47", not an accelerator. */
+.binding-row__wheels {
+  display: flex;
+  gap: 4px;
+}
+.binding-row__wheel {
+  min-width: 62px;
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.binding-row__wheel[data-capturing="true"] {
+  border-color: var(--cyan);
+  color: var(--cyan);
 }

@@ -23,22 +23,18 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
-import type { AidKeyBinding } from './aidKeymap';
+import { findAid, readLmuKeybinds } from './lmuKeybinds';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
 
 /** Largest command body we will read — these are a handful of small fields. */
 const MAX_BODY_BYTES = 4096;
-/** Cap on the bind-helper fire delay, so a stray value can't hang a request. */
-const MAX_KEY_DELAY_MS = 15_000;
 
 /** Dependencies the MFD routes act through. */
 export interface MfdRouteDeps {
   controller: MfdController;
   keys: KeySender;
-  /** Aid→key map, indexed by aid (VM_) key. */
-  keymap: Map<string, AidKeyBinding>;
 }
 
 /**
@@ -50,7 +46,7 @@ export function handleMfdCommand(
   res: ServerResponse,
   deps: MfdRouteDeps,
 ): boolean {
-  const { controller, keys, keymap } = deps;
+  const { controller, keys } = deps;
   const url = (req.url ?? '').split('?')[0] ?? '';
   if (!url.startsWith(MFD_API_PREFIX)) return false;
   const action = url.slice(MFD_API_PREFIX.length);
@@ -65,15 +61,32 @@ export function handleMfdCommand(
     return true;
   }
 
-  // The aid→key map + injector status, so the widget can label each aid with the
-  // key to bind in LMU and warn when the sim isn't focused / injection is off.
+  // What the overlay can actually drive: LMU's OWN aid binds (read live from its
+  // keyboard.json), plus injector status. The widget uses this to show ± only on
+  // aids that are really bound, and to explain itself when the sim isn't focused.
   if (req.method === 'GET' && action === 'keymap') {
+    const binds = readLmuKeybinds();
     sendJson(res, 200, {
       ok: true,
       available: keys.available,
       simForeground: keys.isSimForeground(),
       foreground: keys.foregroundTitle(),
-      bindings: [...keymap.values()],
+      configPath: binds.path,
+      keyboardSchemeActive: binds.keyboardSchemeActive,
+      aids: binds.aids.map((a) => ({
+        id: a.id,
+        vmKey: a.vmKey,
+        // Every name this aid answers to, so the widget can match a row whatever
+        // key its frame happens to carry (brake bias arrives as BRAKE_BIAS).
+        keys: [a.id, a.vmKey, ...a.aliases].filter(Boolean),
+        label: a.label,
+        // A direction with no key is not offerable — surfaced so the widget can
+        // grey it out rather than fail on click.
+        canInc: a.inc !== null,
+        canDec: a.dec !== null,
+        incFunction: a.incFunction,
+        decFunction: a.decFunction,
+      })),
     });
     return true;
   }
@@ -109,7 +122,7 @@ export function handleMfdCommand(
         return;
       }
       if (action === 'aidkey') {
-        handleAidKey(res, body, keys, keymap);
+        await handleAidKey(res, body, keys);
         return;
       }
       sendJson(res, 404, { ok: false, error: `unknown MFD action: ${action}` });
@@ -122,37 +135,65 @@ export function handleMfdCommand(
 }
 
 /**
- * Fires the keystroke bound to an aid direction. `requireSim` (default true)
- * refuses to send unless LMU is the foreground window, so a click that stole
- * focus can't leak a key into the browser. `delayMs` defers the press — the
- * LMU-binding flow: request it, then focus LMU's control-bind dialog before it
- * fires (with `requireSim:false`, since the dialog is captured differently).
+ * Fires the keystroke that steps a driving aid.
+ *
+ * The keys come from **LMU's own `keyboard.json`**, resolved fresh on every
+ * request (see {@link module:server/lmuKeybinds}) rather than from a keymap we
+ * invent. That matters for two reasons: a key the game has not bound does
+ * nothing however perfectly we send it, and the driver may rebind at any time.
+ *
+ * The aid may be named either by its stable id (`tc`) or by the `VM_*` key the
+ * telemetry frame carries (`VM_TRACTIONCONTROLMAP`), so the widget can pass
+ * straight through whatever it is rendering.
+ *
+ * `requireSim` (default true) refuses to send unless LMU is frontmost —
+ * `SendInput` goes to the foreground window, so an unguarded press would land
+ * in whatever the operator just clicked.
  */
-function handleAidKey(
-  res: ServerResponse,
-  body: unknown,
-  keys: KeySender,
-  keymap: Map<string, AidKeyBinding>,
-): void {
-  const b = body as { aid?: string; dir?: string; requireSim?: boolean; delayMs?: number };
+async function handleAidKey(res: ServerResponse, body: unknown, keys: KeySender): Promise<void> {
+  const b = body as { aid?: string; dir?: string; requireSim?: boolean; repeat?: number };
   if (!b.aid || (b.dir !== 'inc' && b.dir !== 'dec')) {
     sendJson(res, 400, { ok: false, error: "aidkey needs { aid, dir: 'inc'|'dec' }" });
     return;
   }
-  const binding = keymap.get(b.aid);
-  if (!binding) {
-    sendJson(res, 404, { ok: false, error: `no key mapping for aid ${b.aid}` });
+
+  const binds = readLmuKeybinds();
+  if (!binds.path) {
+    sendJson(res, 503, { ok: false, error: 'LMU keyboard config not found' });
     return;
   }
-  const keyName = b.dir === 'inc' ? binding.inc : binding.dec;
-  const requireSim = b.requireSim ?? true;
-  const fire = (): void => {
-    const r = keys.press(keyName, { requireSim });
-    sendJson(res, r.ok ? 200 : 409, { ...r, aid: b.aid, dir: b.dir, key: keyName });
-  };
-  const delay = Math.min(MAX_KEY_DELAY_MS, Math.max(0, Number(b.delayMs) || 0));
-  if (delay > 0) setTimeout(fire, delay);
-  else fire();
+  const aid = findAid(binds, b.aid);
+  if (!aid) {
+    sendJson(res, 404, { ok: false, error: `unknown aid: ${b.aid}` });
+    return;
+  }
+  const key = b.dir === 'inc' ? aid.inc : aid.dec;
+  if (!key) {
+    // Bound in LMU is the precondition; say so plainly rather than failing mute.
+    sendJson(res, 409, {
+      ok: false,
+      error: `"${b.dir === 'inc' ? aid.incFunction : aid.decFunction}" is not bound to a key in LMU`,
+      aid: aid.id,
+    });
+    return;
+  }
+  if (!binds.keyboardSchemeActive) {
+    sendJson(res, 409, {
+      ok: false,
+      error: 'LMU has its keyboard scheme disabled — the key would be ignored',
+    });
+    return;
+  }
+
+  const repeat = Math.min(20, Math.max(1, Math.round(Number(b.repeat) || 1)));
+  const result = await keys.pressScanTimes(key, repeat, { requireSim: b.requireSim ?? true });
+  sendJson(res, result.ok ? 200 : 409, {
+    ...result,
+    aid: aid.id,
+    dir: b.dir,
+    scancode: key.scancode,
+    extended: key.extended,
+  });
 }
 
 /** Reads and JSON-parses a small request body, rejecting oversized ones. */

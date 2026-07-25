@@ -133,6 +133,26 @@
       </div>
     </section>
 
+    <!-- ===================== BINDINGS ===================== -->
+    <section class="card">
+      <div class="card__head">
+        <h2 class="card__title">Bindings</h2>
+        <p class="card__desc">
+          Bind a key to any action. Bindings are <strong>global</strong>, so they
+          fire while the sim has focus — and a <strong>Stream Deck</strong> button
+          set to that key works too, since it just sends a keystroke.
+          <br />
+          Driving-aid actions come from <strong>LMU's own key bindings</strong>;
+          rebind in game and they follow automatically.
+        </p>
+      </div>
+      <ul class="binding-list" id="binding-list"><!-- rows injected by JS --></ul>
+      <p class="field__hint binding-note">
+        A bound key is <strong>consumed</strong> — it will not also reach the sim.
+        Pick keys LMU doesn't use.
+      </p>
+    </section>
+
     <div class="two-col">
       <!-- ===================== SETTINGS ===================== -->
       <section class="card">

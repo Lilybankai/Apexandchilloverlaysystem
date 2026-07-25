@@ -37,6 +37,8 @@
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
+    initMode(new URLSearchParams(window.location.search));
+
     var grid = document.createElement("div");
     grid.className = "tyres__grid";
 
@@ -74,6 +76,33 @@
     mount.appendChild(grid);
   }
 
+  /**
+   * Which reading fills the big line: 'auto' (core temp → surface → tread),
+   * 'temp', 'surface' or 'tread'.
+   *
+   * Set by the operator through the appearance channel (a bound key/wheel button
+   * cycles it live), or pinned per OBS source with `?tyres=`. The URL wins, the
+   * same contract the Motion widget's mode params use — a source configured for
+   * a specific readout should not change under someone else's key press.
+   */
+  var mode = "auto";
+  var modePinned = false;
+
+  function initMode(params) {
+    var fromUrl = (params.get("tyres") || "").trim().toLowerCase();
+    if (fromUrl === "temp" || fromUrl === "surface" || fromUrl === "tread" || fromUrl === "auto") {
+      mode = fromUrl;
+      modePinned = true;
+      return;
+    }
+    if (window.ApexAppearance && window.ApexAppearance.onModes) {
+      window.ApexAppearance.onModes(function (modes) {
+        if (modePinned) return;
+        mode = modes.tyres || "auto";
+      });
+    }
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var tyres = frame.player ? frame.player.tyres : null;
@@ -91,10 +120,23 @@
       var hasWear = fmt.has(t.wear);
       var wearStr = hasWear ? Math.round(t.wear * 100) + "%" : "—";
 
-      // Primary: core temp (matches the game) → surface temp → tread %.
-      // Sub-line: the surface temp when core is primary, else tread %.
+      // What goes on the big line is the operator's choice (bindable to a key,
+      // a wheel button or a Stream Deck; see electron/actions.js). Each explicit
+      // mode still falls back when its channel is missing, so picking "tread" on
+      // a car that reports no wear shows a temperature rather than a dash.
       var primaryStr, subStr;
-      if (hasCore) {
+      if (mode === "tread" && hasWear) {
+        primaryStr = wearStr;
+        subStr = hasCore ? fmt.tempC1(t.tempC) : hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : "TREAD";
+      } else if (mode === "surface" && hasSurf) {
+        primaryStr = fmt.tempC1(t.surfaceTempC);
+        subStr = wearStr;
+      } else if (mode === "temp" && hasCore) {
+        primaryStr = fmt.tempC1(t.tempC);
+        subStr = wearStr;
+      } else if (hasCore) {
+        // 'auto' (the default): core temp → surface temp → tread %, with the
+        // surface temp on the sub-line when core is primary.
         primaryStr = fmt.tempC1(t.tempC);
         subStr = hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : wearStr;
       } else if (hasSurf) {
