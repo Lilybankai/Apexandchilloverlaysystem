@@ -2,11 +2,18 @@
  * ingame.js — layout + edit-mode manager for the in-game overlay layer.
  * -----------------------------------------------------------------------------
  * Runs only on ingame.html. Owns the .ig-item wrappers around each widget:
- *   - applies saved placement ({x, y, scale} per widget) or sensible defaults
- *     mirroring the OBS combined page;
+ *   - applies saved placement ({x, y, scale, w, h} per widget) or sensible
+ *     defaults mirroring the OBS combined page;
  *   - in edit mode (toggled by the app through window.apexIngame) lets the
- *     operator drag widgets and resize them via the corner handle (scale
- *     transform — widget internals never reflow);
+ *     operator drag widgets to move them and resize them three ways:
+ *       · the RIGHT edge sets the widget's width — the widget reflows into it,
+ *         so a wider standings tower gives its driver names more room rather
+ *         than magnifying the whole thing;
+ *       · the BOTTOM edge sets its height — the body is boxed and clipped to
+ *         that height, which is how a 20-car field is cropped to the top few;
+ *       · the CORNER scales the whole widget uniformly (transform: scale), the
+ *         original behaviour — nothing inside reflows.
+ *     Double-clicking a handle clears that dimension back to automatic.
  *   - persists placement through the preload bridge, falling back to
  *     localStorage when the page is opened in a plain browser.
  *
@@ -20,6 +27,13 @@
   var LS_KEY = "apex-ingame-layout";
   var MIN_SCALE = 0.4;
   var MAX_SCALE = 3;
+  /** Floors for edge resizing — small enough to be useful, never unclickable. */
+  var MIN_W = 120;
+  var MIN_H = 56;
+
+  function clampNum(v, min, max) {
+    return Math.min(max, Math.max(min, v));
+  }
 
   /** Default placement per widget id (px, for a generic 16:9 screen). */
   function defaultsFor(id, vw, vh) {
@@ -60,7 +74,19 @@
     var d = defaultsFor(id, window.innerWidth, window.innerHeight);
     var l = layout[id] || { x: d.x, y: d.y, scale: 1 };
     layout[id] = l;
-    el.style.width = d.w + "px";
+    // Width: the operator's stretched width when they have set one, otherwise
+    // the widget's design width (the same one the OBS pages use).
+    el.style.width = (l.w || d.w) + "px";
+    // Height stays automatic unless it has been set: a panel is normally as tall
+    // as its content (the standings tower grows with the field). Once a height
+    // exists the widget is boxed to it and its body clips — see ingame.css.
+    if (l.h) {
+      el.style.height = l.h + "px";
+      el.setAttribute("data-sized-h", "true");
+    } else {
+      el.style.height = "";
+      el.removeAttribute("data-sized-h");
+    }
     el.style.left = l.x + "px";
     el.style.top = l.y + "px";
     el.style.transform = l.scale === 1 ? "" : "scale(" + l.scale + ")";
@@ -118,6 +144,14 @@
     editing = !!on;
     document.body.classList.toggle("ig-editing", editing);
     toolbar.hidden = !editing;
+    // Panel backgrounds come back for the duration, whatever the operator's
+    // "Widget background" setting is — a widget faded to nothing can still be
+    // moved and stretched, but not found. js/appearance.js restores the chosen
+    // value (including one changed while editing) on the way out.
+    if (window.ApexAppearance) {
+      if (editing) window.ApexAppearance.suspend();
+      else window.ApexAppearance.resume();
+    }
   }
 
   document.getElementById("ig-done").addEventListener("click", function () {
@@ -153,7 +187,12 @@
     if (bridge) bridge.layoutReset();
   });
 
-  /** One drag session: moving the item, or scaling it via the corner handle. */
+  /**
+   * One drag session. `mode` is "move" (anywhere on the widget) or the handle's
+   * own data-resize: "width" (right edge), "height" (bottom edge) or "scale"
+   * (corner). offsetWidth/offsetHeight are the UNSCALED box, which is what the
+   * width/height we store describe.
+   */
   var drag = null;
 
   function onPointerDown(ev) {
@@ -166,13 +205,14 @@
     drag = {
       el: item,
       id: id,
-      resize: !!handle,
+      mode: handle ? handle.getAttribute("data-resize") || "scale" : "move",
       startX: ev.clientX,
       startY: ev.clientY,
       origX: l.x,
       origY: l.y,
       origScale: l.scale,
       baseW: item.offsetWidth,
+      baseH: item.offsetHeight,
     };
     ev.preventDefault();
   }
@@ -180,16 +220,27 @@
   function onPointerMove(ev) {
     if (!drag) return;
     var l = layout[drag.id];
-    if (drag.resize) {
+    var dxScreen = ev.clientX - drag.startX;
+    var dyScreen = ev.clientY - drag.startY;
+
+    if (drag.mode === "scale") {
       // Dragging the corner: new scale = scaled width / natural width.
-      var newW = drag.baseW * drag.origScale + (ev.clientX - drag.startX);
-      var s = newW / drag.baseW;
-      if (s < MIN_SCALE) s = MIN_SCALE;
-      else if (s > MAX_SCALE) s = MAX_SCALE;
-      l.scale = Math.round(s * 100) / 100;
+      var s = (drag.baseW * drag.origScale + dxScreen) / drag.baseW;
+      l.scale = Math.round(clampNum(s, MIN_SCALE, MAX_SCALE) * 100) / 100;
+    } else if (drag.mode === "width" || drag.mode === "height") {
+      // The box is drawn scaled, so the cursor travels `scale` screen pixels for
+      // every pixel of box: divide, or the edge runs away from the pointer on a
+      // widget that has also been scaled up.
+      if (drag.mode === "width") {
+        var w = drag.baseW + dxScreen / drag.origScale;
+        l.w = Math.round(clampNum(w, MIN_W, window.innerWidth));
+      } else {
+        var h = drag.baseH + dyScreen / drag.origScale;
+        l.h = Math.round(clampNum(h, MIN_H, window.innerHeight));
+      }
     } else {
-      var x = drag.origX + (ev.clientX - drag.startX);
-      var y = drag.origY + (ev.clientY - drag.startY);
+      var x = drag.origX + dxScreen;
+      var y = drag.origY + dyScreen;
       // Keep at least a grabbable sliver on screen.
       var maxX = window.innerWidth - 40;
       var maxY = window.innerHeight - 40;
@@ -205,9 +256,31 @@
     saveLayout();
   }
 
+  /**
+   * Double-click a handle to give that dimension back to the widget: the design
+   * width, content height, or 1:1 scale. Without this, a height dragged too
+   * short could only be undone by guessing the original back or resetting the
+   * whole layout.
+   */
+  function onDoubleClick(ev) {
+    if (!editing) return;
+    var handle = ev.target.closest(".ig-item__handle");
+    var item = ev.target.closest(".ig-item");
+    if (!handle || !item) return;
+    var l = layout[item.getAttribute("data-id")];
+    var mode = handle.getAttribute("data-resize") || "scale";
+    if (mode === "width") delete l.w;
+    else if (mode === "height") delete l.h;
+    else l.scale = 1;
+    applyItem(item);
+    saveLayout();
+    ev.preventDefault();
+  }
+
   document.addEventListener("pointerdown", onPointerDown);
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("dblclick", onDoubleClick);
 
   /* --------------------------------- boot -------------------------------- */
 
@@ -233,11 +306,16 @@
       for (var id in saved) {
         var l = saved[id];
         if (l && isFinite(l.x) && isFinite(l.y)) {
-          layout[id] = {
+          var entry = {
             x: Math.round(l.x),
             y: Math.round(l.y),
-            scale: isFinite(l.scale) ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, l.scale)) : 1,
+            scale: isFinite(l.scale) ? clampNum(l.scale, MIN_SCALE, MAX_SCALE) : 1,
           };
+          // Width/height are optional: absent means "the widget's own size",
+          // which is not the same as a stored value of 0.
+          if (isFinite(l.w) && l.w > 0) entry.w = Math.round(clampNum(l.w, MIN_W, 4000));
+          if (isFinite(l.h) && l.h > 0) entry.h = Math.round(clampNum(l.h, MIN_H, 4000));
+          layout[id] = entry;
         }
       }
     }

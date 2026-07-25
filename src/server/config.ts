@@ -62,6 +62,18 @@ export interface ServerConfig {
   /** Seconds each sponsor logo is shown before cross-fading to the next. */
   sponsorIntervalSec: number;
   /**
+   * Opacity of every widget's panel background, as a percentage (0..100).
+   * Served to the overlays at `/appearance.json`, where it becomes the
+   * `--panel-alpha` CSS token (see overlay/js/appearance.js). `100` is the
+   * original solid design; `0` removes every panel background, border and
+   * header so only the live data floats over the game.
+   *
+   * This is the boot value only — the desktop app retunes it at runtime
+   * through `setAppearance()`, so moving its slider does not restart the
+   * server or interrupt a broadcast.
+   */
+  panelOpacity: number;
+  /**
    * Path to a JSON file overriding the MFD widget's aid→keyboard-key map. Empty
    * to use the built-in F13–F24 defaults (or a `mfd-keymap.json` in the working
    * directory, if present). See {@link module:server/aidKeymap}.
@@ -84,6 +96,7 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   lmuApiPort: 6397,
   sponsorDir: '',
   sponsorIntervalSec: 12,
+  panelOpacity: 100,
   aidKeymapPath: '',
   verbose: false,
 });
@@ -149,6 +162,7 @@ function clamp(value: number, min: number, max: number): number {
  * - `APEX_LMU_PORT` — LMU REST API port, clamped to 1..65535 (default `6397`)
  * - `APEX_SPONSOR_DIR` — sponsor logo directory served at `/sponsors/` (default none)
  * - `APEX_SPONSOR_SEC` — seconds per sponsor logo, clamped to 3..120 (default `12`)
+ * - `APEX_PANEL_OPACITY` — widget background opacity %, clamped to 0..100 (default `100`)
  * - `APEX_VERBOSE` — verbose logging (default `false`)
  *
  * @returns A fully-resolved, ready-to-use configuration object.
@@ -179,6 +193,7 @@ export function loadConfig(): ServerConfig {
       3,
       120,
     ),
+    panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
     aidKeymapPath: envStr('APEX_AID_KEYMAP', DEFAULT_CONFIG.aidKeymapPath),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };

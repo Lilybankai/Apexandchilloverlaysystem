@@ -48,9 +48,26 @@ The control panel:
 - **Overlays** — tick the ones you want; each has its own URL + **Copy** and
   **Preview** buttons. Add each as a **separate OBS Browser Source** and drag it
   into position inside OBS.
-- **Settings** — server port, update rate (1–120 Hz), and a **Demo mode** toggle
-  that forces simulated data (no sim/plugin needed).
+- **Settings** — server port, update rate (1–120 Hz), a **Demo mode** toggle
+  that forces simulated data (no sim/plugin needed), and **Widget background**,
+  which fades every widget's panel background live — at 0% only the data is left
+  over the game (see [Widget background](#widget-background)).
 - **Status pill** — shows LIVE / DEMO DATA / NO DATA / STOPPED at a glance.
+
+### In-game layout editor
+
+With **Show in game** on, **Edit layout** unlocks the overlay layer so widgets
+can be arranged over the sim. Drag a widget anywhere to move it, and resize it
+three ways:
+
+| Handle          | Does                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| **Right edge**  | Sets the widget's **width** — it reflows, so a wider standings tower gives its driver names more room rather than magnifying everything |
+| **Bottom edge** | Sets its **height** — the body is boxed and clipped to fit, which is how a 20-car field is cropped to the top few rows |
+| **Corner**      | Scales the whole widget uniformly; nothing inside reflows          |
+
+Double-click a handle to hand that dimension back to automatic. Placement is
+saved per widget in `config.json`; **Reset layout** clears the lot.
 
 Settings are saved to `%APPDATA%/apex-overlay-system/config.json` and restored on
 next launch. The server starts automatically when the app opens.
@@ -75,7 +92,8 @@ install and on each update ("More info → Run anyway").
 
 ## Overlays
 
-Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
+Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
+(turn them down or off with **Widget background** — see below):
 
 - **Standings** (top-left) — full field, gaps, pit status
 - **Relative / timing** (top-right) — nearest cars on track, live delta
@@ -92,6 +110,28 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds:
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
 - **MFD** — a read-only, colour-grouped readout of the in-game pit menu and
   driving aids. See below; LMU only
+
+### Widget background
+
+One slider in the control panel's **Settings** card fades the panel behind
+**every** widget at once — background, header strip, row shading, borders, the
+brand accent bar and the drop shadow. At **0%** they are all gone and nothing but
+the live data floats over the game; at 100% (the default) the overlay is the
+original solid design that fully occludes the sim's own HUD. Below 100% the text
+picks up a shadow and the dimmest labels are lifted, so readings stay legible
+over pale tarmac or sky.
+
+It applies **live** — in game and to OBS Browser Sources that are already added,
+with no restart, reload or re-copied URL. Two deliberate exceptions keep things
+usable: the Fuel Planner's steppers and setup fields keep a faint background so
+they can still be clicked in interact mode (F7), and the in-game **layout
+editor** puts every panel back to solid while it is open, since a widget faded to
+nothing can be dragged but not found.
+
+Per source, `?bg=` on the URL overrides the app's setting and pins that page
+(`?bg=0` for a bare HUD, `?bg=100` for solid, `?bg=40` for a light tint). This is
+separate from the Motion/Damage/MFD/Radar `?opacity=` control, which fades a
+single widget's **contents**; `bg` only ever touches the box behind them.
 
 ### Motion widget modes
 
@@ -274,6 +314,7 @@ All settings are environment variables with lightweight defaults
 | `APEX_FORCE_SIM`   | `false`     | Force the simulator provider (demo mode)      |
 | `APEX_PROVIDER`    | `lmu`       | Live source: `lmu` / `rf2` / `simulator`      |
 | `APEX_LMU_PORT`    | `6397`      | LMU REST API port (when `provider` is `lmu`)  |
+| `APEX_PANEL_OPACITY` | `100`     | Widget background opacity % (0 = none), 0–100 |
 | `APEX_VERBOSE`     | `false`     | Verbose logging                               |
 
 ## Project layout

@@ -116,6 +116,13 @@ browser. There is no database, no message broker, no cloud round-trip.
   is simulated.
 - **`js/widgets/*.js`** — one self-contained module per widget, registered
   against the `window.ApexOverlay` runtime.
+- **`js/appearance.js`** — applies the operator's global widget-background
+  setting as the `--panel-alpha` token every surface colour in `theme.css`
+  resolves through. Loaded synchronously in `<head>` so the value is in place
+  before the first paint. Like the sponsor manifest this is operator
+  configuration fetched over HTTP (`/appearance.json`), never telemetry — the
+  in-game layer is pushed it over IPC instead, so the layer that draws over the
+  sim does no polling at all.
 
 ---
 

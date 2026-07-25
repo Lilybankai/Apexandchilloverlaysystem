@@ -35,12 +35,34 @@ body.ingame {
 
 .ig-item {
   position: absolute;
-  /* Width per widget matches the OBS combined page (set inline by ingame.js).
-     Scaling is done with transform so widget internals never reflow. */
+  /* Width per widget matches the OBS combined page unless the operator has
+     stretched it (both set inline by ingame.js). Corner scaling is done with
+     transform so widget internals never reflow; edge resizing sets the box's
+     real width/height, which the widget then reflows into. */
   transform-origin: top left;
 }
 
+/* Height-boxed by the bottom edge handle: the panel takes the wrapper's height
+   and its body absorbs the slack, clipping whatever does not fit (the top N of
+   a long standings field). Only applies once a height has been set, so every
+   other widget keeps sizing to its content. */
+.ig-item[data-sized-h="true"] .widget {
+  height: 100% !important;
+  display: flex;
+  flex-direction: column;
+}
+.ig-item[data-sized-h="true"] .widget .panel__body {
+  flex: 1 1 auto;
+  min-height: 0; /* without this a flex item refuses to shrink below content */
+  overflow: hidden;
+}
+
 /* --------------------------- edit mode chrome --------------------------- */
+
+/* Editing brings every panel background back, whatever the operator's "Widget
+   background" setting is — that is done in JS, not here: --panel-alpha has to be
+   re-declared on <html> to take effect (see the note in js/appearance.js), so
+   ingame.js calls ApexAppearance.suspend()/resume() around edit mode. */
 
 body.ig-editing .ig-item {
   cursor: move;
@@ -52,22 +74,50 @@ body.ig-editing .ig-item:hover {
   outline-style: solid;
 }
 
+/* --- resize handles: right edge (width), bottom edge (height), corner (scale) */
+
 .ig-item__handle {
   display: none;
   position: absolute;
-  right: -7px;
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
   background: linear-gradient(135deg, #26bbf4, #6a2fd6);
   border: 1px solid #fff;
-  cursor: nwse-resize;
+  border-radius: 3px;
   z-index: 2;
 }
 
 body.ig-editing .ig-item__handle {
   display: block;
+}
+
+/* Edge handles are bars centred on their edge, so they read as "stretch this
+   side" rather than as three identical corner dots. */
+.ig-item__handle--e {
+  top: 50%;
+  right: -5px;
+  width: 10px;
+  height: 34px;
+  margin-top: -17px;
+  cursor: ew-resize;
+}
+
+.ig-item__handle--s {
+  left: 50%;
+  bottom: -5px;
+  width: 34px;
+  height: 10px;
+  margin-left: -17px;
+  cursor: ns-resize;
+}
+
+/* The corner keeps the original uniform-scale behaviour, and sits above the two
+   edge bars where they meet it. */
+.ig-item__handle--se {
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 3;
 }
 
 /* ------------------------------- toolbar -------------------------------- */

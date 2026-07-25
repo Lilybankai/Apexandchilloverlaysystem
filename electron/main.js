@@ -104,7 +104,9 @@ function defaultSettings() {
     // click-through window) instead of / as well as OBS Browser Sources.
     ingameEnabled: false,
     ingameOverlays,
-    // Saved widget placement in the in-game layer: { [id]: {x, y, scale} }.
+    // Saved widget placement in the in-game layer:
+    // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
+    // width/height in px; absent means "the widget's own size".
     ingameLayout: {},
     // Global hotkey that toggles the in-game overlay (Show in game). An Electron
     // accelerator string; '' means unbound. Rebindable from the control panel.
@@ -118,6 +120,11 @@ function defaultSettings() {
     // `sponsorDir` in the server config for why they live outside overlay/.
     sponsorsEnabled: false,
     sponsorIntervalSec: 12,
+    // Opacity of every widget's panel background, as a percentage. 100 is the
+    // original solid design (fully occludes the sim's own HUD); 0 removes the
+    // background, border and header from every widget so only the live data
+    // floats over the game. Applied by overlay/js/appearance.js.
+    panelOpacity: 100,
   };
 }
 
@@ -164,6 +171,34 @@ function normalizeShortcut(value, fallback) {
   return fallback;
 }
 
+/** Bounds for an in-game widget's edge-resized width/height, in px. */
+const MIN_ITEM_PX = 56;
+const MAX_ITEM_PX = 4000;
+
+/**
+ * Validate one in-game placement entry, or null if it isn't one. Shared by the
+ * load and save paths so a layout can never be normalized two different ways.
+ *
+ * `w`/`h` are optional and only carried when genuinely present: their absence is
+ * meaningful (use the widget's design width / let the content set the height),
+ * so a missing value must not be written back as a 0.
+ */
+function normalizeLayoutEntry(l) {
+  if (!l || !Number.isFinite(l.x) || !Number.isFinite(l.y)) return null;
+  const entry = {
+    x: Math.round(l.x),
+    y: Math.round(l.y),
+    scale: Number.isFinite(l.scale) ? Math.min(3, Math.max(0.4, l.scale)) : 1,
+  };
+  if (Number.isFinite(l.w) && l.w > 0) {
+    entry.w = clamp(l.w, MIN_ITEM_PX, MAX_ITEM_PX, MIN_ITEM_PX);
+  }
+  if (Number.isFinite(l.h) && l.h > 0) {
+    entry.h = clamp(l.h, MIN_ITEM_PX, MAX_ITEM_PX, MIN_ITEM_PX);
+  }
+  return entry;
+}
+
 /** Load settings, merged over defaults so missing/old keys are filled in. */
 function loadSettings() {
   const defaults = defaultSettings();
@@ -186,14 +221,8 @@ function loadSettings() {
   const ingameLayout = {};
   if (stored.ingameLayout && typeof stored.ingameLayout === 'object') {
     for (const o of OVERLAY_CATALOG) {
-      const l = stored.ingameLayout[o.id];
-      if (l && Number.isFinite(l.x) && Number.isFinite(l.y)) {
-        ingameLayout[o.id] = {
-          x: Math.round(l.x),
-          y: Math.round(l.y),
-          scale: Number.isFinite(l.scale) ? Math.min(3, Math.max(0.4, l.scale)) : 1,
-        };
-      }
+      const entry = normalizeLayoutEntry(stored.ingameLayout[o.id]);
+      if (entry) ingameLayout[o.id] = entry;
     }
   }
   return {
@@ -224,6 +253,7 @@ function loadSettings() {
         ? stored.sponsorsEnabled
         : defaults.sponsorsEnabled,
     sponsorIntervalSec: clamp(stored.sponsorIntervalSec, 3, 120, defaults.sponsorIntervalSec),
+    panelOpacity: clamp(stored.panelOpacity, 0, 100, defaults.panelOpacity),
   };
 }
 
@@ -269,6 +299,9 @@ function buildServerConfig(settings) {
     // /sponsors/ route rather than serving a directory nobody asked for.
     sponsorDir: settings.sponsorsEnabled ? sponsorDir() : '',
     sponsorIntervalSec: settings.sponsorIntervalSec,
+    // Boot value only — changes are pushed live via applyAppearance(), so the
+    // slider never restarts the server.
+    panelOpacity: settings.panelOpacity,
     verbose: false,
   };
 }
@@ -452,6 +485,31 @@ function toggleIngame() {
 }
 
 /**
+ * Applies the widget-background opacity everywhere it is consumed, with no
+ * restart and no reload:
+ *
+ *   - the running server, which serves it at /appearance.json to OBS Browser
+ *     Sources and browser tabs (they re-read it about once a second);
+ *   - the in-game layer, pushed straight to the window so the operator sees the
+ *     background fade as they drag the slider.
+ *
+ * Safe to call before the server is up (the require simply fails and the value
+ * is picked up from the config at the next start).
+ */
+function applyAppearance(settings) {
+  const s = settings || loadSettings();
+  const payload = { panelOpacity: s.panelOpacity };
+  try {
+    requireServer().setAppearance(payload);
+  } catch (err) {
+    // Not built / not started yet — buildServerConfig() carries the value in.
+  }
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.webContents.send('ingame:appearance', payload);
+  }
+}
+
+/**
  * (Re)register the global hotkey that toggles the in-game overlay. Clears any
  * previous binding first; an empty accelerator leaves it unbound. Registration
  * is wrapped so an invalid/occupied accelerator can never crash startup.
@@ -584,6 +642,10 @@ function syncOverlayWindow() {
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   applyIngameMouse(); // click-through unless edit/interact is already on
   overlayWin.ingameUrl = url;
+  // The layer is push-fed its appearance (it deliberately does no polling), so
+  // every load — including the reloads triggered by a widget-list change — has
+  // to be re-told the current value.
+  overlayWin.webContents.on('did-finish-load', () => applyAppearance());
   void overlayWin.loadURL(url);
   overlayWin.on('closed', () => {
     overlayWin = null;
@@ -705,8 +767,15 @@ function registerIpc() {
       if (partial.sponsorIntervalSec !== undefined) {
         next.sponsorIntervalSec = clamp(partial.sponsorIntervalSec, 3, 120, current.sponsorIntervalSec);
       }
+      if (partial.panelOpacity !== undefined) {
+        next.panelOpacity = clamp(partial.panelOpacity, 0, 100, current.panelOpacity);
+      }
     }
     saveSettings(next);
+
+    // Look-and-feel only: applied live to the server and the in-game layer, so
+    // it is deliberately NOT part of the restart check below.
+    if (next.panelOpacity !== current.panelOpacity) applyAppearance(next);
 
     // Re-bind the global hotkey if it changed.
     if (next.ingameToggleShortcut !== current.ingameToggleShortcut) {
@@ -831,14 +900,10 @@ function registerIpc() {
     const settings = loadSettings();
     const merged = { ...settings.ingameLayout };
     for (const o of OVERLAY_CATALOG) {
-      const l = layout[o.id];
-      if (l && Number.isFinite(l.x) && Number.isFinite(l.y)) {
-        merged[o.id] = {
-          x: Math.round(l.x),
-          y: Math.round(l.y),
-          scale: Number.isFinite(l.scale) ? Math.min(3, Math.max(0.4, l.scale)) : 1,
-        };
-      }
+      const entry = normalizeLayoutEntry(layout[o.id]);
+      // Replace, don't merge: the page sends whole entries, and dropping w/h is
+      // how a double-clicked handle returns that dimension to automatic.
+      if (entry) merged[o.id] = entry;
     }
     saveSettings({ ...settings, ingameLayout: merged });
     return true;

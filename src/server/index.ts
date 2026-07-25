@@ -72,6 +72,56 @@ export function selectProvider(config: ServerConfig): TelemetryProvider {
   return new LmuRestProvider(config);
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Appearance — operator look-and-feel, live-tunable                         */
+/* -------------------------------------------------------------------------- */
+
+/** The overlay appearance settings served at {@link APPEARANCE_PATH}. */
+export interface Appearance {
+  /** Widget panel-background opacity, 0..100 (see `ServerConfig.panelOpacity`). */
+  panelOpacity: number;
+}
+
+/** URL the overlays read their appearance from. */
+const APPEARANCE_PATH = '/appearance.json';
+
+/**
+ * Live appearance state. Deliberately module-level and mutable: the desktop app
+ * runs this server **in-process**, so it can retune the look through
+ * {@link setAppearance} while a session is live. Baking the value into the
+ * `ServerConfig` alone would mean restarting the server — and dropping every
+ * connected overlay — each time the operator nudged the slider.
+ */
+const appearance: Appearance = { panelOpacity: 100 };
+
+/** Current appearance (a copy — callers must not mutate the live state). */
+export function getAppearance(): Appearance {
+  return { ...appearance };
+}
+
+/**
+ * Updates the appearance served to the overlays, effective immediately (they
+ * re-read it within a second, or are pushed to directly by the app). Values are
+ * clamped, so a bad caller cannot put nonsense on the wire.
+ */
+export function setAppearance(next: Partial<Appearance>): Appearance {
+  if (typeof next?.panelOpacity === 'number' && Number.isFinite(next.panelOpacity)) {
+    appearance.panelOpacity = Math.min(100, Math.max(0, Math.round(next.panelOpacity)));
+  }
+  return getAppearance();
+}
+
+/** Serves the current {@link Appearance} as JSON (never cached). */
+function serveAppearance(res: ServerResponse): void {
+  const body = JSON.stringify(appearance);
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
 /** URL prefix the operator's sponsor logos are served under. */
 const SPONSOR_PREFIX = '/sponsors/';
 /** Image extensions accepted as sponsor logos. */
@@ -126,6 +176,12 @@ async function serveStatic(
   // Strip query string and decode; default to index.html.
   const rawPath = decodeURIComponent((req.url ?? '/').split('?')[0] ?? '/');
   const relPath = rawPath === '/' ? '/index.html' : rawPath;
+
+  // Appearance is runtime state, not a file on disk.
+  if (relPath === APPEARANCE_PATH) {
+    serveAppearance(res);
+    return;
+  }
 
   let root = overlayRoot;
   let subPath = relPath;
@@ -184,6 +240,10 @@ async function serveStatic(
 export async function start(config: ServerConfig = loadConfig()): Promise<() => Promise<void>> {
   const overlayRoot = resolve(process.cwd(), config.overlayDir);
   const sponsorRoot = config.sponsorDir ? resolve(config.sponsorDir) : '';
+
+  // Seed the live appearance from config; the app may retune it later without a
+  // restart (see setAppearance).
+  setAppearance({ panelOpacity: config.panelOpacity });
 
   // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works
   // even under provider `rf2` as long as the game's API is up); `aidkey` injects

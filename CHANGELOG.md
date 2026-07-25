@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.13.0 — 2026-07-25
+
+### Added
+
+- **A "Widget background" slider in the control panel, fading every widget's
+  panel at once.** One knob (Settings → Widget background) drives the background,
+  header strip, row shading, borders, brand accent bar and drop shadow of every
+  widget: at **0%** all of it is gone and only the live data floats over the
+  game; at 100% — the default — the overlay is byte-for-byte the solid design it
+  has always been. Implemented as a single `--panel-alpha` token behind the
+  surface colours in `theme.css`, so it reaches every widget at once, including
+  any added later, without each one opting in.
+
+  It applies **live**: the in-game layer is pushed the value over IPC, and OBS
+  Browser Sources already added to a scene pick it up from the new
+  `/appearance.json` route within a second — no restart, reload or re-copied URL,
+  and no interruption to a running broadcast. Per source, `?bg=0..100` on the URL
+  pins a page and overrides the app.
+
+  Three details that make it usable rather than just transparent: below 100% the
+  panel text gains a shadow and the two dimmest text tokens are lifted, so
+  readings survive pale tarmac; the Fuel Planner's steppers and setup fields keep
+  a faint background of their own so they can still be clicked in interact mode
+  (F7); and the in-game **layout editor** forces panels back to solid while it is
+  open, because a widget faded to nothing can be dragged but not found.
+
+- **In-game widgets can now be resized horizontally and vertically, not only
+  scaled from the corner.** Each widget in the layout editor gains two edge
+  handles beside the existing corner one:
+  - the **right edge** sets its **width**, and the widget *reflows* into it — a
+    wider standings tower spends the extra room on driver names instead of
+    magnifying the whole thing, which is all the corner handle could ever do;
+  - the **bottom edge** sets its **height**, boxing the body and clipping what
+    does not fit — the way a 20-car field gets cropped to the top few rows;
+  - the **corner** keeps its original uniform `transform: scale` behaviour.
+
+  Double-click a handle to return that dimension to automatic. Width/height are
+  persisted per widget in `ingameLayout` alongside `x`/`y`/`scale`; absent means
+  "the widget's own size", so existing saved layouts are unaffected.
+
+### Changed
+
+- `ServerConfig` gains `panelOpacity` (env `APEX_PANEL_OPACITY`, 0–100) as the
+  boot value for the above, plus `setAppearance()` / `getAppearance()` on the
+  server module so the desktop app can retune it in-process at runtime.
+
 ## 0.12.8 — 2026-07-24
 
 ### Changed

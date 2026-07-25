@@ -34,12 +34,31 @@
     var(--ac-magenta) 100%
   );
 
-  /* --- Surfaces (all SOLID/opaque so we sit over the sim's overlays) - */
+  /* --- Surfaces -------------------------------------------------------
+   * Every widget surface is drawn at --panel-alpha, the single knob the
+   * control panel's "Widget background" slider turns (see js/appearance.js).
+   * At 1 these are the original solid colours, so the overlay fully occludes
+   * the sim's own HUD; at 0 the panel, header, rows and borders vanish
+   * completely and only the live data floats over the game.
+   *
+   * The alpha lives in the tokens rather than in a per-widget rule so it
+   * reaches every widget at once — including any added later — without each
+   * one having to opt in.
+   */
+  --panel-alpha: 1;
   --bg-stage: transparent;          /* page background stays clear for OBS  */
-  --bg-panel: #0c0e18;              /* solid panel base                     */
-  --bg-panel-2: #10131f;            /* raised rows / inner cells            */
-  --bg-panel-3: #161a29;            /* hover / player-highlight row         */
-  --bg-header: #090a12;             /* panel header strip                   */
+  --bg-panel: rgba(12, 14, 24, var(--panel-alpha));    /* panel base        */
+  --bg-panel-2: rgba(16, 19, 31, var(--panel-alpha));  /* rows/inner cells  */
+  --bg-panel-3: rgba(22, 26, 41, var(--panel-alpha));  /* hover/player row  */
+  --bg-header: rgba(9, 10, 18, var(--panel-alpha));    /* header strip      */
+
+  /* Interactive chrome (Fuel Planner steppers + setup fields, MFD buttons)
+   * keeps a legibility floor: a control you cannot see is a control you
+   * cannot click, and interact mode (F7) exists precisely to click these
+   * over the running game. */
+  --control-alpha: max(var(--panel-alpha), 0.85);
+  --bg-control: rgba(22, 26, 41, var(--control-alpha));
+  --border-control: rgba(49, 56, 80, var(--control-alpha));
 
   /* --- Text ---------------------------------------------------------- */
   --text-primary: #f4f6fb;
@@ -70,9 +89,12 @@
   --tyre-warm: #ffb020;
   --tyre-hot: #ff5470;
 
-  /* --- Borders & lines ---------------------------------------------- */
-  --border-soft: #232838;
-  --border-strong: #313850;
+  /* --- Borders & lines ----------------------------------------------
+   * Alpha-matched to the surfaces above: row separators and cell outlines are
+   * part of the "box", so they have to go with it — a grid of hairlines left
+   * hanging over the track at 0% would read as a broken widget. */
+  --border-soft: rgba(35, 40, 56, var(--panel-alpha));
+  --border-strong: rgba(49, 56, 80, var(--panel-alpha));
 
   /* --- Typography --------------------------------------------------- */
   /* Condensed uppercase display face — Bahnschrift ships with Windows.  */
@@ -117,8 +139,9 @@ body {
 
 /* =========================================================================
  * PANEL PRIMITIVE
- * Every widget is a .panel with a SOLID background so it fully occludes the
- * sim's native overlay underneath.
+ * Every widget is a .panel whose background is solid by default, so it fully
+ * occludes the sim's native overlay underneath — and fades out with
+ * --panel-alpha when the operator turns the background down.
  * ========================================================================= */
 .panel {
   position: relative;
@@ -126,17 +149,38 @@ body {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   overflow: hidden;
-  /* Single cheap shadow for separation from footage — no blur filters. */
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  /* Single cheap shadow for separation from footage — no blur filters. It
+     fades with the panel: a drop shadow with nothing casting it is just a
+     grey smudge on the track. */
+  box-shadow: 0 4px 14px rgba(0, 0, 0, calc(0.55 * var(--panel-alpha)));
 }
 
-/* Left accent bar carrying the brand gradient. */
+/* Left accent bar carrying the brand gradient. Chrome, not data — so it goes
+   with the background rather than hanging in mid-air at 0%. */
 .panel::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--accent-bar-w);
   background: var(--ac-gradient-vertical);
+  opacity: var(--panel-alpha);
+}
+
+/* Below a solid background the panel loses the dark backdrop that made its
+   text readable, so the text carries its own. Scoped to the attribute
+   js/appearance.js sets (not applied via a calc'd transparent shadow) so the
+   default, fully-opaque overlay pays nothing for a shadow it never shows. */
+html[data-panel-bg="translucent"] .panel {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.6);
+  /* The two dimmest text tokens were chosen to sit on a near-black panel. With
+     the panel gone they can land on pale tarmac or sky, where they disappear —
+     so labels and units are lifted for this state only. Both are plain colours
+     (no nested var()), which is what lets a re-declaration here reach every
+     descendant that reads them. */
+  --text-secondary: #e6ebf6;
+  --text-muted: #c6cfe1;
 }
 
 .panel__header {

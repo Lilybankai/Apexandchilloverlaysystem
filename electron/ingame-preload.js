@@ -40,4 +40,14 @@ contextBridge.exposeInMainWorld('apexIngame', {
   onLayoutReset: (callback) => {
     ipcRenderer.on('ingame:layout-reset', () => callback());
   },
+
+  /**
+   * Widget-background opacity pushed from the control panel's slider:
+   * `{ panelOpacity: 0..100 }`. Consumed by overlay/js/appearance.js, which
+   * uses this instead of polling the server precisely because this layer
+   * repaints over the running sim.
+   */
+  onAppearance: (callback) => {
+    ipcRenderer.on('ingame:appearance', (_evt, appearance) => callback(appearance));
+  },
 });

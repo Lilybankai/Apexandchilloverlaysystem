@@ -20,6 +20,10 @@
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/overlay.css" />
   <link rel="stylesheet" href="css/ingame.css" />
+
+  <!-- Global widget-background opacity. Here it is push-driven by the app over
+       the apexIngame bridge (no polling in the layer that draws over the sim). -->
+  <script src="js/appearance.js"></script>
 </head>
 <body class="ingame">
   <!-- Widget wrappers injected here synchronously by the inline script. -->
@@ -28,7 +32,10 @@
   <!-- Edit-mode chrome (hidden while locked). -->
   <div class="ig-toolbar" id="ig-toolbar" hidden>
     <span class="ig-toolbar__brand"></span>
-    <span class="ig-toolbar__text">Editing overlays — drag to move, corner handle to resize</span>
+    <span class="ig-toolbar__text">
+      Editing overlays — drag to move · right edge = width · bottom edge = height
+      · corner = scale (double-click a handle to reset it)
+    </span>
     <button class="ig-btn ig-btn--ghost" id="ig-reset" type="button">Reset</button>
     <button class="ig-btn" id="ig-done" type="button">Done</button>
   </div>
@@ -54,12 +61,21 @@
       if (wanted.length === 0) wanted = Object.keys(window.ApexShells);
 
       var stage = document.getElementById("ig-stage");
+      // Three resize handles per widget (see js/ingame.js): the right edge sets
+      // width, the bottom edge sets height, the corner scales the whole widget.
+      var handles =
+        '<div class="ig-item__handle ig-item__handle--e" data-resize="width"' +
+        ' title="Drag to set width — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--s" data-resize="height"' +
+        ' title="Drag to set height — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--se" data-resize="scale"' +
+        ' title="Drag to scale — double-click to reset"></div>';
       var html = "";
       for (var i = 0; i < wanted.length; i++) {
         html +=
           '<div class="ig-item" data-id="' + wanted[i] + '">' +
           window.ApexShells[wanted[i]] +
-          '<div class="ig-item__handle" title="Drag to resize"></div>' +
+          handles +
           "</div>";
       }
       stage.innerHTML = html;

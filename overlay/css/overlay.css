@@ -902,12 +902,14 @@
   font-size: 15px;
   line-height: 1;
   color: var(--text-primary);
-  background: var(--bg-panel-3);
-  border: 1px solid var(--border-strong);
+  /* Control tokens, not panel tokens: the fuel-ratio steppers stay visible and
+     clickable in interact mode (F7) even with the widget background at 0%. */
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.fuelplan__step:hover:not(:disabled) { background: var(--border-strong); }
+.fuelplan__step:hover:not(:disabled) { background: var(--border-control); }
 .fuelplan__step:disabled { opacity: 0.3; cursor: default; }
 
 /* --- Setup / inputs (collapsible) --------------------------------------- */
@@ -969,8 +971,10 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-primary);
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-soft);
+  /* Same reasoning as .fuelplan__step — these are typed into, so they keep a
+     visible field even when the panel background is off. */
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   padding: 3px 5px;
   width: 100%;
@@ -1262,8 +1266,8 @@
   gap: 6px;
   padding: 3px 6px;
   border-radius: var(--radius-sm);
-  background: var(--bg-header);
-  border: 1px solid var(--border-soft);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
@@ -1531,8 +1535,8 @@
   align-items: center;
   gap: 6px;
   padding: 3px 7px;
-  background: var(--bg-header);
-  border: 1px solid var(--border-soft);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   opacity: 0;
   pointer-events: none;
@@ -1622,8 +1626,8 @@ body.ig-editing #widget-radar .panel__header {
   gap: 6px;
   padding: 3px 6px;
   border-radius: var(--radius-sm);
-  background: var(--bg-header);
-  border: 1px solid var(--border-soft);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
@@ -1765,8 +1769,8 @@ body.ig-editing #widget-radar .panel__header {
   align-items: center;
   gap: 6px;
   padding: 3px 7px;
-  background: var(--bg-header);
-  border: 1px solid var(--border-soft);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   opacity: 0;
   pointer-events: none;

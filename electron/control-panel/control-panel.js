@@ -23,6 +23,8 @@
   const rateRange = $('#rate-range');
   const rateEcho = $('#rate-echo');
   const demoToggle = $('#demo-toggle');
+  const bgRange = $('#bg-range');
+  const bgEcho = $('#bg-echo');
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -97,6 +99,8 @@
     rateRange.value = settings.updateRateHz;
     rateEcho.textContent = settings.updateRateHz;
     demoToggle.checked = !!settings.forceSimulator;
+    bgRange.value = settings.panelOpacity;
+    bgEcho.textContent = settings.panelOpacity;
     sponsorsToggle.checked = !!settings.sponsorsEnabled;
     sponsorRange.value = settings.sponsorIntervalSec;
     sponsorEcho.textContent = settings.sponsorIntervalSec;
@@ -286,6 +290,18 @@
   demoToggle.addEventListener('change', async () => {
     const state = await window.apex.updateSettings({ forceSimulator: demoToggle.checked });
     renderStatus(state.status);
+  });
+
+  // Widget background opacity. Debounced only lightly: nothing restarts on this
+  // change, it is pushed straight to the overlays, so the operator can watch the
+  // panels fade as they drag.
+  const commitPanelOpacity = debounce(async (value) => {
+    await window.apex.updateSettings({ panelOpacity: value });
+  }, 120);
+
+  bgRange.addEventListener('input', () => {
+    bgEcho.textContent = bgRange.value;
+    commitPanelOpacity(parseInt(bgRange.value, 10));
   });
 
   // --- Sponsor logos -------------------------------------------------------
