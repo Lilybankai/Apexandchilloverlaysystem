@@ -67,6 +67,13 @@ export interface AidBind {
   /** LMU function name that steps it UP, and the key bound to it. */
   incFunction: string;
   inc: ScanKey | null;
+  /**
+   * Controller buttons LMU has this aid bound to, if any. Used to keep the
+   * shadow value honest when the driver adjusts an aid on the wheel instead of
+   * through the overlay.
+   */
+  incWheel: WheelBind | null;
+  decWheel: WheelBind | null;
 }
 
 /**
@@ -75,7 +82,9 @@ export interface AidBind {
  * These names are authoritative — they are the keys LMU itself writes into
  * `direct input.json` / `keyboard.json`, so they must match verbatim.
  */
-const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
+const AID_FUNCTIONS: ReadonlyArray<
+  Omit<AidBind, 'inc' | 'dec' | 'incWheel' | 'decWheel'>
+> = [
   {
     id: 'brakeBias',
     vmKey: 'VM_BRAKE_BALANCE',
@@ -179,6 +188,47 @@ export function findKeyboardConfig(): string | null {
   return null;
 }
 
+/** A controller button LMU has an aid bound to: which device, which button. */
+export interface WheelBind {
+  /** DirectInput product name, e.g. `MOZA R9 Base` — matches gamepad.js ids. */
+  device: string;
+  /** 1-based button number, matching how the reader and LMU both count. */
+  button: number;
+}
+
+/**
+ * Reads the aid bindings from `direct input.json`, LMU's *controller* bind set.
+ *
+ * Why this matters even though we drive aids with the keyboard: TC, ABS and the
+ * motor map have **no live telemetry source**, so their displayed value has to
+ * be tracked rather than read. Tracking only our own writes would drift the
+ * moment the driver used their wheel — and these functions are bound to the
+ * wheel, because that is how people actually drive. Knowing which buttons LMU
+ * listens to lets the shadow follow the driver's own presses too.
+ *
+ * Entries look like `"Traction Control Up": { "device": "<name>-<guid>", "id": 97 }`.
+ * The device key carries a GUID suffix that the DirectInput product name does
+ * not, so it is stripped for matching.
+ */
+function readWheelBinds(keyboardPath: string): Record<string, WheelBind> {
+  const out: Record<string, WheelBind> = {};
+  try {
+    const diPath = join(keyboardPath, '..', 'direct input.json');
+    const parsed = JSON.parse(readFileSync(diPath, 'utf8')) as {
+      Input?: Record<string, { device?: unknown; id?: unknown }>;
+    };
+    for (const [fn, entry] of Object.entries(parsed.Input ?? {})) {
+      if (!entry || typeof entry.device !== 'string' || typeof entry.id !== 'number') continue;
+      // "MOZA R9 Base-5E58DAC81FD72D9D" -> "MOZA R9 Base"
+      const device = entry.device.replace(/-[0-9A-F]{8,}$/i, '');
+      out[fn] = { device, button: entry.id };
+    }
+  } catch {
+    /* no controller config — wheel-follow simply stays off */
+  }
+  return out;
+}
+
 /** The full resolved bind set, plus where it came from. */
 export interface LmuKeybinds {
   /** Absolute path the binds were read from, or null when unavailable. */
@@ -198,7 +248,7 @@ function emptyBinds(path: string | null): LmuKeybinds {
   return {
     path,
     keyboardSchemeActive: false,
-    aids: AID_FUNCTIONS.map((a) => ({ ...a, dec: null, inc: null })),
+    aids: AID_FUNCTIONS.map((a) => ({ ...a, dec: null, inc: null, decWheel: null, incWheel: null })),
     pit: {},
     all: {},
   };
@@ -228,10 +278,13 @@ export function readLmuKeybinds(explicitPath?: string): LmuKeybinds {
     if (key) all[fn] = key;
   }
 
+  const wheel = readWheelBinds(path);
   const aids = AID_FUNCTIONS.map((a) => ({
     ...a,
     dec: all[a.decFunction] ?? null,
     inc: all[a.incFunction] ?? null,
+    decWheel: wheel[a.decFunction] ?? null,
+    incWheel: wheel[a.incFunction] ?? null,
   }));
 
   const pit: Record<string, ScanKey | null> = {};

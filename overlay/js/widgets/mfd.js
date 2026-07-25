@@ -72,6 +72,8 @@
    * the overlay first loads.
    */
   var aidBinds = {};
+  /** Server-tracked estimates for the aids LMU will not report live. */
+  var shadowAids = [];
 
   function loadAidBinds() {
     fetch("/api/mfd/keymap", { cache: "no-store" })
@@ -89,6 +91,9 @@
             if (k) next[k] = entry;
           });
         });
+        // TC / ABS / motor map have no live source, so the server counts them
+        // instead (see server/aidShadow). Shown as ESTIMATES, never as readings.
+        shadowAids = Array.isArray(cfg.shadowAids) ? cfg.shadowAids : [];
         // Only rebuild rows if the offerable set actually changed.
         if (JSON.stringify(next) !== JSON.stringify(aidBinds)) {
           aidBinds = next;
@@ -265,6 +270,27 @@
 
   function renderAids(list) {
     if (!aids.container) return;
+    // Merge the live aids (currently just brake bias) with the server's
+    // estimates. They are deliberately the same rows with the same controls —
+    // the only difference the driver sees is the "est" tag, because the value's
+    // provenance matters but the way you change it does not.
+    var merged = (list || []).slice();
+    for (var s = 0; s < shadowAids.length; s++) {
+      var sh = shadowAids[s];
+      var already = merged.some(function (a) {
+        return a.key === sh.id || a.label === sh.label;
+      });
+      if (!already) {
+        merged.push({
+          key: sh.id,
+          label: sh.label,
+          value: sh.value,
+          text: String(sh.value),
+          estimated: true,
+        });
+      }
+    }
+    list = merged;
     if (!list || list.length === 0) {
       markEmpty(aids);
       return;
@@ -283,7 +309,10 @@
         return a.label;
       },
       function (a) {
-        return a.text || String(a.value);
+        var text = a.text || String(a.value);
+        // Tagged, not hidden: an estimate the driver knows is an estimate is
+        // useful; one presented as a reading is a hazard.
+        return a.estimated ? text + " est" : text;
       },
       // Aids are stepped with a KEYSTROKE, not REST — LMU's REST aid values are
       // frozen setup values. Only offered for aids LMU actually has bound (from

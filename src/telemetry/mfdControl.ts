@@ -255,6 +255,17 @@ export class MfdController {
     return buildMfdState(pit, garage);
   }
 
+  /**
+   * Raw `VM_*` garage values — the frozen SETUP numbers.
+   *
+   * Exposed for {@link module:server/aidShadow}, which uses them as the baseline
+   * for the aids LMU will not report live. Deliberately raw: the shadow needs
+   * `minValue`/`maxValue` to clamp, which the projected {@link MfdState} drops.
+   */
+  public getGarageData(): Promise<Record<string, RawGarageVal> | null> {
+    return this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData');
+  }
+
   /* ------------------------------- HTTP glue ------------------------------ */
 
   private getJson<T>(path: string): Promise<T | null> {

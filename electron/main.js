@@ -689,7 +689,13 @@ function getGamepad() {
 /** Start/stop polling to match whether any binding (or capture) needs it. */
 function syncGamepad(settings) {
   const s = settings || loadSettings();
-  const wanted = wheelCapture !== null || Object.keys(s.wheelBindings || {}).length > 0;
+  const wanted =
+    wheelCapture !== null ||
+    Object.keys(s.wheelBindings || {}).length > 0 ||
+    // Also poll purely to KEEP THE AID SHADOW HONEST while the server is up: the
+    // estimated aids are only trustworthy if we see the driver's wheel presses
+    // too. One small state read per device per tick, so this is cheap.
+    (status.running && wantsAidFollow());
   if (!wanted && !gamepad) return; // never opened, nothing to do
   getGamepad().setActive(wanted);
 }
@@ -710,6 +716,12 @@ function onWheelButton(device, button, down) {
     return;
   }
 
+  // The driver may adjust an aid on their WHEEL rather than through the overlay
+  // — those presses go straight to LMU and we never see a request. Watching the
+  // very buttons LMU is bound to is what stops the estimated TC/ABS/motor-map
+  // values drifting the moment the wheel is used.
+  followWheelAid(device, button);
+
   const bindings = loadSettings().wheelBindings || {};
   for (const [actionId, entry] of Object.entries(bindings)) {
     for (const dir of ['inc', 'dec']) {
@@ -718,6 +730,55 @@ function onWheelButton(device, button, down) {
         void runAction(actionId, dir === 'dec' ? -1 : 1);
       }
     }
+  }
+}
+
+/** LMU's bind set, cached — re-reading a file per button edge would be silly. */
+let lmuBindCache = { at: 0, binds: null };
+const LMU_BIND_TTL_MS = 10_000;
+
+function lmuBinds() {
+  const now = Date.now();
+  if (lmuBindCache.binds && now - lmuBindCache.at < LMU_BIND_TTL_MS) return lmuBindCache.binds;
+  try {
+    const kb = require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
+    lmuBindCache = { at: now, binds: kb.readLmuKeybinds() };
+  } catch {
+    lmuBindCache = { at: now, binds: null };
+  }
+  return lmuBindCache.binds;
+}
+
+/** True when any tracked aid has a wheel button, i.e. following is worth doing. */
+function wantsAidFollow() {
+  const binds = lmuBinds();
+  if (!binds) return false;
+  try {
+    const shadow = require(path.join(__dirname, '..', 'dist', 'server', 'aidShadow.js'));
+    return binds.aids.some(
+      (a) => shadow.isTracked(a.id) && (a.incWheel || a.decWheel),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Nudge the shadow when a watched wheel button steps an aid in-game. */
+function followWheelAid(device, button) {
+  const binds = lmuBinds();
+  if (!binds) return;
+  let shadow;
+  try {
+    shadow = require(path.join(__dirname, '..', 'dist', 'server', 'aidShadow.js'));
+  } catch {
+    return;
+  }
+  for (const aid of binds.aids) {
+    if (!shadow.isTracked(aid.id)) continue;
+    const inc = aid.incWheel;
+    const dec = aid.decWheel;
+    if (inc && inc.device === device && inc.button === button) shadow.bump(aid.id, 1, 'wheel');
+    else if (dec && dec.device === device && dec.button === button) shadow.bump(aid.id, -1, 'wheel');
   }
 }
 

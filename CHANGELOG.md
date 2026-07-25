@@ -1,13 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 — 2026-07-25
 
-Turns the MFD widget from a readout into a controller, and adds a binding layer
-so any input source can drive any action. Not yet released — shadow state for the
-unreadable aids and a single-instance lock are still outstanding.
+Turns the MFD widget from a readout into a controller, adds a binding layer so
+any input source can drive any action, and gives TC / ABS / motor map a value
+the driver can actually see. A single-instance lock is still outstanding.
 
 ### Added
 
+- **`src/server/aidShadow.ts` — tracked values for the aids LMU will not report.**
+  Traction control, ABS and the motor map have **no live source anywhere** —
+  verified with a noise-filtered scan of the whole telemetry record and the
+  Extended block while each control was worked; REST's `VM_*` numbers are the
+  frozen *setup* values and never move in-race. So the overlay counts instead of
+  mirroring, seeded from the garage setup value and clamped to LMU's own
+  min/max.
+
+  Counting is only trustworthy because **both** routes are watched: the
+  overlay's own `/api/mfd/aidkey` presses, and the driver's wheel presses — read
+  from the very buttons LMU is bound to in `direct input.json`. A tracker that
+  saw only its own writes would drift the instant the wheel was used, and these
+  aids *are* bound to the wheel, because that is how people drive. Only presses
+  actually **sent** are counted; one refused because the sim was not focused
+  changed nothing in game.
+
+  The values are labelled **`est`** in the widget rather than passed off as
+  readings, and `POST /api/mfd` `{action:"aidresync"}` re-seeds from the setup
+  value for the cases an estimate cannot cover (a change made by hand on the
+  keyboard, or an aid moved before the overlay was running).
 - **`src/server/lmuKeybinds.ts` — read LMU's OWN key bindings** instead of
   guessing them. `<LMU>/UserData/player/keyboard.json` stores `{function: DIK}`,
   where the integers are DirectInput scancodes — exactly what `SendInput` sends.

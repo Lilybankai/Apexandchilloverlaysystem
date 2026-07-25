@@ -61,6 +61,7 @@ import {
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
+import { seedFromGarage as seedAidShadow } from '../server/aidShadow';
 import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -412,7 +413,13 @@ export class LmuRestProvider implements TelemetryProvider {
       this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData').catch(() => null),
     ]);
     if (Array.isArray(pit)) this.pitMenuRaw = pit;
-    if (garage && typeof garage === 'object') this.garageDataRaw = garage;
+    if (garage && typeof garage === 'object') {
+      this.garageDataRaw = garage;
+      // Give the estimated aids (TC/ABS/motor map) their baseline as soon as the
+      // garage answers. Seeding is one-way — it never overwrites a value we are
+      // already tracking — so this is safe to call on every poll.
+      seedAidShadow(garage);
+    }
     if (Array.isArray(pit) || (garage && typeof garage === 'object')) {
       this.lastMfdOkAt = Date.now();
     }

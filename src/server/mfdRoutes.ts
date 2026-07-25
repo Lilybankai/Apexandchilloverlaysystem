@@ -24,6 +24,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
 import { findAid, readLmuKeybinds } from './lmuKeybinds';
+import { bump as bumpShadow, getShadowAids, isTracked, resync } from './aidShadow';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -72,6 +73,7 @@ export function handleMfdCommand(
       simForeground: keys.isSimForeground(),
       foreground: keys.foregroundTitle(),
       configPath: binds.path,
+      shadowAids: getShadowAids(),
       keyboardSchemeActive: binds.keyboardSchemeActive,
       aids: binds.aids.map((a) => ({
         id: a.id,
@@ -119,6 +121,14 @@ export function handleMfdCommand(
         }
         const result = await controller.setAid(b.key, { value: b.value, delta: b.delta });
         sendJson(res, result.ok ? 200 : 502, result);
+        return;
+      }
+      if (action === 'aidresync') {
+        // Re-seed the estimated aids from LMU's setup values. The driver's escape
+        // hatch when a change happened on a route we cannot see.
+        const garage = await controller.getGarageData().catch(() => null);
+        resync(garage);
+        sendJson(res, 200, { ok: true, shadowAids: getShadowAids() });
         return;
       }
       if (action === 'aidkey') {
@@ -187,12 +197,24 @@ async function handleAidKey(res: ServerResponse, body: unknown, keys: KeySender)
 
   const repeat = Math.min(20, Math.max(1, Math.round(Number(b.repeat) || 1)));
   const result = await keys.pressScanTimes(key, repeat, { requireSim: b.requireSim ?? true });
+
+  // Keep the shadow in step for the aids LMU will not let us read back. Only
+  // count presses that were actually SENT: a refused press (sim not focused)
+  // changed nothing in the game, so counting it would desync the display.
+  let shadowValue = null;
+  if (isTracked(aid.id) && result.sent > 0) {
+    for (let i = 0; i < result.sent; i++) {
+      shadowValue = bumpShadow(aid.id, b.dir === 'inc' ? 1 : -1, 'overlay');
+    }
+  }
+
   sendJson(res, result.ok ? 200 : 409, {
     ...result,
     aid: aid.id,
     dir: b.dir,
     scancode: key.scancode,
     extended: key.extended,
+    shadowValue,
   });
 }
 
