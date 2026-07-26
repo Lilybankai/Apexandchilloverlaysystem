@@ -83,11 +83,43 @@
   var rowsDmg = []; // { fill, val } for aero + 4 corners
   var rowsBrake = [];
   var cache = {};
+  /** Shared widget context, kept so the setters can reach the glow helpers. */
+  var octx = null;
 
   function setText(el, key, text) {
     if (!el || cache[key] === text) return;
     cache[key] = text;
     el.textContent = text;
+  }
+
+  /**
+   * As setText, for a value worth a bloom when it changes — used for what the
+   * pit menu has selected, which only moves when the driver moves it.
+   */
+  function setCritText(el, key, text) {
+    if (!el || cache[key] === text) return;
+    cache[key] = text;
+    if (octx && octx.crit) octx.crit(el, text);
+    else el.textContent = text;
+  }
+
+  /**
+   * Write the stop-length estimate, blooming only when the WHOLE second moves.
+   *
+   * The figure is shown to a tenth and the sim's own estimate drifts constantly
+   * while a stop is booked in — blooming on the text meant ~20 blooms a minute,
+   * a permanent strobe on the widget that reads as a fault rather than as news.
+   * A whole second of pit time appearing or disappearing is the real event.
+   */
+  function setHeroSeconds(el, key, text, sec) {
+    setText(el, key, text);
+    if (!el || !octx || !octx.critPulse) return;
+    if (typeof sec !== "number" || !isFinite(sec) || sec < 0) return;
+    var step = Math.round(sec);
+    if (cache[key + "_step"] === step) return;
+    var first = cache[key + "_step"] === undefined;
+    cache[key + "_step"] = step;
+    if (!first) octx.critPulse(el);
   }
 
   function setAttr(el, key, name, value) {
@@ -252,7 +284,7 @@
       hero.className = "damage__hero";
 
       elHeroNum = document.createElement("span");
-      elHeroNum.className = "damage__hero-num";
+      elHeroNum.className = "damage__hero-num is-crit";
       elHeroNum.textContent = "—";
 
       var unit = document.createElement("span");
@@ -355,7 +387,7 @@
       selK.className = "damage__sel-key";
       selK.textContent = "PIT MENU";
       elSel = document.createElement("span");
-      elSel.className = "damage__sel-val";
+      elSel.className = "damage__sel-val is-crit";
       elSel.textContent = "—";
       sel.appendChild(selK);
       sel.appendChild(elSel);
@@ -393,6 +425,7 @@
   }
 
   function update(frame, ctx) {
+    octx = ctx;
     var p = frame.player;
     var d = p && p.damage;
 
@@ -432,7 +465,12 @@
       if (elClean) elClean.hidden = anyWork;
       if (elHeroNum) elHeroNum.parentElement.hidden = !anyWork;
       if (anyWork) {
-        setText(elHeroNum, "hero", hasTime ? heroSec.toFixed(1) : "—");
+        setHeroSeconds(
+          elHeroNum,
+          "hero",
+          hasTime ? heroSec.toFixed(1) : "—",
+          hasTime ? heroSec : -1,
+        );
         // Name what the number actually is. "PIT STOP" when it is the sim's
         // total, "TO REPAIR" when we have fallen back to the repair figure —
         // the two mean different things and must not be labelled alike.
@@ -472,7 +510,7 @@
         );
       }
 
-      setText(elSel, "sel", selectionLabel(d.repairSelection));
+      setCritText(elSel, "sel", selectionLabel(d.repairSelection));
       setAttr(
         elSel,
         "selstate",

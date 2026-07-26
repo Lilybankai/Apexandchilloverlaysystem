@@ -22,6 +22,8 @@
   var headerMeta = null;
   var mountEl = null;
   var wrapEl = null;
+  /** The shared widget context, kept so the render helpers can reach ctx.crit. */
+  var octx = null;
   var showPit = true;
   var showAids = true;
   var disabled = false;
@@ -168,7 +170,12 @@
     var label = document.createElement("span");
     label.className = "mfd__label";
     var value = document.createElement("span");
-    value.className = "mfd__value";
+    // Every MFD value glows on change — including the pit rows. This is the one
+    // place in the overlay where a value moving is the confirmation that a
+    // command LANDED: the driver clicks +, looks away, and the bloom on the next
+    // frame is how they know the sim took it. Without it, success is silent and
+    // only failure has a signal (data-error), which is exactly backwards.
+    value.className = "mfd__value is-crit";
     row.appendChild(label);
     row.appendChild(value);
     var refs = { root: row, label: label, value: value };
@@ -224,7 +231,7 @@
       var refs = group.rows[idOf(it)];
       if (!refs) return;
       setText(refs.label, labelOf(it));
-      setText(refs.value, textOf(it));
+      critText(refs.value, textOf(it));
     });
   }
 
@@ -376,6 +383,16 @@
     if (el.textContent !== text) el.textContent = text;
   }
 
+  /**
+   * Write a value that should bloom when it changes. Falls back to a plain write
+   * if the runtime predates the helper, so the widget can never be broken by the
+   * glow being unavailable — it just stops glowing.
+   */
+  function critText(el, text) {
+    if (octx && octx.crit) octx.crit(el, text);
+    else setText(el, text);
+  }
+
   /** Tidy the sim's raw labels a touch: drop the trailing colon. */
   function prettyPit(name) {
     return String(name || "").replace(/:\s*$/, "");
@@ -383,9 +400,13 @@
 
   /* ------------------------------- structure ------------------------------ */
 
-  function makeGroup(title, group) {
+  function makeGroup(title, group, id) {
     var box = document.createElement("div");
     box.className = "mfd__group";
+    // Lets the CSS size the driving aids larger than the pit list: brake bias,
+    // TC, ABS and motor map are changed and read mid-corner, while the pit rows
+    // are set up on a straight or in the box.
+    box.setAttribute("data-group", id);
 
     var head = document.createElement("div");
     head.className = "mfd__group-title";
@@ -414,8 +435,8 @@
     mountEl.textContent = "";
     wrapEl = document.createElement("div");
     wrapEl.className = "mfd__wrap";
-    if (showPit) wrapEl.appendChild(makeGroup("PIT STRATEGY", pit));
-    if (showAids) wrapEl.appendChild(makeGroup("DRIVING AIDS", aids));
+    if (showPit) wrapEl.appendChild(makeGroup("PIT STRATEGY", pit, "pit"));
+    if (showAids) wrapEl.appendChild(makeGroup("DRIVING AIDS", aids, "aids"));
     mountEl.appendChild(wrapEl);
   }
 
@@ -481,6 +502,7 @@
   /* --------------------------------- init --------------------------------- */
 
   function init(root, ctx) {
+    octx = ctx;
     headerMeta = root.querySelector('[data-role="meta"]');
     mountEl = root.querySelector('[data-role="mount"]');
 
@@ -514,6 +536,7 @@
 
   function update(frame, ctx) {
     if (disabled) return;
+    octx = ctx;
     renderState(frame && frame.mfd ? frame.mfd : null);
   }
 

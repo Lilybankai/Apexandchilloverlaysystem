@@ -38,7 +38,9 @@
 #widget-delta     { top: 196px;   left: 50%; transform: translateX(-50%); width: 300px; }
 #widget-pacedelta { top: 280px;   left: 50%; transform: translateX(-50%); width: 348px; }
 #widget-relative  { top: 24px;    right: 24px;  width: 400px; }
-#widget-fuel      { top: 250px;   right: 24px;  width: 400px; }
+/* 290, not 250: the fuel panel's Tier 1 stats made it taller, and at 250 its
+   header slid under the bottom of the relative table above it. */
+#widget-fuel      { top: 290px;   right: 24px;  width: 400px; }
 #widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
 #widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
 /* The alternate inputs readout sits clear of the original so both can be up at
@@ -55,6 +57,11 @@
 /* Fuel Planner — a taller widget (plan + stint timer + setup fields); left
    column below the radar, clear of the standings tower. */
 #widget-fuelplan  { top: 470px;  left: 24px;  width: 340px; }
+/* MFD — had no anchor at all, so it fell to the static top-left and landed on
+   top of the standings session strip, hiding the lap counter and countdown
+   underneath it. The centre band is the one part of this all-widgets page with
+   room for it, below the pace-delta grid and above the pedal trace. */
+#widget-mfd       { top: 420px;  left: 50%; transform: translateX(-50%); width: 360px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
@@ -72,7 +79,7 @@
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.05em;
   color: var(--text-secondary);
   z-index: 10;
@@ -101,7 +108,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-size: 15px;
+  font-size: var(--fs-data);
 }
 .brand__mark {
   width: 22px;
@@ -118,6 +125,16 @@
  * ========================================================================= */
 .standings { max-height: 700px; }
 
+/* Tier 1: the player's own position, in the panel header. It was 11px meta text
+   — the same size as a field label — despite being the number the entire panel
+   below it exists to explain. */
+#widget-standings .panel__meta {
+  font-size: var(--fs-value);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
 /* --- Session strip: prominent lap counter + timed-race countdown clock ---- */
 .standings__session {
   display: flex;
@@ -128,26 +145,28 @@
   border-bottom: 1px solid var(--border-strong);
   background: var(--bg-header);
 }
+/* Tier 1. How much race is left decides everything else on this panel — when to
+   push, when to save, whether a stop still fits — so the lap counter and the
+   countdown are sized to be readable without looking away from the corner. */
 .standings__session-lap {
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0.06em;
-  /* The "a bit bigger" lap counter. */
-  font-size: 20px;
+  font-size: var(--fs-crit);
   line-height: 1;
   color: var(--text-primary);
 }
 .standings__session-clock {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 20px;
+  font-size: var(--fs-crit);
   line-height: 1;
   letter-spacing: 0.02em;
   color: var(--ac-cyan);
 }
 .standings__session-clock::before {
   content: "⏱ ";
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .standings__session-clock.is-urgent {
@@ -159,7 +178,7 @@
 .standings__session-togo {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
@@ -174,7 +193,7 @@
   box-shadow: inset 3px 0 0 var(--purple-fastest);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   color: var(--purple-fastest);
   white-space: nowrap;
@@ -185,7 +204,7 @@
 .standings__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-body);
   table-layout: fixed;
 }
 .standings__row {
@@ -234,13 +253,13 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
 }
 .standings__group-count {
   float: right;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
@@ -257,7 +276,7 @@
   width: 30px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
@@ -275,7 +294,7 @@
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--fs-label);
 }
 .standings__ve-bar {
   position: absolute;
@@ -300,7 +319,7 @@
 .standings__last {
   text-align: right;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   font-variant-numeric: tabular-nums;
 }
 .standings__gap { width: 62px; color: var(--text-secondary); }
@@ -347,7 +366,9 @@
 .delta { padding: 2px 0; }
 .delta__track {
   position: relative;
-  height: 30px;
+  /* Derived from the value it contains rather than fixed, so the bar grows with
+     the text scale instead of cropping the number it exists to frame. */
+  height: calc(var(--fs-crit-lg) * 1.3);
   background: var(--bg-panel-2);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -374,7 +395,10 @@
   margin-left: -1px;
   background: var(--border-strong);
 }
-/* Signed value pill, always centred and legible over the fill. */
+/* Signed value pill, always centred and legible over the fill.
+   Tier 1 at the largest step in the scale: this widget exists to show exactly
+   one number, it is the most-read number in any race, and it has a whole panel
+   to itself — so nothing here is competing with it for room. */
 .delta__value {
   position: absolute;
   inset: 0;
@@ -384,7 +408,7 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 18px;
+  font-size: var(--fs-crit-lg);
   letter-spacing: 0.02em;
   color: var(--text-primary);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
@@ -406,7 +430,7 @@
 .pacedelta__corner { }
 .pacedelta__colhead {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -415,7 +439,7 @@
 }
 .pacedelta__rowhead {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: var(--fs-data);
   font-weight: 700;
   color: var(--text-secondary);
   display: flex;
@@ -426,7 +450,7 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 14px;
+  font-size: var(--fs-data);
   letter-spacing: 0;
   text-align: center;
   padding: 5px 3px;
@@ -443,6 +467,13 @@
 /* =========================================================================
  * RELATIVE / TIMING WIDGET (top-right)
  * ========================================================================= */
+/* Lap / time remaining in this panel's header — how much race is left. */
+#widget-relative .panel__meta {
+  font-size: var(--fs-data);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .timing__strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -457,7 +488,7 @@
 }
 .timing__label {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -465,7 +496,7 @@
 .timing__value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--fs-data);
   color: var(--text-primary);
   margin-top: 1px;
 }
@@ -479,7 +510,7 @@
   box-shadow: inset 3px 0 0 var(--flag-blue);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-body);
   letter-spacing: 0.06em;
   color: var(--flag-blue);
   white-space: nowrap;
@@ -492,7 +523,7 @@
 .relative__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 .relative__row { border-bottom: 1px solid var(--border-soft); }
 .relative__row:last-child { border-bottom: none; }
@@ -533,6 +564,18 @@
 @keyframes relative-ghost-bob {
   50% { transform: translateY(-1.5px); }
 }
+/* Tier 1: the car immediately ahead and the car immediately behind. Those two
+   gaps are the ones being defended or attacked right now, so they are the only
+   numbers in this table sized to be caught without reading it. */
+   Size and weight only, deliberately no colour: the yield-blue and traffic-amber
+   rules above are the same specificity and appear earlier, so setting a colour
+   here would quietly outrank them and repaint the one distinction in this table
+   that must never be lost. */
+.relative__row--near .relative__delta {
+  font-size: var(--fs-value);
+  font-weight: 700;
+}
+
 .relative__cell { padding: 4px 8px; white-space: nowrap; }
 .relative__pos {
   width: 26px; text-align: center;
@@ -541,7 +584,12 @@
 }
 .relative__driver { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .relative__delta {
-  width: 70px; text-align: right;
+  /* Sized off the LARGEST font this column ever holds — the promoted neighbour
+     rows below, not the table's own size — and derived from the token so it
+     tracks the text scale. A fixed 70px fitted "−12.3" at 13px and clipped it
+     the moment those two rows went to 20px. */
+  width: calc(var(--fs-value) * 4.2);
+  text-align: right;
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 
@@ -559,16 +607,25 @@
 .weather__temp {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 22px;
+  font-size: var(--fs-value);
   color: var(--text-primary);
 }
-.weather__temp small { font-size: 12px; color: var(--text-muted); }
+.weather__temp small { font-size: var(--fs-body); color: var(--text-muted); }
 .weather__meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--text-secondary);
+}
+/* Tier 1 — the one line in this block that changes how the car is driven. */
+.weather__wet {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-data);
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  line-height: 1.1;
 }
 .weather__forecast {
   display: grid;
@@ -584,14 +641,14 @@
 }
 .weather__slot-time {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-muted);
 }
 .weather__slot-temp {
   font-family: var(--font-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--fs-data);
   line-height: 1.1;
   margin-top: 3px;
   color: var(--text-primary);
@@ -599,16 +656,28 @@
 .weather__slot-rain {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--fs-label);
   margin-top: 1px;
   color: var(--text-secondary);
 }
 /* A tiny raindrop hint before the rain-chance number. */
 .weather__slot-rain::before {
   content: "☂ ";
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-muted);
 }
+/* The next slot is the actionable one: rain arriving in 15 minutes is a strategy
+   call, rain forecast for hour three is not. Its rain chance is promoted out of
+   the strip's uniform quietness so the eye lands on it first. */
+.weather__slot[data-next="true"] {
+  background: var(--bg-panel-3);
+}
+.weather__slot[data-next="true"] .weather__slot-rain {
+  font-size: var(--fs-data);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 /* Rain-chance intensity is signalled by the slot's top border colour. */
 .weather__slot[data-rain="dry"]   { border-top: 2px solid var(--pos-gain); }
 .weather__slot[data-rain="low"]   { border-top: 2px solid var(--warn); }
@@ -621,7 +690,7 @@
 .fuel__mode {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.12em;
   color: var(--text-muted);
   margin-bottom: 4px;
@@ -642,7 +711,7 @@
 }
 .fuel__stat-label {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -650,10 +719,17 @@
 .fuel__stat-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: var(--fs-value);
+  line-height: 1.05;
   margin-top: 2px;
 }
-.fuel__stat-value small { font-size: 11px; color: var(--text-muted); }
+/* Tier 1 — laps left and margin at the flag (and energy remaining in the energy
+   view). Two of the four cells are the answer and two are the working, so the
+   grid is read in one glance instead of four. */
+.fuel__stat-value--hero {
+  font-size: var(--fs-crit);
+}
+.fuel__stat-value small { font-size: var(--fs-label); color: var(--text-muted); }
 /* Energy-overlap chip: shown in both views, never hidden by the rotation. */
 .fuel__overlap {
   margin: 6px 0 4px;
@@ -662,7 +738,7 @@
   background: var(--bg-panel-2);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
@@ -675,7 +751,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--text-secondary);
 }
 /* Fuel-to-finish margin state colour on the value. */
@@ -700,7 +776,7 @@
 }
 .fuelplan__stat-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -708,7 +784,7 @@
 .fuelplan__stat-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 16px;
+  font-size: var(--fs-data);
   margin-top: 1px;
 }
 .fuelplan__stat-value[data-state="ok"] { color: var(--pos-gain); }
@@ -717,7 +793,7 @@
 
 .fuelplan__sub {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -726,7 +802,7 @@
 .fuelplan__breakdown {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-muted);
   margin-top: 2px;
   white-space: nowrap;
@@ -749,15 +825,19 @@
 .fuelplan__stint-mode {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.12em;
   color: var(--text-muted);
 }
 .fuelplan__stint-mode[data-mode="energy"] { color: var(--ac-cyan); }
+/* Tier 1: what is actually left in the car right now. This — not the pre-race
+   LOAD figure below — is the number being watched while driving, so the two
+   swapped sizes. */
 .fuelplan__stint-big {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 20px;
+  font-size: var(--fs-crit);
+  line-height: 1.05;
   color: var(--text-primary);
 }
 .fuelplan__bar { height: 7px; margin-bottom: 6px; }
@@ -765,7 +845,7 @@
 .fuelplan__margin {
   margin-top: 5px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--text-secondary);
 }
 .fuelplan__margin[data-state="ok"] { color: var(--pos-gain); }
@@ -787,21 +867,24 @@
 .fuelplan__load-label {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: 0.12em;
   color: var(--text-muted);
 }
+/* Tier 2, deliberately demoted. The fuel to load is read once, before the race,
+   from a stationary car — it was previously the second-largest number in the
+   whole system, competing with values that have to be read at 200 km/h. */
 .fuelplan__load-val {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 26px;
+  font-size: var(--fs-value);
   line-height: 1;
   color: var(--text-primary);
 }
 .fuelplan__stops {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
@@ -829,7 +912,7 @@
   background: var(--bg-panel-2);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: var(--fs-label);
 }
 /* The stint the driver is currently in. */
 .fuelplan__stint-row[data-current="true"] {
@@ -847,7 +930,7 @@
 .fuelplan__st-act {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   color: var(--warn);
   text-align: right;
@@ -874,7 +957,7 @@
 .fuelplan__ratio-label {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -883,7 +966,7 @@
   flex: 1;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--ac-cyan);
   white-space: nowrap;
   overflow: hidden;
@@ -899,7 +982,7 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: var(--fs-data);
   line-height: 1;
   color: var(--text-primary);
   /* Control tokens, not panel tokens: the fuel-ratio steppers stay visible and
@@ -926,7 +1009,7 @@
 .fuelplan__setup-toggle {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -942,7 +1025,7 @@
   align-items: center;
   gap: 4px;
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.08em;
   color: var(--text-muted);
   cursor: pointer;
@@ -961,7 +1044,7 @@
 }
 .fuelplan__field-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -969,7 +1052,7 @@
 .fuelplan__select,
 .fuelplan__num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--text-primary);
   /* Same reasoning as .fuelplan__step — these are typed into, so they keep a
      visible field even when the panel background is off. */
@@ -999,21 +1082,23 @@
 }
 .tyre__pos {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
-/* Primary readout: remaining tread %. */
+/* Primary readout: remaining tread %. Tier 1 — a corner going away is something
+   you need to catch from the corner of your eye, not by reading four boxes. */
 .tyre__wear {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: var(--fs-crit);
+  line-height: 1.05;
   margin: 2px 0 0;
 }
 /* Sub-line: temperature when known, else the "TREAD" label. */
 .tyre__temp {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   color: var(--text-muted);
   min-height: 12px;
@@ -1065,7 +1150,7 @@
   border-radius: 3px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   color: #0a0b12;
 }
@@ -1108,13 +1193,13 @@
 .pedal-bar__fill--brake[data-aid="true"] { background: var(--aid-abs); }
 .pedal-bar__label {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 .pedal-bar__val {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-secondary);
 }
 
@@ -1209,14 +1294,16 @@
 }
 .motion__stat-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   color: var(--text-muted);
 }
+/* Every one of the seven motion channels was previously secondary text under an
+   8px label — the whole widget was context and nothing in it was a readout. */
 .motion__stat-val {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: var(--fs-data);
+  color: var(--text-primary);
 }
 /* Balance verdict. Amber/blue rather than the green/red the pedals own — this
    is not a good/bad reading, it is which end is letting go. */
@@ -1226,7 +1313,7 @@
   border-radius: 3px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.12em;
   color: var(--text-muted);
   background: var(--bg-panel-2);
@@ -1281,7 +1368,7 @@
 }
 .motion__opacity-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
@@ -1294,7 +1381,7 @@
 }
 .motion__opacity-val {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-secondary);
   min-width: 28px;
   text-align: right;
@@ -1320,10 +1407,13 @@
   gap: 6px;
   margin-bottom: 2px;
 }
+/* Tier 2, deliberately demoted. This was the largest number in the entire
+   overlay, and it is one you read while deciding whether to pit — with time to
+   look at it — not one you catch mid-corner. */
 .damage__hero-num {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 30px;
+  font-size: var(--fs-value);
   line-height: 1;
   color: var(--pos-loss);
   font-variant-numeric: tabular-nums;
@@ -1331,7 +1421,7 @@
 .damage__hero-unit {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--fs-body);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -1341,7 +1431,7 @@
 .damage__hero-tag {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
@@ -1360,7 +1450,7 @@
    line here that describes something the sim has not published. */
 .damage__range {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   color: var(--text-muted);
   margin-top: -1px;
@@ -1380,7 +1470,7 @@
 }
 .damage__tyre-key {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1388,13 +1478,13 @@
 }
 .damage__tyre-note {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-muted);
 }
 .damage__tyre-val {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -1415,7 +1505,7 @@
 .damage__clean-text {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--fs-body);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--pos-gain);
@@ -1432,7 +1522,7 @@
 .damage__row:last-child { margin-bottom: 0; }
 .damage__label {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1458,7 +1548,7 @@
 .damage__fill[data-state="wear"]  { background: var(--pos-gain); }
 .damage__val {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -1473,7 +1563,7 @@
 
 .damage__subhead {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1490,7 +1580,7 @@
 }
 .damage__sel-key {
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1498,7 +1588,7 @@
 }
 .damage__sel-val {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   color: var(--ac-cyan);
 }
 /* "Do Not Repair" with damage on the car is a deliberate choice, so it is
@@ -1550,7 +1640,7 @@
 }
 .damage__opacity-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1562,7 +1652,7 @@
 }
 .damage__opacity-val {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-secondary);
   min-width: 28px;
   text-align: right;
@@ -1640,7 +1730,7 @@ body.ig-editing #widget-radar .panel__header {
 }
 .radar__opacity-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
@@ -1653,7 +1743,7 @@ body.ig-editing #widget-radar .panel__header {
 }
 .radar__opacity-val {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-secondary);
   min-width: 28px;
   text-align: right;
@@ -1672,7 +1762,7 @@ body.ig-editing #widget-radar .panel__header {
 /* Prominent section headers with a branded gradient underline. */
 .mfd__group-title {
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1692,7 +1782,7 @@ body.ig-editing #widget-radar .panel__header {
 .mfd__empty {
   display: none;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-label);
   color: var(--text-muted);
   padding: 2px 0;
 }
@@ -1704,7 +1794,7 @@ body.ig-editing #widget-radar .panel__header {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 22px;
+  min-height: calc(var(--fs-data) * 1.5);
   padding: 2px 8px 2px 9px;
   border-left: 3px solid var(--mfd-cat, var(--border-strong));
   /* A whisper of the category colour tints the whole row so groups read as
@@ -1718,7 +1808,7 @@ body.ig-editing #widget-radar .panel__header {
 
 .mfd__label {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -1726,12 +1816,23 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__value {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
   color: var(--text-primary);
   text-align: right;
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+}
+
+/* Tier 1: the driving aids. Brake bias, TC, ABS and motor map are changed from
+   the wheel mid-corner and have to be confirmed without looking away, so this
+   group's values are sized as readouts while the pit list below stays a list.
+   The rows grow with them — a 20px value in a 22px row is a clipped value. */
+.mfd__group[data-group="aids"] .mfd__value {
+  font-size: var(--fs-value);
+}
+.mfd__group[data-group="aids"] .mfd__row {
+  min-height: calc(var(--fs-value) * 1.4);
 }
 
 /* --- Category colours (the --mfd-cat the row border + tint read from) ------ */
@@ -1763,7 +1864,7 @@ body.ig-editing #widget-radar .panel__header {
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1;
   color: var(--text-primary);
   /* Control tokens keep these clickable even with the panel background at 0% —
@@ -1824,7 +1925,7 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__opacity-label {
   font-family: var(--font-display);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1836,7 +1937,7 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__opacity-val {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--text-secondary);
   min-width: 28px;
   text-align: right;
@@ -1849,7 +1950,7 @@ body.ig-editing #widget-radar .panel__header {
 .placeholder {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   padding: 6px 2px;
   text-align: center;
 }

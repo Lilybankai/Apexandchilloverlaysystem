@@ -125,6 +125,20 @@ function defaultSettings() {
     // background, border and header from every widget so only the live data
     // floats over the game. Applied by overlay/js/appearance.js.
     panelOpacity: 100,
+    // Global multiplier on the overlay's type scale, as a percentage. Every font
+    // size in theme.css is declared as calc(Npx * var(--fs-scale)), so this moves
+    // the whole hierarchy together rather than any one value: the relative
+    // emphasis between critical, important and context text is a design
+    // decision, but how big all of it needs to be depends on the operator's
+    // screen size and how far away they sit. 80–120 (the widgets have fixed
+    // widths, and past ~125% the busiest panels stop fitting their own text —
+    // see SCALE_MAX in appearance.js), applied by appearance.js.
+    textScale: 100,
+    // Whether a critical value blooms cyan when it changes (see the crit()
+    // helpers in overlay/js/client.js). On by default — it is the whole point of
+    // marking a value critical — but it is a visual effect over live footage, so
+    // it can be turned off for a broadcast that wants a completely static look.
+    changeGlow: true,
     // Keyboard bindings, { [actionId]: accelerator } — see electron/actions.js
     // for the action vocabulary. Registered as GLOBAL hotkeys, so they also fire
     // while the sim has focus, and a Stream Deck "Hotkey" button (which just
@@ -291,6 +305,9 @@ function loadSettings() {
         : defaults.sponsorsEnabled,
     sponsorIntervalSec: clamp(stored.sponsorIntervalSec, 3, 120, defaults.sponsorIntervalSec),
     panelOpacity: clamp(stored.panelOpacity, 0, 100, defaults.panelOpacity),
+    textScale: clamp(stored.textScale, 80, 120, defaults.textScale),
+    changeGlow:
+      typeof stored.changeGlow === 'boolean' ? stored.changeGlow : defaults.changeGlow,
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     wheelBindings: normalizeWheelBindings(stored),
@@ -395,9 +412,11 @@ function buildServerConfig(settings) {
     // /sponsors/ route rather than serving a directory nobody asked for.
     sponsorDir: settings.sponsorsEnabled ? sponsorDir() : '',
     sponsorIntervalSec: settings.sponsorIntervalSec,
-    // Boot value only — changes are pushed live via applyAppearance(), so the
-    // slider never restarts the server.
+    // Boot values only — changes are pushed live via applyAppearance(), so the
+    // sliders never restart the server.
     panelOpacity: settings.panelOpacity,
+    textScale: settings.textScale,
+    changeGlow: settings.changeGlow,
     verbose: false,
   };
 }
@@ -581,8 +600,8 @@ function toggleIngame() {
 }
 
 /**
- * Applies the widget-background opacity everywhere it is consumed, with no
- * restart and no reload:
+ * Applies the appearance settings — widget-background opacity, text scale and
+ * the change glow — everywhere they are consumed, with no restart and no reload:
  *
  *   - the running server, which serves it at /appearance.json to OBS Browser
  *     Sources and browser tabs (they re-read it about once a second);
@@ -594,7 +613,12 @@ function toggleIngame() {
  */
 function applyAppearance(settings) {
   const s = settings || loadSettings();
-  const payload = { panelOpacity: s.panelOpacity, widgetModes: s.widgetModes || {} };
+  const payload = {
+    panelOpacity: s.panelOpacity,
+    textScale: s.textScale,
+    changeGlow: s.changeGlow,
+    widgetModes: s.widgetModes || {},
+  };
   try {
     requireServer().setAppearance(payload);
   } catch (err) {
@@ -1104,8 +1128,14 @@ function registerIpc() {
     saveSettings(next);
 
     // Look-and-feel only: applied live to the server and the in-game layer, so
-    // it is deliberately NOT part of the restart check below.
-    if (next.panelOpacity !== current.panelOpacity) applyAppearance(next);
+    // these are deliberately NOT part of the restart check below.
+    if (
+      next.panelOpacity !== current.panelOpacity ||
+      next.textScale !== current.textScale ||
+      next.changeGlow !== current.changeGlow
+    ) {
+      applyAppearance(next);
+    }
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map
     // rather than per-key: a rebind, a clear and a brand-new binding all need

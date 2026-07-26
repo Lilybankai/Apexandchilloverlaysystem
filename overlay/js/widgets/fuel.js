@@ -22,15 +22,43 @@
   var refuelEl, pitEl;
   var cache = {};
   var grids = {};
+  /** Shared widget context, kept so the setters can reach the glow helpers. */
+  var octx = null;
 
-  function makeStat(grid, key, label) {
+  /**
+   * Bloom a Tier 1 stat when its WHOLE number moves.
+   *
+   * Laps left and energy remaining drift continuously — a bloom on every tick of
+   * the first decimal would strobe for the entire race and stop meaning
+   * anything. Losing a whole lap of range, or another whole percent of energy, is
+   * the event actually worth looking up for.
+   */
+  function pulseOnStep(key, value) {
+    if (!octx || !octx.critPulse) return;
+    var el = stats[key];
+    if (!el || typeof value !== "number" || !isFinite(value)) return;
+    var step = Math.floor(value);
+    var ck = key + "Step";
+    if (cache[ck] === step) return;
+    var first = cache[ck] === undefined;
+    cache[ck] = step;
+    if (!first) octx.critPulse(el);
+  }
+
+  /**
+   * @param {boolean} hero  Tier 1 — sized to be read at a glance, and glowing on
+   *   a discrete change. "Laps left" and "margin at the flag" answer the only
+   *   question this widget exists to answer; consumption per lap and litres to
+   *   the finish are how that answer was reached, and stay Tier 2.
+   */
+  function makeStat(grid, key, label, hero) {
     var wrap = document.createElement("div");
     wrap.className = "fuel__stat";
     var l = document.createElement("div");
     l.className = "fuel__stat-label";
     l.textContent = label;
     var v = document.createElement("div");
-    v.className = "fuel__stat-value";
+    v.className = hero ? "fuel__stat-value fuel__stat-value--hero is-crit" : "fuel__stat-value";
     v.textContent = "—";
     wrap.appendChild(l);
     wrap.appendChild(v);
@@ -52,10 +80,10 @@
 
     var fuelGrid = document.createElement("div");
     fuelGrid.className = "fuel__grid";
-    makeStat(fuelGrid, "perLap", "Per Lap");
-    makeStat(fuelGrid, "lapsLeft", "Laps Left");
-    makeStat(fuelGrid, "toFinish", "To Finish");
-    makeStat(fuelGrid, "margin", "Margin");
+    makeStat(fuelGrid, "perLap", "Per Lap", false);
+    makeStat(fuelGrid, "lapsLeft", "Laps Left", true);
+    makeStat(fuelGrid, "toFinish", "To Finish", false);
+    makeStat(fuelGrid, "margin", "Margin", true);
     mount.appendChild(fuelGrid);
     grids.fuel = fuelGrid;
 
@@ -63,10 +91,10 @@
     var energyGrid = document.createElement("div");
     energyGrid.className = "fuel__grid";
     energyGrid.style.display = "none";
-    makeStat(energyGrid, "veRemain", "Remaining");
-    makeStat(energyGrid, "vePerLap", "Per Lap");
-    makeStat(energyGrid, "veLapsLeft", "Laps Left");
-    makeStat(energyGrid, "veMargin", "Margin");
+    makeStat(energyGrid, "veRemain", "Remaining", true);
+    makeStat(energyGrid, "vePerLap", "Per Lap", false);
+    makeStat(energyGrid, "veLapsLeft", "Laps Left", true);
+    makeStat(energyGrid, "veMargin", "Margin", true);
     mount.appendChild(energyGrid);
     grids.energy = energyGrid;
 
@@ -118,10 +146,14 @@
       cache[key] = html;
       el.innerHTML = html;
     }
-    if (cache[key + "State"] !== state) {
-      cache[key + "State"] = state;
-      if (state) el.setAttribute("data-state", state);
-      else el.removeAttribute("data-state");
+    // Crossing ok → marginal → short is the discrete event inside a continuously
+    // drifting number, so the bucket is what blooms. critAttr writes the
+    // attribute as well, so this stays a single source of truth for the state.
+    if (state) {
+      if (octx && octx.critAttr) octx.critAttr(el, "data-state", state);
+      else el.setAttribute("data-state", state);
+    } else if (el.hasAttribute("data-state")) {
+      el.removeAttribute("data-state");
     }
   }
 
@@ -158,6 +190,7 @@
 
   function update(frame, ctx) {
     var fmt = ctx.fmt;
+    octx = ctx;
     var f = frame.fuel;
     if (!f) return;
 
@@ -200,6 +233,8 @@
         null
       );
       setMargin("veMargin", f.virtualEnergyDeltaPct, f.virtualEnergyPerLapPct, fmt, "%");
+      pulseOnStep("veRemain", f.virtualEnergyPct);
+      pulseOnStep("veLapsLeft", f.virtualEnergyLapsRemaining);
 
       var eLine = "Virtual energy · rotates 20s";
       if (cache.refuel !== eLine) { cache.refuel = eLine; refuelEl.textContent = eLine; }
@@ -211,6 +246,7 @@
     setStat("lapsLeft", fmt.intVal(f.lapsRemaining), null);
     setStat("toFinish", fmt.liters(f.fuelToFinishLiters), "L");
     setMargin("margin", f.fuelDeltaLiters, f.perLapAvgLiters, fmt, "L");
+    pulseOnStep("lapsLeft", f.lapsRemaining);
 
     // Bottom line: refuel-to-finish + pit window.
     var refuel = fmt.has(f.refuelToFinishLiters)

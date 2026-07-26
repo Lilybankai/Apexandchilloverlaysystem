@@ -105,6 +105,47 @@
     monospace;
   --font-ui: "Segoe UI", system-ui, sans-serif;
 
+  /* --- Type scale ----------------------------------------------------
+   * One global ladder, so a size means the same URGENCY in every widget and
+   * the eye learns one hierarchy rather than fourteen. Sizes were previously
+   * decided per widget, which left the damage stop-time estimate (read once,
+   * in the pits) as the biggest number on screen and the lap delta — the
+   * most-read number in any race — at two thirds of it.
+   *
+   *   micro/label   Tier 3, context: units, field labels, column heads
+   *   body          Tier 3 tables and long rows
+   *   data/value    Tier 2, read between corners
+   *   crit          Tier 1, glance-critical (see .is-crit below)
+   *   crit-lg       Tier 1 in a widget whose whole job is one number
+   *
+   * Everything multiplies through --fs-scale, the knob the control panel's
+   * "Text size" slider turns (see js/appearance.js) — same pattern as
+   * --panel-alpha, and for the same reason: sizes that read well on a 32"
+   * desk monitor and on a triple-screen rig are not the same, so it is the
+   * operator's call rather than a guess baked into this file. */
+  --fs-scale: 1;
+  --fs-micro: calc(9px * var(--fs-scale));
+  --fs-label: calc(11px * var(--fs-scale));
+  --fs-body: calc(12px * var(--fs-scale));
+  --fs-data: calc(15px * var(--fs-scale));
+  --fs-value: calc(20px * var(--fs-scale));
+  --fs-crit: calc(28px * var(--fs-scale));
+  --fs-crit-lg: calc(34px * var(--fs-scale));
+
+  /* --- Change glow ---------------------------------------------------
+   * The bloom on a critical value that just changed. Cyan because one colour
+   * has to mean one thing — "this just changed" — everywhere, and the brand
+   * cyan sits outside the green/red state vocabulary, so it is never mistaken
+   * for good or bad news. */
+  --glow: var(--ac-cyan);
+  /* The wide outer bloom, pre-mixed rather than colour-mix()'d: OBS ships an
+     older CEF than desktop Chrome and a glow that silently fails to render is
+     worse than one that cannot be retinted. */
+  --glow-soft: rgba(34, 211, 238, 0.65);
+  /* Flat tint used instead of the bloom under prefers-reduced-motion. */
+  --glow-tint: rgba(34, 211, 238, 0.22);
+  --glow-fade: 550ms;
+
   /* --- Geometry ----------------------------------------------------- */
   --radius: 8px;
   --radius-sm: 5px;
@@ -198,7 +239,7 @@ html[data-panel-bg="translucent"] .panel {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 12px;
+  font-size: var(--fs-body);
   line-height: 1;
   color: var(--text-primary);
 }
@@ -206,7 +247,7 @@ html[data-panel-bg="translucent"] .panel {
 /* Small meta text on the right of a header (e.g. lap count, session). */
 .panel__meta {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   letter-spacing: 0.02em;
   color: var(--text-secondary);
 }
@@ -259,16 +300,73 @@ html[data-panel-bg="translucent"] .panel {
 .warn { color: var(--warn); }
 
 /* =========================================================================
+ * CHANGE GLOW
+ * A critical value that just changed blooms cyan, then decays — so a new
+ * position, a fresh laps-left figure or a landed brake-bias click catches the
+ * eye instead of having to be hunted for.
+ *
+ * `is-crit` is a MARKER ONLY: it carries the transition and nothing else, so
+ * it composes with whatever the value's own rule already does (data-state,
+ * .lap-green, data-wear) and leaves size to the tier token on the widget's own
+ * selector. Applied by attribute from js/client.js rather than as a keyframe
+ * animation, because a value that changes again mid-decay then simply re-arms
+ * instead of needing the DOM thrash of restarting an animation.
+ *
+ * Only DISCRETE changes are wired up (see the crit() helper in client.js): a
+ * bloom on a continuously-varying value — delta, gaps, tyre temps, g — would
+ * strobe permanently and become noise, which is the opposite of the point.
+ * ========================================================================= */
+.is-crit {
+  transition: text-shadow var(--glow-fade) ease-out;
+}
+
+.is-crit[data-glow="on"] {
+  /* The bloom is the ONLY thing this rule changes. It deliberately does not
+     touch `color`: most critical values already carry a state colour from a
+     more specific selector (.tyre[data-wear="crit"] .tyre__wear and friends), so
+     a colour lift here would win on some values and lose on others — and a
+     signal that means "changed" has to look identical everywhere to be read
+     without thinking.
+
+     The black shadow is repeated deliberately. The one on .panel below a solid
+     background reaches this element by INHERITANCE, and a text-shadow declared
+     directly on the element replaces it wholesale — so without this first stop a
+     glowing value would lose its dark backing at the exact moment it is trying
+     to be seen, over whatever pale tarmac is behind it. */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 4px var(--glow),
+    0 0 14px var(--glow-soft);
+  transition: none; /* arrive instantly, leave on the fade */
+}
+
+/* A bloom is a light effect, not motion, but it does animate — so honour the
+   preference with a flat tint instead. Tint rather than colour for the same
+   reason as above: it does not have to out-specify the state colours. */
+@media (prefers-reduced-motion: reduce) {
+  .is-crit {
+    transition: background-color var(--glow-fade) ease-out;
+  }
+  .is-crit[data-glow="on"] {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    background-color: var(--glow-tint);
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* =========================================================================
  * BADGE / CHIP — angled corner accent used for class/session tags.
  * ========================================================================= */
 .chip {
   display: inline-flex;
   align-items: center;
-  height: 16px;
+  /* Height derived from the font so a chip grows with the text scale instead of
+     becoming a squeezed box of clipped letters at 160%. */
+  height: calc(var(--fs-label) * 1.5);
   padding: 0 7px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-invert);

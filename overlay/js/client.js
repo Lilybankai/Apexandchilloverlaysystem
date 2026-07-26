@@ -116,6 +116,138 @@
   };
 
   /* ------------------------------------------------------------------ */
+  /*  Critical-value writes + change glow                                */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Every widget needs the same two things for a critical readout: write the DOM
+   * only when the value actually moved, and — when it did — make it announce
+   * itself. Both live here rather than in the widgets because the guard was
+   * being hand-rolled in ~30 places and the flash existed in exactly one
+   * (standings' private PB_FLASH_MS/flashUntil map), so nothing else could get
+   * it without copying it.
+   *
+   * How long the bloom is HELD at full strength. The decay itself is a CSS
+   * transition (--glow-fade), so the visual fade is smooth and independent of
+   * the widget's throttleMs — which is 250 ms for fuel, weather, damage and MFD
+   * and would make a JS-driven decay visibly steppy.
+   */
+  var GLOW_HOLD_MS = 120;
+
+  /** @type {WeakMap<Element, {v:*, until:number}>} last value + bloom deadline. */
+  var critState = new WeakMap();
+
+  /** Elements currently glowing, swept for expiry at the end of each frame. */
+  var glowing = [];
+
+  /** The operator can turn the glow off; js/appearance.js owns the attribute. */
+  function glowEnabled() {
+    return document.documentElement.getAttribute("data-glow-enabled") !== "false";
+  }
+
+  /** Arm (or re-arm) the bloom on an element that just changed. */
+  function arm(el, now) {
+    if (!glowEnabled()) return;
+    var s = critState.get(el);
+    if (!s.until) {
+      el.setAttribute("data-glow", "on");
+      glowing.push(el);
+    }
+    s.until = now + GLOW_HOLD_MS;
+  }
+
+  /**
+   * Write text to a critical element, blooming on change.
+   *
+   * The first write is deliberately silent: a widget coming to life would
+   * otherwise flash every value it owns at once, which reads as a fault rather
+   * than as news.
+   *
+   * @param {Element} el    Element carrying the `is-crit` marker class.
+   * @param {string}  text  The formatted value.
+   */
+  function crit(el, text) {
+    writeCrit(el, text, false);
+  }
+
+  /**
+   * As `crit`, for a value whose markup carries a nested unit (`26.4<small>L
+   * </small>`). Only ever called with strings this codebase builds itself, and
+   * only when the value moved, so it costs an innerHTML parse a few times a lap.
+   */
+  function critHtml(el, html) {
+    writeCrit(el, html, true);
+  }
+
+  function writeCrit(el, value, asHtml) {
+    if (!el) return;
+    var s = critState.get(el);
+    if (!s) {
+      critState.set(el, { v: value, until: 0 });
+      if (asHtml) el.innerHTML = value;
+      else el.textContent = value;
+      return;
+    }
+    if (s.v === value) return;
+    s.v = value;
+    if (asHtml) el.innerHTML = value;
+    else el.textContent = value;
+    arm(el, nowMs());
+  }
+
+  /**
+   * Same contract for a `data-*` attribute rather than text — the house way of
+   * expressing a state bucket (data-state="ok|marginal|short", data-wear=…).
+   * Crossing a bucket boundary is exactly the kind of discrete change worth a
+   * bloom, even when the number itself is drifting continuously.
+   *
+   * The bloom lands on `el`, so pass the element that shows the value.
+   */
+  function critAttr(el, attr, value) {
+    if (!el) return;
+    var key = attr + " " + value;
+    var s = critState.get(el);
+    if (!s) {
+      critState.set(el, { v: key, until: 0 });
+      el.setAttribute(attr, value);
+      return;
+    }
+    if (el.getAttribute(attr) !== value) el.setAttribute(attr, value);
+    if (s.v === key) return;
+    s.v = key;
+    arm(el, nowMs());
+  }
+
+  /**
+   * Explicitly bloom an element for a discrete event with no value of its own
+   * (a personal best set, a blue flag raised). Idempotent while already lit, so
+   * a widget may call it every frame the condition holds.
+   */
+  function critPulse(el) {
+    if (!el) return;
+    if (!critState.get(el)) critState.set(el, { v: null, until: 0 });
+    arm(el, nowMs());
+  }
+
+  /** Drop the bloom from anything whose hold has elapsed; CSS fades the rest. */
+  function sweepGlow(now) {
+    for (var i = glowing.length - 1; i >= 0; i--) {
+      var el = glowing[i];
+      var s = critState.get(el);
+      if (s && now < s.until) continue;
+      if (s) s.until = 0;
+      el.removeAttribute("data-glow");
+      glowing.splice(i, 1);
+    }
+  }
+
+  function nowMs() {
+    return typeof performance !== "undefined" && performance.now
+      ? performance.now()
+      : Date.now();
+  }
+
+  /* ------------------------------------------------------------------ */
   /*  Widget registry                                                    */
   /* ------------------------------------------------------------------ */
 
@@ -134,7 +266,13 @@
   }
 
   /** Shared context handed to every widget init/update call. */
-  var ctx = { fmt: fmt };
+  var ctx = {
+    fmt: fmt,
+    crit: crit,
+    critHtml: critHtml,
+    critAttr: critAttr,
+    critPulse: critPulse,
+  };
 
   /* ------------------------------------------------------------------ */
   /*  Connection-status UI                                               */
@@ -159,25 +297,31 @@
   /* ------------------------------------------------------------------ */
 
   function updateSessionMeta(frame) {
-    // Standings header: position / field size.
+    // Standings header: position / field size. Tier 1 and glow-eligible — your
+    // own position changing is the single most consequential discrete event in a
+    // race, and it is the one the driver most often misses while driving.
     var s = document.querySelector('#widget-standings [data-role="session"]');
     if (s && frame.player && frame.session) {
-      s.textContent =
-        fmt.intVal(frame.player.position) + " / " + fmt.intVal(frame.session.numCars);
+      if (!s.classList.contains("is-crit")) s.classList.add("is-crit");
+      crit(s, fmt.intVal(frame.player.position) + " / " + fmt.intVal(frame.session.numCars));
     }
     // Relative header: current lap / total (or time remaining for timed races).
     var laps = document.querySelector('#widget-relative [data-role="laps"]');
     if (laps && frame.session) {
       var cur = frame.session.currentLap;
       var tot = frame.session.totalLaps;
+      var text;
       if (has(tot) && tot > 0) {
-        laps.textContent = "LAP " + fmt.intVal(cur) + "/" + tot;
+        text = "LAP " + fmt.intVal(cur) + "/" + tot;
       } else if (has(frame.session.timeRemainingSec)) {
         var mins = Math.max(0, Math.floor(frame.session.timeRemainingSec / 60));
-        laps.textContent = mins + " MIN";
+        text = mins + " MIN";
       } else {
-        laps.textContent = "LAP " + fmt.intVal(cur);
+        text = "LAP " + fmt.intVal(cur);
       }
+      // Steps once a lap (or once a minute on the timed variant), so it blooms.
+      if (!laps.classList.contains("is-crit")) laps.classList.add("is-crit");
+      crit(laps, text);
     }
   }
 
@@ -186,10 +330,7 @@
   /* ------------------------------------------------------------------ */
 
   function dispatch(frame) {
-    var now =
-      typeof performance !== "undefined" && performance.now
-        ? performance.now()
-        : Date.now();
+    var now = nowMs();
 
     setDemo(frame.connected === false);
     updateSessionMeta(frame);
@@ -207,6 +348,12 @@
         console.error("[Apex] widget '" + w.name + "' update failed:", err);
       }
     }
+
+    // After the widgets have written, retire any bloom whose hold has elapsed.
+    // Done once per frame here rather than with a timer per element: the loop is
+    // already ticking, and a value that changes twice in quick succession must
+    // re-arm the same deadline instead of racing two pending timeouts.
+    if (glowing.length) sweepGlow(now);
   }
 
   /* ------------------------------------------------------------------ */
@@ -272,6 +419,9 @@
 
     ws.onclose = function () {
       ws = null;
+      // The sweep only runs on a frame, so without this a bloom that was lit as
+      // the link dropped would sit there glowing over the track indefinitely.
+      if (glowing.length) sweepGlow(Infinity);
       scheduleReconnect();
     };
 

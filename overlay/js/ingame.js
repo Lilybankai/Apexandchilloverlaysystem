@@ -46,7 +46,9 @@
       // standings, where it looked like the overlay had failed to load.
       pacedelta: { x: Math.round(vw / 2 - 170), y: 280, w: 340 },
       relative: { x: vw - 424, y: 24, w: 400 },
-      fuel: { x: vw - 424, y: 250, w: 400 },
+      // 290, not 250: the fuel panel's Tier 1 stats are sized to be read at a
+      // glance, which made it taller than the gap under the relative table.
+      fuel: { x: vw - 424, y: 290, w: 400 },
       // Wider than the readout widgets — it carries the setup fields. Left edge,
       // clear of the standings tower, so its inputs are reachable in edit mode.
       fuelplan: { x: 24, y: 300, w: 340 },
@@ -56,11 +58,19 @@
       // side by side, so spawning them on the same centre line would stack one
       // on the other and read as a widget that failed to load.
       pedalsv: { x: 24, y: vh - 270, w: 300 },
-      motion: { x: vw - 260, y: vh - 420, w: 236 },
+      // vh - 470, not vh - 420: promoting the seven motion channels out of 11px
+      // secondary text grew the panel past the 420px it had been given, so it
+      // spawned with its last row hanging off the bottom of the screen.
+      motion: { x: vw - 260, y: vh - 470, w: 236 },
       // Bottom-left, right of `pedalsv` rather than above it: the repair figure
       // plus five component rows runs ~230px tall, and stacking it in that
       // column would push it up into the standings list.
       damage: { x: 340, y: vh - 300, w: 268 },
+      // Had no entry, so it fell through to the {24, 24} fallback and spawned on
+      // top of standings — the same trap pacedelta hit above. Centre band, below
+      // the pace-delta grid, where the driving-aid rows are reachable in
+      // interact mode without covering the mirrors.
+      mfd: { x: Math.round(vw / 2 - 180), y: 420, w: 360 },
     };
     return D[id] || { x: 24, y: 24, w: 400 };
   }

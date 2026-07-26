@@ -80,6 +80,14 @@ export interface Appearance {
   /** Widget panel-background opacity, 0..100 (see `ServerConfig.panelOpacity`). */
   panelOpacity: number;
   /**
+   * Global multiplier on the overlay's type scale, 80..120 (percent). Moves every
+   * font size together so the glance hierarchy keeps its proportions while the
+   * operator tunes overall legibility for their screen and seating distance.
+   */
+  textScale: number;
+  /** Whether a critical value blooms cyan when it changes. */
+  changeGlow: boolean;
+  /**
    * Per-widget display mode, `{ [widgetId]: mode }` — e.g. `{ tyres: 'tread' }`
    * to show remaining tread instead of temperature.
    *
@@ -102,7 +110,12 @@ const APPEARANCE_PATH = '/appearance.json';
  * `ServerConfig` alone would mean restarting the server — and dropping every
  * connected overlay — each time the operator nudged the slider.
  */
-const appearance: Appearance = { panelOpacity: 100, widgetModes: {} };
+const appearance: Appearance = {
+  panelOpacity: 100,
+  textScale: 100,
+  changeGlow: true,
+  widgetModes: {},
+};
 
 /** Current appearance (a deep-enough copy — callers must not mutate the state). */
 export function getAppearance(): Appearance {
@@ -117,6 +130,12 @@ export function getAppearance(): Appearance {
 export function setAppearance(next: Partial<Appearance>): Appearance {
   if (typeof next?.panelOpacity === 'number' && Number.isFinite(next.panelOpacity)) {
     appearance.panelOpacity = Math.min(100, Math.max(0, Math.round(next.panelOpacity)));
+  }
+  if (typeof next?.textScale === 'number' && Number.isFinite(next.textScale)) {
+    appearance.textScale = Math.min(120, Math.max(80, Math.round(next.textScale)));
+  }
+  if (typeof next?.changeGlow === 'boolean') {
+    appearance.changeGlow = next.changeGlow;
   }
   if (next?.widgetModes && typeof next.widgetModes === 'object') {
     for (const [widget, mode] of Object.entries(next.widgetModes)) {
@@ -261,7 +280,11 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
 
   // Seed the live appearance from config; the app may retune it later without a
   // restart (see setAppearance).
-  setAppearance({ panelOpacity: config.panelOpacity });
+  setAppearance({
+    panelOpacity: config.panelOpacity,
+    textScale: config.textScale,
+    changeGlow: config.changeGlow,
+  });
 
   // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works
   // even under provider `rf2` as long as the game's API is up); `aidkey` injects

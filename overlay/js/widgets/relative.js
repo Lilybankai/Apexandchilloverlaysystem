@@ -131,7 +131,7 @@
     // Blue-flag / backmarker alert, between the timing strip and the table so it
     // pushes nothing off-screen when it appears.
     alertEl = document.createElement("div");
-    alertEl.className = "relative__alert";
+    alertEl.className = "relative__alert is-crit";
     alertEl.hidden = true;
     mount.appendChild(alertEl);
 
@@ -148,7 +148,7 @@
    * closest such car (there can be more than one in a multiclass train) so the
    * driver is told about the one arriving first.
    */
-  function updateAlert(list, fmt, now) {
+  function updateAlert(list, fmt, now, ctx) {
     var best = null;
     for (var i = 0; i < list.length; i++) {
       var e = list[i];
@@ -176,6 +176,10 @@
       alertCache.text = txt;
       alertEl.textContent = txt;
     }
+    // Bloom when a NEW car takes over the alert, not on every text change — the
+    // gap in the banner counts down continuously, and the banner already strobes
+    // on its own. What is new here is who you owe the move to.
+    if (alertCache.slot !== best.slotId && ctx && ctx.critPulse) ctx.critPulse(alertEl);
     alertCache.slot = best.slotId;
     alertCache.until = now + ALERT_HOLD_MS;
     if (alertEl.hidden) alertEl.hidden = false;
@@ -212,9 +216,23 @@
     // Relative table.
     var list = frame.relative || [];
     var seen = new Set();
-    updateAlert(list, fmt, Date.now());
+    updateAlert(list, fmt, Date.now(), ctx);
+
+    // The two cars either side of the player are Tier 1: they are the race you
+    // are actually in. Everything further up or down the list is context, and
+    // sizing all of it alike is what makes the panel something you have to read
+    // rather than glance at.
+    var playerIdx = -1;
+    for (var pi = 0; pi < list.length; pi++) {
+      if (list[pi].isPlayer) {
+        playerIdx = pi;
+        break;
+      }
+    }
+
     for (var i = 0; i < list.length; i++) {
       var e = list[i];
+      var isNear = playerIdx >= 0 && Math.abs(i - playerIdx) === 1;
       var row = rows.get(e.slotId);
       if (!row) {
         row = createRow();
@@ -225,6 +243,7 @@
       set(row, "cls", row.tr, "className",
         "relative__row" +
           (e.isPlayer ? " relative__row--player" : "") +
+          (isNear ? " relative__row--near" : "") +
           (e.yieldTo ? " relative__row--yield" : "") +
           (e.trafficAhead ? " relative__row--traffic" : ""));
       set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));

@@ -45,7 +45,10 @@
     meta.className = "weather__meta";
     ambientEl = document.createElement("span");
     ambientEl.textContent = "Air —°";
+    // Tier 1. Whether the track is wet, and how wet, changes tyre choice, brake
+    // points and everything else — it was previously one of three 11px lines.
     wetEl = document.createElement("span");
+    wetEl.className = "weather__wet is-crit";
     wetEl.textContent = "Dry";
     skyEl = document.createElement("span");
     skyEl.textContent = "—";
@@ -90,7 +93,18 @@
     if (cache.wet !== wetStr) {
       cache.wet = wetStr;
       wetEl.textContent = wetStr;
-      wetEl.className = rainPct > 2 || wetPct > 20 ? "neg" : "";
+      // classList, not className: a wholesale assignment here would drop the
+      // is-crit marker the first time the track went wet, silently disabling the
+      // glow on the one value most worth glowing.
+      wetEl.classList.toggle("neg", rainPct > 2 || wetPct > 20);
+    }
+    // Bloom on the CONDITION changing, not on the percentage: in the wet the
+    // number moves every frame, and "Dry → Wet" is the moment that matters.
+    var wetState = rainPct > 2 ? "rain" : wetPct > 2 ? "wet" : "dry";
+    if (cache.wetState !== wetState) {
+      var firstWet = cache.wetState === undefined;
+      cache.wetState = wetState;
+      if (!firstWet && ctx.critPulse) ctx.critPulse(wetEl);
     }
 
     // Forecast strip — rebuild only when the signature changes. `sky` is part
@@ -121,6 +135,10 @@
       cell.className = "weather__slot";
       cell.setAttribute("data-rain", rainBucket(s.rainChance));
       cell.setAttribute("data-sky", s.sky || "");
+      // Slot 0 is "now" — already covered by the block above. Slot 1 is what is
+      // about to happen, which is the only forecast entry that changes a decision
+      // in the next few laps, so it is the one that gets read at a glance.
+      if (j === 1) cell.setAttribute("data-next", "true");
 
       var time = document.createElement("div");
       time.className = "weather__slot-time";

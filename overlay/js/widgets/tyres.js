@@ -34,6 +34,9 @@
 
   function init(root) {
     header = root.querySelector('[data-role="compound"]');
+    // Marked here rather than in the shell markup so the three pages that embed
+    // this widget (index.html, widget.html, ingame.html) cannot drift apart.
+    if (header) header.classList.add("is-crit");
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -52,8 +55,10 @@
       pos.textContent = c.label;
 
       // Primary readout: live temperature (falls back to tread % — see update).
+      // Tier 1: `is-crit` carries the bloom for a corner crossing a wear bucket.
+      // The number itself does NOT bloom — a temperature moves every frame.
       var primary = document.createElement("div");
-      primary.className = "tyre__wear";
+      primary.className = "tyre__wear is-crit";
       primary.textContent = "—";
 
       // Sub-line: remaining tread %, or a label when temp isn't the primary.
@@ -159,18 +164,26 @@
       // Colour band always reflects remaining tread — meaningful either way.
       var bucket = wearBucket(hasWear ? t.wear : -1);
       if (ref.bucket !== bucket) {
+        var firstBucket = ref.bucket === undefined;
         ref.bucket = bucket;
         ref.cell.setAttribute("data-wear", bucket);
+        // A corner dropping into `low` or `crit` is the event worth catching
+        // peripherally, and it happens perhaps twice a stint. Not on the first
+        // reading, which is a widget waking up rather than a tyre going away.
+        if (!firstBucket && ctx.critPulse) ctx.critPulse(ref.primary);
       }
 
       if (!compound && t.compound) compound = t.compound;
     }
 
     if (header) {
+      // A compound change means a stop just happened — discrete, rare, and worth
+      // confirming, so this one goes through the glow helper.
       var comp = compound || "—";
       if (cache.compound !== comp) {
         cache.compound = comp;
-        header.textContent = comp.toUpperCase();
+        if (ctx.crit) ctx.crit(header, comp.toUpperCase());
+        else header.textContent = comp.toUpperCase();
       }
     }
   }

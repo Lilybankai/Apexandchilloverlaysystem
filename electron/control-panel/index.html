@@ -194,6 +194,34 @@
               Applies live, in game and in OBS.
             </span>
           </label>
+
+          <label class="field">
+            <span class="field__label">Text size</span>
+            <div class="rate-row">
+              <input class="field__range" id="text-range" type="range" min="80" max="120" step="5" />
+              <span class="rate-value"><span id="text-echo">100</span> %</span>
+            </div>
+            <span class="field__hint">
+              Scales the text in every widget together, keeping the size hierarchy
+              intact. Turn it up until the critical values — position, laps left,
+              delta, tyres — are readable at a glance from where you actually sit.
+              Stops at <strong>120%</strong>, the point where the widest panels
+              stop fitting their own text; to make a whole widget bigger, resize
+              its OBS source or use the in-game layout editor.
+            </span>
+          </label>
+
+          <label class="field field--toggle">
+            <span class="field__label">Change glow</span>
+            <span class="switch">
+              <input type="checkbox" id="glow-toggle" />
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+            </span>
+            <span class="field__hint">
+              Blooms a critical value in cyan the moment it changes — a position
+              gained, a lap of fuel lost, a brake-bias click landing.
+            </span>
+          </label>
         </div>
       </section>
 

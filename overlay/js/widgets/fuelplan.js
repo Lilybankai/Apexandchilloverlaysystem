@@ -111,6 +111,9 @@
 
   /* --------------------------------- helpers ------------------------------ */
 
+  /** Shared widget context, kept so the setters below can reach ctx.crit*. */
+  var octx = null;
+
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -123,6 +126,34 @@
       cache[node.__ck] = text;
       node.textContent = text;
     }
+  }
+
+  /**
+   * As setText, for a Tier 1 value that should bloom when it changes. Used for
+   * the values that step rather than drift — the predicted pit lap above all,
+   * because it moving means the plan just moved.
+   */
+  function setCritText(node, text) {
+    if (!node || cache[node.__ck] === text) return;
+    cache[node.__ck] = text;
+    if (octx && octx.crit) octx.crit(node, text);
+    else node.textContent = text;
+  }
+
+  /**
+   * Bloom a continuously-drifting value only when its whole number moves — see
+   * the same reasoning in widgets/fuel.js. Another whole percent of energy gone
+   * is news; the first decimal ticking over is not.
+   */
+  function pulseOnStep(node, value) {
+    if (!node || !octx || !octx.critPulse) return;
+    if (typeof value !== "number" || !isFinite(value)) return;
+    var k = node.__ck + "_step";
+    var step = Math.floor(value);
+    if (cache[k] === step) return;
+    var first = cache[k] === undefined;
+    cache[k] = step;
+    if (!first) octx.critPulse(node);
   }
 
   /** Register a node under a cache key so setTextKeyed avoids redundant writes. */
@@ -374,10 +405,12 @@
 
   /* ------------------------------- structure ------------------------------ */
 
-  function statCell(grid, key, label) {
+  /** @param {boolean} [crit]  Tier 1 — glows when it steps (see setCritText). */
+  function statCell(grid, key, label, crit) {
     var cell = el("div", "fuelplan__stat");
     cell.appendChild(el("div", "fuelplan__stat-label", label));
-    var v = keyed(el("div", "fuelplan__stat-value", "—"), "stat_" + key);
+    var cls = crit ? "fuelplan__stat-value is-crit" : "fuelplan__stat-value";
+    var v = keyed(el("div", cls, "—"), "stat_" + key);
     cell.appendChild(v);
     grid.appendChild(cell);
     els[key] = v;
@@ -407,7 +440,7 @@
     var liveBox = el("div", "fuelplan__live");
     var lHead = el("div", "fuelplan__stint-head");
     els.veMode = keyed(el("span", "fuelplan__stint-mode", "LIVE"), "veMode");
-    els.veBig = keyed(el("span", "fuelplan__stint-big", "—"), "veBig");
+    els.veBig = keyed(el("span", "fuelplan__stint-big is-crit", "—"), "veBig");
     lHead.appendChild(els.veMode);
     lHead.appendChild(els.veBig);
     liveBox.appendChild(lHead);
@@ -418,10 +451,10 @@
     liveBox.appendChild(bar);
 
     var liveGrid = el("div", "fuelplan__grid");
-    statCell(liveGrid, "nextPit", "Next Pit");
+    statCell(liveGrid, "nextPit", "Next Pit", true);
     statCell(liveGrid, "toFinish", "To Finish");
-    statCell(liveGrid, "save", "Save/Lap");
-    statCell(liveGrid, "margin", "Margin");
+    statCell(liveGrid, "save", "Save/Lap", true);
+    statCell(liveGrid, "margin", "Margin", true);
     liveBox.appendChild(liveGrid);
     mount.appendChild(liveBox);
 
@@ -803,11 +836,17 @@
   function setStatColored(node, text, state) {
     setText(node, text);
     var k = node.__ck + "_st";
-    if (cache[k] !== state) {
-      cache[k] = state;
-      if (state) node.setAttribute("data-state", state);
-      else node.removeAttribute("data-state");
+    if (cache[k] === state) return;
+    var first = cache[k] === undefined;
+    cache[k] = state;
+    if (!state) {
+      node.removeAttribute("data-state");
+      return;
     }
+    node.setAttribute("data-state", state);
+    // Falling from ok into marginal, or marginal into short, is the moment the
+    // strategy stops working — a discrete step inside a number that drifts.
+    if (!first && octx && octx.critPulse) octx.critPulse(node);
   }
 
   /**
@@ -827,11 +866,13 @@
       setText(els.veMode, "VIRTUAL ENERGY");
       els.veMode.setAttribute("data-mode", "energy");
       setText(els.veBig, f.virtualEnergyPct.toFixed(1) + "%");
+      pulseOnStep(els.veBig, f.virtualEnergyPct);
       els.veFill.style.width = Math.max(0, Math.min(100, f.virtualEnergyPct)).toFixed(1) + "%";
     } else {
       setText(els.veMode, "FUEL");
       els.veMode.setAttribute("data-mode", "fuel");
       setText(els.veBig, num(f.levelLiters) ? f.levelLiters.toFixed(1) + " L" : "—");
+      pulseOnStep(els.veBig, f.levelLiters);
       var cap = num(f.capacityLiters) && f.capacityLiters > 0 ? f.capacityLiters : 0;
       var pct = cap > 0 && num(f.levelLiters) ? Math.max(0, Math.min(100, (f.levelLiters / cap) * 100)) : 0;
       els.veFill.style.width = pct.toFixed(1) + "%";
@@ -851,7 +892,7 @@
       pits.push(lapsDone + Math.floor(f.virtualEnergyLapsRemaining));
     }
     var nextPit = pits.length ? Math.min.apply(null, pits) : null;
-    setText(els.nextPit, nextPit != null ? "L" + Math.round(nextPit) : "—");
+    setCritText(els.nextPit, nextPit != null ? "L" + Math.round(nextPit) : "—");
 
     // Refuel to reach the finish.
     setText(
@@ -966,6 +1007,7 @@
 
   function update(frame, ctx) {
     if (!mounted || !frame) return;
+    octx = ctx;
     captureLive(frame);
     autoDetectIdentity(frame);
     reflectAuto();

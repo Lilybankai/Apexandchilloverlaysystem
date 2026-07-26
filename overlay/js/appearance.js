@@ -1,21 +1,29 @@
 /**
- * appearance.js — applies the operator's global widget-background setting.
+ * appearance.js — applies the operator's global appearance settings.
  * -----------------------------------------------------------------------------
- * One knob, `--panel-alpha` (0..1), drives the background of EVERY widget: the
- * panel base, header strip, inner rows and the hairline borders all resolve
- * through it (see the surface tokens in css/theme.css). At 1 the overlay is the
- * original solid design; at 0 every box disappears and only the live data
- * floats over the game.
+ * Three global knobs, all landing on <html> so every widget inherits them:
+ *
+ *   --panel-alpha (0..1)  drives the background of EVERY widget: the panel
+ *      base, header strip, inner rows and the hairline borders all resolve
+ *      through it (see the surface tokens in css/theme.css). At 1 the overlay
+ *      is the original solid design; at 0 every box disappears and only the
+ *      live data floats over the game.
+ *   --fs-scale (0.8..1.2)  multiplies the whole type scale at once, so the
+ *      glance hierarchy keeps its proportions while the operator tunes overall
+ *      legibility for their screen size and seating distance.
+ *   data-glow-enabled  turns the change glow on critical values on or off
+ *      (read by the crit() helpers in js/client.js).
  *
  * Loaded as a plain <script> in <head> — before any widget paints — so the
- * chosen value is in place for the first frame instead of flashing a solid
- * panel and then fading it.
+ * chosen values are in place for the first frame instead of flashing a solid
+ * panel at the wrong size and then correcting it.
  *
- * Where the value comes from, in precedence order:
+ * Where the values come from, in precedence order:
  *
- *   1. `?bg=` on the URL (0..1, or 0..100 as a percentage). Pins the page to a
- *      fixed value and disables the two live routes below — the escape hatch
- *      for an OBS source that wants its own look regardless of the app.
+ *   1. `?bg=`, `?text=`, `?glow=` on the URL. Each pins its own knob to a fixed
+ *      value and opts that one knob out of the two live routes below — the
+ *      escape hatch for an OBS source that wants its own look regardless of the
+ *      app. Pinning one does not freeze the others.
  *   2. The desktop app, pushed over the in-game bridge (window.apexIngame).
  *      Push, not poll: the in-game layer is the one page that renders over the
  *      sim every frame, so it does no periodic work at all.
@@ -68,6 +76,57 @@
     if (typeof alpha !== "number" || !isFinite(alpha)) return;
     wanted = Math.min(1, Math.max(0, alpha));
     if (!suspended) write(wanted);
+  }
+
+  /* ------------------------------- text scale ------------------------------ */
+
+  /**
+   * Bounds match the control panel's slider; see theme.css --fs-scale.
+   *
+   * The ceiling is 1.2, not something larger, because the widgets have FIXED
+   * pixel widths: past ~1.25 the relative panel's four-across timing strip stops
+   * fitting inside its 400px, then the motion stat cells and the tyre corners go
+   * the same way. This knob is for tuning legibility within a panel — to make a
+   * whole widget bigger, scale the OBS source (the stage already fits itself to
+   * it) or use the in-game layer's own per-widget scale, both of which grow the
+   * panel and its text together.
+   */
+  var SCALE_MIN = 0.8;
+  var SCALE_MAX = 1.2;
+
+  var scaleWritten = null;
+
+  /**
+   * Write the type scale. Lands on <html> for the same reason --panel-alpha
+   * does: the size tokens are DECLARED there as calc(Npx * var(--fs-scale)), and
+   * a custom property is substituted where it is declared, so setting the scale
+   * on any deeper element would compute a value nothing reads.
+   */
+  function applyScale(scale) {
+    if (typeof scale !== "number" || !isFinite(scale)) return;
+    var s = Math.min(SCALE_MAX, Math.max(SCALE_MIN, scale));
+    if (s === scaleWritten) return;
+    scaleWritten = s;
+    document.documentElement.style.setProperty("--fs-scale", String(s));
+  }
+
+  /** Accepts 0.8..1.6 (a factor) or 80..160 (a percentage), as the panel sends. */
+  function toScale(value) {
+    var n = typeof value === "number" ? value : parseFloat(value);
+    if (!isFinite(n)) return null;
+    if (n > SCALE_MAX) n = n / 100;
+    return Math.min(SCALE_MAX, Math.max(SCALE_MIN, n));
+  }
+
+  /* ------------------------------ change glow ------------------------------ */
+
+  var glowWritten = null;
+
+  function applyGlow(on) {
+    var v = on === false || on === "false" || on === 0 || on === "0" ? "false" : "true";
+    if (v === glowWritten) return;
+    glowWritten = v;
+    document.documentElement.setAttribute("data-glow-enabled", v);
   }
 
   /* --------------------------- per-widget modes --------------------------- */
@@ -142,16 +201,34 @@
 
   /* ---------------------------- 1. URL override --------------------------- */
 
-  // `?bg=` pins the OPACITY only. Widget modes keep flowing, so a source with a
-  // fixed look still follows a readout switch — pinning one is not a request to
-  // freeze the other.
+  // Each param pins its OWN knob only. Widget modes keep flowing, and an
+  // unpinned knob keeps following the app, so a source with a fixed background
+  // still tracks a text-size change — pinning one is not a request to freeze
+  // everything else.
   var alphaPinned = false;
+  var scalePinned = false;
+  var glowPinned = false;
   try {
-    var raw = new URLSearchParams(window.location.search).get("bg");
+    var params = new URLSearchParams(window.location.search);
+
+    var raw = params.get("bg");
     var fromUrl = raw === null ? null : toAlpha(raw);
     if (fromUrl !== null) {
       apply(fromUrl);
       alphaPinned = true;
+    }
+
+    var rawText = params.get("text");
+    var scaleFromUrl = rawText === null ? null : toScale(rawText);
+    if (scaleFromUrl !== null) {
+      applyScale(scaleFromUrl);
+      scalePinned = true;
+    }
+
+    var rawGlow = params.get("glow");
+    if (rawGlow !== null) {
+      applyGlow(rawGlow !== "0" && rawGlow !== "false" && rawGlow !== "off");
+      glowPinned = true;
     }
   } catch (e) {
     /* no URLSearchParams / malformed query — fall through to the live routes */
@@ -165,6 +242,11 @@
       if (!appearance) return;
       var a = toAlpha(appearance.panelOpacity);
       if (a !== null && !alphaPinned) apply(a);
+      var s = toScale(appearance.textScale);
+      if (s !== null && !scalePinned) applyScale(s);
+      if (!glowPinned && appearance.changeGlow !== undefined) {
+        applyGlow(appearance.changeGlow);
+      }
       applyModes(appearance.widgetModes);
     });
     return; // the app pushes changes — nothing to poll
@@ -181,6 +263,9 @@
         if (!cfg) return;
         var a = toAlpha(cfg.panelOpacity);
         if (a !== null && !alphaPinned) apply(a);
+        var s = toScale(cfg.textScale);
+        if (s !== null && !scalePinned) applyScale(s);
+        if (!glowPinned && cfg.changeGlow !== undefined) applyGlow(cfg.changeGlow);
         applyModes(cfg.widgetModes);
       })
       .catch(function () {

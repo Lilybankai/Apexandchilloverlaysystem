@@ -73,6 +73,23 @@ export interface ServerConfig {
    * server or interrupt a broadcast.
    */
   panelOpacity: number;
+  /**
+   * Boot value for the global type-scale multiplier, 80..120 (percent), driving
+   * the `--fs-scale` CSS token. Every font size in the overlay is declared as
+   * `calc(Npx * var(--fs-scale))`, so this moves the whole size hierarchy
+   * together — the relative emphasis between critical, important and context
+   * text stays fixed, while how large all of it needs to be follows the
+   * operator's screen size and seating distance.
+   *
+   * Retuned at runtime through `setAppearance()`, exactly like `panelOpacity`.
+   */
+  textScale: number;
+  /**
+   * Boot value for the change glow: whether a critical value blooms cyan the
+   * moment it changes (see the `crit()` helpers in overlay/js/client.js).
+   * Retuned at runtime through `setAppearance()`.
+   */
+  changeGlow: boolean;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -90,7 +107,9 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   lmuApiPort: 6397,
   sponsorDir: '',
   sponsorIntervalSec: 12,
-  panelOpacity: 100,
+  panelOpacity: 100,
+  textScale: 100,
+  changeGlow: true,
   verbose: false,
 });
 
@@ -186,7 +205,9 @@ export function loadConfig(): ServerConfig {
       3,
       120,
     ),
-    panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
+    panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
+    textScale: clamp(envInt('APEX_TEXT_SCALE', DEFAULT_CONFIG.textScale), 80, 120),
+    changeGlow: envBool('APEX_CHANGE_GLOW', DEFAULT_CONFIG.changeGlow),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

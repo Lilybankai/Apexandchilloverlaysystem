@@ -25,6 +25,9 @@
   const demoToggle = $('#demo-toggle');
   const bgRange = $('#bg-range');
   const bgEcho = $('#bg-echo');
+  const textRange = $('#text-range');
+  const textEcho = $('#text-echo');
+  const glowToggle = $('#glow-toggle');
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -101,6 +104,9 @@
     demoToggle.checked = !!settings.forceSimulator;
     bgRange.value = settings.panelOpacity;
     bgEcho.textContent = settings.panelOpacity;
+    textRange.value = settings.textScale;
+    textEcho.textContent = settings.textScale;
+    glowToggle.checked = settings.changeGlow !== false;
     sponsorsToggle.checked = !!settings.sponsorsEnabled;
     sponsorRange.value = settings.sponsorIntervalSec;
     sponsorEcho.textContent = settings.sponsorIntervalSec;
@@ -302,6 +308,22 @@
   bgRange.addEventListener('input', () => {
     bgEcho.textContent = bgRange.value;
     commitPanelOpacity(parseInt(bgRange.value, 10));
+  });
+
+  // Text size. Same contract as the background slider — pushed straight to the
+  // overlays, so the operator drags it while watching the widgets resize and
+  // stops where the critical values read cleanly from their seat.
+  const commitTextScale = debounce(async (value) => {
+    await window.apex.updateSettings({ textScale: value });
+  }, 120);
+
+  textRange.addEventListener('input', () => {
+    textEcho.textContent = textRange.value;
+    commitTextScale(parseInt(textRange.value, 10));
+  });
+
+  glowToggle.addEventListener('change', async () => {
+    await window.apex.updateSettings({ changeGlow: glowToggle.checked });
   });
 
   // --- Sponsor logos -------------------------------------------------------

@@ -125,7 +125,10 @@
     bestTd.className = "standings__cell standings__best";
 
     var lastTd = document.createElement("td");
-    lastTd.className = "standings__cell standings__last";
+    // is-crit carries the bloom for a personal best landing (see renderRow). The
+    // lap TIME itself is not routed through ctx.crit — every car's last lap
+    // changes every lap, and 32 rows blooming in sequence is wallpaper.
+    lastTd.className = "standings__cell standings__last is-crit";
 
     tr.appendChild(posTd);
     tr.appendChild(deltaTd);
@@ -186,14 +189,20 @@
     sessionStrip = document.createElement("div");
     sessionStrip.className = "standings__session";
     sessLap = document.createElement("span");
-    sessLap.className = "standings__session-lap";
+    // Tier 1, and glow-eligible: the lap counter steps once every ninety seconds
+    // or so, which is exactly the cadence a bloom is for.
+    sessLap.className = "standings__session-lap is-crit";
     sessLap.textContent = "LAP —";
     sessClock = document.createElement("span");
+    // Tier 1 for SIZE only — deliberately no is-crit. The clock changes every
+    // second, so a bloom on it would strobe for the whole race. Its own urgency
+    // signal already exists (.is-urgent, in the final minute).
     sessClock.className = "standings__session-clock";
     sessClock.hidden = true;
-    // Estimated laps-to-go for a timed race (LMU only gives a clock).
+    // Estimated laps-to-go for a timed race (LMU only gives a clock). Glows: it
+    // is an integer that steps a few dozen times in a race.
     sessToGo = document.createElement("span");
-    sessToGo.className = "standings__session-togo";
+    sessToGo.className = "standings__session-togo is-crit";
     sessToGo.hidden = true;
     sessionStrip.appendChild(sessLap);
     sessionStrip.appendChild(sessClock);
@@ -216,12 +225,20 @@
     var colgroup = document.createElement("colgroup");
     // pos, ±, driver(rest), VE, gap, best, last. The six fixed columns total
     // 298px of the panel's 474px, leaving ~176px for the driver name. The three
-    // time columns are sized for a full "1:58.492" at the 12px mono size the CSS
-    // gives them — undersize them and the tenths silently clip off the right.
+    // time columns are sized for a full "1:58.492" — undersize them and the
+    // tenths silently clip off the right.
+    //
+    // Given in em, NOT px, because these widths are only correct relative to the
+    // text they hold and that text now scales with --fs-scale (the operator's
+    // "Text size" slider). At a fixed 70px, "1:58.492" clips the moment the
+    // slider passes ~110%. em on a <col> resolves against the font-size it
+    // inherits from the table, which is --fs-body — so the divisor here is the
+    // 12px --fs-body is defined as, and the ratios hold at every scale.
+    var BASE_PX = 12;
     var widths = [26, 28, 0, 42, 62, 70, 70];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
-      if (widths[c] > 0) col.style.width = widths[c] + "px";
+      if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
       colgroup.appendChild(col);
     }
     table.appendChild(colgroup);
@@ -309,7 +326,7 @@
   }
 
   /** Render the LAP x/y counter and the timed-race countdown clock. */
-  function updateSession(frame, fmt) {
+  function updateSession(frame, fmt, ctx) {
     var s = frame.session;
     if (!s) return;
     var cur = s.currentLap;
@@ -317,7 +334,8 @@
     var lapText;
     if (fmt.has(tot) && tot > 0) lapText = "LAP " + fmt.intVal(cur) + "/" + tot;
     else lapText = "LAP " + fmt.intVal(cur);
-    if (sessLap.textContent !== lapText) sessLap.textContent = lapText;
+    if (ctx.crit) ctx.crit(sessLap, lapText);
+    else if (sessLap.textContent !== lapText) sessLap.textContent = lapText;
 
     // Countdown only for timed sessions (no fixed lap count) with a known clock.
     var timed = !(fmt.has(tot) && tot > 0);
@@ -338,7 +356,8 @@
     var lr = s.lapsRemaining;
     if (timed && fmt.has(lr) && lr > 0) {
       var togo = "~" + fmt.intVal(lr) + (lr === 1 ? " LAP LEFT" : " LAPS LEFT");
-      if (sessToGo.textContent !== togo) sessToGo.textContent = togo;
+      if (ctx.crit) ctx.crit(sessToGo, togo);
+      else if (sessToGo.textContent !== togo) sessToGo.textContent = togo;
       if (sessToGo.hidden) sessToGo.hidden = false;
     } else if (!sessToGo.hidden) {
       sessToGo.hidden = true;
@@ -362,7 +381,7 @@
     var list = frame.standings || [];
     var seen = new Set();
 
-    updateSession(frame, fmt);
+    updateSession(frame, fmt, ctx);
 
     // Fastest lap of the race (purple) and fastest lap per class (green). In a
     // multiclass field only one car can hold the purple, so without the
@@ -425,7 +444,7 @@
       // Member rows.
       var clsFastestSlot = classFastest[cls] ? classFastest[cls].slot : -1;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot);
+        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot, ctx);
         seen.add(members[m].slotId);
       }
     }
@@ -464,7 +483,7 @@
     if (sessFastest.hidden) sessFastest.hidden = false;
   }
 
-  function renderRow(e, fmt, now, fastestSlot, classFastestSlot) {
+  function renderRow(e, fmt, now, fastestSlot, classFastestSlot, ctx) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -480,6 +499,11 @@
       // Completed a new lap: flash green if it set/matched a personal best.
       if (fmt.has(e.lastLapSec) && (!fmt.has(t.best) || e.lastLapSec <= t.best + 1e-6)) {
         t.flashUntil = now + PB_FLASH_MS;
+        // The green hold and the bloom do different jobs and both are kept: the
+        // bloom catches the eye at the instant the lap lands, the five-second
+        // green says WHAT it was long enough to actually be read. Collapsing the
+        // hold into the bloom's half-second would lose the second of those.
+        if (ctx.critPulse) ctx.critPulse(row.lastTd);
       }
       t.laps = e.lapsCompleted;
     }
