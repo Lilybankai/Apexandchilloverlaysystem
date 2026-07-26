@@ -194,6 +194,7 @@
     gctx = canvas.getContext("2d");
     sizeCanvas();
     watchSize(canvas);
+    loadSprites();
   }
 
   /* -------------------------------- drawing ------------------------------- */
@@ -206,10 +207,27 @@
     return [x, y];
   }
 
-  /** The player's own car: a fixed arrow at the centre pointing forward,
-   *  outlined so it stays visible over any part of the game feed. */
-  function drawEgo() {
+  /**
+   * The player's own car, fixed at the centre pointing forward.
+   *
+   * Drawn as the UNTINTED white artwork for the player's own class, so their car
+   * is the one white shape among coloured rivals — the fastest possible "which
+   * one am I" read, and it needs no extra marker to achieve it. Falls back to the
+   * outlined arrow before the sprites decode, or if they failed to load.
+   */
+  function drawEgo(playerClass) {
     var cx = cssW / 2, cy = cssH / 2;
+    var fam = carFamily(playerClass);
+    // An unrecognised (or not yet known) class still gets a car rather than a
+    // shapeless marker — the GT silhouette is the most generic of the four.
+    var img = spritesReady ? spriteFor(fam === "generic" ? "gt" : fam) : null;
+    if (img) {
+      gctx.save();
+      gctx.translate(cx, cy);
+      drawSpriteImage(img, fam);
+      gctx.restore();
+      return;
+    }
     var s = ICON * 0.6;
     gctx.save();
     gctx.fillStyle = "#e9eefb";
@@ -227,12 +245,33 @@
   }
 
   /**
-   * Edge warning bars: left/right glow when a car is alongside on that side, and
-   * the ends glow when one is right on the nose / tail. Intensity rises as the
-   * car gets closer, so a door-to-door pass ramps up rather than blinking on.
+   * How far the warning glow reaches in from the edge, as a fraction of the
+   * strip's width. Long enough that the falloff reads as light rather than as a
+   * drawn object, but capped at 0.4: at 0.62 two blooms on a 163px-wide strip met
+   * in the middle and the whole HUD just went red, losing the one thing this
+   * warning exists to tell you — WHICH SIDE the car is on.
+   */
+  var GLOW_REACH = 0.4;
+
+  /**
+   * Edge proximity warning — a soft red bloom hugging the side a car is arriving
+   * on, brightest level with that car.
+   *
+   * This was a 5px solid bar up the full height of the strip, which read as a
+   * piece of UI switching on and drew the eye away from the track. A radial
+   * gradient anchored on the edge at the car's own longitudinal position does the
+   * same job with none of that: it says "there is something HERE, on your left"
+   * rather than just "left", and having no hard edge anywhere means nothing on
+   * screen appears or disappears — it only brightens.
+   *
+   * Built from stacked colour stops rather than a real gaussian blur: canvas
+   * `filter = blur()` would cost a full-canvas convolution every frame at 30–60Hz
+   * for a shape that is already a smooth falloff by construction. The stop curve
+   * below is a rough gaussian, which is indistinguishable here and free.
    */
   function drawWarnings(blips) {
     var left = 0, right = 0;
+    var leftY = cssH / 2, rightY = cssH / 2;
     for (var i = 0; i < blips.length; i++) {
       var b = blips[i];
       var alongside = b.alongside || Math.abs(b.longitudinalM) <= ALONGSIDE_M;
@@ -240,24 +279,34 @@
       if (Math.abs(b.lateralM) > LATERAL_RANGE_M) continue;
       var intensity = 1 - Math.abs(b.longitudinalM) / ALONGSIDE_M; // 1 = dead level
       intensity = Math.max(0.25, Math.min(1, intensity));
-      if (b.lateralM < 0) left = Math.max(left, intensity);
-      else right = Math.max(right, intensity);
+      // Anchor the bloom at the car, so the warning points at where it actually is.
+      var y = toXY(0, b.longitudinalM, 10)[1];
+      if (b.lateralM < 0) {
+        if (intensity > left) { left = intensity; leftY = y; }
+      } else if (intensity > right) { right = intensity; rightY = y; }
     }
-    var barW = 5;
-    if (left > 0) {
-      gctx.save();
-      gctx.globalAlpha = 0.25 + 0.6 * left;
-      gctx.fillStyle = "#ff3b3b";
-      gctx.fillRect(0, 0, barW, cssH);
-      gctx.restore();
-    }
-    if (right > 0) {
-      gctx.save();
-      gctx.globalAlpha = 0.25 + 0.6 * right;
-      gctx.fillStyle = "#ff3b3b";
-      gctx.fillRect(cssW - barW, 0, barW, cssH);
-      gctx.restore();
-    }
+    if (left > 0) drawEdgeGlow(0, leftY, left);
+    if (right > 0) drawEdgeGlow(cssW, rightY, right);
+  }
+
+  /** One edge bloom, centred on (edgeX, y) and fading out in every direction. */
+  function drawEdgeGlow(edgeX, y, intensity) {
+    var radius = cssW * GLOW_REACH;
+    var g = gctx.createRadialGradient(edgeX, y, 0, edgeX, y, radius);
+    // Peak alpha stays well under 1: this is a tint over the track, not a panel.
+    var peak = 0.42 * intensity;
+    g.addColorStop(0.0, "rgba(255, 59, 59, " + peak.toFixed(3) + ")");
+    g.addColorStop(0.25, "rgba(255, 59, 59, " + (peak * 0.62).toFixed(3) + ")");
+    g.addColorStop(0.5, "rgba(255, 59, 59, " + (peak * 0.28).toFixed(3) + ")");
+    g.addColorStop(0.75, "rgba(255, 59, 59, " + (peak * 0.08).toFixed(3) + ")");
+    g.addColorStop(1.0, "rgba(255, 59, 59, 0)");
+    gctx.save();
+    gctx.fillStyle = g;
+    // The gradient is a circle centred ON the edge, so half of it falls outside
+    // the canvas and only the inward half paints — which is what keeps the
+    // brightest part hugging the edge where peripheral vision picks it up.
+    gctx.fillRect(edgeX - radius, y - radius, radius * 2, radius * 2);
+    gctx.restore();
   }
 
   /**
@@ -266,6 +315,89 @@
    * silhouette needs to read at a glance.
    */
   var ICON = 18;
+
+  /* ------------------------------ car sprites -----------------------------
+   * Top-down car artwork, one silhouette per class family, in img/cars/.
+   *
+   * The files are the WHITE artwork only, and every opponent colour is produced
+   * from it at runtime (see `tintedSprite`). One set of shapes therefore covers
+   * every class the palette can produce — including the hashed colours handed to
+   * mod classes nobody anticipated — instead of needing a new PNG per class.
+   * It also makes the player's icon fall out for free: the player is simply the
+   * untinted artwork, so their own car reads as white while every rival carries
+   * its class colour.
+   * -------------------------------------------------------------------------- */
+
+  var SPRITE_FAMILIES = ["hyper", "lmp2", "lmp3", "gt"];
+  var sprites = {};
+  /** Set once at least one sprite has decoded; until then we draw the vectors. */
+  var spritesReady = false;
+
+  function loadSprites() {
+    SPRITE_FAMILIES.forEach(function (fam) {
+      var img = new Image();
+      img.onload = function () {
+        spritesReady = true;
+      };
+      img.onerror = function () {
+        // A missing file must not blank the radar — the vector silhouettes below
+        // stay as the fallback, which is also what runs on the first few frames
+        // before these have decoded.
+        sprites[fam] = null;
+      };
+      img.src = "img/cars/" + fam + ".png";
+      sprites[fam] = img;
+    });
+  }
+
+  function spriteFor(fam) {
+    var img = sprites[fam];
+    return img && img.complete && img.naturalWidth > 0 ? img : null;
+  }
+
+  /**
+   * The white artwork recoloured, cached per (family, colour).
+   *
+   * `multiply` rather than a flat `source-in` fill: the artwork carries its own
+   * shading — panel lines, the cockpit, the wing — as greys, and multiplying
+   * keeps all of that as darker tones of the class colour. A flat fill would
+   * collapse each car to a featureless blob at exactly the size where the
+   * silhouette is doing the work. The `destination-in` pass afterwards puts the
+   * original alpha back, since the multiply fill covers the whole rect.
+   */
+  var tintCache = {};
+
+  function tintedSprite(fam, colour) {
+    var key = fam + "|" + colour;
+    if (tintCache[key]) return tintCache[key];
+    var img = spriteFor(fam);
+    if (!img) return null;
+    var c = document.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    var x = c.getContext("2d");
+    x.drawImage(img, 0, 0);
+    x.globalCompositeOperation = "multiply";
+    x.fillStyle = colour;
+    x.fillRect(0, 0, c.width, c.height);
+    x.globalCompositeOperation = "destination-in";
+    x.drawImage(img, 0, 0);
+    tintCache[key] = c;
+    return c;
+  }
+
+  /**
+   * Relative on-screen size per family, so a Hypercar still reads as bigger than
+   * an LMP3 the way it does on track. Multiplies the shared ICON length.
+   */
+  var FAMILY_SCALE = { hyper: 1, lmp2: 0.96, lmp3: 0.86, gt: 0.92, generic: 0.9 };
+
+  /** Draw a sprite (or tinted canvas) centred on the current origin, nose up. */
+  function drawSpriteImage(src, fam) {
+    var h = ICON * 2 * (FAMILY_SCALE[fam] || 1);
+    var w = h * (src.width / src.height);
+    gctx.drawImage(src, -w / 2, -h / 2, w, h);
+  }
 
   /** Shape family for a class label — GT box vs the prototype silhouettes. */
   function carFamily(cls) {
@@ -421,6 +553,18 @@
     }
 
     var fam = carFamily(b.carClass);
+
+    // Preferred path: the artwork, recoloured to this car's class. The vector
+    // silhouettes below remain for the frames before the PNGs decode, for an
+    // unrecognised class with no matching shape, and if the files are missing.
+    var tinted = spritesReady ? tintedSprite(fam === "generic" ? "gt" : fam, col) : null;
+    if (tinted) {
+      drawSpriteImage(tinted, fam);
+      drawCarNumber(b);
+      gctx.restore();
+      return;
+    }
+
     if (fam === "gt") drawGT(col);
     else if (fam === "hyper") drawProto(col, { sharp: true, fin: true, wide: 1.05 });
     else if (fam === "lmp2") drawProto(col, { sharp: false, wide: 0.92 });
@@ -433,20 +577,49 @@
       gctx.stroke();
     }
 
-    // Car number below the icon, when we have one — kept off the silhouette so
-    // the shape stays readable.
-    if (b.carNumber) {
-      gctx.fillStyle = "#e6ebf5";
-      gctx.strokeStyle = "rgba(0,0,0,0.85)";
-      gctx.lineWidth = 2.5;
-      gctx.font = "bold 8px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      gctx.textAlign = "center";
-      gctx.textBaseline = "middle";
-      var ny = ICON + 7;
-      gctx.strokeText(String(b.carNumber).slice(0, 3), 0, ny);
-      gctx.fillText(String(b.carNumber).slice(0, 3), 0, ny);
-    }
+    drawCarNumber(b);
     gctx.restore();
+  }
+
+  /** Car number below the icon — kept off the silhouette so the shape reads. */
+  function drawCarNumber(b) {
+    if (!b.carNumber) return;
+    gctx.fillStyle = "#e6ebf5";
+    gctx.strokeStyle = "rgba(0,0,0,0.85)";
+    gctx.lineWidth = 2.5;
+    gctx.font = "bold 8px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    gctx.textAlign = "center";
+    gctx.textBaseline = "middle";
+    var ny = ICON + 7;
+    gctx.strokeText(String(b.carNumber).slice(0, 3), 0, ny);
+    gctx.fillText(String(b.carNumber).slice(0, 3), 0, ny);
+  }
+
+  /**
+   * The player's own car class, for picking their silhouette.
+   *
+   * Read off whichever field list marks the player, because `frame.player` does
+   * not carry a class — the blips only describe classes RELATIVE to the player
+   * (isFasterClass / slowerClass), so the player's own is not derivable from
+   * `frame.radar` alone. Cached: it cannot change without a session change, and
+   * this runs every frame.
+   */
+  var playerClassCache = null;
+
+  function playerClass(frame) {
+    if (playerClassCache) return playerClassCache;
+    var lists = [frame.standings, frame.relative];
+    for (var l = 0; l < lists.length; l++) {
+      var list = lists[l];
+      if (!list) continue;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].isPlayer && list[i].carClass) {
+          playerClassCache = list[i].carClass;
+          return playerClassCache;
+        }
+      }
+    }
+    return null;
   }
 
   function setMeta(text) {
@@ -485,7 +658,7 @@
 
     gctx.clearRect(0, 0, cssW, cssH);
     drawWarnings(blips);
-    drawEgo();
+    drawEgo(playerClass(frame));
     // Draw furthest first so the nearest blip sits on top of any overlap.
     for (var j = blips.length - 1; j >= 0; j--) drawBlip(blips[j]);
   }
