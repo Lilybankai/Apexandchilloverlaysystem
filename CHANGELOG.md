@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.21.0 — 2026-07-26 "Paddock Pass"
+
+The first slice of the cloud phase: the app now has **accounts**. Nothing about
+the overlays changes if you don't want one — this is the door, not a toll gate.
+
+### Added
+
+- **Sign in, create account and reset password screens**, built to the Apex &
+  Chill design system (Hub kit): the split layout with the gradient-lit brand
+  panel on the left and a single 380px form column on the right. The window opens
+  on them and swaps to the control panel once you're in.
+
+  **Continue offline** is a first-class button, not fine print. Every overlay,
+  the in-game layer and the server work exactly as before without an account, and
+  the choice is remembered so the screen doesn't ask twice. The top bar keeps a
+  **Sign in** button for whenever it becomes worth it, and shows who's signed in
+  with a **Sign out** next to it.
+
+  The hero title scales with the window rather than sitting at the design's 44px:
+  the panel opens at 1000px wide, where 44px wrapped "BROADCAST-GRADE" and lost
+  the intended two-line break.
+
+- **Password reset as a code, not a link.** A recovery link needs a web page to
+  land on and this is a desktop app, so the reset flow is three steps in the
+  window: request a code, paste it with the new password, done. It accepts the
+  whole reset link pasted in too, and pulls the token out — the default Supabase
+  template mails a link whose `token=` param is the *hashed* token, which goes to
+  a different GoTrue field than a plain one-time code, and getting that wrong
+  fails every reset while the code in the email is perfectly good. It tries the
+  shape it inferred, then the other one; a rejected verify consumes nothing.
+
+  For a plain code to arrive, the recovery email template needs `{{ .Token }}`
+  (Supabase dashboard → *Authentication → Emails → Reset password*).
+
+- **`public.profiles`** — one row per driver (display name, primary sim, email
+  opt-in), created by an `on_auth_user_created` trigger from the metadata the
+  register screen collects, so no second write can be lost between signup and
+  first launch. RLS lets a driver read and write only their own row; the trigger
+  function's `EXECUTE` is revoked from `anon` and `authenticated` so it can't be
+  called as an RPC.
+
+- `npm run test:auth` — 28 offline checks over the two bits of this that are easy
+  to get quietly wrong and impossible to see on a screenshot: which GoTrue field
+  a pasted token belongs in, and the shape of the user object handed to the
+  renderer (asserted to carry no token fields at all).
+
+- The `APEX_SHOT` capture pass now walks all six states of the account page, not
+  just the one it opens on.
+
+### Notes
+
+- **Supabase calls all happen in the main process** (`electron/auth.js`). The
+  panel's CSP is `default-src 'none'`, so the renderer couldn't load supabase-js
+  or reach supabase.co even if we wanted it to — and this way access and refresh
+  tokens never cross the preload bridge. The session file
+  (`%APPDATA%/apex-overlay-system/session.json`) is written only when **Remember
+  me** is ticked, and mode 0600 where the OS honours it.
+- A network failure while restoring a remembered session does **not** sign you
+  out; only a 4xx (a genuinely revoked token) clears it. Losing your login
+  because the wifi dropped mid-race-weekend is not an acceptable failure.
+- No new dependency: GoTrue is plain REST over Node's built-in `fetch`.
+
 ## 0.20.0 — 2026-07-26
 
 ### Added

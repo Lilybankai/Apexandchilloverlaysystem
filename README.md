@@ -72,6 +72,33 @@ saved per widget in `config.json`; **Reset layout** clears the lot.
 Settings are saved to `%APPDATA%/apex-overlay-system/config.json` and restored on
 next launch. The server starts automatically when the app opens.
 
+### Accounts
+
+The app opens on the **account screens** — sign in, create account, or reset a
+password — implemented from the Apex & Chill design system (Hub kit). An account
+is what will carry your lap database, leaderboard entries and settings between
+PCs; **Continue offline** skips it entirely and every overlay still works. That
+choice is remembered, and the top bar keeps a **Sign in** button for later.
+
+Accounts live in Supabase (project `Apexoverlaysystem`). Two things are worth
+knowing about how it is wired:
+
+- **All Supabase traffic happens in the Electron main process** (`electron/auth.js`),
+  never in the renderer. The panel's CSP is `default-src 'none'`, and access and
+  refresh tokens never cross the preload bridge — the renderer only ever receives
+  a sanitised user object. The session is stored at
+  `%APPDATA%/apex-overlay-system/session.json`, and only when **Remember me** is
+  ticked.
+- **Password reset is a code, not a link.** A desktop app has no web page for a
+  recovery link to land on, so the reset screen asks for the code from the email
+  (it also accepts the whole link pasted in, and pulls the token out). For a plain
+  code to arrive, the recovery email template needs `{{ .Token }}` in it —
+  Supabase dashboard → *Authentication → Emails → Reset password*.
+
+Signing up creates a row in `public.profiles` (display name, primary sim,
+email opt-in) via the `on_auth_user_created` trigger. RLS lets a driver read and
+write only their own row.
+
 ### Auto-update
 
 The app checks GitHub Releases on launch (via `electron-updater`). When a newer
@@ -524,7 +551,9 @@ overlay/                 # browser overlays (HTML/CSS/JS) — OBS Browser Source
 electron/                # desktop control-panel app (Electron)
   main.js                #   runs the dist/server in-process; persists settings
   preload.js             #   safe IPC bridge to the renderer
+  auth.js                #   Supabase accounts (main-process only; owns the session)
   control-panel/         #   the window UI (choose overlays, copy URLs, status)
+    auth.html/.css/.js   #     sign in / register / reset password screens
 docs/                    # OBS setup + architecture notes
 scripts/                 # Windows launcher
 ```

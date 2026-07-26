@@ -1,0 +1,587 @@
+/* =========================================================================
+ * auth.css — Apex & Chill account screens (sign in / register / reset)
+ * -------------------------------------------------------------------------
+ * Implements the split brand/form layout from the Apex & Chill design system
+ * ("Hub" kit, Auth screens): a gradient-lit brand panel on the left, a single
+ * 380px form column on the right.
+ *
+ * Same house rules as control-panel.css — system fonts only (no webfont can
+ * load under the panel's CSP anyway), no blurs or backdrop-filters, one cheap
+ * shadow. The design-system token NAMES are kept (--ac-*, --bg-*, --text-*) so
+ * this file reads next to the design source, with the logo-native ramp the
+ * desktop app already uses.
+ * ========================================================================= */
+
+:root {
+  /* Brand ramp — logo-native stops, as used across the desktop app. */
+  --ac-logo-blue: #309be1;
+  --ac-logo-cyan: #26bbf4;
+  --ac-logo-purple: #6a2fd6;
+  --ac-cyan: #26bbf4;
+  --ac-blue: #309be1;
+  --ac-purple: #6a2fd6;
+  --ac-magenta: #ec4899;
+
+  --ac-gradient: linear-gradient(90deg, var(--ac-cyan) 0%, var(--ac-blue) 32%, var(--ac-purple) 64%, var(--ac-magenta) 100%);
+  --ac-gradient-vertical: linear-gradient(180deg, var(--ac-cyan) 0%, var(--ac-purple) 55%, var(--ac-magenta) 100%);
+  --ac-gradient-logo: linear-gradient(120deg, var(--ac-logo-blue) 0%, var(--ac-logo-cyan) 45%, var(--ac-logo-purple) 100%);
+
+  /* Surfaces */
+  --bg-app: #060a12;
+  --bg-panel: #0c111c;
+  --bg-panel-2: #101724;
+
+  /* Text */
+  --text-primary: #f4f6fb;
+  --text-secondary: #aeb6c8;
+  --text-muted: #6b7387;
+
+  /* Lines */
+  --border-soft: #232838;
+  --border-strong: #313850;
+
+  /* Status */
+  --ok: #35d07f;
+  --bad: #ff5470;
+  --warn: #ffb020;
+
+  --font-display: "Bahnschrift", "Segoe UI Semibold", system-ui, sans-serif;
+  --font-ui: "Segoe UI", system-ui, sans-serif;
+
+  --radius: 10px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--ac-cyan);
+  text-decoration: none;
+}
+a:hover { color: var(--ac-blue); }
+
+button { font-family: inherit; }
+
+.icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ============================== LAYOUT ================================== */
+
+.auth {
+  display: flex;
+  height: 100%;
+}
+
+/* ---------------------------- BRAND PANEL ------------------------------- */
+
+.auth__brand {
+  flex: 0 0 46%;
+  position: relative;
+  overflow: hidden;
+  padding: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  background:
+    radial-gradient(700px 320px at 15% 10%, rgba(48, 155, 225, 0.22), transparent 60%),
+    radial-gradient(680px 360px at 90% 100%, rgba(106, 47, 214, 0.26), transparent 60%),
+    var(--bg-panel);
+}
+
+/* The signature 3px gradient rail down the leading edge. */
+.auth__brand::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ac-gradient-vertical);
+}
+
+.brand-lock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-lock__mark {
+  width: 40px;
+  height: 40px;
+  display: block;
+}
+
+.brand-lock__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.brand-lock__amp { color: var(--ac-cyan); }
+
+.pitch__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  /* The design's 44px assumes a 1440px canvas; the app window opens at 1000px,
+   * where 44px wraps "BROADCAST-GRADE" and loses the intended two-line break.
+   * Scale with the window and cap at the design size. */
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.02;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The second line carries the gradient — the design's hero treatment. */
+.pitch__grad {
+  background: var(--ac-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pitch__lede {
+  margin: 16px 0 0;
+  max-width: 360px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.pitch__feats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pitch__feats li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.feat-dot {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(38, 187, 244, 0.16);
+  border: 1px solid rgba(38, 187, 244, 0.35);
+  color: var(--ac-cyan);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feat-dot .icon { width: 15px; height: 15px; }
+
+.brand-foot {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ------------------------------ FORM SIDE -------------------------------- */
+
+.auth__form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  overflow: auto;
+  background: var(--bg-app);
+}
+
+.form {
+  width: 100%;
+  max-width: 380px;
+}
+
+.form__t {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.form__sub {
+  margin: 6px 0 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.form__foot {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Back-to-sign-in affordance above the reset title. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.back:hover { color: var(--text-secondary); }
+
+/* ------------------------------- FIELDS ---------------------------------- */
+
+.field { margin-bottom: 14px; }
+
+.lbl {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.field__wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field__icon {
+  position: absolute;
+  left: 11px;
+  display: inline-flex;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.inp {
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.inp::placeholder { color: var(--text-muted); }
+
+.inp:focus {
+  outline: none;
+  border-color: var(--ac-cyan);
+}
+
+.inp:disabled { opacity: 0.55; }
+
+/* Leave room for the leading icon / trailing reveal button. */
+.field__wrap--icon .inp { padding-left: 34px; }
+.field__wrap--eye .inp { padding-right: 40px; }
+
+/* A field the last submit complained about. */
+.inp[data-invalid="true"] { border-color: var(--bad); }
+
+.inp--code {
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.18em;
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.field__chev {
+  position: absolute;
+  right: 11px;
+  display: inline-flex;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+.eye {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.eye:hover { color: var(--text-secondary); }
+
+.field__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* --------------------------- CHECKS + ROWS ------------------------------- */
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.chk {
+  accent-color: var(--ac-cyan);
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 18px;
+}
+
+.linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ac-cyan);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.linkbtn:hover { color: var(--ac-blue); }
+
+/* ------------------------------ BUTTONS ---------------------------------- */
+
+.btn {
+  appearance: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  cursor: pointer;
+  padding: 9px 18px;
+  transition: filter 120ms ease, background 120ms ease;
+}
+
+.btn:hover:not(:disabled) { filter: brightness(1.2); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+.btn--accent {
+  background: var(--ac-gradient-logo);
+  border: none;
+  color: #fff;
+}
+
+.btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.btn--block {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 12px;
+}
+
+/* Busy state: the label is replaced by a ring so the width never jumps. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 700ms linear infinite;
+}
+
+.btn--ghost .spinner {
+  border-color: rgba(174, 182, 200, 0.3);
+  border-top-color: var(--text-secondary);
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2s; }
+}
+
+/* ------------------------------ DIVIDER ---------------------------------- */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+/* ------------------------------ MESSAGES --------------------------------- */
+
+/* One banner per form, reused for errors, notices and success. */
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.msg .icon { flex: 0 0 auto; margin-top: 1px; }
+
+.msg[data-kind="error"] {
+  background: rgba(255, 84, 112, 0.1);
+  border-color: rgba(255, 84, 112, 0.4);
+  color: #ffc3cd;
+}
+
+.msg[data-kind="ok"] {
+  background: rgba(53, 208, 127, 0.1);
+  border-color: rgba(53, 208, 127, 0.4);
+  color: #b6efd0;
+}
+
+.msg[data-kind="info"] {
+  background: rgba(38, 187, 244, 0.1);
+  border-color: rgba(38, 187, 244, 0.35);
+  color: #bfe8fb;
+}
+
+/* --------------------------- SUCCESS / DONE ------------------------------ */
+
+.done-mark {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  background: rgba(53, 208, 127, 0.12);
+  border: 1px solid rgba(53, 208, 127, 0.4);
+  color: var(--ok);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.done-mark .icon { width: 26px; height: 26px; }
+
+.done-mark--info {
+  background: rgba(38, 187, 244, 0.12);
+  border-color: rgba(38, 187, 244, 0.4);
+  color: var(--ac-cyan);
+}
+
+.mailto {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+/* ---------------------------- NARROW WINDOW ------------------------------ */
+/*
+ * The panel window can be dragged down to 760px wide. Below ~900px the brand
+ * panel stops being a 46% column and becomes a compact header strip, so the
+ * form never gets squeezed under its 380px design width.
+ */
+@media (max-width: 900px) {
+  .auth { flex-direction: column; }
+
+  .auth__brand {
+    flex: 0 0 auto;
+    padding: 20px 24px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+  }
+
+  .auth__brand::before { inset: 0 0 auto 0; width: auto; height: 3px; background: var(--ac-gradient); }
+
+  .pitch, .brand-foot { display: none; }
+
+  .auth__form {
+    padding: 28px 24px 40px;
+    align-items: flex-start;
+  }
+}
+
+@media (max-height: 700px) {
+  .pitch__title { font-size: 34px; }
+  .pitch__feats { display: none; }
+}

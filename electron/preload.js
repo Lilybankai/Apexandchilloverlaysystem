@@ -65,6 +65,40 @@ contextBridge.exposeInMainWorld('apex', {
   /** Reset every in-game widget to its default position. */
   ingameLayoutReset: () => ipcRenderer.invoke('ingame:layoutReset'),
 
+  /* ---- Account (Supabase) ----
+   *
+   * Every call is handled in the main process (electron/auth.js). Access and
+   * refresh tokens never cross this bridge — the renderer only ever receives
+   * the sanitised `user` object and `{ ok, error }` results. */
+  auth: {
+    /** { signedIn, user, configured, primarySims, lastEmail }. */
+    getState: () => ipcRenderer.invoke('auth:getState'),
+    /** { email, password, remember } → { ok, error?, field?, state? }. */
+    signIn: (payload) => ipcRenderer.invoke('auth:signIn', payload),
+    /** { displayName, email, password, primarySim, marketingOptIn }. */
+    register: (payload) => ipcRenderer.invoke('auth:register', payload),
+    /** Re-send the signup confirmation email: { email }. */
+    resendConfirmation: (payload) => ipcRenderer.invoke('auth:resendConfirmation', payload),
+    /** Step 1 of reset — email a recovery code: { email }. */
+    requestReset: (payload) => ipcRenderer.invoke('auth:requestReset', payload),
+    /** Step 2 of reset — { email, token, password }. */
+    resetPassword: (payload) => ipcRenderer.invoke('auth:resetPassword', payload),
+    /** Sign out and return to the account screens. */
+    signOut: () => ipcRenderer.invoke('auth:signOut'),
+    /** Leave the account screens for the control panel (after signing in). */
+    enterApp: () => ipcRenderer.invoke('auth:enterApp'),
+    /** Skip signing in; remembered so it doesn't ask again next launch. */
+    continueOffline: () => ipcRenderer.invoke('auth:continueOffline'),
+    /** Go back to the account screens from the control panel. */
+    showAuth: () => ipcRenderer.invoke('auth:showAuth'),
+    /** Subscribe to account-state pushes. Returns an unsubscribe function. */
+    onChange: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('auth:changed', listener);
+      return () => ipcRenderer.removeListener('auth:changed', listener);
+    },
+  },
+
   /** Subscribe to live status pushes. Returns an unsubscribe function. */
   onStatus: (callback) => {
     const listener = (_evt, payload) => callback(payload);

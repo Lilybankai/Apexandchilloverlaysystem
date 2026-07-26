@@ -142,6 +142,33 @@ browser. There is no database, no message broker, no cloud round-trip.
   in-game layer is pushed it over IPC instead, so the layer that draws over the
   sim does no polling at all.
 
+### Accounts (`electron/auth.js` + `electron/control-panel/auth.*`)
+
+Supabase-backed accounts, with one hard rule: **the renderer never talks to
+Supabase and never holds a token.**
+
+- `electron/auth.js` runs in the **main process** and owns everything — the
+  GoTrue REST calls (plain `fetch`, no SDK), validation, refresh-token rotation,
+  and the session file at `<userData>/session.json` (written only when *Remember
+  me* is ticked). It is the only module that knows the project URL and key.
+- The renderer gets a narrow IPC surface (`window.apex.auth.*` from
+  `preload.js`) whose results are `{ ok, error?, field? }` plus a sanitised user
+  object — `publicUser()` builds it field by field, so a token cannot leak into
+  the DOM by accident. `scripts/test-auth.js` asserts that.
+- Two forces this shape: the panel's CSP is `default-src 'none'`
+  (`script-src 'self'`), so no CDN bundle can load and no renderer fetch can
+  leave the page; and keeping refresh tokens out of a renderer means an XSS in
+  the panel cannot exfiltrate a long-lived credential.
+- The **window is the router**: one `BrowserWindow` loads either `auth.html` or
+  `index.html`, and main swaps it (`loadPage`) on sign-in, sign-out, or
+  "Continue offline". Nothing about the telemetry server or the in-game layer
+  depends on account state — the app is fully usable signed out, by design.
+- **Password reset uses a code, not a redirect**, because there is no companion
+  web page for a recovery link to land on. `parseRecoveryToken()` accepts either
+  a one-time code or a pasted reset link, and `verifyRecovery()` tries both
+  GoTrue token fields (`token` vs `token_hash`) rather than betting the flow on
+  which template the project is using.
+
 ---
 
 ## Why it's lightweight (the "no Electron" rationale)

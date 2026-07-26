@@ -740,6 +740,45 @@
     if (settings) renderSettings(settings);
   });
 
+  // --- Account -------------------------------------------------------------
+  /*
+   * The account screens live on their own page (auth.html); the panel only shows
+   * who is signed in and offers the way in/out. Main swaps the page.
+   */
+
+  const account = $('#account');
+  const accountInitials = $('#account-initials');
+  const accountName = $('#account-name');
+  const accountEmail = $('#account-email');
+  const signOutBtn = $('#signout-btn');
+  const signInBtn = $('#signin-btn');
+
+  function renderAuth(state) {
+    const user = state && state.user;
+    const signedIn = !!(state && state.signedIn && user);
+    account.hidden = !signedIn;
+    signInBtn.hidden = signedIn;
+    if (!signedIn) return;
+    accountInitials.textContent = user.initials;
+    accountName.textContent = user.displayName;
+    accountEmail.textContent = user.email;
+  }
+
+  signOutBtn.addEventListener('click', async () => {
+    signOutBtn.disabled = true;
+    // Main sends us back to the account screens, so there's nothing to re-render
+    // on success; only a failure leaves us here with a live button.
+    try {
+      await window.apex.auth.signOut();
+    } finally {
+      signOutBtn.disabled = false;
+    }
+  });
+
+  signInBtn.addEventListener('click', () => window.apex.auth.showAuth());
+
+  window.apex.auth.onChange(renderAuth);
+
   // --- App updates ---------------------------------------------------------
 
   function renderUpdate(u) {
@@ -783,6 +822,7 @@
 
   // --- Boot ----------------------------------------------------------------
   window.apex.getState().then(renderAll);
+  window.apex.auth.getState().then(renderAuth);
   void renderBindings();
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);

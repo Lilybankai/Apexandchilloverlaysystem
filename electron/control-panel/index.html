@@ -19,6 +19,17 @@
     </div>
 
     <div class="topbar__right">
+      <!-- Account: the signed-in driver, or a way in when working offline. -->
+      <div class="account" id="account" hidden>
+        <span class="account__avatar" id="account-initials"></span>
+        <span class="account__text">
+          <span class="account__name" id="account-name"></span>
+          <span class="account__email" id="account-email"></span>
+        </span>
+        <button class="account__out" id="signout-btn" type="button" title="Sign out">Sign out</button>
+      </div>
+      <button class="btn btn--ghost btn--sm" id="signin-btn" type="button" hidden>Sign in</button>
+
       <div class="feed-pill" id="feed-pill" data-feed="stopped">
         <span class="feed-pill__dot"></span>
         <span class="feed-pill__text" id="feed-text">STOPPED</span>

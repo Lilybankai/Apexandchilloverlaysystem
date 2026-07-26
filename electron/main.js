@@ -33,6 +33,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
+const authService = require('./auth');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — every widget, each addable to OBS as its own source.    */
@@ -182,6 +183,12 @@ function defaultSettings() {
     // a wheel button is a device+number, not an accelerator string — and unlike
     // a global hotkey it is NOT consumed, so the sim still sees it too.
     wheelBindings: {},
+    // Account: the operator picked "Continue offline" on the sign-in screen, so
+    // don't show it again on launch (they can still sign in from the top bar).
+    offlineMode: false,
+    // Last address that signed in, purely to prefill the sign-in field. Never a
+    // credential — tokens live in session.json, handled by electron/auth.js.
+    lastAuthEmail: '',
   };
 }
 
@@ -336,6 +343,9 @@ function loadSettings() {
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     wheelBindings: normalizeWheelBindings(stored),
+    offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
+    lastAuthEmail:
+      typeof stored.lastAuthEmail === 'string' ? stored.lastAuthEmail : defaults.lastAuthEmail,
   };
 }
 
@@ -611,6 +621,18 @@ function pushSettings(settings) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('settings:changed', settings);
   }
+}
+
+/** Push the account state (signed in / who) to whichever page is loaded. */
+function pushAuth() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('auth:changed', authStateForUi());
+  }
+}
+
+/** Account state plus the remembered email the sign-in screen prefills with. */
+function authStateForUi() {
+  return { ...authService.stateForUi(), lastEmail: loadSettings().lastAuthEmail || '' };
 }
 
 /**
@@ -1441,6 +1463,67 @@ function registerIpc() {
     return { ok: true, settings: next };
   });
 
+  /* ---- Account (see electron/auth.js) ----
+   *
+   * These handlers are thin: auth.js owns validation, the Supabase calls and
+   * the session file. Main's only extra jobs are remembering the address for
+   * the next launch and swapping the window between auth.html and index.html. */
+
+  ipcMain.handle('auth:getState', () => authStateForUi());
+
+  ipcMain.handle('auth:signIn', async (_evt, payload) => {
+    const res = await authService.signIn(payload || {});
+    if (res.ok) rememberEmail(payload && payload.email);
+    return res;
+  });
+
+  ipcMain.handle('auth:register', async (_evt, payload) => {
+    const res = await authService.register(payload || {});
+    if (res.ok) rememberEmail(payload && payload.email);
+    return res;
+  });
+
+  ipcMain.handle('auth:resendConfirmation', (_evt, payload) =>
+    authService.resendConfirmation(payload || {}),
+  );
+
+  ipcMain.handle('auth:requestReset', (_evt, payload) =>
+    authService.requestReset(payload || {}),
+  );
+
+  ipcMain.handle('auth:resetPassword', async (_evt, payload) => {
+    const res = await authService.resetPassword(payload || {});
+    if (res.ok) rememberEmail(res.email);
+    return res;
+  });
+
+  ipcMain.handle('auth:signOut', async () => {
+    const res = await authService.signOut();
+    // Signing out means "ask me next launch" again, so drop the offline choice.
+    saveSettings({ ...loadSettings(), offlineMode: false });
+    loadPage('auth');
+    return res;
+  });
+
+  /** Signed in (or registered without confirmation) — show the control panel. */
+  ipcMain.handle('auth:enterApp', () => {
+    loadPage('panel');
+    return authStateForUi();
+  });
+
+  /** "Continue offline" — remembered, so the screen doesn't nag every launch. */
+  ipcMain.handle('auth:continueOffline', () => {
+    saveSettings({ ...loadSettings(), offlineMode: true });
+    loadPage('panel');
+    return authStateForUi();
+  });
+
+  /** Back to the account screens from the panel's "Sign in" button. */
+  ipcMain.handle('auth:showAuth', () => {
+    loadPage('auth');
+    return authStateForUi();
+  });
+
   ipcMain.handle('clipboard:write', (_evt, text) => {
     if (typeof text === 'string') clipboard.writeText(text);
     return true;
@@ -1558,6 +1641,30 @@ function setupAutoUpdate() {
 
 let mainWindow = null;
 
+/** Remember the address that just signed in, to prefill the field next time. */
+function rememberEmail(email) {
+  if (typeof email !== 'string' || !email.trim()) return;
+  const settings = loadSettings();
+  const next = email.trim().slice(0, 254);
+  if (settings.lastAuthEmail !== next) saveSettings({ ...settings, lastAuthEmail: next });
+}
+
+/**
+ * Which page the single window shows: the account screens until the operator is
+ * either signed in or has explicitly chosen to work offline.
+ */
+function initialPage() {
+  if (authService.stateForUi().signedIn) return 'panel';
+  return loadSettings().offlineMode ? 'panel' : 'auth';
+}
+
+/** Swap the window between the account screens and the control panel. */
+function loadPage(page) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const file = page === 'auth' ? 'auth.html' : 'index.html';
+  void mainWindow.loadFile(path.join(__dirname, 'control-panel', file));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
@@ -1576,7 +1683,7 @@ function createWindow() {
   });
 
   mainWindow.removeMenu?.();
-  void mainWindow.loadFile(path.join(__dirname, 'control-panel', 'index.html'));
+  loadPage(initialPage());
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -1610,6 +1717,23 @@ async function captureWindowsAndQuit(dir) {
     }
   };
   for (const [name, win] of shots) await snap(name, win);
+
+  // If the window opened on the account screens, walk them: they are one page
+  // with six states, and only the first would otherwise ever be captured.
+  if (mainWindow && !mainWindow.isDestroyed() && /auth\.html$/.test(mainWindow.webContents.getURL())) {
+    for (const screen of ['register', 'reset-request', 'reset-verify', 'reset-done', 'confirm']) {
+      try {
+        await mainWindow.webContents.executeJavaScript(
+          `window.__shot ? window.__shot('${screen}') : null`,
+        );
+      } catch {
+        /* the page exposes __shot only in dev — skip if absent */
+      }
+      await new Promise((r) => setTimeout(r, 250));
+      await snap(`auth-${screen}`, mainWindow);
+    }
+  }
+
   // Also exercise edit mode on the in-game layer, if it is up.
   if (overlayWin && !overlayWin.isDestroyed()) {
     setIngameEdit(true);
@@ -1620,8 +1744,19 @@ async function captureWindowsAndQuit(dir) {
 }
 
 app.whenReady().then(async () => {
+  // Before createWindow(): whether a session is remembered decides which page
+  // the window opens on.
+  authService.init(app.getPath('userData'));
   registerIpc();
   createWindow();
+
+  // Turn a remembered refresh token into a live session in the background — a
+  // slow or offline network must not hold up the panel or the server.
+  void authService
+    .restore()
+    .then(pushAuth)
+    .catch((err) => console.error('[auth] restore failed:', err.message));
+
   setupAutoUpdate();
   applyBindings(loadSettings());
   syncGamepad();
