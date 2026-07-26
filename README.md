@@ -256,9 +256,9 @@ cannot tell you a car is drawing alongside on your **left**. This can.
 
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
-| `?icons=50`   | Icon size, 30..150% (default 50; also a hover slider, and it remembers) |
-| `?range=18`   | Longitudinal range each way, metres (clamped 8..150) — the same knob, from the other end; wins over `?icons=` |
-| `?reveal=12`  | Radius within which a car makes the HUD fade in (default 12 m)         |
+| `?icons=50`   | Pins icon size, 30..150%, for this source only — otherwise it follows the control panel's **Radar car size** slider |
+| `?range=18`   | Longitudinal range each way, metres (clamped 8..150) — the same knob from the other end; wins over both of the above |
+| `?reveal=<m>` | Replaces the fade-perimeter reveal with a plain distance gate (metres) |
 | `?opacity=0.4`| HUD opacity, same contract as the Motion/Damage widgets                |
 
 **The scale is isotropic and the cars are drawn at their real size.** One metre
@@ -267,23 +267,30 @@ car's true footprint — 5.10 × 2.00 m for a Hypercar, 4.76 × 2.05 m for a GT3
 **icons touching means cars touching**, on both axes and at any angle between
 them, whatever the range is set to and however large the widget has been dragged.
 
-**Icon size and range are one control, deliberately.** The `ICONS` slider (hover
-the widget) sets the display range: 100% is the classic 18 m, 50% is 36 m and so
-half-size cars. It is not a multiplier laid over the geometry — that is exactly
-the fixed-pixel icon this widget was rebuilt to get rid of, and it would break
-the property above. Zooming out shrinks the cars *and* the metres they stand on
-together, so contact still reads true at every setting. The lateral half-width
-follows from the range and lands at about a track width (~13 m) at 100%.
+**Icon size and range are one control, deliberately.** The control panel's
+**Radar car size** slider (30–150%, default 50%) sets the display range: 100% is
+the classic 18 m, 50% is 36 m and so half-size cars. It is not a multiplier laid
+over the geometry — that is exactly the fixed-pixel icon this widget was rebuilt
+to get rid of, and it would break the property above. Zooming out shrinks the
+cars *and* the metres they stand on together, so contact still reads true at
+every setting. The lateral half-width follows from the range and lands at about a
+track width (~13 m) at 100%. It rides the appearance channel with the background
+and text sliders, so one drag retunes every live source, in game and in OBS.
 
-The HUD is invisible until a car comes within the reveal radius, then fades in —
-so it costs nothing in clear air. **Opponents then fade with distance**: the fade
-starts at your own icon's centre line and reaches nothing on a rounded perimeter
-3.5 car widths to each side and 3.5 car lengths fore and aft (≈7 m and ≈17 m for
-a GT3), so everything on screen is something within a few car lengths, brightest
-closest, and nothing pops in or out at an edge. A car arriving alongside lights a
-soft red bloom on that side, anchored at the car's own position up the strip,
-brightest level with it, decaying to nothing exactly on your centre line, and
-feathered at every edge so nothing it draws ends on a hard line.
+**Opponents fade with distance**, and the whole-HUD reveal is tied to the same
+perimeter: the HUD wakes the moment a car crosses the ring, which is exactly when
+that car's icon starts fading up from nothing. The fade starts at your own icon's
+centre line and reaches nothing at **6 car lengths** fore and aft and **4.5 car
+widths** to each side (≈29 m and ≈9 m for a GT3) — an ellipse in metres, so a car
+coming diagonally fades on the same curve as one up the inside. Six lengths is
+about two seconds of run-up at a modest closing speed; sideways stays tighter
+because past four car widths you are looking at the far side of the track, not at
+anyone who can hit you.
+
+A car arriving alongside lights a soft red bloom on that side, anchored at the
+car's own position up the strip, brightest level with it, decaying to nothing
+exactly on your centre line, and feathered at every edge so nothing it draws ends
+on a hard line.
 
 Faster-class cars carry a halo ring; a car you are lapping draws as a ghost.
 Blip positions come from `src/telemetry/radar.ts`, which owns the world→local
@@ -316,7 +323,11 @@ and the session, and an index alone would quietly slide onto a brake duct.
 
 Pit strategy is read from LMU's REST garage API and projected in
 `src/telemetry/mfdControl.ts`; the selected row lives in `src/server/pitCursor.ts`
-so a wheel button, a hotkey and a click on the widget all move the same one.
+so a wheel button, a hotkey and a click on the widget all move the same one. The
+pit menu is polled twice a second (the heavier setup read stays on its slow
+timer), and any change made through the widget or a bound button is read back
+immediately rather than waiting for the next frame — so the value moving is
+prompt confirmation that the command landed.
 **Brake bias is read live from shared memory**
 (`mRearBrakeBias`) and updates as the driver shifts the balance — the REST garage
 data only reports the frozen *setup* value, so it can't show live aids. The other

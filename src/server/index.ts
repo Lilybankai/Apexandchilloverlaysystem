@@ -88,6 +88,14 @@ export interface Appearance {
   /** Whether a critical value blooms cyan when it changes. */
   changeGlow: boolean;
   /**
+   * Radar car-icon size, 30..150 (percent) — really the radar's ZOOM, since the
+   * icons are drawn at the cars' real footprint and 100% is the classic 18 m
+   * range (50% = 36 m, so half-size cars). On this channel rather than a URL
+   * param because it is exactly the kind of look-and-feel the operator tunes
+   * once from the control panel and expects every live source to follow.
+   */
+  radarIconScale: number;
+  /**
    * Per-widget display mode, `{ [widgetId]: mode }` — e.g. `{ tyres: 'tread' }`
    * to show remaining tread instead of temperature.
    *
@@ -114,6 +122,7 @@ const appearance: Appearance = {
   panelOpacity: 100,
   textScale: 100,
   changeGlow: true,
+  radarIconScale: 50,
   widgetModes: {},
 };
 
@@ -136,6 +145,9 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   }
   if (typeof next?.changeGlow === 'boolean') {
     appearance.changeGlow = next.changeGlow;
+  }
+  if (typeof next?.radarIconScale === 'number' && Number.isFinite(next.radarIconScale)) {
+    appearance.radarIconScale = Math.min(150, Math.max(30, Math.round(next.radarIconScale)));
   }
   if (next?.widgetModes && typeof next.widgetModes === 'object') {
     for (const [widget, mode] of Object.entries(next.widgetModes)) {
@@ -284,6 +296,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     panelOpacity: config.panelOpacity,
     textScale: config.textScale,
     changeGlow: config.changeGlow,
+    radarIconScale: config.radarIconScale,
   });
 
   // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works

@@ -211,6 +211,22 @@
             </span>
           </label>
 
+          <label class="field">
+            <span class="field__label">Radar car size</span>
+            <div class="rate-row">
+              <input class="field__range" id="radar-icons-range" type="range" min="30" max="150" step="5" />
+              <span class="rate-value"><span id="radar-icons-echo">50</span> %</span>
+            </div>
+            <span class="field__hint">
+              How large the cars are drawn on the proximity radar. This is the
+              radar's <strong>zoom</strong>: the icons are drawn at the cars' real
+              footprint, so <strong>100%</strong> is the classic 18&nbsp;m range and
+              <strong>50%</strong> shows 36&nbsp;m with half-size cars. Because the
+              cars and the metres shrink together, icons touching still means cars
+              touching at every setting.
+            </span>
+          </label>
+
           <label class="field field--toggle">
             <span class="field__label">Change glow</span>
             <span class="switch">

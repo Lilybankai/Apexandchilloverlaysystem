@@ -37,25 +37,34 @@
  *
  * ## Icon size is the SAME knob as range, deliberately
  * "The cars are too big" and "I want more range" are one control here, not two:
- * the ICONS slider sets the display range (100% = the classic 18 m, 50% = 36 m
- * and therefore half-size cars). It cannot be a size multiplier laid over the
- * geometry — that is exactly the fixed-pixel icon this widget was rebuilt to get
- * rid of, and it would break the one property the radar exists to have (an
- * icon's edge is the car's edge). Zooming out shrinks the cars AND the metres
- * they stand on together, so contact still reads true at every setting.
+ * the control panel's **Radar car size** slider sets the display range (100% =
+ * the classic 18 m, 50% = 36 m and therefore half-size cars). It cannot be a size
+ * multiplier laid over the geometry — that is exactly the fixed-pixel icon this
+ * widget was rebuilt to get rid of, and it would break the one property the radar
+ * exists to have (an icon's edge is the car's edge). Zooming out shrinks the cars
+ * AND the metres they stand on together, so contact still reads true at every
+ * setting. The value arrives on the appearance channel (see js/appearance.js),
+ * so one slider retunes every live source, in game and in OBS.
  *
- * ## Distance fade
+ * ## Distance fade, and the reveal that follows it
  * Opponents fade with distance rather than being clipped by the canvas: the fade
  * starts at the player icon's own centre line and reaches nothing on a rounded
- * perimeter 3.5 car widths to each side and 3.5 car lengths fore and aft. So
- * everything on screen is something within a few car lengths of you, brightest
- * closest, and nothing ever pops in or out at an edge.
+ * perimeter {@link FADE_WIDTHS} car widths to each side and {@link FADE_LENGTHS}
+ * car lengths fore and aft. Brightest closest, and nothing ever pops in or out at
+ * an edge.
+ *
+ * The whole-HUD reveal is tied to that same perimeter rather than to a radius of
+ * its own: the HUD wakes the moment any car crosses the ring, which is exactly
+ * when that car's icon starts fading up from nothing. Two independent thresholds
+ * is what made the earlier build show a car only at the last moment — the reveal
+ * gate (12 m) was tighter than the fade, so the icon appeared already half solid
+ * with no run-up. `?reveal=<m>` still pins the old distance gate if wanted.
  *
  * URL params (all optional):
- *   ?icons=<pct>   Icon size, 30..150 (default 50; also a hover slider). 100% is
- *                  the classic 18 m range — this IS the zoom, see above.
  *   ?range=<m>     Longitudinal display range each way, metres (clamped 8..150).
- *                  The same knob from the other end; wins over ?icons=.
+ *                  The zoom, from the other end; wins over the app's slider.
+ *   ?icons=<pct>   Icon size, 30..150 — pins this source's zoom regardless of the
+ *                  app (handled in js/appearance.js, like ?bg= and ?text=).
  *   ?opacity=0..1  HUD opacity (also a hover slider), so it can sit over the
  *                  track as a see-through practice aid.
  *
@@ -113,11 +122,10 @@
    * Icon size as a percentage of the classic geometry, i.e. `BASE_RANGE_M /
    * rangeM`. 50% by default: at 100% the cars filled more of the strip than
    * they needed to at a glance. The bounds are just RANGE_MIN/MAX seen from the
-   * other side (150% = 12 m of range, 30% = 60 m).
+   * other side (150% = 12 m of range, 30% = 60 m), and match the control panel's
+   * slider — the operator's value arrives from there, not from here.
    */
   var ICON_DEFAULT = 50, ICON_MIN = 30, ICON_MAX = 150;
-  /** localStorage key for the operator's chosen icon size. */
-  var ICON_SIZE_KEY = "apex-radar-iconsize";
   /** Border inset, CSS px, so a car at the very edge is not half off-canvas. */
   var PAD = 10;
   /**
@@ -138,13 +146,16 @@
   var MIN_OPACITY = 0.15;
 
   /**
-   * Proximity reveal: the HUD is invisible until a car is within this radius
-   * (metres), then fades in, and fades out again as it leaves. `?reveal=<m>`
-   * overrides it. `revealAlpha` is the current eased opacity of the whole canvas;
-   * `FADE_RATE` is the per-frame easing toward the target (radar runs every
-   * frame, so ~0.15 gives a ~0.2–0.4 s fade).
+   * Proximity reveal: the HUD is invisible until a car crosses the fade
+   * perimeter, then fades in, and fades out again as the last one leaves.
+   *
+   * The threshold IS the fade perimeter — see the module note. `?reveal=<m>`
+   * replaces it with a plain distance gate (the pre-0.19 behaviour) for a source
+   * that wants one. `revealAlpha` is the current eased opacity of the whole
+   * canvas; `FADE_RATE` is the per-frame easing toward the target (the radar runs
+   * every frame, so ~0.15 gives a ~0.2–0.4 s fade).
    */
-  var REVEAL_RADIUS_M = 12;
+  var revealOverrideM = null;
   var FADE_RATE = 0.15;
   var revealAlpha = 0;
 
@@ -158,8 +169,16 @@
    * than it should. Measured in car sizes rather than metres because that is the
    * unit the driver is actually thinking in — "he's two cars back" — and it
    * scales itself for a 5.1 m Hypercar against a 4.65 m LMP3 for free.
+   *
+   * **6 lengths and 4.5 widths, not 3.5 and 3.5.** At 3.5 lengths (~17 m for a
+   * GT3) a car closing at even a modest delta arrived already alongside: there
+   * was no run-up in which to decide anything, which is the entire job. Six
+   * lengths (~29 m) is about two seconds at a 15 km/h closing speed and still
+   * inside what the strip can show at the default zoom. Sideways is a different
+   * problem — past about four car widths you are looking at the far side of the
+   * track, not at anyone who can hit you — so that one grew far less.
    */
-  var FADE_WIDTHS = 3.5, FADE_LENGTHS = 3.5;
+  var FADE_WIDTHS = 4.5, FADE_LENGTHS = 6;
 
   /* ------------------------------- elements ------------------------------- */
 
@@ -273,19 +292,6 @@
     var op = isFinite(urlOp) ? urlOp : savedOp !== null ? savedOp : 1;
     op = Math.min(1, Math.max(MIN_OPACITY, op));
 
-    // Icon size, resolved from (in order) ?range=, ?icons=, the saved value, the
-    // default. ?range= wins because it names the geometry directly — an operator
-    // who has asked for 40 m of range means it, whatever that does to the icons.
-    var urlRange = parseFloat(params.get("range"));
-    var urlIcons = parseFloat(params.get("icons"));
-    var savedIcons = stored(ICON_SIZE_KEY);
-    var icons = isFinite(urlRange) && urlRange > 0
-      ? (BASE_RANGE_M / Math.min(RANGE_MAX, Math.max(RANGE_MIN, urlRange))) * 100
-      : isFinite(urlIcons) ? urlIcons
-      : savedIcons !== null ? savedIcons
-      : ICON_DEFAULT;
-    icons = Math.min(ICON_MAX, Math.max(ICON_MIN, icons));
-
     var anchor = document.createElement("div");
     anchor.className = "radar__ctl-anchor";
     anchor.appendChild(
@@ -300,22 +306,35 @@
         },
       }),
     );
-    anchor.appendChild(
-      sliderBar({
-        className: "radar__size",
-        label: "ICONS",
-        min: ICON_MIN, max: ICON_MAX,
-        value: icons,
-        onInput: function (v) {
-          setIconPercent(v);
-          try { localStorage.setItem(ICON_SIZE_KEY, String(v)); } catch (e) { /* ignore */ }
-        },
-      }),
-    );
     root.appendChild(anchor);
     applyOpacity(op);
-    // Before sizeCanvas() runs, so the first frame is already at the right zoom.
-    setIconPercent(icons);
+  }
+
+  /**
+   * Resolve the display range, and keep following the app's slider.
+   *
+   * `?range=` pins the geometry outright — an operator who asked for 40 m means
+   * it, whatever it does to the icon size — so it opts this source out of the
+   * appearance channel entirely. Otherwise the size comes from the control panel
+   * (via js/appearance.js, which also handles `?icons=`), and moving that slider
+   * re-zooms a source that is already live.
+   */
+  function bindZoom(params) {
+    var urlRange = parseFloat(params.get("range"));
+    if (isFinite(urlRange) && urlRange > 0) {
+      rangeM = Math.min(RANGE_MAX, Math.max(RANGE_MIN, urlRange));
+      applyScale();
+      return;
+    }
+    setIconPercent(ICON_DEFAULT);
+    var app = window.ApexAppearance;
+    if (app && typeof app.onRadarIcons === "function") {
+      app.onRadarIcons(function (pct) {
+        setIconPercent(pct);
+        // The canvas bitmap is unchanged — only metres-per-pixel moved — so the
+        // next frame simply draws at the new scale. Nothing to resize.
+      });
+    }
   }
 
   /* --------------------------------- init --------------------------------- */
@@ -327,11 +346,11 @@
 
     var params = new URLSearchParams(window.location.search);
     var rev = parseFloat(params.get("reveal"));
-    if (isFinite(rev) && rev > 0) REVEAL_RADIUS_M = Math.min(150, rev);
+    if (isFinite(rev) && rev > 0) revealOverrideM = Math.min(150, rev);
 
-    // Owns ?range= / ?icons= as well as the sliders, and sets rangeM before
-    // sizeCanvas() below bakes it into pxPerM.
     buildControls(root, params);
+    // Before sizeCanvas() below, which bakes the range into pxPerM.
+    bindZoom(params);
 
     var wrap = document.createElement("div");
     wrap.className = "radar__wrap";
@@ -563,6 +582,22 @@
   var egoFam = "generic";
 
   /**
+   * The fade perimeter's semi-axes in metres, at the current zoom.
+   *
+   * Capped at what the strip can actually show, because zoomed in far enough the
+   * canvas edge arrives before the ring does — and a blip reaching an edge must
+   * be faded out by the time it gets there, never clipped at it. At the default
+   * zoom nothing is capped and the full 6 × 4.5 car ring applies.
+   */
+  function fadeRadii() {
+    var s = CAR_SIZE_M[egoFam] || CAR_SIZE_M.generic;
+    return {
+      lat: Math.min(FADE_WIDTHS * s.width, lateralRangeM()),
+      lon: Math.min(FADE_LENGTHS * s.length, rangeM),
+    };
+  }
+
+  /**
    * How solidly an opponent at (lat, lon) metres draws — 1 on top of the player,
    * 0 on the fade perimeter and beyond.
    *
@@ -570,16 +605,31 @@
    * weight from the very first metre: whatever is closest is always the most
    * solid thing on the strip, which is the order a spotter would call them in.
    * `t` is the distance to the player scaled so the perimeter is t = 1 in every
-   * direction (an ellipse in metres — FADE_WIDTHS across, FADE_LENGTHS fore and
-   * aft), and the square keeps the near half of that ellipse near-solid instead
-   * of dropping everything to half strength the moment it leaves the centre.
+   * direction, and the square keeps the near half of that ellipse near-solid
+   * instead of dropping everything to half strength the moment it leaves the
+   * centre.
    */
   function fadeAlpha(lat, lon) {
-    var s = CAR_SIZE_M[egoFam] || CAR_SIZE_M.generic;
-    var u = lat / (FADE_WIDTHS * s.width);
-    var v = lon / (FADE_LENGTHS * s.length);
+    var r = fadeRadii();
+    var u = lat / r.lat;
+    var v = lon / r.lon;
     var t = Math.sqrt(u * u + v * v);
     return t >= 1 ? 0 : 1 - t * t;
+  }
+
+  /** Whether any car is close enough for the HUD to be awake at all. */
+  function anyoneInRange(blips) {
+    for (var i = 0; i < blips.length; i++) {
+      var b = blips[i];
+      if (revealOverrideM !== null) {
+        if (b.distanceM <= revealOverrideM) return true;
+      } else if (fadeAlpha(b.lateralM, b.longitudinalM) > 0) {
+        // Tied to the fade rather than to a radius of its own, so a car's icon
+        // begins fading up at the same instant the HUD does.
+        return true;
+      }
+    }
+    return false;
   }
 
   /* ------------------------------ car sprites -----------------------------
@@ -916,15 +966,11 @@
     // than each rival lingering by its own size.
     egoFam = carFamily(playerClass(frame));
 
-    // Proximity reveal: the whole HUD (every icon AND the player arrow) stays
-    // invisible until a car comes within REVEAL_RADIUS_M, then fades in, and
-    // fades back out as the nearest car leaves that radius. The fade is applied
-    // to the canvas element itself so each icon's own alphas are preserved.
-    var nearest = Infinity;
-    for (var i = 0; i < blips.length; i++) {
-      if (blips[i].distanceM < nearest) nearest = blips[i].distanceM;
-    }
-    var target = nearest <= REVEAL_RADIUS_M ? 1 : 0;
+    // Proximity reveal: the whole HUD (every icon AND the player's own car) stays
+    // invisible until a car crosses the fade perimeter, then fades in, and fades
+    // back out as the last one leaves. The fade is applied to the canvas element
+    // itself so each icon's own alphas are preserved.
+    var target = anyoneInRange(blips) ? 1 : 0;
     revealAlpha += (target - revealAlpha) * FADE_RATE;
     if (target === 0 && revealAlpha < 0.003) revealAlpha = 0;
     canvas.style.opacity = String(revealAlpha);

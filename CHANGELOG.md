@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.19.0 — 2026-07-26
+
+### Changed
+
+- **The radar shows a car coming, not a car arriving.** The fade perimeter grew
+  from 3.5 car lengths to **6** (≈29 m for a GT3) fore and aft, and from 3.5 car
+  widths to **4.5** (≈9 m) to each side — six lengths is about two seconds of
+  run-up at a modest closing speed, where 3.5 put a car on top of you before it
+  had finished appearing. Sideways grew far less on purpose: past about four car
+  widths you are looking at the far side of the track, not at anyone who can hit
+  you.
+
+- **The whole-HUD reveal is now tied to that perimeter** instead of having a
+  radius of its own. Two independent thresholds was the actual bug behind "it only
+  shows at the last moment": the reveal gate was 12 m while the fade reached
+  17 m, so a car's icon appeared already half solid with no run-up at all. Now the
+  HUD wakes at the same instant the icon starts fading up from nothing — measured,
+  a car closing from behind now appears at ~29 m and reaches full strength as it
+  arrives. `?reveal=<m>` still pins a plain distance gate for a source that wants
+  one.
+
+- **Radar car size moved to the control panel**, next to Widget background and
+  Text size (30–150%, default 50%). It belongs with the other look-and-feel knobs:
+  it rides the same appearance channel, so one drag retunes every live source in
+  game and in OBS instead of being set per browser source. The hover slider on the
+  widget is gone; `?icons=` still pins one source, and `?range=` still wins over
+  both.
+
+- **The MFD keeps up.** The pit menu now has its own **500 ms** poll rather than
+  sharing the 3 s garage timer — it is pit strategy, not slow-moving wear data,
+  and the widget is a control surface for it. On top of that, a change made
+  through the widget or a bound button is read back at once instead of waiting for
+  the next frame, and the cursor endpoints carry the row's new value so it appears
+  in the same beat as the press. Worst-case confirmation went from ~3 s to ~150 ms.
+  The heavy `getPlayerGarageData` read stays on the slow timer, where it belongs:
+  those values cannot move mid-session.
+
+- **The selected pit row is far brighter** — a near-solid fill in the row's own
+  category colour, a full-strength ring, an outward glow and white text. The first
+  pass read as "slightly different" rather than "this one", which is useless at a
+  glance mid-corner.
+
 ## 0.18.0 — 2026-07-26
 
 ### Added

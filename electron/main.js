@@ -139,6 +139,13 @@ function defaultSettings() {
     // marking a value critical — but it is a visual effect over live footage, so
     // it can be turned off for a broadcast that wants a completely static look.
     changeGlow: true,
+    // Radar car-icon size, 30..150 (percent). This is the radar's ZOOM: it sets
+    // the display range (100% = the classic 18 m, 50% = 36 m and therefore
+    // half-size cars), because the icons are drawn at the cars' real footprint
+    // and a size multiplier over that geometry would break the widget's one
+    // promise — an icon's edge is the car's edge. Delivered on the appearance
+    // channel like panelOpacity/textScale, so dragging it retunes live sources.
+    radarIconScale: 50,
     // Keyboard bindings, { [actionId]: accelerator } — see electron/actions.js
     // for the action vocabulary. Registered as GLOBAL hotkeys, so they also fire
     // while the sim has focus, and a Stream Deck "Hotkey" button (which just
@@ -308,6 +315,7 @@ function loadSettings() {
     textScale: clamp(stored.textScale, 80, 120, defaults.textScale),
     changeGlow:
       typeof stored.changeGlow === 'boolean' ? stored.changeGlow : defaults.changeGlow,
+    radarIconScale: clamp(stored.radarIconScale, 30, 150, defaults.radarIconScale),
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     wheelBindings: normalizeWheelBindings(stored),
@@ -417,6 +425,7 @@ function buildServerConfig(settings) {
     panelOpacity: settings.panelOpacity,
     textScale: settings.textScale,
     changeGlow: settings.changeGlow,
+    radarIconScale: settings.radarIconScale,
     verbose: false,
   };
 }
@@ -617,6 +626,7 @@ function applyAppearance(settings) {
     panelOpacity: s.panelOpacity,
     textScale: s.textScale,
     changeGlow: s.changeGlow,
+    radarIconScale: s.radarIconScale,
     widgetModes: s.widgetModes || {},
   };
   try {
@@ -1105,6 +1115,9 @@ function registerIpc() {
       if (partial.panelOpacity !== undefined) {
         next.panelOpacity = clamp(partial.panelOpacity, 0, 100, current.panelOpacity);
       }
+      if (partial.radarIconScale !== undefined) {
+        next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
+      }
       if (partial.actionBindings && typeof partial.actionBindings === 'object') {
         next.actionBindings = { ...current.actionBindings };
         for (const [id, accel] of Object.entries(partial.actionBindings)) {
@@ -1132,7 +1145,8 @@ function registerIpc() {
     if (
       next.panelOpacity !== current.panelOpacity ||
       next.textScale !== current.textScale ||
-      next.changeGlow !== current.changeGlow
+      next.changeGlow !== current.changeGlow ||
+      next.radarIconScale !== current.radarIconScale
     ) {
       applyAppearance(next);
     }

@@ -90,6 +90,17 @@ const HTTP_TIMEOUT_MS = 1500;
  * endpoint carries them). Wear moves slowly, so a gentle poll is plenty.
  */
 const GARAGE_REFRESH_INTERVAL_MS = 3000;
+/**
+ * How often to pull the PIT MENU itself (ms).
+ *
+ * Much faster than the garage poll it used to share, because this one is not
+ * wear data — it is the pit strategy, and the MFD widget is now a control
+ * surface for it. Every change the driver makes (from the widget, from a bound
+ * wheel button, or in the game's own MFD) is confirmed by this value moving, so
+ * a 3 s poll meant up to three seconds of "did that land?". One small localhost
+ * request; the heavy `getPlayerGarageData` read stays on the slow timer.
+ */
+const PIT_MENU_REFRESH_INTERVAL_MS = 500;
 /** Treat wear data older than this as gone (left session / in menus). */
 const GARAGE_STALE_AFTER_MS = 10_000;
 /**
@@ -279,6 +290,8 @@ export class LmuRestProvider implements TelemetryProvider {
   private garageDataRaw: Record<string, RawGarageVal> | null = null;
   private lastMfdOkAt = 0;
   private garageTimer: NodeJS.Timeout | null = null;
+  /** The pit menu's own faster timer — see PIT_MENU_REFRESH_INTERVAL_MS. */
+  private pitMenuTimer: NodeJS.Timeout | null = null;
   /** Raw per-session weather forecast from `/rest/sessions/weather`. */
   private weatherForecast: RestWeather | null = null;
   private weatherTimer: NodeJS.Timeout | null = null;
@@ -295,12 +308,15 @@ export class LmuRestProvider implements TelemetryProvider {
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
     void this.refreshGarage();
-    void this.refreshMfd();
+    void this.refreshGarageAids();
     this.garageTimer = setInterval(() => {
       void this.refreshGarage();
-      void this.refreshMfd();
+      void this.refreshGarageAids();
     }, GARAGE_REFRESH_INTERVAL_MS);
     this.garageTimer.unref?.();
+    void this.refreshPitMenu();
+    this.pitMenuTimer = setInterval(() => void this.refreshPitMenu(), PIT_MENU_REFRESH_INTERVAL_MS);
+    this.pitMenuTimer.unref?.();
     void this.refreshWeather();
     this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
     this.weatherTimer.unref?.();
@@ -326,6 +342,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.garageTimer) {
       clearInterval(this.garageTimer);
       this.garageTimer = null;
+    }
+    if (this.pitMenuTimer) {
+      clearInterval(this.pitMenuTimer);
+      this.pitMenuTimer = null;
     }
     if (this.weatherTimer) {
       clearInterval(this.weatherTimer);
@@ -411,27 +431,42 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
-   * Pulls the controllable MFD (pit menu + live driving aids). Kept SEPARATE
-   * from {@link refreshGarage} on purpose: the repair, pit-menu and
-   * garage-setup screens have independent availability (any one can 404 while
-   * another answers — e.g. the pit menu exists on track but the repair screen
-   * may not), so sharing a `try` would let one screen's absence silently drop
-   * the others. The two reads here are also independent of each other.
+   * Pulls the pit menu — the pit strategy the MFD widget both shows AND drives.
+   *
+   * On its own fast timer, and kept SEPARATE from {@link refreshGarage} and
+   * {@link refreshGarageAids}: the repair, pit-menu and garage-setup screens have
+   * independent availability (any one can 404 while another answers — the pit
+   * menu exists on track when the repair screen may not), so sharing a `try`
+   * would let one screen's absence silently drop the others.
    */
-  private async refreshMfd(): Promise<void> {
-    const [pit, garage] = await Promise.all([
-      this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu').catch(() => null),
-      this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData').catch(() => null),
-    ]);
-    if (Array.isArray(pit)) this.pitMenuRaw = pit;
+  private async refreshPitMenu(): Promise<void> {
+    const pit = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu').catch(
+      () => null,
+    );
+    if (Array.isArray(pit)) {
+      this.pitMenuRaw = pit;
+      this.lastMfdOkAt = Date.now();
+    }
+  }
+
+  /**
+   * Pulls the `VM_*` garage values — the frozen SETUP numbers behind the aids.
+   *
+   * Deliberately still slow: these do not move in a session at all (that is the
+   * whole reason the aid rows are estimated, see server/aidShadow), and it is a
+   * 100+ key payload. Polling it at the pit menu's rate would be the one
+   * genuinely wasteful request in the provider.
+   */
+  private async refreshGarageAids(): Promise<void> {
+    const garage = await this.getJson<Record<string, RawGarageVal>>(
+      '/rest/garage/getPlayerGarageData',
+    ).catch(() => null);
     if (garage && typeof garage === 'object') {
       this.garageDataRaw = garage;
       // Give the estimated aids (TC/ABS/motor map) their baseline as soon as the
       // garage answers. Seeding is one-way — it never overwrites a value we are
       // already tracking — so this is safe to call on every poll.
       seedAidShadow(garage);
-    }
-    if (Array.isArray(pit) || (garage && typeof garage === 'object')) {
       this.lastMfdOkAt = Date.now();
     }
   }

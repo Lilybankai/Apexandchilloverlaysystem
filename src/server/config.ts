@@ -90,6 +90,15 @@ export interface ServerConfig {
    * Retuned at runtime through `setAppearance()`.
    */
   changeGlow: boolean;
+  /**
+   * Boot value for the radar's car-icon size, 30..150 (percent).
+   *
+   * This is the radar's zoom, not a multiplier on the artwork: the icons are
+   * drawn at the cars' real footprint, so the only honest way to make them
+   * smaller is to show more metres (100% = the classic 18 m range, 50% = 36 m).
+   * Retuned at runtime through `setAppearance()`, exactly like `panelOpacity`.
+   */
+  radarIconScale: number;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -110,6 +119,7 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   panelOpacity: 100,
   textScale: 100,
   changeGlow: true,
+  radarIconScale: 50,
   verbose: false,
 });
 
@@ -208,6 +218,7 @@ export function loadConfig(): ServerConfig {
     panelOpacity: clamp(envInt('APEX_PANEL_OPACITY', DEFAULT_CONFIG.panelOpacity), 0, 100),
     textScale: clamp(envInt('APEX_TEXT_SCALE', DEFAULT_CONFIG.textScale), 80, 120),
     changeGlow: envBool('APEX_CHANGE_GLOW', DEFAULT_CONFIG.changeGlow),
+    radarIconScale: clamp(envInt('APEX_RADAR_ICONS', DEFAULT_CONFIG.radarIconScale), 30, 150),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

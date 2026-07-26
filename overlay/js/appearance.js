@@ -14,6 +14,10 @@
  *   data-glow-enabled  turns the change glow on critical values on or off
  *      (read by the crit() helpers in js/client.js).
  *
+ * …plus one that cannot be CSS: the radar's car-icon size (30..150%), which is a
+ * metres-per-pixel scale for a canvas, not a style. It is handed to the widget as
+ * a value with a subscription (`ApexAppearance.onRadarIcons`).
+ *
  * Loaded as a plain <script> in <head> — before any widget paints — so the
  * chosen values are in place for the first frame instead of flashing a solid
  * panel at the wrong size and then correcting it.
@@ -129,6 +133,42 @@
     document.documentElement.setAttribute("data-glow-enabled", v);
   }
 
+  /* --------------------------- radar icon size ---------------------------- */
+
+  /**
+   * The radar's car-icon size, 30..150 (percent).
+   *
+   * Unlike the three knobs above this cannot be a CSS custom property: the radar
+   * draws to a canvas, and the number is a *scale in metres per pixel*, not a
+   * style. So it is handed over as a value with a subscription — the radar reads
+   * it once at init and is told when it moves, rather than sampling it in a draw
+   * loop that runs every frame.
+   *
+   * It lives on the appearance channel (not a URL param and not a slider on the
+   * widget) because it is operator look-and-feel like the other three: set once
+   * from the control panel, followed by every live source, in game and in OBS.
+   */
+  var ICON_MIN = 30;
+  var ICON_MAX = 150;
+
+  var iconScale = null;
+  var iconListeners = [];
+
+  function applyIcons(value) {
+    var n = typeof value === "number" ? value : parseFloat(value);
+    if (!isFinite(n)) return;
+    var v = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.round(n)));
+    if (v === iconScale) return;
+    iconScale = v;
+    for (var i = 0; i < iconListeners.length; i++) {
+      try {
+        iconListeners[i](v);
+      } catch (e) {
+        if (window.console) console.error("[Apex] radar icon listener failed:", e);
+      }
+    }
+  }
+
   /* --------------------------- per-widget modes --------------------------- */
 
   /** Current mode per widget id, and everyone who wants telling when it moves. */
@@ -189,6 +229,16 @@
       modeListeners.push(cb);
       cb(modes);
     },
+    /**
+     * Subscribe to the radar's icon size (percent). Called immediately IF a value
+     * has already arrived — and deliberately not otherwise, so the radar keeps
+     * its own default rather than being handed a placeholder it would have to
+     * redraw away from a moment later.
+     */
+    onRadarIcons: function (cb) {
+      iconListeners.push(cb);
+      if (iconScale !== null) cb(iconScale);
+    },
   };
 
   /** Accepts 0..1 (a fraction) or 1..100 (a percentage), as the panel sends. */
@@ -208,6 +258,7 @@
   var alphaPinned = false;
   var scalePinned = false;
   var glowPinned = false;
+  var iconsPinned = false;
   try {
     var params = new URLSearchParams(window.location.search);
 
@@ -230,6 +281,14 @@
       applyGlow(rawGlow !== "0" && rawGlow !== "false" && rawGlow !== "off");
       glowPinned = true;
     }
+
+    // ?icons= still pins the radar's icon size for a source that wants its own
+    // zoom regardless of the panel — the same escape hatch the other three have.
+    var rawIcons = params.get("icons");
+    if (rawIcons !== null && isFinite(parseFloat(rawIcons))) {
+      applyIcons(parseFloat(rawIcons));
+      iconsPinned = true;
+    }
   } catch (e) {
     /* no URLSearchParams / malformed query — fall through to the live routes */
   }
@@ -246,6 +305,9 @@
       if (s !== null && !scalePinned) applyScale(s);
       if (!glowPinned && appearance.changeGlow !== undefined) {
         applyGlow(appearance.changeGlow);
+      }
+      if (!iconsPinned && appearance.radarIconScale !== undefined) {
+        applyIcons(appearance.radarIconScale);
       }
       applyModes(appearance.widgetModes);
     });
@@ -266,6 +328,7 @@
         var s = toScale(cfg.textScale);
         if (s !== null && !scalePinned) applyScale(s);
         if (!glowPinned && cfg.changeGlow !== undefined) applyGlow(cfg.changeGlow);
+        if (!iconsPinned && cfg.radarIconScale !== undefined) applyIcons(cfg.radarIconScale);
         applyModes(cfg.widgetModes);
       })
       .catch(function () {

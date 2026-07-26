@@ -1784,9 +1784,9 @@ body.ig-editing #widget-radar .panel__header {
   position: relative;
   height: 0;
 }
-/* Two stacked hover sliders: OPACITY, then ICONS (which is the display range —
-   see the module note in widgets/radar.js). Both float over the canvas from the
-   same zero-height anchor, so neither takes any layout space from the HUD. */
+/* The hover slider (OPACITY), floated over the canvas from a zero-height anchor
+   so it takes no layout space from the HUD. Car size is NOT here — it is the
+   radar's zoom, and it lives in the control panel on the appearance channel. */
 .radar__ctl {
   position: absolute;
   left: 0;
@@ -1805,9 +1805,6 @@ body.ig-editing #widget-radar .panel__header {
 }
 .radar__opacity {
   top: 3px;
-}
-.radar__size {
-  top: 27px;
 }
 #widget-radar:hover .radar__ctl,
 .radar__ctl:focus-within {
@@ -1891,15 +1888,25 @@ body.ig-editing #widget-radar .panel__header {
 /* The row the bindable ▲ ▼ + − controls are aimed at (server/pitCursor, mirrored
    by widgets/mfd.js). It has to be findable in peripheral vision from a moving
    car, so it takes the row's own category colour up to full strength and widens
-   the stripe rather than introducing a new colour the eye has to decode. */
+   the stripe rather than introducing a new colour the eye has to decode.
+
+   Pushed hard on purpose: the first pass at 26% tint read as "slightly different"
+   rather than "this one", which is useless at a glance mid-corner. A near-solid
+   category fill, a full-strength ring and an outward glow make it the brightest
+   thing in the widget — and because it is still the row's OWN colour, it says
+   *which* row without adding a second thing to decode. */
 .mfd__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 26%, transparent);
-  border-left-width: 6px;
-  padding-left: 6px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 45%, transparent);
+  background: color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 55%, transparent);
+  border-left-width: 7px;
+  padding-left: 5px;
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 85%, transparent),
+    0 0 10px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 40%, transparent);
 }
-.mfd__row[data-selected="true"] .mfd__label {
-  color: var(--text-primary);
+.mfd__row[data-selected="true"] .mfd__label,
+.mfd__row[data-selected="true"] .mfd__value {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
 }
 /* A little air where the category changes, separating the colour blocks. */
 .mfd__row--group-start { margin-top: 5px; }

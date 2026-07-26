@@ -27,6 +27,8 @@
   const bgEcho = $('#bg-echo');
   const textRange = $('#text-range');
   const textEcho = $('#text-echo');
+  const radarIconsRange = $('#radar-icons-range');
+  const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
@@ -106,6 +108,8 @@
     bgEcho.textContent = settings.panelOpacity;
     textRange.value = settings.textScale;
     textEcho.textContent = settings.textScale;
+    radarIconsRange.value = settings.radarIconScale;
+    radarIconsEcho.textContent = settings.radarIconScale;
     glowToggle.checked = settings.changeGlow !== false;
     sponsorsToggle.checked = !!settings.sponsorsEnabled;
     sponsorRange.value = settings.sponsorIntervalSec;
@@ -320,6 +324,18 @@
   textRange.addEventListener('input', () => {
     textEcho.textContent = textRange.value;
     commitTextScale(parseInt(textRange.value, 10));
+  });
+
+  // Radar car size. Same live-push contract as the two sliders above — it is the
+  // radar's zoom, so the operator drags it with the widget in view and stops
+  // where the cars read at a glance without crowding each other.
+  const commitRadarIcons = debounce(async (value) => {
+    await window.apex.updateSettings({ radarIconScale: value });
+  }, 120);
+
+  radarIconsRange.addEventListener('input', () => {
+    radarIconsEcho.textContent = radarIconsRange.value;
+    commitRadarIcons(parseInt(radarIconsRange.value, 10));
   });
 
   glowToggle.addEventListener('change', async () => {

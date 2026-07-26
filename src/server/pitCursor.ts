@@ -29,11 +29,13 @@
  * gone (see {@link resolveIndex}).
  */
 
-import type { MfdController, RawPitRow } from '../telemetry/mfdControl';
+import type { MfdController } from '../telemetry/mfdControl';
 
-/** A row as far as the cursor cares — anything with a name will do. */
+/** A row as far as the cursor cares — a name, and its value text if it has one. */
 export interface CursorRow {
   name?: string;
+  currentSetting?: number;
+  settings?: Array<{ text?: string }>;
 }
 
 /** Where the cursor is, as reported to the overlay. */
@@ -42,12 +44,22 @@ export interface PitCursorState {
   index: number;
   /** The row's name — the durable half of the cursor. */
   name: string | null;
+  /**
+   * The row's value text as of the last cursor operation.
+   *
+   * Carried so the overlay can show a change in the same beat as the button
+   * press: it polls this endpoint anyway to move its highlight, and having the
+   * new value ride along means it does not have to go and ask the sim what it
+   * just told the sim to do.
+   */
+  text: string | null;
   /** `Date.now()` of the last move, so the widget can flash a fresh change. */
   updatedAt: number;
 }
 
 let index = 0;
 let name: string | null = null;
+let text: string | null = null;
 let updatedAt = 0;
 
 /**
@@ -66,13 +78,21 @@ export function resolveIndex(rows: CursorRow[]): number {
 
 /** The cursor as it stands, without consulting a menu. */
 export function getCursor(): PitCursorState {
-  return { index, name, updatedAt };
+  return { index, name, text, updatedAt };
 }
 
-/** Points the cursor at `i` in `rows` and remembers that row's name. */
+/** A row's currently-selected option text, when the row carries its options. */
+function rowText(row: CursorRow | undefined): string | null {
+  if (!row || !Array.isArray(row.settings)) return null;
+  const cur = typeof row.currentSetting === 'number' ? row.currentSetting : 0;
+  return row.settings[cur]?.text ?? null;
+}
+
+/** Points the cursor at `i` in `rows` and remembers that row's name and value. */
 function land(rows: CursorRow[], i: number): PitCursorState {
   index = i;
   name = rows[i]?.name ?? null;
+  text = rowText(rows[i]);
   updatedAt = Date.now();
   return getCursor();
 }
@@ -117,17 +137,7 @@ export function selectRow(
 /** What a live cursor operation reports back. */
 export interface PitCursorResult extends PitCursorState {
   ok: boolean;
-  /** The row's current value text, when known — the confirmation a driver wants. */
-  text?: string;
   error?: string;
-}
-
-/** The cursor's row plus the text it currently reads, from a fresh menu. */
-function describe(rows: RawPitRow[], i: number): PitCursorResult {
-  const row = rows[i];
-  const settings = Array.isArray(row?.settings) ? row!.settings! : [];
-  const cur = typeof row?.currentSetting === 'number' ? row.currentSetting : 0;
-  return { ...getCursor(), ok: true, text: settings[cur]?.text ?? undefined };
 }
 
 /** Moves the cursor by `delta` rows against the sim's CURRENT menu. */
@@ -139,8 +149,8 @@ export async function moveCursorLive(
   if (!Array.isArray(rows) || rows.length === 0) {
     return { ...getCursor(), ok: false, error: 'pit menu unavailable (not in a session?)' };
   }
-  const state = moveCursor(delta, rows);
-  return describe(rows, state.index);
+  moveCursor(delta, rows);
+  return { ...getCursor(), ok: true };
 }
 
 /**
@@ -170,6 +180,10 @@ export async function stepSelected(
     { delta: delta < 0 ? -1 : 1 },
   );
   if (!res.ok) return { ...getCursor(), ok: false, error: res.error ?? `HTTP ${res.status}` };
+  // Record what it now reads, so the overlay's next cursor poll carries the new
+  // value rather than the one it had before the press.
   const settings = Array.isArray(row.settings) ? row.settings : [];
-  return { ...getCursor(), ok: true, text: settings[res.applied ?? 0]?.text ?? undefined };
+  text = settings[res.applied ?? 0]?.text ?? null;
+  updatedAt = Date.now();
+  return { ...getCursor(), ok: true };
 }

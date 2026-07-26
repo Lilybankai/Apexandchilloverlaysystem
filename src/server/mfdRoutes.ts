@@ -9,6 +9,7 @@
  * overlay posts an *intent* here and the server performs it.
  *
  *   GET  /api/mfd/state    fresh MFD snapshot (pit menu + aid values)
+ *   GET  /api/mfd/state?section=pit   just the pit menu — the fast confirm read
  *   POST /api/mfd/pit      { pmcValue?, name?, setting?, delta? }   → LMU REST
  *   POST /api/mfd/aid      { key, value?, delta? }                  → LMU REST (setup)
  *   GET  /api/mfd/keymap   the aid→keyboard-key map + injector status
@@ -23,7 +24,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { MfdController } from '../telemetry/mfdControl';
+import { projectPitMenu, type MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
 import { findAid, readLmuKeybinds } from './lmuKeybinds';
 import { bump as bumpShadow, getShadowAids, isTracked, resync } from './aidShadow';
@@ -57,7 +58,21 @@ export function handleMfdCommand(
 
   // Fresh read-through, so the widget can confirm a change without waiting for
   // the next telemetry frame.
+  //
+  // `?section=pit` reads ONLY the pit menu. That is the one the widget asks for
+  // after a change, and the distinction is worth a query param: the full read
+  // also pulls `getPlayerGarageData`, a 100+ key payload for values that cannot
+  // move mid-session, and waiting on it doubled the time to confirm a pit change
+  // the driver is sitting there watching for.
   if (req.method === 'GET' && action === 'state') {
+    const pitOnly = /[?&]section=pit(&|$)/.test(req.url ?? '');
+    if (pitOnly) {
+      controller
+        .getPitRows()
+        .then((rows) => sendJson(res, 200, { ok: true, pit: projectPitMenu(rows) }))
+        .catch((err: Error) => sendJson(res, 502, { ok: false, error: err.message }));
+      return true;
+    }
     controller
       .getState()
       .then((state) => sendJson(res, 200, { ok: true, mfd: state }))

@@ -147,6 +147,20 @@ console.log('\n4) Live operations against a stub sim');
   }
 
   {
+    // The overlay shows a change in the same beat as the press by reading the
+    // cursor's own `text`, so a plain GET of the cursor must carry the value the
+    // last operation left the row at — not the one it had before.
+    const menu = FULL.map((r) => ({ ...r, settings: [...r.settings] }));
+    const c = stub(menu);
+    selectRow({ name: 'FR TIRE:' }, menu);
+    check('the cursor carries the row\'s current text on landing', getCursor().text === 'No Change',
+      getCursor().text);
+    await stepSelected(1, c);
+    check('...and the NEW text after a step, without another read',
+      getCursor().text === 'New Medium', getCursor().text);
+  }
+
+  {
     const c = stub(null); // out of a session
     const moved = await moveCursorLive(1, c);
     check('moving with no menu fails cleanly', moved.ok === false && !!moved.error, moved.error);

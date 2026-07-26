@@ -255,7 +255,59 @@
   /** The rows as last rendered, so a poll can re-highlight without a frame. */
   var lastPitRows = [];
   /** Poll cadence, ms. The route answers from memory, so this is nearly free. */
-  var CURSOR_POLL_MS = 200;
+  var CURSOR_POLL_MS = 120;
+
+  /**
+   * Re-read the pit menu straight from the sim and render it, instead of waiting
+   * for the next telemetry frame to carry the change.
+   *
+   * This is what makes a change feel immediate: frames are broadcast on a poll
+   * cadence, so a value the driver just altered could sit stale for a beat — long
+   * enough to wonder whether the command landed. `?section=pit` because the aids
+   * cannot move mid-session and the payload behind them is large; asking for the
+   * whole state here doubled the time to confirm a pit change.
+   *
+   * Coalesced: several changes in quick succession collapse into one read rather
+   * than queueing a request per keypress.
+   */
+  var refreshPending = false;
+
+  function refreshNow() {
+    if (refreshPending) return;
+    refreshPending = true;
+    fetch("/api/mfd/state?section=pit", { cache: "no-store" })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (res) {
+        refreshPending = false;
+        if (res && res.ok !== false && Array.isArray(res.pit) && res.pit.length) {
+          renderPit(res.pit);
+        }
+      })
+      .catch(function () {
+        refreshPending = false;
+      });
+  }
+
+  /**
+   * Show a value a command has ALREADY told us, without waiting to be told again.
+   *
+   * The cursor endpoints return the selected row's new text, so the change can be
+   * on screen in the same beat as the button press — the read-through above then
+   * confirms it against the sim a moment later. Believing our own command for a
+   * few hundred milliseconds is safe because a failed one reports `ok:false` and
+   * never gets here.
+   */
+  function showRowText(name, text) {
+    if (!name || typeof text !== "string" || !pit.rows) return;
+    for (var i = 0; i < lastPitRows.length; i++) {
+      if (lastPitRows[i].name !== name) continue;
+      var refs = pit.rows[pitRowId(lastPitRows[i])];
+      if (refs) critText(refs.value, text);
+      return;
+    }
+  }
 
   function pitRowId(r) {
     return "p" + r.pmcValue + ":" + r.name;
@@ -269,8 +321,17 @@
       .then(function (c) {
         if (!c || c.ok === false) return;
         var moved = c.name !== pitCursor.name || c.updatedAt !== pitCursor.updatedAt;
+        var first = pitCursor.updatedAt === 0;
         pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
-        if (moved) highlightCursor(lastPitRows, true);
+        if (!moved) return;
+        highlightCursor(lastPitRows, true);
+        // The cursor moving means a bound button was pressed — and a `+` or `−`
+        // moves it too (it re-anchors on the row it changed), so this is also how
+        // the widget learns a wheel button just altered a value. Skip the very
+        // first poll: that is only us catching up with existing state.
+        if (first) return;
+        showRowText(c.name, c.text);
+        refreshNow();
       })
       .catch(function () {
         /* server not up / older build — the widget just shows no selection */
@@ -352,8 +413,13 @@
           aimCursorAt(r);
           postJson("/api/mfd/pit", body).then(function (res) {
             refs.value.removeAttribute("data-busy");
-            if (!res || res.ok === false) flashError(refs, (res && res.error) || "pit change failed");
-            // The next telemetry frame carries the new value; no manual refresh.
+            if (!res || res.ok === false) {
+              flashError(refs, (res && res.error) || "pit change failed");
+              return;
+            }
+            // Read the sim back at once rather than waiting for the next frame —
+            // the value moving is how the driver knows the command landed.
+            refreshNow();
           });
         };
       },
@@ -426,6 +492,7 @@
               // The commonest failure is the sim not being frontmost, which the
               // server reports verbatim — worth showing, not swallowing.
               if (!res || res.ok === false) flashError(refs, (res && res.error) || "key not sent");
+              else refreshNow();
             },
           );
         };
@@ -637,8 +704,10 @@
   }
 
   window.ApexOverlay.registerWidget("mfd", {
-    // The MFD changes on driver input, not per frame; a gentle cadence is plenty.
-    throttleMs: 250,
+    // The MFD changes on driver input rather than per frame, but when it does the
+    // driver is waiting on it — so the render throttle stays well under the
+    // provider's pit-menu poll instead of adding a quarter-second on top of it.
+    throttleMs: 100,
     init: init,
     update: update,
   });
