@@ -12,10 +12,33 @@
  * on your LEFT. This can. When a car overlaps you longitudinally (`alongside`),
  * the matching edge bar lights — the "don't turn in" warning.
  *
+ * ## The scale is ISOTROPIC, and the cars are drawn at their real size
+ * One metre is the same number of pixels across the strip as it is up it, and
+ * each car is drawn at its true footprint in metres — a 5.1 m × 2.0 m Hypercar,
+ * a 4.76 m × 2.05 m GT3. That is the whole reason the geometry is arranged this
+ * way: it makes **sprites touching mean cars touching**, on both axes and at any
+ * angle between them.
+ *
+ * The earlier build had neither property. The two axes ran at different metres
+ * per pixel (±12 m lateral against ±70 m longitudinal, so ~5.9 px/m sideways
+ * against ~1.6 px/m fore-aft) and the icons were a fixed 36 px regardless. A
+ * 36 px icon is 20 m of car at the longitudinal scale, so blips merged a full
+ * car length before the cars did; the same icon is ~3.3 m wide at the lateral
+ * scale on a narrow strip and under 2 m on a wide one, so side-by-side contact
+ * showed as an overlap or a gap depending only on how big the operator had
+ * dragged the widget. Deriving both from one metres-per-pixel and sizing the
+ * artwork in metres removes all of that.
+ *
+ * The cost is range: holding the lateral half-width at roughly a track width
+ * (~13 m) fixes the scale at ~6 px/m, and the strip's height then affords ±18 m
+ * fore-aft rather than ±70. That is a spotter's range, and it is more than the
+ * 12 m reveal radius the HUD appears at — a car is on screen before it is close
+ * enough to matter. Use `?range=` for more, knowing the cars shrink to match.
+ *
  * URL params (all optional):
- *   ?range=<m>     Longitudinal display range each way, metres (default 70,
- *                  clamped 20..150). Lateral zoom is fixed so a car a metre off
- *                  your door is clearly offset.
+ *   ?range=<m>     Longitudinal display range each way, metres (default 18,
+ *                  clamped 8..150). Sets the scale for BOTH axes; the lateral
+ *                  half-width follows from the strip's width (~13 m at default).
  *   ?opacity=0..1  HUD opacity (also a hover slider), so it can sit over the
  *                  track as a see-through practice aid.
  *
@@ -48,16 +71,24 @@
 
   /* -------------------------------- config -------------------------------- */
 
-  /** Longitudinal display range each way, metres. Overridable with ?range=. */
-  var rangeM = 70;
-  var RANGE_MIN = 20, RANGE_MAX = 150;
   /**
-   * Lateral half-width shown, metres. Fixed and much tighter than the
-   * longitudinal range: real side-by-side gaps are a couple of metres, so the
-   * lateral axis is zoomed in to make them legible. A track is a handful of car
-   * widths across, so ±12 m covers "on the same bit of tarmac" with margin.
+   * Longitudinal display range each way, metres. Overridable with ?range=.
+   *
+   * This is the ONE scale knob: it sets metres-per-pixel for both axes (see the
+   * module note), so the lateral half-width is not configurable independently —
+   * it falls out of the strip's width and lands at ~13 m by default, which is
+   * about a track width. Making it a second knob would be making the two axes
+   * disagree again, which is the bug this shape exists to prevent.
    */
-  var LATERAL_RANGE_M = 12;
+  var rangeM = 18;
+  var RANGE_MIN = 8, RANGE_MAX = 150;
+  /** Border inset, CSS px, so a car at the very edge is not half off-canvas. */
+  var PAD = 10;
+  /**
+   * Pixels per metre — the same on both axes. Recomputed in {@link sizeCanvas},
+   * since it depends on the strip's height, and read by everything that draws.
+   */
+  var pxPerM = 6;
   /**
    * A car within this longitudinal gap (metres) is treated as ALONGSIDE for the
    * edge-bar warning even if the provider's own flag hasn't tripped — kept in
@@ -99,6 +130,11 @@
     var bh = Math.round(h * d);
     if (bw === canvas.width && bh === canvas.height && w === cssW) return;
     cssW = w; cssH = h; dpr = d;
+    // One scale for both axes, pinned to the longitudinal range. Everything
+    // else — blip positions, car footprints, the lateral extent — is derived
+    // from this, so resizing the widget zooms the whole picture rather than
+    // changing what "touching" means.
+    pxPerM = (cssH / 2 - PAD) / rangeM;
     canvas.style.height = cssH + "px";
     // Add the border chrome back so the content box is exactly cssH tall and the
     // bitmap is never squashed to fit (same fix as motion.js).
@@ -176,6 +212,7 @@
 
     var params = new URLSearchParams(window.location.search);
     var r = parseFloat(params.get("range"));
+    // Before sizeCanvas() below, which bakes the range into pxPerM.
     if (isFinite(r)) rangeM = Math.min(RANGE_MAX, Math.max(RANGE_MIN, r));
     var rev = parseFloat(params.get("reveal"));
     if (isFinite(rev) && rev > 0) REVEAL_RADIUS_M = Math.min(150, rev);
@@ -199,12 +236,22 @@
 
   /* -------------------------------- drawing ------------------------------- */
 
-  /** Map a blip's (lateral, longitudinal) metres to canvas pixels. */
-  function toXY(lat, lon, pad) {
-    var cx = cssW / 2, cy = cssH / 2;
-    var x = cx + (lat / LATERAL_RANGE_M) * (cssW / 2 - pad);
-    var y = cy - (lon / rangeM) * (cssH / 2 - pad);
-    return [x, y];
+  /**
+   * Map a blip's (lateral, longitudinal) metres to canvas pixels, at the single
+   * shared scale. The player sits at the centre; +lat is to their right and +lon
+   * is ahead (canvas y grows downward, hence the subtraction).
+   */
+  function toXY(lat, lon) {
+    return [cssW / 2 + lat * pxPerM, cssH / 2 - lon * pxPerM];
+  }
+
+  /**
+   * The lateral half-width the strip currently shows, metres. Derived rather
+   * than configured — see {@link rangeM}. Used to decide when a car is far
+   * enough to the side to be clamped to the edge rather than drawn off it.
+   */
+  function lateralRangeM() {
+    return (cssW / 2 - PAD) / pxPerM;
   }
 
   /**
@@ -228,16 +275,18 @@
       gctx.restore();
       return;
     }
-    var s = ICON * 0.6;
+    // Vector fallback, at the same true footprint as the artwork it stands in for.
+    var box = footprint(fam);
     gctx.save();
+    gctx.translate(cx, cy);
     gctx.fillStyle = "#e9eefb";
     gctx.strokeStyle = "rgba(0,0,0,0.75)";
     gctx.lineWidth = 1.6;
     gctx.beginPath();
-    gctx.moveTo(cx, cy - s); // nose
-    gctx.lineTo(cx - s * 0.78, cy + s * 0.72); // rear left
-    gctx.lineTo(cx, cy + s * 0.32); // tail notch
-    gctx.lineTo(cx + s * 0.78, cy + s * 0.72); // rear right
+    gctx.moveTo(0, -box.hl); // nose
+    gctx.lineTo(-box.hw, box.hl); // rear left
+    gctx.lineTo(0, box.hl * 0.45); // tail notch
+    gctx.lineTo(box.hw, box.hl); // rear right
     gctx.closePath();
     gctx.fill();
     gctx.stroke();
@@ -272,21 +321,74 @@
   function drawWarnings(blips) {
     var left = 0, right = 0;
     var leftY = cssH / 2, rightY = cssH / 2;
+    var latRange = lateralRangeM();
     for (var i = 0; i < blips.length; i++) {
       var b = blips[i];
       var alongside = b.alongside || Math.abs(b.longitudinalM) <= ALONGSIDE_M;
       if (!alongside) continue;
-      if (Math.abs(b.lateralM) > LATERAL_RANGE_M) continue;
+      if (Math.abs(b.lateralM) > latRange) continue;
       var intensity = 1 - Math.abs(b.longitudinalM) / ALONGSIDE_M; // 1 = dead level
       intensity = Math.max(0.25, Math.min(1, intensity));
       // Anchor the bloom at the car, so the warning points at where it actually is.
-      var y = toXY(0, b.longitudinalM, 10)[1];
+      var y = toXY(0, b.longitudinalM)[1];
       if (b.lateralM < 0) {
         if (intensity > left) { left = intensity; leftY = y; }
       } else if (intensity > right) { right = intensity; rightY = y; }
     }
+    if (left <= 0 && right <= 0) return;
     if (left > 0) drawEdgeGlow(0, leftY, left);
     if (right > 0) drawEdgeGlow(cssW, rightY, right);
+    // Both blooms are anchored ON a canvas edge, so the canvas rect cuts each
+    // one at its brightest point — which is what put a hard vertical line down
+    // the side of the widget and made the "soft" warning read as a bar after all.
+    // Feathering afterwards is what actually removes it; see featherEdges.
+    featherEdges();
+  }
+
+  /**
+   * How far in from each edge the glow is feathered back to nothing, as a
+   * fraction of the strip's width. Wide enough to hide the cut, narrow enough
+   * that the bloom still hugs the side rather than floating in from it.
+   */
+  var FEATHER_FRAC = 0.09;
+  var FEATHER_MIN_PX = 9;
+
+  /**
+   * Fade the glow out at all four canvas edges, so nothing it draws ends on a
+   * hard line.
+   *
+   * A radial bloom centred on the edge is at its PEAK where the canvas stops.
+   * The falloff is smooth in every direction the eye can follow it and then
+   * simply ceases at the boundary, which is exactly the sharp edge the soft
+   * warning was meant to get rid of. Erasing a short ramp back off each edge
+   * makes the alpha profile rise from zero at the boundary to the bloom's peak
+   * a few pixels in, so the warning has no hard edge anywhere.
+   *
+   * `destination-out` erases whatever has been drawn so far, which is safe only
+   * because the warnings are the FIRST thing drawn each frame — the ego car and
+   * the blips come afterwards and must not be eaten by this. Both edges' blooms
+   * are drawn before this runs, so a car either side is feathered once, not
+   * twice.
+   */
+  function featherEdges() {
+    var f = Math.max(FEATHER_MIN_PX, cssW * FEATHER_FRAC);
+    gctx.save();
+    gctx.globalCompositeOperation = "destination-out";
+    var ramp = function (x0, y0, x1, y1) {
+      var g = gctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, "rgba(0,0,0,1)"); // at the edge: erase completely
+      g.addColorStop(1, "rgba(0,0,0,0)"); // f px in: leave the bloom alone
+      return g;
+    };
+    gctx.fillStyle = ramp(0, 0, f, 0);
+    gctx.fillRect(0, 0, f, cssH);
+    gctx.fillStyle = ramp(cssW, 0, cssW - f, 0);
+    gctx.fillRect(cssW - f, 0, f, cssH);
+    gctx.fillStyle = ramp(0, 0, 0, f);
+    gctx.fillRect(0, 0, cssW, f);
+    gctx.fillStyle = ramp(0, cssH, 0, cssH - f);
+    gctx.fillRect(0, cssH - f, cssW, f);
+    gctx.restore();
   }
 
   /** One edge bloom, centred on (edgeX, y) and fading out in every direction. */
@@ -310,11 +412,31 @@
   }
 
   /**
-   * Half-length of a car icon, CSS px. Deliberately large — the blips are the
-   * whole point of the HUD (the scope backdrop is gone), so the per-class
-   * silhouette needs to read at a glance.
+   * Real car dimensions per class family, METRES — `length` fore-aft, `width`
+   * across. These are the published dimensions of the cars the classes actually
+   * run (a 5.1 m LMH, a 4.75 m Oreca 07, a 4.76 m GT3), and they are what every
+   * icon on the strip is drawn at.
+   *
+   * Sizing in metres rather than pixels is what makes the radar tell the truth
+   * about contact: two icons meet exactly when the two cars would, whatever the
+   * range is set to and however large the operator has dragged the widget. The
+   * previous fixed 36 px icon could not do that on either axis — see the module
+   * note. It also gets the class sizing right for free, so a Hypercar reads as
+   * bigger than an LMP3 because it IS, not because of a hand-tuned multiplier.
    */
-  var ICON = 18;
+  var CAR_SIZE_M = {
+    hyper: { length: 5.1, width: 2.0 },
+    lmp2: { length: 4.75, width: 1.9 },
+    lmp3: { length: 4.65, width: 1.9 },
+    gt: { length: 4.76, width: 2.05 },
+    generic: { length: 4.8, width: 2.0 },
+  };
+
+  /** A family's footprint in CSS px, as half-extents: `hl` fore-aft, `hw` across. */
+  function footprint(fam) {
+    var s = CAR_SIZE_M[fam] || CAR_SIZE_M.generic;
+    return { hl: (s.length * pxPerM) / 2, hw: (s.width * pxPerM) / 2 };
+  }
 
   /* ------------------------------ car sprites -----------------------------
    * Top-down car artwork, one silhouette per class family, in img/cars/.
@@ -387,16 +509,20 @@
   }
 
   /**
-   * Relative on-screen size per family, so a Hypercar still reads as bigger than
-   * an LMP3 the way it does on track. Multiplies the shared ICON length.
+   * Draw a sprite (or tinted canvas) centred on the current origin, nose up,
+   * filling exactly the car's real footprint.
+   *
+   * The artwork's own aspect is deliberately NOT preserved. The PNGs are drawn
+   * about 0.58 wide for 1 long, where a real car is nearer 0.40 — a stylistic
+   * choice in the artwork, and harmless until the icon started standing in for
+   * the car's actual extent. Fitting the art to the footprint narrows it by
+   * roughly a third, which is what a car this length really looks like from
+   * above, and it keeps the one property the widget needs: the edge of the icon
+   * is the edge of the car.
    */
-  var FAMILY_SCALE = { hyper: 1, lmp2: 0.96, lmp3: 0.86, gt: 0.92, generic: 0.9 };
-
-  /** Draw a sprite (or tinted canvas) centred on the current origin, nose up. */
   function drawSpriteImage(src, fam) {
-    var h = ICON * 2 * (FAMILY_SCALE[fam] || 1);
-    var w = h * (src.width / src.height);
-    gctx.drawImage(src, -w / 2, -h / 2, w, h);
+    var box = footprint(fam);
+    gctx.drawImage(src, -box.hw, -box.hl, box.hw * 2, box.hl * 2);
   }
 
   /** Shape family for a class label — GT box vs the prototype silhouettes. */
@@ -419,8 +545,8 @@
   }
 
   /** A GT car from above: boxy body with a distinct cabin. Points up (−y). */
-  function drawGT(col) {
-    var hl = ICON, hw = ICON * 0.62;
+  function drawGT(col, box) {
+    var hl = box.hl, hw = box.hw;
     gctx.fillStyle = col;
     gctx.beginPath();
     roundRect(-hw, -hl, hw * 2, hl * 2, hw * 0.55);
@@ -434,10 +560,8 @@
   }
 
   /** A Le Mans prototype from above: teardrop body + cockpit canopy. Points up. */
-  function drawProto(col, opts) {
-    var sc = opts.scale || 1;
-    var hl = ICON * sc;
-    var hw = ICON * 0.56 * sc * (opts.wide || 1);
+  function drawProto(col, box, opts) {
+    var hl = box.hl, hw = box.hw;
     gctx.fillStyle = col;
     gctx.beginPath();
     if (opts.sharp) {
@@ -473,9 +597,13 @@
     }
   }
 
-  /** A Pac-Man-style ghost for a backmarker (a slower-class car being lapped). */
-  function drawGhost(col) {
-    var w = ICON * 0.72, h = ICON * 1.7;
+  /**
+   * A Pac-Man-style ghost for a backmarker (a slower-class car being lapped).
+   * Sized to the car's footprint like every other icon, so a ghost's edges mean
+   * the same thing a car's do — a lapped car is still a car you can hit.
+   */
+  function drawGhost(col, box) {
+    var w = box.hw, h = box.hl * 2;
     var top = -h / 2, bottom = h / 2, r = w;
     gctx.fillStyle = col;
     gctx.beginPath();
@@ -513,28 +641,33 @@
     // capped at 150 m); lateral beyond the strip clamps to the edge with a hint
     // so a car well off to the side still registers rather than vanishing.
     if (Math.abs(b.longitudinalM) > rangeM) return;
-    var pad = 10;
-    var clampedLat = Math.max(-LATERAL_RANGE_M, Math.min(LATERAL_RANGE_M, b.lateralM));
-    var xy = toXY(clampedLat, b.longitudinalM, pad);
+    var latRange = lateralRangeM();
+    var clampedLat = Math.max(-latRange, Math.min(latRange, b.lateralM));
+    var xy = toXY(clampedLat, b.longitudinalM);
     var col = classColor(b.carClass);
+    var fam = carFamily(b.carClass);
+    var box = footprint(fam);
 
     gctx.save();
     gctx.translate(xy[0], xy[1]);
 
     // Faster-class cars get a halo RING so a Hypercar bearing down reads
     // instantly — a ring rather than a filled disc, so the silhouette shows.
+    // Sized just clear of the car's own footprint so it never masquerades as
+    // the car's extent, which is now the one thing an icon's edge means.
     if (b.isFasterClass) {
+      var halo = box.hl + 0.9 * pxPerM;
       gctx.save();
       gctx.globalAlpha = 0.22;
       gctx.fillStyle = col;
       gctx.beginPath();
-      gctx.arc(0, 0, ICON * 1.5, 0, Math.PI * 2);
+      gctx.arc(0, 0, halo, 0, Math.PI * 2);
       gctx.fill();
       gctx.globalAlpha = 0.95;
       gctx.strokeStyle = col;
       gctx.lineWidth = 1.6;
       gctx.beginPath();
-      gctx.arc(0, 0, ICON * 1.5, 0, Math.PI * 2);
+      gctx.arc(0, 0, halo, 0, Math.PI * 2);
       gctx.stroke();
       gctx.restore();
     }
@@ -547,12 +680,10 @@
     // never ghosted (its ring warns you), even if it's temporarily a lap behind.
     var backmarker = !b.isFasterClass && (b.slowerClass || (b.lapsDown || 0) >= 1);
     if (backmarker) {
-      drawGhost(col);
+      drawGhost(col, box);
       gctx.restore();
       return;
     }
-
-    var fam = carFamily(b.carClass);
 
     // Preferred path: the artwork, recoloured to this car's class. The vector
     // silhouettes below remain for the frames before the PNGs decode, for an
@@ -560,29 +691,23 @@
     var tinted = spritesReady ? tintedSprite(fam === "generic" ? "gt" : fam, col) : null;
     if (tinted) {
       drawSpriteImage(tinted, fam);
-      drawCarNumber(b);
+      drawCarNumber(b, box);
       gctx.restore();
       return;
     }
 
-    if (fam === "gt") drawGT(col);
-    else if (fam === "hyper") drawProto(col, { sharp: true, fin: true, wide: 1.05 });
-    else if (fam === "lmp2") drawProto(col, { sharp: false, wide: 0.92 });
-    else if (fam === "lmp3") drawProto(col, { sharp: false, wide: 0.85, scale: 0.82 });
-    else {
-      gctx.fillStyle = col;
-      gctx.beginPath();
-      gctx.arc(0, 0, ICON * 0.7, 0, Math.PI * 2);
-      gctx.fill();
-      gctx.stroke();
-    }
+    if (fam === "gt") drawGT(col, box);
+    else if (fam === "hyper") drawProto(col, box, { sharp: true, fin: true });
+    else if (fam === "lmp2") drawProto(col, box, { sharp: false });
+    else if (fam === "lmp3") drawProto(col, box, { sharp: false });
+    else drawGT(col, box);
 
-    drawCarNumber(b);
+    drawCarNumber(b, box);
     gctx.restore();
   }
 
   /** Car number below the icon — kept off the silhouette so the shape reads. */
-  function drawCarNumber(b) {
+  function drawCarNumber(b, box) {
     if (!b.carNumber) return;
     gctx.fillStyle = "#e6ebf5";
     gctx.strokeStyle = "rgba(0,0,0,0.85)";
@@ -590,7 +715,7 @@
     gctx.font = "bold 8px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
     gctx.textAlign = "center";
     gctx.textBaseline = "middle";
-    var ny = ICON + 7;
+    var ny = box.hl + 7;
     gctx.strokeText(String(b.carNumber).slice(0, 3), 0, ny);
     gctx.fillText(String(b.carNumber).slice(0, 3), 0, ny);
   }

@@ -18,6 +18,18 @@
  *                                 is the only channel here that is not about
  *                                 the pit decision.
  *
+ * ## The stop itself
+ * Once the car is stationary in its box, the repair figure has done its job —
+ * the decision is made and the driver is sitting there watching a crew. So the
+ * whole hero slot switches to a countdown from the moment work begins to the
+ * moment the car is released (`frame.player.pit`, see src/telemetry/types.ts).
+ *
+ * It counts down the length the stop was BOOKED for and then keeps going,
+ * because the booked figure is a floor and not a prediction: LMU draws up to 6 s
+ * of delay when the stop happens and publishes only the cap. Past zero the
+ * widget says so — the alternative, freezing on 0 and hoping, is exactly the
+ * kind of confident wrong number the repair figures are careful not to be.
+ *
  * ## Every number here is read, not derived
  * The headline is `pitStopLength.timeInSeconds` — the sim's OWN total stop
  * length for whatever the pit menu currently has selected. It was verified equal
@@ -80,6 +92,19 @@
   var elRepairVal = null;
   var elTyreVal = null;
   var elTyreNote = null;
+  /** The stop countdown: the block, and the pieces of it that carry numbers. */
+  var elStop = null;
+  var elStopNum = null;
+  var elStopUnit = null;
+  var elStopTag = null;
+  var elStopFill = null;
+  var elStopSub = null;
+  /**
+   * Everything the countdown replaces while the crew is working: the repair
+   * estimate and its breakdown. Kept as a list so the swap is one loop and no
+   * element can be left behind showing an estimate for a stop already happening.
+   */
+  var planningEls = [];
   var rowsDmg = []; // { fill, val } for aero + 4 corners
   var rowsBrake = [];
   var cache = {};
@@ -248,6 +273,11 @@
     mount.innerHTML = "";
     rowsDmg = [];
     rowsBrake = [];
+    planningEls = [];
+    planningVisible = true;
+    wasWorking = false;
+    workEndedAt = 0;
+    lastElapsedSec = -1;
     cache = {};
 
     var params = new URLSearchParams(window.location.search);
@@ -358,6 +388,50 @@
 
       wrap.appendChild(elRepair);
       wrap.appendChild(elTyre);
+
+      // The stop itself. Same slot, same size as the repair estimate it
+      // replaces — the driver's eye does not have to move when the car stops,
+      // the number under it just changes meaning from "what will this cost me"
+      // to "how much longer".
+      elStop = document.createElement("div");
+      elStop.className = "damage__stop";
+      elStop.hidden = true;
+
+      var stopHero = document.createElement("div");
+      stopHero.className = "damage__hero";
+      elStopNum = document.createElement("span");
+      elStopNum.className = "damage__hero-num is-crit";
+      elStopNum.textContent = "—";
+      elStopUnit = document.createElement("span");
+      elStopUnit.className = "damage__hero-unit";
+      elStopUnit.textContent = "sec";
+      elStopTag = document.createElement("span");
+      elStopTag.className = "damage__hero-tag";
+      elStopTag.textContent = "TO RELEASE";
+      stopHero.appendChild(elStopNum);
+      stopHero.appendChild(elStopUnit);
+      stopHero.appendChild(elStopTag);
+      elStop.appendChild(stopHero);
+
+      // A bar as well as the number: the number is the answer, the bar is how
+      // far through the stop is, which is the thing you read without looking.
+      var stopTrack = document.createElement("div");
+      stopTrack.className = "damage__stop-track";
+      elStopFill = document.createElement("span");
+      elStopFill.className = "damage__stop-fill";
+      stopTrack.appendChild(elStopFill);
+      elStop.appendChild(stopTrack);
+
+      elStopSub = document.createElement("div");
+      elStopSub.className = "damage__stop-sub";
+      elStopSub.textContent = "";
+      elStop.appendChild(elStopSub);
+
+      wrap.appendChild(elStop);
+
+      // The planning half of the widget, in one list — hidden the moment the
+      // car comes to rest and the countdown takes the slot over.
+      planningEls = [hero, elRange, elClean, elRepair, elTyre];
     }
 
     if (modeDmg) {
@@ -416,6 +490,144 @@
     setAttr(row.val, key + ".vs", "data-state", state);
   }
 
+  /* ------------------------------ the stop --------------------------------- */
+
+  /**
+   * How long the widget keeps saying RELEASED after the crew let the car go, ms.
+   *
+   * The release is the moment the countdown exists to reach, and it goes past in
+   * an instant — the phase flips to `exiting` and the car is gone. Holding the
+   * result for a few seconds means the driver, who was watching the mirrors and
+   * not the overlay, can still see what the stop actually took.
+   */
+  var RELEASED_HOLD_MS = 5000;
+
+  var wasWorking = false;
+  var workEndedAt = 0;
+  /** Elapsed seconds at the last frame of work — what RELEASED reports. */
+  var lastElapsedSec = -1;
+
+  /**
+   * Show/hide the planning half of the widget in one go.
+   *
+   * Only called on the transitions into and out of a stop, never every frame:
+   * the rest of the time each of those elements has its own visibility rule
+   * (clean vs damaged, tyres selected or not), and blanket-showing them first
+   * would override those — a clean car would flash its hidden repair row back on
+   * before the normal path hid it again.
+   */
+  var planningVisible = true;
+
+  function showPlanning(on) {
+    if (planningVisible === on) return;
+    planningVisible = on;
+    for (var i = 0; i < planningEls.length; i++) {
+      if (planningEls[i]) planningEls[i].hidden = !on;
+    }
+  }
+
+  /**
+   * Move the countdown between its stages, blooming on the way in.
+   *
+   * The bloom fires on the STAGE, never on the seconds: the number moves once a
+   * second by design, and glowing with it would be a metronome the eye cannot
+   * ignore — the same reason the repair figure only blooms on a whole second of
+   * pit time appearing (see setHeroSeconds). Crossing into the overrun, and the
+   * release itself, are the two things worth catching from the corner of an eye.
+   */
+  function setStopState(state) {
+    if (!elStop || cache.stopstate === state) return;
+    var first = cache.stopstate === undefined;
+    cache.stopstate = state;
+    elStop.setAttribute("data-state", state);
+    if (!first && octx && octx.critPulse && elStopNum) octx.critPulse(elStopNum);
+  }
+
+  /**
+   * Renders the stop countdown when there is a stop, and says whether it has
+   * taken the hero slot over.
+   *
+   * @param pit `frame.player.pit`, or nothing on a provider that has no pit
+   *            stage. Absent is treated exactly like "not pitting".
+   * @returns The header text while the countdown owns the widget, or `null` when
+   *          the normal repair-estimate presentation should run.
+   */
+  function renderStop(pit) {
+    if (!elStop) return null;
+
+    var working = !!(pit && pit.working);
+    if (working && typeof pit.elapsedSec === "number" && pit.elapsedSec >= 0) {
+      lastElapsedSec = pit.elapsedSec;
+    }
+    if (wasWorking && !working) workEndedAt = Date.now();
+    wasWorking = working;
+
+    var released = !working && !!pit && workEndedAt > 0 && Date.now() - workEndedAt < RELEASED_HOLD_MS;
+
+    if (!working && !released) {
+      elStop.hidden = true;
+      showPlanning(true);
+      return null;
+    }
+    elStop.hidden = false;
+    showPlanning(false);
+
+    if (released) {
+      // The stop is over. Report what it took, not what it was booked for.
+      setStopState("done");
+      setText(elStopNum, "stopnum", lastElapsedSec >= 0 ? String(Math.round(lastElapsedSec)) : "—");
+      setText(elStopTag, "stoptag", "RELEASED");
+      setWidth(elStopFill, "stopw", 100);
+      elStopFill.parentElement.hidden = false;
+      setText(elStopSub, "stopsub", "stop complete");
+      return "RELEASED";
+    }
+
+    var elapsed = typeof pit.elapsedSec === "number" && pit.elapsedSec >= 0 ? pit.elapsedSec : 0;
+    var planned = typeof pit.plannedSec === "number" ? pit.plannedSec : -1;
+    var slack = typeof pit.slackSec === "number" ? pit.slackSec : -1;
+
+    // No booked length — the repair screen was not answering when the car
+    // stopped. There is still an honest clock to show, so show that and say
+    // plainly that there is nothing to count down to rather than inventing one.
+    if (planned <= 0) {
+      setStopState("working");
+      setText(elStopNum, "stopnum", String(Math.floor(elapsed)));
+      setText(elStopTag, "stoptag", "IN THE BOX");
+      elStopFill.parentElement.hidden = true;
+      setText(elStopSub, "stopsub", "no booked length published");
+      return "BOX " + Math.floor(elapsed) + "s";
+    }
+
+    elStopFill.parentElement.hidden = false;
+    setWidth(elStopFill, "stopw", Math.max(0, Math.min(100, Math.round((elapsed / planned) * 100))));
+
+    var remaining = planned - elapsed;
+    if (remaining > 0) {
+      setStopState("working");
+      // Ceil, so the last whole second reads "1" and zero arrives when the
+      // booked time genuinely does.
+      setText(elStopNum, "stopnum", String(Math.ceil(remaining)));
+      setText(elStopTag, "stoptag", "TO RELEASE");
+      setText(elStopSub, "stopsub", "of " + planned.toFixed(1) + "s booked");
+      return "BOX " + Math.ceil(remaining) + "s";
+    }
+
+    // Past the booked length, which is normal and not an error: LMU draws its
+    // delay when the stop happens and publishes only the cap. Name the overrun
+    // and, where the sim published a cap, how much of it is left to run.
+    var over = -remaining;
+    setStopState("over");
+    setText(elStopNum, "stopnum", "0");
+    setText(elStopTag, "stoptag", "ANY MOMENT");
+    setText(
+      elStopSub,
+      "stopsub",
+      "+" + over.toFixed(1) + "s over booked" + (slack > 0 ? " · up to +" + slack.toFixed(0) + "s" : ""),
+    );
+    return "BOX +" + over.toFixed(1) + "s";
+  }
+
   /** What the pit menu selection should read as, in the driver's words. */
   function selectionLabel(sel) {
     if (sel === "all") return "Repair All";
@@ -429,16 +641,26 @@
     var p = frame.player;
     var d = p && p.damage;
 
+    // The stop is resolved BEFORE the damage block is checked, deliberately: the
+    // repair screen can stop answering mid-stop, and a countdown that vanished
+    // into "NO DATA" halfway through the one moment it matters would be worse
+    // than not having one. Its clock and its target both come from the server
+    // and need nothing from `d`.
+    var stopMeta = modeRepair ? renderStop(p && p.pit) : null;
+
     if (!d) {
       // No repair screen: spectating, between sessions, or a provider without
       // the endpoint (rF2). Say so rather than rendering zeros, which would
       // read as a pristine car and could talk a driver out of pitting.
-      setText(headerMeta, "meta", "NO DATA");
+      setText(headerMeta, "meta", stopMeta || "NO DATA");
+      if (stopMeta) setAttr(headerMeta, "metastate", "data-state", "alarm");
       if (elHeroNum) setText(elHeroNum, "hero", "—");
-      if (elClean) elClean.hidden = true;
-      if (elTyre) elTyre.hidden = true;
-      if (elRepair) elRepair.hidden = true;
-      if (elRange) elRange.hidden = true;
+      if (!stopMeta) {
+        if (elClean) elClean.hidden = true;
+        if (elTyre) elTyre.hidden = true;
+        if (elRepair) elRepair.hidden = true;
+        if (elRange) elRange.hidden = true;
+      }
       if (elHeroTag) setText(elHeroTag, "herotag", "TO REPAIR");
       for (var n = 0; n < rowsDmg.length; n++) {
         paintDamageRow(rowsDmg[n], "d" + n, 0);
@@ -457,7 +679,7 @@
     var hasTime = heroSec !== -1;
     var tyreSec = d.tyreChangeSeconds;
 
-    if (modeRepair) {
+    if (modeRepair && !stopMeta) {
       // Clean and damaged are mutually exclusive presentations of the same slot.
       // A clean car with tyres selected still has a stop worth pricing, so the
       // figure shows whenever there is any work booked in, not only on damage.
@@ -509,7 +731,14 @@
             (d.tyreCornersSelected === 1 ? "" : "s"),
         );
       }
+    }
 
+    // The pit-menu row keeps updating through the stop, unlike the estimate
+    // above it: mid-stop it stops being a plan and becomes a description of what
+    // the crew is doing, which is worth more then than it was beforehand. It is
+    // also the one line that would sit there visibly stale if the countdown
+    // froze it.
+    if (modeRepair) {
       setCritText(elSel, "sel", selectionLabel(d.repairSelection));
       setAttr(
         elSel,
@@ -548,9 +777,12 @@
     }
 
     // Header carries the answer even when the widget is trimmed to one mode, so
-    // it quotes the same figure the hero does — the sim's total stop where it
-    // has one, the repair time where it does not.
-    if (!d.hasDamage && d.tyreCornersSelected <= 0) {
+    // it quotes the same figure the hero does — the countdown once the car is in
+    // its box, the sim's total stop where it has one, the repair time otherwise.
+    if (stopMeta) {
+      setText(headerMeta, "meta", stopMeta);
+      setAttr(headerMeta, "metastate", "data-state", stopMeta === "RELEASED" ? "ok" : "alarm");
+    } else if (!d.hasDamage && d.tyreCornersSelected <= 0) {
       setText(headerMeta, "meta", "CLEAN");
       setAttr(headerMeta, "metastate", "data-state", "ok");
     } else if (!hasTime) {

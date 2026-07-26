@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.17.0 — 2026-07-26
+
+### Added
+
+- **A live stop countdown on the damage widget**, from the moment work begins on
+  the car to the moment it is released. Once the car is at rest in its box the
+  repair estimate has done its job — the decision is made — so the same slot
+  switches to counting the stop down, with a bar for how far through it is.
+
+  It counts down the length the stop was **booked** for, snapshotted the instant
+  work starts and then held: the pit menu keeps changing as the crew works
+  through it, and re-reading it would move the target mid-countdown. Past zero it
+  keeps going and says so (`ANY MOMENT`, `+3.2s over booked · up to +6s`), which
+  is the honest reading — LMU draws `FixRandomDelay` (≤5 s) and `RandomTireDelay`
+  (≤1 s) when the stop happens and publishes only the caps, so freezing on `0`
+  would be the one confidently-wrong number this widget is otherwise careful
+  never to show. On release it holds the **actual** stop length for five seconds.
+
+- **`PitState` in the telemetry contract** (`src/telemetry/types.ts`), with
+  ISI's own `mPitState` stages normalized across providers and the crew's clock
+  attached. Decoded from LMU's `pitState` string, cross-checked against the car's
+  speed so the clock starts when the car is genuinely stationary rather than when
+  the sim first mentions the box. The clock runs on the server, so a browser
+  source reloading mid-stop rejoins the same countdown instead of restarting it.
+  The simulator provider runs a full stop on a loop — approach, work, overrun,
+  release — so the countdown is reachable without a race running.
+
+### Fixed
+
+- **Radar: the icons are drawn at the cars' real size, on one shared scale.**
+  Sprites touching now means cars touching, on both axes and at any angle.
+
+  The two axes previously ran at different metres per pixel (±12 m lateral
+  against ±70 m longitudinal, so ~5.9 px/m sideways against ~1.6 px/m fore-aft)
+  and the icons were a fixed 36 px regardless of either. A 36 px icon is 20 m of
+  car at the longitudinal scale, so blips merged a full car length before the
+  cars did; the same icon is ~3.3 m wide at the lateral scale on a narrow strip
+  and under 2 m on a wide one, so side-by-side contact showed as an overlap or a
+  gap depending only on how large the widget had been dragged. Both symptoms were
+  reported from a live session.
+
+  One metres-per-pixel now drives both axes, and each icon is its car's published
+  footprint (5.10 × 2.00 m Hypercar, 4.76 × 2.05 m GT3), so the class sizing is
+  right for free rather than by hand-tuned multiplier. Holding the lateral
+  half-width at about a track width fixes the scale at ~6 px/m, which is what
+  moves the default `?range=` from 70 m to **18 m** — a spotter's range, and
+  still more than the 12 m radius the HUD reveals at.
+
+- **Radar: the edge warning no longer ends on a hard line.** The bloom is
+  anchored on the canvas edge, which is where it is at its brightest — so the
+  canvas rect cut it at full strength and put a vertical bar down the side of the
+  widget, which is exactly what replacing the old solid bar with a soft glow was
+  meant to get rid of. All four edges are now feathered after the blooms are
+  drawn, so the alpha rises from nothing at the boundary to the bloom's peak a
+  few pixels in. Measured across the strip: 1/255 at the edge against a peak of
+  23/255 inboard, on both sides.
+
 ## 0.14.0 — 2026-07-25
 
 Turns the MFD widget from a readout into a controller, adds a binding layer so

@@ -23,6 +23,8 @@ import {
   type FuelState,
   type MotionState,
   type PedalInputs,
+  type PitPhase,
+  type PitState,
   type RadarBlip,
   type RelativeEntry,
   type StandingEntry,
@@ -158,11 +160,15 @@ function wrapHalf(d: number): number {
   return x;
 }
 
-/** Small symmetric jitter in [-amp, amp]. */
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+function round1(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
+/** Small symmetric jitter in [-amp, amp]. */
 function jitter(amp: number): number {
   return (Math.random() * 2 - 1) * amp;
 }
@@ -302,6 +308,9 @@ export class SimulatorProvider implements TelemetryProvider {
     const motion = this.motionFor(this.pedals);
     const chassis = this.buildChassis(motion);
     const damage = this.buildDamage();
+    // After the damage block, which is where the booked stop length comes from
+    // when a stop starts.
+    const pit = this.advancePit(dt, damage);
 
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
@@ -355,6 +364,7 @@ export class SimulatorProvider implements TelemetryProvider {
         // exercises the widget's "waiting for data" branch too.
         ...(chassis ? { chassis } : {}),
         ...(damage ? { damage } : {}),
+        pit,
       },
       standings,
       relative,
@@ -585,6 +595,101 @@ export class SimulatorProvider implements TelemetryProvider {
       frontRight: mk(this.tyreTemps.fr, this.tyreWear.fr),
       rearLeft: mk(this.tyreTemps.rl, this.tyreWear.rl),
       rearRight: mk(this.tyreTemps.rr, this.tyreWear.rr),
+    };
+  }
+
+  /* -------------------------------- pit stop ------------------------------- */
+
+  /**
+   * How long the demo spends out on track between stops, seconds. Long enough
+   * that the overlay is not permanently in the pits, short enough that anyone
+   * checking the countdown does not have to wait around for it.
+   */
+  private static readonly PIT_INTERVAL_SEC = 100;
+  /** Seconds spent trundling down the lane, each way. */
+  private static readonly PIT_LANE_SEC = 5;
+  /**
+   * Seconds the demo stop overruns its booked length by.
+   *
+   * Fixed rather than random: the whole point of the overrun is to exercise the
+   * widget's past-zero state, and a random one would make the demo behave
+   * differently on every run for no gain. 3.2 s is the residual actually
+   * measured on a real stop (published 184.5, finished 187.7) — see
+   * `telemetry/damage.ts`.
+   */
+  private static readonly PIT_OVERRUN_SEC = 3.2;
+
+  /** Seconds into the current lap of the pit cycle. */
+  private pitClockSec = 0;
+  /**
+   * The booked stop length and slack, captured when the crew starts work and
+   * held until the cycle comes round again — NOT cleared at the release.
+   *
+   * The stop's length is what puts the release and the end of the cycle on the
+   * clock, so dropping it the instant the car is let go would move both
+   * boundaries backwards and skip the exiting stage entirely on the next frame.
+   */
+  private pitWork: { plannedSec: number; slackSec: number } | null = null;
+
+  /**
+   * Runs the demo through a full stop on a loop — approaching, stationary with
+   * the crew working, then released — so the damage widget's countdown can be
+   * seen and tuned without a race running.
+   *
+   * The stop's length is the sim's own published total for whatever the demo
+   * damage block currently has booked, exactly as the live path takes it from
+   * the repair screen, so the countdown is exercised against real figures rather
+   * than a made-up duration.
+   */
+  private advancePit(dt: number, damage: DamageState | null): PitState {
+    this.pitClockSec += dt;
+    const lane = SimulatorProvider.PIT_LANE_SEC;
+    const enterAt = SimulatorProvider.PIT_INTERVAL_SEC;
+    const stopAt = enterAt + lane;
+
+    // The crew's work begins the moment the car reaches the box, so the booked
+    // length is captured there — before it is needed to place the release.
+    if (this.pitClockSec >= stopAt && !this.pitWork) {
+      this.pitWork = {
+        plannedSec: damage ? damage.stopLengthSeconds : UNKNOWN_VALUE,
+        slackSec: damage ? damage.randomDelayMaxSeconds : UNKNOWN_VALUE,
+      };
+    }
+    const booked =
+      this.pitWork && this.pitWork.plannedSec !== UNKNOWN_VALUE ? this.pitWork.plannedSec : 30;
+    const releaseAt = stopAt + booked + SimulatorProvider.PIT_OVERRUN_SEC;
+    const doneAt = releaseAt + lane;
+
+    if (this.pitClockSec >= doneAt) {
+      this.pitClockSec -= doneAt; // keep the overshoot, so the cycle does not drift
+      this.pitWork = null;
+    }
+    const t = this.pitClockSec;
+
+    let phase: PitPhase = 'none';
+    if (t >= releaseAt) phase = 'exiting';
+    else if (t >= stopAt) phase = 'stopped';
+    else if (t >= enterAt) phase = 'entering';
+
+    // The player's own standings row should agree with the phase, or the tower
+    // would show a car on track while the widget counts its stop down.
+    this.player().inPit = phase !== 'none';
+
+    if (phase !== 'stopped') {
+      return {
+        phase,
+        working: false,
+        elapsedSec: UNKNOWN_VALUE,
+        plannedSec: UNKNOWN_VALUE,
+        slackSec: UNKNOWN_VALUE,
+      };
+    }
+    return {
+      phase,
+      working: true,
+      elapsedSec: round1(t - stopAt),
+      plannedSec: this.pitWork ? this.pitWork.plannedSec : UNKNOWN_VALUE,
+      slackSec: this.pitWork ? this.pitWork.slackSec : UNKNOWN_VALUE,
     };
   }
 

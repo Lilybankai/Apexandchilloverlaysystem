@@ -57,6 +57,8 @@ import {
   type TyreState,
   type WeatherForecastSlot,
   type DamageState,
+  type PitPhase,
+  type PitState,
   type MfdState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
@@ -263,6 +265,15 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Last decoded damage block, and when it last decoded cleanly. */
   private damage: DamageState | null = null;
   private lastDamageOkAt = 0;
+  /**
+   * The player's live pit work, or `null` when the crew is not on the car.
+   *
+   * `plannedSec` / `slackSec` are snapshotted the instant the car comes to rest
+   * in the box and then held for the whole stop — see {@link PitState} for why
+   * re-reading the repair screen mid-stop would make the countdown's target move
+   * while it was counting down to it.
+   */
+  private pitWork: { startedAt: number; plannedSec: number; slackSec: number } | null = null;
   /** Last raw pit menu + garage `VM_*` data, for the MFD-control block. */
   private pitMenuRaw: RawPitRow[] | null = null;
   private garageDataRaw: Record<string, RawGarageVal> | null = null;
@@ -1172,6 +1183,8 @@ export class LmuRestProvider implements TelemetryProvider {
         : null;
     const surfaceTemps = local ? local.tyreTempsC : null;
     const hudTemps = local ? local.tyreHudTempsC : null;
+    const speedKph = local ? local.speedKph : restSpeed;
+    const pit = this.buildPit(focus, speedKph);
     const tyre = (i: number): TyreState => ({
       // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
       tempC: hudTemps ? (hudTemps[i] as number) : UNKNOWN_VALUE,
@@ -1192,7 +1205,7 @@ export class LmuRestProvider implements TelemetryProvider {
           }
         : { throttle: 0, brake: 0, clutch: 0, steer: 0 },
       gear: local ? local.gear : UNKNOWN_VALUE,
-      speedKph: local ? local.speedKph : restSpeed,
+      speedKph,
       rpm: local ? local.rpm : UNKNOWN_VALUE,
       maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
@@ -1233,11 +1246,101 @@ export class LmuRestProvider implements TelemetryProvider {
       ...(this.damage && Date.now() - this.lastDamageOkAt < GARAGE_STALE_AFTER_MS
         ? { damage: this.damage }
         : {}),
+      ...(pit ? { pit } : {}),
+    };
+  }
+
+  /**
+   * The player's pit stage, and the crew's clock while they are on the car.
+   *
+   * The clock is started here rather than in the widget because it has to
+   * survive things the widget cannot see: a browser source reloading mid-stop, a
+   * second overlay opening, the widget being throttled. It is also the only
+   * place with the repair screen to hand at the instant work begins, which is
+   * when the booked stop length has to be captured — see {@link PitState}.
+   */
+  private buildPit(focus: RestStanding | undefined, speedKph: number): PitState | undefined {
+    if (!focus) {
+      this.pitWork = null;
+      return undefined;
+    }
+    const phase = pitPhase(focus, speedKph);
+    if (phase !== 'stopped') {
+      // Anything other than stationary-in-the-box ends the stop, including the
+      // car simply vanishing from the feed. The next stop starts a fresh clock.
+      this.pitWork = null;
+      return { phase, working: false, elapsedSec: UNKNOWN_VALUE, plannedSec: UNKNOWN_VALUE, slackSec: UNKNOWN_VALUE };
+    }
+    const now = Date.now();
+    if (!this.pitWork) {
+      // Work has just begun. Snapshot what the stop was booked for; a stale or
+      // missing repair screen leaves the target unknown rather than guessed, and
+      // the widget counts up instead of down.
+      const fresh = this.damage && now - this.lastDamageOkAt < GARAGE_STALE_AFTER_MS ? this.damage : null;
+      this.pitWork = {
+        startedAt: now,
+        plannedSec: fresh ? fresh.stopLengthSeconds : UNKNOWN_VALUE,
+        slackSec: fresh ? fresh.randomDelayMaxSeconds : UNKNOWN_VALUE,
+      };
+    }
+    return {
+      phase,
+      working: true,
+      elapsedSec: round1((now - this.pitWork.startedAt) / 1000),
+      plannedSec: this.pitWork.plannedSec,
+      slackSec: this.pitWork.slackSec,
     };
   }
 }
 
 /* --------------------------------- helpers -------------------------------- */
+
+/**
+ * Speed (km/h) at or below which the car counts as stationary in its box.
+ *
+ * Not zero: the REST velocity channel and the shared-memory speed both dither
+ * around a fraction of a km/h on a parked car, and a stop that flickered in and
+ * out of "working" would restart the crew's clock every few frames. A car being
+ * pushed or rolling in the stall is well above this.
+ */
+const PIT_STATIONARY_KPH = 3;
+
+/** `pitState` strings LMU publishes, in ISI's own `mPitState` vocabulary. */
+const PIT_PHASES: Record<string, PitPhase> = {
+  NONE: 'none',
+  REQUEST: 'request',
+  REQUESTED: 'request',
+  ENTERING: 'entering',
+  ENTER: 'entering',
+  STOPPED: 'stopped',
+  EXITING: 'exiting',
+  EXIT: 'exiting',
+};
+
+/**
+ * Which stage of a stop a car is at.
+ *
+ * `pitState` is the authoritative channel, but it is a string the sim can
+ * rename, so an unrecognised value falls back to the two booleans beside it
+ * (`pitting` / `inGarageStall`) plus the car's own speed. That fallback cannot
+ * tell `entering` from `exiting` — both are "in the lane, moving" — and reports
+ * `entering` for either, which is the safe way round: it never claims the crew
+ * has finished.
+ */
+function pitPhase(c: RestStanding, speedKph: number): PitPhase {
+  const raw = typeof c.pitState === 'string' ? c.pitState.trim().toUpperCase() : '';
+  const known = PIT_PHASES[raw];
+  const stationary = speedKph === UNKNOWN_VALUE || speedKph <= PIT_STATIONARY_KPH;
+  if (known) {
+    // A `STOPPED` reading on a car that is plainly still moving is not a stop
+    // in progress — hold at `entering` until it has actually come to rest, so
+    // the crew's clock starts when the work does.
+    if (known === 'stopped' && !stationary) return 'entering';
+    return known;
+  }
+  if (c.pitting === true || c.inGarageStall === true) return stationary ? 'stopped' : 'entering';
+  return 'none';
+}
 
 function isInPit(c: RestStanding): boolean {
   return (

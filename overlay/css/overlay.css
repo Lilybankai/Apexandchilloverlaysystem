@@ -1481,7 +1481,47 @@
 .damage__hero[hidden],
 .damage__tyre[hidden],
 .damage__range[hidden],
+.damage__stop[hidden],
+.damage__stop-track[hidden],
 .damage__clean[hidden] { display: none; }
+
+/* --- the stop countdown -------------------------------------------------
+   Live from the moment the crew starts work to the moment the car is released,
+   in the same slot as the repair estimate it replaces. It reuses .damage__hero
+   wholesale so the number does not change size or position when the meaning
+   changes — the driver's eye stays where it was. */
+.damage__stop-track {
+  height: 5px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 3px 0 4px;
+}
+.damage__stop-fill {
+  display: block;
+  height: 100%;
+  /* Linear, and matched to the widget's 250 ms tick: a stop clock advances at a
+     constant rate, so any easing here would show as the bar surging and
+     settling four times a second. */
+  transition: width 250ms linear;
+}
+/* One state attribute on the block drives the bar AND the number, so the two
+   can never disagree about which stage of the stop is being described. */
+.damage__stop[data-state="working"] .damage__stop-fill { background: var(--warn); }
+.damage__stop[data-state="working"] .damage__hero-num { color: var(--warn); }
+/* Past the booked length. Red because the driver is now waiting on a delay the
+   sim never published, not because anything is wrong. */
+.damage__stop[data-state="over"] .damage__stop-fill { background: var(--pos-loss); }
+.damage__stop[data-state="over"] .damage__hero-num { color: var(--pos-loss); }
+.damage__stop[data-state="done"] .damage__stop-fill { background: var(--pos-gain); }
+.damage__stop[data-state="done"] .damage__hero-num { color: var(--pos-gain); }
+.damage__stop-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
 
 /* The expected range. Deliberately small and muted directly under the headline:
    it qualifies that number rather than competing with it, and it is the only

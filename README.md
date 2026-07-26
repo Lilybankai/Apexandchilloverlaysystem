@@ -103,8 +103,10 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
   fixed centre-bottom pivot. An alternate to the above, not a replacement.
 - **Motion** — G-force, rotation and attitude, in three independently
   switchable modes (see below)
-- **Damage & Repair** — component damage and the sim's own repair time, so the
-  pit decision can be made from the overlay (see below; LMU only)
+- **Damage & Repair** — component damage, the sim's own repair time, and a live
+  countdown once the crew is on the car (see below; LMU only)
+- **Radar** — a spotter's-eye strip of the cars around you, drawn to scale (see
+  below)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
@@ -216,6 +218,68 @@ Severity is shown exactly as the sim reports it (`0..1`). It is not remapped to 
 > `NO DATA` there, and between sessions where the endpoint 404s. The block is
 > **absent, not zeroed**, so "no data" can never be mistaken for an undamaged
 > car. See `src/telemetry/damage.ts` and `scripts/probe-lmu-damage.js`.
+
+#### The stop countdown
+
+The moment the car comes to rest in its box, the repair estimate has done its
+job — the decision is made and the driver is sitting there watching a crew. So
+the same slot switches to a **countdown from when work begins to when the car is
+released**, with a bar for how far through the stop is.
+
+It counts down the length the stop was **booked** for, captured at the instant
+work starts and then held — the pit menu keeps changing as the crew works
+through it, and re-reading it would move the target mid-countdown.
+
+Past zero it keeps going and says so (`ANY MOMENT`, `+3.2s over booked`), because
+the booked figure is a floor and not a prediction: LMU draws `FixRandomDelay`
+(≤5 s) and `RandomTireDelay` (≤1 s) when the stop happens and publishes only the
+caps. Freezing on `0` and hoping would be the one confidently-wrong number this
+widget is otherwise careful never to show. When the car is released it holds the
+**actual** stop length for five seconds, so it can still be read by someone who
+was watching their mirrors.
+
+If the repair screen was not answering when the car stopped there is nothing to
+count down to, and the widget counts **up** instead (`IN THE BOX`) rather than
+inventing a target.
+
+> The stop phase comes from `pitState` on LMU's standings feed, cross-checked
+> against the car's own speed so the clock starts when the car is actually
+> stationary. The clock itself runs on the server, so a browser source reloading
+> mid-stop rejoins the same countdown. See `PitState` in `src/telemetry/types.ts`.
+
+
+### Radar widget
+
+A spotter's-eye strip: the cars around you as they are in space, with you fixed
+at the centre. The relative/timing widget is 1-D — how far round the lap — so it
+cannot tell you a car is drawing alongside on your **left**. This can.
+
+| Param         | Shows                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| `?range=18`   | Longitudinal range each way, metres (default 18, clamped 8..150)       |
+| `?reveal=12`  | Radius within which a car makes the HUD fade in (default 12 m)         |
+| `?opacity=0.4`| HUD opacity, same contract as the Motion/Damage widgets                |
+
+**The scale is isotropic and the cars are drawn at their real size.** One metre
+is the same number of pixels across the strip as up it, and each icon is its
+car's true footprint — 5.10 × 2.00 m for a Hypercar, 4.76 × 2.05 m for a GT3. So
+**icons touching means cars touching**, on both axes and at any angle between
+them, whatever the range is set to and however large the widget has been dragged.
+
+`?range=` is the only scale knob, deliberately: the lateral half-width follows
+from it and lands at about a track width (~13 m) at the default. Making it a
+second knob would be making the two axes disagree again. A wider range is
+available and the cars shrink to match.
+
+The HUD is invisible until a car comes within the reveal radius, then fades in —
+so it costs nothing in clear air. A car arriving alongside lights a soft red
+bloom on that side, anchored at the car's own position up the strip, brightest
+level with it, and feathered at every edge so nothing it draws ends on a hard
+line.
+
+Faster-class cars carry a halo ring; a car you are lapping draws as a ghost.
+Blip positions come from `src/telemetry/radar.ts`, which owns the world→local
+projection and is unit-tested headless in `scripts/test-radar.js`.
 
 
 ### MFD widget

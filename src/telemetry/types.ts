@@ -441,6 +441,72 @@ export interface DamageState {
   randomDelayMaxSeconds: number;
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Pit stop                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a car is in a pit stop, normalized across providers.
+ *
+ * These are ISI's own `mPitState` stages, which LMU inherits and publishes as
+ * strings on `/rest/watch/standings`. The one that matters is `stopped`: it is
+ * the only stage where the crew is on the car, and therefore the only stage
+ * during which a "how long until I'm released" countdown means anything.
+ *
+ *   `none`      not pitting.
+ *   `request`   a stop has been requested — the car may still be out on track.
+ *   `entering`  in the pit lane, heading for the box.
+ *   `stopped`   stationary in the box; **work is happening**.
+ *   `exiting`   released, leaving the lane.
+ */
+export type PitPhase = 'none' | 'request' | 'entering' | 'stopped' | 'exiting';
+
+/**
+ * The player's live pit stop: which stage it is at, and — once the crew starts
+ * — how long they have been working against how long the stop was booked for.
+ *
+ * ## Why the clock is measured, not predicted
+ * {@link DamageState.stopLengthSeconds} is the sim's own total for the selected
+ * work, and it is a **floor**: LMU draws `FixRandomDelay` (≤5 s) and
+ * `RandomTireDelay` (≤1 s) when the stop actually happens, and publishes only
+ * the caps. So a countdown cannot be a prediction of the release. What it can be
+ * — and what this is — is the booked time counting down against a real elapsed
+ * clock, with the sim's own remaining slack named once the booked time is up.
+ *
+ * The planned figure is captured at the instant work begins and then held. The
+ * pit menu keeps answering during the stop and its selections change as the crew
+ * works through them; re-reading it mid-stop would make the countdown's target
+ * move under it.
+ */
+export interface PitState {
+  /** Which stage of a stop the car is at. */
+  phase: PitPhase;
+  /**
+   * `true` while the car is stationary in its box with work underway — i.e.
+   * {@link phase} is `stopped`. The countdown fields below are only populated
+   * while this holds.
+   */
+  working: boolean;
+  /**
+   * Seconds since work began, or {@link UNKNOWN_VALUE} when not working.
+   * Measured from a real clock, so it keeps counting past {@link plannedSec}.
+   */
+  elapsedSec: number;
+  /**
+   * The stop length that was booked when work began, seconds — the sim's
+   * published total for the work selected at that moment. {@link UNKNOWN_VALUE}
+   * when the repair screen was not answering, in which case there is an elapsed
+   * clock but nothing to count down to.
+   */
+  plannedSec: number;
+  /**
+   * The unpublished delay the sim can still add on top of {@link plannedSec},
+   * seconds — captured with it, and the reason a stop can run past zero without
+   * anything being wrong. {@link UNKNOWN_VALUE} when the sim published no caps.
+   */
+  slackSec: number;
+}
+
 /**
  * State specific to the **player's** car (the spectated/driven entry).
  * Standings for the whole field live in {@link TelemetryFrame.standings}.
@@ -490,6 +556,13 @@ export interface PlayerState {
    * would be indistinguishable from a pristine car. See {@link DamageState}.
    */
   damage?: DamageState;
+  /**
+   * The player's live pit stop — which stage it is at, and the crew's clock once
+   * they are working. Omitted when the provider cannot see a pit stage at all,
+   * so a widget can tell "not pitting" (`phase: 'none'`) from "this provider
+   * does not report pitting" (field absent). See {@link PitState}.
+   */
+  pit?: PitState;
 }
 
 /* -------------------------------------------------------------------------- */
