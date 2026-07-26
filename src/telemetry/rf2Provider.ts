@@ -62,6 +62,7 @@ import { decodeMotion } from './motion';
 import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
+import { TrackLimitsTracker } from './trackLimits';
 import type { RawCorner, RawCornerSet } from './chassis';
 
 /* ------------------------- Win32 / shared-memory ------------------------- */
@@ -118,8 +119,17 @@ const VS = {
   mDriverName: 4, // char[32]
   mTotalLaps: 100, // short
   mLapDist: 104, // double
+  // Lateral offset of the car's centre from the track path, and how far the
+  // track extends in that same direction — both metres, and both carrying the
+  // SAME sign, so |lateral| > |edge| is the sim saying the car has left the
+  // road. The only channels anywhere in the feed that describe where the road
+  // ends; see telemetry/trackLimits.ts for what is built on them.
+  mPathLateral: 112, // double
+  mTrackEdge: 120, // double
   mBestLapTime: 144, // double
   mLastLapTime: 168, // double
+  /** Outstanding penalties the sim has issued this car. */
+  mNumPenalties: 194, // short
   mIsPlayer: 196, // bool
   mInPits: 198, // bool
   mPlace: 199, // unsigned char
@@ -129,6 +139,7 @@ const VS = {
   mTimeBehindLeader: 244, // double
   mLapsBehindLeader: 252, // long
   mPitState: 457, // unsigned char
+  mInGarageStall: 507, // bool
 } as const;
 
 /** Offsets inside each `rF2VehicleTelemetry` element (stride 2880). */
@@ -289,6 +300,11 @@ export class RF2Provider implements TelemetryProvider {
    * per-corner reference over ~25 s, so it must survive between polls.
    */
   private readonly chassisTracker = new ChassisTracker();
+  /**
+   * Counts track-limit excursions across the session, so — like the chassis
+   * tracker above — it has to survive between polls. See `trackLimits.ts`.
+   */
+  private readonly trackLimitsTracker = new TrackLimitsTracker();
   private readonly win32: Win32 | null;
   private telemetry: MappedBuffer | null = null;
   private scoring: MappedBuffer | null = null;
@@ -557,6 +573,25 @@ export class RF2Provider implements TelemetryProvider {
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
+    const trackName = readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown';
+    // Track limits, from the player's own scoring record: how far off the path
+    // the car is against how far the road goes, plus the sim's own penalty
+    // count. Absent when the player has no scoring record (never on the live
+    // path, but the frame must not claim a clean sheet it hasn't checked).
+    const trackLimits =
+      playerScoringOff >= 0
+        ? this.trackLimitsTracker.update({
+            pathLateralM: scoring.readDoubleLE(playerScoringOff + VS.mPathLateral),
+            trackEdgeM: scoring.readDoubleLE(playerScoringOff + VS.mTrackEdge),
+            speedKph,
+            inPit:
+              scoring.readUInt8(playerScoringOff + VS.mInPits) !== 0 ||
+              scoring.readUInt8(playerScoringOff + VS.mInGarageStall) !== 0,
+            penalties: scoring.readInt16LE(playerScoringOff + VS.mNumPenalties),
+            sessionKey: `${trackName}|${sessionCode}`,
+            nowMs: Date.now(),
+          })
+        : null;
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -567,7 +602,7 @@ export class RF2Provider implements TelemetryProvider {
         type: mapSessionType(sessionCode),
         phase: mapSessionPhase(gamePhase),
         flag: mapFlag(gamePhase),
-        track: readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown',
+        track: trackName,
         timeRemainingSec: timeRemaining,
         totalLaps: maxLaps > 0 ? maxLaps : 0,
         lapsRemaining: UNKNOWN_VALUE,
@@ -601,6 +636,7 @@ export class RF2Provider implements TelemetryProvider {
         // Absent rather than zeroed when the wheel block fails its guards, so
         // the widget can tell "no data" from "a car sitting perfectly flat".
         ...(chassis ? { chassis } : {}),
+        ...(trackLimits ? { trackLimits } : {}),
       },
       standings,
       relative,

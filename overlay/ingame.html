@@ -21,6 +21,11 @@
   <link rel="stylesheet" href="css/overlay.css" />
   <link rel="stylesheet" href="css/ingame.css" />
 
+  <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
+       the operator's on/off + volume as soon as they arrive over the bridge.
+       This is the layer where the cues matter most — the driver is looking at
+       the track, not at a widget. -->
+  <script src="js/audio.js"></script>
   <!-- Global widget-background opacity. Here it is push-driven by the app over
        the apexIngame bridge (no polling in the layer that draws over the sim). -->
   <script src="js/appearance.js"></script>
@@ -96,6 +101,7 @@
   <script src="js/widgets/motion.js" defer></script>
   <script src="js/widgets/damage.js" defer></script>
   <script src="js/widgets/radar.js" defer></script>
+  <script src="js/widgets/limits.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
   <!-- Fuel Planner: reference-data module must load before its widget. -->
   <script src="js/data/racedata.js" defer></script>

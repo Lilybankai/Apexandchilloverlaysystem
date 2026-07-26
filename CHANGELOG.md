@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.20.0 — 2026-07-26
+
+### Added
+
+- **A Track Limits widget.** How many times you have run wide this session, how
+  many penalties the sim has actually issued for it, and — the part that is
+  useful *before* the mistake — a bar showing how much road you have left right
+  now. The overlay had nothing at all on limits, which is the one mistake in
+  endurance racing that compounds silently: you know you ran wide, you do not
+  know whether that was the first or the third.
+
+  The two counts are **kept apart on purpose**. The headline (amber, under
+  "LIMITS") is ours; the red "PEN" chip is the sim's own `mNumPenalties`. They
+  can disagree, because LMU judges limits internally against the white line and
+  publishes no warning tally anywhere — not over REST, not in shared memory. An
+  earlier build had a fresh penalty take over the headline number for a few
+  seconds and it read as a lie: a red "5" under the word LIMITS is five
+  penalties to anyone glancing at it, when it was five warnings and one penalty.
+  Two differently-sourced numbers get two places.
+
+  The warning count is derived from the two channels that *do* exist —
+  `mPathLateral` against `mTrackEdge` — plus half a car's width, since those
+  measure the car's centre and the rule everyone races to is all four wheels
+  beyond the line. Counting is one excursion per mistake however long it lasts,
+  with hysteresis so a car balanced on the limit does not tick over and over, a
+  100 ms minimum so a kerb strike is not a run-off, and nothing counted in the
+  pit lane or below racing speed. All of that lives in
+  `src/telemetry/trackLimits.ts` behind 28 headless assertions
+  (`npm run test:tracklimits`) — none of those failure modes is visible on a
+  screenshot of a clean lap.
+
+- **A pit-release light on the radar.** A red ring around your own car while the
+  crew is on it; a green ring sweeping outward the instant they let you go.
+
+  It is on the radar rather than beside the Damage widget's stop countdown
+  because the countdown answers *how much longer*, and by the time the answer is
+  "now" nobody is watching it. The radar is the widget still worth looking at
+  for the two seconds after a release — and the only one that answers the
+  question the release immediately creates: is anything coming down the lane. It
+  wakes itself for both states, since an empty pit box has nobody inside the
+  reveal perimeter. The release is detected as the moment the stop *ends*, not
+  as the arrival of the "exiting" stage, so a feed that drops a phase still
+  tells you.
+
+- **Three audio cues** — a blip on a limits warning, a falling two-tone on a
+  penalty, a rising two-tone on the pit release — because all three land at
+  moments when the driver's eyes are, correctly, somewhere else.
+
+  They are **synthesised**, not sound files: an oscillator and a gain envelope,
+  two nodes built and thrown away per cue. Nothing is downloaded, decoded,
+  buffered or held resident — which is the whole brief, and matters most in the
+  in-game layer that stays resident for a stint. On by default, with **Audio
+  cues** and **Cue volume** (plus a Test button) in the control panel, and
+  `?audio=off` to silence one Browser Source when several share an OBS scene.
+  The in-game window now runs with Chromium's gesture requirement relaxed, or
+  the one layer where a cue matters most would be the one layer that stayed
+  silent.
+
+### Fixed
+
+- **The one signed field on the frame no longer uses the `-1` sentinel.**
+  `TrackLimitsState.beyondEdgeM` is metres-past-the-edge, so it is legitimately
+  negative — a car with exactly one metre of road left would have reported the
+  sentinel and been read as "no data". It is omitted when unknown instead, which
+  has no such ambiguity. Same treatment on the way in, for the raw lateral
+  channels. (The two pre-existing instances of this trap, `LapTiming.delta` and
+  `FuelState.fuelDeltaLiters`, are unchanged and still noted as future work —
+  this simply avoids adding a third.)
+
 ## 0.19.0 — 2026-07-26
 
 ### Changed

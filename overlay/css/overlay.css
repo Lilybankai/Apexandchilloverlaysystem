@@ -53,7 +53,7 @@
  * layout survives a full grid, brake-disc rows and the 120% text scale at once.
  *
  *   LEFT     x 24    standings, pedalsv
- *   CHANNEL  x 520   radar               (the gap beside the tower)
+ *   CHANNEL  x 520   radar, limits       (the gap beside the tower)
  *   CENTRE   centred weather, delta, pedals
  *   RIGHT    right   relative, fuel, tyres, and damage inboard of them
  *
@@ -80,8 +80,15 @@
 
 /* --- CHANNEL: the strip between the tower and the centre column -----------
    Clear of the tower's 498px right edge. Mid-height, which is where a spotter
-   readout wants to be. */
+   readout wants to be.
+
+   Track limits sits under the radar in the same channel. Measured against the
+   stage at the 120% text scale — the worst case, and the one an earlier pass
+   got wrong by doing arithmetic instead — the radar occupies 300..567 and the
+   limits widget 650..789, leaving an 83px gap above it and 291px of clear stage
+   below. Nothing else is anchored in this column, so neither can be pushed. */
 #widget-radar     { top: 300px;  left: 520px; width: 188px; }
+#widget-limits    { top: 650px;  left: 520px; width: 188px; }
 
 /* --- CENTRE: conditions, the delta, and the pedal trace on the bottom edge -
    The band between the delta and the trace is left empty on purpose: on a
@@ -2047,6 +2054,176 @@ body.ig-editing #widget-radar .panel__header {
   color: var(--text-secondary);
   min-width: 28px;
   text-align: right;
+}
+
+/* =========================================================================
+ * TRACK LIMITS WIDGET — the excursion count, and how much road is left.
+ * -------------------------------------------------------------------------
+ * Four states drive everything below, set on the section as data-limits:
+ *
+ *   clean      nothing has happened. The default and, over a stint, by far the
+ *              most common — so it is DELIBERATELY dull. A widget that colours
+ *              itself while reporting good news is one the driver learns to
+ *              stop reading, and then it is not there when it matters.
+ *   warned     excursions on the board, none of them recent. Amber, steady.
+ *   alarm      an excursion is happening or just happened. Amber, and the only
+ *              state that animates.
+ *   penalty    the sim has issued one. Red — the strongest thing this widget
+ *              can say, reserved for the one number on it that is not our
+ *              opinion (see the module note in js/widgets/limits.js).
+ *   penalised  a penalty stands but is no longer news. Red, muted.
+ *
+ * The alarm pulse is a keyframed background on the panel rather than a
+ * box-shadow: shadows on a large box are composited every frame over live
+ * footage, and this widget can be lit for seconds at a time.
+ * ========================================================================= */
+.limits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+/* --- the headline count -------------------------------------------------- */
+.limits__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* Tier 1. The whole widget exists to answer "how many", so the number gets the
+   largest step in the scale and the label sits under it as context. */
+.limits__count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: var(--fs-crit);
+  line-height: 1;
+  color: var(--text-muted);
+  transition: color 0.2s ease;
+}
+.limits__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* The sim's penalty count, in its own chip pushed to the right edge of the row.
+   Separate from the headline on purpose — see the module note in
+   js/widgets/limits.js for the version that shared a slot and read as a lie. */
+.limits__penalty {
+  margin-left: auto;
+  align-self: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 84, 112, 0.16);
+  border: 1px solid var(--pos-loss);
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--pos-loss);
+  white-space: nowrap;
+}
+
+/* --- the pips ------------------------------------------------------------ */
+.limits__pips {
+  display: flex;
+  gap: 4px;
+}
+/* Each pip is a segment of the row, so the row reads as a progress bar toward
+   a penalty rather than as a set of separate lamps. */
+.limits__pip {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.limits__pip[data-on="yes"] {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+/* Past the scale: the row starts again in red, so a fourth warning on a
+   three-pip scale is visibly worse than the third rather than identical to it. */
+.limits__pip[data-on="over"] {
+  background: var(--pos-loss);
+  border-color: var(--pos-loss);
+}
+
+/* --- the edge bar: how much road is left, right now ---------------------- */
+.limits__bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-panel-2);
+  overflow: hidden;
+}
+/* Grows from the left as the car runs out of road. No transition: this is the
+   one readout here that is live rather than historical, and easing it would
+   make it lag the thing it is reporting. */
+.limits__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: linear-gradient(90deg, var(--warn), var(--pos-loss));
+}
+.limits__edge {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  text-align: right;
+  min-height: 1em;
+}
+
+/* --- states --------------------------------------------------------------
+   The headline number is the WARNING count in every state, so it only ever
+   takes the warning colour. Red belongs to the penalty chip, which is the only
+   thing on the widget reporting the sim's own verdict — colouring the warning
+   count red because a penalty exists would attach the wrong number to it. */
+#widget-limits[data-limits="clean"] .limits__count { color: var(--text-secondary); }
+#widget-limits[data-limits="warned"] .limits__count,
+#widget-limits[data-limits="warned"] .limits__label,
+#widget-limits[data-limits="penalised"] .limits__count,
+#widget-limits[data-limits="penalised"] .limits__label,
+#widget-limits[data-limits="penalty"] .limits__count,
+#widget-limits[data-limits="penalty"] .limits__label,
+#widget-limits[data-limits="alarm"] .limits__count,
+#widget-limits[data-limits="alarm"] .limits__label { color: var(--warn); }
+#widget-limits[data-limits="alarm"] .limits__edge { color: var(--warn); }
+#widget-limits[data-limits="none"] .limits__count,
+#widget-limits[data-limits="none"] .limits__label { color: var(--text-muted); }
+
+/* The alarm and a fresh penalty pulse; nothing else on the widget moves. Two
+   seconds of gentle breathing is enough to catch peripheral vision without
+   becoming the thing you look at instead of the corner. */
+#widget-limits[data-limits="alarm"] .panel__body,
+#widget-limits[data-limits="penalty"] .panel__body {
+  animation: limits-pulse 0.9s ease-in-out infinite;
+}
+@keyframes limits-pulse {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(255, 176, 32, 0.16); }
+}
+#widget-limits[data-limits="penalty"] .panel__body {
+  animation-name: limits-pulse-bad;
+}
+@keyframes limits-pulse-bad {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(255, 84, 112, 0.20); }
+}
+
+/* Respect the operator's / OS's reduced-motion preference: the colour states
+   above carry the whole message on their own, so dropping the animation costs
+   nothing. */
+@media (prefers-reduced-motion: reduce) {
+  #widget-limits[data-limits="alarm"] .panel__body,
+  #widget-limits[data-limits="penalty"] .panel__body {
+    animation: none;
+  }
 }
 
 /* =========================================================================

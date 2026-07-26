@@ -99,6 +99,14 @@ export interface ServerConfig {
    * Retuned at runtime through `setAppearance()`, exactly like `panelOpacity`.
    */
   radarIconScale: number;
+  /**
+   * Boot value for the audio cues: whether the short synthesised tones sound at
+   * all (see `overlay/js/audio.js`). Retuned at runtime through
+   * `setAppearance()`, like every other look-and-feel value here.
+   */
+  audioCues: boolean;
+  /** Boot value for the cues' master volume, 0..100 (percent). */
+  audioVolume: number;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -120,6 +128,8 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   textScale: 100,
   changeGlow: true,
   radarIconScale: 50,
+  audioCues: true,
+  audioVolume: 60,
   verbose: false,
 });
 
@@ -185,6 +195,8 @@ function clamp(value: number, min: number, max: number): number {
  * - `APEX_SPONSOR_DIR` — sponsor logo directory served at `/sponsors/` (default none)
  * - `APEX_SPONSOR_SEC` — seconds per sponsor logo, clamped to 3..120 (default `12`)
  * - `APEX_PANEL_OPACITY` — widget background opacity %, clamped to 0..100 (default `100`)
+ * - `APEX_AUDIO_CUES` — play the synthesised audio cues (default `true`)
+ * - `APEX_AUDIO_VOLUME` — cue volume %, clamped to 0..100 (default `60`)
  * - `APEX_VERBOSE` — verbose logging (default `false`)
  *
  * @returns A fully-resolved, ready-to-use configuration object.
@@ -219,6 +231,8 @@ export function loadConfig(): ServerConfig {
     textScale: clamp(envInt('APEX_TEXT_SCALE', DEFAULT_CONFIG.textScale), 80, 120),
     changeGlow: envBool('APEX_CHANGE_GLOW', DEFAULT_CONFIG.changeGlow),
     radarIconScale: clamp(envInt('APEX_RADAR_ICONS', DEFAULT_CONFIG.radarIconScale), 30, 150),
+    audioCues: envBool('APEX_AUDIO_CUES', DEFAULT_CONFIG.audioCues),
+    audioVolume: clamp(envInt('APEX_AUDIO_VOLUME', DEFAULT_CONFIG.audioVolume), 0, 100),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

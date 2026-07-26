@@ -15,6 +15,9 @@
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/overlay.css" />
 
+  <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
+       the operator's on/off + volume as soon as it has them. -->
+  <script src="js/audio.js"></script>
   <!-- Global widget-background opacity (control panel / ?bg=). Synchronous and
        in <head> so the operator's setting is applied before the first paint. -->
   <script src="js/appearance.js"></script>
@@ -150,6 +153,19 @@
     </section>
 
 
+    <!-- ====== TRACK LIMITS (excursions, penalties, road left) ======= -->
+    <section class="widget panel" id="widget-limits" data-widget="limits"
+             aria-label="Track limits — warnings and penalties">
+      <header class="panel__header">
+        <span class="panel__title">Track Limits</span>
+        <span class="panel__meta" data-role="meta">—</span>
+      </header>
+      <div class="panel__body" data-role="mount">
+        <div class="placeholder">Awaiting telemetry…</div>
+      </div>
+    </section>
+
+
     <!-- ===================== BRAND WORDMARK ========================= -->
     <div class="brand" aria-hidden="true">
       <span class="brand__mark"></span>
@@ -195,5 +211,6 @@
   <script src="js/widgets/pedalsv.js" defer></script>
   <script src="js/widgets/damage.js" defer></script>
   <script src="js/widgets/radar.js" defer></script>
+  <script src="js/widgets/limits.js" defer></script>
 </body>
 </html>

@@ -21,10 +21,11 @@
     "test:multiclass": "node scripts/test-multiclass.js",
     "test:motion": "node scripts/test-motion.js",
     "test:chassis": "node scripts/test-chassis.js",
-    "test": "npm run build && npm run test:delta && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor",
+    "test": "npm run build && npm run test:delta && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits",
     "test:pitcursor": "node scripts/test-pitcursor.js",
     "test:damage": "node scripts/test-damage.js",
-    "test:radar": "node scripts/test-radar.js"
+    "test:radar": "node scripts/test-radar.js",
+    "test:tracklimits": "node scripts/test-tracklimits.js"
   },
   "engines": {
     "node": ">=18"

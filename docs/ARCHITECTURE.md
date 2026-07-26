@@ -56,7 +56,8 @@ that.
   │  js/client.js WS connect → parse → dispatch     │
   │  js/widgets/  standings · relative · weather ·  │
   │               tyres · fuel · pedals · radar     │
-  │               (Canvas)                          │
+  │               (Canvas) · limits                 │
+  │  js/audio.js  synthesised cues (no assets)      │
   └───────────────┬────────────────────────────────┘
                   │  rendered as an OBS Browser Source (Chromium/CEF)
                   ▼
@@ -87,6 +88,16 @@ browser. There is no database, no message broker, no cloud round-trip.
 - **`rf2Provider.ts` + `fuelCalculator.ts`** *(Task E)* — reads the rF2/LMU
   shared-memory buffers into a `TelemetryFrame` and computes the fuel strategy.
   Falls back to the simulator when the plugin/game is absent.
+- **`lmuScoring.ts` + `trackLimits.ts`** — the track-limits pair. The reader
+  opens the **Scoring** buffer (a different region from the Telemetry one
+  `lmuLocalCar.ts` owns) for the driven car's `mPathLateral`, `mTrackEdge` and
+  `mNumPenalties`; the tracker turns that continuous lateral position into
+  discrete excursions. Split because the second half is pure logic with real
+  edges in it — hysteresis, a minimum duration, session resets — and belongs
+  under a headless test (`scripts/test-tracklimits.js`) rather than behind a
+  Windows-only shared-memory read. Both live providers share the tracker, and
+  the simulator drives the **real** one from synthetic geometry, so a regression
+  in the counting surfaces in demo mode rather than on track.
 
 ### Server (`src/server/`)
 - **`index.ts`** — boots three things in one process: a tiny static HTTP server
@@ -116,6 +127,13 @@ browser. There is no database, no message broker, no cloud round-trip.
   is simulated.
 - **`js/widgets/*.js`** — one self-contained module per widget, registered
   against the `window.ApexOverlay` runtime.
+- **`js/audio.js`** — the cue engine: three short tones, **synthesised** with an
+  oscillator and a gain envelope rather than shipped as sound files. Same
+  rationale as the no-Electron and no-web-fonts choices above — an asset would
+  be fetched, decoded and held resident by every Browser Source in a scene and
+  by the in-game layer for a whole stint, where a cue costs two Web Audio nodes
+  that are created, played and thrown away. On/off and volume ride the
+  appearance channel with the other operator settings.
 - **`js/appearance.js`** — applies the operator's global widget-background
   setting as the `--panel-alpha` token every surface colour in `theme.css`
   resolves through. Loaded synchronously in `<head>` so the value is in place

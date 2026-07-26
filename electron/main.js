@@ -65,6 +65,11 @@ const OVERLAY_CATALOG = [
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
   { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)" },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
+  {
+    id: 'limits',
+    label: 'Track Limits',
+    description: 'Excursions this session, the sim\'s penalties, and how much road is left',
+  },
   // A clickable control page, not a HUD graphic: it belongs in a browser tab
   // (or an OBS source as a readout), never the locked, click-through in-game
   // layer — so it defaults out of the in-game set.
@@ -146,6 +151,16 @@ function defaultSettings() {
     // promise — an icon's edge is the car's edge. Delivered on the appearance
     // channel like panelOpacity/textScale, so dragging it retunes live sources.
     radarIconScale: 50,
+    // Short synthesised tones for the events a driver cannot see coming while
+    // looking at the track: a track-limits warning, a penalty landing, the pit
+    // release. On by default — the cue exists because the visual alone is
+    // missed at the exact moments it matters — and silenced with one switch for
+    // a broadcast whose audio is already mixed. See overlay/js/audio.js for why
+    // these are synthesised rather than shipped as files.
+    audioCues: true,
+    // Master volume for those cues, as a percentage. 60 sits under a sim's own
+    // engine and spotter audio without disappearing into it.
+    audioVolume: 60,
     // Keyboard bindings, { [actionId]: accelerator } — see electron/actions.js
     // for the action vocabulary. Registered as GLOBAL hotkeys, so they also fire
     // while the sim has focus, and a Stream Deck "Hotkey" button (which just
@@ -316,6 +331,8 @@ function loadSettings() {
     changeGlow:
       typeof stored.changeGlow === 'boolean' ? stored.changeGlow : defaults.changeGlow,
     radarIconScale: clamp(stored.radarIconScale, 30, 150, defaults.radarIconScale),
+    audioCues: typeof stored.audioCues === 'boolean' ? stored.audioCues : defaults.audioCues,
+    audioVolume: clamp(stored.audioVolume, 0, 100, defaults.audioVolume),
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     wheelBindings: normalizeWheelBindings(stored),
@@ -426,6 +443,8 @@ function buildServerConfig(settings) {
     textScale: settings.textScale,
     changeGlow: settings.changeGlow,
     radarIconScale: settings.radarIconScale,
+    audioCues: settings.audioCues,
+    audioVolume: settings.audioVolume,
     verbose: false,
   };
 }
@@ -627,6 +646,8 @@ function applyAppearance(settings) {
     textScale: s.textScale,
     changeGlow: s.changeGlow,
     radarIconScale: s.radarIconScale,
+    audioCues: s.audioCues,
+    audioVolume: s.audioVolume,
     widgetModes: s.widgetModes || {},
   };
   try {
@@ -981,6 +1002,13 @@ function syncOverlayWindow() {
       sandbox: false,
       // Keep telemetry painting while the game window has focus.
       backgroundThrottling: false,
+      // The audio cues (overlay/js/audio.js) are the point of this: Chromium
+      // refuses to start an AudioContext without a user gesture, and this is a
+      // click-through window over a game that nobody ever clicks — so without
+      // this the one layer where a cue matters most would be the one layer that
+      // stays silent. Nothing here plays media on its own; the only sound is a
+      // cue a widget fires on an event the driver asked to be told about.
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
   // 'screen-saver' level floats above borderless-fullscreen game windows.
@@ -1118,6 +1146,12 @@ function registerIpc() {
       if (partial.radarIconScale !== undefined) {
         next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
       }
+      if (typeof partial.audioCues === 'boolean') {
+        next.audioCues = partial.audioCues;
+      }
+      if (partial.audioVolume !== undefined) {
+        next.audioVolume = clamp(partial.audioVolume, 0, 100, current.audioVolume);
+      }
       if (partial.actionBindings && typeof partial.actionBindings === 'object') {
         next.actionBindings = { ...current.actionBindings };
         for (const [id, accel] of Object.entries(partial.actionBindings)) {
@@ -1146,7 +1180,9 @@ function registerIpc() {
       next.panelOpacity !== current.panelOpacity ||
       next.textScale !== current.textScale ||
       next.changeGlow !== current.changeGlow ||
-      next.radarIconScale !== current.radarIconScale
+      next.radarIconScale !== current.radarIconScale ||
+      next.audioCues !== current.audioCues ||
+      next.audioVolume !== current.audioVolume
     ) {
       applyAppearance(next);
     }

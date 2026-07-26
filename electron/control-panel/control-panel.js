@@ -30,6 +30,10 @@
   const radarIconsRange = $('#radar-icons-range');
   const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
+  const audioToggle = $('#audio-toggle');
+  const audioRange = $('#audio-range');
+  const audioEcho = $('#audio-echo');
+  const audioTest = $('#audio-test');
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -111,6 +115,9 @@
     radarIconsRange.value = settings.radarIconScale;
     radarIconsEcho.textContent = settings.radarIconScale;
     glowToggle.checked = settings.changeGlow !== false;
+    audioToggle.checked = settings.audioCues !== false;
+    audioRange.value = settings.audioVolume;
+    audioEcho.textContent = settings.audioVolume;
     sponsorsToggle.checked = !!settings.sponsorsEnabled;
     sponsorRange.value = settings.sponsorIntervalSec;
     sponsorEcho.textContent = settings.sponsorIntervalSec;
@@ -340,6 +347,85 @@
 
   glowToggle.addEventListener('change', async () => {
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
+  });
+
+  // --- Audio cues ----------------------------------------------------------
+
+  /**
+   * Preview the cue at the current volume, right here in the panel.
+   *
+   * A volume slider you cannot hear is a slider you set by guessing, and the
+   * alternative — drive a lap, run wide, listen — is not a way to tune anything.
+   * So the panel plays its own tone.
+   *
+   * This is a deliberate, and deliberately small, echo of the `release` cue in
+   * `overlay/js/audio.js`: the two live in different worlds (this page is a
+   * file:// document under a strict `script-src 'self'` policy, the overlays are
+   * served over HTTP) and there is no way for one to load the other's script.
+   * What is duplicated is one envelope and two frequencies — kept in step by
+   * hand, and worth it for a slider the operator can actually set by ear. The
+   * cue vocabulary itself is NOT duplicated; audio.js remains the only place
+   * that decides which event sounds like what.
+   */
+  let previewCtx = null;
+
+  function previewCue() {
+    const volume = Math.min(1, Math.max(0, parseInt(audioRange.value, 10) / 100));
+    if (!audioToggle.checked || volume <= 0) return;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return;
+    try {
+      if (!previewCtx) previewCtx = new Ctor();
+      if (previewCtx.state === 'suspended') void previewCtx.resume();
+      // The `release` cue: two rising tones. Mirrors CUES.release in audio.js.
+      const peak = 0.6 * volume;
+      const step = 0.09;
+      const at = previewCtx.currentTime + 0.01;
+      [660, 990].forEach((freq, i) => {
+        const osc = previewCtx.createOscillator();
+        const gain = previewCtx.createGain();
+        const t0 = at + i * step;
+        const dur = step * 0.92;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t0);
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(peak, t0 + 0.006);
+        gain.gain.setValueAtTime(peak, t0 + Math.max(0.006, dur - 0.04));
+        gain.gain.linearRampToValueAtTime(0, t0 + dur);
+        osc.connect(gain);
+        gain.connect(previewCtx.destination);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.01);
+      });
+    } catch {
+      // No audio device / blocked context — the setting still saves and the
+      // overlays still cue; only this preview is silent.
+    }
+  }
+
+  audioToggle.addEventListener('change', async () => {
+    await window.apex.updateSettings({ audioCues: audioToggle.checked });
+    if (audioToggle.checked) previewCue();
+  });
+
+  // Same live-push contract as the visual sliders, plus a preview on release
+  // rather than on every input event — dragging a slider through forty values
+  // would otherwise fire forty overlapping tones.
+  const commitAudioVolume = debounce(async (value) => {
+    await window.apex.updateSettings({ audioVolume: value });
+  }, 120);
+
+  audioRange.addEventListener('input', () => {
+    audioEcho.textContent = audioRange.value;
+    commitAudioVolume(parseInt(audioRange.value, 10));
+  });
+  audioRange.addEventListener('change', previewCue);
+
+  audioTest.addEventListener('click', (e) => {
+    // The button sits inside the field's <label>, so a bare click would also
+    // toggle/focus the control the label is for.
+    e.preventDefault();
+    previewCue();
   });
 
   // --- Sponsor logos -------------------------------------------------------

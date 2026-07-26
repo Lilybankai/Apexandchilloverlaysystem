@@ -228,6 +228,33 @@
           </label>
 
           <label class="field field--toggle">
+            <span class="field__label">Audio cues</span>
+            <span class="switch">
+              <input type="checkbox" id="audio-toggle" />
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+            </span>
+            <span class="field__hint">
+              Short tones for the things you cannot see coming with your eyes on
+              the track — a track-limits warning, a penalty landing, the pit
+              release. Synthesised, so nothing is downloaded and nothing is
+              buffered.
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Cue volume</span>
+            <div class="rate-row">
+              <input class="field__range" id="audio-range" type="range" min="0" max="100" step="5" />
+              <span class="rate-value"><span id="audio-echo">60</span> %</span>
+            </div>
+            <span class="field__hint">
+              Set it under your sim's own audio, not over it — the cue only has
+              to be noticed. Drag to hear it.
+              <button class="btn btn--ghost btn--sm" id="audio-test" type="button">Test</button>
+            </span>
+          </label>
+
+          <label class="field field--toggle">
             <span class="field__label">Change glow</span>
             <span class="switch">
               <input type="checkbox" id="glow-toggle" />

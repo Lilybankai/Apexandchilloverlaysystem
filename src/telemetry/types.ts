@@ -563,6 +563,78 @@ export interface PlayerState {
    * does not report pitting" (field absent). See {@link PitState}.
    */
   pit?: PitState;
+  /**
+   * Track-limit excursions and the sim's own penalty count. Omitted — absent,
+   * not zeroed — when neither the lateral-position channels nor the penalty
+   * count is readable (spectating, no shared memory, out of a session), so a
+   * clean sheet is never confused with no data. See {@link TrackLimitsState}.
+   */
+  trackLimits?: TrackLimitsState;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Track limits                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How the player is doing against the white lines: whether they are off the
+ * road right now, how many excursions they have had this session, and how many
+ * penalties the sim has actually issued.
+ *
+ * ## Two numbers with two different authorities, deliberately kept apart
+ * {@link penalties} is the sim's own `mNumPenalties` — the stewards' verdict,
+ * reported untouched. {@link warnings} is **ours**, derived by
+ * `telemetry/trackLimits.ts` from the car's lateral position against the track
+ * edge, because neither the shared memory nor the REST API publishes LMU's
+ * internal warning tally. They can disagree, and the widget presents them as
+ * what they are rather than blending them into one authoritative-looking count.
+ * See the module note in `trackLimits.ts` for why that is still the more useful
+ * number to a driver mid-stint.
+ */
+export interface TrackLimitsState {
+  /**
+   * `true` while the car is currently past the edge of the track — i.e. an
+   * excursion is in progress and has lasted long enough to be counted. This is
+   * the live "you are off" state the widget lights and the audio cue fires on.
+   */
+  offTrack: boolean;
+  /**
+   * How far the car's centre is beyond the track edge, metres — negative while
+   * inside it, so the widget can show a car running out of road *before* it runs
+   * out.
+   *
+   * **Omitted, not sentinelled**, when the lateral channels are unavailable.
+   * This is the one field here that is legitimately negative, so the frame's
+   * usual {@link UNKNOWN_VALUE} would collide with a real reading: a car with
+   * exactly one metre of road left would report `-1` and be read as "no data".
+   * Absence has no such ambiguity. (Same trap as `LapTiming.delta`, noted in the
+   * architecture doc's future work — this field simply avoids it rather than
+   * adding a third instance of it.)
+   */
+  beyondEdgeM?: number;
+  /** Excursions counted this session (see the caveat above). */
+  warnings: number;
+  /**
+   * How many warnings the display scale runs to — the classic three. A display
+   * scale, not a threshold the sim enforces; see `WARNING_LIMIT`.
+   */
+  warningLimit: number;
+  /**
+   * The sim's outstanding-penalty count for this car. {@link UNKNOWN_VALUE}
+   * when the channel is unavailable, which is different from zero.
+   */
+  penalties: number;
+  /**
+   * Milliseconds since the most recent warning was counted, so a widget can
+   * flash on the event itself rather than on the count's value.
+   * {@link UNKNOWN_VALUE} when there has not been one.
+   */
+  msSinceWarning: number;
+  /**
+   * Milliseconds since {@link penalties} last increased.
+   * {@link UNKNOWN_VALUE} when it has not moved this session.
+   */
+  msSincePenalty: number;
 }
 
 /* -------------------------------------------------------------------------- */

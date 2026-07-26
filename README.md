@@ -105,8 +105,10 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
   switchable modes (see below)
 - **Damage & Repair** — component damage, the sim's own repair time, and a live
   countdown once the crew is on the car (see below; LMU only)
-- **Radar** — a spotter's-eye strip of the cars around you, drawn to scale (see
-  below)
+- **Radar** — a spotter's-eye strip of the cars around you, drawn to scale, plus
+  the pit-release light (see below)
+- **Track limits** — excursions this session, the sim's own penalties, and how
+  much road you have left right now (see below)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
@@ -296,6 +298,83 @@ Faster-class cars carry a halo ring; a car you are lapping draws as a ghost.
 Blip positions come from `src/telemetry/radar.ts`, which owns the world→local
 projection and is unit-tested headless in `scripts/test-radar.js`.
 
+**The pit release lives here too** — the pit-lane light gantry, on the widget you
+are already staring at during a stop. A **red ring** sits around your car while
+the crew is on it; the instant they let you go, a **green ring sweeps outward**
+and fades, with a rising two-tone cue if audio is on. The radar wakes itself for
+both, since an empty pit box has nobody within the reveal perimeter.
+
+It is on the radar rather than on the Damage widget's stop countdown because the
+countdown answers *how much longer* — and by the time the answer is "now", nobody
+is watching it any more. The radar is the widget still worth looking at for the
+two seconds after the release, and it is the only one that answers the question
+the release immediately creates: **is anything coming down the lane.** The
+release is detected as the moment the stop *ends*, not as the arrival of the
+"exiting" stage, so a feed that skips a phase still tells you.
+
+### Track limits widget
+
+Two numbers, from two different authorities, deliberately kept apart:
+
+- **LIMITS** (the headline, amber) — excursions **we** counted this session, plus
+  a row of pips filling toward a penalty. Past the scale the row starts again in
+  red, so a fourth warning is visibly worse than the third.
+- **PEN** (a red chip) — penalties **the sim itself** has issued. This one is not
+  our opinion.
+
+Underneath, a bar showing **how much road is left**: it fills as your car runs
+out of track and goes solid at `OFF TRACK`. That is the part that is useful
+*before* the mistake — it is the only thing on the overlay that says "you are
+using all of it" while there is still time to do something about it.
+
+| Param        | Shows                                                            |
+| ------------ | ---------------------------------------------------------------- |
+| `?limits=<n>`| Pip count, for a league running its own number rather than the FIA three |
+
+**Where the warning count comes from — and what it is not.** LMU judges track
+limits internally against the white line and publishes **no** warning tally:
+neither the REST API nor shared memory carries one, and the only thing it does
+publish is the *consequence*, `mNumPenalties`, once a penalty has already landed.
+So the warning count is derived here, from the two channels that do exist — the
+car's lateral offset from the track path (`mPathLateral`) against how far the
+track extends in that direction (`mTrackEdge`) — plus half a car's width, because
+the rule everyone races to is *all four wheels* beyond the line and those
+channels measure the car's centre.
+
+That means **it can disagree with the sim's own judgement**, and it will on a
+circuit whose white line sits inboard of the track boundary the AIW describes.
+The widget never blends the two counts into one for exactly that reason. It is
+still the number you want mid-stint: "how many times have I run wide" is the
+question, and an answer the moment it happens beats an exact one that arrives at
+the end of the lap.
+
+The counting itself — one excursion per mistake however long it lasts, hysteresis
+so a car balanced on the limit does not tick over and over, a minimum duration so
+a kerb strike is not a run-off, and no counting in the pit lane or below racing
+speed — lives in `src/telemetry/trackLimits.ts` and is unit-tested headless in
+`scripts/test-tracklimits.js`. `scripts/probe-lmu-scoring.js` re-verifies the
+shared-memory offsets against a running game if an LMU update ever moves them.
+
+### Audio cues
+
+Three short tones, for the things you cannot see coming with your eyes on the
+track. On by default; **Audio cues** and **Cue volume** in the control panel's
+Settings card turn them down or off, and the Test button previews them.
+
+| Cue     | Sound                    | Fires when                        |
+| ------- | ------------------------ | --------------------------------- |
+| Limit   | one mid blip             | a track-limits warning is counted |
+| Penalty | two descending low tones | the sim issues a penalty          |
+| Release | two rising tones         | the crew lets you go              |
+
+They are **synthesised**, not sound files: an oscillator and a gain envelope, two
+nodes created and thrown away per cue. Nothing is downloaded, decoded, buffered
+or held resident, which keeps the "no assets, no network" property the rest of
+the overlay has — it matters most in the in-game layer, which is resident for a
+whole stint. Add `?audio=off` to a Browser Source URL to silence just that one,
+which is what you want when several overlay sources share an OBS scene and would
+otherwise all cue the same event at once.
+
 
 ### MFD widget
 
@@ -360,6 +439,15 @@ fuel calculator on top of the REST timing. This is automatic and best-effort: no
 local car (pure spectating) simply means those come from REST (fuel) or stay
 empty (pedals).
 
+**Track limits on LMU:** also driven-car only, and also from shared memory —
+this time the **Scoring** buffer rather than the Telemetry one, since the three
+channels involved (`mPathLateral`, `mTrackEdge`, `mNumPenalties`) live there and
+LMU's REST feed carries none of them. `src/telemetry/lmuScoring.ts` reads just
+that one car's record; `scripts/probe-lmu-scoring.js` re-verifies the offsets
+against a running game, deriving the record stride from the data rather than
+trusting a header. Spectating omits the block entirely rather than reporting a
+clean sheet nobody earned.
+
 **Tyre temps on LMU:** available for the locally-driven car. LMU publishes the
 per-wheel `mTemperature[3]` bands (inner/centre/outer, in Kelvin) in shared
 memory; the reader averages the three into a per-corner °C. They read absolute
@@ -410,6 +498,8 @@ All settings are environment variables with lightweight defaults
 | `APEX_PROVIDER`    | `lmu`       | Live source: `lmu` / `rf2` / `simulator`      |
 | `APEX_LMU_PORT`    | `6397`      | LMU REST API port (when `provider` is `lmu`)  |
 | `APEX_PANEL_OPACITY` | `100`     | Widget background opacity % (0 = none), 0–100 |
+| `APEX_AUDIO_CUES`  | `true`      | Play the synthesised audio cues                |
+| `APEX_AUDIO_VOLUME`| `60`        | Cue master volume % (0 = silent), 0–100        |
 | `APEX_VERBOSE`     | `false`     | Verbose logging                               |
 
 ## Project layout
@@ -421,6 +511,8 @@ src/
     provider.ts          # TelemetryProvider interface
     simulatorProvider.ts # synthetic data for demos / dev
     rf2Provider.ts       # rF2/LMU shared-memory reader (falls back to simulator)
+    lmuScoring.ts        # LMU Scoring buffer: lateral position + the sim's penalties
+    trackLimits.ts       # excursion counting (hysteresis, guards) — unit-tested
     fuelCalculator.ts    # fuel/lap, laps remaining, fuel-to-finish, pit window
   server/
     config.ts            # runtime config (ports, update rate)

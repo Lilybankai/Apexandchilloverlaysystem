@@ -169,6 +169,26 @@
     }
   }
 
+  /* ------------------------------ audio cues ------------------------------ */
+
+  /**
+   * On/off and master volume for the audio cues (see js/audio.js).
+   *
+   * Handed straight to `ApexAudio.configure` rather than written to the DOM: a
+   * volume is not a style, and unlike the radar's icon size it has no
+   * subscription either — the audio module holds the live value itself and reads
+   * it when a cue fires, which happens a handful of times a session.
+   *
+   * `audio.js` is loaded by every overlay page beside this one, but the guard
+   * below means a page that omits it simply has no cues rather than throwing.
+   */
+  function applyAudio(cfg) {
+    var audio = window.ApexAudio;
+    if (!audio || typeof audio.configure !== "function") return;
+    if (cfg.audioCues === undefined && cfg.audioVolume === undefined) return;
+    audio.configure({ audioCues: cfg.audioCues, audioVolume: cfg.audioVolume });
+  }
+
   /* --------------------------- per-widget modes --------------------------- */
 
   /** Current mode per widget id, and everyone who wants telling when it moves. */
@@ -259,6 +279,7 @@
   var scalePinned = false;
   var glowPinned = false;
   var iconsPinned = false;
+  var audioPinned = false;
   try {
     var params = new URLSearchParams(window.location.search);
 
@@ -289,6 +310,20 @@
       applyIcons(parseFloat(rawIcons));
       iconsPinned = true;
     }
+
+    // ?audio=off silences ONE source while the rest keep the operator's setting
+    // — the case that needs it is an OBS scene with several overlay sources in
+    // it, where every one of them would otherwise cue the same event at once.
+    // ?audio=<0..100> pins that source's volume instead.
+    var rawAudio = params.get("audio");
+    if (rawAudio !== null) {
+      var off = rawAudio === "0" || rawAudio === "off" || rawAudio === "false";
+      applyAudio({
+        audioCues: !off,
+        audioVolume: off ? 0 : isFinite(parseFloat(rawAudio)) ? parseFloat(rawAudio) : undefined,
+      });
+      audioPinned = true;
+    }
   } catch (e) {
     /* no URLSearchParams / malformed query — fall through to the live routes */
   }
@@ -309,6 +344,7 @@
       if (!iconsPinned && appearance.radarIconScale !== undefined) {
         applyIcons(appearance.radarIconScale);
       }
+      if (!audioPinned) applyAudio(appearance);
       applyModes(appearance.widgetModes);
     });
     return; // the app pushes changes — nothing to poll
@@ -329,6 +365,7 @@
         if (s !== null && !scalePinned) applyScale(s);
         if (!glowPinned && cfg.changeGlow !== undefined) applyGlow(cfg.changeGlow);
         if (!iconsPinned && cfg.radarIconScale !== undefined) applyIcons(cfg.radarIconScale);
+        if (!audioPinned) applyAudio(cfg);
         applyModes(cfg.widgetModes);
       })
       .catch(function () {

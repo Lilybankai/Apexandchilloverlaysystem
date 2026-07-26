@@ -39,6 +39,8 @@ import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator } from './fuelCalculator';
 import { LmuLocalCarReader, type LocalCarPhysics } from './lmuLocalCar';
+import { LmuScoringReader } from './lmuScoring';
+import { TrackLimitsTracker } from './trackLimits';
 import { buildRadar, type RadarCar } from './radar';
 import {
   TELEMETRY_SCHEMA_VERSION,
@@ -60,6 +62,7 @@ import {
   type PitPhase,
   type PitState,
   type MfdState,
+  type TrackLimitsState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
@@ -250,6 +253,14 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
   private readonly localCar = new LmuLocalCarReader();
   /**
+   * Reads the lateral-position and penalty channels the REST feed omits, from
+   * the Scoring buffer. Separate from {@link localCar} because it is a different
+   * shared-memory region with its own record layout — see `lmuScoring.ts`.
+   */
+  private readonly scoring = new LmuScoringReader();
+  /** Counts track-limit excursions for the driven car; see `trackLimits.ts`. */
+  private readonly trackLimits = new TrackLimitsTracker();
+  /**
    * Per-car relative-gap history, for the closing-rate derivation that drives
    * the backmarker / blue-flag alert. Keyed by slot id. See
    * {@link CLOSING_WINDOW_MS} for why this is sampled rather than differenced
@@ -304,6 +315,7 @@ export class LmuRestProvider implements TelemetryProvider {
   public async start(): Promise<void> {
     this.fallback.start();
     this.localCar.start(); // best-effort shared-memory reader for the driven car
+    this.scoring.start(); // …and the scoring buffer, for track limits + penalties
     await this.refresh(); // prime the cache before the first poll
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
@@ -353,6 +365,7 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     this.fallback.stop();
     this.localCar.stop();
+    this.scoring.stop();
     this.live = false;
   }
 
@@ -599,7 +612,16 @@ export class LmuRestProvider implements TelemetryProvider {
     } else {
       deltaSec = this.lapDelta.update(focus, trackLen);
     }
-    const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas);
+    // Track limits ride on the DRIVEN car (like the radar), so they need that
+    // car's own speed — not the focused car's, which may be a rival being
+    // spectated while the player sits stationary in their garage.
+    const drivenSpeedKph = local
+      ? local.speedKph
+      : playerCar && typeof playerCar.carVelocity?.velocity === 'number'
+        ? Math.round(Math.abs(playerCar.carVelocity.velocity) * 3.6)
+        : UNKNOWN_VALUE;
+    const trackLimits = this.buildTrackLimits(playerCar, session, drivenSpeedKph);
+    const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
     // Live rear brake bias from shared memory (the driven car only); projectAids
     // uses it as the one genuinely-live aid, falling back to the setup value.
     const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined);
@@ -1200,6 +1222,7 @@ export class LmuRestProvider implements TelemetryProvider {
     local: LocalCarPhysics | null,
     deltaSec: number,
     paceDeltas: PaceDeltas | undefined,
+    trackLimits: TrackLimitsState | undefined,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -1282,7 +1305,48 @@ export class LmuRestProvider implements TelemetryProvider {
         ? { damage: this.damage }
         : {}),
       ...(pit ? { pit } : {}),
+      // Like motion and chassis, this exists only for the car driven on this PC
+      // — it is read from that car's own scoring record — so spectating omits it
+      // rather than reporting a clean sheet nobody earned.
+      ...(trackLimits ? { trackLimits } : {}),
     };
+  }
+
+  /**
+   * Track-limit excursions and penalties for the **driven** car.
+   *
+   * Centred on the driven car rather than the broadcast focus, for the same
+   * reason the radar is: it is a driver aid, and the channels behind it exist
+   * only for the car whose scoring record this PC owns. Returns `undefined`
+   * when the scoring buffer is unreadable, which drops the block from the frame.
+   */
+  private buildTrackLimits(
+    playerCar: RestStanding | undefined,
+    session: SessionState,
+    speedKph: number,
+  ): TrackLimitsState | undefined {
+    if (!playerCar) {
+      this.trackLimits.reset();
+      return undefined;
+    }
+    const car = this.scoring.read(playerCar.slotID);
+    if (!car) return undefined;
+    return (
+      this.trackLimits.update({
+        pathLateralM: car.pathLateralM,
+        trackEdgeM: car.trackEdgeM,
+        speedKph,
+        // The scoring record's own pit flags are authoritative here: they are
+        // the same source as the lateral channels, so the two can never
+        // disagree about which lap the car is on.
+        inPit: car.inPit || isInPit(playerCar),
+        penalties: car.penalties,
+        // Track + session type: a new session zeroes the count, and so does
+        // driving the same session at a different circuit (a rolling server).
+        sessionKey: `${session.track}|${session.type}`,
+        nowMs: Date.now(),
+      }) ?? undefined
+    );
   }
 
   /**

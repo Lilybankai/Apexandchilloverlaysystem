@@ -12,6 +12,12 @@
  * on your LEFT. This can. When a car overlaps you longitudinally (`alongside`),
  * the matching edge bar lights — the "don't turn in" warning.
  *
+ * ## It also carries the pit release
+ * A red ring around your own car while the crew is on it, and a green sweep the
+ * instant they let you go — the pit-lane light gantry, on the one widget you are
+ * already looking at through a stop. See {@link updatePitRelease} for why it
+ * lives here rather than on the damage widget's stop countdown.
+ *
  * ## The scale is ISOTROPIC, and the cars are drawn at their real size
  * One metre is the same number of pixels across the strip as it is up it, and
  * each car is drawn at its true footprint in metres — a 5.1 m × 2.0 m Hypercar,
@@ -581,6 +587,145 @@
   /** The player's own shape family, refreshed once per frame in {@link update}. */
   var egoFam = "generic";
 
+  /* ------------------------------ pit release ------------------------------
+   * The one moment in a stop that has no readout anywhere else: the crew
+   * finishes and the car is LET GO.
+   *
+   * It belongs on the radar rather than on the damage widget's countdown for a
+   * simple reason — the countdown answers "how much longer", and by the time
+   * the answer is "now" the driver has stopped watching it. The radar is
+   * already the thing being stared at through a stop (it is what tells you
+   * whether the lane is clear), and it is the widget still on screen for the
+   * two seconds after the release when the information is actually worth
+   * something. It is also the only widget whose blips answer the question the
+   * release immediately creates: is anyone coming down the lane.
+   *
+   * Two states, and they are the pit-lane light gantry:
+   *   held      the crew is on the car (pit.phase === 'stopped'). A red ring
+   *             around the ego car, steady.
+   *   released  the phase has just left 'stopped'. A green ring that expands
+   *             outward and fades — a GO, not a lamp, so it reads in
+   *             peripheral vision without needing to be looked at.
+   *
+   * The release is detected as an EDGE (stopped -> anything else) rather than
+   * as `phase === 'exiting'`, because a stop can end straight into `none` when
+   * the feed drops a phase, and a driver who was let go still needs telling.
+   * -------------------------------------------------------------------------- */
+
+  /** How long the release sweep lasts, ms. */
+  var RELEASE_MS = 1800;
+  /** Whether the crew was working on the car last frame. */
+  var wasStopped = false;
+  /** Timestamp of the release, or 0 when there hasn't been one. */
+  var releasedAt = 0;
+  /** Whether the crew is on the car right now — drives the held ring. */
+  var held = false;
+
+  /**
+   * Track the pit phase and fire the release. Called once per frame before
+   * anything is drawn.
+   */
+  function updatePitRelease(frame) {
+    var pit = frame.player ? frame.player.pit : null;
+    // No pit block at all (a provider that doesn't report stops): leave both
+    // states off rather than inventing a release that never happened.
+    if (!pit) {
+      wasStopped = false;
+      held = false;
+      return;
+    }
+    var stopped = pit.phase === "stopped";
+    if (wasStopped && !stopped) {
+      releasedAt = nowMs();
+      cue("release");
+    }
+    wasStopped = stopped;
+    held = stopped;
+  }
+
+  /** Milliseconds since the release, or Infinity when there hasn't been one. */
+  function sinceRelease() {
+    return releasedAt ? nowMs() - releasedAt : Infinity;
+  }
+
+  /** Whether anything pit-related wants drawing — and therefore the HUD awake. */
+  function pitActive() {
+    return held || sinceRelease() < RELEASE_MS;
+  }
+
+  /**
+   * The held ring: the crew is on the car, do not go.
+   *
+   * Drawn as a ring around the ego car rather than as a bar or a word, so it
+   * sits exactly where the driver's eye already is and cannot be confused with
+   * the edge-proximity blooms, which live on the sides.
+   */
+  function drawPitHold() {
+    var cx = cssW / 2, cy = cssH / 2;
+    var box = footprint(egoFam);
+    var r = Math.max(box.hl, box.hw) + 6;
+    gctx.save();
+    gctx.strokeStyle = "rgba(255, 84, 112, 0.85)";
+    gctx.lineWidth = 2.5;
+    gctx.beginPath();
+    gctx.arc(cx, cy, r, 0, Math.PI * 2);
+    gctx.stroke();
+    gctx.restore();
+  }
+
+  /**
+   * The release sweep: a green ring expanding away from the car and fading out.
+   *
+   * Expanding rather than flashing because a flash competes with the edge
+   * warnings for the same "something changed" channel, and this is the one
+   * event on the radar that means GO rather than CAREFUL. Motion outward reads
+   * as permission in a way a blink does not.
+   */
+  function drawPitRelease(t) {
+    var p = t / RELEASE_MS; // 0 at the release, 1 at the end
+    var cx = cssW / 2, cy = cssH / 2;
+    var box = footprint(egoFam);
+    var from = Math.max(box.hl, box.hw) + 6;
+    var to = Math.min(cssW, cssH) * 0.48;
+    // Ease out, so the ring leaves quickly and settles — the shape of a light
+    // going green rather than of something being drawn.
+    var eased = 1 - Math.pow(1 - p, 2);
+    var r = from + (to - from) * eased;
+    var alpha = (1 - p) * 0.9;
+    gctx.save();
+    gctx.strokeStyle = "rgba(53, 208, 127, " + alpha.toFixed(3) + ")";
+    gctx.lineWidth = 3;
+    gctx.beginPath();
+    gctx.arc(cx, cy, r, 0, Math.PI * 2);
+    gctx.stroke();
+    // A soft green wash inside the ring for the first half, so the release
+    // registers even when the ring has already swept past where you were
+    // looking.
+    if (p < 0.5) {
+      var g = gctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      var wash = (0.5 - p) * 0.5;
+      g.addColorStop(0, "rgba(53, 208, 127, " + wash.toFixed(3) + ")");
+      g.addColorStop(1, "rgba(53, 208, 127, 0)");
+      gctx.fillStyle = g;
+      gctx.beginPath();
+      gctx.arc(cx, cy, r, 0, Math.PI * 2);
+      gctx.fill();
+    }
+    gctx.restore();
+  }
+
+  /** Fire an audio cue, if this page loaded the audio module at all. */
+  function cue(name) {
+    var audio = window.ApexAudio;
+    if (audio && typeof audio.cue === "function") audio.cue(name);
+  }
+
+  function nowMs() {
+    return typeof performance !== "undefined" && performance.now
+      ? performance.now()
+      : Date.now();
+  }
+
   /**
    * The fade perimeter's semi-axes in metres, at the current zoom.
    *
@@ -965,12 +1110,19 @@
     // car widths and lengths, so every blip is judged against one ring rather
     // than each rival lingering by its own size.
     egoFam = carFamily(playerClass(frame));
+    // Watch the pit phase for the stopped -> released edge. Before the reveal
+    // below, which has to know whether a release is running.
+    updatePitRelease(frame);
 
     // Proximity reveal: the whole HUD (every icon AND the player's own car) stays
     // invisible until a car crosses the fade perimeter, then fades in, and fades
     // back out as the last one leaves. The fade is applied to the canvas element
     // itself so each icon's own alphas are preserved.
-    var target = anyoneInRange(blips) ? 1 : 0;
+    //
+    // A stop in progress or a release just fired also wakes it: an empty pit box
+    // has nobody within the perimeter, so without this the one moment the
+    // release exists to announce would be the one moment the HUD was invisible.
+    var target = anyoneInRange(blips) || pitActive() ? 1 : 0;
     revealAlpha += (target - revealAlpha) * FADE_RATE;
     if (target === 0 && revealAlpha < 0.003) revealAlpha = 0;
     canvas.style.opacity = String(revealAlpha);
@@ -983,9 +1135,15 @@
 
     gctx.clearRect(0, 0, cssW, cssH);
     drawWarnings(blips);
+    // The held ring goes UNDER the ego car (it frames it), the release sweep
+    // goes over everything — it is the most important thing on the strip for
+    // the second and a half it lasts, and it is transparent anyway.
+    if (held) drawPitHold();
     drawEgo();
     // Draw furthest first so the nearest blip sits on top of any overlap.
     for (var j = blips.length - 1; j >= 0; j--) drawBlip(blips[j]);
+    var since = sinceRelease();
+    if (since < RELEASE_MS) drawPitRelease(since);
   }
 
   window.ApexOverlay.registerWidget("radar", {

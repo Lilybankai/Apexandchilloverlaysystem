@@ -17,7 +17,7 @@
       /widget.html?w=pedals&port=8080     (override WS port if needed)
 
     Valid names: standings, relative, delta, pacedelta, weather, fuel, fuelplan,
-                 tyres, pedals, pedalsv, motion, damage, radar, mfd
+                 tyres, pedals, pedalsv, motion, damage, radar, limits, mfd
 
     It reuses the exact same widget runtime (client.js) and widget modules as
     the combined page. client.js binds a widget only if its section is present,
@@ -27,6 +27,10 @@
   <link rel="stylesheet" href="css/overlay.css" />
   <link rel="stylesheet" href="css/single.css" />
 
+  <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
+       the operator's on/off + volume. Add ?audio=off to silence just this
+       source when several overlay sources share one OBS scene. -->
+  <script src="js/audio.js"></script>
   <!-- Global widget-background opacity (control panel / ?bg=). Synchronous and
        in <head> so the operator's setting is applied before the first paint. -->
   <script src="js/appearance.js"></script>
@@ -83,6 +87,7 @@
   <script src="js/widgets/motion.js" defer></script>
   <script src="js/widgets/damage.js" defer></script>
   <script src="js/widgets/radar.js" defer></script>
+  <script src="js/widgets/limits.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
   <!-- Fuel Planner: reference-data module must load before its widget. -->
   <script src="js/data/racedata.js" defer></script>

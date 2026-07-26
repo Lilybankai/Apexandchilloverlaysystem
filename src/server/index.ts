@@ -96,6 +96,16 @@ export interface Appearance {
    */
   radarIconScale: number;
   /**
+   * Whether the short synthesised audio cues sound at all (see
+   * `overlay/js/audio.js`). On by default — a cue exists precisely for the
+   * moments a driver's eyes are on the track and the visual is missed — but a
+   * broadcast whose audio is already mixed wants one switch that silences the
+   * lot.
+   */
+  audioCues: boolean;
+  /** Master volume for those cues, 0..100 (percent). Zero is silence. */
+  audioVolume: number;
+  /**
    * Per-widget display mode, `{ [widgetId]: mode }` — e.g. `{ tyres: 'tread' }`
    * to show remaining tread instead of temperature.
    *
@@ -123,6 +133,8 @@ const appearance: Appearance = {
   textScale: 100,
   changeGlow: true,
   radarIconScale: 50,
+  audioCues: true,
+  audioVolume: 60,
   widgetModes: {},
 };
 
@@ -148,6 +160,12 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   }
   if (typeof next?.radarIconScale === 'number' && Number.isFinite(next.radarIconScale)) {
     appearance.radarIconScale = Math.min(150, Math.max(30, Math.round(next.radarIconScale)));
+  }
+  if (typeof next?.audioCues === 'boolean') {
+    appearance.audioCues = next.audioCues;
+  }
+  if (typeof next?.audioVolume === 'number' && Number.isFinite(next.audioVolume)) {
+    appearance.audioVolume = Math.min(100, Math.max(0, Math.round(next.audioVolume)));
   }
   if (next?.widgetModes && typeof next.widgetModes === 'object') {
     for (const [widget, mode] of Object.entries(next.widgetModes)) {
@@ -297,6 +315,8 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     textScale: config.textScale,
     changeGlow: config.changeGlow,
     radarIconScale: config.radarIconScale,
+    audioCues: config.audioCues,
+    audioVolume: config.audioVolume,
   });
 
   // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works

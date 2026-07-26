@@ -29,6 +29,7 @@ import {
   type RelativeEntry,
   type StandingEntry,
   type TelemetryFrame,
+  type TrackLimitsState,
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
@@ -38,6 +39,7 @@ import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
+import { TrackLimitsTracker, WARNING_LIMIT } from './trackLimits';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -311,6 +313,9 @@ export class SimulatorProvider implements TelemetryProvider {
     // After the damage block, which is where the booked stop length comes from
     // when a stop starts.
     const pit = this.advancePit(dt, damage);
+    // After the pit cycle: excursions are not judged in the pit lane, so the
+    // tracker needs this poll's phase, not last poll's.
+    const trackLimits = this.buildTrackLimits(dt, this.speedFor(this.pedals));
 
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
@@ -365,6 +370,7 @@ export class SimulatorProvider implements TelemetryProvider {
         ...(chassis ? { chassis } : {}),
         ...(damage ? { damage } : {}),
         pit,
+        ...(trackLimits ? { trackLimits } : {}),
       },
       standings,
       relative,
@@ -692,6 +698,70 @@ export class SimulatorProvider implements TelemetryProvider {
       slackSec: this.pitWork ? this.pitWork.slackSec : UNKNOWN_VALUE,
     };
   }
+
+  /* ------------------------------ track limits ----------------------------- */
+
+  /**
+   * How often the demo driver runs wide, seconds. Frequent enough that the
+   * widget's warning flash, its pips and the audio cue can all be seen without
+   * waiting around; slow enough that the strip is mostly showing its clean
+   * state, which is what it will be doing for most of a real stint.
+   */
+  private static readonly LIMITS_INTERVAL_SEC = 35;
+  /** How long each demo excursion lasts, seconds. */
+  private static readonly LIMITS_EXCURSION_SEC = 1.2;
+  /** Half the demo track's width, metres — the `mTrackEdge` the sim would give. */
+  private static readonly LIMITS_TRACK_EDGE_M = 7;
+
+  /** Seconds into the current run-wide cycle. */
+  private limitsClockSec = 0;
+  /** The real tracker — the demo invents the geometry, not the counting. */
+  private readonly limits = new TrackLimitsTracker();
+
+  /**
+   * Synthesises the two lateral-position channels a real car would publish and
+   * runs them through the **live** {@link TrackLimitsTracker}, exactly as
+   * {@link buildChassis} does with the chassis tracker.
+   *
+   * So demo mode exercises the actual hysteresis, the minimum-duration guard and
+   * the counting — a regression in any of them shows up here rather than on
+   * track. Only the car's lateral position is invented.
+   *
+   * The penalty count follows the warnings the way a race director would: one
+   * penalty per full set of three, which is what makes the widget's two
+   * differently-sourced numbers both reachable in a demo.
+   */
+  private buildTrackLimits(dt: number, speedKph: number): TrackLimitsState | undefined {
+    this.limitsClockSec += dt;
+    const period = SimulatorProvider.LIMITS_INTERVAL_SEC;
+    if (this.limitsClockSec >= period) this.limitsClockSec -= period;
+
+    const edge = SimulatorProvider.LIMITS_TRACK_EDGE_M;
+    const off = this.limitsClockSec < SimulatorProvider.LIMITS_EXCURSION_SEC;
+    // Drifting around mid-track normally; well past the edge while running wide
+    // (the margin the tracker adds is half a car, so this has to clear it).
+    const lateral = off
+      ? edge + 2.2
+      : Math.sin(this.limitsClockSec * 0.9) * (edge * 0.4);
+
+    const state = this.limits.update({
+      pathLateralM: lateral,
+      trackEdgeM: edge,
+      speedKph,
+      inPit: this.player().inPit,
+      // The stewards' own count, one per completed set of warnings — fed from
+      // last poll's tally, so the penalty lands the poll AFTER the warning that
+      // earned it, which is also how a real race director behaves.
+      penalties: Math.floor(this.demoWarnings / WARNING_LIMIT),
+      sessionKey: 'demo',
+      nowMs: Date.now(),
+    });
+    if (state) this.demoWarnings = state.warnings;
+    return state ?? undefined;
+  }
+
+  /** Warnings counted so far, mirrored so the demo's penalties can follow. */
+  private demoWarnings = 0;
 
   /* -------------------------------- damage -------------------------------- */
 

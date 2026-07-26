@@ -55,6 +55,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    limits:
+      '<section class="widget panel" id="widget-limits" data-widget="limits" aria-label="Track limits — warnings and penalties">' +
+      '<header class="panel__header"><span class="panel__title">Track Limits</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     fuel:
       '<section class="widget panel" id="widget-fuel" data-widget="fuel" aria-label="Fuel calculator">' +
       '<header class="panel__header"><span class="panel__title">Fuel</span>' +
