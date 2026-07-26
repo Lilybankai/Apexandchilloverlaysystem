@@ -35,10 +35,27 @@
  * 12 m reveal radius the HUD appears at — a car is on screen before it is close
  * enough to matter. Use `?range=` for more, knowing the cars shrink to match.
  *
+ * ## Icon size is the SAME knob as range, deliberately
+ * "The cars are too big" and "I want more range" are one control here, not two:
+ * the ICONS slider sets the display range (100% = the classic 18 m, 50% = 36 m
+ * and therefore half-size cars). It cannot be a size multiplier laid over the
+ * geometry — that is exactly the fixed-pixel icon this widget was rebuilt to get
+ * rid of, and it would break the one property the radar exists to have (an
+ * icon's edge is the car's edge). Zooming out shrinks the cars AND the metres
+ * they stand on together, so contact still reads true at every setting.
+ *
+ * ## Distance fade
+ * Opponents fade with distance rather than being clipped by the canvas: the fade
+ * starts at the player icon's own centre line and reaches nothing on a rounded
+ * perimeter 3.5 car widths to each side and 3.5 car lengths fore and aft. So
+ * everything on screen is something within a few car lengths of you, brightest
+ * closest, and nothing ever pops in or out at an edge.
+ *
  * URL params (all optional):
- *   ?range=<m>     Longitudinal display range each way, metres (default 18,
- *                  clamped 8..150). Sets the scale for BOTH axes; the lateral
- *                  half-width follows from the strip's width (~13 m at default).
+ *   ?icons=<pct>   Icon size, 30..150 (default 50; also a hover slider). 100% is
+ *                  the classic 18 m range — this IS the zoom, see above.
+ *   ?range=<m>     Longitudinal display range each way, metres (clamped 8..150).
+ *                  The same knob from the other end; wins over ?icons=.
  *   ?opacity=0..1  HUD opacity (also a hover slider), so it can sit over the
  *                  track as a see-through practice aid.
  *
@@ -72,16 +89,35 @@
   /* -------------------------------- config -------------------------------- */
 
   /**
-   * Longitudinal display range each way, metres. Overridable with ?range=.
+   * The range that counts as 100% icon size — the geometry this widget shipped
+   * with. Everything else is expressed as a percentage of it so the slider can
+   * talk about car size, which is what the operator actually sees, while the
+   * code keeps working in metres.
+   */
+  var BASE_RANGE_M = 18;
+
+  /**
+   * Longitudinal display range each way, metres. Set by the ICONS slider (and
+   * overridable with ?range= / ?icons=).
    *
    * This is the ONE scale knob: it sets metres-per-pixel for both axes (see the
    * module note), so the lateral half-width is not configurable independently —
-   * it falls out of the strip's width and lands at ~13 m by default, which is
+   * it falls out of the strip's width and lands at ~13 m at 100%, which is
    * about a track width. Making it a second knob would be making the two axes
    * disagree again, which is the bug this shape exists to prevent.
    */
-  var rangeM = 18;
+  var rangeM = BASE_RANGE_M * 2; // 50% icon size — the default, see ICON_DEFAULT
   var RANGE_MIN = 8, RANGE_MAX = 150;
+
+  /**
+   * Icon size as a percentage of the classic geometry, i.e. `BASE_RANGE_M /
+   * rangeM`. 50% by default: at 100% the cars filled more of the strip than
+   * they needed to at a glance. The bounds are just RANGE_MIN/MAX seen from the
+   * other side (150% = 12 m of range, 30% = 60 m).
+   */
+  var ICON_DEFAULT = 50, ICON_MIN = 30, ICON_MAX = 150;
+  /** localStorage key for the operator's chosen icon size. */
+  var ICON_SIZE_KEY = "apex-radar-iconsize";
   /** Border inset, CSS px, so a car at the very edge is not half off-canvas. */
   var PAD = 10;
   /**
@@ -112,6 +148,19 @@
   var FADE_RATE = 0.15;
   var revealAlpha = 0;
 
+  /**
+   * Distance fade — how far out an opponent stays visible, in the player's own
+   * car widths (sideways) and car lengths (fore-aft).
+   *
+   * The perimeter these describe is a rounded one: an ellipse in metres, so a
+   * car coming diagonally fades on the same curve as one coming straight up the
+   * inside, and there is no corner of the strip where a blip survives longer
+   * than it should. Measured in car sizes rather than metres because that is the
+   * unit the driver is actually thinking in — "he's two cars back" — and it
+   * scales itself for a 5.1 m Hypercar against a 4.65 m LMP3 for free.
+   */
+  var FADE_WIDTHS = 3.5, FADE_LENGTHS = 3.5;
+
   /* ------------------------------- elements ------------------------------- */
 
   var canvas, gctx, cssW = 0, cssH = 0, dpr = 1;
@@ -120,6 +169,23 @@
 
   /** Aspect: taller than wide, like a spotter strip. Height = width × this. */
   var ASPECT = 1.5;
+
+  /**
+   * One scale for both axes, pinned to the longitudinal range. Everything else
+   * — blip positions, car footprints, the lateral extent — is derived from it,
+   * so resizing the widget (or moving the ICONS slider) zooms the whole picture
+   * rather than changing what "touching" means.
+   */
+  function applyScale() {
+    pxPerM = (cssH / 2 - PAD) / rangeM;
+  }
+
+  /** Set the display range from an icon-size percentage, and re-scale. */
+  function setIconPercent(pct) {
+    var p = Math.min(ICON_MAX, Math.max(ICON_MIN, pct));
+    rangeM = Math.min(RANGE_MAX, Math.max(RANGE_MIN, BASE_RANGE_M / (p / 100)));
+    applyScale();
+  }
 
   function sizeCanvas() {
     if (!canvas) return;
@@ -130,11 +196,7 @@
     var bh = Math.round(h * d);
     if (bw === canvas.width && bh === canvas.height && w === cssW) return;
     cssW = w; cssH = h; dpr = d;
-    // One scale for both axes, pinned to the longitudinal range. Everything
-    // else — blip positions, car footprints, the lateral extent — is derived
-    // from this, so resizing the widget zooms the whole picture rather than
-    // changing what "touching" means.
-    pxPerM = (cssH / 2 - PAD) / rangeM;
+    applyScale();
     canvas.style.height = cssH + "px";
     // Add the border chrome back so the content box is exactly cssH tall and the
     // bitmap is never squashed to fit (same fix as motion.js).
@@ -154,53 +216,106 @@
     window.addEventListener("resize", sizeCanvas, { passive: true });
   }
 
-  /* --------------------------- opacity HUD control ------------------------ */
+  /* ----------------------------- HUD controls ----------------------------- */
   // Same contract as motion.js: fade the CONTENTS (not the section) so the
-  // hover slider stays visible, and drop the panel chrome below full opacity so
+  // hover sliders stay visible, and drop the panel chrome below full opacity so
   // the widget reads as a HUD over the track rather than a box.
-  function buildOpacityControl(root, params) {
-    var apply = function (v) {
-      root.style.setProperty("--radar-op", String(v));
-      root.setAttribute("data-transparent", v < 1 ? "true" : "false");
-    };
-    var stored = null;
-    try {
-      var raw = localStorage.getItem(OPACITY_KEY);
-      if (raw !== null && isFinite(parseFloat(raw))) stored = parseFloat(raw);
-    } catch (e) { /* private mode */ }
-    var fromUrl = parseFloat(params.get("opacity"));
-    var initial = isFinite(fromUrl) ? fromUrl : stored !== null ? stored : 1;
-    initial = Math.min(1, Math.max(MIN_OPACITY, initial));
 
+  /** Read a persisted number, or null when absent/unparseable/unavailable. */
+  function stored(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (raw !== null && isFinite(parseFloat(raw))) return parseFloat(raw);
+    } catch (e) { /* private mode — the slider still works, it just won't stick */ }
+    return null;
+  }
+
+  /**
+   * One hover slider: LABEL — track — readout. `opts.onInput(value)` receives
+   * the raw slider number; persistence is the caller's business, since only it
+   * knows what unit the stored value is in.
+   */
+  function sliderBar(opts) {
     var bar = document.createElement("div");
-    bar.className = "radar__opacity";
+    bar.className = "radar__ctl " + opts.className;
     var label = document.createElement("span");
-    label.className = "radar__opacity-label";
-    label.textContent = "OPACITY";
+    label.className = "radar__ctl-label";
+    label.textContent = opts.label;
     var slider = document.createElement("input");
-    slider.className = "radar__opacity-range";
+    slider.className = "radar__ctl-range";
     slider.type = "range";
-    slider.min = String(Math.round(MIN_OPACITY * 100));
-    slider.max = "100"; slider.step = "1";
-    slider.value = String(Math.round(initial * 100));
+    slider.min = String(opts.min); slider.max = String(opts.max); slider.step = "1";
+    slider.value = String(Math.round(opts.value));
     var readout = document.createElement("span");
-    readout.className = "radar__opacity-val";
+    readout.className = "radar__ctl-val";
     readout.textContent = slider.value + "%";
     slider.addEventListener("input", function () {
-      var v = Math.min(1, Math.max(MIN_OPACITY, Number(slider.value) / 100));
-      apply(v);
-      readout.textContent = Math.round(v * 100) + "%";
-      try { localStorage.setItem(OPACITY_KEY, String(v)); } catch (e) { /* ignore */ }
+      var v = Math.min(opts.max, Math.max(opts.min, Number(slider.value)));
+      readout.textContent = Math.round(v) + "%";
+      opts.onInput(v);
     });
+    // The in-game layer starts a widget drag on pointerdown anywhere inside a
+    // widget; without this, dragging the slider drags the whole radar instead.
     ["pointerdown", "mousedown", "touchstart"].forEach(function (evt) {
       bar.addEventListener(evt, function (e) { e.stopPropagation(); });
     });
     bar.appendChild(label); bar.appendChild(slider); bar.appendChild(readout);
+    return bar;
+  }
+
+  function buildControls(root, params) {
+    var applyOpacity = function (v) {
+      root.style.setProperty("--radar-op", String(v));
+      root.setAttribute("data-transparent", v < 1 ? "true" : "false");
+    };
+    var savedOp = stored(OPACITY_KEY);
+    var urlOp = parseFloat(params.get("opacity"));
+    var op = isFinite(urlOp) ? urlOp : savedOp !== null ? savedOp : 1;
+    op = Math.min(1, Math.max(MIN_OPACITY, op));
+
+    // Icon size, resolved from (in order) ?range=, ?icons=, the saved value, the
+    // default. ?range= wins because it names the geometry directly — an operator
+    // who has asked for 40 m of range means it, whatever that does to the icons.
+    var urlRange = parseFloat(params.get("range"));
+    var urlIcons = parseFloat(params.get("icons"));
+    var savedIcons = stored(ICON_SIZE_KEY);
+    var icons = isFinite(urlRange) && urlRange > 0
+      ? (BASE_RANGE_M / Math.min(RANGE_MAX, Math.max(RANGE_MIN, urlRange))) * 100
+      : isFinite(urlIcons) ? urlIcons
+      : savedIcons !== null ? savedIcons
+      : ICON_DEFAULT;
+    icons = Math.min(ICON_MAX, Math.max(ICON_MIN, icons));
+
     var anchor = document.createElement("div");
-    anchor.className = "radar__opacity-anchor";
-    anchor.appendChild(bar);
+    anchor.className = "radar__ctl-anchor";
+    anchor.appendChild(
+      sliderBar({
+        className: "radar__opacity",
+        label: "OPACITY",
+        min: Math.round(MIN_OPACITY * 100), max: 100,
+        value: Math.round(op * 100),
+        onInput: function (v) {
+          applyOpacity(v / 100);
+          try { localStorage.setItem(OPACITY_KEY, String(v / 100)); } catch (e) { /* ignore */ }
+        },
+      }),
+    );
+    anchor.appendChild(
+      sliderBar({
+        className: "radar__size",
+        label: "ICONS",
+        min: ICON_MIN, max: ICON_MAX,
+        value: icons,
+        onInput: function (v) {
+          setIconPercent(v);
+          try { localStorage.setItem(ICON_SIZE_KEY, String(v)); } catch (e) { /* ignore */ }
+        },
+      }),
+    );
     root.appendChild(anchor);
-    apply(initial);
+    applyOpacity(op);
+    // Before sizeCanvas() runs, so the first frame is already at the right zoom.
+    setIconPercent(icons);
   }
 
   /* --------------------------------- init --------------------------------- */
@@ -211,13 +326,12 @@
     mount.innerHTML = "";
 
     var params = new URLSearchParams(window.location.search);
-    var r = parseFloat(params.get("range"));
-    // Before sizeCanvas() below, which bakes the range into pxPerM.
-    if (isFinite(r)) rangeM = Math.min(RANGE_MAX, Math.max(RANGE_MIN, r));
     var rev = parseFloat(params.get("reveal"));
     if (isFinite(rev) && rev > 0) REVEAL_RADIUS_M = Math.min(150, rev);
 
-    buildOpacityControl(root, params);
+    // Owns ?range= / ?icons= as well as the sliders, and sets rangeM before
+    // sizeCanvas() below bakes it into pxPerM.
+    buildControls(root, params);
 
     var wrap = document.createElement("div");
     wrap.className = "radar__wrap";
@@ -262,9 +376,9 @@
    * one am I" read, and it needs no extra marker to achieve it. Falls back to the
    * outlined arrow before the sprites decode, or if they failed to load.
    */
-  function drawEgo(playerClass) {
+  function drawEgo() {
     var cx = cssW / 2, cy = cssH / 2;
-    var fam = carFamily(playerClass);
+    var fam = egoFam;
     // An unrecognised (or not yet known) class still gets a car rather than a
     // shapeless marker — the GT silhouette is the most generic of the four.
     var img = spritesReady ? spriteFor(fam === "generic" ? "gt" : fam) : null;
@@ -295,12 +409,16 @@
 
   /**
    * How far the warning glow reaches in from the edge, as a fraction of the
-   * strip's width. Long enough that the falloff reads as light rather than as a
-   * drawn object, but capped at 0.4: at 0.62 two blooms on a 163px-wide strip met
-   * in the middle and the whole HUD just went red, losing the one thing this
-   * warning exists to tell you — WHICH SIDE the car is on.
+   * strip's width — 0.5, so each bloom BEGINS on the player icon's own centre
+   * line and brightens outward to the side the car is on.
+   *
+   * Half the width is the largest reach that still says which side: the two
+   * blooms meet on the centre line at exactly zero, so a car either side lights
+   * both flanks and leaves the middle clear. Going past it (0.62 was tried) has
+   * them overlapping at strength, the whole HUD goes red, and the one thing the
+   * warning exists to tell you — WHICH SIDE — is the thing it stops saying.
    */
-  var GLOW_REACH = 0.4;
+  var GLOW_REACH = 0.5;
 
   /**
    * Edge proximity warning — a soft red bloom hugging the side a car is arriving
@@ -327,6 +445,9 @@
       var alongside = b.alongside || Math.abs(b.longitudinalM) <= ALONGSIDE_M;
       if (!alongside) continue;
       if (Math.abs(b.lateralM) > latRange) continue;
+      // Past the fade perimeter the car itself is not drawn, so warning about it
+      // would be a bloom pointing at nothing.
+      if (fadeAlpha(b.lateralM, b.longitudinalM) <= 0) continue;
       var intensity = 1 - Math.abs(b.longitudinalM) / ALONGSIDE_M; // 1 = dead level
       intensity = Math.max(0.25, Math.min(1, intensity));
       // Anchor the bloom at the car, so the warning points at where it actually is.
@@ -436,6 +557,29 @@
   function footprint(fam) {
     var s = CAR_SIZE_M[fam] || CAR_SIZE_M.generic;
     return { hl: (s.length * pxPerM) / 2, hw: (s.width * pxPerM) / 2 };
+  }
+
+  /** The player's own shape family, refreshed once per frame in {@link update}. */
+  var egoFam = "generic";
+
+  /**
+   * How solidly an opponent at (lat, lon) metres draws — 1 on top of the player,
+   * 0 on the fade perimeter and beyond.
+   *
+   * The fade begins at the player icon's centre line, so distance reads as
+   * weight from the very first metre: whatever is closest is always the most
+   * solid thing on the strip, which is the order a spotter would call them in.
+   * `t` is the distance to the player scaled so the perimeter is t = 1 in every
+   * direction (an ellipse in metres — FADE_WIDTHS across, FADE_LENGTHS fore and
+   * aft), and the square keeps the near half of that ellipse near-solid instead
+   * of dropping everything to half strength the moment it leaves the centre.
+   */
+  function fadeAlpha(lat, lon) {
+    var s = CAR_SIZE_M[egoFam] || CAR_SIZE_M.generic;
+    var u = lat / (FADE_WIDTHS * s.width);
+    var v = lon / (FADE_LENGTHS * s.length);
+    var t = Math.sqrt(u * u + v * v);
+    return t >= 1 ? 0 : 1 - t * t;
   }
 
   /* ------------------------------ car sprites -----------------------------
@@ -637,9 +781,12 @@
   }
 
   function drawBlip(b) {
-    // Longitudinal beyond the display range is dropped (the provider already
-    // capped at 150 m); lateral beyond the strip clamps to the edge with a hint
-    // so a car well off to the side still registers rather than vanishing.
+    // Anything past the fade perimeter has already reached zero alpha, so it is
+    // skipped outright rather than drawn invisibly. This — not the canvas edge —
+    // is what bounds the strip now: a blip fades away at a few car lengths, and
+    // the display range only decides how large the survivors are drawn.
+    var alpha = fadeAlpha(b.lateralM, b.longitudinalM);
+    if (alpha <= 0.004) return;
     if (Math.abs(b.longitudinalM) > rangeM) return;
     var latRange = lateralRangeM();
     var clampedLat = Math.max(-latRange, Math.min(latRange, b.lateralM));
@@ -650,6 +797,9 @@
 
     gctx.save();
     gctx.translate(xy[0], xy[1]);
+    // Everything below inherits the distance fade — silhouette, halo ring and
+    // car number together, so a fading car dims as one object.
+    gctx.globalAlpha = alpha;
 
     // Faster-class cars get a halo RING so a Hypercar bearing down reads
     // instantly — a ring rather than a filled disc, so the silhouette shows.
@@ -658,12 +808,12 @@
     if (b.isFasterClass) {
       var halo = box.hl + 0.9 * pxPerM;
       gctx.save();
-      gctx.globalAlpha = 0.22;
+      gctx.globalAlpha = alpha * 0.22;
       gctx.fillStyle = col;
       gctx.beginPath();
       gctx.arc(0, 0, halo, 0, Math.PI * 2);
       gctx.fill();
-      gctx.globalAlpha = 0.95;
+      gctx.globalAlpha = alpha * 0.95;
       gctx.strokeStyle = col;
       gctx.lineWidth = 1.6;
       gctx.beginPath();
@@ -761,6 +911,10 @@
     if (!gctx || cssW === 0) { sizeCanvas(); if (cssW === 0) return; }
 
     var blips = frame.radar || [];
+    // Before anything is drawn: the fade perimeter is measured in the PLAYER's
+    // car widths and lengths, so every blip is judged against one ring rather
+    // than each rival lingering by its own size.
+    egoFam = carFamily(playerClass(frame));
 
     // Proximity reveal: the whole HUD (every icon AND the player arrow) stays
     // invisible until a car comes within REVEAL_RADIUS_M, then fades in, and
@@ -783,7 +937,7 @@
 
     gctx.clearRect(0, 0, cssW, cssH);
     drawWarnings(blips);
-    drawEgo(playerClass(frame));
+    drawEgo();
     // Draw furthest first so the nearest blip sits on top of any overlap.
     for (var j = blips.length - 1; j >= 0; j--) drawBlip(blips[j]);
   }

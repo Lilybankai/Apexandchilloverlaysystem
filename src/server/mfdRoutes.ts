@@ -13,6 +13,8 @@
  *   POST /api/mfd/aid      { key, value?, delta? }                  → LMU REST (setup)
  *   GET  /api/mfd/keymap   the aid→keyboard-key map + injector status
  *   POST /api/mfd/aidkey   { aid, dir, requireSim?, delayMs? }      → keystroke into LMU
+ *   GET  /api/mfd/cursor   which pit row the bindable ± is aimed at
+ *   POST /api/mfd/cursor   { move? } | { name? } | { index? } | { value? }
  *
  * `pit`/`aid` go over LMU's REST API. `aidkey` injects a real keystroke for the
  * LIVE aids LMU does not expose to REST — see {@link module:server/keySender}
@@ -25,6 +27,7 @@ import type { MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
 import { findAid, readLmuKeybinds } from './lmuKeybinds';
 import { bump as bumpShadow, getShadowAids, isTracked, resync } from './aidShadow';
+import { getCursor, moveCursorLive, selectRow, stepSelected } from './pitCursor';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -93,6 +96,16 @@ export function handleMfdCommand(
     return true;
   }
 
+  // Where the bindable pit controls are pointing. Deliberately answered from
+  // memory rather than by re-reading the menu: the widget polls this to draw its
+  // highlight, and it already has the rows from the telemetry frame — asking LMU
+  // again several times a second to learn something we ourselves decided would
+  // be pure noise on the sim's API.
+  if (req.method === 'GET' && action === 'cursor') {
+    sendJson(res, 200, { ok: true, ...getCursor() });
+    return true;
+  }
+
   if (req.method !== 'POST') {
     sendJson(res, 405, { ok: false, error: 'method not allowed' });
     return true;
@@ -129,6 +142,32 @@ export function handleMfdCommand(
         const garage = await controller.getGarageData().catch(() => null);
         resync(garage);
         sendJson(res, 200, { ok: true, shadowAids: getShadowAids() });
+        return;
+      }
+      if (action === 'cursor') {
+        // One route for all four bindable controls, because they are one control
+        // surface: `move` walks the rows, `value` changes the row it stopped on.
+        const b = body as { move?: number; value?: number; name?: string; index?: number };
+        if (b.value != null) {
+          const result = await stepSelected(b.value, controller);
+          sendJson(res, result.ok ? 200 : 502, result);
+          return;
+        }
+        if (b.move != null) {
+          const result = await moveCursorLive(b.move, controller);
+          sendJson(res, result.ok ? 200 : 502, result);
+          return;
+        }
+        if (b.name != null || b.index != null) {
+          const rows = await controller.getPitRows();
+          if (!Array.isArray(rows) || rows.length === 0) {
+            sendJson(res, 502, { ok: false, ...getCursor(), error: 'pit menu unavailable' });
+            return;
+          }
+          sendJson(res, 200, { ok: true, ...selectRow({ name: b.name, index: b.index }, rows) });
+          return;
+        }
+        sendJson(res, 400, { ok: false, error: 'cursor needs move, value, name or index' });
         return;
       }
       if (action === 'aidkey') {

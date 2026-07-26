@@ -256,6 +256,18 @@ export class MfdController {
   }
 
   /**
+   * The raw pit-menu rows, straight from the sim.
+   *
+   * Exposed for {@link module:server/pitCursor}, which needs the rows as the sim
+   * numbers them — the projected {@link MfdPitRow} drops the `settings` array the
+   * cursor reads a row's new text out of, and turns a missing `PMC Value` into a
+   * sentinel it would then have to undo. Returns null out of a session.
+   */
+  public getPitRows(): Promise<RawPitRow[] | null> {
+    return this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+  }
+
+  /**
    * Raw `VM_*` garage values — the frozen SETUP numbers.
    *
    * Exposed for {@link module:server/aidShadow}, which uses them as the baseline

@@ -1780,15 +1780,17 @@ body.ig-editing #widget-radar {
 body.ig-editing #widget-radar .panel__header {
   display: flex;
 }
-.radar__opacity-anchor {
+.radar__ctl-anchor {
   position: relative;
   height: 0;
 }
-.radar__opacity {
+/* Two stacked hover sliders: OPACITY, then ICONS (which is the display range —
+   see the module note in widgets/radar.js). Both float over the canvas from the
+   same zero-height anchor, so neither takes any layout space from the HUD. */
+.radar__ctl {
   position: absolute;
   left: 0;
   right: 0;
-  top: 3px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1801,25 +1803,31 @@ body.ig-editing #widget-radar .panel__header {
   transition: opacity 0.12s ease;
   z-index: 5;
 }
-#widget-radar:hover .radar__opacity,
-.radar__opacity:focus-within {
+.radar__opacity {
+  top: 3px;
+}
+.radar__size {
+  top: 27px;
+}
+#widget-radar:hover .radar__ctl,
+.radar__ctl:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
-.radar__opacity-label {
+.radar__ctl-label {
   font-family: var(--font-display);
   font-size: var(--fs-micro);
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
-.radar__opacity-range {
+.radar__ctl-range {
   flex: 1;
   min-width: 0;
   height: 12px;
   accent-color: var(--ac-cyan);
   cursor: pointer;
 }
-.radar__opacity-val {
+.radar__ctl-val {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   color: var(--text-secondary);
@@ -1879,6 +1887,19 @@ body.ig-editing #widget-radar .panel__header {
      blocks, not just a stripe. color-mix is supported by OBS's Chromium. */
   background: color-mix(in srgb, var(--mfd-cat, transparent) 9%, transparent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+/* The row the bindable ▲ ▼ + − controls are aimed at (server/pitCursor, mirrored
+   by widgets/mfd.js). It has to be findable in peripheral vision from a moving
+   car, so it takes the row's own category colour up to full strength and widens
+   the stripe rather than introducing a new colour the eye has to decode. */
+.mfd__row[data-selected="true"] {
+  background: color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 26%, transparent);
+  border-left-width: 6px;
+  padding-left: 6px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 45%, transparent);
+}
+.mfd__row[data-selected="true"] .mfd__label {
+  color: var(--text-primary);
 }
 /* A little air where the category changes, separating the colour blocks. */
 .mfd__row--group-start { margin-top: 5px; }

@@ -1,12 +1,20 @@
 /**
- * widgets/mfd.js — a read-only readout of the in-game MFD (pit menu + driving
- * aids) for the player's car.
+ * widgets/mfd.js — the in-game MFD (pit menu + driving aids) for the player's
+ * car, readable and adjustable.
  * -----------------------------------------------------------------------------
  * Renders `frame.mfd` (see src/telemetry/types.ts MfdState): two clearly headed
  * sections, PIT STRATEGY and DRIVING AIDS, with each row colour-coded by
  * category (tyres, pressures, ducts, aero, fuel…) so related lines read as a
- * group at a glance. Display only — no controls: it mirrors what the driver has
- * set in-game.
+ * group at a glance.
+ *
+ * ## The selected row
+ * One pit row is highlighted: the row the four BINDABLE controls (▲ ▼ + −, bound
+ * to wheel buttons or a Stream Deck in the control panel) are aimed at. The
+ * cursor lives on the server (server/pitCursor), because a wheel button and a
+ * click on this widget have to move the same one — so the highlight here is a
+ * view of that state, polled, not a local selection. Clicking a row's ± aims the
+ * cursor at it too, which keeps "the thing I last touched" and "the thing my
+ * buttons will change" the same row.
  *
  * URL params:
  *   ?pit=off      hide the pit-strategy section.  Default on.
@@ -235,19 +243,92 @@
     });
   }
 
+  /* ------------------------- the selected pit row ------------------------- */
+
+  /**
+   * Where the bindable ▲ ▼ + − controls are pointing, mirrored from the server
+   * (GET /api/mfd/cursor). Anchored by NAME as well as index for the same reason
+   * the server is: the pit menu's shape changes with the car and the session, so
+   * an index on its own quietly slides onto a different row.
+   */
+  var pitCursor = { index: -1, name: null, updatedAt: 0 };
+  /** The rows as last rendered, so a poll can re-highlight without a frame. */
+  var lastPitRows = [];
+  /** Poll cadence, ms. The route answers from memory, so this is nearly free. */
+  var CURSOR_POLL_MS = 200;
+
+  function pitRowId(r) {
+    return "p" + r.pmcValue + ":" + r.name;
+  }
+
+  function loadCursor() {
+    fetch("/api/mfd/cursor", { cache: "no-store" })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (c) {
+        if (!c || c.ok === false) return;
+        var moved = c.name !== pitCursor.name || c.updatedAt !== pitCursor.updatedAt;
+        pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
+        if (moved) highlightCursor(lastPitRows, true);
+      })
+      .catch(function () {
+        /* server not up / older build — the widget just shows no selection */
+      });
+  }
+
+  /** Points the server's cursor at a row — used when a row's own ± is clicked. */
+  function aimCursorAt(row) {
+    postJson("/api/mfd/cursor", { name: row.name }).then(function (c) {
+      if (c && c.ok !== false) {
+        pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
+        highlightCursor(lastPitRows, false);
+      }
+    });
+  }
+
+  /**
+   * Marks the cursor's row. `scroll` brings it into view, but only when the list
+   * is genuinely scrollable — scrollIntoView on a widget that fits would be free
+   * rein to move the page under the driver.
+   */
+  function highlightCursor(rows, scroll) {
+    if (!pit.rowsEl || !rows || rows.length === 0) return;
+    var idx = -1;
+    if (pitCursor.name) {
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].name === pitCursor.name) { idx = i; break; }
+      }
+    }
+    if (idx < 0 && pitCursor.index >= 0 && pitCursor.index < rows.length) idx = pitCursor.index;
+    var selected = null;
+    for (var j = 0; j < rows.length; j++) {
+      var refs = pit.rows[pitRowId(rows[j])];
+      if (!refs) continue;
+      if (j === idx) {
+        refs.root.setAttribute("data-selected", "true");
+        selected = refs.root;
+      } else {
+        refs.root.removeAttribute("data-selected");
+      }
+    }
+    if (scroll && selected && pit.rowsEl.scrollHeight > pit.rowsEl.clientHeight + 1) {
+      selected.scrollIntoView({ block: "nearest" });
+    }
+  }
+
   function renderPit(rows) {
     if (!pit.container) return;
     if (!rows || rows.length === 0) {
       markEmpty(pit);
+      lastPitRows = [];
       return;
     }
     pit.container.removeAttribute("data-empty");
     reconcile(
       pit,
       rows,
-      function (r) {
-        return "p" + r.pmcValue + ":" + r.name;
-      },
+      pitRowId,
       function (r) {
         return pitCategory(r.name);
       },
@@ -265,6 +346,10 @@
           if (r.pmcValue != null) body.pmcValue = r.pmcValue;
           if (r.name) body.name = r.name;
           refs.value.setAttribute("data-busy", "true");
+          // Aim the bindable controls at the row being clicked, so the buttons
+          // carry on from wherever the mouse left off rather than from some
+          // other row the driver can no longer remember choosing.
+          aimCursorAt(r);
           postJson("/api/mfd/pit", body).then(function (res) {
             refs.value.removeAttribute("data-busy");
             if (!res || res.ok === false) flashError(refs, (res && res.error) || "pit change failed");
@@ -273,6 +358,8 @@
         };
       },
     );
+    lastPitRows = rows;
+    highlightCursor(rows, false);
   }
 
   function renderAids(list) {
@@ -521,6 +608,15 @@
     // value that moves twice a session would be pure waste.
     loadAidBinds();
     setInterval(loadAidBinds, 10000);
+
+    // The selected pit row, on the other hand, moves the instant a bound button
+    // is pressed — and the driver pressed it precisely because they are not
+    // looking at the screen for long. Polled quickly, and answered from the
+    // server's memory rather than from the sim, so this costs almost nothing.
+    if (showPit) {
+      loadCursor();
+      setInterval(loadCursor, CURSOR_POLL_MS);
+    }
 
     if (!showPit && !showAids) {
       disabled = true;

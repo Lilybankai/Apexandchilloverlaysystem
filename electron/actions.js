@@ -56,6 +56,7 @@ function createActions(deps = {}) {
   const keySenderMod = tryRequire('server/keySender.js');
   const keybindsMod = tryRequire('server/lmuKeybinds.js');
   const mfdMod = tryRequire('telemetry/mfdControl.js');
+  const cursorMod = tryRequire('server/pitCursor.js');
 
   /** One KeySender for the process; it holds no per-press state. */
   const keys = keySenderMod ? new keySenderMod.KeySender({ verbose: false }) : null;
@@ -219,6 +220,52 @@ function createActions(deps = {}) {
         return c.setPitRow({ name: 'VIRTUAL ENERGY:' }, { delta: dir < 0 ? -1 : 1 });
       },
     });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Pit menu cursor — the whole menu from four buttons               */
+  /* ---------------------------------------------------------------- */
+
+  // The named pit actions above each own one row, which does not scale: the menu
+  // runs to ~20 rows and nobody is binding twenty pairs of buttons. These four
+  // are the in-game MFD's own idiom instead — scroll to FL TIRE, press +, get a
+  // new medium — except that they go over REST, so the sim's MFD never has to be
+  // on screen and the sim does not even have to be the focused window.
+  //
+  // Four PULSE actions rather than two `delta` ones on purpose: a delta action
+  // gets both directions from a wheel encoder but only ONE global hotkey (see
+  // applyBindings in main.js), and these must be bindable from a keyboard or a
+  // Stream Deck too — which is most of the point of having them.
+  if (mfdMod && cursorMod) {
+    const cursorAction = (id, label, run) =>
+      define({ id, label, group: 'Pit strategy', kind: 'pulse', run });
+
+    const withController = (fn) => async () => {
+      const c = controller();
+      if (!c) return { ok: false, error: 'pit control unavailable' };
+      return fn(c);
+    };
+
+    cursorAction(
+      'pit.rowUp',
+      'Pit menu ▲ (previous row)',
+      withController((c) => cursorMod.moveCursorLive(-1, c)),
+    );
+    cursorAction(
+      'pit.rowDown',
+      'Pit menu ▼ (next row)',
+      withController((c) => cursorMod.moveCursorLive(1, c)),
+    );
+    cursorAction(
+      'pit.valueInc',
+      'Pit menu + (raise selected value)',
+      withController((c) => cursorMod.stepSelected(1, c)),
+    );
+    cursorAction(
+      'pit.valueDec',
+      'Pit menu − (lower selected value)',
+      withController((c) => cursorMod.stepSelected(-1, c)),
+    );
   }
 
   return {

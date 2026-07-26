@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.18.0 — 2026-07-26
+
+### Added
+
+- **The pit menu, from four bindable buttons.** `Pit menu ▲`, `▼`, `+` and `−`
+  join the action registry, so a wheel button, a Stream Deck key or a global
+  hotkey can drive the whole menu the way the in-game MFD does: scroll down to
+  `FL TIRE`, press `+`, get a new medium. It goes over LMU's REST API, so the
+  in-game MFD never has to be on screen and the sim does not even have to be the
+  focused window.
+
+  The named per-row actions that came before (fuel ratio, virtual energy) do not
+  scale — the menu runs to eighteen rows and nobody is binding eighteen pairs of
+  buttons. These four cover all of it with one piece of shared state: the
+  selected row, which now lives in `src/server/pitCursor.ts` and is highlighted
+  on the MFD widget, so a button press and a click on the widget move the same
+  cursor. Deliberately four *pulse* actions rather than two `delta` ones — a
+  delta action takes both directions from a wheel encoder but only one global
+  hotkey, and these have to be bindable from a keyboard too.
+
+  The cursor is anchored by row **name**, not index: LMU's menu changes shape
+  with the car, the session and the damage state, and an index alone silently
+  slides onto a different row — the driver aims at the left-front tyre and the
+  next `+` lands on a brake duct. Covered headless in
+  `scripts/test-pitcursor.js`, and verified live against LMU v1.3000.
+
+- **A radar `ICONS` slider (30–150%, default 50%)**, alongside the opacity one.
+  The cars were reading larger than they needed to at a glance.
+
+  It sets the display *range* rather than multiplying the artwork — 100% is the
+  classic 18 m, 50% is 36 m and therefore half-size cars. A size multiplier laid
+  over the geometry would be the fixed-pixel icon 0.17.0 removed, and would break
+  the property that makes the widget worth having: an icon's edge is the car's
+  edge. Zooming shrinks the cars and the metres they stand on together, so
+  contact still reads true at every setting. `?icons=` sets it too; `?range=`
+  still wins.
+
+### Changed
+
+- **Radar: opponents fade with distance instead of being clipped by the canvas.**
+  The fade starts at the player icon's own centre line and reaches nothing on a
+  rounded perimeter 3.5 car widths to each side and 3.5 car lengths fore and aft
+  (≈7 m and ≈17 m for a GT3) — an ellipse in metres, so a car coming diagonally
+  fades on the same curve as one coming up the inside and no corner of the strip
+  lets a blip survive longer than it should. Distance now reads as weight:
+  whatever is closest is the most solid thing on screen.
+
+- **Radar: the alongside warning bloom now begins exactly on the player's centre
+  line** (reach 0.4 → 0.5 of the strip's width) and brightens outward to the side
+  the car is on. Half the width is the most it can reach and still say *which*
+  side: the two blooms meet on the centre line at zero, so a car either side
+  lights both flanks and leaves the middle clear. A car past the fade perimeter
+  no longer lights a bloom at all — it was a warning pointing at nothing.
+
 ## 0.17.0 — 2026-07-26
 
 ### Added

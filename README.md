@@ -256,7 +256,8 @@ cannot tell you a car is drawing alongside on your **left**. This can.
 
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
-| `?range=18`   | Longitudinal range each way, metres (default 18, clamped 8..150)       |
+| `?icons=50`   | Icon size, 30..150% (default 50; also a hover slider, and it remembers) |
+| `?range=18`   | Longitudinal range each way, metres (clamped 8..150) — the same knob, from the other end; wins over `?icons=` |
 | `?reveal=12`  | Radius within which a car makes the HUD fade in (default 12 m)         |
 | `?opacity=0.4`| HUD opacity, same contract as the Motion/Damage widgets                |
 
@@ -266,16 +267,23 @@ car's true footprint — 5.10 × 2.00 m for a Hypercar, 4.76 × 2.05 m for a GT3
 **icons touching means cars touching**, on both axes and at any angle between
 them, whatever the range is set to and however large the widget has been dragged.
 
-`?range=` is the only scale knob, deliberately: the lateral half-width follows
-from it and lands at about a track width (~13 m) at the default. Making it a
-second knob would be making the two axes disagree again. A wider range is
-available and the cars shrink to match.
+**Icon size and range are one control, deliberately.** The `ICONS` slider (hover
+the widget) sets the display range: 100% is the classic 18 m, 50% is 36 m and so
+half-size cars. It is not a multiplier laid over the geometry — that is exactly
+the fixed-pixel icon this widget was rebuilt to get rid of, and it would break
+the property above. Zooming out shrinks the cars *and* the metres they stand on
+together, so contact still reads true at every setting. The lateral half-width
+follows from the range and lands at about a track width (~13 m) at 100%.
 
 The HUD is invisible until a car comes within the reveal radius, then fades in —
-so it costs nothing in clear air. A car arriving alongside lights a soft red
-bloom on that side, anchored at the car's own position up the strip, brightest
-level with it, and feathered at every edge so nothing it draws ends on a hard
-line.
+so it costs nothing in clear air. **Opponents then fade with distance**: the fade
+starts at your own icon's centre line and reaches nothing on a rounded perimeter
+3.5 car widths to each side and 3.5 car lengths fore and aft (≈7 m and ≈17 m for
+a GT3), so everything on screen is something within a few car lengths, brightest
+closest, and nothing pops in or out at an edge. A car arriving alongside lights a
+soft red bloom on that side, anchored at the car's own position up the strip,
+brightest level with it, decaying to nothing exactly on your centre line, and
+feathered at every edge so nothing it draws ends on a hard line.
 
 Faster-class cars carry a halo ring; a car you are lapping draws as a ghost.
 Blip positions come from `src/telemetry/radar.ts`, which owns the world→local
@@ -284,11 +292,21 @@ projection and is unit-tested headless in `scripts/test-radar.js`.
 
 ### MFD widget
 
-A **read-only readout** of the in-game Multi-Function Display for the player's
-car: a **PIT STRATEGY** section (colour-coded by category — tyres, pressures,
-ducts, aero, fuel, brakes — so related lines read as a group) and a **DRIVING
-AIDS** section showing **live brake bias**. It mirrors what you've set in-game;
-it does not change anything.
+The in-game Multi-Function Display for the player's car: a **PIT STRATEGY**
+section (colour-coded by category — tyres, pressures, ducts, aero, fuel, brakes —
+so related lines read as a group) and a **DRIVING AIDS** section showing **live
+brake bias**.
+
+**Driving the pit menu from four buttons.** One pit row is highlighted — the row
+the bindable `Pit menu ▲ / ▼ / + / −` actions are aimed at. Bind them to wheel
+buttons, a Stream Deck or global hotkeys in the control panel's Bindings section
+and the whole menu is reachable the way the in-game MFD does it: scroll down to
+`FL TIRE`, press `+`, get a new medium. The changes go over LMU's REST API, so
+the in-game MFD never has to be on screen and the sim does not even have to be
+the focused window. Clicking a row's own ± aims the cursor at that row too, so
+the mouse and the buttons never disagree about which row is selected. The cursor
+is anchored by row **name**, not index — the menu's shape changes with the car
+and the session, and an index alone would quietly slide onto a brake duct.
 
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
@@ -297,7 +315,9 @@ it does not change anything.
 | `?opacity=0.4`| Panel opacity, same contract as the Motion/Damage widgets             |
 
 Pit strategy is read from LMU's REST garage API and projected in
-`src/telemetry/mfdControl.ts`. **Brake bias is read live from shared memory**
+`src/telemetry/mfdControl.ts`; the selected row lives in `src/server/pitCursor.ts`
+so a wheel button, a hotkey and a click on the widget all move the same one.
+**Brake bias is read live from shared memory**
 (`mRearBrakeBias`) and updates as the driver shifts the balance — the REST garage
 data only reports the frozen *setup* value, so it can't show live aids. The other
 aids (TC/ABS/engine maps) aren't shown at all: LMU exposes no live value for them
