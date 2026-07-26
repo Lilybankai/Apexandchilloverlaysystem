@@ -30,38 +30,76 @@
   transform-origin: center center;
 }
 
-/* Absolute widget anchors. */
+/* =========================================================================
+ * WIDGET ANCHORS — the all-in-one page.
+ * -------------------------------------------------------------------------
+ * Widgets were added here one at a time over many versions, each anchored to
+ * whichever edge suited it, and several ended up on top of each other: motion
+ * over fuel, damage over the fuel planner, the radar over the standings table.
+ *
+ * The fix is as much about WHAT is on this page as where it goes. Fourteen
+ * panels do not fit in 1920x1080 — not once the standings tower fills up with
+ * a full multiclass grid and the MFD carries a whole pit menu — so four are
+ * deliberately not here (they are also absent from index.html):
+ *
+ *   pacedelta  a lap-time analysis grid; read on a straight, not at a glance
+ *   fuelplan   a pre-race planner with setup fields, driven by mouse
+ *   motion     a practice/coaching HUD, not race information
+ *   mfd        a control surface, and the tallest panel in the system
+ *
+ * Each is still a first-class widget — available as its own OBS source via
+ * widget.html?w=<name>, and in the in-game layer where the operator places it
+ * themselves. Excluding them here buys the remaining ten enough room that the
+ * layout survives a full grid, brake-disc rows and the 120% text scale at once.
+ *
+ *   LEFT     x 24    standings, pedalsv
+ *   CHANNEL  x 520   radar               (the gap beside the tower)
+ *   CENTRE   centred weather, delta, pedals
+ *   RIGHT    right   relative, fuel, tyres, and damage inboard of them
+ *
+ * Verified overlap-free by measuring every pair of boxes in the browser across
+ * those combinations. Arithmetic on this many fixed anchors is not
+ * trustworthy: an earlier pass looked right and still had four overlaps at
+ * 120%, and `offsetLeft` silently ignores the translateX(-50%) on the centred
+ * widgets, so measure getBoundingClientRect against the stage instead.
+ *
+ * Every .widget is position:absolute, so a widget with NO rule here lands at
+ * its static position behind whatever is drawn top-left and reads as one that
+ * failed to load — which is how the missing `mfd` and `pacedelta` anchors were
+ * found. Anything added to index.html needs an anchor in this block.
+ * ========================================================================= */
 .widget { position: absolute; }
 
-#widget-standings { top: 24px;    left: 24px;   width: 474px; }
-#widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
-#widget-delta     { top: 196px;   left: 50%; transform: translateX(-50%); width: 300px; }
-#widget-pacedelta { top: 280px;   left: 50%; transform: translateX(-50%); width: 348px; }
-#widget-relative  { top: 24px;    right: 24px;  width: 400px; }
-/* 290, not 250: the fuel panel's Tier 1 stats made it taller, and at 250 its
-   header slid under the bottom of the relative table above it. */
-#widget-fuel      { top: 290px;   right: 24px;  width: 400px; }
-#widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
-#widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
-/* The alternate inputs readout sits clear of the original so both can be up at
-   once while they are being compared. */
+/* --- LEFT: the standings tower, inputs beneath it -------------------------
+   Nothing else shares this column, so the tower is free to grow to its cap
+   (~757px including the header and sponsor strip) without pushing into
+   anything. The vertical inputs readout is pinned to the bottom edge, well
+   clear of it. */
+#widget-standings { top: 24px;    left: 24px; width: 474px; }
 #widget-pedalsv   { bottom: 24px; left: 24px; width: 300px; }
-#widget-motion    { bottom: 300px; right: 24px; width: 236px; }
-/* Mirrors `motion` on the left edge. Every .widget is position:absolute, so a
-   widget with no rule here lands at its static position behind whatever is
-   already drawn there and reads as one that failed to load. */
-#widget-damage    { bottom: 300px; left: 24px;  width: 268px; }
-/* Spotter radar — a narrow spatial strip, left edge mid-height, clear of the
-   standings tower above and the vertical-inputs widget below. */
-#widget-radar     { top: 264px;  left: 24px;  width: 188px; }
-/* Fuel Planner — a taller widget (plan + stint timer + setup fields); left
-   column below the radar, clear of the standings tower. */
-#widget-fuelplan  { top: 470px;  left: 24px;  width: 340px; }
-/* MFD — had no anchor at all, so it fell to the static top-left and landed on
-   top of the standings session strip, hiding the lap counter and countdown
-   underneath it. The centre band is the one part of this all-widgets page with
-   room for it, below the pace-delta grid and above the pedal trace. */
-#widget-mfd       { top: 420px;  left: 50%; transform: translateX(-50%); width: 360px; }
+
+/* --- CHANNEL: the strip between the tower and the centre column -----------
+   Clear of the tower's 498px right edge. Mid-height, which is where a spotter
+   readout wants to be. */
+#widget-radar     { top: 300px;  left: 520px; width: 188px; }
+
+/* --- CENTRE: conditions, the delta, and the pedal trace on the bottom edge -
+   The band between the delta and the trace is left empty on purpose: on a
+   broadcast that is where the car is. */
+#widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
+#widget-delta     { top: 243px;   left: 50%; transform: translateX(-50%); width: 300px; }
+#widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
+
+/* --- RIGHT: the timing/strategy stack on the edge, damage inboard ---------
+   Gaps are sized for the 120% text scale, not the default: relative and fuel
+   both grow ~30px there, which is what used to push fuel's header under the
+   relative table. Damage sits inboard rather than under fuel because a fourth
+   panel on the right edge is what put it on top of the tyres widget once its
+   brake-disc rows (?brakes=on) were on. */
+#widget-damage    { top: 24px;    left: 1200px; width: 268px; }
+#widget-relative  { top: 24px;    right: 24px;  width: 400px; }
+#widget-fuel      { top: 330px;   right: 24px;  width: 400px; }
+#widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
 
 /* =========================================================================
  * CONNECTION STATUS PILL (top-centre, above weather)
