@@ -106,18 +106,21 @@
   }
 
   /**
-   * The Hub shell's dashboard stat tiles and footer status bar. Reads the same
-   * status object the pill does — deliberately no second source of truth, so the
-   * three can never disagree about whether the feed is live.
+   * The footer status bar. Reads the same status object the nav pill does —
+   * deliberately no second source of truth, so the two can never disagree about
+   * whether the feed is live.
+   *
+   * This used to also drive three dashboard stat tiles (feed, port, update
+   * rate). The design system spends that strip on driver stats instead, and
+   * those three were the same three facts this footer already carries — so the
+   * tiles went and the footer stayed.
    */
   function renderShellStatus(status, feed) {
     const label = FEED_LABEL[feed] || feed.toUpperCase();
-    setText('#stat-feed', label);
     setText('#foot-feed-text', label);
     setAttr('#foot-feed', 'data-feed', feed);
 
     const port = status.port || Number(portInput.value) || null;
-    setText('#stat-port', port ? `127.0.0.1:${port}` : '—');
     setText('#foot-url', port ? `127.0.0.1:${port}` : '—');
 
     // The provider is only meaningful while the server is up; "demo" is a feed
@@ -132,9 +135,8 @@
     );
   }
 
-  /** Stat tiles fed by settings rather than status. */
+  /** The one stat tile fed by settings rather than by the lap database. */
   function renderShellSettings(settings) {
-    setText('#stat-rate', `${settings.updateRateHz} Hz`);
     const on = Object.values(settings.enabledOverlays || {}).filter(Boolean).length;
     const total = Object.keys(settings.enabledOverlays || {}).length;
     setText('#stat-widgets', total ? `${on} / ${total}` : '—');
@@ -369,6 +371,260 @@
     renderStatus(state.status);
     renderVersion(state.appVersion);
   }
+
+  // --- Your week -----------------------------------------------------------
+  /*
+   * The lap database's dashboard card. Everything it shows is read from local
+   * files by the main process, so it renders with no account and no network.
+   */
+
+  /** `138123` → `"2:18.123"`. Leaderboard formatting: always m:ss.mmm. */
+  function formatLapTime(ms) {
+    if (!(ms > 0)) return '—';
+    const total = Math.round(ms);
+    const minutes = Math.floor(total / 60000);
+    const seconds = Math.floor((total % 60000) / 1000);
+    const millis = total % 1000;
+    return `${minutes}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
+  }
+
+  /**
+   * Time on track, as a driver would say it: "3h 42m", "42m", "8m".
+   * Seconds are dropped above a minute — nobody reads the seconds digit of a
+   * weekly total, and it would be the only part of the card that never settles.
+   */
+  function formatDuration(ms) {
+    const totalMin = Math.floor(ms / 60000);
+    if (totalMin < 1) return ms > 0 ? '<1m' : '0m';
+    const hours = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    return hours ? `${hours}h ${mins}m` : `${mins}m`;
+  }
+
+  /**
+   * Metres → km with one decimal below 100 km, whole km above.
+   *
+   * Empty reads `0 km`, not `0 m`: this tile is a kilometre tile, and on first
+   * run — the state every new driver sees — switching the unit just to say zero
+   * makes the card look like it is reporting something it isn't.
+   */
+  function formatDistance(metres) {
+    if (!metres) return '0 km';
+    const km = metres / 1000;
+    if (km < 1) return `${Math.round(metres)} m`;
+    return km < 100 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+  }
+
+  /** `"2026-07-21"` → `"21 Jul"`. Parsed as parts, not `new Date(str)`. */
+  function formatDayStamp(stamp) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(stamp || ''));
+    if (!m) return '';
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] || ''}`.trim();
+  }
+
+  /** `"2026-07-21"` → `"Tue"`. Built from the stamp, never from a local Date. */
+  function weekdayOf(stamp) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(stamp || ''));
+    if (!m) return '';
+    // Parsed as UTC to match how the day files are named. Using the local
+    // constructor would relabel every bar for anyone west of Greenwich.
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] || '';
+  }
+
+  /**
+   * The design system's WeeklyCard: one bar per day, the busiest lit with the
+   * brand gradient and captioned with its lap count.
+   *
+   * Bars are sized as a percentage of the biggest day rather than of some fixed
+   * ceiling, so the chart is about the SHAPE of your week — which days you
+   * actually drove — rather than about hitting a target nobody set.
+   */
+  function renderWeekChart(byDay) {
+    const chart = $('#week-chart');
+    if (!chart) return;
+    chart.textContent = '';
+    const peak = byDay.reduce((max, d) => Math.max(max, d.laps || 0), 0);
+
+    for (const entry of byDay) {
+      const laps = entry.laps || 0;
+      // Ties go to the later day, so "busiest" reads as the most recent peak
+      // rather than an identical one from six days ago.
+      const isPeak = peak > 0 && laps === peak;
+
+      const col = document.createElement('div');
+      col.className = 'weekbar';
+      col.setAttribute('data-peak', String(isPeak));
+      col.title = `${entry.day} — ${laps} lap${laps === 1 ? '' : 's'}`;
+
+      const track = document.createElement('div');
+      track.className = 'weekbar__track';
+      const fill = document.createElement('div');
+      fill.className = 'weekbar__fill';
+      // A floor of 4% so a zero day still draws a visible baseline — an absent
+      // bar reads as missing data rather than as a day off.
+      fill.style.height = peak > 0 ? `${Math.max(4, (laps / peak) * 100)}%` : '4%';
+      if (isPeak) {
+        const cap = document.createElement('span');
+        cap.className = 'weekbar__count';
+        cap.textContent = String(laps);
+        fill.append(cap);
+      }
+      track.append(fill);
+
+      const label = document.createElement('span');
+      label.className = 'weekbar__day';
+      label.textContent = weekdayOf(entry.day);
+
+      col.append(track, label);
+      chart.append(col);
+    }
+  }
+
+  function renderWeek(summary) {
+    const s = summary || {};
+    const byDay = Array.isArray(s.byDay) ? s.byDay : [];
+
+    // Spell the window out. "This week" is ambiguous the moment anyone wonders
+    // whether it means the last seven days or since Monday — and here it is
+    // firmly the former, so the card says which seven days it is counting.
+    if (byDay.length) {
+      const from = formatDayStamp(byDay[0].day);
+      const to = formatDayStamp(byDay[byDay.length - 1].day);
+      setText(
+        '#week-sub',
+        `Rolling 7 days · ${from} – ${to}. Laps are counted whenever the server is running.`,
+      );
+    }
+
+    // The design system's dashboard stat tiles.
+    setText('#stat-laps-week', String(s.laps || 0));
+    setText('#stat-time-driven', formatDuration(s.drivingMs || 0));
+    setText('#stat-time-sub', s.distanceM ? `${formatDistance(s.distanceM)} covered` : '');
+    setText('#stat-clean-laps', String(s.cleanLaps || 0));
+    setText(
+      '#stat-clean-sub',
+      s.laps ? `${Math.round((s.cleanLaps / s.laps) * 100)}% of your laps` : '',
+    );
+
+    // With no laps at all the chart is seven flat slivers, which reads as broken
+    // rather than as empty. Show the explanation instead, and bring the chart
+    // back the moment there is a shape to draw.
+    const hasLaps = (s.laps || 0) > 0;
+    renderWeekChart(byDay);
+    const chart = $('#week-chart');
+    if (chart) chart.hidden = !hasLaps;
+    const empty = $('#week-empty');
+    if (empty) empty.hidden = hasLaps;
+
+    const bests = Array.isArray(s.bests) ? s.bests : [];
+    const wrap = $('#week-bests');
+    const list = $('#week-bests-list');
+    if (!wrap || !list) return;
+    wrap.hidden = bests.length === 0;
+    list.textContent = '';
+
+    // The design system's `.lbrow` shape, minus its position column — and that
+    // omission is the point. A position only means something within one track
+    // and one class; these rows span both, so numbering them would rank a 1:31
+    // at Fuji above a 3:27 at Le Mans and call it a result. Same reasoning
+    // retires the purple "fastest" highlight here: it is the kit's signal for
+    // quickest in a comparable set, and nothing on this list is comparable.
+    // The Leaderboard tab is where real positions belong.
+    for (const b of bests) {
+      const li = document.createElement('li');
+      li.className = 'lbrow';
+      // createElement rather than innerHTML throughout: track and car names come
+      // from the sim, and the panel's CSP would not save us from a mod pack with
+      // a bracket in its name mangling the row.
+      const track = document.createElement('span');
+      track.className = 'lbrow__name';
+      track.textContent = b.track || '—';
+      const cls = document.createElement('span');
+      cls.className = 'chip';
+      cls.textContent = b.carClass || '—';
+      const car = document.createElement('span');
+      car.className = 'lbrow__car';
+      car.textContent = b.car || '';
+      const time = document.createElement('span');
+      time.className = 'lbrow__time';
+      time.textContent = formatLapTime(b.lapMs);
+      li.append(track, cls, car, time);
+      list.append(li);
+    }
+  }
+
+  /** Pull a fresh summary. Cheap, and always current when the card is shown. */
+  function refreshWeek() {
+    window.apex.lapsWeek().then(renderWeek).catch(() => renderWeek(null));
+  }
+
+  // --- Lap sync ------------------------------------------------------------
+  /*
+   * Whether the local laps have reached the league. Worth a line of its own
+   * because the failure it reports is invisible otherwise: laps keep recording
+   * perfectly while signed out, so without this the first sign that nothing was
+   * uploading would be an empty leaderboard weeks later.
+   */
+
+  /** "just now", "6 min ago", "3 h ago" — enough precision to trust it. */
+  function formatAgo(ms) {
+    const mins = Math.floor((Date.now() - ms) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hours = Math.floor(mins / 60);
+    return hours < 24 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+  }
+
+  function renderLapSync(sync) {
+    const s = sync || {};
+    const btn = $('#sync-btn');
+    let text;
+    switch (s.status) {
+      case 'syncing':
+        text = 'Uploading…';
+        break;
+      case 'signed-out':
+        // Not an error. Laps are safe locally and go up on the next sign-in.
+        text = 'Sign in to put your laps on the league boards.';
+        break;
+      case 'offline':
+        text = s.pending
+          ? `Offline — ${s.pending} to upload when you're back.`
+          : 'Offline — will retry.';
+        break;
+      case 'error':
+        text = s.error || 'Upload failed — will retry.';
+        break;
+      case 'ok':
+        text = s.pending
+          ? `${s.pending} still to upload.`
+          : `Laps synced to the league${s.lastOkAt ? ` · ${formatAgo(s.lastOkAt)}` : ''}.`;
+        break;
+      default:
+        text = 'Waiting to sync.';
+    }
+    setText('#sync-text', text);
+    setAttr('#sync-dot', 'data-status', s.status || 'idle');
+    if (btn) btn.disabled = s.status === 'syncing' || s.status === 'signed-out';
+  }
+
+  function refreshLapSync() {
+    window.apex.lapsSyncState().then(renderLapSync).catch(() => renderLapSync(null));
+  }
+
+  window.apex.onLapSync((s) => {
+    renderLapSync(s);
+    // A completed upload changes nothing on the chart, but the run that follows
+    // a stint usually coincides with new laps on disk — cheap to re-read.
+    if (s && s.status === 'ok') refreshWeek();
+  });
+
+  $('#sync-btn').addEventListener('click', async () => {
+    renderLapSync({ status: 'syncing' });
+    renderLapSync(await window.apex.lapsSync());
+  });
 
   // --- Actions -------------------------------------------------------------
 
@@ -900,6 +1156,9 @@
     // position over lands you halfway down an unrelated page.
     const content = $('#content');
     if (content) content.scrollTop = 0;
+    // Laps land while the driver is in the sim, not while they are looking at
+    // this window, so the card is refreshed on arrival rather than on a timer.
+    if (target === 'dashboard') refreshWeek();
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
@@ -1019,4 +1278,7 @@
   void renderBindings();
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);
+  // Same for the lap history — files on disk, not part of app state.
+  refreshWeek();
+  refreshLapSync();
 })();

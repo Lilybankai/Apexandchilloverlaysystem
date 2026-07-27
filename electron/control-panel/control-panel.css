@@ -18,6 +18,9 @@
   --bg: #060a12;
   --panel: #0c111c;
   --panel-2: #101724;
+  /* Third surface, for a filled shape that must read as "present but inactive"
+     against a raised row — the design system's --bg-panel-3. */
+  --panel-3: #161d2c;
 
   /* Text */
   --text: #f4f6fb;

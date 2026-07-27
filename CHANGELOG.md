@@ -1,5 +1,124 @@
 # Changelog
 
+## 0.25.0 — 2026-07-27 "Postbox"
+
+Laps now reach the league. v0.24 recorded them; this connects that record to the
+Apex & Chill database so a leaderboard has something to rank.
+
+### Added
+
+- **The lap uploader.** Your best clean lap per track and class, and your daily
+  lap counts, are sent up in the background — on launch, when you sign in, every
+  few minutes while the app is open, and on demand from the Dashboard.
+
+  What goes up is **two aggregates, not laps**. Four hundred practice laps become
+  one row saying "400" and one saying "your best was a 2:18.080". The full lap
+  history stays on your machine.
+
+- **A sync line on the "This week" card**, with a *Sync now* button. It reports a
+  state rather than a failure, because none of these are errors: signed out means
+  your laps are safe on disk and will go up when you sign in; offline means the
+  same and it will retry.
+
+- **The database behind it** (Supabase): a track dictionary with an alias table,
+  a best-lap row per driver/track/class, and per-day activity counters. Clients
+  have **no write access to any of it** — two `security definer` functions are
+  the only way in, so every rule about what may reach a board lives in one place.
+
+### Notes
+
+- **There is no upload queue, on purpose.** The obvious design — a queue of laps
+  and a cursor — has a failure mode this one cannot have: a cursor that desyncs
+  from the data, which either double-counts or silently drops laps with no way to
+  tell which. Instead both server functions are idempotent (the day counter keeps
+  the *greater* value; a best lap only ever replaces a *slower* one), so the app
+  recomputes what the database should say and sends that. Sending it twice is a
+  no-op by construction.
+
+  The consequence worth knowing: `lap-sync.json` next to your settings is a
+  cache, not a ledger. Deleting it causes one burst of redundant requests and
+  changes nothing else. Verified against the live project — re-sending a full
+  day's rows after wiping the cache left the totals identical.
+
+- **A row the server refuses for good is never retried.** An impossible time or a
+  day outside the accepted range is remembered as refused; without that, one
+  malformed lap becomes a request every five minutes for the life of the install.
+
+## 0.24.0 — 2026-07-27 "Logbook"
+
+The lap database. Every lap you drive is now recorded locally, and the Dashboard
+carries a rolling 7-day summary of it. This is the foundation the league
+leaderboard is built on — the boards themselves come next, once these numbers
+have been proven against real driving.
+
+### Added
+
+- **The Dashboard's stat tiles are now about your driving**, as the design
+  system's Hub specifies: laps this week, time driven, overlays active, clean
+  laps. They replace the feed state, the port and the update rate — all three of
+  which the footer status bar already carries, which is presumably why the
+  design spends the strip on the driver instead.
+
+- **"This week", on the Dashboard.** The design system's weekly chart: one bar
+  per day over a rolling seven, the busiest lit with the brand gradient and
+  captioned with its lap count. A chart rather than a total because the question
+  a driver asks of their week is *when did I drive* — one number cannot tell
+  four solid days from one enormous one. Days with nothing on them still get a
+  bar; the gap is the point.
+
+  The window is *rolling* rather than Monday-to-Sunday: it needs no timezone
+  policy to mean something, and the card spells out which seven days it is
+  counting so "this week" is never ambiguous.
+
+- **Best clean laps this week** — your quickest clean lap at each track in each
+  class, in the design system's leaderboard row. Deliberately **unranked**: a
+  position only means something within one track and one class, and these rows
+  span both, so numbering them would put a 1:31 at Fuji above a 3:27 at Le Mans
+  and call it a result. The Leaderboard tab is where real positions belong.
+
+  Everything on it is read from local files, so it works offline and before you
+  have signed in. Nothing is uploaded anywhere yet.
+
+- **A local lap log.** Each completed lap is appended to
+  `~/.apex-overlay/laps/<date>.jsonl` — track, car, class, the sim's own lap
+  time, the conditions, and whether it was clean. Written by the server, so laps
+  are recorded whether you run the desktop app or `npm start`.
+
+  The recorded time is the **sim's own** `lastLapTime`, not one reconstructed
+  from our sampling. The delta engine builds its own lap clock because it needs a
+  distance→time trace; a leaderboard entry is a claim about what the sim said, so
+  it uses what the sim said.
+
+  Laps are only recorded from a real sim. Demo mode drives the overlays, not your
+  history.
+
+- **A clean-lap rule, and it is ours.** LMU publishes no per-lap validity —
+  it judges track limits internally and exposes only `mNumPenalties`, once a
+  penalty has landed. So a lap is clean here when it had no pit or garage visit,
+  no track-limit excursion by our own geometry, no new penalty from the sim, and
+  a plausible time. It is deliberately stricter than the sim, and it is labelled
+  as the league's rule rather than the stewards'.
+
+  Laps that fail still count as laps — the weekly total is what you drove, and
+  `clean laps` is the subset that could go on a board.
+
+- **The car model is now read from shared memory** (`mVehicleName`). LMU's REST
+  standings publish the class, the number and the team but never which car it
+  is, so a lap database had nowhere else to look for it.
+
+### Fixed
+
+- **The all-time-best delta was keyed by track alone**, so a lap in one car
+  became the reference for a stint in another at the same circuit. In a
+  multiclass field that was permanently, uselessly wrong: come back to Spa in a
+  GT3 after a Hypercar run and the all-time delta sat ~10 s in the red against a
+  trace with completely different braking points. The reference is now keyed by
+  track *and* car.
+
+  Traces saved under the old track-only names are orphaned by this, which is
+  intended — they hold whichever car happened to set the time. The first flying
+  lap in each car writes a correct one.
+
 ## 0.23.0 — 2026-07-27 "Paddock"
 
 The control panel is now built to the design system. The account screens in

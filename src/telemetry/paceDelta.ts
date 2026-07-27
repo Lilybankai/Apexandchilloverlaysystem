@@ -19,8 +19,9 @@
  * Both are computed off the exact shared-memory lap clock the driven car
  * already exposes (`lapTimeSec = mElapsedTime − mLapStartET`).
  *
- * The all-time-best reference is persisted per track under the user's home dir
- * so it survives restarts (SimHub's "all time best" is likewise cross-session).
+ * The all-time-best reference is persisted per track AND CAR under the user's
+ * home dir so it survives restarts (SimHub's "all time best" is likewise
+ * cross-session). See {@link refKeyOf} for why the car belongs in that key.
  */
 
 import * as fs from 'node:fs';
@@ -197,7 +198,10 @@ export class LocalPaceDeltaTracker {
    *                     delta sawtooths.
    * @param elapsedSec - Sim `mElapsedTime` (seconds), a monotonic real-time clock.
    * @param restBest   - REST `bestLapTime`, for out-lap plausibility guarding.
-   * @param trackKey   - Stable per-track id (name + length) for persistence.
+   * @param trackKey   - Stable per-track-and-car id for persistence; build it
+   *                     with {@link refKeyOf}. A change of key reloads the
+   *                     all-time best, so swapping cars mid-session adopts the
+   *                     right reference without a restart.
    * @param fresh      - Whether `d` came from a REST snapshot not seen before.
    *                     Only fresh positions are written into the reference
    *                     trace: extrapolated ones would bake this poll's velocity
@@ -484,13 +488,59 @@ function saveAllTime(trackKey: string, ref: Reference): void {
   }
 }
 
-/** Build a filesystem-safe per-track key from its name and length. */
-export function trackKeyOf(trackName: string, lapDistanceM: number): string {
-  const name = (trackName || 'unknown')
+/** Lower-case, strip to `[a-z0-9-]`, trim dashes, cap the length. */
+function slug(value: string, maxLen: number): string {
+  return (value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
+    .slice(0, maxLen);
+}
+
+/** Build a filesystem-safe per-track key from its name and length. */
+export function trackKeyOf(trackName: string, lapDistanceM: number): string {
+  const name = slug(trackName || 'unknown', 48);
   const len = lapDistanceM > 1 ? Math.round(lapDistanceM) : 0;
   return `${name || 'unknown'}_${len}`;
+}
+
+/**
+ * Build the key the all-time-best reference is stored under: the track AND the
+ * car.
+ *
+ * ## Why the car has to be in the key
+ * It was track-only, and that made the all-time delta actively misleading in
+ * the one situation this league runs in constantly — a multiclass field. Drive
+ * a Hypercar at Spa, come back in a GT3, and the GT3's "all-time best" delta
+ * was measured against the Hypercar's lap: permanently ~10 s in the red, its
+ * distance→time trace shaped by a car with completely different braking points.
+ * A delta bar that is wrong in a fixed direction is worse than no delta bar,
+ * because the driver stops reading it.
+ *
+ * Note this is deliberately keyed per **car model**, while the league
+ * leaderboard is keyed per **class**. They are different jobs: a board wants
+ * times that are comparable between drivers, a delta wants the closest possible
+ * reference to the lap you are actually driving. Keying both the same way would
+ * make one of them worse.
+ *
+ * @param carName - Car model from the Scoring buffer (`mVehicleName`). Falls
+ *                  back to the car's class, then to `unknown`: spectating and
+ *                  rF2-without-koffi have no model name, and one shared
+ *                  `unknown` bucket per track is exactly the old behaviour —
+ *                  no worse than before, and it self-corrects the moment shared
+ *                  memory answers.
+ *
+ * Changing this key orphans the PB traces saved under the old track-only names.
+ * That is intended: those files hold whichever car happened to set the time, so
+ * there is nothing in them worth migrating. The first flying lap in each car
+ * writes a correct one.
+ */
+export function refKeyOf(
+  trackName: string,
+  lapDistanceM: number,
+  carName: string,
+  carClass?: string,
+): string {
+  const car = slug(carName, 40) || slug(carClass || '', 40) || 'unknown';
+  return `${trackKeyOf(trackName, lapDistanceM)}__${car}`;
 }

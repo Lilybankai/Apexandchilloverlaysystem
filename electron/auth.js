@@ -484,6 +484,30 @@ async function accessToken() {
 }
 
 /**
+ * Call a Postgres function through PostgREST as the signed-in driver.
+ *
+ * Lives here rather than in the caller because this module already owns the
+ * project URL, the publishable key and — the part that actually matters — the
+ * token refresh. An uploader that built its own requests would need all three,
+ * and would be a second place that could get the credential handling wrong.
+ *
+ * `signedOut: true` is reported separately from an error: for a background
+ * uploader those are completely different situations. One means "wait for the
+ * driver to sign in", the other means "try again shortly".
+ *
+ * @returns `{ ok: true, body }`, or `{ ok: false, error, signedOut?, status }`.
+ */
+async function rpc(fn, body) {
+  const token = await accessToken();
+  if (!token) return { ok: false, signedOut: true, error: 'Not signed in.' };
+  const res = await api(`/rest/v1/rpc/${fn}`, { body, token });
+  // A 401 here means the token was revoked between the refresh above and this
+  // call. Report it as signed-out so the caller waits rather than hammering.
+  if (!res.ok && res.status === 401) return { ...res, signedOut: true };
+  return res;
+}
+
+/**
  * Called at startup: turn a remembered refresh token into a live session and
  * refresh the cached user. Safe (and cheap) to call when signed out.
  */
@@ -510,6 +534,7 @@ module.exports = {
   resetPassword,
   signOut,
   accessToken,
+  rpc,
   // Exported for the offline test script.
   parseRecoveryToken,
   publicUser,

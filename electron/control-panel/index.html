@@ -102,39 +102,58 @@
           <div>
             <h1 class="view__title">Dashboard</h1>
             <p class="view__sub">
-              The server, the feed and the in-game layer at a glance.
+              Your week, your overlays and the in-game layer at a glance. The
+              server's own state lives in the bar along the bottom.
             </p>
           </div>
         </div>
 
+        <!-- The design system's Dashboard puts DRIVER stats here, not server
+             ones (Laps this week / Time driven / Overlays active / rank). The
+             feed state, port and update rate that used to sit here are all still
+             on screen — the feed in the nav pill and the footer, the port and
+             the rate in the footer — so nothing was lost by following it. -->
         <div class="stats">
           <div class="stat">
-            <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-circle-dot" /></svg></span>
-            <span class="stat__body">
-              <span class="stat__label">Feed</span>
-              <span class="stat__value" id="stat-feed">—</span>
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-flag" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Laps this week</span>
+                <span class="stat__value" id="stat-laps-week">—</span>
+              </span>
             </span>
           </div>
           <div class="stat">
-            <span class="stat__icon"><svg class="icon"><use href="#i-server" /></svg></span>
-            <span class="stat__body">
-              <span class="stat__label">Served at</span>
-              <span class="stat__value" id="stat-port">—</span>
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-clock" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Time driven</span>
+                <span class="stat__value" id="stat-time-driven">—</span>
+              </span>
             </span>
+            <span class="stat__sub" id="stat-time-sub"></span>
           </div>
           <div class="stat">
-            <span class="stat__icon"><svg class="icon"><use href="#i-gauge" /></svg></span>
-            <span class="stat__body">
-              <span class="stat__label">Update rate</span>
-              <span class="stat__value" id="stat-rate">—</span>
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-layout-grid" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Overlays active</span>
+                <span class="stat__value" id="stat-widgets">—</span>
+              </span>
             </span>
           </div>
+          <!-- The design's fourth tile is League rank, which needs boards that
+               do not exist yet. Clean laps is the honest stand-in: same family,
+               real data, and it vacates the slot when the leaderboard lands. -->
           <div class="stat">
-            <span class="stat__icon"><svg class="icon"><use href="#i-layers" /></svg></span>
-            <span class="stat__body">
-              <span class="stat__label">Widgets on</span>
-              <span class="stat__value" id="stat-widgets">—</span>
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-check" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Clean laps</span>
+                <span class="stat__value" id="stat-clean-laps">—</span>
+              </span>
             </span>
+            <span class="stat__sub" id="stat-clean-sub"></span>
           </div>
         </div>
 
@@ -169,6 +188,46 @@
               <button class="hotkey__clear" id="ig-hotkey-clear" type="button" title="Clear hotkey">&times;</button>
             </div>
           </div>
+        </section>
+
+        <!-- ===================== YOUR WEEK =====================
+             The lap database's first visible surface. Local-only: these come
+             from ~/.apex-overlay/laps, not from the account, so the card works
+             offline and before anyone has signed in. -->
+        <section class="card card--week">
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-activity" /></svg>This week
+          </h2>
+          <p class="card__desc" id="week-sub">
+            Rolling 7 days. Laps are counted whenever the server is running.
+          </p>
+
+          <!-- One bar per day, built by the renderer. A day with no laps still
+               gets a bar: the gap is the thing a week chart is for. -->
+          <div class="weekchart" id="week-chart"></div>
+
+          <p class="weekempty" id="week-empty" hidden>
+            No laps recorded yet. Start the server, drive, and they'll appear here.
+          </p>
+
+          <!-- Whether these laps have actually reached the league. Laps are kept
+               locally either way, so this reports a state, not a failure. -->
+          <div class="syncline">
+            <span class="syncline__dot" id="sync-dot" data-status="idle"></span>
+            <span class="syncline__text" id="sync-text">Checking…</span>
+            <button class="btn btn--ghost btn--sm" id="sync-btn" type="button">Sync now</button>
+          </div>
+        </section>
+
+        <!-- ================== BEST CLEAN LAPS ==================
+             The design system's Dashboard carries a leaderboard preview beside
+             the week chart. The boards themselves are not built, so this shows
+             the same shape against the one set of times we do have: your own. -->
+        <section class="card card--bests" id="week-bests" hidden>
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-trophy" /></svg>Best clean laps this week
+          </h2>
+          <ul class="lblist" id="week-bests-list"></ul>
         </section>
 
         <!-- ===================== OBS HELP ===================== -->

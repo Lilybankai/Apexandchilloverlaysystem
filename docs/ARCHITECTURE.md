@@ -98,6 +98,34 @@ browser. There is no database, no message broker, no cloud round-trip.
   Windows-only shared-memory read. Both live providers share the tracker, and
   the simulator drives the **real** one from synthetic geometry, so a regression
   in the counting surfaces in demo mode rather than on track.
+- **`lapLog.ts`** — the lap database. Watches the driven car's completed-lap
+  count and appends one record per lap to `~/.apex-overlay/laps/<date>.jsonl`:
+  track, car, class, the **sim's own** lap time, conditions, and whether the lap
+  was clean. Also owns the rolling-window summary the control panel's "Your week"
+  card reads back.
+
+  Two deliberate splits. **Detection is pure** — the recorder does no file IO, so
+  a whole stint can be scripted headlessly (`scripts/test-laplog.js`) — and
+  **nothing here touches the network**: laps land on disk, and uploading them
+  later belongs to the desktop app, which is the half of the system that holds
+  the account. That keeps a race weekend with no internet counting, keeps
+  headless `npm start` runs counting, and keeps the eventual cloud tables holding
+  aggregates rather than four hundred practice laps.
+
+  Cleanliness is **our rule, not the sim's** — LMU publishes no per-lap validity,
+  only `mNumPenalties` once a penalty has landed — so it is defined in one place
+  and labelled as the league's rule wherever it is shown.
+
+  It also owns `buildUploadPlan()` / `diffPlan()`: what the league database
+  *should* hold given these files, and what of that has not been sent. Those are
+  pure, so `scripts/test-lapupload.js` can exercise the whole decision without a
+  network. `electron/lapUpload.js` adds only HTTP and a timer.
+
+  **There is no queue and no cursor.** Both server RPCs are idempotent — the day
+  counter keeps the greater value, a best lap only replaces a slower one — so the
+  client recomputes the desired state and sends it rather than maintaining a
+  position in a stream that can desync from the data. `lap-sync.json` is a cache
+  that stops redundant re-sends; deleting it costs bandwidth, never correctness.
 
 ### Server (`src/server/`)
 - **`index.ts`** — boots three things in one process: a tiny static HTTP server

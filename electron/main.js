@@ -34,6 +34,7 @@ const fs = require('node:fs');
 const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
+const lapUpload = require('./lapUpload');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — every widget, each addable to OBS as its own source.    */
@@ -642,6 +643,13 @@ function pushSettings(settings) {
 function pushAuth() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('auth:changed', authStateForUi());
+  }
+}
+
+/** Push the lap uploader's state so the Dashboard can show whether it is working. */
+function pushLapSync(syncState) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('laps:sync', syncState);
   }
 }
 
@@ -1401,6 +1409,41 @@ function registerIpc() {
     return true;
   });
 
+  /* ---- Lap database ---- */
+
+  /**
+   * The Dashboard's "Your week" card: a rolling 7-day summary of the local lap
+   * files that `telemetry/lapLog` writes.
+   *
+   * Read on demand rather than cached, because the file grows underneath us
+   * while the driver is on track and the card is meant to move when they come
+   * back to it. A week of hard practice is a few hundred short lines — reading
+   * it costs less than the IPC round trip that asked for it.
+   *
+   * The module is required lazily and defensively: the summary is a nicety, and
+   * an unbuilt or broken `dist/` must degrade this card to zeroes rather than
+   * take down the whole panel, which is the one screen that can start the server.
+   */
+  ipcMain.handle('laps:week', () => {
+    try {
+      const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
+      return lapLog.summarize(Date.now(), 7);
+    } catch (err) {
+      console.error('[app] lap summary unavailable:', err.message);
+      return { days: [], laps: 0, cleanLaps: 0, distanceM: 0, drivingMs: 0, tracks: 0, bests: [] };
+    }
+  });
+
+  /** Where the lap uploader has got to, for the Dashboard's sync line. */
+  ipcMain.handle('laps:syncState', () => lapUpload.stateForUi());
+
+  /**
+   * Sync now. The background timer runs every few minutes, which is right for a
+   * driver mid-stint and far too slow for one who has just finished and wants to
+   * see their time on the board.
+   */
+  ipcMain.handle('laps:sync', () => lapUpload.sync({ reason: 'manual' }));
+
   /* ---- Bindable actions ---- */
 
   /**
@@ -1522,7 +1565,12 @@ function registerIpc() {
 
   ipcMain.handle('auth:signIn', async (_evt, payload) => {
     const res = await authService.signIn(payload || {});
-    if (res.ok) rememberEmail(payload && payload.email);
+    if (res.ok) {
+      rememberEmail(payload && payload.email);
+      // Anything driven while signed out is sitting in the local files waiting
+      // for exactly this moment. Not awaited — signing in must not block on it.
+      void lapUpload.sync({ reason: 'sign-in' });
+    }
     return res;
   });
 
@@ -1805,9 +1853,23 @@ app.whenReady().then(async () => {
 
   // Turn a remembered refresh token into a live session in the background — a
   // slow or offline network must not hold up the panel or the server.
+  //
+  // The lap uploader is started from inside this chain rather than beside it:
+  // its first run needs a live token, and firing it before the refresh has
+  // landed would guarantee one wasted signed-out attempt on every launch.
   void authService
     .restore()
-    .then(pushAuth)
+    .then((authState) => {
+      pushAuth(authState);
+      lapUpload.init({
+        userDataDir: app.getPath('userData'),
+        auth: authService,
+        appVersion: app.getVersion(),
+        onChange: pushLapSync,
+      });
+      // Catch up on anything driven while signed out or offline.
+      void lapUpload.sync({ reason: 'startup' });
+    })
     .catch((err) => console.error('[auth] restore failed:', err.message));
 
   setupAutoUpdate();

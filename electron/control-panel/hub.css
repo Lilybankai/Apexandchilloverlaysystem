@@ -205,17 +205,21 @@ html, body { height: 100%; overflow: hidden; }
 
 /* -------------------------------- stat tile ----------------------------- */
 
+/* A column, not a row: the kit's Stat puts its optional `sub` line UNDER the
+ * whole icon+value block rather than indented past the icon, so the icon row is
+ * its own element inside. */
 .stat {
   display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 13px 15px;
+  flex-direction: column;
+  padding: 14px 16px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   position: relative;
   overflow: hidden;
 }
+
+.stat__row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 /* The kit's 3px gradient rail — the same signature the overlays and the account
  * screens already carry. */
@@ -257,9 +261,21 @@ html, body { height: 100%; overflow: hidden; }
 .stat__value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: 22px;
   margin-top: 2px;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Optional second line — "12.4 km covered", "88% of your laps". Empty by
+ * default, and an empty span collapses, so a tile without one is unchanged. */
+.stat__sub {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -513,3 +529,161 @@ html, body { height: 100%; overflow: hidden; }
   height: 15px;
   color: var(--cyan);
 }
+
+
+/* ------------------------------- this week ------------------------------ */
+/*
+ * The kit's WeeklyCard (Dashboard.jsx): seven day-columns, each a bar whose
+ * height is a share of the busiest day, the peak lit with the brand gradient and
+ * captioned with its lap count.
+ *
+ * A chart rather than a row of totals because the question a driver actually
+ * asks of their week is "when did I drive", not "how many". A single number
+ * cannot tell four heavy days from one enormous one.
+ */
+.weekchart {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 150px;
+  margin-top: 16px;
+}
+
+.weekbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+}
+
+.weekbar__track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+
+.weekbar__fill {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--panel-3);
+  position: relative;
+}
+
+/* The vertical cut of the logo gradient. --grad runs at 120deg for wide
+ * surfaces; a 40px-wide bar needs it top-to-bottom or it reads as flat colour. */
+.weekbar[data-peak="true"] .weekbar__fill {
+  background: linear-gradient(180deg, var(--cyan), var(--purple));
+}
+
+.weekbar__count {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--cyan);
+}
+
+.weekbar__day {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.weekbar[data-peak="true"] .weekbar__day { color: var(--text); }
+
+.weekempty {
+  margin: 16px 0 0;
+  padding: 14px;
+  background: var(--panel-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* ---------------------------- leaderboard rows -------------------------- */
+/*
+ * The kit's `.lbrow` (Dashboard.jsx LeaderboardPreview): position, name, time,
+ * with the time in mono so a column of them reads as a column — which is the
+ * comparison the eye is there to make. Used here for your own best laps; the
+ * league boards will reuse it unchanged.
+ */
+.lblist { margin: 14px 0 0; padding: 0; list-style: none; }
+
+.lbrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.lbrow:nth-child(odd) { background: var(--panel-2); }
+
+/* Fixed basis: with names of different lengths the class chips land somewhere
+ * different on every row, and the chip column is what the list is scanned by. */
+.lbrow__name {
+  flex: 0 0 180px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lbrow__car {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lbrow__time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ------------------------------- sync line ------------------------------ */
+/*
+ * A quiet status footer inside the week card. Deliberately understated: for a
+ * signed-in driver on a working connection this says "synced" forever and must
+ * not compete with the chart above it for attention. It earns its place on the
+ * days it says something else.
+ */
+.syncline {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.syncline__text { flex: 1; min-width: 0; }
+
+.syncline__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.syncline__dot[data-status="ok"] { background: var(--ok); }
+.syncline__dot[data-status="syncing"] { background: var(--cyan); }
+.syncline__dot[data-status="offline"] { background: var(--warn); }
+.syncline__dot[data-status="error"] { background: var(--bad); }
+/* Signed out is a state, not a fault — the laps are safely on disk. */
+.syncline__dot[data-status="signed-out"] { background: var(--text-3); }

@@ -65,6 +65,30 @@ contextBridge.exposeInMainWorld('apex', {
   /** Reset every in-game widget to its default position. */
   ingameLayoutReset: () => ipcRenderer.invoke('ingame:layoutReset'),
 
+  /* ---- Lap database ---- */
+
+  /**
+   * Rolling 7-day driving summary read from the local lap files:
+   * `{ laps, cleanLaps, distanceM, drivingMs, tracks, bests[], days[] }`.
+   *
+   * Local-only for now — no account needed and no network involved, so it works
+   * offline and before the driver has ever signed in.
+   */
+  lapsWeek: () => ipcRenderer.invoke('laps:week'),
+
+  /** Where the uploader has got to: `{ status, lastOkAt, pending, sent, error }`. */
+  lapsSyncState: () => ipcRenderer.invoke('laps:syncState'),
+
+  /** Push everything pending to the league now, rather than on the next tick. */
+  lapsSync: () => ipcRenderer.invoke('laps:sync'),
+
+  /** Subscribe to uploader state changes. Returns an unsubscribe function. */
+  onLapSync: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('laps:sync', listener);
+    return () => ipcRenderer.removeListener('laps:sync', listener);
+  },
+
   /* ---- Account (Supabase) ----
    *
    * Every call is handled in the main process (electron/auth.js). Access and

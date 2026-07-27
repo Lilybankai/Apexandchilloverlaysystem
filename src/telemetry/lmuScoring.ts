@@ -2,18 +2,22 @@
  * @file src/telemetry/lmuScoring.ts
  * @module telemetry/lmuScoring
  *
- * Reads the **three scoring channels the REST API does not publish** for the
+ * Reads the **four scoring channels the REST API does not publish** for the
  * locally-driven car, straight from the rF2/LMU shared-memory Scoring buffer:
  *
  *   `mPathLateral`   the car's lateral offset from the track's centre path, m
  *   `mTrackEdge`     how far the track surface extends in that direction, m
  *   `mNumPenalties`  the sim's own outstanding-penalty count
+ *   `mVehicleName`   the car MODEL, e.g. "Ferrari 296 GT3"
  *
  * The first two are the only spatial statement anywhere in the feed about
  * *where the road ends*, which is what a track-limits readout needs (see
  * `telemetry/trackLimits.ts`); the third is the sim's own verdict when it has
- * one. LMU's `/rest/watch/standings` carries none of them, and there is no
- * REST endpoint that does — hence a second small shared-memory reader beside
+ * one. The fourth is the only place the driven car's model is named at all:
+ * `/rest/watch/standings` publishes the class, the number and the team, but
+ * never which car it is — so a per-car lap database has nowhere else to look.
+ * LMU's REST API carries none of them, and there is no endpoint that does —
+ * hence a second small shared-memory reader beside
  * {@link module:telemetry/lmuLocalCar}, which owns the *Telemetry* buffer.
  *
  * ## The layout was verified live, not assumed
@@ -62,6 +66,16 @@ const VS = {
   stride: 584,
   mID: 0, // long — equals the REST `slotID`
   mDriverName: 4, // char[32]
+  /**
+   * The car model as the sim names it, e.g. `"Ferrari 296 GT3"`.
+   *
+   * Not probed separately, and not taken on faith from an rF2 header either:
+   * it is *bracketed* by two offsets this module already verified live. The
+   * driver name occupies 4..35 (char[32]), so the next field starts at 36, and
+   * `mTotalLaps` was confirmed at 100 — exactly 36 + 64. A char[64] is the only
+   * thing that fits the hole, and it is what the stock record puts there.
+   */
+  mVehicleName: 36, // char[64]
   mTotalLaps: 100, // short
   mLapDist: 104, // double
   /**
@@ -111,6 +125,13 @@ export interface ScoringCar {
   penalties: number;
   /** `true` when the sim has this car in the pit lane or its garage stall. */
   inPit: boolean;
+  /**
+   * The car model, e.g. `"Ferrari 296 GT3"`. Empty string when the field is
+   * blank or unreadable — an empty name is a *missing* name, and callers key
+   * lap records off it, so it must never be confused with a real car called
+   * something odd.
+   */
+  vehicleName: string;
 }
 
 /**
@@ -321,6 +342,24 @@ export class LmuScoringReader {
   }
 }
 
+/**
+ * Read a fixed-width NUL-terminated field as a string.
+ *
+ * The sim pads these with NULs, but a torn or uninitialised record can leave
+ * arbitrary bytes there, so anything non-printable ends the string too rather
+ * than becoming mojibake in a lap record that outlives the session.
+ */
+function readCString(rec: Buffer, offset: number, maxLen: number): string {
+  let end = offset;
+  const limit = Math.min(offset + maxLen, rec.length);
+  while (end < limit) {
+    const b = rec[end]!;
+    if (b < 0x20 || b > 0x7e) break;
+    end++;
+  }
+  return rec.toString('latin1', offset, end).trim();
+}
+
 /** Decode one copied `rF2VehicleScoring` record. */
 function parseRecord(rec: Buffer, slotId: number): ScoringCar {
   const lateral = rec.readDoubleLE(VS.mPathLateral);
@@ -335,5 +374,6 @@ function parseRecord(rec: Buffer, slotId: number): ScoringCar {
     // A negative count is a record that isn't populated, not a credit.
     penalties: penalties >= 0 ? penalties : UNKNOWN_VALUE,
     inPit: rec.readUInt8(VS.mInPits) !== 0 || rec.readUInt8(VS.mInGarageStall) !== 0,
+    vehicleName: readCString(rec, VS.mVehicleName, 64),
   };
 }

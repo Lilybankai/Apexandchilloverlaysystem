@@ -57,6 +57,28 @@ const PANEL_CONTRACT = {
   'update-text': 'span',
   'update-action': 'button',
 
+  // Dashboard stat tiles. v0.24.0 swapped these from SERVER stats (feed, port,
+  // update rate) to the driver stats the design system's Dashboard specifies;
+  // the server facts they replaced all live in the footer below.
+  'stat-laps-week': 'span',
+  'stat-time-driven': 'span',
+  'stat-time-sub': 'span',
+  'stat-widgets': 'span',
+  'stat-clean-laps': 'span',
+  'stat-clean-sub': 'span',
+
+  // This week — the lap database's dashboard card (v0.24.0)
+  'week-sub': 'p',
+  'week-chart': 'div',
+  'week-bests': 'section',
+  'week-bests-list': 'ul',
+  'week-empty': 'p',
+
+  // Lap upload status (v0.25.0)
+  'sync-dot': 'span',
+  'sync-text': 'span',
+  'sync-btn': 'button',
+
   // Account (v0.21.0)
   account: 'div',
   'account-initials': 'span',
@@ -178,7 +200,7 @@ function referencedIds(js) {
     /querySelector(?:All)?\(\s*['"]#([a-zA-Z0-9_-]+)['"]\s*\)/g,
     /getElementById\(\s*['"]([a-zA-Z0-9_-]+)['"]\s*\)/g,
     // Any bare '#id' string literal. The shell's stat tiles and footer are
-    // addressed through helpers (`setText('#stat-feed', …)`), so a selector-call
+    // addressed through helpers (`setText('#foot-url', …)`), so a selector-call
     // pattern alone cannot see them — and an id that the guard cannot see is an
     // id it cannot protect from being renamed.
     /['"]#([a-zA-Z0-9_-]+)['"]/g,

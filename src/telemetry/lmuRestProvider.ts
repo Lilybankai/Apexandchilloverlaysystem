@@ -39,7 +39,7 @@ import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator } from './fuelCalculator';
 import { LmuLocalCarReader, type LocalCarPhysics } from './lmuLocalCar';
-import { LmuScoringReader } from './lmuScoring';
+import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { buildRadar, type RadarCar } from './radar';
 import {
@@ -68,7 +68,8 @@ import {
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
 import { seedFromGarage as seedAidShadow } from '../server/aidShadow';
-import { LocalPaceDeltaTracker, trackKeyOf } from './paceDelta';
+import { LocalPaceDeltaTracker, refKeyOf } from './paceDelta';
+import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
@@ -259,8 +260,21 @@ export class LmuRestProvider implements TelemetryProvider {
    * shared-memory region with its own record layout — see `lmuScoring.ts`.
    */
   private readonly scoring = new LmuScoringReader();
+  /**
+   * The driven car's model, latched from the Scoring buffer.
+   *
+   * Sticky on purpose. The name cannot change without a trip through the garage,
+   * but a single torn or missed read would blank it — and it keys both the PB
+   * reference and the lap log, so a momentary blank would silently start a
+   * second set of records for the same car. Keeping the last good value is the
+   * behaviour that matches reality; only a genuine car change replaces it, and
+   * that always comes with a non-empty name.
+   */
+  private playerVehicleName = '';
   /** Counts track-limit excursions for the driven car; see `trackLimits.ts`. */
   private readonly trackLimits = new TrackLimitsTracker();
+  /** Turns the driven car's lap boundaries into the lap database; see `lapLog.ts`. */
+  private readonly lapRecorder = new LapRecorder();
   /**
    * Per-car relative-gap history, for the closing-rate derivation that drives
    * the backmarker / blue-flag alert. Keyed by slot id. See
@@ -552,6 +566,13 @@ export class LmuRestProvider implements TelemetryProvider {
       local = this.lastLocal;
     }
 
+    // One scoring read per poll, shared by everything that needs it. It used to
+    // live inside buildTrackLimits, but the PB reference key (below) needs the
+    // car model from the same record and is computed earlier in the frame, and
+    // reading the buffer twice per poll to serve two callers would be pure waste.
+    const scoringCar = playerCar ? this.scoring.read(playerCar.slotID) : null;
+    if (scoringCar && scoringCar.vehicleName) this.playerVehicleName = scoringCar.vehicleName;
+
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus);
@@ -601,7 +622,7 @@ export class LmuRestProvider implements TelemetryProvider {
         d,
         local!.elapsedSec,
         focus!.bestLapTime,
-        trackKeyOf(si.trackName || '', trackLen),
+        refKeyOf(si.trackName || '', trackLen, this.playerVehicleName, playerCar?.carClass),
         fresh,
       );
       // The single-value Delta widget mirrors the pace widget's session-best
@@ -621,7 +642,7 @@ export class LmuRestProvider implements TelemetryProvider {
       : playerCar && typeof playerCar.carVelocity?.velocity === 'number'
         ? Math.round(Math.abs(playerCar.carVelocity.velocity) * 3.6)
         : UNKNOWN_VALUE;
-    const trackLimits = this.buildTrackLimits(playerCar, session, drivenSpeedKph);
+    const trackLimits = this.buildTrackLimits(playerCar, scoringCar, session, drivenSpeedKph);
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
     // Live rear brake bias from shared memory (the driven car only); projectAids
     // uses it as the one genuinely-live aid, falling back to the setup value.
@@ -630,6 +651,9 @@ export class LmuRestProvider implements TelemetryProvider {
     // it reads that car's world position + orientation from shared memory, which
     // exists only for the car driven on this PC. Omitted when spectating.
     const radar = this.buildRadarBlips(playerCar, cars);
+    // The lap database. Last, because it reads the results of everything above
+    // (the excursion count, the pit flags) to decide whether the lap was clean.
+    this.recordLap(playerCar, scoringCar, session, trackLimits, si, trackLen, nowMs);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -1334,6 +1358,7 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   private buildTrackLimits(
     playerCar: RestStanding | undefined,
+    car: ScoringCar | null,
     session: SessionState,
     speedKph: number,
   ): TrackLimitsState | undefined {
@@ -1341,7 +1366,6 @@ export class LmuRestProvider implements TelemetryProvider {
       this.trackLimits.reset();
       return undefined;
     }
-    const car = this.scoring.read(playerCar.slotID);
     if (!car) return undefined;
     return (
       this.trackLimits.update({
@@ -1359,6 +1383,53 @@ export class LmuRestProvider implements TelemetryProvider {
         nowMs: Date.now(),
       }) ?? undefined
     );
+  }
+
+  /**
+   * Feed the lap recorder, and write out any lap that just completed.
+   *
+   * Centred on the DRIVEN car, like track limits and the radar — a lap database
+   * records what you drove, so spectating another car must add nothing to it.
+   *
+   * The file write happens here rather than being handed up to the caller
+   * because it is an append of a few hundred bytes once every lap or two: at
+   * that rate the simplicity of doing it inline is worth more than the machinery
+   * of queueing it, and {@link appendLap} swallows its own errors so a full disk
+   * cannot take the overlay down mid-race.
+   */
+  private recordLap(
+    playerCar: RestStanding | undefined,
+    scoringCar: ScoringCar | null,
+    session: SessionState,
+    trackLimits: TrackLimitsState | undefined,
+    si: RestSession,
+    trackLenM: number,
+    nowMs: number,
+  ): void {
+    if (!playerCar) return;
+    const lap = this.lapRecorder.update(
+      {
+        sim: 'lmu',
+        track: session.track,
+        trackLengthM: trackLenM,
+        car: this.playerVehicleName,
+        carClass: normalizeClass(playerCar.carClass) || '',
+        sessionType: session.type,
+        lapsCompleted: playerCar.lapsCompleted,
+        lastLapSec: playerCar.lastLapTime,
+        // Same two sources buildTrackLimits trusts, and for the same reason:
+        // the scoring record's pit flags share an origin with the lateral
+        // channels, so they cannot disagree about which lap the car is on.
+        inPit: (scoringCar ? scoringCar.inPit : false) || isInPit(playerCar),
+        limitWarnings: trackLimits ? trackLimits.warnings : UNKNOWN_VALUE,
+        penalties: scoringCar ? scoringCar.penalties : UNKNOWN_VALUE,
+        ...(typeof si.trackTemp === 'number' ? { trackTempC: si.trackTemp } : {}),
+        ...(typeof si.ambientTemp === 'number' ? { ambientTempC: si.ambientTemp } : {}),
+        wet: (si.raining ?? 0) > 0 || (si.maxPathWetness ?? 0) > 0,
+      },
+      nowMs,
+    );
+    if (lap) appendLap(lap);
   }
 
   /**
