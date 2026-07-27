@@ -28,6 +28,8 @@ import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { setTrackLimitsMargin, trackLimitsMargin } from '../telemetry/trackLimits';
 import { handleMfdCommand } from './mfdRoutes';
+import { setVirtualRows } from './pitCursor';
+import { buildRaceControlRows } from './raceControlRows';
 import { KeySender } from './keySender';
 
 /** Maps file extensions to Content-Type headers for the static server. */
@@ -365,6 +367,12 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   if (!mfdDeps.keys.available) {
     console.log('[apex-overlay] keystroke injection unavailable — live aid keys disabled.');
   }
+
+  // Put the overlay's own rows (SERVE, PIT REQUEST) into the list the pit cursor
+  // walks, so the four bindable controls reach them exactly as they reach the
+  // sim's rows. Registered here because this is the one place that holds both
+  // the controller and the key sender they need.
+  setVirtualRows(() => buildRaceControlRows(mfdDeps.controller, mfdDeps.keys));
 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.

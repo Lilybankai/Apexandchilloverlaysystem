@@ -22,6 +22,8 @@ const {
   resolveIndex,
   selectRow,
   stepSelected,
+  setVirtualRows,
+  withVirtualRows,
 } = require('../dist/server/pitCursor');
 
 let passed = 0;
@@ -166,6 +168,54 @@ console.log('\n4) Live operations against a stub sim');
     check('moving with no menu fails cleanly', moved.ok === false && !!moved.error, moved.error);
     const stepped = await stepSelected(1, c);
     check('stepping with no menu fails cleanly', stepped.ok === false && !!stepped.error, stepped.error);
+  }
+
+  console.log('\n6) The overlay\'s own rows are in the list the cursor walks');
+
+  {
+    // The bug this exists to prevent: SERVE and PIT REQUEST rendered fine and
+    // were completely unreachable from the four bindable controls — which are
+    // the only way to use them with both hands on the wheel.
+    let serve = 0;
+    let applied = null;
+    setVirtualRows(() => [
+      {
+        name: 'SERVE:',
+        options: ['OFF', 'DRIVE-THRU', 'STOP/GO'],
+        current: serve,
+        apply: async (n) => { serve = n; applied = n; return { ok: true, applied: n }; },
+      },
+    ]);
+    const vsim = [{ name: 'FUEL:', currentSetting: 0, settings: [{ text: '0 L' }] }];
+    const vrows = withVirtualRows(vsim);
+    check('virtual rows come first', vrows[0].name === 'SERVE:', vrows.map((r) => r.name).join());
+    check('…and the sim rows follow', vrows[1].name === 'FUEL:');
+
+    selectRow({ name: 'SERVE:' }, vrows);
+    check('the cursor can land on a virtual row', getCursor().name === 'SERVE:');
+    check('…and reads its value', getCursor().text === 'OFF', getCursor().text);
+
+    // Stepping must reach the row own handler, never a pit-menu write.
+    const guard = {
+      getPitRows: async () => vsim,
+      setPitRow: async () => { throw new Error('must not write the sim menu'); },
+    };
+    const vres = await stepSelected(1, guard);
+    check('stepping a virtual row runs its handler', vres.ok === true && applied === 1, vres.error);
+    check('…and reports the new value', getCursor().text === 'DRIVE-THRU', getCursor().text);
+
+    // Clamped, not wrapped: one extra press on a blind control must not roll
+    // round from the last option to the first and fire something unintended.
+    await stepSelected(1, guard);
+    await stepSelected(1, guard);
+    check('a virtual row clamps at its last option', serve === 2, serve);
+    await stepSelected(-1, guard);
+    await stepSelected(-1, guard);
+    await stepSelected(-1, guard);
+    check('…and at its first', serve === 0, serve);
+
+    setVirtualRows(null);
+    check('clearing the provider removes them', withVirtualRows(vsim).length === 1);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -156,7 +156,30 @@ const wanted = argOf('--key', null);
 
 const config = read();
 const input = config.Input || {};
-const usedDik = new Set(Object.values(input).filter((v) => typeof v === 'number'));
+
+/**
+ * Keys already spoken for — EXCLUDING the target function's own binding.
+ *
+ * That exclusion is the whole point. Without it, a function that is already
+ * bound counts its own key as taken, so the auto-picker skips it and hands out
+ * the next one down: run the tool twice and `Pit Request` walks F10 → F11, three
+ * times and it is on F9. Which is exactly what happened the first time this was
+ * re-run against a config it had already written.
+ */
+const usedDik = new Set(
+  Object.entries(input)
+    .filter(([fn, v]) => typeof v === 'number' && fn !== fnName)
+    .map(([, v]) => v),
+);
+
+// Already on a key we can press, and the caller did not ask for a specific one:
+// leave it alone. Re-running this must be a no-op, not a reshuffle — it is the
+// kind of tool people run again when they are unsure whether it worked.
+if (!wanted && Object.values(KEYS).indexOf(input[fnName]) >= 0) {
+  const name = Object.keys(KEYS).find((k) => KEYS[k] === input[fnName]);
+  console.log(`"${fnName}" is already bound to ${name}. Nothing to do.`);
+  process.exit(0);
+}
 
 let keyName = wanted;
 if (keyName) {

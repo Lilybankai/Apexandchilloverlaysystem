@@ -323,6 +323,11 @@
         var moved = c.name !== pitCursor.name || c.updatedAt !== pitCursor.updatedAt;
         var first = pitCursor.updatedAt === 0;
         pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
+        // The overlay-owned rows ride along on this poll, so their values are
+        // drawn from the server rather than from a copy kept here — the wheel
+        // buttons change them too, and a local copy would drift the moment a
+        // driver used the buttons instead of the mouse.
+        if (Array.isArray(c.virtual)) renderVirtualRows(c.virtual);
         if (!moved) return;
         highlightCursor(lastPitRows, true);
         // The cursor moving means a bound button was pressed — and a `+` or `−`
@@ -353,7 +358,38 @@
    * is genuinely scrollable — scrollIntoView on a widget that fits would be free
    * rein to move the page under the driver.
    */
+  /**
+   * Mark the overlay's OWN rows when the cursor is on one of them.
+   *
+   * They live in the RACE CONTROL group rather than the pit list, but the server
+   * walks them as part of one list (see server/pitCursor withVirtualRows), so
+   * the highlight has to follow the cursor across both. Matched by name, which
+   * is the cursor's own anchor.
+   */
+  /** Draw the overlay-owned rows' values from the server's copy. */
+  function renderVirtualRows(virtual) {
+    var byName = { 'SERVE:': rcRows.serve, 'PIT REQUEST:': rcRows.request };
+    for (var i = 0; i < virtual.length; i++) {
+      var refs = byName[virtual[i].name];
+      if (refs) critText(refs.value, virtual[i].text || '—');
+    }
+  }
+
+  function highlightRaceControl() {
+    var byName = { 'SERVE:': rcRows.serve, 'PIT REQUEST:': rcRows.request };
+    for (var key in byName) {
+      if (!Object.prototype.hasOwnProperty.call(byName, key)) continue;
+      var refs = byName[key];
+      if (!refs) continue;
+      if (pitCursor.name === key) refs.root.setAttribute("data-selected", "true");
+      else refs.root.removeAttribute("data-selected");
+    }
+  }
+
   function highlightCursor(rows, scroll) {
+    // Always run, even with no pit list: the cursor may be sitting on one of the
+    // overlay's own rows, which exist whether or not the sim's menu is up.
+    highlightRaceControl();
     if (!pit.rowsEl || !rows || rows.length === 0) return;
     var idx = -1;
     if (pitCursor.name) {
@@ -615,11 +651,22 @@
    *
    * LMU issues a drive-through for track limits, so that is the default.
    */
-  var SERVE_KINDS = [
-    { id: 'drivethrough', label: 'DRIVE-THRU', request: false },
-    { id: 'stopgo', label: 'STOP/GO', request: true },
-  ];
-  var serveKind = 0;
+  /**
+   * Step one of the overlay-owned rows: aim the cursor at it, then change it.
+   *
+   * Two calls rather than one because that is the existing contract — clicking a
+   * row's ± moves the cursor onto it, so whatever the driver last touched with
+   * the mouse is what their bound + and − will act on next.
+   */
+  function stepVirtual(name, dir) {
+    postJson('/api/mfd/cursor', { name: name })
+      .then(function () { return postJson('/api/mfd/cursor', { value: dir }); })
+      .then(function (res) {
+        if (res && res.ok === false) showNote(res.error || 'failed', true);
+        loadCursor();
+        refreshNow();
+      });
+  }
 
   /** POST a control intent and report the outcome on the note line. */
   function rcPost(path, body, okText) {
@@ -704,40 +751,20 @@
     rcRows.penalty.root.setAttribute('data-cat', 'service');
     rows.appendChild(rcRows.penalty.root);
 
-    rcRows.request = makeActionRow('PIT REQUEST', 'REQUEST', function () {
-      return rcPost('/api/mfd/pitrequest', {}, 'pit requested');
-    });
+    // PIT REQUEST and SERVE are ordinary ± rows now, driven through the SAME
+    // server-side cursor as the sim's own rows. That is what makes them reachable
+    // from the four bindable controls: scroll to them with ▲ ▼, change them with
+    // + −, exactly like FL TIRE. Clicking a row's ± aims the cursor at it first,
+    // so the mouse and the buttons never disagree about which row is selected —
+    // the same contract the sim's rows have always had here.
+    rcRows.request = makeRow(function (dir) { stepVirtual('PIT REQUEST:', dir); });
+    setText(rcRows.request.label, 'PIT REQUEST');
+    rcRows.request.root.setAttribute('data-cat', 'service');
     rows.appendChild(rcRows.request.root);
 
-    // SERVE cycles the penalty type with ± and fires with the button, so the
-    // whole thing is reachable from the four bindable pit-menu controls too.
-    rcRows.serve = makeActionRow('SERVE', 'SERVE', function () {
-      var kind = SERVE_KINDS[serveKind];
-      return rcPost(
-        kind.request ? '/api/mfd/servestopgo' : '/api/mfd/clearservice',
-        {},
-        kind.request ? 'stop/go armed — pit requested' : 'drive-through armed — do NOT stop',
-      );
-    });
-    var cycle = document.createElement('button');
-    cycle.type = 'button';
-    cycle.className = 'mfd__step';
-    cycle.textContent = '⇄';
-    cycle.title = 'Switch between drive-through and stop/go';
-    ['pointerdown', 'mousedown', 'touchstart'].forEach(function (evt) {
-      cycle.addEventListener(evt, function (e) { e.stopPropagation(); });
-    });
-    cycle.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      serveKind = (serveKind + 1) % SERVE_KINDS.length;
-      critText(rcRows.serve.value, SERVE_KINDS[serveKind].label);
-    });
-    rcRows.serve.root.querySelector('.mfd__ctrls').insertBefore(
-      cycle,
-      rcRows.serve.root.querySelector('.mfd__act'),
-    );
-    critText(rcRows.serve.value, SERVE_KINDS[serveKind].label);
+    rcRows.serve = makeRow(function (dir) { stepVirtual('SERVE:', dir); });
+    setText(rcRows.serve.label, 'SERVE');
+    rcRows.serve.root.setAttribute('data-cat', 'service');
     rows.appendChild(rcRows.serve.root);
 
     // The outcome line. Errors are the point of it: the likeliest failure is

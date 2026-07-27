@@ -28,7 +28,8 @@ import { projectPitMenu, type MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
 import { findAid, readLmuKeybinds } from './lmuKeybinds';
 import { bump as bumpShadow, getShadowAids, isTracked, resync } from './aidShadow';
-import { getCursor, moveCursorLive, selectRow, stepSelected } from './pitCursor';
+import { getCursor, moveCursorLive, selectRow, stepSelected, getVirtualRows, withVirtualRows,
+} from './pitCursor';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -117,7 +118,13 @@ export function handleMfdCommand(
   // again several times a second to learn something we ourselves decided would
   // be pure noise on the sim's API.
   if (req.method === 'GET' && action === 'cursor') {
-    sendJson(res, 200, { ok: true, ...getCursor() });
+    // The overlay-owned rows ride along: the widget needs their values to draw
+    // them, and this endpoint is already answered from memory and polled.
+    sendJson(res, 200, {
+      ok: true,
+      ...getCursor(),
+      virtual: getVirtualRows().map((v) => ({ name: v.name, text: v.options[v.current] })),
+    });
     return true;
   }
 
@@ -211,8 +218,8 @@ export function handleMfdCommand(
           return;
         }
         if (b.name != null || b.index != null) {
-          const rows = await controller.getPitRows();
-          if (!Array.isArray(rows) || rows.length === 0) {
+          const rows = withVirtualRows((await controller.getPitRows()) ?? []);
+          if (rows.length === 0) {
             sendJson(res, 502, { ok: false, ...getCursor(), error: 'pit menu unavailable' });
             return;
           }

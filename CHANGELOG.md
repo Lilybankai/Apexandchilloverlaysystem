@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.27.0 — 2026-07-27
+
+### Changed
+
+- **SERVE and PIT REQUEST are reachable from the four bindable controls.** They
+  were rendered as rows but were not IN the list the pit cursor walks, so ▲ ▼
+  scrolled straight past them and only a mouse could touch them. That is the
+  wrong way round: the single moment a driver most needs to serve a penalty is
+  the moment they least want to be finding a mouse.
+
+  The cursor now walks a combined list — the overlay's own rows first, then the
+  sim's — so scroll-scroll-plus reaches them exactly as it reaches FL TIRE. They
+  behave like every other row: ± changes the value, clicking a row's ± aims the
+  cursor at it, and a wheel button and a click stay in agreement because both go
+  through the one server-side cursor.
+
+  SERVE cycles `OFF → DRIVE-THRU → STOP/GO`, and the distinction is not
+  cosmetic: both strip the stop back to no service, but a stop/go means stopping
+  in your box so the pit stop IS requested, while a drive-through means driving
+  the lane without stopping so it deliberately is not.
+
+  These rows **clamp** rather than wrap at their ends, unlike the sim's. Wrapping
+  is right for a value; it is wrong for a row whose last option strips a pit
+  stop, because one extra press on a control the driver is not looking at would
+  roll round and do something they were not reaching for.
+
+### Fixed
+
+- **`scripts/bind-lmu-key.js` no longer walks a binding down the keyboard on
+  re-runs.** It counted the target function's OWN key as occupied, so the
+  auto-picker skipped it and handed out the next one down: run it twice and
+  `Pit Request` moved F10 → F11, three times and it was on F9, quietly taking
+  over Quick Chat #9. It now ignores the function's own binding, and an
+  already-bound function is left alone entirely unless `--key` asks for a
+  specific one — so re-running is a proven no-op, which matters for a tool people
+  run again when they are unsure it worked.
+
 ## 0.26.0 — 2026-07-27
 
 ### Changed

@@ -36,6 +36,86 @@ export interface CursorRow {
   name?: string;
   currentSetting?: number;
   settings?: Array<{ text?: string }>;
+  /**
+   * The sim's own stable row id, when this row came from the sim. Absent on the
+   * overlay's own rows, which the sim has never heard of — see {@link VirtualRow}.
+   */
+  'PMC Value'?: number;
+}
+
+/* ------------------------------ virtual rows ------------------------------ */
+
+/**
+ * A row the OVERLAY owns rather than the sim: the tyre compound collapsed across
+ * four corners, the pit request, serving a penalty.
+ *
+ * These have to sit in the same list the cursor walks, or they are unreachable
+ * from the only input vocabulary that matters. The four bindable controls are
+ * the whole point of the cursor — scroll, scroll, plus — and a control that can
+ * only be clicked is a control a driver cannot use, because the one moment they
+ * need to serve a penalty is a moment both hands are on the wheel. Putting them
+ * in a panel of their own beside the list was the mistake this fixes.
+ *
+ * They are declared through {@link setVirtualRows} rather than imported, because
+ * applying one needs the MFD controller and the key sender, and pitCursor must
+ * not depend on either — it is walked by the Electron action registry, by the
+ * HTTP routes and by the widget, and a dependency here would be a cycle.
+ */
+export interface VirtualRow {
+  /** Row name, in the sim's own style so the widget can key off it uniformly. */
+  name: string;
+  /** The options this row cycles, as display text. */
+  options: string[];
+  /** Which option is selected right now. */
+  current: number;
+  /**
+   * Apply a new selection. Returns the option index actually in force
+   * afterwards, which is not always the one asked for — a row whose action
+   * failed stays where it was rather than lying about it.
+   */
+  apply: (next: number) => Promise<{ ok: boolean; applied: number; error?: string }>;
+}
+
+let virtualProvider: (() => VirtualRow[]) | null = null;
+
+/**
+ * Register the overlay-owned rows. Called once at server start; passing `null`
+ * removes them, which is what a build without the MFD control plane does.
+ */
+export function setVirtualRows(provider: (() => VirtualRow[]) | null): void {
+  virtualProvider = provider;
+}
+
+/** The overlay-owned rows right now, or an empty list when none are registered. */
+export function getVirtualRows(): VirtualRow[] {
+  if (!virtualProvider) return [];
+  try {
+    return virtualProvider();
+  } catch {
+    return [];
+  }
+}
+
+/** A virtual row in the shape the cursor and the widget already understand. */
+function asCursorRow(v: VirtualRow): CursorRow {
+  return {
+    name: v.name,
+    currentSetting: v.current,
+    settings: v.options.map((text) => ({ text })),
+  };
+}
+
+/**
+ * The full list the cursor walks: the overlay's rows first, then the sim's.
+ *
+ * First, deliberately. They are the rows a driver reaches for under pressure —
+ * a penalty has just landed — and the sim's twenty-odd strategy rows are the
+ * ones set on a quiet lap. Scrolling past nineteen brake ducts to find SERVE is
+ * the version of this that does not get used.
+ */
+export function withVirtualRows(simRows: CursorRow[]): CursorRow[] {
+  const virt = getVirtualRows().map(asCursorRow);
+  return virt.concat(Array.isArray(simRows) ? simRows : []);
 }
 
 /** Where the cursor is, as reported to the overlay. */
@@ -145,8 +225,9 @@ export async function moveCursorLive(
   delta: number,
   controller: MfdController,
 ): Promise<PitCursorResult> {
-  const rows = await controller.getPitRows();
-  if (!Array.isArray(rows) || rows.length === 0) {
+  const simRows = await controller.getPitRows();
+  const rows = withVirtualRows(Array.isArray(simRows) ? simRows : []);
+  if (rows.length === 0) {
     return { ...getCursor(), ok: false, error: 'pit menu unavailable (not in a session?)' };
   }
   moveCursor(delta, rows);
@@ -164,11 +245,34 @@ export async function stepSelected(
   delta: number,
   controller: MfdController,
 ): Promise<PitCursorResult> {
-  const rows = await controller.getPitRows();
-  if (!Array.isArray(rows) || rows.length === 0) {
+  const simRows = await controller.getPitRows();
+  const virt = getVirtualRows();
+  const rows = withVirtualRows(Array.isArray(simRows) ? simRows : []);
+  if (rows.length === 0) {
     return { ...getCursor(), ok: false, error: 'pit menu unavailable (not in a session?)' };
   }
   const at = resolveIndex(rows);
+
+  // An overlay-owned row is applied by its own handler rather than by writing a
+  // pit-menu index the sim has never heard of.
+  if (at >= 0 && at < virt.length) {
+    const v = virt[at]!;
+    land(rows, at);
+    const step = delta < 0 ? -1 : 1;
+    // Clamped, not wrapped. These rows have consequences at their ends — SERVE's
+    // last option strips the whole stop — and wrapping from the last back to the
+    // first would let one extra press on a blind control do something the driver
+    // was not reaching for.
+    const next = Math.min(v.options.length - 1, Math.max(0, v.current + step));
+    const res = await v.apply(next);
+    if (!res.ok) {
+      return { ...getCursor(), ok: false, error: res.error ?? 'row action failed' };
+    }
+    text = v.options[res.applied] ?? null;
+    updatedAt = Date.now();
+    return { ...getCursor(), ok: true };
+  }
+
   const row = rows[at];
   if (!row) return { ...getCursor(), ok: false, error: 'no pit row selected' };
   // Re-anchor first: if the remembered name has gone, the cursor is now sitting
