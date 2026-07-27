@@ -102,6 +102,52 @@
       errorBanner.hidden = true;
     }
     syncIngameControls();
+    renderShellStatus(status, feed);
+  }
+
+  /**
+   * The Hub shell's dashboard stat tiles and footer status bar. Reads the same
+   * status object the pill does — deliberately no second source of truth, so the
+   * three can never disagree about whether the feed is live.
+   */
+  function renderShellStatus(status, feed) {
+    const label = FEED_LABEL[feed] || feed.toUpperCase();
+    setText('#stat-feed', label);
+    setText('#foot-feed-text', label);
+    setAttr('#foot-feed', 'data-feed', feed);
+
+    const port = status.port || Number(portInput.value) || null;
+    setText('#stat-port', port ? `127.0.0.1:${port}` : '—');
+    setText('#foot-url', port ? `127.0.0.1:${port}` : '—');
+
+    // The provider is only meaningful while the server is up; "demo" is a feed
+    // state rather than a source, so it is named as such instead of as a sim.
+    setText(
+      '#foot-source',
+      !status.running
+        ? 'server stopped'
+        : feed === 'demo'
+          ? 'simulated data'
+          : `rFactor 2 / LMU · ${rateRange.value} Hz`,
+    );
+  }
+
+  /** Stat tiles fed by settings rather than status. */
+  function renderShellSettings(settings) {
+    setText('#stat-rate', `${settings.updateRateHz} Hz`);
+    const on = Object.values(settings.enabledOverlays || {}).filter(Boolean).length;
+    const total = Object.keys(settings.enabledOverlays || {}).length;
+    setText('#stat-widgets', total ? `${on} / ${total}` : '—');
+  }
+
+  function setText(sel, text) {
+    const el = $(sel);
+    if (el) el.textContent = text;
+  }
+
+  function setAttr(sel, name, value) {
+    const el = $(sel);
+    if (el) el.setAttribute(name, value);
   }
 
   function renderSettings(settings) {
@@ -129,6 +175,7 @@
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
+    renderShellSettings(settings);
   }
 
   // --- In-game toggle hotkey capture --------------------------------------
@@ -173,70 +220,134 @@
     renderHotkey(state.settings.ingameToggleShortcut);
   }
 
+  /**
+   * One card per widget, in the design system's Overlays grid (`.ovgrid` /
+   * `.ovcard` from Views.jsx). The kit's card carries a single switch; ours
+   * carries the two destinations the app actually has — the OBS Browser-Source
+   * URL and the in-game layer — because a widget can be on in one and off in the
+   * other, and collapsing them to one toggle would remove a real capability.
+   *
+   * Built with createElement and per-card listeners, exactly as the previous
+   * row list was: the handlers are attached to the elements this function
+   * creates, so restyling cannot detach them. Only class names and nesting
+   * changed here — the same five controls exist per widget.
+   */
   function renderOverlays(overlays, combined) {
     overlayList.innerHTML = '';
     for (const o of overlays) {
       const li = document.createElement('li');
-      li.className = 'overlay-row';
+      li.className = 'card ovcard';
       li.setAttribute('data-enabled', String(o.enabled));
 
-      const check = document.createElement('label');
-      check.className = 'overlay-row__check';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = o.enabled;
-      cb.addEventListener('change', () => toggleOverlay(o.id, cb.checked));
-      check.appendChild(cb);
+      /* -- header: icon, name, OBS switch -- */
+      const head = document.createElement('div');
+      head.className = 'ovcard__head';
 
-      const info = document.createElement('div');
-      info.className = 'overlay-row__info';
-      info.innerHTML =
-        '<div class="overlay-row__label"></div><div class="overlay-row__desc"></div>';
-      info.querySelector('.overlay-row__label').textContent = o.label;
-      info.querySelector('.overlay-row__desc').textContent = o.description;
+      const icon = document.createElement('span');
+      icon.className = 'ovIcon';
+      const iconName = (window.APEX_WIDGET_ICONS || {})[o.id] || 'monitor';
+      icon.innerHTML = window.apexIcon ? window.apexIcon(iconName) : '';
 
-      // Per-widget "show in game" toggle (takes effect when the in-game
-      // display master switch is on).
-      const ig = document.createElement('label');
-      ig.className = 'overlay-row__ig';
-      ig.setAttribute('data-on', String(!!o.ingame));
-      const igCb = document.createElement('input');
-      igCb.type = 'checkbox';
-      igCb.checked = !!o.ingame;
-      igCb.addEventListener('change', async () => {
-        ig.setAttribute('data-on', String(igCb.checked));
-        await window.apex.updateSettings({ ingameOverlays: { [o.id]: igCb.checked } });
-      });
-      const igText = document.createElement('span');
-      igText.textContent = 'In game';
-      ig.appendChild(igCb);
-      ig.appendChild(igText);
+      const name = document.createElement('span');
+      name.className = 'ovcard__name';
+      name.textContent = o.label;
+      name.title = o.label;
 
+      head.appendChild(icon);
+      head.appendChild(name);
+
+      /* -- description -- */
+      const desc = document.createElement('p');
+      desc.className = 'ovcard__desc';
+      desc.textContent = o.description;
+
+      /* -- URL + copy + preview -- */
       const urlWrap = document.createElement('div');
-      urlWrap.className = 'overlay-row__url url-box';
+      urlWrap.className = 'ovcard__url url-box';
       const urlInput = document.createElement('input');
       urlInput.className = 'url-box__input';
       urlInput.type = 'text';
       urlInput.readOnly = true;
       urlInput.value = o.url;
+      // Icon buttons: at four cards across there is no room for two text
+      // buttons, and copy/open are the two most universally understood glyphs.
       const copyBtn = document.createElement('button');
-      copyBtn.className = 'btn btn--ghost btn--sm';
+      copyBtn.className = 'iconbtn sm';
       copyBtn.type = 'button';
-      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy URL';
+      copyBtn.setAttribute('aria-label', `Copy ${o.label} URL`);
+      copyBtn.innerHTML = window.apexIcon ? window.apexIcon('copy') : 'Copy';
       copyBtn.addEventListener('click', () => copyUrl(o.url, o.label));
       const previewBtn = document.createElement('button');
-      previewBtn.className = 'btn btn--ghost btn--sm';
+      previewBtn.className = 'iconbtn sm';
       previewBtn.type = 'button';
-      previewBtn.textContent = 'Preview';
+      previewBtn.title = 'Preview in browser';
+      previewBtn.setAttribute('aria-label', `Preview ${o.label}`);
+      previewBtn.innerHTML = window.apexIcon ? window.apexIcon('external-link') : 'Preview';
       previewBtn.addEventListener('click', () => window.apex.openInBrowser(o.url));
       urlWrap.appendChild(urlInput);
       urlWrap.appendChild(copyBtn);
       urlWrap.appendChild(previewBtn);
 
-      li.appendChild(check);
-      li.appendChild(info);
-      li.appendChild(ig);
+      /* -- footer: the two destinations, each labelled --
+       *
+       * Both switches live here side by side rather than one in the header,
+       * because "on" is ambiguous for a widget with two independent
+       * destinations: a card whose only toggle sat next to its name would say
+       * nothing about WHICH of OBS and the in-game layer it controlled. The app's
+       * own .switch component is reused so these read as the same control as
+       * "Show in game" and "Demo mode" elsewhere. */
+      const foot = document.createElement('div');
+      foot.className = 'ovcard__foot';
+
+      /** One labelled destination toggle. */
+      const destination = (label, on, title, onChange) => {
+        const wrap = document.createElement('label');
+        wrap.className = 'ovcard__dest';
+        wrap.setAttribute('data-on', String(!!on));
+        wrap.title = title;
+        const text = document.createElement('span');
+        text.className = 'ovcard__dest-label';
+        text.textContent = label;
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!on;
+        const track = document.createElement('span');
+        track.className = 'switch__track';
+        track.innerHTML = '<span class="switch__thumb"></span>';
+        const sw = document.createElement('span');
+        sw.className = 'switch';
+        sw.appendChild(input);
+        sw.appendChild(track);
+        input.addEventListener('change', () => {
+          wrap.setAttribute('data-on', String(input.checked));
+          onChange(input.checked);
+        });
+        wrap.appendChild(text);
+        wrap.appendChild(sw);
+        return wrap;
+      };
+
+      const obsDest = destination('OBS', o.enabled, 'Show as an OBS Browser Source', (on) =>
+        toggleOverlay(o.id, on),
+      );
+
+      const igDest = destination(
+        'In game',
+        o.ingame,
+        'Show on screen in game (needs "Show in game" on the Dashboard)',
+        async (on) => {
+          await window.apex.updateSettings({ ingameOverlays: { [o.id]: on } });
+        },
+      );
+
+      foot.appendChild(obsDest);
+      foot.appendChild(igDest);
+
+      li.appendChild(head);
+      li.appendChild(desc);
       li.appendChild(urlWrap);
+      li.appendChild(foot);
       overlayList.appendChild(li);
     }
     combinedUrl.value = combined;
@@ -756,6 +867,71 @@
   window.apex.onSettings((settings) => {
     if (settings) renderSettings(settings);
   });
+
+  // --- Tab router ----------------------------------------------------------
+  /*
+   * The Hub shell's five tabs plus the gear, over one document: each view is a
+   * [data-view] section and only the active one is displayed. No routing library
+   * and no page loads — a reload would drop the WebSocket status feed and make
+   * the panel flash black between tabs.
+   *
+   * The chosen tab is remembered, because the tab someone lives in says what
+   * they use the app for: a streamer setting up sits in Overlays, and being
+   * dropped back on Dashboard every launch would be a small daily annoyance.
+   */
+
+  const TAB_STORAGE_KEY = 'apex.panel.tab';
+  const views = Array.from(document.querySelectorAll('[data-view]'));
+  const tabButtons = Array.from(document.querySelectorAll('.tab[data-tab]'));
+  const settingsBtn = $('#settings-btn');
+
+  function showView(name) {
+    const known = views.some((v) => v.dataset.view === name);
+    const target = known ? name : 'dashboard';
+    for (const view of views) {
+      view.setAttribute('data-active', String(view.dataset.view === target));
+    }
+    for (const tab of tabButtons) {
+      tab.setAttribute('data-active', String(tab.dataset.tab === target));
+    }
+    // Settings has no tab of its own — the gear is its affordance, so light it.
+    settingsBtn.setAttribute('data-active', String(target === 'settings'));
+    // Each view scrolls from its own top; carrying the previous view's scroll
+    // position over lands you halfway down an unrelated page.
+    const content = $('#content');
+    if (content) content.scrollTop = 0;
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, target);
+    } catch {
+      /* storage disabled — the tab just won't persist */
+    }
+  }
+
+  /** The last tab-bar view, so the gear has somewhere to return to. */
+  let lastContentTab = 'dashboard';
+
+  for (const tab of tabButtons) {
+    tab.addEventListener('click', () => {
+      lastContentTab = tab.dataset.tab;
+      showView(tab.dataset.tab);
+    });
+  }
+
+  settingsBtn.addEventListener('click', () => {
+    // The gear both opens and closes Settings: it is the only affordance for a
+    // view with no tab of its own, so it has to be able to undo itself.
+    const open = settingsBtn.getAttribute('data-active') === 'true';
+    showView(open ? lastContentTab : 'settings');
+  });
+
+  let restored = 'dashboard';
+  try {
+    restored = localStorage.getItem(TAB_STORAGE_KEY) || 'dashboard';
+  } catch {
+    /* storage disabled */
+  }
+  if (restored !== 'settings') lastContentTab = restored;
+  showView(restored);
 
   // --- Account -------------------------------------------------------------
   /*

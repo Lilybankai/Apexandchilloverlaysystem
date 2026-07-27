@@ -6,314 +6,597 @@
         content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <title>Apex Overlay System</title>
   <link rel="stylesheet" href="control-panel.css" />
+  <!-- Second, so the Hub shell's frame rules win over the original
+       single-scrolling-page layout in control-panel.css. -->
+  <link rel="stylesheet" href="hub.css" />
 </head>
 <body>
-  <!-- ===================== TOP BAR ===================== -->
-  <header class="topbar">
-    <div class="brand">
+<!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
+<script src="icons.js"></script>
+
+<div class="app">
+
+  <!-- ========================= TOP NAV ================================= -->
+  <header class="nav">
+    <div class="nav__brand">
       <img class="brand__mark" src="assets/mark.svg" alt="" />
-      <div class="brand__text">
-        <span class="brand__name">APEX <span class="brand__amp">&amp;</span> CHILL</span>
-        <span class="brand__sub">Overlay System <span class="brand__version" id="app-version"></span></span>
-      </div>
+      <span class="brand__name">APEX <span class="brand__amp">&amp;</span> CHILL</span>
     </div>
 
-    <div class="topbar__right">
-      <!-- Account: the signed-in driver, or a way in when working offline. -->
-      <div class="account" id="account" hidden>
-        <span class="account__avatar" id="account-initials"></span>
-        <span class="account__text">
-          <span class="account__name" id="account-name"></span>
-          <span class="account__email" id="account-email"></span>
-        </span>
-        <button class="account__out" id="signout-btn" type="button" title="Sign out">Sign out</button>
-      </div>
-      <button class="btn btn--ghost btn--sm" id="signin-btn" type="button" hidden>Sign in</button>
+    <nav class="tabs">
+      <button class="tab" type="button" data-tab="dashboard" data-active="true">
+        <svg class="icon"><use href="#i-layout-grid" /></svg><span class="tab__label">Dashboard</span>
+      </button>
+      <button class="tab" type="button" data-tab="overlays">
+        <svg class="icon"><use href="#i-monitor" /></svg><span class="tab__label">Overlays</span>
+      </button>
+      <button class="tab" type="button" data-tab="leaderboard">
+        <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
+        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
+      </button>
+      <button class="tab" type="button" data-tab="setups">
+        <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
+        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
+      </button>
+      <button class="tab" type="button" data-tab="suggestions">
+        <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
+        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
+      </button>
+    </nav>
 
-      <div class="feed-pill" id="feed-pill" data-feed="stopped">
-        <span class="feed-pill__dot"></span>
-        <span class="feed-pill__text" id="feed-text">STOPPED</span>
-      </div>
-      <button class="btn btn--power" id="power-btn" type="button">Start</button>
+    <span class="nav__spacer"></span>
+
+    <!-- Race / Training. Training gates the lap database and audio markers,
+         which are not built — so it is shown disabled rather than hidden. -->
+    <div class="seg"
+         title="Race = lightweight. Training (coming soon) = full data + lap database.">
+      <button type="button" data-mode="race" data-active="true">
+        <svg class="icon"><use href="#i-zap" /></svg><span class="seg__label">Race</span>
+      </button>
+      <button type="button" data-mode="training" disabled>
+        <svg class="icon"><use href="#i-graduation-cap" /></svg><span class="seg__label">Training</span>
+      </button>
     </div>
+
+    <div class="feed-pill" id="feed-pill" data-feed="stopped">
+      <span class="feed-pill__dot"></span>
+      <span class="feed-pill__text" id="feed-text">STOPPED</span>
+    </div>
+
+    <button class="iconbtn" id="settings-btn" type="button" title="Settings" aria-label="Settings">
+      <svg class="icon"><use href="#i-settings" /></svg>
+    </button>
+
+    <!-- Account: the signed-in driver, or a way in when working offline. -->
+    <div class="account" id="account" hidden>
+      <span class="account__avatar" id="account-initials"></span>
+      <span class="account__text">
+        <span class="account__name" id="account-name"></span>
+        <span class="account__email" id="account-email"></span>
+      </span>
+      <button class="account__out" id="signout-btn" type="button" title="Sign out">Sign out</button>
+    </div>
+    <button class="btn btn--ghost btn--sm" id="signin-btn" type="button" hidden>Sign in</button>
+
+    <button class="btn btn--power" id="power-btn" type="button">Start</button>
   </header>
 
-  <main class="app-main">
-    <!-- Update banner (hidden unless a new version is available) -->
-    <div class="update-banner" id="update-banner" hidden>
-      <span class="update-banner__icon">⬆</span>
-      <span class="update-banner__text" id="update-text"></span>
-      <button class="btn btn--update" id="update-action" type="button"></button>
-    </div>
+  <!-- Banners live OUTSIDE the views on purpose: a failed server start or a
+       pending update has to be visible from whichever tab you are on. -->
+  <div class="update-banner" id="update-banner" hidden>
+    <span class="update-banner__icon">⬆</span>
+    <span class="update-banner__text" id="update-text"></span>
+    <button class="btn btn--update" id="update-action" type="button"></button>
+  </div>
+  <div class="error-banner" id="error-banner" hidden>
+    <span class="error-banner__icon">!</span>
+    <span class="error-banner__text" id="error-text"></span>
+  </div>
 
-    <!-- Error banner (hidden unless the server fails to start) -->
-    <div class="error-banner" id="error-banner" hidden>
-      <span class="error-banner__icon">!</span>
-      <span class="error-banner__text" id="error-text"></span>
-    </div>
+  <div class="content" id="content">
 
-    <!-- ===================== HERO / IN-GAME DISPLAY ===================== -->
-    <section class="hero">
-      <div class="hero__info">
-        <h1 class="hero__title">Overlays</h1>
-        <p class="hero__desc">
-          Use each overlay as an <strong>OBS Browser Source</strong> for your
-          stream, show it <strong>on screen in game</strong> — or both.
-        </p>
-        <p class="hero__hint">
-          In-game display needs the sim in <strong>Borderless / Windowed</strong>
-          mode (exclusive fullscreen draws over everything).
-        </p>
-      </div>
-      <div class="hero__actions">
-        <label class="ingame-switch" for="ingame-toggle">
-          <span class="switch">
-            <input type="checkbox" id="ingame-toggle" />
-            <span class="switch__track"><span class="switch__thumb"></span></span>
-          </span>
-          <span class="ingame-switch__label">Show in game</span>
-        </label>
-        <div class="hero__buttons">
-          <button class="btn btn--accent" id="ig-edit-btn" type="button" disabled>Edit layout</button>
-          <button class="btn btn--ghost" id="ig-reset-btn" type="button">Reset layout</button>
-        </div>
-        <div class="hotkey" title="Global hotkey that toggles Show in game — works while the sim has focus.">
-          <span class="hotkey__label">Toggle hotkey</span>
-          <button class="hotkey__key" id="ig-hotkey" type="button">F8</button>
-          <button class="hotkey__clear" id="ig-hotkey-clear" type="button" title="Clear hotkey">&times;</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================== OVERLAYS ===================== -->
-    <section class="card">
-      <div class="card__head">
-        <h2 class="card__title">Widgets</h2>
-        <p class="card__desc">
-          <strong>OBS</strong> ticks an overlay's Browser-Source URL on;
-          <strong>In game</strong> shows it on screen when "Show in game" is enabled.
-        </p>
-      </div>
-
-      <ul class="overlay-list" id="overlay-list"><!-- rows injected by JS --></ul>
-
-      <div class="combined-row">
-        <div class="combined-row__text">
-          <span class="combined-row__label">All-in-one page</span>
-          <span class="combined-row__hint">Every widget on one 1920×1080 source (fixed positions)</span>
-        </div>
-        <div class="url-box">
-          <input class="url-box__input" id="combined-url" type="text" readonly />
-          <button class="btn btn--ghost btn--sm" data-copy-target="combined-url" type="button">Copy</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================== SPONSORS ===================== -->
-    <section class="card">
-      <div class="card__head">
-        <h2 class="card__title">Sponsor logos</h2>
-        <p class="card__desc">
-          Rotate partner logos in a strip under the standings tower, like a broadcast graphic.
-        </p>
-      </div>
-      <div class="settings-grid">
-        <label class="field field--toggle">
-          <span class="field__label">Show sponsors</span>
-          <span class="switch">
-            <input type="checkbox" id="sponsors-toggle" />
-            <span class="switch__track"><span class="switch__thumb"></span></span>
-          </span>
-          <span class="field__hint">Adds a logo strip below the standings widget</span>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Seconds per logo</span>
-          <div class="rate-row">
-            <input class="field__range" id="sponsor-range" type="range" min="3" max="60" step="1" />
-            <span class="rate-value"><span id="sponsor-echo">12</span> s</span>
+    <!-- ======================== DASHBOARD ============================== -->
+    <section class="view" data-view="dashboard" data-active="true">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Dashboard</h1>
+            <p class="view__sub">
+              The server, the feed and the in-game layer at a glance.
+            </p>
           </div>
-          <span class="field__hint">How long each logo shows before cross-fading</span>
-        </label>
-      </div>
-
-      <ul class="sponsor-list" id="sponsor-list"></ul>
-      <div class="sponsor-actions">
-        <button class="btn btn--ghost" id="sponsor-add">Add logos…</button>
-        <span class="field__hint">PNG or SVG with a transparent background works best.</span>
-      </div>
-    </section>
-
-    <!-- ===================== BINDINGS ===================== -->
-    <section class="card">
-      <div class="card__head">
-        <h2 class="card__title">Bindings</h2>
-        <p class="card__desc">
-          Bind a key to any action. Bindings are <strong>global</strong>, so they
-          fire while the sim has focus — and a <strong>Stream Deck</strong> button
-          set to that key works too, since it just sends a keystroke.
-          <br />
-          Driving-aid actions come from <strong>LMU's own key bindings</strong>;
-          rebind in game and they follow automatically.
-        </p>
-      </div>
-      <ul class="binding-list" id="binding-list"><!-- rows injected by JS --></ul>
-      <p class="field__hint binding-note">
-        A bound key is <strong>consumed</strong> — it will not also reach the sim.
-        Pick keys LMU doesn't use.
-      </p>
-    </section>
-
-    <div class="two-col">
-      <!-- ===================== SETTINGS ===================== -->
-      <section class="card">
-        <h2 class="card__title">Settings</h2>
-        <div class="settings-grid">
-          <label class="field">
-            <span class="field__label">Server port</span>
-            <input class="field__input" id="port-input" type="number" min="1" max="65535" step="1" />
-            <span class="field__hint">Overlays are served at 127.0.0.1:<span id="port-echo">8080</span></span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Update rate</span>
-            <div class="rate-row">
-              <input class="field__range" id="rate-range" type="range" min="1" max="120" step="1" />
-              <span class="rate-value"><span id="rate-echo">30</span> Hz</span>
-            </div>
-            <span class="field__hint">Higher = smoother pedal trace, a little more CPU</span>
-          </label>
-
-          <label class="field field--toggle">
-            <span class="field__label">Demo mode</span>
-            <span class="switch">
-              <input type="checkbox" id="demo-toggle" />
-              <span class="switch__track"><span class="switch__thumb"></span></span>
-            </span>
-            <span class="field__hint">Force simulated data (no sim / plugin needed)</span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Widget background</span>
-            <div class="rate-row">
-              <input class="field__range" id="bg-range" type="range" min="0" max="100" step="5" />
-              <span class="rate-value"><span id="bg-echo">100</span> %</span>
-            </div>
-            <span class="field__hint">
-              Fades the panel behind every widget — at <strong>0%</strong> the box,
-              border and header are gone and only the data floats over the game.
-              Applies live, in game and in OBS.
-            </span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Text size</span>
-            <div class="rate-row">
-              <input class="field__range" id="text-range" type="range" min="80" max="120" step="5" />
-              <span class="rate-value"><span id="text-echo">100</span> %</span>
-            </div>
-            <span class="field__hint">
-              Scales the text in every widget together, keeping the size hierarchy
-              intact. Turn it up until the critical values — position, laps left,
-              delta, tyres — are readable at a glance from where you actually sit.
-              Stops at <strong>120%</strong>, the point where the widest panels
-              stop fitting their own text; to make a whole widget bigger, resize
-              its OBS source or use the in-game layout editor.
-            </span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Radar car size</span>
-            <div class="rate-row">
-              <input class="field__range" id="radar-icons-range" type="range" min="30" max="150" step="5" />
-              <span class="rate-value"><span id="radar-icons-echo">50</span> %</span>
-            </div>
-            <span class="field__hint">
-              How large the cars are drawn on the proximity radar. This is the
-              radar's <strong>zoom</strong>: the icons are drawn at the cars' real
-              footprint, so <strong>100%</strong> is the classic 18&nbsp;m range and
-              <strong>50%</strong> shows 36&nbsp;m with half-size cars. Because the
-              cars and the metres shrink together, icons touching still means cars
-              touching at every setting.
-            </span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Track limits threshold</span>
-            <div class="rate-row">
-              <input class="field__range" id="limits-range" type="range" min="5" max="50" step="1" />
-              <span class="rate-value"><span id="limits-echo">2.4</span> m</span>
-            </div>
-            <span class="field__hint">
-              How far past the edge of the road your car has to be before it
-              counts as running wide. The sim's own "edge" sits at or inside the
-              white line, so the <strong>kerb is already past it</strong> — which
-              is why the useful setting is roughly a car's half-width
-              <em>plus a kerb</em>. At the default <strong>2.4&nbsp;m</strong> all
-              four wheels are clear of the kerb before anything counts; drop it
-              toward <strong>1.0&nbsp;m</strong> for the strict
-              all-four-wheels-past-the-line reading, raise it for circuits with
-              unusually wide kerbs. Applies live, mid-session.
-            </span>
-          </label>
-
-          <label class="field field--toggle">
-            <span class="field__label">Audio cues</span>
-            <span class="switch">
-              <input type="checkbox" id="audio-toggle" />
-              <span class="switch__track"><span class="switch__thumb"></span></span>
-            </span>
-            <span class="field__hint">
-              Short tones for the things you cannot see coming with your eyes on
-              the track — a track-limits warning, a penalty landing, the pit
-              release. Synthesised, so nothing is downloaded and nothing is
-              buffered.
-            </span>
-          </label>
-
-          <label class="field">
-            <span class="field__label">Cue volume</span>
-            <div class="rate-row">
-              <input class="field__range" id="audio-range" type="range" min="0" max="100" step="5" />
-              <span class="rate-value"><span id="audio-echo">60</span> %</span>
-            </div>
-            <span class="field__hint">
-              Set it under your sim's own audio, not over it — the cue only has
-              to be noticed. Drag to hear it.
-              <button class="btn btn--ghost btn--sm" id="audio-test" type="button">Test</button>
-            </span>
-          </label>
-
-          <label class="field field--toggle">
-            <span class="field__label">Change glow</span>
-            <span class="switch">
-              <input type="checkbox" id="glow-toggle" />
-              <span class="switch__track"><span class="switch__thumb"></span></span>
-            </span>
-            <span class="field__hint">
-              Blooms a critical value in cyan the moment it changes — a position
-              gained, a lap of fuel lost, a brake-bias click landing.
-            </span>
-          </label>
         </div>
-      </section>
 
-      <!-- ===================== OBS HELP ===================== -->
-      <section class="card card--help">
-        <h2 class="card__title">Adding an overlay to OBS</h2>
-        <ol class="help-steps">
-          <li>In OBS, click <strong>+</strong> under Sources → <strong>Browser</strong>.</li>
-          <li>Paste the overlay's URL (use <strong>Copy</strong> above).</li>
-          <li>Set width/height (e.g. 1920×1080), click OK.</li>
-          <li>Drag the source where you want it over the sim.</li>
-        </ol>
-      </section>
-    </div>
-  </main>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-circle-dot" /></svg></span>
+            <span class="stat__body">
+              <span class="stat__label">Feed</span>
+              <span class="stat__value" id="stat-feed">—</span>
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat__icon"><svg class="icon"><use href="#i-server" /></svg></span>
+            <span class="stat__body">
+              <span class="stat__label">Served at</span>
+              <span class="stat__value" id="stat-port">—</span>
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat__icon"><svg class="icon"><use href="#i-gauge" /></svg></span>
+            <span class="stat__body">
+              <span class="stat__label">Update rate</span>
+              <span class="stat__value" id="stat-rate">—</span>
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat__icon"><svg class="icon"><use href="#i-layers" /></svg></span>
+            <span class="stat__body">
+              <span class="stat__label">Widgets on</span>
+              <span class="stat__value" id="stat-widgets">—</span>
+            </span>
+          </div>
+        </div>
 
-  <!-- Toast for copy confirmation -->
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        <!-- ===================== IN-GAME DISPLAY ===================== -->
+        <section class="hero">
+          <div class="hero__info">
+            <h1 class="hero__title">In game</h1>
+            <p class="hero__desc">
+              Use each overlay as an <strong>OBS Browser Source</strong> for your
+              stream, show it <strong>on screen in game</strong> — or both.
+            </p>
+            <p class="hero__hint">
+              In-game display needs the sim in <strong>Borderless / Windowed</strong>
+              mode (exclusive fullscreen draws over everything).
+            </p>
+          </div>
+          <div class="hero__actions">
+            <label class="ingame-switch" for="ingame-toggle">
+              <span class="switch">
+                <input type="checkbox" id="ingame-toggle" />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="ingame-switch__label">Show in game</span>
+            </label>
+            <div class="hero__buttons">
+              <button class="btn btn--accent" id="ig-edit-btn" type="button" disabled>Edit layout</button>
+              <button class="btn btn--ghost" id="ig-reset-btn" type="button">Reset layout</button>
+            </div>
+            <div class="hotkey" title="Global hotkey that toggles Show in game — works while the sim has focus.">
+              <span class="hotkey__label">Toggle hotkey</span>
+              <button class="hotkey__key" id="ig-hotkey" type="button">F8</button>
+              <button class="hotkey__clear" id="ig-hotkey-clear" type="button" title="Clear hotkey">&times;</button>
+            </div>
+          </div>
+        </section>
 
-  <script src="control-panel.js"></script>
+        <!-- ===================== OBS HELP ===================== -->
+        <section class="card card--help">
+          <h2 class="card__title">Adding an overlay to OBS</h2>
+          <ol class="help-steps">
+            <li>In OBS, click <strong>+</strong> under Sources → <strong>Browser</strong>.</li>
+            <li>Paste the overlay's URL (use <strong>Copy</strong> on the Overlays tab).</li>
+            <li>Set width/height (e.g. 1920×1080), click OK.</li>
+            <li>Drag the source where you want it over the sim.</li>
+          </ol>
+        </section>
+      </div>
+    </section>
+
+    <!-- ========================= OVERLAYS ============================== -->
+    <section class="view" data-view="overlays">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Overlays</h1>
+            <p class="view__sub">
+              <strong>OBS</strong> ticks an overlay's Browser-Source URL on;
+              <strong>In game</strong> shows it on screen when "Show in game" is
+              enabled on the Dashboard.
+            </p>
+          </div>
+        </div>
+
+        <ul class="overlay-list" id="overlay-list"><!-- cards injected by JS --></ul>
+
+        <section class="card">
+          <div class="combined-row">
+            <div class="combined-row__text">
+              <span class="combined-row__label">All-in-one page</span>
+              <span class="combined-row__hint">Every widget on one 1920×1080 source (fixed positions)</span>
+            </div>
+            <div class="url-box">
+              <input class="url-box__input" id="combined-url" type="text" readonly />
+              <button class="btn btn--ghost btn--sm" data-copy-target="combined-url" type="button">Copy</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===================== SPONSORS ===================== -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">Sponsor branding</h2>
+            <p class="card__desc">
+              Rotate partner logos in a strip under the standings tower, like a broadcast graphic.
+            </p>
+          </div>
+          <div class="settings-grid">
+            <label class="field field--toggle">
+              <span class="field__label">Show sponsors</span>
+              <span class="switch">
+                <input type="checkbox" id="sponsors-toggle" />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="field__hint">Adds a logo strip below the standings widget</span>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Seconds per logo</span>
+              <div class="rate-row">
+                <input class="field__range" id="sponsor-range" type="range" min="3" max="60" step="1" />
+                <span class="rate-value"><span id="sponsor-echo">12</span> s</span>
+              </div>
+              <span class="field__hint">How long each logo shows before cross-fading</span>
+            </label>
+          </div>
+
+          <ul class="sponsor-list" id="sponsor-list"></ul>
+          <div class="sponsor-actions">
+            <button class="btn btn--ghost" id="sponsor-add">Add logos…</button>
+            <span class="field__hint">PNG or SVG with a transparent background works best.</span>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ======================== LEADERBOARD ============================ -->
+    <section class="view" data-view="leaderboard">
+      <div class="wrap">
+        <div class="soon">
+          <span class="soon__icon"><svg class="icon"><use href="#i-trophy" /></svg></span>
+          <h2 class="soon__title">Leaderboard — coming soon</h2>
+          <p class="soon__desc">
+            Per-track, per-car lap rankings for the whole league. Your account is
+            already set up to carry your laps — the boards themselves are next.
+          </p>
+        </div>
+        <div class="soon__label">On the roadmap</div>
+        <div class="ovgrid">
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-database" /></svg></span>
+              <span class="ovcard__name">Best-lap database</span>
+            </div>
+            <p class="ovcard__desc">Every clean lap saved per car and track, on your account.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-trophy" /></svg></span>
+              <span class="ovcard__name">League boards</span>
+            </div>
+            <p class="ovcard__desc">Ranked by track and class, with your own row pinned.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-timer" /></svg></span>
+              <span class="ovcard__name">Sector compare</span>
+            </div>
+            <p class="ovcard__desc">Where the time actually went against a faster lap.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-trending-up" /></svg></span>
+              <span class="ovcard__name">Pace rank</span>
+            </div>
+            <p class="ovcard__desc">Your pace against the field, not just your own best.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================== SETUPS ============================== -->
+    <section class="view" data-view="setups">
+      <div class="wrap">
+        <div class="soon">
+          <span class="soon__icon"><svg class="icon"><use href="#i-sliders-horizontal" /></svg></span>
+          <h2 class="soon__title">Setups — coming soon</h2>
+          <p class="soon__desc">
+            Save, share and load car setups per track and class.
+          </p>
+        </div>
+        <div class="soon__label">On the roadmap</div>
+        <div class="ovgrid">
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-graduation-cap" /></svg></span>
+              <span class="ovcard__name">Training mode</span>
+            </div>
+            <p class="ovcard__desc">One switch for the lap database, trace capture and audio.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-volume-2" /></svg></span>
+              <span class="ovcard__name">Audio markers</span>
+            </div>
+            <p class="ovcard__desc">Brake and turn-in tones learned from a reference lap.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-clipboard-list" /></svg></span>
+              <span class="ovcard__name">Setup sharing</span>
+            </div>
+            <p class="ovcard__desc">Per track and class, so a team can run the same car.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-activity" /></svg></span>
+              <span class="ovcard__name">Benchmark pace</span>
+            </div>
+            <p class="ovcard__desc">A reference bar for what a good lap is at this track.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== SUGGESTIONS =========================== -->
+    <section class="view" data-view="suggestions">
+      <div class="wrap">
+        <div class="soon">
+          <span class="soon__icon"><svg class="icon"><use href="#i-message-square-plus" /></svg></span>
+          <h2 class="soon__title">Suggestions — coming soon</h2>
+          <p class="soon__desc">
+            Send an idea straight from the app, vote on what others have asked
+            for, and see what is already in progress.
+          </p>
+        </div>
+        <div class="soon__label">Until then</div>
+        <div class="ovgrid">
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-message-square-plus" /></svg></span>
+              <span class="ovcard__name">Tell Carl</span>
+            </div>
+            <p class="ovcard__desc">Ideas go through the league's usual channels for now.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-arrow-up" /></svg></span>
+              <span class="ovcard__name">Voting</span>
+            </div>
+            <p class="ovcard__desc">Popular ideas will go straight onto the roadmap.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-sparkles" /></svg></span>
+              <span class="ovcard__name">Status</span>
+            </div>
+            <p class="ovcard__desc">Planned, in progress or shipped, per idea.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-check" /></svg></span>
+              <span class="ovcard__name">Shipped list</span>
+            </div>
+            <p class="ovcard__desc">What went in, and which release it landed in.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================= SETTINGS ============================= -->
+    <section class="view" data-view="settings">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Settings</h1>
+            <p class="view__sub">
+              Server, appearance, audio and key bindings. Appearance changes apply
+              live — in game and to OBS sources already added.
+            </p>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <!-- ---------------------- SERVER ---------------------- -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-server" /></svg>Server</h2>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field__label">Server port</span>
+                <input class="field__input" id="port-input" type="number" min="1" max="65535" step="1" />
+                <span class="field__hint">Overlays are served at 127.0.0.1:<span id="port-echo">8080</span></span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Update rate</span>
+                <div class="rate-row">
+                  <input class="field__range" id="rate-range" type="range" min="1" max="120" step="1" />
+                  <span class="rate-value"><span id="rate-echo">30</span> Hz</span>
+                </div>
+                <span class="field__hint">Higher = smoother pedal trace, a little more CPU</span>
+              </label>
+
+              <label class="field field--toggle">
+                <span class="field__label">Demo mode</span>
+                <span class="switch">
+                  <input type="checkbox" id="demo-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">Force simulated data (no sim / plugin needed)</span>
+              </label>
+
+              <!-- Added in v0.22.0. It belongs with Server rather than
+                   Appearance: it retunes the server's own detection, not how a
+                   widget looks. -->
+              <label class="field">
+                <span class="field__label">Track limits threshold</span>
+                <div class="rate-row">
+                  <input class="field__range" id="limits-range" type="range" min="5" max="50" step="1" />
+                  <span class="rate-value"><span id="limits-echo">2.4</span> m</span>
+                </div>
+                <span class="field__hint">
+                  How far past the edge of the road your car has to be before it
+                  counts as running wide. The sim's own "edge" sits at or inside the
+                  white line, so the <strong>kerb is already past it</strong> — which
+                  is why the useful setting is roughly a car's half-width
+                  <em>plus a kerb</em>. At the default <strong>2.4&nbsp;m</strong> all
+                  four wheels are clear of the kerb before anything counts; drop it
+                  toward <strong>1.0&nbsp;m</strong> for the strict
+                  all-four-wheels-past-the-line reading, raise it for circuits with
+                  unusually wide kerbs. Applies live, mid-session.
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <!-- -------------------- APPEARANCE -------------------- -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-palette" /></svg>Appearance</h2>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field__label">Widget background</span>
+                <div class="rate-row">
+                  <input class="field__range" id="bg-range" type="range" min="0" max="100" step="5" />
+                  <span class="rate-value"><span id="bg-echo">100</span> %</span>
+                </div>
+                <span class="field__hint">
+                  Fades the panel behind every widget — at <strong>0%</strong> the box,
+                  border and header are gone and only the data floats over the game.
+                  Applies live, in game and in OBS.
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Text size</span>
+                <div class="rate-row">
+                  <input class="field__range" id="text-range" type="range" min="80" max="120" step="5" />
+                  <span class="rate-value"><span id="text-echo">100</span> %</span>
+                </div>
+                <span class="field__hint">
+                  Scales the text in every widget together, keeping the size hierarchy
+                  intact. Turn it up until the critical values — position, laps left,
+                  delta, tyres — are readable at a glance from where you actually sit.
+                  Stops at <strong>120%</strong>, the point where the widest panels
+                  stop fitting their own text; to make a whole widget bigger, resize
+                  its OBS source or use the in-game layout editor.
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Radar car size</span>
+                <div class="rate-row">
+                  <input class="field__range" id="radar-icons-range" type="range" min="30" max="150" step="5" />
+                  <span class="rate-value"><span id="radar-icons-echo">50</span> %</span>
+                </div>
+                <span class="field__hint">
+                  How large the cars are drawn on the proximity radar. This is the
+                  radar's <strong>zoom</strong>: the icons are drawn at the cars' real
+                  footprint, so <strong>100%</strong> is the classic 18&nbsp;m range and
+                  <strong>50%</strong> shows 36&nbsp;m with half-size cars. Because the
+                  cars and the metres shrink together, icons touching still means cars
+                  touching at every setting.
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <!-- ------------------ AUDIO & FEEDBACK ---------------- -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-volume-2" /></svg>Audio &amp; feedback</h2>
+            </div>
+            <div class="settings-grid">
+              <label class="field field--toggle">
+                <span class="field__label">Audio cues</span>
+                <span class="switch">
+                  <input type="checkbox" id="audio-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">
+                  Short tones for the things you cannot see coming with your eyes on
+                  the track — a track-limits warning, a penalty landing, the pit
+                  release. Synthesised, so nothing is downloaded and nothing is
+                  buffered.
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Cue volume</span>
+                <div class="rate-row">
+                  <input class="field__range" id="audio-range" type="range" min="0" max="100" step="5" />
+                  <span class="rate-value"><span id="audio-echo">60</span> %</span>
+                </div>
+                <span class="field__hint">
+                  Set it under your sim's own audio, not over it — the cue only has
+                  to be noticed. Drag to hear it.
+                  <button class="btn btn--ghost btn--sm" id="audio-test" type="button">Test</button>
+                </span>
+              </label>
+
+              <label class="field field--toggle">
+                <span class="field__label">Change glow</span>
+                <span class="switch">
+                  <input type="checkbox" id="glow-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">
+                  Blooms a critical value in cyan the moment it changes — a position
+                  gained, a lap of fuel lost, a brake-bias click landing.
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <!-- ---------------------- BINDINGS -------------------- -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-keyboard" /></svg>Bindings</h2>
+              <p class="card__desc">
+                Bind a key to any action. Bindings are <strong>global</strong>, so they
+                fire while the sim has focus — and a <strong>Stream Deck</strong> button
+                set to that key works too, since it just sends a keystroke.
+                <br />
+                Driving-aid actions come from <strong>LMU's own key bindings</strong>;
+                rebind in game and they follow automatically.
+              </p>
+            </div>
+            <ul class="binding-list" id="binding-list"><!-- rows injected by JS --></ul>
+            <p class="field__hint binding-note">
+              A bound key is <strong>consumed</strong> — it will not also reach the sim.
+              Pick keys LMU doesn't use.
+            </p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ========================== FOOTER ================================ -->
+  <footer class="foot">
+    <span class="foot__group">
+      <span class="foot__item" id="foot-feed" data-feed="stopped">
+        <svg class="icon"><use href="#i-circle-dot" /></svg><span id="foot-feed-text">STOPPED</span>
+      </span>
+      <span class="foot__item foot__hide-sm" id="foot-source">—</span>
+      <span class="foot__item foot__mode foot__hide-sm">RACE MODE · lightweight</span>
+    </span>
+    <span class="foot__group">
+      <span class="foot__item foot__hide-sm" id="foot-url">—</span>
+      <span class="foot__item"><span class="brand__version" id="app-version"></span></span>
+    </span>
+  </footer>
+
+</div>
+
+<!-- Toast for copy confirmation -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="control-panel.js"></script>
 </body>
 </html>

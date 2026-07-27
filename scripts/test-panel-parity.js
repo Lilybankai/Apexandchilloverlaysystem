@@ -92,6 +92,10 @@ const PANEL_CONTRACT = {
   'rate-range': 'input:range',
   'rate-echo': 'span',
   'demo-toggle': 'input:checkbox',
+  // v0.22.0. Retunes the server's own off-track detection, not a widget's look,
+  // which is why it sits with Server rather than Appearance.
+  'limits-range': 'input:range',
+  'limits-echo': 'span',
 
   // Settings — appearance (all three ride the live appearance channel)
   'bg-range': 'input:range',
@@ -173,6 +177,11 @@ function referencedIds(js) {
     /\$\(\s*['"]#([a-zA-Z0-9_-]+)['"]\s*\)/g,
     /querySelector(?:All)?\(\s*['"]#([a-zA-Z0-9_-]+)['"]\s*\)/g,
     /getElementById\(\s*['"]([a-zA-Z0-9_-]+)['"]\s*\)/g,
+    // Any bare '#id' string literal. The shell's stat tiles and footer are
+    // addressed through helpers (`setText('#stat-feed', …)`), so a selector-call
+    // pattern alone cannot see them — and an id that the guard cannot see is an
+    // id it cannot protect from being renamed.
+    /['"]#([a-zA-Z0-9_-]+)['"]/g,
   ];
   // Deliberately id-only. auth.js also reaches elements by data attribute
   // (`[data-echo="confirm-email"]`, `[data-screen]`, `[data-msg]`) and those are
@@ -201,11 +210,44 @@ function check(name, cond, detail) {
 }
 
 /**
+ * Icon ids provided by the shared sprite (icons.js), as `i-<name>`. The sprite is
+ * injected at runtime, so from a page's point of view these are declared
+ * elsewhere — hence they are added to each page's declared set below.
+ */
+function spriteIds() {
+  const js = fs.readFileSync(path.join(PANEL, 'icons.js'), 'utf8');
+  const body = js.slice(js.indexOf('const ICONS = {'), js.indexOf('const NS ='));
+  const ids = new Set();
+  // Keys are either bare (`monitor:`) or quoted (`'layout-grid':`).
+  for (const m of body.matchAll(/^\s{4}(?:'([a-z0-9-]+)'|([a-z0-9-]+)):/gm)) {
+    ids.add(`i-${m[1] || m[2]}`);
+  }
+  return ids;
+}
+
+/**
+ * Every icon a page asks for, from markup (`<use href="#i-x">`) and from JS
+ * (`apexIcon('x')`, `'#i-x'`).
+ */
+function iconRefs(sources) {
+  const refs = new Set();
+  for (const src of sources) {
+    for (const m of src.matchAll(/href="#(i-[a-z0-9-]+)"/g)) refs.add(m[1]);
+    for (const m of src.matchAll(/['"]#(i-[a-z0-9-]+)['"]/g)) refs.add(m[1]);
+    for (const m of src.matchAll(/apexIcon\(\s*['"]([a-z0-9-]+)['"]/g)) refs.add(`i-${m[1]}`);
+    // The widget cards pick their icon indirectly, through the id->icon map in
+    // icons.js, so the map's VALUES are references too — without this every
+    // per-widget icon reads as unused.
+    const map = /APEX_WIDGET_ICONS\s*=\s*\{([\s\S]*?)\};/.exec(src);
+    if (map) for (const m of map[1].matchAll(/:\s*'([a-z0-9-]+)'/g)) refs.add(`i-${m[1]}`);
+  }
+  return refs;
+}
+
+/**
  * Verify one page against its contract.
  *
- * `extraRefs` names ids that legitimately live outside the page's own markup —
- * the panel's widget rows and binding rows are built by JS at runtime, so an id
- * the JS creates itself is not a missing element.
+ * `ignoreUnused` names id prefixes that may legitimately go unreferenced by JS.
  */
 function verifyPage({ label, htmlFile, jsFiles, contract, ignoreUnused = [] }) {
   console.log(`\n${label}`);
@@ -215,6 +257,11 @@ function verifyPage({ label, htmlFile, jsFiles, contract, ignoreUnused = [] }) {
 
   const declared = declaredIds(html);
   const declaredSet = new Set(declared.map((d) => d.id));
+  // The sprite's symbols are injected by icons.js rather than written into the
+  // page, so they count as declared for the id checks below. They are excluded
+  // from the dead-markup warning, which the icon section covers properly.
+  const sprite = spriteIds();
+  for (const id of sprite) declaredSet.add(id);
   const referenced = referencedIds(js);
 
   // 1. Every id the JS reaches for must exist.
@@ -261,7 +308,10 @@ function verifyPage({ label, htmlFile, jsFiles, contract, ignoreUnused = [] }) {
   // 4. Dead markup is a warning, not a failure — an id can exist for CSS or for
   //    an aria relationship without the JS ever touching it.
   const unused = [...declaredSet]
-    .filter((id) => !referenced.has(id) && !ignoreUnused.some((p) => id.startsWith(p)))
+    .filter(
+      (id) =>
+        !referenced.has(id) && !sprite.has(id) && !ignoreUnused.some((p) => id.startsWith(p)),
+    )
     .sort();
   if (unused.length) warnings.push(`${htmlFile}: ids never referenced by JS — ${unused.join(', ')}`);
 }
@@ -282,6 +332,37 @@ verifyPage({
   // <use href>, never from JS.
   ignoreUnused: ['i-'],
 });
+
+/* -------------------------------------------------------------------------- */
+/*  Icon sprite                                                               */
+/* -------------------------------------------------------------------------- */
+/*
+ * A <use> pointing at a symbol that does not exist renders NOTHING — no error,
+ * no console warning, just a blank space where an icon should be. With ~60
+ * hand-written references across two pages that is the single easiest thing to
+ * get silently wrong here.
+ */
+
+console.log('\nIcon sprite — icons.js');
+
+{
+  const available = spriteIds();
+  const sources = ['index.html', 'auth.html', 'control-panel.js', 'auth.js', 'icons.js'].map((f) =>
+    fs.readFileSync(path.join(PANEL, f), 'utf8'),
+  );
+  const wanted = iconRefs(sources);
+  const missing = [...wanted].filter((id) => !available.has(id)).sort();
+  check(
+    'every icon referenced by markup or JS exists in the sprite',
+    missing.length === 0,
+    missing.length ? `MISSING: ${missing.join(', ')}` : `${wanted.size} of ${available.size} used`,
+  );
+
+  const unused = [...available].filter((id) => !wanted.has(id)).sort();
+  if (unused.length) {
+    warnings.push(`icons.js: symbols never referenced — ${unused.join(', ')}`);
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 

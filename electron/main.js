@@ -1716,8 +1716,12 @@ function loadPage(page) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 800,
+    // The Hub shell's nav carries five tabs, the mode toggle, the feed pill, the
+    // gear, the account chip and the power button on one row: at 1000px they
+    // fit only by dropping the tab labels to icons (see hub.css), which is the
+    // narrow-window fallback rather than the intended first run.
+    width: 1180,
+    height: 820,
     minWidth: 760,
     minHeight: 560,
     backgroundColor: '#060a12',

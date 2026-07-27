@@ -604,56 +604,10 @@ html, body {
   background: #fff;
 }
 
-/* ============================ OVERLAY LIST ============================== */
-
-.overlay-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.overlay-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto minmax(260px, 360px);
-  align-items: center;
-  gap: 14px;
-  padding: 10px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.overlay-row[data-enabled="false"] .overlay-row__info { opacity: 0.45; }
-
-.overlay-row__check input { accent-color: var(--cyan); cursor: pointer; width: 15px; height: 15px; }
-
-.overlay-row__label {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.05em;
-}
-
-.overlay-row__desc { font-size: 12px; color: var(--text-3); }
-
-.overlay-row__ig {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  font-size: 11px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.overlay-row__ig input { accent-color: var(--purple); cursor: pointer; }
-.overlay-row__ig[data-on="true"] { color: var(--cyan); }
+/* The overlay row list was replaced by the Hub card grid — see .ovcard in
+ * hub.css and renderOverlays() in control-panel.js. Its rules are gone rather
+ * than overridden: .overlay-row set align-items:center, which in the new
+ * flex-column card centred every child horizontally. */
 
 /* URL box */
 .url-box { display: flex; gap: 6px; min-width: 0; }

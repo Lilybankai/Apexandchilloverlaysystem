@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.23.0 — 2026-07-27 "Paddock"
+
+The control panel is now built to the design system. The account screens in
+v0.21.0 were the first thing drawn to the Apex & Chill Hub kit, so the app opened
+on a designed screen and then dropped into an undesigned one. That gap is closed.
+
+### Changed
+
+- **The panel has tabs.** A Hub-style top nav — Dashboard, Overlays, Leaderboard,
+  Setups, Suggestions — with the Race/Training toggle, feed pill, gear and account
+  chip on the right, and a status bar along the bottom carrying the feed state,
+  the source, the port and the running version. Switching tabs is a class change,
+  not a page load: a reload would drop the status WebSocket and flash the window
+  black. The chosen tab is remembered between launches, because the tab someone
+  lives in says what they use the app for.
+
+- **Overlays is now a card per widget, with both destinations labelled.** Each card
+  carries the widget's icon, what it does, its Browser-Source URL with copy and
+  preview, and two switches: **OBS** and **In game**. The first pass had a single
+  unlabelled switch beside the widget name, which said nothing about *which*
+  destination it controlled — a widget can be on in one and off in the other, and
+  collapsing that to one toggle would have removed a real capability.
+
+- **Settings became its own view**, behind the gear, in four cards: Server (port,
+  update rate, demo mode, track-limits threshold), Appearance (widget background,
+  text size, radar car size), Audio & feedback (cues, volume, change glow) and
+  Bindings. The kit has only a gear icon, and ten controls plus two binding tables
+  do not belong in a popover.
+
+- **Update and error banners moved above the tabs.** A failed server start has to
+  be visible from whichever tab you are on, not only the one that raised it.
+
+- **The window opens at 1180×820** (was 1000×800). Five tabs plus the mode toggle,
+  pill, gear, account chip and power button only fit 1000px by dropping the tab
+  labels to icons, which is the narrow-window fallback rather than the intended
+  first run. Below ~1080px they still do exactly that.
+
+### Added
+
+- **Coming-soon screens for Leaderboard, Setups and Suggestions**, using the kit's
+  own pattern from `Setups.jsx` rather than a new one, each listing what is
+  actually planned. **Training** mode appears in the toggle but ships disabled with
+  the kit's purple chip: it gates a lap database and audio markers that do not
+  exist yet, and hiding it would misrepresent where the app is going. No password
+  box — in an unpacked-asar Electron app that is decoration, and when there is
+  something real behind a tab the gate becomes a server-side account flag.
+
+- **`npm run test:panel-parity`** — a guard on the panel's wiring. The panel is
+  plain HTML wired up by id, which is invisible to both a typecheck and a
+  screenshot: rename or retype one element and the control silently stops doing
+  anything while the panel still looks perfect. It asserts every id the renderer
+  looks up exists, that none is declared twice, that no wired control changed
+  element type, and that every icon reference resolves. It went in *before* any
+  markup moved, and was deliberately broken three ways to prove it bites.
+
+- **`icons.js`** — one inlined SVG sprite (43 symbols, all used), shared with the
+  account screens, which drop their own copy. Injected as the first thing in
+  `<body>`: a `<use>` whose target does not exist at parse time renders nothing,
+  with no error and no warning.
+
+### Notes
+
+- **Nothing was lost and nothing was rewired.** All 47 controls keep their id and
+  element type; `control-panel.js`'s logic, its `window.apex.*` calls and every IPC
+  handler are untouched. `renderOverlays` — the only markup the renderer builds —
+  was restyled by changing class names and nesting, with each listener still
+  attached to the element that function creates. Verified by clicking the real
+  controls against a logging stub: the OBS and in-game switches, copy, preview, the
+  appearance sliders and v0.22.0's track-limits threshold all emit the same calls
+  with the same payloads as before.
+- The design kit itself is untouched and unused at runtime. `ui_kits/hub/*.jsx` is
+  React plus in-browser Babel plus Lucide from a CDN; none of it can load under the
+  panel's CSP, so its structure and CSS are ported into the vanilla renderer and
+  the JSX stays the reference for what things should look like.
+- The old `.overlay-row` CSS is deleted rather than overridden — its
+  `align-items:center` centred every child of the new flex-column card.
+- The nav's bell and info buttons from the kit are deliberately absent: there are
+  no notifications and no about screen, and two dead buttons are worse than a
+  plainer nav.
+
 ## 0.22.0 — 2026-07-27
 
 ### Changed

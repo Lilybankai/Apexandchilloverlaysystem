@@ -43,16 +43,29 @@ Run the app in development (no packaging):
 npm run app          # builds the server, then launches the Electron window
 ```
 
-The control panel:
+The control panel is built to the Apex & Chill design system's Hub layout — a
+tabbed top nav, a card grid, and a status bar along the bottom:
 
-- **Overlays** — tick the ones you want; each has its own URL + **Copy** and
-  **Preview** buttons. Add each as a **separate OBS Browser Source** and drag it
-  into position inside OBS.
-- **Settings** — server port, update rate (1–120 Hz), a **Demo mode** toggle
-  that forces simulated data (no sim/plugin needed), and **Widget background**,
-  which fades every widget's panel background live — at 0% only the data is left
-  over the game (see [Widget background](#widget-background)).
-- **Status pill** — shows LIVE / DEMO DATA / NO DATA / STOPPED at a glance.
+- **Dashboard** — the server, the feed and the in-game layer at a glance: feed
+  state, the address overlays are served at, update rate, how many widgets are
+  on, plus the **Show in game** switch, **Edit layout** and the toggle hotkey.
+- **Overlays** — one card per widget. Each has two independent destinations:
+  **OBS** (its Browser-Source URL, with copy and preview) and **In game** (the
+  on-screen layer). A widget can be on in one and off in the other. The
+  all-in-one page URL and the sponsor rotator live here too.
+- **Settings** (the gear, top right) — **Server** (port, update rate, demo mode,
+  track-limits threshold), **Appearance** (widget background, text size, radar car
+  size — all applying live), **Audio & feedback** (cues, volume, change glow) and
+  **Bindings** (keyboard and wheel).
+- **Leaderboard · Setups · Suggestions** — not built yet; each says so and lists
+  what is coming. **Training** mode is shown in the top-right toggle but disabled
+  for the same reason.
+- **Status pill** — LIVE / DEMO DATA / NO DATA / STOPPED at a glance, mirrored in
+  the footer along with the port and the running version.
+
+The chosen tab is remembered between launches. Update and error banners sit above
+the tabs rather than inside one, so a failed server start is visible wherever you
+happen to be.
 
 ### In-game layout editor
 

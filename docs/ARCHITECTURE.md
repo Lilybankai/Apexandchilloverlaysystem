@@ -142,6 +142,34 @@ browser. There is no database, no message broker, no cloud round-trip.
   in-game layer is pushed it over IPC instead, so the layer that draws over the
   sim does no polling at all.
 
+### Control panel (`electron/control-panel/`)
+
+Plain HTML wired up by id — no framework, and deliberately so: the panel's CSP is
+`default-src 'none'` with `script-src 'self'`, so nothing can be fetched at
+runtime, and the app sits beside a running sim where a second framework runtime
+earns nothing.
+
+- **`index.html`** — the Hub shell: one `.nav`, one scrolling `.content` holding
+  six `[data-view]` sections, one `.foot`. Only the active view is displayed, so
+  switching tabs is a class change, never a page load — a reload would drop the
+  status WebSocket and flash the window black.
+- **`hub.css`** — the shell, ported from the design system's Hub kit
+  (`ui_kits/hub/`). That kit is React + Lucide over a CDN and cannot load here, so
+  its **structure and CSS** are ported and driven by the vanilla renderer instead.
+  Selector names match the kit so the two read side by side; values resolve through
+  `control-panel.css`'s logo-native tokens.
+- **`control-panel.css`** — the components (`.card`, `.field`, `.switch`, `.btn`).
+  These were **not** renamed during the reskin: restyling them in place is what
+  let every control keep its id and its wiring.
+- **`icons.js`** — one inlined SVG sprite shared with `auth.html`, injected as the
+  first thing in `<body>`. A `<use>` whose target does not exist at parse time
+  renders nothing at all, so load order is load-bearing.
+- **`scripts/test-panel-parity.js`** — the guard on all of the above. It asserts
+  every id the JS looks up exists, none is duplicated, no wired control changed
+  element type, and every icon reference resolves. Run it after touching panel
+  markup: a control that silently stops working still *looks* perfect, and neither
+  a typecheck nor a screenshot catches it.
+
 ### Accounts (`electron/auth.js` + `electron/control-panel/auth.*`)
 
 Supabase-backed accounts, with one hard rule: **the renderer never talks to
