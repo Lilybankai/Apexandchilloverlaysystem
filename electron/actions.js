@@ -220,6 +220,103 @@ function createActions(deps = {}) {
         return c.setPitRow({ name: 'VIRTUAL ENERGY:' }, { delta: dir < 0 ? -1 : 1 });
       },
     });
+
+    // The whole tyre decision on one control: a step here moves all four
+    // corners together, so "put the wets on" is one button rather than four
+    // rows of scrolling. See MfdController.setTyreCompound.
+    define({
+      id: 'pit.tyreCompound',
+      label: 'Tyre compound (all four)',
+      group: 'Pit strategy',
+      kind: 'delta',
+      run: async (dir) => {
+        const c = controller();
+        if (!c) return { ok: false, error: 'pit control unavailable' };
+        return c.setTyreCompound({ delta: dir < 0 ? -1 : 1 });
+      },
+    });
+
+    // Serving a stop-and-go, in the only two steps that can be automated:
+    // strip the stop back to no service, then ask for the stop.
+    define({
+      id: 'pit.clearService',
+      label: 'Clear pit service (stop/go)',
+      group: 'Pit strategy',
+      kind: 'pulse',
+      run: async () => {
+        const c = controller();
+        if (!c) return { ok: false, error: 'pit control unavailable' };
+        return c.clearPitService();
+      },
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Pit request — a keystroke, because LMU exposes no REST route     */
+  /* ---------------------------------------------------------------- */
+
+  if (keys && keys.available) {
+    define({
+      id: 'pit.request',
+      label: 'Request pit stop',
+      group: 'Pit strategy',
+      kind: 'pulse',
+      /**
+       * Re-reads the binds each press, like the aid actions: LMU rewrites
+       * keyboard.json on exit, so a cached key goes stale after a rebind. Fails
+       * with the fix rather than a shrug when "Pit Request" is only on a wheel
+       * button, which is where most drivers have it.
+       */
+      run: async () => {
+        const fresh = readBinds();
+        const key = fresh && fresh.pit && fresh.pit.pitRequest;
+        if (!key) {
+          return {
+            ok: false,
+            error:
+              '"Pit Request" is not bound to a KEY in LMU — bind it under ' +
+              'Controls → Keyboard (a wheel button cannot be pressed from here).',
+          };
+        }
+        if (!fresh.keyboardSchemeActive) {
+          return { ok: false, error: 'LMU has its keyboard scheme disabled' };
+        }
+        return keys.pressScan(key);
+      },
+    });
+
+    // The two halves as one button, in the order they have to happen: clearing
+    // the menu AFTER requesting would leave a stop already booked with service
+    // on it, which is the exact mistake this exists to prevent.
+    if (mfdMod) {
+      define({
+        id: 'pit.serveStopGo',
+        label: 'Serve stop/go (clear service + request pit)',
+        group: 'Pit strategy',
+        kind: 'pulse',
+        run: async () => {
+          const c = controller();
+          if (!c) return { ok: false, error: 'pit control unavailable' };
+          const cleared = await c.clearPitService();
+          if (!cleared.ok) return cleared;
+          const fresh = readBinds();
+          const key = fresh && fresh.pit && fresh.pit.pitRequest;
+          if (!key) {
+            // The menu IS clear, which is most of the value — say so rather
+            // than reporting a flat failure the driver would act on twice.
+            return {
+              ok: false,
+              error:
+                'Service cleared, but "Pit Request" is not bound to a key in LMU — ' +
+                'request the stop yourself.',
+              cleared: cleared.cleared,
+            };
+          }
+          const pressed = await keys.pressScan(key);
+          return pressed.ok ? { ...pressed, cleared: cleared.cleared } : pressed;
+        },
+      });
+    }
   }
 
   /* ---------------------------------------------------------------- */

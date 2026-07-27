@@ -63,6 +63,31 @@ export type SessionPhase =
   | 'checkered'
   | 'cooldown';
 
+/**
+ * The phases that come **before** a session is actually running.
+ *
+ * Lives beside the type it partitions rather than in each provider, because all
+ * three of them have to agree on it: a widget that showed a pre-session header
+ * on `lmu` and a lap counter on `rf2` for the same moment on the grid would be
+ * worse than having neither.
+ *
+ * `countdown` counts as not-started deliberately — the lights are still on, and
+ * the driver on the grid is still being told which session they are about to
+ * run rather than what lap they are on. `formation` likewise: the lap does not
+ * count.
+ */
+const PRE_GREEN_PHASES: ReadonlySet<SessionPhase> = new Set<SessionPhase>([
+  'garage',
+  'gridwalk',
+  'formation',
+  'countdown',
+]);
+
+/** Whether this phase is before the session has gone green. */
+export function isPreGreen(phase: SessionPhase): boolean {
+  return PRE_GREEN_PHASES.has(phase);
+}
+
 /** Global flag state shown to the field. */
 export type FlagState =
   | 'none'
@@ -111,6 +136,27 @@ export interface SessionState {
   numCars: number;
   /** Optional server / lobby name. */
   serverName?: string;
+  /**
+   * `true` before the session has actually gone green — sitting in the garage,
+   * on the grid, on a formation lap or in the countdown.
+   *
+   * The widgets need this as its own fact rather than inferring it from an
+   * absent lap count, because "no laps yet" and "this session has no lap count"
+   * look identical on the wire and mean completely different things. Before the
+   * flag drops there is no lap 1 and no clock running down, so a counter is the
+   * wrong thing to show; what the driver wants is *which session am I about to
+   * run, and how long is it*. See {@link scheduledLengthSec}.
+   */
+  notStarted: boolean;
+  /**
+   * The session's **full booked length** in seconds, independent of how much of
+   * it is left — so a widget can say "PRACTICE · 30 MIN" while sitting in the
+   * garage, where {@link timeRemainingSec} has nothing useful to say yet.
+   *
+   * {@link UNKNOWN_VALUE} for a lap-based session (use {@link totalLaps}) or
+   * when the sim has not published a length.
+   */
+  scheduledLengthSec: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1011,11 +1057,64 @@ export interface MfdAid {
  * exactly like {@link DamageState}, so the widget can tell "no data" from a real
  * empty menu rather than acting on a stale one.
  */
+/**
+ * The **one** tyre control: which compound goes on the car at the next stop.
+ *
+ * ## Why this is derived rather than a row
+ * LMU's pit menu carries the tyre decision as four independent per-corner rows
+ * (`FL TIRE:` … `RR TIRE:`), each cycling the same list — `No Change`, then
+ * whatever compounds this car has for this event (`New Medium`, `New Wet`, and
+ * hards/softs where the class runs them). Nobody changes one corner. Driving it
+ * as four rows means four times the scrolling to express a decision that is
+ * always "put the wets on", and it is why the widget's tyre section read as a
+ * list of indices rather than as a choice between compounds.
+ *
+ * So this collapses the four into one control whose options are the sim's own
+ * compound names, and a write sets all four corners together. The per-corner
+ * rows remain in {@link MfdState.pit} untouched for anyone who genuinely wants
+ * one corner — nothing is hidden, this is an additional, better-shaped handle on
+ * the same underlying rows.
+ *
+ * Omitted from {@link MfdState} when the menu has no per-corner tyre rows at
+ * all (out of a session, or a car/series without them).
+ */
+export interface MfdTyreControl {
+  /**
+   * The compound options exactly as the sim names them, in its own order —
+   * `["No Change", "New Medium", "New Wet"]`. Index 0 is always the no-change
+   * option. Taken from the sim, so a class running hards or softs gets those
+   * without this module knowing anything about compounds.
+   */
+  options: string[];
+  /**
+   * Index into {@link options} currently selected on all four corners, or
+   * {@link UNKNOWN_VALUE} when the corners disagree (see {@link mixed}).
+   */
+  current: number;
+  /**
+   * `true` when the four corners are NOT all on the same option — someone has
+   * set a per-corner strategy by hand, or the sim has. The widget says "MIXED"
+   * rather than picking one corner's answer and quietly misreporting the other
+   * three; the next write from this control resolves it by setting all four.
+   */
+  mixed: boolean;
+  /**
+   * The rendered text of the current selection, e.g. `"New Medium"`, or
+   * `"Mixed"` when {@link mixed}. Saves every consumer re-deriving it.
+   */
+  currentText: string;
+}
+
 export interface MfdState {
   /** The full pit MFD, in the sim's row order. */
   pit: MfdPitRow[];
   /** Curated live aids (brake bias, ABS/TC map, engine maps, regen…). */
   aids: MfdAid[];
+  /**
+   * The collapsed all-four-corners tyre compound control. Omitted when the menu
+   * carries no per-corner tyre rows. See {@link MfdTyreControl}.
+   */
+  tyres?: MfdTyreControl;
 }
 
 /* -------------------------------------------------------------------------- */

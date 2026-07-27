@@ -1878,6 +1878,113 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__group[data-empty="true"] .mfd__rows { display: none; }
 .mfd__group[data-empty="true"] .mfd__empty { display: block; }
+/* The tyre control has no .mfd__rows, so it needs its own empty rule. */
+.mfd__group[data-group="tyres"][data-empty="true"] .mfd__tyre-opts { display: none; }
+
+/* --- the tyre compound control ------------------------------------------
+   One control for a decision that is always all four corners. The options are
+   the sim's own compound names, so a class running hards gets hards without
+   this file knowing what a compound is. */
+.mfd__tyre-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mfd__tyre-opt {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mfd__tyre-opt:hover { border-color: var(--ac-cyan); color: var(--text-primary); }
+/* The selected compound. A filled chip, not a border change: this is the one
+   thing in the section that has to be readable without looking at it. */
+.mfd__tyre-opt[data-on="true"] {
+  background: var(--ac-cyan);
+  border-color: var(--ac-cyan);
+  color: var(--text-invert);
+}
+/* Corners disagreeing — stated rather than resolved to one corner's answer. */
+.mfd__group[data-group="tyres"][data-mixed="true"] .mfd__group-title::after {
+  content: " · MIXED";
+  color: var(--warn);
+}
+
+/* --- penalties + the consequence actions ---------------------------------
+   The only section here that reports something happening TO the driver rather
+   than something they are choosing, which is why it sits at the top and is the
+   only one that changes colour. */
+.mfd__penalty-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-crit);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+.mfd__penalty-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.mfd__penalty-btn {
+  flex: 1 1 0;
+  padding: 7px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.mfd__penalty-btn:hover:not(:disabled) {
+  border-color: var(--ac-cyan);
+  color: var(--text-primary);
+}
+.mfd__penalty-btn:disabled { opacity: 0.5; cursor: default; }
+/* The outcome line. Errors are the point of it — the likeliest failure is
+   "Pit Request" being on a wheel button, which the driver can only fix if they
+   are told so in those words. */
+.mfd__penalty-note {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.mfd__penalty-note[data-error="true"] { color: var(--warn); }
+
+.mfd__penalty[data-state="standing"] .mfd__penalty-count { color: var(--pos-loss); }
+.mfd__penalty[data-state="nodata"] .mfd__penalty-count { color: var(--text-muted); }
+/* The four seconds after a penalty lands — the same window the Track Limits
+   widget announces in, driven by the same ctx.consequenceMs. */
+.mfd__penalty[data-state="fresh"] {
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  margin: -6px;
+  animation: mfd-consequence 0.5s ease-in-out infinite alternate;
+}
+.mfd__penalty[data-state="fresh"] .mfd__penalty-count { color: #fff; }
+@keyframes mfd-consequence {
+  from { background-color: rgba(255, 84, 112, 0.28); }
+  to { background-color: rgba(255, 84, 112, 0.62); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mfd__penalty[data-state="fresh"] { animation: none; background-color: rgba(255, 84, 112, 0.45); }
+}
 
 .mfd__row {
   display: flex;
@@ -2177,6 +2284,43 @@ body.ig-editing #widget-radar .panel__header {
   color: var(--text-muted);
   text-align: right;
   min-height: 1em;
+}
+
+/* --- the consequence indicator -------------------------------------------
+   The four seconds after the sim applies a penalty. Absolutely positioned over
+   the widget's own content rather than pushed in above it: this fires mid-lap,
+   and a banner that reflowed the panel would move the pips and the edge bar
+   under the driver's eye at the exact moment they are looking at them.
+
+   It covers the readouts on purpose. For those four seconds there is nothing on
+   this widget more important than the fact that a penalty just landed, and a
+   driver glancing across must not have to pick it out from beside the numbers
+   it supersedes. */
+.limits__banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 84, 112, 0.92);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: var(--fs-value);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  animation: limits-consequence 0.5s ease-in-out infinite alternate;
+}
+/* The wrapper is the positioning context for the banner above. */
+.limits { position: relative; }
+
+@keyframes limits-consequence {
+  from { background-color: rgba(255, 84, 112, 0.92); }
+  to { background-color: rgba(196, 32, 60, 0.92); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .limits__banner { animation: none; }
 }
 
 /* --- states --------------------------------------------------------------

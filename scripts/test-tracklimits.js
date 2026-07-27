@@ -18,7 +18,10 @@
 const {
   TrackLimitsTracker,
   WARNING_LIMIT,
-  OFF_TRACK_MARGIN_M,
+  DEFAULT_OFF_TRACK_MARGIN_M,
+  HALF_CAR_WIDTH_M,
+  setTrackLimitsMargin,
+  trackLimitsMargin,
   RECOVERY_MARGIN_M,
   MIN_EXCURSION_MS,
   MIN_SPEED_KPH,
@@ -72,7 +75,7 @@ function rig(over) {
 }
 
 /** Comfortably beyond the edge — clear of the half-a-car margin. */
-const WIDE = EDGE + OFF_TRACK_MARGIN_M + 1.5;
+const WIDE = EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 1.5;
 /** Comfortably inside it. */
 const ONTRACK = 1.0;
 
@@ -107,7 +110,7 @@ console.log('\n2) Hysteresis — a car balanced on the limit');
   // Straddling the threshold: out, barely back, out again, with the "back"
   // never clearing the recovery band. That is one wide moment, not three.
   const r = rig();
-  const justInside = EDGE + OFF_TRACK_MARGIN_M - 0.2; // inside the trigger, inside the band
+  const justInside = EDGE + DEFAULT_OFF_TRACK_MARGIN_M - 0.2; // inside the trigger, inside the band
   r.hold(WIDE, 300);
   r.hold(justInside, 300);
   r.hold(WIDE, 300);
@@ -155,7 +158,7 @@ console.log('\n3) The guards');
   // Half a car's width of margin: a centre exactly on the edge still has two
   // wheels on the road, which is not a breach anywhere in motorsport.
   const r = rig();
-  r.hold(EDGE + OFF_TRACK_MARGIN_M - 0.2, 1500);
+  r.hold(EDGE + DEFAULT_OFF_TRACK_MARGIN_M - 0.2, 1500);
   check('a centre on the edge is not all four wheels off', r.state.warnings === 0, r.state.warnings);
 }
 
@@ -266,9 +269,61 @@ console.log('\n6) The display scale');
   check('outside it, beyondEdgeM is positive', r.state.beyondEdgeM > 0, r.state.beyondEdgeM);
   check(
     'the recovery band is inside the trigger',
-    RECOVERY_MARGIN_M > 0 && RECOVERY_MARGIN_M < OFF_TRACK_MARGIN_M,
-    `${RECOVERY_MARGIN_M} < ${OFF_TRACK_MARGIN_M}`,
+    RECOVERY_MARGIN_M > 0 && RECOVERY_MARGIN_M < DEFAULT_OFF_TRACK_MARGIN_M,
+    `${RECOVERY_MARGIN_M} < ${DEFAULT_OFF_TRACK_MARGIN_M}`,
   );
+}
+
+console.log('\n7) The threshold, and why it is not half a car\'s width');
+
+{
+  // The regression this section exists for: `mTrackEdge` marks the AIW's
+  // drivable surface, which sits at or inside the white line — so the KERB is
+  // already past it. At a half-car-width margin, riding a kerb the way every
+  // driver rides a kerb counted as running wide.
+  const onTheKerb = EDGE + HALF_CAR_WIDTH_M + 0.3; // outer wheels on the kerb
+  const r = rig();
+  r.hold(onTheKerb, 2000);
+  check('riding a kerb does NOT count at the default', r.state.warnings === 0, r.state.warnings);
+
+  check(
+    'the default clears a kerb rather than just the car',
+    DEFAULT_OFF_TRACK_MARGIN_M > HALF_CAR_WIDTH_M + 1.0,
+    `${DEFAULT_OFF_TRACK_MARGIN_M} m vs ${HALF_CAR_WIDTH_M} m half-car`,
+  );
+
+  // …and genuinely off, past the kerb, still counts.
+  const r2 = rig();
+  r2.hold(EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 0.5, 1000);
+  check('being properly off still counts', r2.state.warnings === 1, r2.state.warnings);
+}
+
+{
+  // The operator's threshold is per-poll, so it retunes a RUNNING session.
+  const r = rig();
+  const onTheKerb = EDGE + HALF_CAR_WIDTH_M + 0.3;
+  r.hold(onTheKerb, 1000);
+  check('kerb ignored at the default margin', r.state.warnings === 0, r.state.warnings);
+  // Turn the threshold down to the old strict value mid-session…
+  r.hold(onTheKerb, 1000, { marginM: HALF_CAR_WIDTH_M });
+  check('…and the same position now counts', r.state.warnings === 1, r.state.warnings);
+}
+
+{
+  // The global setter is what the control panel drives; it must clamp, and it
+  // must be readable back so the server can report what is in force.
+  const before = trackLimitsMargin();
+  check('the live margin defaults to the constant', before === DEFAULT_OFF_TRACK_MARGIN_M, before);
+  check('an absurdly small margin is clamped up', setTrackLimitsMargin(0.01) === 0.5);
+  check('an absurdly large one is clamped down', setTrackLimitsMargin(999) === 5);
+  check('null restores the default', setTrackLimitsMargin(null) === DEFAULT_OFF_TRACK_MARGIN_M);
+  check('a sane value is taken verbatim', setTrackLimitsMargin(1.8) === 1.8);
+
+  // …and the tracker actually follows it, with no per-poll input.
+  const r = rig();
+  r.hold(EDGE + 2.0, 1000); // past 1.8, inside the 2.4 default
+  check('the tracker follows the live margin', r.state.warnings === 1, r.state.warnings);
+  setTrackLimitsMargin(null); // leave global state as we found it
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

@@ -61,11 +61,9 @@
    */
   var ALARM_MS = 2000;
 
-  /**
-   * How long a fresh penalty owns the headline, ms. Longer than the warning
-   * alarm: it is worse news, it is rarer, and it is the sim's own verdict.
-   */
-  var PENALTY_MS = 6000;
+  // How long a fresh penalty is announced for lives in the runtime as
+  // `ctx.consequenceMs` (4 s), because the MFD announces the same event and the
+  // two must agree — see the consequence-indicator block in js/client.js.
 
   /**
    * Metres of road remaining at which the edge bar starts to show anything.
@@ -76,7 +74,7 @@
    */
   var EDGE_WARN_M = 2;
 
-  var root, pipsEl, countEl, labelEl, penaltyEl, barFillEl, edgeEl, headerMeta;
+  var root, pipsEl, countEl, labelEl, penaltyEl, bannerEl, barFillEl, edgeEl, headerMeta;
   var metaCache = "";
   /** Pip elements, rebuilt only when the limit itself changes. */
   var pips = [];
@@ -135,10 +133,16 @@
     edgeEl.className = "limits__edge";
     edgeEl.textContent = "";
 
+    // The consequence banner sits over the whole body when it fires.
+    bannerEl = document.createElement("div");
+    bannerEl.className = "limits__banner";
+    bannerEl.hidden = true;
+
     wrap.appendChild(head);
     wrap.appendChild(pipsEl);
     wrap.appendChild(bar);
     wrap.appendChild(edgeEl);
+    wrap.appendChild(bannerEl);
     mount.appendChild(wrap);
 
     setState("none");
@@ -187,6 +191,7 @@
       if (countEl.textContent !== "—") countEl.textContent = "—";
       labelEl.textContent = "NO DATA";
       penaltyEl.hidden = true;
+      bannerEl.hidden = true;
       buildPips(pipOverride || 3);
       for (var i = 0; i < pips.length; i++) pips[i].removeAttribute("data-on");
       barFillEl.style.width = "0%";
@@ -201,9 +206,9 @@
     /* ------------------------------ the counts --------------------------- */
 
     var warnings = tl.warnings || 0;
-    var penalties = fmt.has(tl.penalties) ? tl.penalties : 0;
+    var penalties = ctx.penaltyCount(tl);
     var freshWarning = fmt.has(tl.msSinceWarning) && tl.msSinceWarning < ALARM_MS;
-    var freshPenalty = fmt.has(tl.msSincePenalty) && tl.msSincePenalty < PENALTY_MS;
+    var freshPenalty = ctx.consequenceFresh(tl);
 
     // The headline is ALWAYS the warning count — it is the number that answers
     // "how many have I had", which is the question this widget exists for, and
@@ -218,6 +223,19 @@
       ctx.crit(penaltyEl, penalties + (penalties === 1 ? " PEN" : " PENS"));
     } else if (!penaltyEl.hidden) {
       penaltyEl.hidden = true;
+    }
+
+    // The consequence indicator: a banner across the widget for the four
+    // seconds after a penalty is applied. The chip above is the standing
+    // record — quiet, permanent, easy to miss. This is the announcement, and it
+    // is deliberately the only thing on the widget that covers anything else,
+    // because at the moment it fires it is the most important thing on screen.
+    if (freshPenalty) {
+      if (bannerEl.hidden) bannerEl.hidden = false;
+      var text = ctx.penaltyText(penalties);
+      if (bannerEl.textContent !== text) bannerEl.textContent = text;
+    } else if (!bannerEl.hidden) {
+      bannerEl.hidden = true;
     }
 
     // Pips fill left to right, wrapping past the scale so a fourth warning on a

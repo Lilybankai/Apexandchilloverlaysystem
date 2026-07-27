@@ -45,6 +45,7 @@ import { FuelCalculator } from './fuelCalculator';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
+  isPreGreen,
   type FlagState,
   type RadarBlip,
   type RelativeEntry,
@@ -574,6 +575,7 @@ export class RF2Provider implements TelemetryProvider {
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
     const trackName = readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown';
+    const sessionPhase = mapSessionPhase(gamePhase);
     // Track limits, from the player's own scoring record: how far off the path
     // the car is against how far the road goes, plus the sim's own penalty
     // count. Absent when the player has no scoring record (never on the live
@@ -600,7 +602,7 @@ export class RF2Provider implements TelemetryProvider {
       connected: true,
       session: {
         type: mapSessionType(sessionCode),
-        phase: mapSessionPhase(gamePhase),
+        phase: sessionPhase,
         flag: mapFlag(gamePhase),
         track: trackName,
         timeRemainingSec: timeRemaining,
@@ -608,6 +610,11 @@ export class RF2Provider implements TelemetryProvider {
         lapsRemaining: UNKNOWN_VALUE,
         currentLap: leaderLaps + 1,
         numCars: numVehicles,
+        notStarted: isPreGreen(sessionPhase),
+        // `mEndET` is the session's full booked length on the sim's own clock,
+        // published from the moment it loads — which is what makes a pre-session
+        // header possible while sitting in the garage.
+        scheduledLengthSec: endET > 0 ? Math.round(endET) : UNKNOWN_VALUE,
       },
       player: {
         slotId: playerId,

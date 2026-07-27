@@ -107,6 +107,13 @@ export interface ServerConfig {
   audioCues: boolean;
   /** Boot value for the cues' master volume, 0..100 (percent). */
   audioVolume: number;
+  /**
+   * Boot value for the track-limits threshold: how far past the sim's track edge
+   * the car's centre must be before an excursion counts, metres. See
+   * `DEFAULT_OFF_TRACK_MARGIN_M` in `telemetry/trackLimits.ts` for what the
+   * number means in wheels. Retuned at runtime through `setTelemetryTuning()`.
+   */
+  trackLimitsMarginM: number;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -130,6 +137,7 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   radarIconScale: 50,
   audioCues: true,
   audioVolume: 60,
+  trackLimitsMarginM: 2.4,
   verbose: false,
 });
 
@@ -146,6 +154,24 @@ function envInt(name: string, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Parses a decimal from an environment string, returning `fallback` when unset
+ * or unparseable. Separate from {@link envInt} because the track-limits margin
+ * is a distance in metres, and rounding "2.4" to 2 would move the threshold by
+ * most of a wheel.
+ */
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Clamps a decimal (the integer {@link clamp} rounds, which this must not). */
+function clampFloat(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /** Parses a TCP port from an env var, clamped into the valid 1..65535 range. */
@@ -197,6 +223,8 @@ function clamp(value: number, min: number, max: number): number {
  * - `APEX_PANEL_OPACITY` — widget background opacity %, clamped to 0..100 (default `100`)
  * - `APEX_AUDIO_CUES` — play the synthesised audio cues (default `true`)
  * - `APEX_AUDIO_VOLUME` — cue volume %, clamped to 0..100 (default `60`)
+ * - `APEX_LIMITS_MARGIN` — track-limits threshold in metres past the track edge,
+ *   clamped to 0.5..5 (default `2.4`)
  * - `APEX_VERBOSE` — verbose logging (default `false`)
  *
  * @returns A fully-resolved, ready-to-use configuration object.
@@ -233,6 +261,11 @@ export function loadConfig(): ServerConfig {
     radarIconScale: clamp(envInt('APEX_RADAR_ICONS', DEFAULT_CONFIG.radarIconScale), 30, 150),
     audioCues: envBool('APEX_AUDIO_CUES', DEFAULT_CONFIG.audioCues),
     audioVolume: clamp(envInt('APEX_AUDIO_VOLUME', DEFAULT_CONFIG.audioVolume), 0, 100),
+    trackLimitsMarginM: clampFloat(
+      envFloat('APEX_LIMITS_MARGIN', DEFAULT_CONFIG.trackLimitsMarginM),
+      0.5,
+      5,
+    ),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

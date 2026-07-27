@@ -25,6 +25,7 @@ import {
   type PedalInputs,
   type PitPhase,
   type PitState,
+  type SessionPhase,
   type RadarBlip,
   type RelativeEntry,
   type StandingEntry,
@@ -39,7 +40,11 @@ import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
-import { TrackLimitsTracker, WARNING_LIMIT } from './trackLimits';
+import {
+  DEFAULT_OFF_TRACK_MARGIN_M,
+  TrackLimitsTracker,
+  WARNING_LIMIT,
+} from './trackLimits';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -316,6 +321,8 @@ export class SimulatorProvider implements TelemetryProvider {
     // After the pit cycle: excursions are not judged in the pit lane, so the
     // tracker needs this poll's phase, not last poll's.
     const trackLimits = this.buildTrackLimits(dt, this.speedFor(this.pedals));
+    // Which pre-green phase the demo is in, or null once it has gone green.
+    const preSession = this.advancePreSession(dt);
 
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
@@ -328,8 +335,8 @@ export class SimulatorProvider implements TelemetryProvider {
       connected: false,
       session: {
         type: 'race',
-        phase: 'green',
-        flag: 'green',
+        phase: preSession ?? 'green',
+        flag: preSession ? 'none' : 'green',
         track: 'Silverstone (ELMS)',
         trackConfig: 'Grand Prix',
         timeRemainingSec: UNKNOWN_VALUE,
@@ -338,6 +345,8 @@ export class SimulatorProvider implements TelemetryProvider {
         currentLap: Math.min(RACE_LAPS, leader.lapsCompleted + 1),
         numCars: this.cars.length,
         serverName: 'Apex & Chill — Midweek Endurance',
+        notStarted: preSession !== null,
+        scheduledLengthSec: SimulatorProvider.DEMO_SESSION_LENGTH_SEC,
       },
       player: {
         slotId: player.slotId,
@@ -699,6 +708,50 @@ export class SimulatorProvider implements TelemetryProvider {
     };
   }
 
+  /* ------------------------------ pre-session ------------------------------ */
+
+  /**
+   * The demo's booked session length, seconds — a 40-minute race, so the
+   * pre-session header has a realistic figure to show rather than a round
+   * number that could be mistaken for a placeholder.
+   */
+  private static readonly DEMO_SESSION_LENGTH_SEC = 2400;
+
+  /**
+   * Seconds of run-up the demo spends before going green, and the phases it
+   * walks through on the way.
+   *
+   * The demo goes green ONCE, at boot, and then stays there — it does not cycle
+   * back like the pit and damage states do. Those cycle because both of their
+   * states are things the widgets spend real time in; "not started" is not. A
+   * demo that dropped back to a garage header every couple of minutes would be
+   * actively unhelpful for the job the demo mostly does, which is positioning
+   * widgets against a running race. Restart the server to see it again.
+   */
+  private static readonly PRE_SESSION: ReadonlyArray<{ until: number; phase: SessionPhase }> = [
+    { until: 8, phase: 'garage' },
+    { until: 15, phase: 'gridwalk' },
+    { until: 20, phase: 'countdown' },
+  ];
+
+  /** Seconds since the demo booted, capped once the session has gone green. */
+  private preSessionClockSec = 0;
+
+  /**
+   * Advances the run-up and returns the phase, or `null` once green. Freezes
+   * its own clock at the changeover so it costs nothing for the rest of the run.
+   */
+  private advancePreSession(dt: number): SessionPhase | null {
+    const table = SimulatorProvider.PRE_SESSION;
+    const total = table[table.length - 1]!.until;
+    if (this.preSessionClockSec >= total) return null;
+    this.preSessionClockSec += dt;
+    for (const step of table) {
+      if (this.preSessionClockSec < step.until) return step.phase;
+    }
+    return null;
+  }
+
   /* ------------------------------ track limits ----------------------------- */
 
   /**
@@ -738,10 +791,16 @@ export class SimulatorProvider implements TelemetryProvider {
 
     const edge = SimulatorProvider.LIMITS_TRACK_EDGE_M;
     const off = this.limitsClockSec < SimulatorProvider.LIMITS_EXCURSION_SEC;
-    // Drifting around mid-track normally; well past the edge while running wide
-    // (the margin the tracker adds is half a car, so this has to clear it).
+    // Drifting around mid-track normally; clearly past the threshold while
+    // running wide.
+    //
+    // Derived from the tracker's own default rather than hard-coded: it was a
+    // flat 2.2 m, which silently stopped counting anything the moment the
+    // default margin moved from 1.0 to 2.4 — the demo went quietly clean and
+    // took the widget's whole warning path out of reach with it. A metre past
+    // whatever the threshold currently is cannot drift the same way.
     const lateral = off
-      ? edge + 2.2
+      ? edge + DEFAULT_OFF_TRACK_MARGIN_M + 1.0
       : Math.sin(this.limitsClockSec * 0.9) * (edge * 0.4);
 
     const state = this.limits.update({

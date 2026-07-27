@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.22.0 — 2026-07-27
+
+### Changed
+
+- **Track limits are far less trigger-happy.** The threshold moved from 1.0 m
+  past the sim's track edge to **2.4 m**, and is now a slider in the control
+  panel (0.5–5.0 m, live, no restart).
+
+  The original 1 m was half a car's width, on the reasoning that a centre one
+  half-width past the edge puts all four wheels past it. The arithmetic was
+  right; it was the wrong edge. `mTrackEdge` marks the AIW's *drivable surface*,
+  which on most circuits runs at or inside the white line — so the kerb is
+  already past it, and riding a kerb the way every driver rides a kerb counted as
+  running wide. 2.4 m is a car's half-width plus a kerb, so all four wheels are
+  clear of the kerb before anything counts. Turn it down toward 1.0 for the
+  strict all-four-wheels-past-the-line reading; up for circuits with unusually
+  wide kerbs.
+
+  The demo's synthetic excursion now derives its distance from the tracker's own
+  default instead of hard-coding 2.2 m — it silently stopped counting the moment
+  the default moved, which took the widget's whole warning path out of reach in
+  demo mode without anything appearing to be wrong.
+
+- **The consequence indicator holds for 4 seconds**, down from 6, and is now a
+  banner across the Track Limits widget rather than a colour change. It covers
+  the readouts on purpose: for those four seconds there is nothing on that widget
+  more important than a penalty having just landed. The window is defined once in
+  the runtime, because the MFD announces the same event and the two disagreeing
+  about how long "just now" lasts would look broken at exactly the moment the
+  driver is paying most attention.
+
+- **Lap and time no longer read "LAP —" before the session starts.** Both the
+  standings strip and the relative header now show a **pre-session** header while
+  in the garage, on the grid or on a formation lap: the session you are about to
+  run and how long it is booked for — `RACE · 16 LAPS`, `PRACTICE · 30 MIN` —
+  plus `ON THE GRID` / `FORMATION LAP` where that applies.
+
+  This needed two new facts on the frame rather than a widget guess. `notStarted`
+  is its own field because "no laps yet" and "this session has no lap count" look
+  identical on the wire and mean opposite things; `scheduledLengthSec` is the
+  session's *full booked* length, because the remaining clock before the flag
+  drops is the countdown to the start, and showing "5 MIN" for a thirty-minute
+  practice is worse than showing nothing.
+
+### Added
+
+- **One tyre control in the MFD, named the way the sim names compounds** — `NO
+  CHANGE · MEDIUM · WET`, and hards/softs wherever the class runs them, straight
+  from the sim's own option list.
+
+  LMU carries the tyre decision as four independent per-corner rows that each
+  cycle the same list. Nobody changes one corner, so expressing "put the wets on"
+  meant four rows of scrolling, and the section read as a list of indices rather
+  than a choice between compounds. This collapses the four into one control and
+  writes all four together in a single read-modify-write — not just fewer
+  requests, but the only way to avoid a held button interleaving four sequential
+  writes into a genuinely mixed set. The per-corner rows are untouched below for
+  anyone who does want one corner, and a mixed set is reported as `MIXED` rather
+  than resolved to one corner's answer.
+
+- **Penalties and the two things you can do about them, on the MFD.** The
+  outstanding count, with the same four-second consequence highlight, plus:
+
+  - **SERVE STOP/GO** — strips the next stop back to no service *and* requests
+    it. The clearing is the part that matters: a stop-go taken with a normal
+    strategy still loaded gets a full service, which does not discharge the
+    penalty and loses the stop as well. Tyres, damage, fuel, virtual energy and
+    driver change are cleared; wing, ducts, pressures and **fuel ratio** are
+    deliberately not — none of them adds time on its own, and wiping the driver's
+    setup as a side effect of serving a penalty would be worse than the penalty.
+  - **REQUEST PIT** — a normal stop.
+
+  Both are also bindable actions (`pit.serveStopGo`, `pit.request`,
+  `pit.clearService`, `pit.tyreCompound`) so they work from a wheel button or a
+  Stream Deck. The request half is a keystroke rather than a REST call because
+  LMU exposes no pit-request route — the whole 176-endpoint surface was checked,
+  and the nearest thing tells the *AI* driving your car to pit, which would be
+  wrong to quietly substitute. When "Pit Request" is bound only to a wheel button
+  (where most drivers have it) the failure says exactly that and, after a
+  stop-go, confirms the menu was still cleared.
+
+- `scripts/test-mfd.js` — 26 assertions over the two pit-menu decisions that are
+  pure judgement rather than plumbing: collapsing the per-corner tyre rows, and
+  which rows a stop-and-go may strip. `FUEL RATIO:` is the trap in the second
+  one — it reads as fuel and is a strategy setting for later stops.
+
 ## 0.21.0 — 2026-07-26 "Paddock Pass"
 
 The first slice of the cloud phase: the app now has **accounts**. Nothing about

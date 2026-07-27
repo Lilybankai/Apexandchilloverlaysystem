@@ -28,7 +28,13 @@
  */
 
 import http from 'node:http';
-import { UNKNOWN_VALUE, type MfdAid, type MfdPitRow, type MfdState } from './types';
+import {
+  UNKNOWN_VALUE,
+  type MfdAid,
+  type MfdPitRow,
+  type MfdState,
+  type MfdTyreControl,
+} from './types';
 
 /** Raw pit row from `receivePitMenu`. */
 export interface RawPitRow {
@@ -134,13 +140,100 @@ export function projectAids(
   return [];
 }
 
+/**
+ * The four per-corner tyre rows, in the sim's own order.
+ *
+ * Matched on the `FL|FR|RL|RR TIRE` prefix rather than by index, because the pit
+ * menu's shape changes with the car and the session — the same reason
+ * `pitCursor.ts` anchors on names. `TIRES:` (the sim's own all-four shortcut) is
+ * deliberately excluded: it is a different row with its own option list, and
+ * including it would double-count against the corners it drives.
+ */
+const CORNER_TYRE_ROW = /^(FL|FR|RL|RR)\s*TIRE/i;
+
+function cornerTyreRows(raw: RawPitRow[] | null | undefined): RawPitRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((r) => typeof r?.name === 'string' && CORNER_TYRE_ROW.test(r.name));
+}
+
+/**
+ * Whether a pit row is **service** — work the crew does on the car, and
+ * therefore something a stop-and-go must not have booked.
+ *
+ * Exported because this predicate is the whole judgement in
+ * {@link MfdController.clearPitService}, and getting it wrong is silent and
+ * expensive in both directions: too greedy and serving a penalty wipes the
+ * driver's aero and pressure setup, too timid and the "stop-go" takes a full
+ * service and does not discharge the penalty.
+ *
+ * The `FUEL RATIO:` exclusion is the subtle one. It reads as fuel and is not:
+ * it is how much the sim puts in at *future* stops, a strategy setting rather
+ * than an amount being added now, so zeroing it would quietly rewrite the
+ * driver's fuelling plan for the rest of the race.
+ */
+export function isServiceRow(name: string): boolean {
+  const upper = String(name || '').toUpperCase();
+  if (!upper) return false;
+  if (CORNER_TYRE_ROW.test(name)) return true;
+  if (upper.startsWith('DAMAGE')) return true;
+  if (upper.startsWith('DRIVER')) return true;
+  if (upper.startsWith('VIRTUAL ENERGY')) return true;
+  if (upper.startsWith('FUEL') && !upper.includes('RATIO')) return true;
+  return false;
+}
+
+/**
+ * Collapses the four per-corner tyre rows into one compound control.
+ *
+ * Returns `null` when the menu has no corner rows at all (out of a session, or a
+ * car without them), so the caller omits the field rather than publishing an
+ * empty control the widget would draw as a broken dropdown.
+ *
+ * The option list is taken from the corner with the MOST options rather than
+ * from a fixed corner: they are the same list in every case observed, but if the
+ * sim ever published a shorter list for one corner, silently offering the driver
+ * fewer compounds than the car has would be the worse failure.
+ */
+export function projectTyreControl(raw: RawPitRow[] | null | undefined): MfdTyreControl | null {
+  const rows = cornerTyreRows(raw);
+  if (rows.length === 0) return null;
+
+  let best: RawPitRow | null = null;
+  for (const r of rows) {
+    const n = Array.isArray(r.settings) ? r.settings.length : 0;
+    const bestN = best && Array.isArray(best.settings) ? best.settings.length : -1;
+    if (n > bestN) best = r;
+  }
+  const options = (Array.isArray(best?.settings) ? best!.settings! : [])
+    .map((s) => (typeof s?.text === 'string' ? s.text : ''))
+    .filter((s) => s !== '');
+  if (options.length === 0) return null;
+
+  const settings = rows.map((r) => (typeof r.currentSetting === 'number' ? r.currentSetting : 0));
+  const first = settings[0]!;
+  const mixed = settings.some((s) => s !== first);
+  const current = mixed ? UNKNOWN_VALUE : first;
+
+  return {
+    options,
+    current,
+    mixed,
+    currentText: mixed ? 'Mixed' : (options[first] ?? ''),
+  };
+}
+
 /** Builds the frame's {@link MfdState} from the raw payloads + live brake bias. */
 export function buildMfdState(
   pitRaw: RawPitRow[] | null | undefined,
   garageRaw: Record<string, RawGarageVal> | null | undefined,
   liveRearBias?: number,
 ): MfdState {
-  return { pit: projectPitMenu(pitRaw), aids: projectAids(garageRaw, liveRearBias) };
+  const tyres = projectTyreControl(pitRaw);
+  return {
+    pit: projectPitMenu(pitRaw),
+    aids: projectAids(garageRaw, liveRearBias),
+    ...(tyres ? { tyres } : {}),
+  };
 }
 
 /* ----------------------------- writes (control) --------------------------- */
@@ -208,6 +301,106 @@ export class MfdController {
     const wanted = opts.setting != null ? opts.setting : current + (opts.delta ?? 0);
     const clamped = clamp(wanted, 0, count - 1);
     row.currentSetting = clamped;
+
+    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    return res.ok ? { ...res, applied: clamped } : res;
+  }
+
+  /**
+   * Strips every service off the next pit stop — the pit-menu half of serving a
+   * **stop-and-go**.
+   *
+   * A stop-go is not a thing the sim can be told to do: there is no "serve
+   * penalty" command in LMU's API or its key bindings, because serving one is
+   * just driving into your box, stopping, and leaving without taking anything.
+   * The part that goes wrong is the *without taking anything* — a driver who
+   * pits with their normal strategy still loaded gets a full service, which does
+   * not discharge the penalty and costs them the stop as well. So this is the
+   * genuinely useful, genuinely automatable half: clear the menu, then pit.
+   *
+   * Which rows are cleared, and why only these:
+   *
+   * - **the four corner tyres** → `No Change` (index 0)
+   * - **`DAMAGE:`** → its first option, which is `Do Not Repair` whenever the
+   *   row has real options; a lone `N/A` (nothing to repair) is left alone
+   * - **fuel and virtual energy** → 0, the "add nothing" end of both rows
+   * - **`DRIVER:`** → index 0, i.e. no driver change
+   *
+   * Everything else in the menu — wing, brake ducts, pressures, fuel *ratio* —
+   * is deliberately untouched. None of it adds time on its own (the sim applies
+   * setup changes as part of a service it is already doing), and wiping the
+   * driver's aero and pressure setup as a side effect of serving a penalty would
+   * be a far worse outcome than the penalty was.
+   *
+   * One read-modify-write for all of it, for the reason given on
+   * {@link setTyreCompound}: `loadPitMenu` takes the whole array.
+   */
+  public async clearPitService(): Promise<MfdWriteResult & { cleared?: string[] }> {
+    const menu = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+    if (!Array.isArray(menu)) {
+      return { ok: false, status: 0, error: 'pit menu unavailable (not in a session?)' };
+    }
+    const cleared: string[] = [];
+    for (const row of menu) {
+      const name = typeof row?.name === 'string' ? row.name : '';
+      if (!name) continue;
+      const count = Array.isArray(row.settings) ? row.settings.length : 0;
+      if (count <= 1) continue; // nothing to choose (a lone "N/A")
+      if (!isServiceRow(name)) continue;
+      if (row.currentSetting !== 0) cleared.push(name);
+      row.currentSetting = 0;
+    }
+    if (cleared.length === 0) {
+      // Already clear. Report success — the caller asked for a state, not for a
+      // change, and a "nothing to do" failure would read as a broken button.
+      return { ok: true, status: 200, cleared };
+    }
+    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    return res.ok ? { ...res, cleared } : res;
+  }
+
+  /**
+   * Sets the tyre compound on **all four corners at once**, absolutely or by
+   * `delta` — the write half of {@link projectTyreControl}.
+   *
+   * One read-modify-write for the whole decision, not four. That is not just
+   * fewer requests: `loadPitMenu` takes the entire array, so four sequential
+   * calls would each re-read a menu the previous one had just changed, and a
+   * driver holding the button down could interleave them into a genuinely mixed
+   * set — the exact state this control exists to avoid.
+   *
+   * `delta` steps from the current selection when the corners agree, and from
+   * the first corner when they do not, so nudging a mixed set resolves it to a
+   * single compound rather than refusing.
+   */
+  public async setTyreCompound(opts: {
+    setting?: number;
+    delta?: number;
+  }): Promise<MfdWriteResult> {
+    const menu = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+    if (!Array.isArray(menu)) {
+      return { ok: false, status: 0, error: 'pit menu unavailable (not in a session?)' };
+    }
+    const corners = menu.filter(
+      (r) => typeof r?.name === 'string' && CORNER_TYRE_ROW.test(r.name),
+    );
+    if (corners.length === 0) {
+      return { ok: false, status: 0, error: 'no per-corner tyre rows in this pit menu' };
+    }
+    // Bound by the SHORTEST option list, so a compound offered on three corners
+    // and not the fourth can never be half-applied.
+    let count = Infinity;
+    for (const r of corners) {
+      count = Math.min(count, Array.isArray(r.settings) ? r.settings.length : 0);
+    }
+    if (!Number.isFinite(count) || count <= 0) {
+      return { ok: false, status: 0, error: 'tyre rows have no settings to select' };
+    }
+
+    const current = typeof corners[0]!.currentSetting === 'number' ? corners[0]!.currentSetting : 0;
+    const wanted = opts.setting != null ? opts.setting : current + (opts.delta ?? 0);
+    const clamped = clamp(wanted, 0, count - 1);
+    for (const r of corners) r.currentSetting = clamped;
 
     const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
     return res.ok ? { ...res, applied: clamped } : res;

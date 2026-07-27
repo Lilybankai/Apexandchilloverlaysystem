@@ -331,6 +331,17 @@
     if (!s) return;
     var cur = s.currentLap;
     var tot = s.totalLaps;
+
+    // Before the flag drops there is no lap 1 and no clock running down, so a
+    // counter here reads as broken — "LAP —" was what the strip actually showed
+    // while sitting in the garage. What the driver wants at that moment is which
+    // session they are about to run and how long it is, so the strip becomes a
+    // pre-session header until the session goes green.
+    if (s.notStarted) {
+      renderPreSession(s, fmt, ctx);
+      return;
+    }
+
     var lapText;
     if (fmt.has(tot) && tot > 0) lapText = "LAP " + fmt.intVal(cur) + "/" + tot;
     else lapText = "LAP " + fmt.intVal(cur);
@@ -358,6 +369,52 @@
       var togo = "~" + fmt.intVal(lr) + (lr === 1 ? " LAP LEFT" : " LAPS LEFT");
       if (ctx.crit) ctx.crit(sessToGo, togo);
       else if (sessToGo.textContent !== togo) sessToGo.textContent = togo;
+      if (sessToGo.hidden) sessToGo.hidden = false;
+    } else if (!sessToGo.hidden) {
+      sessToGo.hidden = true;
+    }
+  }
+
+  /**
+   * The pre-session header: which session this is, how long it is booked for,
+   * and where in the run-up we are.
+   *
+   * The name and the length come from the runtime (`ctx.sessionLabel` /
+   * `ctx.sessionLength`) rather than from a table here, so this strip and the
+   * relative panel's header cannot end up disagreeing about which session the
+   * driver is sitting in.
+   *
+   * The length is the session's FULL booked length, not the time remaining:
+   * sitting in the garage the remaining clock is either the same number by luck
+   * or the countdown to the green flag, and showing "5 MIN" for a thirty-minute
+   * practice is worse than showing nothing. A session the sim has published no
+   * length for shows just its name rather than an invented figure.
+   */
+  function renderPreSession(s, fmt, ctx) {
+    var name = ctx.sessionLabel ? ctx.sessionLabel(s.type) : "SESSION";
+    if (ctx.crit) ctx.crit(sessLap, name);
+    else if (sessLap.textContent !== name) sessLap.textContent = name;
+
+    var length = ctx.sessionLength ? ctx.sessionLength(s) : "";
+    if (length) {
+      if (sessClock.textContent !== length) sessClock.textContent = length;
+      if (sessClock.hidden) sessClock.hidden = false;
+      if (sessClock.classList.contains("is-urgent")) sessClock.classList.remove("is-urgent");
+    } else if (!sessClock.hidden) {
+      sessClock.hidden = true;
+    }
+
+    // Where in the run-up: the grid and the formation lap are worth calling out,
+    // the garage is the default and says nothing extra.
+    var PHASE_NOTE = {
+      countdown: "ON THE GRID",
+      gridwalk: "ON THE GRID",
+      formation: "FORMATION LAP",
+    };
+    var note = PHASE_NOTE[s.phase] || "";
+    if (note) {
+      if (ctx.crit) ctx.crit(sessToGo, note);
+      else if (sessToGo.textContent !== note) sessToGo.textContent = note;
       if (sessToGo.hidden) sessToGo.hidden = false;
     } else if (!sessToGo.hidden) {
       sessToGo.hidden = true;

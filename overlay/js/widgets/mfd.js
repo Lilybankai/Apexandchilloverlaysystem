@@ -508,6 +508,7 @@
       return;
     }
     if (!wrapEl || mountEl.getAttribute("data-nodata") === "true") buildBody();
+    if (showPit) renderTyres(state.tyres);
     if (showPit) renderPit(state.pit || []);
     if (showAids) renderAids(state.aids || []);
     if (headerMeta) headerMeta.textContent = "LIVE";
@@ -525,6 +526,10 @@
     mountEl.setAttribute("data-nodata", "true");
     mountEl.textContent = "";
     wrapEl = null;
+    // The body is gone; drop the section refs with it, or the next render
+    // writes into detached nodes and silently shows nothing.
+    tyreEl.box = null;
+    penaltyBox.box = null;
     var ph = document.createElement("div");
     ph.className = "placeholder";
     ph.textContent = "No MFD data — join a session in LMU";
@@ -584,14 +589,255 @@
     return box;
   }
 
+  /* ---------------------------- the tyre control -------------------------- */
+
+  /**
+   * The one tyre control: which compound goes on at the next stop, as a row of
+   * buttons named the way the sim names them ("No Change", "New Medium", "New
+   * Wet", and whatever else the class runs).
+   *
+   * The four per-corner rows are still in the pit list below for anyone who
+   * wants one corner. This is the handle for the decision people actually make,
+   * which is always all four — see MfdTyreControl in src/telemetry/types.ts for
+   * why the sim's own shape needed collapsing.
+   */
+  var tyreEl = { box: null, opts: null, sig: "", buttons: [] };
+
+  function buildTyreControl() {
+    var box = document.createElement("div");
+    box.className = "mfd__group";
+    box.setAttribute("data-group", "tyres");
+
+    var head = document.createElement("div");
+    head.className = "mfd__group-title";
+    head.textContent = "TYRES";
+
+    var opts = document.createElement("div");
+    opts.className = "mfd__tyre-opts";
+
+    box.appendChild(head);
+    box.appendChild(opts);
+    tyreEl.box = box;
+    tyreEl.opts = opts;
+    tyreEl.sig = "";
+    tyreEl.buttons = [];
+    return box;
+  }
+
+  /** Send a compound choice, then read the menu back to confirm it landed. */
+  function chooseTyre(index) {
+    fetch("/api/mfd/tyres", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ setting: index }),
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return null;
+        });
+      })
+      .then(function (res) {
+        if (res && res.ok === false) flashError({ root: tyreEl.box });
+        refreshNow();
+      })
+      .catch(function () {
+        flashError({ root: tyreEl.box });
+      });
+  }
+
+  function renderTyres(tyres) {
+    if (!tyreEl.box) return;
+    if (!tyres || !tyres.options || !tyres.options.length) {
+      tyreEl.box.setAttribute("data-empty", "true");
+      return;
+    }
+    tyreEl.box.removeAttribute("data-empty");
+
+    // Rebuild only when the option LIST changes — which is once a session, if
+    // that. Rebuilding per frame would drop the button the driver is mid-click on.
+    var sig = tyres.options.join("|");
+    if (sig !== tyreEl.sig) {
+      tyreEl.sig = sig;
+      tyreEl.opts.textContent = "";
+      tyreEl.buttons = [];
+      tyres.options.forEach(function (text, i) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "mfd__tyre-opt";
+        // The sim's names are long ("No Change", "New Medium"); the widget is
+        // narrow. Drop the leading "New " — every option but the first has it,
+        // so it carries no information and costs a third of the button.
+        b.textContent = text.replace(/^New\s+/i, "");
+        b.title = text;
+        b.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          chooseTyre(i);
+        });
+        ["pointerdown", "mousedown", "touchstart"].forEach(function (evt) {
+          b.addEventListener(evt, function (ev) {
+            ev.stopPropagation();
+          });
+        });
+        tyreEl.opts.appendChild(b);
+        tyreEl.buttons.push(b);
+      });
+    }
+
+    for (var i = 0; i < tyreEl.buttons.length; i++) {
+      var on = !tyres.mixed && i === tyres.current;
+      if ((tyreEl.buttons[i].getAttribute("data-on") === "true") !== on) {
+        tyreEl.buttons[i].setAttribute("data-on", String(on));
+      }
+    }
+    // A mixed set is stated rather than resolved to one corner's answer — the
+    // driver set it that way deliberately, or the sim did, and picking one to
+    // display would misreport the other three.
+    tyreEl.box.setAttribute("data-mixed", String(!!tyres.mixed));
+  }
+
   function buildBody() {
     mountEl.removeAttribute("data-nodata");
     mountEl.textContent = "";
     wrapEl = document.createElement("div");
     wrapEl.className = "mfd__wrap";
+    // Penalties first: it is the only section that reports something happening
+    // TO the driver rather than something they are choosing, and when it has
+    // anything to say it outranks the strategy below it.
+    wrapEl.appendChild(buildPenaltyBox());
+    if (showPit) wrapEl.appendChild(buildTyreControl());
     if (showPit) wrapEl.appendChild(makeGroup("PIT STRATEGY", pit, "pit"));
     if (showAids) wrapEl.appendChild(makeGroup("DRIVING AIDS", aids, "aids"));
     mountEl.appendChild(wrapEl);
+  }
+
+  /* --------------------------- penalties + actions ------------------------ */
+
+  /**
+   * The consequence indicator, on the control surface.
+   *
+   * The Track Limits widget announces a penalty; this is where the driver can do
+   * something about it. Two buttons, in the order the job actually happens:
+   *
+   *   SERVE STOP/GO  strips the next stop back to no service AND requests it.
+   *                  Clearing matters because a stop-go taken with a normal
+   *                  strategy loaded gets a full service, which does not
+   *                  discharge the penalty and loses the stop as well.
+   *   REQUEST PIT    just the request, for a normal stop.
+   *
+   * Both go through the server: the menu half over LMU's REST API, the request
+   * half as a keystroke, because LMU exposes no pit-request route (see
+   * handlePitRequest in src/server/mfdRoutes.ts).
+   */
+  var penaltyBox = { box: null, count: null, note: null };
+
+  function buildPenaltyBox() {
+    var box = document.createElement("div");
+    box.className = "mfd__group mfd__penalty";
+    box.setAttribute("data-group", "penalty");
+    box.setAttribute("data-state", "clean");
+
+    var head = document.createElement("div");
+    head.className = "mfd__group-title";
+    head.textContent = "PENALTIES";
+
+    var count = document.createElement("div");
+    count.className = "mfd__penalty-count is-crit";
+    count.textContent = "0";
+
+    var actions = document.createElement("div");
+    actions.className = "mfd__penalty-actions";
+    actions.appendChild(actionButton("SERVE STOP/GO", "/api/mfd/servestopgo"));
+    actions.appendChild(actionButton("REQUEST PIT", "/api/mfd/pitrequest"));
+
+    var note = document.createElement("div");
+    note.className = "mfd__penalty-note";
+    note.hidden = true;
+
+    box.appendChild(head);
+    box.appendChild(count);
+    box.appendChild(actions);
+    box.appendChild(note);
+    penaltyBox.box = box;
+    penaltyBox.count = count;
+    penaltyBox.note = note;
+    return box;
+  }
+
+  /**
+   * A button that POSTs to `path` and reports the outcome in the note line.
+   *
+   * The note is the point: the most likely failure here is "Pit Request" being
+   * bound to a wheel button rather than a key, which we cannot press — and the
+   * driver can only fix that if they are told, in those words, rather than
+   * watching a button do nothing.
+   */
+  function actionButton(label, path) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "mfd__penalty-btn";
+    b.textContent = label;
+    b.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      b.disabled = true;
+      fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then(function (r) {
+          return r.json().catch(function () {
+            return null;
+          });
+        })
+        .then(function (res) {
+          b.disabled = false;
+          if (res && res.ok === false) showNote(res.error || "failed", true);
+          else showNote(label.toLowerCase() + " sent", false);
+          refreshNow();
+        })
+        .catch(function () {
+          b.disabled = false;
+          showNote("no connection to the overlay server", true);
+        });
+    });
+    ["pointerdown", "mousedown", "touchstart"].forEach(function (evt) {
+      b.addEventListener(evt, function (ev) {
+        ev.stopPropagation();
+      });
+    });
+    return b;
+  }
+
+  var noteTimer = null;
+
+  function showNote(text, isError) {
+    if (!penaltyBox.note) return;
+    penaltyBox.note.textContent = text;
+    penaltyBox.note.setAttribute("data-error", String(!!isError));
+    penaltyBox.note.hidden = false;
+    if (noteTimer) clearTimeout(noteTimer);
+    // Errors linger — the driver has to read and act on them. A success is a
+    // confirmation and can go.
+    noteTimer = setTimeout(
+      function () {
+        penaltyBox.note.hidden = true;
+      },
+      isError ? 12000 : 3000,
+    );
+  }
+
+  /**
+   * Render the penalty count and the consequence state. `ctx` supplies both the
+   * count and the four-second announce window, so this and the Track Limits
+   * widget cannot disagree about either.
+   */
+  function renderPenalties(frame, ctx) {
+    if (!penaltyBox.box || !ctx || !ctx.penaltyCount) return;
+    var tl = frame.player ? frame.player.trackLimits : null;
+    var n = ctx.penaltyCount(tl);
+    critText(penaltyBox.count, String(n));
+    var state = !tl ? "nodata" : ctx.consequenceFresh(tl) ? "fresh" : n > 0 ? "standing" : "clean";
+    if (penaltyBox.box.getAttribute("data-state") !== state) {
+      penaltyBox.box.setAttribute("data-state", state);
+    }
   }
 
   /* --- opacity control — identical contract to widgets/damage.js ----------- */
@@ -701,6 +947,11 @@
     if (disabled) return;
     octx = ctx;
     renderState(frame && frame.mfd ? frame.mfd : null);
+    // After renderState, which is what builds the body the penalty box lives in.
+    // Driven off `frame.player.trackLimits`, not off the MFD block: the sim's
+    // penalty count comes from the scoring buffer and exists even when the
+    // garage endpoints that feed the rest of this widget do not.
+    renderPenalties(frame, ctx);
   }
 
   window.ApexOverlay.registerWidget("mfd", {

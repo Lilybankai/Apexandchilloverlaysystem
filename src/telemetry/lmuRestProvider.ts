@@ -45,6 +45,7 @@ import { buildRadar, type RadarCar } from './radar';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
+  isPreGreen,
   type FlagState,
   type FuelState,
   type RadarBlip,
@@ -950,9 +951,18 @@ export class LmuRestProvider implements TelemetryProvider {
     // Prefer the focused car's flag/phase strings (reliable); sessionInfo's
     // gamePhase can be numeric, so fall back to it only as a string.
     const phaseStr = focus?.gamePhase ?? si.gamePhase;
+    const phase = mapPhase(phaseStr);
+    // The full booked length, which is `endEventTime` — LMU publishes that as
+    // soon as the session is loaded, well before the clock starts running, which
+    // is exactly the window the pre-session header exists for. `timeRemaining`
+    // above cannot stand in for it: during the garage phase it is either the
+    // whole length (indistinguishable, but only by luck) or the countdown to the
+    // green flag (badly wrong — a "5 MIN" practice session that is actually 30).
+    const scheduledLengthSec =
+      endET > 0 && endET < 100000 ? Math.round(endET) : UNKNOWN_VALUE;
     return {
       type: mapSessionType(si.session),
-      phase: mapPhase(phaseStr),
+      phase,
       flag: mapFlag(focus?.flag ?? phaseStr),
       track: si.trackName || 'Unknown',
       timeRemainingSec: timeRemaining,
@@ -960,6 +970,8 @@ export class LmuRestProvider implements TelemetryProvider {
       lapsRemaining,
       currentLap: leaderLaps + 1,
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
+      notStarted: isPreGreen(phase),
+      scheduledLengthSec,
     };
   }
 

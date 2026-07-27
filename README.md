@@ -358,15 +358,30 @@ using all of it" while there is still time to do something about it.
 | ------------ | ---------------------------------------------------------------- |
 | `?limits=<n>`| Pip count, for a league running its own number rather than the FIA three |
 
+When a penalty lands, a **consequence indicator** takes over the widget for four
+seconds — long enough to be seen by a driver whose eyes are on a corner exit,
+short enough to be unambiguously about the thing that just happened. The same
+window highlights the penalty count on the MFD.
+
+**Tuning the threshold.** *Track limits threshold* in the control panel sets how
+far past the edge of the road your car has to be before it counts (0.5–5.0 m,
+applies live, mid-session).
+
+The sim's own "edge" sits at or inside the white line, so **the kerb is already
+past it** — which is why the useful setting is roughly a car's half-width *plus a
+kerb*. At the default **2.4 m** all four wheels are clear of the kerb before
+anything counts. Drop it toward **1.0 m** for the strict
+all-four-wheels-past-the-line reading; raise it for circuits with unusually wide
+kerbs.
+
 **Where the warning count comes from — and what it is not.** LMU judges track
 limits internally against the white line and publishes **no** warning tally:
 neither the REST API nor shared memory carries one, and the only thing it does
 publish is the *consequence*, `mNumPenalties`, once a penalty has already landed.
 So the warning count is derived here, from the two channels that do exist — the
 car's lateral offset from the track path (`mPathLateral`) against how far the
-track extends in that direction (`mTrackEdge`) — plus half a car's width, because
-the rule everyone races to is *all four wheels* beyond the line and those
-channels measure the car's centre.
+track extends in that direction (`mTrackEdge`) — plus the margin above, because
+those channels measure the car's *centre*.
 
 That means **it can disagree with the sim's own judgement**, and it will on a
 circuit whose white line sits inboard of the track boundary the AIW describes.
@@ -405,10 +420,41 @@ otherwise all cue the same event at once.
 
 ### MFD widget
 
-The in-game Multi-Function Display for the player's car: a **PIT STRATEGY**
-section (colour-coded by category — tyres, pressures, ducts, aero, fuel, brakes —
-so related lines read as a group) and a **DRIVING AIDS** section showing **live
-brake bias**.
+The in-game Multi-Function Display for the player's car: **PENALTIES**, a one-tap
+**TYRES** compound control, a **PIT STRATEGY** section (colour-coded by category —
+tyres, pressures, ducts, aero, fuel, brakes — so related lines read as a group)
+and a **DRIVING AIDS** section showing **live brake bias**.
+
+**Tyres are one control, not four rows.** LMU carries the tyre decision as four
+independent per-corner rows that each cycle the same list, so expressing "put the
+wets on" meant four rows of scrolling. The **TYRES** row collapses them into the
+sim's own compound names — `NO CHANGE · MEDIUM · WET`, plus hards and softs
+wherever the class runs them — and one tap sets all four corners together. The
+per-corner rows are still below for anyone who wants one corner, and a set that
+genuinely disagrees reads `MIXED` rather than being resolved to one corner's
+answer.
+
+**Penalties, and the two things you can do about them.** The outstanding count,
+highlighted for four seconds when one lands (the same window the Track Limits
+widget announces in), with two buttons:
+
+- **SERVE STOP/GO** — strips the next stop back to no service *and* requests it.
+  The clearing is the part that matters: a stop-go taken with a normal strategy
+  still loaded gets a full service, which does not discharge the penalty and
+  loses the stop as well. It clears tyres, damage, fuel, virtual energy and
+  driver change — and deliberately leaves wing, ducts, pressures and **fuel
+  ratio** alone, since none of those adds time on its own and wiping the driver's
+  setup as a side effect of serving a penalty would be worse than the penalty.
+- **REQUEST PIT** — a normal stop.
+
+Both are bindable actions too (`pit.serveStopGo`, `pit.request`,
+`pit.clearService`, `pit.tyreCompound`), so they work from a wheel button or a
+Stream Deck. The *request* half is a **keystroke**, not a REST call: LMU exposes
+no pit-request route anywhere in its API, and the nearest thing tells the AI
+driving your car to pit, which is a different action. So it presses LMU's own
+**Pit Request** bind — which means it must be bound to a **key**, not just a
+wheel button. When it is not, the widget says exactly that (and, after a
+stop-go, confirms the menu was still cleared so you do not do it twice).
 
 **Driving the pit menu from four buttons.** One pit row is highlighted — the row
 the bindable `Pit menu ▲ / ▼ / + / −` actions are aimed at. Bind them to wheel
@@ -527,6 +573,7 @@ All settings are environment variables with lightweight defaults
 | `APEX_PANEL_OPACITY` | `100`     | Widget background opacity % (0 = none), 0–100 |
 | `APEX_AUDIO_CUES`  | `true`      | Play the synthesised audio cues                |
 | `APEX_AUDIO_VOLUME`| `60`        | Cue master volume % (0 = silent), 0–100        |
+| `APEX_LIMITS_MARGIN`| `2.4`      | Track-limits threshold, metres past the track edge, 0.5–5 |
 | `APEX_VERBOSE`     | `false`     | Verbose logging                               |
 
 ## Project layout

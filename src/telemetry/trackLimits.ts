@@ -56,24 +56,94 @@ import type { TrackLimitsState } from './types';
 export const WARNING_LIMIT = 3;
 
 /**
- * Half the width of a car, metres — the margin added to the track edge before an
- * excursion counts.
+ * Half the width of a car, metres.
  *
- * `mPathLateral` measures the car's CENTRE. A car whose centre is exactly on the
- * edge still has its two inside wheels on the road, which is not a track-limits
- * breach anywhere in motorsport; the rule everyone actually races to is *all
- * four wheels* beyond the line. Adding half a car's width to the threshold
- * converts the centre-line channel into that rule to within the accuracy the
- * channel has. Roughly 1 m covers the whole LMU field (a 2.0 m Hypercar, a
- * 2.05 m GT3), so it is a constant rather than a per-class lookup — the
- * difference between the widest and narrowest car here is 25 mm a side.
+ * `mPathLateral` measures the car's CENTRE, so this is what turns that channel
+ * into a statement about wheels. Roughly 1 m covers the whole LMU field (a 2.0 m
+ * Hypercar, a 2.05 m GT3) — the gap between the widest and narrowest car is
+ * 25 mm a side, well below the precision of anything else here, so it is a
+ * constant rather than a per-class lookup.
  */
-export const OFF_TRACK_MARGIN_M = 1.0;
+export const HALF_CAR_WIDTH_M = 1.0;
 
 /**
- * How far back INSIDE the edge the car must come before the next excursion can
- * be counted, metres — measured from the same margin, so the on/off decision has
- * a half-metre of hysteresis around it.
+ * How far past the sim's track edge the car's centre must be before an excursion
+ * counts, metres — the **default**, overridable per-install through
+ * {@link TrackLimitsInput.marginM}.
+ *
+ * ## Why this is not simply half a car's width
+ * It was, and it was far too sensitive on track. The arithmetic was sound — a
+ * centre one half-width past the edge does put all four wheels past it — but it
+ * was the wrong edge. `mTrackEdge` marks the AIW's **drivable-surface**
+ * boundary, which on most circuits runs at or inside the white line, so the kerb
+ * is already "past the edge". At a 1 m margin, riding a kerb the way every
+ * driver rides a kerb counted as running wide.
+ *
+ * A racing kerb is about 1.2–1.5 m of it, so putting the threshold a kerb's
+ * width further out means the car has to be clear of the kerb entirely before
+ * anything counts — which is the point a driver would themselves say they ran
+ * out of road. Read as wheels, at the 2.4 m default:
+ *
+ * - centre at `edge + 1.4` — the outer two wheels are off the road, inner two on
+ * - centre at `edge + 2.4` — **all four wheels beyond the kerb**, this threshold
+ *
+ * The residual error is that kerb width varies by circuit and the AIW boundary
+ * is not in the same place at every track. That is exactly why this is tunable
+ * rather than constant: somewhere with unusually wide kerbs turns it up, and a
+ * league wanting the strict all-four-wheels-past-the-white-line reading turns it
+ * down to 1.0 and gets the original behaviour back.
+ */
+export const DEFAULT_OFF_TRACK_MARGIN_M = 2.4;
+
+/**
+ * Bounds for a caller-supplied margin. Below half a car's width the threshold
+ * would trip with wheels still unambiguously on the road; past 5 m it would miss
+ * genuine excursions at all but the widest run-offs.
+ */
+export const MARGIN_MIN_M = 0.5;
+export const MARGIN_MAX_M = 5;
+
+/**
+ * The operator's chosen margin, or `null` to use the default.
+ *
+ * Module-level and mutable for the same reason the server's `appearance` state
+ * is: the desktop app runs the telemetry server **in-process**, so it can retune
+ * this while a session is live. Baking it into the provider's constructor would
+ * mean restarting the server — and dropping every connected overlay — each time
+ * the driver nudged the slider, which is exactly the wrong cost for a control
+ * whose whole purpose is "that felt too eager, try again".
+ *
+ * Providers deliberately do NOT pass `marginM` on the input; they leave it unset
+ * and let this be the source of truth, so there is one writer
+ * ({@link setTrackLimitsMargin}) rather than a value copied into two trackers
+ * that could then disagree. The input field remains for tests, which want to
+ * pin a threshold without touching global state.
+ */
+let runtimeMarginM: number | null = null;
+
+/**
+ * Sets the live off-track margin in metres, or clears it back to the default
+ * with `null`. Clamped here so no caller can put an unusable threshold in.
+ * Returns the value actually in force.
+ */
+export function setTrackLimitsMargin(marginM: number | null): number {
+  if (marginM === null || !Number.isFinite(marginM)) {
+    runtimeMarginM = null;
+  } else {
+    runtimeMarginM = Math.min(MARGIN_MAX_M, Math.max(MARGIN_MIN_M, marginM));
+  }
+  return trackLimitsMargin();
+}
+
+/** The off-track margin currently in force, metres. */
+export function trackLimitsMargin(): number {
+  return runtimeMarginM ?? DEFAULT_OFF_TRACK_MARGIN_M;
+}
+
+/**
+ * How far back INSIDE the threshold the car must come before the next excursion
+ * can be counted, metres — so the on/off decision has a half-metre of hysteresis
+ * around it.
  *
  * Without it a car balanced on the limit through a long fast corner ticks the
  * counter every time the channel dithers across the threshold, and one wide
@@ -141,6 +211,18 @@ export interface TrackLimitsInput {
   sessionKey: string;
   /** Wall-clock now, milliseconds. Passed in so the tracker is testable. */
   nowMs: number;
+  /**
+   * How far past the track edge the car's centre must be before it counts,
+   * metres. Omitted uses {@link DEFAULT_OFF_TRACK_MARGIN_M}; anything supplied
+   * is clamped to `[MARGIN_MIN_M, MARGIN_MAX_M]`.
+   *
+   * On the per-poll input rather than in the constructor so the operator's
+   * slider retunes a **running** session — a driver who finds it too eager does
+   * not want to restart the server to say so, and the count so far stays valid
+   * because nothing about it depended on the old threshold except the decision
+   * that has already been made.
+   */
+  marginM?: number;
 }
 
 /**
@@ -230,6 +312,14 @@ export class TrackLimitsTracker {
       input.speedKph !== UNKNOWN_VALUE &&
       input.speedKph >= MIN_SPEED_KPH;
 
+    // The threshold in force, read every poll so the control panel's slider
+    // takes effect mid-session rather than at the next restart. An explicit
+    // input wins (tests pin one); otherwise the operator's live value.
+    const margin =
+      typeof input.marginM === 'number' && Number.isFinite(input.marginM)
+        ? Math.min(MARGIN_MAX_M, Math.max(MARGIN_MIN_M, input.marginM))
+        : trackLimitsMargin();
+
     if (!eligible) {
       // Leaving the eligible window ends any excursion in progress without
       // counting it — a car that ran wide and then pitted has not earned a
@@ -243,7 +333,7 @@ export class TrackLimitsTracker {
       this.off = false;
     } else if (this.off) {
       // Already out: stay out until back inside the edge by the recovery band.
-      if (beyondM < OFF_TRACK_MARGIN_M - RECOVERY_MARGIN_M) {
+      if (beyondM < margin - RECOVERY_MARGIN_M) {
         this.off = false;
         this.offSince = 0;
         this.counted = false;
@@ -253,7 +343,7 @@ export class TrackLimitsTracker {
         this.warnings += 1;
         this.lastWarningAt = input.nowMs;
       }
-    } else if (beyondM >= OFF_TRACK_MARGIN_M) {
+    } else if (beyondM >= margin) {
       // All four wheels have just passed the edge; the clock starts, and the
       // branch above counts it once it has lasted MIN_EXCURSION_MS.
       this.off = true;

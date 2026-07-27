@@ -272,6 +272,16 @@
     critHtml: critHtml,
     critAttr: critAttr,
     critPulse: critPulse,
+    // Shared so the two widgets that show a pre-session header cannot drift
+    // apart on what to call the session or how long it is.
+    sessionLabel: sessionLabel,
+    sessionLength: sessionLength,
+    // …and likewise for the consequence indicator, which the Track Limits
+    // widget and the MFD both announce.
+    consequenceMs: CONSEQUENCE_MS,
+    consequenceFresh: consequenceFresh,
+    penaltyCount: penaltyCount,
+    penaltyText: penaltyText,
   };
 
   /* ------------------------------------------------------------------ */
@@ -296,6 +306,82 @@
   /*  Session header helpers (top-of-panel meta shared across widgets)   */
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /*  The consequence indicator                                          */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * How long a penalty stays announced after the sim applies it, ms.
+   *
+   * Four seconds: long enough to be seen by a driver whose eyes are on a corner
+   * exit when it lands, short enough that it is unambiguously about the thing
+   * that just happened rather than a status light that has been on for a while.
+   * Past this the penalty is still *reported* — it goes on standing, and the
+   * widgets keep showing the count — it just stops shouting about it.
+   *
+   * Lives here rather than in a widget because more than one surface announces
+   * it (the Track Limits widget and the MFD), and two of them disagreeing about
+   * how long "just now" lasts would make the overlay look broken at exactly the
+   * moment the driver is paying most attention to it.
+   */
+  var CONSEQUENCE_MS = 4000;
+
+  /**
+   * Whether a penalty has landed within the announce window.
+   *
+   * Takes the whole `trackLimits` block so a caller cannot accidentally pass
+   * `msSinceWarning` — the two are adjacent on the frame, identically typed, and
+   * mean very different things.
+   */
+  function consequenceFresh(trackLimits) {
+    if (!trackLimits) return false;
+    var since = trackLimits.msSincePenalty;
+    return typeof since === "number" && since >= 0 && since < CONSEQUENCE_MS;
+  }
+
+  /** The sim's outstanding penalty count, or 0 when unknown/none. */
+  function penaltyCount(trackLimits) {
+    if (!trackLimits) return 0;
+    var n = trackLimits.penalties;
+    return typeof n === "number" && n > 0 ? n : 0;
+  }
+
+  /** "1 PENALTY" / "2 PENALTIES" — the wording both surfaces use. */
+  function penaltyText(n) {
+    return n + (n === 1 ? " PENALTY" : " PENALTIES");
+  }
+
+  /**
+   * Short session names for the pre-session headers. Kept here rather than in a
+   * widget because two widgets show them and they must agree — the relative
+   * panel and the standings strip disagreeing about which session you are in
+   * would be worse than either being slightly terse.
+   */
+  var SESSION_SHORT = {
+    practice: "PRACTICE",
+    qualifying: "QUALIFYING",
+    warmup: "WARM-UP",
+    race: "RACE",
+    testday: "TEST DAY",
+    unknown: "SESSION",
+  };
+
+  function sessionLabel(type) {
+    return SESSION_SHORT[type] || SESSION_SHORT.unknown;
+  }
+
+  /**
+   * A session's booked length as a short string ("24 LAPS", "30 MIN", "2 HR"),
+   * or "" when the sim has published none — in which case the caller shows just
+   * the session's name rather than inventing a duration.
+   */
+  function sessionLength(session) {
+    if (has(session.totalLaps) && session.totalLaps > 0) return session.totalLaps + " LAPS";
+    if (!has(session.scheduledLengthSec) || session.scheduledLengthSec <= 0) return "";
+    var mins = Math.round(session.scheduledLengthSec / 60);
+    return mins >= 60 && mins % 60 === 0 ? mins / 60 + " HR" : mins + " MIN";
+  }
+
   function updateSessionMeta(frame) {
     // Standings header: position / field size. Tier 1 and glow-eligible — your
     // own position changing is the single most consequential discrete event in a
@@ -305,13 +391,22 @@
       if (!s.classList.contains("is-crit")) s.classList.add("is-crit");
       crit(s, fmt.intVal(frame.player.position) + " / " + fmt.intVal(frame.session.numCars));
     }
-    // Relative header: current lap / total (or time remaining for timed races).
+    // Relative header: current lap / total (or time remaining for timed races),
+    // and before the flag drops, which session is about to run.
     var laps = document.querySelector('#widget-relative [data-role="laps"]');
     if (laps && frame.session) {
       var cur = frame.session.currentLap;
       var tot = frame.session.totalLaps;
       var text;
-      if (has(tot) && tot > 0) {
+      if (frame.session.notStarted) {
+        // Same reasoning as the standings strip: there is no lap 1 yet, so a
+        // counter reads as broken. Name the session and its booked length —
+        // the full length, never the remaining clock, which pre-green is the
+        // countdown to the start rather than the session's own duration.
+        text = sessionLabel(frame.session.type);
+        var len = sessionLength(frame.session);
+        if (len) text += " " + len;
+      } else if (has(tot) && tot > 0) {
         text = "LAP " + fmt.intVal(cur) + "/" + tot;
       } else if (has(frame.session.timeRemainingSec)) {
         var mins = Math.max(0, Math.floor(frame.session.timeRemainingSec / 60));

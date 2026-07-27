@@ -151,6 +151,43 @@ export function handleMfdCommand(
         sendJson(res, result.ok ? 200 : 502, result);
         return;
       }
+      if (action === 'tyres') {
+        // The collapsed all-four-corners compound control. `setting` picks an
+        // option outright (what the widget's list sends); `delta` steps it (what
+        // a bound wheel button sends).
+        const b = body as { setting?: number; delta?: number };
+        if (b.setting == null && b.delta == null) {
+          sendJson(res, 400, { ok: false, error: 'tyres command needs setting or delta' });
+          return;
+        }
+        const result = await controller.setTyreCompound({ setting: b.setting, delta: b.delta });
+        sendJson(res, result.ok ? 200 : 502, result);
+        return;
+      }
+      if (action === 'clearservice') {
+        // Strip the next stop back to no service — the pit-menu half of serving
+        // a stop-and-go. The other half (actually requesting the stop) is a key
+        // press, because LMU exposes no REST route for it; see `pitrequest`.
+        const result = await controller.clearPitService();
+        sendJson(res, result.ok ? 200 : 502, result);
+        return;
+      }
+      if (action === 'pitrequest') {
+        await handlePitRequest(res, keys);
+        return;
+      }
+      if (action === 'servestopgo') {
+        // The two halves as one button, in the order they must happen: clearing
+        // the menu AFTER requesting would leave a stop already booked with
+        // service on it, which is the exact mistake this exists to prevent.
+        const cleared = await controller.clearPitService();
+        if (!cleared.ok) {
+          sendJson(res, 502, cleared);
+          return;
+        }
+        await handlePitRequest(res, keys, cleared.cleared);
+        return;
+      }
       if (action === 'aidresync') {
         // Re-seed the estimated aids from LMU's setup values. The driver's escape
         // hatch when a change happened on a route we cannot see.
@@ -214,6 +251,60 @@ export function handleMfdCommand(
  * `SendInput` goes to the foreground window, so an unguarded press would land
  * in whatever the operator just clicked.
  */
+/**
+ * Presses LMU's own **Pit Request** key.
+ *
+ * This one genuinely cannot go over REST. LMU's API has no pit-request route —
+ * the whole 176-endpoint surface was checked — and the nearest thing
+ * (`/rest/sessions/ai/forcePlayerVehAiPit`) tells the AI driving your car to
+ * pit, which is a different action with a different meaning and would be wrong
+ * to quietly substitute. So the request is a keystroke, with the same
+ * preconditions the aid keys have: bound in LMU, keyboard scheme on, sim
+ * focused.
+ *
+ * When it is unbound the failure is reported in the terms the driver can act
+ * on — bind "Pit Request" to a key in LMU's controls — rather than as a generic
+ * error, because that is by far the most likely reason this route ever fails:
+ * most drivers have it on a wheel button, which we cannot press.
+ */
+async function handlePitRequest(
+  res: ServerResponse,
+  keys: KeySender,
+  cleared?: string[],
+): Promise<void> {
+  const binds = readLmuKeybinds();
+  if (!binds.path) {
+    sendJson(res, 503, { ok: false, error: 'LMU keyboard config not found', cleared });
+    return;
+  }
+  const key = binds.pit.pitRequest;
+  if (!key) {
+    // When this follows a successful clear, say so: the menu IS stripped, which
+    // is most of the value, and a flat failure would have the driver do it twice.
+    sendJson(res, 409, {
+      ok: false,
+      error: cleared
+        ? 'Service cleared, but "Pit Request" is not bound to a KEY in LMU — request the stop ' +
+          'yourself. Bind it under Controls → Keyboard to do both from here.'
+        : '"Pit Request" is not bound to a KEY in LMU. Bind it under Controls → ' +
+          'Keyboard (a wheel-button binding cannot be pressed from here).',
+      unbound: true,
+      cleared,
+    });
+    return;
+  }
+  if (!binds.keyboardSchemeActive) {
+    sendJson(res, 409, {
+      ok: false,
+      error: 'LMU has its keyboard scheme disabled — the key would be ignored',
+      cleared,
+    });
+    return;
+  }
+  const result = await keys.pressScan(key);
+  sendJson(res, result.ok ? 200 : 502, { ...result, cleared });
+}
+
 async function handleAidKey(res: ServerResponse, body: unknown, keys: KeySender): Promise<void> {
   const b = body as { aid?: string; dir?: string; requireSim?: boolean; repeat?: number };
   if (!b.aid || (b.dir !== 'inc' && b.dir !== 'dec')) {
