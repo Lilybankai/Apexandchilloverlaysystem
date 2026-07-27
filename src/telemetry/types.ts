@@ -645,6 +645,23 @@ export interface TrackLimitsState {
    */
   offTrack: boolean;
   /**
+   * `true` while the car is off the road **and the verdict is still open** —
+   * the window in which lifting off gives the time back and cancels the points.
+   *
+   * This is the only part of the sequence the driver can still act on, which is
+   * why it is what the audio cue and the widget's alarm key off. Announcing the
+   * points *after* they land tells a driver something they can no longer do
+   * anything about. See `AT_RISK_WINDOW_MS` in `telemetry/trackLimits.ts`.
+   */
+  atRisk: boolean;
+  /**
+   * `true` when, during the current at-risk window, the driver has already
+   * lifted — i.e. as things stand this one will not score. Lets the widget flip
+   * from "lift!" to "saved" while the car is still off the road, and lets the
+   * cue know not to keep nagging. `false` whenever {@link atRisk} is `false`.
+   */
+  liftedInTime: boolean;
+  /**
    * How far the car's centre is beyond the track edge, metres — negative while
    * inside it, so the widget can show a car running out of road *before* it runs
    * out.
@@ -658,13 +675,42 @@ export interface TrackLimitsState {
    * adding a third instance of it.)
    */
   beyondEdgeM?: number;
-  /** Excursions counted this session (see the caveat above). */
+  /**
+   * **Points** accumulated this session — the unit LMU actually judges track
+   * limits in.
+   *
+   * The sim scores every infringement rather than counting strikes: a wheel a
+   * metre wide and a lap through the run-off are not the same offence, and it
+   * weighs how far off you went, whether you were on the throttle, and whether
+   * you were at the speed expected for that part of the track. This mirrors that
+   * shape with the magnitude we can actually measure (see
+   * `POINT_STEP_M`), so the number moves the way the sim's does even though it
+   * is not the sim's own tally — the caveat at the top of this block applies to
+   * it exactly as it did to the old strike count.
+   */
+  points: number;
+  /**
+   * Points that earn the penalty in this session. Configurable, because LMU
+   * makes it a per-session setting that leagues publish on the event's
+   * registration page; see `DEFAULT_POINTS_LIMIT`.
+   */
+  pointsLimit: number;
+  /**
+   * What the most recent scored infringement was worth, so the widget can say
+   * "that one cost you 2". {@link UNKNOWN_VALUE} before anything has scored.
+   *
+   * Worth showing on its own because LMU issues a drive-through for any *single*
+   * infringement worth 3 — a fact about one cut, not about the running total.
+   */
+  lastInfringementPoints: number;
+  /** How many infringements have scored this session. */
   warnings: number;
   /**
-   * How many warnings the display scale runs to — the classic three. A display
-   * scale, not a threshold the sim enforces; see `WARNING_LIMIT`.
+   * How many excursions the driver **gave back** by lifting inside the at-risk
+   * window, and which therefore cost nothing. The only genuinely encouraging
+   * number on the widget, and the one that tells a driver the lift is working.
    */
-  warningLimit: number;
+  negated: number;
   /**
    * The sim's outstanding-penalty count for this car. {@link UNKNOWN_VALUE}
    * when the channel is unavailable, which is different from zero.
@@ -676,6 +722,11 @@ export interface TrackLimitsState {
    * {@link UNKNOWN_VALUE} when there has not been one.
    */
   msSinceWarning: number;
+  /**
+   * Milliseconds since the driver last saved one by lifting.
+   * {@link UNKNOWN_VALUE} when they have not.
+   */
+  msSinceNegated: number;
   /**
    * Milliseconds since {@link penalties} last increased.
    * {@link UNKNOWN_VALUE} when it has not moved this session.

@@ -354,61 +354,52 @@ release is detected as the moment the stop *ends*, not as the arrival of the
 
 ### Track limits widget
 
-Two numbers, from two different authorities, deliberately kept apart:
+LMU judges track limits in **points**, not strikes, so this widget does too. Every
+infringement scores — the sim weighs how far off you went, whether you were on the
+throttle, and whether you were at the speed expected for that part of the track — and
+a drive-through is issued once the running total passes a threshold the *session*
+configures. A single infringement worth **3 points** is an instant drive-through on
+its own.
 
-- **LIMITS** (the headline, amber) — excursions **we** counted this session, plus
-  a row of pips filling toward a penalty. Past the scale the row starts again in
-  red, so a fourth warning is visibly worse than the third.
-- **PEN** (a red chip) — penalties **the sim itself** has issued. This one is not
-  our opinion.
+- **POINTS** (the headline, amber) — the running total, with pips filling toward the
+  limit. Past it the row starts again in red.
+- **PEN** (a red chip) — penalties **the sim itself** has issued. Not our opinion.
+- A bar showing **how much road is left**, which is useful *before* the mistake.
 
-Underneath, a bar showing **how much road is left**: it fills as your car runs
-out of track and goes solid at `OFF TRACK`. That is the part that is useful
-*before* the mistake — it is the only thing on the overlay that says "you are
-using all of it" while there is still time to do something about it.
+**Lift, and it costs you nothing.** This is the important part. LMU raises a Race
+Control notice the moment you are **at risk** and gives you a brief opportunity to
+slow down while the violation is calculated — lift inside that window and the
+infringement scores nothing.
 
-| Param        | Shows                                                            |
-| ------------ | ---------------------------------------------------------------- |
-| `?limits=<n>`| Pip count, for a league running its own number rather than the FIA three |
+So the widget goes **LIFT** in amber and the audio cue fires **at the start of that
+window**, not when the points land: a tone announcing points already taken is telling
+you about something you can no longer do anything about. Lift and it flips to a green
+**SAVED** and the cue goes quiet — a prompt that keeps sounding after you have
+complied is how people learn to ignore prompts. The cue fires **once** per excursion,
+on the edge, not repeatedly while you are out there.
 
-When a penalty lands, a **consequence indicator** takes over the widget for four
-seconds — long enough to be seen by a driver whose eyes are on a corner exit,
-short enough to be unambiguously about the thing that just happened. The same
-window highlights the penalty count on the MFD.
+A **negated** count tracks how many you have given back. It is the one encouraging
+number on the widget, and the one that tells you the lift is working.
 
-**Tuning the threshold.** *Track limits threshold* in the control panel sets how
-far past the edge of the road your car has to be before it counts (0.5–5.0 m,
-applies live, mid-session).
+| Param         | Shows                                              |
+| ------------- | -------------------------------------------------- |
+| `?limits=<n>` | Points limit, for a league running its own number   |
 
-The sim's own "edge" sits at or inside the white line, so **the kerb is already
-past it** — which is why the useful setting is roughly a car's half-width *plus a
-kerb*. At the default **2.4 m** all four wheels are clear of the kerb before
-anything counts. Drop it toward **1.0 m** for the strict
-all-four-wheels-past-the-line reading; raise it for circuits with unusually wide
-kerbs.
+**Tuning the threshold.** *Track limits threshold* in the control panel sets how far
+past the edge of the road your car has to be before it counts (0.5–5.0 m, applies
+live). The sim's own "edge" sits at or inside the white line, so **the kerb is
+already past it** — at the default **2.4 m** all four wheels are clear of the kerb
+before anything counts. Drop it toward **1.0 m** for the strict
+all-four-wheels-past-the-line reading.
 
-**Where the warning count comes from — and what it is not.** LMU judges track
-limits internally against the white line and publishes **no** warning tally:
-neither the REST API nor shared memory carries one, and the only thing it does
-publish is the *consequence*, `mNumPenalties`, once a penalty has already landed.
-So the warning count is derived here, from the two channels that do exist — the
-car's lateral offset from the track path (`mPathLateral`) against how far the
-track extends in that direction (`mTrackEdge`) — plus the margin above, because
-those channels measure the car's *centre*.
-
-That means **it can disagree with the sim's own judgement**, and it will on a
-circuit whose white line sits inboard of the track boundary the AIW describes.
-The widget never blends the two counts into one for exactly that reason. It is
-still the number you want mid-stint: "how many times have I run wide" is the
-question, and an answer the moment it happens beats an exact one that arrives at
-the end of the lap.
-
-The counting itself — one excursion per mistake however long it lasts, hysteresis
-so a car balanced on the limit does not tick over and over, a minimum duration so
-a kerb strike is not a run-off, and no counting in the pit lane or below racing
-speed — lives in `src/telemetry/trackLimits.ts` and is unit-tested headless in
-`scripts/test-tracklimits.js`. `scripts/probe-lmu-scoring.js` re-verifies the
-shared-memory offsets against a running game if an LMU update ever moves them.
+**What this is not.** LMU publishes neither its points nor its thresholds — not over
+REST, not in shared memory. (CrewChief falls back to its own heuristics for the same
+reason.) The only thing the sim exposes is the *consequence*, `mNumPenalties`, once a
+penalty has already landed. So the points here are derived from the car's lateral
+position and throttle, will not always match the sim's own tally, and are never added
+to the penalty count. Set the limit to match the figure your league publishes on the
+event page. The logic lives in `src/telemetry/trackLimits.ts` behind 68 headless
+assertions (`npm run test:tracklimits`).
 
 ### Audio cues
 
@@ -438,36 +429,51 @@ The in-game Multi-Function Display for the player's car: **PENALTIES**, a one-ta
 tyres, pressures, ducts, aero, fuel, brakes — so related lines read as a group)
 and a **DRIVING AIDS** section showing **live brake bias**.
 
-**Tyres are one control, not four rows.** LMU carries the tyre decision as four
-independent per-corner rows that each cycle the same list, so expressing "put the
-wets on" meant four rows of scrolling. The **TYRES** row collapses them into the
-sim's own compound names — `NO CHANGE · MEDIUM · WET`, plus hards and softs
-wherever the class runs them — and one tap sets all four corners together. The
-per-corner rows are still below for anyone who wants one corner, and a set that
-genuinely disagrees reads `MIXED` rather than being resolved to one corner's
-answer.
+**Tyres are one row, not four.** LMU carries the tyre decision as four independent
+per-corner rows that each cycle the same list, so "put the wets on" meant four rows of
+scrolling. The **TIRES** row sits at the top of PIT STRATEGY — where the sim's own
+all-four entry would be, beside the per-corner rows it drives — and its `±` cycles the
+compounds the car actually has, in the sim's own words: `No Change`, `New Medium`,
+`Used Medium`, `New Hard`, `New Wet`. One press sets all four corners together. The
+per-corner rows are untouched below for anyone who wants one corner, and a set that
+genuinely disagrees reads `Mixed` rather than being resolved to one corner's answer.
 
-**Penalties, and the two things you can do about them.** The outstanding count,
-highlighted for four seconds when one lands (the same window the Track Limits
-widget announces in), with two buttons:
+**RACE CONTROL** carries what the sim is doing *to* you, and the two replies — all as
+rows, in the same shape as everything else on the widget:
 
-- **SERVE STOP/GO** — strips the next stop back to no service *and* requests it.
-  The clearing is the part that matters: a stop-go taken with a normal strategy
-  still loaded gets a full service, which does not discharge the penalty and
-  loses the stop as well. It clears tyres, damage, fuel, virtual energy and
-  driver change — and deliberately leaves wing, ducts, pressures and **fuel
-  ratio** alone, since none of those adds time on its own and wiping the driver's
-  setup as a side effect of serving a penalty would be worse than the penalty.
-- **REQUEST PIT** — a normal stop.
+| Row             | Does                                                          |
+| --------------- | ------------------------------------------------------------- |
+| **PENALTIES**   | Outstanding count, lit for four seconds when one lands         |
+| **PIT REQUEST** | Requests a normal stop                                         |
+| **SERVE**       | `⇄` picks **DRIVE-THRU** or **STOP/GO**; `SERVE` arms it       |
 
-Both are bindable actions too (`pit.serveStopGo`, `pit.request`,
-`pit.clearService`, `pit.tyreCompound`), so they work from a wheel button or a
-Stream Deck. The *request* half is a **keystroke**, not a REST call: LMU exposes
-no pit-request route anywhere in its API, and the nearest thing tells the AI
-driving your car to pit, which is a different action. So it presses LMU's own
-**Pit Request** bind — which means it must be bound to a **key**, not just a
-wheel button. When it is not, the widget says exactly that (and, after a
-stop-go, confirms the menu was still cleared so you do not do it twice).
+The two penalty types differ in a way that matters. Both strip the next stop back to
+no service — a penalty taken with your normal strategy loaded gets a full service,
+which does not discharge it and loses you the stop as well. But a **stop/go** means
+stopping in your box, so the pit stop *is* requested; a **drive-through** means
+driving the length of the lane without stopping, so it deliberately does **not**
+request one. Requesting a stop for a drive-through is how drivers turn a
+drive-through into a drive-through *plus* a pit stop.
+
+Wing, ducts, pressures and **fuel ratio** are deliberately left alone by both — none
+adds time on its own, and wiping your setup as a side effect of serving a penalty
+would be worse than the penalty. All four are bindable actions too
+(`pit.serveStopGo`, `pit.request`, `pit.clearService`, `pit.tyreCompound`).
+
+**Pit Request must be bound to a KEY.** LMU exposes no pit-request route anywhere in
+its API, so the overlay presses the game's own bind — and a wheel-button binding
+cannot be pressed from outside. If it is unbound the row says so. To fix it, with
+**LMU closed**:
+
+```bash
+node scripts/bind-lmu-key.js            # binds Pit Request to a free F-key
+node scripts/bind-lmu-key.js --list     # what is bound now
+node scripts/bind-lmu-key.js --restore  # undo
+```
+
+It refuses to run while LMU is open, because the game rewrites `keyboard.json` from
+memory when it exits — an edit made with it running looks like it worked and is gone
+the next time you launch. A timestamped backup is written before any change.
 
 **Driving the pit menu from four buttons.** One pit row is highlighted — the row
 the bindable `Pit menu ▲ / ▼ / + / −` actions are aimed at. Bind them to wheel

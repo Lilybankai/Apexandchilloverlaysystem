@@ -47,13 +47,38 @@ import { UNKNOWN_VALUE } from './types';
 import type { TrackLimitsState } from './types';
 
 /**
- * How many warnings the widget draws pips for, i.e. the number of excursions
- * that classically costs you a penalty. Not read from the sim — LMU does not
- * publish its limit — so this is the FIA-standard three, and it is only ever a
- * *display* scale: passing it does not make us claim a penalty, it just fills
- * the last pip and leaves the real verdict to {@link TrackLimitsState.penalties}.
+ * How many **points** it takes to earn the penalty, by default.
+ *
+ * LMU's track limits are a points system, not a strike count: every infringement
+ * scores points, and a drive-through is issued once the running total passes a
+ * threshold the *session* configures — leagues publish theirs on the event's
+ * registration page. There is therefore no universally correct number to hard-code
+ * here, which is why this is only the default and the real one is an operator
+ * setting (see {@link TrackLimitsInput.pointsLimit}).
+ *
+ * Ten is a middling league figure and, more usefully, is well clear of the one
+ * threshold LMU *does* document — a single infringement worth 3 points is an
+ * instant drive-through on its own (see {@link INSTANT_PENALTY_POINTS}) — so the
+ * two rules stay visibly separate on the widget instead of collapsing into each
+ * other at the default.
  */
-export const WARNING_LIMIT = 3;
+export const DEFAULT_POINTS_LIMIT = 10;
+
+/**
+ * Points from a **single** infringement that LMU turns into an immediate
+ * drive-through regardless of the running total. This is the one hard number the
+ * sim's own documentation gives, so it is a constant rather than a setting.
+ */
+export const INSTANT_PENALTY_POINTS = 3;
+
+/**
+ * The most points one infringement can score here.
+ *
+ * Capped at {@link INSTANT_PENALTY_POINTS} because that is where the scale stops
+ * meaning anything: past it the sim issues the penalty outright, so a "4-point"
+ * cut would be a distinction with no consequence attached to it.
+ */
+export const MAX_INFRINGEMENT_POINTS = INSTANT_PENALTY_POINTS;
 
 /**
  * Half the width of a car, metres.
@@ -176,6 +201,52 @@ export const MIN_EXCURSION_MS = 100;
  */
 export const MIN_SPEED_KPH = 40;
 
+/**
+ * How long the driver has, after putting the car off the road, to give the time
+ * back before the infringement is scored — milliseconds.
+ *
+ * This is the sim's own mechanic, not an invention. LMU raises a Race Control
+ * notification the moment you are **at risk**, and its own documentation is
+ * explicit that you then "have a brief opportunity to slow down whilst the
+ * violation is calculated to avoid a penalty". Its scoring weighs whether you
+ * were accelerating and whether you were at the speed expected for that part of
+ * the track: run slower than expected and the points come down, faster and they
+ * go up.
+ *
+ * So an excursion here is not scored the instant it happens. It opens a window,
+ * and what the driver does inside that window decides whether it costs anything —
+ * which is the whole reason the audio cue fires at the START of the window rather
+ * than at the end. A cue that announces a point already taken tells the driver
+ * something they can no longer do anything about.
+ *
+ * 1.2 s is long enough to react to the cue and lift, short enough that the
+ * verdict still arrives while the driver remembers the corner.
+ */
+export const AT_RISK_WINDOW_MS = 1200;
+
+/**
+ * Throttle (0..1) at or below which the driver counts as having lifted.
+ *
+ * Not zero: giving the time back is a lift, not a brake test, and a driver
+ * feathering the throttle to scrub speed on the exit kerb is doing exactly what
+ * the rule asks of them. A quarter throttle at racing speed is a car that is
+ * slowing down.
+ */
+export const LIFT_THROTTLE = 0.25;
+
+/**
+ * How far past the threshold an excursion has to reach to score each extra
+ * point, metres.
+ *
+ * The sim scores partly on how much of an advantage the cut represents, which we
+ * cannot measure directly — but how far off the road the car actually got is a
+ * fair proxy for it and is the one thing the lateral channels do tell us. Two
+ * strides of ~1.5 m take a single infringement from 1 point to the 3 that LMU
+ * turns into an instant drive-through, which puts "put a wheel a metre wide" and
+ * "drove across the run-off" on visibly different sides of the scale.
+ */
+export const POINT_STEP_M = 1.5;
+
 /** One poll's worth of input — everything the decision needs, already in SI. */
 export interface TrackLimitsInput {
   /**
@@ -195,6 +266,17 @@ export interface TrackLimitsInput {
   trackEdgeM: number | null;
   /** Car speed, km/h. {@link UNKNOWN_VALUE} when unknown. */
   speedKph: number;
+  /**
+   * Throttle position `0`..`1`, or `null` when the channel is unavailable
+   * (spectating, no shared memory).
+   *
+   * This is what makes lifting-to-negate possible. With no throttle channel the
+   * tracker cannot tell a driver giving the time back from one flooring it, so
+   * it scores every excursion rather than guessing — the safe way round, since
+   * the alternative is quietly forgiving infringements that did cost the driver
+   * points in the sim.
+   */
+  throttle: number | null;
   /** `true` when the car is in the pit lane or its garage stall. */
   inPit: boolean;
   /**
@@ -223,6 +305,12 @@ export interface TrackLimitsInput {
    * that has already been made.
    */
   marginM?: number;
+  /**
+   * Points that earn the penalty in THIS session, overriding
+   * {@link DEFAULT_POINTS_LIMIT}. Leagues publish their own number; a value at
+   * or below zero is ignored rather than making every excursion instantly fatal.
+   */
+  pointsLimit?: number;
 }
 
 /**
@@ -235,16 +323,28 @@ export interface TrackLimitsInput {
 export class TrackLimitsTracker {
   /** Session this counter belongs to; a change wipes it. */
   private sessionKey = '';
-  /** Excursions counted this session. */
+  /** Infringements that actually scored this session. */
   private warnings = 0;
+  /** Points accumulated this session. */
+  private points = 0;
+  /** Infringements the driver gave back by lifting inside the window. */
+  private negated = 0;
+  /** Points the last scored infringement was worth, for the widget's callout. */
+  private lastPoints = 0;
   /** Whether the car is currently outside the edge (with hysteresis applied). */
   private off = false;
   /** When the current excursion began, or 0 when on track. */
   private offSince = 0;
-  /** Whether the current excursion has already been counted. */
+  /** Whether the current excursion has already been resolved (scored or not). */
   private counted = false;
-  /** `nowMs` of the most recent counted excursion, for the widget's flash. */
+  /** Whether the driver has lifted at any point during the current window. */
+  private liftedDuringRisk = false;
+  /** Deepest the car got beyond the threshold this excursion, metres. */
+  private worstBeyondM = 0;
+  /** `nowMs` of the most recent scored infringement, for the widget's flash. */
   private lastWarningAt = 0;
+  /** `nowMs` of the most recent NEGATED one — the "well saved" feedback. */
+  private lastNegatedAt = 0;
   /** `nowMs` at which {@link penalties} last increased. */
   private lastPenaltyAt = 0;
   /** Last penalty count seen, to detect the increment. */
@@ -253,12 +353,32 @@ export class TrackLimitsTracker {
   /** Forget everything — a new session, or the car leaving the feed. */
   public reset(): void {
     this.warnings = 0;
+    this.points = 0;
+    this.negated = 0;
+    this.lastPoints = 0;
     this.off = false;
     this.offSince = 0;
     this.counted = false;
+    this.liftedDuringRisk = false;
+    this.worstBeyondM = 0;
     this.lastWarningAt = 0;
+    this.lastNegatedAt = 0;
     this.lastPenaltyAt = 0;
     this.penalties = UNKNOWN_VALUE;
+  }
+
+  /**
+   * What one infringement is worth, given how far off the road it got.
+   *
+   * Mirrors the shape of the sim's own scoring — worse cut, more points — using
+   * the only magnitude the lateral channels give us. Capped at
+   * {@link MAX_INFRINGEMENT_POINTS}: past that the sim issues the penalty
+   * outright, so a higher number would describe a distinction with no
+   * consequence behind it.
+   */
+  private static score(worstBeyondM: number, marginM: number): number {
+    const past = Math.max(0, worstBeyondM - marginM);
+    return Math.min(MAX_INFRINGEMENT_POINTS, 1 + Math.floor(past / POINT_STEP_M));
   }
 
   /**
@@ -320,46 +440,88 @@ export class TrackLimitsTracker {
         ? Math.min(MARGIN_MAX_M, Math.max(MARGIN_MIN_M, input.marginM))
         : trackLimitsMargin();
 
+    const pointsLimit =
+      typeof input.pointsLimit === 'number' && input.pointsLimit > 0
+        ? Math.round(input.pointsLimit)
+        : DEFAULT_POINTS_LIMIT;
+
     if (!eligible) {
       // Leaving the eligible window ends any excursion in progress without
-      // counting it — a car that ran wide and then pitted has not earned a
-      // second warning for the pit lane's own geometry.
-      this.off = false;
-      this.offSince = 0;
-      this.counted = false;
+      // scoring it — a car that ran wide and then pitted has not earned points
+      // for the pit lane's own geometry.
+      this.endExcursion();
     } else if (beyondM === null) {
       // Unreachable while `eligible` (which requires the channels), but it is
       // what makes the comparisons below provably non-null rather than asserted.
-      this.off = false;
+      this.endExcursion();
     } else if (this.off) {
-      // Already out: stay out until back inside the edge by the recovery band.
-      if (beyondM < margin - RECOVERY_MARGIN_M) {
-        this.off = false;
-        this.offSince = 0;
-        this.counted = false;
-      } else if (!this.counted && input.nowMs - this.offSince >= MIN_EXCURSION_MS) {
-        // Long enough to be real — count it once, on the way through.
-        this.counted = true;
-        this.warnings += 1;
-        this.lastWarningAt = input.nowMs;
+      // Out on the road. Two things are being watched at once: how deep it got
+      // (which sets the score) and whether the driver lifted (which cancels it).
+      if (beyondM > this.worstBeyondM) this.worstBeyondM = beyondM;
+      if (input.throttle !== null && input.throttle <= LIFT_THROTTLE) {
+        this.liftedDuringRisk = true;
       }
+
+      const elapsed = input.nowMs - this.offSince;
+      if (!this.counted && elapsed >= Math.max(MIN_EXCURSION_MS, AT_RISK_WINDOW_MS)) {
+        // The window has run: score it, or credit the driver for giving it back.
+        this.counted = true;
+        if (this.liftedDuringRisk) {
+          this.negated += 1;
+          this.lastNegatedAt = input.nowMs;
+        } else {
+          const scored = TrackLimitsTracker.score(this.worstBeyondM, margin);
+          this.warnings += 1;
+          this.points += scored;
+          this.lastPoints = scored;
+          this.lastWarningAt = input.nowMs;
+        }
+      }
+
+      // Back inside the recovery band ends it — but only AFTER the resolution
+      // above, so a driver who lifts and gathers it up inside the window still
+      // gets the credit rather than the excursion simply vanishing unjudged.
+      if (beyondM < margin - RECOVERY_MARGIN_M && this.counted) this.endExcursion();
     } else if (beyondM >= margin) {
-      // All four wheels have just passed the edge; the clock starts, and the
-      // branch above counts it once it has lasted MIN_EXCURSION_MS.
+      // All four wheels have just passed the threshold. The window opens here —
+      // this is the instant the driver is AT RISK and can still give it back.
       this.off = true;
       this.offSince = input.nowMs;
       this.counted = false;
+      this.liftedDuringRisk =
+        input.throttle !== null && input.throttle <= LIFT_THROTTLE;
+      this.worstBeyondM = beyondM;
     }
 
+    // At risk = out on the road with the verdict still open. This is what the
+    // audio cue and the widget's alarm key off, because it is the only part of
+    // the sequence the driver can still do something about.
+    const atRisk = this.off && !this.counted;
+
     return {
-      offTrack: this.off && this.counted,
+      offTrack: this.off,
+      atRisk,
+      liftedInTime: atRisk ? this.liftedDuringRisk : false,
       ...(beyondM === null ? {} : { beyondEdgeM: round2(beyondM) }),
+      points: this.points,
+      pointsLimit,
+      lastInfringementPoints: this.lastPoints || UNKNOWN_VALUE,
       warnings: this.warnings,
-      warningLimit: WARNING_LIMIT,
+      negated: this.negated,
       penalties: this.penalties,
       msSinceWarning: this.lastWarningAt ? input.nowMs - this.lastWarningAt : UNKNOWN_VALUE,
+      msSinceNegated: this.lastNegatedAt ? input.nowMs - this.lastNegatedAt : UNKNOWN_VALUE,
       msSincePenalty: this.lastPenaltyAt ? input.nowMs - this.lastPenaltyAt : UNKNOWN_VALUE,
     };
+  }
+
+  /** Close the current excursion without judging it. */
+  private endExcursion(): void {
+    this.off = false;
+    this.offSince = 0;
+    this.counted = false;
+    this.liftedDuringRisk = false;
+    this.worstBeyondM = 0;
   }
 }
 

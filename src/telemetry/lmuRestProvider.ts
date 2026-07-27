@@ -642,7 +642,17 @@ export class LmuRestProvider implements TelemetryProvider {
       : playerCar && typeof playerCar.carVelocity?.velocity === 'number'
         ? Math.round(Math.abs(playerCar.carVelocity.velocity) * 3.6)
         : UNKNOWN_VALUE;
-    const trackLimits = this.buildTrackLimits(playerCar, scoringCar, session, drivenSpeedKph);
+    // Throttle comes from the driven car's shared memory — the channel that
+    // makes lifting-to-negate detectable. Absent when spectating, in which case
+    // the tracker scores every excursion rather than guessing (see
+    // TrackLimitsInput.throttle).
+    const trackLimits = this.buildTrackLimits(
+      playerCar,
+      scoringCar,
+      session,
+      drivenSpeedKph,
+      local ? local.throttle : null,
+    );
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
     // Live rear brake bias from shared memory (the driven car only); projectAids
     // uses it as the one genuinely-live aid, falling back to the setup value.
@@ -1361,6 +1371,7 @@ export class LmuRestProvider implements TelemetryProvider {
     car: ScoringCar | null,
     session: SessionState,
     speedKph: number,
+    throttle: number | null,
   ): TrackLimitsState | undefined {
     if (!playerCar) {
       this.trackLimits.reset();
@@ -1372,6 +1383,7 @@ export class LmuRestProvider implements TelemetryProvider {
         pathLateralM: car.pathLateralM,
         trackEdgeM: car.trackEdgeM,
         speedKph,
+        throttle,
         // The scoring record's own pit flags are authoritative here: they are
         // the same source as the lateral channels, so the two can never
         // disagree about which lap the car is on.

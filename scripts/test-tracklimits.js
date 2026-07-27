@@ -17,14 +17,19 @@
 
 const {
   TrackLimitsTracker,
-  WARNING_LIMIT,
+  DEFAULT_POINTS_LIMIT,
+  INSTANT_PENALTY_POINTS,
+  MAX_INFRINGEMENT_POINTS,
   DEFAULT_OFF_TRACK_MARGIN_M,
   HALF_CAR_WIDTH_M,
-  setTrackLimitsMargin,
-  trackLimitsMargin,
   RECOVERY_MARGIN_M,
   MIN_EXCURSION_MS,
   MIN_SPEED_KPH,
+  AT_RISK_WINDOW_MS,
+  LIFT_THROTTLE,
+  POINT_STEP_M,
+  setTrackLimitsMargin,
+  trackLimitsMargin,
 } = require('../dist/telemetry/trackLimits');
 
 let passed = 0;
@@ -57,6 +62,7 @@ function rig(over) {
       pathLateralM: lateral,
       trackEdgeM: EDGE,
       speedKph: 180,
+      throttle: 1,
       inPit: false,
       penalties: 0,
       sessionKey: 'test',
@@ -76,6 +82,8 @@ function rig(over) {
 
 /** Comfortably beyond the edge — clear of the half-a-car margin. */
 const WIDE = EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 1.5;
+/** Only just past the threshold — the cheapest infringement, worth one point. */
+const JUST_WIDE = EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 0.2;
 /** Comfortably inside it. */
 const ONTRACK = 1.0;
 
@@ -87,7 +95,7 @@ console.log('\n1) One excursion is one warning');
   check('a clean lap counts nothing', r.state.warnings === 0, r.state.warnings);
   check('…and is not flagged off-track', r.state.offTrack === false);
 
-  r.hold(WIDE, 1000);
+  r.hold(WIDE, 1600);
   check('running wide counts exactly one', r.state.warnings === 1, r.state.warnings);
   check('…and reports offTrack while out there', r.state.offTrack === true);
 
@@ -111,20 +119,20 @@ console.log('\n2) Hysteresis — a car balanced on the limit');
   // never clearing the recovery band. That is one wide moment, not three.
   const r = rig();
   const justInside = EDGE + DEFAULT_OFF_TRACK_MARGIN_M - 0.2; // inside the trigger, inside the band
-  r.hold(WIDE, 300);
-  r.hold(justInside, 300);
-  r.hold(WIDE, 300);
-  r.hold(justInside, 300);
-  r.hold(WIDE, 300);
+  r.hold(WIDE, 700);
+  r.hold(justInside, 400);
+  r.hold(WIDE, 700);
+  r.hold(justInside, 400);
+  r.hold(WIDE, 700);
   check('dithering on the threshold counts once', r.state.warnings === 1, r.state.warnings);
 }
 
 {
   // …but genuinely gathering it up and going wide again IS two mistakes.
   const r = rig();
-  r.hold(WIDE, 400);
-  r.hold(ONTRACK, 400); // well inside the recovery band
-  r.hold(WIDE, 400);
+  r.hold(WIDE, 1600);
+  r.hold(ONTRACK, 600); // well inside the recovery band
+  r.hold(WIDE, 1600);
   check('recovering fully and going again counts twice', r.state.warnings === 2, r.state.warnings);
 }
 
@@ -174,6 +182,7 @@ console.log('\n3) The guards');
       pathLateralM: -WIDE,
       trackEdgeM: -EDGE, // same sign as the position, as the sim publishes it
       speedKph: 180,
+      throttle: 1,
       inPit: false,
       penalties: 0,
       sessionKey: 'test',
@@ -204,6 +213,7 @@ console.log('\n4) The sim\'s own penalties, kept separate from our warnings');
     pathLateralM: null,
     trackEdgeM: null,
     speedKph: 180,
+    throttle: 1,
     inPit: false,
     penalties: 2,
     sessionKey: 'test',
@@ -220,6 +230,7 @@ console.log('\n4) The sim\'s own penalties, kept separate from our warnings');
     pathLateralM: null,
     trackEdgeM: null,
     speedKph: 180,
+    throttle: 1,
     inPit: false,
     penalties: -1,
     sessionKey: 'test',
@@ -232,31 +243,66 @@ console.log('\n5) Sessions');
 
 {
   const r = rig();
-  r.hold(WIDE, 500);
-  r.hold(ONTRACK, 200);
+  r.hold(WIDE, 1600);
+  r.hold(ONTRACK, 400);
   check('warnings accumulate within a session', r.state.warnings === 1, r.state.warnings);
   r.hold(ONTRACK, 100, { sessionKey: 'the-race' });
   check('a new session wipes them', r.state.warnings === 0, r.state.warnings);
 }
 
-console.log('\n6) The display scale');
+console.log('\n6) Points — the unit LMU actually judges limits in');
 
 {
   const r = rig();
   r.hold(ONTRACK, 100);
-  check(`warningLimit is the classic ${WARNING_LIMIT}`, r.state.warningLimit === WARNING_LIMIT);
+  check('the points limit defaults to the constant', r.state.pointsLimit === DEFAULT_POINTS_LIMIT, r.state.pointsLimit);
+  check('a clean session has scored nothing', r.state.points === 0, r.state.points);
 
-  // Past the scale the count keeps rising — it is a display scale, not a cap,
-  // and a driver on their fifth needs to be told it is five.
-  for (let i = 0; i < WARNING_LIMIT + 2; i++) {
-    r.hold(WIDE, 400);
-    r.hold(ONTRACK, 400);
-  }
+  // A wheel over the line is not the same offence as a lap through the run-off,
+  // so the score has to move with how far off the road it got.
+  // JUST past the threshold, not a step past it — WIDE is exactly one
+  // POINT_STEP_M out and correctly scores two.
+  r.hold(JUST_WIDE, 1600);
+  r.hold(ONTRACK, 600);
+  const light = r.state.points;
+  check('a modest cut scores one point', light === 1, light);
+
+  const r2 = rig();
+  r2.hold(EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 2 * POINT_STEP_M + 0.2, 1600);
+  r2.hold(ONTRACK, 600);
+  check('a much deeper cut scores more', r2.state.points > light, r2.state.points);
   check(
-    'the count runs past the scale rather than clamping',
-    r.state.warnings === WARNING_LIMIT + 2,
-    r.state.warnings,
+    '…and is capped where the sim stops caring',
+    r2.state.points <= MAX_INFRINGEMENT_POINTS,
+    `${r2.state.points} <= ${MAX_INFRINGEMENT_POINTS}`,
   );
+  check(
+    'the cap is the instant-drive-through figure',
+    MAX_INFRINGEMENT_POINTS === INSTANT_PENALTY_POINTS,
+    MAX_INFRINGEMENT_POINTS,
+  );
+  check('the last infringement reports its own worth', r2.state.lastInfringementPoints === r2.state.points, r2.state.lastInfringementPoints);
+}
+
+{
+  // The limit is a league setting, not a law — LMU configures it per session.
+  const r = rig();
+  r.hold(ONTRACK, 100, { pointsLimit: 4 });
+  check('a session limit overrides the default', r.state.pointsLimit === 4, r.state.pointsLimit);
+  r.hold(ONTRACK, 100, { pointsLimit: 0 });
+  check('a nonsense limit falls back', r.state.pointsLimit === DEFAULT_POINTS_LIMIT, r.state.pointsLimit);
+}
+
+{
+  // Points accumulate past the limit rather than clamping: a driver already
+  // penalised still needs to know they are digging further in.
+  const r = rig();
+  for (let i = 0; i < 4; i++) {
+    r.hold(JUST_WIDE, 1600);
+    r.hold(ONTRACK, 600);
+  }
+  check('points accumulate across infringements', r.state.points === 4, r.state.points);
+  check('…and so does the infringement count', r.state.warnings === 4, r.state.warnings);
 }
 
 {
@@ -294,7 +340,7 @@ console.log('\n7) The threshold, and why it is not half a car\'s width');
 
   // …and genuinely off, past the kerb, still counts.
   const r2 = rig();
-  r2.hold(EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 0.5, 1000);
+  r2.hold(EDGE + DEFAULT_OFF_TRACK_MARGIN_M + 0.5, 1600);
   check('being properly off still counts', r2.state.warnings === 1, r2.state.warnings);
 }
 
@@ -302,10 +348,10 @@ console.log('\n7) The threshold, and why it is not half a car\'s width');
   // The operator's threshold is per-poll, so it retunes a RUNNING session.
   const r = rig();
   const onTheKerb = EDGE + HALF_CAR_WIDTH_M + 0.3;
-  r.hold(onTheKerb, 1000);
+  r.hold(onTheKerb, 1600);
   check('kerb ignored at the default margin', r.state.warnings === 0, r.state.warnings);
   // Turn the threshold down to the old strict value mid-session…
-  r.hold(onTheKerb, 1000, { marginM: HALF_CAR_WIDTH_M });
+  r.hold(onTheKerb, 1600, { marginM: HALF_CAR_WIDTH_M });
   check('…and the same position now counts', r.state.warnings === 1, r.state.warnings);
 }
 
@@ -321,9 +367,91 @@ console.log('\n7) The threshold, and why it is not half a car\'s width');
 
   // …and the tracker actually follows it, with no per-poll input.
   const r = rig();
-  r.hold(EDGE + 2.0, 1000); // past 1.8, inside the 2.4 default
+  r.hold(EDGE + 2.0, 1600); // past 1.8, inside the 2.4 default
   check('the tracker follows the live margin', r.state.warnings === 1, r.state.warnings);
   setTrackLimitsMargin(null); // leave global state as we found it
+}
+
+console.log('\n8) The at-risk window, and giving the time back');
+
+{
+  // LMU raises a Race Control notice the moment you are at risk and gives you
+  // "a brief opportunity to slow down whilst the violation is calculated".
+  // Nothing may score before that window has run.
+  const r = rig();
+  r.step(WIDE);
+  check('going off puts the driver AT RISK immediately', r.state.atRisk === true);
+  check('…and nothing has scored yet', r.state.points === 0, r.state.points);
+
+  r.hold(WIDE, AT_RISK_WINDOW_MS - 200);
+  check('still at risk inside the window', r.state.atRisk === true);
+  check('…still nothing scored', r.state.points === 0, r.state.points);
+
+  r.hold(WIDE, 400);
+  check('past the window it scores', r.state.points > 0, r.state.points);
+  check('…and is no longer at risk', r.state.atRisk === false);
+}
+
+{
+  // Lift, and it costs nothing. This is the whole mechanic.
+  const r = rig();
+  r.hold(WIDE, 300);
+  r.hold(WIDE, 1600, { throttle: 0 });
+  r.hold(ONTRACK, 400);
+  check('lifting inside the window scores nothing', r.state.points === 0, r.state.points);
+  check('…and counts as an infringement given back', r.state.negated === 1, r.state.negated);
+  check('…leaving the scored count at zero', r.state.warnings === 0, r.state.warnings);
+  check('…and stamping a time-since', r.state.msSinceNegated >= 0, r.state.msSinceNegated);
+}
+
+{
+  // Staying on the throttle costs the points.
+  const r = rig();
+  r.hold(WIDE, 1900, { throttle: 1 });
+  r.hold(ONTRACK, 400);
+  check('staying on the throttle scores', r.state.points > 0, r.state.points);
+  check('…and nothing was given back', r.state.negated === 0, r.state.negated);
+}
+
+{
+  // A feathered throttle IS a lift — the rule asks you to slow, not to brake.
+  const r = rig();
+  r.hold(WIDE, 1900, { throttle: LIFT_THROTTLE });
+  r.hold(ONTRACK, 400);
+  check('a feathered throttle counts as lifting', r.state.negated === 1, r.state.negated);
+}
+
+{
+  // Lifting for a moment is enough; the driver need not stay off it all window.
+  const r = rig();
+  r.hold(WIDE, 200, { throttle: 1 });
+  r.hold(WIDE, 200, { throttle: 0 });      // a brief lift…
+  r.hold(WIDE, 1500, { throttle: 1 });     // …then back on it
+  r.hold(ONTRACK, 400);
+  check('a brief lift inside the window still saves it', r.state.negated === 1, r.state.negated);
+}
+
+{
+  // liftedInTime is what lets the widget flip from "LIFT" to "saved" while the
+  // car is still off the road — it must only be true while the verdict is open.
+  const r = rig();
+  r.hold(WIDE, 300, { throttle: 1 });
+  check('not flagged as lifted while still on the throttle', r.state.liftedInTime === false);
+  r.hold(WIDE, 200, { throttle: 0 });
+  check('flagged the moment the driver lifts', r.state.liftedInTime === true);
+  check('…while still at risk', r.state.atRisk === true);
+  r.hold(WIDE, 1600, { throttle: 0 });
+  check('and cleared once the verdict is in', r.state.liftedInTime === false);
+}
+
+{
+  // No throttle channel (spectating): score everything rather than quietly
+  // forgiving infringements that did cost the driver points in the sim.
+  const r = rig();
+  r.hold(WIDE, 1900, { throttle: null });
+  r.hold(ONTRACK, 400);
+  check('with no throttle channel it still scores', r.state.points > 0, r.state.points);
+  check('…and nothing is credited as given back', r.state.negated === 0, r.state.negated);
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

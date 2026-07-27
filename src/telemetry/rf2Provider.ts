@@ -586,6 +586,10 @@ export class RF2Provider implements TelemetryProvider {
             pathLateralM: scoring.readDoubleLE(playerScoringOff + VS.mPathLateral),
             trackEdgeM: scoring.readDoubleLE(playerScoringOff + VS.mTrackEdge),
             speedKph,
+            // Unfiltered throttle: what the driver's foot is doing, which is
+            // what "did they lift" asks. The filtered channel would credit TC
+            // for a lift the driver never made.
+            throttle: clamp01(throttle),
             inPit:
               scoring.readUInt8(playerScoringOff + VS.mInPits) !== 0 ||
               scoring.readUInt8(playerScoringOff + VS.mInGarageStall) !== 0,

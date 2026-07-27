@@ -42,8 +42,8 @@ import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
 import {
   DEFAULT_OFF_TRACK_MARGIN_M,
+  INSTANT_PENALTY_POINTS,
   TrackLimitsTracker,
-  WARNING_LIMIT,
 } from './trackLimits';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
@@ -761,8 +761,15 @@ export class SimulatorProvider implements TelemetryProvider {
    * state, which is what it will be doing for most of a real stint.
    */
   private static readonly LIMITS_INTERVAL_SEC = 35;
-  /** How long each demo excursion lasts, seconds. */
-  private static readonly LIMITS_EXCURSION_SEC = 1.2;
+  /**
+   * How long each demo excursion lasts, seconds.
+   *
+   * Must comfortably outlast `AT_RISK_WINDOW_MS`, or the excursion ends before
+   * the verdict is reached and nothing ever scores. It was exactly 1.2 s — the
+   * same figure as the window — which made resolution a coin toss on poll
+   * timing.
+   */
+  private static readonly LIMITS_EXCURSION_SEC = 2.0;
   /** Half the demo track's width, metres — the `mTrackEdge` the sim would give. */
   private static readonly LIMITS_TRACK_EDGE_M = 7;
 
@@ -787,7 +794,10 @@ export class SimulatorProvider implements TelemetryProvider {
   private buildTrackLimits(dt: number, speedKph: number): TrackLimitsState | undefined {
     this.limitsClockSec += dt;
     const period = SimulatorProvider.LIMITS_INTERVAL_SEC;
-    if (this.limitsClockSec >= period) this.limitsClockSec -= period;
+    if (this.limitsClockSec >= period) {
+      this.limitsClockSec -= period;
+      this.limitsCycle += 1;
+    }
 
     const edge = SimulatorProvider.LIMITS_TRACK_EDGE_M;
     const off = this.limitsClockSec < SimulatorProvider.LIMITS_EXCURSION_SEC;
@@ -803,24 +813,34 @@ export class SimulatorProvider implements TelemetryProvider {
       ? edge + DEFAULT_OFF_TRACK_MARGIN_M + 1.0
       : Math.sin(this.limitsClockSec * 0.9) * (edge * 0.4);
 
+    // Every third demo excursion, the driver lifts — so the lift-to-negate path
+    // and its "saved" feedback are reachable in demo mode too, not just the
+    // path where the points land. Without this half the widget's states could
+    // only be seen by running wide in a real session on purpose.
+    const givesItBack = this.limitsCycle % 3 === 2;
+    const throttle = off && givesItBack ? 0 : 0.9;
+
     const state = this.limits.update({
       pathLateralM: lateral,
       trackEdgeM: edge,
       speedKph,
+      throttle,
       inPit: this.player().inPit,
-      // The stewards' own count, one per completed set of warnings — fed from
-      // last poll's tally, so the penalty lands the poll AFTER the warning that
+      // The stewards' own count — one per full points limit, fed from last
+      // poll's tally so the penalty lands the poll AFTER the infringement that
       // earned it, which is also how a real race director behaves.
-      penalties: Math.floor(this.demoWarnings / WARNING_LIMIT),
+      penalties: Math.floor(this.demoPoints / INSTANT_PENALTY_POINTS),
       sessionKey: 'demo',
       nowMs: Date.now(),
     });
-    if (state) this.demoWarnings = state.warnings;
+    if (state) this.demoPoints = state.points;
     return state ?? undefined;
   }
 
-  /** Warnings counted so far, mirrored so the demo's penalties can follow. */
-  private demoWarnings = 0;
+  /** Points scored so far, mirrored so the demo's penalties can follow. */
+  private demoPoints = 0;
+  /** Which excursion of the cycle this is, so every third one is given back. */
+  private limitsCycle = 0;
 
   /* -------------------------------- damage -------------------------------- */
 

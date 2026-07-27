@@ -6,30 +6,47 @@
  *
  * ## What it is FOR, and why that shapes the design
  * A driver who runs wide already knows they ran wide. What they do not know is
- * **how many that makes**, and that is the thing this widget exists to answer at
- * a glance — because the answer changes how you drive the next twenty minutes.
- * So the count is the headline and the live off-track state is the alarm around
- * it, not the other way round.
+ * **what it cost and how close that puts them to a drive-through**, and that is
+ * what this widget answers at a glance — because the answer changes how you
+ * drive the next twenty minutes.
  *
- * ## Three states, in the house's glance hierarchy
+ * ## It counts POINTS, because that is what LMU judges limits in
+ * The sim does not run a strike count. Every infringement scores points — it
+ * weighs how far off you went, whether you were on the throttle and whether you
+ * were at the speed expected there — and a drive-through is issued once the
+ * running total passes a threshold the session configures. A single infringement
+ * worth 3 points is an instant drive-through on its own.
+ *
+ * ## The at-risk window is the whole reason this is useful
+ * LMU raises a Race Control notice the moment you are at risk and gives you a
+ * brief opportunity to slow down while the violation is calculated. Lift inside
+ * it and the infringement costs nothing. So the widget's loudest state — and
+ * the audio cue — fire at the START of that window, while the driver can still
+ * act, not when the points land. A warning about something already decided is
+ * just noise at 200 km/h.
+ *
+ * ## The states, in the house's glance hierarchy
  *   clean     nothing has happened. Deliberately quiet — a dimmed row of empty
  *             pips, no colour. Most of a stint looks like this and a widget that
  *             shouts through all of it teaches the driver to stop looking.
- *   warned    one or more excursions. Pips fill amber; the count is the crit
- *             value, so the change glow fires on the increment (a discrete
- *             event — exactly what the glow is for) rather than on the state.
+ *   atrisk    off the road, verdict open. The loudest thing here, because it is
+ *             the only state with an action attached: LIFT.
+ *   saved     they lifted. Green, briefly — the confirmation that makes the
+ *             habit stick. Without it a driver lifts, sees nothing change, and
+ *             stops bothering.
+ *   warned    points on the board. Pips fill amber.
  *   penalty   the sim has actually issued one. Red, and the panel pulses.
  *
  * ## The two numbers do not pretend to be one
- * `warnings` is derived by us from the car's lateral position; `penalties` is
- * the sim's own count. They can disagree — LMU judges limits against the white
- * line internally and publishes no warning tally — so they get separate places
- * on the widget and are never added together: the warning count is the headline
- * under "LIMITS", and a penalty appears as its own red chip beside it.
+ * `points` is derived by us from the car's lateral position and throttle;
+ * `penalties` is the sim's own count. They can disagree — LMU judges limits
+ * internally and publishes neither its points nor its thresholds — so they get
+ * separate places and are never added together: points are the headline under
+ * "POINTS", and a penalty appears as its own red chip beside it.
  *
  * An earlier build had the penalty take over the headline number for a few
- * seconds. It read as a lie: a red "5" under the word LIMITS is five penalties
- * to anyone glancing at it, when it was five warnings and one penalty. Two
+ * seconds. It read as a lie: a red "5" under that label is five penalties to
+ * anyone glancing at it, when it was five points and one penalty. Two
  * differently-sourced numbers need two places, and the chip costs almost none.
  * See the module note in trackLimits.ts for why the derived number is worth
  * having at all.
@@ -41,12 +58,12 @@
  * "you are using all of it" while there is still time to do something about it.
  *
  * URL params:
- *   ?limits=<n>  Override the pip count (default: the provider's warningLimit).
- *                For a league running its own number rather than the FIA three.
+ *   ?limits=<n>  Override the points limit (default: the provider's pointsLimit).
+ *                LMU sets this per session; leagues publish theirs on the event.
  *
- * Audio: fires the `limit` cue on a fresh warning and `penalty` on a fresh
- * penalty, through js/audio.js — which is rate-limited, so the naive "call it
- * whenever the condition holds" below is safe.
+ * Audio: fires the `limit` cue once as the AT-RISK window opens — not once the
+ * points land, and not repeatedly while it stays open — and `penalty` when the
+ * sim issues one. Through js/audio.js.
  */
 (function () {
   "use strict";
@@ -83,6 +100,11 @@
   var pipOverride = null;
   /** Last state written, so the DOM is touched only on a real change. */
   var stateCache = "";
+  /**
+   * Whether the driver was at risk on the previous frame, so the cue fires
+   * once as the window OPENS rather than on every frame it stays open.
+   */
+  var wasAtRisk = false;
 
   function init(rootEl) {
     root = rootEl;
@@ -200,24 +222,24 @@
       return;
     }
 
-    if (labelEl.textContent !== "LIMITS") labelEl.textContent = "LIMITS";
-    buildPips(pipOverride || tl.warningLimit || 3);
+    if (labelEl.textContent !== "POINTS") labelEl.textContent = "POINTS";
+    buildPips(pipOverride || tl.pointsLimit || 10);
 
     /* ------------------------------ the counts --------------------------- */
 
-    var warnings = tl.warnings || 0;
+    var points = tl.points || 0;
+    var limit = pipOverride || tl.pointsLimit || 10;
     var penalties = ctx.penaltyCount(tl);
     var freshWarning = fmt.has(tl.msSinceWarning) && tl.msSinceWarning < ALARM_MS;
+    var freshNegated = fmt.has(tl.msSinceNegated) && tl.msSinceNegated < ALARM_MS;
     var freshPenalty = ctx.consequenceFresh(tl);
 
-    // The headline is ALWAYS the warning count — it is the number that answers
-    // "how many have I had", which is the question this widget exists for, and
-    // it must not change meaning under the driver mid-glance. `crit` blooms it
-    // on the increment, which is the discrete event worth a bloom.
-    ctx.crit(countEl, String(warnings));
+    // The headline is ALWAYS the running points total — the number that answers
+    // "how close am I to the drive-through", which is what this widget exists
+    // for. It must not change meaning under the driver mid-glance.
+    ctx.crit(countEl, String(points));
 
-    // The sim's verdict, in its own chip. Also `crit`, so a penalty landing
-    // blooms even though the panel is already pulsing.
+    // The sim's verdict, in its own chip.
     if (penalties > 0) {
       if (penaltyEl.hidden) penaltyEl.hidden = false;
       ctx.crit(penaltyEl, penalties + (penalties === 1 ? " PEN" : " PENS"));
@@ -225,27 +247,41 @@
       penaltyEl.hidden = true;
     }
 
-    // The consequence indicator: a banner across the widget for the four
-    // seconds after a penalty is applied. The chip above is the standing
-    // record — quiet, permanent, easy to miss. This is the announcement, and it
-    // is deliberately the only thing on the widget that covers anything else,
-    // because at the moment it fires it is the most important thing on screen.
-    if (freshPenalty) {
+    // The banner has three things to say, in descending order of consequence.
+    // Only one can be up at a time, and at-risk outranks the rest while it is
+    // live: it is the only one the driver can still act on.
+    var banner = null;
+    if (tl.atRisk) {
+      // LIFT while the verdict is open; SAVED once they have. Saying "saved"
+      // the instant they lift is the confirmation that makes the habit stick —
+      // without it the driver lifts, sees no change, and stops bothering.
+      banner = tl.liftedInTime ? "SAVED" : "LIFT";
+    } else if (freshPenalty) {
+      banner = ctx.penaltyText(penalties);
+    } else if (freshWarning && fmt.has(tl.lastInfringementPoints)) {
+      banner = "+" + tl.lastInfringementPoints +
+        (tl.lastInfringementPoints === 1 ? " POINT" : " POINTS");
+    } else if (freshNegated) {
+      banner = "SAVED";
+    }
+    if (banner !== null) {
       if (bannerEl.hidden) bannerEl.hidden = false;
-      var text = ctx.penaltyText(penalties);
-      if (bannerEl.textContent !== text) bannerEl.textContent = text;
+      if (bannerEl.textContent !== banner) bannerEl.textContent = banner;
+      bannerEl.setAttribute(
+        "data-kind",
+        tl.atRisk ? (tl.liftedInTime ? "saved" : "lift") : freshPenalty ? "penalty" : freshWarning ? "scored" : "saved",
+      );
     } else if (!bannerEl.hidden) {
       bannerEl.hidden = true;
     }
 
-    // Pips fill left to right, wrapping past the scale so a fourth warning on a
-    // three-pip scale lights the first pip again in the "over" tone rather than
-    // silently doing nothing.
-    var over = pipCount > 0 ? Math.floor(warnings / pipCount) : 0;
-    var lit = pipCount > 0 ? warnings - over * pipCount : 0;
-    if (warnings > 0 && lit === 0) {
-      // Exactly on a multiple: show a full row of the previous tier, not empty.
-      lit = pipCount;
+    // Pips fill left to right with the points scored, wrapping past the limit
+    // so a driver already over it sees the row start again in the "over" tone
+    // rather than a full row that stopped meaning anything.
+    var over = limit > 0 ? Math.floor(points / limit) : 0;
+    var lit = limit > 0 ? points - over * limit : 0;
+    if (points > 0 && lit === 0) {
+      lit = limit;
       over -= 1;
     }
     for (var p = 0; p < pips.length; p++) {
@@ -280,29 +316,52 @@
 
     /* -------------------------------- state ------------------------------ */
 
-    // Order matters: the worst true thing wins the colour.
+    // Order matters: the worst true thing wins the colour, except that "you can
+    // still fix this" outranks everything — it is the only state with an action
+    // attached to it.
     var state;
-    if (freshPenalty) state = "penalty";
-    else if (tl.offTrack || freshWarning) state = "alarm";
+    if (tl.atRisk) state = tl.liftedInTime ? "saved" : "atrisk";
+    else if (freshPenalty) state = "penalty";
+    else if (freshWarning) state = "alarm";
+    else if (freshNegated) state = "saved";
     else if (penalties > 0) state = "penalised";
-    else if (warnings > 0) state = "warned";
+    else if (points > 0) state = "warned";
     else state = "clean";
     setState(state);
 
     /* -------------------------------- audio ------------------------------ */
 
-    // Both are rate-limited inside audio.js, so calling them on every frame the
-    // condition holds plays each once — no edge-detection needed here.
+    // The limits cue fires while the point is still AT RISK — not when it
+    // lands.
+    //
+    // This is the whole point of the cue. LMU scores an infringement over a
+    // brief window and lets you give the time back inside it by lifting, so a
+    // tone that plays once the points are on the board is telling the driver
+    // about something they can no longer do anything about. Fired at the top of
+    // the window instead, it is an instruction: lift, now, and this costs you
+    // nothing.
+    //
+    // It is deliberately silent once `liftedInTime` goes true — the driver has
+    // already done the thing being asked, and a cue that keeps sounding after
+    // compliance is what teaches people to ignore cues.
+    //
+    // Edge-triggered, NOT left to audio.js's rate limit. That limit is one
+    // second and the at-risk window is 1.2, so calling it every frame the
+    // condition held sounded the tone TWICE per excursion — measured. Two beeps
+    // for one instruction reads as an alarm rather than a prompt, and the fix
+    // cannot be "make the rate limit longer" because that would also swallow the
+    // second of two genuinely separate excursions.
     if (freshPenalty) cue("penalty");
-    else if (freshWarning) cue("limit");
+    if (tl.atRisk && !tl.liftedInTime && !wasAtRisk) cue("limit");
+    wasAtRisk = tl.atRisk && !tl.liftedInTime;
 
     /* ----------------------------- header meta --------------------------- */
 
-    // The count against its scale, and nothing else. It deliberately does NOT
-    // repeat the penalty: the chip already carries that, and the header is a
+    // Points against the limit that earns the drive-through. Deliberately does
+    // NOT repeat the penalty: the chip already carries that, and the header is a
     // narrow strip that wraps onto two lines the moment it is given a word as
     // long as "PENALTIES" — which pushed the panel title onto two lines with it.
-    setMeta(warnings + " / " + pipCount);
+    setMeta(points + " / " + limit);
   }
 
   window.ApexOverlay.registerWidget("limits", {

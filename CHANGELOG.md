@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.26.0 — 2026-07-27
+
+### Changed
+
+- **Track limits are counted in POINTS now, because that is what LMU judges them
+  in.** The sim does not run a strike count: every infringement scores, weighed by
+  how far off you went, whether you were on the throttle and whether you were at
+  the speed expected there, and a drive-through follows once the running total
+  passes a threshold the *session* configures. A single infringement worth 3
+  points is an instant drive-through on its own.
+
+  So the headline is points against a limit (configurable — leagues publish
+  theirs on the event page), a deeper cut scores more than a wheel over the line,
+  and the widget stops pretending three strikes is the rule anywhere.
+
+- **The audio cue fires while the point can still be avoided, not after it
+  lands.** This is the change that makes the cue worth having. LMU raises a Race
+  Control notice the moment you are **at risk** and gives you a brief window to
+  slow down while the violation is calculated — lift inside it and the
+  infringement costs nothing.
+
+  The widget now shows **LIFT** and sounds the tone at the *start* of that window.
+  Lift and it flips to a green **SAVED** and goes quiet; a prompt that keeps
+  sounding after you have complied is how people learn to ignore prompts. A
+  `negated` count tracks how many you have given back, which is the only
+  encouraging number on the widget and the one that proves the lift is working.
+
+  The cue is edge-triggered rather than left to the audio module's rate limit:
+  that limit is one second and the window is 1.2, so the old code sounded the tone
+  **twice** per excursion — measured. Two beeps for one instruction reads as an
+  alarm rather than a prompt, and lengthening the rate limit would have swallowed
+  the second of two genuinely separate excursions.
+
+  With no throttle channel (spectating) every excursion scores, rather than
+  quietly forgiving ones that did cost the driver points in the sim.
+
+- **Tyres are one MFD row, not a panel of buttons.** The compound choice moved
+  onto a **TIRES** row at the top of PIT STRATEGY — where the sim's own all-four
+  entry would be, beside the per-corner rows it drives — cycling the compounds the
+  car actually has in the sim's own words (`New Medium`, `Used Medium`, `New
+  Wet`…). A control that looks different from its neighbours reads as a different
+  kind of thing, and this is not a different kind of thing.
+
+- **Pit request and serving a penalty are MFD rows too**, under **RACE CONTROL**,
+  alongside the outstanding penalty count.
+
+  `SERVE` now distinguishes **DRIVE-THRU** from **STOP/GO**, which is not
+  cosmetic: both strip the stop back to no service, but a stop/go means stopping
+  in your box so the pit stop *is* requested, while a drive-through means driving
+  the lane without stopping so it deliberately is **not**. Requesting a stop for a
+  drive-through is how drivers turn a drive-through into a drive-through plus a
+  pit stop.
+
+### Added
+
+- **`scripts/bind-lmu-key.js`** — writes the missing `Pit Request` keyboard
+  binding into LMU's own config, so the overlay has something to press. LMU
+  exposes no pit-request route in its API and a wheel-button binding cannot be
+  synthesised, which is why REQUEST PIT could not work for most drivers.
+
+  It **refuses to run while LMU is open**, and that guard is the reason this is a
+  script rather than a file edit: the game rewrites `keyboard.json` from memory
+  when it exits, so an edit made with it running appears to work, survives a test,
+  and is gone the next time you launch. A timestamped backup is written before any
+  change and `--restore` puts it back.
+
 ## 0.25.0 — 2026-07-27 "Postbox"
 
 Laps now reach the league. v0.24 recorded them; this connects that record to the

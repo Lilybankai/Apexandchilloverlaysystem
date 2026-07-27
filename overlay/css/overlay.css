@@ -1878,83 +1878,49 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__group[data-empty="true"] .mfd__rows { display: none; }
 .mfd__group[data-empty="true"] .mfd__empty { display: block; }
-/* The tyre control has no .mfd__rows, so it needs its own empty rule. */
-.mfd__group[data-group="tyres"][data-empty="true"] .mfd__tyre-opts { display: none; }
 
-/* --- the tyre compound control ------------------------------------------
-   One control for a decision that is always all four corners. The options are
-   the sim's own compound names, so a class running hards gets hards without
-   this file knowing what a compound is. */
-.mfd__tyre-opts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.mfd__tyre-opt {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 5px 8px;
+/* --- tyres + race control, as rows ---------------------------------------
+   Both used to be panels of their own — a strip of compound buttons, and a big
+   count with two wide buttons. They are rows now, in the same LABEL … VALUE … ±
+   shape as the sim's own pit entries, because that is what they are: the tyre
+   row belongs beside FL/FR/RL/RR TIRE, not in a box above them, and a control
+   that looks different from its neighbours reads as a different KIND of thing.
+
+   All that is left to style is the one control the row idiom did not already
+   have: a button with a word on it rather than a glyph. */
+.mfd__act {
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-control);
   background: var(--bg-control);
   color: var(--text-secondary);
   font-family: var(--font-display);
-  font-size: var(--fs-label);
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
 }
-.mfd__tyre-opt:hover { border-color: var(--ac-cyan); color: var(--text-primary); }
-/* The selected compound. A filled chip, not a border change: this is the one
-   thing in the section that has to be readable without looking at it. */
-.mfd__tyre-opt[data-on="true"] {
-  background: var(--ac-cyan);
-  border-color: var(--ac-cyan);
-  color: var(--text-invert);
-}
-/* Corners disagreeing — stated rather than resolved to one corner's answer. */
-.mfd__group[data-group="tyres"][data-mixed="true"] .mfd__group-title::after {
-  content: " · MIXED";
-  color: var(--warn);
-}
+.mfd__act:hover:not(:disabled) { border-color: var(--ac-cyan); color: var(--text-primary); }
+.mfd__act:disabled { opacity: 0.5; cursor: default; }
 
-/* --- penalties + the consequence actions ---------------------------------
-   The only section here that reports something happening TO the driver rather
-   than something they are choosing, which is why it sits at the top and is the
-   only one that changes colour. */
-.mfd__penalty-count {
+/* The outcome line under the race-control rows. Errors are the point of it:
+   the likeliest failure is the pit-request key not being bound, which the
+   driver can only fix if they are told so in those words. */
+.mfd__penalty-note {
+  margin-top: 6px;
   font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-crit);
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+  line-height: 1.35;
+  color: var(--text-muted);
 }
-.mfd__penalty-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
+.mfd__penalty-note[data-error="true"] { color: var(--warn); }
+
+/* A standing penalty tints its row's value; a fresh one lights the whole group
+   for the same four seconds the Track Limits widget announces in. */
+.mfd__penalty[data-state="standing"] .mfd__row[data-cat="service"] .mfd__value {
+  color: var(--pos-loss);
 }
-.mfd__penalty-btn {
-  flex: 1 1 0;
-  padding: 7px 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-control);
-  background: var(--bg-control);
-  color: var(--text-secondary);
-  font-family: var(--font-display);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-.mfd__penalty-btn:hover:not(:disabled) {
-  border-color: var(--ac-cyan);
-  color: var(--text-primary);
-}
-.mfd__penalty-btn:disabled { opacity: 0.5; cursor: default; }
 /* The outcome line. Errors are the point of it — the likeliest failure is
    "Pit Request" being on a wheel button, which the driver can only fix if they
    are told so in those words. */
@@ -1967,8 +1933,8 @@ body.ig-editing #widget-radar .panel__header {
 }
 .mfd__penalty-note[data-error="true"] { color: var(--warn); }
 
-.mfd__penalty[data-state="standing"] .mfd__penalty-count { color: var(--pos-loss); }
-.mfd__penalty[data-state="nodata"] .mfd__penalty-count { color: var(--text-muted); }
+.mfd__penalty[data-state="standing"] .mfd__row[data-cat="service"] .mfd__value { color: var(--pos-loss); }
+.mfd__penalty[data-state="nodata"] .mfd__row[data-cat="service"] .mfd__value { color: var(--text-muted); }
 /* The four seconds after a penalty lands — the same window the Track Limits
    widget announces in, driven by the same ctx.consequenceMs. */
 .mfd__penalty[data-state="fresh"] {
@@ -1977,7 +1943,7 @@ body.ig-editing #widget-radar .panel__header {
   margin: -6px;
   animation: mfd-consequence 0.5s ease-in-out infinite alternate;
 }
-.mfd__penalty[data-state="fresh"] .mfd__penalty-count { color: #fff; }
+.mfd__penalty[data-state="fresh"] .mfd__row[data-cat="service"] .mfd__value { color: #fff; }
 @keyframes mfd-consequence {
   from { background-color: rgba(255, 84, 112, 0.28); }
   to { background-color: rgba(255, 84, 112, 0.62); }
@@ -2338,16 +2304,49 @@ body.ig-editing #widget-radar .panel__header {
 #widget-limits[data-limits="alarm"] .limits__count,
 #widget-limits[data-limits="alarm"] .limits__label { color: var(--warn); }
 #widget-limits[data-limits="alarm"] .limits__edge { color: var(--warn); }
+#widget-limits[data-limits="atrisk"] .limits__count,
+#widget-limits[data-limits="atrisk"] .limits__label,
+#widget-limits[data-limits="atrisk"] .limits__edge { color: var(--warn); }
+#widget-limits[data-limits="saved"] .limits__count,
+#widget-limits[data-limits="saved"] .limits__label { color: var(--pos-gain); }
 #widget-limits[data-limits="none"] .limits__count,
 #widget-limits[data-limits="none"] .limits__label { color: var(--text-muted); }
+
+/* The banner says one of four things; only its colour changes.
+   `lift` is the one with an action attached, so it is the loudest thing the
+   widget can do — and `saved` is deliberately calm and green, because a driver
+   who is told off for complying stops complying. */
+.limits__banner[data-kind="lift"] {
+  background: rgba(255, 176, 32, 0.94);
+  color: var(--text-invert);
+  animation-name: limits-lift;
+}
+@keyframes limits-lift {
+  from { background-color: rgba(255, 176, 32, 0.94); }
+  to { background-color: rgba(255, 122, 0, 0.94); }
+}
+.limits__banner[data-kind="saved"] {
+  background: rgba(53, 208, 127, 0.92);
+  color: var(--text-invert);
+  animation: none;
+}
+.limits__banner[data-kind="scored"] {
+  background: rgba(255, 176, 32, 0.92);
+  color: var(--text-invert);
+  animation: none;
+}
 
 /* The alarm and a fresh penalty pulse; nothing else on the widget moves. Two
    seconds of gentle breathing is enough to catch peripheral vision without
    becoming the thing you look at instead of the corner. */
 #widget-limits[data-limits="alarm"] .panel__body,
+#widget-limits[data-limits="atrisk"] .panel__body,
 #widget-limits[data-limits="penalty"] .panel__body {
   animation: limits-pulse 0.9s ease-in-out infinite;
 }
+/* At risk pulses faster than anything else here: it is the one state that has a
+   deadline attached to it. */
+#widget-limits[data-limits="atrisk"] .panel__body { animation-duration: 0.45s; }
 @keyframes limits-pulse {
   0%, 100% { background-color: transparent; }
   50% { background-color: rgba(255, 176, 32, 0.16); }
