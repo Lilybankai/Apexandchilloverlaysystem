@@ -494,3 +494,22 @@ html, body { height: 100%; overflow: hidden; }
 
 .ovcard__dest[data-on="true"] .ovcard__dest-label { color: var(--cyan); }
 .ovcard__dest .switch { transform: scale(0.8); transform-origin: right center; }
+
+/* -------------------------- card titles with icons ---------------------- */
+/*
+ * The kit's card headers carry an icon beside the title (card__t in
+ * AppChrome.jsx). `.icon` is display:block so it composes predictably inside
+ * flex rows, which means a title has to BE a flex row — otherwise the icon takes
+ * a line of its own and the heading reads as two stacked elements.
+ */
+.card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card__title .icon {
+  width: 15px;
+  height: 15px;
+  color: var(--cyan);
+}
