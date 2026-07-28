@@ -13,18 +13,22 @@
  *   pool, because "nobody can press a Japanese key" is a very good reason to
  *   expect it to be free and not a guarantee that it is.
  *
- * The pool itself is the product decision: keys that exist in DirectInput and
- * on no Western keyboard, so no driver can already be using them and no global
- * hotkey in OBS or Discord can be listening for them. CONVERT, NOCONVERT and
- * YEN were each verified against the running game — bound to a real LMU
- * function, pressed with SendInput, and the car's own aid value moved.
+ * The pool itself is the product decision: scancodes Windows maps to no virtual
+ * key at all, so no driver can already be using them and no global hotkey in OBS
+ * or Discord can be listening. Every one was verified against the running game —
+ * bound to a real LMU function, pressed with SendInput, and the car's own aid
+ * value watched in shared memory.
+ *
+ * F16-F24 are excluded even though they were tested and worked perfectly:
+ * DirectInput's names stop at F15 but the scancodes do not, and F13-F24 is
+ * exactly what a Stream Deck emits for "a key no game uses".
  *
  * Run: node scripts/test-lmubinder.js
  */
 
 'use strict';
 
-const { KEY_POOL, WANTED, planLmuBindings } = require('../dist/server/lmuBinder');
+const { FKEY_SCANCODES, KEY_POOL, WANTED, planLmuBindings } = require('../dist/server/lmuBinder');
 
 let passed = 0;
 let failed = 0;
@@ -56,8 +60,14 @@ console.log('\n1) The pool is keys nobody can press');
   // Above 0x80 the codes resolve to E0-prefixed scancodes — the media keys —
   // so binding one would mute the driver's music every time we changed a bias.
   check('…so none of them can resolve to a media key', KEY_POOL.every((k) => (k.dik & 0x80) === 0));
-  check('the verified keys come first', KEY_POOL.slice(0, 3).every((k) => k.proven),
-    KEY_POOL.filter((k) => k.proven).length + ' proven');
+  // Every pooled key was pressed into the running game and moved a real value.
+  check('every pooled key is verified against the game', KEY_POOL.every((k) => k.proven),
+    KEY_POOL.filter((k) => k.proven).length + ' of ' + KEY_POOL.length);
+  // F16-F24 work perfectly and are still disqualified: a Stream Deck emits them.
+  check('no F-key scancode is in the pool',
+    !KEY_POOL.some((k) => FKEY_SCANCODES.includes(k.dik)), KEY_POOL.map((k) => k.dik).join());
+  check('the pool covers every function on a bare rig', KEY_POOL.length >= WANTED.length,
+    KEY_POOL.length + ' keys for ' + WANTED.length + ' functions');
   check('no key appears twice', new Set(KEY_POOL.map((k) => k.dik)).size === KEY_POOL.length);
 }
 
@@ -91,18 +101,16 @@ console.log('\n3) A key already in the file is never handed out again');
   check('no two functions are given the same key', new Set(used).size === used.length, used.join());
 }
 
-console.log('\n4) When the pool runs out, it says so rather than inventing keys');
+console.log('\n4) A bare rig gets full coverage');
 
 {
   const plan = planLmuBindings(binds({}));
   const offered = plan.rows.filter((r) => r.status === 'will-bind').length;
-  check('it binds as many as it has keys for', offered === KEY_POOL.length, offered);
-  check('…and reports the rest as uncovered', plan.unbindable === WANTED.length - KEY_POOL.length,
-    plan.unbindable);
-  check('…rather than reusing a pooled key',
-    new Set(plan.rows.map((r) => r.proposedDik).filter(Boolean)).size === KEY_POOL.length);
-  // Pit Request has no REST equivalent anywhere in LMU's API, so if only one
-  // key is ever claimed it has to be that one.
+  check('a rig with nothing bound gets everything bound', offered === WANTED.length, offered);
+  check('…with nothing left uncovered', plan.unbindable === 0, plan.unbindable);
+  check('…and no key handed out twice',
+    new Set(plan.rows.map((r) => r.proposedDik).filter(Boolean)).size === offered);
+  // Pit Request has no REST equivalent anywhere in LMU's API, so it goes first.
   check('the first key goes to Pit Request', rowFor(plan, 'Pit Request').proposedDik === KEY_POOL[0].dik,
     rowFor(plan, 'Pit Request').proposedLabel);
 }

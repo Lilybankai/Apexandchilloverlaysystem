@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.33.0 — 2026-07-28
+
+### Changed
+
+- **The binder can now cover a bare rig completely — 15 proven keys against 13
+  functions.** It shipped with six, three of them assumed rather than tested,
+  which meant a driver with nothing bound got Pit Request and five aids and a
+  list of "no spare key left" for the rest. Every key in the pool has now been
+  bound to a real LMU function, pressed into the running game with `SendInput`,
+  and watched moving the car's own value in shared memory. Nothing in it is
+  inferred.
+
+- **F16–F24 are excluded, despite working perfectly.** They were the obvious
+  candidates — DirectInput's names stop at F15, so `0x67`–`0x6F` look like
+  unclaimed space, and all ten drove the game on the first try. Then Windows was
+  asked what they actually are: `MapVirtualKey` maps them straight onto the F16+
+  virtual keys. F13–F24 is precisely what a **Stream Deck** emits for "a key no
+  game uses", so binding them would have put the overlay on a collision course
+  with the one peripheral most of this audience owns. They worked *because* they
+  are ordinary function keys, which is exactly the disqualification.
+
+  The pool is instead built from scancodes Windows maps to **no virtual key at
+  all**, or to unassigned OEM slots — 21 of them exist, 15 are now proven, and
+  the remaining six are noted in the source for when they are needed. A test
+  asserts the pool can never drift back into the F-key range.
+
 ## 0.32.0 — 2026-07-28
 
 ### Fixed

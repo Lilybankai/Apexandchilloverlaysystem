@@ -13,25 +13,28 @@
  * something writes the missing binds. Asking every user to hand-bind a dozen
  * functions in LMU's menus is not a product.
  *
- * ## The pool: keys that do not physically exist
- * Every key here is a real DirectInput key on a keyboard layout the driver
- * almost certainly does not own — Japanese and Brazilian keys. That is the
- * whole idea:
+ * ## The pool: scancodes no keyboard produces
+ * Every key here is a scancode Windows maps to **no virtual key at all**, or to
+ * an unassigned OEM slot. That is the whole idea:
  *
- *   - the driver cannot already have bound it in LMU, because they cannot
- *     press it;
+ *   - the driver cannot already have bound it in LMU, because no key on their
+ *     desk emits it;
  *   - it cannot fire an OBS or Discord global hotkey for the same reason;
- *   - Windows itself has no meaning for these scancodes.
+ *   - Windows itself has no meaning for it, so nothing is stolen from the
+ *     desktop either.
  *
- * **Verified against the game, not assumed.** `CONVERT`, `NOCONVERT` and `YEN`
- * were each bound to a real LMU function and pressed with `SendInput`; the
- * car's own aid values moved in shared memory. `KANA`, `ABNT_C1` and `ABNT_C2`
- * are the same class of key and are used only after the proven three.
+ * **Every one was verified against the running game**, not inferred from a
+ * header: bound to a real LMU function, pressed with `SendInput`, and the car's
+ * own aid value watched in shared memory.
  *
- * The DIK codes here are all below `0x80` **deliberately**. The other exotic
- * codes (`0x90`+) resolve to `E0`-prefixed scancodes — the media keys — so
- * binding one of those would mean the overlay muted the driver's music or
- * skipped a track every time it changed a brake bias.
+ * Two whole families were ruled out along the way, both of which *worked*:
+ *
+ *   - `0x67`–`0x6F` are **F16–F24**. DirectInput's names stop at F15, but the
+ *     scancodes do not, and F13–F24 is precisely what a Stream Deck emits for
+ *     "a key no game uses" — see {@link FKEY_SCANCODES}.
+ *   - `0x90`+ resolve to `E0`-prefixed scancodes, the **media keys**, so one of
+ *     those would mute the driver's music every time the overlay nudged a brake
+ *     bias.
  *
  * ## The one hard rule about writing
  * **LMU rewrites `keyboard.json` from memory when it exits.** A write made
@@ -54,16 +57,54 @@ export interface PoolKey {
 }
 
 /**
- * Claimable keys, **proven ones first** so a rig that needs only a few gets
- * only the verified ones.
+ * Scancodes for **F16–F24**, which must never enter the pool.
+ *
+ * They are the obvious-looking candidates and they work perfectly — every one
+ * was tested against the running game and drove its function. They are still
+ * disqualified, because DirectInput's *names* stop at F15 but the scancodes do
+ * not: Windows maps `0x67`–`0x6F` straight onto the F16+ virtual keys, and
+ * F13–F24 is exactly what a **Stream Deck** emits when asked for "a key no game
+ * uses". Binding them would put the overlay on a collision course with the one
+ * peripheral most of this audience owns.
+ *
+ * Kept as a named constant rather than a comment so the test can assert the
+ * pool never drifts back into this range.
+ */
+export const FKEY_SCANCODES: readonly number[] = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110];
+
+/**
+ * Claimable keys. Every one of these was **bound to a real LMU function and
+ * pressed into the running game**, and the car's own values moved in shared
+ * memory — none of it is inferred from a header file.
+ *
+ * They are ordered by how invisible they are to Windows. The first block maps
+ * to **no virtual key at all** on a standard layout; the last three map to
+ * unassigned OEM slots. Nothing in either block appears on a keyboard sold in
+ * the West, and nothing in either block can be produced by a Stream Deck, which
+ * is the failure mode that ruled out the F-keys (see {@link FKEY_SCANCODES}).
+ *
+ * Fifteen keys against thirteen functions, so a rig with nothing bound at all
+ * gets full coverage with two to spare. If more are ever needed, `85, 90, 91,
+ * 92, 94, 95, 115, 126` are the same class of code and only need the same test.
  */
 export const KEY_POOL: readonly PoolKey[] = [
+  // No virtual key whatsoever — the safest thing a scancode can be.
   { dik: 121, label: 'CONVERT (Japanese 変換)', proven: true },
-  { dik: 123, label: 'NOCONVERT (Japanese 無変換)', proven: true },
   { dik: 125, label: 'YEN (Japanese ¥)', proven: true },
-  { dik: 112, label: 'KANA (Japanese)', proven: false },
-  { dik: 115, label: 'ABNT_C1 (Brazilian /?)', proven: false },
-  { dik: 126, label: 'ABNT_C2 (Brazilian numpad .)', proven: false },
+  { dik: 112, label: 'KANA (Japanese)', proven: true },
+  { dik: 114, label: 'unmapped 0x72', proven: true },
+  { dik: 116, label: 'unmapped 0x74', proven: true },
+  { dik: 117, label: 'unmapped 0x75', proven: true },
+  { dik: 119, label: 'unmapped 0x77', proven: true },
+  { dik: 120, label: 'unmapped 0x78', proven: true },
+  { dik: 122, label: 'unmapped 0x7A', proven: true },
+  { dik: 127, label: 'unmapped 0x7F', proven: true },
+  { dik: 96, label: 'unmapped 0x60', proven: true },
+  { dik: 97, label: 'unmapped 0x61', proven: true },
+  // Unassigned OEM virtual keys — no physical key produces them either.
+  { dik: 123, label: 'NOCONVERT (Japanese 無変換)', proven: true },
+  { dik: 111, label: 'unmapped 0x6F (OEM)', proven: true },
+  { dik: 113, label: 'unmapped 0x71 (OEM)', proven: true },
 ];
 
 /**

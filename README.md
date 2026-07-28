@@ -479,10 +479,16 @@ outside the game — so anything you have only on the wheel is unusable from her
 until it also has a key. Settings → **LMU controls** shows what is bound, what
 isn't, and binds the missing ones in one click.
 
-The keys it claims are Japanese and Brazilian ones — `CONVERT`, `NOCONVERT`, `YEN`,
-`KANA`, `ABNT_C1`, `ABNT_C2`. They exist in DirectInput and on no keyboard you own,
-which is the entire point: you cannot already have bound them in LMU, and no OBS or
-Discord hotkey can be listening for them. Anything you *have* bound is left exactly
+The keys it claims are scancodes Windows maps to **no virtual key at all** — no
+keyboard sold produces them, which is the entire point: you cannot already have bound
+them in LMU, and no OBS or Discord hotkey can be listening for them. Fifteen of them
+are verified against the running game, against thirteen functions, so even a rig with
+nothing bound is covered.
+
+**F16–F24 are deliberately not used**, though they work. DirectInput's names stop at
+F15 so `0x67`–`0x6F` look like free space, but Windows maps them onto the F16+ virtual
+keys — and F13–F24 is exactly what a **Stream Deck** emits for "a key no game uses".
+They work *because* they are ordinary function keys, which is why they are unsafe. Anything you *have* bound is left exactly
 as it is, a key already in your file is never handed out twice, a timestamped backup
 is taken first, and **Undo** puts it back. It refuses while LMU is running — the game
 rewrites that file from memory when it exits, so a change made now would be thrown
