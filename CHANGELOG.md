@@ -43,6 +43,12 @@
   the desktop app that ran whenever the server was up purely to watch the
   driver's own aid presses. None of it has a job once the values can be read.
 
+- **Reading LMU's controller binds (`direct input.json`).** That file was parsed
+  on every bind read so the estimate tracker could watch the buttons the driver
+  actually uses. Nothing needs to know what the wheel is bound to now, so the
+  parse, the `WheelBind` type and the `incWheel`/`decWheel` fields are gone —
+  one fewer file read on a path that runs on every aid press.
+
 ## 0.29.0 — 2026-07-28
 
 ### Fixed
