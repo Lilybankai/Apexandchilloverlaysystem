@@ -1027,12 +1027,25 @@
       if (capturingBind && capturingBind.chip === chip) stopBindCapture();
     });
 
+    // Clears EVERYTHING bound to this action — the key and both wheel
+    // directions. It used to clear only the key, which is not what a row-level
+    // "×" says it does: the wheel binding stayed, kept firing, and the only way
+    // to remove it was a right-click on the chip that nothing advertised.
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'hotkey__clear';
-    clear.title = 'Clear binding';
+    clear.title = 'Clear every binding on this action (key and wheel)';
     clear.innerHTML = '&times;';
-    clear.addEventListener('click', () => void commitBinding(action.id, '', chip));
+    clear.addEventListener('click', async () => {
+      await commitBinding(action.id, '', chip);
+      if (action.wheel && (action.wheel.inc || action.wheel.dec)) {
+        for (const dir of ['inc', 'dec']) {
+          if (action.wheel[dir]) await window.apex.wheelBind(action.id, dir, null);
+        }
+        showToast('Cleared key and wheel bindings');
+        await renderBindings();
+      }
+    });
 
     // Wheel chips. A `delta` action gets two (an encoder's two directions); a
     // `pulse` action gets one. Unlike a global hotkey, a wheel button is NOT
@@ -1049,7 +1062,9 @@
       const glyph = action.kind === 'delta' ? (dir === 'dec' ? '− ' : '+ ') : '';
       chip.textContent = bound ? glyph + 'btn ' + bound.button : glyph + 'wheel';
       chip.setAttribute('data-empty', String(!bound));
-      chip.title = bound ? `${bound.device} button ${bound.button}` : 'Click, then press a wheel button';
+      chip.title = bound
+        ? `${bound.device} button ${bound.button} — click to rebind, right-click to clear`
+        : 'Click, then press a wheel button';
       chip.addEventListener('click', async () => {
         chip.setAttribute('data-capturing', 'true');
         chip.textContent = 'press…';

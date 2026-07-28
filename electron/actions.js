@@ -161,36 +161,27 @@ function createActions(deps = {}) {
   }
 
   /* ---------------------------------------------------------------- */
-  /*  Driving aids — keystroke injection, page-independent binds       */
+  /*  Driving aids — deliberately NOT bindable actions                 */
   /* ---------------------------------------------------------------- */
 
-  // Registered from LMU's OWN bind list, so the set of available aid actions
-  // reflects what the driver actually has bound. An aid with neither direction
-  // bound contributes nothing.
-  const binds = readBinds();
-  if (keys && keys.available && binds) {
-    for (const aid of binds.aids) {
-      if (!aid.inc && !aid.dec) continue;
-      define({
-        id: `aid.${aid.id}`,
-        label: aid.label,
-        group: 'Driving aids',
-        kind: 'delta',
-        /**
-         * Re-reads the binds each time so a mid-session rebind is picked up,
-         * and refuses when the sim is not frontmost — SendInput goes to the
-         * foreground window, so an unguarded press lands in the wrong app.
-         */
-        run: async (dir) => {
-          const fresh = readBinds();
-          const entry = fresh && fresh.aids.find((a) => a.id === aid.id);
-          const key = entry && (dir < 0 ? entry.dec : entry.inc);
-          if (!key) return { ok: false, error: `${aid.label}: no key bound in LMU` };
-          return keys.pressScan(key);
-        },
-      });
-    }
-  }
+  /*
+   * There used to be one delta action per aid (`aid.tc`, `aid.abs`, …), each
+   * pressing LMU's own key. They are gone, and their absence is the fix for a
+   * real bug rather than a tidy-up.
+   *
+   * Two bindings on one button. A driver binds a wheel encoder to `pit.valueInc`
+   * — the ± of the four MFD controls — and, at some earlier point, the same
+   * button to `aid.tc`. Nothing stops that: the two live in different groups and
+   * a wheel button is not consumed, so both fire on every press. The result is
+   * traction control creeping up and down whenever a pit value is changed, from
+   * a control the driver has long since stopped thinking about. It looked for
+   * all the world like the overlay misreading TC.
+   *
+   * They are also redundant now. The MFD cursor walks the aid rows along with
+   * everything else (see server/pitCursor), so ▲ ▼ + − reach every aid without
+   * a binding of their own — which is the whole point of having four buttons
+   * instead of twenty.
+   */
 
   /* ---------------------------------------------------------------- */
   /*  Pit strategy — REST, independent of focus and of the MFD page    */

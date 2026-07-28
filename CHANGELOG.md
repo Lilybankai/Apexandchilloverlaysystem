@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.32.0 — 2026-07-28
+
+### Fixed
+
+- **Traction control moving on its own when a pit value changed.** Not a
+  misreading — two actions on one button. The bindings panel offered a delta
+  action per driving aid (`aid.tc`, `aid.abs`, …) alongside the four MFD cursor
+  controls, and nothing stopped one wheel button carrying both. On the rig this
+  was found on, button 46 was `pit.rowUp` **and** `aid.tc` inc, button 48 was
+  `pit.valueInc` **and** `aid.tc` dec. A wheel button is not consumed, so both
+  fired every time: scrolling the cursor up raised TC, raising a pit value
+  lowered it.
+
+  The per-aid actions are removed. They were redundant as well as harmful — the
+  MFD cursor walks the aid rows along with everything else, so ▲ ▼ + − reach
+  every aid without a binding of their own, which is the entire point of having
+  four buttons instead of twenty.
+
+- **Bindings left behind by removed actions are cleaned up on launch.** A stale
+  binding is not just untidy: a global hotkey for an action that no longer
+  exists still **consumes the key**, so it stops reaching the sim and does
+  nothing in exchange, and neither it nor a stale wheel binding is visible in
+  the UI, because the row it belonged to is gone. Only ids this app has actually
+  removed are dropped — an explicit list, never a sweep against the live
+  registry, because half of it is conditional and a bad load would otherwise eat
+  a driver's pit bindings.
+
+- **The "×" on a binding row now clears the wheel binding too.** It only ever
+  cleared the *key*, which is not what a row-level clear says it does: the wheel
+  binding stayed and kept firing, and the only way to remove it was a
+  right-click on a chip that advertised nothing. That right-click still works
+  and now says so in its tooltip.
+
 ## 0.31.0 — 2026-07-28
 
 ### Added

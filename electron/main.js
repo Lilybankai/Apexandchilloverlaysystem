@@ -869,6 +869,57 @@ async function runAction(id, dir) {
  *
  * @returns {{registered: string[], failed: {action: string, accel: string, reason: string}[]}}
  */
+/**
+ * Bindings for actions this app has REMOVED, matched by id prefix.
+ *
+ * Deliberately an explicit list rather than "anything the registry doesn't
+ * know". Half the registry is conditional — the pit actions only exist when
+ * `dist/` loaded — so a sweep against the live registry would quietly delete a
+ * driver's pit bindings on the one launch where a module failed to load. An
+ * explicit list can only ever remove what it names.
+ */
+const REMOVED_ACTION_PREFIXES = [
+  // Per-aid delta actions (`aid.tc`, `aid.abs`, …). The MFD cursor reaches
+  // every aid, so these were redundant — and worse than redundant: nothing
+  // stopped the same wheel button carrying both `aid.tc` and `pit.valueInc`,
+  // which moved traction control every time the driver changed a pit value.
+  'aid.',
+];
+
+/**
+ * Drops bindings left behind by removed actions.
+ *
+ * A stale binding is not merely untidy. A global hotkey for a dead action still
+ * **consumes the key** — it stops reaching the sim and does nothing in
+ * exchange — and a stale wheel binding keeps firing a lookup on every press.
+ * Neither is visible in the UI, because the row it belonged to is gone.
+ */
+function pruneRemovedBindings() {
+  const isRemoved = (id) => REMOVED_ACTION_PREFIXES.some((p) => id.startsWith(p));
+  const s = loadSettings();
+  const actionBindings = {};
+  const wheelBindings = {};
+  const dropped = [];
+  for (const [id, accel] of Object.entries(s.actionBindings || {})) {
+    if (!isRemoved(id)) actionBindings[id] = accel;
+    else if (accel) dropped.push(`${id} (key ${accel})`);
+  }
+  for (const [id, entry] of Object.entries(s.wheelBindings || {})) {
+    if (!isRemoved(id)) wheelBindings[id] = entry;
+    else dropped.push(`${id} (wheel)`);
+  }
+  const changed =
+    Object.keys(actionBindings).length !== Object.keys(s.actionBindings || {}).length ||
+    Object.keys(wheelBindings).length !== Object.keys(s.wheelBindings || {}).length;
+  if (!changed) return;
+
+  if (dropped.length > 0) {
+    console.log(`[bindings] removed ${dropped.length} binding(s) for actions that no longer exist:`);
+    for (const d of dropped) console.log(`  ${d}`);
+  }
+  saveSettings({ ...s, actionBindings, wheelBindings });
+}
+
 function applyBindings(settings) {
   globalShortcut.unregisterAll();
   const s = settings || loadSettings();
@@ -1849,6 +1900,7 @@ app.whenReady().then(async () => {
     .catch((err) => console.error('[auth] restore failed:', err.message));
 
   setupAutoUpdate();
+  pruneRemovedBindings();
   applyBindings(loadSettings());
   syncGamepad();
   // Auto-start the server so overlays are live as soon as the app opens.
