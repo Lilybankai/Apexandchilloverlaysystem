@@ -424,28 +424,26 @@ otherwise all cue the same event at once.
 
 ### MFD widget
 
-The in-game Multi-Function Display for the player's car: **PENALTIES**, a one-tap
-**TYRES** compound control, a **PIT STRATEGY** section (colour-coded by category —
-tyres, pressures, ducts, aero, fuel, brakes — so related lines read as a group)
-and a **DRIVING AIDS** section showing **live brake bias**.
+The in-game Multi-Function Display for the player's car: a **RACE CONTROL** section,
+a **PIT STRATEGY** section (the sim's own menu, colour-coded by category — tyres,
+pressures, ducts, aero, fuel, brakes — so related lines read as a group) and a
+**DRIVING AIDS** section.
 
-**Tyres are one row, not four.** LMU carries the tyre decision as four independent
-per-corner rows that each cycle the same list, so "put the wets on" meant four rows of
-scrolling. The **TIRES** row sits at the top of PIT STRATEGY — where the sim's own
-all-four entry would be, beside the per-corner rows it drives — and its `±` cycles the
-compounds the car actually has, in the sim's own words: `No Change`, `New Medium`,
-`Used Medium`, `New Hard`, `New Wet`. One press sets all four corners together. The
-per-corner rows are untouched below for anyone who wants one corner, and a set that
-genuinely disagrees reads `Mixed` rather than being resolved to one corner's answer.
+**One row per setting.** PIT STRATEGY is LMU's menu verbatim, including its own
+all-four `TIRES:` row — the overlay adds nothing of its own to it. It used to draw a
+second, collapsed tyre row at the top of the section, which duplicated that entry and,
+being the widget's invention rather than a row the server walks, was the one row
+▲ ▼ could never reach. Setting all four corners in one press is still there as the
+bindable `pit.tyreCompound` action.
 
 **RACE CONTROL** carries what the sim is doing *to* you, and the two replies — all as
 rows, in the same shape as everything else on the widget:
 
-| Row             | Does                                                          |
-| --------------- | ------------------------------------------------------------- |
-| **PENALTIES**   | Outstanding count, lit for four seconds when one lands         |
-| **PIT REQUEST** | Requests a normal stop                                         |
-| **SERVE**       | `⇄` picks **DRIVE-THRU** or **STOP/GO**; `SERVE` arms it       |
+| Row             | Does                                                                    |
+| --------------- | ----------------------------------------------------------------------- |
+| **PENALTIES**   | Outstanding count, lit for four seconds when one lands. A readout — the only line here ▲ ▼ walk past, because there is nothing to set |
+| **SERVE**       | `OFF → DRIVE-THRU → STOP/GO` — arms one, stripping the stop back to no service |
+| **PIT REQUEST** | `NO → YES` — requests a normal stop                                     |
 
 The two penalty types differ in a way that matters. Both strip the next stop back to
 no service — a penalty taken with your normal strategy loaded gets a full service,
@@ -475,21 +473,30 @@ It refuses to run while LMU is open, because the game rewrites `keyboard.json` f
 memory when it exits — an edit made with it running looks like it worked and is gone
 the next time you launch. A timestamped backup is written before any change.
 
-**Driving the pit menu from four buttons.** One pit row is highlighted — the row
-the bindable `Pit menu ▲ / ▼ / + / −` actions are aimed at. Bind them to wheel
+**Driving the whole MFD from four buttons.** Exactly one row is highlighted — the
+row the bindable `Pit menu ▲ / ▼ / + / −` actions are aimed at. Bind them to wheel
 buttons, a Stream Deck or global hotkeys in the control panel's Bindings section
-and the whole menu is reachable the way the in-game MFD does it: scroll down to
-`FL TIRE`, press `+`, get a new medium. The changes go over LMU's REST API, so
-the in-game MFD never has to be on screen and the sim does not even have to be
-the focused window. Clicking a row's own ± aims the cursor at that row too, so
-the mouse and the buttons never disagree about which row is selected. The cursor
-is anchored by row **name**, not index — the menu's shape changes with the car
-and the session, and an index alone would quietly slide onto a brake duct.
+and every adjustable row is reachable the way the in-game MFD does it: scroll down
+to `FL TIRE`, press `+`, get a new medium.
+
+▲ ▼ walk **one list covering all three sections**, in the order they are drawn:
+the race-control rows, then the sim's pit menu, then the driving aids. Anything
+with a `±` on it can be reached; the only line skipped is the PENALTIES readout.
+Pit changes go over LMU's REST API, so the in-game MFD never has to be on screen
+and the sim does not even have to be the focused window — the aid rows are the
+exception, since they are keystrokes and LMU must be frontmost to receive one
+(the row says so if it is not).
+
+Clicking a row's own ± aims the cursor at that row too, so the mouse and the
+buttons never disagree about which row is selected. The cursor is anchored by a
+**section-scoped row key**, not an index — the list's shape changes with the car,
+the session and what the driver has bound, and an index alone would quietly slide
+onto a brake duct or, worse, resolve one section's row against another's.
 
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
 | `?pit=off`    | Hide the pit-strategy section (fuel, energy, tyres, wing, pressures, ducts, repairs) |
-| `?aids=off`   | Hide the driving-aids section (live brake bias)                       |
+| `?aids=off`   | Hide the driving-aids section (brake bias, TC, ABS, motor map)        |
 | `?opacity=0.4`| Panel opacity, same contract as the Motion/Damage widgets             |
 
 Pit strategy is read from LMU's REST garage API and projected in
@@ -501,10 +508,13 @@ immediately rather than waiting for the next frame — so the value moving is
 prompt confirmation that the command landed.
 **Brake bias is read live from shared memory**
 (`mRearBrakeBias`) and updates as the driver shifts the balance — the REST garage
-data only reports the frozen *setup* value, so it can't show live aids. The other
-aids (TC/ABS/engine maps) aren't shown at all: LMU exposes no live value for them
-anywhere, and a frozen setup number that never moves reads as broken. **LMU
-only** — the widget shows "No MFD data" out of a session or on rF2.
+data only reports the frozen *setup* value, so it can't show live aids. TC, ABS
+and the motor map have no live value anywhere in LMU, so they are **counted, not
+read**: seeded from the setup value and stepped by every press the overlay makes
+*and* every press on the wheel buttons LMU has them bound to. They are tagged
+`est` for exactly that reason — an estimate the driver knows is an estimate is
+useful, one passed off as a reading is a hazard. **LMU only** — the widget shows
+"No MFD data" out of a session or on rF2.
 
 ## Live telemetry sources
 

@@ -1879,30 +1879,14 @@ body.ig-editing #widget-radar .panel__header {
 .mfd__group[data-empty="true"] .mfd__rows { display: none; }
 .mfd__group[data-empty="true"] .mfd__empty { display: block; }
 
-/* --- tyres + race control, as rows ---------------------------------------
-   Both used to be panels of their own — a strip of compound buttons, and a big
-   count with two wide buttons. They are rows now, in the same LABEL … VALUE … ±
-   shape as the sim's own pit entries, because that is what they are: the tyre
-   row belongs beside FL/FR/RL/RR TIRE, not in a box above them, and a control
-   that looks different from its neighbours reads as a different KIND of thing.
+/* --- race control, as rows -----------------------------------------------
+   This used to be a panel of its own — a big count with two wide buttons. It is
+   rows now, in the same LABEL … VALUE … ± shape as the sim's own pit entries,
+   because that is what they are, and a control that looks different from its
+   neighbours reads as a different KIND of thing.
 
-   All that is left to style is the one control the row idiom did not already
-   have: a button with a word on it rather than a glyph. */
-.mfd__act {
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-control);
-  background: var(--bg-control);
-  color: var(--text-secondary);
-  font-family: var(--font-display);
-  font-size: var(--fs-micro);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.mfd__act:hover:not(:disabled) { border-color: var(--ac-cyan); color: var(--text-primary); }
-.mfd__act:disabled { opacity: 0.5; cursor: default; }
+   Nothing here needs styling of its own any more: every one of these rows is a
+   plain ± row, so .mfd__row and .mfd__step already carry it. */
 
 /* The outcome line under the race-control rows. Errors are the point of it:
    the likeliest failure is the pit-request key not being bound, which the

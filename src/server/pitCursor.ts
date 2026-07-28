@@ -2,16 +2,16 @@
  * @file src/server/pitCursor.ts
  * @module server/pitCursor
  *
- * The selected row of the pit menu — the "where am I" for the four bindable pit
- * controls (row up, row down, value +, value −).
+ * The selected MFD row — the "where am I" for the four bindable controls (row
+ * up, row down, value +, value −).
  *
  * ## Why this exists at all
- * Every other pit write in the app names its row outright (`FUEL RATIO:`), which
- * is fine for a dedicated button but does not scale: the menu has ~20 rows and
- * nobody is binding twenty pairs of wheel buttons. The driver wants what the
- * in-game MFD gives them — scroll to FL TIRE, press +, get a new medium — from
- * two pairs of buttons, without the in-game MFD being on screen. That needs one
- * piece of state: which row the ± is currently aimed at.
+ * Every other write in the app names its row outright (`FUEL RATIO:`), which is
+ * fine for a dedicated button but does not scale: the MFD has ~25 adjustable
+ * lines and nobody is binding twenty-five pairs of wheel buttons. The driver
+ * wants what the in-game MFD gives them — scroll to FL TIRE, press +, get a new
+ * medium — from two pairs of buttons, without the in-game MFD being on screen.
+ * That needs one piece of state: which row the ± is currently aimed at.
  *
  * It lives here, in a module of its own, because THREE callers share it and none
  * of them owns the others: the Electron action registry (a wheel button or
@@ -20,46 +20,81 @@
  * inside Electron main, so a plain module-level value genuinely is shared state
  * between all three — no IPC, no round trip through the sim.
  *
- * ## The cursor is anchored by NAME, not by index
- * The pit menu is not a fixed list: rows come and go with the car, the session
- * and the damage state (DAMAGE and DRIVER are not always there). An index alone
- * silently slides onto a different row when that happens — the driver scrolls to
- * FL TIRE, the menu changes shape, and the next + lands on a brake duct. So the
- * name is the anchor and the index is only the fallback for when the name is
- * gone (see {@link resolveIndex}).
+ * ## One list, three sources, in the order the widget draws them
+ * The cursor walks EVERY adjustable row the MFD shows, in exactly the order the
+ * widget lays them out:
+ *
+ *   race →  the overlay's own rows (SERVE, PIT REQUEST)      RACE CONTROL
+ *   pit  →  the sim's pit menu, verbatim                     PIT STRATEGY
+ *   aid  →  the driving aids LMU has bound to a key          DRIVING AIDS
+ *
+ * A control that cannot be reached by ▲ ▼ is a control a driver cannot use, so
+ * "adjustable but not walked" is a bug, not a design choice — the one deliberate
+ * exception is the PENALTIES readout, which is a reading and has nothing to set.
+ * Keeping this order identical to the widget's is not cosmetic either: a cursor
+ * that jumps from the bottom of one group to the middle of another reads as the
+ * highlight teleporting, which is how the previous split list felt.
+ *
+ * ## The cursor is anchored by KEY, not by index
+ * The list is not a fixed shape: sim rows come and go with the car, the session
+ * and the damage state (DAMAGE and DRIVER are not always there), and the aid
+ * rows depend on what the driver has bound. An index alone silently slides onto
+ * a different row when that happens — the driver scrolls to FL TIRE, the menu
+ * changes shape, and the next + lands on a brake duct.
+ *
+ * So each row carries a section-scoped {@link MfdRow.key} (`pit:FL TIRE:`), that
+ * key is the anchor, and the index is only the fallback for when the key is gone
+ * (see {@link resolveIndex}). Scoping the key by section matters as much as the
+ * name in it: the overlay's rows and the sim's are named in the same style, and
+ * an unscoped name lets a lookup for one land on the other — which is precisely
+ * how the highlight ended up on PIT REQUEST and a pit row at the same time.
  */
 
 import type { MfdController } from '../telemetry/mfdControl';
 
-/** A row as far as the cursor cares — a name, and its value text if it has one. */
-export interface CursorRow {
+/** A pit row as LMU's `receivePitMenu` returns it. */
+export interface PitMenuRow {
   name?: string;
   currentSetting?: number;
   settings?: Array<{ text?: string }>;
-  /**
-   * The sim's own stable row id, when this row came from the sim. Absent on the
-   * overlay's own rows, which the sim has never heard of — see {@link VirtualRow}.
-   */
+  /** The sim's own stable row id — how a write targets a row unambiguously. */
   'PMC Value'?: number;
 }
 
-/* ------------------------------ virtual rows ------------------------------ */
+/** Which part of the MFD a walked row belongs to. */
+export type MfdSection = 'race' | 'pit' | 'aid';
 
 /**
- * A row the OVERLAY owns rather than the sim: the tyre compound collapsed across
- * four corners, the pit request, serving a penalty.
+ * One row in the list the cursor walks, whatever it is underneath.
  *
- * These have to sit in the same list the cursor walks, or they are unreachable
- * from the only input vocabulary that matters. The four bindable controls are
- * the whole point of the cursor — scroll, scroll, plus — and a control that can
- * only be clicked is a control a driver cannot use, because the one moment they
- * need to serve a penalty is a moment both hands are on the wheel. Putting them
- * in a panel of their own beside the list was the mistake this fixes.
- *
- * They are declared through {@link setVirtualRows} rather than imported, because
- * applying one needs the MFD controller and the key sender, and pitCursor must
- * not depend on either — it is walked by the Electron action registry, by the
- * HTTP routes and by the widget, and a dependency here would be a cycle.
+ * The three sources have nothing in common mechanically — a pit row is a REST
+ * write, an aid is a keystroke, SERVE is a small state machine — so they are
+ * normalised to this before the cursor sees any of them. That is what lets
+ * {@link moveCursor} and {@link stepSelected} stay ignorant of which is which,
+ * and it is why adding a row to the widget can no longer forget to make it
+ * reachable.
+ */
+export interface MfdRow {
+  /** Stable, section-scoped identity: `race:SERVE:`, `pit:FL TIRE:`, `aid:tc`. */
+  key: string;
+  /** The row's name, in the sim's own style. */
+  name: string;
+  section: MfdSection;
+  /** Its current value as text, when the source knows it. */
+  text: string | null;
+  /** Change it by one step. `dir` is ±1. */
+  step: (dir: number) => Promise<{ ok: boolean; text?: string | null; error?: string }>;
+}
+
+/* ------------------------- the overlay's own rows ------------------------- */
+
+/**
+ * A row the OVERLAY owns rather than the sim: serving a penalty, requesting the
+ * stop. Declared through {@link setRaceControlRows} rather than imported,
+ * because applying one needs the MFD controller and the key sender, and this
+ * module must not depend on either — it is walked by the Electron action
+ * registry, by the HTTP routes and by the widget, and a dependency here would be
+ * a cycle.
  */
 export interface VirtualRow {
   /** Row name, in the sim's own style so the widget can key off it uniformly. */
@@ -76,54 +111,158 @@ export interface VirtualRow {
   apply: (next: number) => Promise<{ ok: boolean; applied: number; error?: string }>;
 }
 
-let virtualProvider: (() => VirtualRow[]) | null = null;
-
-/**
- * Register the overlay-owned rows. Called once at server start; passing `null`
- * removes them, which is what a build without the MFD control plane does.
- */
-export function setVirtualRows(provider: (() => VirtualRow[]) | null): void {
-  virtualProvider = provider;
+/** A driving aid as the cursor walks it: a label, a value, and ± by keystroke. */
+export interface AidRow {
+  /** The aid's stable id (`tc`), which the widget resolves its rows to as well. */
+  id: string;
+  label: string;
+  /** Current value text, when there is one to show — aids are often estimates. */
+  text: string | null;
+  step: (dir: number) => Promise<{ ok: boolean; text?: string | null; error?: string }>;
 }
 
-/** The overlay-owned rows right now, or an empty list when none are registered. */
-export function getVirtualRows(): VirtualRow[] {
-  if (!virtualProvider) return [];
+let raceProvider: (() => VirtualRow[]) | null = null;
+let aidProvider: (() => AidRow[]) | null = null;
+
+/**
+ * Register the overlay-owned race-control rows. Called once at server start;
+ * passing `null` removes them, which is what a build without the MFD control
+ * plane does.
+ */
+export function setRaceControlRows(provider: (() => VirtualRow[]) | null): void {
+  raceProvider = provider;
+}
+
+/** Register the driving-aid rows. Same contract as {@link setRaceControlRows}. */
+export function setAidRows(provider: (() => AidRow[]) | null): void {
+  aidProvider = provider;
+}
+
+/** A provider's rows right now, or an empty list when it is absent or throws. */
+function safely<T>(provider: (() => T[]) | null): T[] {
+  if (!provider) return [];
   try {
-    return virtualProvider();
+    const rows = provider();
+    return Array.isArray(rows) ? rows : [];
   } catch {
     return [];
   }
 }
 
-/** A virtual row in the shape the cursor and the widget already understand. */
-function asCursorRow(v: VirtualRow): CursorRow {
+/**
+ * The overlay-owned rows right now.
+ *
+ * Exported because the widget draws them from this rather than from a copy of
+ * its own: the wheel buttons change them too, and a local copy would drift the
+ * moment a driver used the buttons instead of the mouse.
+ */
+export function getRaceControlRows(): VirtualRow[] {
+  return safely(raceProvider);
+}
+
+/** The driving-aid rows right now. */
+export function getAidRows(): AidRow[] {
+  return safely(aidProvider);
+}
+
+/* ------------------------------ list assembly ----------------------------- */
+
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+function raceRow(v: VirtualRow): MfdRow {
   return {
+    key: `race:${v.name}`,
     name: v.name,
-    currentSetting: v.current,
-    settings: v.options.map((text) => ({ text })),
+    section: 'race',
+    text: v.options[v.current] ?? null,
+    step: async (dir) => {
+      // Clamped, not wrapped. These rows have consequences at their ends —
+      // SERVE's non-OFF options strip the whole stop back to no service — and
+      // wrapping from the last option round to the first would let one extra
+      // press on a blind control do something the driver was not reaching for.
+      const next = clamp(v.current + (dir < 0 ? -1 : 1), 0, v.options.length - 1);
+      const res = await v.apply(next);
+      return { ok: res.ok, text: v.options[res.applied] ?? null, error: res.error };
+    },
+  };
+}
+
+function pitRow(r: PitMenuRow, controller: MfdController | null): MfdRow {
+  const name = r.name ?? '';
+  const settings = Array.isArray(r.settings) ? r.settings : [];
+  const cur = typeof r.currentSetting === 'number' ? r.currentSetting : 0;
+  return {
+    key: `pit:${name}`,
+    name,
+    section: 'pit',
+    text: settings[cur]?.text ?? null,
+    step: async (dir) => {
+      if (!controller) return { ok: false, error: 'pit control unavailable' };
+      // Targeted by `PMC Value` — the sim's own stable id — so the write cannot
+      // land on a neighbouring row even if the menu re-ordered between the
+      // cursor moving and the ± being pressed.
+      const res = await controller.setPitRow(
+        { pmcValue: r['PMC Value'], name },
+        { delta: dir < 0 ? -1 : 1 },
+      );
+      if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
+      return { ok: true, text: settings[res.applied ?? 0]?.text ?? null };
+    },
+  };
+}
+
+function aidRow(a: AidRow): MfdRow {
+  return {
+    key: `aid:${a.id}`,
+    name: a.label,
+    section: 'aid',
+    text: a.text,
+    step: (dir) => a.step(dir < 0 ? -1 : 1),
   };
 }
 
 /**
- * The full list the cursor walks: the overlay's rows first, then the sim's.
+ * Assembles the walked list from the sim's pit rows plus both providers.
  *
- * First, deliberately. They are the rows a driver reaches for under pressure —
- * a penalty has just landed — and the sim's twenty-odd strategy rows are the
- * ones set on a quiet lap. Scrolling past nineteen brake ducts to find SERVE is
- * the version of this that does not get used.
+ * Built fresh on every call rather than cached, because every value in it has to
+ * be as of *this* moment — the cursor asks for the rows and then immediately
+ * reads or writes the selected one.
  */
-export function withVirtualRows(simRows: CursorRow[]): CursorRow[] {
-  const virt = getVirtualRows().map(asCursorRow);
-  return virt.concat(Array.isArray(simRows) ? simRows : []);
+export function composeRows(
+  simRows: PitMenuRow[] | null | undefined,
+  controller: MfdController | null,
+): MfdRow[] {
+  const rows: MfdRow[] = getRaceControlRows().map(raceRow);
+  if (Array.isArray(simRows)) {
+    for (const r of simRows) {
+      if (r && typeof r.name === 'string' && r.name) rows.push(pitRow(r, controller));
+    }
+  }
+  for (const a of getAidRows()) rows.push(aidRow(a));
+  return rows;
 }
+
+/** {@link composeRows} against the sim's CURRENT menu. */
+export async function buildRows(controller: MfdController): Promise<MfdRow[]> {
+  const simRows = await controller.getPitRows().catch(() => null);
+  return composeRows(simRows, controller);
+}
+
+/* ------------------------------- the cursor ------------------------------- */
 
 /** Where the cursor is, as reported to the overlay. */
 export interface PitCursorState {
-  /** Index into the CURRENT menu, or -1 when there is no menu to point into. */
+  /** Index into the CURRENT list, or -1 when there is nothing to point into. */
   index: number;
-  /** The row's name — the durable half of the cursor. */
+  /**
+   * The row's section-scoped key — the durable half of the cursor, and what the
+   * widget matches its own rows against so it can never highlight two.
+   */
+  key: string | null;
+  /** The row's name, for display and for logging. */
   name: string | null;
+  /** Which group the selected row is in. */
+  section: MfdSection | null;
   /**
    * The row's value text as of the last cursor operation.
    *
@@ -138,41 +277,47 @@ export interface PitCursorState {
 }
 
 let index = 0;
+let key: string | null = null;
 let name: string | null = null;
+let section: MfdSection | null = null;
 let text: string | null = null;
 let updatedAt = 0;
 
 /**
  * The index the cursor currently points at within `rows`, re-locked onto the
- * remembered name when the menu has changed shape underneath it. Returns -1 for
- * an empty menu; otherwise always a valid index.
+ * remembered row when the list has changed shape underneath it. Returns -1 for
+ * an empty list; otherwise always a valid index.
+ *
+ * The name is tried after the key purely to survive a row being renamed between
+ * sections (a sim row the overlay later takes over, say) — it is a courtesy, and
+ * it is scoped to the same section so it can never cross-match.
  */
-export function resolveIndex(rows: CursorRow[]): number {
+export function resolveIndex(rows: MfdRow[]): number {
   if (!Array.isArray(rows) || rows.length === 0) return -1;
-  if (name) {
-    const found = rows.findIndex((r) => r.name === name);
+  if (key) {
+    const found = rows.findIndex((r) => r.key === key);
     if (found >= 0) return found;
   }
-  return Math.min(rows.length - 1, Math.max(0, index));
+  if (name && section) {
+    const found = rows.findIndex((r) => r.section === section && r.name === name);
+    if (found >= 0) return found;
+  }
+  return clamp(index, 0, rows.length - 1);
 }
 
-/** The cursor as it stands, without consulting a menu. */
+/** The cursor as it stands, without consulting a list. */
 export function getCursor(): PitCursorState {
-  return { index, name, text, updatedAt };
+  return { index, key, name, section, text, updatedAt };
 }
 
-/** A row's currently-selected option text, when the row carries its options. */
-function rowText(row: CursorRow | undefined): string | null {
-  if (!row || !Array.isArray(row.settings)) return null;
-  const cur = typeof row.currentSetting === 'number' ? row.currentSetting : 0;
-  return row.settings[cur]?.text ?? null;
-}
-
-/** Points the cursor at `i` in `rows` and remembers that row's name and value. */
-function land(rows: CursorRow[], i: number): PitCursorState {
+/** Points the cursor at `i` in `rows` and remembers that row's identity + value. */
+function land(rows: MfdRow[], i: number): PitCursorState {
+  const row = rows[i];
   index = i;
-  name = rows[i]?.name ?? null;
-  text = rowText(rows[i]);
+  key = row?.key ?? null;
+  name = row?.name ?? null;
+  section = row?.section ?? null;
+  text = row?.text ?? null;
   updatedAt = Date.now();
   return getCursor();
 }
@@ -185,25 +330,29 @@ function land(rows: CursorRow[], i: number): PitCursorState {
  * does nothing at the end of the list feels like a dropped input. Coming back
  * round to the top is unambiguous either way.
  */
-export function moveCursor(delta: number, rows: CursorRow[]): PitCursorState {
+export function moveCursor(delta: number, rows: MfdRow[]): PitCursorState {
   const at = resolveIndex(rows);
   if (at < 0) return getCursor();
   const step = delta < 0 ? -1 : 1;
   return land(rows, (at + step + rows.length) % rows.length);
 }
 
-/** Points the cursor at an explicit row — by name (preferred) or by index. */
+/** Points the cursor at an explicit row — by key, by name, or by index. */
 export function selectRow(
-  target: { name?: string; index?: number },
-  rows: CursorRow[],
+  target: { key?: string; name?: string; index?: number },
+  rows: MfdRow[],
 ): PitCursorState {
   if (!Array.isArray(rows) || rows.length === 0) return getCursor();
+  if (target.key) {
+    const found = rows.findIndex((r) => r.key === target.key);
+    if (found >= 0) return land(rows, found);
+  }
   if (target.name) {
     const found = rows.findIndex((r) => r.name === target.name);
     if (found >= 0) return land(rows, found);
   }
   if (typeof target.index === 'number' && Number.isFinite(target.index)) {
-    return land(rows, Math.min(rows.length - 1, Math.max(0, Math.round(target.index))));
+    return land(rows, clamp(Math.round(target.index), 0, rows.length - 1));
   }
   return getCursor();
 }
@@ -220,74 +369,54 @@ export interface PitCursorResult extends PitCursorState {
   error?: string;
 }
 
-/** Moves the cursor by `delta` rows against the sim's CURRENT menu. */
+/** The message shown when there is nothing to walk at all. */
+const NO_ROWS = 'MFD unavailable (not in a session?)';
+
+/** Moves the cursor by `delta` rows against the CURRENT list. */
 export async function moveCursorLive(
   delta: number,
   controller: MfdController,
 ): Promise<PitCursorResult> {
-  const simRows = await controller.getPitRows();
-  const rows = withVirtualRows(Array.isArray(simRows) ? simRows : []);
-  if (rows.length === 0) {
-    return { ...getCursor(), ok: false, error: 'pit menu unavailable (not in a session?)' };
-  }
+  const rows = await buildRows(controller);
+  if (rows.length === 0) return { ...getCursor(), ok: false, error: NO_ROWS };
   moveCursor(delta, rows);
   return { ...getCursor(), ok: true };
 }
 
+/** Points the cursor at a named row against the CURRENT list. */
+export async function selectRowLive(
+  target: { key?: string; name?: string; index?: number },
+  controller: MfdController,
+): Promise<PitCursorResult> {
+  const rows = await buildRows(controller);
+  if (rows.length === 0) return { ...getCursor(), ok: false, error: NO_ROWS };
+  selectRow(target, rows);
+  return { ...getCursor(), ok: true };
+}
+
 /**
- * Steps the SELECTED row's value by `delta`.
+ * Steps the SELECTED row's value by `delta`, whatever kind of row it is.
  *
- * Targets the row by `PMC Value` — the sim's own stable id — having resolved it
- * from the cursor's name, so the write cannot land on a neighbouring row even if
- * the menu re-ordered between the cursor moving and the ± being pressed.
+ * Re-anchors before writing: if the remembered row has gone, the cursor is now
+ * sitting on whatever the index landed on, and the driver should be told which
+ * row it actually changed rather than the one they last aimed at.
  */
 export async function stepSelected(
   delta: number,
   controller: MfdController,
 ): Promise<PitCursorResult> {
-  const simRows = await controller.getPitRows();
-  const virt = getVirtualRows();
-  const rows = withVirtualRows(Array.isArray(simRows) ? simRows : []);
-  if (rows.length === 0) {
-    return { ...getCursor(), ok: false, error: 'pit menu unavailable (not in a session?)' };
-  }
+  const rows = await buildRows(controller);
+  if (rows.length === 0) return { ...getCursor(), ok: false, error: NO_ROWS };
   const at = resolveIndex(rows);
-
-  // An overlay-owned row is applied by its own handler rather than by writing a
-  // pit-menu index the sim has never heard of.
-  if (at >= 0 && at < virt.length) {
-    const v = virt[at]!;
-    land(rows, at);
-    const step = delta < 0 ? -1 : 1;
-    // Clamped, not wrapped. These rows have consequences at their ends — SERVE's
-    // last option strips the whole stop — and wrapping from the last back to the
-    // first would let one extra press on a blind control do something the driver
-    // was not reaching for.
-    const next = Math.min(v.options.length - 1, Math.max(0, v.current + step));
-    const res = await v.apply(next);
-    if (!res.ok) {
-      return { ...getCursor(), ok: false, error: res.error ?? 'row action failed' };
-    }
-    text = v.options[res.applied] ?? null;
-    updatedAt = Date.now();
-    return { ...getCursor(), ok: true };
-  }
-
   const row = rows[at];
-  if (!row) return { ...getCursor(), ok: false, error: 'no pit row selected' };
-  // Re-anchor first: if the remembered name has gone, the cursor is now sitting
-  // on whatever the index landed on, and the driver should be told which row it
-  // actually changed rather than the one they last aimed at.
+  if (!row) return { ...getCursor(), ok: false, error: 'no MFD row selected' };
   land(rows, at);
-  const res = await controller.setPitRow(
-    { pmcValue: row['PMC Value'], name: row.name },
-    { delta: delta < 0 ? -1 : 1 },
-  );
-  if (!res.ok) return { ...getCursor(), ok: false, error: res.error ?? `HTTP ${res.status}` };
+
+  const res = await row.step(delta);
+  if (!res.ok) return { ...getCursor(), ok: false, error: res.error ?? 'row action failed' };
   // Record what it now reads, so the overlay's next cursor poll carries the new
   // value rather than the one it had before the press.
-  const settings = Array.isArray(row.settings) ? row.settings : [];
-  text = settings[res.applied ?? 0]?.text ?? null;
+  if (res.text !== undefined) text = res.text;
   updatedAt = Date.now();
   return { ...getCursor(), ok: true };
 }

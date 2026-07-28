@@ -14,8 +14,8 @@
  *   POST /api/mfd/aid      { key, value?, delta? }                  → LMU REST (setup)
  *   GET  /api/mfd/keymap   the aid→keyboard-key map + injector status
  *   POST /api/mfd/aidkey   { aid, dir, requireSim?, delayMs? }      → keystroke into LMU
- *   GET  /api/mfd/cursor   which pit row the bindable ± is aimed at
- *   POST /api/mfd/cursor   { move? } | { name? } | { index? } | { value? }
+ *   GET  /api/mfd/cursor   which MFD row the bindable ± is aimed at
+ *   POST /api/mfd/cursor   { move? } | { key? } | { name? } | { index? } | { value? }
  *
  * `pit`/`aid` go over LMU's REST API. `aidkey` injects a real keystroke for the
  * LIVE aids LMU does not expose to REST — see {@link module:server/keySender}
@@ -26,10 +26,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { projectPitMenu, type MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
-import { findAid, readLmuKeybinds } from './lmuKeybinds';
-import { bump as bumpShadow, getShadowAids, isTracked, resync } from './aidShadow';
-import { getCursor, moveCursorLive, selectRow, stepSelected, getVirtualRows, withVirtualRows,
-} from './pitCursor';
+import { readLmuKeybinds } from './lmuKeybinds';
+import { getShadowAids, resync } from './aidShadow';
+import { stepAid } from './aidRows';
+import { getCursor, getRaceControlRows, moveCursorLive, selectRowLive, stepSelected } from './pitCursor';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -95,6 +95,9 @@ export function handleMfdCommand(
       shadowAids: getShadowAids(),
       keyboardSchemeActive: binds.keyboardSchemeActive,
       aids: binds.aids.map((a) => ({
+        // The stable id is what the cursor keys an aid row by (`aid:tc`), so the
+        // widget needs it to know which of its own rows the cursor is on —
+        // whatever alias its frame happens to label that row with.
         id: a.id,
         vmKey: a.vmKey,
         // Every name this aid answers to, so the widget can match a row whatever
@@ -118,12 +121,14 @@ export function handleMfdCommand(
   // again several times a second to learn something we ourselves decided would
   // be pure noise on the sim's API.
   if (req.method === 'GET' && action === 'cursor') {
-    // The overlay-owned rows ride along: the widget needs their values to draw
-    // them, and this endpoint is already answered from memory and polled.
+    // The overlay-owned rows ride along: the widget draws them FROM this rather
+    // than from a copy of its own, so their order and values cannot disagree
+    // with the list the cursor walks. Answered from memory like the cursor
+    // itself, so the poll stays nearly free.
     sendJson(res, 200, {
       ok: true,
       ...getCursor(),
-      virtual: getVirtualRows().map((v) => ({ name: v.name, text: v.options[v.current] })),
+      race: getRaceControlRows().map((v) => ({ name: v.name, text: v.options[v.current] ?? null })),
     });
     return true;
   }
@@ -206,7 +211,13 @@ export function handleMfdCommand(
       if (action === 'cursor') {
         // One route for all four bindable controls, because they are one control
         // surface: `move` walks the rows, `value` changes the row it stopped on.
-        const b = body as { move?: number; value?: number; name?: string; index?: number };
+        const b = body as {
+          move?: number;
+          value?: number;
+          key?: string;
+          name?: string;
+          index?: number;
+        };
         if (b.value != null) {
           const result = await stepSelected(b.value, controller);
           sendJson(res, result.ok ? 200 : 502, result);
@@ -217,16 +228,17 @@ export function handleMfdCommand(
           sendJson(res, result.ok ? 200 : 502, result);
           return;
         }
-        if (b.name != null || b.index != null) {
-          const rows = withVirtualRows((await controller.getPitRows()) ?? []);
-          if (rows.length === 0) {
-            sendJson(res, 502, { ok: false, ...getCursor(), error: 'pit menu unavailable' });
-            return;
-          }
-          sendJson(res, 200, { ok: true, ...selectRow({ name: b.name, index: b.index }, rows) });
+        if (b.key != null || b.name != null || b.index != null) {
+          // `key` is what the widget sends — section-scoped, so aiming at its own
+          // SERVE row can never resolve to a sim row of the same name.
+          const result = await selectRowLive(
+            { key: b.key, name: b.name, index: b.index },
+            controller,
+          );
+          sendJson(res, result.ok ? 200 : 502, result);
           return;
         }
-        sendJson(res, 400, { ok: false, error: 'cursor needs move, value, name or index' });
+        sendJson(res, 400, { ok: false, error: 'cursor needs move, value, key, name or index' });
         return;
       }
       if (action === 'aidkey') {
@@ -242,22 +254,6 @@ export function handleMfdCommand(
   return true;
 }
 
-/**
- * Fires the keystroke that steps a driving aid.
- *
- * The keys come from **LMU's own `keyboard.json`**, resolved fresh on every
- * request (see {@link module:server/lmuKeybinds}) rather than from a keymap we
- * invent. That matters for two reasons: a key the game has not bound does
- * nothing however perfectly we send it, and the driver may rebind at any time.
- *
- * The aid may be named either by its stable id (`tc`) or by the `VM_*` key the
- * telemetry frame carries (`VM_TRACTIONCONTROLMAP`), so the widget can pass
- * straight through whatever it is rendering.
- *
- * `requireSim` (default true) refuses to send unless LMU is frontmost —
- * `SendInput` goes to the foreground window, so an unguarded press would land
- * in whatever the operator just clicked.
- */
 /**
  * Presses LMU's own **Pit Request** key.
  *
@@ -318,56 +314,15 @@ async function handleAidKey(res: ServerResponse, body: unknown, keys: KeySender)
     sendJson(res, 400, { ok: false, error: "aidkey needs { aid, dir: 'inc'|'dec' }" });
     return;
   }
-
-  const binds = readLmuKeybinds();
-  if (!binds.path) {
-    sendJson(res, 503, { ok: false, error: 'LMU keyboard config not found' });
-    return;
-  }
-  const aid = findAid(binds, b.aid);
-  if (!aid) {
-    sendJson(res, 404, { ok: false, error: `unknown aid: ${b.aid}` });
-    return;
-  }
-  const key = b.dir === 'inc' ? aid.inc : aid.dec;
-  if (!key) {
-    // Bound in LMU is the precondition; say so plainly rather than failing mute.
-    sendJson(res, 409, {
-      ok: false,
-      error: `"${b.dir === 'inc' ? aid.incFunction : aid.decFunction}" is not bound to a key in LMU`,
-      aid: aid.id,
-    });
-    return;
-  }
-  if (!binds.keyboardSchemeActive) {
-    sendJson(res, 409, {
-      ok: false,
-      error: 'LMU has its keyboard scheme disabled — the key would be ignored',
-    });
-    return;
-  }
-
-  const repeat = Math.min(20, Math.max(1, Math.round(Number(b.repeat) || 1)));
-  const result = await keys.pressScanTimes(key, repeat, { requireSim: b.requireSim ?? true });
-
-  // Keep the shadow in step for the aids LMU will not let us read back. Only
-  // count presses that were actually SENT: a refused press (sim not focused)
-  // changed nothing in the game, so counting it would desync the display.
-  let shadowValue = null;
-  if (isTracked(aid.id) && result.sent > 0) {
-    for (let i = 0; i < result.sent; i++) {
-      shadowValue = bumpShadow(aid.id, b.dir === 'inc' ? 1 : -1, 'overlay');
-    }
-  }
-
-  sendJson(res, result.ok ? 200 : 409, {
-    ...result,
-    aid: aid.id,
-    dir: b.dir,
-    scancode: key.scancode,
-    extended: key.extended,
-    shadowValue,
+  // One implementation, shared with the cursor's aid rows (server/aidRows): the
+  // widget's ± and a bound wheel button are meant to be the same act, down to
+  // the shadow bookkeeping, and the surest way to keep them so is one function.
+  const result = await stepAid(b.aid, b.dir, keys, {
+    requireSim: b.requireSim ?? true,
+    repeat: b.repeat,
   });
+  const { status, ...rest } = result;
+  sendJson(res, status, { ...rest, dir: b.dir });
 }
 
 /** Reads and JSON-parses a small request body, rejecting oversized ones. */

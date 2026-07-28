@@ -28,7 +28,8 @@ import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { setTrackLimitsMargin, trackLimitsMargin } from '../telemetry/trackLimits';
 import { handleMfdCommand } from './mfdRoutes';
-import { setVirtualRows } from './pitCursor';
+import { setAidRows, setRaceControlRows } from './pitCursor';
+import { buildAidRows } from './aidRows';
 import { buildRaceControlRows } from './raceControlRows';
 import { KeySender } from './keySender';
 
@@ -368,11 +369,13 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     console.log('[apex-overlay] keystroke injection unavailable — live aid keys disabled.');
   }
 
-  // Put the overlay's own rows (SERVE, PIT REQUEST) into the list the pit cursor
-  // walks, so the four bindable controls reach them exactly as they reach the
-  // sim's rows. Registered here because this is the one place that holds both
-  // the controller and the key sender they need.
-  setVirtualRows(() => buildRaceControlRows(mfdDeps.controller, mfdDeps.keys));
+  // Everything the MFD can change goes into the one list the cursor walks — the
+  // overlay's own rows (SERVE, PIT REQUEST) ahead of the sim's pit menu, the
+  // driving aids after it — so the four bindable controls reach every adjustable
+  // row and not just the pit ones. Registered here because this is the one place
+  // that holds both the controller and the key sender they need.
+  setRaceControlRows(() => buildRaceControlRows(mfdDeps.controller, mfdDeps.keys));
+  setAidRows(() => buildAidRows(mfdDeps.keys));
 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.

@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.28.0 — 2026-07-28
+
+### Fixed
+
+- **The MFD highlight can no longer land on two rows at once, or appear to jump
+  backwards.** The widget fell back to the cursor's INDEX whenever it could not
+  find the cursor's row by name in the pit list — and that index counts a
+  different list. The server walks `[SERVE, PIT REQUEST, …the sim's rows]`; the
+  widget searched the sim's rows alone, so a cursor sitting on `PIT REQUEST`
+  (index 1) lit `PIT REQUEST` *and* the second pit row, and `SERVE` (index 0) lit
+  `SERVE` and `DAMAGE`. Wrapping off the end of the list into those rows is what
+  read as "▼ jumped back up to DAMAGE".
+
+  Every walkable row now carries the server's own section-scoped key
+  (`pit:FL TIRE:`), and the highlight matches on that and nothing else. When the
+  cursor is on a row this instance is not drawing, nothing is marked — pointing
+  at a nearby row is worse than pointing at none, because it tells the driver
+  their buttons are aimed somewhere they are not.
+
+- **The race-control rows are drawn in the order the cursor walks them.** The
+  list read PIT REQUEST above SERVE while ▼ visited them the other way round, so
+  one downward press moved the highlight upward. Both the order and the values
+  now come from the cursor poll, so the drawn list and the walked list cannot
+  disagree again.
+
+- **The duplicate TIRES row is gone.** The widget drew its own collapsed
+  all-four-corners row at the top of PIT STRATEGY, a few lines above the sim's
+  own `TIRES:` entry, which does the same job. Being the widget's invention
+  rather than a row the server walks, it was also the one row ▲ ▼ could never
+  reach. Setting all four corners in one press remains as the bindable
+  `pit.tyreCompound` action.
+
+### Changed
+
+- **▲ ▼ + − now reach every adjustable row on the widget, driving aids
+  included.** Brake bias, TC, ABS and the motor map were mouse-only; a control
+  that can only be clicked is a control a driver cannot use, which is the whole
+  reason the cursor exists. The cursor walks ONE list — race control, then the
+  sim's pit menu, then the aids, in the order they are drawn — and the only line
+  it skips is the PENALTIES readout, which has nothing to set.
+
+  Aids are stepped by pressing LMU's own bound key, so unlike the pit rows they
+  need the sim frontmost; the row reports that in those words when it is not.
+  Only aids LMU actually has bound are walked, since an unbound function cannot
+  be triggered at all. The key press and the shadow-value bookkeeping behind it
+  are now one implementation (`src/server/aidRows.ts`) shared by the widget's ±
+  and the bindable controls, rather than a copy each.
+
 ## 0.27.0 — 2026-07-27
 
 ### Changed

@@ -1,29 +1,41 @@
 /**
- * scripts/test-pitcursor.js — the pit-menu cursor's row anchoring.
+ * scripts/test-pitcursor.js — the MFD cursor's row anchoring and reachability.
  * -----------------------------------------------------------------------------
- * The cursor is what the four bindable pit controls (▲ ▼ + −) aim at, and its
- * one hard requirement is that it keeps pointing at the row the driver chose.
- * That is not free: LMU's pit menu changes shape between cars, sessions and
- * damage states — DAMAGE and DRIVER are not always present — so a cursor held as
- * an index alone silently slides onto a different row, and the next `+` lands on
- * a brake duct instead of the left-front tyre. Nobody notices until the stop.
+ * The cursor is what the four bindable controls (▲ ▼ + −) aim at, and it has two
+ * hard requirements.
  *
- * So each case here reshapes the menu underneath a cursor and asserts where it
- * ends up, plus the wrap-around and the write targeting. Run:
- *   node scripts/test-pitcursor.js
+ * It must keep pointing at the row the driver chose. That is not free: LMU's pit
+ * menu changes shape between cars, sessions and damage states — DAMAGE and
+ * DRIVER are not always present — so a cursor held as an index alone silently
+ * slides onto a different row, and the next `+` lands on a brake duct instead of
+ * the left-front tyre. Nobody notices until the stop.
+ *
+ * And it must reach EVERYTHING the widget shows a control for. A row that can
+ * only be clicked is a row a driver cannot use with both hands on the wheel, so
+ * the walked list covers the overlay's own race-control rows, the sim's pit menu
+ * and the driving aids — in that order, which is the order they are drawn.
+ *
+ * Both failure modes below were live bugs: a tyre row drawn by the widget alone
+ * that ▲ ▼ could never land on, and an unscoped name lookup that let the cursor
+ * resolve one section's row against another's — which put the highlight on two
+ * rows at once and made ▼ appear to jump backwards.
+ *
+ * Run: node scripts/test-pitcursor.js
  */
 
 'use strict';
 
 const {
+  buildRows,
+  composeRows,
   getCursor,
   moveCursor,
   moveCursorLive,
   resolveIndex,
   selectRow,
+  setAidRows,
+  setRaceControlRows,
   stepSelected,
-  setVirtualRows,
-  withVirtualRows,
 } = require('../dist/server/pitCursor');
 
 let passed = 0;
@@ -59,35 +71,60 @@ const FULL = [
 /** The same session minus the two rows that come and go. */
 const TRIMMED = FULL.slice(2);
 
+/** The walked list with no providers registered — pit rows only. */
+const pitOnly = (menu) => composeRows(menu, null);
+
+const keys = (rows) => rows.map((r) => r.key).join();
+
 console.log('\n1) The cursor follows its ROW, not its index');
 
 {
-  selectRow({ name: 'FL TIRE:' }, FULL);
-  check('selecting by name lands on that row', getCursor().index === 3, getCursor().index);
+  const rows = pitOnly(FULL);
+  const trimmed = pitOnly(TRIMMED);
+  selectRow({ key: 'pit:FL TIRE:' }, rows);
+  check('selecting by key lands on that row', getCursor().index === 3, getCursor().index);
   check(
     'the menu losing two rows above it does NOT move the cursor off FL TIRE',
-    TRIMMED[resolveIndex(TRIMMED)].name === 'FL TIRE:',
-    TRIMMED[resolveIndex(TRIMMED)].name,
+    trimmed[resolveIndex(trimmed)].name === 'FL TIRE:',
+    trimmed[resolveIndex(trimmed)].name,
   );
-  check('...and the index re-resolves to the new position', resolveIndex(TRIMMED) === 1, resolveIndex(TRIMMED));
+  check('...and the index re-resolves to the new position', resolveIndex(trimmed) === 1, resolveIndex(trimmed));
 }
 
 {
   // The fallback path: the remembered row is gone entirely from this car's menu.
-  selectRow({ name: 'DAMAGE:' }, FULL);
-  const at = resolveIndex(TRIMMED);
-  check('a row that no longer exists falls back to a VALID index', at >= 0 && at < TRIMMED.length, at);
+  const trimmed = pitOnly(TRIMMED);
+  selectRow({ key: 'pit:DAMAGE:' }, pitOnly(FULL));
+  const at = resolveIndex(trimmed);
+  check('a row that no longer exists falls back to a VALID index', at >= 0 && at < trimmed.length, at);
 }
 
 console.log('\n2) Moving — wraps rather than dead-ending');
 
 {
-  selectRow({ index: 0 }, FULL);
-  check('▼ from the first row goes to the second', moveCursor(1, FULL).name === 'DRIVER:');
-  selectRow({ index: 0 }, FULL);
-  check('▲ from the first row wraps to the LAST', moveCursor(-1, FULL).name === 'R WING:');
-  selectRow({ index: FULL.length - 1 }, FULL);
-  check('▼ from the last row wraps to the FIRST', moveCursor(1, FULL).name === 'DAMAGE:');
+  const rows = pitOnly(FULL);
+  selectRow({ index: 0 }, rows);
+  check('▼ from the first row goes to the second', moveCursor(1, rows).name === 'DRIVER:');
+  selectRow({ index: 0 }, rows);
+  check('▲ from the first row wraps to the LAST', moveCursor(-1, rows).name === 'R WING:');
+  selectRow({ index: rows.length - 1 }, rows);
+  check('▼ from the last row wraps to the FIRST', moveCursor(1, rows).name === 'DAMAGE:');
+}
+
+{
+  // The bug this guards: ▼ from DAMAGE landed back ON damage, because the row it
+  // moved to resolved through a name that matched something else. Walking the
+  // whole list must visit every row once and only once.
+  const rows = pitOnly(FULL);
+  selectRow({ index: 0 }, rows);
+  const seen = [];
+  for (let i = 0; i < rows.length; i++) seen.push(moveCursor(1, rows).key);
+  check(
+    'a full lap of ▼ visits every row exactly once',
+    new Set(seen).size === rows.length,
+    seen.join(' → '),
+  );
+  check('...and comes back to where it started', seen[seen.length - 1] === rows[0].key, seen[seen.length - 1]);
 }
 
 console.log('\n3) Empty / absent menu — never throws, never invents a row');
@@ -121,7 +158,7 @@ console.log('\n4) Live operations against a stub sim');
   {
     const menu = FULL.map((r) => ({ ...r, settings: [...r.settings] }));
     const c = stub(menu);
-    selectRow({ name: 'FL TIRE:' }, menu);
+    selectRow({ key: 'pit:FL TIRE:' }, pitOnly(menu));
     const res = await stepSelected(1, c);
     check('+ on the selected row reports the new text', res.text === 'New Medium', res.text);
     check(
@@ -135,11 +172,11 @@ console.log('\n4) Live operations against a stub sim');
   }
 
   {
-    // The whole point of the name anchor, end to end: the driver aims at FL TIRE
+    // The whole point of the key anchor, end to end: the driver aims at FL TIRE
     // on the full menu, the menu loses its first two rows, and + must still hit
     // the tyre rather than whatever slid into index 3.
     const menu = FULL.map((r) => ({ ...r, settings: [...r.settings] }));
-    selectRow({ name: 'FL TIRE:' }, menu);
+    selectRow({ key: 'pit:FL TIRE:' }, pitOnly(menu));
     const trimmed = menu.slice(2);
     const c = stub(trimmed);
     const res = await stepSelected(1, c);
@@ -154,7 +191,7 @@ console.log('\n4) Live operations against a stub sim');
     // last operation left the row at — not the one it had before.
     const menu = FULL.map((r) => ({ ...r, settings: [...r.settings] }));
     const c = stub(menu);
-    selectRow({ name: 'FR TIRE:' }, menu);
+    selectRow({ key: 'pit:FR TIRE:' }, pitOnly(menu));
     check('the cursor carries the row\'s current text on landing', getCursor().text === 'No Change',
       getCursor().text);
     await stepSelected(1, c);
@@ -170,52 +207,102 @@ console.log('\n4) Live operations against a stub sim');
     check('stepping with no menu fails cleanly', stepped.ok === false && !!stepped.error, stepped.error);
   }
 
-  console.log('\n6) The overlay\'s own rows are in the list the cursor walks');
+  console.log('\n5) Every adjustable row is in the ONE list the cursor walks');
 
   {
-    // The bug this exists to prevent: SERVE and PIT REQUEST rendered fine and
-    // were completely unreachable from the four bindable controls — which are
-    // the only way to use them with both hands on the wheel.
+    // The bug this exists to prevent: rows that rendered fine and were completely
+    // unreachable from the four bindable controls — which are the only way to use
+    // them with both hands on the wheel.
     let serve = 0;
-    let applied = null;
-    setVirtualRows(() => [
+    let aidSteps = 0;
+    setRaceControlRows(() => [
       {
         name: 'SERVE:',
         options: ['OFF', 'DRIVE-THRU', 'STOP/GO'],
         current: serve,
-        apply: async (n) => { serve = n; applied = n; return { ok: true, applied: n }; },
+        apply: async (n) => { serve = n; return { ok: true, applied: n }; },
       },
     ]);
-    const vsim = [{ name: 'FUEL:', currentSetting: 0, settings: [{ text: '0 L' }] }];
-    const vrows = withVirtualRows(vsim);
-    check('virtual rows come first', vrows[0].name === 'SERVE:', vrows.map((r) => r.name).join());
-    check('…and the sim rows follow', vrows[1].name === 'FUEL:');
+    setAidRows(() => [
+      {
+        id: 'tc',
+        label: 'Traction Control',
+        text: '3 est',
+        step: async () => { aidSteps++; return { ok: true, text: '4 est' }; },
+      },
+    ]);
 
-    selectRow({ name: 'SERVE:' }, vrows);
-    check('the cursor can land on a virtual row', getCursor().name === 'SERVE:');
-    check('…and reads its value', getCursor().text === 'OFF', getCursor().text);
+    const sim = [row('FUEL:', 20, ['0 L', '10 L'])];
+    const rows = composeRows(sim, null);
+    check('race rows come first', rows[0].key === 'race:SERVE:', keys(rows));
+    check('…the sim rows next', rows[1].key === 'pit:FUEL:');
+    check('…and the aids last — the order the widget draws them', rows[2].key === 'aid:tc');
 
-    // Stepping must reach the row own handler, never a pit-menu write.
     const guard = {
-      getPitRows: async () => vsim,
+      getPitRows: async () => sim,
       setPitRow: async () => { throw new Error('must not write the sim menu'); },
     };
+
+    selectRow({ key: 'race:SERVE:' }, rows);
+    check('the cursor can land on a race-control row', getCursor().key === 'race:SERVE:');
+    check('…and reads its value', getCursor().text === 'OFF', getCursor().text);
+
+    // Stepping must reach the row's own handler, never a pit-menu write.
     const vres = await stepSelected(1, guard);
-    check('stepping a virtual row runs its handler', vres.ok === true && applied === 1, vres.error);
+    check('stepping a race row runs its handler', vres.ok === true && serve === 1, vres.error);
     check('…and reports the new value', getCursor().text === 'DRIVE-THRU', getCursor().text);
 
     // Clamped, not wrapped: one extra press on a blind control must not roll
     // round from the last option to the first and fire something unintended.
     await stepSelected(1, guard);
     await stepSelected(1, guard);
-    check('a virtual row clamps at its last option', serve === 2, serve);
+    check('a race row clamps at its last option', serve === 2, serve);
     await stepSelected(-1, guard);
     await stepSelected(-1, guard);
     await stepSelected(-1, guard);
     check('…and at its first', serve === 0, serve);
 
-    setVirtualRows(null);
-    check('clearing the provider removes them', withVirtualRows(vsim).length === 1);
+    // The aid rows are the half that used to be mouse-only.
+    const live = await buildRows(guard);
+    selectRow({ key: 'aid:tc' }, live);
+    check('the cursor can land on an aid row', getCursor().section === 'aid', getCursor().section);
+    const ares = await stepSelected(1, guard);
+    check('stepping an aid row presses its key', ares.ok === true && aidSteps === 1, ares.error);
+    check('…and reports the estimate it left behind', getCursor().text === '4 est', getCursor().text);
+  }
+
+  console.log('\n6) A name is only ever resolved within its own section');
+
+  {
+    // The failure this rules out: the overlay's rows and the sim's are named in
+    // the same style, so an unscoped lookup let one match the other. That is what
+    // put the highlight on PIT REQUEST and a pit row at the same time, and made
+    // ▼ appear to jump back up the list.
+    setRaceControlRows(() => [
+      {
+        name: 'PIT REQUEST:',
+        options: ['NO', 'YES'],
+        current: 0,
+        apply: async (n) => ({ ok: true, applied: n }),
+      },
+    ]);
+    setAidRows(null);
+
+    const collide = [row('PIT REQUEST:', 30, ['NO', 'YES']), row('DAMAGE:', 31)];
+    const rows = composeRows(collide, null);
+    check('a same-named sim row is its OWN row in the list', rows.length === 3, keys(rows));
+
+    selectRow({ key: 'pit:PIT REQUEST:' }, rows);
+    check('aiming at the sim row lands on the sim row', getCursor().index === 1, getCursor().index);
+    check('…and stays there when the list is re-resolved', resolveIndex(rows) === 1, resolveIndex(rows));
+    check('…with the section recorded', getCursor().section === 'pit', getCursor().section);
+
+    selectRow({ key: 'race:PIT REQUEST:' }, rows);
+    check('aiming at the overlay row lands on the overlay row', getCursor().index === 0, getCursor().index);
+    check('…and it too holds on re-resolve', resolveIndex(rows) === 0, resolveIndex(rows));
+
+    setRaceControlRows(null);
+    check('clearing the providers removes their rows', composeRows(collide, null).length === 2);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

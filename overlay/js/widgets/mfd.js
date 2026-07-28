@@ -8,13 +8,27 @@
  * group at a glance.
  *
  * ## The selected row
- * One pit row is highlighted: the row the four BINDABLE controls (▲ ▼ + −, bound
- * to wheel buttons or a Stream Deck in the control panel) are aimed at. The
- * cursor lives on the server (server/pitCursor), because a wheel button and a
- * click on this widget have to move the same one — so the highlight here is a
+ * Exactly one row is highlighted: the row the four BINDABLE controls (▲ ▼ + −,
+ * bound to wheel buttons or a Stream Deck in the control panel) are aimed at.
+ * The cursor lives on the server (server/pitCursor), because a wheel button and
+ * a click on this widget have to move the same one — so the highlight here is a
  * view of that state, polled, not a local selection. Clicking a row's ± aims the
  * cursor at it too, which keeps "the thing I last touched" and "the thing my
  * buttons will change" the same row.
+ *
+ * It walks EVERY adjustable row on screen, in the order they are drawn: the
+ * overlay's own race-control rows, then the sim's pit menu, then the aids. Two
+ * rules keep that honest, and both exist because breaking them is what made the
+ * highlight jump about and land on two rows at once:
+ *
+ *   - every walkable row carries the server's own `data-key` (`pit:FL TIRE:`),
+ *     and the highlight matches on THAT and nothing else — no falling back to an
+ *     index, which belongs to a different list than the one being searched;
+ *   - the race-control rows are drawn FROM the cursor poll, in the server's
+ *     order, so the on-screen order and the walked order cannot drift apart.
+ *
+ * The PENALTIES line is deliberately outside all of this: it is a reading, with
+ * nothing to set, so it has no key and the cursor never stops on it.
  *
  * URL params:
  *   ?pit=off      hide the pit-strategy section.  Default on.
@@ -94,7 +108,10 @@
         if (!cfg || !Array.isArray(cfg.aids)) return;
         var next = {};
         cfg.aids.forEach(function (a) {
-          var entry = { canInc: !!a.canInc, canDec: !!a.canDec };
+          // `id` is the aid's stable name on the server, which is what the
+          // cursor keys its aid rows by — the frame may label the same aid
+          // something else entirely, so carry the id on every alias.
+          var entry = { canInc: !!a.canInc, canDec: !!a.canDec, id: a.id };
           // Index under every alias — the frame's key for an aid is not always
           // the VM_ one (brake bias comes through as BRAKE_BIAS).
           (a.keys || [a.vmKey]).forEach(function (k) {
@@ -211,8 +228,12 @@
    * (Re)builds a group's rows when the id/category set changes; else just
    * refreshes the label/value text in place. `catOf` also drives the colour
    * (data-cat) and a small gap at each category change (group-start).
+   *
+   * `keyOf` gives each row the server cursor's own key. Every adjustable row
+   * gets one — that key is the whole basis of the highlight, so a row built
+   * without it is a row the driver can select and never see selected.
    */
-  function reconcile(group, items, idOf, catOf, labelOf, textOf, stepFor) {
+  function reconcile(group, items, idOf, catOf, labelOf, textOf, stepFor, keyOf) {
     var sig = items
       .map(function (it) {
         return idOf(it) + ":" + catOf(it);
@@ -227,6 +248,7 @@
         var refs = makeRow(stepFor ? stepFor(it) : null);
         var cat = catOf(it);
         refs.root.setAttribute("data-cat", cat);
+        if (keyOf) refs.root.setAttribute("data-key", keyOf(it));
         if (cat !== prevCat) {
           refs.root.classList.add("mfd__row--group-start");
           prevCat = cat;
@@ -234,6 +256,8 @@
         group.rows[idOf(it)] = refs;
         group.rowsEl.appendChild(refs.root);
       });
+      // A rebuild drops the previous DOM, and with it the selection marker.
+      highlightCursor(false);
     }
     items.forEach(function (it) {
       var refs = group.rows[idOf(it)];
@@ -247,13 +271,15 @@
 
   /**
    * Where the bindable ▲ ▼ + − controls are pointing, mirrored from the server
-   * (GET /api/mfd/cursor). Anchored by NAME as well as index for the same reason
-   * the server is: the pit menu's shape changes with the car and the session, so
-   * an index on its own quietly slides onto a different row.
+   * (GET /api/mfd/cursor).
+   *
+   * Anchored by the server's section-scoped KEY. An index would be worse than
+   * useless here: the server's index counts one list (race rows, then pit rows,
+   * then aids) and this widget draws three, so an index resolved against any one
+   * of them lands on an unrelated row — which is exactly how the highlight used
+   * to appear on PIT REQUEST and a pit row simultaneously.
    */
-  var pitCursor = { index: -1, name: null, updatedAt: 0 };
-  /** The rows as last rendered, so a poll can re-highlight without a frame. */
-  var lastPitRows = [];
+  var pitCursor = { key: null, name: null, updatedAt: 0 };
   /** Poll cadence, ms. The route answers from memory, so this is nearly free. */
   var CURSOR_POLL_MS = 120;
 
@@ -299,18 +325,30 @@
    * few hundred milliseconds is safe because a failed one reports `ok:false` and
    * never gets here.
    */
-  function showRowText(name, text) {
-    if (!name || typeof text !== "string" || !pit.rows) return;
-    for (var i = 0; i < lastPitRows.length; i++) {
-      if (lastPitRows[i].name !== name) continue;
-      var refs = pit.rows[pitRowId(lastPitRows[i])];
-      if (refs) critText(refs.value, text);
-      return;
-    }
+  function showRowText(key, text) {
+    if (typeof text !== "string") return;
+    var row = rowByKey(key);
+    if (row) critText(row.querySelector(".mfd__value"), text);
   }
 
   function pitRowId(r) {
     return "p" + r.pmcValue + ":" + r.name;
+  }
+
+  /** The server cursor's key for a pit row — section-scoped, as the server's is. */
+  function pitRowKey(r) {
+    return "pit:" + r.name;
+  }
+
+  /**
+   * The cursor's key for an aid row. The server names aids by their stable id
+   * (`tc`); the frame labels the same aid by whatever it was read from
+   * (`BRAKE_BIAS` comes out of shared memory), so the id comes from the keymap,
+   * which lists every alias an aid answers to.
+   */
+  function aidRowKey(a) {
+    var bind = aidBinds[a.key];
+    return "aid:" + ((bind && bind.id) || a.key);
   }
 
   function loadCursor() {
@@ -320,22 +358,22 @@
       })
       .then(function (c) {
         if (!c || c.ok === false) return;
-        var moved = c.name !== pitCursor.name || c.updatedAt !== pitCursor.updatedAt;
+        var moved = c.key !== pitCursor.key || c.updatedAt !== pitCursor.updatedAt;
         var first = pitCursor.updatedAt === 0;
-        pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
-        // The overlay-owned rows ride along on this poll, so their values are
-        // drawn from the server rather than from a copy kept here — the wheel
-        // buttons change them too, and a local copy would drift the moment a
-        // driver used the buttons instead of the mouse.
-        if (Array.isArray(c.virtual)) renderVirtualRows(c.virtual);
+        pitCursor = { key: c.key, name: c.name, updatedAt: c.updatedAt };
+        // The overlay-owned rows ride along on this poll, so both their ORDER and
+        // their values come from the server rather than from a copy kept here —
+        // the wheel buttons change them too, and a local copy would drift the
+        // moment a driver used the buttons instead of the mouse.
+        if (Array.isArray(c.race)) renderRaceRows(c.race);
         if (!moved) return;
-        highlightCursor(lastPitRows, true);
+        highlightCursor(true);
         // The cursor moving means a bound button was pressed — and a `+` or `−`
         // moves it too (it re-anchors on the row it changed), so this is also how
         // the widget learns a wheel button just altered a value. Skip the very
         // first poll: that is only us catching up with existing state.
         if (first) return;
-        showRowText(c.name, c.text);
+        showRowText(c.key, c.text);
         refreshNow();
       })
       .catch(function () {
@@ -344,73 +382,67 @@
   }
 
   /** Points the server's cursor at a row — used when a row's own ± is clicked. */
-  function aimCursorAt(row) {
-    postJson("/api/mfd/cursor", { name: row.name }).then(function (c) {
+  function aimCursorAt(key) {
+    return postJson("/api/mfd/cursor", { key: key }).then(function (c) {
       if (c && c.ok !== false) {
-        pitCursor = { index: c.index, name: c.name, updatedAt: c.updatedAt };
-        highlightCursor(lastPitRows, false);
+        pitCursor = { key: c.key, name: c.name, updatedAt: c.updatedAt };
+        highlightCursor(false);
       }
+      return c;
     });
   }
 
+  /** Every walkable row on screen, in DOM order. */
+  function walkableRows() {
+    return mountEl ? mountEl.querySelectorAll(".mfd__row[data-key]") : [];
+  }
+
+  function rowByKey(key) {
+    if (!key) return null;
+    var nodes = walkableRows();
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute("data-key") === key) return nodes[i];
+    }
+    return null;
+  }
+
   /**
-   * Marks the cursor's row. `scroll` brings it into view, but only when the list
-   * is genuinely scrollable — scrollIntoView on a widget that fits would be free
-   * rein to move the page under the driver.
-   */
-  /**
-   * Mark the overlay's OWN rows when the cursor is on one of them.
+   * Marks the cursor's row — the one row whose key matches, across all three
+   * groups, and nothing else.
    *
-   * They live in the RACE CONTROL group rather than the pit list, but the server
-   * walks them as part of one list (see server/pitCursor withVirtualRows), so
-   * the highlight has to follow the cursor across both. Matched by name, which
-   * is the cursor's own anchor.
+   * There is deliberately no fallback when the key is not on screen. The cursor
+   * can legitimately sit on a row this instance is not drawing (`?aids=off`, or
+   * a pit menu that has not arrived yet), and highlighting a nearby row instead
+   * of none tells the driver their buttons are aimed somewhere they are not.
+   *
+   * `scroll` brings the selection into view, but only when something is actually
+   * scrollable — scrollIntoView on a widget that fits would be free rein to move
+   * the page under the driver.
    */
-  /** Draw the overlay-owned rows' values from the server's copy. */
-  function renderVirtualRows(virtual) {
-    var byName = { 'SERVE:': rcRows.serve, 'PIT REQUEST:': rcRows.request };
-    for (var i = 0; i < virtual.length; i++) {
-      var refs = byName[virtual[i].name];
-      if (refs) critText(refs.value, virtual[i].text || '—');
-    }
-  }
-
-  function highlightRaceControl() {
-    var byName = { 'SERVE:': rcRows.serve, 'PIT REQUEST:': rcRows.request };
-    for (var key in byName) {
-      if (!Object.prototype.hasOwnProperty.call(byName, key)) continue;
-      var refs = byName[key];
-      if (!refs) continue;
-      if (pitCursor.name === key) refs.root.setAttribute("data-selected", "true");
-      else refs.root.removeAttribute("data-selected");
-    }
-  }
-
-  function highlightCursor(rows, scroll) {
-    // Always run, even with no pit list: the cursor may be sitting on one of the
-    // overlay's own rows, which exist whether or not the sim's menu is up.
-    highlightRaceControl();
-    if (!pit.rowsEl || !rows || rows.length === 0) return;
-    var idx = -1;
-    if (pitCursor.name) {
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].name === pitCursor.name) { idx = i; break; }
-      }
-    }
-    if (idx < 0 && pitCursor.index >= 0 && pitCursor.index < rows.length) idx = pitCursor.index;
+  function highlightCursor(scroll) {
+    var nodes = walkableRows();
     var selected = null;
-    for (var j = 0; j < rows.length; j++) {
-      var refs = pit.rows[pitRowId(rows[j])];
-      if (!refs) continue;
-      if (j === idx) {
-        refs.root.setAttribute("data-selected", "true");
-        selected = refs.root;
-      } else {
-        refs.root.removeAttribute("data-selected");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var want = !!pitCursor.key && el.getAttribute("data-key") === pitCursor.key;
+      // Only touch the attribute when it actually changes: this runs on every
+      // render as well as every cursor poll, and a needless write is a needless
+      // style recalculation on a row with a glow on it.
+      if (want !== (el.getAttribute("data-selected") === "true")) {
+        if (want) el.setAttribute("data-selected", "true");
+        else el.removeAttribute("data-selected");
       }
+      if (want) selected = el;
     }
-    if (scroll && selected && pit.rowsEl.scrollHeight > pit.rowsEl.clientHeight + 1) {
-      selected.scrollIntoView({ block: "nearest" });
+    if (scroll && selected) scrollRowIntoView(selected);
+  }
+
+  function scrollRowIntoView(el) {
+    for (var p = el.parentNode; p && p !== document.body; p = p.parentNode) {
+      if (p.scrollHeight > p.clientHeight + 1) {
+        el.scrollIntoView({ block: "nearest" });
+        return;
+      }
     }
   }
 
@@ -418,7 +450,6 @@
     if (!pit.container) return;
     if (!rows || rows.length === 0) {
       markEmpty(pit);
-      lastPitRows = [];
       return;
     }
     pit.container.removeAttribute("data-empty");
@@ -446,7 +477,7 @@
           // Aim the bindable controls at the row being clicked, so the buttons
           // carry on from wherever the mouse left off rather than from some
           // other row the driver can no longer remember choosing.
-          aimCursorAt(r);
+          aimCursorAt(pitRowKey(r));
           postJson("/api/mfd/pit", body).then(function (res) {
             refs.value.removeAttribute("data-busy");
             if (!res || res.ok === false) {
@@ -459,9 +490,9 @@
           });
         };
       },
+      pitRowKey,
     );
-    lastPitRows = rows;
-    highlightCursor(rows, false);
+    highlightCursor(false);
   }
 
   function renderAids(list) {
@@ -522,6 +553,9 @@
             return;
           }
           refs.value.setAttribute("data-busy", "true");
+          // Same contract as the pit rows: the mouse moves the cursor onto what
+          // it just touched, so the bound buttons carry on from there.
+          aimCursorAt(aidRowKey(a));
           postJson("/api/mfd/aidkey", { aid: a.key, dir: dir > 0 ? "inc" : "dec" }).then(
             function (res) {
               refs.value.removeAttribute("data-busy");
@@ -533,7 +567,9 @@
           );
         };
       },
+      aidRowKey,
     );
+    highlightCursor(false);
   }
 
   /** Applies a full MfdState to the DOM (from a telemetry frame). */
@@ -544,7 +580,6 @@
       return;
     }
     if (!wrapEl || mountEl.getAttribute("data-nodata") === "true") buildBody();
-    if (showPit) renderTyres(state.tyres);
     if (showPit) renderPit(state.pit || []);
     if (showAids) renderAids(state.aids || []);
     if (headerMeta) headerMeta.textContent = "LIVE";
@@ -564,8 +599,9 @@
     wrapEl = null;
     // The body is gone; drop the section refs with it, or the next render
     // writes into detached nodes and silently shows nothing.
-    tyreRow = null;
     rcRows.box = null;
+    rcRows.rowsEl = null;
+    rcRows.sig = "";
     var ph = document.createElement("div");
     ph.className = "placeholder";
     ph.textContent = "No MFD data — join a session in LMU";
@@ -625,41 +661,35 @@
     return box;
   }
 
-  /* ------------------------ tyres + race control rows ---------------------
+  /* ---------------------------- race control rows -------------------------
    * Everything here is a ROW, not a panel of its own — same LABEL … VALUE … ±
    * shape as the sim's own pit entries. That is deliberate: these sit among
    * twenty rows the driver already reads that way, and a control that looks
-   * different reads as a different KIND of thing. The tyre row in particular
-   * belongs beside FL/FR/RL/RR TIRE, not in a box above them.
+   * different reads as a different KIND of thing.
+   *
+   * There is no TIRES row here any more. The overlay used to draw a collapsed
+   * all-four-corners row at the top of PIT STRATEGY, which was a duplicate of
+   * the sim's own `TIRES:` entry sitting a few lines below it, and — because it
+   * was the widget's invention rather than a row the server walks — it was the
+   * one row ▲ ▼ could never reach. Two rows for one setting, one of them dead
+   * to the buttons, is worse than not having it.
    * ------------------------------------------------------------------------ */
 
-  /** The collapsed all-four-corners compound row. */
-  var tyreRow = null;
-  /** Race-control rows: pit request, serve penalty, the penalty count. */
-  var rcRows = { request: null, serve: null, penalty: null, note: null, box: null };
   /**
-   * Which penalty the SERVE row is armed for. Both start the same way — strip
-   * the stop back to no service — and differ in what happens next, which is why
-   * this is a choice and not one button:
-   *
-   *   STOP/GO        you stop in your box for the held time, so the pit stop IS
-   *                  requested; without the request the crew is not expecting
-   *                  you and the box may not be yours.
-   *   DRIVE-THROUGH  you drive the length of the lane without stopping, so the
-   *                  stop must NOT be requested — requesting one is how drivers
-   *                  turn a drive-through into a drive-through plus a pit stop.
-   *
-   * LMU issues a drive-through for track limits, so that is the default.
+   * The race-control group. `rowsEl` holds the walkable rows, which are built
+   * from the server's list rather than declared here — see renderRaceRows.
    */
+  var rcRows = { penalty: null, note: null, box: null, rowsEl: null, sig: '' };
+
   /**
    * Step one of the overlay-owned rows: aim the cursor at it, then change it.
    *
-   * Two calls rather than one because that is the existing contract — clicking a
-   * row's ± moves the cursor onto it, so whatever the driver last touched with
-   * the mouse is what their bound + and − will act on next.
+   * Two calls rather than one because that is the contract every other row here
+   * follows — clicking a row's ± moves the cursor onto it, so whatever the
+   * driver last touched with the mouse is what their bound + and − act on next.
    */
-  function stepVirtual(name, dir) {
-    postJson('/api/mfd/cursor', { name: name })
+  function stepRaceRow(key, dir) {
+    aimCursorAt(key)
       .then(function () { return postJson('/api/mfd/cursor', { value: dir }); })
       .then(function (res) {
         if (res && res.ok === false) showNote(res.error || 'failed', true);
@@ -668,69 +698,46 @@
       });
   }
 
-  /** POST a control intent and report the outcome on the note line. */
-  function rcPost(path, body, okText) {
-    return postJson(path, body || {}).then(function (res) {
-      if (res && res.ok === false) showNote(res.error || 'failed', true);
-      else showNote(okText, false);
-      refreshNow();
-      return res;
-    });
-  }
-
-  /** A row whose control is a single labelled button rather than ±. */
-  function makeActionRow(label, buttonText, onPress) {
-    var refs = makeRow(null);
-    setText(refs.label, label);
-    var ctrls = document.createElement('span');
-    ctrls.className = 'mfd__ctrls';
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'mfd__act';
-    b.textContent = buttonText;
-    // The in-game layer starts a widget drag on pointerdown anywhere inside a
-    // widget; without this, pressing the button drags the whole MFD instead.
-    ['pointerdown', 'mousedown', 'touchstart'].forEach(function (evt) {
-      b.addEventListener(evt, function (e) { e.stopPropagation(); });
-    });
-    b.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      b.disabled = true;
-      Promise.resolve(onPress()).then(function () { b.disabled = false; },
-        function () { b.disabled = false; });
-    });
-    ctrls.appendChild(b);
-    refs.root.appendChild(ctrls);
-    refs.root.setAttribute('data-adjustable', 'true');
-    refs.button = b;
-    return refs;
-  }
-
-  /** The tyre row: compound as the value, ± to cycle through what the car has. */
-  function buildTyreRow() {
-    var refs = makeRow(function (dir) {
-      rcPost('/api/mfd/tyres', { delta: dir }, dir > 0 ? 'tyres up' : 'tyres down');
-    });
-    refs.root.setAttribute('data-cat', 'tyre');
-    setText(refs.label, 'TIRES');
-    tyreRow = refs;
-    return refs.root;
-  }
-
-  function renderTyres(tyres) {
-    if (!tyreRow) return;
-    if (!tyres || !tyres.options || !tyres.options.length) {
-      critText(tyreRow.value, '—');
-      return;
+  /**
+   * Draws the overlay's own rows from the cursor poll — their names, their
+   * order and their values all come from the server.
+   *
+   * Nothing about them is declared in this file, and that is the point: the
+   * server walks these rows in a definite order, and any order this widget
+   * decided for itself could disagree with it. It did, in fact — the list read
+   * PIT REQUEST above SERVE while ▼ visited them the other way round, so the
+   * highlight appeared to jump upwards on a downward press.
+   */
+  function renderRaceRows(list) {
+    if (!rcRows.rowsEl) return;
+    var sig = list
+      .map(function (r) {
+        return r.name;
+      })
+      .join('|');
+    if (sig !== rcRows.sig) {
+      rcRows.sig = sig;
+      rcRows.rowsEl.textContent = '';
+      list.forEach(function (r, i) {
+        var key = 'race:' + r.name;
+        var refs = makeRow(function (dir) {
+          stepRaceRow(key, dir);
+        });
+        refs.root.setAttribute('data-cat', 'service');
+        refs.root.setAttribute('data-key', key);
+        if (i === 0) refs.root.classList.add('mfd__row--group-start');
+        setText(refs.label, prettyPit(r.name));
+        rcRows.rowsEl.appendChild(refs.root);
+      });
+      highlightCursor(false);
     }
-    // The sim's own wording, minus nothing: "No Change", "New Medium", "Used
-    // Medium", "New Wet" all say something the driver needs, and shortening them
-    // is how a used set gets mistaken for a new one.
-    critText(tyreRow.value, tyres.mixed ? 'Mixed' : tyres.currentText || '—');
+    list.forEach(function (r) {
+      var row = rowByKey('race:' + r.name);
+      if (row) critText(row.querySelector('.mfd__value'), r.text || '—');
+    });
   }
 
-  /** The race-control group: what the sim is doing TO you, and the two replies. */
+  /** The race-control group: what the sim is doing TO you, and the replies. */
   function buildRaceControl() {
     var box = document.createElement('div');
     box.className = 'mfd__group mfd__penalty';
@@ -741,31 +748,24 @@
     head.className = 'mfd__group-title';
     head.textContent = 'RACE CONTROL';
 
-    var rows = document.createElement('div');
-    rows.className = 'mfd__rows';
-
     // Penalties outstanding — a plain row, because it is a reading like any
-    // other. Its urgency is carried by the group's data-state, not by size.
+    // other. Its urgency is carried by the group's data-state, not by size. It
+    // carries no cursor key: there is nothing to set, so ▲ ▼ walk straight past
+    // it rather than stopping on a row where + and − would do nothing.
+    var readings = document.createElement('div');
+    readings.className = 'mfd__rows';
     rcRows.penalty = makeRow(null);
     setText(rcRows.penalty.label, 'PENALTIES');
     rcRows.penalty.root.setAttribute('data-cat', 'service');
-    rows.appendChild(rcRows.penalty.root);
+    readings.appendChild(rcRows.penalty.root);
 
-    // PIT REQUEST and SERVE are ordinary ± rows now, driven through the SAME
-    // server-side cursor as the sim's own rows. That is what makes them reachable
-    // from the four bindable controls: scroll to them with ▲ ▼, change them with
-    // + −, exactly like FL TIRE. Clicking a row's ± aims the cursor at it first,
-    // so the mouse and the buttons never disagree about which row is selected —
-    // the same contract the sim's rows have always had here.
-    rcRows.request = makeRow(function (dir) { stepVirtual('PIT REQUEST:', dir); });
-    setText(rcRows.request.label, 'PIT REQUEST');
-    rcRows.request.root.setAttribute('data-cat', 'service');
-    rows.appendChild(rcRows.request.root);
-
-    rcRows.serve = makeRow(function (dir) { stepVirtual('SERVE:', dir); });
-    setText(rcRows.serve.label, 'SERVE');
-    rcRows.serve.root.setAttribute('data-cat', 'service');
-    rows.appendChild(rcRows.serve.root);
+    // SERVE and PIT REQUEST are ordinary ± rows, driven through the SAME
+    // server-side cursor as the sim's own rows. That is what makes them
+    // reachable from the four bindable controls: scroll to them with ▲ ▼, change
+    // them with + −, exactly like FL TIRE.
+    rcRows.rowsEl = document.createElement('div');
+    rcRows.rowsEl.className = 'mfd__rows';
+    rcRows.sig = '';
 
     // The outcome line. Errors are the point of it: the likeliest failure is
     // "Pit Request" being bound to a wheel button, which the driver can only fix
@@ -775,7 +775,8 @@
     rcRows.note.hidden = true;
 
     box.appendChild(head);
-    box.appendChild(rows);
+    box.appendChild(readings);
+    box.appendChild(rcRows.rowsEl);
     box.appendChild(rcRows.note);
     rcRows.box = box;
     return box;
@@ -819,16 +820,12 @@
     // TO the driver rather than something they are choosing, and when it has
     // anything to say it outranks the strategy below it.
     wrapEl.appendChild(buildRaceControl());
-    if (showPit) {
-      var pitBox = makeGroup('PIT STRATEGY', pit, 'pit');
-      // The tyre row goes at the TOP of the pit group, where the sim's own
-      // all-four TIRES entry would be — beside the per-corner rows it drives,
-      // not in a box of its own above them.
-      pitBox.insertBefore(buildTyreRow(), pit.rowsEl);
-      wrapEl.appendChild(pitBox);
-    }
+    if (showPit) wrapEl.appendChild(makeGroup('PIT STRATEGY', pit, 'pit'));
     if (showAids) wrapEl.appendChild(makeGroup('DRIVING AIDS', aids, 'aids'));
     mountEl.appendChild(wrapEl);
+    // The body is new, so nothing in it is marked yet — and the cursor may well
+    // already be somewhere.
+    highlightCursor(false);
   }
 
   /* --- opacity control — identical contract to widgets/damage.js ----------- */
@@ -913,11 +910,15 @@
     loadAidBinds();
     setInterval(loadAidBinds, 10000);
 
-    // The selected pit row, on the other hand, moves the instant a bound button
-    // is pressed — and the driver pressed it precisely because they are not
-    // looking at the screen for long. Polled quickly, and answered from the
-    // server's memory rather than from the sim, so this costs almost nothing.
-    if (showPit) {
+    // The selected row, on the other hand, moves the instant a bound button is
+    // pressed — and the driver pressed it precisely because they are not looking
+    // at the screen for long. Polled quickly, and answered from the server's
+    // memory rather than from the sim, so this costs almost nothing.
+    //
+    // Unconditional, unlike the sections: this one poll carries the cursor for
+    // every group AND the race-control rows themselves, so skipping it when the
+    // pit section is hidden would leave SERVE and PIT REQUEST blank.
+    if (!isOff("pit") || !isOff("aids")) {
       loadCursor();
       setInterval(loadCursor, CURSOR_POLL_MS);
     }
