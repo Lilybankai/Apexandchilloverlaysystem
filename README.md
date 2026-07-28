@@ -521,15 +521,23 @@ pit menu is polled twice a second (the heavier setup read stays on its slow
 timer), and any change made through the widget or a bound button is read back
 immediately rather than waiting for the next frame — so the value moving is
 prompt confirmation that the command landed.
-**Brake bias is read live from shared memory**
-(`mRearBrakeBias`) and updates as the driver shifts the balance — the REST garage
-data only reports the frozen *setup* value, so it can't show live aids. TC, ABS
-and the motor map have no live value anywhere in LMU, so they are **counted, not
-read**: seeded from the setup value and stepped by every press the overlay makes
-*and* every press on the wheel buttons LMU has them bound to. They are tagged
-`est` for exactly that reason — an estimate the driver knows is an estimate is
-useful, one passed off as a reading is a hazard. **LMU only** — the widget shows
-"No MFD data" out of a session or on rF2.
+**Every aid is read live from the car**, not inferred: brake bias, the TC map, its
+two sub-settings (**TC Slip** and **TC Power Cut**), ABS and the motor map all come
+off the telemetry record in shared memory, each shown as its step against the
+maximum the car allows (`7/11`). They were *counted* until v0.30.0, on the finding
+that LMU published no live value for them. That finding was wrong twice over: the
+values are single **bytes** in what stock rF2 leaves as reserved space, so a scan
+for doubles steps straight over them — and every car except the driver's own
+publishes zeros there, so probing the wrong record looks exactly like "not
+supported".
+
+`±` appears only on the aids LMU has a **keyboard** bind for, since a key the game
+has not bound does nothing however perfectly it is sent. TC Slip and TC Power Cut
+have no keyboard function in LMU, so they read live but carry no controls, and
+▲ ▼ walk past them. The frozen setup value from the REST garage data survives as
+the fallback for brake bias when there is no live car — in the garage, or
+spectating. **LMU only** — the widget shows "No MFD data" out of a session or on
+rF2.
 
 ## Live telemetry sources
 

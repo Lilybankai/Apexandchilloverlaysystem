@@ -26,6 +26,7 @@ const {
   isAllFourTyreRow,
   isServiceRow,
   nextTyreOption,
+  projectAids,
   projectPitMenu,
   projectTyreControl,
   tyreOptionSet,
@@ -183,7 +184,50 @@ console.log('\n4) The slots that are not compounds');
   check('genuinely mixed corners still read Mixed', mixed.currentText === 'Mixed', mixed.currentText);
 }
 
-console.log('\n5) What a stop-and-go strips, and what it must not');
+console.log('\n5) The driving aids are READINGS, not guesses');
+
+{
+  // These were declared unreadable for two releases and counted instead. They
+  // are readable — single bytes in what stock rF2 leaves as reserved space, on
+  // the player's record only. Sampled live: TC 7/11, ABS 9/9, motor map 1/1.
+  const live = {
+    tc: { value: 7, max: 11 },
+    tcSlip: { value: 7, max: 11 },
+    tcCut: { value: 7, max: 11 },
+    abs: { value: 9, max: 9 },
+    motorMap: { value: 1, max: 1 },
+    tcActive: false,
+    absActive: false,
+  };
+  const rows = projectAids(null, 0.51, live);
+  const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+  check('every aid the car reports becomes a row', rows.length === 6, rows.map((r) => r.key).join());
+  check('brake bias stays a front:rear split', byKey.BRAKE_BIAS.text === '49.0:51.0', byKey.BRAKE_BIAS.text);
+  check('TC reads its step and its headroom', byKey.tc.text === '7/11', byKey.tc.text);
+  check('…and carries the max as a bound', byKey.tc.maxValue === 11, byKey.tc.maxValue);
+  check('TC slip and power cut are separate rows', !!byKey.tcSlip && !!byKey.tcCut);
+  check('nothing is tagged as an estimate', rows.every((r) => !/est/.test(r.text)), rows.map((r) => r.text).join());
+
+  // A car that does not offer a control reports max 0 for it. Showing that as a
+  // permanent "0" would read as "turned off", which is a different and alarming
+  // thing to tell a driver.
+  const gt = projectAids(null, 0.51, { ...live, motorMap: { value: 0, max: 0 } });
+  check('a control this car lacks is omitted, not shown as 0',
+    !gt.some((r) => r.key === 'motorMap'), gt.map((r) => r.key).join());
+}
+
+{
+  // Every car except the player's own publishes zeros in this block. Reporting
+  // that as "TC 0" on a car running TC 7 is the trap that made the whole thing
+  // look unsupported in the first place.
+  const rows = projectAids(null, 0.51, null);
+  check('no live block means brake bias alone', rows.length === 1 && rows[0].key === 'BRAKE_BIAS',
+    rows.map((r) => r.key).join());
+  const setup = projectAids({ VM_BRAKE_BALANCE: { value: 32, maxValue: 57, stringValue: '49.0:51.0' } });
+  check('and with no live car at all, the setup value stands in', setup.length === 1, setup.length);
+}
+
+console.log('\n6) What a stop-and-go strips, and what it must not');
 
 {
   check('the four corners are service', CORNERS.every(isServiceRow));

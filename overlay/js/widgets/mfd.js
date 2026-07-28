@@ -74,8 +74,11 @@
   /** Category (→ colour) for a driving aid, from its VM_ key. */
   function aidCategory(key) {
     var k = String(key || "").toUpperCase();
-    if (/BRAKE/.test(k)) return "brake";
-    if (/ANTILOCK|TRACTION/.test(k)) return "traction";
+    // ABS and the TC family are one colour block: they are the two systems that
+    // intervene between the driver's foot and the car, and they sit together.
+    // Order matters — BRAKE_BIAS must not be caught by the ABS test.
+    if (/^BRAKE|BIAS/.test(k)) return "brake";
+    if (/^TC|ANTILOCK|TRACTION|^ABS/.test(k)) return "traction";
     if (/REGEN|ELECTRIC|MOTOR/.test(k)) return "hybrid";
     if (/ENGINE/.test(k)) return "engine";
     return "other";
@@ -96,8 +99,6 @@
    * the overlay first loads.
    */
   var aidBinds = {};
-  /** Server-tracked estimates for the aids LMU will not report live. */
-  var shadowAids = [];
 
   function loadAidBinds() {
     fetch("/api/mfd/keymap", { cache: "no-store" })
@@ -118,9 +119,6 @@
             if (k) next[k] = entry;
           });
         });
-        // TC / ABS / motor map have no live source, so the server counts them
-        // instead (see server/aidShadow). Shown as ESTIMATES, never as readings.
-        shadowAids = Array.isArray(cfg.shadowAids) ? cfg.shadowAids : [];
         // Only rebuild rows if the offerable set actually changed.
         if (JSON.stringify(next) !== JSON.stringify(aidBinds)) {
           aidBinds = next;
@@ -497,27 +495,10 @@
 
   function renderAids(list) {
     if (!aids.container) return;
-    // Merge the live aids (currently just brake bias) with the server's
-    // estimates. They are deliberately the same rows with the same controls —
-    // the only difference the driver sees is the "est" tag, because the value's
-    // provenance matters but the way you change it does not.
-    var merged = (list || []).slice();
-    for (var s = 0; s < shadowAids.length; s++) {
-      var sh = shadowAids[s];
-      var already = merged.some(function (a) {
-        return a.key === sh.id || a.label === sh.label;
-      });
-      if (!already) {
-        merged.push({
-          key: sh.id,
-          label: sh.label,
-          value: sh.value,
-          text: String(sh.value),
-          estimated: true,
-        });
-      }
-    }
-    list = merged;
+    // Every row here is a live READING off the car — brake bias, the TC map and
+    // its two sub-settings, ABS, the motor map. There is nothing to merge and
+    // nothing to tag: the estimates this used to blend in existed only while
+    // those values were thought to be unreadable.
     if (!list || list.length === 0) {
       markEmpty(aids);
       return;
@@ -536,14 +517,14 @@
         return a.label;
       },
       function (a) {
-        var text = a.text || String(a.value);
-        // Tagged, not hidden: an estimate the driver knows is an estimate is
-        // useful; one presented as a reading is a hazard.
-        return a.estimated ? text + " est" : text;
+        return a.text || String(a.value);
       },
-      // Aids are stepped with a KEYSTROKE, not REST — LMU's REST aid values are
-      // frozen setup values. Only offered for aids LMU actually has bound (from
-      // /api/mfd/keymap), since an unbound function cannot be triggered at all.
+      // Aids are READ from the car's telemetry record but STEPPED with a
+      // keystroke — LMU exposes no write for them, and its REST aid values are
+      // frozen setup numbers. ± is offered only for aids LMU actually has bound
+      // (from /api/mfd/keymap), since an unbound function cannot be triggered at
+      // all: TC Slip and TC Power Cut read live but have no keyboard bind, so
+      // they show as readings with no controls.
       function (a) {
         var bind = aidBinds[a.key];
         if (!bind || (!bind.canInc && !bind.canDec)) return null;

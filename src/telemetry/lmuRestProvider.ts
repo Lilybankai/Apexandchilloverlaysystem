@@ -38,7 +38,7 @@ import http from 'node:http';
 import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator } from './fuelCalculator';
-import { LmuLocalCarReader, type LocalCarPhysics } from './lmuLocalCar';
+import { LmuLocalCarReader, type AidSettings, type LocalCarPhysics } from './lmuLocalCar';
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { buildRadar, type RadarCar } from './radar';
@@ -67,7 +67,6 @@ import {
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
-import { seedFromGarage as seedAidShadow } from '../server/aidShadow';
 import { LocalPaceDeltaTracker, refKeyOf } from './paceDelta';
 import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
@@ -480,10 +479,11 @@ export class LmuRestProvider implements TelemetryProvider {
   /**
    * Pulls the `VM_*` garage values — the frozen SETUP numbers behind the aids.
    *
-   * Deliberately still slow: these do not move in a session at all (that is the
-   * whole reason the aid rows are estimated, see server/aidShadow), and it is a
-   * 100+ key payload. Polling it at the pit menu's rate would be the one
-   * genuinely wasteful request in the provider.
+   * Deliberately slow: these do not move in a session at all, and it is a 100+
+   * key payload. Polling it at the pit menu's rate would be the one genuinely
+   * wasteful request in the provider. Only brake bias is still read from here,
+   * and only as the fallback for when there is no live car — every aid now
+   * comes off the telemetry record instead (see `projectAids`).
    */
   private async refreshGarageAids(): Promise<void> {
     const garage = await this.getJson<Record<string, RawGarageVal>>(
@@ -491,10 +491,6 @@ export class LmuRestProvider implements TelemetryProvider {
     ).catch(() => null);
     if (garage && typeof garage === 'object') {
       this.garageDataRaw = garage;
-      // Give the estimated aids (TC/ABS/motor map) their baseline as soon as the
-      // garage answers. Seeding is one-way — it never overwrites a value we are
-      // already tracking — so this is safe to call on every poll.
-      seedAidShadow(garage);
       this.lastMfdOkAt = Date.now();
     }
   }
@@ -654,9 +650,9 @@ export class LmuRestProvider implements TelemetryProvider {
       local ? local.throttle : null,
     );
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
-    // Live rear brake bias from shared memory (the driven car only); projectAids
-    // uses it as the one genuinely-live aid, falling back to the setup value.
-    const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined);
+    // The driving aids as the car holds them, from shared memory (the driven car
+    // only — every other record publishes zeros there).
+    const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined, local?.aidSettings);
     // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
     // it reads that car's world position + orientation from shared memory, which
     // exists only for the car driven on this PC. Omitted when spectating.
@@ -687,10 +683,10 @@ export class LmuRestProvider implements TelemetryProvider {
    * staleness window as tyre wear / damage so the widget never drives the MFD
    * from a menu snapshot left over from a previous session.
    */
-  private buildMfd(liveRearBias?: number): MfdState | undefined {
+  private buildMfd(liveRearBias?: number, liveAids?: AidSettings | null): MfdState | undefined {
     if (Date.now() - this.lastMfdOkAt >= GARAGE_STALE_AFTER_MS) return undefined;
     if (!this.pitMenuRaw && !this.garageDataRaw) return undefined;
-    return buildMfdState(this.pitMenuRaw, this.garageDataRaw, liveRearBias);
+    return buildMfdState(this.pitMenuRaw, this.garageDataRaw, liveRearBias, liveAids);
   }
 
   /**

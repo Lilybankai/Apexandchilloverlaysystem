@@ -27,7 +27,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { projectPitMenu, type MfdController } from '../telemetry/mfdControl';
 import type { KeySender } from './keySender';
 import { readLmuKeybinds } from './lmuKeybinds';
-import { getShadowAids, resync } from './aidShadow';
 import { stepAid } from './aidRows';
 import { getCursor, getRaceControlRows, moveCursorLive, selectRowLive, stepSelected } from './pitCursor';
 
@@ -92,7 +91,6 @@ export function handleMfdCommand(
       simForeground: keys.isSimForeground(),
       foreground: keys.foregroundTitle(),
       configPath: binds.path,
-      shadowAids: getShadowAids(),
       keyboardSchemeActive: binds.keyboardSchemeActive,
       aids: binds.aids.map((a) => ({
         // The stable id is what the cursor keys an aid row by (`aid:tc`), so the
@@ -198,14 +196,6 @@ export function handleMfdCommand(
           return;
         }
         await handlePitRequest(res, keys, cleared.cleared);
-        return;
-      }
-      if (action === 'aidresync') {
-        // Re-seed the estimated aids from LMU's setup values. The driver's escape
-        // hatch when a change happened on a route we cannot see.
-        const garage = await controller.getGarageData().catch(() => null);
-        resync(garage);
-        sendJson(res, 200, { ok: true, shadowAids: getShadowAids() });
         return;
       }
       if (action === 'cursor') {

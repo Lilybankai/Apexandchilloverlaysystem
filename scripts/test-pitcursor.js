@@ -231,8 +231,8 @@ console.log('\n4) Live operations against a stub sim');
       {
         id: 'tc',
         label: 'Traction Control',
-        text: '3 est',
-        step: async () => { aidSteps++; return { ok: true, text: '4 est' }; },
+        text: '3/11',
+        step: async () => { aidSteps++; return { ok: true, text: '4/11' }; },
       },
     ]);
 
@@ -272,7 +272,7 @@ console.log('\n4) Live operations against a stub sim');
     check('the cursor can land on an aid row', getCursor().section === 'aid', getCursor().section);
     const ares = await stepSelected(1, guard);
     check('stepping an aid row presses its key', ares.ok === true && aidSteps === 1, ares.error);
-    check('…and reports the estimate it left behind', getCursor().text === '4 est', getCursor().text);
+    check('…and reports the value it left behind', getCursor().text === '4/11', getCursor().text);
   }
 
   console.log('\n6) A press never acts on a row the driver did not aim at');

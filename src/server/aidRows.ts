@@ -2,18 +2,21 @@
  * @file src/server/aidRows.ts
  * @module server/aidRows
  *
- * Driving aids as things the driver can **step**, in the one place that knows
- * how: press LMU's own key for the direction, then keep the shadow value in
- * step with what that press did.
+ * Driving aids as things the driver can **step**: press LMU's own key for the
+ * direction, in the one place that knows how.
+ *
+ * Writing is all this does. The aids are READ live off the car's telemetry
+ * record (see {@link module:telemetry/mfdControl} `projectAids`), so a press
+ * needs no bookkeeping to be believed — the next frame carries what the game
+ * actually did with it. That replaced a tracker which counted presses because
+ * the values were thought to be unreadable, and which could drift from the game
+ * with no way for the driver to tell.
  *
  * ## Why it is a module and not two copies
  * Two callers need exactly this: `/api/mfd/aidkey` (the widget's ± buttons) and
- * the MFD cursor (the four bindable controls, which now walk the aid rows as
- * well as the pit ones). The shadow bookkeeping in particular has a rule that is
- * easy to get subtly wrong in a second copy — only presses that were actually
- * SENT may be counted, because a refused press (sim not focused) changed nothing
- * in the game and counting it would desync the display from reality with no way
- * for the driver to tell.
+ * the MFD cursor (the four bindable controls, which walk the aid rows as well as
+ * the pit ones). A wheel button and a click on the widget are meant to be the
+ * same act, down to the failure messages.
  *
  * ## Only bound aids are offered
  * A key LMU has not bound does nothing however perfectly we send it, so
@@ -22,7 +25,6 @@
  * driver cannot change is not a row the cursor should stop on.
  */
 
-import { bump as bumpShadow, getShadowAids, isTracked } from './aidShadow';
 import type { KeySender } from './keySender';
 import { boundAids, findAid, readLmuKeybinds, type AidBind } from './lmuKeybinds';
 import type { AidRow } from './pitCursor';
@@ -44,8 +46,6 @@ export interface AidStepResult {
   foreground?: string;
   scancode?: number;
   extended?: boolean;
-  /** The tracked estimate after the press, when this aid is shadowed. */
-  shadowValue: number | null;
 }
 
 /**
@@ -70,15 +70,15 @@ export async function stepAid(
   opts: { requireSim?: boolean; repeat?: number } = {},
 ): Promise<AidStepResult> {
   if (!keys) {
-    return { ok: false, status: 503, error: 'key sender unavailable', sent: 0, shadowValue: null };
+    return { ok: false, status: 503, error: 'key sender unavailable', sent: 0 };
   }
   const binds = readLmuKeybinds();
   if (!binds.path) {
-    return { ok: false, status: 503, error: 'LMU keyboard config not found', sent: 0, shadowValue: null };
+    return { ok: false, status: 503, error: 'LMU keyboard config not found', sent: 0 };
   }
   const aid = findAid(binds, aidName);
   if (!aid) {
-    return { ok: false, status: 404, error: `unknown aid: ${aidName}`, sent: 0, shadowValue: null };
+    return { ok: false, status: 404, error: `unknown aid: ${aidName}`, sent: 0 };
   }
   const bound = dir === 'inc' ? aid.inc : aid.dec;
   if (!bound) {
@@ -90,7 +90,6 @@ export async function stepAid(
       error: `"${fn}" is not bound to a key in LMU`,
       aid: aid.id,
       sent: 0,
-      shadowValue: null,
     };
   }
   if (!binds.keyboardSchemeActive) {
@@ -100,21 +99,11 @@ export async function stepAid(
       error: 'LMU has its keyboard scheme disabled — the key would be ignored',
       aid: aid.id,
       sent: 0,
-      shadowValue: null,
     };
   }
 
   const repeat = Math.min(20, Math.max(1, Math.round(Number(opts.repeat) || 1)));
   const result = await keys.pressScanTimes(bound, repeat, { requireSim: opts.requireSim ?? true });
-
-  // Keep the shadow in step for the aids LMU will not let us read back. Only
-  // count presses that were actually SENT.
-  let shadowValue: number | null = null;
-  if (isTracked(aid.id) && result.sent > 0) {
-    for (let i = 0; i < result.sent; i++) {
-      shadowValue = bumpShadow(aid.id, dir === 'inc' ? 1 : -1, 'overlay');
-    }
-  }
 
   return {
     ok: result.ok,
@@ -125,38 +114,29 @@ export async function stepAid(
     foreground: result.foreground,
     scancode: bound.scancode,
     extended: bound.extended,
-    shadowValue,
   };
-}
-
-/** The value text for an aid, when the overlay has one to show. */
-function aidText(id: string): string | null {
-  const shadow = getShadowAids().find((s) => s.id === id);
-  // Tagged as an estimate here as well as in the widget: this text is what rides
-  // back on a cursor press, and a counted value presented as a reading is the
-  // one way this display can mislead.
-  return shadow && shadow.value !== null ? `${shadow.value} est` : null;
 }
 
 /**
  * The aid rows for the MFD cursor to walk, in the SAME order the widget draws
- * them — brake bias first (the one aid with a live value), then the counted
- * ones. That order is the widget's, not a preference: the cursor list and the
+ * them. That order is the widget's, not a preference: the cursor list and the
  * on-screen list have to agree or ▼ appears to skip rows.
+ *
+ * The rows carry no value. They do not need to: the aids are read live from the
+ * car on every telemetry frame, so the widget already has the number and the
+ * press it just made shows up there within a frame. This module's job is the
+ * press, not the reading — which is the whole shape of the change that removed
+ * the estimate tracker.
  */
 export function buildAidRows(keys: KeySender | null): AidRow[] {
   const binds = readLmuKeybinds();
   return boundAids(binds).map((aid: AidBind) => ({
     id: aid.id,
     label: aid.label,
-    text: aidText(aid.id),
+    text: null,
     step: async (dir: number) => {
       const res = await stepAid(aid.id, dir < 0 ? 'dec' : 'inc', keys);
-      return {
-        ok: res.ok,
-        text: res.shadowValue !== null ? `${res.shadowValue} est` : aidText(aid.id),
-        ...(res.error ? { error: res.error } : {}),
-      };
+      return { ok: res.ok, ...(res.error ? { error: res.error } : {}) };
     },
   }));
 }

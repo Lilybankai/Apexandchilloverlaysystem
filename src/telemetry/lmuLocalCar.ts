@@ -114,6 +114,39 @@ const VT = {
   // moves in the pits but reads 0 on track and is not this.) Like every offset
   // here it is version-sensitive and may shift on an LMU update.
   mRearBrakeBias: 664,
+  /* ----------------------- LMU's driving-aid block -----------------------
+   * TC, its two sub-settings, ABS and the motor map, live, for the player's
+   * own car — each a single BYTE, paired with the maximum the car allows.
+   *
+   * These were declared unreadable here for two releases ("no live value
+   * anywhere, verified twice"), and the note was wrong in a way worth
+   * recording, because both traps are easy to fall into again:
+   *
+   *   - they are BYTES in what stock rF2 leaves as reserved expansion space,
+   *     so a scan looking for doubles or ints steps straight over them;
+   *   - AI cars publish ZEROS here. Probe any record but the driver's own and
+   *     the block reads empty, which looks exactly like "not supported".
+   *
+   * Cross-checked against SimHub's own LMU struct
+   * (`RfactorReader.LMU.TelemInfoV01`), which declares `mRearBrakeBias` at
+   * 664 — the offset directly above, already verified live on track. Two
+   * independent descriptions agreeing on that anchor is what makes the rest of
+   * the block trustworthy rather than scanned-for. Verified live besides: on
+   * the player's record TC read 7/11, ABS 9/9, motor map 1/1, matching both
+   * the game and the values the overlay had been counting.
+   */
+  mABSActive: 746,
+  mTCActive: 747,
+  mTC: 750,
+  mTCMax: 751,
+  mTCSlip: 752,
+  mTCSlipMax: 753,
+  mTCCut: 754,
+  mTCCutMax: 755,
+  mABS: 756,
+  mABSMax: 757,
+  mMotorMap: 758,
+  mMotorMapMax: 759,
   // mWheels[4] (FL, FR, RL, RR). Each LMU rF2Wheel record is 260 bytes; its
   // mTemperature[3] band array (inner/centre/outer, in KELVIN) sits at the
   // wheel base +0/+8/+16. Verified live vs SimHub — all 12 bands matched to
@@ -250,6 +283,40 @@ export interface LocalCarPhysics {
    * {@link LmuLocalCarReader}, which owns the tracker.
    */
   chassis: ChassisState | null;
+  /**
+   * The driver's aid SETTINGS as the car currently holds them. `null` when the
+   * block reads empty, which is what a car that is not the player's own looks
+   * like — see {@link VT.mTC}.
+   *
+   * Not to be confused with {@link tc} / {@link abs} above: those are how hard
+   * the systems are intervening this instant, which is a different question from
+   * which map the driver has selected.
+   */
+  aidSettings: AidSettings | null;
+}
+
+/** One aid: where it is set, and the highest setting this car offers. */
+export interface AidStep {
+  value: number;
+  max: number;
+}
+
+/**
+ * The aid maps the driver can select, read live from the car.
+ *
+ * `tcSlip` and `tcCut` are LMU's two traction-control sub-settings — the slip
+ * angle it starts working at, and how much power it cuts when it does — which
+ * are separate controls from the TC map itself and are shown as separate rows.
+ */
+export interface AidSettings {
+  tc: AidStep;
+  tcSlip: AidStep;
+  tcCut: AidStep;
+  abs: AidStep;
+  motorMap: AidStep;
+  /** True while the system is actually intervening, as of this frame. */
+  tcActive: boolean;
+  absActive: boolean;
 }
 
 /**
@@ -740,6 +807,36 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     rawCorners,
     // Filled in by LmuLocalCarReader, which owns the cross-frame tracker.
     chassis: null,
+    aidSettings: parseAidSettings(rec),
+  };
+}
+
+/**
+ * Reads the aid block, or `null` when it is empty.
+ *
+ * "Empty" is every MAX reading zero. A car with traction control offers at
+ * least one step of it, so an all-zero block is not a car with everything
+ * turned off — it is a record that does not carry these values at all, which is
+ * what every car except the player's own looks like. Returning null rather than
+ * a row of zeros is the difference between the widget saying nothing and the
+ * widget confidently reporting TC 0 on a car running TC 7.
+ */
+function parseAidSettings(rec: Buffer): AidSettings | null {
+  const step = (at: number): AidStep => ({ value: rec[at] ?? 0, max: rec[at + 1] ?? 0 });
+  const tc = step(VT.mTC);
+  const tcSlip = step(VT.mTCSlip);
+  const tcCut = step(VT.mTCCut);
+  const abs = step(VT.mABS);
+  const motorMap = step(VT.mMotorMap);
+  if (!tc.max && !tcSlip.max && !tcCut.max && !abs.max && !motorMap.max) return null;
+  return {
+    tc,
+    tcSlip,
+    tcCut,
+    abs,
+    motorMap,
+    tcActive: (rec[VT.mTCActive] ?? 0) !== 0,
+    absActive: (rec[VT.mABSActive] ?? 0) !== 0,
   };
 }
 

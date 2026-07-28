@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.30.0 — 2026-07-28
+
+### Changed
+
+- **The driving aids are read from the car now, not counted.** TC, ABS and the
+  motor map were *estimates*: seeded from the setup value, stepped by every press
+  the overlay made and every press on the wheel buttons LMU had them bound to,
+  and tagged `est` because they could drift from the game with no way for the
+  driver to tell. They are real readings, live off the telemetry record, and the
+  tag is gone.
+
+  The finding they were built on — "no live value anywhere, verified twice" —
+  was wrong, and in two ways that are worth writing down because both are easy
+  to repeat. The values are single **bytes** in what stock rF2 leaves as
+  reserved expansion space, so a scan looking for doubles or ints steps straight
+  over them. And every car except the driver's own publishes **zeros** there, so
+  a probe on the wrong record shows an empty block, which looks exactly like
+  "the sim does not expose this".
+
+  Sampled live against the game to confirm: TC 7/11, ABS 9/9, motor map 1/1 —
+  matching both LMU's own MFD and the numbers the overlay had been counting.
+  Cross-checked against SimHub's LMU struct, which declares `mRearBrakeBias` at
+  the same offset this project had already verified on track.
+
+- **Two aids that were never shown at all: TC Slip and TC Power Cut.** LMU
+  carries the traction-control slip angle and power cut as separate settings
+  from the TC map, and both are readable. They have no keyboard function in LMU,
+  so they read live but carry no `±` and the cursor walks past them — the same
+  rule every other unbindable control follows.
+
+- **Aids show their headroom.** A row reads `7/11` rather than `7`, so the step
+  and what the car allows are one glance rather than two. A control this car
+  does not have (a GT3 with no motor map) is omitted rather than shown as a
+  permanent `0`, which reads as "turned off" — a different and more alarming
+  thing to tell a driver.
+
+### Removed
+
+- **`server/aidShadow` and everything that fed it.** The estimate tracker, the
+  `/api/mfd/aidresync` escape hatch it needed, and the wheel-button polling in
+  the desktop app that ran whenever the server was up purely to watch the
+  driver's own aid presses. None of it has a job once the values can be read.
+
 ## 0.29.0 — 2026-07-28
 
 ### Fixed

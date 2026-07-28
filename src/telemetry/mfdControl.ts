@@ -28,6 +28,7 @@
  */
 
 import http from 'node:http';
+import type { AidSettings, AidStep } from './lmuLocalCar';
 import {
   UNKNOWN_VALUE,
   type MfdAid,
@@ -114,51 +115,86 @@ export function projectPitMenu(raw: RawPitRow[] | null | undefined): MfdPitRow[]
 }
 
 /**
- * The driving aids the widget shows — just **brake bias**, the one aid LMU
- * exposes a LIVE value for (via shared memory). The other aids (TC/ABS/engine
- * maps) are deliberately omitted: LMU only reports their frozen SETUP value over
- * REST, which never moves when the driver adjusts them in-race and so reads as
- * broken. See {@link module:telemetry/lmuLocalCar} `mRearBrakeBias`.
+ * The driving aids the widget shows, **read live from the car** — brake bias,
+ * the TC map with its two sub-settings, ABS and the motor map.
  *
- * @param garageRaw - Raw garage data, for the setup-value fallback.
- * @param liveRearBias - Live rear brake-bias fraction (0..1) from shared memory,
- *                       when available; the driver's on-the-fly value.
+ * All of it comes from shared memory (see {@link module:telemetry/lmuLocalCar}
+ * `mTC`), which is a correction: everything except brake bias used to be
+ * *counted* here rather than read, on the finding that LMU published no live
+ * value for them anywhere. That finding was wrong. The values are single bytes
+ * in what stock rF2 leaves as reserved space, and they are only populated on
+ * the player's own record — two ways to look straight past them — but they are
+ * there, and they are exactly what the game's own MFD shows.
+ *
+ * The garage fallback is kept for brake bias alone, because it is the one aid
+ * with a REST counterpart. It is a frozen SETUP value that never moves in-race,
+ * so it is only ever reached when there is no live car to read — in the garage,
+ * or spectating.
+ *
+ * @param garageRaw - Raw garage data, for the brake-bias setup fallback.
+ * @param liveRearBias - Live rear brake-bias fraction (0..1) from shared memory.
+ * @param liveAids - The aid maps from the player's telemetry record.
  */
 export function projectAids(
   garageRaw: Record<string, RawGarageVal> | null | undefined,
   liveRearBias?: number,
+  liveAids?: AidSettings | null,
 ): MfdAid[] {
+  const aids: MfdAid[] = [];
+
   // Live value from shared memory wins — the whole point of the section.
   if (typeof liveRearBias === 'number' && liveRearBias > 0 && liveRearBias < 1) {
     const rear = Math.round(liveRearBias * 1000) / 10; // %, one decimal
     const front = Math.round((1 - liveRearBias) * 1000) / 10;
-    return [
-      {
-        key: 'BRAKE_BIAS',
-        label: 'Brake Bias',
-        value: Math.round(liveRearBias * 100),
-        minValue: 0,
-        maxValue: 100,
-        text: `${front.toFixed(1)}:${rear.toFixed(1)}`,
-      },
-    ];
-  }
-  // Fallback: the frozen setup value from the garage (better than nothing, but
-  // it won't move — shown only when there is no live value, e.g. spectating).
-  const v = garageRaw ? garageRaw['VM_BRAKE_BALANCE'] : undefined;
-  if (v && typeof v.value === 'number' && typeof v.stringValue === 'string') {
-    return [
-      {
+    aids.push({
+      key: 'BRAKE_BIAS',
+      label: 'Brake Bias',
+      value: Math.round(liveRearBias * 100),
+      minValue: 0,
+      maxValue: 100,
+      text: `${front.toFixed(1)}:${rear.toFixed(1)}`,
+    });
+  } else {
+    // Fallback: the frozen setup value from the garage (better than nothing, but
+    // it won't move — shown only when there is no live value, e.g. spectating).
+    const v = garageRaw ? garageRaw['VM_BRAKE_BALANCE'] : undefined;
+    if (v && typeof v.value === 'number' && typeof v.stringValue === 'string') {
+      aids.push({
         key: 'BRAKE_BIAS',
         label: 'Brake Bias',
         value: v.value,
         minValue: 0,
         maxValue: typeof v.maxValue === 'number' ? inclusiveMax(0, v.maxValue) : v.value,
         text: v.stringValue.trim(),
-      },
-    ];
+      });
+    }
   }
-  return [];
+
+  if (liveAids) {
+    // `max` of 0 means this car does not offer the control at all (a GT3 with no
+    // motor map, say). Skipped rather than shown as a permanent 0, which would
+    // read as "turned off" — a different and alarming thing to tell a driver.
+    const row = (key: string, label: string, step: AidStep): void => {
+      if (step.max <= 0) return;
+      aids.push({
+        key,
+        label,
+        value: step.value,
+        minValue: 0,
+        maxValue: step.max,
+        // The sim counts these from 1 in its own MFD, but publishes the raw
+        // step; shown as "7/11" so the driver can see the headroom either way.
+        text: `${step.value}/${step.max}`,
+      });
+    };
+    row('tc', 'Traction Control', liveAids.tc);
+    row('tcSlip', 'TC Slip', liveAids.tcSlip);
+    row('tcCut', 'TC Power Cut', liveAids.tcCut);
+    row('abs', 'ABS', liveAids.abs);
+    row('motorMap', 'Motor Map', liveAids.motorMap);
+  }
+
+  return aids;
 }
 
 /**
@@ -327,16 +363,17 @@ export function projectTyreControl(raw: RawPitRow[] | null | undefined): MfdTyre
   };
 }
 
-/** Builds the frame's {@link MfdState} from the raw payloads + live brake bias. */
+/** Builds the frame's {@link MfdState} from the raw payloads + the live car. */
 export function buildMfdState(
   pitRaw: RawPitRow[] | null | undefined,
   garageRaw: Record<string, RawGarageVal> | null | undefined,
   liveRearBias?: number,
+  liveAids?: AidSettings | null,
 ): MfdState {
   const tyres = projectTyreControl(pitRaw);
   return {
     pit: projectPitMenu(pitRaw),
-    aids: projectAids(garageRaw, liveRearBias),
+    aids: projectAids(garageRaw, liveRearBias, liveAids),
     ...(tyres ? { tyres } : {}),
   };
 }
@@ -676,9 +713,10 @@ export class MfdController {
   /**
    * Raw `VM_*` garage values — the frozen SETUP numbers.
    *
-   * Exposed for {@link module:server/aidShadow}, which uses them as the baseline
-   * for the aids LMU will not report live. Deliberately raw: the shadow needs
-   * `minValue`/`maxValue` to clamp, which the projected {@link MfdState} drops.
+   * Deliberately raw, keeping the `minValue`/`maxValue` bounds the projected
+   * {@link MfdState} drops. Only brake bias is still read from here, and only as
+   * the fallback for when there is no live car to read (in the garage, or
+   * spectating): every aid otherwise comes off the telemetry record.
    */
   public getGarageData(): Promise<Record<string, RawGarageVal> | null> {
     return this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData');
