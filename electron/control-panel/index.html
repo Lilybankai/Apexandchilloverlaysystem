@@ -611,6 +611,34 @@
             </div>
           </section>
 
+          <!-- -------------------- LMU CONTROLS ------------------ -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-keyboard" /></svg>LMU controls</h2>
+              <p class="card__desc">
+                The overlay can only press what LMU has bound to a <strong>key</strong> —
+                a wheel button cannot be pressed from outside the game. This gives the
+                missing ones a key, chosen from Japanese and Brazilian keys that
+                <strong>do not exist on your keyboard</strong>, so nothing you (or OBS,
+                or Discord) already use can ever clash with them.
+                <br />
+                Anything you have already bound is left exactly as it is.
+              </p>
+            </div>
+            <ul class="binding-list" id="lmu-bind-list"><!-- rows injected by JS --></ul>
+            <div class="lmu-bind__actions">
+              <button class="btn btn--accent" id="lmu-bind-apply">Bind missing controls</button>
+              <button class="btn btn--ghost btn--sm" id="lmu-bind-restore">Undo</button>
+              <span class="field__hint" id="lmu-bind-status"></span>
+            </div>
+            <p class="field__hint binding-note">
+              <strong>Close Le Mans Ultimate first.</strong> The game rewrites its controls
+              file from memory when it exits, so a change made while it is running is
+              thrown away the next time you launch. A timestamped backup is taken before
+              anything is written.
+            </p>
+          </section>
+
           <!-- ---------------------- BINDINGS -------------------- -->
           <section class="card">
             <div class="card__head">

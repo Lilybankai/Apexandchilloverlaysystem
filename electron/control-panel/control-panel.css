@@ -740,3 +740,16 @@ html, body {
   border-color: var(--cyan);
   color: var(--cyan);
 }
+
+/* --- LMU controls card ---------------------------------------------------
+   The button row under the plan. Wraps rather than truncating: the status line
+   beside it carries the reason a write is refused ("Close Le Mans Ultimate to
+   apply"), which is the one thing on this card the operator must be able to
+   read in full. */
+.lmu-bind__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}

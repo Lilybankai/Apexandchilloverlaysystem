@@ -1434,6 +1434,38 @@ function registerIpc() {
   /* ---- Wheel bindings ---- */
 
   /** Attached controllers plus whether the reader works on this host. */
+  /**
+   * LMU's own controls file. The overlay can only press what the game has bound
+   * to a KEY, and most drivers have their aids on wheel buttons — so on a fresh
+   * rig these controls are simply unusable until something writes the missing
+   * binds. See server/lmuBinder for the key pool and why it cannot collide.
+   */
+  const lmuBinder = () => {
+    try {
+      return require(path.join(__dirname, '..', 'dist', 'server', 'lmuBinder.js'));
+    } catch {
+      return null;
+    }
+  };
+
+  ipcMain.handle('lmuBind:plan', () => {
+    const mod = lmuBinder();
+    if (!mod) return { ok: false, error: 'binder unavailable (build not present)' };
+    return { ok: true, ...mod.planLmuBindings() };
+  });
+
+  ipcMain.handle('lmuBind:apply', () => {
+    const mod = lmuBinder();
+    if (!mod) return { ok: false, error: 'binder unavailable (build not present)', written: [] };
+    return mod.applyLmuBindings();
+  });
+
+  ipcMain.handle('lmuBind:restore', () => {
+    const mod = lmuBinder();
+    if (!mod) return { ok: false, error: 'binder unavailable (build not present)' };
+    return mod.restoreLmuBindings();
+  });
+
   ipcMain.handle('wheel:devices', () => {
     const g = getGamepad();
     // Opening is idempotent; this also picks up a wheel plugged in since boot.

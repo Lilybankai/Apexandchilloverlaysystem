@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.31.0 — 2026-07-28
+
+### Added
+
+- **One-click LMU control binding, on keys nobody can be using.** The overlay
+  can only press what LMU has bound to a *key*, and most drivers have their aids
+  on wheel buttons and nothing else — so on a fresh rig half these controls
+  cannot be driven at all until somebody hand-binds a dozen functions in the
+  game's menus. Settings now has an **LMU controls** card: it shows what is
+  already bound, what it would bind, and writes the missing ones.
+
+  The keys it claims are Japanese and Brazilian keys — `CONVERT`, `NOCONVERT`,
+  `YEN`, `KANA`, `ABNT_C1`, `ABNT_C2`. The point is that they exist in
+  DirectInput and on no keyboard the driver owns, so **nobody can already have
+  bound them** in LMU, and no OBS or Discord global hotkey can be listening for
+  them either. Every code is below `0x80` deliberately: the other exotic codes
+  resolve to `E0`-prefixed scancodes — the media keys — so binding one would
+  mute the driver's music every time the overlay changed a brake bias.
+
+  Verified against the running game rather than assumed: `CONVERT`, `NOCONVERT`
+  and `YEN` were each bound to a real LMU function and pressed with `SendInput`,
+  and the car's own aid values moved in shared memory. The other three are the
+  same class of key and are only used after those three.
+
+  Two safety rules, both tested: a function the driver has already bound is
+  never touched, so re-running is a complete no-op (an earlier binder walked a
+  binding down the keyboard on every run and quietly took over Quick Chat #9);
+  and a key already present anywhere in the file is never handed out, because
+  "nobody can press a Japanese key" is a good reason to expect it to be free and
+  not a guarantee. A timestamped backup is taken before any write, and **Undo**
+  restores it.
+
+  It refuses while LMU is running, and says why. That is not caution: LMU
+  rewrites its controls file from memory when it exits, so a write made with the
+  game up survives a test and is gone at the next launch — the worst kind of
+  failure, because it looks like success.
+
+- **TC Slip and TC Power Cut are adjustable, not just readable.** Their LMU
+  function names are in no config file on disk — the game only writes a function
+  into `keyboard.json` once it is bound — so they were found by binding
+  candidates and seeing which moved the car: `Traction Control Slip Angle Up`
+  drives the slip byte, and `Traction Control 2` turns out to be the **power
+  cut**, not a second TC map. Both now carry `±` and the cursor walks them.
+
 ## 0.30.0 — 2026-07-28
 
 ### Changed

@@ -473,9 +473,22 @@ adds time on its own, and wiping your setup as a side effect of serving a penalt
 would be worse than the penalty. All four are bindable actions too
 (`pit.serveStopGo`, `pit.request`, `pit.clearService`, `pit.tyreCompound`).
 
-**Pit Request must be bound to a KEY.** LMU exposes no pit-request route anywhere in
-its API, so the overlay presses the game's own bind — and a wheel-button binding
-cannot be pressed from outside. If it is unbound the row says so. To fix it, with
+**Controls must be bound to a KEY, and the app can do it for you.** The overlay
+presses LMU's own bindings, and a wheel-button binding cannot be pressed from
+outside the game — so anything you have only on the wheel is unusable from here
+until it also has a key. Settings → **LMU controls** shows what is bound, what
+isn't, and binds the missing ones in one click.
+
+The keys it claims are Japanese and Brazilian ones — `CONVERT`, `NOCONVERT`, `YEN`,
+`KANA`, `ABNT_C1`, `ABNT_C2`. They exist in DirectInput and on no keyboard you own,
+which is the entire point: you cannot already have bound them in LMU, and no OBS or
+Discord hotkey can be listening for them. Anything you *have* bound is left exactly
+as it is, a key already in your file is never handed out twice, a timestamped backup
+is taken first, and **Undo** puts it back. It refuses while LMU is running — the game
+rewrites that file from memory when it exits, so a change made now would be thrown
+away at the next launch.
+
+The manual route is still there, and is what you want for a one-off. With
 **LMU closed**:
 
 ```bash

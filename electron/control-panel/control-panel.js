@@ -1115,6 +1115,95 @@
     }
   }
 
+  // --- LMU's own controls file ----------------------------------------------
+  /*
+   * Shows what the overlay would bind inside LMU and writes it on request. The
+   * whole card is inert while the game is running: LMU rewrites its controls
+   * file from memory when it exits, so a write made now would survive a test
+   * and be gone at the next launch — the worst kind of failure, because it
+   * looks like success.
+   */
+  const lmuBindList = document.getElementById('lmu-bind-list');
+  const lmuBindApply = document.getElementById('lmu-bind-apply');
+  const lmuBindRestore = document.getElementById('lmu-bind-restore');
+  const lmuBindStatus = document.getElementById('lmu-bind-status');
+
+  function lmuBindRow(row) {
+    const li = document.createElement('li');
+    li.className = 'binding-row';
+    const name = document.createElement('span');
+    name.className = 'binding-row__label';
+    name.textContent = row.label;
+    const state = document.createElement('span');
+    state.className = 'field__hint';
+    if (row.status === 'already-bound') {
+      state.textContent = 'already bound in LMU';
+    } else if (row.status === 'will-bind') {
+      state.textContent = `will bind → ${row.proposedLabel}`;
+    } else {
+      state.textContent = 'no spare key left';
+    }
+    li.appendChild(name);
+    li.appendChild(state);
+    return li;
+  }
+
+  async function renderLmuBindings() {
+    if (!lmuBindList) return;
+    const plan = await window.apex.lmuBindPlan();
+    lmuBindList.innerHTML = '';
+    if (!plan || plan.ok === false || !plan.path) {
+      lmuBindStatus.textContent =
+        (plan && plan.error) || 'Le Mans Ultimate not found on this PC.';
+      lmuBindApply.disabled = true;
+      lmuBindRestore.disabled = true;
+      return;
+    }
+    for (const row of plan.rows) lmuBindList.appendChild(lmuBindRow(row));
+
+    // Running > nothing-to-do > ready, in that order: the reason it is disabled
+    // matters more to the operator than the fact that it is.
+    if (plan.lmuRunning) {
+      lmuBindStatus.textContent = 'Close Le Mans Ultimate to apply.';
+      lmuBindApply.disabled = true;
+      lmuBindRestore.disabled = true;
+    } else if (plan.toBind === 0) {
+      lmuBindStatus.textContent = 'Everything the overlay drives already has a key.';
+      lmuBindApply.disabled = true;
+      lmuBindRestore.disabled = false;
+    } else {
+      lmuBindStatus.textContent = `${plan.toBind} control${plan.toBind === 1 ? '' : 's'} to bind.`;
+      lmuBindApply.disabled = false;
+      lmuBindRestore.disabled = false;
+    }
+    if (plan.unbindable > 0) {
+      lmuBindStatus.textContent += ` ${plan.unbindable} could not be covered — bind those in LMU by hand.`;
+    }
+  }
+
+  if (lmuBindApply) {
+    lmuBindApply.addEventListener('click', async () => {
+      lmuBindApply.disabled = true;
+      lmuBindStatus.textContent = 'Writing…';
+      const res = await window.apex.lmuBindApply();
+      if (!res || res.ok === false) {
+        lmuBindStatus.textContent = (res && res.error) || 'Could not write LMU\'s controls file.';
+      } else {
+        lmuBindStatus.textContent = `Bound ${res.written.length}. Launch LMU to pick them up.`;
+      }
+      await renderLmuBindings();
+    });
+  }
+  if (lmuBindRestore) {
+    lmuBindRestore.addEventListener('click', async () => {
+      lmuBindRestore.disabled = true;
+      const res = await window.apex.lmuBindRestore();
+      lmuBindStatus.textContent =
+        res && res.ok ? `Restored from ${res.from}.` : (res && res.error) || 'Nothing to restore.';
+      await renderLmuBindings();
+    });
+  }
+
   // Live status pushes from the main process.
   window.apex.onStatus((status) => renderStatus(status));
 
@@ -1276,6 +1365,7 @@
   window.apex.getState().then(renderAll);
   window.apex.auth.getState().then(renderAuth);
   void renderBindings();
+  void renderLmuBindings();
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);
   // Same for the lap history — files on disk, not part of app state.

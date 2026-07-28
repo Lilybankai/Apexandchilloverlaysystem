@@ -92,6 +92,34 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
     decFunction: 'Traction Control Down',
     incFunction: 'Traction Control Up',
   },
+  // LMU's two traction-control sub-settings. Their function names were not
+  // guessable and are in no config file on disk — LMU only writes a function
+  // into keyboard.json once it is bound, so an unbound one leaves no trace.
+  // They were found by binding candidates and seeing which moved the car:
+  // `Traction Control Slip Angle Up` moved the slip byte, `Traction Control 3
+  // Up` did nothing. The name pattern is LMU's own UI label with
+  // Increase/Decrease written as Up/Down.
+  //
+  // `Traction Control 2` is the POWER CUT, not a second TC map — confirmed
+  // twice over: LMU's UI shows "Traction Control Power Increase" bound to V,
+  // its config has `Traction Control 2 Up` = 47 (DIK for V), and pressing it
+  // moved the cut byte.
+  {
+    id: 'tcSlip',
+    vmKey: '',
+    aliases: ['TC_SLIP'],
+    label: 'TC Slip',
+    decFunction: 'Traction Control Slip Angle Down',
+    incFunction: 'Traction Control Slip Angle Up',
+  },
+  {
+    id: 'tcCut',
+    vmKey: '',
+    aliases: ['TC_CUT', 'TC_POWER'],
+    label: 'TC Power Cut',
+    decFunction: 'Traction Control 2 Down',
+    incFunction: 'Traction Control 2 Up',
+  },
   {
     id: 'abs',
     vmKey: 'VM_ANTILOCKBRAKESYSTEMMAP',

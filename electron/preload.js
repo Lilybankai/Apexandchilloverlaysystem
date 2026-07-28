@@ -47,6 +47,15 @@ contextBridge.exposeInMainWorld('apex', {
   /** Trigger an action now (the per-row Test button). `dir` is ±1 for deltas. */
   actionRun: (actionId, dir) => ipcRenderer.invoke('actions:run', actionId, dir),
 
+  /* ---- LMU's own controls file ---- */
+
+  /** What the overlay would bind in LMU, and what is already bound. */
+  lmuBindPlan: () => ipcRenderer.invoke('lmuBind:plan'),
+  /** Write the missing bindings. Refuses while LMU is running. */
+  lmuBindApply: () => ipcRenderer.invoke('lmuBind:apply'),
+  /** Put the newest backup of LMU's controls file back. */
+  lmuBindRestore: () => ipcRenderer.invoke('lmuBind:restore'),
+
   /* ---- Wheel / controller bindings ---- */
 
   /** Attached controllers + whether background reading works on this host. */
