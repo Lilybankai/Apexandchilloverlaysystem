@@ -71,20 +71,41 @@ function inclusiveMax(min: number, maxCount: number): number {
 
 /* --------------------------- projection (read side) ----------------------- */
 
-/** Projects the raw pit-menu array into the frame's {@link MfdPitRow} list. */
+/**
+ * Projects the raw pit-menu array into the frame's {@link MfdPitRow} list.
+ *
+ * The one row that is not passed straight through is the sim's all-four
+ * `TIRES:` entry, which is projected from the four corners instead (see
+ * {@link projectTyreControl}). Its own `currentSetting` is not a reading of
+ * what the car will be shod with: set the corners individually — or through
+ * this overlay — and the row sits on `Mixed Tyres` while all four corners
+ * agree perfectly. Showing that would be a lie a driver cannot check at a
+ * glance, and the corners are the thing the crew actually fits.
+ */
 export function projectPitMenu(raw: RawPitRow[] | null | undefined): MfdPitRow[] {
   if (!Array.isArray(raw)) return [];
+  const tyres = projectTyreControl(raw);
   const rows: MfdPitRow[] = [];
   for (const r of raw) {
     if (!r || typeof r.name !== 'string') continue;
     const settings = Array.isArray(r.settings) ? r.settings : [];
     const cur = typeof r.currentSetting === 'number' ? r.currentSetting : 0;
-    const curText = settings[cur] && typeof settings[cur]!.text === 'string' ? settings[cur]!.text! : '';
+    let curText = settings[cur] && typeof settings[cur]!.text === 'string' ? settings[cur]!.text! : '';
+    let count = settings.length;
+    if (tyres && isAllFourTyreRow(r.name)) {
+      curText = tyres.currentText;
+      count = tyres.options.length;
+    } else if (isTyreRow(r.name)) {
+      // A corner: same filtering, so the row cannot advertise more compounds
+      // than its ± will ever stop on.
+      count = tyreOptionSet(r).options.length;
+      curText = curText.trim();
+    }
     rows.push({
       pmcValue: typeof r['PMC Value'] === 'number' ? r['PMC Value']! : UNKNOWN_VALUE,
       name: r.name,
       currentSetting: cur,
-      settingCount: settings.length,
+      settingCount: count,
       defaultSetting: typeof r.default === 'number' ? r.default : UNKNOWN_VALUE,
       currentText: curText,
     });
@@ -151,9 +172,94 @@ export function projectAids(
  */
 const CORNER_TYRE_ROW = /^(FL|FR|RL|RR)\s*TIRE/i;
 
+/** The sim's own all-four shortcut row, which sits above the four corners. */
+const ALL_FOUR_TYRE_ROW = /^\s*TIRES?\s*:/i;
+
+/** Whether a row is the sim's all-four `TIRES:` entry (not a corner). */
+export function isAllFourTyreRow(name: string | undefined): boolean {
+  return typeof name === 'string' && ALL_FOUR_TYRE_ROW.test(name);
+}
+
+/** Whether a row is any tyre row — the all-four shortcut or one corner. */
+export function isTyreRow(name: string | undefined): boolean {
+  return typeof name === 'string' && (ALL_FOUR_TYRE_ROW.test(name) || CORNER_TYRE_ROW.test(name));
+}
+
 function cornerTyreRows(raw: RawPitRow[] | null | undefined): RawPitRow[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((r) => typeof r?.name === 'string' && CORNER_TYRE_ROW.test(r.name));
+}
+
+/**
+ * Options a tyre row publishes that are **not compounds a driver can pick**.
+ *
+ * Verified live: LMU's tyre rows carry a fixed slot list per car and fill the
+ * slots this car/event does not run with `INVALID`, and the all-four `TIRES:`
+ * row carries an extra `Mixed Tyres` slot which is a *state* — what the row
+ * reports when the corners disagree — rather than something to select.
+ *
+ * Both must be skipped when stepping, because both are dead ends the driver
+ * cannot use and cannot see coming: pressing `+` twice from `New Wet` used to
+ * book `INVALID`, which is not a tyre, and one more landed on `Mixed Tyres`,
+ * which is not a decision. The compounds that remain are exactly the ones this
+ * car has at this event, which is why nothing here knows what a compound is.
+ */
+const UNSELECTABLE_TYRE_OPTION = /^(invalid|mixed(\s|$))/i;
+
+/** A tyre row's real choices, and the raw setting index each one writes. */
+export interface TyreOptionSet {
+  /** Selectable compounds, in the sim's own order and words. */
+  options: string[];
+  /** `raw[i]` is the `currentSetting` value that selects `options[i]`. */
+  raw: number[];
+}
+
+/**
+ * The compounds a tyre row actually offers.
+ *
+ * Exported because the read side (what the widget shows), the write side (what
+ * a ± books) and the cursor all have to agree about which options exist — an
+ * index that means `New Wet` in one and `INVALID` in another is the bug this
+ * prevents.
+ */
+export function tyreOptionSet(row: RawPitRow | null | undefined): TyreOptionSet {
+  const settings = Array.isArray(row?.settings) ? row.settings : [];
+  const options: string[] = [];
+  const raw: number[] = [];
+  settings.forEach((s, i) => {
+    const text = typeof s?.text === 'string' ? s.text.trim() : '';
+    if (!text || UNSELECTABLE_TYRE_OPTION.test(text)) return;
+    options.push(text);
+    raw.push(i);
+  });
+  return { options, raw };
+}
+
+/**
+ * Where a ± lands on a tyre row. `current` is the selected option, or
+ * {@link UNKNOWN_VALUE} when there isn't one (the corners disagree, or the row
+ * is parked on a slot that is not a compound).
+ *
+ * **Clamped, never wrapped.** Every other pit row clamps, and here it also
+ * matters in its own right: wrapping from the last compound round to
+ * `No Change` would cancel the tyre change the driver just booked, on a control
+ * they are pressing without looking.
+ *
+ * From "no current option", one press resolves it in the direction pressed —
+ * `−` to `No Change`, `+` to the first real compound — so a mixed set is one
+ * press from being a single compound either way.
+ */
+export function nextTyreOption(current: number, delta: number, count: number): number {
+  if (count <= 0) return UNKNOWN_VALUE;
+  if (delta === 0) return current;
+  if (current < 0) return delta < 0 ? 0 : Math.min(1, count - 1);
+  return clamp(current + (delta < 0 ? -1 : 1), 0, count - 1);
+}
+
+/** The option index a row's raw `currentSetting` corresponds to, or -1. */
+function selectedOption(row: RawPitRow, set: TyreOptionSet): number {
+  const cur = typeof row.currentSetting === 'number' ? row.currentSetting : 0;
+  return set.raw.indexOf(cur);
 }
 
 /**
@@ -198,27 +304,26 @@ export function projectTyreControl(raw: RawPitRow[] | null | undefined): MfdTyre
   const rows = cornerTyreRows(raw);
   if (rows.length === 0) return null;
 
-  let best: RawPitRow | null = null;
+  let best: TyreOptionSet = { options: [], raw: [] };
   for (const r of rows) {
-    const n = Array.isArray(r.settings) ? r.settings.length : 0;
-    const bestN = best && Array.isArray(best.settings) ? best.settings.length : -1;
-    if (n > bestN) best = r;
+    const set = tyreOptionSet(r);
+    if (set.options.length > best.options.length) best = set;
   }
-  const options = (Array.isArray(best?.settings) ? best!.settings! : [])
-    .map((s) => (typeof s?.text === 'string' ? s.text : ''))
-    .filter((s) => s !== '');
-  if (options.length === 0) return null;
+  if (best.options.length === 0) return null;
 
-  const settings = rows.map((r) => (typeof r.currentSetting === 'number' ? r.currentSetting : 0));
-  const first = settings[0]!;
-  const mixed = settings.some((s) => s !== first);
-  const current = mixed ? UNKNOWN_VALUE : first;
+  // Compared as OPTIONS, not as raw indices: the corners agree when they are on
+  // the same compound, and two corners could in principle reach the same
+  // compound through different slots.
+  const selected = rows.map((r) => selectedOption(r, tyreOptionSet(r)));
+  const first = selected[0]!;
+  const mixed = selected.some((s) => s !== first);
+  const current = mixed || first < 0 ? UNKNOWN_VALUE : first;
 
   return {
-    options,
+    options: best.options,
     current,
     mixed,
-    currentText: mixed ? 'Mixed' : (options[first] ?? ''),
+    currentText: mixed ? 'Mixed' : (best.options[first] ?? ''),
   };
 }
 
@@ -247,6 +352,12 @@ export interface MfdWriteResult {
   error?: string;
   /** The value/setting actually applied after clamping, when known. */
   applied?: number;
+  /**
+   * What that setting now reads as. Carried so a caller can show the new value
+   * without another read — and because on a tyre row `applied` indexes the
+   * *selectable* compounds, which is not the raw settings list the caller has.
+   */
+  appliedText?: string;
 }
 
 /** How a caller addresses a pit row: by the sim's stable id, or by exact name. */
@@ -279,6 +390,14 @@ export class MfdController {
    * Reads the current menu, resolves the target row by `pmcValue` (preferred) or
    * `name`, clamps the new index to `[0, settingCount-1]`, then POSTs the whole
    * (minimally edited) array to `loadPitMenu`.
+   *
+   * **Tyre rows are handled as compounds, not as raw indices**, and that
+   * decision lives here rather than in each caller so no route, button or
+   * cursor can miss it: the sim's tyre rows carry slots that are not compounds
+   * (`INVALID`, `Mixed Tyres`), and the all-four `TIRES:` row means "all four
+   * corners", which is a write to the corners rather than to itself. On those
+   * rows `setting` therefore indexes the *selectable* compounds — see
+   * {@link tyreOptionSet}.
    */
   public async setPitRow(
     target: PitTarget,
@@ -295,15 +414,52 @@ export class MfdController {
       return { ok: false, status: 0, error: `pit row not found (${target.pmcValue ?? target.name})` };
     }
     const row = menu[idx]!;
-    const count = Array.isArray(row.settings) ? row.settings.length : 0;
-    if (count <= 0) return { ok: false, status: 0, error: 'row has no settings to select' };
-    const current = typeof row.currentSetting === 'number' ? row.currentSetting : 0;
-    const wanted = opts.setting != null ? opts.setting : current + (opts.delta ?? 0);
-    const clamped = clamp(wanted, 0, count - 1);
-    row.currentSetting = clamped;
+
+    // The all-four row IS the compound control — one press, four corners.
+    if (isAllFourTyreRow(row.name)) return this.writeTyreCompound(menu, opts);
+
+    let applied: number;
+    let appliedText: string;
+    if (isTyreRow(row.name)) {
+      const set = tyreOptionSet(row);
+      if (set.options.length === 0) {
+        return { ok: false, status: 0, error: 'this corner offers no compounds' };
+      }
+      applied =
+        opts.setting != null
+          ? clamp(opts.setting, 0, set.options.length - 1)
+          : nextTyreOption(selectedOption(row, set), opts.delta ?? 0, set.options.length);
+      row.currentSetting = set.raw[applied]!;
+      appliedText = set.options[applied]!;
+      // A corner is subject to the same "the sim did not take it" behaviour as
+      // the all-four row — see readTyreCompound.
+      const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+      if (!res.ok) return res;
+      const after = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+      const now = Array.isArray(after)
+        ? after.find((r) => r['PMC Value'] === row['PMC Value'] || r.name === row.name)
+        : null;
+      if (now) {
+        const nowSet = tyreOptionSet(now);
+        const at = selectedOption(now, nowSet);
+        if (at >= 0) {
+          applied = at;
+          appliedText = nowSet.options[at]!;
+        }
+      }
+      return { ...res, applied, appliedText };
+    } else {
+      const count = Array.isArray(row.settings) ? row.settings.length : 0;
+      if (count <= 0) return { ok: false, status: 0, error: 'row has no settings to select' };
+      const current = typeof row.currentSetting === 'number' ? row.currentSetting : 0;
+      const wanted = opts.setting != null ? opts.setting : current + (opts.delta ?? 0);
+      applied = clamp(wanted, 0, count - 1);
+      row.currentSetting = applied;
+      appliedText = row.settings?.[applied]?.text?.trim() ?? '';
+    }
 
     const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
-    return res.ok ? { ...res, applied: clamped } : res;
+    return res.ok ? { ...res, applied, appliedText } : res;
   }
 
   /**
@@ -369,9 +525,10 @@ export class MfdController {
    * driver holding the button down could interleave them into a genuinely mixed
    * set — the exact state this control exists to avoid.
    *
-   * `delta` steps from the current selection when the corners agree, and from
-   * the first corner when they do not, so nudging a mixed set resolves it to a
-   * single compound rather than refusing.
+   * `delta` steps from the compound the corners agree on, and resolves a mixed
+   * set to a single compound in the direction pressed rather than refusing —
+   * see {@link nextTyreOption}. `setting` indexes the *selectable* compounds,
+   * so it can never book an `INVALID` slot.
    */
   public async setTyreCompound(opts: {
     setting?: number;
@@ -381,29 +538,85 @@ export class MfdController {
     if (!Array.isArray(menu)) {
       return { ok: false, status: 0, error: 'pit menu unavailable (not in a session?)' };
     }
-    const corners = menu.filter(
-      (r) => typeof r?.name === 'string' && CORNER_TYRE_ROW.test(r.name),
-    );
+    return this.writeTyreCompound(menu, opts);
+  }
+
+  /**
+   * Sets every corner to one compound in an already-read menu, then posts it.
+   *
+   * Takes the menu rather than reading its own so that a write arriving through
+   * {@link setPitRow} (the `TIRES:` row, a widget ±, the cursor) is still ONE
+   * read and ONE write — re-reading here would race a menu we are part-way
+   * through editing.
+   *
+   * Matched by option TEXT rather than by index, because each corner carries its
+   * own slot list: the same compound can sit at a different `currentSetting` on
+   * different corners, and writing one index to all four is how a car ends up
+   * on three wets and a medium.
+   */
+  private async writeTyreCompound(
+    menu: RawPitRow[],
+    opts: { setting?: number; delta?: number },
+  ): Promise<MfdWriteResult> {
+    const corners = cornerTyreRows(menu);
     if (corners.length === 0) {
       return { ok: false, status: 0, error: 'no per-corner tyre rows in this pit menu' };
     }
-    // Bound by the SHORTEST option list, so a compound offered on three corners
-    // and not the fourth can never be half-applied.
-    let count = Infinity;
-    for (const r of corners) {
-      count = Math.min(count, Array.isArray(r.settings) ? r.settings.length : 0);
-    }
+    const sets = corners.map((r) => tyreOptionSet(r));
+    // Bound by the SHORTEST list, so a compound offered on three corners and not
+    // the fourth can never be half-applied.
+    const count = Math.min(...sets.map((s) => s.options.length));
     if (!Number.isFinite(count) || count <= 0) {
-      return { ok: false, status: 0, error: 'tyre rows have no settings to select' };
+      return { ok: false, status: 0, error: 'tyre rows offer no compounds to select' };
     }
 
-    const current = typeof corners[0]!.currentSetting === 'number' ? corners[0]!.currentSetting : 0;
-    const wanted = opts.setting != null ? opts.setting : current + (opts.delta ?? 0);
-    const clamped = clamp(wanted, 0, count - 1);
-    for (const r of corners) r.currentSetting = clamped;
+    const selected = corners.map((r, i) => selectedOption(r, sets[i]!));
+    const agreed = selected.every((s) => s === selected[0]) ? selected[0]! : UNKNOWN_VALUE;
+    const wanted =
+      opts.setting != null
+        ? clamp(opts.setting, 0, count - 1)
+        : nextTyreOption(agreed, opts.delta ?? 0, count);
+    corners.forEach((r, i) => {
+      r.currentSetting = sets[i]!.raw[wanted]!;
+    });
+    // The all-four row is carried along with the corners. On its own it is
+    // ignored — verified live: posting `TIRES:` alone changes nothing — but a
+    // load that leaves it on `Mixed Tyres` while the corners agree makes the
+    // sim's own MFD disagree with this one.
+    const all = menu.find((r) => isAllFourTyreRow(r.name));
+    if (all) {
+      const allSet = tyreOptionSet(all);
+      if (allSet.raw[wanted] != null) all.currentSetting = allSet.raw[wanted]!;
+    }
 
     const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
-    return res.ok ? { ...res, applied: clamped } : res;
+    if (!res.ok) return res;
+    return { ...res, ...(await this.readTyreCompound(wanted, sets[0]!)) };
+  }
+
+  /**
+   * What the tyres ACTUALLY read after a write, rather than what was asked for.
+   *
+   * The sim does not always take a tyre write, and it is not merely refusing —
+   * verified live, in a session where it would not go back to `No Change`:
+   * asking for `No Change` from `New Medium` left the corners on `New Wet`.
+   * Reporting the request as though it had landed made a held `−` oscillate
+   * between two compounds, because the next press computed from the sim's real
+   * state while the display showed ours.
+   *
+   * So one extra read, on tyre writes only. Every other pit row takes its value
+   * (a wing angle is a wing angle), and the read is a localhost round trip on a
+   * control the driver is watching — cheap next to telling them they booked a
+   * compound the car is not on.
+   */
+  private async readTyreCompound(
+    fallback: number,
+    fallbackSet: TyreOptionSet,
+  ): Promise<{ applied: number; appliedText: string }> {
+    const menu = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+    const tyres = projectTyreControl(menu);
+    if (!tyres) return { applied: fallback, appliedText: fallbackSet.options[fallback] ?? '' };
+    return { applied: tyres.current, appliedText: tyres.currentText };
   }
 
   /**

@@ -22,7 +22,14 @@
 
 'use strict';
 
-const { projectTyreControl, isServiceRow } = require('../dist/telemetry/mfdControl');
+const {
+  isAllFourTyreRow,
+  isServiceRow,
+  nextTyreOption,
+  projectPitMenu,
+  projectTyreControl,
+  tyreOptionSet,
+} = require('../dist/telemetry/mfdControl');
 
 let passed = 0;
 let failed = 0;
@@ -111,7 +118,72 @@ console.log('\n3) Which rows are part of the menu at all');
   check('the longest option list wins', t.options.length === 3, t.options.length);
 }
 
-console.log('\n4) What a stop-and-go strips, and what it must not');
+console.log('\n4) The slots that are not compounds');
+
+{
+  // Sampled live from LMU: the tyre rows carry a fixed slot list per car, with
+  // the compounds this car/event does not run filled in as INVALID, and the
+  // all-four row carries a "Mixed Tyres" slot that is a STATE, not a choice.
+  // Stepping onto either is a dead end the driver cannot see coming.
+  const LIVE_CORNER = ['No Change', 'New Medium ', 'New Wet ', 'INVALID'];
+  const LIVE_ALL_FOUR = [...LIVE_CORNER, 'Mixed Tyres'];
+
+  const set = tyreOptionSet(corner('FL TIRE:', 0, LIVE_CORNER));
+  check('INVALID is not offered', set.options.join('/') === 'No Change/New Medium/New Wet',
+    set.options.join('/'));
+  check('…and the raw slot each compound writes is kept', set.raw.join() === '0,1,2', set.raw.join());
+
+  const all = tyreOptionSet(corner('TIRES:', 4, LIVE_ALL_FOUR));
+  check('"Mixed Tyres" is not offered either', all.options.length === 3, all.options.join('/'));
+
+  // The user-facing order, and the whole point: no change, then the compounds
+  // this car actually has.
+  check('the order is the sim\'s own', all.options[0] === 'No Change' && all.options[1] === 'New Medium'
+    && all.options[2] === 'New Wet', all.options.join(' → '));
+
+  // A class running four compounds gets four — nothing here knows what a
+  // compound is, so hards and softs arrive on their own when the car has them.
+  const four = tyreOptionSet(
+    corner('FL TIRE:', 0, ['No Change', 'New Soft', 'New Medium', 'New Hard', 'New Wet']),
+  );
+  check('a car with soft/hard gets soft/hard', four.options.length === 5, four.options.join('/'));
+
+  const t = projectTyreControl(CORNERS.map((n) => corner(n, 2, LIVE_CORNER)));
+  check('the collapsed control offers only real compounds', t.options.length === 3, t.options.join('/'));
+  check('…and reads the corners back', t.currentText === 'New Wet', t.currentText);
+}
+
+{
+  // Where ± lands. Clamped, never wrapped: wrapping from the last compound back
+  // to "No Change" would cancel the tyre change on one extra blind press.
+  check('+ steps up the list', nextTyreOption(0, 1, 3) === 1);
+  check('− steps back down', nextTyreOption(2, -1, 3) === 1);
+  check('+ clamps at the last compound', nextTyreOption(2, 1, 3) === 2);
+  check('− clamps at No Change', nextTyreOption(0, -1, 3) === 0);
+  // A mixed set is one press from being a single compound, either way.
+  check('+ on a mixed set books the first compound', nextTyreOption(-1, 1, 3) === 1);
+  check('− on a mixed set clears to No Change', nextTyreOption(-1, -1, 3) === 0);
+  check('a one-option row cannot move', nextTyreOption(-1, 1, 1) === 0);
+}
+
+{
+  // The row lies about itself: LMU leaves TIRES: on "Mixed Tyres" even when all
+  // four corners agree, so the widget must read the corners instead.
+  const menu = [
+    corner('TIRES:', 4, ['No Change', 'New Medium ', 'New Wet ', 'INVALID', 'Mixed Tyres']),
+    ...CORNERS.map((n) => corner(n, 2, ['No Change', 'New Medium ', 'New Wet ', 'INVALID'])),
+  ];
+  const projected = projectPitMenu(menu);
+  const all = projected.find((r) => isAllFourTyreRow(r.name));
+  check('TIRES: shows what the corners are on', all.currentText === 'New Wet', all.currentText);
+  check('…and offers only the real compounds', all.settingCount === 3, all.settingCount);
+
+  menu[1].currentSetting = 1; // one corner off on its own
+  const mixed = projectPitMenu(menu).find((r) => isAllFourTyreRow(r.name));
+  check('genuinely mixed corners still read Mixed', mixed.currentText === 'Mixed', mixed.currentText);
+}
+
+console.log('\n5) What a stop-and-go strips, and what it must not');
 
 {
   check('the four corners are service', CORNERS.every(isServiceRow));

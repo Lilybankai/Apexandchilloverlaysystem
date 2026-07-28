@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.29.0 — 2026-07-28
+
+### Fixed
+
+- **The TIRES row cycles compounds, and nothing else.** `±` on it now goes
+  `No Change → New Medium → New Wet`, all four corners together — plus
+  `New Soft` / `New Hard` when the car and the event have them, since the list
+  comes from the sim and nothing here knows what a compound is.
+
+  Two of the slots LMU publishes on a tyre row are not compounds, and both were
+  reachable: `INVALID`, which is a compound this car does not run at this event,
+  and `Mixed Tyres`, which is a *state* — what the row reports when the corners
+  disagree — rather than something to select. Pressing `+` twice past `New Wet`
+  used to book `INVALID`, which is not a tyre. Both are now skipped everywhere,
+  including on the per-corner rows.
+
+  The row also clamps at both ends rather than wrapping. That is the rule the
+  sim's own rows follow, and here it matters in its own right: wrapping from the
+  last compound round to `No Change` would cancel the tyres the driver had just
+  booked, on a control they are pressing without looking.
+
+- **The TIRES row shows what the crew will actually fit.** LMU leaves its own
+  `TIRES:` row on `Mixed Tyres` even when all four corners agree — set the
+  corners individually, or through this overlay, and the row claims a mixed set
+  that does not exist. It is now projected from the corners, and reads `Mixed`
+  only when they genuinely differ.
+
+- **A tyre change is verified against the sim before it is reported.** LMU does
+  not always take a tyre write: observed live in one session, asking for
+  `No Change` from `New Medium` left the corners on `New Wet`. Reporting the
+  request as though it had landed made a held `−` oscillate between two
+  compounds, because the next press computed from the sim's real state while the
+  display showed ours. Tyre writes now read back what the game kept.
+
+- **A press can no longer act on a row the driver did not aim at.** When the
+  anchored row disappears — the menu changes shape, or the sim leaves its
+  session and takes the whole pit list with it — the cursor fell back to an
+  index into a list that had just lost twenty rows. That pointed at SERVE, whose
+  action strips the entire pit stop. It now re-anchors and refuses the press,
+  saying which row it landed on; the next press acts on that row.
+
 ## 0.28.0 — 2026-07-28
 
 ### Fixed

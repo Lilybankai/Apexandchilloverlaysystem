@@ -50,7 +50,7 @@
  * how the highlight ended up on PIT REQUEST and a pit row at the same time.
  */
 
-import type { MfdController } from '../telemetry/mfdControl';
+import { isAllFourTyreRow, projectTyreControl, type MfdController } from '../telemetry/mfdControl';
 
 /** A pit row as LMU's `receivePitMenu` returns it. */
 export interface PitMenuRow {
@@ -187,15 +187,13 @@ function raceRow(v: VirtualRow): MfdRow {
   };
 }
 
-function pitRow(r: PitMenuRow, controller: MfdController | null): MfdRow {
+function pitRow(r: PitMenuRow, controller: MfdController | null, text: string | null): MfdRow {
   const name = r.name ?? '';
-  const settings = Array.isArray(r.settings) ? r.settings : [];
-  const cur = typeof r.currentSetting === 'number' ? r.currentSetting : 0;
   return {
     key: `pit:${name}`,
     name,
     section: 'pit',
-    text: settings[cur]?.text ?? null,
+    text,
     step: async (dir) => {
       if (!controller) return { ok: false, error: 'pit control unavailable' };
       // Targeted by `PMC Value` — the sim's own stable id — so the write cannot
@@ -206,9 +204,23 @@ function pitRow(r: PitMenuRow, controller: MfdController | null): MfdRow {
         { delta: dir < 0 ? -1 : 1 },
       );
       if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
-      return { ok: true, text: settings[res.applied ?? 0]?.text ?? null };
+      // The controller reports the text, rather than this reading it back out of
+      // the row's own settings: on a tyre row the applied index is into the
+      // compounds that are actually selectable, which is not that list.
+      return { ok: true, text: res.appliedText ?? null };
     },
   };
+}
+
+/** A pit row's value as the widget shows it. */
+function pitRowText(r: PitMenuRow, tyres: ReturnType<typeof projectTyreControl>): string | null {
+  // The all-four TIRES: row reads from the corners, not from itself — its own
+  // setting says `Mixed Tyres` even when all four corners agree. Same reasoning
+  // as projectPitMenu, and the two must not disagree.
+  if (tyres && isAllFourTyreRow(r.name)) return tyres.currentText;
+  const settings = Array.isArray(r.settings) ? r.settings : [];
+  const cur = typeof r.currentSetting === 'number' ? r.currentSetting : 0;
+  return settings[cur]?.text?.trim() ?? null;
 }
 
 function aidRow(a: AidRow): MfdRow {
@@ -234,8 +246,11 @@ export function composeRows(
 ): MfdRow[] {
   const rows: MfdRow[] = getRaceControlRows().map(raceRow);
   if (Array.isArray(simRows)) {
+    const tyres = projectTyreControl(simRows);
     for (const r of simRows) {
-      if (r && typeof r.name === 'string' && r.name) rows.push(pitRow(r, controller));
+      if (r && typeof r.name === 'string' && r.name) {
+        rows.push(pitRow(r, controller, pitRowText(r, tyres)));
+      }
     }
   }
   for (const a of getAidRows()) rows.push(aidRow(a));
@@ -410,6 +425,21 @@ export async function stepSelected(
   const at = resolveIndex(rows);
   const row = rows[at];
   if (!row) return { ...getCursor(), ok: false, error: 'no MFD row selected' };
+
+  // The row the driver aimed at is GONE — the menu changed shape, or the sim
+  // left the session and took the whole pit list with it. Re-anchor, but do NOT
+  // act: {@link resolveIndex} falls back to an index, and an index into a list
+  // that just lost twenty rows points at something arbitrary. It pointed at
+  // SERVE, which clears the entire pit stop. A press that lands on a row the
+  // driver did not choose is worse than a press that does nothing and says so.
+  if (key && row.key !== key) {
+    land(rows, at);
+    return {
+      ...getCursor(),
+      ok: false,
+      error: `that row is no longer in the menu — now on ${row.name}`,
+    };
+  }
   land(rows, at);
 
   const res = await row.step(delta);

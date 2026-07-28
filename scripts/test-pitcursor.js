@@ -144,13 +144,17 @@ console.log('\n4) Live operations against a stub sim');
     return {
       state,
       getPitRows: async () => rows,
+      // Mirrors the real controller's contract, including reporting the text it
+      // left the row on — the cursor takes the new value from there rather than
+      // re-deriving it, because on a tyre row the applied index is into the
+      // selectable compounds and not the row's raw settings.
       setPitRow: async (target, opts) => {
         state.writes.push({ target, opts });
         if (!rows) return { ok: false, status: 0, error: 'no menu' };
         const r = rows.find((x) => x['PMC Value'] === target.pmcValue);
         const next = Math.max(0, Math.min(r.settings.length - 1, r.currentSetting + opts.delta));
         r.currentSetting = next;
-        return { ok: true, status: 200, applied: next };
+        return { ok: true, status: 200, applied: next, appliedText: r.settings[next].text };
       },
     };
   };
@@ -271,7 +275,39 @@ console.log('\n4) Live operations against a stub sim');
     check('…and reports the estimate it left behind', getCursor().text === '4 est', getCursor().text);
   }
 
-  console.log('\n6) A name is only ever resolved within its own section');
+  console.log('\n6) A press never acts on a row the driver did not aim at');
+
+  {
+    // Seen live: the sim left its session, the pit menu vanished, and the cursor
+    // — anchored on a tyre row that no longer existed — fell back to an index
+    // that landed on SERVE, whose action strips the whole pit stop. A press must
+    // re-anchor and refuse rather than act on whatever slid underneath it.
+    let served = 0;
+    setRaceControlRows(() => [
+      {
+        name: 'SERVE:',
+        options: ['OFF', 'DRIVE-THRU', 'STOP/GO'],
+        current: 0,
+        apply: async (n) => { served++; return { ok: true, applied: n }; },
+      },
+    ]);
+    setAidRows(null);
+
+    const menu = [row('TIRES:', 8, ['No Change', 'New Wet'])];
+    selectRow({ key: 'pit:TIRES:' }, composeRows(menu, null));
+    check('aimed at the tyre row', getCursor().key === 'pit:TIRES:');
+
+    const gone = { getPitRows: async () => null, setPitRow: async () => ({ ok: true, status: 200 }) };
+    const res = await stepSelected(1, gone);
+    check('the press is refused when that row has gone', res.ok === false, res.error);
+    check('…and SERVE was NOT actioned', served === 0, served);
+    check('…while the cursor re-anchors somewhere real', getCursor().key === 'race:SERVE:',
+      getCursor().key);
+    const second = await stepSelected(1, gone);
+    check('the NEXT press acts on the row now selected', second.ok === true && served === 1, served);
+  }
+
+  console.log('\n7) A name is only ever resolved within its own section');
 
   {
     // The failure this rules out: the overlay's rows and the sim's are named in

@@ -429,12 +429,27 @@ a **PIT STRATEGY** section (the sim's own menu, colour-coded by category — tyr
 pressures, ducts, aero, fuel, brakes — so related lines read as a group) and a
 **DRIVING AIDS** section.
 
-**One row per setting.** PIT STRATEGY is LMU's menu verbatim, including its own
-all-four `TIRES:` row — the overlay adds nothing of its own to it. It used to draw a
-second, collapsed tyre row at the top of the section, which duplicated that entry and,
-being the widget's invention rather than a row the server walks, was the one row
-▲ ▼ could never reach. Setting all four corners in one press is still there as the
-bindable `pit.tyreCompound` action.
+**One row per setting.** PIT STRATEGY is LMU's menu, including its own all-four
+`TIRES:` row — the overlay adds nothing of its own to it. It used to draw a second,
+collapsed tyre row at the top of the section, which duplicated that entry and, being
+the widget's invention rather than a row the server walks, was the one row ▲ ▼ could
+never reach.
+
+**The TIRES row sets all four corners, and only offers real compounds.** Its `±`
+cycles `No Change → New Medium → New Wet` — and `New Soft` / `New Hard` when the car
+and the event have them, because the list comes from the sim and nothing here knows
+what a compound is. Two slots the sim publishes are deliberately never landed on:
+`INVALID`, which is a compound this car does not run at this event, and `Mixed Tyres`,
+which is a *state* (the corners disagree), not a choice. It clamps at both ends rather
+than wrapping, so one extra blind press cannot roll `New Wet` round to `No Change` and
+silently cancel the tyres you just booked. The per-corner rows are untouched below for
+anyone who wants one corner, and they skip `INVALID` the same way.
+
+The row reads from the corners, not from itself: LMU leaves `TIRES:` on `Mixed Tyres`
+even when all four corners agree, so the widget shows what the crew will actually fit
+and says `Mixed` only when the corners really do differ. And because the sim does not
+always take a tyre write, the value is read back from the game before it is reported —
+if LMU refuses a compound, the row shows what LMU kept, not what was asked for.
 
 **RACE CONTROL** carries what the sim is doing *to* you, and the two replies — all as
 rows, in the same shape as everything else on the widget:
