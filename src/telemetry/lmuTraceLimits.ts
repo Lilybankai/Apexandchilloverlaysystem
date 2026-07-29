@@ -115,11 +115,27 @@ export interface TracePenalty {
  */
 const TRACK_LIMIT_PENALTY = /track\s*limits|drive\s*-?\s*thr(u|ough)|stop\s*\/?\s*go/i;
 
-/** `18137.68s score.cpp 4822: Track Limits: …` */
-const TL_LINE = /^([\d.]+)s\s+score\.cpp\s+(\d+):\s+Track Limits:\s+(.*)$/;
+/**
+ * `18137.68s score.cpp 4822: Track Limits: …`
+ *
+ * ## The leading `\s*` is load-bearing
+ * The game right-aligns the timestamp into a fixed-width column, so the same line
+ * arrives padded or unpadded depending only on how long the game has been running:
+ *
+ * ```
+ * " 114.51s score.cpp   626: …"   <- fresh launch, 3-digit seconds, PADDED
+ * "16313.48s score.cpp   626: …"  <- five hours in, 5 digits, no padding
+ * ```
+ *
+ * Anchored strictly at `^`, this reader worked only after the game had been up for
+ * about 2.7 hours — the point at which the seconds field fills the column. Every
+ * fixture in the test suite had been copied from one such long-running session,
+ * which is precisely why they all passed while a fresh session recorded nothing.
+ */
+const TL_LINE = /^\s*([\d.]+)s\s+score\.cpp\s+(\d+):\s+Track Limits:\s+(.*)$/;
 
 /** `18137.68s score.cpp 1365: Local penalty et=4807.4 0 10 0 0 "Speeding In Pitlane"` */
-const PENALTY_LINE = /^([\d.]+)s\s+score\.cpp\s+\d+:\s+Local penalty\s+et=[\d.]+.*?"([^"]+)"/;
+const PENALTY_LINE = /^\s*([\d.]+)s\s+score\.cpp\s+\d+:\s+Local penalty\s+et=[\d.]+.*?"([^"]+)"/;
 
 /**
  * `132.59s steward.cpp 9371: SessionName="Practice"` — a session beginning.
@@ -129,7 +145,7 @@ const PENALTY_LINE = /^([\d.]+)s\s+score\.cpp\s+\d+:\s+Local penalty\s+et=[\d.]+
  * qualifying and shows a driver 39 points against an allowance of 5 — which is
  * exactly what replaying an evening's trace did before it was added.
  */
-const SESSION_LINE = /^([\d.]+)s\s+steward\.cpp\s+\d+:\s+SessionName="([^"]+)"/;
+const SESSION_LINE = /^\s*([\d.]+)s\s+steward\.cpp\s+\d+:\s+SessionName="([^"]+)"/;
 
 /** Verdict wording → our enum. Order matters: `Off Track Again` before `Off Track`. */
 const VERDICTS: ReadonlyArray<readonly [RegExp, TraceVerdict]> = [
@@ -489,7 +505,7 @@ export class LmuTraceLimitsReader {
     }
     // Start at the END of the current file: the history in it belongs to earlier
     // sessions, and replaying it would credit the driver with old cuts.
-    this.rescan(Date.now(), true);
+    this.rescan(Date.now());
     if (this.verbose) console.log(`[trace] watching ${this.file ?? 'nothing yet'}`);
   }
 
@@ -519,7 +535,7 @@ export class LmuTraceLimitsReader {
    */
   public poll(nowMs: number = Date.now()): void {
     if (!this.started || !this.dir) return;
-    if (nowMs - this.lastScanAt > RESCAN_INTERVAL_MS) this.rescan(nowMs, false);
+    if (nowMs - this.lastScanAt > RESCAN_INTERVAL_MS) this.rescan(nowMs);
     if (!this.file) return;
 
     let size: number;
@@ -576,8 +592,8 @@ export class LmuTraceLimitsReader {
     }
   }
 
-  /** Re-pick the newest trace file; on a change, start reading at its end. */
-  private rescan(nowMs: number, initial: boolean): void {
+  /** Re-pick the newest trace file; on a change, recover that session's total. */
+  private rescan(nowMs: number): void {
     this.lastScanAt = nowMs;
     if (!this.dir) return;
     const newest = newestTrace(this.dir);
@@ -589,18 +605,18 @@ export class LmuTraceLimitsReader {
     } catch {
       this.offset = 0;
     }
-    if (initial) {
-      // Recover the total for the session already in progress. Starting cold at
-      // the end of the file is right for OLD sessions and wrong for the current
-      // one: restart the overlay four cuts into a race and the driver is shown 0
-      // while the stewards have them at 4.75, which is the one number on this
-      // widget that must never flatter them.
-      this.backfill(newest);
-    } else {
-      // A new trace file means the game restarted, so nothing accumulated against
-      // the old one still applies.
-      this.accumulator.reset();
-    }
+    // Recover the total for the session already in progress. Starting cold at the
+    // end of the file is right for OLD sessions and wrong for the current one:
+    // restart the overlay four cuts into a race and the driver is shown 0 while the
+    // stewards have them at 4.75, which is the one number on this widget that must
+    // never flatter them.
+    //
+    // This applies to a rotation as much as to startup. A new trace file means the
+    // game restarted, so nothing from the old one applies — but the driver may
+    // already be several cuts into the new session by the time the rescan notices,
+    // and seeking to the end would silently forgive every one of them. Backfill
+    // resets first (the marker line does it), so the old total cannot leak through.
+    this.backfill(newest);
   }
 
   /**
@@ -614,6 +630,11 @@ export class LmuTraceLimitsReader {
    * lines that cannot be attributed to this session are worse than no lines.
    */
   private backfill(file: string): void {
+    // Unconditionally, before anything is read: on a rotation the accumulator still
+    // holds the previous game's total, and if this file turns out to have no session
+    // marker (or cannot be read at all) nothing below would clear it.
+    this.accumulator.reset();
+
     let text: string;
     try {
       const size = fs.statSync(file).size;

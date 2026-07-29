@@ -24,6 +24,7 @@ const path = require('node:path');
 const {
   parseTraceLine,
   parseTracePenalty,
+  parseTraceSession,
   TraceLimitsAccumulator,
   LmuTraceLimitsReader,
 } = require('../dist/telemetry/lmuTraceLimits');
@@ -95,6 +96,24 @@ const PEN_STOP_GO = '5200.00s score.cpp    1365: Local penalty et=5100.0 0 10 0 
 
 /** A session beginning — practice, qualifying, race, or a race restart. */
 const SESSION_START = '16868.68s steward.cpp  9371: SessionName="Race"';
+
+/*
+ * The SAME lines as the game writes them in a FRESH session.
+ *
+ * The timestamp sits in a right-aligned fixed-width column, so while the game has
+ * been running for less than about 2.7 hours the seconds are 3-4 digits and the
+ * line arrives with LEADING SPACES. Every other fixture in this file was copied
+ * from a five-hour-old session where the field was full — which is how a reader
+ * that only worked after 2.7 hours of uptime passed 59 assertions and then
+ * recorded nothing at all in a freshly launched race.
+ */
+const PADDED_WARNING = '  373.36s score.cpp    4083: Track Limits: Warning; Lap: 1 LapDist: 668.62';
+const PADDED_SCORED =
+  '  373.36s score.cpp     626: Track Limits: WarnPts: 0.50 Pts: 0.29 ET: 3.21 ' +
+  'TimeSkipped: 0.11 DistPts: 0.02 PtsScaling: 1.00 MaxOffTrack: 2.60 ResetOffTrackDist: 0';
+const PADDED_SESSION = '  160.42s steward.cpp  9371: SessionName="Race"';
+const PADDED_PENALTY =
+  '  451.40s score.cpp    1365: Local penalty et=451.4 0 10 0 0 "Track Limits"';
 
 const NOISE = '18137.68s gr_dx11.cpp  921: Invalid offset"';
 
@@ -271,6 +290,32 @@ acc = new TraceLimitsAccumulator();
 acc.push(WARNING);
 check('a verdict with no breakdown charges nothing', acc.state().points === 0, acc.state().points);
 check('…and is not an incident', acc.state().charged === 0, acc.state().charged);
+
+/* ---------------------- a freshly launched session ------------------------- */
+
+// The reader recorded nothing for the first ~2.7 hours of every session, because the
+// game right-aligns its timestamp column and every fixture above came from a
+// long-running session where the column was full. Reported from a live race.
+console.log('\na freshly launched session (padded timestamps)');
+
+check('a padded verdict line parses', parseTraceLine(PADDED_WARNING) !== null);
+check('…with its verdict', parseTraceLine(PADDED_WARNING)?.verdict === 'warning',
+  parseTraceLine(PADDED_WARNING)?.verdict);
+check('a padded breakdown line parses', parseTraceLine(PADDED_SCORED)?.warnPts === 0.5,
+  parseTraceLine(PADDED_SCORED)?.warnPts);
+check('a padded session line parses', parseTraceSession(PADDED_SESSION)?.session === 'Race',
+  parseTraceSession(PADDED_SESSION)?.session);
+check('a padded penalty line parses', parseTracePenalty(PADDED_PENALTY)?.name === 'Track Limits',
+  parseTracePenalty(PADDED_PENALTY)?.name);
+
+acc = new TraceLimitsAccumulator();
+acc.push(PADDED_SESSION);
+acc.push(PADDED_WARNING);
+acc.push(PADDED_SCORED);
+check('a fresh session accumulates', acc.state().points === 0.5, acc.state().points);
+check('…and knows its session', acc.state().session === 'Race', acc.state().session);
+acc.push(PADDED_PENALTY);
+check('…and discharges', acc.state().points === 0, acc.state().points);
 
 /* ------------------------- recovering a session ---------------------------- */
 

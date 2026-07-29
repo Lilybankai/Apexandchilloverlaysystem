@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.40.2 — 2026-07-30
+
+### Fixed
+
+- **The points total read zero for the first ~2.7 hours of every session.** The game
+  right-aligns the timestamp into a fixed-width column, so the same line arrives
+  padded or not depending only on how long the game has been running:
+
+  ```
+  " 114.51s score.cpp   626: Track Limits: WarnPts: 0.25 …"   <- fresh launch, PADDED
+  "16313.48s score.cpp   626: Track Limits: WarnPts: 0.50 …"  <- five hours in
+  ```
+
+  The parser anchored the timestamp at the start of the line, so it matched only once
+  the seconds field grew to five digits — about 2.7 hours of uptime. Reported from a
+  freshly launched race where nothing was recorded at all.
+
+  Every fixture in the test suite had been copied from a five-hour-old session, which
+  is exactly why 59 assertions passed over a reader that did not work in a new
+  session. The suite now carries the padded forms of the same lines.
+
+- **Restarting the *game* mid-stint lost the total the same way a restarting overlay
+  used to.** A new trace file was picked up correctly, but the reader seeked to its end
+  and started from zero — so any cuts taken before the rescan noticed the new file were
+  silently forgiven. Rotation now recovers the session's total exactly as startup does,
+  and clears the previous game's figures before it reads, so nothing can leak across
+  either.
+
 ## 0.40.1 — 2026-07-30
 
 ### Fixed
