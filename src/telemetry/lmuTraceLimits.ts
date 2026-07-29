@@ -454,6 +454,14 @@ const RESCAN_INTERVAL_MS = 30_000;
 const MAX_READ_BYTES = 1 << 20;
 
 /**
+ * Cap on the one-off backfill read at startup — see {@link LmuTraceLimitsReader.backfill}.
+ *
+ * Generous, because it is read once and being short of the session's start is the
+ * one failure that matters here. A five-hour trace ran to 5 MB.
+ */
+const MAX_BACKFILL_BYTES = 64 << 20;
+
+/**
  * Tails the live trace file and accumulates the sim's track-limit charges.
  *
  * Best-effort throughout, in the manner of the other readers here: every failure
@@ -581,8 +589,61 @@ export class LmuTraceLimitsReader {
     } catch {
       this.offset = 0;
     }
-    // A new trace file means the game restarted, so nothing accumulated against
-    // the old one still applies.
-    if (!initial) this.accumulator.reset();
+    if (initial) {
+      // Recover the total for the session already in progress. Starting cold at
+      // the end of the file is right for OLD sessions and wrong for the current
+      // one: restart the overlay four cuts into a race and the driver is shown 0
+      // while the stewards have them at 4.75, which is the one number on this
+      // widget that must never flatter them.
+      this.backfill(newest);
+    } else {
+      // A new trace file means the game restarted, so nothing accumulated against
+      // the old one still applies.
+      this.accumulator.reset();
+    }
+  }
+
+  /**
+   * Replay the trace from the CURRENT session's start, so a mid-session restart of
+   * the overlay recovers the running total instead of beginning at zero.
+   *
+   * Anchored on the sim's own `SessionName` marker, and only on the **last** one in
+   * the file. Replaying further back would credit the driver with cuts from
+   * practice, or from a race they have already restarted out of; if no marker is
+   * found in the window, nothing is replayed and the total starts at zero, because
+   * lines that cannot be attributed to this session are worse than no lines.
+   */
+  private backfill(file: string): void {
+    let text: string;
+    try {
+      const size = fs.statSync(file).size;
+      const from = Math.max(0, size - MAX_BACKFILL_BYTES);
+      const fd = fs.openSync(file, 'r');
+      try {
+        const buf = Buffer.alloc(size - from);
+        const read = fs.readSync(fd, buf, 0, size - from, from);
+        text = buf.subarray(0, read).toString('latin1');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return; // unreadable: start at zero, as before
+    }
+
+    const marker = text.lastIndexOf('SessionName="');
+    if (marker === -1) return;
+    // Back up to the start of that line so the marker itself is parsed, and with it
+    // the session's name.
+    const lineStart = text.lastIndexOf('\n', marker) + 1;
+    for (const line of text.slice(lineStart).split('\n')) {
+      if (line) this.accumulator.push(line.trimEnd());
+    }
+    if (this.verbose) {
+      const s = this.accumulator.state();
+      console.log(
+        `[trace] recovered ${s.points} point(s) from ${s.charged} cut(s) in the current ` +
+          `${s.session ?? 'session'}`,
+      );
+    }
   }
 }

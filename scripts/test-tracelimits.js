@@ -17,10 +17,15 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
 const {
   parseTraceLine,
   parseTracePenalty,
   TraceLimitsAccumulator,
+  LmuTraceLimitsReader,
 } = require('../dist/telemetry/lmuTraceLimits');
 
 let passed = 0;
@@ -266,6 +271,72 @@ acc = new TraceLimitsAccumulator();
 acc.push(WARNING);
 check('a verdict with no breakdown charges nothing', acc.state().points === 0, acc.state().points);
 check('…and is not an incident', acc.state().charged === 0, acc.state().charged);
+
+/* ------------------------- recovering a session ---------------------------- */
+
+// Restarting the overlay four cuts into a race must not show the driver 0 while the
+// stewards have them at 4.75. The reader starts at the END of the trace so old
+// sessions are not replayed, which made a mid-session restart lose the total
+// entirely — reported from a live race. It now replays from the last SessionName.
+console.log('\nrecovering the total after a restart');
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-trace-'));
+const traceFile = path.join(tmp, 'trace_2026_07_29_17_57_29-62.txt');
+
+function writeTrace(lines) {
+  // CRLF, as the game writes it.
+  fs.writeFileSync(traceFile, lines.join('\r\n') + '\r\n', 'latin1');
+}
+
+function readerState() {
+  const prev = process.env.APEX_LMU_LOG_DIR;
+  process.env.APEX_LMU_LOG_DIR = tmp;
+  const r = new LmuTraceLimitsReader(false);
+  r.start();
+  const s = r.state();
+  r.stop();
+  if (prev === undefined) delete process.env.APEX_LMU_LOG_DIR;
+  else process.env.APEX_LMU_LOG_DIR = prev;
+  return s;
+}
+
+// An earlier session's cuts, then this session's — only the latter may count.
+writeTrace([
+  '100.00s steward.cpp  9371: SessionName="Practice"',
+  WARNING,
+  SCORED_100,
+  WARNING,
+  SCORED_100,
+  '16868.68s steward.cpp  9371: SessionName="Race"',
+  WARNING,
+  SCORED_050,
+  WARNING,
+  SCORED_100,
+]);
+let st = readerState();
+check('a mid-session restart recovers the running total', st && st.points === 1.5,
+  st && st.points);
+check('…counting only the current session', st && st.charged === 2, st && st.charged);
+check('…and naming it', st && st.session === 'Race', st && st.session);
+
+// No marker in the file at all: nothing can be attributed, so nothing is claimed.
+writeTrace([WARNING, SCORED_100, WARNING, SCORED_050]);
+st = readerState();
+check('with no session marker, nothing is replayed', st && st.points === 0, st && st.points);
+
+// A discharge inside the session must survive the replay.
+writeTrace([
+  '16868.68s steward.cpp  9371: SessionName="Race"',
+  WARNING,
+  SCORED_100,
+  PEN_TRACK_LIMITS,
+  WARNING,
+  SCORED_050,
+]);
+st = readerState();
+check('a discharge during the session is replayed too', st && st.points === 0.5, st && st.points);
+
+fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 1 && 0 : 1);
