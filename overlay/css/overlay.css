@@ -406,6 +406,56 @@
 .lap-green { color: var(--pos-gain) !important; }
 
 /* =========================================================================
+ * ALARM BAR — a call the driver must act on this lap (see ApexOverlay.alarmBar).
+ *
+ * Deliberately outside the glance hierarchy. Every other readout competes for
+ * attention politely, in a tier that says how much it is worth; this one is not
+ * competing. It is solid red, full width, and it flashes, because the cost of it
+ * being missed is a race and the cost of it being over-loud is a few seconds of
+ * annoyance in the rare case it fires when it need not have.
+ *
+ * The flash alternates a bright fill with a dark one rather than fading opacity:
+ * a pulse that passes through "nearly invisible" is exactly what peripheral
+ * vision drops, and OBS's compositor makes low-alpha frames worse still.
+ * ========================================================================= */
+.alarmbar {
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display, inherit);
+  font-size: var(--fs-value);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #fff;
+  background: #d81225;
+  animation: alarmbar-flash 0.62s steps(1, end) infinite;
+}
+.alarmbar[hidden] { display: none; }
+@keyframes alarmbar-flash {
+  0%, 49% {
+    background: #ff1f33;
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(255, 90, 110, 0.9), 0 0 22px rgba(255, 30, 50, 0.75);
+  }
+  50%, 100% {
+    background: #4a020b;
+    color: #ffc9d0;
+    box-shadow: 0 0 0 2px rgba(255, 90, 110, 0.25);
+  }
+}
+/* Reduced motion takes the flashing away, NOT the alarm: it stays the loudest
+   thing on screen, just steady. */
+@media (prefers-reduced-motion: reduce) {
+  .alarmbar {
+    animation: none;
+    background: #ff1f33;
+    box-shadow: 0 0 0 2px rgba(255, 90, 110, 0.9), 0 0 22px rgba(255, 30, 50, 0.75);
+  }
+}
+
+/* =========================================================================
  * DELTA WIDGET (top-centre) — live predictive lap delta bar.
  * ========================================================================= */
 .delta { padding: 2px 0; }

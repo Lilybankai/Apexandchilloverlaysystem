@@ -1011,6 +1011,30 @@ export interface FuelState {
   /** Earliest lap the pit window opens (enough fuel to finish); optional. */
   pitWindowOpenLap?: number;
   /**
+   * **Come in at the end of this lap or you will not get back.** True when, from
+   * where the car is on the road right now, there is not enough left to finish
+   * this lap and complete another one — *even driving the rest of it as
+   * economically as anyone realistically can*. It is not "you are getting low":
+   * it is the point where saving has stopped being an option and the only
+   * remaining choice is which lap you come in on.
+   *
+   * Deliberately a projection to the start/finish line rather than a level
+   * threshold, because the question a driver needs answered is not "how much is
+   * left" but "can I take the green flag again". Absent until a lap of
+   * consumption has been observed, and never raised on the final lap of a race —
+   * there is nothing to come back for.
+   *
+   * @see FuelState.pitThisLapReason for which budget ran out.
+   */
+  pitThisLap?: boolean;
+  /**
+   * Which budget forces {@link pitThisLap}. LMU cars run both a fuel tank and a
+   * virtual-energy allowance and either can be the binding one, so the alarm
+   * names it — "PIT THIS LAP FOR ENERGY" sends the driver to a different pit
+   * menu than a fuel call does.
+   */
+  pitThisLapReason?: 'fuel' | 'energy';
+  /**
    * Player car's remaining **virtual energy** as a percentage `0`..`100` (LMU's
    * per-car energy budget). Omitted when the car/class doesn't run one.
    */

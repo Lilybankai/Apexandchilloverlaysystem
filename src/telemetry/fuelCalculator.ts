@@ -34,6 +34,13 @@ export interface FuelUpdate {
   timeRemainingSec: number;
   /** Reference lap time in seconds, used to convert remaining time → laps. */
   avgLapTimeSec: number;
+  /**
+   * How far round the current lap the car is, `0..1`. Required for
+   * {@link FuelState.pitThisLap} — "can I get round again" depends on how much
+   * of this lap is still to pay for. {@link UNKNOWN_VALUE} (or omitted) when the
+   * road position isn't known, in which case the alarm is simply not raised.
+   */
+  lapFraction?: number;
 }
 
 /** Default number of recent laps averaged for the burn estimate. */
@@ -57,6 +64,34 @@ const MAX_PLAUSIBLE_LAP_BURN_L = 100;
 const BURN_OUTLIER_FACTOR = 3;
 
 /**
+ * How much of a lap's burn a driver can realistically claw back by saving —
+ * lifting and coasting, short-shifting, leaning the mix — expressed as a
+ * fraction of the rolling average.
+ *
+ * This constant sets what the "pit this lap" alarm *means*. The alarm's whole
+ * job is to say that saving has stopped being an option, so it has to model how
+ * much saving was on the table. Assume too much and the alarm waits until the
+ * situation is beyond hope, arriving after the pit entry it was supposed to
+ * warn about. Assume too little and it cries wolf on laps a driver could
+ * comfortably have nursed home.
+ *
+ * 10% sits at the low end of what lift-and-coast actually returns in these cars
+ * (roughly 5–15%, at around a second a lap), which errs the right way: the alarm
+ * fires a little sooner than strictly necessary rather than a little too late.
+ * A missed pit call costs a race; an early one costs a few seconds.
+ */
+const MAX_SAVE_FRACTION = 0.1;
+
+/**
+ * Fuel held back beyond the arithmetic, as a fraction of one lap's burn. Covers
+ * what the model does not: the lap you are on may be slower than the average,
+ * the in-lap still has to reach the box, and a pump does not run a tank to
+ * literally zero. 5% of a lap is a few hundred millilitres — enough to absorb
+ * the noise, too little to move the call by a whole lap.
+ */
+const PIT_RESERVE_LAPS = 0.05;
+
+/**
  * Stateful fuel-usage tracker. One instance per player car / session; call
  * {@link reset} when the session or car changes.
  */
@@ -68,6 +103,17 @@ export class FuelCalculator {
   private lastLapsCompleted: number = UNKNOWN_VALUE;
   /** Fuel level captured at the start of the current lap. */
   private fuelAtLapStart: number = UNKNOWN_VALUE;
+  /**
+   * Whether the "pit this lap" call has been made and is standing.
+   *
+   * Latched rather than recomputed clean each frame. The call is a decision, not
+   * a reading: the margin it turns on closes slowly, so around the boundary the
+   * raw condition can sit on the fence and chatter — and an alarm that blinks
+   * out just as the driver reaches the pit entry is worse than one that never
+   * fired, because they will have started to believe it. Cleared only by fuel
+   * actually going in.
+   */
+  private pitArmed = false;
 
   /**
    * @param sampleWindow - How many recent laps to average (default 5). Smaller
@@ -82,6 +128,7 @@ export class FuelCalculator {
     this.burns.length = 0;
     this.lastLapsCompleted = UNKNOWN_VALUE;
     this.fuelAtLapStart = UNKNOWN_VALUE;
+    this.pitArmed = false;
   }
 
   /**
@@ -115,7 +162,15 @@ export class FuelCalculator {
   public update(u: FuelUpdate): FuelState {
     const fuel = Math.max(0, u.currentFuelLiters);
 
+    // Fuel went IN — a stop, or a reset to a full tank. That is the one event
+    // that answers the pit call, so it is the one thing that stands it down.
+    // Tested against a whole lap's burn so ordinary noise on the level reading
+    // can't silence a standing alarm.
+    const avgBefore = this.perLapAverage;
+    if (avgBefore > 0 && fuel > this.fuelAtLapStart + avgBefore * 0.5) this.pitArmed = false;
+
     // --- lap-boundary detection -> record per-lap burn ------------------
+    let crossedLine = false;
     if (this.lastLapsCompleted === UNKNOWN_VALUE) {
       // First observation: anchor the lap-start fuel, no burn yet.
       this.lastLapsCompleted = u.lapsCompleted;
@@ -143,6 +198,7 @@ export class FuelCalculator {
       }
       this.lastLapsCompleted = u.lapsCompleted;
       this.fuelAtLapStart = fuel;
+      crossedLine = true;
     }
 
     // --- derive strategy -------------------------------------------------
@@ -173,7 +229,70 @@ export class FuelCalculator {
       state.pitWindowOpenLap = u.lapsCompleted + Math.floor(lapsRemaining);
     }
 
+    // The call is taken once per lap, as the line is crossed — see
+    // {@link decideAtLine} for why it cannot be a running comparison.
+    if (crossedLine) this.pitArmed = this.decideAtLine(lapsRemaining, lapsToFinish);
+    if (this.strandedThisLap(u, lapsRemaining, lapsToFinish)) this.pitArmed = true;
+    if (this.pitArmed) state.pitThisLap = true;
+
     return state;
+  }
+
+  /**
+   * Taken as the car crosses the line: **from here, can it get round twice?**
+   * If not, it has to come in at the end of the lap it is just starting.
+   *
+   * Worked in **laps of fuel** rather than litres, so the same arithmetic serves
+   * the litre tank, the 0..1 fuel fraction of a spectated car, and the virtual
+   * energy budget in percent — the units cancel and only the ratios matter. Not
+   * pitting costs this lap plus a whole further one, each at
+   * `1 − MAX_SAVE_FRACTION` of an average lap if driven as economically as
+   * anyone realistically can, plus {@link PIT_RESERVE_LAPS}.
+   *
+   * ## Why this is a per-lap decision and not a running comparison
+   * The obvious implementation re-asks the question every frame, against the
+   * fuel left and the road still to cover. It is wrong in the one case that
+   * matters. Both sides of that comparison fall as the lap runs — the tank
+   * drains at the real burn rate, the requirement shrinks at the *saving* rate —
+   * so the margin between them erodes by only the difference, a tenth of a lap's
+   * fuel over a whole lap. A car that begins the lap a hair inside the limit
+   * therefore trips it a hair before the line: the alarm arrives at the pit
+   * entry it was meant to warn about, which is the one outcome that makes it
+   * useless.
+   *
+   * Deciding at the line instead gives an answer that is stable for the whole
+   * lap and arrives with a whole lap in hand — which is the point. The driver
+   * learns on the pit straight that this is the lap, not at the last corner.
+   */
+  private decideAtLine(lapsRemaining: number, lapsToFinish: number): boolean {
+    // No burn history yet — nothing to project with, so make no claim.
+    if (lapsRemaining === UNKNOWN_VALUE || lapsRemaining < 0) return false;
+    // The last lap of the race: there is no further lap to carry fuel for, and
+    // sending someone down the pit lane on it would cost them the finish the
+    // alarm exists to protect. An unknown race length (practice, or a timed
+    // session we can't read) is NOT treated as the last lap — running dry there
+    // still ruins the run.
+    if (lapsToFinish !== UNKNOWN_VALUE && lapsToFinish <= 1) return false;
+    return lapsRemaining < 2 * (1 - MAX_SAVE_FRACTION) + PIT_RESERVE_LAPS;
+  }
+
+  /**
+   * The continuous safety net: not enough left to reach the line at all, so the
+   * car is going to stop on track during this lap.
+   *
+   * This one has to be live rather than per-lap, because it catches what the
+   * line decision cannot see — attaching mid-lap, a reading that was wrong when
+   * the call was taken, or fuel disappearing faster than any lap average
+   * predicted. Being past the pit entry when it fires is not a flaw here: at
+   * this point the choice is between coasting to the pit lane and stopping on
+   * the circuit, and the driver deserves to know which one they are doing.
+   */
+  private strandedThisLap(u: FuelUpdate, lapsRemaining: number, lapsToFinish: number): boolean {
+    const frac = u.lapFraction;
+    if (typeof frac !== 'number' || frac < 0 || frac > 1) return false;
+    if (lapsRemaining === UNKNOWN_VALUE || lapsRemaining < 0) return false;
+    if (lapsToFinish !== UNKNOWN_VALUE && lapsToFinish <= 1) return false;
+    return lapsRemaining < (1 - frac) * (1 - MAX_SAVE_FRACTION) + PIT_RESERVE_LAPS;
   }
 
   /**

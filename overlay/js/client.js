@@ -571,10 +571,49 @@
     if (typeof window.__apexFitStage === "function") window.__apexFitStage();
   }
 
+  /**
+   * A flashing alarm bar, pinned to the top of a widget's body.
+   *
+   * Shared rather than written per widget because the same alarm has to appear
+   * in more than one place at once — the fuel calculator and the fuel planner
+   * both carry the pit call — and two copies of an alarm are two things that can
+   * drift apart. An alarm that says one thing in one widget and something else
+   * in another is worse than no alarm, because the driver then has to work out
+   * which one to believe, at exactly the moment they have no attention to spare.
+   *
+   * @param {Element} parent - Widget body; the bar inserts itself at the top.
+   * @returns {function(boolean, string): void} `set(active, text)`, cheap to
+   *   call every frame — it only touches the DOM when something actually moved.
+   */
+  function alarmBar(parent) {
+    var el = document.createElement("div");
+    el.className = "alarmbar";
+    el.hidden = true;
+    parent.insertBefore(el, parent.firstChild);
+    var lastText = null;
+    var on = false;
+    return function set(active, text) {
+      if (active) {
+        if (text !== lastText) {
+          lastText = text;
+          el.textContent = text;
+        }
+        if (!on) {
+          on = true;
+          el.hidden = false;
+        }
+      } else if (on) {
+        on = false;
+        el.hidden = true;
+      }
+    };
+  }
+
   // Expose the runtime for widget modules.
   window.ApexOverlay = {
     registerWidget: registerWidget,
     fmt: fmt,
+    alarmBar: alarmBar,
   };
 
   // Boot scheduling.

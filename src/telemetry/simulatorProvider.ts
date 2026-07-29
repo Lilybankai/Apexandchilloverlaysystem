@@ -1259,6 +1259,16 @@ export class SimulatorProvider implements TelemetryProvider {
         fuelDelta === UNKNOWN_VALUE ? 0 : Math.round(Math.max(0, -fuelDelta) * 10) / 10,
       pitWindowOpenLap:
         lapsRemaining > 0 ? player.lapsCompleted + Math.floor(lapsRemaining) : undefined,
+      // Same call the live calculator makes: not enough to finish this lap and
+      // get round again even saving hard, and a lap still to come afterwards.
+      // Demo mode has to be able to show this — it is the loudest thing the
+      // overlay ever does, and nobody should first meet it in a race.
+      ...(lapsRemaining !== UNKNOWN_VALUE &&
+      lapsRemaining >= 0 &&
+      lapsToFinish > 1 &&
+      lapsRemaining < 2 * 0.9 + 0.05
+        ? { pitThisLap: true, pitThisLapReason: 'fuel' as const }
+        : {}),
       virtualEnergyPct: Math.round(vePct * 10) / 10,
       virtualEnergyPerLapPct: vePerLapPct,
       virtualEnergyLapsRemaining: veLapsLeft,

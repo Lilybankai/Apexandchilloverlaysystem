@@ -624,13 +624,15 @@ export class LmuRestProvider implements TelemetryProvider {
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus);
     const weather = this.buildWeather(si, session.type);
-    const fuel = this.buildFuel(focus, session, local, cars);
+    // Lap length is needed by the fuel call as well as the delta, so it is
+    // resolved once here rather than where the delta happens to use it.
+    const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
+    const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running). When the
     // focused car is the one driven on this PC it gets the shared-memory lap
     // clock and that car's own live speed; every other car runs the same engine
     // off the REST feed — see {@link LapDeltaTracker}.
-    const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
     const restAgeSec = Math.min(0.5, Math.max(0, (nowMs - this.lastOkAt) / 1000));
     const deltaClock = this.stepDeltaClock(local ? local.elapsedSec : UNKNOWN_VALUE, nowMs);
     const localIsFocus =
@@ -1143,9 +1145,25 @@ export class LmuRestProvider implements TelemetryProvider {
     session: SessionState,
     local: LocalCarPhysics | null,
     cars: RestStanding[],
+    trackLen: number,
+    playerCar: RestStanding | undefined,
   ) {
-    // Virtual-energy strategy rides along with whichever fuel path applies.
-    const energy = this.buildEnergy(focus, session, cars);
+    // How far round the lap a car is. The "pit this lap" alarm asks about the
+    // road ahead, not the tank alone, so it needs this; REST's own lap distance
+    // is plenty here, where a metre is worth microlitres.
+    //
+    // Taken from whichever car the fuel figure belongs to, which is not always
+    // the focused one: the litres come from the DRIVEN car's shared memory, and
+    // while spectating a rival that car is somewhere else entirely on the
+    // circuit. Reading one car's tank against another car's position would put
+    // the alarm's "can I even reach the line" net at the wrong point on track.
+    const fracOf = (c: RestStanding | undefined): number =>
+      c && typeof c.lapDistance === 'number' && trackLen > 0
+        ? clamp01(c.lapDistance / trackLen)
+        : UNKNOWN_VALUE;
+    // Virtual energy is a property of the focused car (it comes from that car's
+    // own REST record), so it keeps the focused car's position.
+    const energy = this.buildEnergy(focus, session, cars, fracOf(focus));
 
     // Prefer the locally-driven car's real litres from shared memory: gives the
     // full fuel widget (per-lap, to-finish, margin) instead of laps-only.
@@ -1157,8 +1175,9 @@ export class LmuRestProvider implements TelemetryProvider {
         totalRaceLaps: session.totalLaps,
         timeRemainingSec: session.timeRemainingSec,
         avgLapTimeSec: focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90,
+        lapFraction: fracOf(playerCar),
       });
-      return { ...s, ...energy };
+      return { ...s, ...energy, ...this.pitCall(s, energy, playerCar ?? focus) };
     }
 
     const frac = focus && typeof focus.fuelFraction === 'number' ? clamp01(focus.fuelFraction) : -1;
@@ -1184,6 +1203,7 @@ export class LmuRestProvider implements TelemetryProvider {
       totalRaceLaps: session.totalLaps,
       timeRemainingSec: session.timeRemainingSec,
       avgLapTimeSec: avgLap,
+      lapFraction: fracOf(focus),
     });
     // Keep the unit-independent numbers; blank the litre-denominated ones since
     // we don't know the tank size for a spectated car.
@@ -1198,7 +1218,32 @@ export class LmuRestProvider implements TelemetryProvider {
       refuelToFinishLiters: 0,
       pitWindowOpenLap: s.pitWindowOpenLap,
       ...energy,
+      ...this.pitCall(s, energy, focus),
     };
+  }
+
+  /**
+   * Resolve the "pit this lap" alarm across both budgets.
+   *
+   * Either the tank or the energy allowance can be the one that runs out first,
+   * and the alarm has to name which — a fuel call and an energy call send the
+   * driver to different rows of the pit menu. Energy wins a tie because in these
+   * cars it is nearly always the tighter of the two, so when both trip within a
+   * lap of each other it is the one that actually decides the stop.
+   *
+   * Cleared outright while the car is in the pit lane: the alarm exists to get
+   * the driver to come in, and once they have, it is only noise sitting over the
+   * numbers they now need to read.
+   */
+  private pitCall(
+    fuel: FuelState,
+    energy: Partial<FuelState>,
+    focus: RestStanding | undefined,
+  ): Partial<Pick<FuelState, 'pitThisLap' | 'pitThisLapReason'>> {
+    if (focus && (focus.pitting === true || focus.inGarageStall === true)) return {};
+    if (energy.pitThisLap) return { pitThisLap: true, pitThisLapReason: 'energy' };
+    if (fuel.pitThisLap) return { pitThisLap: true, pitThisLapReason: 'fuel' };
+    return {};
   }
 
   /**
@@ -1212,6 +1257,7 @@ export class LmuRestProvider implements TelemetryProvider {
     focus: RestStanding | undefined,
     session: SessionState,
     cars: RestStanding[],
+    lapFraction: number,
   ): Partial<
     Pick<
       FuelState,
@@ -1219,6 +1265,7 @@ export class LmuRestProvider implements TelemetryProvider {
       | 'virtualEnergyPerLapPct'
       | 'virtualEnergyLapsRemaining'
       | 'virtualEnergyDeltaPct'
+      | 'pitThisLap'
     >
   > {
     const ve =
@@ -1234,6 +1281,7 @@ export class LmuRestProvider implements TelemetryProvider {
       totalRaceLaps: session.totalLaps,
       timeRemainingSec: session.timeRemainingSec,
       avgLapTimeSec: avgLap,
+      lapFraction,
     });
     const out: Partial<
       Pick<
@@ -1242,11 +1290,13 @@ export class LmuRestProvider implements TelemetryProvider {
         | 'virtualEnergyPerLapPct'
         | 'virtualEnergyLapsRemaining'
         | 'virtualEnergyDeltaPct'
+        | 'pitThisLap'
       >
     > = { virtualEnergyPct: round1(ve * 100) };
     if (s.perLapAvgLiters !== UNKNOWN_VALUE) out.virtualEnergyPerLapPct = s.perLapAvgLiters;
     if (s.lapsRemaining !== UNKNOWN_VALUE) out.virtualEnergyLapsRemaining = s.lapsRemaining;
     if (s.fuelDeltaLiters !== UNKNOWN_VALUE) out.virtualEnergyDeltaPct = s.fuelDeltaLiters;
+    if (s.pitThisLap) out.pitThisLap = true;
     Object.assign(out, this.buildEnergyOverlap(focus, cars, s.perLapAvgLiters, s.lapsRemaining));
     return out;
   }

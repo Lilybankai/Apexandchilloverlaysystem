@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.36.0 — 2026-07-29
+
+### Added
+
+- **"PIT THIS LAP FOR FUEL" — a flashing alarm on both fuel widgets.** Solid
+  red, full width, pinned above everything else in the fuel calculator *and* the
+  fuel planner. It is deliberately outside the overlay's glance hierarchy: every
+  other readout competes for attention politely, in a tier that says how much it
+  is worth, and this one is not competing.
+
+  What it means is narrow on purpose. Not "you are getting low" — that is what
+  the margin and laps-left are for. It fires when, from where the car is on the
+  road right now, there is not enough left to finish this lap and complete
+  another one **even driving the rest of it as economically as anyone
+  realistically can**. It is the point where saving has stopped being an option
+  and the only remaining choice is which lap you come in on.
+
+  Fuel and virtual energy are both checked, and the alarm names which one ran
+  out — "FOR FUEL" and "FOR ENERGY" send the driver to different rows of the pit
+  menu. Energy wins a tie, being nearly always the tighter of the two in these
+  cars. It never fires on the final lap of a race, where pitting would throw
+  away the finish the alarm exists to protect, and it stands down the moment
+  fuel actually goes in.
+
+  **The timing is the hard part, and the obvious implementation gets it wrong.**
+  Re-asking the question every frame — fuel left against road still to cover —
+  fails in exactly the case that matters. Both sides of that comparison fall as
+  the lap runs: the tank drains at the real burn rate, the requirement shrinks at
+  the *saving* rate, so the margin between them erodes by only the difference, a
+  tenth of a lap's fuel over a whole lap. A car that begins the lap a hair inside
+  the limit therefore trips it a hair before the line — the alarm arrives at the
+  pit entry it was meant to warn about. So the call is taken **once, as the line
+  is crossed**, which makes it stable for the whole lap and delivers it with a
+  whole lap in hand. A continuous net still runs underneath for the case the line
+  decision cannot see: not enough left to reach the line at all.
+
+  Covered by `npm run test:fuel` (15 checks), including the regression guard for
+  the timing — on the boundary lap the alarm must stay clear on the lap the car
+  can still make, and appear within the first tenth of the next one.
+
+- **Demo mode can show it.** The simulator raises the same call as its tank runs
+  down. It is the loudest thing the overlay ever does and nobody should first
+  meet it in a race.
+
 ## 0.35.0 — 2026-07-29
 
 ### Added

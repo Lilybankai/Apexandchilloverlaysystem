@@ -19,7 +19,7 @@
 
   var header, modeChip, overlapEl;
   var stats = {};
-  var refuelEl, pitEl;
+  var refuelEl, pitEl, setAlarm;
   var cache = {};
   var grids = {};
   /** Shared widget context, kept so the setters can reach the glow helpers. */
@@ -116,6 +116,11 @@
     margin.appendChild(refuelEl);
     margin.appendChild(pitEl);
     mount.appendChild(margin);
+
+    // Added last so it inserts itself ABOVE everything built above it, and
+    // outside the rotating FUEL/ENERGY grids — a call the driver has one lap to
+    // act on cannot be hidden behind a 20-second rotation.
+    setAlarm = window.ApexOverlay.alarmBar(mount);
   }
 
   function setStat(key, value, unitSmall) {
@@ -188,12 +193,24 @@
     if (overlapEl.hidden) overlapEl.hidden = false;
   }
 
+  /**
+   * Which budget sent the driver in. Fuel and energy are refilled from different
+   * rows of the pit menu, so an alarm that only said "PIT" would leave the one
+   * decision it triggered still to be worked out.
+   */
+  function pitCallText(f) {
+    return f.pitThisLapReason === "energy"
+      ? "⛽ PIT THIS LAP FOR ENERGY"
+      : "⛽ PIT THIS LAP FOR FUEL";
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     octx = ctx;
     var f = frame.fuel;
     if (!f) return;
 
+    setAlarm(f.pitThisLap === true, pitCallText(f));
     updateOverlap(f);
 
     var hasEnergy = typeof f.virtualEnergyPct === "number";

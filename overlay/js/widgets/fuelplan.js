@@ -83,6 +83,7 @@
   var els = {}; // cached DOM references
   var cache = {}; // last-rendered text, to avoid churn
   var mounted = false;
+  var setAlarm = null; // shared pit-call banner (ApexOverlay.alarmBar)
   var lastPlan = null; // most recent calculateFuel() result
   var lastStints = []; // most recent stint plan (for live highlighting)
 
@@ -474,6 +475,10 @@
     // --- SETUP (collapsible inputs) ---
     buildSetup(mount);
 
+    // Built last so it inserts itself above the strategy hero: on the lap it
+    // fires, which lap to come in on outranks how much to put in when you do.
+    setAlarm = window.ApexOverlay.alarmBar(mount);
+
     mounted = true;
   }
 
@@ -859,6 +864,18 @@
   function renderLive(frame) {
     var f = frame.fuel;
     if (!f) return;
+
+    // The same call, in the same words, as the fuel widget carries — see
+    // ApexOverlay.alarmBar for why it is one implementation and not two.
+    if (setAlarm) {
+      setAlarm(
+        f.pitThisLap === true,
+        f.pitThisLapReason === "energy"
+          ? "⛽ PIT THIS LAP FOR ENERGY"
+          : "⛽ PIT THIS LAP FOR FUEL",
+      );
+    }
+
     var hasVE = num(f.virtualEnergyPct);
 
     // Remaining big number + bar.
