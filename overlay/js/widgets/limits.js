@@ -227,7 +227,18 @@
 
     /* ------------------------------ the counts --------------------------- */
 
-    var points = tl.points || 0;
+    // The sim's OWN running total when it can be read, ours only as a fallback.
+    //
+    // `simPoints` comes from LMU's trace log (see telemetry/lmuTraceLimits.ts) and
+    // is the stewards' figure — the same number the in-game HUD shows, validated
+    // against the session-end results XML. `tl.points` is our reconstruction from
+    // geometry, which cannot see what the sim charges: it counts excursions, and
+    // the sim charges for time GAINED, so the two disagree by design.
+    //
+    // Checked with `has()` rather than truthiness: a real 0 from the sim is the
+    // most reassuring number on the widget and must not fall through to ours.
+    var fromSim = tl.pointsSource === "sim" && fmt.has(tl.simPoints);
+    var points = fromSim ? tl.simPoints : tl.points || 0;
     var limit = pipOverride || tl.pointsLimit || 10;
     var penalties = ctx.penaltyCount(tl);
     var freshWarning = fmt.has(tl.msSinceWarning) && tl.msSinceWarning < ALARM_MS;
@@ -386,7 +397,13 @@
     // NOT repeat the penalty: the chip already carries that, and the header is a
     // narrow strip that wraps onto two lines the moment it is given a word as
     // long as "PENALTIES" — which pushed the panel title onto two lines with it.
-    setMeta(points + " / " + limit);
+    // The `~` marks OUR estimate, and its absence marks the sim's own figure.
+    //
+    // A driver told they are on 4.75 of 5 drives the rest of the stint to that
+    // number, so it has to be clear whether the stewards said it or we inferred it.
+    // One character, in the header rather than the headline, because the whole
+    // point of the headline is that it does not change shape mid-glance.
+    setMeta((fromSim ? "" : "~") + points + " / " + limit);
   }
 
   window.ApexOverlay.registerWidget("limits", {

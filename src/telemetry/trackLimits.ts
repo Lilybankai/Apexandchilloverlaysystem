@@ -53,8 +53,16 @@ import type { TrackLimitsState } from './types';
  * scores points, and a drive-through is issued once the running total passes a
  * threshold the *session* configures — leagues publish theirs on the event's
  * registration page. There is therefore no universally correct number to hard-code
- * here, which is why this is only the default and the real one is an operator
- * setting (see {@link TrackLimitsInput.pointsLimit}).
+ * here, which is why this is only the default (see
+ * {@link TrackLimitsInput.pointsLimit}).
+ *
+ * **The sim publishes the real one.** `/rest/sessions` carries
+ * `SESSSET_cuts_allowed` — the allowance this session was actually configured
+ * with — and `LmuRestProvider.refreshRules` passes it in, so on LMU this default
+ * applies only before the first read or outside a session. It stays a middling
+ * league figure rather than becoming, say, 5, because it is what a driver sees
+ * when nothing authoritative is available, and under-promising the allowance is
+ * the safe direction to be wrong in.
  *
  * Ten is a middling league figure and, more usefully, is well clear of the one
  * threshold LMU *does* document — a single infringement worth 3 points is an

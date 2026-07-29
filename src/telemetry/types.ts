@@ -776,6 +776,39 @@ export interface TrackLimitsState {
    * established. Omitted alongside {@link penaltyType}.
    */
   penaltyDetail?: string;
+  /**
+   * **The sim's own running total**, in points, when it can be read — as opposed to
+   * {@link points}, which is our reconstruction from geometry.
+   *
+   * Read from LMU's trace log, which is the only live source for it anywhere:
+   * shared memory and the REST API publish the *consequence* (a penalty count) and
+   * never the total, and the results XML publishes the total but not until the
+   * session has ended. See `telemetry/lmuTraceLimits.ts`.
+   *
+   * Validated against that XML: for one race the reader's charges reproduced the
+   * sim's thirteen, in order, summing to exactly the 5.00 that earned the
+   * drive-through.
+   *
+   * Omitted — not zeroed — when the trace is unavailable, which is the difference
+   * between "the stewards have you at nothing" and "we cannot see the stewards".
+   */
+  simPoints?: number;
+  /**
+   * What the sim charged for the most recent infringement, its own figure. The
+   * counterpart to {@link lastInfringementPoints}, which is ours.
+   */
+  simLastCharge?: number;
+  /** How many infringements the sim has actually charged for since its last reset. */
+  simCharged?: number;
+  /**
+   * Where {@link points} on the widget came from: `sim` when the trace is being
+   * read, `estimated` when it is our geometry.
+   *
+   * The widget must be able to say which. A driver who is told they are on 4.75
+   * will drive the rest of the stint differently, and that is only a fair thing to
+   * show them if it is the stewards' number rather than our approximation of it.
+   */
+  pointsSource?: 'sim' | 'estimated';
 }
 
 /* -------------------------------------------------------------------------- */

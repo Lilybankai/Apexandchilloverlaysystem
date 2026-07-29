@@ -41,6 +41,7 @@ import { FuelCalculator, resolvePitCall } from './fuelCalculator';
 import { LmuLocalCarReader, type AidSettings, type LocalCarPhysics } from './lmuLocalCar';
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
+import { LmuTraceLimitsReader } from './lmuTraceLimits';
 import { buildRadar, type RadarCar } from './radar';
 import {
   TELEMETRY_SCHEMA_VERSION,
@@ -115,6 +116,16 @@ const GARAGE_STALE_AFTER_MS = 10_000;
  * every 150 ms.
  */
 const WEATHER_REFRESH_INTERVAL_MS = 15_000;
+/**
+ * How often to re-read the session's own rule settings (ms).
+ *
+ * Slower than the weather: these change when a session changes, not while it is
+ * running. It is polled at all rather than read once because the provider outlives
+ * the session — practice, qualifying and the race are three sessions on one
+ * connection, and a league server can roll to an event with a different allowance
+ * without the overlay restarting.
+ */
+const RULES_REFRESH_INTERVAL_MS = 30_000;
 /**
  * How long to keep showing the last good local-car physics after a read returns
  * nothing. The shared-memory reader occasionally misses a single poll (a torn
@@ -331,16 +342,36 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Raw per-session weather forecast from `/rest/sessions/weather`. */
   private weatherForecast: RestWeather | null = null;
   private weatherTimer: NodeJS.Timeout | null = null;
+  /**
+   * The session's own track-limits allowance, from `SESSSET_cuts_allowed`, or
+   * `null` when the sim has not published one.
+   *
+   * `null` matters: it is the difference between "this session allows 5" and "we
+   * do not know", and only the first may be shown as a threshold. See
+   * {@link refreshRules}.
+   */
+  private cutsAllowed: number | null = null;
+  private rulesTimer: NodeJS.Timeout | null = null;
+  /**
+   * Reads the sim's own track-limit charges from its trace log — the only live
+   * source for them. See `telemetry/lmuTraceLimits.ts` for why a log file, and for
+   * what was ruled out first.
+   */
+  private readonly traceLimits: LmuTraceLimitsReader;
+  /** The session the trace reader was last reset for, so a restart clears its total. */
+  private traceSessionKey = '';
 
   public constructor(config: LmuRestConfig) {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
     this.verbose = config.verbose;
+    this.traceLimits = new LmuTraceLimitsReader(config.verbose);
   }
 
   public async start(): Promise<void> {
     this.fallback.start();
     this.localCar.start(); // best-effort shared-memory reader for the driven car
     this.scoring.start(); // …and the scoring buffer, for track limits + penalties
+    this.traceLimits.start(); // …and the trace log, for the sim's own points
     await this.refresh(); // prime the cache before the first poll
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
@@ -357,6 +388,9 @@ export class LmuRestProvider implements TelemetryProvider {
     void this.refreshWeather();
     this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
     this.weatherTimer.unref?.();
+    void this.refreshRules();
+    this.rulesTimer = setInterval(() => void this.refreshRules(), RULES_REFRESH_INTERVAL_MS);
+    this.rulesTimer.unref?.();
     if (this.lastOkAt > 0) {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
     } else {
@@ -388,9 +422,14 @@ export class LmuRestProvider implements TelemetryProvider {
       clearInterval(this.weatherTimer);
       this.weatherTimer = null;
     }
+    if (this.rulesTimer) {
+      clearInterval(this.rulesTimer);
+      this.rulesTimer = null;
+    }
     this.fallback.stop();
     this.localCar.stop();
     this.scoring.stop();
+    this.traceLimits.stop();
     this.live = false;
   }
 
@@ -514,6 +553,47 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch (err) {
       // Endpoint is only alive inside a session; keep the last forecast.
       if (this.verbose) console.error('[lmu] weather refresh failed:', (err as Error).message);
+    }
+  }
+
+  /**
+   * Read the session's track-limits allowance from `/rest/sessions`.
+   *
+   * ## Why this exists
+   * The points limit shown on the Track Limits widget was a hard-coded default
+   * (`DEFAULT_POINTS_LIMIT`) — a middling league figure, and a guess. It turns out
+   * the sim publishes the real one: `/rest/sessions` carries the whole session
+   * setup, including
+   *
+   * ```
+   * SESSSET_cuts_allowed = { currentValue: 5,  numStepsTotal: 63 }
+   * SESSSET_cut_rules    = { currentValue: 1,  stringValue: "Default" }
+   * ```
+   *
+   * `cuts_allowed` is the allowance this session was configured with, so a driver
+   * counting up to it is counting to the number that will actually be enforced
+   * instead of to ours.
+   *
+   * ## What is deliberately NOT done with it
+   * `cut_rules` is left alone. It has three states and only the middle one has
+   * been observed (`1` → `"Default"`), so what `0` and `2` mean — and in
+   * particular whether either is a "show but never penalise" mode that should
+   * suppress the countdown entirely — is unknown. Acting on an unobserved value
+   * would mean either hiding a real threshold or promising immunity that is not
+   * there; the raw setting is logged by `scripts/probe-lmu-penalty.js` so it can be
+   * pinned by changing it in a session rather than guessed at here.
+   *
+   * A missing or nonsensical value leaves {@link cutsAllowed} as `null` and the
+   * widget falls back to its default, which is the pre-existing behaviour.
+   */
+  private async refreshRules(): Promise<void> {
+    try {
+      const data = await this.getJson<Record<string, { currentValue?: unknown }>>('/rest/sessions');
+      const raw = data?.SESSSET_cuts_allowed?.currentValue;
+      this.cutsAllowed = typeof raw === 'number' && raw > 0 ? raw : null;
+    } catch (err) {
+      // Only alive inside a session; keep whatever the last session published.
+      if (this.verbose) console.error('[lmu] cut rules refresh failed:', (err as Error).message);
     }
   }
 
@@ -1564,7 +1644,19 @@ export class LmuRestProvider implements TelemetryProvider {
       return undefined;
     }
     if (!car) return undefined;
-    return (
+
+    // The trace reader resets itself on the sim's own `SessionName` line, which is
+    // the authoritative signal; this covers the case where the overlay starts
+    // mid-session and then the session changes under it.
+    const sessionKey = `${session.track}|${session.type}`;
+    if (sessionKey !== this.traceSessionKey) {
+      this.traceSessionKey = sessionKey;
+      this.traceLimits.reset();
+    }
+    this.traceLimits.poll();
+    const trace = this.traceLimits.state();
+
+    const state =
       this.trackLimits.update({
         pathLateralM: car.pathLateralM,
         trackEdgeM: car.trackEdgeM,
@@ -1578,9 +1670,26 @@ export class LmuRestProvider implements TelemetryProvider {
         // Track + session type: a new session zeroes the count, and so does
         // driving the same session at a different circuit (a rolling server).
         sessionKey: `${session.track}|${session.type}`,
+        // The session's own allowance when it published one, so the pips count to
+        // the number that will be enforced rather than to our default.
+        ...(this.cutsAllowed !== null ? { pointsLimit: this.cutsAllowed } : {}),
         nowMs: Date.now(),
-      }) ?? undefined
-    );
+      }) ?? undefined;
+
+    if (!state) return undefined;
+    if (!trace) return state; // no trace log — our own count, as before
+
+    // The sim's figures ride alongside ours rather than overwriting them: `points`
+    // stays the geometric reconstruction so the two can be compared in the field,
+    // and `pointsSource` tells the widget which one it is entitled to present as
+    // the stewards' view.
+    return {
+      ...state,
+      simPoints: trace.points,
+      simCharged: trace.charged,
+      ...(trace.lastIncident ? { simLastCharge: trace.lastIncident.warnPts } : {}),
+      pointsSource: 'sim',
+    };
   }
 
   /**
