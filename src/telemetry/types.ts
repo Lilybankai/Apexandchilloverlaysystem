@@ -732,6 +732,35 @@ export interface TrackLimitsState {
    * {@link UNKNOWN_VALUE} when it has not moved this session.
    */
   msSincePenalty: number;
+  /**
+   * Milliseconds since {@link penalties} last **decreased** — the sim confirming
+   * a penalty has been discharged. {@link UNKNOWN_VALUE} until one has been.
+   *
+   * This is the only confirmation there is that a penalty was served correctly:
+   * nothing in the feed says "that drive-through counted". Without it a driver
+   * leaves the pit lane not knowing whether it took, which is exactly when they
+   * go round again to be safe and lose the time twice.
+   */
+  msSinceServed: number;
+  /**
+   * What kind of penalty is outstanding, in LMU's own words — `"STOP/GO"`,
+   * `"DRIVE THRU"` — taken from the row the sim puts in the pit menu for it.
+   *
+   * **Omitted whenever we cannot name it**, which is deliberate and load-bearing.
+   * The count is a fact; the type is read from a menu row whose naming we have
+   * only observed for one kind of penalty, so it is reported only when the sim's
+   * own menu is affirmatively showing one. Guessing "STOP/GO" at a driver
+   * serving a drive-through would send them into their box and turn a 20-second
+   * penalty into a lap — strictly worse than the "1 PENALTY" they get today.
+   */
+  penaltyType?: string;
+  /**
+   * The penalty row's value exactly as the pit menu renders it, e.g.
+   * `"Yes(0Laps)"`. Passed through verbatim rather than parsed: it is the sim's
+   * wording, and the meaning of the parenthesised part is not something we have
+   * established. Omitted alongside {@link penaltyType}.
+   */
+  penaltyDetail?: string;
 }
 
 /* -------------------------------------------------------------------------- */

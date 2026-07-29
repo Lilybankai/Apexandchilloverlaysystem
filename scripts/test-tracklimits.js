@@ -203,6 +203,38 @@ console.log('\n4) The sim\'s own penalties, kept separate from our warnings');
   r.hold(ONTRACK, 200, { penalties: 1 });
   check('a penalty from the sim is passed straight through', r.state.penalties === 1);
   check('…and stamps a time-since', r.state.msSincePenalty >= 0, r.state.msSincePenalty);
+  check('but nothing served yet', r.state.msSinceServed === -1, r.state.msSinceServed);
+}
+
+{
+  // The count going DOWN is the only confirmation anywhere in the feed that a
+  // penalty was discharged — nothing says "that drive-through counted". Without
+  // it a driver leaves the lane unsure and goes round again to be safe.
+  const r = rig();
+  r.hold(ONTRACK, 200, { penalties: 1 });
+  check('standing penalty is not a served one', r.state.msSinceServed === -1);
+
+  r.hold(ONTRACK, 200, { penalties: 0 });
+  check('serving it stamps a time-since-served', r.state.msSinceServed >= 0, r.state.msSinceServed);
+  check('…and the count is back to zero', r.state.penalties === 0);
+  // Picking one up again must not read as having served one.
+  const before = r.state.msSinceServed;
+  r.hold(ONTRACK, 200, { penalties: 1 });
+  check(
+    'a NEW penalty does not re-stamp served',
+    r.state.msSinceServed > before,
+    r.state.msSinceServed,
+  );
+  check('…and stamps the arrival instead', r.state.msSincePenalty >= 0);
+}
+
+{
+  // Two outstanding, one served: still a discharge, and still one to go.
+  const r = rig();
+  r.hold(ONTRACK, 100, { penalties: 2 });
+  r.hold(ONTRACK, 100, { penalties: 1 });
+  check('serving one of two is announced', r.state.msSinceServed >= 0, r.state.msSinceServed);
+  check('…with the other still standing', r.state.penalties === 1);
 }
 
 {

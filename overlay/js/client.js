@@ -280,8 +280,10 @@
     // widget and the MFD both announce.
     consequenceMs: CONSEQUENCE_MS,
     consequenceFresh: consequenceFresh,
+    servedFresh: servedFresh,
     penaltyCount: penaltyCount,
     penaltyText: penaltyText,
+    penaltyLabel: penaltyLabel,
   };
 
   /* ------------------------------------------------------------------ */
@@ -339,6 +341,24 @@
     return typeof since === "number" && since >= 0 && since < CONSEQUENCE_MS;
   }
 
+  /**
+   * How long "SERVED" is announced for after the sim discharges a penalty.
+   *
+   * Longer than the arrival window above, because it answers a question the
+   * driver is actively asking rather than telling them something they already
+   * felt. Leaving the pit lane unsure whether a drive-through counted is how a
+   * driver goes round again to be safe and pays for it twice, and the exit is
+   * busy enough that a four-second confirmation can be missed entirely.
+   */
+  var SERVED_MS = 8000;
+
+  /** Whether a penalty was discharged within the announce window. */
+  function servedFresh(trackLimits) {
+    if (!trackLimits) return false;
+    var since = trackLimits.msSinceServed;
+    return typeof since === "number" && since >= 0 && since < SERVED_MS;
+  }
+
   /** The sim's outstanding penalty count, or 0 when unknown/none. */
   function penaltyCount(trackLimits) {
     if (!trackLimits) return 0;
@@ -349,6 +369,19 @@
   /** "1 PENALTY" / "2 PENALTIES" — the wording both surfaces use. */
   function penaltyText(n) {
     return n + (n === 1 ? " PENALTY" : " PENALTIES");
+  }
+
+  /**
+   * The penalty in as many words as the sim has given us: its kind when the pit
+   * menu named one ("STOP/GO"), the bare count when it did not.
+   *
+   * The count is never dropped even when the kind is known — with two
+   * outstanding, "STOP/GO" alone would read as one thing to serve.
+   */
+  function penaltyLabel(trackLimits, n) {
+    var kind = trackLimits && trackLimits.penaltyType;
+    if (!kind) return penaltyText(n);
+    return n > 1 ? n + "× " + kind : kind;
   }
 
   /**

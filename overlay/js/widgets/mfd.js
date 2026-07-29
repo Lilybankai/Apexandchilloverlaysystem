@@ -785,8 +785,22 @@
     if (!rcRows.box || !ctx || !ctx.penaltyCount) return;
     var tl = frame.player ? frame.player.trackLimits : null;
     var n = ctx.penaltyCount(tl);
-    critText(rcRows.penalty.value, tl ? String(n) : '—');
-    var state = !tl ? 'nodata' : ctx.consequenceFresh(tl) ? 'fresh' : n > 0 ? 'standing' : 'clean';
+    // The KIND when the sim named it, because this row sits directly above the
+    // SERVE control the driver is about to set — and setting it to the wrong
+    // one is how a drive-through becomes a stop in the box that serves nothing.
+    // A bare count when it did not; never a guess.
+    var served = ctx.servedFresh(tl);
+    var text = !tl ? '—' : served && n === 0 ? 'SERVED' : n > 0 ? ctx.penaltyLabel(tl, n) : String(n);
+    critText(rcRows.penalty.value, text);
+    var state = !tl
+      ? 'nodata'
+      : served
+        ? 'served'
+        : ctx.consequenceFresh(tl)
+          ? 'fresh'
+          : n > 0
+            ? 'standing'
+            : 'clean';
     if (rcRows.box.getAttribute('data-state') !== state) {
       rcRows.box.setAttribute('data-state', state);
     }

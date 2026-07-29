@@ -701,13 +701,19 @@ export class LmuRestProvider implements TelemetryProvider {
     // makes lifting-to-negate detectable. Absent when spectating, in which case
     // the tracker scores every excursion rather than guessing (see
     // TrackLimitsInput.throttle).
-    const trackLimits = this.buildTrackLimits(
+    const limitsBase = this.buildTrackLimits(
       playerCar,
       scoringCar,
       session,
       drivenSpeedKph,
       local ? local.throttle : null,
     );
+    // The penalty's KIND rides on the track-limits block because that is where
+    // its count already lives, and the two are read together or not at all.
+    const trackLimits =
+      limitsBase && limitsBase.penalties > 0
+        ? { ...limitsBase, ...this.buildPenaltyType() }
+        : limitsBase;
     const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there).
@@ -1501,6 +1507,61 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
+   * Name the outstanding penalty from the sim's own pit menu.
+   *
+   * LMU publishes the *count* of penalties in three places and the *kind* in
+   * none of them — which is how a driver ends up staring at "1 PENALTY" with the
+   * in-game HUD off, unable to tell a drive-through from a stop/go.
+   *
+   * ## Where the kind actually is, and how that was established
+   * The sim inserts a row into the **pit menu** for the penalty it wants served,
+   * named after it. Verified live, in both directions, on one car in one
+   * session:
+   *
+   *   penalties = 1  → the menu carried `PMC 1 "STOP/GO:"` = `"Yes(0Laps)"`
+   *   penalties = 0  → that row was **absent from the menu entirely**
+   *
+   * The second half is what makes this trustworthy. A row that is merely present
+   * while a penalty happens to be outstanding proves nothing; a row that appears
+   * and disappears with the count is the sim telling us what it wants served.
+   * And the menu is already on the wire every 500 ms for the MFD widget, so this
+   * costs nothing but the lookup.
+   *
+   * ## Why presence, and not the row's value, is the test
+   * The row defaults to `Yes` but the driver can set it to `No` — that is a
+   * choice about *this* pit stop, not a statement that the penalty has gone. Its
+   * existence is the signal; its value is passed through as detail only.
+   *
+   * ## Why an unrecognised row yields nothing at all
+   * A penalty type is not a display detail: told "STOP/GO" a driver stops in
+   * their box, and doing that to discharge a drive-through does not serve it —
+   * it turns twenty seconds into a lap. Only the drive-through's exact wording
+   * is still unobserved (this car has not had one), so {@link PENALTY_ROW}
+   * carries the plausible spellings and anything outside them falls back to the
+   * bare count the widgets show today. Being unhelpful is recoverable; being
+   * confidently wrong here is not. `scripts/probe-lmu-penalty.js` captures the
+   * menu for whichever penalty is outstanding, so the drive-through wording can
+   * be pinned the same way rather than left to a guess.
+   */
+  private buildPenaltyType(): { penaltyType?: string; penaltyDetail?: string } {
+    const rows = this.pitMenuRaw;
+    if (!Array.isArray(rows)) return {};
+    for (const row of rows) {
+      const raw = String(row?.name ?? '');
+      const name = raw.replace(/:\s*$/, '').trim();
+      if (!PENALTY_ROW.test(name)) continue;
+      const opts = Array.isArray(row.settings) ? row.settings : [];
+      const idx = typeof row.currentSetting === 'number' ? row.currentSetting : -1;
+      const text = String(opts[idx]?.text ?? '').trim();
+      return {
+        penaltyType: name.toUpperCase(),
+        ...(text ? { penaltyDetail: text } : {}),
+      };
+    }
+    return {};
+  }
+
+  /**
    * Feed the lap recorder, and write out any lap that just completed.
    *
    * Centred on the DRIVEN car, like track limits and the radar — a lap database
@@ -1770,6 +1831,18 @@ function round2(v: number): number {
 }
 
 /* ----------------------------- lap-delta tracker -------------------------- */
+
+/**
+ * Pit-menu rows that name a penalty rather than a service.
+ *
+ * `STOP/GO` is confirmed — the row appears in the menu exactly while a stop/go
+ * is outstanding and vanishes when it is served. The drive-through spellings are
+ * plausible rather than observed, which is why a row outside this list produces
+ * no claim at all rather than a fallback guess. Widen it from the output of
+ * `scripts/probe-lmu-penalty.js`, not from intuition.
+ * See {@link LmuRestProvider.buildPenaltyType}.
+ */
+const PENALTY_ROW = /^(STOP\s*[/-]?\s*GO|DRIVE\s*[-]?\s*(THRU|THROUGH)|PENALTY)$/i;
 
 /** Per-car state for {@link LapDeltaTracker}. */
 interface CarDeltaState {

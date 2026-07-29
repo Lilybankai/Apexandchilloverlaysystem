@@ -2057,6 +2057,17 @@ body.ig-editing #widget-radar .panel__header {
 @media (prefers-reduced-motion: reduce) {
   .mfd__penalty[data-state="fresh"] { animation: none; background-color: rgba(255, 84, 112, 0.45); }
 }
+/* Discharged. Green, steady, and NOT sharing the red group's pulse: the driver
+   is rejoining traffic, and this only has to answer "did that count?". */
+.mfd__penalty[data-state="served"] {
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  margin: -6px;
+  background-color: rgba(53, 208, 127, 0.26);
+}
+.mfd__penalty[data-state="served"] .mfd__row[data-cat="service"] .mfd__value {
+  color: var(--pos-gain);
+}
 
 .mfd__row {
   display: flex;
@@ -2438,6 +2449,16 @@ body.ig-editing #widget-radar .panel__header {
 }
 .limits__banner[data-kind="scored"] {
   background: rgba(255, 176, 32, 0.92);
+  color: var(--text-invert);
+  animation: none;
+}
+/* Penalty discharged. Green and steady, like SAVED — this is the one penalty
+   message that is good news, and it must not be mistakable at a glance for the
+   red one that says you have picked another up. It does not pulse: the driver is
+   leaving the pit lane and rejoining traffic, and the job here is to answer
+   "did that count?" without also demanding attention. */
+.limits__banner[data-kind="served"] {
+  background: rgba(53, 208, 127, 0.94);
   color: var(--text-invert);
   animation: none;
 }

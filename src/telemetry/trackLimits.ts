@@ -347,6 +347,8 @@ export class TrackLimitsTracker {
   private lastNegatedAt = 0;
   /** `nowMs` at which {@link penalties} last increased. */
   private lastPenaltyAt = 0;
+  /** `nowMs` at which {@link penalties} last DECREASED — one was discharged. */
+  private lastServedAt = 0;
   /** Last penalty count seen, to detect the increment. */
   private penalties: number = UNKNOWN_VALUE;
 
@@ -364,6 +366,7 @@ export class TrackLimitsTracker {
     this.lastWarningAt = 0;
     this.lastNegatedAt = 0;
     this.lastPenaltyAt = 0;
+    this.lastServedAt = 0;
     this.penalties = UNKNOWN_VALUE;
   }
 
@@ -401,6 +404,15 @@ export class TrackLimitsTracker {
     if (penalties !== UNKNOWN_VALUE) {
       if (this.penalties !== UNKNOWN_VALUE && penalties > this.penalties) {
         this.lastPenaltyAt = input.nowMs;
+      }
+      // The count going DOWN is the sim confirming one has been discharged, and
+      // it is the only confirmation there is: nothing in the feed says "that
+      // drive-through counted". Drivers otherwise finish the lane not knowing
+      // whether they served it correctly or are about to be told to do it again
+      // — which is exactly when they go back round and lose another 20 seconds
+      // to be safe.
+      if (this.penalties !== UNKNOWN_VALUE && penalties < this.penalties) {
+        this.lastServedAt = input.nowMs;
       }
       this.penalties = penalties;
     }
@@ -512,6 +524,7 @@ export class TrackLimitsTracker {
       msSinceWarning: this.lastWarningAt ? input.nowMs - this.lastWarningAt : UNKNOWN_VALUE,
       msSinceNegated: this.lastNegatedAt ? input.nowMs - this.lastNegatedAt : UNKNOWN_VALUE,
       msSincePenalty: this.lastPenaltyAt ? input.nowMs - this.lastPenaltyAt : UNKNOWN_VALUE,
+      msSinceServed: this.lastServedAt ? input.nowMs - this.lastServedAt : UNKNOWN_VALUE,
     };
   }
 

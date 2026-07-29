@@ -239,10 +239,19 @@
     // for. It must not change meaning under the driver mid-glance.
     ctx.crit(countEl, String(points));
 
-    // The sim's verdict, in its own chip.
+    // The sim's verdict, in its own chip — named when the sim named it. WHICH
+    // penalty is the actionable half: a drive-through and a stop/go are served
+    // differently, and with the in-game HUD off this chip is the only place that
+    // says which. Falls back to the bare count when the type is unknown rather
+    // than guessing (see buildPenaltyType in the provider).
     if (penalties > 0) {
       if (penaltyEl.hidden) penaltyEl.hidden = false;
-      ctx.crit(penaltyEl, penalties + (penalties === 1 ? " PEN" : " PENS"));
+      ctx.crit(
+        penaltyEl,
+        tl.penaltyType
+          ? ctx.penaltyLabel(tl, penalties)
+          : penalties + (penalties === 1 ? " PEN" : " PENS"),
+      );
     } else if (!penaltyEl.hidden) {
       penaltyEl.hidden = true;
     }
@@ -250,14 +259,20 @@
     // The banner has three things to say, in descending order of consequence.
     // Only one can be up at a time, and at-risk outranks the rest while it is
     // live: it is the only one the driver can still act on.
+    var freshServed = ctx.servedFresh(tl);
     var banner = null;
     if (tl.atRisk) {
       // LIFT while the verdict is open; SAVED once they have. Saying "saved"
       // the instant they lift is the confirmation that makes the habit stick —
       // without it the driver lifts, sees no change, and stops bothering.
       banner = tl.liftedInTime ? "SAVED" : "LIFT";
+    } else if (freshServed) {
+      // Ranked above a fresh penalty: if both fired, the newer event is the
+      // discharge, and "PENALTY SERVED" is the answer to the question the driver
+      // is asking on the way out of the lane.
+      banner = "PENALTY SERVED";
     } else if (freshPenalty) {
-      banner = ctx.penaltyText(penalties);
+      banner = ctx.penaltyLabel(tl, penalties);
     } else if (freshWarning && fmt.has(tl.lastInfringementPoints)) {
       banner = "+" + tl.lastInfringementPoints +
         (tl.lastInfringementPoints === 1 ? " POINT" : " POINTS");
@@ -269,7 +284,17 @@
       if (bannerEl.textContent !== banner) bannerEl.textContent = banner;
       bannerEl.setAttribute(
         "data-kind",
-        tl.atRisk ? (tl.liftedInTime ? "saved" : "lift") : freshPenalty ? "penalty" : freshWarning ? "scored" : "saved",
+        tl.atRisk
+          ? tl.liftedInTime
+            ? "saved"
+            : "lift"
+          : freshServed
+            ? "served"
+            : freshPenalty
+              ? "penalty"
+              : freshWarning
+                ? "scored"
+                : "saved",
       );
     } else if (!bannerEl.hidden) {
       bannerEl.hidden = true;

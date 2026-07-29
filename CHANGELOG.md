@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.38.0 — 2026-07-29
+
+### Added
+
+- **The penalty now says which penalty it is.** With the in-game HUD off, a
+  penalty was a bare "1 PENALTY" — the count, never the kind — and a
+  drive-through and a stop/go are not served the same way. The Track Limits chip
+  and the MFD's RACE CONTROL row now read **STOP/GO** (or `2× STOP/GO`) when the
+  sim has named one.
+
+  Where the kind actually lives took finding. LMU publishes the *count* in three
+  places and the *kind* in none of them; what it does do is **insert a row into
+  the pit menu for the penalty it wants served, named after it**. Confirmed live,
+  in both directions, which is what makes it trustworthy rather than a
+  coincidence:
+
+  ```
+  penalties = 1  →  menu carries  PMC 1  "STOP/GO:" = "Yes(0Laps)"
+  penalties = 0  →  that row is absent from the menu entirely
+  ```
+
+  The menu is already on the wire every 500 ms for the MFD widget, so this costs
+  a lookup and nothing else. The row's *presence* is the signal — its value is a
+  choice about this stop, not a statement that the penalty has gone.
+
+  **An unrecognised row produces no claim at all.** Only the stop/go wording has
+  been observed; a drive-through has not, so the match list carries the plausible
+  spellings and anything outside them falls back to the bare count. Told
+  "STOP/GO" a driver stops in their box, and doing that to discharge a
+  drive-through does not serve it — it turns twenty seconds into a lap. Being
+  unhelpful is recoverable; being confidently wrong here is not.
+
+- **"PENALTY SERVED" — confirmation that it counted.** Green and steady on the
+  Track Limits banner for eight seconds, and on the MFD row, when the sim's
+  outstanding count *decreases*.
+
+  That decrease is the only confirmation anywhere in the feed: nothing says "that
+  drive-through counted". Without it a driver leaves the pit lane not knowing
+  whether it took, which is exactly when they go round again to be safe and pay
+  for the penalty twice. It outranks a freshly-issued penalty on the banner —
+  if both fired, the discharge is the newer event and the one being asked about
+  — and it is deliberately *not* red or pulsing: the driver is rejoining
+  traffic, and this only has to answer "did that count?".
+
+- **`scripts/probe-lmu-penalty.js`** — watches the penalty count, the pit menu,
+  and the `Extended` / `PitInfo` shared-memory buffers, printing a line whenever
+  anything penalty-shaped changes. Run it and drive; the next penalty of either
+  kind is captured exactly as the sim words it, so the drive-through row can be
+  pinned the same way the stop/go was rather than guessed at.
+
 ## 0.37.0 — 2026-07-29
 
 ### Added
