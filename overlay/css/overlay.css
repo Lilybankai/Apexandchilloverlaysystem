@@ -865,6 +865,24 @@
 .fuel__mode[data-mode="energy"] {
   color: var(--ac-cyan);
 }
+
+/* Names which reading the tyre grid's big line is showing. The view is cycled
+   from a wheel button, where the driver cannot see what they pressed, and a core
+   temp, a surface temp and a tread percentage are all two-or-three-digit numbers
+   — indistinguishable without being told which is which. Tier 3: it labels the
+   numbers, it is not one of them. */
+.tyres__mode {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  min-height: 1em;
+}
+/* Tread is the odd one out — a percentage among temperatures — so it gets the
+   accent, which is also the fastest way to see that the cycle has wrapped. */
+.tyres__mode[data-view="tread"] { color: var(--ac-cyan); }
 .fuel__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

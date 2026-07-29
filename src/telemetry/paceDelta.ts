@@ -46,6 +46,7 @@ export const EMPTY_PACE_DELTAS: PaceDeltas = {
   vAllTime: UNKNOWN_VALUE,
   vLast: UNKNOWN_VALUE,
   predictedLapSec: UNKNOWN_VALUE,
+  lapTimeSec: UNKNOWN_VALUE,
   refSessionSec: UNKNOWN_VALUE,
   refAllTimeSec: UNKNOWN_VALUE,
   lastLapSec: UNKNOWN_VALUE,
@@ -510,6 +511,11 @@ export class LocalPaceDeltaTracker {
       vAllTime: f.vAllTime.step(t, deltaV(this.allTime, t, d)),
       vLast: f.vLast.step(t, deltaV(this.last, t, d)),
       predictedLapSec,
+      // Only once a crossing has been seen. Before that the lap "started" where
+      // the car happened to be when we attached, and publishing that as an
+      // elapsed lap time would read seconds short — the very fault it exists to
+      // fix.
+      lapTimeSec: this.fromLine ? round2(t) : UNKNOWN_VALUE,
       refSessionSec: this.session ? round2(this.session.lapSec) : UNKNOWN_VALUE,
       refAllTimeSec: this.allTime ? round2(this.allTime.lapSec) : UNKNOWN_VALUE,
       lastLapSec: this.lastLapSec === UNKNOWN_VALUE ? UNKNOWN_VALUE : round2(this.lastLapSec),

@@ -176,6 +176,15 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
+/** Name a wetness fraction — mirrors wetnessBand() in the LMU provider. */
+function simWetnessBand(wet: number): string {
+  if (wet < 0.02) return 'DRY';
+  if (wet < 0.2) return 'DAMP';
+  if (wet < 0.5) return 'WET';
+  if (wet < 0.8) return 'VERY WET';
+  return 'SATURATED';
+}
+
 /** Small symmetric jitter in [-amp, amp]. */
 function jitter(amp: number): number {
   return (Math.random() * 2 - 1) * amp;
@@ -225,6 +234,8 @@ export class SimulatorProvider implements TelemetryProvider {
   private tyreTemps = { fl: 78, fr: 80, rl: 82, rr: 84 };
   private tyreWear = { fl: 1, fr: 1, rl: 1, rr: 1 };
   private rainIntensity = 0;
+  /** Which way the demo track is going, for the weather widget's trend arrow. */
+  private wetTrend: 'drying' | 'wetting' | 'steady' = 'steady';
   private weatherPhase = 0;
   /**
    * Seconds of simulated session time. Demo mode has no sim clock of its own,
@@ -343,6 +354,7 @@ export class SimulatorProvider implements TelemetryProvider {
       vAllTime: round2(simDelta * 0.9 + 0.21),
       vLast: round2(simDelta * 0.9 - 0.13),
       predictedLapSec: round2(player.bestLapSec + simDelta),
+      lapTimeSec: round2(player.progress * player.lapSec),
       refSessionSec: round2(player.bestLapSec),
       refAllTimeSec: round2(player.bestLapSec - 0.21),
       lastLapSec: round2(player.lastLapSec),
@@ -409,6 +421,13 @@ export class SimulatorProvider implements TelemetryProvider {
         ambientTempC: 22 + Math.sin(this.weatherPhase * 0.7) * 0.8 - this.rainIntensity * 3,
         rainIntensity: this.rainIntensity,
         trackWetness: clamp01(this.rainIntensity * 1.2),
+        // Named condition and trend, so demo mode exercises the wet-weather
+        // readout instead of leaving it permanently on the dry branch. The
+        // simulator's rain builds and clears over the stint, so this walks the
+        // whole band scale on its own.
+        trackCondition: simWetnessBand(clamp01(this.rainIntensity * 1.2)),
+        trackTrend: this.wetTrend,
+        trackSpread: round2(clamp01(this.rainIntensity * 0.35)),
         forecast: this.buildForecast(),
       },
       fuel,
@@ -1289,7 +1308,13 @@ export class SimulatorProvider implements TelemetryProvider {
     this.weatherPhase += dt * 0.02;
     // Slowly build then clear light rain over the stint to exercise the widget.
     const wave = Math.sin(this.weatherPhase * 0.5);
-    this.rainIntensity = clamp01(Math.max(0, wave - 0.5) * 0.8);
+    const next = clamp01(Math.max(0, wave - 0.5) * 0.8);
+    // Which way the surface is going, for the widget's trend arrow. The live
+    // provider works this out over three minutes of history because the real
+    // feed jitters; here the curve is smooth, so the sign of one step is enough.
+    this.wetTrend =
+      next > this.rainIntensity ? 'wetting' : next < this.rainIntensity ? 'drying' : 'steady';
+    this.rainIntensity = next;
   }
 
   private buildForecast(): WeatherForecastSlot[] {

@@ -16,7 +16,7 @@
  *   2. It must not cry wolf on a lap a driver could have nursed home, because an
  *      alarm that is sometimes wrong is one drivers learn to drive through.
  */
-const { FuelCalculator } = require(require('path').join(__dirname, '..', 'dist', 'telemetry', 'fuelCalculator.js'));
+const { FuelCalculator, resolvePitCall } = require(require('path').join(__dirname, '..', 'dist', 'telemetry', 'fuelCalculator.js'));
 
 const FRAMES = 60;
 let pass = 0, fail = 0;
@@ -169,7 +169,42 @@ console.log('\n9) Putting fuel in stands it down');
   check('cleared by refuelling', after.pitThisLap !== true);
 }
 
-console.log('\n10) Same arithmetic in energy units (percent)');
+console.log('\n10) A stop that adds LESS than the lap burned still stands it down');
+{
+  // The bug this guards: the stand-down used to compare the level against where
+  // the lap STARTED, which is a whole lap stale by the time the driver reaches
+  // their box. Take on two laps' worth after a lap that burned three and the
+  // level is still below where the lap began, so the alarm never cleared — it
+  // followed the driver out of the pits and round the next lap. Fuel going in is
+  // the event; the level relative to some earlier moment is not.
+  const c = primed(3, 5.3, 0);
+  const frames = drive(c, { laps: 1, burn: 3, startFuel: 5.3, startLap: 3 });
+  check('armed on the way in', !!firstAlarm(frames));
+  // A splash of 2.0 L — less than the 3.0 L this lap has already burned.
+  const topUp = c.update({
+    currentFuelLiters: 4.3,
+    capacityLiters: 100,
+    lapsCompleted: 3,
+    totalRaceLaps: 0,
+    timeRemainingSec: -1,
+    avgLapTimeSec: 90,
+    lapFraction: 0.95,
+  });
+  check('a partial splash still clears it', topUp.pitThisLap !== true,
+    'pitThisLap=' + topUp.pitThisLap);
+}
+
+console.log('\n11) Burning fuel never clears it');
+{
+  // The mirror of the check above: the stand-down must key on the level RISING,
+  // so ordinary consumption can never be mistaken for a stop.
+  const c = primed(3, 5.3, 0);
+  const frames = drive(c, { laps: 1, burn: 3, startFuel: 5.3, startLap: 3 });
+  check('stays up while the level only falls', frames.every((f) => f.frac < 0.02 || f.alarm),
+    'clear frames=' + frames.filter((f) => !f.alarm).length);
+}
+
+console.log('\n12) Same arithmetic in energy units (percent)');
 {
   // The virtual-energy channel runs the identical calculator over 0..100 %.
   // 4 % a lap, 7.2 % left: needs 2 x 3.6 + 0.2 = 7.4 to skip the stop.
@@ -183,6 +218,50 @@ console.log('\n10) Same arithmetic in energy units (percent)');
   drive(ok, { laps: 3, burn: 4, startFuel: 40, capacity: 100 });
   const clear = drive(ok, { laps: 1, burn: 4, startFuel: 8.4, startLap: 3, capacity: 100 });
   check('and stays quiet when energy saving covers it', !firstAlarm(clear));
+}
+
+/* ---------------------------------------------------------------------------
+ * 13) Resolving the call across BOTH budgets.
+ *
+ * Fuel and virtual energy each run their own calculator, and each publishes its
+ * own `pitThisLap` inside the block it returns. That is the trap this guards:
+ * merging the two and then spreading a decision over the top cannot switch the
+ * alarm OFF, because "no alarm" is an absent key and an absent key does not
+ * overwrite a present one. The in-pit suppression silently did nothing, and an
+ * energy-driven alarm arrived with no reason attached — so it rendered with the
+ * default wording and told a driver low on virtual energy to pit for FUEL, over
+ * and over, right through the stop that fixed neither. That is precisely the
+ * "I refuelled and it stayed on" report.
+ * ------------------------------------------------------------------------- */
+console.log('\n13) The pit call is resolved across both budgets, and can be cleared');
+{
+  // A block carrying a stale flag from whichever calculator set it.
+  const armed = { levelLiters: 4, pitThisLap: true, pitThisLapReason: 'fuel' };
+
+  const clear = resolvePitCall(armed, false, false, false);
+  check('neither budget armed clears the flag', clear.pitThisLap === undefined,
+    'pitThisLap=' + clear.pitThisLap);
+  check('…and the reason with it', clear.pitThisLapReason === undefined);
+  check('…without disturbing the rest of the block', clear.levelLiters === 4);
+
+  const inPit = resolvePitCall(armed, true, true, true);
+  check('in the pits it is silenced even with both armed', inPit.pitThisLap === undefined,
+    'pitThisLap=' + inPit.pitThisLap);
+
+  const fuelOnly = resolvePitCall(armed, true, false, false);
+  check('fuel alone reads FUEL', fuelOnly.pitThisLap === true && fuelOnly.pitThisLapReason === 'fuel',
+    fuelOnly.pitThisLapReason);
+
+  // The one that was misreporting: energy is the binding budget, so the driver
+  // must be sent to the energy row and not the fuel one.
+  const energyOnly = resolvePitCall(armed, false, true, false);
+  check('energy alone reads ENERGY, not FUEL',
+    energyOnly.pitThisLap === true && energyOnly.pitThisLapReason === 'energy',
+    energyOnly.pitThisLapReason);
+
+  const both = resolvePitCall(armed, true, true, false);
+  check('both armed names ENERGY, the tighter budget', both.pitThisLapReason === 'energy',
+    both.pitThisLapReason);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

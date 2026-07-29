@@ -114,6 +114,11 @@ export class FuelCalculator {
    * actually going in.
    */
   private pitArmed = false;
+  /**
+   * Fuel level at the previous sample, so a refuel is spotted the moment the
+   * level rises rather than a lap later. {@link UNKNOWN_VALUE} before the first.
+   */
+  private lastFuel: number = UNKNOWN_VALUE;
 
   /**
    * @param sampleWindow - How many recent laps to average (default 5). Smaller
@@ -129,6 +134,7 @@ export class FuelCalculator {
     this.lastLapsCompleted = UNKNOWN_VALUE;
     this.fuelAtLapStart = UNKNOWN_VALUE;
     this.pitArmed = false;
+    this.lastFuel = UNKNOWN_VALUE;
   }
 
   /**
@@ -164,10 +170,18 @@ export class FuelCalculator {
 
     // Fuel went IN — a stop, or a reset to a full tank. That is the one event
     // that answers the pit call, so it is the one thing that stands it down.
-    // Tested against a whole lap's burn so ordinary noise on the level reading
-    // can't silence a standing alarm.
-    const avgBefore = this.perLapAverage;
-    if (avgBefore > 0 && fuel > this.fuelAtLapStart + avgBefore * 0.5) this.pitArmed = false;
+    //
+    // Measured SAMPLE TO SAMPLE, not against the level at the start of the lap.
+    // Burning fuel only ever takes the level down, so any rise beyond float
+    // noise is the rig putting some in, and that is true the instant the hose
+    // goes on. Comparing against the lap's starting level — which is what this
+    // did first — is a whole lap stale by the time a driver reaches their box:
+    // take on two laps' worth after a lap that burned three and the level is
+    // still BELOW where the lap began, so the alarm never stands down and
+    // follows the driver back out onto the circuit.
+    const eps = (u.capacityLiters > 0 ? u.capacityLiters : 1) * 0.002;
+    if (this.lastFuel !== UNKNOWN_VALUE && fuel > this.lastFuel + eps) this.pitArmed = false;
+    this.lastFuel = fuel;
 
     // --- lap-boundary detection -> record per-lap burn ------------------
     let crossedLine = false;
@@ -309,6 +323,52 @@ export class FuelCalculator {
     }
     return UNKNOWN_VALUE;
   }
+}
+
+/**
+ * Resolve the "pit this lap" alarm across the two budgets — the ONLY place
+ * {@link FuelState.pitThisLap} may be set on an outgoing frame.
+ *
+ * Either the tank or the energy allowance can be the one that runs out first,
+ * and the alarm has to name which: a fuel call and an energy call send the
+ * driver to different rows of the pit menu, and a driver told to pit for fuel
+ * who then refuels and finds the alarm still up has been told the wrong thing.
+ * Energy wins a tie because in these cars it is nearly always the tighter of the
+ * two, so when both trip it is the one that actually decides the stop.
+ *
+ * Cleared outright while the car is in the pit lane: the alarm exists to get the
+ * driver to come in, and once they have, it is only noise sitting over the
+ * numbers they now need to read.
+ *
+ * ## Why the flag is deleted before the decision is applied
+ * Both budgets run their own {@link FuelCalculator}, and each publishes its own
+ * `pitThisLap` inside the block it returns. A plain
+ * `{...fuel, ...energy, ...decision}` therefore cannot switch the alarm OFF: a
+ * decision of "no alarm" is an *absent* key, and an absent key does not
+ * overwrite a present one. The in-pit suppression silently did nothing, and an
+ * energy-driven alarm reached the widgets with no reason attached — so it
+ * rendered with the default wording and told a driver who was low on virtual
+ * energy to pit for fuel, over and over, right through the stop that fixed
+ * neither.
+ *
+ * @param base       - The merged fuel + energy block, before the decision.
+ * @param fuelArmed  - The litre budget's own call.
+ * @param energyArmed- The virtual-energy budget's own call.
+ * @param inPit      - Whether the car is in the pit lane or its garage stall.
+ */
+export function resolvePitCall(
+  base: FuelState,
+  fuelArmed: boolean,
+  energyArmed: boolean,
+  inPit: boolean,
+): FuelState {
+  const out: FuelState = { ...base };
+  delete out.pitThisLap;
+  delete out.pitThisLapReason;
+  if (inPit) return out;
+  if (energyArmed) return { ...out, pitThisLap: true, pitThisLapReason: 'energy' };
+  if (fuelArmed) return { ...out, pitThisLap: true, pitThisLapReason: 'fuel' };
+  return out;
 }
 
 /** Rounds to one decimal place. */

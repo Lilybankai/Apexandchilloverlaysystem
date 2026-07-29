@@ -29,7 +29,21 @@
     return "crit";
   }
 
-  var header, cells = {};
+  var header, modeChip, cells = {};
+  /** Last label written to the mode chip, so it only touches the DOM on a change. */
+  var modeChipCache = "";
+
+  /**
+   * What the big line is showing, in words. Keyed on the reading actually
+   * chosen rather than on the requested mode: `auto` resolves to one of the
+   * three, and an explicit mode falls back when its channel is missing, so
+   * naming the request would sometimes name something that is not on screen.
+   */
+  var VIEW_LABELS = {
+    core: "CORE TEMP",
+    surface: "SURFACE TEMP",
+    tread: "TREAD LEFT",
+  };
   var cache = {};
 
   function init(root) {
@@ -41,6 +55,16 @@
     mount.innerHTML = "";
 
     initMode(new URLSearchParams(window.location.search));
+
+    // Names the reading currently on the big line. The view is cycled from a
+    // wheel button or a Stream Deck, where the driver cannot see what they
+    // pressed — and three of the four views are numbers in the 20-120 range, so
+    // a core temp, a surface temp and a tread percentage are not tellable apart
+    // by looking at them. Without this the cycle is a guess.
+    modeChip = document.createElement("div");
+    modeChip.className = "tyres__mode";
+    modeChip.textContent = "";
+    mount.appendChild(modeChip);
 
     var grid = document.createElement("div");
     grid.className = "tyres__grid";
@@ -114,6 +138,9 @@
     if (!tyres) return;
 
     var compound = null;
+    // Which reading actually reached the big line. All four corners resolve the
+    // same way, so the last one round is the answer for the widget.
+    var view = null;
     for (var i = 0; i < CORNERS.length; i++) {
       var c = CORNERS[i];
       var t = tyres[c.key];
@@ -133,23 +160,29 @@
       if (mode === "tread" && hasWear) {
         primaryStr = wearStr;
         subStr = hasCore ? fmt.tempC1(t.tempC) : hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : "TREAD";
+        view = "tread";
       } else if (mode === "surface" && hasSurf) {
         primaryStr = fmt.tempC1(t.surfaceTempC);
         subStr = wearStr;
+        view = "surface";
       } else if (mode === "temp" && hasCore) {
         primaryStr = fmt.tempC1(t.tempC);
         subStr = wearStr;
+        view = "core";
       } else if (hasCore) {
         // 'auto' (the default): core temp → surface temp → tread %, with the
         // surface temp on the sub-line when core is primary.
         primaryStr = fmt.tempC1(t.tempC);
         subStr = hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : wearStr;
+        view = "core";
       } else if (hasSurf) {
         primaryStr = fmt.tempC1(t.surfaceTempC);
         subStr = wearStr;
+        view = "surface";
       } else {
         primaryStr = wearStr;
         subStr = "TREAD";
+        view = "tread";
       }
 
       if (ref.primaryCache !== primaryStr) {
@@ -174,6 +207,16 @@
       }
 
       if (!compound && t.compound) compound = t.compound;
+    }
+
+    // Name the view. `auto` says so as well as naming what it landed on, so a
+    // driver cycling past it can tell a deliberate pick from the default.
+    var label = view ? VIEW_LABELS[view] : "";
+    if (label && mode === "auto") label += " · AUTO";
+    if (modeChipCache !== label) {
+      modeChipCache = label;
+      modeChip.textContent = label;
+      if (view) modeChip.setAttribute("data-view", view);
     }
 
     if (header) {

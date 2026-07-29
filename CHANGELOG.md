@@ -1,5 +1,83 @@
 # Changelog
 
+## 0.39.0 — 2026-07-29
+
+### Added
+
+- **The tyre grid names the reading it is showing.** It cycles between core
+  temperature, surface temperature and remaining tread, and all three are
+  two-or-three-digit numbers — so with the view bound to a wheel button, where
+  you cannot see what you pressed, there was no way to tell which one was on
+  screen. A label now sits above the grid: `CORE TEMP`, `SURFACE TEMP`,
+  `TREAD LEFT`. Tread gets the accent colour, being the odd one out among the
+  temperatures and the fastest way to see the cycle has wrapped.
+
+  The label names what actually reached the big line, not what was asked for:
+  `auto` resolves to one of the three, and an explicit pick falls back when its
+  channel is missing, so naming the request would sometimes name something that
+  is not on screen. `auto` says so as well, so a deliberate pick is
+  distinguishable from the default.
+
+- **Track condition in the weather widget.** The surface in words — `DRY`,
+  `DAMP`, `WET`, `VERY WET`, `SATURATED` — with a `▲`/`▼` for whether it is
+  getting wetter or drying. A percentage answers "how wet" and not "what does
+  that mean for me": the tyre call changes at DAMP→WET, not at 41%. The
+  percentage stays alongside it, and the change glow now fires on crossing a
+  band rather than on the number, which had been creeping all lap.
+
+  The trend is measured over three minutes rather than between polls. Wetness
+  moves slowly and the feed jitters, so differencing consecutive samples reports
+  a track flickering between drying and wetting all session.
+
+  **The grip/rubbering-in level is not included, because it is not published.**
+  No REST endpoint carries it and the shared-memory buffers that might
+  (`Extended`, `PitInfo`) read empty. `scripts/probe-lmu-penalty.js` watches both
+  and will show it the moment it appears; until then this readout covers the
+  wetness half of what the in-game MFD shows and claims nothing about the rest.
+
+### Fixed
+
+- **The relative strip's CURRENT lap time ran seconds short.** It was REST
+  `timeIntoLap`, which is the *position-derived estimate* already known to be
+  useless for the delta: it reports the same value at a given distance whatever
+  the lap is actually taking, so any lap slower than the pace it assumes reads
+  short — by exactly the amount you were losing.
+
+  It now uses the delta engine's own clock, a real elapsed time measured from
+  the interpolated start/finish crossing, so the current lap and the delta beside
+  it can never disagree. `timeIntoLap` remains the fallback until the engine has
+  seen a crossing, because before that an estimate beats nothing.
+
+- **The pit alarm stayed up after the stop that answered it.** Two separate
+  faults, and between them they kept it on through the refuel, out of the pit
+  lane and round the next lap.
+
+  **The alarm could not be switched off.** Fuel and virtual energy each run their
+  own calculator and each publishes its own `pitThisLap` inside the block it
+  returns. Those two blocks were merged and a decision spread over the top —
+  which cannot clear anything, because "no alarm" is an *absent* key and an
+  absent key does not overwrite a present one. So the in-pit suppression that was
+  supposed to silence it in the lane silently did nothing, and an energy-driven
+  alarm reached the widgets with **no reason attached** — rendering with the
+  default wording and telling a driver who was low on virtual energy to pit for
+  *fuel*, over and over, right through the stop that fixed neither. The decision
+  is now a single pure function that is the only thing allowed to set the flag,
+  and it clears the field before applying its answer.
+
+  **Fuel going in was measured against the wrong moment.** The stand-down
+  compared the level against where the *lap* started, which is up to a full lap
+  stale by the time a driver reaches their box: take on two laps' worth after a
+  lap that burned three and the level is still below where the lap began, so the
+  alarm never stood down. It now watches for the level *rising* between
+  consecutive samples — burning fuel only ever takes it down, so any rise is the
+  rig putting some in, and that is true the instant the hose goes on.
+
+  Found from live telemetry mid-stop: `veFraction 0.09` with `fuelFraction 0` and
+  `pitting: true` — the tank was fine, the energy was not, and the alarm was
+  saying "FOR FUEL". Seven new checks in `npm run test:fuel` (25 there now)
+  cover both: a partial splash smaller than the lap's burn still clears it,
+  ordinary consumption never does, and an energy-only call names ENERGY.
+
 ## 0.38.0 — 2026-07-29
 
 ### Added

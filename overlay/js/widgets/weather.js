@@ -84,12 +84,25 @@
     var airStr = "Air " + fmt.tempC(w.ambientTempC);
     if (cache.air !== airStr) { cache.air = airStr; ambientEl.textContent = airStr; }
 
-    // Wetness / rain description.
+    // Wetness / rain description. The named condition leads when the provider
+    // has one — the tyre decision changes at DAMP→WET, not at 41% — with the
+    // percentage kept behind it for anyone who wants the number, and the trend
+    // appended because a track at 30% drying is a completely different call
+    // from a track at 30% getting wetter.
     var wetPct = fmt.pct(w.trackWetness);
     var rainPct = fmt.pct(w.rainIntensity);
-    var wetStr = rainPct > 2 ? "Rain " + Math.round(rainPct) + "%"
-      : wetPct > 2 ? "Wet " + Math.round(wetPct) + "%"
-      : "Dry";
+    var wetStr;
+    if (w.trackCondition) {
+      wetStr = w.trackCondition;
+      if (wetPct > 2) wetStr += " " + Math.round(wetPct) + "%";
+      if (rainPct > 2) wetStr += " · rain " + Math.round(rainPct) + "%";
+      if (w.trackTrend === "drying") wetStr += " ▼";
+      else if (w.trackTrend === "wetting") wetStr += " ▲";
+    } else {
+      wetStr = rainPct > 2 ? "Rain " + Math.round(rainPct) + "%"
+        : wetPct > 2 ? "Wet " + Math.round(wetPct) + "%"
+        : "Dry";
+    }
     if (cache.wet !== wetStr) {
       cache.wet = wetStr;
       wetEl.textContent = wetStr;
@@ -100,7 +113,12 @@
     }
     // Bloom on the CONDITION changing, not on the percentage: in the wet the
     // number moves every frame, and "Dry → Wet" is the moment that matters.
-    var wetState = rainPct > 2 ? "rain" : wetPct > 2 ? "wet" : "dry";
+    // Keyed on the named band when there is one, so crossing DAMP→WET blooms —
+    // that is the moment a tyre call changes, and it is invisible in a
+    // percentage that has been creeping all lap.
+    var wetState = w.trackCondition
+      ? w.trackCondition
+      : rainPct > 2 ? "rain" : wetPct > 2 ? "wet" : "dry";
     if (cache.wetState !== wetState) {
       var firstWet = cache.wetState === undefined;
       cache.wetState = wetState;

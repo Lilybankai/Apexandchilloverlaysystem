@@ -37,7 +37,7 @@
 import http from 'node:http';
 import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
-import { FuelCalculator } from './fuelCalculator';
+import { FuelCalculator, resolvePitCall } from './fuelCalculator';
 import { LmuLocalCarReader, type AidSettings, type LocalCarPhysics } from './lmuLocalCar';
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
@@ -59,6 +59,7 @@ import {
   type TelemetryFrame,
   type TyreState,
   type WeatherForecastSlot,
+  type WeatherState,
   type DamageState,
   type PitPhase,
   type PitState,
@@ -178,6 +179,8 @@ interface RestSession {
   ambientTemp?: number;
   raining?: number;
   maxPathWetness?: number;
+  minPathWetness?: number;
+  averagePathWetness?: number;
   session?: string;
   gamePhase?: string;
   currentEventTime?: number;
@@ -317,6 +320,8 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   private pitWork: { startedAt: number; plannedSec: number; slackSec: number } | null = null;
   /** Last raw pit menu + garage `VM_*` data, for the MFD-control block. */
+  /** Recent average-wetness samples, for the drying/wetting trend. */
+  private readonly wetHistory: Array<{ at: number; wet: number }> = [];
   private pitMenuRaw: RawPitRow[] | null = null;
   private garageDataRaw: Record<string, RawGarageVal> | null = null;
   private lastMfdOkAt = 0;
@@ -1089,8 +1094,64 @@ export class LmuRestProvider implements TelemetryProvider {
       ambientTempC: round1(num(si.ambientTemp)),
       rainIntensity: round2(rain),
       trackWetness: round2(wet),
+      ...this.buildTrackCondition(si),
       forecast: this.buildForecast(sessionType, trackT, rain, sky),
     };
+  }
+
+  /**
+   * The racing surface in words, plus which way it is going.
+   *
+   * ## What this is, and what it is not
+   * LMU's own MFD carries a track readout, and this is the part of it that can
+   * be sourced honestly. The feed publishes the **wetness** of the circuit at
+   * three points — driest, wettest and average (`min`/`max`/`averagePathWetness`)
+   * — and that is what the DRY…SATURATED scale below is built from. It does NOT
+   * publish the *rubbering-in* level, so nothing here claims to know it: no REST
+   * endpoint carries it, and the shared-memory buffers that might
+   * (`Extended`, `PitInfo`) read empty. `scripts/probe-lmu-penalty.js` watches
+   * both if it ever starts appearing.
+   *
+   * ## Why a band and not a percentage
+   * "41%" answers how wet and not what to do about it. The decision a driver is
+   * actually making — which tyre, how much lift — changes at the boundaries, so
+   * the boundaries are what gets named. The percentage stays alongside for
+   * anyone who wants it.
+   *
+   * ## Why the trend needs a history and not two samples
+   * Wetness moves slowly and the feed jitters, so consecutive polls disagree in
+   * both directions all the time; differencing them would report a track
+   * flickering between drying and wetting. The comparison is against a reading
+   * from minutes ago, which is the timescale the surface actually changes on.
+   */
+  private buildTrackCondition(
+    si: RestSession,
+  ): Partial<Pick<WeatherState, 'trackCondition' | 'trackTrend' | 'trackSpread'>> {
+    const max = typeof si.maxPathWetness === 'number' ? clamp01(si.maxPathWetness) : -1;
+    if (max < 0) return {};
+    const min = typeof si.minPathWetness === 'number' ? clamp01(si.minPathWetness) : -1;
+    const avg = typeof si.averagePathWetness === 'number' ? clamp01(si.averagePathWetness) : max;
+
+    const now = Date.now();
+    this.wetHistory.push({ at: now, wet: avg });
+    while (this.wetHistory.length > 1 && now - this.wetHistory[0]!.at > WET_TREND_WINDOW_MS) {
+      this.wetHistory.shift();
+    }
+    const oldest = this.wetHistory[0]!;
+    const spanMs = now - oldest.at;
+    let trend: 'drying' | 'wetting' | 'steady' = 'steady';
+    if (spanMs > WET_TREND_WINDOW_MS / 2) {
+      const change = avg - oldest.wet;
+      if (change > WET_TREND_MIN) trend = 'wetting';
+      else if (change < -WET_TREND_MIN) trend = 'drying';
+    }
+
+    const out: Partial<Pick<WeatherState, 'trackCondition' | 'trackTrend' | 'trackSpread'>> = {
+      trackCondition: wetnessBand(max),
+      trackTrend: trend,
+    };
+    if (min >= 0) out.trackSpread = round2(Math.max(0, max - min));
+    return out;
   }
 
   /**
@@ -1183,22 +1244,32 @@ export class LmuRestProvider implements TelemetryProvider {
         avgLapTimeSec: focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90,
         lapFraction: fracOf(playerCar),
       });
-      return { ...s, ...energy, ...this.pitCall(s, energy, playerCar ?? focus) };
+      return this.withPitCall(
+        { ...s, ...energy },
+        s.pitThisLap === true,
+        energy.pitThisLap === true,
+        playerCar ?? focus,
+      );
     }
 
     const frac = focus && typeof focus.fuelFraction === 'number' ? clamp01(focus.fuelFraction) : -1;
     if (frac < 0) {
-      return {
-        levelLiters: UNKNOWN_VALUE,
-        capacityLiters: UNKNOWN_VALUE,
-        perLapAvgLiters: UNKNOWN_VALUE,
-        lapsRemaining: UNKNOWN_VALUE,
-        lapsToFinish: UNKNOWN_VALUE,
-        fuelToFinishLiters: UNKNOWN_VALUE,
-        fuelDeltaLiters: UNKNOWN_VALUE,
-        refuelToFinishLiters: 0,
-        ...energy,
-      };
+      return this.withPitCall(
+        {
+          levelLiters: UNKNOWN_VALUE,
+          capacityLiters: UNKNOWN_VALUE,
+          perLapAvgLiters: UNKNOWN_VALUE,
+          lapsRemaining: UNKNOWN_VALUE,
+          lapsToFinish: UNKNOWN_VALUE,
+          fuelToFinishLiters: UNKNOWN_VALUE,
+          fuelDeltaLiters: UNKNOWN_VALUE,
+          refuelToFinishLiters: 0,
+          ...energy,
+        },
+        false,
+        energy.pitThisLap === true,
+        focus,
+      );
     }
     const laps = focus ? focus.lapsCompleted | 0 : 0;
     const avgLap = focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90;
@@ -1213,43 +1284,38 @@ export class LmuRestProvider implements TelemetryProvider {
     });
     // Keep the unit-independent numbers; blank the litre-denominated ones since
     // we don't know the tank size for a spectated car.
-    return {
-      levelLiters: UNKNOWN_VALUE,
-      capacityLiters: UNKNOWN_VALUE,
-      perLapAvgLiters: UNKNOWN_VALUE,
-      lapsRemaining: s.lapsRemaining,
-      lapsToFinish: s.lapsToFinish,
-      fuelToFinishLiters: UNKNOWN_VALUE,
-      fuelDeltaLiters: UNKNOWN_VALUE,
-      refuelToFinishLiters: 0,
-      pitWindowOpenLap: s.pitWindowOpenLap,
-      ...energy,
-      ...this.pitCall(s, energy, focus),
-    };
+    return this.withPitCall(
+      {
+        levelLiters: UNKNOWN_VALUE,
+        capacityLiters: UNKNOWN_VALUE,
+        perLapAvgLiters: UNKNOWN_VALUE,
+        lapsRemaining: s.lapsRemaining,
+        lapsToFinish: s.lapsToFinish,
+        fuelToFinishLiters: UNKNOWN_VALUE,
+        fuelDeltaLiters: UNKNOWN_VALUE,
+        refuelToFinishLiters: 0,
+        pitWindowOpenLap: s.pitWindowOpenLap,
+        ...energy,
+      },
+      s.pitThisLap === true,
+      energy.pitThisLap === true,
+      focus,
+    );
   }
 
   /**
-   * Resolve the "pit this lap" alarm across both budgets.
-   *
-   * Either the tank or the energy allowance can be the one that runs out first,
-   * and the alarm has to name which — a fuel call and an energy call send the
-   * driver to different rows of the pit menu. Energy wins a tie because in these
-   * cars it is nearly always the tighter of the two, so when both trip within a
-   * lap of each other it is the one that actually decides the stop.
-   *
-   * Cleared outright while the car is in the pit lane: the alarm exists to get
-   * the driver to come in, and once they have, it is only noise sitting over the
-   * numbers they now need to read.
+   * Apply {@link resolvePitCall} to a finished fuel block. The decision itself
+   * is pure and lives with the calculator; this only supplies the sim-shaped
+   * half of it — whether the car is actually in the pits.
    */
-  private pitCall(
-    fuel: FuelState,
-    energy: Partial<FuelState>,
+  private withPitCall(
+    base: FuelState,
+    fuelArmed: boolean,
+    energyArmed: boolean,
     focus: RestStanding | undefined,
-  ): Partial<Pick<FuelState, 'pitThisLap' | 'pitThisLapReason'>> {
-    if (focus && (focus.pitting === true || focus.inGarageStall === true)) return {};
-    if (energy.pitThisLap) return { pitThisLap: true, pitThisLapReason: 'energy' };
-    if (fuel.pitThisLap) return { pitThisLap: true, pitThisLapReason: 'fuel' };
-    return {};
+  ): FuelState {
+    const inPit = focus !== undefined && (focus.pitting === true || focus.inGarageStall === true);
+    return resolvePitCall(base, fuelArmed, energyArmed, inPit);
   }
 
   /**
@@ -1422,14 +1488,25 @@ export class LmuRestProvider implements TelemetryProvider {
       rpm: local ? local.rpm : UNKNOWN_VALUE,
       maxRpm: local ? local.maxRpm : UNKNOWN_VALUE,
       lap: {
-        // Live elapsed time on the current lap, from the REST watch feed. (An
-        // earlier build used the shared-memory lap clock mElapsedTime−mLapStartET,
-        // but mLapStartET proved unreliable on current LMU builds — wrong,
-        // irregular lap durations — so REST timeIntoLap is the trustworthy source.)
+        // Live elapsed time on the current lap, from the delta engine's own
+        // clock — a real elapsed time measured from the interpolated line
+        // crossing, and the same clock the delta beside it runs on.
+        //
+        // NOT REST `timeIntoLap`, which is what this used to be. That field is a
+        // position-derived ESTIMATE: it reports the same value at a given
+        // distance whatever the lap is actually taking, so any lap slower than
+        // the pace it assumes reads seconds short — which is exactly how it
+        // looked. (It is still the fallback, because before the engine has seen
+        // a line crossing an estimate beats nothing. The shared-memory clock
+        // mElapsedTime−mLapStartET is not an option: mLapStartET reports wrong,
+        // irregular lap durations on current LMU builds, which is why the engine
+        // detects the crossing itself.)
         current:
-          focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
-            ? round2(focus.timeIntoLap)
-            : UNKNOWN_VALUE,
+          paceDeltas && paceDeltas.lapTimeSec !== UNKNOWN_VALUE
+            ? paceDeltas.lapTimeSec
+            : focus && typeof focus.timeIntoLap === 'number' && focus.timeIntoLap > 0
+              ? round2(focus.timeIntoLap)
+              : UNKNOWN_VALUE,
         last: row ? row.lastLapSec : UNKNOWN_VALUE,
         best: row ? row.bestLapSec : UNKNOWN_VALUE,
         delta: deltaSec,
@@ -1843,6 +1920,30 @@ function round2(v: number): number {
  * See {@link LmuRestProvider.buildPenaltyType}.
  */
 const PENALTY_ROW = /^(STOP\s*[/-]?\s*GO|DRIVE\s*[-]?\s*(THRU|THROUGH)|PENALTY)$/i;
+
+/**
+ * How far back the wetness trend looks. Long, because a circuit takes minutes to
+ * dry and the feed's own jitter is larger than a poll-to-poll change — compare
+ * two adjacent samples and the readout flickers between drying and wetting all
+ * session.
+ */
+const WET_TREND_WINDOW_MS = 180_000;
+/** Wetness change over that window below which the track is called steady. */
+const WET_TREND_MIN = 0.02;
+
+/**
+ * Name a wetness fraction. The bands are placed where the *decision* changes
+ * rather than at round numbers: DAMP is "a dry line exists but the rest is not",
+ * WET is "wets, and the dry line has gone", and SATURATED is standing water —
+ * aquaplaning territory, where the answer is pace rather than tyres.
+ */
+function wetnessBand(wet: number): string {
+  if (wet < 0.02) return 'DRY';
+  if (wet < 0.2) return 'DAMP';
+  if (wet < 0.5) return 'WET';
+  if (wet < 0.8) return 'VERY WET';
+  return 'SATURATED';
+}
 
 /** Per-car state for {@link LapDeltaTracker}. */
 interface CarDeltaState {

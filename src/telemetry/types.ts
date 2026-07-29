@@ -283,6 +283,21 @@ export interface PaceDeltas {
   vLast: number;
   /** Best-based projected time for the current lap (`sessionBest + tSession`). */
   predictedLapSec: number;
+  /**
+   * Seconds into the current lap on the delta engine's own clock — a real
+   * elapsed time, measured from the interpolated start/finish crossing.
+   *
+   * Published because REST `timeIntoLap`, the obvious source for a "current lap"
+   * readout, is a **position-derived estimate**: it reports the same value at a
+   * given distance whatever the lap is actually taking, so a lap slower than the
+   * pace it assumes reads seconds short. This is the clock the delta itself runs
+   * on, so the two can never disagree.
+   *
+   * {@link UNKNOWN_VALUE} until a line crossing has been observed — before that
+   * the engine's lap started wherever the car happened to be when the overlay
+   * attached, and reporting that as a lap time would read far too low.
+   */
+  lapTimeSec: number;
   /** Adopted session-best lap time (s), or {@link UNKNOWN_VALUE}. */
   refSessionSec: number;
   /** Adopted all-time-best lap time (s), or {@link UNKNOWN_VALUE}. */
@@ -1001,6 +1016,29 @@ export interface WeatherState {
   rainIntensity: number;
   /** Current track wetness, `0` (dry) .. `1` (flooded). */
   trackWetness: number;
+  /**
+   * The state of the racing surface in words — `DRY`, `DAMP`, `WET`,
+   * `VERY WET`, `SATURATED` — plus, when the track is not uniform, whether it is
+   * drying or getting wetter.
+   *
+   * A percentage answers "how wet" and not "what does that mean for me", which
+   * is the question a driver glancing at it is actually asking: the tyre
+   * decision changes at DAMP→WET, not at 41%.
+   */
+  trackCondition?: string;
+  /**
+   * Which way the surface is going — `drying`, `wetting`, or `steady`. Derived
+   * from the trend in wetness over the last few minutes, so it survives the
+   * feed's own jitter.
+   */
+  trackTrend?: 'drying' | 'wetting' | 'steady';
+  /**
+   * How uneven the surface is: the spread between the driest and wettest part of
+   * the circuit, `0..1`. High while a dry line is forming (or being washed away)
+   * and near zero once the whole lap is the same. Omitted when the feed does not
+   * publish both ends.
+   */
+  trackSpread?: number;
   /**
    * Forecast timeline (typically 5–6 slots, e.g. now/+5/+15/+30/+60 min).
    * Always includes a `minutesAhead === 0` "now" slot as the first element.
