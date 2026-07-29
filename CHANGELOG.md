@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.40.1 — 2026-07-30
+
+### Fixed
+
+- **Restarting the overlay mid-session reset the points total to zero.** The trace
+  reader starts at the *end* of the log so that an old session's cuts are never
+  credited to the current one — right for old sessions, wrong for the one in
+  progress. Restart four cuts into a race and the driver was shown `0` while the
+  stewards had them on 4.75, which is the one direction this number must never be
+  wrong in: flattering the driver is what sends them back out to collect a penalty
+  they did not know they were one cut away from.
+
+  It now replays from the sim's own `SessionName` marker, and only from the **last**
+  one in the file — anything earlier belongs to practice, or to a race that has since
+  been restarted. With no marker in the window nothing is replayed and the total
+  starts at zero, because lines that cannot be attributed to this session are worse
+  than no lines at all. Verified against a live race: recovered 4.75 points from 9
+  cuts, matching what the widget had been showing before the restart.
+
+### Known limitation
+
+- **A charge can take up to ~25 seconds to appear.** Measured, not estimated: LMU does
+  not flush its trace per line, it writes in bursts, and one burst was observed
+  carrying 27 seconds of game time in a single write —
+
+  ```
+  12:00:26   Off Track WP: 450     lag  1.2s
+  ---        26 seconds of nothing
+  12:00:52   626: WarnPts 0.00     lag 24.5s   <- held in the buffer this long
+  12:00:52   No Track Cut          lag -2.1s   <- caught up
+  ```
+
+  So the driver's next off-track appears to "trigger" the previous charge, when what
+  it actually does is generate the log volume that flushes the buffer holding it. The
+  figures are correct when they land; nothing outside the game can force the flush,
+  and polling faster does not help because the bytes are not on disk yet.
+
 ## 0.40.0 — 2026-07-29
 
 ### Added
