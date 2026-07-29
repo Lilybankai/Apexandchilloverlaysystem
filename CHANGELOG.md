@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.37.0 — 2026-07-29
+
+### Added
+
+- **The pit call now makes a sound.** A short beep, played as a **triplet**, on
+  the same trigger as the flashing bar. The supplied clip is 130 ms on its own,
+  which is under the length at which a sound registers as a deliberate signal
+  rather than as something that might have been the car; three in quick
+  succession is unmistakably a pattern, and the pattern is what makes it
+  identifiable as *this* alarm and not the track-limits blip.
+
+  It repeats roughly four or five times over the lap it is up for. Often enough
+  that it cannot be missed while the driver is busy, rarely enough that it stays
+  an alarm instead of becoming background noise to be tuned out. The widgets
+  simply ask for the cue on every frame the alarm holds; the audio layer's
+  per-cue rate limit owns how often that is actually heard.
+
+  The cue fires from the shared alarm bar rather than from the widgets, for the
+  same reason the bar itself is shared: an alarm the driver can hear but not see
+  — or see but not hear — is one they have to stop and reconcile.
+
+### Changed
+
+- **`audio.js` can play samples, not only synthesised tones.** This is the first
+  cue with a file behind it, and it is meant to stay close to the last: the
+  module's rationale for synthesising everything (no decode, no buffer, no file
+  to 404, no network) still holds for routine cues, and is now written down as
+  such rather than as an absolute. The fuel call earns the exception because it
+  is the only alarm that demands the driver change their race within the lap,
+  and it has to be identifiable as itself in the half second before they think
+  about it — more than a sine tone can carry. It costs 4 KB, fetched and decoded
+  once per source.
+
+  Every sampled cue carries a synthesised `fallback`, played if the file 404s or
+  the host refuses to decode it. An alarm that is silent because an asset did not
+  load would be the worst possible bug in that file.
+
+- Static server now serves `.mp3`, `.ogg` and `.wav`.
+
 ## 0.36.0 — 2026-07-29
 
 ### Added

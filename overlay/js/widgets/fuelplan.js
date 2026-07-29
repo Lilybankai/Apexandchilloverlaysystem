@@ -477,7 +477,7 @@
 
     // Built last so it inserts itself above the strategy hero: on the lap it
     // fires, which lap to come in on outranks how much to put in when you do.
-    setAlarm = window.ApexOverlay.alarmBar(mount);
+    setAlarm = window.ApexOverlay.alarmBar(mount, "fuel");
 
     mounted = true;
   }

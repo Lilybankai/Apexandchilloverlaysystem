@@ -4,15 +4,27 @@
  * A handful of short tones that tell the driver something happened while their
  * eyes are on the track: a track-limits warning, a penalty, a pit release.
  *
- * ## Why there are no sound files
- * "Lightweight" is the whole brief, and an overlay that ships audio assets pays
- * for them on every source: OBS decodes and buffers each one, the in-game layer
- * holds them resident for a stint, and every Browser Source added to a scene
- * fetches its own copy over HTTP. These cues are **synthesised** instead — an
- * oscillator, a gain envelope, and nothing else. A cue costs two Web Audio nodes
- * that are created, played for under a fifth of a second, and thrown away; there
- * is no decoding, no buffer, no file to 404, and no network at all. It also
- * keeps the "no web fonts / no network" property the rest of the overlay has.
+ * ## Why almost all of these are synthesised
+ * "Lightweight" is the whole brief, and an overlay that ships a *library* of
+ * audio assets pays for it on every source: OBS decodes and buffers each one,
+ * the in-game layer holds them resident for a stint, and every Browser Source
+ * added to a scene fetches its own copy over HTTP. So the routine cues are
+ * **synthesised** — an oscillator, a gain envelope, and nothing else. A cue
+ * costs two Web Audio nodes that are created, played for under a fifth of a
+ * second, and thrown away; no decoding, no buffer, no file to 404.
+ *
+ * The one exception is the fuel call, which plays a real recording. That is a
+ * judgement about what the cue has to *be*, not a relaxation of the rule: it is
+ * the only alarm that demands the driver change their race in the next lap, and
+ * it has to be identifiable as itself in the half second before they think about
+ * it — which is more than a sine tone can carry. It costs 4 KB, fetched once and
+ * decoded once per source, which is the size of a small icon. Anything that
+ * would need a second file should be a tone instead.
+ *
+ * A sampled cue also cannot be allowed to fail quietly, so every one carries a
+ * synthesised `fallback` played if the file 404s or the host refuses to decode
+ * it. An alarm that is silent because an asset did not load is the worst
+ * possible bug in this file.
  *
  * The tones are deliberately plain. A driver is already listening to an engine,
  * a spotter and possibly a race director; the cue has to cut through that
@@ -64,10 +76,40 @@
     limit: { freq: [880], stepMs: 90, gain: 0.5 },
     penalty: { freq: [520, 360], stepMs: 130, gain: 0.7 },
     release: { freq: [660, 990], stepMs: 90, gain: 0.6 },
+    /**
+     * The fuel/energy pit call — the only sampled cue, and the only one that
+     * repeats while its condition holds.
+     *
+     * Played as a TRIPLET rather than the single blip the file contains. On its
+     * own the clip is 130 ms, which is under the threshold where a sound
+     * registers as a deliberate signal rather than as something that might have
+     * been the car; three of them in quick succession is unmistakably a pattern,
+     * and a pattern is what makes it identifiable as this alarm and not the
+     * track-limits blip.
+     *
+     * `minGapMs` is the whole repeat strategy. The alarm it belongs to stands
+     * for a full lap, so the widgets simply ask for the cue on every frame it is
+     * up and this decides how often that is actually heard — roughly four or
+     * five times over a lap. Often enough that it cannot be missed while the
+     * driver is busy, rarely enough that it stays an alarm instead of becoming
+     * background noise to be tuned out.
+     */
+    fuel: {
+      src: "audio/fuel-warning.mp3",
+      repeat: 3,
+      spacingMs: 190,
+      gain: 1,
+      minGapMs: 20000,
+      // If the sample can't be had: a hard, high triple-blip. Not as
+      // identifiable, but never silent.
+      fallback: { freq: [1046, 1046, 1046], stepMs: 120, gain: 0.85 },
+    },
   };
 
   /**
-   * Minimum time between two firings of the SAME cue, milliseconds.
+   * Minimum time between two firings of the SAME cue, milliseconds. A cue may
+   * override it with `minGapMs` — see the fuel call, which uses it to pace a
+   * repeat rather than merely to debounce.
    *
    * Widgets are allowed to be naive — "call cue() whenever this is true" — and
    * this is what makes that safe. A second is longer than any of the cues and
@@ -75,6 +117,14 @@
    * letting two genuinely separate events a second apart both be heard.
    */
   var MIN_GAP_MS = 1000;
+
+  /**
+   * How long after asking for a sampled cue its file may still arrive and be
+   * played. Covers the first firing, where the fetch and decode have not
+   * happened yet; beyond this the moment has passed and playing it would be
+   * announcing something that is no longer news.
+   */
+  var SAMPLE_LATE_MS = 3000;
 
   /** Master volume, 0..1, from the operator. 0 (or `enabled: false`) is silent. */
   var volume = 0.6;
@@ -166,32 +216,116 @@
     osc.stop(at + durSec + 0.01);
   }
 
+  /** Decoded sample buffers by cue name; `null` once known to be unusable. */
+  var samples = {};
+  /** Cue names whose fetch is in flight, so it is only started once. */
+  var loading = {};
+
+  /**
+   * Fetch and decode a cue's sample, then hand it to `then`. Failure is
+   * recorded as `null` so the fallback is used from that point on without
+   * retrying a file that is not coming.
+   */
+  function loadSample(ctx, name, spec, then) {
+    if (loading[name]) return;
+    loading[name] = true;
+    var fail = function () {
+      samples[name] = null;
+      then(null);
+    };
+    try {
+      fetch(spec.src)
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.arrayBuffer();
+        })
+        // The callback form as well as the promise: Safari and older CEF builds
+        // only implement the former, and this has to work in whatever browser
+        // the operator's OBS happens to embed.
+        .then(function (buf) {
+          return new Promise(function (resolve, reject) {
+            var p = ctx.decodeAudioData(buf, resolve, reject);
+            if (p && typeof p.then === "function") p.then(resolve, reject);
+          });
+        })
+        .then(function (decoded) {
+          samples[name] = decoded;
+          then(decoded);
+        })
+        .catch(fail);
+    } catch (e) {
+      fail();
+    }
+  }
+
+  /** Play a decoded sample `repeat` times, `spacingMs` apart. */
+  function playSample(ctx, buffer, spec, peak) {
+    var at = ctx.currentTime + 0.01;
+    var reps = spec.repeat || 1;
+    var spacing = (spec.spacingMs || 0) / 1000;
+    for (var i = 0; i < reps; i++) {
+      var src = ctx.createBufferSource();
+      var gain = ctx.createGain();
+      src.buffer = buffer;
+      gain.gain.setValueAtTime(peak, at);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(at + i * spacing);
+    }
+  }
+
+  /** Play a cue's synthesised tones (its own, or a sampled cue's fallback). */
+  function playTones(ctx, spec, peak) {
+    // A few ms of lead, so the first tone's attack ramp is scheduled in the
+    // future rather than already-past (which some hosts render as a click).
+    var at = ctx.currentTime + 0.01;
+    var step = spec.stepMs / 1000;
+    for (var i = 0; i < spec.freq.length; i++) {
+      tone(ctx, spec.freq[i], at + i * step, step * 0.92, peak);
+    }
+  }
+
   /**
    * Fire a cue by name. Safe to call every frame a condition holds — see
    * MIN_GAP_MS — and safe to call for a name that does not exist.
    *
    * Returns `true` when a sound was actually scheduled, which is only used by
-   * the audio test button in the control panel; widgets ignore it.
+   * the audio test button in the control panel; widgets ignore it. A sampled cue
+   * firing for the first time returns `true` on the strength of having started
+   * its fetch — the sound follows a moment later.
    */
   function cue(name) {
     if (!enabled || volume <= 0) return false;
     var spec = CUES[name];
     if (!spec) return false;
     var t = nowMs();
-    if (lastAt[name] && t - lastAt[name] < MIN_GAP_MS) return false;
+    var gap = spec.minGapMs || MIN_GAP_MS;
+    if (lastAt[name] && t - lastAt[name] < gap) return false;
     var ctx = context();
     if (!ctx) return false;
     resume();
     lastAt[name] = t;
+    var peak = spec.gain * volume;
     try {
-      // A few ms of lead, so the first tone's attack ramp is scheduled in the
-      // future rather than already-past (which some hosts render as a click).
-      var at = ctx.currentTime + 0.01;
-      var step = spec.stepMs / 1000;
-      var peak = spec.gain * volume;
-      for (var i = 0; i < spec.freq.length; i++) {
-        tone(ctx, spec.freq[i], at + i * step, step * 0.92, peak);
+      if (!spec.src) {
+        playTones(ctx, spec, peak);
+        return true;
       }
+      if (samples[name]) {
+        playSample(ctx, samples[name], spec, peak);
+        return true;
+      }
+      if (samples[name] === null) {
+        playTones(ctx, spec.fallback, spec.fallback.gain * volume);
+        return true;
+      }
+      // First ask for this sample: start the fetch and play on arrival, unless
+      // so much time has passed that the moment is gone.
+      loadSample(ctx, name, spec, function (decoded) {
+        if (nowMs() - t > SAMPLE_LATE_MS) return;
+        if (decoded) playSample(ctx, decoded, spec, peak);
+        else if (spec.fallback) playTones(ctx, spec.fallback, spec.fallback.gain * volume);
+      });
     } catch (e) {
       if (window.console) console.error("[Apex] audio cue failed:", e);
       return false;

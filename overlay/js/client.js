@@ -581,11 +581,18 @@
    * in another is worse than no alarm, because the driver then has to work out
    * which one to believe, at exactly the moment they have no attention to spare.
    *
+   * The audio cue is fired from HERE rather than from the widgets, for the same
+   * reason the bar itself is shared: an alarm the driver can hear but not see —
+   * or see but not hear — is an alarm they have to stop and reconcile. Asking
+   * for the cue on every active frame is deliberate and safe; ApexAudio's
+   * per-cue rate limit owns how often it is actually heard.
+   *
    * @param {Element} parent - Widget body; the bar inserts itself at the top.
+   * @param {string} [cueName] - ApexAudio cue to sound while the bar is up.
    * @returns {function(boolean, string): void} `set(active, text)`, cheap to
    *   call every frame — it only touches the DOM when something actually moved.
    */
-  function alarmBar(parent) {
+  function alarmBar(parent, cueName) {
     var el = document.createElement("div");
     el.className = "alarmbar";
     el.hidden = true;
@@ -602,6 +609,7 @@
           on = true;
           el.hidden = false;
         }
+        if (cueName && window.ApexAudio) window.ApexAudio.cue(cueName);
       } else if (on) {
         on = false;
         el.hidden = true;

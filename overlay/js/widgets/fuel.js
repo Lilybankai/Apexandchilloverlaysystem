@@ -120,7 +120,7 @@
     // Added last so it inserts itself ABOVE everything built above it, and
     // outside the rotating FUEL/ENERGY grids — a call the driver has one lap to
     // act on cannot be hidden behind a 20-second rotation.
-    setAlarm = window.ApexOverlay.alarmBar(mount);
+    setAlarm = window.ApexOverlay.alarmBar(mount, "fuel");
   }
 
   function setStat(key, value, unitSmall) {
