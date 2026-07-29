@@ -76,6 +76,21 @@ const SANE_LIMIT_SEC = 30;
 const SMOOTH_SLEW_SEC_PER_SEC = 1.5;
 const SMOOTH_TAU_SEC = 0.25;
 
+/**
+ * Road-position observer constants — see {@link RoadPosition}.
+ *
+ *   • POS_TAU_SEC — how quickly the observer is pulled onto the REST-measured
+ *     position. Long, because the fast motion already comes from integrating the
+ *     car's own live speed: the measurement is only needed to stop slow drift,
+ *     so trusting it slowly costs no tracking accuracy and rejects most of its
+ *     noise.
+ *   • POS_SNAP_M — beyond this disagreement the measurement is not noise but a
+ *     different place: a teleport, a track reset, an ESC-to-garage. Adopt it
+ *     outright rather than crawling there over several seconds.
+ */
+const POS_TAU_SEC = 1.0;
+const POS_SNAP_M = 50;
+
 /** A reference lap: its ordered trace and the lap time it was set at. */
 interface Reference {
   trace: Sample[];
@@ -122,6 +137,103 @@ class Channel {
 }
 
 /**
+ * Complementary filter for the car's position on the road — the delta engine's
+ * distance axis.
+ *
+ * ## Why the raw REST position can't be the axis
+ * `t − t_ref(d)` divides by nothing and subtracts everything: an error of `e`
+ * metres in `d` lands in the readout as `e / speed` seconds, so at 60 m/s every
+ * 6 m of position error is a tenth on screen. The REST feed supplies `d`, and it
+ * carries three separate errors of exactly that size:
+ *
+ *   1. Its snapshots are published at the game's own rate and arrive over HTTP,
+ *      so what lands is 5–85 ms stale by an amount that varies packet to packet.
+ *      Extrapolating by the snapshot's *measured* age (arrival → now) can't
+ *      remove the part that happened before arrival, so `d` jitters by metres.
+ *   2. That leftover staleness is proportional to speed, so it is not a constant
+ *      offset that cancels between the live lap and the reference lap — it is a
+ *      bias that changes shape around the lap. Measured at −0.06 s mean on a lap
+ *      driven identically to its own reference, drifting through the corners.
+ *   3. Each arrival lands as a step, so the readout twitches at the poll rate.
+ *
+ * ## What this does instead
+ * The classic complementary split. High-frequency motion is *integrated* from
+ * the car's own speed — shared memory, same buffer and same instant as the delta
+ * clock, no network in between — which is smooth and exactly coherent with the
+ * time axis. The REST position is used only to correct slow drift, pulled in
+ * over {@link POS_TAU_SEC}, which low-passes its noise away.
+ *
+ * Because the prediction step uses live speed, there is no steady-state lag to
+ * pay for that long time constant: the observer tracks a constant speed
+ * perfectly and only its (tiny) accumulated drift is corrected slowly. What lag
+ * does remain under acceleration is identical on the live lap and on the
+ * reference lap — both are recorded through this same filter — so it cancels in
+ * the subtraction instead of showing up as sway.
+ */
+export class RoadPosition {
+  /** Estimated metres into the current lap; `-1` before the first fix. */
+  private dist = -1;
+  /** Sim clock at the last step; `-1` before the first. */
+  private t = -1;
+
+  /** Drop the estimate, so the next measurement is adopted verbatim. */
+  public reset(): void {
+    this.dist = -1;
+    this.t = -1;
+  }
+
+  /**
+   * @param t         - Sim clock (`mElapsedTime`, seconds). Clocking on the sim
+   *                    rather than on wall time means a paused game freezes the
+   *                    observer instead of coasting it forward.
+   * @param measuredM - REST lap distance, already extrapolated to `t` by the
+   *                    caller (metres into the lap).
+   * @param speedMps  - The car's live speed from shared memory (m/s).
+   * @param trackLenM - Lap length in metres, for wrapping at the line.
+   * @returns Metres into the lap, `0..trackLenM`.
+   */
+  public step(t: number, measuredM: number, speedMps: number, trackLenM: number): number {
+    if (!(trackLenM > 1) || !Number.isFinite(measuredM)) return measuredM;
+    const m = wrapDist(measuredM, trackLenM);
+    const dt = t - this.t;
+    const armed = this.dist >= 0 && this.t >= 0;
+    // The clock stood still (a torn shared-memory read re-served the previous
+    // sample). Nothing has been observed, so hold — re-seeding here would throw
+    // the whole estimate away and adopt the raw measurement, which is exactly
+    // the noise this filter exists to reject, on every torn frame.
+    if (armed && dt === 0) return this.dist;
+    // First fix, or a gap long enough that the integration would be guesswork
+    // (feed dropout, session change, unpause) → take the measurement as truth.
+    if (!armed || dt < 0 || dt > 1) {
+      this.dist = m;
+      this.t = t;
+      return m;
+    }
+    this.t = t;
+    const v = Number.isFinite(speedMps) ? Math.min(150, Math.max(0, speedMps)) : 0;
+    let d = wrapDist(this.dist + v * dt, trackLenM);
+    // Shortest way round from the prediction to the measurement, so a
+    // disagreement across the start/finish line reads as centimetres, not a lap.
+    const half = trackLenM / 2;
+    let err = m - d;
+    if (err > half) err -= trackLenM;
+    else if (err < -half) err += trackLenM;
+    d =
+      Math.abs(err) > POS_SNAP_M
+        ? m
+        : wrapDist(d + err * (1 - Math.exp(-dt / POS_TAU_SEC)), trackLenM);
+    this.dist = d;
+    return d;
+  }
+}
+
+/** Fold a lap distance into `0..len`. */
+function wrapDist(d: number, len: number): number {
+  const laps = d / len;
+  return (laps - Math.floor(laps)) * len;
+}
+
+/**
  * Maintains the three reference laps for the driven car and computes both
  * delta flavours against each on every physics sample.
  */
@@ -161,6 +273,8 @@ export class LocalPaceDeltaTracker {
   private allTime: Reference | null = null;
   private last: Reference | null = null;
   private lastLapSec: number = UNKNOWN_VALUE;
+  /** The last answer given, re-served whenever the sim clock doesn't advance. */
+  private lastOut: PaceDeltas = EMPTY_PACE_DELTAS;
 
   /** Track key the all-time best was loaded for (reloads on track change). */
   private trackKey = '';
@@ -175,6 +289,7 @@ export class LocalPaceDeltaTracker {
     this.session = null;
     this.last = null;
     this.lastLapSec = UNKNOWN_VALUE;
+    this.lastOut = EMPTY_PACE_DELTAS;
     // allTime is NOT cleared on a session reset — it spans sessions.
   }
 
@@ -191,31 +306,54 @@ export class LocalPaceDeltaTracker {
    * Lap boundaries are detected by the lap-distance fraction wrapping past the
    * start/finish line — `mLapStartET`/`lapsCompleted` are not needed.
    *
-   * @param d          - Road position as a lap fraction `0..1`, already
-   *                     dead-reckoned forward to `elapsedSec` by the caller (see
-   *                     {@link SMOOTH_SLEW_SEC_PER_SEC}). Without that, `d` is a
-   *                     ~150 ms-stale REST value against a live clock and the
-   *                     delta sawtooths.
+   * @param d          - Road position as a lap fraction `0..1`, from the caller's
+   *                     {@link RoadPosition} observer. It must be that filtered
+   *                     estimate and not a raw REST reading: the reference trace
+   *                     is built from these same values, so live and reference
+   *                     positions only cancel each other's lag if both come off
+   *                     the same filter.
    * @param elapsedSec - Sim `mElapsedTime` (seconds), a monotonic real-time clock.
    * @param restBest   - REST `bestLapTime`, for out-lap plausibility guarding.
    * @param trackKey   - Stable per-track-and-car id for persistence; build it
    *                     with {@link refKeyOf}. A change of key reloads the
    *                     all-time best, so swapping cars mid-session adopts the
    *                     right reference without a restart.
-   * @param fresh      - Whether `d` came from a REST snapshot not seen before.
-   *                     Only fresh positions are written into the reference
-   *                     trace: extrapolated ones would bake this poll's velocity
-   *                     assumption into the lap we later compare against.
    */
-  public update(
+  public update(d: number, elapsedSec: number, restBest: number, trackKey: string): PaceDeltas {
+    const at = this.advance(d, elapsedSec, restBest, trackKey);
+    if (at === null) return this.lastOut;
+    this.lastOut = this.compute(at.t, at.d);
+    return this.lastOut;
+  }
+
+  /**
+   * Feed a sample and keep the reference laps up to date, without computing the
+   * deltas. For cars that are being followed but not shown — a broadcast
+   * director cuts between cars constantly, and a car whose laps were only
+   * recorded while the camera was on it has no reference the moment it cuts
+   * back. Tracking every car costs a lap-boundary check and an occasional trace
+   * point; it is {@link compute} (six interpolations over the traces) that is
+   * worth skipping for the cars nobody is looking at.
+   */
+  public observe(d: number, elapsedSec: number, restBest: number, trackKey: string): void {
+    this.advance(d, elapsedSec, restBest, trackKey);
+  }
+
+  /**
+   * Advance the lap state by one sample.
+   * @returns The `(t, d)` to compute deltas at, or `null` when this sample
+   *          produced no usable point — in which case {@link lastOut} already
+   *          holds the right answer (held over, or blanked).
+   */
+  private advance(
     d: number,
     elapsedSec: number,
     restBest: number,
     trackKey: string,
-    fresh = true,
-  ): PaceDeltas {
+  ): { t: number; d: number } | null {
     if (d < 0 || d > 1 || typeof elapsedSec !== 'number' || elapsedSec <= 0) {
-      return EMPTY_PACE_DELTAS;
+      this.lastOut = EMPTY_PACE_DELTAS;
+      return null;
     }
 
     // Track change → (re)load the persisted all-time best for the new track.
@@ -226,6 +364,29 @@ export class LocalPaceDeltaTracker {
 
     // Session restart / return-to-garage → the sim clock rewinds; start over.
     if (this.lapStartElapsed >= 0 && elapsedSec + 1 < this.lapStartElapsed) this.reset();
+
+    // The clock did not advance since the last poll: shared memory was read
+    // mid-write and the caller re-served its previous sample, or the sim is
+    // paused. Running the delta anyway would compare a frozen `t` against a
+    // position that is still moving, so the readout falls at a full second per
+    // second and snaps back when the clock catches up. At a few percent of torn
+    // reads that alone was ±0.09 s of twitch, frame to frame. Hold instead.
+    if (this.prevElapsed >= 0 && elapsedSec <= this.prevElapsed) return null;
+
+    // A long gap: the car was in the garage, or dropped out of the feed, or the
+    // provider stopped feeding it. Whatever the in-progress lap was, it is not a
+    // lap any more — its start is minutes behind and the car has been moved
+    // since. Re-anchor here and let the next line crossing start a real one,
+    // rather than carrying a stale `lapStartElapsed` that puts every delta past
+    // the sanity limit until the car happens to cross the line again.
+    if (this.prevElapsed >= 0 && elapsedSec - this.prevElapsed > 5) {
+      this.samples = [];
+      this.lapStartElapsed = elapsedSec;
+      this.prevD = d;
+      this.fromLine = false;
+      this.resetFilters();
+    }
+
     if (this.lapStartElapsed < 0) {
       this.lapStartElapsed = elapsedSec;
       this.prevD = d;
@@ -259,16 +420,23 @@ export class LocalPaceDeltaTracker {
     this.prevElapsed = elapsedSec;
 
     const t = elapsedSec - this.lapStartElapsed; // real seconds into the lap
-    if (t < 0) return EMPTY_PACE_DELTAS;
+    if (t < 0) {
+      this.lastOut = EMPTY_PACE_DELTAS;
+      return null;
+    }
 
     // Record forward progress, decimated to ~0.2% of a lap between samples.
-    // Extrapolated positions are skipped — see the `fresh` parameter.
+    // Every frame is a candidate: `d` is now the observer's estimate rather than
+    // a raw REST reading, so a frame that happens to coincide with a packet is
+    // no better a sample than any other — and taking whichever frame first
+    // crosses the decimation step gives a trace with even spacing, which is what
+    // {@link interpTime} interpolates cleanly between.
     const prev = this.samples[this.samples.length - 1];
-    if (fresh && (prev === undefined || (d > prev.d + 0.002 && t >= prev.t))) {
+    if (prev === undefined || (d > prev.d + 0.002 && t >= prev.t)) {
       this.samples.push({ d, t });
     }
 
-    return this.compute(t, d);
+    return { t, d };
   }
 
   /**

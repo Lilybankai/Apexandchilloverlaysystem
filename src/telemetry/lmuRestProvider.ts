@@ -67,7 +67,7 @@ import {
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
-import { LocalPaceDeltaTracker, refKeyOf } from './paceDelta';
+import { LocalPaceDeltaTracker, RoadPosition, refKeyOf } from './paceDelta';
 import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -241,8 +241,14 @@ export class LmuRestProvider implements TelemetryProvider {
    * widget and the single-value Delta widget. Built on the REST watch feed.
    */
   private readonly paceDelta = new LocalPaceDeltaTracker();
-  /** `lastOkAt` of the newest REST snapshot already fed to {@link paceDelta}. */
-  private paceDeltaSnapshotAt = 0;
+  /** The delta engine's distance axis — see {@link RoadPosition}. */
+  private readonly roadPos = new RoadPosition();
+  /** Accumulated seconds on the spectated delta clock — see {@link stepDeltaClock}. */
+  private deltaClockSec = 0;
+  /** Sim clock at the last {@link stepDeltaClock}; `-1` when it wasn't readable. */
+  private deltaClockSimSec = -1;
+  /** Wall clock (ms) at the last {@link stepDeltaClock}. */
+  private deltaClockWallMs = 0;
   /** Separate calculator fed real litres from shared memory (local car). */
   private readonly localFuel = new FuelCalculator();
   /**
@@ -535,6 +541,51 @@ export class LmuRestProvider implements TelemetryProvider {
 
   /* ------------------------------- mapping ------------------------------- */
 
+  /**
+   * Advance the time axis the spectated delta engine runs on, and return it.
+   *
+   * A lap delta is a difference of two clocks, so the clock has to be real —
+   * REST `timeIntoLap` is derived from position and reports the same value at a
+   * given distance whatever the lap time, which is why the spectated delta used
+   * to sit at 0.00. Two real clocks are available, and which one we get depends
+   * on how the overlay is being run:
+   *
+   *   • the sim's own `mElapsedTime`, when this PC has a car in the session —
+   *     the same clock the driven car's delta uses. It stops when the sim is
+   *     paused, which is what makes it the better of the two;
+   *   • wall time, for a spectator or broadcast PC with no car of its own. It
+   *     ticks 1:1 with a live session and only misleads if the sim is paused or
+   *     running dilated, neither of which happens on a live server.
+   *
+   * Rather than hand those out directly — swapping between them mid-session
+   * would look like a jump of decades — this accumulates a single monotonic
+   * count of seconds from whichever source is currently available. Each step is
+   * clamped to a sane interval, so a resumed session, a slow frame or a
+   * shared-memory dropout contributes at most one step's worth instead of a
+   * discontinuity every car's lap timing would have to recover from.
+   *
+   * @param simSec - The sim clock this frame, or {@link UNKNOWN_VALUE}.
+   * @param nowMs  - Wall clock (ms) for this frame.
+   */
+  private stepDeltaClock(simSec: number, nowMs: number): number {
+    const haveSim = typeof simSec === 'number' && simSec > 0;
+    let step: number;
+    if (haveSim && this.deltaClockSimSec > 0) {
+      step = simSec - this.deltaClockSimSec;
+    } else if (this.deltaClockWallMs > 0) {
+      step = (nowMs - this.deltaClockWallMs) / 1000;
+    } else {
+      step = 0;
+    }
+    this.deltaClockSimSec = haveSim ? simSec : -1;
+    this.deltaClockWallMs = nowMs;
+    // A negative step is the sim clock rewinding (session restart); a large one
+    // is a stall or an unpause. Neither is time the cars actually spent driving.
+    this.deltaClockSec += step > 0 && step < 1 ? step : 0;
+    // Never zero: the tracker treats a non-positive clock as "no data".
+    return this.deltaClockSec + 1;
+  }
+
   private buildFrame(nowMs: number): TelemetryFrame {
     const cars = this.standings ?? [];
     const si = this.session ?? {};
@@ -576,12 +627,19 @@ export class LmuRestProvider implements TelemetryProvider {
     const fuel = this.buildFuel(focus, session, local, cars);
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running). When the
-    // focused car is the one driven on this PC, the shared-memory lap clock
-    // drives a high-rate exact tracker; spectated cars use the REST tracker.
+    // focused car is the one driven on this PC it gets the shared-memory lap
+    // clock and that car's own live speed; every other car runs the same engine
+    // off the REST feed — see {@link LapDeltaTracker}.
     const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
+    const restAgeSec = Math.min(0.5, Math.max(0, (nowMs - this.lastOkAt) / 1000));
+    const deltaClock = this.stepDeltaClock(local ? local.elapsedSec : UNKNOWN_VALUE, nowMs);
     const localIsFocus =
       local !== null && playerCar !== undefined && focus !== undefined &&
       playerCar.slotID === focus.slotID;
+    // Runs for the whole field on every frame, including while the driven car
+    // has focus: stop feeding it and the first cut to a rival has no reference
+    // lap to compare against.
+    const restDeltaSec = this.lapDelta.update(cars, focus, trackLen, deltaClock, restAgeSec);
     let deltaSec: number;
     let paceDeltas: PaceDeltas | undefined;
     if (
@@ -596,39 +654,32 @@ export class LmuRestProvider implements TelemetryProvider {
       // the sim clock genuinely differs between fast and slow laps.
       //
       // The two axes tick at very different rates: the clock is fresh every
-      // frame (~30-60 Hz) but the REST position only every REFRESH_INTERVAL_MS.
-      // Feeding a stale position against a live clock makes `t − t_ref(d)` climb
-      // at 1.0 s/s between packets and snap back on arrival — a visible sawtooth
-      // of up to ~0.2 s. So extrapolate the position forward by the snapshot's
-      // age × the car's own velocity, exactly as buildRelative() does, and wrap
-      // it at the start/finish line. Both axes then advance together and the
-      // delta is smooth; `fresh` tells the tracker which samples are real
-      // measurements it may store as reference-lap points.
-      const snapshotAt = this.lastOkAt;
-      const fresh = snapshotAt !== this.paceDeltaSnapshotAt;
-      this.paceDeltaSnapshotAt = snapshotAt;
-      const ageSec = Math.min(0.5, Math.max(0, (Date.now() - snapshotAt) / 1000));
+      // frame (~30-60 Hz) but the REST position only every REFRESH_INTERVAL_MS,
+      // and each snapshot is already stale by a varying few tens of ms when it
+      // lands. Extrapolating it forward by (arrival age × the snapshot's own
+      // velocity) gets the bulk of that back, but not the part that elapsed
+      // before arrival — and at racing speed the leftover is metres, which the
+      // delta divides into tenths of a second. So this is a *measurement*, not
+      // the axis: RoadPosition folds it into a position integrated from the
+      // car's own live speed, which is smooth and shares the delta clock's
+      // buffer and instant. See {@link RoadPosition} for the full reasoning.
       const vel = focus!.carVelocity?.velocity;
-      const speedMps =
+      const restMps =
         typeof vel === 'number' && Number.isFinite(vel) ? Math.min(150, Math.max(0, vel)) : 0;
-      const distM = focus!.lapDistance + speedMps * ageSec;
-      const laps = distM / trackLen;
-      const d = clamp01(laps - Math.floor(laps));
+      const measuredM = focus!.lapDistance + restMps * restAgeSec;
+      const distM = this.roadPos.step(local!.elapsedSec, measuredM, local!.speedMps, trackLen);
+      const d = clamp01(distM / trackLen);
       paceDeltas = this.paceDelta.update(
         d,
         local!.elapsedSec,
         focus!.bestLapTime,
         refKeyOf(si.trackName || '', trackLen, this.playerVehicleName, playerCar?.carClass),
-        fresh,
       );
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
-      deltaSec =
-        paceDeltas.tSession !== UNKNOWN_VALUE
-          ? paceDeltas.tSession
-          : this.lapDelta.update(focus, trackLen);
+      deltaSec = paceDeltas.tSession !== UNKNOWN_VALUE ? paceDeltas.tSession : restDeltaSec;
     } else {
-      deltaSec = this.lapDelta.update(focus, trackLen);
+      deltaSec = restDeltaSec;
     }
     // Track limits ride on the DRIVEN car (like the radar), so they need that
     // car's own speed — not the focused car's, which may be a rival being
@@ -1664,138 +1715,96 @@ function round2(v: number): number {
 
 /* ----------------------------- lap-delta tracker -------------------------- */
 
-/** One point on a lap's distance→time curve (distance as a 0..1 fraction). */
-interface DeltaSample {
-  d: number;
-  t: number;
+/** Per-car state for {@link LapDeltaTracker}. */
+interface CarDeltaState {
+  /** The car's distance axis — see {@link RoadPosition}. */
+  pos: RoadPosition;
+  /** The same engine the driven car uses, minus the persisted all-time best. */
+  engine: LocalPaceDeltaTracker;
 }
 
 /**
- * Computes a **predictive live lap delta** for the focused car against its own
- * fastest lap, the way a sim's on-screen delta bar does.
+ * Live lap delta for cars we can only see through the REST feed — anyone but
+ * the car being driven on this PC.
  *
- * It records the car's `(distanceFraction, timeIntoLap)` trace over each lap.
- * When the car completes a new personal-best lap (and we captured a reasonably
- * complete trace), that trace becomes the **reference**. Thereafter the delta at
- * any moment is `currentTimeIntoLap − referenceTimeAt(currentDistance)`:
- * negative means ahead of the best lap (faster), positive means behind.
+ * ## Why this is not just the old REST tracker with a filter on it
+ * It used to read the delta as `timeIntoLap − refTimeAt(d)`, taking REST
+ * `timeIntoLap` as the lap clock. That field is a **position-derived estimate**:
+ * at a given distance it reports the same value on a fast lap and a slow one.
+ * So the subtraction cancelled by construction and the readout sat at 0.00
+ * whatever the car did — a bar that was perfectly steady and completely silent.
+ * (This was already recorded as a known dead end when the driven car's delta was
+ * rebuilt in 0.6.5; it is only now being paid off for everyone else.)
  *
- * Returns {@link UNKNOWN_VALUE} until a reference lap exists (e.g. the opening
- * lap, or a best set before the overlay started — its trace was never seen), and
- * resets cleanly when broadcast focus moves to a different car.
+ * So the time axis here is a real clock — the sim's own `mElapsedTime` where
+ * shared memory can be read, otherwise wall time (see the provider's
+ * `deltaClockSec`) — with lap boundaries taken from the distance fraction
+ * wrapping past the line, exactly as the driven car's engine does it. That makes
+ * this the same engine, per car: {@link LocalPaceDeltaTracker} with an empty
+ * track key, which is what disables the on-disk all-time best (a spectated car's
+ * best belongs to the session being watched, not to this PC's PB store).
+ *
+ * Every car in the feed is tracked every frame, not just the focused one. A
+ * director cuts between cars constantly, and a car whose laps were only recorded
+ * while the camera was on it has nothing to compare against the moment it cuts
+ * back. Only the focused car's deltas are actually computed.
  */
-/** Per-car lap-delta state: the in-progress trace and the adopted reference. */
-interface CarDeltaState {
-  laps: number;
-  samples: DeltaSample[];
-  ref: DeltaSample[] | null;
-  refBest: number;
-  /** Whether the reference trace covers the whole lap (captured flag-to-flag). */
-  refIsFull: boolean;
-}
-
 class LapDeltaTracker {
-  /**
-   * State per car (keyed by slotID) rather than for a single focused car. A
-   * broadcast director constantly switches which car has focus; keeping the
-   * reference lap per-car means a car's delta keeps working the instant focus
-   * returns to it, instead of resetting to "—" and needing a fresh lap every
-   * time the camera cuts away and back.
-   */
   private readonly cars = new Map<number, CarDeltaState>();
 
-  public update(focus: RestStanding | undefined, trackLen: number): number {
-    if (!focus || trackLen <= 0) return UNKNOWN_VALUE;
-    const t = focus.timeIntoLap;
-    const dist = focus.lapDistance;
-    if (typeof t !== 'number' || typeof dist !== 'number' || t < 0) return UNKNOWN_VALUE;
-    const d = clamp01(dist / trackLen);
+  /**
+   * @param cars     - Every car in the current REST standings snapshot.
+   * @param focus    - The car whose delta is wanted (the broadcast focus).
+   * @param trackLen - Lap length in metres.
+   * @param clockSec - A real-time clock in seconds, monotonic and continuous
+   *                   across the session (the provider's `deltaClockSec`).
+   * @param ageSec   - Age of the REST snapshot, for dead-reckoning positions.
+   * @returns The focused car's delta in seconds, or {@link UNKNOWN_VALUE}.
+   */
+  public update(
+    cars: RestStanding[],
+    focus: RestStanding | undefined,
+    trackLen: number,
+    clockSec: number,
+    ageSec: number,
+  ): number {
+    if (trackLen <= 0 || !(clockSec > 0)) return UNKNOWN_VALUE;
+    let out: number = UNKNOWN_VALUE;
+    const seen = new Set<number>();
 
-    let st = this.cars.get(focus.slotID);
-    if (!st) {
-      st = {
-        laps: focus.lapsCompleted | 0,
-        samples: [],
-        ref: null,
-        refBest: Infinity,
-        refIsFull: false,
-      };
-      this.cars.set(focus.slotID, st);
-    }
-
-    // Lap boundary: consider adopting the just-completed lap's trace as the
-    // reference. A PARTIAL trace (we started watching mid-lap) is still valid —
-    // its (distance, timeIntoLap) pairs come from the sim, not from when we
-    // began observing — but only *within the span it covers*; interpolation is
-    // gated to that span below, so the first observed lap already arms the
-    // delta for the covered part of the track instead of waiting another lap.
-    const laps = focus.lapsCompleted | 0;
-    if (laps !== st.laps) {
-      const lastLap = typeof focus.lastLapTime === 'number' ? focus.lastLapTime : -1;
-      const first = st.samples[0];
-      const last = st.samples[st.samples.length - 1];
-      // The trace must at least END at the line so its samples belong to the lap
-      // whose time we just received.
-      const usable = st.samples.length >= 8 && last !== undefined && last.d > 0.9;
-      const isFull = usable && first !== undefined && first.d < 0.1;
-      // Reject out-laps / crawls: a real flying lap is within ~40% of the car's
-      // own best. Without a sane best yet (first ever lap), accept anything sane.
-      const best = focus.bestLapTime;
-      const plausible =
-        lastLap > 5 &&
-        lastLap < 600 &&
-        (!(best > 5 && best < 600) || lastLap < best * 1.4);
-      // Adopt when faster than the current reference, or to upgrade a partial
-      // reference to full coverage (even at a slightly slower time).
-      if (usable && plausible && (lastLap < st.refBest || (isFull && !st.refIsFull))) {
-        st.ref = st.samples.slice().sort((a, b) => a.d - b.d);
-        st.refBest = lastLap;
-        st.refIsFull = isFull;
+    for (const c of cars) {
+      if (typeof c.lapDistance !== 'number' || !Number.isFinite(c.lapDistance)) continue;
+      seen.add(c.slotID);
+      let st = this.cars.get(c.slotID);
+      if (!st) {
+        st = { pos: new RoadPosition(), engine: new LocalPaceDeltaTracker() };
+        this.cars.set(c.slotID, st);
       }
-      st.samples = [];
-      st.laps = laps;
+      // A car in its garage stall is not on the road; feeding its position would
+      // record a "lap" through the pit building. Skipping it leaves a gap the
+      // engine re-anchors on when the car reappears.
+      if (c.inGarageStall === true) continue;
+
+      const vel = c.carVelocity?.velocity;
+      const v =
+        typeof vel === 'number' && Number.isFinite(vel) ? Math.min(150, Math.max(0, vel)) : 0;
+      // Same two-step as the driven car: dead-reckon the snapshot to now, then
+      // let the observer fold that measurement into a smooth position. Here both
+      // steps use the REST velocity — there is no shared-memory speed for a car
+      // this PC isn't driving — but the win is the same, because the arrival
+      // jitter lands in the position, not in the velocity.
+      const distM = st.pos.step(clockSec, c.lapDistance + v * ageSec, v, trackLen);
+      const d = clamp01(distM / trackLen);
+      if (focus && c.slotID === focus.slotID) {
+        out = st.engine.update(d, clockSec, c.bestLapTime, '').tSession;
+      } else {
+        st.engine.observe(d, clockSec, c.bestLapTime, '');
+      }
     }
 
-    // Record only forward progress (ignore pit resets / going backwards). Between
-    // REST updates d is unchanged, so this naturally de-dupes to ~one point per
-    // real update rather than per 30 Hz frame.
-    const last = st.samples[st.samples.length - 1];
-    if (last === undefined || (d > last.d && t >= last.t)) st.samples.push({ d, t });
-
-    if (!st.ref || st.ref.length < 2) return UNKNOWN_VALUE;
-    const refT = interpTime(st.ref, d);
-    if (refT < 0) return UNKNOWN_VALUE;
-    const delta = t - refT;
-    // Safety net: a lap delta is realistically only a few seconds; anything
-    // wilder means the reference is unusable (bad/partial trace), so hide it
-    // rather than show nonsense on the bar.
-    if (Math.abs(delta) > DELTA_SANE_LIMIT_SEC) return UNKNOWN_VALUE;
-    return round2(delta);
+    // Drop cars that have left the session, so a long server run doesn't
+    // accumulate a trace per driver who ever connected.
+    for (const id of this.cars.keys()) if (!seen.has(id)) this.cars.delete(id);
+    return out;
   }
-}
-
-/** Beyond this |delta| (seconds) we assume a bad reference and report unknown. */
-const DELTA_SANE_LIMIT_SEC = 30;
-/**
- * Linear-interpolate the reference lap's time at distance fraction `d`.
- * Returns `-1` (unknown) when `d` falls OUTSIDE the trace's covered span —
- * clamping there instead would compare against the span edge's time and produce
- * wildly wrong deltas whenever the reference is a partial lap.
- */
-function interpTime(ref: DeltaSample[], d: number): number {
-  const n = ref.length;
-  // Tolerance for float noise right at the span edges (~0.5% of a lap).
-  const EDGE = 0.005;
-  if (d < ref[0]!.d - EDGE || d > ref[n - 1]!.d + EDGE) return -1;
-  if (d <= ref[0]!.d) return ref[0]!.t;
-  if (d >= ref[n - 1]!.d) return ref[n - 1]!.t;
-  for (let i = 1; i < n; i++) {
-    const b = ref[i]!;
-    if (b.d >= d) {
-      const a = ref[i - 1]!;
-      const span = b.d - a.d;
-      return span <= 0 ? a.t : a.t + (b.t - a.t) * ((d - a.d) / span);
-    }
-  }
-  return ref[n - 1]!.t;
 }

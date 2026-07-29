@@ -217,6 +217,14 @@ export interface LocalCarPhysics {
   maxRpm: number;
   speedKph: number;
   /**
+   * The same forward speed in m/s, unrounded. `speedKph` is rounded to whole
+   * km/h for display, and that 0.28 m/s of quantisation is a bias rather than
+   * noise — held for as long as the car holds a speed — so anything that
+   * *integrates* speed (the delta engine's road-position observer) has to read
+   * it from here instead.
+   */
+  speedMps: number;
+  /**
    * Live rear brake-bias fraction `0..1` (share of braking on the rear) — the
    * value the driver shifts on the fly. `UNKNOWN_VALUE` when it reads outside a
    * plausible range. Read from shared memory because the REST garage API only
@@ -793,6 +801,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     rpm: Math.round(rpm),
     maxRpm: Math.round(rec.readDoubleLE(VT.mEngineMaxRPM)) || 8000,
     speedKph: Math.round(Math.abs(fwdVel) * 3.6),
+    speedMps: Number.isFinite(fwdVel) ? Math.abs(fwdVel) : 0,
     rearBrakeBias: plausibleFraction(rec.readDoubleLE(VT.mRearBrakeBias)),
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),

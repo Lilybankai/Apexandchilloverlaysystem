@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.34.0 — 2026-07-29
+
+### Fixed
+
+- **The delta bar now holds still.** It swayed and twitched instead of settling,
+  which made it useless for the one thing it exists for — telling you whether
+  the corner you just took was worth anything. The delta is `t − t_ref(d)`, so
+  an error of a few metres in *where the car is* lands on screen as tenths of a
+  second, and the position axis was carrying three separate errors of exactly
+  that size:
+
+  - REST snapshots are published on the game's own clock and arrive over HTTP,
+    so each one is already 5–85 ms old when it lands, by an amount that varies
+    packet to packet. Extrapolating by the snapshot's measured age (arrival →
+    now) cannot recover the part that elapsed before arrival.
+  - Because that leftover staleness scales with speed, it was not a constant
+    offset cancelling between the live lap and the reference lap. It was a bias
+    that changed shape around the lap — measured at −0.07 s mean, drifting
+    through the corners, on a lap driven identically to its own reference.
+  - Every REST arrival landed as a step, so the readout twitched at the poll
+    rate. On top of that, a torn shared-memory read froze the delta's *time*
+    axis for a frame while the position axis kept moving, dropping the readout
+    at a full second per second until the clock caught up: ±0.09 s of jump on
+    its own.
+
+  The position axis is now a complementary filter. Fast motion is integrated
+  from the car's own speed — shared memory, same buffer and same instant as the
+  delta clock, no network in between — and the REST position is used only to
+  correct slow drift, pulled in over a second, which low-passes its noise away.
+  Because the prediction uses live speed there is no lag to pay for that long
+  time constant, and what lag remains is identical on the live lap and the
+  reference lap, so it cancels in the subtraction instead of showing as sway.
+  The engine also holds its last answer when the sim clock does not advance.
+
+  Under a rig that models the real feed (braking zones, jittering snapshot
+  latency, 5 % torn reads) driving a lap identical to its own reference, where
+  the correct readout is a flat 0.00: error spread **0.150 s → 0.045 s**, bias
+  **−0.069 s → −0.003 s**, worst frame-to-frame jump **0.084 s → 0.002 s**.
+  Committed as regression checks in `npm run test:delta`.
+
+- **Spectated cars now have a delta at all.** Chasing the sway into the
+  spectated path turned up something worse than sway: that bar was reading
+  `timeIntoLap − refTimeAt(d)`, and REST **`timeIntoLap` is derived from
+  position** — at a given distance it returns the same value on a fast lap and a
+  slow one. The subtraction cancelled by construction, so the readout sat at
+  0.00 whatever the car did. Perfectly steady, and saying nothing. (This was
+  written down as a known dead end when the driven car's delta was rebuilt in
+  0.6.5, and has been the spectated behaviour ever since.)
+
+  Spectated cars now run the same engine as the driven car, per car: a real
+  clock — the sim's `mElapsedTime` when this PC has a car in the session, wall
+  time on a spectator or broadcast box — with lap boundaries from the distance
+  fraction wrapping past the line, and the same road-position observer on the
+  distance axis. On the rig above, a spectated car driving a lap identical to
+  its own reference holds to a **0.035 s** spread, and a lap 0.32 s slower now
+  reads **+0.34** where it used to read 0.00.
+
+  Two knock-on changes. **Every car in the feed is tracked on every frame**, not
+  just whichever one has the camera — a director cuts constantly, and a car
+  whose laps were only recorded while it was on screen has nothing to compare
+  against the moment it cuts back. Only the focused car's deltas are computed,
+  so this costs a lap-boundary check per car, not six interpolations. And a car
+  that vanishes for a while (garage, feed dropout) now **re-anchors** rather
+  than carrying a lap start from ten minutes ago that would put every delta past
+  the sanity limit until it next crossed the line.
+
+  One deliberate loss: the old tracker would arm off a **partial** trace, giving
+  a delta over whatever slice of the track it had seen. Times measured against a
+  start line the car was never observed crossing can't be trusted now that we
+  measure the lap ourselves, so a full lap from the line is required. In
+  practice availability improves, because cars are no longer only recorded while
+  on camera.
+
 ## 0.33.0 — 2026-07-28
 
 ### Changed
