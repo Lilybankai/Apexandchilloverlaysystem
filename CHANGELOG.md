@@ -1,5 +1,86 @@
 # Changelog
 
+## 0.40.0 — 2026-07-29
+
+### Added
+
+- **The points total is now the sim's, not ours.** The Track Limits widget counted
+  excursions from geometry and compared them against a hard-coded limit of 10. LMU's
+  real allowance is a per-session setting, and its charges are nothing like an
+  excursion count — so the number a driver was watching was wrong twice over. Both
+  halves are now read from the sim, and the widget marks which is which: a leading
+  `~` in the header means the figure is our estimate, and its absence means it is the
+  stewards'.
+
+  **The threshold comes from `/rest/sessions`**, which publishes the session's own
+  setup:
+
+  ```
+  SESSSET_cuts_allowed = { currentValue: 5,  numStepsTotal: 63 }
+  SESSSET_cut_rules    = { currentValue: 1,  stringValue: "Default" }
+  ```
+
+  `cuts_allowed` is **points, not cuts** — confirmed by driving it: one deep cut
+  charged 1.00 and left four to go. `cut_rules` is deliberately not acted on. It has
+  three states and only `"Default"` has been observed, so whether either of the others
+  is a show-but-never-penalise mode is unknown, and promising immunity that is not
+  there is worse than saying nothing.
+
+  **The charges come from the trace log**, which is the only live source for them
+  anywhere. Everything else was ruled out first, live, in a race session: `Extended`,
+  `PitInfo` and `Rules` are all mapped and contain **zero printable strings**, so LMU
+  never writes rF2's message fields at all; every REST message, incident and
+  race-control endpoint 404s; and the standings row's 46 fields carry the penalty
+  *count* and nothing else. The results XML holds exactly the right data and is written
+  in a single burst when the session **ends**, which is too late to drive by.
+
+  `score.cpp` writes a verdict line and a scoring breakdown for every excursion:
+
+  ```
+  4822: Track Limits: Back On Track; Lap: 1 LapDist: 3029.19
+   626: Track Limits: WarnPts: 1.00 Pts: 0.84 TimeSkipped: 0.33 … MaxOffTrack: 12.91
+  4083: Track Limits: Warning; Lap: 1 LapDist: 3183.09
+  ```
+
+  Three things about that took establishing, and each was a bug first. **The charge is
+  driven by time gained, not by how far off the road the car went** — `Pts` goes
+  negative when the driver *lost* time, which is charged as zero, so a 0.93 m excursion
+  at 183 kph cost nothing while a 9.92 m cut that gained 0.33 s cost 1.00. **Every
+  excursion is evaluated twice and only the second counts**: a provisional figure the
+  instant the car rejoins, then the settled `Warning` or `No Track Cut` — the
+  provisional ones read 3.75 where the settled verdict charged 0.25, and counting them
+  put one session at 22 points against an allowance of 5. **The discharge is named
+  `"Track Limits"`**, not "Drive Through", so the obvious pattern never fires; pit-lane
+  speeding must not discharge it either, so the match is on wording rather than on a
+  penalty appearing. Totals are per session and reset on `steward.cpp SessionName`,
+  which covers a race restart.
+
+  Validated against the sim's own arithmetic rather than by inspection. Replaying one
+  race's trace reproduces its thirteen charges, in order, summing to exactly the
+  **5.00** that earned the drive-through — the same sequence as that session's XML
+  `WarningPoints`, whose `CurrentPoints` climbs to 4.75 and resets at 5.00, with the
+  two events aligning in time (XML `et=382.4` ↔ trace `16313.45s`).
+
+  Not included: **lap invalidation**. The XML reports it and the trace has no
+  equivalent line, so nothing claims it live. `scripts/probe-lmu-penalty.js` now logs
+  `countLapFlag`, the likeliest candidate, so a single cut will settle it.
+
+- **`scripts/test-tracelimits.js`** — 54 assertions on lines copied verbatim out of a
+  live trace, now part of `npm run test`. Two are regressions for bugs the real file
+  found and hand-written fixtures never would have: JavaScript's `.` does not match
+  `\r`, so the CRLF log defeated the `$` anchor and *every* genuine line parsed as
+  `null`; and searching for `Pts` matches inside `WarnPts`, silently returning the
+  charge where the raw score was asked for.
+
+- **`scripts/probe-lmu-penalty.js` keeps what it finds.** It printed to a terminal that
+  gets closed, scrolled past, or killed with the sim — taking the one event it was left
+  running for hours to catch with it. Changes now append to
+  `~/.apex-overlay/penalty-probe.jsonl` as raw records, and it samples the lateral
+  geometry at 4 Hz (an excursion is over in a second; at 1 Hz a fast one is a single
+  reading or none), excludes the pit lane, and records the minimum speed through each
+  excursion so a spin or a crawl back onto the road is separable from a cut taken at
+  racing speed.
+
 ## 0.39.0 — 2026-07-29
 
 ### Added

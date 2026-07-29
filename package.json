@@ -1,6 +1,6 @@
 {
   "name": "apex-overlay-system",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "private": true,
   "description": "Apex & Chill Racing League — lightweight rFactor2 / Le Mans Ultimate telemetry overlay system for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays), with an optional Electron desktop control panel + installer.",
   "type": "commonjs",
@@ -22,7 +22,7 @@
     "test:multiclass": "node scripts/test-multiclass.js",
     "test:motion": "node scripts/test-motion.js",
     "test:chassis": "node scripts/test-chassis.js",
-    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:lmubinder && npm run test:panel-parity",
+    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:tracelimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:lmubinder && npm run test:panel-parity",
     "test:auth": "node scripts/test-auth.js",
     "test:laplog": "node scripts/test-laplog.js",
     "test:lapupload": "node scripts/test-lapupload.js",
@@ -32,6 +32,7 @@
     "test:damage": "node scripts/test-damage.js",
     "test:radar": "node scripts/test-radar.js",
     "test:tracklimits": "node scripts/test-tracklimits.js",
+    "test:tracelimits": "node scripts/test-tracelimits.js",
     "test:lmubinder": "node scripts/test-lmubinder.js"
   },
   "engines": {
