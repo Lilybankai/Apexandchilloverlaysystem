@@ -22,6 +22,7 @@ import {
   type DamageState,
   type FuelState,
   type MotionState,
+  type PaceDeltas,
   type PedalInputs,
   type PitPhase,
   type PitState,
@@ -324,6 +325,29 @@ export class SimulatorProvider implements TelemetryProvider {
     // Which pre-green phase the demo is in, or null once it has gone green.
     const preSession = this.advancePreSession(dt);
 
+    // The demo's live delta, and the pace block derived from it. Demo mode is
+    // how the overlay is set up and how it looks when LMU is unreachable, so
+    // the delta widget's projected lap has to have something to show here or it
+    // reads as broken rather than as waiting.
+    const simDelta =
+      Math.round(
+        (Math.sin(player.progress * Math.PI * 3) * 0.35 +
+          (player.lapSec - player.bestLapSec) * (player.progress - 0.5)) *
+          100,
+      ) / 100;
+    const paceDeltas: PaceDeltas = {
+      tSession: simDelta,
+      tAllTime: round2(simDelta + 0.21),
+      tLast: round2(simDelta - 0.13),
+      vSession: round2(simDelta * 0.9),
+      vAllTime: round2(simDelta * 0.9 + 0.21),
+      vLast: round2(simDelta * 0.9 - 0.13),
+      predictedLapSec: round2(player.bestLapSec + simDelta),
+      refSessionSec: round2(player.bestLapSec),
+      refAllTimeSec: round2(player.bestLapSec - 0.21),
+      lastLapSec: round2(player.lastLapSec),
+    };
+
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
     );
@@ -364,15 +388,11 @@ export class SimulatorProvider implements TelemetryProvider {
           // Wandering live delta vs. best: swings a few tenths either side of zero
           // through the lap (green when up, red when down) so the delta bar reads
           // like a real predictive delta rather than a one-way drift.
-          delta:
-            Math.round(
-              (Math.sin(player.progress * Math.PI * 3) * 0.35 +
-                (player.lapSec - player.bestLapSec) * (player.progress - 0.5)) *
-                100,
-            ) / 100,
+          delta: simDelta,
           sector: Math.min(3, Math.floor(player.progress * 3) + 1),
         },
         tyres: this.buildTyres(),
+        paceDeltas,
         // Absent for the first few seconds while the tracker's reference
         // converges — the same shape the live path produces, so demo mode
         // exercises the widget's "waiting for data" branch too.

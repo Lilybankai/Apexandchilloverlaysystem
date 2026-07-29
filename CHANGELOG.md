@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.35.0 — 2026-07-29
+
+### Added
+
+- **The delta bar now shows the lap it is projecting.** `PROJ` under the bar is
+  `sessionBest + delta` — the same projected-lap number LMU's own dashboards
+  carry. The delta says how the lap is going; this says what it adds up to,
+  which is the one you want when you are chasing a target time. It is Tier 2,
+  well under the delta itself, and takes the delta's colour so a glance says
+  better-or-worse without reading the digits. Two decimals, not the standings'
+  three: it is recomputed every frame off a live delta, so the thousandths never
+  sit still and showing them makes a steady projection look like it is churning.
+
+  The engine already computed this — it just had nowhere to go while
+  spectating. The REST delta engine now returns its whole pace block rather than
+  a bare number, so the projected lap (and the pace widget's session and last
+  columns) work for the focused car whoever is driving it. The all-time column
+  stays empty for a spectated car by design: a rival's cross-session PB is not
+  ours to keep.
+
+- **Chevrons in the delta bar, marching the way the lap is going** — rightward
+  as you gain, leftward as you lose, and faster the bigger the delta. Peripheral
+  vision reads motion long before it reads digits, which is the point of a bar
+  you glance at mid-corner rather than study.
+
+  They take the half-track on the delta's side and sit *above* the fill, not
+  inside it: inside, they spend most of their life behind the value, because the
+  fill grows outward from the same centre the number occupies. A mask fades them
+  out towards the middle so nothing crowds the number, and one `scaleX(-1)` for
+  the losing state points them the other way, reverses their travel and mirrors
+  the fade in a single property. Drawn as a tiled background rather than DOM
+  nodes, so it is one compositor-level animation with no per-frame layout, and
+  it costs the same at any bar width. Honours `prefers-reduced-motion`.
+
+- **Demo mode has a pace block.** The simulator emits `paceDeltas` derived from
+  its own wandering delta. Demo mode is how the overlay is set up, and how it
+  looks whenever LMU is unreachable, so a permanently blank projected lap there
+  would read as broken rather than as waiting.
+
 ## 0.34.0 — 2026-07-29
 
 ### Fixed

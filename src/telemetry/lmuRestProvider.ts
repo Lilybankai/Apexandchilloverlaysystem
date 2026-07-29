@@ -67,7 +67,7 @@ import {
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
-import { LocalPaceDeltaTracker, RoadPosition, refKeyOf } from './paceDelta';
+import { EMPTY_PACE_DELTAS, LocalPaceDeltaTracker, RoadPosition, refKeyOf } from './paceDelta';
 import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -639,7 +639,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // Runs for the whole field on every frame, including while the driven car
     // has focus: stop feeding it and the first cut to a rival has no reference
     // lap to compare against.
-    const restDeltaSec = this.lapDelta.update(cars, focus, trackLen, deltaClock, restAgeSec);
+    const restDeltas = this.lapDelta.update(cars, focus, trackLen, deltaClock, restAgeSec);
     let deltaSec: number;
     let paceDeltas: PaceDeltas | undefined;
     if (
@@ -677,9 +677,15 @@ export class LmuRestProvider implements TelemetryProvider {
       );
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
-      deltaSec = paceDeltas.tSession !== UNKNOWN_VALUE ? paceDeltas.tSession : restDeltaSec;
+      deltaSec =
+        paceDeltas.tSession !== UNKNOWN_VALUE ? paceDeltas.tSession : restDeltas.tSession;
     } else {
-      deltaSec = restDeltaSec;
+      // Spectating: the REST engine's answer IS the pace-delta block, so the
+      // predicted lap time and the session/last columns work for the focused
+      // car too. Its all-time column stays unknown by design — a rival's PB
+      // across sessions isn't ours to keep.
+      paceDeltas = restDeltas;
+      deltaSec = restDeltas.tSession;
     }
     // Track limits ride on the DRIVEN car (like the radar), so they need that
     // car's own speed — not the focused car's, which may be a rival being
@@ -1759,7 +1765,7 @@ class LapDeltaTracker {
    * @param clockSec - A real-time clock in seconds, monotonic and continuous
    *                   across the session (the provider's `deltaClockSec`).
    * @param ageSec   - Age of the REST snapshot, for dead-reckoning positions.
-   * @returns The focused car's delta in seconds, or {@link UNKNOWN_VALUE}.
+   * @returns The focused car's deltas, or {@link EMPTY_PACE_DELTAS}.
    */
   public update(
     cars: RestStanding[],
@@ -1767,9 +1773,9 @@ class LapDeltaTracker {
     trackLen: number,
     clockSec: number,
     ageSec: number,
-  ): number {
-    if (trackLen <= 0 || !(clockSec > 0)) return UNKNOWN_VALUE;
-    let out: number = UNKNOWN_VALUE;
+  ): PaceDeltas {
+    if (trackLen <= 0 || !(clockSec > 0)) return EMPTY_PACE_DELTAS;
+    let out: PaceDeltas = EMPTY_PACE_DELTAS;
     const seen = new Set<number>();
 
     for (const c of cars) {
@@ -1796,7 +1802,7 @@ class LapDeltaTracker {
       const distM = st.pos.step(clockSec, c.lapDistance + v * ageSec, v, trackLen);
       const d = clamp01(distM / trackLen);
       if (focus && c.slotID === focus.slotID) {
-        out = st.engine.update(d, clockSec, c.bestLapTime, '').tSession;
+        out = st.engine.update(d, clockSec, c.bestLapTime, '');
       } else {
         st.engine.observe(d, clockSec, c.bestLapTime, '');
       }

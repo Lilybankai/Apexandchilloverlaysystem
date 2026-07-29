@@ -430,6 +430,51 @@
 }
 #widget-delta[data-delta="ahead"] .delta__fill { background: var(--pos-gain); }
 #widget-delta[data-delta="behind"] .delta__fill { background: var(--pos-loss); }
+/* Chevrons marching the way the delta is going, faster the bigger it is (the
+   widget sets --delta-chev-dur from |delta|). They own the half-track on that
+   side and sit ABOVE the fill, so the march reads at any magnitude — inside the
+   fill they would spend most of their life hidden behind the value, which grows
+   outward from the same centre the number occupies.
+
+   Drawn as a tiled background rather than DOM nodes: one compositor-level
+   animation of background-position, no per-frame layout, and it costs the same
+   at any width. White at low alpha over the fill's own green/red, which saves
+   carrying a second tinted copy of the artwork per state. */
+.delta__chev {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  right: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='24'><path d='M2.5 5.5L8 12l-5.5 6.5' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-size: 12px 58%;
+  background-repeat: repeat-x;
+  background-position-y: center;
+  opacity: 0.34;
+  animation: delta-chev var(--delta-chev-dur, 1.4s) linear infinite;
+  /* Faded out at the centre so nothing crowds the number, full strength at the
+     outer edge where there is only bar. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 55%);
+}
+/* Losing time: the chevrons take the LEFT half, and one transform does the rest
+   — it points them the other way, reverses their apparent travel, and mirrors
+   the mask so the fade still lands at the centre. The animation is untouched. */
+#widget-delta[data-delta="behind"] .delta__chev {
+  left: 0;
+  right: 50%;
+  transform: scaleX(-1);
+}
+/* Nothing to march about at 0.00, or with no reference lap yet. */
+#widget-delta[data-delta="flat"] .delta__chev,
+#widget-delta[data-delta="none"] .delta__chev { display: none; }
+@keyframes delta-chev {
+  from { background-position-x: 0; }
+  to { background-position-x: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .delta__chev { animation: none; }
+}
 /* Centre reference tick. */
 .delta__center {
   position: absolute;
@@ -461,6 +506,33 @@
 #widget-delta[data-delta="ahead"] .delta__value { color: #eafff4; }
 #widget-delta[data-delta="behind"] .delta__value { color: #ffeef1; }
 #widget-delta[data-delta="none"] .delta__value { color: var(--text-muted); }
+
+/* Projected lap time (sessionBest + delta) — Tier 2, deliberately a long way
+   under the delta itself. The delta is the act-on-it-now number; this is the
+   read-between-corners one, and sizing it to compete would cost the bar the
+   single-number clarity it exists for. No change glow: it drifts continuously,
+   which is exactly the case the glow must not fire on. */
+.delta__pred {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.4em;
+  margin-top: 3px;
+}
+.delta__predlabel {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.delta__predval {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-data);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+#widget-delta[data-delta="ahead"] .delta__predval { color: var(--pos-gain); }
+#widget-delta[data-delta="behind"] .delta__predval { color: var(--pos-loss); }
 
 /* =========================================================================
  * PACE DELTA WIDGET — Pacelogic-style Δt + Δv vs session/all-time/last.
