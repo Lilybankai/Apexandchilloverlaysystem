@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.42.0 — 2026-07-30
+
+### Added
+
+- **Each of the fuel and energy bars now says how many laps it is worth.** `62.0 L · 23.9 laps`
+  and `83.9 % · 17.5 laps`, on the bar itself, in both widgets. Litres and percent are not
+  what anyone plans a race in — laps are — and neither figure converts to laps without
+  the burn rate that was sitting two lines further down.
+
+  The figure is per budget rather than shared, because the two do not run out on the
+  same lap: the pair above is a car with six more laps of fuel than energy in it, which
+  is the entire strategy call, and a single laps-left cell underneath could only ever
+  have been right about one of them. It is the same pairing the car's own dash makes
+  (`83.0L (37.6 laps)`), kept for each resource separately.
+
+  Blank rather than a dash while the burn rate is still unknown — for the first lap or
+  two of a stint there genuinely is no answer. The whole-lap bloom moved here from the
+  quantity beside it: losing a whole lap of range is the event worth looking up for,
+  and a bloom on every whole litre fired twice as often to say half as much.
+
+### Fixed
+
+- **The pit alarm could fire on lap one of a race with twenty laps of fuel in the car.**
+  Not the alarm's arithmetic — the burn rate underneath it. Laps-of-range is level
+  divided by burn, so an overstated burn understates the range in exact proportion, and
+  the calculator was accepting level changes that were never driven at all.
+
+  Three ways in, all landing on the **first** sample of a stint — the one that defines
+  the average every later sample is judged against, and so the one the existing outlier
+  test could not help with:
+
+  - A **new session reloads every car's tank from its setup.** Sit out a practice on a
+    full tank and start the race on the planner's 50.9 L and no lap ever runs backwards
+    to announce the change, so the first race lap was "measured" as 83 L minus 48.7 L —
+    a 34 L lap, fifteen times the real one. Measured against a real run: 12.9 L/lap
+    recorded where the car burned 2.2, and the alarm arriving on lap one.
+  - **Fuel edited in the garage**, or an energy allocation re-cut by a fuel-ratio
+    change, is a level rewritten part way through a lap.
+  - **Attaching part way round a lap** made the piece that was watched count as a whole
+    one — the same error inverted, and the more dangerous of the two, since an alarm
+    that reads three laps of fuel as nine simply never fires.
+
+  Level changes consumption cannot explain are now spotted sample to sample, and the lap
+  they land in is discarded rather than measured; no sample may exceed a quarter of the
+  whole budget (nothing in this game does four laps on a tank); and the fuel and energy
+  histories are dropped outright when the session changes, or when the broadcast focus
+  moves to a different car — a burn rate carried from one car to another is a
+  laps-remaining figure invented out of two.
+
 ## 0.41.0 — 2026-07-30
 
 ### Added

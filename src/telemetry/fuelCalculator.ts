@@ -47,11 +47,56 @@ export interface FuelUpdate {
 const DEFAULT_SAMPLE_WINDOW = 5;
 
 /**
- * Absolute upper bound (litres) on a single lap's recorded burn. A lap can
- * never consume more than the tank holds, so the known tank capacity is used
- * when available and this is only the fallback when capacity is unknown.
+ * Stand-in for the size of the whole budget when the real one isn't known —
+ * litres, since that is the only unit that can arrive without a capacity (the
+ * fraction and percent channels always declare theirs).
  */
 const MAX_PLAUSIBLE_LAP_BURN_L = 100;
+
+/**
+ * The largest share of the **whole budget** one lap may plausibly consume.
+ *
+ * This is the guard that the outlier check cannot be: the outlier check needs a
+ * rolling average to compare against, so the very first sample — the one that
+ * defines the average every later sample is judged by — passes through it
+ * untouched. A single bad first sample therefore sets the burn rate for the rest
+ * of the stint, and because laps-of-range is `level / burn`, doubling the burn
+ * halves the range and can raise the pit alarm on a car with twenty laps in it.
+ * That is exactly the "it screamed at me with a full tank" failure.
+ *
+ * A quarter of the budget per lap means a full tank — or a full energy
+ * allocation — lasting four laps. Nothing in this game is close: the shortest
+ * real stints are a dozen laps or so, so this rejects nonsense with an enormous
+ * margin over anything a car could actually do.
+ */
+const MAX_LAP_BURN_BUDGET_FRACTION = 0.25;
+
+/**
+ * A level change between two consecutive samples larger than this share of the
+ * budget did not come from driving — nothing burns a twentieth of its tank
+ * between two frames. It is the tank being **rewritten**: a new session loading
+ * the setup's fuel load, the driver changing that load in the garage, a
+ * fuel-ratio change re-cutting the energy allocation, or a teleport to the box.
+ *
+ * The lap such a jump lands in is discarded rather than measured, because the
+ * difference between its start and end level is a mixture of driving and an edit
+ * and there is no way to tell how much of it was which.
+ *
+ * Set well above any stall: at 5% of an 83 L tank, ordinary consumption would
+ * have to go unsampled for minutes to be mistaken for an edit — and if it ever
+ * were, the cost is one skipped sample, which errs quiet rather than wrong.
+ */
+const LEVEL_JUMP_BUDGET_FRACTION = 0.05;
+
+/**
+ * How close to the start/finish line the first observation must be for the lap
+ * it opens to count as a whole lap. Attach the overlay half way round and the
+ * "lap" that ends at the next line is only the half of it that was watched;
+ * recording that as a lap's burn halves the rate and doubles the apparent range,
+ * which is the same error the other way up — an alarm that stays quiet past the
+ * point it was needed.
+ */
+const FIRST_ANCHOR_MAX_FRACTION = 0.02;
 
 /**
  * Once a rolling average exists, reject a new per-lap sample larger than this
@@ -119,6 +164,12 @@ export class FuelCalculator {
    * level rises rather than a lap later. {@link UNKNOWN_VALUE} before the first.
    */
   private lastFuel: number = UNKNOWN_VALUE;
+  /**
+   * Whether the lap in progress has had its level changed by something other
+   * than driving, so the difference between its start and end is not a burn.
+   * Cleared at each line, since the next lap starts from a fresh anchor.
+   */
+  private lapDirty = false;
 
   /**
    * @param sampleWindow - How many recent laps to average (default 5). Smaller
@@ -135,6 +186,7 @@ export class FuelCalculator {
     this.fuelAtLapStart = UNKNOWN_VALUE;
     this.pitArmed = false;
     this.lastFuel = UNKNOWN_VALUE;
+    this.lapDirty = false;
   }
 
   /**
@@ -167,20 +219,38 @@ export class FuelCalculator {
    */
   public update(u: FuelUpdate): FuelState {
     const fuel = Math.max(0, u.currentFuelLiters);
+    // The whole budget: a tank of litres, a tank expressed as 1.0, or 100 points
+    // of virtual energy. Every threshold below is a share of it, which is what
+    // lets one set of constants serve all three unit systems.
+    const budget = u.capacityLiters > 0 ? u.capacityLiters : MAX_PLAUSIBLE_LAP_BURN_L;
 
-    // Fuel went IN — a stop, or a reset to a full tank. That is the one event
-    // that answers the pit call, so it is the one thing that stands it down.
+    // --- level changes that are not driving -------------------------------
     //
     // Measured SAMPLE TO SAMPLE, not against the level at the start of the lap.
-    // Burning fuel only ever takes the level down, so any rise beyond float
-    // noise is the rig putting some in, and that is true the instant the hose
-    // goes on. Comparing against the lap's starting level — which is what this
-    // did first — is a whole lap stale by the time a driver reaches their box:
-    // take on two laps' worth after a lap that burned three and the level is
-    // still BELOW where the lap began, so the alarm never stands down and
-    // follows the driver back out onto the circuit.
+    // Burning only ever takes the level down and only ever slowly, so anything
+    // else that moves it shows up here as a step, and shows up the instant it
+    // happens rather than a lap later.
+    //
+    // A RISE is the rig putting fuel in — the one event that answers the pit
+    // call, so it is the one thing that stands it down. Comparing against the
+    // lap's starting level — which is what this did first — is a whole lap stale
+    // by the time a driver reaches their box: take on two laps' worth after a lap
+    // that burned three and the level is still BELOW where the lap began, so the
+    // alarm never stands down and follows the driver back out onto the circuit.
+    //
+    // A large DROP is the tank being rewritten rather than emptied — see
+    // {@link LEVEL_JUMP_BUDGET_FRACTION}. Either way the lap it lands in is no
+    // longer a measurement of anything.
     const eps = (u.capacityLiters > 0 ? u.capacityLiters : 1) * 0.002;
-    if (this.lastFuel !== UNKNOWN_VALUE && fuel > this.lastFuel + eps) this.pitArmed = false;
+    if (this.lastFuel !== UNKNOWN_VALUE) {
+      const change = fuel - this.lastFuel;
+      if (change > eps) {
+        this.pitArmed = false;
+        this.lapDirty = true;
+      } else if (-change > budget * LEVEL_JUMP_BUDGET_FRACTION) {
+        this.lapDirty = true;
+      }
+    }
     this.lastFuel = fuel;
 
     // --- lap-boundary detection -> record per-lap burn ------------------
@@ -189,29 +259,38 @@ export class FuelCalculator {
       // First observation: anchor the lap-start fuel, no burn yet.
       this.lastLapsCompleted = u.lapsCompleted;
       this.fuelAtLapStart = fuel;
+      this.lapDirty = this.anchoredMidLap(u);
     } else if (u.lapsCompleted < this.lastLapsCompleted) {
       // Laps went backwards (session restart / new car): re-anchor.
       this.reset();
       this.lastLapsCompleted = u.lapsCompleted;
       this.fuelAtLapStart = fuel;
+      this.lastFuel = fuel;
+      this.lapDirty = this.anchoredMidLap(u);
     } else if (u.lapsCompleted > this.lastLapsCompleted) {
       const burn = this.fuelAtLapStart - fuel;
-      // A lap cannot burn more than the tank holds; fall back to an absolute
-      // ceiling when capacity is unknown.
-      const maxBurn = u.capacityLiters > 0 ? u.capacityLiters : MAX_PLAUSIBLE_LAP_BURN_L;
+      // No car in this game does four laps on a full budget, so anything above a
+      // quarter of it is a level edit wearing a lap's clothing — and unlike the
+      // outlier test below, this one also catches the FIRST sample, which is the
+      // one that sets the average everything else is judged against.
+      const maxBurn = budget * MAX_LAP_BURN_BUDGET_FRACTION;
       // Reject a spike well above the established average (a bad reading on a lap
       // boundary) so it cannot poison the rolling average; the first samples,
       // before any average exists, are always accepted to bootstrap it.
       const avg = this.perLapAverage;
       const isOutlier = avg > 0 && burn > avg * BURN_OUTLIER_FACTOR;
-      // Only count plausible consumption (ignore refuel/telemetry noise, values
-      // beyond the tank, and outlier spikes).
-      if (burn > 0 && burn <= maxBurn && !isOutlier && Number.isFinite(burn)) {
+      // Only count plausible consumption: a lap whose level was rewritten part
+      // way round is not a measurement, and neither are refuel/telemetry noise,
+      // implausible totals, or outlier spikes.
+      if (!this.lapDirty && burn > 0 && burn <= maxBurn && !isOutlier && Number.isFinite(burn)) {
         this.burns.push(burn);
         while (this.burns.length > this.window) this.burns.shift();
       }
       this.lastLapsCompleted = u.lapsCompleted;
       this.fuelAtLapStart = fuel;
+      // The next lap starts from a fresh anchor, so whatever spoiled this one
+      // cannot reach it.
+      this.lapDirty = false;
       crossedLine = true;
     }
 
@@ -250,6 +329,18 @@ export class FuelCalculator {
     if (this.pitArmed) state.pitThisLap = true;
 
     return state;
+  }
+
+  /**
+   * Whether an anchor taken right now is being taken part way round a lap, so
+   * the "lap" it opens is only the piece of it this calculator will have
+   * watched. Unknown road position answers *no*: without it there is nothing to
+   * go on, and refusing to measure at all would cost a car whose position the
+   * feed cannot supply its burn rate entirely.
+   */
+  private anchoredMidLap(u: FuelUpdate): boolean {
+    const frac = u.lapFraction;
+    return typeof frac === 'number' && frac > FIRST_ANCHOR_MAX_FRACTION && frac <= 1;
   }
 
   /**

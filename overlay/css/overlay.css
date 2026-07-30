@@ -890,6 +890,18 @@
   font-size: var(--fs-label);
   color: var(--text-secondary);
 }
+/* Laps of range, beside the quantity it belongs to. `margin-left: auto` on the
+   value keeps the two as one right-hand group under the head's space-between,
+   so the pair reads as one statement rather than as three scattered figures. */
+.fuel__gauge-val { margin-left: auto; }
+.fuel__gauge-laps {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 .fuel__gauge-bar { height: 6px; }
 /* The two bars are read side by side, so they must not look like one quantity
    split in half — fuel keeps the house gradient, energy is flat cyan. */
@@ -1047,6 +1059,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 5px;
 }
 .fuelplan__stint-mode {
@@ -1066,6 +1079,17 @@
   font-size: var(--fs-crit);
   line-height: 1.05;
   color: var(--text-primary);
+  margin-left: auto; /* groups the quantity and its laps at the right edge */
+}
+/* How far THIS budget carries the car. Deliberately a tier below the quantity:
+   it is read together with it, not instead of it. */
+.fuelplan__stint-laps {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 .fuelplan__bar { height: 7px; margin-bottom: 6px; }
 

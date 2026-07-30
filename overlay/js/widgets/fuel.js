@@ -37,8 +37,8 @@
    *
    * Laps left and energy remaining drift continuously — a bloom on every tick of
    * the first decimal would strobe for the entire race and stop meaning
-   * anything. Losing a whole lap of range, or another whole percent of energy, is
-   * the event actually worth looking up for.
+   * anything. Losing a whole lap of range is the event actually worth looking up
+   * for.
    */
   function pulseOnStep(el, ck, value) {
     if (!octx || !octx.critPulse) return;
@@ -72,7 +72,7 @@
   }
 
   /**
-   * A permanent gauge: label, live quantity, and a fill bar.
+   * A permanent gauge: label, live quantity, laps of range, and a fill bar.
    *
    * Fuel and virtual energy are two separate budgets. They are burned at
    * different rates, run out at different laps, and are refilled from different
@@ -80,6 +80,12 @@
    * These two gauges sit OUTSIDE the rotating grids and never cycle: whichever
    * view happens to be up, "how much is actually in the car" is answerable
    * without waiting up to 20 seconds for a rotation to come back round.
+   *
+   * Each carries its own laps figure because litres and percent are not what a
+   * driver plans in — laps are. 50.9 L means nothing without the burn rate
+   * beside it, and the two budgets do not run out on the same lap, so a single
+   * shared figure would be wrong for one of them. This is the same pairing the
+   * car's own dash makes ("83.0L (37.6 laps)"), kept per budget.
    */
   function makeGauge(parent, key, label) {
     var row = document.createElement("div");
@@ -91,10 +97,14 @@
     l.className = "fuel__gauge-label";
     l.textContent = label;
     var v = document.createElement("div");
-    v.className = "fuel__gauge-val is-crit";
+    v.className = "fuel__gauge-val";
     v.textContent = "—";
+    var lp = document.createElement("div");
+    lp.className = "fuel__gauge-laps is-crit";
+    lp.textContent = "";
     head.appendChild(l);
     head.appendChild(v);
+    head.appendChild(lp);
     var bar = document.createElement("div");
     bar.className = "bar fuel__gauge-bar";
     var fill = document.createElement("div");
@@ -103,15 +113,20 @@
     row.appendChild(head);
     row.appendChild(bar);
     parent.appendChild(row);
-    gauges[key] = { row: row, val: v, fill: fill };
+    gauges[key] = { row: row, val: v, laps: lp, fill: fill };
   }
 
   /**
    * Write a gauge. `pct` drives the bar (tank fraction for fuel, the percentage
-   * itself for energy); `value` is the raw quantity, used only to decide when
-   * the reading has stepped a whole unit and is worth blooming for.
+   * itself for energy); `laps` is how far that budget will actually carry the
+   * car, shown beside the quantity and blooming when a whole lap of it is gone.
+   *
+   * `null` laps blanks the figure rather than printing a dash: for the first lap
+   * or two of a stint the burn rate genuinely is not known yet, and an empty
+   * space says that more honestly than a placeholder sitting where a number is
+   * about to appear.
    */
-  function setGauge(key, html, pct, value) {
+  function setGauge(key, html, pct, laps) {
     var g = gauges[key];
     if (!g) return;
     var ck = "g_" + key;
@@ -126,7 +141,14 @@
       cache[ck + "_w"] = w;
       g.fill.style.width = w;
     }
-    pulseOnStep(g.val, ck + "_step", value);
+    var lapTxt = typeof laps === "number" && isFinite(laps) && laps >= 0
+      ? laps.toFixed(1) + " laps"
+      : "";
+    if (cache[ck + "_laps"] !== lapTxt) {
+      cache[ck + "_laps"] = lapTxt;
+      g.laps.textContent = lapTxt;
+    }
+    pulseOnStep(g.laps, ck + "_step", laps);
   }
 
   function init(root) {
@@ -302,11 +324,20 @@
     var lvl = fmt.has(f.levelLiters) ? f.levelLiters : null;
     var cap =
       typeof f.capacityLiters === "number" && f.capacityLiters > 0 ? f.capacityLiters : null;
+    // Laps of range on each budget, from the server's own rolling burn average.
+    // Both are published whether or not the litres are (a spectated car has no
+    // readable tank size but its laps-remaining is still known), so the figure
+    // survives cases where the quantity beside it cannot be shown.
+    var fuelLaps = fmt.has(f.lapsRemaining) ? f.lapsRemaining : null;
+    var veLaps =
+      typeof f.virtualEnergyLapsRemaining === "number" && f.virtualEnergyLapsRemaining >= 0
+        ? f.virtualEnergyLapsRemaining
+        : null;
     setGauge(
       "fuel",
       lvl != null ? lvl.toFixed(1) + "<small> L</small>" : "—",
       cap != null && lvl != null ? (lvl / cap) * 100 : 0,
-      lvl
+      fuelLaps
     );
     // A car with no energy budget has no second bar to draw — showing an empty
     // one would read as "energy exhausted" rather than "not applicable".
@@ -316,7 +347,7 @@
         "energy",
         f.virtualEnergyPct.toFixed(1) + "<small> %</small>",
         f.virtualEnergyPct,
-        f.virtualEnergyPct
+        veLaps
       );
     }
 

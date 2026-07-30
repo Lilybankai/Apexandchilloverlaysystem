@@ -422,8 +422,14 @@
   }
 
   /**
-   * One always-on resource readout: label, big live quantity, and a fill bar.
-   * Stores `<key>Big` / `<key>Fill` on `els` for the update pass.
+   * One always-on resource readout: label, big live quantity, laps of range, and
+   * a fill bar. Stores `<key>Big` / `<key>Laps` / `<key>Fill` on `els` for the
+   * update pass.
+   *
+   * The laps figure sits on the bar itself rather than in the grid below because
+   * it belongs to *this* budget. Energy and fuel do not run out on the same lap —
+   * that difference is the whole reason there are two bars — so a single
+   * laps-left cell underneath could only ever be right about one of them.
    */
   function resourceRow(parent, res, label, key) {
     var row = el("div", "fuelplan__res");
@@ -431,9 +437,11 @@
     var head = el("div", "fuelplan__stint-head");
     var mode = el("span", "fuelplan__stint-mode", label);
     mode.setAttribute("data-mode", res);
-    var big = keyed(el("span", "fuelplan__stint-big is-crit", "—"), key + "Big");
+    var big = keyed(el("span", "fuelplan__stint-big", "—"), key + "Big");
+    var laps = keyed(el("span", "fuelplan__stint-laps is-crit", ""), key + "Laps");
     head.appendChild(mode);
     head.appendChild(big);
+    head.appendChild(laps);
     row.appendChild(head);
     var bar = el("div", "bar fuelplan__bar");
     var fill = el("div", "bar__fill");
@@ -441,6 +449,7 @@
     row.appendChild(bar);
     parent.appendChild(row);
     els[key + "Big"] = big;
+    els[key + "Laps"] = laps;
     els[key + "Fill"] = fill;
     return row;
   }
@@ -862,6 +871,21 @@
     }
   }
 
+  /**
+   * How far a budget will carry the car, written beside its quantity on the bar.
+   *
+   * Blank rather than a dash while the burn rate is still unknown: for the first
+   * lap or two of a stint there genuinely is no answer, and an empty space says
+   * so better than a placeholder sitting where a number is about to appear.
+   * Blooms when a whole lap of range goes — the discrete event inside a figure
+   * that otherwise drifts down all race.
+   */
+  function setLaps(node, laps) {
+    var txt = num(laps) && laps >= 0 ? laps.toFixed(1) + " laps" : "";
+    setText(node, txt);
+    pulseOnStep(node, num(laps) && laps >= 0 ? laps : null);
+  }
+
   /** Set a stat cell's text + colour state (ok / marginal / short). */
   function setStatColored(node, text, state) {
     setText(node, text);
@@ -908,7 +932,7 @@
     if (els.veRow.hidden === hasVE) els.veRow.hidden = !hasVE;
     if (hasVE) {
       setText(els.veBig, f.virtualEnergyPct.toFixed(1) + "%");
-      pulseOnStep(els.veBig, f.virtualEnergyPct);
+      setLaps(els.veLaps, f.virtualEnergyLapsRemaining);
       els.veFill.style.width = Math.max(0, Math.min(100, f.virtualEnergyPct)).toFixed(1) + "%";
     }
 
@@ -918,7 +942,7 @@
     var lvl = num(f.levelLiters) && f.levelLiters >= 0 ? f.levelLiters : null;
     var cap = num(f.capacityLiters) && f.capacityLiters > 0 ? f.capacityLiters : null;
     setText(els.fuelLvlBig, lvl != null ? lvl.toFixed(1) + " L" : "—");
-    pulseOnStep(els.fuelLvlBig, lvl);
+    setLaps(els.fuelLvlLaps, f.lapsRemaining);
     els.fuelLvlFill.style.width =
       (lvl != null && cap != null ? Math.max(0, Math.min(100, (lvl / cap) * 100)) : 0).toFixed(1) +
       "%";

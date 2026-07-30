@@ -271,6 +271,29 @@ export class LmuRestProvider implements TelemetryProvider {
    * calculator's rounding.
    */
   private readonly energyCalc = new FuelCalculator();
+  /**
+   * Circuit + session the burn history above was measured in. A new session
+   * reloads every car's tank from its setup, which lands as a level change with
+   * no lap between it and the last lap of the old session — so the first lap of
+   * the race would otherwise be "measured" as the difference between the fuel
+   * you finished practice on and the fuel you started the race with. That number
+   * can be ten times a real lap's burn, and since laps-of-range is level over
+   * burn, it is what puts a full-tank car one lap from a pit alarm.
+   *
+   * The calculator now refuses samples that large on its own; this is the other
+   * half of the same fix, and the better-placed one: history from a different
+   * session is not evidence about this one, whatever its size.
+   */
+  private fuelSessionKey = '';
+  /**
+   * Slot the focus-following fuel and energy calculators are tracking. Those two
+   * follow the broadcast focus, so when it moves to another car their history
+   * belongs to somebody else's tank — and a burn rate carried across from one
+   * car to another is a laps-remaining figure invented out of two cars.
+   * {@link localFuel} is exempt: it reads the tank of the car driven on this PC,
+   * which the focus cannot change.
+   */
+  private fuelFocusSlot: number | null = null;
   /** Reads the locally-driven car's inputs + fuel from shared memory. */
   private readonly localCar = new LmuLocalCarReader();
   /**
@@ -1322,6 +1345,24 @@ export class LmuRestProvider implements TelemetryProvider {
       c && typeof c.lapDistance === 'number' && trackLen > 0
         ? clamp01(c.lapDistance / trackLen)
         : UNKNOWN_VALUE;
+
+    // Burn history is only evidence about the car and session it was measured
+    // in — see {@link fuelSessionKey} / {@link fuelFocusSlot}. Dropped before
+    // anything is fed in, so no sample can straddle the change.
+    const sessionKey = `${session.track}|${session.type}`;
+    if (sessionKey !== this.fuelSessionKey) {
+      this.fuelSessionKey = sessionKey;
+      this.localFuel.reset();
+      this.fuel.reset();
+      this.energyCalc.reset();
+      this.fuelFocusSlot = focus ? focus.slotID : null;
+    }
+    const focusSlot = focus ? focus.slotID : null;
+    if (focusSlot !== this.fuelFocusSlot) {
+      this.fuelFocusSlot = focusSlot;
+      this.fuel.reset();
+      this.energyCalc.reset();
+    }
     // Virtual energy is a property of the focused car (it comes from that car's
     // own REST record), so it keeps the focused car's position.
     const energy = this.buildEnergy(focus, session, cars, fracOf(focus));

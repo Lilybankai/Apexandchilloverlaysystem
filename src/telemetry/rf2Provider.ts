@@ -297,6 +297,12 @@ export class RF2Provider implements TelemetryProvider {
   private readonly fallback = new SimulatorProvider();
   private readonly fuel = new FuelCalculator();
   /**
+   * Circuit + session the burn history above belongs to. History from a
+   * different session is not evidence about this one — see the reset at the fuel
+   * block, and the LMU provider's `fuelSessionKey` for the failure it prevents.
+   */
+  private fuelSessionKey = '';
+  /**
    * Cross-frame state for the four-corner load channels — it learns a
    * per-corner reference over ~25 s, so it must survive between polls.
    */
@@ -563,6 +569,17 @@ export class RF2Provider implements TelemetryProvider {
     const wetness = clamp01(scoring.readDoubleLE(SI.base + SI.mMaxPathWetness));
 
     // --- fuel strategy via the shared calculator ------------------------
+    // Burn history is only evidence about the session it was measured in: a new
+    // session reloads the tank from the setup, and with no lap between that and
+    // the last lap of the old session the difference would be recorded as one
+    // enormous lap of burn — which is a laps-remaining figure short enough to
+    // raise the pit alarm on a full tank. See {@link fuelSessionKey}.
+    const trackName = readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown';
+    const fuelSessionKey = `${trackName}|${sessionCode}`;
+    if (fuelSessionKey !== this.fuelSessionKey) {
+      this.fuelSessionKey = fuelSessionKey;
+      this.fuel.reset();
+    }
     const fuelState = this.fuel.update({
       currentFuelLiters: fuelLevel,
       capacityLiters: fuelCapacity,
@@ -574,7 +591,6 @@ export class RF2Provider implements TelemetryProvider {
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
-    const trackName = readCString(scoring, SI.base + SI.mTrackName, 64) || 'Unknown';
     const sessionPhase = mapSessionPhase(gamePhase);
     // Track limits, from the player's own scoring record: how far off the path
     // the car is against how far the road goes, plus the sim's own penalty

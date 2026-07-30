@@ -264,5 +264,88 @@ console.log('\n13) The pit call is resolved across both budgets, and can be clea
     both.pitThisLapReason);
 }
 
+/* ---------------------------------------------------------------------------
+ * 14-16) The burn rate is the thing the alarm is built on.
+ *
+ * Laps-of-range is level divided by burn, so an overstated burn understates the
+ * range in exact proportion — double the burn and a car with twenty laps in it
+ * reads as having ten, then five, and eventually trips an alarm whose own
+ * arithmetic was never wrong. That is the "it screamed at me with a full tank"
+ * report, and every case below is a way the level moves WITHOUT being driven:
+ * a new session loading the setup's fuel, a load edited in the garage, or the
+ * calculator simply starting to watch part way round a lap.
+ *
+ * The outlier test cannot catch any of them on its own, because it needs a
+ * rolling average to compare against and these all land on the FIRST sample —
+ * the one that defines that average.
+ * ------------------------------------------------------------------------- */
+
+/** One frame at an explicit level / lap / road position. */
+function frame(calc, o) {
+  return calc.update({
+    currentFuelLiters: o.fuel,
+    capacityLiters: o.capacity === undefined ? 83 : o.capacity,
+    lapsCompleted: o.lap,
+    totalRaceLaps: o.totalRaceLaps === undefined ? 0 : o.totalRaceLaps,
+    timeRemainingSec: -1,
+    avgLapTimeSec: 90,
+    lapFraction: o.frac === undefined ? 0 : o.frac,
+  });
+}
+
+/** Burn rate reported on the last frame of a run. */
+const finalPerLap = (frames) => frames[frames.length - 1].state.perLapAvgLiters;
+
+console.log('\n14) A tank reloaded between sessions is not a lap of burn');
+{
+  const c = new FuelCalculator();
+  // Practice, sat in the garage on a full tank without going out. Nobody
+  // completes a lap, so the lap counter never runs backwards and nothing in the
+  // data itself announces that the session changed.
+  for (let i = 0; i < 5; i++) frame(c, { fuel: 83, lap: 0 });
+  // The race loads what the setup asked for — 50.9 L — still on lap 0. Treated
+  // as consumption this is a 34 L lap, fifteen times the real one, and the alarm
+  // arrives on lap two of a race the car could run twenty laps of.
+  const frames = drive(c, { laps: 4, burn: 2.2, startFuel: 50.9, capacity: 83 });
+  const hit = firstAlarm(frames);
+  check('no alarm on a car with twenty laps in it', !hit, hit ? 'lap ' + hit.lap : 'silent');
+  check('the rate is the lap it actually drove', Math.abs(finalPerLap(frames) - 2.2) < 0.25,
+    'perLap=' + finalPerLap(frames));
+}
+
+console.log('\n15) Fuel taken OUT in the garage is not fuel burned on track');
+{
+  const c = new FuelCalculator();
+  frame(c, { fuel: 83, lap: 0, frac: 0 });
+  frame(c, { fuel: 81.9, lap: 0, frac: 0.5 });
+  // 8 L dropped out of the load part way through the lap: far more than a lap
+  // burns, but well inside a quarter of the tank, so a size ceiling alone would
+  // wave it through. Only knowing that the level was REWRITTEN rejects it.
+  frame(c, { fuel: 73.9, lap: 0, frac: 0.51 });
+  frame(c, { fuel: 72.8, lap: 0, frac: 0.99 });
+  const after = frame(c, { fuel: 72.8, lap: 1, frac: 0 });
+  check('the edited lap yields no burn rate at all', after.perLapAvgLiters < 0,
+    'perLap=' + after.perLapAvgLiters);
+  const frames = drive(c, { laps: 3, burn: 2.2, startFuel: 72.8, startLap: 1, capacity: 83 });
+  check('and the clean laps after it measure normally',
+    Math.abs(finalPerLap(frames) - 2.2) < 0.25, 'perLap=' + finalPerLap(frames));
+}
+
+console.log('\n16) Attaching part way round does not shrink the burn rate');
+{
+  // The same error the other way up, and the more dangerous one: a third of a
+  // lap recorded as a whole lap triples the apparent range, and an alarm that
+  // reads three laps of fuel as nine simply never fires.
+  const c = new FuelCalculator();
+  frame(c, { fuel: 40, lap: 5, frac: 0.7 });
+  frame(c, { fuel: 39.4, lap: 5, frac: 0.99 });
+  const after = frame(c, { fuel: 39.34, lap: 6, frac: 0 });
+  check('the part-lap is not recorded as a lap', after.perLapAvgLiters < 0,
+    'perLap=' + after.perLapAvgLiters);
+  const frames = drive(c, { laps: 3, burn: 2.2, startFuel: 39.34, startLap: 6, capacity: 83 });
+  check('the first whole lap after it sets the rate',
+    Math.abs(finalPerLap(frames) - 2.2) < 0.25, 'perLap=' + finalPerLap(frames));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
