@@ -853,6 +853,48 @@
 /* =========================================================================
  * FUEL WIDGET (mid-right) — calculator readout.
  * ========================================================================= */
+/* Permanent gauges: litres in the tank and virtual energy remaining. These do
+   NOT take part in the FUEL/ENERGY rotation below them — the two budgets are
+   spent at different rates and topped up from different pit rows, so hiding
+   either one behind a 20-second cycle removes half the picture exactly when the
+   driver is deciding what to ask for. */
+.fuel__gauges {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.fuel__gauge + .fuel__gauge { margin-top: 6px; }
+.fuel__gauge-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.fuel__gauge-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.fuel__gauge[data-res="energy"] .fuel__gauge-label { color: var(--ac-cyan); }
+.fuel__gauge-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-value);
+  line-height: 1;
+  color: var(--text-primary);
+}
+.fuel__gauge-val small {
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+}
+.fuel__gauge-bar { height: 6px; }
+/* The two bars are read side by side, so they must not look like one quantity
+   split in half — fuel keeps the house gradient, energy is flat cyan. */
+.fuel__gauge[data-res="energy"] .bar__fill { background: var(--ac-cyan); }
+
 /* View chip: names the rotating view (FUEL / VIRTUAL ENERGY). */
 .fuel__mode {
   font-family: var(--font-display);
@@ -1123,11 +1165,22 @@
 }
 .fuelplan__st-act[data-fin="true"] { color: var(--pos-gain); }
 
-/* --- Live strip (remaining + predicted pit + save target) ---------------- */
+/* --- Live strip (both budgets + predicted pit + save target) ------------- */
 .fuelplan__live {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border-soft);
+}
+/* One row per budget, both permanent. */
+.fuelplan__res + .fuelplan__res { margin-top: 6px; }
+.fuelplan__res[data-res="energy"] .bar__fill { background: var(--ac-cyan); }
+/* The budget that will actually end the stint keeps the Tier 1 size; the other
+   drops to Tier 2. Both remain readable — the demoted one is still a number the
+   driver has to manage, just not the one they are driving to. */
+.fuelplan__live[data-primary="energy"] .fuelplan__res[data-res="fuel"] .fuelplan__stint-big,
+.fuelplan__live[data-primary="fuel"] .fuelplan__res[data-res="energy"] .fuelplan__stint-big {
+  font-size: var(--fs-value);
+  color: var(--text-secondary);
 }
 
 /* --- Fuel-ratio control -------------------------------------------------- */

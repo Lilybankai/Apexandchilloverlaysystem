@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.41.0 — 2026-07-30
+
+### Added
+
+- **Fuel and virtual energy are now both on screen at all times, in litres and percent.**
+  Neither widget previously showed how much fuel was actually in the car alongside the
+  energy budget. They are two separate resources: they drain at different rates over a
+  stint, run dry on different laps, and are topped up from different rows of the pit
+  menu, so neither figure can be worked out from the other — which is exactly the
+  calculation a driver was being left to do.
+
+  The **fuel widget** gains a pair of permanent gauges above everything else — `FUEL`
+  in litres with the tank fraction as its bar, `ENERGY` in percent with its own. They
+  are written every frame and take no part in the 20-second FUEL/ENERGY rotation
+  below them, so "how much is in the car" no longer disappears for twenty seconds at
+  a time. The panel header carries both at once (`59.5 L · 82%`) instead of swapping
+  with the view.
+
+  The **fuel planner**'s live section becomes two permanent rows rather than one that
+  switched between them. The budget that will actually end the stint keeps the Tier 1
+  size and the other steps down a tier — still readable, since it is still a resource
+  being managed, just not the one being driven to.
+
+  On a car with no energy budget the energy bar is hidden rather than drawn empty: an
+  empty bar reads as "energy exhausted", not "this car has none". The two bars are
+  coloured apart — fuel keeps the house gradient, energy is flat cyan — so a glance
+  cannot mistake them for one quantity split in half.
+
+### Fixed
+
+- **A tank that had not been read yet could render as `-1.0 L`.** The new gauges screen
+  the fuel level through the provider's `UNKNOWN_VALUE` sentinel rather than a plain
+  finite-number check, which would have shown the sentinel itself. A genuinely dry tank
+  is still a real reading and still shows `0.0 L`.
+
 ## 0.40.3 — 2026-07-30
 
 ### Added

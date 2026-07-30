@@ -7,10 +7,14 @@
  *   1. PLAN      — window.ApexRaceData.calculateFuel() over the chosen (or
  *                  auto-detected) track/car/race-length: total fuel, laps, pit
  *                  stops, laps-per-stint, and a per-stint breakdown.
- *   2. STINT     — LMU's virtual energy (frame.fuel.virtualEnergy*) as a live
- *                  stint timer: % remaining + bar, %/lap, laps left on energy,
- *                  projected time to empty, and the margin at the flag. Cars with
- *                  no VE fall back to a fuel-litres stint readout.
+ *   2. LIVE      — what is in the car right now, as two permanent bars: LMU's
+ *                  virtual energy (frame.fuel.virtualEnergy*) as % of budget,
+ *                  and the fuel level as litres + fraction of tank. They are
+ *                  separate budgets consumed at different rates and refilled
+ *                  from different pit rows, so both are always shown; the one
+ *                  that binds the stint takes the larger size. Below them: the
+ *                  predicted pit lap, refuel to finish, save-per-lap target and
+ *                  the margin at the flag. Cars with no VE hide the energy bar.
  *   3. FUEL RATIO — reads the "FUEL RATIO:" pit-menu row from frame.mfd and lets
  *                  the driver step it with −/+ (POST /api/mfd/pit → LMU REST),
  *                  the same control path the MFD server routes expose.
@@ -417,6 +421,30 @@
     els[key] = v;
   }
 
+  /**
+   * One always-on resource readout: label, big live quantity, and a fill bar.
+   * Stores `<key>Big` / `<key>Fill` on `els` for the update pass.
+   */
+  function resourceRow(parent, res, label, key) {
+    var row = el("div", "fuelplan__res");
+    row.setAttribute("data-res", res);
+    var head = el("div", "fuelplan__stint-head");
+    var mode = el("span", "fuelplan__stint-mode", label);
+    mode.setAttribute("data-mode", res);
+    var big = keyed(el("span", "fuelplan__stint-big is-crit", "—"), key + "Big");
+    head.appendChild(mode);
+    head.appendChild(big);
+    row.appendChild(head);
+    var bar = el("div", "bar fuelplan__bar");
+    var fill = el("div", "bar__fill");
+    bar.appendChild(fill);
+    row.appendChild(bar);
+    parent.appendChild(row);
+    els[key + "Big"] = big;
+    els[key + "Fill"] = fill;
+    return row;
+  }
+
   function buildBody(mount) {
     mount.textContent = "";
 
@@ -437,19 +465,16 @@
     els.stintTable = el("div", "fuelplan__stints");
     mount.appendChild(els.stintTable);
 
-    // --- LIVE: remaining energy/fuel + predicted pit + fuel-save target ---
+    // --- LIVE: what is in the car right now + predicted pit + save target ---
+    //
+    // Two permanent rows, one per budget. Virtual energy and fuel are consumed
+    // at different rates over a stint and are added from different pit-menu
+    // rows, so the litres in the tank can never be read off the energy figure
+    // (or the reverse) — both are always on screen, neither cycles.
     var liveBox = el("div", "fuelplan__live");
-    var lHead = el("div", "fuelplan__stint-head");
-    els.veMode = keyed(el("span", "fuelplan__stint-mode", "LIVE"), "veMode");
-    els.veBig = keyed(el("span", "fuelplan__stint-big is-crit", "—"), "veBig");
-    lHead.appendChild(els.veMode);
-    lHead.appendChild(els.veBig);
-    liveBox.appendChild(lHead);
-
-    var bar = el("div", "bar fuelplan__bar");
-    els.veFill = el("div", "bar__fill");
-    bar.appendChild(els.veFill);
-    liveBox.appendChild(bar);
+    els.liveBox = liveBox;
+    els.veRow = resourceRow(liveBox, "energy", "VIRTUAL ENERGY", "ve");
+    els.fuelRow = resourceRow(liveBox, "fuel", "FUEL", "fuelLvl");
 
     var liveGrid = el("div", "fuelplan__grid");
     statCell(liveGrid, "nextPit", "Next Pit", true);
@@ -878,21 +903,32 @@
 
     var hasVE = num(f.virtualEnergyPct);
 
-    // Remaining big number + bar.
+    // --- Energy row. Hidden (not drawn empty) on a car with no VE budget: an
+    // empty bar reads as "energy exhausted", not "this car has none".
+    if (els.veRow.hidden === hasVE) els.veRow.hidden = !hasVE;
     if (hasVE) {
-      setText(els.veMode, "VIRTUAL ENERGY");
-      els.veMode.setAttribute("data-mode", "energy");
       setText(els.veBig, f.virtualEnergyPct.toFixed(1) + "%");
       pulseOnStep(els.veBig, f.virtualEnergyPct);
       els.veFill.style.width = Math.max(0, Math.min(100, f.virtualEnergyPct)).toFixed(1) + "%";
-    } else {
-      setText(els.veMode, "FUEL");
-      els.veMode.setAttribute("data-mode", "fuel");
-      setText(els.veBig, num(f.levelLiters) ? f.levelLiters.toFixed(1) + " L" : "—");
-      pulseOnStep(els.veBig, f.levelLiters);
-      var cap = num(f.capacityLiters) && f.capacityLiters > 0 ? f.capacityLiters : 0;
-      var pct = cap > 0 && num(f.levelLiters) ? Math.max(0, Math.min(100, (f.levelLiters / cap) * 100)) : 0;
-      els.veFill.style.width = pct.toFixed(1) + "%";
+    }
+
+    // --- Fuel row: litres actually in the tank, bar as a fraction of the tank.
+    // >= 0 rather than num() alone: the provider's UNKNOWN sentinel is -1, and a
+    // genuinely dry tank is a real 0 that must still be shown.
+    var lvl = num(f.levelLiters) && f.levelLiters >= 0 ? f.levelLiters : null;
+    var cap = num(f.capacityLiters) && f.capacityLiters > 0 ? f.capacityLiters : null;
+    setText(els.fuelLvlBig, lvl != null ? lvl.toFixed(1) + " L" : "—");
+    pulseOnStep(els.fuelLvlBig, lvl);
+    els.fuelLvlFill.style.width =
+      (lvl != null && cap != null ? Math.max(0, Math.min(100, (lvl / cap) * 100)) : 0).toFixed(1) +
+      "%";
+
+    // Whichever budget binds the stint keeps the Tier 1 size; the other steps
+    // down a tier. Both stay legible, but only one is the number being driven to.
+    var primary = hasVE ? "energy" : "fuel";
+    if (cache.livePrimary !== primary) {
+      cache.livePrimary = primary;
+      els.liveBox.setAttribute("data-primary", primary);
     }
 
     // Laps completed, backed out of the server's fuel pit-window figure

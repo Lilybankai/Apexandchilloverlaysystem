@@ -6,10 +6,16 @@
  * the margin at the flag (colour-coded surplus/short), plus refuel-to-finish
  * and the pit window. Values are display-ready; this widget only formats them.
  *
- * When the car runs a **virtual energy** budget (LMU), the widget rotates every
- * 20 s between the FUEL view and an ENERGY view (remaining %, % per lap, laps
- * left on energy, margin at the flag) — energy is the resource that actually
- * limits an LMU stint. Cars without VE just show the fuel view permanently.
+ * Two gauges at the top — litres in the tank and virtual energy remaining — are
+ * permanent: they are written every frame and never take part in any rotation,
+ * because fuel and energy are separate budgets that drain at different rates and
+ * are refilled from different rows of the pit menu.
+ *
+ * Below them, when the car runs a **virtual energy** budget (LMU), the widget
+ * rotates every 20 s between the FUEL view and an ENERGY view (remaining %, %
+ * per lap, laps left on energy, margin at the flag) — energy is the resource
+ * that usually limits an LMU stint. Cars without VE just show the fuel view
+ * permanently, and the energy gauge is hidden rather than drawn empty.
  */
 (function () {
   "use strict";
@@ -19,6 +25,7 @@
 
   var header, modeChip, overlapEl;
   var stats = {};
+  var gauges = {};
   var refuelEl, pitEl, setAlarm;
   var cache = {};
   var grids = {};
@@ -33,12 +40,10 @@
    * anything. Losing a whole lap of range, or another whole percent of energy, is
    * the event actually worth looking up for.
    */
-  function pulseOnStep(key, value) {
+  function pulseOnStep(el, ck, value) {
     if (!octx || !octx.critPulse) return;
-    var el = stats[key];
     if (!el || typeof value !== "number" || !isFinite(value)) return;
     var step = Math.floor(value);
-    var ck = key + "Step";
     if (cache[ck] === step) return;
     var first = cache[ck] === undefined;
     cache[ck] = step;
@@ -66,10 +71,76 @@
     stats[key] = v;
   }
 
+  /**
+   * A permanent gauge: label, live quantity, and a fill bar.
+   *
+   * Fuel and virtual energy are two separate budgets. They are burned at
+   * different rates, run out at different laps, and are refilled from different
+   * rows of the pit menu, so neither figure can be inferred from the other.
+   * These two gauges sit OUTSIDE the rotating grids and never cycle: whichever
+   * view happens to be up, "how much is actually in the car" is answerable
+   * without waiting up to 20 seconds for a rotation to come back round.
+   */
+  function makeGauge(parent, key, label) {
+    var row = document.createElement("div");
+    row.className = "fuel__gauge";
+    row.setAttribute("data-res", key);
+    var head = document.createElement("div");
+    head.className = "fuel__gauge-head";
+    var l = document.createElement("div");
+    l.className = "fuel__gauge-label";
+    l.textContent = label;
+    var v = document.createElement("div");
+    v.className = "fuel__gauge-val is-crit";
+    v.textContent = "—";
+    head.appendChild(l);
+    head.appendChild(v);
+    var bar = document.createElement("div");
+    bar.className = "bar fuel__gauge-bar";
+    var fill = document.createElement("div");
+    fill.className = "bar__fill";
+    bar.appendChild(fill);
+    row.appendChild(head);
+    row.appendChild(bar);
+    parent.appendChild(row);
+    gauges[key] = { row: row, val: v, fill: fill };
+  }
+
+  /**
+   * Write a gauge. `pct` drives the bar (tank fraction for fuel, the percentage
+   * itself for energy); `value` is the raw quantity, used only to decide when
+   * the reading has stepped a whole unit and is worth blooming for.
+   */
+  function setGauge(key, html, pct, value) {
+    var g = gauges[key];
+    if (!g) return;
+    var ck = "g_" + key;
+    if (cache[ck] !== html) {
+      cache[ck] = html;
+      g.val.innerHTML = html;
+    }
+    var w =
+      (typeof pct === "number" && isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0).toFixed(1) +
+      "%";
+    if (cache[ck + "_w"] !== w) {
+      cache[ck + "_w"] = w;
+      g.fill.style.width = w;
+    }
+    pulseOnStep(g.val, ck + "_step", value);
+  }
+
   function init(root) {
     header = root.querySelector('[data-role="tank"]');
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
+
+    // Static gauges, built before the rotating views and never hidden by them.
+    var gaugeBox = document.createElement("div");
+    gaugeBox.className = "fuel__gauges";
+    makeGauge(gaugeBox, "fuel", "FUEL");
+    makeGauge(gaugeBox, "energy", "ENERGY");
+    mount.appendChild(gaugeBox);
+    grids.gauges = gaugeBox;
 
     // Mode chip: names the view currently shown (FUEL / ENERGY).
     modeChip = document.createElement("div");
@@ -226,12 +297,34 @@
       modeChip.setAttribute("data-mode", mode);
     }
 
-    // Header readout follows the view: tank litres vs energy %.
+    // Static gauges — written every frame regardless of which grid is showing.
+    // fmt.has screens out the UNKNOWN sentinel; an empty tank is a real 0.
+    var lvl = fmt.has(f.levelLiters) ? f.levelLiters : null;
+    var cap =
+      typeof f.capacityLiters === "number" && f.capacityLiters > 0 ? f.capacityLiters : null;
+    setGauge(
+      "fuel",
+      lvl != null ? lvl.toFixed(1) + "<small> L</small>" : "—",
+      cap != null && lvl != null ? (lvl / cap) * 100 : 0,
+      lvl
+    );
+    // A car with no energy budget has no second bar to draw — showing an empty
+    // one would read as "energy exhausted" rather than "not applicable".
+    if (gauges.energy.row.hidden === hasEnergy) gauges.energy.row.hidden = !hasEnergy;
+    if (hasEnergy) {
+      setGauge(
+        "energy",
+        f.virtualEnergyPct.toFixed(1) + "<small> %</small>",
+        f.virtualEnergyPct,
+        f.virtualEnergyPct
+      );
+    }
+
+    // Header carries both budgets at once, so the panel answers "what is in the
+    // car" from its title bar alone even when the body is mid-rotation.
     if (header) {
-      var hdr =
-        mode === "energy"
-          ? Math.round(f.virtualEnergyPct) + "%"
-          : fmt.liters(f.levelLiters) + " L";
+      var hdr = fmt.liters(f.levelLiters) + " L";
+      if (hasEnergy) hdr += " · " + Math.round(f.virtualEnergyPct) + "%";
       if (cache.tank !== hdr) { cache.tank = hdr; header.textContent = hdr; }
     }
 
@@ -250,8 +343,8 @@
         null
       );
       setMargin("veMargin", f.virtualEnergyDeltaPct, f.virtualEnergyPerLapPct, fmt, "%");
-      pulseOnStep("veRemain", f.virtualEnergyPct);
-      pulseOnStep("veLapsLeft", f.virtualEnergyLapsRemaining);
+      pulseOnStep(stats.veRemain, "veRemainStep", f.virtualEnergyPct);
+      pulseOnStep(stats.veLapsLeft, "veLapsLeftStep", f.virtualEnergyLapsRemaining);
 
       var eLine = "Virtual energy · rotates 20s";
       if (cache.refuel !== eLine) { cache.refuel = eLine; refuelEl.textContent = eLine; }
@@ -263,7 +356,7 @@
     setStat("lapsLeft", fmt.intVal(f.lapsRemaining), null);
     setStat("toFinish", fmt.liters(f.fuelToFinishLiters), "L");
     setMargin("margin", f.fuelDeltaLiters, f.perLapAvgLiters, fmt, "L");
-    pulseOnStep("lapsLeft", f.lapsRemaining);
+    pulseOnStep(stats.lapsLeft, "lapsLeftStep", f.lapsRemaining);
 
     // Bottom line: refuel-to-finish + pit window.
     var refuel = fmt.has(f.refuelToFinishLiters)
