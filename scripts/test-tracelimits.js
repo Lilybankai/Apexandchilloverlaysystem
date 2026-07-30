@@ -211,6 +211,23 @@ for (let i = 0; i < 3; i++) {
 }
 check('repeated quarter-points stay exact', acc.state().points === 1.5, acc.state().points);
 
+// "Ruled on, charged nothing" is still a ruling, and it is what tells the widget
+// nothing is outstanding — the sim's log reaches us up to ~25s late, so the count of
+// rulings is how a caller knows whether the total on screen is behind.
+acc = new TraceLimitsAccumulator();
+check('nothing ruled on yet', acc.state().settled === 0, acc.state().settled);
+acc.push(OFF_TRACK);
+acc.push(BACK_ON);
+acc.push(SCORED_100);
+check('a provisional evaluation is not a ruling', acc.state().settled === 0,
+  acc.state().settled);
+acc.push(NO_CUT);
+check('No Track Cut counts as ruled on', acc.state().settled === 1, acc.state().settled);
+acc.push(WARNING);
+check('…and so does a Warning', acc.state().settled === 2, acc.state().settled);
+acc.push(SESSION_START);
+check('a new session clears the rulings', acc.state().settled === 0, acc.state().settled);
+
 console.log('\ndischarge');
 
 acc = new TraceLimitsAccumulator();

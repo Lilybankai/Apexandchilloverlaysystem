@@ -414,7 +414,15 @@
     // point of the headline is that it does not change shape mid-glance.
     // "4.75 / 5" where the limit bites; "9.5 PTS" where it does not, rather than a
     // ratio against a threshold the session will never enforce.
-    setMeta((fromSim ? "" : "~") + points + (enforced ? " / " + limit : " PTS"));
+    //
+    // "+?" marks a cut the sim has not ruled on yet: its log reaches us a 4 KB block
+    // at a time, so a charge can be anywhere from a tenth of a second to ~25s behind.
+    // Reading "4.75+? / 5" says at least 4.75 with more to come, which is the true
+    // state — where a bare 4.75 would quietly claim the stewards had finished.
+    // Only meaningful alongside the sim's own figure; our estimate is already
+    // qualified by the "~".
+    var pendingMark = fromSim && tl.chargePending ? "+?" : "";
+    setMeta((fromSim ? "" : "~") + points + pendingMark + (enforced ? " / " + limit : " PTS"));
   }
 
   window.ApexOverlay.registerWidget("limits", {

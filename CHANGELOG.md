@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.40.3 — 2026-07-30
+
+### Added
+
+- **`+?` — a cut the stewards have not ruled on yet.** The header reads `4.75+? / 5`
+  when an excursion has happened that the sim has not yet reported: at least 4.75,
+  with more to come. A bare `4.75` would quietly claim the stewards had finished.
+
+  This exists because the delay is now understood and cannot be fixed from outside the
+  game. **LMU flushes its log one 4 KB block at a time** — measured, every append
+  landing on the boundary (`+4141`, `+4134`, `+4128`, `+8264` for two at once) with
+  gaps from 0.1 s to 26 s. So a charge arrives whenever unrelated log output happens to
+  complete the block, which is why a lap crossing appeared to "trigger" the update one
+  evening and a second cut did it the next. Nothing external can force it: 175 REST
+  calls to the game wrote zero bytes, and polling faster cannot help because the bytes
+  are still inside the game's process.
+
+  The marker is **positive evidence only**. Our own geometry applies a margin and the
+  sim charges on time gained, so a shallow cut that still scores can pass us by:
+  present means "more is coming", absent does not promise the total is final.
+
+### Fixed
+
+- **Practice and qualifying no longer count down to a penalty that cannot come.**
+  `/rest/sessions` reports `cuts_allowed` for every session type, but only a race
+  spends it on a drive-through — practice invalidates the lap and lets the total run
+  past the allowance. Observed live at 9.5 against an allowance of 5, with the game's
+  own HUD showing the limit as infinity, and corroborated by the 727
+  `Invalid Lap Cut Track` rulings in one evening's results files. Outside a race the
+  pip row is hidden and the header reads `9.5 PTS` rather than `9.5 / 5`. An explicit
+  `?limits=` override still wins.
+
+- **The reader could latch onto a copy of a finished session.** The game keeps a plain
+  `trace.txt` beside the dated logs: an exit-time copy of the session that just ended,
+  byte-identical and carrying the same mtime — so the tie could win a
+  newest-by-mtime comparison and leave the reader tailing a static file. Only
+  `trace_<launch>.txt` is considered now.
+
 ## 0.40.2 — 2026-07-30
 
 ### Fixed

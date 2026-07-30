@@ -824,6 +824,21 @@ export interface TrackLimitsState {
    * showing them our estimate as the stewards' number.
    */
   pointsLimitEnforced?: boolean;
+  /**
+   * An excursion has happened that the sim has **not yet ruled on**, so
+   * {@link simPoints} is behind.
+   *
+   * The sim flushes its log a 4 KB block at a time and which write completes the
+   * block is arbitrary, so a charge can take anywhere from a tenth of a second to
+   * ~25 s to reach us. Our own geometry sees the excursion at once, and the gap
+   * between the two is this flag.
+   *
+   * **Positive evidence only.** Our detector applies a margin and the sim charges on
+   * time gained, so a shallow cut that still scores can pass us by. Present means
+   * "more is coming"; absent does not promise the total is final — which is why it
+   * reads as `+?` on the widget rather than the total being declared settled.
+   */
+  chargePending?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

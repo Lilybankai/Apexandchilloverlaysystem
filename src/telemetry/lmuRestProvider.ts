@@ -360,6 +360,20 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly traceLimits: LmuTraceLimitsReader;
   /** The session the trace reader was last reset for, so a restart clears its total. */
   private traceSessionKey = '';
+  /**
+   * State for the "a cut is awaiting judgement" marker.
+   *
+   * The sim's rulings reach us up to ~25 s late — it flushes its log a 4 KB block at
+   * a time, and which write completes the block is arbitrary. Our own geometry sees
+   * the excursion immediately, so comparing the two says whether the total on screen
+   * is settled or has something still to come.
+   *
+   * {@link traceSettledSeen} is the sim's count of rulings at the moment we last
+   * re-baselined, and {@link warningsAtSettled} our excursion count at that same
+   * moment.
+   */
+  private traceSettledSeen = -1;
+  private warningsAtSettled = 0;
 
   public constructor(config: LmuRestConfig) {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
@@ -1684,6 +1698,20 @@ export class LmuRestProvider implements TelemetryProvider {
 
     if (!trace) return { ...state, pointsLimitEnforced: enforced };
 
+    // Has the sim ruled on everything we have seen?
+    //
+    // Re-baseline whenever its count of rulings moves: from then on, any excursion
+    // OUR detector counts is one the sim has not been heard from about. This is
+    // positive evidence of something outstanding, not a guarantee of its absence —
+    // our geometry uses a margin and the sim charges on time gained, so it can miss
+    // a shallow cut that still scores. The marker means "there is more to come"; its
+    // absence does not promise the total is final.
+    if (trace.settled !== this.traceSettledSeen) {
+      this.traceSettledSeen = trace.settled;
+      this.warningsAtSettled = state.warnings;
+    }
+    const chargePending = state.warnings > this.warningsAtSettled;
+
     // The sim's figures ride alongside ours rather than overwriting them: `points`
     // stays the geometric reconstruction so the two can be compared in the field,
     // and `pointsSource` tells the widget which one it is entitled to present as
@@ -1695,6 +1723,7 @@ export class LmuRestProvider implements TelemetryProvider {
       ...(trace.lastIncident ? { simLastCharge: trace.lastIncident.warnPts } : {}),
       pointsSource: 'sim',
       pointsLimitEnforced: enforced,
+      ...(chargePending ? { chargePending: true } : {}),
     };
   }
 

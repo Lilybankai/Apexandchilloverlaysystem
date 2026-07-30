@@ -265,6 +265,17 @@ export interface TraceLimitsState {
   lastPenalty: TracePenalty | null;
   /** Incidents seen since the last reset — the count the sim actually charged for. */
   charged: number;
+  /**
+   * How many excursions the sim has **ruled on** this session, charged or not.
+   *
+   * Distinct from {@link charged} because "ruled and charged nothing" is a verdict
+   * too — and it is the one that tells us there is no longer anything outstanding.
+   * A caller comparing this against its own excursion count can tell whether a cut
+   * is still awaiting judgement, which matters because the sim's writes reach us up
+   * to ~25 s late (a 4 KB log buffer; see the flush notes in
+   * `docs/TRACK-LIMITS-POINTS.md`).
+   */
+  settled: number;
   /** The session these points belong to, in the sim's words (`"Race"`, `"Practice"`). */
   session: string | null;
 }
@@ -278,6 +289,7 @@ export interface TraceLimitsState {
 export class TraceLimitsAccumulator {
   private points = 0;
   private charged = 0;
+  private settled = 0;
   private lastIncident: TraceIncident | null = null;
   private lastPenalty: TracePenalty | null = null;
   private session: string | null = null;
@@ -313,6 +325,11 @@ export class TraceLimitsAccumulator {
     // the lap and distance. Pair them rather than reporting half of each.
     if (parsed.warnPts === null) {
       if (parsed.verdict) this.pending = parsed;
+      // A settled verdict — charged or not — means the sim has finished with that
+      // excursion, so nothing is outstanding on its account any more.
+      if (parsed.verdict === 'warning' || parsed.verdict === 'no-track-cut') {
+        this.settled += 1;
+      }
       return;
     }
 
@@ -356,6 +373,7 @@ export class TraceLimitsAccumulator {
       lastIncident: this.lastIncident,
       lastPenalty: this.lastPenalty,
       charged: this.charged,
+      settled: this.settled,
       session: this.session,
     };
   }
@@ -369,6 +387,7 @@ export class TraceLimitsAccumulator {
   public reset(): void {
     this.points = 0;
     this.charged = 0;
+    this.settled = 0;
     this.lastIncident = null;
     this.lastPenalty = null;
     this.pending = null;
