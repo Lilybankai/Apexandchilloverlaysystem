@@ -110,6 +110,59 @@ showed `Resolution="5"` beside `cuts_allowed = 5`; it is a verdict code
 (`2` = Drive Through Penalty, `4` = Warning, `5` = Invalid Lap Cut Track,
 `7` = No Further Action) and the match was a coincidence.
 
+## The flush lag — the open problem, and what is already ruled out
+
+**Charges are correct but late.** LMU does not flush its trace per line; it writes in
+bursts. Measured with a watcher that timestamps each line's arrival against when the
+event happened: one burst carried **27 seconds of game time in a single write**, the
+oldest line in it landing **24.5 s** after the fact.
+
+```
+12:00:26   Off Track WP: 450     lag  1.2s
+---        26 seconds of nothing
+12:00:52   626: WarnPts 0.00     lag 24.5s   <- held in the buffer this long
+12:00:52   No Track Cut          lag -2.1s   <- caught up
+```
+
+**What appears to "trigger" an update is only log volume.** Confirmed on track: the
+total moves when crossing the start/finish line after a clean lap, when transiting the
+pit lane, or on a brief four-wheels-off that draws no assessment from the HUD at all.
+None of those cause the charge — they each write lines, which pushes the buffer past
+its threshold so the charge already sitting in it gets flushed out.
+
+### Ruled out
+
+- **`RealTimeLogging`** (`Settings.JSON` → `Game Options`, documented as
+  `"0=off, 1=Accurate"`). Set to `1` with the game closed; it survived a subsequent
+  rewrite of the file by the game, so the change was live. **No effect on the lag.**
+  Revert it unless a reason to keep it emerges — backup kept beside it as
+  `Settings.apex-backup-2026-07-30T00-25-00.JSON`.
+- **It is not the telemetry recorder.** No new `UserData/Telemetry/*.duckdb` appeared
+  after enabling it, and those files are physics traces (13–20 MB a session), not
+  stewarding decisions.
+- **There is no separate steward log.** Nothing in `UserData/Log` carries steward or
+  penalty output; it all goes to the trace.
+- **Polling faster does not help** and never will: the bytes are inside the game's
+  process, not on disk.
+
+### Next candidates, in order
+
+1. **Find where the in-game HUD gets it.** The HUD shows the assessment immediately, so
+   the value exists in the process the instant it is decided. LMU's UI is web-based and
+   the REST API on `:6397` is the same server — the endpoint list we enumerated was
+   guessed at, not discovered. Reading the shipped UI assets for whatever the
+   track-limits HUD element subscribes to would find a genuinely live source and make
+   the trace redundant.
+2. **`Steward Log Level`** (currently `1`, described only as *"Where to log steward
+   messages"*). Its other values are unobserved; one may write to a file the game
+   flushes promptly, or raise the volume enough to shorten the lag.
+3. **Anything that raises trace verbosity.** More bytes means the buffer fills sooner,
+   which shortens the lag without fixing it. A blunt instrument, and it costs disk.
+4. **Accept it and say so on the widget.** Our own geometry sees the excursion
+   immediately, so the widget could mark that a cut is awaiting judgement — turning the
+   lag from a wrong number into a visibly pending one. Decision not taken; it adds an
+   element to the panel.
+
 ## Open questions
 
 - **Lap invalidation is not in the trace.** The XML reports it (`Invalid Lap Cut
