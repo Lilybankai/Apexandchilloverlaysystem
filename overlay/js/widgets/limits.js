@@ -223,7 +223,16 @@
     }
 
     if (labelEl.textContent !== "POINTS") labelEl.textContent = "POINTS";
-    buildPips(pipOverride || tl.pointsLimit || 10);
+
+    // The pips are a countdown to the drive-through, so they only mean anything in a
+    // session that issues one. Practice and qualifying invalidate the lap instead and
+    // let the total run past the allowance — the game's own HUD shows the limit as
+    // infinity there — so the row is hidden rather than filling up and stopping at a
+    // threshold nothing will happen at. An explicit ?limits= override still wins:
+    // that is someone deliberately watching a scale.
+    var enforced = tl.pointsLimitEnforced !== false || !!pipOverride;
+    if (pipsEl.hidden === enforced) pipsEl.hidden = !enforced;
+    if (enforced) buildPips(pipOverride || tl.pointsLimit || 10);
 
     /* ------------------------------ the counts --------------------------- */
 
@@ -403,7 +412,9 @@
     // number, so it has to be clear whether the stewards said it or we inferred it.
     // One character, in the header rather than the headline, because the whole
     // point of the headline is that it does not change shape mid-glance.
-    setMeta((fromSim ? "" : "~") + points + " / " + limit);
+    // "4.75 / 5" where the limit bites; "9.5 PTS" where it does not, rather than a
+    // ratio against a threshold the session will never enforce.
+    setMeta((fromSim ? "" : "~") + points + (enforced ? " / " + limit : " PTS"));
   }
 
   window.ApexOverlay.registerWidget("limits", {

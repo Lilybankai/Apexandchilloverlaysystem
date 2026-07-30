@@ -369,6 +369,24 @@ writeTrace([WARNING, SCORED_100, WARNING, SCORED_050]);
 st = readerState();
 check('with no session marker, nothing is replayed', st && st.points === 0, st && st.points);
 
+// The game keeps a plain `trace.txt` beside the dated files: an exit-time copy of the
+// session that just finished, byte-identical and with the same mtime. Picked by mtime
+// alone that tie can win, leaving the reader tailing a static copy of a dead session.
+writeTrace([
+  '16868.68s steward.cpp  9371: SessionName="Race"',
+  WARNING,
+  SCORED_050,
+]);
+fs.writeFileSync(
+  path.join(tmp, 'trace.txt'),
+  ['100.00s steward.cpp  9371: SessionName="Practice"', WARNING, SCORED_100, WARNING, SCORED_100].join('\r\n'),
+  'latin1',
+);
+st = readerState();
+check('a plain trace.txt is not mistaken for the live log', st && st.points === 0.5,
+  st && st.points);
+check('…so the dead session’s total is not shown', st && st.charged === 1, st && st.charged);
+
 // A discharge inside the session must survive the replay.
 writeTrace([
   '16868.68s steward.cpp  9371: SessionName="Race"',

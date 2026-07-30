@@ -809,6 +809,21 @@ export interface TrackLimitsState {
    * show them if it is the stewards' number rather than our approximation of it.
    */
   pointsSource?: 'sim' | 'estimated';
+  /**
+   * Whether {@link pointsLimit} is a threshold the sim will actually act on in THIS
+   * session.
+   *
+   * `/rest/sessions` reports `cuts_allowed` for every session type, but only a race
+   * spends it on a drive-through: in practice and qualifying LMU invalidates the lap
+   * instead and lets the total run — observed at 9.5 against an allowance of 5, with
+   * the game's own HUD showing the limit as infinity, and corroborated by the 727
+   * `Invalid Lap Cut Track` rulings in one evening's results files.
+   *
+   * So the countdown is shown only where it is real. Telling a driver in practice
+   * they are 0.25 from a drive-through that cannot come is the same class of error as
+   * showing them our estimate as the stewards' number.
+   */
+  pointsLimitEnforced?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1677,7 +1677,12 @@ export class LmuRestProvider implements TelemetryProvider {
       }) ?? undefined;
 
     if (!state) return undefined;
-    if (!trace) return state; // no trace log — our own count, as before
+
+    // Only a race spends the allowance on a drive-through; practice and qualifying
+    // invalidate the lap and let the total run past it. See `pointsLimitEnforced`.
+    const enforced = session.type === 'race';
+
+    if (!trace) return { ...state, pointsLimitEnforced: enforced };
 
     // The sim's figures ride alongside ours rather than overwriting them: `points`
     // stays the geometric reconstruction so the two can be compared in the field,
@@ -1689,6 +1694,7 @@ export class LmuRestProvider implements TelemetryProvider {
       simCharged: trace.charged,
       ...(trace.lastIncident ? { simLastCharge: trace.lastIncident.warnPts } : {}),
       pointsSource: 'sim',
+      pointsLimitEnforced: enforced,
     };
   }
 

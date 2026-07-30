@@ -448,7 +448,11 @@ export function newestTrace(dir: string): string | null {
   try {
     let best: { file: string; at: number } | null = null;
     for (const name of fs.readdirSync(dir)) {
-      if (!/^trace.*\.txt$/i.test(name)) continue;
+      // `trace_<launch time>.txt` only. The game also keeps a plain `trace.txt`,
+      // which is an EXIT-TIME COPY of the session that just finished — byte-identical
+      // to the dated file, with the same mtime. That tie can win this comparison, and
+      // then the reader is tailing a static copy of a session that has ended.
+      if (!/^trace_.*\.txt$/i.test(name)) continue;
       const file = path.join(dir, name);
       const at = fs.statSync(file).mtimeMs;
       if (!best || at > best.at) best = { file, at };
