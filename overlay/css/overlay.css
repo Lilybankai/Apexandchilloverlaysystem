@@ -166,6 +166,94 @@
 .brand__amp { color: var(--ac-cyan); }
 
 /* =========================================================================
+ * SESSION STRIP — how much of the session is left, across the top of a panel.
+ * -------------------------------------------------------------------------
+ * Built by `ApexOverlay.sessionStrip` (client.js) and worn by two panels: the
+ * standings tower and the fuel calculator. One component rather than two, so
+ * the tower and the fuel panel cannot show a different number of laps to go —
+ * they are read as a pair, and the whole strategy call is the subtraction
+ * between them.
+ *
+ * Tier 1. How much session is left decides everything else on either panel —
+ * when to push, when to save, whether a stop still fits — so the counter and
+ * the clock are sized to be read without looking away from the corner.
+ * ========================================================================= */
+.sessionstrip {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* Flush: the strip supplies the header padding and rule its panel body does not
+   (a `panel__body--flush`, where a table manages its own spacing). */
+.sessionstrip--flush {
+  padding: 5px 10px 6px calc(10px + var(--accent-bar-w));
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--bg-header);
+}
+/* Inset: inside an already-padded body, ruled off like the fuel gauges below it
+   so the strip reads as its own statement rather than as a stray first row. */
+.sessionstrip--inset {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sessionstrip__primary {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: var(--fs-crit);
+  line-height: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.sessionstrip__clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-crit);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ac-cyan);
+  white-space: nowrap;
+}
+.sessionstrip__clock::before {
+  content: "⏱ ";
+  font-size: var(--fs-body);
+  color: var(--text-muted);
+}
+.sessionstrip__clock.is-urgent {
+  color: var(--pos-loss);
+  animation: sessionstrip-clock-pulse 1s steps(2, jump-none) infinite;
+}
+@keyframes sessionstrip-clock-pulse { 50% { opacity: 0.45; } }
+/* Laps still to run, beside the counter (estimated, with a tilde, on a timed
+   race — LMU only gives a clock). Tier 2: the counter is the headline, this is
+   the number the driver actually fuels and paces against. */
+.sessionstrip__note {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-body);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Small: a panel too narrow to carry three Tier 1 fields across it. The fuel
+   panel is 400px and already has two Tier 1 stats of its own below the strip,
+   so the counter and clock drop a tier there rather than competing with the
+   answer they set up. Wrapping is the backstop for the worst case — an hour
+   clock beside a lap counter at the 120% text scale. */
+.sessionstrip--sm { flex-wrap: wrap; }
+.sessionstrip--sm .sessionstrip__primary,
+.sessionstrip--sm .sessionstrip__clock {
+  font-size: var(--fs-value);
+}
+.sessionstrip--sm .sessionstrip__note { font-size: var(--fs-label); }
+
+/* =========================================================================
  * STANDINGS WIDGET (top-left)
  * ========================================================================= */
 .standings { max-height: 700px; }
@@ -178,56 +266,6 @@
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
-}
-
-/* --- Session strip: prominent lap counter + timed-race countdown clock ---- */
-.standings__session {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 5px 10px 6px calc(10px + var(--accent-bar-w));
-  border-bottom: 1px solid var(--border-strong);
-  background: var(--bg-header);
-}
-/* Tier 1. How much race is left decides everything else on this panel — when to
-   push, when to save, whether a stop still fits — so the lap counter and the
-   countdown are sized to be readable without looking away from the corner. */
-.standings__session-lap {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  font-size: var(--fs-crit);
-  line-height: 1;
-  color: var(--text-primary);
-}
-.standings__session-clock {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-crit);
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--ac-cyan);
-}
-.standings__session-clock::before {
-  content: "⏱ ";
-  font-size: var(--fs-body);
-  color: var(--text-muted);
-}
-.standings__session-clock.is-urgent {
-  color: var(--pos-loss);
-  animation: standings-clock-pulse 1s steps(2, jump-none) infinite;
-}
-@keyframes standings-clock-pulse { 50% { opacity: 0.45; } }
-/* Estimated laps-to-go for a timed race, beside the countdown clock. */
-.standings__session-togo {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--fs-body);
-  line-height: 1;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-  white-space: nowrap;
 }
 
 /* Fastest-lap-of-the-race banner, under the session strip. */

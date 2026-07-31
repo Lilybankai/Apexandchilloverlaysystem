@@ -415,6 +415,109 @@
     return mins >= 60 && mins % 60 === 0 ? mins / 60 + " HR" : mins + " MIN";
   }
 
+  /** Seconds -> "H:MM:SS" (drops the hour when zero). */
+  function clockText(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = sec % 60;
+    var mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+    var ss = String(s).padStart(2, "0");
+    return (h > 0 ? h + ":" : "") + mm + ":" + ss;
+  }
+
+  /**
+   * Where in the run-up we are. The grid and the formation lap are worth calling
+   * out; the garage is the default and says nothing extra.
+   */
+  var PHASE_NOTE = {
+    countdown: "ON THE GRID",
+    gridwalk: "ON THE GRID",
+    formation: "FORMATION LAP",
+  };
+
+  /** "28 LAPS LEFT" / "1 LAP LEFT", tilde-prefixed when it is an estimate. */
+  function lapsLeftText(n, estimated) {
+    return (estimated ? "~" : "") + n + (n === 1 ? " LAP LEFT" : " LAPS LEFT");
+  }
+
+  /**
+   * The one-line answer to *where are we in this session* — the headline every
+   * panel carrying a session strip shows.
+   *
+   * Three shapes, because three different questions are being asked:
+   *
+   * - **Not started yet.** There is no lap 1 and no clock running down, so a
+   *   counter reads as broken. Name the session and its FULL booked length (never
+   *   the remaining clock, which pre-green is the countdown to the start).
+   * - **A lap limit exists.** Count laps: which one is running, out of how many,
+   *   and how many are still to come. Those last two are not the same fact —
+   *   "LAP 12/40" is where the race is, "29 LAPS LEFT" is what has to be fuelled
+   *   and tyred for — and asking a driver to subtract mid-corner is asking for
+   *   the wrong answer.
+   * - **Timed, no lap limit.** A race still counts laps, with the laps-to-go
+   *   estimated from the clock and the leader's pace (all LMU gives us). Practice
+   *   and qualifying do not: there is no total to count towards, so the lap
+   *   number is a personal tally rather than a position in the session. What the
+   *   driver wants there is which session this is and how much of it is left, so
+   *   the counter gives way to the session's own name.
+   *
+   * @param {object} session  `frame.session` (SessionState).
+   * @returns {{primary: string, clock: string, note: string, urgent: boolean}}
+   *   `clock`/`note` are `""` when they have nothing to say and should be hidden.
+   */
+  function sessionHeadline(session) {
+    if (!session) return { primary: "", clock: "", note: "", urgent: false };
+
+    if (session.notStarted) {
+      return {
+        primary: sessionLabel(session.type),
+        clock: sessionLength(session),
+        note: PHASE_NOTE[session.phase] || "",
+        urgent: false,
+      };
+    }
+
+    var cur = session.currentLap;
+    var tot = session.totalLaps;
+
+    if (has(tot) && tot > 0) {
+      // A lap-limited session has no clock worth showing — it ends on a lap, and a
+      // countdown next to a lap counter invites planning against the wrong one.
+      //
+      // Laps left INCLUDES the lap being run: on lap 40 of 40 there is 1 to go,
+      // and on lap 12 of 40 there are 29 still to drive. That is deliberately
+      // the same count the fuel calculator finishes the race on (lapsToFinish
+      // = totalRaceLaps − lapsCompleted, telemetry/fuelCalculator.ts) — this
+      // strip sits directly above the litres derived from it in the fuel panel,
+      // and the two disagreeing by a lap would discredit both.
+      var left = has(cur) && cur > 0 ? Math.max(0, tot - (cur - 1)) : 0;
+      return {
+        primary: "LAP " + intVal(cur) + "/" + tot,
+        clock: "",
+        note: left > 0 ? lapsLeftText(left, false) : "",
+        urgent: false,
+      };
+    }
+
+    var rem = session.timeRemainingSec;
+    var clock = has(rem) && rem > 0 ? clockText(rem) : "";
+    // Inside the final minute the clock is the whole story; it flashes for itself.
+    var urgent = clock !== "" && rem <= 60;
+
+    if (session.type !== "race") {
+      return { primary: sessionLabel(session.type), clock: clock, note: "", urgent: urgent };
+    }
+
+    var est = session.lapsRemaining;
+    return {
+      primary: "LAP " + intVal(cur),
+      clock: clock,
+      note: has(est) && est > 0 ? lapsLeftText(Math.round(est), true) : "",
+      urgent: urgent,
+    };
+  }
+
   function updateSessionMeta(frame) {
     // Standings header: position / field size. Tier 1 and glow-eligible — your
     // own position changing is the single most consequential discrete event in a
@@ -650,11 +753,89 @@
     };
   }
 
+  /**
+   * The session strip: how much of this session is left, across the top of a
+   * panel.
+   *
+   * Shared rather than built per widget for the same reason the alarm bar is.
+   * Two panels carry it — the standings tower and the fuel calculator — and they
+   * are read together: the tower says the race is on lap 12 of 40, the fuel
+   * panel says the tank is good for 14 laps, and the whole decision is the
+   * subtraction between them. Two hand-rolled copies of "how many laps are
+   * left" that could disagree by one would make that subtraction worthless.
+   *
+   * Everything shown comes from {@link sessionHeadline}, so what the strip says
+   * is decided in one place; this only draws it.
+   *
+   * Glow: the lap counter and the laps-left note step a few dozen times in a
+   * race and are exactly what a bloom is for. The clock deliberately does NOT
+   * glow — it changes every second, and a bloom on it would strobe from lights
+   * to flag. Its own urgency signal is the red flash inside the final minute.
+   *
+   * @param {Element} parent  Widget body; the strip appends itself.
+   * @param {{flush?: boolean, small?: boolean}} [opts]
+   *   `flush` for a padding-less panel body, where the strip supplies its own
+   *   header padding and rule (the standings tower). `small` drops the readouts
+   *   a tier, for a panel too narrow to carry Tier 1 across three fields
+   *   (the 400px fuel panel, which already has its own Tier 1 stats below).
+   * @returns {function(object): void} `set(session)`, cheap to call every frame.
+   */
+  function sessionStrip(parent, opts) {
+    opts = opts || {};
+    var el = document.createElement("div");
+    el.className =
+      "sessionstrip" +
+      (opts.flush ? " sessionstrip--flush" : " sessionstrip--inset") +
+      (opts.small ? " sessionstrip--sm" : "");
+
+    var primaryEl = document.createElement("span");
+    primaryEl.className = "sessionstrip__primary is-crit";
+    primaryEl.textContent = "LAP —";
+    var clockEl = document.createElement("span");
+    clockEl.className = "sessionstrip__clock";
+    clockEl.hidden = true;
+    var noteEl = document.createElement("span");
+    noteEl.className = "sessionstrip__note is-crit";
+    noteEl.hidden = true;
+
+    el.appendChild(primaryEl);
+    el.appendChild(clockEl);
+    el.appendChild(noteEl);
+    parent.appendChild(el);
+
+    return function set(session) {
+      if (!session) return;
+      var h = sessionHeadline(session);
+      crit(primaryEl, h.primary);
+
+      if (h.clock) {
+        if (clockEl.textContent !== h.clock) clockEl.textContent = h.clock;
+        if (clockEl.hidden) clockEl.hidden = false;
+        if (clockEl.classList.contains("is-urgent") !== h.urgent)
+          clockEl.classList.toggle("is-urgent", h.urgent);
+      } else if (!clockEl.hidden) {
+        clockEl.hidden = true;
+      }
+
+      if (h.note) {
+        crit(noteEl, h.note);
+        if (noteEl.hidden) noteEl.hidden = false;
+      } else if (!noteEl.hidden) {
+        noteEl.hidden = true;
+      }
+    };
+  }
+
   // Expose the runtime for widget modules.
   window.ApexOverlay = {
     registerWidget: registerWidget,
     fmt: fmt,
     alarmBar: alarmBar,
+    sessionStrip: sessionStrip,
+    // The strip's text as data, for anything that wants the wording without the
+    // markup — and so the rule about which sessions count laps can be tested
+    // headlessly rather than by squinting at a panel.
+    sessionHeadline: sessionHeadline,
   };
 
   // Boot scheduling.

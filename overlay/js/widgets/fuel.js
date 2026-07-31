@@ -6,6 +6,11 @@
  * the margin at the flag (colour-coded surplus/short), plus refuel-to-finish
  * and the pit window. Values are display-ready; this widget only formats them.
  *
+ * A session strip across the top says how much of the session is left — the lap
+ * counter and laps to go in a race, the session name and the clock in practice
+ * and qualifying, where there is no lap total to count towards. Every figure
+ * below it is measured against that one.
+ *
  * Two gauges at the top — litres in the tank and virtual energy remaining — are
  * permanent: they are written every frame and never take part in any rotation,
  * because fuel and energy are separate budgets that drain at different rates and
@@ -26,7 +31,7 @@
   var header, modeChip, overlapEl;
   var stats = {};
   var gauges = {};
-  var refuelEl, pitEl, setAlarm;
+  var refuelEl, pitEl, setAlarm, setSession;
   var cache = {};
   var grids = {};
   /** Shared widget context, kept so the setters can reach the glow helpers. */
@@ -155,6 +160,13 @@
     header = root.querySelector('[data-role="tank"]');
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
+
+    // How much session is left, above everything else. Every number under it is
+    // measured against that one: laps left in the tank only means anything
+    // beside laps left in the race, and "+4.2 L margin" is a margin to the
+    // finish. The same strip the standings tower carries, from the same source,
+    // so the two panels cannot state a different number of laps to go.
+    setSession = window.ApexOverlay.sessionStrip(mount, { small: true });
 
     // Static gauges, built before the rotating views and never hidden by them.
     var gaugeBox = document.createElement("div");
@@ -301,6 +313,11 @@
     var fmt = ctx.fmt;
     octx = ctx;
     var f = frame.fuel;
+    // Written before the fuel block bails out: how much session is left is a
+    // fact about the session, and it is still true (and still worth showing) on
+    // a car the calculator has nothing to say about — a spectated entry, or the
+    // first laps before a burn rate exists.
+    setSession(frame.session);
     if (!f) return;
 
     setAlarm(f.pitThisLap === true, pitCallText(f));

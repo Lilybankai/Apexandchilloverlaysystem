@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.43.0 — 2026-07-31
+
+### Added
+
+- **How much of the session is left now sits across the top of the fuel widget as well as
+  the standings tower**, and says both halves of it: `LAP 12/40 · 29 LAPS LEFT`. The
+  counter is where the race is; the laps left are what has to be fuelled and tyred for,
+  and asking a driver to subtract those mid-corner is asking for the wrong answer.
+
+  It matters most on the fuel panel, which had no session context at all. Every figure on
+  it is measured against the race length — laps left in the tank only means something
+  beside laps left in the race, and "−13.4 L margin" is a margin *to the finish* — so the
+  panel was answering a question it never stated. It states it now, directly above the two
+  gauges: 29 laps of race, 23.9 laps of fuel, 17.5 of energy.
+
+  Laps left includes the lap being run (lap 12 of 40 leaves 29, not 28). That is the same
+  count the fuel calculator finishes the race on, so the strip and the litres under it are
+  answers to the same question rather than two that differ by a lap.
+
+- **Practice and qualifying are named instead of counted.** They have a clock but no lap
+  total, so `LAP 5` there was a personal tally shown where a position in the session
+  belongs — five of nothing. Both panels now read `PRACTICE · 28:14`, the session and what
+  is left of it, which is the thing being decided in a session with no finish to reach.
+  A lap-limited qualifying session — unusual, entirely legal — still counts laps: the lap
+  limit decides this, not the session's name.
+
+### Changed
+
+- The session strip is now one shared component rather than one panel's private markup, so
+  the tower and the fuel panel cannot state a different number of laps to go. They are read
+  as a pair and the whole strategy call is the subtraction between them; two hand-rolled
+  copies that could drift by one lap would make that subtraction worthless. New in
+  `scripts/test-session-headline.js` (`npm run test:session-headline`), which pins the
+  practice/qualifying rule and the off-by-one, both of which are easy to undo by accident.
+
 ## 0.42.0 — 2026-07-30
 
 ### Added

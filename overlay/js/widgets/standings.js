@@ -3,7 +3,7 @@
  * -----------------------------------------------------------------------------
  * Renders `frame.standings` (StandingEntry[]) as a class-grouped timing tower:
  *
- *   ┌ session strip ─ big LAP x/y counter + countdown clock (timed races) ┐
+ *   ┌ session strip ─ LAP x/y · laps left · clock (or the session name) ──┐
  *   ├ HYPERCAR · 6 CARS ─────────────────────────────────────────────────┤
  *   │  P  ±   Driver            VE     GAP        LAST                     │
  *   ├ GT3 · 9 CARS ───────────────────────────────────────────────────────┤
@@ -81,7 +81,7 @@
   /** How long a new personal-best lap flashes green (ms). */
   var PB_FLASH_MS = 5000;
 
-  var mount, sessionStrip, sessLap, sessClock, sessToGo, sessFastest, tbody;
+  var mount, setSession, sessFastest, tbody;
   /** @type {Map<number, object>} slotId -> cached row element + last values. */
   var rows = new Map();
   /** @type {Map<number, object>} slotId -> { laps, best, flashUntil }. */
@@ -185,29 +185,13 @@
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
-    // Session strip: a prominent lap counter + a countdown clock for timed races.
-    sessionStrip = document.createElement("div");
-    sessionStrip.className = "standings__session";
-    sessLap = document.createElement("span");
-    // Tier 1, and glow-eligible: the lap counter steps once every ninety seconds
-    // or so, which is exactly the cadence a bloom is for.
-    sessLap.className = "standings__session-lap is-crit";
-    sessLap.textContent = "LAP —";
-    sessClock = document.createElement("span");
-    // Tier 1 for SIZE only — deliberately no is-crit. The clock changes every
-    // second, so a bloom on it would strobe for the whole race. Its own urgency
-    // signal already exists (.is-urgent, in the final minute).
-    sessClock.className = "standings__session-clock";
-    sessClock.hidden = true;
-    // Estimated laps-to-go for a timed race (LMU only gives a clock). Glows: it
-    // is an integer that steps a few dozen times in a race.
-    sessToGo = document.createElement("span");
-    sessToGo.className = "standings__session-togo is-crit";
-    sessToGo.hidden = true;
-    sessionStrip.appendChild(sessLap);
-    sessionStrip.appendChild(sessClock);
-    sessionStrip.appendChild(sessToGo);
-    mount.appendChild(sessionStrip);
+    // Session strip: the lap counter, the laps still to run, and a countdown
+    // clock for timed sessions — or the session's name in practice and
+    // qualifying, which have a clock but no lap total to count towards. The
+    // runtime owns all of that wording (client.js `sessionHeadline`) so this
+    // strip and the fuel panel's cannot end up disagreeing about how much of
+    // the session is left.
+    setSession = window.ApexOverlay.sessionStrip(mount, { flush: true });
 
     // Fastest-lap-of-the-race banner: who holds it and what it is. Sits on its
     // own line under the session strip so it never squeezes the lap counter.
@@ -325,120 +309,13 @@
     sponsorShowingA = !sponsorShowingA;
   }
 
-  /** Render the LAP x/y counter and the timed-race countdown clock. */
-  function updateSession(frame, fmt, ctx) {
-    var s = frame.session;
-    if (!s) return;
-    var cur = s.currentLap;
-    var tot = s.totalLaps;
-
-    // Before the flag drops there is no lap 1 and no clock running down, so a
-    // counter here reads as broken — "LAP —" was what the strip actually showed
-    // while sitting in the garage. What the driver wants at that moment is which
-    // session they are about to run and how long it is, so the strip becomes a
-    // pre-session header until the session goes green.
-    if (s.notStarted) {
-      renderPreSession(s, fmt, ctx);
-      return;
-    }
-
-    var lapText;
-    if (fmt.has(tot) && tot > 0) lapText = "LAP " + fmt.intVal(cur) + "/" + tot;
-    else lapText = "LAP " + fmt.intVal(cur);
-    if (ctx.crit) ctx.crit(sessLap, lapText);
-    else if (sessLap.textContent !== lapText) sessLap.textContent = lapText;
-
-    // Countdown only for timed sessions (no fixed lap count) with a known clock.
-    var timed = !(fmt.has(tot) && tot > 0);
-    var rem = s.timeRemainingSec;
-    if (timed && fmt.has(rem) && rem > 0) {
-      var clock = formatClock(rem);
-      if (sessClock.textContent !== clock) sessClock.textContent = clock;
-      if (sessClock.hidden) sessClock.hidden = false;
-      // Flash the clock red inside the final minute.
-      var urgent = rem <= 60;
-      if (sessClock.classList.contains("is-urgent") !== urgent)
-        sessClock.classList.toggle("is-urgent", urgent);
-    } else if (!sessClock.hidden) {
-      sessClock.hidden = true;
-    }
-
-    // Estimated laps remaining for a timed race, shown next to the clock.
-    var lr = s.lapsRemaining;
-    if (timed && fmt.has(lr) && lr > 0) {
-      var togo = "~" + fmt.intVal(lr) + (lr === 1 ? " LAP LEFT" : " LAPS LEFT");
-      if (ctx.crit) ctx.crit(sessToGo, togo);
-      else if (sessToGo.textContent !== togo) sessToGo.textContent = togo;
-      if (sessToGo.hidden) sessToGo.hidden = false;
-    } else if (!sessToGo.hidden) {
-      sessToGo.hidden = true;
-    }
-  }
-
-  /**
-   * The pre-session header: which session this is, how long it is booked for,
-   * and where in the run-up we are.
-   *
-   * The name and the length come from the runtime (`ctx.sessionLabel` /
-   * `ctx.sessionLength`) rather than from a table here, so this strip and the
-   * relative panel's header cannot end up disagreeing about which session the
-   * driver is sitting in.
-   *
-   * The length is the session's FULL booked length, not the time remaining:
-   * sitting in the garage the remaining clock is either the same number by luck
-   * or the countdown to the green flag, and showing "5 MIN" for a thirty-minute
-   * practice is worse than showing nothing. A session the sim has published no
-   * length for shows just its name rather than an invented figure.
-   */
-  function renderPreSession(s, fmt, ctx) {
-    var name = ctx.sessionLabel ? ctx.sessionLabel(s.type) : "SESSION";
-    if (ctx.crit) ctx.crit(sessLap, name);
-    else if (sessLap.textContent !== name) sessLap.textContent = name;
-
-    var length = ctx.sessionLength ? ctx.sessionLength(s) : "";
-    if (length) {
-      if (sessClock.textContent !== length) sessClock.textContent = length;
-      if (sessClock.hidden) sessClock.hidden = false;
-      if (sessClock.classList.contains("is-urgent")) sessClock.classList.remove("is-urgent");
-    } else if (!sessClock.hidden) {
-      sessClock.hidden = true;
-    }
-
-    // Where in the run-up: the grid and the formation lap are worth calling out,
-    // the garage is the default and says nothing extra.
-    var PHASE_NOTE = {
-      countdown: "ON THE GRID",
-      gridwalk: "ON THE GRID",
-      formation: "FORMATION LAP",
-    };
-    var note = PHASE_NOTE[s.phase] || "";
-    if (note) {
-      if (ctx.crit) ctx.crit(sessToGo, note);
-      else if (sessToGo.textContent !== note) sessToGo.textContent = note;
-      if (sessToGo.hidden) sessToGo.hidden = false;
-    } else if (!sessToGo.hidden) {
-      sessToGo.hidden = true;
-    }
-  }
-
-  /** Seconds -> "H:MM:SS" (drops the hour when zero). */
-  function formatClock(sec) {
-    sec = Math.max(0, Math.floor(sec));
-    var h = Math.floor(sec / 3600);
-    var m = Math.floor((sec % 3600) / 60);
-    var s = sec % 60;
-    var mm = (h > 0 ? String(m).padStart(2, "0") : String(m));
-    var ss = String(s).padStart(2, "0");
-    return (h > 0 ? h + ":" : "") + mm + ":" + ss;
-  }
-
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var now = Date.now();
     var list = frame.standings || [];
     var seen = new Set();
 
-    updateSession(frame, fmt, ctx);
+    setSession(frame.session);
 
     // Fastest lap of the race (purple) and fastest lap per class (green). In a
     // multiclass field only one car can hold the purple, so without the
