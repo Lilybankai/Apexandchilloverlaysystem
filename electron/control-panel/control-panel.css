@@ -725,6 +725,14 @@ html, body {
   gap: 12px;
 }
 
+/* Streaming-chat YouTube row: the Link/Unlink buttons + their status line. */
+.chat-yt-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 /* Wheel-button chips, one per bindable direction. Narrower than the key chip:
    they hold "btn 47", not an accelerator. */
 .binding-row__wheels {

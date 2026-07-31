@@ -154,6 +154,28 @@ contextBridge.exposeInMainWorld('apex', {
     },
   },
 
+  /* ---- Streaming chat linking (YouTube + Twitch) ----
+   *
+   * Twitch is read anonymously, so linking it is only a channel name. YouTube's
+   * OAuth runs entirely in the main process (electron/chatLink.js) — the Google
+   * token never crosses this bridge, only the sanitised link state. */
+  chatLink: {
+    /** { twitchChannel, twitchLinked, youTubeConfigured, youTubeLinked, youTubeAccount, youTubeLive }. */
+    status: () => ipcRenderer.invoke('chatLink:status'),
+    /** Remember (or clear) the Twitch channel: name → { ok, state }. */
+    setTwitchChannel: (name) => ipcRenderer.invoke('chatLink:setTwitchChannel', name),
+    /** Run the Google consent flow in the browser: → { ok, error?, state }. */
+    linkYouTube: () => ipcRenderer.invoke('chatLink:linkYouTube'),
+    /** Forget the YouTube link: → { ok, state }. */
+    unlinkYouTube: () => ipcRenderer.invoke('chatLink:unlinkYouTube'),
+    /** Subscribe to link-state pushes. Returns an unsubscribe function. */
+    onChange: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('chatState:changed', listener);
+      return () => ipcRenderer.removeListener('chatState:changed', listener);
+    },
+  },
+
   /** Subscribe to live status pushes. Returns an unsubscribe function. */
   onStatus: (callback) => {
     const listener = (_evt, payload) => callback(payload);

@@ -35,6 +35,7 @@ const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
 const lapUpload = require('./lapUpload');
+const chatLink = require('./chatLink');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — every widget, each addable to OBS as its own source.    */
@@ -84,6 +85,16 @@ const OVERLAY_CATALOG = [
     id: 'mfd',
     label: 'MFD Control',
     description: 'Set pit strategy from the overlay — open in a browser to click (LMU only)',
+    ingameDefault: false,
+  },
+  // Stream chat pulls its own feed from the /chat socket, not the telemetry
+  // frame. Off in the in-game set by default — it is a deliberate add (a side
+  // monitor on a triple-screen rig), not something to drop over everyone's sim.
+  // Link accounts under Overlays → Streaming chat.
+  {
+    id: 'chat',
+    label: 'Stream Chat',
+    description: 'YouTube + Twitch chat on screen — link your accounts in Streaming chat below',
     ingameDefault: false,
   },
 ];
@@ -661,6 +672,26 @@ function pushLapSync(syncState) {
 /** Account state plus the remembered email the sign-in screen prefills with. */
 function authStateForUi() {
   return { ...authService.stateForUi(), lastEmail: loadSettings().lastAuthEmail || '' };
+}
+
+/** Push the streaming-chat link state (which platforms are linked) to the panel. */
+function pushChatState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('chatState:changed', chatLink.stateForUi());
+  }
+}
+
+/**
+ * Forward the chat sources to the running server, effective immediately. Safe
+ * before the server is up (the require carries the value in at the next start,
+ * via the staged pendingChatConfig in server/index.ts).
+ */
+function applyChatConfig(cfg) {
+  try {
+    requireServer().setChatConfig(cfg || {});
+  } catch (err) {
+    // Not built / not started yet — server start() seeds from the staged value.
+  }
 }
 
 /**
@@ -1777,6 +1808,22 @@ function registerIpc() {
     return authStateForUi();
   });
 
+  /* ---- Streaming chat linking (see electron/chatLink.js) ----
+   *
+   * Twitch is read anonymously, so "linking" it is just remembering a channel
+   * name. YouTube needs Google OAuth, which runs entirely in chatLink (main),
+   * so the renderer never sees a token — only the sanitised state below. */
+
+  ipcMain.handle('chatLink:status', () => chatLink.stateForUi());
+
+  ipcMain.handle('chatLink:setTwitchChannel', (_evt, name) =>
+    chatLink.setTwitchChannel(typeof name === 'string' ? name : ''),
+  );
+
+  ipcMain.handle('chatLink:linkYouTube', () => chatLink.linkYouTube());
+
+  ipcMain.handle('chatLink:unlinkYouTube', () => chatLink.unlinkYouTube());
+
   ipcMain.handle('clipboard:write', (_evt, text) => {
     if (typeof text === 'string') clipboard.writeText(text);
     return true;
@@ -2034,6 +2081,21 @@ app.whenReady().then(async () => {
   syncGamepad();
   // Auto-start the server so overlays are live as soon as the app opens.
   await startServer();
+
+  // Streaming chat: link state persists across launches, so bring it back up now
+  // and forward the operator's sources to the just-started server. The YouTube
+  // token-refresh hook lets the server ask for a fresh token when its poll 401s,
+  // rather than spinning on a dead credential.
+  chatLink.init({
+    userDataDir: app.getPath('userData'),
+    onChange: pushChatState,
+    applyChatConfig,
+  });
+  try {
+    requireServer().setChatYouTubeAuthErrorHandler(() => chatLink.handleYouTubeAuthError());
+  } catch (err) {
+    /* server not built — the standalone path doesn't use chatLink anyway */
+  }
 
   if (process.env.APEX_SHOT) {
     setTimeout(() => void captureWindowsAndQuit(process.env.APEX_SHOT), 3500);

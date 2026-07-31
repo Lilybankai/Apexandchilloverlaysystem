@@ -78,6 +78,11 @@
       // the pace-delta grid, where the driving-aid rows are reachable in
       // interact mode without covering the mirrors.
       mfd: { x: Math.round(vw / 2 - 180), y: 420, w: 360 },
+      // Far right, full height: chat is the widget triple-screen users park on a
+      // side monitor's dead space, so it defaults to a tall narrow column hard
+      // against the right edge rather than into the racing content. The height
+      // handle boxes it; without one it grows with the messages.
+      chat: { x: vw - 344, y: 24, w: 320, h: Math.max(240, vh - 48) },
     };
     return D[id] || { x: 24, y: 24, w: 400 };
   }

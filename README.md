@@ -717,7 +717,28 @@ All settings are environment variables with lightweight defaults
 | `APEX_AUDIO_CUES`  | `true`      | Play the synthesised audio cues                |
 | `APEX_AUDIO_VOLUME`| `60`        | Cue master volume % (0 = silent), 0–100        |
 | `APEX_LIMITS_MARGIN`| `2.4`      | Track-limits threshold, metres past the track edge, 0.5–5 |
+| `APEX_TWITCH_CHANNEL` | _(none)_ | Twitch channel for the Chat overlay (read anonymously — no login) |
+| `APEX_YT_LIVE_CHAT_ID` | _(none)_ | YouTube live-chat id for the Chat overlay (see below) |
+| `APEX_YT_TOKEN`    | _(none)_    | YouTube OAuth access token for the Chat overlay (see below) |
 | `APEX_VERBOSE`     | `false`     | Verbose logging                               |
+
+### Stream chat overlay (YouTube + Twitch)
+
+The **Chat** widget (`/widget.html?w=chat`, or the in-game layer) shows your
+YouTube and Twitch chat as one scrolling column — the widget triple-screen users
+park on a side monitor's dead space. It rides its own `/chat` WebSocket, not the
+telemetry frame; the server does the platform-specific work and hands the widget
+one normalized message shape, so the widget stays a thin, XSS-safe renderer.
+
+- **Twitch** is read anonymously over IRC — set `APEX_TWITCH_CHANNEL` to your
+  channel name and that half just works, no account link, no credential.
+- **YouTube** has no anonymous read, so it needs Google OAuth. In the **desktop
+  app** this is a one-click link (Overlays → *Streaming chat* → *Link YouTube*),
+  which runs the sign-in in the main process, finds your active broadcast's live
+  chat, and keeps the token fresh — no token ever reaches the browser. For a
+  standalone server you can instead supply `APEX_YT_LIVE_CHAT_ID` and a valid
+  `APEX_YT_TOKEN` directly. (Linking in the app requires a Google OAuth client;
+  set `APEX_GOOGLE_CLIENT_ID` / `APEX_GOOGLE_CLIENT_SECRET` for the build.)
 
 ## Project layout
 
