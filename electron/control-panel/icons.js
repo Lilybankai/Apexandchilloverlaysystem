@@ -113,6 +113,9 @@
     // wifi arc, and this is the one icon whose job is to say "radar".
     radar:
       '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6"/><path d="M12 12 18.4 7.6"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/>',
+    // Reference pace: a target, because the feature is "how close to the mark".
+    target:
+      '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   };
 
   const NS = 'http://www.w3.org/2000/svg';
@@ -147,6 +150,7 @@
     relative: 'timer',
     delta: 'trending-up',
     pacedelta: 'activity',
+    refpace: 'target',
     weather: 'cloud-rain',
     fuel: 'fuel',
     fuelplan: 'clipboard-list',

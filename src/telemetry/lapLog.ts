@@ -80,8 +80,15 @@ export type DirtyReason = 'pit' | 'limits' | 'penalty' | 'partial' | 'implausibl
 
 /** One completed lap, as written to disk. One JSON object per line. */
 export interface LapRecord {
-  /** Schema version, so a later reader can migrate rather than guess. */
-  v: 1;
+  /**
+   * Schema version, so a later reader can migrate rather than guess.
+   *
+   * `2` added the two layout-identifying fields below. Nothing needs migrating:
+   * both are optional, and a v1 lap simply cannot be pace-scored at a venue with
+   * more than one layout — which is the correct outcome, since at the time it
+   * was written we genuinely did not record which layout it was.
+   */
+  v: 1 | 2;
   /** Wall-clock completion time, ISO 8601. */
   at: string;
   /** Which sim produced it (`"lmu"`, `"rf2"`, `"simulator"`). */
@@ -90,6 +97,20 @@ export interface LapRecord {
   track: string;
   /** Normalised `name_length` key — the stable identity across name variants. */
   trackKey: string;
+  /**
+   * Layout/config name, when the provider published one. Absent for LMU, whose
+   * REST feed names only the venue.
+   */
+  trackConfig?: string;
+  /**
+   * The sim's INTERNAL track name — the scene, from `rF2ScoringInfo.mTrackName`.
+   *
+   * Stored because it is the only channel that states which LAYOUT is loaded,
+   * and a lap is scored against a layout's reference pace long after the session
+   * that set it has gone. Without it a Monza lap in the history can never be
+   * told apart from a Curva Grande one, and those are ~10 s apart.
+   */
+  simTrackName?: string;
   /** Lap length in metres, `0` when the sim did not publish one. */
   trackLengthM: number;
   /** Car model from the Scoring buffer; `""` when unreadable (spectating). */
@@ -141,6 +162,10 @@ export interface LapInput {
   sim: string;
   /** Track name from the sim. */
   track: string;
+  /** Layout/config name, when the provider publishes one. */
+  trackConfig?: string;
+  /** The sim's internal (scene) track name, when shared memory gave one. */
+  simTrackName?: string;
   /** Lap length, metres; `0` when unknown. */
   trackLengthM: number;
   /** Car model, `""` when unreadable. */
@@ -274,11 +299,13 @@ export class LapRecorder {
 
     const reasons = [...dirty];
     return {
-      v: 1,
+      v: 2,
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
       track: input.track,
       trackKey: trackKeyOf(input.track, input.trackLengthM),
+      ...(input.trackConfig ? { trackConfig: input.trackConfig } : {}),
+      ...(input.simTrackName ? { simTrackName: input.simTrackName } : {}),
       trackLengthM: Math.round(input.trackLengthM) || 0,
       car: input.car,
       carClass: input.carClass,
@@ -427,6 +454,14 @@ export interface LapBest {
   car: string;
   lapMs: number;
   at: string;
+  /**
+   * The three fields `referencePace` needs to identify which LAYOUT this was, so
+   * the dashboard can score the time without re-reading the day files. Carried
+   * on the summary rather than looked up later because the lap already knew.
+   */
+  trackLengthM: number;
+  trackConfig?: string;
+  simTrackName?: string;
 }
 
 /**
@@ -484,6 +519,9 @@ export function summarize(nowMs: number, days = 7, dir = lapDir()): LapSummary {
           car: rec.car,
           lapMs: rec.lapMs,
           at: rec.at,
+          trackLengthM: rec.trackLengthM || 0,
+          ...(rec.trackConfig ? { trackConfig: rec.trackConfig } : {}),
+          ...(rec.simTrackName ? { simTrackName: rec.simTrackName } : {}),
         });
       }
     }
@@ -542,6 +580,15 @@ export interface PendingBest {
   trackKey: string;
   trackName: string;
   trackLengthM: number;
+  /**
+   * Layout hints, carried for the local pace score rather than for the upload —
+   * the server neither reads nor stores them. They live here because this is
+   * already the "best lap per track and class" projection the panel needs, and
+   * building a second one that differs only in these two fields would be a
+   * second place for the definition of "your best" to drift.
+   */
+  trackConfig?: string;
+  simTrackName?: string;
   carClass: string;
   car: string;
   lapMs: number;
@@ -636,6 +683,8 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
           trackKey,
           trackName: rec.track || trackKey,
           trackLengthM: rec.trackLengthM || 0,
+          ...(rec.trackConfig ? { trackConfig: rec.trackConfig } : {}),
+          ...(rec.simTrackName ? { simTrackName: rec.simTrackName } : {}),
           carClass,
           car: rec.car || '',
           lapMs: rec.lapMs,

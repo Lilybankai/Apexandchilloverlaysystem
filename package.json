@@ -22,7 +22,7 @@
     "test:multiclass": "node scripts/test-multiclass.js",
     "test:motion": "node scripts/test-motion.js",
     "test:chassis": "node scripts/test-chassis.js",
-    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:tracelimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:lmubinder && npm run test:panel-parity && npm run test:session-headline",
+    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:tracelimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:refpace && npm run test:lmubinder && npm run test:panel-parity && npm run test:session-headline",
     "test:auth": "node scripts/test-auth.js",
     "test:laplog": "node scripts/test-laplog.js",
     "test:lapupload": "node scripts/test-lapupload.js",
@@ -31,10 +31,13 @@
     "test:pitcursor": "node scripts/test-pitcursor.js",
     "test:damage": "node scripts/test-damage.js",
     "test:radar": "node scripts/test-radar.js",
+    "test:refpace": "node scripts/test-referencepace.js",
     "test:session-headline": "node scripts/test-session-headline.js",
     "test:tracklimits": "node scripts/test-tracklimits.js",
     "test:tracelimits": "node scripts/test-tracelimits.js",
-    "test:lmubinder": "node scripts/test-lmubinder.js"
+    "test:lmubinder": "node scripts/test-lmubinder.js",
+    "reference-times": "node scripts/fetch-reference-times.js",
+    "reference-times:check": "node scripts/fetch-reference-times.js --check"
   },
   "engines": {
     "node": ">=18"

@@ -653,6 +653,273 @@ html, body { height: 100%; overflow: hidden; }
   color: var(--text);
 }
 
+/* ------------------------- pace vs reference ---------------------------- */
+/*
+ * The percentage column on a `.lbrow`, plus the band tint that carries it.
+ *
+ * One custom property per band, set on the row and on the Dashboard tile, so
+ * the two surfaces cannot end up disagreeing about what "Midpack" looks like.
+ * Deliberately quieter than the overlay's version of the same scale: this is a
+ * list to read, not a number to catch out of the corner of your eye at 200 km/h.
+ */
+[data-band] { --band: var(--text-2); }
+[data-band="alien"],
+[data-band="competitive"] { --band: var(--ok); }
+[data-band="good"]        { --band: var(--text); }
+[data-band="midpack"]     { --band: var(--warn); }
+[data-band="tail"],
+[data-band="offline"]     { --band: var(--bad); }
+[data-band="none"]        { --band: var(--text-3); }
+
+.lbrow__score {
+  flex: 0 0 68px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--band);
+}
+
+/* Column headings for the pace list — Leaderboard.jsx's `.lbhead`. Padded to
+   the same 10px as `.lbrow` so each heading sits over its own column, and the
+   flex bases below are kept identical to the row's on purpose: a heading a
+   column-width out of step is worse than no heading, because it silently
+   renames the column next to it. */
+.lbhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 6px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lbhead > :nth-child(1) { flex: 0 0 300px; }
+.lbhead > :nth-child(2) { flex: 1 1 auto; }
+.lbhead > :nth-child(3) { flex: 0 0 92px; text-align: right; }
+.lbhead > :nth-child(4) { flex: 0 0 68px; text-align: right; }
+
+/* The list sits directly under its headings, so it loses the standalone gap. */
+.lbhead + .lblist { margin-top: 4px; }
+
+/* Wider than the week card's 180px: these names carry a layout as well as a
+   venue ("Autodromo Nazionale Monza · Curva Grande"), which is the whole point
+   of the column here and was being ellipsed away. */
+#pace-list .lbrow__name { flex: 0 0 300px; }
+#pace-list .lbrow__time { flex: 0 0 92px; text-align: right; }
+
+/* Class chip, plus the reason on a row that could not be scored. */
+.lbrow__mid {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lbrow__why {
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tile's value takes the same tint. `.stat__value` sets the size; this only
+   recolours it, so an unscored state still reads as a normal em dash. */
+#stat-pace { color: var(--band); }
+
+/* ------------------------------- rank bar ------------------------------- */
+/*
+ * AppChrome.jsx's RankBar — its own comment calls it "Ohnespeed-style rank
+ * progress", which is precisely what this data is.
+ *
+ * Note the direction: the kit runs OK → GOOD → 102% → ALIEN left to right, so
+ * FASTER is further RIGHT. That is the opposite of the overlay widget's ladder,
+ * which runs fast-to-slow because it is read as a scale of lap times. Both are
+ * right for where they sit, and `paceRankPct()` in control-panel.js is the one
+ * place that flips between them.
+ */
+/*
+ * The kit puts this card in a ~340px sidebar column. Here it sits in the
+ * Dashboard's full-width content column, and a RankBar stretched to 1100px puts
+ * its four zone labels so far apart that they stop reading as one scale — so
+ * the card's contents keep a column's measure regardless of the card's width.
+ */
+.card--rank .rankhero,
+.card--rank .rankhero__times,
+.card--rank .rankbar,
+.card--rank .rankhero__note {
+  max-width: 460px;
+}
+
+.rankhero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* The kit's 40px gradient display number. Falls back to a flat colour where
+   background-clip:text is unavailable — an invisible headline is the one
+   failure mode worth spending three lines to rule out. */
+.rankhero__pct {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .rankhero__pct { color: transparent; }
+}
+
+.rankhero__times {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--text);
+}
+.rankhero__times [data-state="behind"] { color: var(--bad); }
+.rankhero__times [data-state="ahead"] { color: var(--ok); }
+
+.rankhero__note {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.rankhero__note strong { color: var(--warn); font-weight: 600; }
+
+.rankbar { margin-top: 14px; }
+
+.rankbar__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.rankbar__label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rankbar__rank {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--band);
+}
+
+.rankbar__track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  opacity: 0.9;
+  background: linear-gradient(
+    90deg,
+    var(--blue),
+    var(--ok) 45%,
+    var(--warn) 75%,
+    var(--purple)
+  );
+}
+
+.rankbar__dot {
+  position: absolute;
+  top: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--bg);
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+  /* The dot is the only thing on this card that moves, and it moves when a lap
+     lands rather than continuously — so it is worth easing. */
+  transition: left 0.4s ease;
+}
+
+.rankbar__zones {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+.rankbar__zones [data-zone="ok"] { color: var(--blue); }
+.rankbar__zones [data-zone="good"] { color: var(--ok); }
+.rankbar__zones [data-zone="mid"] { color: var(--warn); }
+.rankbar__zones [data-zone="alien"] { color: var(--purple); }
+
+/* ------------------------------ attribution ----------------------------- */
+/*
+ * The credit for Ohne Speed's reference times. Styled as a real block rather
+ * than fine print: the entire card above it is their data, and a footnote-sized
+ * grey line would be the wrong way to say so.
+ */
+.credit {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+}
+
+.credit__icon {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--text-3);
+  padding-top: 1px;
+}
+
+.credit__text {
+  flex: 1 1 240px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.credit__text strong { color: var(--text); font-weight: 600; }
+
+/* On its own line: it dates the data, which is a different claim from crediting
+   it, and running the two together reads as one sentence about neither. */
+.credit__meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-3);
+}
+
+.credit__links {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* ------------------------------- sync line ------------------------------ */
 /*
  * A quiet status footer inside the week card. Deliberately understated: for a

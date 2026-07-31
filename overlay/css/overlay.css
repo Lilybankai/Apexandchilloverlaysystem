@@ -670,6 +670,146 @@
 .pacedelta__val[data-state="none"]  { color: var(--text-muted); }
 
 /* =========================================================================
+ * REFERENCE PACE WIDGET — your lap as a % of the class benchmark.
+ *
+ * Reference times and band names are Ohne Speed's; the credit line at the foot
+ * is part of the widget, not a nicety, and is styled to stay legible rather
+ * than to disappear.
+ *
+ * The band colour runs on ONE custom property set from the section's
+ * [data-band], so the number, the label and the ladder marker cannot disagree
+ * about which band you are in.
+ * ========================================================================= */
+.refpace {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  /* Bounded on purpose. The single-widget OBS page sizes the panel to its
+     content, and the "why there is no score" sentence is a full sentence — left
+     unbounded it stretched the panel to twice the width of every other state,
+     so the widget changed size depending on which track you were at. */
+  min-width: 250px;
+  max-width: 330px;
+}
+
+#widget-refpace { --band: var(--text-muted); }
+
+/* "Reference Pace" plus a class-and-layout meta is the longest header any
+   widget carries, and at the panel's default width both were wrapping to two
+   lines. The title is short enough to always fit; the meta gives way instead,
+   and carries its full text in a tooltip. */
+#widget-refpace .panel__title { white-space: nowrap; }
+#widget-refpace .panel__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#widget-refpace[data-band="alien"]       { --band: var(--pos-gain); }
+#widget-refpace[data-band="competitive"] { --band: var(--pos-gain); }
+#widget-refpace[data-band="good"]        { --band: var(--text-primary); }
+#widget-refpace[data-band="midpack"]     { --band: var(--warn); }
+#widget-refpace[data-band="tail"]        { --band: var(--pos-loss); }
+#widget-refpace[data-band="offline"]     { --band: var(--pos-loss); }
+
+.refpace__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.refpace__percent {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  /* The hero number: this widget exists to show one figure. */
+  font-size: calc(var(--fs-data) * 1.85);
+  line-height: 1;
+  color: var(--band);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+.refpace__band {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--band);
+}
+
+/* The reason there is no score. Wraps, unlike everything else in here — the
+   sentence is the content, so truncating it would defeat the point. */
+.refpace__note {
+  font-size: var(--fs-label);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  /* Track names come from the sim and can be one long unbroken token. */
+  overflow-wrap: anywhere;
+}
+
+.refpace__ladder {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 8px;
+}
+.refpace__seg {
+  border-radius: 2px;
+  background: var(--bg-panel-2);
+  opacity: 0.85;
+}
+.refpace__seg[data-band="alien"],
+.refpace__seg[data-band="competitive"] { background: var(--pos-gain); }
+.refpace__seg[data-band="good"]        { background: var(--text-secondary); }
+.refpace__seg[data-band="midpack"]     { background: var(--warn); }
+.refpace__seg[data-band="tail"],
+.refpace__seg[data-band="offline"]     { background: var(--pos-loss); }
+
+/* Your position on the ladder. Centred on its own left offset so the marker
+   sits ON the percentage rather than starting at it. */
+.refpace__marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 14px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85);
+}
+
+.refpace__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.refpace__stat {
+  background: var(--bg-panel-2);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.refpace__stat-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.refpace__stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: var(--fs-data);
+  color: var(--text-primary);
+}
+.refpace__stat-value[data-state="ahead"]  { color: var(--pos-gain); }
+.refpace__stat-value[data-state="behind"] { color: var(--pos-loss); }
+
+.refpace__credit {
+  font-size: calc(var(--fs-label) * 0.92);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* =========================================================================
  * RELATIVE / TIMING WIDGET (top-right)
  * ========================================================================= */
 /* Lap / time remaining in this panel's header — how much race is left. */

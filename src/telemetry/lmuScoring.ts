@@ -317,6 +317,48 @@ export class LmuScoringReader {
   }
 
   /**
+   * The sim's own name for the loaded track — `rF2ScoringInfo.mTrackName`.
+   *
+   * ## Why this is worth a shared-memory read of its own
+   * LMU's REST `sessionInfo.trackName` is the VENUE ("Autodromo Nazionale
+   * Monza") and never says which layout is loaded. Monza's two layouts share a
+   * centreline and are ~10 s apart in GT3; Le Mans's are ~16 s apart. This
+   * string names the scene, so it is the only channel in the whole feed that can
+   * tell them apart — which `referencePace` needs before it will score a lap at
+   * either of them.
+   *
+   * The offset is not a new guess: `mTrackName` is a `char[64]` at 0 and the
+   * neighbouring `mSession` at 64 was verified live, which brackets it exactly
+   * the way `mVehicleName` is bracketed in the vehicle record.
+   *
+   * Returns `""` — never a partial or mangled name — when shared memory is
+   * unavailable, the mapping has gone, or the read tore. Callers treat an empty
+   * name as "the sim did not say", which is a state they already handle.
+   */
+  public readTrackName(): string {
+    const w = this.win32;
+    if (w === null) return '';
+    if (!this.view) {
+      this.open();
+      if (!this.view) return '';
+    }
+    try {
+      for (let attempt = 0; attempt < TORN_READ_RETRIES; attempt++) {
+        const v1 = w.readU32(this.view, 0);
+        if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
+        if (SI.base + 64 > this.size) return '';
+        const buf = w.readBytes(this.view, SI.base + SI.mTrackName, 64);
+        if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
+        return readCString(buf, 0, 64);
+      }
+      return '';
+    } catch {
+      this.stop();
+      return '';
+    }
+  }
+
+  /**
    * Record index of the car with this slot id, or -1.
    *
    * A car's record INDEX is not its slot id (the player sat at index 36 with

@@ -306,6 +306,62 @@ export interface PaceDeltas {
   lastLapSec: number;
 }
 
+/**
+ * How the driver's pace compares to the reference for their class at this track.
+ *
+ * The numbers come from **Ohne Speed's LMU laptimes spreadsheet** (times by
+ * beAlien, Go and Hymo), shipped as `overlay/js/data/reference-times.json`. The
+ * band labels are theirs too. `credit` rides on the block rather than being
+ * looked up separately so that no surface can render a score without also having
+ * the attribution to hand.
+ *
+ * Present whenever the track+class could be identified in that table — which is
+ * NOT always: LMU never names the track LAYOUT, and Monza's two are ~10 s apart.
+ * When it could not, {@link ok} is `false` and {@link detail} says why, so the
+ * widget explains itself instead of showing a wrong number. See
+ * `telemetry/referencePace.ts`.
+ */
+export interface PaceScoreState {
+  /** Whether a reference was found. Everything below is meaningful only if so. */
+  ok: boolean;
+  /** Why not, in a sentence a driver can act on. Present when `ok` is false. */
+  detail?: string;
+  /** Machine-readable form of the same. */
+  reason?: string;
+  /** Best clean lap this session as a percentage of the reference, 1 dp. */
+  percent?: number;
+  /** The band that percentage falls in — `"Competitive"`, `"Midpack"`, … */
+  bandLabel?: string;
+  /** Band id, for styling. */
+  bandId?: string;
+  /** Seconds off the reference; negative when faster. */
+  deltaSec?: number;
+  /** The reference lap itself, seconds — what 100% means here. */
+  refSec?: number;
+  /** The sheet's alien hotlap benchmark for the same row, seconds. */
+  hotlapSec?: number;
+  /** The lap of yours being scored, seconds. `UNKNOWN_VALUE` before the first. */
+  lapSec: number;
+  /** Resolved layout and class, so the overlay can show what it compared to. */
+  layoutName?: string;
+  circuitName?: string;
+  sheetClass?: string;
+  /**
+   * How the layout was identified — `'only'`, `'sim-name'`, `'config'`,
+   * `'length'`. `'only'` means the circuit has a single layout in the table, so
+   * naming it in the UI adds nothing.
+   */
+  via?: string;
+  /** `true` when part of the match was assumed; the UI must hedge. */
+  assumed?: boolean;
+  /** Attribution for the reference data. Always present when the table loaded. */
+  credit?: {
+    author: string;
+    title: string;
+    sheetUrl: string;
+  };
+}
+
 /** State of a single tyre/corner. */
 export interface TyreState {
   /**
@@ -604,6 +660,14 @@ export interface PlayerState {
    * physics for a car not driven on this PC). See {@link PaceDeltas}.
    */
   paceDeltas?: PaceDeltas;
+  /**
+   * Where this driver's best clean lap sits against the reference pace for their
+   * class at this track — the Alien → Offline ladder from Ohne Speed's
+   * spreadsheet. Omitted when spectating; present-but-`ok: false` when the
+   * reference could not be identified, which the widget renders as an
+   * explanation rather than a number. See {@link PaceScoreState}.
+   */
+  paceScore?: PaceScoreState;
   /**
    * G-force / rotation / attitude channels. Omitted when spectating or when
    * shared memory is unavailable — the motion block is only populated for the

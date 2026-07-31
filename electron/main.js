@@ -50,6 +50,11 @@ const OVERLAY_CATALOG = [
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
+  {
+    id: 'refpace',
+    label: 'Reference Pace',
+    description: "Your lap vs the class benchmark — Alien to Offline (times by Ohne Speed)",
+  },
   { id: 'weather', label: 'Weather', description: 'Current conditions + forecast' },
   { id: 'fuel', label: 'Fuel Calculator', description: 'Per-lap use, laps left, pit window' },
   // Interactive planner + fuel-ratio control: like the MFD it has clickable
@@ -1426,6 +1431,81 @@ function registerIpc() {
     } catch (err) {
       console.error('[app] lap summary unavailable:', err.message);
       return { days: [], laps: 0, cleanLaps: 0, distanceM: 0, drivingMs: 0, tracks: 0, bests: [] };
+    }
+  });
+
+  /**
+   * Pace scores for the driver's best CLEAN laps — the Dashboard's fourth stat
+   * tile and the Leaderboard tab's reference card.
+   *
+   * Clean laps rather than the sim's session best, unlike the overlay: this
+   * screen is closer to a claim about the driver than a live readout, and the
+   * league's own rule is that a time with an excursion in it is not a time. The
+   * two surfaces are allowed to disagree by exactly that much, and the widget's
+   * own comment says the same from the other side.
+   *
+   * The attribution rides on the response rather than being hardcoded in the
+   * renderer, so the panel physically cannot render a score without having
+   * Ohne Speed's credit to hand.
+   */
+  ipcMain.handle('laps:pace', () => {
+    try {
+      const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
+      const ref = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
+      // All-time bests, not this week's: a personal best does not expire on
+      // Sunday the way the rolling lap count does.
+      const plan = lapLog.buildUploadPlan();
+      const rows = [];
+      for (const best of plan.bests) {
+        const scored = ref.scoreLap({
+          track: best.trackName,
+          trackConfig: best.trackConfig,
+          simTrackName: best.simTrackName,
+          trackLengthM: best.trackLengthM,
+          carClass: best.carClass,
+          car: best.car,
+          lapMs: best.lapMs,
+        });
+        rows.push({
+          track: best.trackName,
+          carClass: best.carClass,
+          car: best.car,
+          lapMs: best.lapMs,
+          ok: !!scored.ok,
+          ...(scored.ok && scored.score
+            ? {
+                percent: scored.score.percent,
+                bandId: scored.score.bandId,
+                bandLabel: scored.score.bandLabel,
+                refMs: scored.score.refMs,
+                layoutName: scored.score.layoutName,
+                // The circuit as the reference table names it, which is not
+                // always what the sim called it — and a layout on its own
+                // ("Grand Prix") says nothing without the venue in front of it.
+                circuitName: scored.score.circuitName,
+                // How the layout was identified. `'only'` means the circuit has
+                // just one layout in the table, which is what lets the UI drop
+                // a meaningless "· Grand Prix" from a single-layout venue.
+                via: scored.score.via,
+                sheetClass: scored.score.sheetClass,
+                assumed: scored.score.assumed,
+              }
+            : { reason: scored.reason, detail: scored.detail }),
+        });
+      }
+      // Best first — the tile shows the single strongest result, and a driver
+      // reading the list wants their high-water mark at the top.
+      const scored = rows.filter((r) => r.ok).sort((a, b) => a.percent - b.percent);
+      const unscored = rows.filter((r) => !r.ok);
+      return {
+        rows: [...scored, ...unscored],
+        best: scored[0] || null,
+        credit: ref.referenceCredit(),
+        sheetUpdated: ref.referenceUpdated(),
+      };
+    } catch (err) {
+      console.error('[app] pace scores unavailable:', err.message);
+      return { rows: [], best: null, credit: null, sheetUpdated: '' };
     }
   });
 

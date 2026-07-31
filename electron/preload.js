@@ -85,6 +85,15 @@ contextBridge.exposeInMainWorld('apex', {
    */
   lapsWeek: () => ipcRenderer.invoke('laps:week'),
 
+  /**
+   * Your best clean laps scored against the class reference:
+   * `{ rows[], best, credit, sheetUpdated }`.
+   *
+   * `credit` is Ohne Speed's attribution for the reference times, and it comes
+   * down with the data on purpose — the panel cannot show a score without it.
+   */
+  lapsPace: () => ipcRenderer.invoke('laps:pace'),
+
   /** Where the uploader has got to: `{ status, lastOkAt, pending, sent, error }`. */
   lapsSyncState: () => ipcRenderer.invoke('laps:syncState'),
 

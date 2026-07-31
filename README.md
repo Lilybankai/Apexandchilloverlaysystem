@@ -154,6 +154,50 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
 - **MFD** — a read-only, colour-grouped readout of the in-game pit menu and
   driving aids. See below; LMU only
+- **Reference pace** — your best lap as a percentage of the pace an alien runs
+  in the same class at the same track layout, on the Alien → Offline ladder.
+  See below
+
+### Reference pace
+
+Answers "am I actually quick here?" without needing anyone else on track. Your
+best lap is compared to a published reference for your **class** at your **track
+layout**, and the percentage lands on a six-rung ladder — Alien (≤100%),
+Competitive (101%), Good (≤103%), Midpack (≤105%), Tail-ender (≤106%), Offline
+beyond. 100% is alien *race* pace, and 107% is the traditional cutoff.
+
+The same number drives three surfaces: the overlay widget, the Dashboard's
+**Pace rank** tile, and the **Leaderboard** tab, which scores your best clean lap
+at every track and class you have driven. The overlay scores the sim's session
+best; the panel scores your best *clean* lap, because that screen is closer to a
+claim about you than a live readout.
+
+**Some laps come back unscored, on purpose.** LMU's feed names the venue and
+never the layout, and Monza's two layouts are ~10 s apart in GT3 — so where the
+layout cannot be established from the sim's own scene name, the lap length or a
+published config, the app says so instead of guessing. GT4 is unrated because
+the reference data does not cover it.
+
+#### Credit
+
+**The reference times, and the Alien → Offline band names, are
+[Ohne Speed](https://www.youtube.com/@ohne_speed)'s work**, published in the
+[LMU laptimes spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTN03UvJDm99byA6vQPZHKOCYVvfxLu1zkJAzdaKyROykzEKY2-Xl1rl1q5znZEf36m88dxMKsY2eaO/pubhtml),
+with lap times contributed by **beAlien**, **Go** and **Hymo**. Apex Overlay
+System only reads them, and credits them in the app wherever a score is shown.
+Ohne Speed's Discord is [here](https://discord.com/invite/dFAqhnuSXH).
+
+The table is **baked at build time**, not fetched at runtime, so scores work
+offline and cannot break when the sheet moves. Refresh it after an LMU patch:
+
+```bash
+npm run reference-times          # fetch the sheet and rewrite the data file
+npm run reference-times:check    # fetch and diff only; exits 1 if it changed
+```
+
+It fails loudly if the sheet gains a track the app cannot place, or renames one
+it could — see `scripts/reference-tracks.js`, which is the hand-written map from
+what the sim calls a track to what the spreadsheet calls it.
 
 ### Widget background
 
@@ -682,6 +726,12 @@ scripts/                 # Windows launcher
 shared between the telemetry producers and the overlays. Every provider maps its
 raw data into this shape, so the overlays never depend on which sim is running.
 The schema is versioned via `TELEMETRY_SCHEMA_VERSION`.
+
+## Credits
+
+Reference lap times and the Alien → Offline pace bands come from **Ohne Speed's
+LMU laptimes spreadsheet**, with times contributed by **beAlien**, **Go** and
+**Hymo**. See [Reference pace](#reference-pace).
 
 ## License
 

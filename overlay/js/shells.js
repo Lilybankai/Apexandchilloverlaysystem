@@ -34,6 +34,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    refpace:
+      '<section class="widget panel" id="widget-refpace" data-widget="refpace" aria-label="Reference pace — your lap against the class benchmark">' +
+      '<header class="panel__header"><span class="panel__title">Reference Pace</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     weather:
       '<section class="widget panel" id="widget-weather" data-widget="weather" aria-label="Weather forecast">' +
       '<header class="panel__header"><span class="panel__title">Weather</span>' +

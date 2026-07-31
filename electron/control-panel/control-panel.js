@@ -498,14 +498,16 @@
       );
     }
 
-    // The design system's dashboard stat tiles.
+    // The design system's dashboard stat tiles. The fourth is Best pace, filled
+    // separately by refreshPace() — it reads all-time bests, not this window.
     setText('#stat-laps-week', String(s.laps || 0));
     setText('#stat-time-driven', formatDuration(s.drivingMs || 0));
     setText('#stat-time-sub', s.distanceM ? `${formatDistance(s.distanceM)} covered` : '');
-    setText('#stat-clean-laps', String(s.cleanLaps || 0));
     setText(
-      '#stat-clean-sub',
-      s.laps ? `${Math.round((s.cleanLaps / s.laps) * 100)}% of your laps` : '',
+      '#week-clean',
+      s.laps
+        ? `${s.cleanLaps} clean — ${Math.round((s.cleanLaps / s.laps) * 100)}% of your laps.`
+        : '',
     );
 
     // With no laps at all the chart is seven flat slivers, which reads as broken
@@ -558,6 +560,274 @@
   /** Pull a fresh summary. Cheap, and always current when the card is shown. */
   function refreshWeek() {
     window.apex.lapsWeek().then(renderWeek).catch(() => renderWeek(null));
+  }
+
+  // --- Pace vs reference ---------------------------------------------------
+  /*
+   * Your best clean laps scored against the pace an alien runs in the same class
+   * at the same track — the Dashboard's fourth tile and the Leaderboard tab's
+   * card. All the numbers come from Ohne Speed's spreadsheet; see the credit
+   * block, which renders from the same payload as the scores so the two cannot
+   * be separated.
+   *
+   * Two things this deliberately does NOT do:
+   *   - rank the rows against each other. 101% at Spa and 103% at Fuji are
+   *     comparable in a way lap times are not, so the list IS sorted best-first
+   *     — but it carries no position column, because a position implies a field
+   *     and there is only one driver in this data.
+   *   - hide the laps it could not score. "Monza has two layouts and the sim
+   *     didn't say which" is the answer to the question a driver would otherwise
+   *     ask, and dropping those rows turns a known limitation into a mystery.
+   */
+
+  /** Where a percentage sits on the band ladder, for the row's tint. */
+  function paceBandOf(row) {
+    return row && row.ok ? row.bandId || 'none' : 'none';
+  }
+
+  /**
+   * Percent-off-reference → a 0–100 position on the kit's RankBar.
+   *
+   * The RankBar runs OK → GOOD → 102% → ALIEN left to right, so faster is
+   * further RIGHT — the opposite direction to the overlay widget's ladder, which
+   * reads as a scale of lap times. This function is the only place the two
+   * conventions meet, deliberately: two flips in two files would eventually
+   * disagree and nobody would be able to tell which end was which.
+   *
+   * 100% pins to Alien and 107% to the floor, which puts 102% at 71 — within a
+   * few pixels of where the kit prints its own "102%" zone label.
+   */
+  const RANK_FLOOR_PCT = 107;
+  const RANK_TOP_PCT = 100;
+  function paceRankPct(percent) {
+    const span = RANK_FLOOR_PCT - RANK_TOP_PCT;
+    return Math.max(0, Math.min(100, ((RANK_FLOOR_PCT - percent) / span) * 100));
+  }
+
+  /** `+0.42` / `−1.08` / `—`. Signed with a real minus, like the overlay. */
+  function formatGap(sec) {
+    if (typeof sec !== 'number' || !isFinite(sec)) return '';
+    return `${sec > 0 ? '+' : sec < 0 ? '−' : ''}${Math.abs(sec).toFixed(2)}s`;
+  }
+
+  /**
+   * Where a scored row was set, in as few words as carry the meaning.
+   *
+   * A layout name alone is useless — "Grand Prix" is fourteen different
+   * circuits — and the venue alone loses the distinction the whole resolver
+   * exists to make. So it is the venue, plus the layout only where the circuit
+   * actually has more than one worth naming.
+   */
+  function paceWhere(row) {
+    const venue = row.circuitName || row.track || '';
+    const layout = row.layoutName || '';
+    if (!layout || !venue) return venue || layout || '—';
+    // `via: 'only'` means the reference table holds one layout for this circuit,
+    // so naming it adds nothing — "Circuit de Spa-Francorchamps · Grand Prix"
+    // is just a longer way of saying Spa.
+    if (row.via === 'only') return venue;
+    return venue.toLowerCase().includes(layout.toLowerCase()) ? venue : `${venue} · ${layout}`;
+  }
+
+  /**
+   * Fill one RankBar card — the Dashboard's and the Leaderboard's are the same
+   * component with different ids, exactly as they are the same `<RankBar>` in
+   * the kit. Passing the ids in rather than duplicating the function is what
+   * stops the two drifting into slightly different wording.
+   */
+  function renderRankCard(ids, best) {
+    const card = $(ids.card);
+    if (card) card.hidden = !best;
+    if (!best) return;
+
+    setAttr(ids.card, 'data-band', paceBandOf(best));
+    setText(ids.pct, `${best.percent.toFixed(1)}%`);
+    setText(ids.band, best.bandLabel || '—');
+    setText(ids.rankName, best.bandLabel || '—');
+    setText(ids.lap, formatLapTime(best.lapMs));
+
+    const gap = (best.lapMs - best.refMs) / 1000;
+    setText(ids.gap, `${formatGap(gap)} to reference`);
+    setAttr(ids.gap, 'data-state', gap > 0 ? 'behind' : gap < 0 ? 'ahead' : 'flat');
+
+    const dot = $(ids.dot);
+    if (dot) {
+      dot.hidden = false;
+      dot.style.left = `${paceRankPct(best.percent)}%`;
+    }
+
+    // The kit writes this line as "0.24s from 102% pace" — a distance to the
+    // next rung rather than a restatement of the number above it, which is the
+    // only part of the card that says what to do next.
+    const note = $(ids.note);
+    if (note) {
+      note.textContent = '';
+      const target = best.percent > 102 ? 102 : best.percent > 100 ? 100 : null;
+      if (target === null) {
+        note.append(
+          document.createTextNode(
+            `On the reference pace for ${best.sheetClass} at ${paceWhere(best)}.`,
+          ),
+        );
+      } else {
+        const need = (best.lapMs - best.refMs * (target / 100)) / 1000;
+        note.append(document.createTextNode(`${need.toFixed(2)}s from `));
+        const strong = document.createElement('strong');
+        strong.textContent = `${target}%`;
+        note.append(strong, document.createTextNode(` pace at ${paceWhere(best)}.`));
+      }
+    }
+  }
+
+  function renderPace(data) {
+    const d = data || {};
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    const best = d.best || null;
+
+    // --- Dashboard tile ---
+    // The kit's Stat shows the BAND as the value ("Good"), not the number: a
+    // band is actionable at a glance and a percentage has to be decoded first.
+    // The number moves to the sub-line, where it qualifies rather than leads.
+    setText('#stat-pace', best ? best.bandLabel : '—');
+    setAttr('#stat-pace', 'data-band', paceBandOf(best));
+    setText(
+      '#stat-pace-sub',
+      best
+        ? `${best.percent.toFixed(1)}% · ${best.sheetClass} at ${paceWhere(best)}`
+        : rows.length
+          ? 'No lap could be matched to a reference yet.'
+          : '',
+    );
+
+    // --- The two RankBar cards ---
+    renderRankCard(
+      {
+        card: '#pace-card',
+        pct: '#rank-pct',
+        band: '#rank-band',
+        rankName: '#rank-name',
+        lap: '#rank-lap',
+        gap: '#rank-gap',
+        dot: '#rank-dot',
+        note: '#rank-note',
+      },
+      best,
+    );
+    renderRankCard(
+      {
+        card: '#lb-rank',
+        pct: '#lb-pct',
+        band: '#lb-band',
+        rankName: '#lb-rank-name',
+        lap: '#lb-lap',
+        gap: '#lb-gap',
+        dot: '#lb-dot',
+        note: '#lb-note',
+      },
+      best,
+    );
+
+    // --- Leaderboard card ---
+    const list = $('#pace-list');
+    const empty = $('#pace-empty');
+    if (!list || !empty) return;
+    list.textContent = '';
+    empty.hidden = rows.length > 0;
+
+    for (const row of rows) {
+      const li = document.createElement('li');
+      li.className = 'lbrow';
+      li.setAttribute('data-band', paceBandOf(row));
+
+      // createElement throughout — track and car names come from the sim, and
+      // the panel's CSP would not save the row from a mod pack with a bracket
+      // in its name. Same reasoning as the week card's bests list.
+      const name = document.createElement('span');
+      name.className = 'lbrow__name';
+      name.textContent = row.ok ? paceWhere(row) : row.track || '—';
+      name.title = name.textContent;
+
+      // The middle column: the class, and — on a row that could not be scored —
+      // the reason, spelled out where the eye already is. It was a tooltip, and
+      // a tooltip on the one row a driver will actually question is the wrong
+      // place for the answer.
+      const mid = document.createElement('span');
+      mid.className = 'lbrow__mid';
+      const cls = document.createElement('span');
+      cls.className = 'chip';
+      cls.textContent = row.sheetClass || row.carClass || '—';
+      mid.append(cls);
+      if (!row.ok) {
+        const why = document.createElement('span');
+        why.className = 'lbrow__why';
+        why.textContent = row.detail || 'No reference for this combination.';
+        why.title = why.textContent;
+        mid.append(why);
+      }
+
+      const time = document.createElement('span');
+      time.className = 'lbrow__time';
+      time.textContent = formatLapTime(row.lapMs);
+
+      const score = document.createElement('span');
+      score.className = 'lbrow__score';
+      if (row.ok) {
+        score.textContent = `${row.percent.toFixed(1)}%`;
+        // The assumption the server flagged — today only the LMP2 ruleset —
+        // gets a visible mark rather than being silently rounded away.
+        score.title = row.assumed
+          ? `${row.bandLabel} — reference row partly assumed (${row.sheetClass})`
+          : `${row.bandLabel} — reference ${formatLapTime(row.refMs)}`;
+        if (row.assumed) score.textContent += ' ?';
+      } else {
+        score.textContent = '—';
+      }
+
+      li.append(name, mid, time, score);
+      list.append(li);
+    }
+
+    // --- Attribution ---
+    const credit = d.credit;
+    const block = $('#pace-credit');
+    if (block) block.hidden = !credit;
+    if (credit) {
+      setText('#pace-credit-title', credit.title);
+      setText(
+        '#pace-credit-people',
+        Array.isArray(credit.contributors) && credit.contributors.length
+          ? credit.contributors.join(', ')
+          : 'the community',
+      );
+      setText('#pace-credit-updated', d.sheetUpdated ? `Sheet updated ${d.sheetUpdated}.` : '');
+      creditLinks = {
+        '#pace-credit-sheet': credit.sheetUrl,
+        '#pace-credit-discord': credit.discordUrl,
+        '#pace-credit-youtube': credit.youtubeUrl,
+      };
+    }
+  }
+
+  /**
+   * The credit block's outbound URLs, filled once the payload arrives.
+   *
+   * Held in JS rather than written into the HTML as anchors because the panel
+   * opens links through the main process (`openInBrowser`) — an <a href> inside
+   * an Electron window would navigate the panel itself.
+   */
+  let creditLinks = {};
+  for (const sel of ['#pace-credit-sheet', '#pace-credit-discord', '#pace-credit-youtube']) {
+    const btn = $(sel);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const url = creditLinks[sel];
+        if (url) window.apex.openInBrowser(url);
+      });
+    }
+  }
+
+  function refreshPace() {
+    window.apex.lapsPace().then(renderPace).catch(() => renderPace(null));
   }
 
   // --- Lap sync ------------------------------------------------------------
@@ -618,7 +888,10 @@
     renderLapSync(s);
     // A completed upload changes nothing on the chart, but the run that follows
     // a stint usually coincides with new laps on disk — cheap to re-read.
-    if (s && s.status === 'ok') refreshWeek();
+    if (s && s.status === 'ok') {
+      refreshWeek();
+      refreshPace();
+    }
   });
 
   $('#sync-btn').addEventListener('click', async () => {
@@ -1261,8 +1534,12 @@
     const content = $('#content');
     if (content) content.scrollTop = 0;
     // Laps land while the driver is in the sim, not while they are looking at
-    // this window, so the card is refreshed on arrival rather than on a timer.
-    if (target === 'dashboard') refreshWeek();
+    // this window, so the cards are refreshed on arrival rather than on a timer.
+    if (target === 'dashboard') {
+      refreshWeek();
+      refreshPace();
+    }
+    if (target === 'leaderboard') refreshPace();
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {

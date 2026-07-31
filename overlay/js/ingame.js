@@ -45,6 +45,13 @@
       // fell through to the {24, 24} fallback and spawned exactly on top of
       // standings, where it looked like the overlay had failed to load.
       pacedelta: { x: Math.round(vw / 2 - 170), y: 280, w: 340 },
+      // Right column, under the fuel panel. This one is read between stints
+      // rather than mid-corner, so it stays out of the centre band where the
+      // delta and pace-delta live. Not the left column, which `fuelplan`
+      // already claims at the same height. An id with no entry here falls
+      // through to {24, 24} and spawns on top of standings, which reads as the
+      // overlay having failed to load — the trap pacedelta and mfd both hit.
+      refpace: { x: vw - 364, y: Math.round(vh * 0.5), w: 340 },
       relative: { x: vw - 424, y: 24, w: 400 },
       // 290, not 250: the fuel panel's Tier 1 stats are sized to be read at a
       // glance, which made it taller than the gap under the relative table.

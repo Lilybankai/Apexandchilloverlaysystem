@@ -30,9 +30,12 @@
       <button class="tab" type="button" data-tab="overlays">
         <svg class="icon"><use href="#i-monitor" /></svg><span class="tab__label">Overlays</span>
       </button>
+      <!-- No padlock: the tab has real content as of the reference-pace work.
+           The league's own boards are still to come and the view says so, but a
+           lock on a tab that scores every lap you have driven would be lying
+           about what is behind it. -->
       <button class="tab" type="button" data-tab="leaderboard">
         <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
-        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
       </button>
       <button class="tab" type="button" data-tab="setups">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
@@ -142,18 +145,24 @@
               </span>
             </span>
           </div>
-          <!-- The design's fourth tile is League rank, which needs boards that
-               do not exist yet. Clean laps is the honest stand-in: same family,
-               real data, and it vacates the slot when the leaderboard lands. -->
+          <!-- Dashboard.jsx's fourth tile:
+                 <Stat icon="trophy" label="League rank" value="Good" sub="Top 20% · GT3" accent />
+               The value is the BAND NAME, not a number — that is the kit's call
+               and it is the right one, because "Good" is actionable and "101.4%"
+               has to be decoded first. Called Pace rank rather than League rank
+               because the league's own boards still do not exist and this is
+               measured against a reference field; AppChrome.jsx's RankBar uses
+               exactly that word for exactly this scale. Clean laps, which held
+               this slot as a stand-in, moved onto the week card. -->
           <div class="stat">
             <span class="stat__row">
-              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-check" /></svg></span>
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-trophy" /></svg></span>
               <span class="stat__body">
-                <span class="stat__label">Clean laps</span>
-                <span class="stat__value" id="stat-clean-laps">—</span>
+                <span class="stat__label">Pace rank</span>
+                <span class="stat__value" id="stat-pace">—</span>
               </span>
             </span>
-            <span class="stat__sub" id="stat-clean-sub"></span>
+            <span class="stat__sub" id="stat-pace-sub"></span>
           </div>
         </div>
 
@@ -201,6 +210,9 @@
           <p class="card__desc" id="week-sub">
             Rolling 7 days. Laps are counted whenever the server is running.
           </p>
+          <!-- Clean laps used to be a stat tile of its own. It reads better here
+               anyway: it is a property OF the week, not a fourth headline. -->
+          <p class="card__desc" id="week-clean"></p>
 
           <!-- One bar per day, built by the renderer. A day with no laps still
                gets a bar: the gap is the thing a week chart is for. -->
@@ -217,6 +229,47 @@
             <span class="syncline__text" id="sync-text">Checking…</span>
             <button class="btn btn--ghost btn--sm" id="sync-btn" type="button">Sync now</button>
           </div>
+        </section>
+
+        <!-- ===================== PACE RANK =====================
+             AppChrome.jsx's RankBar, whose own comment calls it "Ohnespeed-style
+             rank progress" — so this card is the design system's own plan for
+             this data, not a new idea bolted on. Dashboard.jsx carries it inside
+             LatestSession; there is no session card here, so it gets its own,
+             sitting where LatestSession sits in the kit's right column. -->
+        <section class="card card--rank" id="pace-card" hidden>
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-target" /></svg>Pace rank
+          </h2>
+
+          <div class="rankhero">
+            <span class="rankhero__pct" id="rank-pct">—</span>
+            <span class="chip" id="rank-band">—</span>
+          </div>
+
+          <div class="rankhero__times">
+            <span id="rank-lap">—</span>
+            <span id="rank-gap"></span>
+          </div>
+
+          <!-- RankBar: OK → Good → 102% → Alien, left (slow) to right (fast). -->
+          <div class="rankbar">
+            <div class="rankbar__head">
+              <span class="rankbar__label">Pace rank</span>
+              <span class="rankbar__rank" id="rank-name">—</span>
+            </div>
+            <div class="rankbar__track">
+              <span class="rankbar__dot" id="rank-dot" hidden></span>
+            </div>
+            <div class="rankbar__zones">
+              <span data-zone="ok">OK</span>
+              <span data-zone="good">GOOD</span>
+              <span data-zone="mid">102%</span>
+              <span data-zone="alien">ALIEN</span>
+            </div>
+          </div>
+
+          <p class="rankhero__note" id="rank-note"></p>
         </section>
 
         <!-- ================== BEST CLEAN LAPS ==================
@@ -312,14 +365,110 @@
     <!-- ======================== LEADERBOARD ============================ -->
     <section class="view" data-view="leaderboard">
       <div class="wrap">
-        <div class="soon">
-          <span class="soon__icon"><svg class="icon"><use href="#i-trophy" /></svg></span>
-          <h2 class="soon__title">Leaderboard — coming soon</h2>
-          <p class="soon__desc">
-            Per-track, per-car lap rankings for the whole league. Your account is
-            already set up to carry your laps — the boards themselves are next.
-          </p>
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Leaderboard</h1>
+            <p class="view__sub">
+              The league's own boards are still to come. Until then, here is the
+              same question answered against a reference field: how your best
+              clean laps compare to the pace an alien runs in your class.
+            </p>
+          </div>
         </div>
+
+        <!-- ==================== YOUR POSITION ====================
+             Leaderboard.jsx's right-hand card, one substitution deep: the kit
+             shows a league position (#37 in gradient display type, a band chip,
+             your lap, the gap to P1, a RankBar and a "0.24s from 102% pace"
+             note). The league's boards do not exist, so the position becomes
+             the percentage and the gap becomes the gap to the reference. Every
+             other element is the kit's, unchanged — including the note, which
+             the kit already writes in terms of % pace. -->
+        <section class="card bar-accent card--rank" id="lb-rank" hidden>
+          <div class="card__head">
+            <h2 class="card__title">Your position</h2>
+          </div>
+
+          <div class="rankhero">
+            <span class="rankhero__pct" id="lb-pct">—</span>
+            <span class="chip" id="lb-band">—</span>
+          </div>
+
+          <div class="rankhero__times">
+            <span id="lb-lap">—</span>
+            <span id="lb-gap"></span>
+          </div>
+
+          <div class="rankbar">
+            <div class="rankbar__head">
+              <span class="rankbar__label">Pace rank</span>
+              <span class="rankbar__rank" id="lb-rank-name">—</span>
+            </div>
+            <div class="rankbar__track">
+              <span class="rankbar__dot" id="lb-dot" hidden></span>
+            </div>
+            <div class="rankbar__zones">
+              <span data-zone="ok">OK</span>
+              <span data-zone="good">GOOD</span>
+              <span data-zone="mid">102%</span>
+              <span data-zone="alien">ALIEN</span>
+            </div>
+          </div>
+
+          <p class="rankhero__note" id="lb-note"></p>
+        </section>
+
+        <!-- ================= PACE VS REFERENCE =================
+             Leaderboard.jsx's main table, per track and class instead of per
+             driver. Local-only, like the week card: scored from
+             ~/.apex-overlay/laps against the times shipped in
+             overlay/js/data/reference-times.json — no account, no network. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-target" /></svg>Pace vs reference
+            </h2>
+            <p class="card__desc">
+              Your best clean lap at each track and class, as a percentage of the
+              reference. 100% is alien race pace; 107% is the traditional cutoff.
+            </p>
+          </div>
+
+          <!-- Column headings, from Leaderboard.jsx's `.lbhead`. The list below
+               is scanned down the percentage column, and an unlabelled column of
+               numbers ending in % could be read as a gap just as easily. -->
+          <div class="lbhead">
+            <span>Track</span><span>Class</span><span>Best lap</span><span>Pace</span>
+          </div>
+
+          <ul class="lblist" id="pace-list"></ul>
+
+          <p class="weekempty" id="pace-empty">
+            No scored laps yet. Drive a clean lap in a class the reference covers
+            and it will appear here.
+          </p>
+
+          <!-- ATTRIBUTION. Every number above is Ohne Speed's work, so this is
+               part of the feature rather than a footnote: it is rendered from
+               the same payload as the scores, and there is no state in which the
+               scores show and this does not. -->
+          <div class="credit" id="pace-credit" hidden>
+            <span class="credit__icon"><svg class="icon"><use href="#i-info" /></svg></span>
+            <p class="credit__text">
+              Reference lap times and the Alien → Offline bands come from
+              <strong id="pace-credit-title">Ohne Speed's LMU laptimes spreadsheet</strong>,
+              with times contributed by <span id="pace-credit-people">the community</span>.
+              Apex Overlay System only reads them.
+              <span class="credit__meta" id="pace-credit-updated"></span>
+            </p>
+            <div class="credit__links">
+              <button class="btn btn--ghost btn--sm" id="pace-credit-sheet" type="button">Spreadsheet</button>
+              <button class="btn btn--ghost btn--sm" id="pace-credit-discord" type="button">Discord</button>
+              <button class="btn btn--ghost btn--sm" id="pace-credit-youtube" type="button">YouTube</button>
+            </div>
+          </div>
+        </section>
+
         <div class="soon__label">On the roadmap</div>
         <div class="ovgrid">
           <div class="card ovcard">
@@ -346,9 +495,9 @@
           <div class="card ovcard">
             <div class="ovcard__head">
               <span class="ovIcon"><svg class="icon"><use href="#i-trending-up" /></svg></span>
-              <span class="ovcard__name">Pace rank</span>
+              <span class="ovcard__name">League pace rank</span>
             </div>
-            <p class="ovcard__desc">Your pace against the field, not just your own best.</p>
+            <p class="ovcard__desc">The same percentage, measured against the league rather than a reference.</p>
           </div>
         </div>
       </div>

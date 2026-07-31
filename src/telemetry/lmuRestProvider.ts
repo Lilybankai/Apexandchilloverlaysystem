@@ -55,6 +55,7 @@ import {
   type SessionState,
   type SessionType,
   type PaceDeltas,
+  type PaceScoreState,
   type SkyState,
   type StandingEntry,
   type TelemetryFrame,
@@ -70,6 +71,7 @@ import {
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
 import { EMPTY_PACE_DELTAS, LocalPaceDeltaTracker, RoadPosition, refKeyOf } from './paceDelta';
+import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
@@ -133,6 +135,15 @@ const RULES_REFRESH_INTERVAL_MS = 30_000;
  * to their "unknown" state for one frame, which reads as flicker on the overlay.
  */
 const LOCAL_HOLD_MS = 500;
+/**
+ * How long to wait before re-probing the sim's internal scene name after a miss.
+ *
+ * The value changes once per session load, and shared memory only answers once
+ * the sim is actually in a session — so between joining the menus and getting on
+ * track this would otherwise be a failing read on every poll for minutes. Five
+ * seconds is well inside the time it takes to load a track and get to the box.
+ */
+const SCENE_NAME_RETRY_MS = 5_000;
 /**
  * Window over which the relative closing rate is measured (ms).
  *
@@ -313,6 +324,24 @@ export class LmuRestProvider implements TelemetryProvider {
    * that always comes with a non-empty name.
    */
   private playerVehicleName = '';
+  /**
+   * The sim's own name for the loaded scene, from shared memory.
+   *
+   * REST names the venue and never the layout, and `referencePace` will not
+   * score a lap at Monza, Le Mans, Fuji or Paul Ricard without knowing which
+   * layout it was — see {@link LmuScoringReader.readTrackName}. Cached because
+   * it changes once per session load, not once per poll.
+   */
+  private simTrackName = '';
+  /** Display track name the cached scene name belongs to; a change clears it. */
+  private simTrackNameFor = '';
+  /** When the scene name was last probed, so a dead buffer is not hit at 30 Hz. */
+  private simTrackNameAt = 0;
+  /**
+   * Memoised pace score. Its inputs move once a lap while this runs at the
+   * update rate, and resolving a layout is string work over the whole table.
+   */
+  private paceScoreCache: { key: string; value: PaceScoreState } | null = null;
   /** Counts track-limit excursions for the driven car; see `trackLimits.ts`. */
   private readonly trackLimits = new TrackLimitsTracker();
   /** Turns the driven car's lap boundaries into the lap database; see `lapLog.ts`. */
@@ -836,7 +865,19 @@ export class LmuRestProvider implements TelemetryProvider {
       limitsBase && limitsBase.penalties > 0
         ? { ...limitsBase, ...this.buildPenaltyType() }
         : limitsBase;
-    const player = this.buildPlayer(focus, standings, local, deltaSec, paceDeltas, trackLimits);
+    // Which LAYOUT is loaded — read before the pace score, which cannot resolve
+    // Monza, Le Mans, Fuji or Paul Ricard without it.
+    this.refreshSimTrackName(session.track, nowMs);
+    const paceScore = this.buildPaceScore(playerCar, session, trackLen);
+    const player = this.buildPlayer(
+      focus,
+      standings,
+      local,
+      deltaSec,
+      paceDeltas,
+      trackLimits,
+      paceScore,
+    );
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there).
     const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined, local?.aidSettings);
@@ -1579,6 +1620,7 @@ export class LmuRestProvider implements TelemetryProvider {
     deltaSec: number,
     paceDeltas: PaceDeltas | undefined,
     trackLimits: TrackLimitsState | undefined,
+    paceScore: PaceScoreState | undefined,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -1654,6 +1696,12 @@ export class LmuRestProvider implements TelemetryProvider {
         rearRight: tyre(3),
       },
       ...(paceDeltas ? { paceDeltas } : {}),
+      // Unlike the blocks below, this one is sent even when it has nothing to
+      // report: `ok: false` carries the REASON there is no score, and "Monza has
+      // two layouts and the sim didn't say which" is the single most useful
+      // thing this feature can tell someone. Omitting it would leave the widget
+      // showing "Awaiting telemetry…" forever with no way to find out why.
+      ...(paceScore ? { paceScore } : {}),
       // Only present with live shared memory: the motion block is populated for
       // the driven car alone, so spectating omits it entirely rather than
       // sending a frozen or zeroed one.
@@ -1824,6 +1872,131 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
+   * Keep {@link simTrackName} current — the sim's internal scene name, which is
+   * the only channel that says which track LAYOUT is loaded.
+   *
+   * Probed on a slow retry rather than every poll: shared memory is only there
+   * once the sim is in a session, and the answer does not change until the next
+   * session load. The display track name is the invalidation key, so driving a
+   * rolling server round to the next circuit re-reads it.
+   */
+  private refreshSimTrackName(track: string, nowMs: number): void {
+    if (track !== this.simTrackNameFor) {
+      this.simTrackNameFor = track;
+      this.simTrackName = '';
+      this.simTrackNameAt = 0;
+    }
+    if (this.simTrackName || nowMs - this.simTrackNameAt < SCENE_NAME_RETRY_MS) return;
+    this.simTrackNameAt = nowMs;
+    this.simTrackName = this.scoring.readTrackName();
+  }
+
+  /**
+   * Where the driven car's best lap sits against the reference pace for its
+   * class — the block the Reference Pace widget and the Dashboard tile render.
+   *
+   * Scores the **session best** rather than the last lap on purpose: a driver's
+   * pace is the best they have shown, and scoring every lap would put the number
+   * in the Offline band every time someone lifted for traffic or came out of the
+   * pits. The delta bar is the widget for what the current lap is doing.
+   *
+   * Note this is the SIM's best lap, not the lap database's best CLEAN lap. The
+   * two differ when a quick lap ran wide, and the honest split is: the overlay
+   * shows what you actually drove, while the Dashboard tile — which is closer to
+   * a claim about you — scores the clean one. See `electron/main.js`.
+   *
+   * Always returns a block once there is a driven car, even when nothing can be
+   * scored: {@link PaceScoreState.detail} is the only place a driver can find
+   * out why Monza never shows a number.
+   */
+  private buildPaceScore(
+    playerCar: RestStanding | undefined,
+    session: SessionState,
+    trackLenM: number,
+  ): PaceScoreState | undefined {
+    if (!playerCar) return undefined;
+
+    const carClass = normalizeClass(playerCar.carClass) || '';
+    const bestSec =
+      typeof playerCar.bestLapTime === 'number' && playerCar.bestLapTime > 0
+        ? playerCar.bestLapTime
+        : 0;
+    const lapMs = Math.round(bestSec * 1000);
+
+    const key = [
+      session.track,
+      session.trackConfig || '',
+      this.simTrackName,
+      Math.round(trackLenM),
+      carClass,
+      this.playerVehicleName,
+      lapMs,
+    ].join('|');
+    if (this.paceScoreCache && this.paceScoreCache.key === key) return this.paceScoreCache.value;
+
+    const identity = {
+      track: session.track,
+      trackConfig: session.trackConfig,
+      simTrackName: this.simTrackName,
+      trackLengthM: trackLenM,
+      carClass,
+      car: this.playerVehicleName,
+    };
+    const credit = referenceCredit();
+    const base: PaceScoreState = {
+      ok: false,
+      lapSec: bestSec > 0 ? round2(bestSec) : UNKNOWN_VALUE,
+      ...(credit
+        ? { credit: { author: credit.author, title: credit.title, sheetUrl: credit.sheetUrl } }
+        : {}),
+    };
+
+    let value: PaceScoreState;
+    // Resolve the reference first, without the lap. The widget can then show
+    // what it is going to compare against from the moment the session loads,
+    // rather than staying blank until the first lap is in.
+    const ref = referenceFor(identity);
+    if (!ref.ok || !ref.score) {
+      value = {
+        ...base,
+        ...(ref.reason ? { reason: ref.reason } : {}),
+        ...(ref.detail ? { detail: ref.detail } : {}),
+      };
+    } else {
+      const known = {
+        refSec: round2(ref.score.refMs / 1000),
+        ...(ref.score.hotlapMs ? { hotlapSec: round2(ref.score.hotlapMs / 1000) } : {}),
+        layoutName: ref.score.layoutName,
+        circuitName: ref.score.circuitName,
+        sheetClass: ref.score.sheetClass,
+        via: ref.score.via,
+        assumed: ref.score.assumed,
+      };
+      const scored = lapMs > 0 ? scoreLap({ ...identity, lapMs }) : null;
+      value =
+        scored && scored.ok && scored.score
+          ? {
+              ...base,
+              ...known,
+              ok: true,
+              percent: scored.score.percent,
+              bandId: scored.score.bandId,
+              bandLabel: scored.score.bandLabel,
+              deltaSec: scored.score.deltaSec,
+            }
+          : {
+              ...base,
+              ...known,
+              reason: 'no-lap',
+              detail: 'Set a lap to see where you land.',
+            };
+    }
+
+    this.paceScoreCache = { key, value };
+    return value;
+  }
+
+  /**
    * Feed the lap recorder, and write out any lap that just completed.
    *
    * Centred on the DRIVEN car, like track limits and the radar — a lap database
@@ -1849,6 +2022,10 @@ export class LmuRestProvider implements TelemetryProvider {
       {
         sim: 'lmu',
         track: session.track,
+        // Both layout hints travel with the lap so it can be pace-scored months
+        // later, when the session that set it is long gone. See `LapRecord`.
+        ...(session.trackConfig ? { trackConfig: session.trackConfig } : {}),
+        ...(this.simTrackName ? { simTrackName: this.simTrackName } : {}),
         trackLengthM: trackLenM,
         car: this.playerVehicleName,
         carClass: normalizeClass(playerCar.carClass) || '',

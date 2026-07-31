@@ -64,15 +64,53 @@ const PANEL_CONTRACT = {
   'stat-time-driven': 'span',
   'stat-time-sub': 'span',
   'stat-widgets': 'span',
-  'stat-clean-laps': 'span',
-  'stat-clean-sub': 'span',
+  // The fourth tile was Clean laps, a stand-in for the League rank the design
+  // system specifies. v0.26.0 gave it a real answer — pace against the class
+  // reference — and clean laps moved onto the week card as `week-clean`.
+  'stat-pace': 'span',
+  'stat-pace-sub': 'span',
 
   // This week — the lap database's dashboard card (v0.24.0)
   'week-sub': 'p',
+  'week-clean': 'p',
   'week-chart': 'div',
   'week-bests': 'section',
   'week-bests-list': 'ul',
   'week-empty': 'p',
+
+  // Pace vs reference — the Leaderboard tab's first real card (v0.26.0).
+  // `pace-credit*` is the attribution for Ohne Speed's reference times and is
+  // contracted like any other control: it is part of the feature, and an
+  // attribution that can be silently deleted by a restyle is worse than none.
+  'pace-list': 'ul',
+  'pace-empty': 'p',
+
+  // The kit's RankBar, twice — Dashboard (`rank-*`) and Leaderboard (`lb-*`).
+  // Contracted separately because they are the same component at two ids, and
+  // losing one silently would leave the other looking perfectly fine.
+  'pace-card': 'section',
+  'rank-pct': 'span',
+  'rank-band': 'span',
+  'rank-name': 'span',
+  'rank-lap': 'span',
+  'rank-gap': 'span',
+  'rank-dot': 'span',
+  'rank-note': 'p',
+  'lb-rank': 'section',
+  'lb-pct': 'span',
+  'lb-band': 'span',
+  'lb-rank-name': 'span',
+  'lb-lap': 'span',
+  'lb-gap': 'span',
+  'lb-dot': 'span',
+  'lb-note': 'p',
+  'pace-credit': 'div',
+  'pace-credit-title': 'strong',
+  'pace-credit-people': 'span',
+  'pace-credit-updated': 'span',
+  'pace-credit-sheet': 'button',
+  'pace-credit-discord': 'button',
+  'pace-credit-youtube': 'button',
 
   // Lap upload status (v0.25.0)
   'sync-dot': 'span',

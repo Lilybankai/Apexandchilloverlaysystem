@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.44.0 — 2026-07-31
+
+### Added
+
+- **Reference pace — how quick you actually are, without needing anyone else on track.**
+  Your best lap is compared to the pace an alien runs in the *same class* at the *same
+  track layout*, and the percentage lands on a named band: Alien (≤100%), Competitive
+  (101%), Good (≤103%), Midpack (≤105%), Tail-ender (≤106%), Offline beyond. 100% is alien
+  *race* pace, not a qualifying lap, and 107% is the traditional cutoff.
+
+  A percentage means something a lap time cannot: 101% at Spa and 101% at Fuji are the same
+  achievement, while 2:21 and 1:30 are not comparable at all. It is the first number in the
+  app that answers "am I quick?" rather than "was that lap better than my last one".
+
+  Three surfaces, one calculation (`src/telemetry/referencePace.ts`):
+
+  - a **Reference Pace** overlay widget — the percentage, the band, a ladder with your
+    marker on it, and your lap beside the reference lap;
+  - the Dashboard's fourth stat tile, now **Pace rank**, showing the band;
+  - the **Leaderboard** tab, which scores your best clean lap at every track and class you
+    have driven, with the design system's RankBar above it.
+
+- **The reference times are [Ohne Speed](https://www.youtube.com/@ohne_speed)'s**, from the
+  LMU laptimes spreadsheet, with lap times contributed by **beAlien**, **Go** and **Hymo**.
+  The Alien → Offline band names are theirs too. The app only reads their work, and credits
+  it wherever a score is shown — the attribution travels on the same payload as the numbers,
+  so no screen can render a score without it. `npm run reference-times` refreshes the table
+  after an LMU patch; it is baked at build time rather than fetched, so scores survive a
+  race weekend with no connection.
+
+### Changed
+
+- **The Leaderboard tab has lost its padlock.** It has real content now. The league's own
+  boards are still to come and the page says so, but a lock on a tab that scores every lap
+  you have driven was advertising the wrong thing.
+
+- Demo mode runs Silverstone pace at Silverstone. `BASE_LAP_SEC` was a round 118 while the
+  demo claimed to be at a circuit whose Hypercar reference is 1:42.9 — 15% out, invisible
+  until something started comparing the two and put the entire synthetic field in the
+  Offline band. The class offsets are now the real class-to-class gaps there as well, which
+  widens the Hypercar→GT3 spread from a hand-picked 11 s to the true 15.6 s.
+
+### Notes
+
+- **Some laps deliberately come back unscored, and the app says why.** LMU's feed names the
+  venue and never the layout — and Monza's two layouts are ~10 s apart in GT3, Le Mans's
+  ~16 s. Where the layout cannot be established from the sim's own scene name, a published
+  config or the lap length, no score is shown and the reason is: *"Circuit de la Sarthe has
+  2 layouts with reference times and the sim did not say which one this is."* A wrong score
+  in a fixed direction is worse than no score, because a driver told they are 9% off when
+  they are on the pace stops reading the number.
+
+  GT4 is unrated — the reference data does not cover it. LMP2 is split into ELMS and WEC
+  regulations (3.6 s apart at Bahrain); the car model picks the right one, and where it
+  cannot, the fallback is marked with a `?` rather than passed off as certain.
+
+- New: `LmuScoringReader.readTrackName()` reads `rF2ScoringInfo.mTrackName`, the only
+  channel in the whole feed that names the loaded *layout*. Lap records gained
+  `trackConfig` and `simTrackName` (schema v2, both optional) so a lap can still be scored
+  months after the session that set it.
+
+- New test: `npm run test:refpace` (58 assertions), weighted towards the ways a lap gets
+  attached to the wrong reference rather than towards the arithmetic.
+
 ## 0.43.0 — 2026-07-31
 
 ### Added

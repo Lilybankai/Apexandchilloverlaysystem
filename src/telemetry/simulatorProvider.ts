@@ -23,6 +23,7 @@ import {
   type FuelState,
   type MotionState,
   type PaceDeltas,
+  type PaceScoreState,
   type PedalInputs,
   type PitPhase,
   type PitState,
@@ -36,6 +37,7 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { assignClassPositions, isFasterClass } from './carClass';
+import { referenceCredit, scoreLap } from './referencePace';
 import { buildRadar, headingOri, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
@@ -56,8 +58,27 @@ const FIELD_SIZE = 12;
 const RACE_LAPS = 16;
 /** Laps every car has already completed when the simulation starts. */
 const START_LAPS = 3;
-/** Nominal lap time in seconds before per-car pace offset and noise. */
-const BASE_LAP_SEC = 118;
+/**
+ * Nominal lap time in seconds before per-car pace offset and noise.
+ *
+ * This is Hypercar race pace at the circuit the demo names below, taken from the
+ * reference table. It used to be a round 118, which meant the demo claimed to be
+ * at Silverstone while running 15% off Silverstone pace — invisible until the
+ * pace score started comparing the two and put the whole synthetic field in the
+ * Offline band. Only the absolute value moved; every relative behaviour in here
+ * comes from the class offsets, which are unchanged in shape.
+ */
+const BASE_LAP_SEC = 102.9;
+/**
+ * The circuit the demo pretends to be at.
+ *
+ * Named constants rather than literals inline because the pace score resolves a
+ * real reference row from these three values: change the track here without the
+ * length, and the demo silently stops scoring while still looking perfect.
+ */
+const DEMO_TRACK = 'Silverstone (ELMS)';
+const DEMO_TRACK_CONFIG = 'Grand Prix';
+const DEMO_TRACK_LENGTH_M = 5890;
 /**
  * Class definitions for the synthetic field: how many cars, and how much slower
  * than {@link BASE_LAP_SEC} that class runs.
@@ -67,14 +88,19 @@ const BASE_LAP_SEC = 118;
  * were cosmetic labels and no faster-class car ever actually caught a slower one.
  * Anything keyed on real multiclass behaviour (the blue-flag alert, class gaps,
  * lapping) therefore never triggered in demo mode and could not be seen without
- * the sim running. These offsets are roughly WEC-shaped: ~11 s from Hypercar to
- * GT3 on a ~2-minute lap.
+ * the sim running.
+ *
+ * The offsets are no longer estimated: they are the real class-to-class gaps at
+ * {@link DEMO_TRACK} out of the reference table, which is a slightly WIDER
+ * spread than the hand-picked ~11 s it replaced (15.6 s Hypercar to GT3). Faster
+ * classes therefore catch slower ones a little sooner in demo mode, which is the
+ * direction that exercises the blue-flag path more, not less.
  */
 const SIM_CLASSES: Array<{ name: string; count: number; lapOffsetSec: number }> = [
   { name: 'HYPERCAR', count: 3, lapOffsetSec: 0 },
-  { name: 'LMP2', count: 3, lapOffsetSec: 5.5 },
-  { name: 'LMP3', count: 3, lapOffsetSec: 8 },
-  { name: 'GT3', count: 3, lapOffsetSec: 11 },
+  { name: 'LMP2', count: 3, lapOffsetSec: 3.8 },
+  { name: 'LMP3', count: 3, lapOffsetSec: 8.4 },
+  { name: 'GT3', count: 3, lapOffsetSec: 15.6 },
 ];
 /**
  * Within-class pace spread, indexed by the car's position inside its class.
@@ -335,6 +361,7 @@ export class SimulatorProvider implements TelemetryProvider {
     const trackLimits = this.buildTrackLimits(dt, this.speedFor(this.pedals));
     // Which pre-green phase the demo is in, or null once it has gone green.
     const preSession = this.advancePreSession(dt);
+    const paceScore = this.buildPaceScore(player);
 
     // The demo's live delta, and the pace block derived from it. Demo mode is
     // how the overlay is set up and how it looks when LMU is unreachable, so
@@ -373,8 +400,8 @@ export class SimulatorProvider implements TelemetryProvider {
         type: 'race',
         phase: preSession ?? 'green',
         flag: preSession ? 'none' : 'green',
-        track: 'Silverstone (ELMS)',
-        trackConfig: 'Grand Prix',
+        track: DEMO_TRACK,
+        trackConfig: DEMO_TRACK_CONFIG,
         timeRemainingSec: UNKNOWN_VALUE,
         totalLaps: RACE_LAPS,
         lapsRemaining: UNKNOWN_VALUE,
@@ -412,6 +439,7 @@ export class SimulatorProvider implements TelemetryProvider {
         ...(damage ? { damage } : {}),
         pit,
         ...(trackLimits ? { trackLimits } : {}),
+        ...(paceScore ? { paceScore } : {}),
       },
       standings,
       relative,
@@ -431,6 +459,57 @@ export class SimulatorProvider implements TelemetryProvider {
         forecast: this.buildForecast(),
       },
       fuel,
+    };
+  }
+
+  /**
+   * The demo's pace score, against the same reference table the live path uses.
+   *
+   * Demo mode is how the overlay gets developed without the sim running (see the
+   * dev harnesses), so this is not decoration: without it the Reference Pace
+   * widget could only ever be seen in its empty state. The demo's identity —
+   * Silverstone Grand Prix, and an LMP2 with no model name — deliberately lands
+   * on the `assumed` branch, because the ELMS/WEC fallback is the one hedge the
+   * widget has to render and would otherwise never be exercised.
+   */
+  private buildPaceScore(player: SimCar): PaceScoreState | undefined {
+    const identity = {
+      track: DEMO_TRACK,
+      trackConfig: DEMO_TRACK_CONFIG,
+      trackLengthM: DEMO_TRACK_LENGTH_M,
+      carClass: player.carClass,
+    };
+    const credit = referenceCredit();
+    const base: PaceScoreState = {
+      ok: false,
+      lapSec: Math.round(player.bestLapSec * 100) / 100,
+      ...(credit
+        ? { credit: { author: credit.author, title: credit.title, sheetUrl: credit.sheetUrl } }
+        : {}),
+    };
+    const scored = scoreLap({ ...identity, lapMs: Math.round(player.bestLapSec * 1000) });
+    if (!scored.ok || !scored.score) {
+      return {
+        ...base,
+        ...(scored.reason ? { reason: scored.reason } : {}),
+        ...(scored.detail ? { detail: scored.detail } : {}),
+      };
+    }
+    const s = scored.score;
+    return {
+      ...base,
+      ok: true,
+      percent: s.percent,
+      bandId: s.bandId,
+      bandLabel: s.bandLabel,
+      deltaSec: s.deltaSec,
+      refSec: Math.round(s.refMs / 10) / 100,
+      ...(s.hotlapMs ? { hotlapSec: Math.round(s.hotlapMs / 10) / 100 } : {}),
+      layoutName: s.layoutName,
+      circuitName: s.circuitName,
+      sheetClass: s.sheetClass,
+      via: s.via,
+      assumed: s.assumed,
     };
   }
 
