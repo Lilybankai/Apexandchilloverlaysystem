@@ -85,6 +85,15 @@ const PANEL_CONTRACT = {
   'pace-list': 'ul',
   'pace-empty': 'p',
 
+  // League boards (v0.45.0) — the cloud half of the Leaderboard tab.
+  'board-track': 'select',
+  'board-classes': 'div',
+  'board-car': 'select',
+  'board-title': 'h2',
+  'board-count': 'span',
+  'board-list': 'ul',
+  'board-empty': 'p',
+
   // The kit's RankBar, twice — Dashboard (`rank-*`) and Leaderboard (`lb-*`).
   // Contracted separately because they are the same component at two ids, and
   // losing one silently would leave the other looking perfectly fine.

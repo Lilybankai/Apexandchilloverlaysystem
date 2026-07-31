@@ -369,11 +369,63 @@
           <div>
             <h1 class="view__title">Leaderboard</h1>
             <p class="view__sub">
-              The league's own boards are still to come. Until then, here is the
-              same question answered against a reference field: how your best
-              clean laps compare to the pace an alien runs in your class.
+              The league's best laps, ranked — and how yours compare to the pace
+              an alien runs in your class.
             </p>
           </div>
+        </div>
+
+        <!-- ==================== LEAGUE BOARD ====================
+             Leaderboard.jsx's sidebar + table. The kit's sidebar filters on
+             Track / Session / Car class / Weather; session and weather are not
+             stored on a best lap (a PB is a PB), so the two that ARE stored —
+             track and class — get the space, plus the car, which the kit shows
+             as a heading and which is asked for here as a filter.
+
+             The car narrows the set; it does not split the board. A board is
+             keyed (track, class) the way `submit_lap` stores it, so a driver's
+             entry is their best in that class whichever car set it. Splitting
+             per car in a league this size would put one name on each board. -->
+        <div class="lbgrid">
+          <aside class="card lbside">
+            <label class="field">
+              <span class="field__label">Track</span>
+              <select class="field__input" id="board-track"></select>
+            </label>
+
+            <div class="field">
+              <span class="field__label">Car class</span>
+              <div class="clschips" id="board-classes"></div>
+            </div>
+
+            <label class="field">
+              <span class="field__label">Car</span>
+              <select class="field__input" id="board-car"></select>
+              <span class="field__hint">
+                Narrows the board. Rankings are per class, so leaving this on
+                <em>All cars</em> is the real board.
+              </span>
+            </label>
+
+            <div class="dbnote">
+              <svg class="icon"><use href="#i-database" /></svg>
+              <span>Best clean laps, uploaded from every member's app.</span>
+            </div>
+          </aside>
+
+          <section class="card lbmain">
+            <div class="card__head">
+              <h2 class="card__title" id="board-title">Leaderboard</h2>
+              <span class="card__meta" id="board-count"></span>
+            </div>
+
+            <div class="lbhead lbhead--board">
+              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span>
+            </div>
+            <ul class="lblist" id="board-list"></ul>
+
+            <p class="weekempty" id="board-empty">Loading the league boards…</p>
+          </section>
         </div>
 
         <!-- ==================== YOUR POSITION ====================
@@ -386,7 +438,7 @@
              the kit already writes in terms of % pace. -->
         <section class="card bar-accent card--rank" id="lb-rank" hidden>
           <div class="card__head">
-            <h2 class="card__title">Your position</h2>
+            <h2 class="card__title">Your pace</h2>
           </div>
 
           <div class="rankhero">
@@ -469,22 +521,12 @@
           </div>
         </section>
 
+        <!-- Best-lap database and League boards both used to sit here. They are
+             built now — the card above IS them — so they came off the list. A
+             roadmap that still promises what is already on the screen teaches
+             people to stop reading it. -->
         <div class="soon__label">On the roadmap</div>
         <div class="ovgrid">
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-database" /></svg></span>
-              <span class="ovcard__name">Best-lap database</span>
-            </div>
-            <p class="ovcard__desc">Every clean lap saved per car and track, on your account.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-trophy" /></svg></span>
-              <span class="ovcard__name">League boards</span>
-            </div>
-            <p class="ovcard__desc">Ranked by track and class, with your own row pinned.</p>
-          </div>
           <div class="card ovcard">
             <div class="ovcard__head">
               <span class="ovIcon"><svg class="icon"><use href="#i-timer" /></svg></span>
@@ -494,10 +536,17 @@
           </div>
           <div class="card ovcard">
             <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-trending-up" /></svg></span>
-              <span class="ovcard__name">League pace rank</span>
+              <span class="ovIcon"><svg class="icon"><use href="#i-activity" /></svg></span>
+              <span class="ovcard__name">Pedal trace compare</span>
             </div>
-            <p class="ovcard__desc">The same percentage, measured against the league rather than a reference.</p>
+            <p class="ovcard__desc">Load P1's braking points next to yours, straight from the board.</p>
+          </div>
+          <div class="card ovcard">
+            <div class="ovcard__head">
+              <span class="ovIcon"><svg class="icon"><use href="#i-trending-up" /></svg></span>
+              <span class="ovcard__name">Weekly league round</span>
+            </div>
+            <p class="ovcard__desc">A board that resets, so a fast week counts for something.</p>
           </div>
         </div>
       </div>

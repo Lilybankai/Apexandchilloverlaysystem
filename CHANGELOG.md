@@ -1,29 +1,49 @@
 # Changelog
 
-## 0.44.1 — 2026-07-31
+## 0.45.0 — 2026-07-31
 
-### Fixed
+### Added
 
-- **The margin at the flag is no longer computed in sessions that have no flag.** In
-  practice the widget read `MARGIN −199.9 %` in the colour it reserves for a real
-  emergency, on a car with a dozen good laps in the tank. It was doing the arithmetic
-  honestly: two and three quarter hours of practice at ninety seconds a lap is 109 laps,
-  109 laps is 240 L, and the tank had 26. But nobody drives a practice session to zero on
-  one tank, so the finish it was measuring against did not exist. Practice, qualifying,
-  warmup and test day now leave laps-to-the-flag, fuel-to-finish, the margin and
-  refuel-to-finish blank; a race projects them exactly as before. What is actually in the
-  car — burn rate, laps of range, both gauges and the pit alarm — is unchanged, because
-  those are true in any session.
+- **The league leaderboard is live.** Every member's best clean lap, ranked, on the
+  Leaderboard tab — filterable by **track**, **car class** and **car**, with your own row
+  marked. This is the board the tab has been promising since v0.23.0; the laps have been
+  uploading since v0.25.0, so there is already history on it.
 
-- **Laps in and out of the pits no longer count towards the burn rate.** An out-lap starts
-  from a standstill in the box and rejoins part way round; an in-lap ends at the limiter.
-  Either can be half a green lap's consumption, and both were being averaged in, which is
-  where a half-lap disagreement with the car's own NRG readout came from — measured live
-  against LMU's dash on the same frame, and against the sim's own per-lap consumption log,
-  which flags exactly these laps. The rolling average now skips them, on both budgets and
-  on both providers. A *requested* stop is deliberately not counted: a driver asks for the
-  box laps before they take it, and those are green laps — the last ones before the stop,
-  which are the ones the average most needs.
+  The filters are built from what the boards *actually hold*, not from a hardcoded track
+  list: pick a track and you are offered only the classes with laps there, then only the
+  cars driven in that class. Offering a dropdown of 31 circuits when three have times on
+  them is the quickest way to make a working feature look broken.
+
+  The **car** filter narrows a board; it does not split one. Boards stay keyed on
+  (track, class), so your entry is your best in that class whichever car set it — splitting
+  per car in a league this size would put one name on every board. Leaving it on *All cars*
+  is the real board, and the sidebar says so.
+
+- **Click any lap in Pace vs reference to load it.** The pace cards used to be pinned to
+  your single best result, which made them a headline rather than a tool — the lap you want
+  to examine is rarely your best one, it's the one that went wrong. Now the list is
+  selectable and both cards follow it: the percentage, the band, the gap and the "0.83s
+  from 102% pace" line all switch to the lap you picked. Click it again to go back to your
+  best. The Dashboard stat tile deliberately does not follow — a stat that moved when you
+  clicked a list further down the page would stop being a stat.
+
+### Changed
+
+- The Leaderboard's roadmap list lost **Best-lap database** and **League boards**. Both are
+  built; the card above them is them. A roadmap that still promises what is already on the
+  screen teaches people to stop reading it.
+
+### Notes
+
+- Two new read functions in Postgres, `leaderboard` and `leaderboard_filters`. They are
+  `SECURITY INVOKER` — the rows were already readable under RLS (`driver_best_laps`,
+  `public_drivers` and `tracks` each carry a select policy for signed-in users), so the
+  functions buy one round trip instead of three and a client-side join, not extra access.
+  Running them as `DEFINER` would have granted a privilege the work doesn't use, and would
+  have kept returning rows if a policy were ever tightened.
+
+- The board needs an account and a connection — it is the one part of the lap database that
+  is inherently about other people. Signed out, it says so; laps keep recording either way.
 
 ## 0.44.0 — 2026-07-31
 

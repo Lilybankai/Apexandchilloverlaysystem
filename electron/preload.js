@@ -94,6 +94,19 @@ contextBridge.exposeInMainWorld('apex', {
    */
   lapsPace: () => ipcRenderer.invoke('laps:pace'),
 
+  /* ---- League leaderboard ----
+   *
+   * Unlike everything else on this bridge, these two read the league's database
+   * rather than local files, so both can come back `{ ok: false, signedOut }`.
+   * That is a state, not an error: laps keep recording either way.
+   */
+
+  /** Track/class/car combinations that have laps: `{ ok, rows[], error? }`. */
+  leaderboardFilters: () => ipcRenderer.invoke('leaderboard:filters'),
+
+  /** One ranked board: `{ trackId, carClass, car }` → `{ ok, rows[], error? }`. */
+  leaderboardRows: (query) => ipcRenderer.invoke('leaderboard:rows', query),
+
   /** Where the uploader has got to: `{ status, lastOkAt, pending, sent, error }`. */
   lapsSyncState: () => ipcRenderer.invoke('laps:syncState'),
 

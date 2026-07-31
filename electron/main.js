@@ -1509,6 +1509,55 @@ function registerIpc() {
     }
   });
 
+  /* ---- League leaderboard ----
+   *
+   * The boards themselves live in Postgres, because a leaderboard is the one
+   * part of the lap database that is inherently about other people — everything
+   * else in this file reads local files on purpose. Two security-definer RPCs do
+   * the ranking and the join server-side (`leaderboard`, `leaderboard_filters`);
+   * the rows they return were already readable under RLS, so they buy one round
+   * trip instead of three, not extra access.
+   */
+
+  /** Track/class/car combinations that actually have laps on them. */
+  ipcMain.handle('leaderboard:filters', async () => {
+    const res = await authService.rpc('leaderboard_filters', { p_sim: 'lmu' });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in to see the league boards.' : res.error || 'Board unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /**
+   * One board, ranked. `car` is a narrowing filter rather than a second axis:
+   * boards stay keyed on (track, class) the way `submit_lap` stores them, so a
+   * driver's entry is their best in the class whichever car set it.
+   */
+  ipcMain.handle('leaderboard:rows', async (_evt, query) => {
+    const q = query || {};
+    const res = await authService.rpc('leaderboard', {
+      p_sim: 'lmu',
+      p_track_id: q.trackId || null,
+      p_car_class: q.carClass || null,
+      p_car: q.car || null,
+      p_limit: 200,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in to see the league boards.' : res.error || 'Board unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
   /** Where the lap uploader has got to, for the Dashboard's sync line. */
   ipcMain.handle('laps:syncState', () => lapUpload.stateForUi());
 

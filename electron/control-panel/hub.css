@@ -721,6 +721,27 @@ html, body { height: 100%; overflow: hidden; }
   gap: 8px;
 }
 
+/* A scored row is a button: clicking it loads that lap into the cards above.
+   Rows that could not be scored stay inert, because there is nothing up there
+   for them to show. */
+.lbrow[data-pick="true"] {
+  cursor: pointer;
+  /* Reserve the selected row's rail on every pickable row so the list does not
+     shift sideways by 3px when a selection moves. */
+  border-left: 3px solid transparent;
+  padding-left: 7px;
+}
+.lbrow[data-pick="true"]:hover { background: var(--panel-3); }
+.lbrow[data-pick="true"]:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: -1px;
+}
+.lbrow[data-selected="true"] {
+  background: var(--panel-3);
+  border-left-color: var(--band);
+}
+.lbrow[data-selected="true"] .lbrow__name { color: var(--text); font-weight: 600; }
+
 .lbrow__why {
   min-width: 0;
   font-size: 11.5px;
@@ -868,6 +889,144 @@ html, body { height: 100%; overflow: hidden; }
 .rankbar__zones [data-zone="good"] { color: var(--ok); }
 .rankbar__zones [data-zone="mid"] { color: var(--warn); }
 .rankbar__zones [data-zone="alien"] { color: var(--purple); }
+
+/* --------------------------- league leaderboard ------------------------- */
+/*
+ * Leaderboard.jsx's two-column layout: a filter rail beside the board. The kit
+ * runs three columns (rail, board, your-position sidebar); here the pace cards
+ * sit below rather than beside, because the panel is a 1000px window rather than
+ * the kit's 1440px canvas and three columns would squeeze the board — the one
+ * thing on the page you actually read across.
+ */
+.lbgrid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .lbgrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.lbside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Track names are long ("Daytona International Speedway Road Course") and a
+   `<select>` sizes to its widest option unless told otherwise — which either
+   blew the rail out or, with the rail fixed at 240px, clipped the label to
+   "Daytona Interv". Fill the rail and let the native control ellipse. */
+.lbside .field__input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Title on the left, row count on the right, on one line. */
+.lbmain .card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Class chips — the kit's `.clschip`, a segmented control that reads as a set
+   of categories rather than as a dropdown of unrelated options. */
+.clschips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.clschip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.clschip:hover { color: var(--text); border-color: var(--text-3); }
+.clschip[data-active="true"] {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.dbnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.dbnote .icon { flex: 0 0 auto; margin-top: 1px; color: var(--purple); }
+
+.lbmain { min-width: 0; }
+
+.card__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Board columns. Kept in one block with `.lbrow--board` below so the headings
+   and the rows cannot drift apart — see the note on `.lbhead`. */
+.lbhead--board > :nth-child(1) { flex: 0 0 34px; }
+.lbhead--board > :nth-child(2) { flex: 0 0 150px; }
+.lbhead--board > :nth-child(3) { flex: 1 1 auto; }
+.lbhead--board > :nth-child(4) { flex: 0 0 92px; text-align: right; }
+.lbhead--board > :nth-child(5) { flex: 0 0 76px; text-align: right; }
+
+.lbrow--board .lbrow__pos {
+  flex: 0 0 34px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--text-3);
+}
+.lbrow--board .lbrow__driver {
+  flex: 0 0 150px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lbrow--board .lbrow__car { flex: 1 1 auto; }
+.lbrow--board .lbrow__time { flex: 0 0 92px; text-align: right; }
+.lbrow--board .lbrow__gap {
+  flex: 0 0 76px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--bad);
+}
+
+/* Quickest in a comparable set — the kit's purple, and the only place in the
+   app it is used, because it is the only place the comparison holds. */
+.lbrow__time[data-fastest="true"] { color: #b47cff; }
+
+/* Your own row. The rail is on the left where the position is, so it reads as
+   "this line is yours" rather than as a highlighted lap time. */
+.lbrow--board { border-left: 3px solid transparent; padding-left: 7px; }
+.lbrow--board[data-you="true"] {
+  background: var(--panel-3);
+  border-left-color: var(--cyan);
+}
+.lbrow--board[data-you="true"] .lbrow__pos { color: var(--cyan); }
+.lbrow--board[data-you="true"] .lbrow__driver { color: var(--text); font-weight: 600; }
 
 /* ------------------------------ attribution ----------------------------- */
 /*

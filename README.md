@@ -57,9 +57,13 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   track-limits threshold), **Appearance** (widget background, text size, radar car
   size — all applying live), **Audio & feedback** (cues, volume, change glow) and
   **Bindings** (keyboard and wheel).
-- **Leaderboard · Setups · Suggestions** — not built yet; each says so and lists
-  what is coming. **Training** mode is shown in the top-right toggle but disabled
-  for the same reason.
+- **Leaderboard** — the league's best clean laps, ranked, filtered by track, car
+  class and car, with your own row marked; plus your pace against the class
+  reference. See [Reference pace](#reference-pace) and
+  [League boards](#league-boards).
+- **Setups · Suggestions** — not built yet; each says so and lists what is
+  coming. **Training** mode is shown in the top-right toggle but disabled for the
+  same reason.
 - **Status pill** — LIVE / DEMO DATA / NO DATA / STOPPED at a glance, mirrored in
   the footer along with the port and the running version.
 
@@ -172,11 +176,35 @@ at every track and class you have driven. The overlay scores the sim's session
 best; the panel scores your best *clean* lap, because that screen is closer to a
 claim about you than a live readout.
 
+**Click any lap in that list** to load it into the pace cards — the percentage,
+band, gap and "what would get you to the next rung" line all follow your
+selection. Click it again to go back to your best.
+
 **Some laps come back unscored, on purpose.** LMU's feed names the venue and
 never the layout, and Monza's two layouts are ~10 s apart in GT3 — so where the
 layout cannot be established from the sim's own scene name, the lap length or a
 published config, the app says so instead of guessing. GT4 is unrated because
 the reference data does not cover it.
+
+### League boards
+
+The **Leaderboard** tab also carries the real thing: every member's best clean
+lap, ranked, for one **track** and **car class** at a time, with your own row
+marked. A **car** filter narrows the board further.
+
+Two rules worth knowing, because they are deliberate:
+
+- **Boards are per class, not per car.** Your entry is your best in that class
+  whichever car set it; the car travels with the time as metadata. In a league
+  this size, per-car boards would have one name on each. The car filter narrows
+  a board rather than splitting it, so *All cars* is the real board.
+- **The filters only offer boards that exist.** Pick a track and you get the
+  classes with laps there, then the cars driven in that class — never a
+  dropdown of every circuit in the game.
+
+This is the one part of the lap database that needs an account and a connection,
+because it is the one part that is about other people. Signed out it says so, and
+your laps keep recording either way — they upload next time you sign in.
 
 #### Credit
 

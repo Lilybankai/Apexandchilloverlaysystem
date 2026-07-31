@@ -679,10 +679,52 @@
     }
   }
 
+  /**
+   * Which scored lap the two RankBar cards are describing.
+   *
+   * It used to be hardwired to your single best result, which made the card a
+   * headline rather than a tool: the lap you want to look at is almost never
+   * your best one, it is the one you just drove badly. So the list below is
+   * selectable and this holds the choice, keyed by track+class rather than by
+   * index — a refresh re-sorts the rows, and an index would quietly slide onto
+   * a different lap underneath you.
+   */
+  let selectedPaceKey = null;
+  /** Last payload, so a selection can re-render without another IPC round trip. */
+  let lastPaceData = null;
+
+  function paceKeyOf(row) {
+    return row ? `${row.track}|${row.carClass}|${row.car || ''}` : '';
+  }
+
+  /** The row the cards should show: the chosen one, or the best as the default. */
+  function selectedPaceRow(data) {
+    const rows = (data && data.rows) || [];
+    const scored = rows.filter((r) => r.ok);
+    if (selectedPaceKey) {
+      const hit = scored.find((r) => paceKeyOf(r) === selectedPaceKey);
+      if (hit) return hit;
+    }
+    return (data && data.best) || scored[0] || null;
+  }
+
+  function selectPaceRow(row) {
+    const key = paceKeyOf(row);
+    // Clicking the selected row again clears back to your best, so the default
+    // view is always one click away rather than requiring a tab round trip.
+    selectedPaceKey = selectedPaceKey === key ? null : key;
+    renderPace(lastPaceData);
+  }
+
   function renderPace(data) {
     const d = data || {};
+    lastPaceData = d;
     const rows = Array.isArray(d.rows) ? d.rows : [];
+    // The tile always reports your best; only the detail cards follow the
+    // selection. A stat tile that changed when you clicked a list further down
+    // the page would stop being a stat.
     const best = d.best || null;
+    const shown = selectedPaceRow(d);
 
     // --- Dashboard tile ---
     // The kit's Stat shows the BAND as the value ("Good"), not the number: a
@@ -711,7 +753,7 @@
         dot: '#rank-dot',
         note: '#rank-note',
       },
-      best,
+      shown,
     );
     renderRankCard(
       {
@@ -724,7 +766,7 @@
         dot: '#lb-dot',
         note: '#lb-note',
       },
-      best,
+      shown,
     );
 
     // --- Leaderboard card ---
@@ -734,10 +776,35 @@
     list.textContent = '';
     empty.hidden = rows.length > 0;
 
+    const shownKey = paceKeyOf(shown);
     for (const row of rows) {
       const li = document.createElement('li');
       li.className = 'lbrow';
       li.setAttribute('data-band', paceBandOf(row));
+
+      // Only a scored row is selectable: there is nothing for the cards above to
+      // show for a lap whose reference could not be found, and a button that
+      // visibly does nothing is worse than a row that was never a button.
+      if (row.ok) {
+        li.setAttribute('data-pick', 'true');
+        li.setAttribute('data-selected', String(paceKeyOf(row) === shownKey));
+        li.tabIndex = 0;
+        li.setAttribute('role', 'button');
+        li.setAttribute(
+          'aria-pressed',
+          String(paceKeyOf(row) === shownKey),
+        );
+        li.title = 'Show this lap against its reference';
+        li.addEventListener('click', () => selectPaceRow(row));
+        // Keyboard parity: the list is a column of buttons, so it has to be
+        // reachable without a mouse like every other control in the panel.
+        li.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectPaceRow(row);
+          }
+        });
+      }
 
       // createElement throughout — track and car names come from the sim, and
       // the panel's CSP would not save the row from a mod pack with a bracket
@@ -828,6 +895,235 @@
 
   function refreshPace() {
     window.apex.lapsPace().then(renderPace).catch(() => renderPace(null));
+  }
+
+  // --- League leaderboard --------------------------------------------------
+  /*
+   * The league's own boards, from the cloud — Leaderboard.jsx's sidebar and
+   * table. Everything else on this page reads local files; this is the one part
+   * of the lap database that is inherently about other people, so it is the one
+   * part that needs an account and a connection.
+   *
+   * The filter list is derived from what the boards ACTUALLY hold
+   * (`leaderboard_filters`), never from a hardcoded track list. Offering a
+   * dropdown of 31 circuits when three have laps on them is the fastest way to
+   * make a working feature look broken.
+   */
+
+  /** Every (track, class, car) combination with laps, as returned by the RPC. */
+  let boardFilters = [];
+  /** The current selection. `car` empty means "All cars". */
+  let boardPick = { trackId: '', carClass: '', car: '' };
+  /** Guards against an older request overwriting a newer one. */
+  let boardRequest = 0;
+
+  function uniqueBy(rows, key) {
+    const seen = new Map();
+    for (const r of rows) if (!seen.has(r[key])) seen.set(r[key], r);
+    return [...seen.values()];
+  }
+
+  /** Rebuild the three controls from `boardFilters`, preserving the selection. */
+  function renderBoardFilters() {
+    const trackSel = $('#board-track');
+    const clsWrap = $('#board-classes');
+    const carSel = $('#board-car');
+    if (!trackSel || !clsWrap || !carSel) return;
+
+    // --- Track ---
+    const tracks = uniqueBy(boardFilters, 'track_id').sort((a, b) =>
+      String(a.track_name).localeCompare(String(b.track_name)),
+    );
+    if (!tracks.some((t) => t.track_id === boardPick.trackId)) {
+      boardPick.trackId = tracks.length ? tracks[0].track_id : '';
+    }
+    trackSel.textContent = '';
+    for (const t of tracks) {
+      const opt = document.createElement('option');
+      opt.value = t.track_id;
+      opt.textContent = t.track_name;
+      opt.selected = t.track_id === boardPick.trackId;
+      trackSel.append(opt);
+    }
+    trackSel.disabled = tracks.length === 0;
+
+    // --- Class: only the classes that have laps AT the chosen track ---
+    const atTrack = boardFilters.filter((f) => f.track_id === boardPick.trackId);
+    const classes = [...new Set(atTrack.map((f) => f.car_class))].sort();
+    if (!classes.includes(boardPick.carClass)) boardPick.carClass = classes[0] || '';
+    clsWrap.textContent = '';
+    for (const cls of classes) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'clschip';
+      btn.textContent = cls;
+      btn.setAttribute('data-active', String(cls === boardPick.carClass));
+      btn.addEventListener('click', () => {
+        boardPick.carClass = cls;
+        // The car list belongs to the class, so a class change invalidates it.
+        boardPick.car = '';
+        renderBoardFilters();
+        refreshBoard();
+      });
+      clsWrap.append(btn);
+    }
+
+    // --- Car: only cars that have laps in the chosen track AND class ---
+    const cars = [
+      ...new Set(atTrack.filter((f) => f.car_class === boardPick.carClass).map((f) => f.car)),
+    ]
+      .filter(Boolean)
+      .sort();
+    if (boardPick.car && !cars.includes(boardPick.car)) boardPick.car = '';
+    carSel.textContent = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All cars';
+    all.selected = !boardPick.car;
+    carSel.append(all);
+    for (const car of cars) {
+      const opt = document.createElement('option');
+      opt.value = car;
+      opt.textContent = car;
+      opt.selected = car === boardPick.car;
+      carSel.append(opt);
+    }
+    // One car and no alternative is not a choice; leave it visible but inert
+    // rather than offering a filter that cannot change anything.
+    carSel.disabled = cars.length < 2;
+  }
+
+  function renderBoard(result) {
+    const list = $('#board-list');
+    const empty = $('#board-empty');
+    if (!list || !empty) return;
+    list.textContent = '';
+
+    const rows = (result && result.rows) || [];
+    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
+    setText(
+      '#board-title',
+      boardPick.carClass && track
+        ? `${boardPick.carClass} · ${track.track_name}`
+        : 'Leaderboard',
+    );
+    setText(
+      '#board-count',
+      rows.length ? `${rows.length} driver${rows.length === 1 ? '' : 's'}` : '',
+    );
+
+    if (!result || !result.ok) {
+      empty.hidden = false;
+      empty.textContent =
+        (result && result.error) || 'The league boards could not be reached.';
+      return;
+    }
+    if (!rows.length) {
+      empty.hidden = false;
+      empty.textContent =
+        'No laps on this board yet. Drive a clean lap here and it will appear.';
+      return;
+    }
+    empty.hidden = true;
+
+    for (const row of rows) {
+      const li = document.createElement('li');
+      li.className = 'lbrow lbrow--board';
+      // The kit marks your own row rather than only your position card: on a
+      // board of names, finding yourself is the first thing anyone does.
+      li.setAttribute('data-you', String(!!row.is_you));
+
+      const pos = document.createElement('span');
+      pos.className = 'lbrow__pos';
+      pos.textContent = String(row.rank);
+
+      const driver = document.createElement('span');
+      driver.className = 'lbrow__driver';
+      // createElement, never innerHTML: display names are user-supplied.
+      driver.textContent = row.is_you ? 'You' : row.display_name || 'Driver';
+      driver.title = row.display_name || '';
+
+      const car = document.createElement('span');
+      car.className = 'lbrow__car';
+      car.textContent = row.car || '';
+      car.title = row.car || '';
+
+      const lap = document.createElement('span');
+      lap.className = 'lbrow__time';
+      // P1 gets the kit's purple: it is the quickest in a genuinely comparable
+      // set, which is the one place that highlight means anything.
+      if (row.rank === 1) lap.setAttribute('data-fastest', 'true');
+      lap.textContent = formatLapTime(row.lap_ms);
+
+      const gap = document.createElement('span');
+      gap.className = 'lbrow__gap';
+      gap.textContent =
+        typeof row.gap_ms === 'number' ? `+${(row.gap_ms / 1000).toFixed(3)}` : '—';
+
+      li.append(pos, driver, car, lap, gap);
+      list.append(li);
+    }
+  }
+
+  function refreshBoard() {
+    if (!boardPick.trackId || !boardPick.carClass) {
+      renderBoard({ ok: true, rows: [] });
+      return;
+    }
+    const ticket = ++boardRequest;
+    window.apex
+      .leaderboardRows({ ...boardPick })
+      .then((res) => {
+        // A slow request for a board you have already navigated away from must
+        // not paint over the one you are looking at.
+        if (ticket === boardRequest) renderBoard(res);
+      })
+      .catch(() => {
+        if (ticket === boardRequest) renderBoard(null);
+      });
+  }
+
+  function refreshBoardFilters() {
+    return window.apex
+      .leaderboardFilters()
+      .then((res) => {
+        if (!res || !res.ok) {
+          boardFilters = [];
+          renderBoardFilters();
+          renderBoard(res);
+          return;
+        }
+        boardFilters = res.rows || [];
+        renderBoardFilters();
+        refreshBoard();
+      })
+      .catch(() => {
+        boardFilters = [];
+        renderBoardFilters();
+        renderBoard(null);
+      });
+  }
+
+  {
+    const trackSel = $('#board-track');
+    if (trackSel) {
+      trackSel.addEventListener('change', () => {
+        boardPick.trackId = trackSel.value;
+        // Class and car both belong to the track; carrying them across would
+        // ask for a board that has no laps on it.
+        boardPick.carClass = '';
+        boardPick.car = '';
+        renderBoardFilters();
+        refreshBoard();
+      });
+    }
+    const carSel = $('#board-car');
+    if (carSel) {
+      carSel.addEventListener('change', () => {
+        boardPick.car = carSel.value;
+        refreshBoard();
+      });
+    }
   }
 
   // --- Lap sync ------------------------------------------------------------
@@ -1539,7 +1835,10 @@
       refreshWeek();
       refreshPace();
     }
-    if (target === 'leaderboard') refreshPace();
+    if (target === 'leaderboard') {
+      refreshPace();
+      refreshBoardFilters();
+    }
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
