@@ -587,6 +587,11 @@ export class RF2Provider implements TelemetryProvider {
       totalRaceLaps: maxLaps > 0 ? maxLaps : 0,
       timeRemainingSec: timeRemaining,
       avgLapTimeSec: playerBest > 0 ? playerBest : 90,
+      isRace: mapSessionType(sessionCode) === 'race',
+      inPit:
+        playerScoringOff >= 0 &&
+        (scoring.readUInt8(playerScoringOff + VS.mInPits) !== 0 ||
+          scoring.readUInt8(playerScoringOff + VS.mInGarageStall) !== 0),
     });
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);

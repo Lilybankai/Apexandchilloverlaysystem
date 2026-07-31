@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.44.1 — 2026-07-31
+
+### Fixed
+
+- **The margin at the flag is no longer computed in sessions that have no flag.** In
+  practice the widget read `MARGIN −199.9 %` in the colour it reserves for a real
+  emergency, on a car with a dozen good laps in the tank. It was doing the arithmetic
+  honestly: two and three quarter hours of practice at ninety seconds a lap is 109 laps,
+  109 laps is 240 L, and the tank had 26. But nobody drives a practice session to zero on
+  one tank, so the finish it was measuring against did not exist. Practice, qualifying,
+  warmup and test day now leave laps-to-the-flag, fuel-to-finish, the margin and
+  refuel-to-finish blank; a race projects them exactly as before. What is actually in the
+  car — burn rate, laps of range, both gauges and the pit alarm — is unchanged, because
+  those are true in any session.
+
+- **Laps in and out of the pits no longer count towards the burn rate.** An out-lap starts
+  from a standstill in the box and rejoins part way round; an in-lap ends at the limiter.
+  Either can be half a green lap's consumption, and both were being averaged in, which is
+  where a half-lap disagreement with the car's own NRG readout came from — measured live
+  against LMU's dash on the same frame, and against the sim's own per-lap consumption log,
+  which flags exactly these laps. The rolling average now skips them, on both budgets and
+  on both providers. A *requested* stop is deliberately not counted: a driver asks for the
+  box laps before they take it, and those are green laps — the last ones before the stop,
+  which are the ones the average most needs.
+
 ## 0.44.0 — 2026-07-31
 
 ### Added

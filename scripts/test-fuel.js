@@ -347,5 +347,71 @@ console.log('\n16) Attaching part way round does not shrink the burn rate');
     Math.abs(finalPerLap(frames) - 2.2) < 0.25, 'perLap=' + finalPerLap(frames));
 }
 
+/* ---------------------------------------------------------------------------
+ * 17-18) Matching the car's own dash.
+ *
+ * Both cases below came from holding the widget up against LMU's in-car fuel /
+ * NRG readout on the same frame and asking why the two disagreed.
+ * ------------------------------------------------------------------------- */
+
+console.log('\n17) A lap through the pit lane is not a lap of burn');
+{
+  const c = new FuelCalculator();
+  const green = drive(c, { laps: 4, burn: 2.2, startFuel: 60, capacity: 83 });
+  check('green laps measure normally', Math.abs(finalPerLap(green) - 2.2) < 0.05,
+    'perLap=' + finalPerLap(green));
+  // The in-lap. Same lap of road, but driven to a pit box: half of it at the
+  // limiter, so it burns half what a green lap burns. Averaged in, it says the
+  // car has range it does not have — and the sim's own consumption log flags
+  // exactly these laps, which is why its dash never showed them.
+  let fuel = 51.2;
+  for (let i = 0; i < FRAMES; i++) {
+    c.update({
+      currentFuelLiters: fuel, capacityLiters: 83, lapsCompleted: 4,
+      totalRaceLaps: 0, timeRemainingSec: -1, avgLapTimeSec: 90,
+      lapFraction: i / FRAMES, inPit: i > FRAMES * 0.9,
+    });
+    fuel -= 1.1 / FRAMES;
+  }
+  const after = c.update({
+    currentFuelLiters: fuel, capacityLiters: 83, lapsCompleted: 5,
+    totalRaceLaps: 0, timeRemainingSec: -1, avgLapTimeSec: 90,
+    lapFraction: 0, inPit: true,
+  });
+  check('the pit lap never enters the average', Math.abs(after.perLapAvgLiters - 2.2) < 0.05,
+    'perLap=' + after.perLapAvgLiters);
+}
+
+console.log('\n18) A practice clock is not a distance to be covered');
+{
+  // 2h43m of practice left, ninety-second laps: project it and the car is a
+  // hundred laps and two hundred litres short of a "finish" nobody is driving
+  // to. That is the −199.9 % margin the widget showed in red, sitting over a
+  // tank with a dozen good laps in it.
+  const at = (isRace) => {
+    const c = new FuelCalculator();
+    c.seedPerLap(2.2);
+    return c.update({
+      currentFuelLiters: 26.3, capacityLiters: 83, lapsCompleted: 3,
+      totalRaceLaps: 0, timeRemainingSec: 9809, avgLapTimeSec: 90,
+      lapFraction: 0, isRace,
+    });
+  };
+  const prac = at(false), race = at(true);
+  check('practice has no laps to the flag', prac.lapsToFinish === -1,
+    'lapsToFinish=' + prac.lapsToFinish);
+  check('…so nothing is projected to one',
+    prac.fuelToFinishLiters === -1 && prac.fuelDeltaLiters === -1,
+    'toFinish=' + prac.fuelToFinishLiters + ' margin=' + prac.fuelDeltaLiters);
+  check('…and refuel-to-finish reads unknown, not a confident zero',
+    prac.refuelToFinishLiters === -1, 'refuel=' + prac.refuelToFinishLiters);
+  check('the same clock in a race still projects',
+    race.lapsToFinish > 100 && race.fuelDeltaLiters < 0,
+    'lapsToFinish=' + race.lapsToFinish + ' margin=' + race.fuelDeltaLiters);
+  check('what is in the tank is true in either session',
+    prac.lapsRemaining === race.lapsRemaining && prac.lapsRemaining > 11,
+    'lapsRemaining=' + prac.lapsRemaining);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

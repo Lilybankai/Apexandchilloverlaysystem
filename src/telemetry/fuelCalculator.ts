@@ -35,6 +35,39 @@ export interface FuelUpdate {
   /** Reference lap time in seconds, used to convert remaining time → laps. */
   avgLapTimeSec: number;
   /**
+   * Whether this session is one the car is required to reach the end of — i.e.
+   * a race.
+   *
+   * Everything "to the finish" (laps still to run, fuel to finish, the margin at
+   * the flag, refuel-to-finish) only means something when there IS a flag to
+   * reach. A practice or qualifying session has a clock, but nobody runs it to
+   * zero on one tank: projecting it says a driver sitting on a full load is
+   * "−190% short", which is arithmetically true of a two-and-a-half hour stint
+   * nobody is going to drive and reads as an emergency in the one colour the
+   * widget reserves for real ones. `false` leaves those figures unknown and the
+   * widget blanks them; the tank-side numbers — burn rate, laps of range, the
+   * pit alarm — are unaffected, because those are true in any session.
+   *
+   * Defaults to `true` (project) when omitted, which is the historical
+   * behaviour and the right answer for a caller that only ever runs races.
+   */
+  isRace?: boolean;
+  /**
+   * Whether the car is in the pit lane or its garage stall right now.
+   *
+   * A lap that touched the pits is not a measurement of how the car burns fuel:
+   * the out-lap starts from a standstill in the box and rejoins part way round,
+   * the in-lap ends with a pit-limiter crawl, and either can be a third of a
+   * lap's worth of consumption away from a green one. LMU flags exactly these
+   * laps in its own consumption log, and the average it shows on the dash reads
+   * as if they were left out — ours was dragged around by them, which is where a
+   * half-lap disagreement with the car's own display came from.
+   *
+   * Omitted (or {@link UNKNOWN_VALUE}-shaped) leaves every lap eligible, which
+   * is the historical behaviour.
+   */
+  inPit?: boolean;
+  /**
    * How far round the current lap the car is, `0..1`. Required for
    * {@link FuelState.pitThisLap} — "can I get round again" depends on how much
    * of this lap is still to pay for. {@link UNKNOWN_VALUE} (or omitted) when the
@@ -253,6 +286,12 @@ export class FuelCalculator {
     }
     this.lastFuel = fuel;
 
+    // A lap that touched the pit lane is not a lap of driving — see
+    // {@link FuelUpdate.inPit}. Set here rather than only at the line so it
+    // catches the whole lap: entering the pits on the way in, and still being in
+    // the box on the way out.
+    if (u.inPit === true) this.lapDirty = true;
+
     // --- lap-boundary detection -> record per-lap burn ------------------
     let crossedLine = false;
     if (this.lastLapsCompleted === UNKNOWN_VALUE) {
@@ -303,7 +342,10 @@ export class FuelCalculator {
     const fuelToFinish =
       perLap > 0 && lapsToFinish !== UNKNOWN_VALUE ? lapsToFinish * perLap : UNKNOWN_VALUE;
     const fuelDelta = fuelToFinish !== UNKNOWN_VALUE ? fuel - fuelToFinish : UNKNOWN_VALUE;
-    const refuel = fuelDelta !== UNKNOWN_VALUE ? Math.max(0, -fuelDelta) : 0;
+    // Unknown rather than zero: "add nothing" and "there is no finish to add for"
+    // are different answers, and a flat `Refuel +0.0 L` in a practice session is
+    // the first one given to the second question.
+    const refuel = fuelDelta !== UNKNOWN_VALUE ? Math.max(0, -fuelDelta) : UNKNOWN_VALUE;
 
     const state: FuelState = {
       levelLiters: round1(fuel),
@@ -313,7 +355,7 @@ export class FuelCalculator {
       lapsToFinish,
       fuelToFinishLiters: fuelToFinish !== UNKNOWN_VALUE ? round1(fuelToFinish) : UNKNOWN_VALUE,
       fuelDeltaLiters: fuelDelta !== UNKNOWN_VALUE ? round1(fuelDelta) : UNKNOWN_VALUE,
-      refuelToFinishLiters: round1(refuel),
+      refuelToFinishLiters: refuel !== UNKNOWN_VALUE ? round1(refuel) : UNKNOWN_VALUE,
     };
 
     // Pit window: earliest lap by which the tank runs dry — i.e. the last lap
@@ -403,8 +445,13 @@ export class FuelCalculator {
   /**
    * Laps still required to reach the finish. Uses the lap count directly for a
    * lap race, or estimates from remaining time and lap pace for a timed race.
+   *
+   * Answers "unknown" outside a race: practice and qualifying have a clock, but
+   * it is not a distance anyone is required to cover on one tank, so projecting
+   * it invents a target — see {@link FuelUpdate.isRace}.
    */
   private lapsToFinish(u: FuelUpdate): number {
+    if (u.isRace === false) return UNKNOWN_VALUE;
     if (u.totalRaceLaps > 0) {
       return Math.max(0, u.totalRaceLaps - u.lapsCompleted);
     }

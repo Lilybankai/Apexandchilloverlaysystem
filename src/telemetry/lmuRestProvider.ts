@@ -1404,9 +1404,12 @@ export class LmuRestProvider implements TelemetryProvider {
       this.fuel.reset();
       this.energyCalc.reset();
     }
+    // Only a race has a finish to run to; see {@link FuelUpdate.isRace}.
+    const isRace = session.type === 'race';
+
     // Virtual energy is a property of the focused car (it comes from that car's
     // own REST record), so it keeps the focused car's position.
-    const energy = this.buildEnergy(focus, session, cars, fracOf(focus));
+    const energy = this.buildEnergy(focus, session, cars, fracOf(focus), isRace);
 
     // Prefer the locally-driven car's real litres from shared memory: gives the
     // full fuel widget (per-lap, to-finish, margin) instead of laps-only.
@@ -1419,6 +1422,11 @@ export class LmuRestProvider implements TelemetryProvider {
         timeRemainingSec: session.timeRemainingSec,
         avgLapTimeSec: focus && focus.bestLapTime > 0 ? focus.bestLapTime : 90,
         lapFraction: fracOf(playerCar),
+        isRace,
+        // The litres come from the DRIVEN car, so it is that car's pit state
+        // that says whether this lap is a measurement — the focused car may be
+        // someone else's, sitting in their own box.
+        inPit: playerCar !== undefined && isOnPitLane(playerCar),
       });
       return this.withPitCall(
         { ...s, ...energy },
@@ -1457,6 +1465,8 @@ export class LmuRestProvider implements TelemetryProvider {
       timeRemainingSec: session.timeRemainingSec,
       avgLapTimeSec: avgLap,
       lapFraction: fracOf(focus),
+      isRace,
+      inPit: focus !== undefined && isOnPitLane(focus),
     });
     // Keep the unit-independent numbers; blank the litre-denominated ones since
     // we don't know the tank size for a spectated car.
@@ -1506,6 +1516,7 @@ export class LmuRestProvider implements TelemetryProvider {
     session: SessionState,
     cars: RestStanding[],
     lapFraction: number,
+    isRace: boolean,
   ): Partial<
     Pick<
       FuelState,
@@ -1530,6 +1541,8 @@ export class LmuRestProvider implements TelemetryProvider {
       timeRemainingSec: session.timeRemainingSec,
       avgLapTimeSec: avgLap,
       lapFraction,
+      isRace,
+      inPit: isOnPitLane(focus),
     });
     const out: Partial<
       Pick<
@@ -2137,6 +2150,28 @@ function pitPhase(c: RestStanding, speedKph: number): PitPhase {
   }
   if (c.pitting === true || c.inGarageStall === true) return stationary ? 'stopped' : 'entering';
   return 'none';
+}
+
+/**
+ * Whether the car is physically on the pit lane (or in its box) right now —
+ * which is what makes the lap it is on unusable as a measurement of burn.
+ *
+ * Deliberately NOT {@link isInPit}: that one counts a *requested* stop as being
+ * in the pits, which is right for "is this car about to stop" but wrong here. A
+ * driver requests the stop laps before they take it, and those are green laps —
+ * the last green laps before the stop, the ones the burn average most needs.
+ */
+function isOnPitLane(c: RestStanding): boolean {
+  const raw = typeof c.pitState === 'string' ? c.pitState.trim().toUpperCase() : '';
+  return (
+    c.pitting === true ||
+    c.inGarageStall === true ||
+    raw === 'ENTERING' ||
+    raw === 'ENTER' ||
+    raw === 'STOPPED' ||
+    raw === 'EXITING' ||
+    raw === 'EXIT'
+  );
 }
 
 function isInPit(c: RestStanding): boolean {
