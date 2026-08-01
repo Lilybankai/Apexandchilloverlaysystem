@@ -43,7 +43,12 @@
       </button>
       <button class="tab" type="button" data-tab="suggestions">
         <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
-        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
+      </button>
+      <!-- League staff only. Hidden until admin:whoami confirms this account is
+           an admin — the server-side RPCs authorise every read regardless, so
+           the hidden attribute is convenience, not the security boundary. -->
+      <button class="tab" type="button" data-tab="admin" id="admin-tab" hidden>
+        <svg class="icon"><use href="#i-shield" /></svg><span class="tab__label">Admin</span>
       </button>
     </nav>
 
@@ -636,45 +641,142 @@
     <!-- ======================== SUGGESTIONS =========================== -->
     <section class="view" data-view="suggestions">
       <div class="wrap">
-        <div class="soon">
-          <span class="soon__icon"><svg class="icon"><use href="#i-message-square-plus" /></svg></span>
-          <h2 class="soon__title">Suggestions — coming soon</h2>
-          <p class="soon__desc">
-            Send an idea straight from the app, vote on what others have asked
-            for, and see what is already in progress.
-          </p>
-        </div>
-        <div class="soon__label">Until then</div>
-        <div class="ovgrid">
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-message-square-plus" /></svg></span>
-              <span class="ovcard__name">Tell Carl</span>
-            </div>
-            <p class="ovcard__desc">Ideas go through the league's usual channels for now.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-arrow-up" /></svg></span>
-              <span class="ovcard__name">Voting</span>
-            </div>
-            <p class="ovcard__desc">Popular ideas will go straight onto the roadmap.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-sparkles" /></svg></span>
-              <span class="ovcard__name">Status</span>
-            </div>
-            <p class="ovcard__desc">Planned, in progress or shipped, per idea.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-check" /></svg></span>
-              <span class="ovcard__name">Shipped list</span>
-            </div>
-            <p class="ovcard__desc">What went in, and which release it landed in.</p>
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Suggestions</h1>
+            <p class="view__sub">
+              Send an idea or report a bug straight from the app. It goes to the
+              league with your app version attached, so we can see it in context.
+            </p>
           </div>
         </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-message-square-plus" /></svg>Send feedback</h2>
+          </div>
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field__label">Type</span>
+              <select class="field__input" id="fb-kind">
+                <option value="idea">Idea / feature request</option>
+                <option value="bug">Bug report</option>
+                <option value="other">Something else</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field__label">Message</span>
+              <textarea class="field__input" id="fb-message" rows="5"
+                        placeholder="What would you like to see, or what went wrong?"></textarea>
+              <span class="field__hint">Signed in only — so we can follow up if we need to.</span>
+            </label>
+            <div class="field">
+              <button class="btn btn--accent" id="fb-submit" type="button">
+                <svg class="icon"><use href="#i-send" /></svg> Send
+              </button>
+              <span class="field__hint" id="fb-status" data-state="idle"></span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ========================== ADMIN =============================== -->
+    <!-- League staff only. Every number here comes from a server-side RPC that
+         checks is_admin; the tab is hidden for everyone else. -->
+    <section class="view" data-view="admin">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Admin</h1>
+            <p class="view__sub">
+              Who is using the overlay system, how often, and what they are asking
+              for. League staff only.
+            </p>
+          </div>
+          <button class="btn btn--ghost btn--sm" id="admin-refresh" type="button">Refresh</button>
+        </div>
+
+        <p class="admin-msg" id="admin-msg" hidden></p>
+
+        <!-- Usage headline tiles -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-users" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Active today</span>
+                <span class="stat__value" id="adm-active-today">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-active-week"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-activity" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Active this month</span>
+                <span class="stat__value" id="adm-active-month">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-sessions-week"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-user" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Total accounts</span>
+                <span class="stat__value" id="adm-total-users">—</span>
+              </span>
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-inbox" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">New feedback</span>
+                <span class="stat__value" id="adm-new-feedback">—</span>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <!-- Active users, last 14 days -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-activity" /></svg>Active users · 14 days</h2>
+            </div>
+            <div class="weekchart" id="adm-daily-chart"></div>
+            <p class="weekempty" id="adm-daily-empty" hidden>No sessions recorded yet.</p>
+          </section>
+
+          <!-- Version adoption -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-database" /></svg>Version · last 30 days</h2>
+            </div>
+            <ul class="admin-bars" id="adm-versions"></ul>
+            <p class="weekempty" id="adm-versions-empty" hidden>No version data yet.</p>
+          </section>
+        </div>
+
+        <!-- Feedback inbox -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-inbox" /></svg>Feedback inbox</h2>
+            <select class="field__input field__input--inline" id="adm-fb-filter">
+              <option value="">All statuses</option>
+              <option value="new">New</option>
+              <option value="planned">Planned</option>
+              <option value="in_progress">In progress</option>
+              <option value="done">Done</option>
+              <option value="declined">Declined</option>
+            </select>
+          </div>
+          <ul class="admin-inbox" id="adm-feedback-list"></ul>
+          <p class="weekempty" id="adm-feedback-empty" hidden>No feedback matches this filter.</p>
+        </section>
       </div>
     </section>
 

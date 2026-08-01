@@ -154,6 +154,32 @@ contextBridge.exposeInMainWorld('apex', {
     },
   },
 
+  /* ---- Feedback (Suggestions tab) ----
+   *
+   * Anyone signed in can file one. Like the leaderboard reads, this hits the
+   * league database, so it can come back `{ ok: false, signedOut }` — a state,
+   * not an error. */
+  feedback: {
+    /** File one suggestion/bug: `{ kind, message }` → `{ ok, id?, signedOut?, error? }`. */
+    submit: (payload) => ipcRenderer.invoke('feedback:submit', payload),
+  },
+
+  /* ---- Admin panel ----
+   *
+   * League-staff only. Every call is authorised server-side (the RPCs check
+   * is_admin), so a non-admin gets `{ ok: false }` and the renderer simply never
+   * shows the tab. Handled in the main process like every other Supabase call. */
+  admin: {
+    /** Is the signed-in driver an admin? `{ ok, isAdmin }`. Decides the tab. */
+    whoami: () => ipcRenderer.invoke('admin:whoami'),
+    /** Headline usage numbers: `{ ok, data, signedOut?, error? }`. */
+    overview: () => ipcRenderer.invoke('admin:overview'),
+    /** The feedback inbox: `{ status? }` → `{ ok, rows[], signedOut?, error? }`. */
+    feedback: (query) => ipcRenderer.invoke('admin:feedback', query),
+    /** Triage one item: `{ id, status }` → `{ ok, error? }`. */
+    setFeedbackStatus: (payload) => ipcRenderer.invoke('admin:setFeedbackStatus', payload),
+  },
+
   /* ---- Streaming chat linking (YouTube + Twitch) ----
    *
    * Twitch is read anonymously, so linking it is only a channel name. YouTube's

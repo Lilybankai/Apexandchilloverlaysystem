@@ -761,3 +761,69 @@ html, body {
   gap: 10px;
   margin-top: 12px;
 }
+
+/* --- Suggestions form ----------------------------------------------------- */
+/* The message box is the one field that wants to be wide, so it overrides the
+   narrow default width the numeric settings inputs use. */
+#fb-message {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.4;
+}
+#fb-kind { width: 220px; }
+#fb-status[data-state="ok"] { color: var(--cyan); }
+#fb-status[data-state="error"] { color: var(--danger, #ff6b6b); }
+
+/* --- Admin panel ---------------------------------------------------------- */
+.admin-msg {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* A select that sits inline in a card header (the inbox status filter). */
+.field__input--inline { width: auto; margin-left: auto; }
+
+/* Version-adoption bars: a label, a proportional track, and a count. */
+.admin-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.admin-bars__row { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 10px; }
+.admin-bars__label { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+.admin-bars__track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.admin-bars__fill { display: block; height: 100%; border-radius: 999px; background: var(--grad); }
+.admin-bars__count { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+
+/* Feedback inbox: one row per item, with a kind badge, the message, and a
+   status control. */
+.admin-inbox { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.admin-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.admin-item__badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.admin-item__badge[data-kind="bug"] { color: #ff9d6b; border-color: #ff9d6b55; }
+.admin-item__badge[data-kind="idea"] { color: var(--cyan); border-color: var(--cyan); }
+.admin-item__msg { min-width: 0; }
+.admin-item__text { margin: 0; font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.admin-item__meta { margin: 4px 0 0; font-size: 11px; color: var(--text-3); }
+.admin-item__status { width: 130px; }
