@@ -737,8 +737,35 @@ one normalized message shape, so the widget stays a thin, XSS-safe renderer.
   which runs the sign-in in the main process, finds your active broadcast's live
   chat, and keeps the token fresh — no token ever reaches the browser. For a
   standalone server you can instead supply `APEX_YT_LIVE_CHAT_ID` and a valid
-  `APEX_YT_TOKEN` directly. (Linking in the app requires a Google OAuth client;
-  set `APEX_GOOGLE_CLIENT_ID` / `APEX_GOOGLE_CLIENT_SECRET` for the build.)
+  `APEX_YT_TOKEN` directly.
+
+#### Setting up YouTube linking (Google OAuth client)
+
+The one-click *Link YouTube* button needs a Google OAuth **Desktop app** client.
+This is a one-time setup for whoever builds the app — end users never see it,
+they just click *Link YouTube* and sign in. Twitch needs none of this.
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and
+   create (or pick) a project.
+2. **APIs & Services → Library →** enable the **YouTube Data API v3**.
+3. **APIs & Services → OAuth consent screen** — configure it (External is fine),
+   and add the scope `.../auth/youtube.readonly`. While the app is in *Testing*,
+   add each streamer's Google account under **Test users** (or *Publish* the
+   consent screen so anyone can link).
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID →
+   Application type: _Desktop app_.** Google issues a client id and a client
+   secret. For a desktop app neither is confidential — the flow uses PKCE and a
+   loopback redirect (`http://127.0.0.1:<random-port>/callback`), which is
+   registered automatically, so there is nothing else to configure.
+5. Provide the two values to the app via `APEX_GOOGLE_CLIENT_ID` and
+   `APEX_GOOGLE_CLIENT_SECRET` (env vars, or bake them into your build). Until
+   they are set, the control panel shows *"YouTube linking isn't available on
+   this build"* and only the Twitch field appears — Twitch never depends on this.
+
+**Quota note:** reading live chat costs ~5 units per poll against the default
+10,000 units/day, and the widget obeys the API's own `pollingIntervalMillis`
+(≈5 s) rather than polling harder — enough for several hours of streaming a day.
+If you run long every day, request a quota increase for the project.
 
 ## Project layout
 
