@@ -308,6 +308,78 @@ acc.push(WARNING);
 check('a verdict with no breakdown charges nothing', acc.state().points === 0, acc.state().points);
 check('…and is not an incident', acc.state().charged === 0, acc.state().charged);
 
+/* ------------------------- the charge history ------------------------------ */
+
+// What the widget's strip is built from: the last few charges, newest first, so a
+// driver can see that three 0.25s is one kerb being clipped every lap rather than
+// three separate mistakes. The running total alone cannot tell those apart.
+console.log('\nthe charge history');
+
+acc = new TraceLimitsAccumulator();
+check('no charges to begin with', acc.state().charges.length === 0);
+check('…and nothing to compare against', acc.state().chargeSeq === 0, acc.state().chargeSeq);
+
+acc.push(WARNING);
+acc.push(SCORED_050);
+acc.push(WARNING);
+acc.push(SCORED_100);
+check('charges land newest first', acc.state().charges.join(',') === '1,0.5',
+  acc.state().charges.join(','));
+check('…one sequence step each', acc.state().chargeSeq === 2, acc.state().chargeSeq);
+
+// The provisional evaluation must not reach the strip either — it would show a
+// driver a 1.00 for a cut the stewards went on to charge 0.25 for.
+acc.push(OFF_TRACK);
+acc.push(BACK_ON);
+acc.push(SCORED_100);
+check('a provisional evaluation is not on the strip', acc.state().charges.length === 2,
+  acc.state().charges.join(','));
+check('…and does not advance the sequence', acc.state().chargeSeq === 2, acc.state().chargeSeq);
+
+// Capped: the strip shows a handful, and a long session must not accumulate an
+// unbounded array on a per-frame broadcast object.
+acc = new TraceLimitsAccumulator();
+for (let i = 0; i < 8; i++) {
+  acc.push(WARNING);
+  acc.push(SCORED_050);
+}
+check('the history is capped', acc.state().charges.length === 5, acc.state().charges.length);
+check('…keeping the newest', acc.state().charges.join(',') === '0.5,0.5,0.5,0.5,0.5');
+check('…while the sequence keeps counting', acc.state().chargeSeq === 8, acc.state().chargeSeq);
+
+// A discharge starts the whole account again — a strip still showing 1.00 beside a
+// total that had gone back to zero would contradict itself.
+acc = new TraceLimitsAccumulator();
+acc.push(WARNING);
+acc.push(SCORED_100);
+check('charged before the discharge', acc.state().charges.length === 1);
+acc.push(PEN_TRACK_LIMITS);
+check('a track-limits penalty clears the strip', acc.state().charges.length === 0,
+  acc.state().charges.join(','));
+
+// …but a pit-lane speeding penalty is not a track-limits one, and must leave it.
+acc = new TraceLimitsAccumulator();
+acc.push(WARNING);
+acc.push(SCORED_100);
+acc.push(PEN_PITLANE);
+check('a pit-lane penalty leaves the strip alone', acc.state().charges.join(',') === '1',
+  acc.state().charges.join(','));
+
+acc.push(SESSION_START);
+check('a new session clears the strip', acc.state().charges.length === 0);
+check('…and the sequence with it', acc.state().chargeSeq === 0, acc.state().chargeSeq);
+
+// The state object is handed straight to a broadcast frame, so its array must not
+// be the reader's own — a later charge would mutate a frame already published.
+acc = new TraceLimitsAccumulator();
+acc.push(WARNING);
+acc.push(SCORED_050);
+const snapshot = acc.state().charges;
+acc.push(WARNING);
+acc.push(SCORED_100);
+check('a published snapshot is not mutated by later charges',
+  snapshot.length === 1 && snapshot[0] === 0.5, snapshot.join(','));
+
 /* ---------------------- a freshly launched session ------------------------- */
 
 // The reader recorded nothing for the first ~2.7 hours of every session, because the

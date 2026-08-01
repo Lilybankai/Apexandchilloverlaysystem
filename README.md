@@ -53,10 +53,10 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   **OBS** (its Browser-Source URL, with copy and preview) and **In game** (the
   on-screen layer). A widget can be on in one and off in the other. The
   all-in-one page URL and the sponsor rotator live here too.
-- **Settings** (the gear, top right) — **Server** (port, update rate, demo mode,
-  track-limits threshold), **Appearance** (widget background, text size, radar car
-  size — all applying live), **Audio & feedback** (cues, volume, change glow) and
-  **Bindings** (keyboard and wheel).
+- **Settings** (the gear, top right) — **Server** (port, update rate, demo mode),
+  **Appearance** (widget background, text size, radar car size — all applying
+  live), **Audio & feedback** (cues, volume, change glow) and **Bindings**
+  (keyboard and wheel).
 - **Leaderboard** — the league's best clean laps, ranked, filtered by track, car
   class and car, with your own row marked; plus your pace against the class
   reference. See [Reference pace](#reference-pace) and
@@ -151,8 +151,8 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
   countdown once the crew is on the car (see below; LMU only)
 - **Radar** — a spotter's-eye strip of the cars around you, drawn to scale, plus
   the pit-release light (see below)
-- **Track limits** — excursions this session, the sim's own penalties, and how
-  much road you have left right now (see below)
+- **Track limits** — how much of the points allowance you have left, what each
+  cut cost you, and the sim's own penalties (see below)
 - **Tyre temps** — four-corner temperatures
 - **Weather forecast** — current + short forecast
 - **Fuel calculator** — per-lap use, laps remaining, fuel-to-finish, pit window
@@ -426,52 +426,52 @@ release is detected as the moment the stop *ends*, not as the arrival of the
 
 ### Track limits widget
 
-LMU judges track limits in **points**, not strikes, so this widget does too. Every
-infringement scores — the sim weighs how far off you went, whether you were on the
-throttle, and whether you were at the speed expected for that part of the track — and
-a drive-through is issued once the running total passes a threshold the *session*
-configures. A single infringement worth **3 points** is an instant drive-through on
-its own.
+LMU judges track limits in **points**, not strikes, and every number on this widget is
+the sim's own. The stewards charge each cut on the time it gained — quarter-points, so
+a wheel over the line is 0.25 and a cut that actually gained something is 1.00 — and a
+drive-through is issued once the running total reaches the session's allowance.
 
-- **POINTS** (the headline, amber) — the running total, with pips filling toward the
-  limit. Past it the row starts again in red.
-- **PEN** (a red chip) — penalties **the sim itself** has issued. Not our opinion.
-- A bar showing **how much road is left**, which is useful *before* the mistake.
+- **LEFT** (the headline) — how much of the allowance you have got left. It counts
+  **down**, because that is the number you act on: "1.75" says a couple more careless
+  kerbs and you are walking down the pit lane. In practice and qualifying, where LMU
+  invalidates the lap instead and lets the total run, it shows points **spent**.
+- A bar under it draining as the allowance goes, amber under half and red under a
+  fifth — so peripheral vision gets the answer without reading the number.
+- **CUTS** — what each of the last five cuts was charged: `0.25 · 0.5 · 1.0`. This is
+  the one that changes behaviour. Three 0.25s in a row is one kerb you are clipping
+  every lap and can fix by moving your line a foot; a single 1.00 is one mistake
+  already made.
+- **PEN** (a red chip) — penalties the sim has issued, named where it names them
+  (`DRIVE THRU`, `STOP/GO`), plus a green **PENALTY SERVED** when one is discharged.
 
-**Lift, and it costs you nothing.** This is the important part. LMU raises a Race
-Control notice the moment you are **at risk** and gives you a brief opportunity to
-slow down while the violation is calculated — lift inside that window and the
-infringement scores nothing.
-
-So the widget goes **LIFT** in amber and the audio cue fires **at the start of that
-window**, not when the points land: a tone announcing points already taken is telling
-you about something you can no longer do anything about. Lift and it flips to a green
-**SAVED** and the cue goes quiet — a prompt that keeps sounding after you have
-complied is how people learn to ignore prompts. The cue fires **once** per excursion,
-on the edge, not repeatedly while you are out there.
-
-A **negated** count tracks how many you have given back. It is the one encouraging
-number on the widget, and the one that tells you the lift is working.
+**The flash.** When the total goes up, the widget flashes yellow with the amount —
+`+0.25`, `+1` — for two seconds, and the audio cue fires once. That is the only thing
+that makes it shout, because it is the only thing on it you did not already know: you
+knew you ran wide; what you did not know is what the stewards charged you for it.
 
 | Param         | Shows                                              |
 | ------------- | -------------------------------------------------- |
 | `?limits=<n>` | Points limit, for a league running its own number   |
 
-**Tuning the threshold.** *Track limits threshold* in the control panel sets how far
-past the edge of the road your car has to be before it counts (0.5–5.0 m, applies
-live). The sim's own "edge" sits at or inside the white line, so **the kerb is
-already past it** — at the default **2.4 m** all four wheels are clear of the kerb
-before anything counts. Drop it toward **1.0 m** for the strict
-all-four-wheels-past-the-line reading.
+**Where the numbers come from, and the one catch.** LMU publishes neither its points
+nor its per-cut charges over REST or in shared memory — only the *consequence*,
+`mNumPenalties`, once a penalty has landed. It does write them to its own trace log,
+which the overlay tails (`src/telemetry/lmuTraceLimits.ts`); the reader was validated
+against a session-end results file, reproducing all thirteen of that race's charges in
+order and to the exact 5.00 that earned the drive-through. The catch is that the game
+flushes that log a block at a time, so a charge can reach you anywhere from a tenth of
+a second to **~25 s** after the cut. The total is right; sometimes it is right late.
+Full workings in [`docs/TRACK-LIMITS-POINTS.md`](docs/TRACK-LIMITS-POINTS.md).
 
-**What this is not.** LMU publishes neither its points nor its thresholds — not over
-REST, not in shared memory. (CrewChief falls back to its own heuristics for the same
-reason.) The only thing the sim exposes is the *consequence*, `mNumPenalties`, once a
-penalty has already landed. So the points here are derived from the car's lateral
-position and throttle, will not always match the sim's own tally, and are never added
-to the penalty count. Set the limit to match the figure your league publishes on the
-event page. The logic lives in `src/telemetry/trackLimits.ts` behind 68 headless
-assertions (`npm run test:tracklimits`).
+On plain rF2, which writes no such log, the widget shows the penalty count and says it
+cannot see a total rather than inventing one.
+
+> **Retired in v0.47.0.** Earlier versions reconstructed the points from the car's
+> lateral position against the track edge, with a tunable *Track limits threshold*, an
+> at-risk **LIFT** prompt and a "+1 POINT" callout. All of it existed because the real
+> numbers were unreachable; once they were not, an estimate sitting next to the
+> stewards' own figure and disagreeing with it was worse than no estimate. The
+> threshold slider and the `APEX_LIMITS_MARGIN` variable are gone with it.
 
 ### Audio cues
 
@@ -481,7 +481,7 @@ Settings card turn them down or off, and the Test button previews them.
 
 | Cue     | Sound                    | Fires when                        |
 | ------- | ------------------------ | --------------------------------- |
-| Limit   | one mid blip             | a track-limits warning is counted |
+| Limit   | one mid blip             | the stewards charge you for a cut |
 | Penalty | two descending low tones | the sim issues a penalty          |
 | Release | two rising tones         | the crew lets you go              |
 
@@ -655,14 +655,16 @@ fuel calculator on top of the REST timing. This is automatic and best-effort: no
 local car (pure spectating) simply means those come from REST (fuel) or stay
 empty (pedals).
 
-**Track limits on LMU:** also driven-car only, and also from shared memory —
-this time the **Scoring** buffer rather than the Telemetry one, since the three
-channels involved (`mPathLateral`, `mTrackEdge`, `mNumPenalties`) live there and
-LMU's REST feed carries none of them. `src/telemetry/lmuScoring.ts` reads just
-that one car's record; `scripts/probe-lmu-scoring.js` re-verifies the offsets
-against a running game, deriving the record stride from the data rather than
-trusting a header. Spectating omits the block entirely rather than reporting a
-clean sheet nobody earned.
+**Track limits on LMU:** also driven-car only, and from two sources at once. The
+**points** come from the game's trace log, the only place LMU publishes its
+stewarding live (`src/telemetry/lmuTraceLimits.ts`). The **penalty count** comes
+from shared memory — the **Scoring** buffer rather than the Telemetry one, since
+`mNumPenalties` lives there and LMU's REST feed carries no penalty detail;
+`src/telemetry/lmuScoring.ts` reads just that one car's record, and
+`scripts/probe-lmu-scoring.js` re-verifies the offsets against a running game,
+deriving the record stride from the data rather than trusting a header.
+Spectating omits the block entirely rather than reporting a clean sheet nobody
+earned.
 
 **Tyre temps on LMU:** available for the locally-driven car. LMU publishes the
 per-wheel `mTemperature[3]` bands (inner/centre/outer, in Kelvin) in shared
@@ -716,7 +718,6 @@ All settings are environment variables with lightweight defaults
 | `APEX_PANEL_OPACITY` | `100`     | Widget background opacity % (0 = none), 0–100 |
 | `APEX_AUDIO_CUES`  | `true`      | Play the synthesised audio cues                |
 | `APEX_AUDIO_VOLUME`| `60`        | Cue master volume % (0 = silent), 0–100        |
-| `APEX_LIMITS_MARGIN`| `2.4`      | Track-limits threshold, metres past the track edge, 0.5–5 |
 | `APEX_TWITCH_CHANNEL` | _(none)_ | Twitch channel for the Chat overlay (read anonymously — no login) |
 | `APEX_YT_LIVE_CHAT_ID` | _(none)_ | YouTube live-chat id for the Chat overlay (see below) |
 | `APEX_YT_TOKEN`    | _(none)_    | YouTube OAuth access token for the Chat overlay (see below) |
@@ -776,8 +777,9 @@ src/
     provider.ts          # TelemetryProvider interface
     simulatorProvider.ts # synthetic data for demos / dev
     rf2Provider.ts       # rF2/LMU shared-memory reader (falls back to simulator)
-    lmuScoring.ts        # LMU Scoring buffer: lateral position + the sim's penalties
-    trackLimits.ts       # excursion counting (hysteresis, guards) — unit-tested
+    lmuScoring.ts        # LMU Scoring buffer: the sim's own penalty count
+    lmuTraceLimits.ts    # LMU trace log: the stewards' track-limit points
+    trackLimits.ts       # penalty edges (issued / served) — unit-tested
     fuelCalculator.ts    # fuel/lap, laps remaining, fuel-to-finish, pit window
   server/
     config.ts            # runtime config (ports, update rate)

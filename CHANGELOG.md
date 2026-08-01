@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.48.0 — 2026-08-01
+
+### Changed
+
+- **The track-limits widget now shows only the stewards' own numbers.** The headline is
+  how much of the points allowance is **left**, counting down — "1.75" answers the
+  question a driver actually has, where "3.25 spent" needs arithmetic first. Under it, a
+  bar draining as the allowance goes — amber under half of it, red under a fifth — and a
+  **CUTS** strip listing what each of the last five cuts was charged: `0.25 · 0.5 · 1.0`.
+  That strip is the part that changes behaviour — three 0.25s in a row is one kerb being
+  clipped every lap and fixable by moving your line a foot; a single 1.00 is one mistake
+  already made, and the running total alone cannot tell those apart.
+
+  The widget now flashes for exactly one thing: the moment the total goes up, in yellow,
+  carrying the amount (`+0.25`, `+1`) for two seconds, with the audio cue. That is the
+  only event on it a driver has not already seen for themselves — you know you ran wide;
+  what you do not know is what it was charged. The flash is a pill in the corner rather
+  than the full-panel banner a penalty gets: the question a charge raises is "so where
+  does that leave me", and covering the answer to ask it would be perverse.
+
+  In practice and qualifying, where LMU invalidates the lap instead of spending the
+  allowance, the headline shows points spent and the bar is hidden — there is no
+  drive-through to count down to. On plain rF2, which writes no trace log, the widget
+  shows the penalty count and says it cannot see a total rather than inventing one.
+
+### Removed
+
+- **The geometric excursion detector, and everything built on it.** The overlay used to
+  reconstruct track-limit points from the car's lateral position against the track edge,
+  because nothing published LMU's real ones. Something does now — the trace reader added
+  in 0.44 was validated against a session-end results file, reproducing all thirteen of
+  that race's charges in order and to the exact 5.00 that earned the drive-through — and
+  an estimate sitting beside the stewards' own figure, disagreeing with it, is worse than
+  no estimate. It could never have been right in principle either: it scored on how far
+  off the road the car got, and the sim charges on time gained.
+
+  Gone with it: the **Track limits threshold** slider in the Control Panel's Server card
+  and the `APEX_LIMITS_MARGIN` environment variable (there is no threshold left to tune);
+  the at-risk **LIFT** / **SAVED** prompts; the "+1 POINT" callout; the metres-of-road-left
+  bar; and the `+?` pending marker. The lap log's clean/dirty flag now keys off the sim's
+  own charge count rather than our excursion count.
+
+  The one cost, stated plainly: the sim flushes its log a block at a time, so a charge can
+  reach the overlay anywhere from a tenth of a second to ~25 s after the cut. The total is
+  right; sometimes it is right late. Full workings in `docs/TRACK-LIMITS-POINTS.md`.
+
 ## 0.47.2 — 2026-08-01
 
 ### Fixed

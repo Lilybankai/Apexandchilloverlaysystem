@@ -124,7 +124,10 @@ const VS = {
   // track extends in that same direction — both metres, and both carrying the
   // SAME sign, so |lateral| > |edge| is the sim saying the car has left the
   // road. The only channels anywhere in the feed that describe where the road
-  // ends; see telemetry/trackLimits.ts for what is built on them.
+  // ends. Nothing reads them today: the track-limits widget was rebuilt on the
+  // sim's own charges (telemetry/lmuTraceLimits.ts) and the geometry estimate
+  // they fed was retired with it. Kept because this block is a map of the
+  // buffer, and these two are the hardest offsets in it to find again.
   mPathLateral: 112, // double
   mTrackEdge: 120, // double
   mBestLapTime: 144, // double
@@ -597,23 +600,15 @@ export class RF2Provider implements TelemetryProvider {
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
     const sessionPhase = mapSessionPhase(gamePhase);
-    // Track limits, from the player's own scoring record: how far off the path
-    // the car is against how far the road goes, plus the sim's own penalty
-    // count. Absent when the player has no scoring record (never on the live
-    // path, but the frame must not claim a clean sheet it hasn't checked).
+    // Track limits, from the player's own scoring record — here, the sim's
+    // penalty count and nothing else. The POINTS behind a penalty come from
+    // LMU's trace log, which plain rF2 does not write, so the widget shows the
+    // penalty and says it cannot see a total rather than inventing one. Absent
+    // entirely when the player has no scoring record (never on the live path,
+    // but the frame must not claim a clean sheet it hasn't checked).
     const trackLimits =
       playerScoringOff >= 0
         ? this.trackLimitsTracker.update({
-            pathLateralM: scoring.readDoubleLE(playerScoringOff + VS.mPathLateral),
-            trackEdgeM: scoring.readDoubleLE(playerScoringOff + VS.mTrackEdge),
-            speedKph,
-            // Unfiltered throttle: what the driver's foot is doing, which is
-            // what "did they lift" asks. The filtered channel would credit TC
-            // for a lift the driver never made.
-            throttle: clamp01(throttle),
-            inPit:
-              scoring.readUInt8(playerScoringOff + VS.mInPits) !== 0 ||
-              scoring.readUInt8(playerScoringOff + VS.mInGarageStall) !== 0,
             penalties: scoring.readInt16LE(playerScoringOff + VS.mNumPenalties),
             sessionKey: `${trackName}|${sessionCode}`,
             nowMs: Date.now(),

@@ -722,27 +722,11 @@
                 <span class="field__hint">Force simulated data (no sim / plugin needed)</span>
               </label>
 
-              <!-- Added in v0.22.0. It belongs with Server rather than
-                   Appearance: it retunes the server's own detection, not how a
-                   widget looks. -->
-              <label class="field">
-                <span class="field__label">Track limits threshold</span>
-                <div class="rate-row">
-                  <input class="field__range" id="limits-range" type="range" min="5" max="50" step="1" />
-                  <span class="rate-value"><span id="limits-echo">2.4</span> m</span>
-                </div>
-                <span class="field__hint">
-                  How far past the edge of the road your car has to be before it
-                  counts as running wide. The sim's own "edge" sits at or inside the
-                  white line, so the <strong>kerb is already past it</strong> — which
-                  is why the useful setting is roughly a car's half-width
-                  <em>plus a kerb</em>. At the default <strong>2.4&nbsp;m</strong> all
-                  four wheels are clear of the kerb before anything counts; drop it
-                  toward <strong>1.0&nbsp;m</strong> for the strict
-                  all-four-wheels-past-the-line reading, raise it for circuits with
-                  unusually wide kerbs. Applies live, mid-session.
-                </span>
-              </label>
+              <!-- A "Track limits threshold" slider lived here from v0.22.0. It
+                   tuned the overlay's own off-track detection, which existed only
+                   because nothing published LMU's real track-limit points. The
+                   overlay now reads the sim's own charges out of its trace log, so
+                   there is no threshold left to tune. -->
             </div>
           </section>
 

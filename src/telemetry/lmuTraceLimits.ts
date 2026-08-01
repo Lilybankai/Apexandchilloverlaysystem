@@ -255,10 +255,36 @@ export interface TraceIncident {
   verdict: TraceVerdict | null;
 }
 
+/**
+ * How many recent charges are kept for the widget's strip.
+ *
+ * Five is what fits on one line of a narrow panel at a glance, and a stint's
+ * worth of history is not the point: the strip exists to show the *shape* of what
+ * is costing the driver — three 0.25s in a row is a kerb they keep clipping, one
+ * 1.0 is a single mistake — which the last few charges say as well as all of them.
+ */
+export const CHARGE_HISTORY = 5;
+
 /** What the reader currently knows. */
 export interface TraceLimitsState {
   /** Points accumulated since the last discharge. A derivation, not a reading. */
   points: number;
+  /**
+   * What each of the last {@link CHARGE_HISTORY} cuts was charged, **newest
+   * first**. Cleared with {@link points} — a discharged penalty starts the whole
+   * account again, and leaving the old amounts up would have the strip contradict
+   * a total that had gone back to zero.
+   */
+  charges: number[];
+  /**
+   * Charges counted since the reader started, monotonic **within a session**.
+   *
+   * Exists so a caller can detect "a charge just landed" by comparing a single
+   * integer, rather than diffing {@link points} — which is a float, moves in
+   * quarters, and goes *down* on a discharge. A caller seeing this decrease is
+   * looking at a session reset, not at a charge.
+   */
+  chargeSeq: number;
   /** The most recent charge, or `null` if nothing has been charged yet. */
   lastIncident: TraceIncident | null;
   /** The most recent named penalty, whatever kind. */
@@ -288,6 +314,8 @@ export interface TraceLimitsState {
  */
 export class TraceLimitsAccumulator {
   private points = 0;
+  private charges: number[] = [];
+  private chargeSeq = 0;
   private charged = 0;
   private settled = 0;
   private lastIncident: TraceIncident | null = null;
@@ -314,6 +342,7 @@ export class TraceLimitsAccumulator {
       if (TRACK_LIMIT_PENALTY.test(pen.name)) {
         this.points = 0;
         this.charged = 0;
+        this.charges = [];
       }
       return;
     }
@@ -355,6 +384,8 @@ export class TraceLimitsAccumulator {
 
     this.points = round2(this.points + parsed.warnPts);
     this.charged += 1;
+    this.chargeSeq += 1;
+    this.charges = [parsed.warnPts, ...this.charges].slice(0, CHARGE_HISTORY);
     this.lastIncident = {
       atGameSec: parsed.atGameSec,
       warnPts: parsed.warnPts,
@@ -370,6 +401,10 @@ export class TraceLimitsAccumulator {
   public state(): TraceLimitsState {
     return {
       points: this.points,
+      // Copied, not handed out: the caller puts this straight on a broadcast
+      // frame, and the array here goes on being mutated by every later charge.
+      charges: [...this.charges],
+      chargeSeq: this.chargeSeq,
       lastIncident: this.lastIncident,
       lastPenalty: this.lastPenalty,
       charged: this.charged,
@@ -386,6 +421,8 @@ export class TraceLimitsAccumulator {
    */
   public reset(): void {
     this.points = 0;
+    this.charges = [];
+    this.chargeSeq = 0;
     this.charged = 0;
     this.settled = 0;
     this.lastIncident = null;

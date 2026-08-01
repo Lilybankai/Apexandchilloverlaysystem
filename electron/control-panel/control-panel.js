@@ -34,8 +34,6 @@
   const audioRange = $('#audio-range');
   const audioEcho = $('#audio-echo');
   const audioTest = $('#audio-test');
-  const limitsRange = $('#limits-range');
-  const limitsEcho = $('#limits-echo');
   const ingameToggle = $('#ingame-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -168,8 +166,6 @@
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
     audioEcho.textContent = settings.audioVolume;
-    limitsRange.value = settings.trackLimitsMarginTenths;
-    limitsEcho.textContent = (settings.trackLimitsMarginTenths / 10).toFixed(1);
     sponsorsToggle.checked = !!settings.sponsorsEnabled;
     sponsorRange.value = settings.sponsorIntervalSec;
     sponsorEcho.textContent = settings.sponsorIntervalSec;
@@ -1287,19 +1283,6 @@
 
   glowToggle.addEventListener('change', async () => {
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
-  });
-
-  // Track-limits threshold. Live like the visual sliders, but it retunes the
-  // SERVER's detection rather than an overlay's look — the driver drags it after
-  // a lap that felt wrongly judged, so waiting for a restart would defeat it.
-  const commitLimitsMargin = debounce(async (tenths) => {
-    await window.apex.updateSettings({ trackLimitsMarginTenths: tenths });
-  }, 120);
-
-  limitsRange.addEventListener('input', () => {
-    const tenths = parseInt(limitsRange.value, 10);
-    limitsEcho.textContent = (tenths / 10).toFixed(1);
-    commitLimitsMargin(tenths);
   });
 
   // --- Audio cues ----------------------------------------------------------

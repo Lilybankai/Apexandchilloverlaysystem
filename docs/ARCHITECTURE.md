@@ -88,16 +88,18 @@ browser. There is no database, no message broker, no cloud round-trip.
 - **`rf2Provider.ts` + `fuelCalculator.ts`** *(Task E)* — reads the rF2/LMU
   shared-memory buffers into a `TelemetryFrame` and computes the fuel strategy.
   Falls back to the simulator when the plugin/game is absent.
-- **`lmuScoring.ts` + `trackLimits.ts`** — the track-limits pair. The reader
-  opens the **Scoring** buffer (a different region from the Telemetry one
-  `lmuLocalCar.ts` owns) for the driven car's `mPathLateral`, `mTrackEdge` and
-  `mNumPenalties`; the tracker turns that continuous lateral position into
-  discrete excursions. Split because the second half is pure logic with real
-  edges in it — hysteresis, a minimum duration, session resets — and belongs
-  under a headless test (`scripts/test-tracklimits.js`) rather than behind a
-  Windows-only shared-memory read. Both live providers share the tracker, and
-  the simulator drives the **real** one from synthetic geometry, so a regression
-  in the counting surfaces in demo mode rather than on track.
+- **`lmuTraceLimits.ts` + `trackLimits.ts`** — the track-limits pair. The first
+  tails the game's own trace log for the stewards' **points**: what each cut was
+  charged, and the discharge when the allowance earns its drive-through. It is
+  the only live source for those numbers anywhere — shared memory and the REST
+  API publish the consequence and never the total (see
+  `docs/TRACK-LIMITS-POINTS.md`). The second is what is left of a geometric
+  excursion detector that reconstructed those points from `mPathLateral` /
+  `mTrackEdge` before the real ones were reachable: now just the penalty count's
+  two edges (issued, served), which is pure logic with real edges in it and
+  belongs under a headless test (`scripts/test-tracklimits.js`) rather than
+  behind a Windows-only read. All three providers share it; the simulator
+  fabricates the trace half so the widget's states are reachable in demo mode.
 - **`lapLog.ts`** — the lap database. Watches the driven car's completed-lap
   count and appends one record per lap to `~/.apex-overlay/laps/<date>.jsonl`:
   track, car, class, the **sim's own** lap time, conditions, and whether the lap

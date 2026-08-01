@@ -180,7 +180,15 @@ export interface LapInput {
   lastLapSec: number;
   /** `true` while the car is in the pit lane or its garage stall. */
   inPit: boolean;
-  /** Our excursion count this session, or {@link UNKNOWN_VALUE} when unreadable. */
+  /**
+   * How many track-limit cuts the sim has **charged** for this session, or
+   * {@link UNKNOWN_VALUE} when unreadable. A move during the lap dirties it.
+   *
+   * The stewards' own count, since the geometry estimate was retired. It arrives
+   * up to ~25 s late (the sim flushes its log a block at a time), so a cut taken
+   * at the end of a lap can land on the next one — the flag is the sim's verdict
+   * rather than a guess, at the cost of occasionally attaching it a lap late.
+   */
   limitWarnings: number;
   /** The sim's penalty count, or {@link UNKNOWN_VALUE} when unreadable. */
   penalties: number;

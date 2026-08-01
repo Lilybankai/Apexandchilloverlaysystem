@@ -468,19 +468,18 @@ export class LmuRestProvider implements TelemetryProvider {
   /** The session the trace reader was last reset for, so a restart clears its total. */
   private traceSessionKey = '';
   /**
-   * State for the "a cut is awaiting judgement" marker.
+   * The trace reader's charge counter as of the last poll, and the wall clock at
+   * which it last went up.
    *
-   * The sim's rulings reach us up to ~25 s late — it flushes its log a 4 KB block at
-   * a time, and which write completes the block is arbitrary. Our own geometry sees
-   * the excursion immediately, so comparing the two says whether the total on screen
-   * is settled or has something still to come.
-   *
-   * {@link traceSettledSeen} is the sim's count of rulings at the moment we last
-   * re-baselined, and {@link warningsAtSettled} our excursion count at that same
-   * moment.
+   * The reader deals in game-clock seconds from the log; the widget needs "how
+   * long ago was that, in real time" to flash on it. Stamping it here — the moment
+   * the charge reaches us — is the only honest answer available: the sim's own
+   * timestamp for the incident can be up to ~25 s older than its arrival, and
+   * flashing for an event whose age we cannot observe would be worse than not
+   * flashing at all.
    */
-  private traceSettledSeen = -1;
-  private warningsAtSettled = 0;
+  private lastChargeSeq = 0;
+  private lastChargeAt = 0;
 
   public constructor(config: LmuRestConfig) {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
@@ -946,25 +945,10 @@ export class LmuRestProvider implements TelemetryProvider {
       paceDeltas = restDeltas;
       deltaSec = restDeltas.tSession;
     }
-    // Track limits ride on the DRIVEN car (like the radar), so they need that
-    // car's own speed — not the focused car's, which may be a rival being
-    // spectated while the player sits stationary in their garage.
-    const drivenSpeedKph = local
-      ? local.speedKph
-      : playerCar && typeof playerCar.carVelocity?.velocity === 'number'
-        ? Math.round(Math.abs(playerCar.carVelocity.velocity) * 3.6)
-        : UNKNOWN_VALUE;
-    // Throttle comes from the driven car's shared memory — the channel that
-    // makes lifting-to-negate detectable. Absent when spectating, in which case
-    // the tracker scores every excursion rather than guessing (see
-    // TrackLimitsInput.throttle).
-    const limitsBase = this.buildTrackLimits(
-      playerCar,
-      scoringCar,
-      session,
-      drivenSpeedKph,
-      local ? local.throttle : null,
-    );
+    // Track limits ride on the DRIVEN car (like the radar) rather than the
+    // broadcast focus, which may be a rival being spectated while the player
+    // sits in their garage.
+    const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
     // The penalty's KIND rides on the track-limits block because that is where
     // its count already lives, and the two are read together or not at all.
     const trackLimits =
@@ -1869,19 +1853,21 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
-   * Track-limit excursions and penalties for the **driven** car.
+   * The stewards' track-limit points and penalties for the **driven** car.
    *
    * Centred on the driven car rather than the broadcast focus, for the same
    * reason the radar is: it is a driver aid, and the channels behind it exist
    * only for the car whose scoring record this PC owns. Returns `undefined`
    * when the scoring buffer is unreadable, which drops the block from the frame.
+   *
+   * Two sources meet here, and neither is ours: the scoring record publishes the
+   * penalty count, and the trace log publishes the points and what each cut was
+   * charged (`telemetry/lmuTraceLimits.ts`).
    */
   private buildTrackLimits(
     playerCar: RestStanding | undefined,
     car: ScoringCar | null,
     session: SessionState,
-    speedKph: number,
-    throttle: number | null,
   ): TrackLimitsState | undefined {
     if (!playerCar) {
       this.trackLimits.reset();
@@ -1896,28 +1882,23 @@ export class LmuRestProvider implements TelemetryProvider {
     if (sessionKey !== this.traceSessionKey) {
       this.traceSessionKey = sessionKey;
       this.traceLimits.reset();
+      this.lastChargeSeq = 0;
+      this.lastChargeAt = 0;
     }
     this.traceLimits.poll();
     const trace = this.traceLimits.state();
 
+    const nowMs = Date.now();
     const state =
       this.trackLimits.update({
-        pathLateralM: car.pathLateralM,
-        trackEdgeM: car.trackEdgeM,
-        speedKph,
-        throttle,
-        // The scoring record's own pit flags are authoritative here: they are
-        // the same source as the lateral channels, so the two can never
-        // disagree about which lap the car is on.
-        inPit: car.inPit || isInPit(playerCar),
         penalties: car.penalties,
         // Track + session type: a new session zeroes the count, and so does
         // driving the same session at a different circuit (a rolling server).
-        sessionKey: `${session.track}|${session.type}`,
-        // The session's own allowance when it published one, so the pips count to
-        // the number that will be enforced rather than to our default.
+        sessionKey,
+        // The session's own allowance when it published one, so the countdown
+        // runs to the number that will be enforced rather than to our default.
         ...(this.cutsAllowed !== null ? { pointsLimit: this.cutsAllowed } : {}),
-        nowMs: Date.now(),
+        nowMs,
       }) ?? undefined;
 
     if (!state) return undefined;
@@ -1926,34 +1907,23 @@ export class LmuRestProvider implements TelemetryProvider {
     // invalidate the lap and let the total run past it. See `pointsLimitEnforced`.
     const enforced = session.type === 'race';
 
+    // No trace — no LMU log directory, or a copy being replayed that has ended.
+    // The points stay UNKNOWN_VALUE rather than becoming a comfortable zero: the
+    // widget must be able to say "we cannot see the stewards".
     if (!trace) return { ...state, pointsLimitEnforced: enforced };
 
-    // Has the sim ruled on everything we have seen?
-    //
-    // Re-baseline whenever its count of rulings moves: from then on, any excursion
-    // OUR detector counts is one the sim has not been heard from about. This is
-    // positive evidence of something outstanding, not a guarantee of its absence —
-    // our geometry uses a margin and the sim charges on time gained, so it can miss
-    // a shallow cut that still scores. The marker means "there is more to come"; its
-    // absence does not promise the total is final.
-    if (trace.settled !== this.traceSettledSeen) {
-      this.traceSettledSeen = trace.settled;
-      this.warningsAtSettled = state.warnings;
-    }
-    const chargePending = state.warnings > this.warningsAtSettled;
+    // A charge lands the moment the reader's counter moves. It only ever goes
+    // DOWN on a session reset, which is not an event to flash about.
+    if (trace.chargeSeq > this.lastChargeSeq) this.lastChargeAt = nowMs;
+    this.lastChargeSeq = trace.chargeSeq;
 
-    // The sim's figures ride alongside ours rather than overwriting them: `points`
-    // stays the geometric reconstruction so the two can be compared in the field,
-    // and `pointsSource` tells the widget which one it is entitled to present as
-    // the stewards' view.
     return {
       ...state,
-      simPoints: trace.points,
-      simCharged: trace.charged,
-      ...(trace.lastIncident ? { simLastCharge: trace.lastIncident.warnPts } : {}),
-      pointsSource: 'sim',
+      points: trace.points,
+      charges: trace.charges,
+      charged: trace.charged,
+      msSinceCharge: this.lastChargeAt ? nowMs - this.lastChargeAt : UNKNOWN_VALUE,
       pointsLimitEnforced: enforced,
-      ...(chargePending ? { chargePending: true } : {}),
     };
   }
 
@@ -2173,11 +2143,12 @@ export class LmuRestProvider implements TelemetryProvider {
         sessionType: session.type,
         lapsCompleted: playerCar.lapsCompleted,
         lastLapSec: playerCar.lastLapTime,
-        // Same two sources buildTrackLimits trusts, and for the same reason:
-        // the scoring record's pit flags share an origin with the lateral
-        // channels, so they cannot disagree about which lap the car is on.
+        // Both pit sources, because either alone misses a case: the scoring
+        // record sees the garage stall, the standings row sees the lane.
         inPit: (scoringCar ? scoringCar.inPit : false) || isInPit(playerCar),
-        limitWarnings: trackLimits ? trackLimits.warnings : UNKNOWN_VALUE,
+        // The sim's own count of cuts it charged for. Late by up to ~25 s, so a
+        // cut at the end of a lap can dirty the next one — see LapInput.
+        limitWarnings: trackLimits ? trackLimits.charged : UNKNOWN_VALUE,
         penalties: scoringCar ? scoringCar.penalties : UNKNOWN_VALUE,
         ...(typeof si.trackTemp === 'number' ? { trackTempC: si.trackTemp } : {}),
         ...(typeof si.ambientTemp === 'number' ? { ambientTempC: si.ambientTemp } : {}),

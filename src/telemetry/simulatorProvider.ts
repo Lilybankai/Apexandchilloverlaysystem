@@ -43,11 +43,7 @@ import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
-import {
-  DEFAULT_OFF_TRACK_MARGIN_M,
-  INSTANT_PENALTY_POINTS,
-  TrackLimitsTracker,
-} from './trackLimits';
+import { TrackLimitsTracker } from './trackLimits';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -356,9 +352,7 @@ export class SimulatorProvider implements TelemetryProvider {
     // After the damage block, which is where the booked stop length comes from
     // when a stop starts.
     const pit = this.advancePit(dt, damage);
-    // After the pit cycle: excursions are not judged in the pit lane, so the
-    // tracker needs this poll's phase, not last poll's.
-    const trackLimits = this.buildTrackLimits(dt, this.speedFor(this.pedals));
+    const trackLimits = this.buildTrackLimits(dt);
     // Which pre-green phase the demo is in, or null once it has gone green.
     const preSession = this.advancePreSession(dt);
     const paceScore = this.buildPaceScore(player);
@@ -895,92 +889,97 @@ export class SimulatorProvider implements TelemetryProvider {
   /* ------------------------------ track limits ----------------------------- */
 
   /**
-   * How often the demo driver runs wide, seconds. Frequent enough that the
-   * widget's warning flash, its pips and the audio cue can all be seen without
-   * waiting around; slow enough that the strip is mostly showing its clean
-   * state, which is what it will be doing for most of a real stint.
+   * How often the demo driver picks up a charge, seconds. Frequent enough that
+   * the widget's flash, its charge strip and the audio cue can all be seen
+   * without waiting around; slow enough that the panel is mostly showing its
+   * clean state, which is what it will be doing for most of a real stint.
    */
   private static readonly LIMITS_INTERVAL_SEC = 35;
   /**
-   * How long each demo excursion lasts, seconds.
+   * The charges the demo cycles through, points.
    *
-   * Must comfortably outlast `AT_RISK_WINDOW_MS`, or the excursion ends before
-   * the verdict is reached and nothing ever scores. It was exactly 1.2 s — the
-   * same figure as the window — which made resolution a coin toss on poll
-   * timing.
+   * The sim's own vocabulary: quarter-point multiples, from a wheel over the line
+   * to a cut worth a whole point. Cycling rather than random keeps the demo
+   * reproducible, and covers both the amounts the flash has to render (`0.25`,
+   * `1`) and the arithmetic that trips on floats (`0.25 + 0.5 + 0.25`).
    */
-  private static readonly LIMITS_EXCURSION_SEC = 2.0;
-  /** Half the demo track's width, metres — the `mTrackEdge` the sim would give. */
-  private static readonly LIMITS_TRACK_EDGE_M = 7;
+  private static readonly LIMITS_CHARGES = [0.25, 0.5, 0.25, 1, 0.5, 2];
+  /** The allowance the demo counts down from — LMU's own observed default. */
+  private static readonly LIMITS_ALLOWANCE = 5;
 
-  /** Seconds into the current run-wide cycle. */
+  /** Seconds since the last demo charge. */
   private limitsClockSec = 0;
-  /** The real tracker — the demo invents the geometry, not the counting. */
+  /** Which charge of the cycle comes next. */
+  private limitsCycle = 0;
+  /** The demo's running total, its charge history and its penalty count. */
+  private demoPoints = 0;
+  private demoCharges: number[] = [];
+  private demoCharged = 0;
+  private demoPenalties = 0;
+  /** When the last demo charge landed, ms, or 0 before the first one. */
+  private demoChargeAt = 0;
+  /**
+   * The real penalty tracker, fed the demo's penalty count — so the timestamps
+   * the widget flashes on (`msSincePenalty`, `msSinceServed`) come out of the
+   * same code the live path uses rather than being faked alongside it.
+   */
   private readonly limits = new TrackLimitsTracker();
 
   /**
-   * Synthesises the two lateral-position channels a real car would publish and
-   * runs them through the **live** {@link TrackLimitsTracker}, exactly as
-   * {@link buildChassis} does with the chassis tracker.
+   * Fabricates what the trace reader would publish on LMU: a running total, the
+   * charges behind it, and the drive-through the allowance eventually earns.
    *
-   * So demo mode exercises the actual hysteresis, the minimum-duration guard and
-   * the counting — a regression in any of them shows up here rather than on
-   * track. Only the car's lateral position is invented.
-   *
-   * The penalty count follows the warnings the way a race director would: one
-   * penalty per full set of three, which is what makes the widget's two
-   * differently-sourced numbers both reachable in a demo.
+   * Invented outright rather than run through a tracker, because there is no
+   * longer anything to exercise — the stewards' figures are read, not derived,
+   * and the demo's job here is to drive the *widget* through all of its states
+   * (clean, a fresh charge, an allowance nearly spent, a penalty) without anyone
+   * having to run wide in a real session on purpose.
    */
-  private buildTrackLimits(dt: number, speedKph: number): TrackLimitsState | undefined {
+  private buildTrackLimits(dt: number): TrackLimitsState | undefined {
+    const nowMs = Date.now();
     this.limitsClockSec += dt;
-    const period = SimulatorProvider.LIMITS_INTERVAL_SEC;
-    if (this.limitsClockSec >= period) {
-      this.limitsClockSec -= period;
+    if (this.limitsClockSec >= SimulatorProvider.LIMITS_INTERVAL_SEC) {
+      this.limitsClockSec -= SimulatorProvider.LIMITS_INTERVAL_SEC;
+      const charges = SimulatorProvider.LIMITS_CHARGES;
+      const charge = charges[this.limitsCycle % charges.length]!;
       this.limitsCycle += 1;
+      // Rounded on every step, like the reader: 0.25 + 0.5 is 0.7500000000000001
+      // in floating point, and that would reach the overlay verbatim.
+      this.demoPoints = Math.round((this.demoPoints + charge) * 100) / 100;
+      this.demoCharges = [charge, ...this.demoCharges].slice(0, 5);
+      this.demoCharged += 1;
+      this.demoChargeAt = nowMs;
+
+      // The allowance spent earns a drive-through, and the sim starts the
+      // account again — the same discharge the trace reader mirrors.
+      if (this.demoPoints >= SimulatorProvider.LIMITS_ALLOWANCE) {
+        this.demoPenalties += 1;
+        this.demoPoints = 0;
+        this.demoCharges = [];
+        this.demoCharged = 0;
+      }
     }
 
-    const edge = SimulatorProvider.LIMITS_TRACK_EDGE_M;
-    const off = this.limitsClockSec < SimulatorProvider.LIMITS_EXCURSION_SEC;
-    // Drifting around mid-track normally; clearly past the threshold while
-    // running wide.
-    //
-    // Derived from the tracker's own default rather than hard-coded: it was a
-    // flat 2.2 m, which silently stopped counting anything the moment the
-    // default margin moved from 1.0 to 2.4 — the demo went quietly clean and
-    // took the widget's whole warning path out of reach with it. A metre past
-    // whatever the threshold currently is cannot drift the same way.
-    const lateral = off
-      ? edge + DEFAULT_OFF_TRACK_MARGIN_M + 1.0
-      : Math.sin(this.limitsClockSec * 0.9) * (edge * 0.4);
-
-    // Every third demo excursion, the driver lifts — so the lift-to-negate path
-    // and its "saved" feedback are reachable in demo mode too, not just the
-    // path where the points land. Without this half the widget's states could
-    // only be seen by running wide in a real session on purpose.
-    const givesItBack = this.limitsCycle % 3 === 2;
-    const throttle = off && givesItBack ? 0 : 0.9;
+    // The demo serves its penalty a lap or so later, so the "PENALTY SERVED"
+    // path is reachable too.
+    if (this.demoPenalties > 0 && this.limitsClockSec > 12) this.demoPenalties = 0;
 
     const state = this.limits.update({
-      pathLateralM: lateral,
-      trackEdgeM: edge,
-      speedKph,
-      throttle,
-      inPit: this.player().inPit,
-      // The stewards' own count — one per full points limit, fed from last
-      // poll's tally so the penalty lands the poll AFTER the infringement that
-      // earned it, which is also how a real race director behaves.
-      penalties: Math.floor(this.demoPoints / INSTANT_PENALTY_POINTS),
+      penalties: this.demoPenalties,
       sessionKey: 'demo',
-      nowMs: Date.now(),
+      pointsLimit: SimulatorProvider.LIMITS_ALLOWANCE,
+      nowMs,
     });
-    if (state) this.demoPoints = state.points;
-    return state ?? undefined;
+    if (!state) return undefined;
+    return {
+      ...state,
+      points: this.demoPoints,
+      charges: [...this.demoCharges],
+      charged: this.demoCharged,
+      msSinceCharge: this.demoChargeAt ? nowMs - this.demoChargeAt : UNKNOWN_VALUE,
+      pointsLimitEnforced: true,
+    };
   }
-
-  /** Points scored so far, mirrored so the demo's penalties can follow. */
-  private demoPoints = 0;
-  /** Which excursion of the cycle this is, so every third one is given back. */
-  private limitsCycle = 0;
 
   /* -------------------------------- damage -------------------------------- */
 

@@ -161,10 +161,6 @@ const PANEL_CONTRACT = {
   'rate-range': 'input:range',
   'rate-echo': 'span',
   'demo-toggle': 'input:checkbox',
-  // v0.22.0. Retunes the server's own off-track detection, not a widget's look,
-  // which is why it sits with Server rather than Appearance.
-  'limits-range': 'input:range',
-  'limits-echo': 'span',
 
   // Settings — appearance (all three ride the live appearance channel)
   'bg-range': 'input:range',

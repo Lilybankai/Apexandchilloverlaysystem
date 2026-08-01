@@ -110,6 +110,24 @@ showed `Resolution="5"` beside `cuts_allowed = 5`; it is a verdict code
 (`2` = Drive Through Penalty, `4` = Warning, `5` = Invalid Lap Cut Track,
 `7` = No Further Action) and the match was a coincidence.
 
+## The geometry estimate is retired (v0.47.0)
+
+`telemetry/trackLimits.ts` used to reconstruct a points total from `mPathLateral`
+against `mTrackEdge` — a tunable margin, hysteresis, a minimum duration, an at-risk
+window with a lift-to-negate rule, and a score that grew with depth. It existed only
+because the real numbers were unreachable, and the retraction above is the reason it
+could never have been right: **it measured the correlate, not the input.**
+
+Once the trace reader was validated it became a second, differently-wrong number beside
+a correct one, and the widget was showing both. It has been reduced to the part that
+never involved geometry: the sim's penalty count and its two edges (issued, served).
+Gone with it — the *Track limits threshold* slider in the control panel, the
+`APEX_LIMITS_MARGIN` variable, the `LIFT` / `SAVED` prompts, and the "+1 POINT"
+callout.
+
+The widget now shows the allowance **remaining**, the per-cut charges as the sim wrote
+them, and a yellow flash carrying the amount whenever the total moves.
+
 ## The flush lag — the open problem, and what is already ruled out
 
 **Charges are correct but late.** LMU does not flush its trace per line; it writes in
@@ -158,10 +176,13 @@ its threshold so the charge already sitting in it gets flushed out.
    flushes promptly, or raise the volume enough to shorten the lag.
 3. **Anything that raises trace verbosity.** More bytes means the buffer fills sooner,
    which shortens the lag without fixing it. A blunt instrument, and it costs disk.
-4. **Accept it and say so on the widget.** Our own geometry sees the excursion
-   immediately, so the widget could mark that a cut is awaiting judgement — turning the
-   lag from a wrong number into a visibly pending one. Decision not taken; it adds an
-   element to the panel.
+4. ~~**Accept it and say so on the widget.**~~ Tried, as a `+?` marker beside the total:
+   our geometry saw the excursion at once, so the gap between its count and the sim's
+   rulings marked a charge as pending. **Removed in v0.47.0** with the geometry itself.
+   It was positive evidence only — our detector applied a margin and the sim charges on
+   time gained, so a shallow cut that still scored passed us by, and a marker that
+   cannot say "nothing outstanding" invites the reading that its absence means settled.
+   Any future version of this needs a source that sees the cut without judging it.
 
 ## Open questions
 
@@ -177,8 +198,9 @@ its threshold so the charge already sitting in it gets flushed out.
   (`score.cpp 547`) *do* name other drivers and are ignored.
 - **Flush latency is unmeasured.** The file grows within seconds of an event, but how
   long after rejoining the charge appears has not been timed.
-- **`INSTANT_PENALTY_POINTS = 3` remains a guess.** Single charges of 3.00 and above do
-  appear in the XML, but nothing confirms a 3-point cut is an immediate drive-through
-  on its own.
+- **Whether a single 3-point cut is an instant drive-through is unconfirmed.** Single
+  charges of 3.00 and above do appear in the XML, and it was taken as a rule (an
+  `INSTANT_PENALTY_POINTS` constant, since deleted) on the strength of LMU's own
+  documentation rather than an observation. Nothing here has ever measured it.
 - Whether the threshold or the charge varies by track. All measurements here are Laguna
   Seca, one car, one driver.

@@ -179,14 +179,6 @@ function defaultSettings() {
     // Master volume for those cues, as a percentage. 60 sits under a sim's own
     // engine and spotter audio without disappearing into it.
     audioVolume: 60,
-    // How far past the sim's track edge the car's centre must be before a
-    // track-limit excursion counts, in TENTHS of a metre (so the control panel's
-    // integer slider can carry it; the server takes metres). 24 = 2.4 m, which
-    // is a car's half-width plus a kerb — i.e. all four wheels clear of the
-    // kerb. Turn it down toward 10 for the strict all-four-wheels-past-the-line
-    // reading, up for circuits with unusually wide kerbs. See
-    // DEFAULT_OFF_TRACK_MARGIN_M in src/telemetry/trackLimits.ts.
-    trackLimitsMarginTenths: 24,
     // Keyboard bindings, { [actionId]: accelerator } — see electron/actions.js
     // for the action vocabulary. Registered as GLOBAL hotkeys, so they also fire
     // while the sim has focus, and a Stream Deck "Hotkey" button (which just
@@ -367,12 +359,6 @@ function loadSettings() {
     radarIconScale: clamp(stored.radarIconScale, 30, 150, defaults.radarIconScale),
     audioCues: typeof stored.audioCues === 'boolean' ? stored.audioCues : defaults.audioCues,
     audioVolume: clamp(stored.audioVolume, 0, 100, defaults.audioVolume),
-    trackLimitsMarginTenths: clamp(
-      stored.trackLimitsMarginTenths,
-      5,
-      50,
-      defaults.trackLimitsMarginTenths,
-    ),
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     wheelBindings: normalizeWheelBindings(stored),
@@ -488,7 +474,6 @@ function buildServerConfig(settings) {
     radarIconScale: settings.radarIconScale,
     audioCues: settings.audioCues,
     audioVolume: settings.audioVolume,
-    trackLimitsMarginM: settings.trackLimitsMarginTenths / 10,
     verbose: false,
   };
 }
@@ -743,25 +728,11 @@ function applyAppearance(settings) {
   }
 }
 
-/**
- * Applies the telemetry-side tuning — currently just the track-limits threshold.
- *
- * Separate from {@link applyAppearance} because this changes what the SERVER
- * computes rather than how an overlay draws it: there is nothing to push to the
- * in-game layer and nothing to serve at /appearance.json, only the running
- * provider to retell. Like the appearance call it is safe before the server is
- * up — the value is carried in by buildServerConfig() at the next start.
- */
-function applyTuning(settings) {
-  const s = settings || loadSettings();
-  try {
-    requireServer().setTelemetryTuning({
-      trackLimitsMarginM: s.trackLimitsMarginTenths / 10,
-    });
-  } catch (err) {
-    // Not built / not started yet — config carries it in at boot.
-  }
-}
+// An applyTuning() sat here, the telemetry-side counterpart to applyAppearance():
+// live changes to what the SERVER computes rather than to how an overlay draws
+// it. Its only setting was the track-limits threshold, and the geometric detector
+// that used it has been retired in favour of the sim's own charges. Nothing on
+// the telemetry side is operator-tunable now.
 
 /* -------------------------------------------------------------------------- */
 /*  Action registry — the vocabulary every input source binds to               */
@@ -1250,14 +1221,6 @@ function registerIpc() {
       if (partial.audioVolume !== undefined) {
         next.audioVolume = clamp(partial.audioVolume, 0, 100, current.audioVolume);
       }
-      if (partial.trackLimitsMarginTenths !== undefined) {
-        next.trackLimitsMarginTenths = clamp(
-          partial.trackLimitsMarginTenths,
-          5,
-          50,
-          current.trackLimitsMarginTenths,
-        );
-      }
       if (partial.actionBindings && typeof partial.actionBindings === 'object') {
         next.actionBindings = { ...current.actionBindings };
         for (const [id, accel] of Object.entries(partial.actionBindings)) {
@@ -1291,12 +1254,6 @@ function registerIpc() {
       next.audioVolume !== current.audioVolume
     ) {
       applyAppearance(next);
-    }
-
-    // Telemetry tuning: also live, also deliberately outside the restart check —
-    // the whole point of the slider is that the driver retunes it between laps.
-    if (next.trackLimitsMarginTenths !== current.trackLimitsMarginTenths) {
-      applyTuning(next);
     }
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map

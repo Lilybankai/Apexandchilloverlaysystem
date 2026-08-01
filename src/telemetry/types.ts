@@ -724,10 +724,10 @@ export interface PlayerState {
    */
   pit?: PitState;
   /**
-   * Track-limit excursions and the sim's own penalty count. Omitted — absent,
-   * not zeroed — when neither the lateral-position channels nor the penalty
-   * count is readable (spectating, no shared memory, out of a session), so a
-   * clean sheet is never confused with no data. See {@link TrackLimitsState}.
+   * The stewards' track-limit points and the sim's own penalty count. Omitted —
+   * absent, not zeroed — when the player has no scoring record at all
+   * (spectating, no shared memory, out of a session), so a clean sheet is never
+   * confused with no data. See {@link TrackLimitsState}.
    */
   trackLimits?: TrackLimitsState;
 }
@@ -737,70 +737,36 @@ export interface PlayerState {
 /* -------------------------------------------------------------------------- */
 
 /**
- * How the player is doing against the white lines: whether they are off the
- * road right now, how many excursions they have had this session, and how many
- * penalties the sim has actually issued.
+ * How the player is doing against the white lines: how many points the stewards
+ * have charged them this session, what each cut cost, and how many penalties the
+ * sim has actually issued.
  *
- * ## Two numbers with two different authorities, deliberately kept apart
- * {@link penalties} is the sim's own `mNumPenalties` — the stewards' verdict,
- * reported untouched. {@link warnings} is **ours**, derived by
- * `telemetry/trackLimits.ts` from the car's lateral position against the track
- * edge, because neither the shared memory nor the REST API publishes LMU's
- * internal warning tally. They can disagree, and the widget presents them as
- * what they are rather than blending them into one authoritative-looking count.
- * See the module note in `trackLimits.ts` for why that is still the more useful
- * number to a driver mid-stint.
+ * ## Every number here is the sim's own
+ * There was once a second set of figures derived from the car's lateral position
+ * against the track edge, because nothing published LMU's internal tally. There
+ * is now: `telemetry/lmuTraceLimits.ts` reads the stewards' own charges out of
+ * the game's trace log, validated against the session-end results XML. So the
+ * geometry reconstruction — and the widget's two-authorities presentation that
+ * went with it — has been retired, and this block carries one set of numbers with
+ * one authority behind them.
+ *
+ * The one thing that costs is latency: the sim flushes its log a block at a time,
+ * so a charge can reach us anywhere from a tenth of a second to ~25 s after the
+ * cut. See `docs/TRACK-LIMITS-POINTS.md`.
  */
 export interface TrackLimitsState {
   /**
-   * `true` while the car is currently past the edge of the track — i.e. an
-   * excursion is in progress and has lasted long enough to be counted. This is
-   * the live "you are off" state the widget lights and the audio cue fires on.
-   */
-  offTrack: boolean;
-  /**
-   * `true` while the car is off the road **and the verdict is still open** —
-   * the window in which lifting off gives the time back and cancels the points.
-   *
-   * This is the only part of the sequence the driver can still act on, which is
-   * why it is what the audio cue and the widget's alarm key off. Announcing the
-   * points *after* they land tells a driver something they can no longer do
-   * anything about. See `AT_RISK_WINDOW_MS` in `telemetry/trackLimits.ts`.
-   */
-  atRisk: boolean;
-  /**
-   * `true` when, during the current at-risk window, the driver has already
-   * lifted — i.e. as things stand this one will not score. Lets the widget flip
-   * from "lift!" to "saved" while the car is still off the road, and lets the
-   * cue know not to keep nagging. `false` whenever {@link atRisk} is `false`.
-   */
-  liftedInTime: boolean;
-  /**
-   * How far the car's centre is beyond the track edge, metres — negative while
-   * inside it, so the widget can show a car running out of road *before* it runs
-   * out.
-   *
-   * **Omitted, not sentinelled**, when the lateral channels are unavailable.
-   * This is the one field here that is legitimately negative, so the frame's
-   * usual {@link UNKNOWN_VALUE} would collide with a real reading: a car with
-   * exactly one metre of road left would report `-1` and be read as "no data".
-   * Absence has no such ambiguity. (Same trap as `LapTiming.delta`, noted in the
-   * architecture doc's future work — this field simply avoids it rather than
-   * adding a third instance of it.)
-   */
-  beyondEdgeM?: number;
-  /**
-   * **Points** accumulated this session — the unit LMU actually judges track
-   * limits in.
+   * **Points** charged this session — the unit LMU actually judges track limits
+   * in, read from the sim's own stewarding rather than inferred.
    *
    * The sim scores every infringement rather than counting strikes: a wheel a
    * metre wide and a lap through the run-off are not the same offence, and it
-   * weighs how far off you went, whether you were on the throttle, and whether
-   * you were at the speed expected for that part of the track. This mirrors that
-   * shape with the magnitude we can actually measure (see
-   * `POINT_STEP_M`), so the number moves the way the sim's does even though it
-   * is not the sim's own tally — the caveat at the top of this block applies to
-   * it exactly as it did to the old strike count.
+   * weighs how much time the cut gained. Charges are quarter-point multiples.
+   *
+   * {@link UNKNOWN_VALUE} when there is no source for it — plain rF2, or an LMU
+   * install whose log directory could not be found. That is different from zero,
+   * which says the stewards have you at nothing, and the widget shows the two
+   * differently.
    */
   points: number;
   /**
@@ -810,37 +776,32 @@ export interface TrackLimitsState {
    */
   pointsLimit: number;
   /**
-   * What the most recent scored infringement was worth, so the widget can say
-   * "that one cost you 2". {@link UNKNOWN_VALUE} before anything has scored.
+   * What the sim charged for each of the most recent cuts, **newest first**,
+   * capped at a handful.
    *
-   * Worth showing on its own because LMU issues a drive-through for any *single*
-   * infringement worth 3 — a fact about one cut, not about the running total.
+   * The individual amounts are what a driver can act on: three 0.25s is a driver
+   * clipping the same kerb every lap, one 1.0 is a single mistake, and the
+   * running total alone cannot tell those apart. Empty when nothing has been
+   * charged this session — including when there is no source at all, so pair it
+   * with {@link points} before drawing a clean sheet.
    */
-  lastInfringementPoints: number;
-  /** How many infringements have scored this session. */
-  warnings: number;
+  charges: number[];
+  /** How many cuts the sim has charged for since its last reset. */
+  charged: number;
   /**
-   * How many excursions the driver **gave back** by lifting inside the at-risk
-   * window, and which therefore cost nothing. The only genuinely encouraging
-   * number on the widget, and the one that tells a driver the lift is working.
+   * Milliseconds since the total last went **up**, so a widget can flash on the
+   * charge itself rather than on the value of the number.
+   * {@link UNKNOWN_VALUE} when nothing has been charged this session.
+   *
+   * This is the only event on the block a driver has not already seen for
+   * themselves — they know they ran wide; what they do not know is what it cost.
    */
-  negated: number;
+  msSinceCharge: number;
   /**
    * The sim's outstanding-penalty count for this car. {@link UNKNOWN_VALUE}
    * when the channel is unavailable, which is different from zero.
    */
   penalties: number;
-  /**
-   * Milliseconds since the most recent warning was counted, so a widget can
-   * flash on the event itself rather than on the count's value.
-   * {@link UNKNOWN_VALUE} when there has not been one.
-   */
-  msSinceWarning: number;
-  /**
-   * Milliseconds since the driver last saved one by lifting.
-   * {@link UNKNOWN_VALUE} when they have not.
-   */
-  msSinceNegated: number;
   /**
    * Milliseconds since {@link penalties} last increased.
    * {@link UNKNOWN_VALUE} when it has not moved this session.
@@ -876,39 +837,6 @@ export interface TrackLimitsState {
    */
   penaltyDetail?: string;
   /**
-   * **The sim's own running total**, in points, when it can be read — as opposed to
-   * {@link points}, which is our reconstruction from geometry.
-   *
-   * Read from LMU's trace log, which is the only live source for it anywhere:
-   * shared memory and the REST API publish the *consequence* (a penalty count) and
-   * never the total, and the results XML publishes the total but not until the
-   * session has ended. See `telemetry/lmuTraceLimits.ts`.
-   *
-   * Validated against that XML: for one race the reader's charges reproduced the
-   * sim's thirteen, in order, summing to exactly the 5.00 that earned the
-   * drive-through.
-   *
-   * Omitted — not zeroed — when the trace is unavailable, which is the difference
-   * between "the stewards have you at nothing" and "we cannot see the stewards".
-   */
-  simPoints?: number;
-  /**
-   * What the sim charged for the most recent infringement, its own figure. The
-   * counterpart to {@link lastInfringementPoints}, which is ours.
-   */
-  simLastCharge?: number;
-  /** How many infringements the sim has actually charged for since its last reset. */
-  simCharged?: number;
-  /**
-   * Where {@link points} on the widget came from: `sim` when the trace is being
-   * read, `estimated` when it is our geometry.
-   *
-   * The widget must be able to say which. A driver who is told they are on 4.75
-   * will drive the rest of the stint differently, and that is only a fair thing to
-   * show them if it is the stewards' number rather than our approximation of it.
-   */
-  pointsSource?: 'sim' | 'estimated';
-  /**
    * Whether {@link pointsLimit} is a threshold the sim will actually act on in THIS
    * session.
    *
@@ -919,25 +847,10 @@ export interface TrackLimitsState {
    * `Invalid Lap Cut Track` rulings in one evening's results files.
    *
    * So the countdown is shown only where it is real. Telling a driver in practice
-   * they are 0.25 from a drive-through that cannot come is the same class of error as
-   * showing them our estimate as the stewards' number.
+   * they are 0.25 from a drive-through that cannot come is a lie about the one
+   * number on this widget they will change their driving for.
    */
   pointsLimitEnforced?: boolean;
-  /**
-   * An excursion has happened that the sim has **not yet ruled on**, so
-   * {@link simPoints} is behind.
-   *
-   * The sim flushes its log a 4 KB block at a time and which write completes the
-   * block is arbitrary, so a charge can take anywhere from a tenth of a second to
-   * ~25 s to reach us. Our own geometry sees the excursion at once, and the gap
-   * between the two is this flag.
-   *
-   * **Positive evidence only.** Our detector applies a margin and the sim charges on
-   * time gained, so a shallow cut that still scores can pass us by. Present means
-   * "more is coming"; absent does not promise the total is final — which is why it
-   * reads as `+?` on the widget rather than the total being declared settled.
-   */
-  chargePending?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -28,7 +28,6 @@ import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
-import { setTrackLimitsMargin, trackLimitsMargin } from '../telemetry/trackLimits';
 import { handleMfdCommand } from './mfdRoutes';
 import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows } from './aidRows';
@@ -187,37 +186,14 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   return getAppearance();
 }
 
-/**
- * Live telemetry tuning — behaviour of the readings themselves, as opposed to
- * how they look.
- *
- * Kept off the {@link Appearance} channel on purpose. Appearance is served to
- * every browser at `/appearance.json` and applied client-side; this changes what
- * the *server* computes, so publishing it there would put a knob on the wire
- * that no overlay can act on and invite a widget to try. Same in-process
- * retune-without-restart contract, different concern.
- */
-export interface TelemetryTuning {
-  /**
-   * How far past the sim's track edge the car's centre must be before an
-   * excursion counts, metres. `null` restores the default. See
-   * `DEFAULT_OFF_TRACK_MARGIN_M` for what the number means in wheels.
-   */
-  trackLimitsMarginM: number | null;
-}
-
-/** Applies live telemetry tuning. Values are clamped by the owning module. */
-export function setTelemetryTuning(next: Partial<TelemetryTuning>): TelemetryTuning {
-  if (next.trackLimitsMarginM !== undefined) {
-    setTrackLimitsMargin(next.trackLimitsMarginM);
-  }
-  return getTelemetryTuning();
-}
-
-/** The tuning currently in force. */
-export function getTelemetryTuning(): TelemetryTuning {
-  return { trackLimitsMarginM: trackLimitsMargin() };
-}
+// There was a live TELEMETRY TUNING channel here, alongside the appearance one:
+// same retune-in-process contract, but for what the server COMPUTES rather than
+// how it looks. Its only setting was the track-limits threshold — the margin the
+// geometric excursion detector used — and that detector has been retired in
+// favour of the sim's own charges (telemetry/lmuTraceLimits.ts), so the channel
+// went with it. Worth re-creating in this shape if a second such knob ever
+// appears; it should not go on `Appearance`, which is served to every browser and
+// would put a server-side knob on the wire that no overlay can act on.
 
 /* -------------------------------------------------------------------------- */
 /*  Live chat — YouTube + Twitch, merged and served on /chat                  */
@@ -408,10 +384,6 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     audioCues: config.audioCues,
     audioVolume: config.audioVolume,
   });
-  // Same deal for the telemetry-side tuning: seeded from config, retunable
-  // live by the app without dropping a single overlay connection.
-  setTelemetryTuning({ trackLimitsMarginM: config.trackLimitsMarginM });
-
   // The MFD widget's control plane. `pit`/`aid` write to LMU's REST API (works
   // even under provider `rf2` as long as the game's API is up); `aidkey` injects
   // real keystrokes for the LIVE aids LMU does not expose to REST.

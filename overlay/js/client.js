@@ -332,7 +332,7 @@
    * Whether a penalty has landed within the announce window.
    *
    * Takes the whole `trackLimits` block so a caller cannot accidentally pass
-   * `msSinceWarning` — the two are adjacent on the frame, identically typed, and
+   * `msSinceCharge` — the two are adjacent on the frame, identically typed, and
    * mean very different things.
    */
   function consequenceFresh(trackLimits) {

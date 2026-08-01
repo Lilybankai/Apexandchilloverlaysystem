@@ -2588,21 +2588,20 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* =========================================================================
- * TRACK LIMITS WIDGET — the excursion count, and how much road is left.
+ * TRACK LIMITS WIDGET — the points left, and what each cut cost.
  * -------------------------------------------------------------------------
- * Four states drive everything below, set on the section as data-limits:
+ * The states below are set on the section as data-limits:
  *
- *   clean      nothing has happened. The default and, over a stint, by far the
- *              most common — so it is DELIBERATELY dull. A widget that colours
+ *   clean      full allowance. The default and, over a stint, by far the most
+ *              common — so it is DELIBERATELY dull. A widget that colours
  *              itself while reporting good news is one the driver learns to
  *              stop reading, and then it is not there when it matters.
- *   warned     excursions on the board, none of them recent. Amber, steady.
- *   alarm      an excursion is happening or just happened. Amber, and the only
- *              state that animates.
+ *   warned     points charged, none of them recent. Amber, steady.
+ *   alarm      a charge just landed. Amber, and the only state that animates.
  *   penalty    the sim has issued one. Red — the strongest thing this widget
- *              can say, reserved for the one number on it that is not our
- *              opinion (see the module note in js/widgets/limits.js).
+ *              can say.
  *   penalised  a penalty stands but is no longer news. Red, muted.
+ *   none       no source for the points (plain rF2, spectating). Muted.
  *
  * The alarm pulse is a keyframed background on the panel rather than a
  * box-shadow: shadows on a large box are composited every frame over live
@@ -2658,33 +2657,10 @@ body.ig-editing #widget-radar .panel__header {
   white-space: nowrap;
 }
 
-/* --- the pips ------------------------------------------------------------ */
-.limits__pips {
-  display: flex;
-  gap: 4px;
-}
-/* Each pip is a segment of the row, so the row reads as a progress bar toward
-   a penalty rather than as a set of separate lamps. */
-.limits__pip {
-  flex: 1 1 0;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-soft);
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-.limits__pip[data-on="yes"] {
-  background: var(--warn);
-  border-color: var(--warn);
-}
-/* Past the scale: the row starts again in red, so a fourth warning on a
-   three-pip scale is visibly worse than the third rather than identical to it. */
-.limits__pip[data-on="over"] {
-  background: var(--pos-loss);
-  border-color: var(--pos-loss);
-}
-
-/* --- the edge bar: how much road is left, right now ---------------------- */
+/* --- the allowance bar: how much of it is left --------------------------- */
+/* A continuous rail rather than the row of pips this used to be. Charges come
+   in quarter-points and a pip cannot show a quarter — the row read as a whole
+   point spent every time the stewards took 0.25. */
 .limits__bar {
   position: relative;
   height: 4px;
@@ -2692,34 +2668,52 @@ body.ig-editing #widget-radar .panel__header {
   background: var(--bg-panel-2);
   overflow: hidden;
 }
-/* Grows from the left as the car runs out of road. No transition: this is the
-   one readout here that is live rather than historical, and easing it would
-   make it lag the thing it is reporting. */
+/* Drains from the right as the allowance is spent, so the lit part is always
+   what is LEFT — the same thing the headline says, in the same direction.
+
+   Its colour is set by how much is left rather than by a gradient across it. A
+   gradient here is laid out across the FILL, not the rail, so it looks identical
+   at 5.0 remaining and at 0.25 — the one comparison the bar exists to make. */
 .limits__bar-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 0%;
-  background: linear-gradient(90deg, var(--warn), var(--pos-loss));
+  width: 100%;
+  background: var(--text-secondary);
+  transition: width 0.25s ease, background-color 0.25s ease;
 }
-.limits__edge {
+/* Under half the allowance, and under a fifth of it. The second threshold is
+   about a point on a typical five-point allowance: one more real cut. */
+#widget-limits[data-allow="low"] .limits__bar-fill { background: var(--warn); }
+#widget-limits[data-allow="crit"] .limits__bar-fill { background: var(--pos-loss); }
+
+/* --- the charge strip ---------------------------------------------------- */
+/* What the last few cuts were charged, newest first. Mono and small: it is
+   reference, not headline, and the eye should land on it only when the driver
+   has already asked "what has been costing me". */
+.limits__charges {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   min-height: 1em;
 }
 
 /* --- the consequence indicator -------------------------------------------
-   The four seconds after the sim applies a penalty. Absolutely positioned over
-   the widget's own content rather than pushed in above it: this fires mid-lap,
-   and a banner that reflowed the panel would move the pips and the edge bar
-   under the driver's eye at the exact moment they are looking at them.
+   The four seconds after the sim applies a penalty, and the two after it charges
+   for a cut. Absolutely positioned over the widget's own content rather than
+   pushed in above it: this fires mid-lap, and a banner that reflowed the panel
+   would move the count and the bar under the driver's eye at the exact moment
+   they are looking at them.
 
-   It covers the readouts on purpose. For those four seconds there is nothing on
-   this widget more important than the fact that a penalty just landed, and a
-   driver glancing across must not have to pick it out from beside the numbers
-   it supersedes. */
+   The base is the PENALTY form, and it covers the readouts on purpose. For those
+   four seconds there is nothing on this widget more important than the fact that
+   a penalty just landed, and a driver glancing across must not have to pick it
+   out from beside the numbers it supersedes. The charge form overrides that —
+   see [data-kind="scored"] below. */
 .limits__banner {
   position: absolute;
   inset: 0;
@@ -2748,10 +2742,10 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* --- states --------------------------------------------------------------
-   The headline number is the WARNING count in every state, so it only ever
-   takes the warning colour. Red belongs to the penalty chip, which is the only
-   thing on the widget reporting the sim's own verdict — colouring the warning
-   count red because a penalty exists would attach the wrong number to it. */
+   The headline number is the ALLOWANCE in every state, so it only ever takes
+   the warning colour. Red belongs to the penalty chip: colouring the allowance
+   red because a penalty exists would attach the wrong number to it — the count
+   goes back UP after a drive-through, which is good news in red. */
 #widget-limits[data-limits="clean"] .limits__count { color: var(--text-secondary); }
 #widget-limits[data-limits="warned"] .limits__count,
 #widget-limits[data-limits="warned"] .limits__label,
@@ -2761,41 +2755,33 @@ body.ig-editing #widget-radar .panel__header {
 #widget-limits[data-limits="penalty"] .limits__label,
 #widget-limits[data-limits="alarm"] .limits__count,
 #widget-limits[data-limits="alarm"] .limits__label { color: var(--warn); }
-#widget-limits[data-limits="alarm"] .limits__edge { color: var(--warn); }
-#widget-limits[data-limits="atrisk"] .limits__count,
-#widget-limits[data-limits="atrisk"] .limits__label,
-#widget-limits[data-limits="atrisk"] .limits__edge { color: var(--warn); }
-#widget-limits[data-limits="saved"] .limits__count,
-#widget-limits[data-limits="saved"] .limits__label { color: var(--pos-gain); }
+/* The charge that just landed is the one worth reading, so the strip comes up
+   with the flash and settles back to muted after it. */
+#widget-limits[data-limits="alarm"] .limits__charges { color: var(--text-secondary); }
 #widget-limits[data-limits="none"] .limits__count,
 #widget-limits[data-limits="none"] .limits__label { color: var(--text-muted); }
 
-/* The banner says one of four things; only its colour changes.
-   `lift` is the one with an action attached, so it is the loudest thing the
-   widget can do — and `saved` is deliberately calm and green, because a driver
-   who is told off for complying stops complying. */
-.limits__banner[data-kind="lift"] {
+/* The banner says one of three things. Two of them cover the widget; the third
+   deliberately does not.
+
+   A charge is the routine event here, and the question it raises — "so where
+   does that leave me?" — is answered by the number it would be covering. So the
+   `scored` flash is a pill in the corner instead: it lands over the charge strip,
+   which is the row it belongs to, and leaves the count and the bar readable
+   underneath. The panel's own yellow pulse is what makes it a flash; the pill
+   only has to carry the amount. */
+.limits__banner[data-kind="scored"] {
+  inset: auto 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 176, 32, 0.94);
   color: var(--text-invert);
-  animation-name: limits-lift;
-}
-@keyframes limits-lift {
-  from { background-color: rgba(255, 176, 32, 0.94); }
-  to { background-color: rgba(255, 122, 0, 0.94); }
-}
-.limits__banner[data-kind="saved"] {
-  background: rgba(53, 208, 127, 0.92);
-  color: var(--text-invert);
+  font-size: var(--fs-label);
   animation: none;
 }
-.limits__banner[data-kind="scored"] {
-  background: rgba(255, 176, 32, 0.92);
-  color: var(--text-invert);
-  animation: none;
-}
-/* Penalty discharged. Green and steady, like SAVED — this is the one penalty
-   message that is good news, and it must not be mistakable at a glance for the
-   red one that says you have picked another up. It does not pulse: the driver is
+/* Penalty discharged. Green and steady — this is the one message on the widget
+   that is good news, and it must not be mistakable at a glance for the red one
+   that says you have picked another up. It does not pulse: the driver is
    leaving the pit lane and rejoining traffic, and the job here is to answer
    "did that count?" without also demanding attention. */
 .limits__banner[data-kind="served"] {
@@ -2808,13 +2794,9 @@ body.ig-editing #widget-radar .panel__header {
    seconds of gentle breathing is enough to catch peripheral vision without
    becoming the thing you look at instead of the corner. */
 #widget-limits[data-limits="alarm"] .panel__body,
-#widget-limits[data-limits="atrisk"] .panel__body,
 #widget-limits[data-limits="penalty"] .panel__body {
   animation: limits-pulse 0.9s ease-in-out infinite;
 }
-/* At risk pulses faster than anything else here: it is the one state that has a
-   deadline attached to it. */
-#widget-limits[data-limits="atrisk"] .panel__body { animation-duration: 0.45s; }
 @keyframes limits-pulse {
   0%, 100% { background-color: transparent; }
   50% { background-color: rgba(255, 176, 32, 0.16); }
