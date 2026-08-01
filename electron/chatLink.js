@@ -418,6 +418,33 @@ async function accessToken() {
  * channel name, and push both to the server. Called on link, on the periodic
  * timer, and when the server reports the token expired.
  */
+/**
+ * The linked channel's name, for the control panel's "Linked as …" line. Kept
+ * separate from broadcast discovery because a `liveBroadcasts` snippet has no
+ * channelTitle — reading one there always yielded undefined, so the panel showed
+ * a blank account even when the link was healthy.
+ */
+async function fetchChannelTitle(token) {
+  try {
+    const res = await fetch(`${YOUTUBE_API}/channels?part=snippet&mine=true`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return;
+    const json = await res.json().catch(() => ({}));
+    const item = Array.isArray(json.items) && json.items[0];
+    const title = item && item.snippet && item.snippet.title ? item.snippet.title.trim() : '';
+    if (!title) return;
+    yt.displayName = title;
+    if (store.youtube) {
+      store.youtube.display_name = title;
+      writeStore();
+    }
+  } catch {
+    /* the name is cosmetic; discovery does not depend on it */
+  }
+}
+
 async function maintainYouTube() {
   if (!store.youtube) return;
   const token = await accessToken();
@@ -428,11 +455,15 @@ async function maintainYouTube() {
     return;
   }
   try {
+    // `broadcastStatus` already scopes the list to the authorized channel, and the
+    // API rejects it alongside `mine` with 400 incompatibleParameters — the two are
+    // alternative filters, not a filter plus a qualifier. Sending both made every
+    // discovery call fail, which the widget could only report as "awaiting live
+    // stream" no matter what was actually on air.
     const params = new URLSearchParams({
       part: 'snippet',
       broadcastStatus: 'active',
       broadcastType: 'all',
-      mine: 'true',
       maxResults: '1',
     });
     const res = await fetch(`${YOUTUBE_API}/liveBroadcasts?${params.toString()}`, {
@@ -443,18 +474,24 @@ async function maintainYouTube() {
       const json = await res.json().catch(() => ({}));
       const item = Array.isArray(json.items) && json.items[0];
       const liveChatId = item && item.snippet && item.snippet.liveChatId ? item.snippet.liveChatId : '';
-      const channel = item && item.snippet && item.snippet.channelTitle ? item.snippet.channelTitle : '';
       const changed = liveChatId !== yt.liveChatId;
       yt.liveChatId = liveChatId;
-      if (channel) {
-        yt.displayName = channel;
-        if (store.youtube) store.youtube.display_name = channel;
-        writeStore();
-      }
       if (changed) pushServerConfig();
+      // A broadcast snippet carries no channelTitle, so the name is asked for
+      // separately — once, since it does not change mid-stream.
+      if (!yt.displayName) await fetchChannelTitle(token);
+    } else {
+      // Not fatal, but never silent: a 400/403 here is a bug or a scope problem,
+      // and swallowing it is what made this take a live stream to notice.
+      const json = await res.json().catch(() => ({}));
+      const err = (json && json.error) || {};
+      const reason = (err.errors && err.errors[0] && err.errors[0].reason) || 'unknown';
+      console.warn(`[chatLink] liveBroadcasts failed: HTTP ${res.status} (${reason}) ${err.message || ''}`);
+      yt.liveChatId = '';
     }
-  } catch {
-    /* transient — the periodic timer tries again */
+  } catch (e) {
+    // Transient — the periodic timer tries again — but say so rather than vanish.
+    if (e && e.name !== 'AbortError') console.warn(`[chatLink] liveBroadcasts error: ${e.message}`);
   }
   // Always re-push (the access token may have rotated even if the chat id held).
   pushServerConfig();

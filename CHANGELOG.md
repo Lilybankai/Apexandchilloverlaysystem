@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.47.2 — 2026-08-01
+
+### Fixed
+
+- **YouTube chat never appeared, whatever was on air.** Broadcast discovery asked the API
+  for `mine=true` and `broadcastStatus=active` together. Those are alternative filters
+  rather than a filter and a qualifier, so every call — for every user, since the widget
+  shipped — came back `400 incompatibleParameters` and no live chat was ever found. The
+  request now sends `broadcastStatus` alone, which already scopes the list to the
+  authorized channel. Confirmed against a running stream: the corrected query returns the
+  broadcast and its `liveChatId`.
+
+- **The failure was invisible, which is why it took a live stream to find.** Discovery
+  acted only on a successful response and discarded everything else, so a malformed
+  request, an expired token and a genuinely offline channel were indistinguishable — all
+  three showed *"awaiting live stream"*. A non-OK response is now logged with its status
+  and reason, and the chat id is cleared rather than left stale.
+
+- **The control panel showed a blank name for a healthy YouTube link.** The channel title
+  was read from the broadcast snippet, which does not carry one, so it was always
+  `undefined`. It is now fetched from the channel itself, once per link.
+
 ## 0.47.1 — 2026-08-01
 
 ### Fixed
