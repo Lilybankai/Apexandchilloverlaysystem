@@ -29,14 +29,49 @@ const clientId = (process.env.APEX_GOOGLE_CLIENT_ID || '').trim();
 const clientSecret = (process.env.APEX_GOOGLE_CLIENT_SECRET || '').trim();
 
 if (!clientId || !clientSecret) {
-  console.warn(
-    '[oauth] APEX_GOOGLE_CLIENT_ID / APEX_GOOGLE_CLIENT_SECRET not set — building\n' +
-      '[oauth] without a baked Google client. Twitch chat is unaffected; YouTube\n' +
-      '[oauth] linking will report "not available on this build" for every install.',
-  );
-  // Write an empty client rather than leaving a stale one from a previous build.
+  // Always clear the file first, so a failed build can never leave a stale client
+  // behind for the next one to pick up and ship by accident.
   fs.writeFileSync(OUT, JSON.stringify({ clientId: '', clientSecret: '' }, null, 2) + '\n');
-  process.exit(0);
+
+  if (process.env.APEX_ALLOW_NO_OAUTH === '1') {
+    console.warn(
+      '[oauth] no credentials, and APEX_ALLOW_NO_OAUTH=1 — building a Twitch-only\n' +
+        '[oauth] package on purpose. YouTube linking will be unavailable in it.',
+    );
+    process.exit(0);
+  }
+
+  // This used to be a warning. A warning scrolls past in build output, and 0.48.0
+  // shipped an installer nobody could link YouTube with — the build looked entirely
+  // successful. Refusing is the only version of this that works.
+  console.error(
+    '\n[oauth] REFUSING TO BUILD: no Google OAuth client in the environment.\n' +
+      '\n' +
+      '  APEX_GOOGLE_CLIENT_ID     ' +
+      (clientId ? 'set' : 'MISSING') +
+      '\n' +
+      '  APEX_GOOGLE_CLIENT_SECRET ' +
+      (clientSecret ? 'set' : 'MISSING') +
+      '\n' +
+      '\n' +
+      '  A package built now would install fine and then tell every user that\n' +
+      '  "YouTube linking isn\'t available on this build". Twitch would still work.\n' +
+      '\n' +
+      '  These are read from the environment at build time and are deliberately not\n' +
+      '  in git (the repo is public). Two things to check, in order:\n' +
+      '\n' +
+      '   1. Is this shell older than the variables? They are set at Windows User\n' +
+      '      scope, and a shell inherits the environment it was STARTED with — so a\n' +
+      '      terminal opened before they were set will never see them. Open a new one,\n' +
+      '      or set them inline for this build:\n' +
+      '        $env:APEX_GOOGLE_CLIENT_ID="…"; $env:APEX_GOOGLE_CLIENT_SECRET="…"; npm run app:dist\n' +
+      '\n' +
+      '   2. If this machine has never had them, get them from whoever registered the\n' +
+      '      Google Cloud project — see README, "Setting up YouTube linking".\n' +
+      '\n' +
+      '  To build a Twitch-only package on purpose: APEX_ALLOW_NO_OAUTH=1\n',
+  );
+  process.exit(1);
 }
 
 fs.writeFileSync(OUT, JSON.stringify({ clientId, clientSecret }, null, 2) + '\n');
