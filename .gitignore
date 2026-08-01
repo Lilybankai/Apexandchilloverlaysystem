@@ -24,5 +24,10 @@ Thumbs.db
 .env.local
 config.local.json
 
+# Google OAuth desktop client, baked into the build by scripts/write-oauth-client.js.
+# Ships inside the package (it must, or YouTube linking only works on the build
+# machine) but never in this public repo, where scanners auto-revoke it.
+electron/oauth-client.generated.json
+
 # Local screenshots / scratch
 /Screenshot*.png

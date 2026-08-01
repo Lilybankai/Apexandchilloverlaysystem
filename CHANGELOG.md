@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.47.1 — 2026-08-01
+
+### Fixed
+
+- **YouTube linking is now available in a distributed build, not just on the machine
+  that built it.** The Google OAuth desktop client is baked into the source instead of
+  being read only from the builder's environment. Every installed copy but the build
+  machine's was showing *"YouTube linking isn't available on this build"*, because the
+  client id and secret were supplied by env vars that exist on one PC. Neither value is
+  confidential for an installed app — the flow is PKCE on a loopback redirect, so
+  possession of them cannot yield anyone's token — which is what makes shipping them the
+  correct fix rather than a shortcut. Env still takes precedence, so a fork can point at
+  its own Cloud project without editing source. Twitch was never affected.
+
 ## 0.47.0 — 2026-08-01
 
 ### Added

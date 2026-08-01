@@ -50,13 +50,34 @@ const { shell } = require('electron');
 /* -------------------------------------------------------------------------- */
 
 /**
- * Google OAuth "Desktop app" client. The client id and the desktop client
- * secret are NOT confidential for an installed app (Google says as much), so
- * they may ship in a build — but they are project-specific, so they are left
- * empty here and supplied by env for whoever registers the Cloud project.
+ * Google OAuth "Desktop app" client, resolved in three steps: the environment
+ * first, then the client baked into the build, then nothing.
+ *
+ * The baked file is written by `scripts/write-oauth-client.js` at package time
+ * from the same two env vars, and is NOT in git — this repo is public, and a
+ * committed credential gets found and auto-revoked by scanners even though it
+ * is harmless. Shipping it inside the build is what makes YouTube linking work
+ * on a machine that has never heard of this Cloud project; without it every
+ * installed copy but the build machine's shows "YouTube linking isn't available
+ * on this build".
+ *
+ * Neither value is confidential for an installed app — the flow is PKCE on a
+ * loopback redirect, so possession of them cannot yield anyone's token. That is
+ * why they may ship at all. See README, "Setting up YouTube linking".
  */
-const GOOGLE_CLIENT_ID = process.env.APEX_GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.APEX_GOOGLE_CLIENT_SECRET || '';
+function bakedClient() {
+  try {
+    // eslint-disable-next-line global-require
+    return require('./oauth-client.generated.json');
+  } catch {
+    return {};
+  }
+}
+
+const baked = bakedClient();
+const GOOGLE_CLIENT_ID = process.env.APEX_GOOGLE_CLIENT_ID || baked.clientId || '';
+const GOOGLE_CLIENT_SECRET =
+  process.env.APEX_GOOGLE_CLIENT_SECRET || baked.clientSecret || '';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
