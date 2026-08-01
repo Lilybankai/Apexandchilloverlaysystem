@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.46.0 — 2026-08-01
+
+### Added
+
+- **A lamp beside each tyre saying whether it is in its operating window.** Green in the
+  window, cyan or amber on the way in or out, blue or red well outside. The window is not
+  a number the overlay picked: LMU publishes its own optimal temperature per compound and
+  per event, and that is what each corner is judged against — 92 °C for the GT3 medium
+  this was built on, 50 °C for the wet, and whatever the next car says for the next car.
+  The lamp is dark whenever the sim publishes no optimum, which is what happens when
+  spectating or on rF2. That case is the point of the design rather than an oversight: a
+  lamp lit green against an invented window would be confidently wrong for every compound
+  whose real window sits somewhere else. Temperatures still show; only the verdict
+  withholds. The lamp reads the core temperature — the number the in-game HUD shows — and
+  shows in every view, because whether the tyre is working is not a function of which
+  number you happen to have on screen.
+
+- **A tyre map: the four tyres drawn as tread strips, blue through red.** A fifth entry in
+  the tyre widget's cycle, after tread. Each tyre shows its temperature across the tread —
+  inner shoulder, centre, outer shoulder — as a colour and a number, with the core
+  temperature on the big line and the surface mean beside it. The ramp runs round the hue
+  circle from blue to red rather than straight between them, so it passes through cyan,
+  green and yellow instead of through purple, where two very different temperatures look
+  alike. It is anchored on the sim's optimum where there is one, so the green middle of
+  the scale lands on the temperature that actually is optimal for the compound fitted.
+
+  The data was there all along. The shared-memory reader has been reading twelve
+  temperature bands per car — three across the tread, for both the surface and the inner
+  liner — and averaging each triplet into a single number before anything downstream could
+  see it. The bands, the carcass core temperature, and the compound name are now carried
+  through to the widget. The compound name is a small side effect worth noting: the tyre
+  widget's header showed `—` on LMU until now, because nothing on that path had ever
+  supplied one.
+
+### Fixed
+
+- **Tyre shoulder temperatures were mirrored on one side of the car.** The sim publishes
+  three temperatures per wheel in a fixed direction across the car — its own tyre screen
+  names them left, centre and right — so the first of the three is the *outer* shoulder on
+  the left of the car and the *inner* shoulder on the right. They were being read as
+  inner-to-outer on all four corners, which mirrored both tyres on one side: every number
+  real, every one attributed to the wrong shoulder on half the car. A camber or pressure
+  call read off them would have been backwards on two corners. The providers now flip the
+  order per side, so `inner` always means the shoulder toward the car's centreline.
+  Confirmed on track: all four corners now show the inner shoulder running hottest, which
+  is what negative camber does, and the two sides agree instead of appearing to behave
+  like different cars.
+
 ## 0.45.0 — 2026-07-31
 
 ### Added

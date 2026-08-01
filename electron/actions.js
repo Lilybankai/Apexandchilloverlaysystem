@@ -150,7 +150,7 @@ function createActions(deps = {}) {
   if (deps.cycleWidgetMode) {
     define({
       id: 'widget.tyres.mode',
-      label: 'Tyre readout (temp / surface / tread)',
+      label: 'Tyre readout (temp / surface / tread / map)',
       group: 'Widgets',
       kind: 'pulse',
       run: async () => {

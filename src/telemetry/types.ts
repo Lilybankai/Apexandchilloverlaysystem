@@ -372,12 +372,47 @@ export interface TyreState {
   tempC: number;
   /** Surface (contact-patch) average temperature in °C, when available. */
   surfaceTempC?: number;
-  /** Inner-shoulder temperature in °C, when available. */
+  /**
+   * Carcass **core** temperature in °C, when available — a single value per
+   * corner, distinct from {@link tempC} (the inner-liner mean). The two track
+   * each other within about a degree; the core is the slower of the two.
+   */
+  coreC?: number;
+  /**
+   * Across-the-tread temperatures, in °C, for the **inner liner** — the layer
+   * {@link tempC} averages.
+   *
+   * ## Orientation is inner/outer *relative to the car*, not the sim's array
+   * The sim publishes three bands per wheel in its own left→right order (its
+   * REST screen names them `leftTemperature`/`centerTemperature`/
+   * `rightTemperature`). That order is a fixed direction in car space, so the
+   * same array index is the OUTER shoulder on the left of the car and the INNER
+   * shoulder on the right. Providers flip it per side so that here `innerC` is
+   * always the shoulder toward the car's centreline and `outerC` always the one
+   * toward the outside — which is what camber and pressure actually mean to a
+   * driver, and what makes the four corners comparable to each other.
+   */
   innerC?: number;
-  /** Centre temperature in °C, when available. */
+  /** Centre-of-tread inner-liner temperature in °C, when available. */
   middleC?: number;
-  /** Outer-shoulder temperature in °C, when available. */
+  /** Outer-shoulder inner-liner temperature in °C. See {@link innerC}. */
   outerC?: number;
+  /** Inner-shoulder **surface** (tread) temperature in °C. See {@link innerC}. */
+  surfaceInnerC?: number;
+  /** Centre-of-tread **surface** temperature in °C, when available. */
+  surfaceMiddleC?: number;
+  /** Outer-shoulder **surface** temperature in °C. See {@link innerC}. */
+  surfaceOuterC?: number;
+  /**
+   * The sim's own optimal operating temperature in °C for the compound fitted
+   * to this corner, when it publishes one.
+   *
+   * This is **read from the sim, never assumed** — LMU carries it per compound
+   * per car/event, so it moves with the machinery rather than being a constant
+   * baked into the overlay. Absent when the sim does not publish it, in which
+   * case nothing downstream may claim a tyre is in or out of its window.
+   */
+  optimalTempC?: number;
   /** Cold/hot pressure in kPa, when available. */
   pressureKpa?: number;
   /** Remaining tread, `0` (worn out) .. `1` (fresh). */

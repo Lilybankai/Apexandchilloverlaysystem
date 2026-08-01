@@ -713,15 +713,37 @@ export class SimulatorProvider implements TelemetryProvider {
     this.tyreWear.rr = clamp01(this.tyreWear.rr - wearRate * (1 + this.pedals.throttle * 0.5));
   }
 
+  /**
+   * The demo's optimal tyre temperature, °C.
+   *
+   * On the live path this is read from the sim per compound and per event
+   * (`optimalCompoundConditions`), never assumed. The simulator has no sim to
+   * ask, so it states a plausible GT3-medium figure — the same 92 °C LMU
+   * published for the car this was built against — purely so the widget's
+   * in-window logic has something to render against in the demo.
+   */
+  private static readonly DEMO_OPTIMAL_C = 92;
+
   private buildTyres() {
+    const r1 = (v: number): number => Math.round(v * 10) / 10;
+    // Carcass and liner lag the surface and sit a little cooler; the inner
+    // shoulder runs hottest, as it does on a car with negative camber. Enough
+    // structure for the tyre map to look like a tyre map without pretending to
+    // be a tyre model.
     const mk = (tempC: number, wear: number): TyreState => ({
-      tempC: Math.round(tempC * 10) / 10,
-      innerC: Math.round((tempC + 3) * 10) / 10,
-      middleC: Math.round(tempC * 10) / 10,
-      outerC: Math.round((tempC - 2) * 10) / 10,
-      pressureKpa: Math.round((165 + (tempC - 82) * 0.4) * 10) / 10,
+      tempC: r1(tempC),
+      surfaceTempC: r1(tempC + 4),
+      coreC: r1(tempC - 1.5),
+      innerC: r1(tempC + 3),
+      middleC: r1(tempC),
+      outerC: r1(tempC - 2),
+      surfaceInnerC: r1(tempC + 8),
+      surfaceMiddleC: r1(tempC + 4),
+      surfaceOuterC: r1(tempC + 1),
+      pressureKpa: r1(165 + (tempC - 82) * 0.4),
       wear: Math.round(wear * 1000) / 1000,
       compound: 'Medium',
+      optimalTempC: SimulatorProvider.DEMO_OPTIMAL_C,
     });
     return {
       frontLeft: mk(this.tyreTemps.fl, this.tyreWear.fl),

@@ -182,6 +182,13 @@ const VT = {
   // shows — verified against the game's own MFD, matching within a few tenths
   // across all four corners (the carcass core at +76 reads ~0.8 °C higher).
   mWheelInnerRel: 84,
+  /**
+   * `mTireCarcassTemperature` — the carcass **core**, a single double per wheel
+   * (not a band triplet), at wheel-start +204 i.e. +76 from the surface base.
+   * Confirmed live alongside the two triplets: cold-soaked it sits within a
+   * tenth of the liner mean, and it moves with them once running.
+   */
+  mWheelCoreRel: 76,
 } as const;
 
 /** Kelvin → Celsius. LMU stores tyre temps in Kelvin. */
@@ -201,6 +208,31 @@ const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
 /** Worst-case bytes we might need (clamped to the real region on open). */
 const MAX_BYTES = VT.base + 128 * VT.stride;
+
+/**
+ * One corner's three across-the-tread temperatures in °C, **oriented to the
+ * car**: `[inner, centre, outer]`, where `inner` is the shoulder toward the
+ * car's centreline.
+ *
+ * The sim does not publish them that way. Its `mTemperature[3]` runs in a fixed
+ * car-space direction — LMU's own REST tyre screen names the three
+ * `leftTemperature` / `centerTemperature` / `rightTemperature` — so index 0 is
+ * the OUTER shoulder on the left of the car and the INNER shoulder on the
+ * right. Reading it as inner→outer everywhere mirrors both right-hand tyres,
+ * which is exactly the kind of error that looks plausible on screen: the
+ * numbers are all real, they are just attributed to the wrong shoulder, and a
+ * camber or pressure call read off them would be backwards on one side of the
+ * car. {@link readWheelBands} does the flip once, here, so nothing downstream
+ * has to know the sim's convention.
+ */
+export type TyreBands = [number, number, number];
+/** Bands for `[FL, FR, RL, RR]`; `null` for a corner with no usable reading. */
+export type TyreBandSet = [
+  TyreBands | null,
+  TyreBands | null,
+  TyreBands | null,
+  TyreBands | null,
+];
 
 /** Physics for the locally-driven car. All values already normalized. */
 export interface LocalCarPhysics {
@@ -246,6 +278,23 @@ export interface LocalCarPhysics {
    * shows. `UNKNOWN_VALUE` when unavailable.
    */
   tyreHudTempsC: [number, number, number, number];
+  /**
+   * Per-corner **surface** temperature bands in °C, `[FL, FR, RL, RR]`, each
+   * `[inner, centre, outer]` oriented relative to the CAR — see
+   * {@link TyreBands} for why the sim's own order cannot be used directly.
+   * `null` when this corner has no usable reading.
+   */
+  tyreSurfaceBandsC: TyreBandSet;
+  /**
+   * Per-corner **inner-liner** temperature bands in °C, same shape and the same
+   * inner/centre/outer orientation as {@link tyreSurfaceBandsC}.
+   */
+  tyreLinerBandsC: TyreBandSet;
+  /**
+   * Per-corner carcass **core** temperature in °C `[FL, FR, RL, RR]`, a single
+   * value per corner (not banded). `UNKNOWN_VALUE` when unavailable.
+   */
+  tyreCoreC: [number, number, number, number];
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
   /**
@@ -746,6 +795,44 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     bandMeanC(3, VT.mWheelInnerRel),
   ];
 
+  /**
+   * The same triplet the means are taken over, kept band-by-band and turned the
+   * right way round for the car — see {@link TyreBands}. All three bands must be
+   * plausible: unlike the mean, a spread is only meaningful if every band in it
+   * is real, and a triplet missing a shoulder would render as a gradient that
+   * simply is not there.
+   *
+   * Wheels 1 and 3 (FR, RR) are the right-hand side, where the sim's array runs
+   * inner→outer already; the left-hand pair is reversed.
+   */
+  const readWheelBands = (wheel: number, rel: number): TyreBands | null => {
+    const b = VT.mWheelTempBase + wheel * VT.mWheelStride + rel;
+    const first = tyreC(b);
+    const centre = tyreC(b + 8);
+    const last = tyreC(b + 16);
+    if (Number.isNaN(first) || Number.isNaN(centre) || Number.isNaN(last)) return null;
+    const isRightSide = wheel === 1 || wheel === 3;
+    const inner = isRightSide ? first : last;
+    const outer = isRightSide ? last : first;
+    return [round1(inner), round1(centre), round1(outer)];
+  };
+  const bandSet = (rel: number): TyreBandSet => [
+    readWheelBands(0, rel),
+    readWheelBands(1, rel),
+    readWheelBands(2, rel),
+    readWheelBands(3, rel),
+  ];
+  const tyreSurfaceBandsC = bandSet(0);
+  const tyreLinerBandsC = bandSet(VT.mWheelInnerRel);
+
+  // Carcass core — one double per wheel, so the same plausibility guard applies
+  // but there is no averaging to do.
+  const coreC = (wheel: number): number => {
+    const c = tyreC(VT.mWheelTempBase + wheel * VT.mWheelStride + VT.mWheelCoreRel);
+    return Number.isNaN(c) ? UNKNOWN_VALUE : round1(c);
+  };
+  const tyreCoreC: [number, number, number, number] = [coreC(0), coreC(1), coreC(2), coreC(3)];
+
   // Exact lap clock: elapsed − lapStart. Guard against pre-session junk (both
   // zero, negative spans, absurd values) — report unknown rather than wrong.
   const elapsed = rec.readDoubleLE(VT.mElapsedTime);
@@ -807,6 +894,9 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
     tyreTempsC,
     tyreHudTempsC,
+    tyreSurfaceBandsC,
+    tyreLinerBandsC,
+    tyreCoreC,
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
     lapTimeSec,
     lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,

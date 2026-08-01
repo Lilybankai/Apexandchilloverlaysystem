@@ -523,10 +523,10 @@ export class RF2Provider implements TelemetryProvider {
     });
 
     const tyres = {
-      frontLeft: this.readTyre(telem, t + VT.mWheels + 0 * WH.stride),
-      frontRight: this.readTyre(telem, t + VT.mWheels + 1 * WH.stride),
-      rearLeft: this.readTyre(telem, t + VT.mWheels + 2 * WH.stride),
-      rearRight: this.readTyre(telem, t + VT.mWheels + 3 * WH.stride),
+      frontLeft: this.readTyre(telem, t + VT.mWheels + 0 * WH.stride, false),
+      frontRight: this.readTyre(telem, t + VT.mWheels + 1 * WH.stride, true),
+      rearLeft: this.readTyre(telem, t + VT.mWheels + 2 * WH.stride, false),
+      rearRight: this.readTyre(telem, t + VT.mWheels + 3 * WH.stride, true),
     };
 
     // Wheel load/suspension block, read raw in the sim's own units. Every
@@ -706,10 +706,24 @@ export class RF2Provider implements TelemetryProvider {
     }));
   }
 
-  private readTyre(buf: Buffer, base: number): TyreState {
-    const inner = buf.readDoubleLE(base + WH.mTemperature + 0) - KELVIN;
+  /**
+   * One corner's tyre state.
+   *
+   * `rightSide` picks which end of the sim's `mTemperature[3]` is the inner
+   * shoulder. The array runs in a fixed car-space direction (ISI's own naming
+   * for the same three values elsewhere is left/centre/right), so index 0 is
+   * the shoulder toward the car's centreline on the RIGHT of the car and the
+   * one toward the outside on the left. Reading it as inner→outer for all four
+   * corners silently mirrors both left-hand tyres — every number still real,
+   * every one attributed to the wrong shoulder on half the car. See
+   * {@link TyreState.innerC}.
+   */
+  private readTyre(buf: Buffer, base: number, rightSide: boolean): TyreState {
+    const first = buf.readDoubleLE(base + WH.mTemperature + 0) - KELVIN;
     const centre = buf.readDoubleLE(base + WH.mTemperature + 8) - KELVIN;
-    const outer = buf.readDoubleLE(base + WH.mTemperature + 16) - KELVIN;
+    const last = buf.readDoubleLE(base + WH.mTemperature + 16) - KELVIN;
+    const inner = rightSide ? first : last;
+    const outer = rightSide ? last : first;
     return {
       tempC: round1(centre),
       innerC: round1(inner),

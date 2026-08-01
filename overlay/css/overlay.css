@@ -1115,6 +1115,9 @@
 /* Tread is the odd one out — a percentage among temperatures — so it gets the
    accent, which is also the fastest way to see that the cycle has wrapped. */
 .tyres__mode[data-view="tread"] { color: var(--ac-cyan); }
+/* The map is the only view that is not a grid of numbers at all, so it says so
+   in the accent too — the cycle has two obvious landmarks rather than one. */
+.tyres__mode[data-view="map"] { color: var(--ac-cyan); }
 .fuel__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1554,6 +1557,71 @@
 .tyre[data-wear="low"] .tyre__wear { color: var(--warn); }
 .tyre[data-wear="crit"] .tyre__band { background: var(--pos-loss); }
 .tyre[data-wear="crit"] .tyre__wear { color: var(--pos-loss); }
+
+/* Corner label row: position on the left, operating-window lamp on the right.
+   The lamp keeps this spot in every view — including the map, where there is no
+   big number for it to sit beside. */
+.tyre__posrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+/* Operating-window lamp. Colour is the whole message, so it is read at a glance
+   and never needs to be parsed; the element's title names the window it was
+   judged against for anyone who wants to check. */
+.tyre__led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  transition: background 180ms linear, box-shadow 180ms linear;
+}
+/* No optimum published (spectating, or a sim that does not report one) — the
+   lamp stays a hollow outline rather than guessing a verdict. */
+.tyre__led[data-lamp="unknown"] { background: transparent; }
+.tyre__led[data-lamp="freezing"] { background: #2f6fd0; border-color: #2f6fd0; }
+.tyre__led[data-lamp="cold"]     { background: var(--ac-cyan); border-color: var(--ac-cyan); }
+/* In the window is the one state worth a glow — it is what the driver is
+   working toward, and the only state that should read as "good" peripherally. */
+.tyre__led[data-lamp="ok"] {
+  background: var(--pos-gain);
+  border-color: var(--pos-gain);
+  box-shadow: 0 0 6px var(--pos-gain);
+}
+.tyre__led[data-lamp="hot"]      { background: var(--warn); border-color: var(--warn); }
+.tyre__led[data-lamp="burning"] {
+  background: var(--pos-loss);
+  border-color: var(--pos-loss);
+  box-shadow: 0 0 6px var(--pos-loss);
+}
+
+/* Tread strip (map view): the tyre seen from above, three bands wide, running
+   inner → centre → outer across the tread. Colours come from the widget on the
+   blue→red thermal ramp, so nothing here fixes a temperature scale. */
+.tyre__strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  margin: 3px 0 2px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tyre__seg {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  padding: 2px 0;
+  background: var(--bg-panel-2);
+  /* The ramp runs through mid-tone blues and reds as well as bright yellows, so
+     a fixed dark or light label would vanish at one end. A dark glyph with a
+     light halo stays legible against every colour on the scale. */
+  color: #0b0f14;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.85);
+}
 
 /* =========================================================================
  * PEDALS WIDGET (bottom-centre) — rolling trace + current bars.

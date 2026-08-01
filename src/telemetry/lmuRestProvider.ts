@@ -119,6 +119,21 @@ const GARAGE_STALE_AFTER_MS = 10_000;
  */
 const WEATHER_REFRESH_INTERVAL_MS = 15_000;
 /**
+ * How often to re-read the tyre spec — the sim's own optimal temperature per
+ * compound, plus which compound is fitted to each corner (ms).
+ *
+ * Deliberately lazy, for the same reason `getPlayerGarageData` is: the optimal
+ * temperatures are a property of the car and event, so within a session they do
+ * not move at all. The only thing here that CAN change is the fitted compound,
+ * and that changes at a pit stop — an event this poll will catch inside half a
+ * minute, on a stint measured in tens of minutes.
+ *
+ * It also earns the slow timer: the screen this comes from carries the entire
+ * pit menu as well (~145 kB, most of it the virtual-energy settings list), so it
+ * is by some way the heaviest response the provider reads.
+ */
+const TYRE_SPEC_REFRESH_INTERVAL_MS = 30_000;
+/**
  * How often to re-read the session's own rule settings (ms).
  *
  * Slower than the weather: these change when a session changes, not while it is
@@ -236,6 +251,38 @@ interface WeatherNode {
  * `NODE_25`, `NODE_50`, `NODE_75`, `FINISH`.
  */
 type RestWeather = Record<string, Record<string, WeatherNode>>;
+
+/**
+ * The slice of `/rest/garage/UIScreen/TireManagement` we consume.
+ *
+ * The screen also carries the whole pit menu, the tyre inventory, weather and
+ * standings — all of which the provider already has from cheaper endpoints, so
+ * only the two blocks that exist nowhere else are typed here.
+ */
+interface RestTireManagement {
+  /**
+   * The sim's own optimal operating temperature per compound. This is the
+   * reason the endpoint is read at all: it is the only published source for
+   * what "up to temperature" means, and it is per car and event rather than a
+   * constant, so nothing else can stand in for it.
+   */
+  optimalCompoundConditions?: {
+    compounds?: Array<{ type?: string; optimalTemperature?: number }>;
+  };
+  /**
+   * Live per-corner state `[FL, FR, RL, RR]`. Only `compound` is taken — an
+   * index into `optimalCompoundConditions.compounds` naming what is fitted.
+   * The temperatures here are a single value per corner and duplicate what
+   * shared memory gives band-by-band, so they are left alone.
+   */
+  wheelInfo?: { wheelLocs?: Array<{ compound?: number }> };
+}
+
+/** Optimal temperature and compound name for one corner, as the sim gives it. */
+interface TyreSpec {
+  compound?: string;
+  optimalTempC?: number;
+}
 
 /** Forecast phases in chronological order, with the label the widget shows. */
 const WEATHER_PHASES: Array<{ key: string; label: string }> = [
@@ -395,6 +442,14 @@ export class LmuRestProvider implements TelemetryProvider {
   private weatherForecast: RestWeather | null = null;
   private weatherTimer: NodeJS.Timeout | null = null;
   /**
+   * Per-corner compound + optimal temperature `[FL, FR, RL, RR]`, from
+   * {@link refreshTyreSpec}. `null` until the screen has been read once; a
+   * corner is `{}` when the sim named a compound it published no optimum for.
+   */
+  private tyreSpec: [TyreSpec, TyreSpec, TyreSpec, TyreSpec] | null = null;
+  private lastTyreSpecOkAt = 0;
+  private tyreSpecTimer: NodeJS.Timeout | null = null;
+  /**
    * The session's own track-limits allowance, from `SESSSET_cuts_allowed`, or
    * `null` when the sim has not published one.
    *
@@ -454,6 +509,12 @@ export class LmuRestProvider implements TelemetryProvider {
     void this.refreshWeather();
     this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
     this.weatherTimer.unref?.();
+    void this.refreshTyreSpec();
+    this.tyreSpecTimer = setInterval(
+      () => void this.refreshTyreSpec(),
+      TYRE_SPEC_REFRESH_INTERVAL_MS,
+    );
+    this.tyreSpecTimer.unref?.();
     void this.refreshRules();
     this.rulesTimer = setInterval(() => void this.refreshRules(), RULES_REFRESH_INTERVAL_MS);
     this.rulesTimer.unref?.();
@@ -491,6 +552,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.rulesTimer) {
       clearInterval(this.rulesTimer);
       this.rulesTimer = null;
+    }
+    if (this.tyreSpecTimer) {
+      clearInterval(this.tyreSpecTimer);
+      this.tyreSpecTimer = null;
     }
     this.fallback.stop();
     this.localCar.stop();
@@ -609,6 +674,47 @@ export class LmuRestProvider implements TelemetryProvider {
       this.garageDataRaw = garage;
       this.lastMfdOkAt = Date.now();
     }
+  }
+
+  /**
+   * Reads the sim's own tyre spec: the optimal temperature for each compound,
+   * and which compound each corner is running.
+   *
+   * This is the whole basis for the overlay ever saying a tyre is in or out of
+   * its window. LMU publishes the number per compound per car/event, so it is
+   * read rather than assumed — a GT3 medium and a wet are 92 °C and 50 °C in
+   * this session, and a different car or event may well disagree. When the read
+   * fails or the sim publishes no optimum, {@link TyreState.optimalTempC} is
+   * left absent and the widget shows temperatures without a verdict, which is
+   * the honest failure: a guessed window would colour every corner confidently
+   * and wrongly.
+   */
+  private async refreshTyreSpec(): Promise<void> {
+    const data = await this.getJson<RestTireManagement>(
+      '/rest/garage/UIScreen/TireManagement',
+    ).catch(() => null);
+    const compounds = data?.optimalCompoundConditions?.compounds;
+    if (!data || !Array.isArray(compounds)) return;
+    const locs = data.wheelInfo?.wheelLocs;
+    const corner = (i: number): TyreSpec => {
+      // Which compound is on this corner. An index the table does not cover is
+      // not a compound we know anything about, so it yields no optimum rather
+      // than falling back to compound 0 — the corners can differ, and naming
+      // the wrong one would put the LED on the wrong window.
+      const idx = Array.isArray(locs) && locs[i] ? locs[i].compound : undefined;
+      if (typeof idx !== 'number' || idx < 0 || idx >= compounds.length) return {};
+      const spec = compounds[idx];
+      if (!spec) return {};
+      const out: TyreSpec = {};
+      if (typeof spec.type === 'string' && spec.type) out.compound = spec.type;
+      // 0 °C is not an optimum any tyre has; treat it as "not published".
+      if (typeof spec.optimalTemperature === 'number' && spec.optimalTemperature > 0) {
+        out.optimalTempC = round1(spec.optimalTemperature);
+      }
+      return out;
+    };
+    this.tyreSpec = [corner(0), corner(1), corner(2), corner(3)];
+    this.lastTyreSpecOkAt = Date.now();
   }
 
   /** Pulls the per-session weather forecast (START → 25/50/75% → FINISH). */
@@ -1654,12 +1760,34 @@ export class LmuRestProvider implements TelemetryProvider {
     const hudTemps = local ? local.tyreHudTempsC : null;
     const speedKph = local ? local.speedKph : restSpeed;
     const pit = this.buildPit(focus, speedKph);
-    const tyre = (i: number): TyreState => ({
-      // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
-      tempC: hudTemps ? (hudTemps[i] as number) : UNKNOWN_VALUE,
-      surfaceTempC: surfaceTemps ? (surfaceTemps[i] as number) : UNKNOWN_VALUE,
-      wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
-    });
+    // Compound + optimal temperature, while the reading is fresh. Held to the
+    // same staleness rule as wear: in the menus or after leaving the session
+    // these describe a car that is no longer there.
+    const spec =
+      this.tyreSpec && Date.now() - this.lastTyreSpecOkAt < GARAGE_STALE_AFTER_MS * 4
+        ? this.tyreSpec
+        : null;
+    const tyre = (i: number): TyreState => {
+      // Bands are already oriented inner→centre→outer for the car by the reader
+      // (see TyreBands) — nothing here re-derives which shoulder is which.
+      const surf = local ? local.tyreSurfaceBandsC[i] : null;
+      const liner = local ? local.tyreLinerBandsC[i] : null;
+      const core = local ? local.tyreCoreC[i] : UNKNOWN_VALUE;
+      const s = spec ? spec[i] : undefined;
+      return {
+        // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
+        tempC: hudTemps ? (hudTemps[i] as number) : UNKNOWN_VALUE,
+        surfaceTempC: surfaceTemps ? (surfaceTemps[i] as number) : UNKNOWN_VALUE,
+        wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
+        ...(core !== UNKNOWN_VALUE ? { coreC: core } : {}),
+        ...(liner ? { innerC: liner[0], middleC: liner[1], outerC: liner[2] } : {}),
+        ...(surf
+          ? { surfaceInnerC: surf[0], surfaceMiddleC: surf[1], surfaceOuterC: surf[2] }
+          : {}),
+        ...(s?.compound ? { compound: s.compound } : {}),
+        ...(s?.optimalTempC !== undefined ? { optimalTempC: s.optimalTempC } : {}),
+      };
+    };
     return {
       slotId: focus ? focus.slotID : UNKNOWN_VALUE,
       position: row ? row.position : UNKNOWN_VALUE,

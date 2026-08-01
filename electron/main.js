@@ -212,8 +212,10 @@ function defaultSettings() {
  * who never touches this sees no change at all.
  */
 const WIDGET_MODES = {
-  // 'auto' keeps the existing core-temp → surface → tread fallback.
-  tyres: ['auto', 'temp', 'surface', 'tread'],
+  // 'auto' keeps the existing core-temp → surface → tread fallback. 'map' is the
+  // four-tyre graphic; it comes last so the three number views stay one press
+  // apart from each other, as they were before it existed.
+  tyres: ['auto', 'temp', 'surface', 'tread', 'map'],
 };
 
 /** Action ids whose binding is mirrored by a legacy single-purpose setting. */
