@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.49.0 — 2026-08-01
+
+### Added
+
+- **An admin panel, for the league rather than the driver.** A new **Admin** tab in the
+  control panel answers the three questions the overlay system could not before: how many
+  people use it, how often, and what they are asking for. It is hidden for everyone but
+  league staff — the tab only appears once `admin_whoami` confirms the account, and every
+  number behind it is fetched through a security-definer RPC that checks `is_admin` again,
+  so the hidden attribute is convenience and the server is the boundary. What it shows are
+  **aggregates only** — active-today / this-week / this-month, sessions, a 14-day
+  active-users chart, version adoption, and a feedback inbox — never another driver's raw
+  rows.
+
+- **A usage heartbeat — the one new signal.** Everything the league could previously see
+  about usage arrived only when someone *completed laps* (`submit_activity`), which misses
+  a streamer who ran overlays and never touched the lap counter. `electron/usageReporter.js`
+  lands one `app_sessions` row the moment the app opens and refreshes it every five minutes,
+  carrying only the app version and a coarse OS label — no telemetry, nothing about what was
+  on screen. The write is idempotent on a per-run session id (the server keeps the later
+  `last_seen`), exactly like the lap uploader, so a dropped or repeated beat costs nothing.
+  Signed-in only, by design: it rides the same `auth.rpc` path and simply waits, quietly,
+  until the driver signs in.
+
+- **The Suggestions tab does something now.** It was a "coming soon" placeholder; it is now
+  a working feedback form (idea / bug / other) that files one row through `submit_feedback`
+  with the app version attached, so the admin inbox reads it in context. Admins triage each
+  item's status (new → planned → in progress → done / declined) straight from the inbox.
+
+- **The Supabase side ships as a migration.** `supabase/migrations/0001_admin_panel.sql`
+  adds the `app_sessions` and `feedback` tables, an `is_admin` flag on `profiles`, and the
+  six RPCs the app calls. It is re-runnable, and the schema lives in the repo even though
+  the project it applies to does not — the app only ever calls these functions, the same way
+  it calls the leaderboard's. Apply it, set `is_admin = true` on your own profile, and the
+  tab appears.
+
 ## 0.48.1 — 2026-08-01
 
 ### Fixed

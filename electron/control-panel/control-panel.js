@@ -1780,6 +1780,274 @@
     if (settings) renderSettings(settings);
   });
 
+  // --- Suggestions (feedback) ----------------------------------------------
+  /*
+   * The Suggestions tab's form. Writes one row through submit_feedback with the
+   * app version attached, so the admin inbox reads it in context. Signed-in only
+   * (the RPC needs a session); a signed-out driver is told to sign in rather than
+   * silently dropped.
+   */
+  const fbKind = $('#fb-kind');
+  const fbMessage = $('#fb-message');
+  const fbSubmit = $('#fb-submit');
+
+  function setFbStatus(text, state) {
+    const el = $('#fb-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.setAttribute('data-state', state || 'idle');
+  }
+
+  if (fbSubmit) {
+    fbSubmit.addEventListener('click', async () => {
+      const message = (fbMessage.value || '').trim();
+      if (!message) {
+        setFbStatus('Type a message first.', 'error');
+        fbMessage.focus();
+        return;
+      }
+      fbSubmit.disabled = true;
+      setFbStatus('Sending…', 'idle');
+      try {
+        const res = await window.apex.feedback.submit({ kind: fbKind.value, message });
+        if (res && res.ok) {
+          fbMessage.value = '';
+          setFbStatus('Thanks — sent to the league.', 'ok');
+        } else {
+          setFbStatus((res && res.error) || 'Could not send.', 'error');
+        }
+      } catch {
+        setFbStatus('Could not send.', 'error');
+      } finally {
+        fbSubmit.disabled = false;
+      }
+    });
+  }
+
+  // --- Admin panel ---------------------------------------------------------
+  /*
+   * League-staff view. The tab is revealed only when admin:whoami confirms this
+   * account is an admin; every read is authorised again server-side, so the
+   * hidden attribute is convenience, not the boundary. All numbers are
+   * aggregates — the panel never sees another driver's raw rows.
+   */
+  const STATUS_LABELS = {
+    new: 'New',
+    planned: 'Planned',
+    in_progress: 'In progress',
+    done: 'Done',
+    declined: 'Declined',
+  };
+
+  function setAdminMsg(text) {
+    const el = $('#admin-msg');
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+
+  function numberOr(n) {
+    return Number.isFinite(Number(n)) ? String(Number(n)) : '—';
+  }
+
+  /** Show or hide the Admin tab based on whether this account is an admin. */
+  async function revealAdminTab() {
+    const tab = $('#admin-tab');
+    if (!tab) return;
+    try {
+      const res = await window.apex.admin.whoami();
+      tab.hidden = !(res && res.ok && res.isAdmin);
+    } catch {
+      tab.hidden = true; // not admin, or offline — the tab stays away
+    }
+  }
+
+  function renderAdminOverview(data) {
+    const d = data || {};
+    setText('#adm-active-today', numberOr(d.activeToday));
+    setText('#adm-active-week', d.activeWeek != null ? `${d.activeWeek} this week` : '');
+    setText('#adm-active-month', numberOr(d.activeMonth));
+    setText('#adm-sessions-week', d.sessionsWeek != null ? `${d.sessionsWeek} sessions · 7d` : '');
+    setText('#adm-total-users', numberOr(d.totalUsers));
+    setText('#adm-new-feedback', numberOr(d.newFeedback));
+    renderAdminDaily(Array.isArray(d.daily) ? d.daily : []);
+    renderAdminVersions(Array.isArray(d.versions) ? d.versions : []);
+  }
+
+  /** The 14-day active-users chart — the week card's bars, keyed on users. */
+  function renderAdminDaily(days) {
+    const chart = $('#adm-daily-chart');
+    const empty = $('#adm-daily-empty');
+    if (!chart) return;
+    chart.textContent = '';
+    if (!days.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const peak = days.reduce((m, d) => Math.max(m, d.users || 0), 0);
+    for (const entry of days) {
+      const users = entry.users || 0;
+      const isPeak = peak > 0 && users === peak;
+      const col = document.createElement('div');
+      col.className = 'weekbar';
+      col.setAttribute('data-peak', String(isPeak));
+      col.title = `${entry.day} — ${users} user${users === 1 ? '' : 's'}, ${entry.sessions || 0} session${
+        entry.sessions === 1 ? '' : 's'
+      }`;
+      const track = document.createElement('div');
+      track.className = 'weekbar__track';
+      const fill = document.createElement('div');
+      fill.className = 'weekbar__fill';
+      fill.style.height = peak > 0 ? `${Math.max(4, (users / peak) * 100)}%` : '4%';
+      if (isPeak) {
+        const cap = document.createElement('span');
+        cap.className = 'weekbar__count';
+        cap.textContent = String(users);
+        fill.append(cap);
+      }
+      track.append(fill);
+      const label = document.createElement('span');
+      label.className = 'weekbar__day';
+      label.textContent = weekdayOf(entry.day);
+      col.append(track, label);
+      chart.append(col);
+    }
+  }
+
+  /** Version adoption as proportional bars, widest = most users. */
+  function renderAdminVersions(versions) {
+    const list = $('#adm-versions');
+    const empty = $('#adm-versions-empty');
+    if (!list) return;
+    list.textContent = '';
+    if (!versions.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const peak = versions.reduce((m, v) => Math.max(m, v.users || 0), 0) || 1;
+    for (const v of versions) {
+      const li = document.createElement('li');
+      li.className = 'admin-bars__row';
+      const label = document.createElement('span');
+      label.className = 'admin-bars__label';
+      label.textContent = v.app_version || '—';
+      const track = document.createElement('span');
+      track.className = 'admin-bars__track';
+      const fill = document.createElement('span');
+      fill.className = 'admin-bars__fill';
+      fill.style.width = `${Math.max(3, ((v.users || 0) / peak) * 100)}%`;
+      track.append(fill);
+      const count = document.createElement('span');
+      count.className = 'admin-bars__count';
+      count.textContent = String(v.users || 0);
+      li.append(label, track, count);
+      list.append(li);
+    }
+  }
+
+  function renderAdminFeedback(rows) {
+    const list = $('#adm-feedback-list');
+    const empty = $('#adm-feedback-empty');
+    if (!list) return;
+    list.textContent = '';
+    if (!rows.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    for (const row of rows) list.append(buildFeedbackItem(row));
+  }
+
+  function buildFeedbackItem(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-item';
+
+    const badge = document.createElement('span');
+    badge.className = 'admin-item__badge';
+    badge.setAttribute('data-kind', row.kind || 'other');
+    badge.textContent = row.kind || 'other';
+
+    const mid = document.createElement('div');
+    mid.className = 'admin-item__msg';
+    const text = document.createElement('p');
+    text.className = 'admin-item__text';
+    text.textContent = row.message || '';
+    const meta = document.createElement('p');
+    meta.className = 'admin-item__meta';
+    const when = row.created_at ? new Date(row.created_at) : null;
+    const whenTxt = when && !Number.isNaN(when.getTime()) ? formatAgo(when.getTime()) : '';
+    meta.textContent = [row.driver || 'Driver', row.app_version ? `v${row.app_version}` : '', whenTxt]
+      .filter(Boolean)
+      .join(' · ');
+    mid.append(text, meta);
+
+    const select = document.createElement('select');
+    select.className = 'field__input admin-item__status';
+    for (const [value, label] of Object.entries(STATUS_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      if (value === row.status) opt.selected = true;
+      select.append(opt);
+    }
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try {
+        const res = await window.apex.admin.setFeedbackStatus({ id: row.id, status: select.value });
+        if (!res || !res.ok) showToast((res && res.error) || 'Could not update.');
+        else row.status = select.value;
+      } finally {
+        select.disabled = false;
+      }
+    });
+
+    li.append(badge, mid, select);
+    return li;
+  }
+
+  /** Load (or reload) everything on the Admin view. */
+  async function loadAdmin() {
+    setAdminMsg('');
+    const filter = $('#adm-fb-filter');
+    try {
+      const [overview, feedback] = await Promise.all([
+        window.apex.admin.overview(),
+        window.apex.admin.feedback({ status: filter ? filter.value : '' }),
+      ]);
+      if (overview && overview.ok) {
+        renderAdminOverview(overview.data);
+      } else if (overview) {
+        setAdminMsg(
+          overview.signedOut
+            ? 'Sign in as an admin to see usage.'
+            : overview.error || 'Usage numbers are unavailable right now.',
+        );
+      }
+      renderAdminFeedback(feedback && feedback.ok ? feedback.rows : []);
+    } catch {
+      setAdminMsg('Could not reach the league.');
+    }
+  }
+
+  async function refreshAdminFeedback() {
+    const filter = $('#adm-fb-filter');
+    const res = await window.apex.admin.feedback({ status: filter ? filter.value : '' });
+    renderAdminFeedback(res && res.ok ? res.rows : []);
+  }
+
+  {
+    const refreshBtn = $('#admin-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => void loadAdmin());
+    const filter = $('#adm-fb-filter');
+    if (filter) filter.addEventListener('change', () => void refreshAdminFeedback());
+  }
+
+  // The admin flag can change with the account, so re-check on sign-in/out too.
+  void revealAdminTab();
+  window.apex.auth.onChange(() => void revealAdminTab());
+
   // --- Tab router ----------------------------------------------------------
   /*
    * The Hub shell's five tabs plus the gear, over one document: each view is a
@@ -1821,6 +2089,9 @@
     if (target === 'leaderboard') {
       refreshPace();
       refreshBoardFilters();
+    }
+    if (target === 'admin') {
+      void loadAdmin();
     }
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);

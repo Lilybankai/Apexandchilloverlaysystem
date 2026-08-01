@@ -177,6 +177,32 @@ const PANEL_CONTRACT = {
   'audio-test': 'button',
   'glow-toggle': 'input:checkbox',
 
+  // Suggestions — the in-app feedback form (v0.49.0)
+  'fb-kind': 'select',
+  'fb-message': 'textarea',
+  'fb-submit': 'button',
+  'fb-status': 'span',
+
+  // Admin panel (v0.49.0) — league-staff usage + feedback inbox. The tab starts
+  // hidden and is revealed by admin:whoami, so it is wired like any other
+  // control: a restyle that dropped one of these would silently break triage.
+  'admin-tab': 'button',
+  'admin-msg': 'p',
+  'admin-refresh': 'button',
+  'adm-active-today': 'span',
+  'adm-active-week': 'span',
+  'adm-active-month': 'span',
+  'adm-sessions-week': 'span',
+  'adm-total-users': 'span',
+  'adm-new-feedback': 'span',
+  'adm-daily-chart': 'div',
+  'adm-daily-empty': 'p',
+  'adm-versions': 'ul',
+  'adm-versions-empty': 'p',
+  'adm-fb-filter': 'select',
+  'adm-feedback-list': 'ul',
+  'adm-feedback-empty': 'p',
+
   // Floating
   toast: 'div',
 };

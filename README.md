@@ -61,9 +61,16 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   class and car, with your own row marked; plus your pace against the class
   reference. See [Reference pace](#reference-pace) and
   [League boards](#league-boards).
-- **Setups · Suggestions** — not built yet; each says so and lists what is
-  coming. **Training** mode is shown in the top-right toggle but disabled for the
+- **Suggestions** — send an idea or a bug report straight from the app; it goes
+  to the league with your app version attached. **Setups** is not built yet and
+  says so. **Training** mode is shown in the top-right toggle but disabled for the
   same reason.
+- **Admin** *(league staff only)* — hidden unless your account is flagged as an
+  admin. Shows how many people are using the overlay system and how often (active
+  today / week / month, a 14-day trend, version adoption) and the feedback inbox,
+  where each suggestion can be triaged. Every number is a server-side aggregate;
+  the panel never sees another member's raw data. See
+  [Admin panel](#admin-panel).
 - **Status pill** — LIVE / DEMO DATA / NO DATA / STOPPED at a glance, mirrored in
   the footer along with the port and the running version.
 
@@ -226,6 +233,46 @@ npm run reference-times:check    # fetch and diff only; exits 1 if it changed
 It fails loudly if the sheet gains a track the app cannot place, or renames one
 it could — see `scripts/reference-tracks.js`, which is the hand-written map from
 what the sim calls a track to what the spreadsheet calls it.
+
+### Admin panel
+
+The **Admin** tab is the league's own view of the tool — how many people use it,
+how often, and what they are asking for. It is hidden for everyone else: the tab
+only appears once `admin_whoami` confirms the signed-in account is an admin, and
+every number behind it comes from a security-definer RPC that checks `is_admin`
+again, so the hidden tab is a convenience and the database is the boundary. What
+it shows are **aggregates** — active users (today / week / month), sessions, a
+14-day active-users chart, version adoption, and the feedback inbox — never
+another member's raw rows.
+
+**Usage** is measured by a light heartbeat. Until now the league could only see
+usage when someone *completed laps* (`submit_activity`), which misses anyone who
+ran overlays without touching the lap counter. `electron/usageReporter.js` writes
+one `app_sessions` row when the app opens and refreshes it every five minutes,
+carrying only the app version and a coarse OS label — no telemetry, nothing about
+what is on screen. The write is idempotent on a per-run session id (the server
+keeps the later `last_seen`), like the lap uploader, so a dropped or repeated beat
+costs nothing. It is signed-in only, by design.
+
+**Feedback** is the [Suggestions](#desktop-app) tab: an idea/bug/other form that
+files one row via `submit_feedback` with the app version attached. Admins triage
+each item's status (new → planned → in progress → done / declined) from the inbox.
+
+The Supabase side lives in the repo as a re-runnable migration,
+`supabase/migrations/0001_admin_panel.sql` — the two tables, the `is_admin` flag,
+and the six RPCs the app calls. The schema is versioned here even though the
+project it applies to is not, the same way the leaderboard's RPCs are: the app
+only ever *calls* these functions. To turn it on:
+
+```sql
+-- 1. apply supabase/migrations/0001_admin_panel.sql in the Supabase SQL editor
+-- 2. make yourself an admin:
+update public.profiles set is_admin = true where id = (
+  select id from auth.users where email = 'you@example.com'
+);
+```
+
+Sign in on the desktop app and the Admin tab appears.
 
 ### Widget background
 
@@ -792,8 +839,13 @@ electron/                # desktop control-panel app (Electron)
   main.js                #   runs the dist/server in-process; persists settings
   preload.js             #   safe IPC bridge to the renderer
   auth.js                #   Supabase accounts (main-process only; owns the session)
+  lapUpload.js           #   background lap/activity uploader (idempotent aggregates)
+  usageReporter.js       #   usage heartbeat → app_sessions (admin panel)
   control-panel/         #   the window UI (choose overlays, copy URLs, status)
     auth.html/.css/.js   #     sign in / register / reset password screens
+supabase/
+  migrations/            # SQL applied to the league's Supabase project
+    0001_admin_panel.sql #   app_sessions + feedback + admin RPCs (is_admin)
 docs/                    # OBS setup + architecture notes
 scripts/                 # Windows launcher
 ```

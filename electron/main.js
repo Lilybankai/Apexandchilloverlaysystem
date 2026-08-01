@@ -35,6 +35,7 @@ const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
 const lapUpload = require('./lapUpload');
+const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
 
 /* -------------------------------------------------------------------------- */
@@ -1558,6 +1559,97 @@ function registerIpc() {
    */
   ipcMain.handle('laps:sync', () => lapUpload.sync({ reason: 'manual' }));
 
+  /* ---- Feedback + admin panel ----
+   *
+   * Thin, like the leaderboard handlers: auth.js owns the token and the call,
+   * and the RPCs authorise themselves server-side (submit_feedback needs a
+   * session; the admin_* functions check is_admin). Main just shapes the result
+   * the way the renderer expects — `signedOut` reported as a state, never an
+   * error — and clamps the inputs.
+   */
+
+  /** File one suggestion/bug from the Suggestions tab. */
+  ipcMain.handle('feedback:submit', async (_evt, payload) => {
+    const p = payload || {};
+    const kind = ['idea', 'bug', 'other'].includes(p.kind) ? p.kind : 'idea';
+    const message = typeof p.message === 'string' ? p.message.trim() : '';
+    if (!message) return { ok: false, error: 'Type a message first.' };
+    const res = await authService.rpc('submit_feedback', {
+      p_kind: kind,
+      p_message: message.slice(0, 4000),
+      p_app_version: app.getVersion(),
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in to send feedback.' : res.error || 'Could not send.',
+      };
+    }
+    return { ok: true, id: res.body };
+  });
+
+  /**
+   * Whether the signed-in driver is a league admin — decides whether the panel
+   * shows the Admin tab at all. A non-admin (or signed-out) driver just gets
+   * `isAdmin: false`; the RPC never raises for them.
+   */
+  ipcMain.handle('admin:whoami', async () => {
+    const res = await authService.rpc('admin_whoami', {});
+    if (!res.ok) return { ok: false, isAdmin: false, signedOut: !!res.signedOut };
+    return { ok: true, isAdmin: res.body === true };
+  });
+
+  /** The admin dashboard's headline numbers (usage, versions, 14-day trend). */
+  ipcMain.handle('admin:overview', async () => {
+    const res = await authService.rpc('admin_usage_overview', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || {} };
+  });
+
+  /** The feedback inbox, optionally filtered by status. */
+  ipcMain.handle('admin:feedback', async (_evt, query) => {
+    const q = query || {};
+    const status = ['new', 'planned', 'in_progress', 'done', 'declined'].includes(q.status)
+      ? q.status
+      : null;
+    const res = await authService.rpc('admin_feedback_list', { p_status: status, p_limit: 200 });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /** Triage one feedback item to a new status. */
+  ipcMain.handle('admin:setFeedbackStatus', async (_evt, payload) => {
+    const p = payload || {};
+    const id = Number(p.id);
+    const status = ['new', 'planned', 'in_progress', 'done', 'declined'].includes(p.status)
+      ? p.status
+      : null;
+    if (!Number.isFinite(id) || !status) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_feedback_set_status', { p_id: id, p_status: status });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not update.',
+      };
+    }
+    return { ok: true };
+  });
+
   /* ---- Bindable actions ---- */
 
   /**
@@ -2031,6 +2123,10 @@ app.whenReady().then(async () => {
       });
       // Catch up on anything driven while signed out or offline.
       void lapUpload.sync({ reason: 'startup' });
+      // Start the usage heartbeat from inside the same chain, for the same
+      // reason: its first beat wants a live token, so firing it before the
+      // refresh lands would waste one signed-out attempt every launch.
+      usageReporter.init({ auth: authService, appVersion: app.getVersion() });
     })
     .catch((err) => console.error('[auth] restore failed:', err.message));
 
