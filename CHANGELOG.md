@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.48.1 — 2026-08-01
+
+### Fixed
+
+- **The published 0.48.0 installer could not link YouTube.** The source was never at
+  fault and no work was lost — the binary was simply built on a machine without the
+  Google OAuth credentials in its environment, so `scripts/write-oauth-client.js` baked an
+  empty client, warned, and let the build continue. Every install updating to 0.48.0 saw
+  *"YouTube linking isn't available on this build"*. This release is the same code rebuilt
+  with the client present; the shipped package was checked rather than assumed, by reading
+  the baked client back out of `app.asar`.
+
 ## 0.48.0 — 2026-08-01
 
 ### Changed
