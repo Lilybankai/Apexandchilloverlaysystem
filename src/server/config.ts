@@ -114,6 +114,27 @@ export interface ServerConfig {
    * number means in wheels. Retuned at runtime through `setTelemetryTuning()`.
    */
   trackLimitsMarginM: number;
+  /**
+   * Twitch channel whose chat the overlay's chat widget shows, as the bare login
+   * (a URL or `#name` is normalized on the way in). Twitch chat is read
+   * anonymously over IRC — no account link, no credential — so a channel name is
+   * the only thing this needs. Empty disables the Twitch half of the feed.
+   *
+   * Live source for the desktop app: it pushes the operator's channel in through
+   * `setChatConfig()` without a restart. This is the boot value, so a standalone
+   * `npm start` gets a working Twitch feed from one env var.
+   */
+  twitchChannel: string;
+  /**
+   * YouTube live-chat id for the overlay's chat widget. Unlike Twitch, YouTube
+   * has no anonymous read, so this (and {@link youTubeAccessToken}) come from the
+   * desktop app's Google sign-in, which discovers the id for the active
+   * broadcast. Empty disables the YouTube half of the feed. Retuned live through
+   * `setChatConfig()`.
+   */
+  youTubeLiveChatId: string;
+  /** OAuth access token for the YouTube live-chat polling calls (see above). */
+  youTubeAccessToken: string;
   /** Enables verbose logging. */
   verbose: boolean;
 }
@@ -138,6 +159,9 @@ export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   audioCues: true,
   audioVolume: 60,
   trackLimitsMarginM: 2.4,
+  twitchChannel: '',
+  youTubeLiveChatId: '',
+  youTubeAccessToken: '',
   verbose: false,
 });
 
@@ -266,6 +290,9 @@ export function loadConfig(): ServerConfig {
       0.5,
       5,
     ),
+    twitchChannel: envStr('APEX_TWITCH_CHANNEL', DEFAULT_CONFIG.twitchChannel),
+    youTubeLiveChatId: envStr('APEX_YT_LIVE_CHAT_ID', DEFAULT_CONFIG.youTubeLiveChatId),
+    youTubeAccessToken: envStr('APEX_YT_TOKEN', DEFAULT_CONFIG.youTubeAccessToken),
     verbose: envBool('APEX_VERBOSE', DEFAULT_CONFIG.verbose),
   };
 }

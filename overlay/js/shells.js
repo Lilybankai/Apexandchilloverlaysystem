@@ -124,5 +124,12 @@
       '<span class="panel__meta" data-role="meta">—</span></header>' +
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
+    chat:
+      '<section class="widget panel widget--chat" id="widget-chat" data-widget="chat" aria-label="Live stream chat">' +
+      '<header class="panel__header"><span class="panel__title">Chat</span>' +
+      '<span class="panel__meta" data-role="meta">YT · TW</span></header>' +
+      '<div class="panel__body panel__body--flush" data-role="mount">' +
+      '<div class="placeholder">Connecting…</div></div></section>',
   };
 })();

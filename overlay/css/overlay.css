@@ -2848,3 +2848,180 @@ body.ig-editing #widget-radar .panel__header {
   padding: 6px 2px;
   text-align: center;
 }
+
+/* =========================================================================
+ * CHAT — merged YouTube + Twitch live chat (widgets/chat.js).
+ * A scrolling column of messages fed by its own /chat WebSocket (not the
+ * telemetry frame). Built to sit on a side monitor's dead space on a
+ * triple-screen rig, so it reads as a tall narrow column by default.
+ * ========================================================================= */
+
+/* Same hover-control contract as the radar: fade the CONTENTS (not the
+   section) so the OPACITY slider stays reachable while the chat itself dims. */
+#widget-chat .panel__header,
+#widget-chat .panel__body {
+  opacity: var(--chat-op, 1);
+}
+
+.chat__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  /* A default height that works as its own OBS source and centred on the
+     single-widget page; the in-game layer's height handle clips it shorter. */
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 10px 8px calc(var(--panel-pad) + var(--accent-bar-w));
+  /* A thin, unobtrusive scrollbar — the column is chrome over a game. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.chat__list::-webkit-scrollbar {
+  width: 6px;
+}
+.chat__list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+/* When the in-game height handle has boxed the widget, let the list fill it and
+   scroll inside rather than overflowing the panel. */
+.ig-item[data-sized-h] #widget-chat,
+.ig-item[data-sized-h] #widget-chat .panel__body {
+  height: 100%;
+}
+.ig-item[data-sized-h] #widget-chat .panel__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ig-item[data-sized-h] #widget-chat .chat__list {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat__row {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Small platform tag (YT / TW) before each line. */
+.chat__plat {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  padding: 2px 3px;
+  margin-right: 4px;
+  border-radius: 3px;
+  color: #fff;
+  vertical-align: middle;
+}
+.chat__plat--yt { background: #ff0033; }
+.chat__plat--tw { background: #9147ff; }
+
+/* Role badges (HOST / MOD / VIP / MBR / verified). */
+.chat__badge {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 3px;
+  margin-right: 3px;
+  border-radius: 3px;
+  color: var(--text-invert);
+  vertical-align: middle;
+}
+.chat__badge--broadcaster { background: var(--pos-loss); color: #fff; }
+.chat__badge--mod { background: var(--pos-gain); color: #04231a; }
+.chat__badge--vip { background: var(--ac-magenta); color: #fff; }
+.chat__badge--member { background: var(--ac-purple); color: #fff; }
+.chat__badge--verified { background: var(--ac-cyan); color: #04222a; }
+
+.chat__author {
+  font-weight: 700;
+}
+.chat__sep {
+  color: var(--text-muted);
+  margin: 0 5px 0 2px;
+}
+.chat__body {
+  color: var(--text-primary);
+}
+
+/* Inline emotes — sized to the line, never taller than it. */
+.chat__emote {
+  height: calc(var(--fs-body) * 1.5);
+  width: auto;
+  max-width: 128px;
+  vertical-align: middle;
+  margin: 0 1px;
+}
+
+/* Connecting / waiting placeholder, replaced by the first message. */
+.chat__status {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+  padding: 8px 10px;
+  text-align: center;
+}
+
+/* Hover opacity slider, floated over the list from a zero-height anchor (same
+   pattern as the radar's), so it takes no layout space. */
+.chat__ctl-anchor {
+  position: relative;
+  height: 0;
+}
+.chat__ctl {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+#widget-chat:hover .chat__ctl,
+.chat__ctl:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.chat__ctl-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.chat__ctl-range {
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  accent-color: var(--ac-cyan);
+  cursor: pointer;
+}
+.chat__ctl-val {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+}

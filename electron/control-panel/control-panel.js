@@ -1911,6 +1911,88 @@
 
   window.apex.auth.onChange(renderAuth);
 
+  // --- Streaming chat linking ---------------------------------------------
+
+  const chatTwitchInput = $('#chat-twitch-input');
+  const chatTwitchStatus = $('#chat-twitch-status');
+  const chatYtLink = $('#chat-yt-link');
+  const chatYtUnlink = $('#chat-yt-unlink');
+  const chatYtStatus = $('#chat-yt-status');
+
+  /** Whether the operator is mid-edit, so a push doesn't clobber their typing. */
+  let chatTwitchEditing = false;
+
+  function renderChatState(state) {
+    if (!state) return;
+    if (chatTwitchInput && !chatTwitchEditing) {
+      chatTwitchInput.value = state.twitchChannel || '';
+    }
+    if (chatTwitchStatus) {
+      chatTwitchStatus.textContent = state.twitchLinked ? '· connected' : '';
+    }
+    // YouTube: three states — not available on this build, not linked, linked.
+    if (chatYtLink && chatYtUnlink && chatYtStatus) {
+      if (!state.youTubeConfigured) {
+        chatYtLink.hidden = true;
+        chatYtUnlink.hidden = true;
+        chatYtStatus.textContent = 'Not available on this build.';
+      } else if (state.youTubeLinked) {
+        chatYtLink.hidden = true;
+        chatYtUnlink.hidden = false;
+        const who = state.youTubeAccount ? ` (${state.youTubeAccount})` : '';
+        chatYtStatus.textContent = state.youTubeLive
+          ? `Linked${who} · live chat found`
+          : `Linked${who} · waiting for a live stream`;
+      } else {
+        chatYtLink.hidden = false;
+        chatYtUnlink.hidden = true;
+        chatYtStatus.textContent = '';
+      }
+    }
+  }
+
+  if (chatTwitchInput) {
+    const commitTwitch = debounce(async (value) => {
+      await window.apex.chatLink.setTwitchChannel(value);
+    }, 400);
+    chatTwitchInput.addEventListener('focus', () => {
+      chatTwitchEditing = true;
+    });
+    chatTwitchInput.addEventListener('input', () => commitTwitch(chatTwitchInput.value));
+    chatTwitchInput.addEventListener('blur', () => {
+      chatTwitchEditing = false;
+      void window.apex.chatLink.setTwitchChannel(chatTwitchInput.value);
+    });
+  }
+
+  if (chatYtLink) {
+    chatYtLink.addEventListener('click', async () => {
+      chatYtLink.disabled = true;
+      chatYtStatus.textContent = 'Opening browser… complete sign-in there.';
+      try {
+        const res = await window.apex.chatLink.linkYouTube();
+        if (res && res.ok) renderChatState(res.state);
+        else chatYtStatus.textContent = (res && res.error) || 'Linking failed.';
+      } finally {
+        chatYtLink.disabled = false;
+      }
+    });
+  }
+
+  if (chatYtUnlink) {
+    chatYtUnlink.addEventListener('click', async () => {
+      chatYtUnlink.disabled = true;
+      try {
+        const res = await window.apex.chatLink.unlinkYouTube();
+        if (res && res.state) renderChatState(res.state);
+      } finally {
+        chatYtUnlink.disabled = false;
+      }
+    });
+  }
+
+  window.apex.chatLink.onChange(renderChatState);
+
   // --- App updates ---------------------------------------------------------
 
   function renderUpdate(u) {
@@ -1955,6 +2037,7 @@
   // --- Boot ----------------------------------------------------------------
   window.apex.getState().then(renderAll);
   window.apex.auth.getState().then(renderAuth);
+  window.apex.chatLink.status().then(renderChatState);
   void renderBindings();
   void renderLmuBindings();
   // The logo list lives on disk, not in settings, so it is fetched separately.

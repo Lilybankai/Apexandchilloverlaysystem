@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Stream chat overlay — YouTube + Twitch, in one column.** A new **Chat** widget
+  shows your live chat over the game, the widget triple-screen streamers can park on
+  a side monitor's dead space. It is deliberately not driven by the telemetry frame:
+  chat is bursty and ordered where telemetry is a latest-wins firehose, so it rides
+  its own lightweight `/chat` WebSocket, and the server does every platform-specific
+  thing (Twitch IRC tag parsing, emote ranges, YouTube polling) so the widget stays a
+  thin renderer. Untrusted chat text is written with `textContent` and emotes load
+  only from an allowlisted CDN, so a chat line can never become markup or an arbitrary
+  request; the column is a fixed-size ring buffer, so a multi-hour stream can't leak
+  memory.
+
+  The two platforms are asymmetric on purpose. **Twitch** is read anonymously over
+  IRC — just a channel name, no login. **YouTube** needs Google OAuth, handled
+  entirely in the desktop app's main process (Overlays → *Streaming chat* → *Link
+  YouTube*): the token never touches the browser, the active broadcast's live chat is
+  found automatically, and the token is refreshed for the length of the stream. A
+  standalone server can run the Twitch half from one env var, or supply a YouTube
+  live-chat id and token directly.
+
 ## 0.46.0 — 2026-08-01
 
 ### Added

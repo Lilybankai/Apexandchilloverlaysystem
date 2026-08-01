@@ -17,7 +17,8 @@
  *   ping/pong and terminated so they do not accumulate.
  */
 
-import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { TelemetryFrame } from '../telemetry/types';
 import type { ServerConfig } from './config';
@@ -50,12 +51,18 @@ export class TelemetryWsServer {
   private readonly verbose: boolean;
 
   /**
-   * @param httpServer - HTTP server the WebSocket endpoint is attached to.
-   * @param config - Runtime config (supplies the WS path and verbosity).
+   * @param config - Runtime config (supplies verbosity).
+   *
+   * Uses `noServer` mode: the endpoint is NOT auto-attached to an HTTP server,
+   * because more than one WebSocket endpoint now shares one HTTP server (telemetry
+   * on `/ws`, chat on `/chat`). A path-scoped `WebSocketServer` aborts any upgrade
+   * whose path it does not own with a 400, so two of them on one server abort
+   * each other — see the single `upgrade` router in index.ts, which dispatches by
+   * path to {@link handleUpgrade}.
    */
-  public constructor(httpServer: HttpServer, config: ServerConfig) {
+  public constructor(config: ServerConfig) {
     this.verbose = config.verbose;
-    this.wss = new WebSocketServer({ server: httpServer, path: config.wsPath });
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.wss.on('connection', (socket: TrackedSocket) => this.handleConnection(socket));
     this.wss.on('error', (err) => {
@@ -72,6 +79,17 @@ export class TelemetryWsServer {
   /** Number of currently-connected overlay clients. */
   public get clientCount(): number {
     return this.wss.clients.size;
+  }
+
+  /**
+   * Complete a WebSocket upgrade the HTTP server's `upgrade` router has decided
+   * belongs to this endpoint. Kept explicit (rather than auto-attached) so the
+   * router owns path dispatch and two endpoints can share one HTTP server.
+   */
+  public handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
+    });
   }
 
   /**

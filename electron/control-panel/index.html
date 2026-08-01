@@ -359,6 +359,43 @@
             <span class="field__hint">PNG or SVG with a transparent background works best.</span>
           </div>
         </section>
+
+        <!-- ===================== STREAMING CHAT ===================== -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">Streaming chat</h2>
+            <p class="card__desc">
+              Show your YouTube and Twitch chat on screen with the
+              <strong>Chat</strong> overlay — add it as an OBS source, or enable
+              it in the in-game layer. Great parked on a side monitor on a
+              triple-screen rig.
+            </p>
+          </div>
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field__label">Twitch channel</span>
+              <input class="field__input" id="chat-twitch-input" type="text"
+                     placeholder="your_channel" autocomplete="off" spellcheck="false" />
+              <span class="field__hint">
+                Read anonymously — no sign-in needed, just your channel name.
+                <span id="chat-twitch-status"></span>
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="field__label">YouTube account</span>
+              <div class="chat-yt-row">
+                <button class="btn btn--ghost" id="chat-yt-link" type="button">Link YouTube…</button>
+                <button class="btn btn--ghost btn--sm" id="chat-yt-unlink" type="button" hidden>Unlink</button>
+                <span class="field__hint" id="chat-yt-status"></span>
+              </div>
+              <span class="field__hint">
+                YouTube needs a one-time Google sign-in so it can read your live
+                chat. Opens in your browser; your login stays on this PC.
+              </span>
+            </label>
+          </div>
+        </section>
       </div>
     </section>
 

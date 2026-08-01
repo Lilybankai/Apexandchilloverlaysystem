@@ -21,6 +21,8 @@ import { createReadStream, promises as fs } from 'node:fs';
 import { extname, normalize, resolve, sep } from 'node:path';
 import { frameIntervalMs, loadConfig, type ServerConfig } from './config';
 import { TelemetryWsServer } from './wsServer';
+import { ChatHub, type ChatConfig } from './chatHub';
+import { ChatWsServer } from './chatWsServer';
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
@@ -217,6 +219,55 @@ export function getTelemetryTuning(): TelemetryTuning {
   return { trackLimitsMarginM: trackLimitsMargin() };
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Live chat — YouTube + Twitch, merged and served on /chat                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The live-chat hub, module-level for the same reason the appearance state is:
+ * the desktop app runs this server in-process and links/unlinks accounts while a
+ * session is live, so it must be able to retune the chat sources through
+ * {@link setChatConfig} without restarting the server and dropping every overlay.
+ * Null until {@link start} builds it (so the module can be imported by tests
+ * that never boot the server).
+ */
+let chatHub: ChatHub | null = null;
+
+/**
+ * Point the chat feed at (or away from) a Twitch channel and/or a YouTube live
+ * chat, effective immediately. The desktop app calls this after the operator
+ * links an account or edits their channel; a standalone server seeds it once
+ * from config at boot. Safe to call before {@link start} — the value is held and
+ * applied when the hub is created.
+ */
+export function setChatConfig(next: ChatConfig): ChatConfig {
+  pendingChatConfig = { ...pendingChatConfig, ...next };
+  if (chatHub) chatHub.setConfig(pendingChatConfig);
+  return { ...pendingChatConfig };
+}
+
+/** The chat config currently in force. */
+export function getChatConfig(): ChatConfig {
+  return chatHub ? chatHub.getConfig() : { ...pendingChatConfig };
+}
+
+/** Config staged before the hub exists (or the running hub's, mirrored here). */
+let pendingChatConfig: ChatConfig = {};
+
+/** Handler run when YouTube reports its token expired — set by the desktop app. */
+let chatAuthErrorHandler: (() => void) | null = null;
+
+/**
+ * Register a callback for "the YouTube access token expired". The desktop app
+ * uses it to mint a fresh token and hand it back via {@link setChatConfig},
+ * which is the whole reason polling stops on a 401 rather than spinning on a
+ * dead credential. Wired straight through to the hub when it exists.
+ */
+export function setChatYouTubeAuthErrorHandler(cb: (() => void) | null): void {
+  chatAuthErrorHandler = cb;
+  if (chatHub) chatHub.onYouTubeAuthError = () => chatAuthErrorHandler?.();
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -386,7 +437,38 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     void serveStatic(req, res, overlayRoot, sponsorRoot, config.sponsorIntervalSec);
   });
 
-  const wsServer = new TelemetryWsServer(httpServer, config);
+  const wsServer = new TelemetryWsServer(config);
+
+  // Live chat: the hub pulls YouTube + Twitch into one normalized feed, the
+  // ChatWsServer serves it to the chat widget on /chat. Seeded from config so a
+  // standalone `npm start` with APEX_TWITCH_CHANNEL set works with no desktop
+  // app; the app retunes it live through setChatConfig().
+  chatHub = new ChatHub({ verbose: config.verbose });
+  if (chatAuthErrorHandler) chatHub.onYouTubeAuthError = () => chatAuthErrorHandler?.();
+  pendingChatConfig = {
+    twitchChannel: config.twitchChannel || pendingChatConfig.twitchChannel,
+    youTubeLiveChatId: config.youTubeLiveChatId || pendingChatConfig.youTubeLiveChatId,
+    youTubeAccessToken: config.youTubeAccessToken || pendingChatConfig.youTubeAccessToken,
+  };
+  chatHub.setConfig(pendingChatConfig);
+  const chatWsServer = new ChatWsServer(chatHub, { verbose: config.verbose });
+
+  // One upgrade router for both WebSocket endpoints. A path-scoped ws server
+  // aborts any upgrade whose path it does not own (HTTP 400), so two of them
+  // auto-attached to the same HTTP server would abort each other — hence both
+  // run in `noServer` mode and are dispatched by path here.
+  const chatPath = '/chat';
+  httpServer.on('upgrade', (req, socket, head) => {
+    let pathname = '/';
+    try {
+      pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+    } catch {
+      /* malformed request-target — falls through to destroy below */
+    }
+    if (pathname === config.wsPath) wsServer.handleUpgrade(req, socket, head);
+    else if (pathname === chatPath) chatWsServer.handleUpgrade(req, socket, head);
+    else socket.destroy();
+  });
 
   const provider = selectProvider(config);
   await provider.start();
@@ -412,6 +494,9 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     // Roll back the pieces already started so a failed bind leaks nothing.
     await provider.stop();
     await wsServer.close();
+    await chatWsServer.close();
+    chatHub.stop();
+    chatHub = null;
     throw err;
   }
 
@@ -456,6 +541,9 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     clearInterval(loop);
     await provider.stop();
     await wsServer.close();
+    await chatWsServer.close();
+    chatHub?.stop();
+    chatHub = null;
     await new Promise<void>((r) => httpServer.close(() => r()));
     console.log('[apex-overlay] stopped');
   };
