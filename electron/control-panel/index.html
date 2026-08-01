@@ -761,6 +761,38 @@
           </section>
         </div>
 
+        <!-- Drivers — one row per account (v0.50.0). The only per-person view in
+             the panel: name, email, how many times they have opened the app and
+             when they were last in it. Search and sort run server-side. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-users" /></svg>Drivers</h2>
+            <div class="admin-tools">
+              <input
+                class="field__input admin-tools__search"
+                id="adm-users-search"
+                type="search"
+                placeholder="Search name or email"
+                autocomplete="off"
+              />
+              <select class="field__input" id="adm-users-sort">
+                <option value="last_seen">Last active</option>
+                <option value="logins">Most logins</option>
+                <option value="name">Name</option>
+                <option value="joined">Newest account</option>
+              </select>
+            </div>
+          </div>
+          <div class="admin-table__head">
+            <span>Driver</span>
+            <span>Logins</span>
+            <span>Last active</span>
+          </div>
+          <ul class="admin-table" id="adm-users-list"></ul>
+          <p class="weekempty" id="adm-users-empty" hidden>No accounts match this search.</p>
+          <p class="admin-foot" id="adm-users-note" hidden></p>
+        </section>
+
         <!-- Feedback inbox -->
         <section class="card">
           <div class="card__head">

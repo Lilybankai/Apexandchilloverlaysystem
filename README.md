@@ -67,10 +67,10 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   same reason.
 - **Admin** *(league staff only)* — hidden unless your account is flagged as an
   admin. Shows how many people are using the overlay system and how often (active
-  today / week / month, a 14-day trend, version adoption) and the feedback inbox,
-  where each suggestion can be triaged. Every number is a server-side aggregate;
-  the panel never sees another member's raw data. See
-  [Admin panel](#admin-panel).
+  today / week / month, a 14-day trend, version adoption), a **driver list** of every
+  account with its app-open count and last-active time, and the feedback inbox, where
+  each suggestion can be triaged. Every read is authorised server-side, and nothing
+  about how anyone drives is exposed. See [Admin panel](#admin-panel).
 - **Status pill** — LIVE / DEMO DATA / NO DATA / STOPPED at a glance, mirrored in
   the footer along with the port and the running version.
 
@@ -240,10 +240,23 @@ The **Admin** tab is the league's own view of the tool — how many people use i
 how often, and what they are asking for. It is hidden for everyone else: the tab
 only appears once `admin_whoami` confirms the signed-in account is an admin, and
 every number behind it comes from a security-definer RPC that checks `is_admin`
-again, so the hidden tab is a convenience and the database is the boundary. What
-it shows are **aggregates** — active users (today / week / month), sessions, a
-14-day active-users chart, version adoption, and the feedback inbox — never
-another member's raw rows.
+again, so the hidden tab is a convenience and the database is the boundary. Most of
+it is **aggregate** — active users (today / week / month), sessions, a 14-day
+active-users chart, version adoption, and the feedback inbox.
+
+**Drivers** is the one per-person view: every account with its name, email, how many
+times it has opened the app, and when it was last active, searchable by name or email
+and sortable by last active / most logins / name / newest. An account that has never
+launched the app is listed too, reading `0` and *Never* — "signed up and never came
+back" is the row a league most needs. This is a deliberate exception to the aggregate
+rule and is scoped to identity and presence; nothing about how anyone *drives* is
+exposed — no laps, no telemetry, no session detail. `admin_users_list` is security
+definer and re-checks `is_admin`, so the boundary is still the server's.
+
+Two things to know when reading it: **logins count app opens**, not Supabase
+sign-ins — one per run, from the same heartbeat below — and that heartbeat only
+started recording in **v0.49.0**, so older accounts read `0` until their next launch.
+The card says so under the list. Search and sort run server-side.
 
 **Usage** is measured by a light heartbeat. Until now the league could only see
 usage when someone *completed laps* (`submit_activity`), which misses anyone who
@@ -258,14 +271,16 @@ costs nothing. It is signed-in only, by design.
 files one row via `submit_feedback` with the app version attached. Admins triage
 each item's status (new → planned → in progress → done / declined) from the inbox.
 
-The Supabase side lives in the repo as a re-runnable migration,
+The Supabase side lives in the repo as re-runnable migrations:
 `supabase/migrations/0001_admin_panel.sql` — the two tables, the `is_admin` flag,
-and the six RPCs the app calls. The schema is versioned here even though the
-project it applies to is not, the same way the leaderboard's RPCs are: the app
-only ever *calls* these functions. To turn it on:
+and the six RPCs the app calls — and `0002_admin_users.sql`, which adds the driver
+list's `admin_users_list` (one function, no schema changes). The schema is versioned
+here even though the project it applies to is not, the same way the leaderboard's
+RPCs are: the app only ever *calls* these functions. To turn it on:
 
 ```sql
--- 1. apply supabase/migrations/0001_admin_panel.sql in the Supabase SQL editor
+-- 1. apply supabase/migrations/0001_admin_panel.sql, then 0002_admin_users.sql,
+--    in the Supabase SQL editor
 -- 2. make yourself an admin:
 update public.profiles set is_admin = true where id = (
   select id from auth.users where email = 'you@example.com'
@@ -846,6 +861,7 @@ electron/                # desktop control-panel app (Electron)
 supabase/
   migrations/            # SQL applied to the league's Supabase project
     0001_admin_panel.sql #   app_sessions + feedback + admin RPCs (is_admin)
+    0002_admin_users.sql #   admin_users_list — the driver roster read
 docs/                    # OBS setup + architecture notes
 scripts/                 # Windows launcher
 ```

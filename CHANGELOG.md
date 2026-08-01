@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.50.0 — 2026-08-01
+
+### Added
+
+- **A driver list in the Admin tab — who, not just how many.** 0.49.0 answered how
+  many people use the overlay system and how often; it could not name one of them. The
+  Admin tab now carries a **Drivers** card listing every account with its name and email,
+  **how many times that driver has opened the app**, and **when they were last active** —
+  sorted by last active, most logins, name, or newest account, with a search that matches
+  either name or email. An account that has never launched the app reads `0` and *Never*
+  rather than being left out, because "signed up and never came back" is the row a league
+  most needs to see. Hovering a row gives the version they last ran and the day they joined.
+
+  This deliberately moves a boundary 0.49.0 drew. That release said an admin sees
+  aggregates only, never another driver's raw rows; this is the considered exception,
+  and it is scoped to identity and presence — a name, an email, a count, a timestamp.
+  Nothing about how anyone *drives* is exposed: no laps, no telemetry, no session detail.
+  The gate is unchanged and is still the server's: `admin_users_list` is SECURITY DEFINER
+  and re-checks `is_admin`, so a non-admin calling it directly gets an exception rather
+  than a roster.
+
+  Two details worth knowing when reading the numbers. **Logins count app opens**, not
+  Supabase sign-ins — one per run of the app, from the same `app_sessions` heartbeat the
+  usage tiles already use. And that heartbeat only started recording in 0.49.0, so an
+  account older than it shows `0` until its next launch; the card says so under the list
+  rather than letting the column be misread. Search and sort both run **server-side**, so
+  a league that grows does not turn into a larger download every time the tab is opened.
+
+  Ships as `supabase/migrations/0002_admin_users.sql` — one new function, no schema
+  changes, re-runnable like 0001.
+
 ## 0.49.0 — 2026-08-01
 
 ### Added

@@ -202,6 +202,14 @@ const PANEL_CONTRACT = {
   'adm-fb-filter': 'select',
   'adm-feedback-list': 'ul',
   'adm-feedback-empty': 'p',
+  // Driver roster (v0.50.0). The search and sort both re-query the league, so
+  // losing either one leaves a list that looks right and answers the wrong
+  // question — exactly the silent failure this file exists to catch.
+  'adm-users-search': 'input:search',
+  'adm-users-sort': 'select',
+  'adm-users-list': 'ul',
+  'adm-users-empty': 'p',
+  'adm-users-note': 'p',
 
   // Floating
   toast: 'div',

@@ -1631,6 +1631,32 @@ function registerIpc() {
     return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
   });
 
+  /**
+   * The driver roster — one row per account with name, email, how many times
+   * the app has been opened, and when it was last open. Search and sort are
+   * pushed to the server so a growing league does not turn into a growing
+   * download; both are whitelisted there as well as here.
+   */
+  ipcMain.handle('admin:users', async (_evt, query) => {
+    const q = query || {};
+    const search = typeof q.search === 'string' ? q.search.trim().slice(0, 80) : '';
+    const sort = ['last_seen', 'logins', 'name', 'joined'].includes(q.sort) ? q.sort : 'last_seen';
+    const res = await authService.rpc('admin_users_list', {
+      p_search: search || null,
+      p_sort: sort,
+      p_limit: 500,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
   /** Triage one feedback item to a new status. */
   ipcMain.handle('admin:setFeedbackStatus', async (_evt, payload) => {
     const p = payload || {};

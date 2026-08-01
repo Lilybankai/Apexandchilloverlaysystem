@@ -1947,6 +1947,88 @@
     }
   }
 
+  /*
+   * The driver roster. Unlike everything above it this is per-person — name,
+   * email, app opens, last active — which is the point: "how many" was already
+   * answered by the tiles, and "who" was not. Nothing about how anyone drives
+   * appears here, and the server checks is_admin on every call regardless of
+   * which tab the panel happens to be showing.
+   */
+  function renderAdminUsers(rows) {
+    const list = $('#adm-users-list');
+    const empty = $('#adm-users-empty');
+    const note = $('#adm-users-note');
+    if (!list) return;
+    list.textContent = '';
+    if (!rows.length) {
+      if (empty) empty.hidden = false;
+      if (note) note.hidden = true;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    for (const row of rows) list.append(buildUserRow(row));
+    if (note) {
+      // The caveat matters: a 0 here means "no launch recorded since sessions
+      // started being kept", not "has never used the app". Saying so in the UI
+      // is cheaper than answering it every time someone reads the column.
+      const never = rows.filter((r) => !r.last_seen_at).length;
+      note.textContent =
+        `${rows.length} account${rows.length === 1 ? '' : 's'} · logins count app opens recorded since v0.49.0` +
+        (never ? ` · ${never} with none yet` : '');
+      note.hidden = false;
+    }
+  }
+
+  function buildUserRow(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+
+    const who = document.createElement('div');
+    who.className = 'admin-row__who';
+    const name = document.createElement('span');
+    name.className = 'admin-row__name';
+    name.textContent = row.name || 'Driver';
+    who.append(name);
+    if (row.is_admin) {
+      const tag = document.createElement('span');
+      tag.className = 'admin-row__tag';
+      tag.textContent = 'admin';
+      who.append(tag);
+    }
+    const email = document.createElement('span');
+    email.className = 'admin-row__email';
+    email.textContent = row.email || '—';
+    who.append(email);
+
+    const logins = document.createElement('span');
+    logins.className = 'admin-row__logins';
+    logins.textContent = numberOr(row.logins);
+
+    const last = document.createElement('span');
+    last.className = 'admin-row__last';
+    const seen = row.last_seen_at ? new Date(row.last_seen_at) : null;
+    if (seen && !Number.isNaN(seen.getTime())) {
+      last.textContent = formatAgo(seen.getTime());
+    } else {
+      last.textContent = 'Never';
+      last.setAttribute('data-never', 'true');
+    }
+
+    // The rest — version and join date — is hover detail rather than another
+    // two columns: useful when chasing one driver, noise on every row.
+    const joined = row.joined_at ? new Date(row.joined_at) : null;
+    li.title = [
+      row.email || '',
+      row.app_version ? `last on v${row.app_version}` : 'no version recorded',
+      joined && !Number.isNaN(joined.getTime()) ? `joined ${joined.toLocaleDateString()}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    li.append(who, logins, last);
+    return li;
+  }
+
   function renderAdminFeedback(rows) {
     const list = $('#adm-feedback-list');
     const empty = $('#adm-feedback-empty');
@@ -2007,14 +2089,25 @@
     return li;
   }
 
+  /** The roster's current query, read straight off its two controls. */
+  function adminUsersQuery() {
+    const search = $('#adm-users-search');
+    const sort = $('#adm-users-sort');
+    return {
+      search: search ? search.value.trim() : '',
+      sort: sort ? sort.value : 'last_seen',
+    };
+  }
+
   /** Load (or reload) everything on the Admin view. */
   async function loadAdmin() {
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback] = await Promise.all([
+      const [overview, feedback, users] = await Promise.all([
         window.apex.admin.overview(),
         window.apex.admin.feedback({ status: filter ? filter.value : '' }),
+        window.apex.admin.users(adminUsersQuery()),
       ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
@@ -2026,6 +2119,7 @@
         );
       }
       renderAdminFeedback(feedback && feedback.ok ? feedback.rows : []);
+      renderAdminUsers(users && users.ok ? users.rows : []);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
@@ -2037,11 +2131,30 @@
     renderAdminFeedback(res && res.ok ? res.rows : []);
   }
 
+  async function refreshAdminUsers() {
+    const res = await window.apex.admin.users(adminUsersQuery());
+    renderAdminUsers(res && res.ok ? res.rows : []);
+  }
+
   {
     const refreshBtn = $('#admin-refresh');
     if (refreshBtn) refreshBtn.addEventListener('click', () => void loadAdmin());
     const filter = $('#adm-fb-filter');
     if (filter) filter.addEventListener('change', () => void refreshAdminFeedback());
+
+    const sort = $('#adm-users-sort');
+    if (sort) sort.addEventListener('change', () => void refreshAdminUsers());
+
+    // Typing a search hits the league, so wait for the typist to stop first —
+    // an eight-letter name should be one query, not eight.
+    const search = $('#adm-users-search');
+    if (search) {
+      let debounce = null;
+      search.addEventListener('input', () => {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(() => void refreshAdminUsers(), 250);
+      });
+    }
   }
 
   // The admin flag can change with the account, so re-check on sign-in/out too.

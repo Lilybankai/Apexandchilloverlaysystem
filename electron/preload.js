@@ -176,6 +176,12 @@ contextBridge.exposeInMainWorld('apex', {
     overview: () => ipcRenderer.invoke('admin:overview'),
     /** The feedback inbox: `{ status? }` → `{ ok, rows[], signedOut?, error? }`. */
     feedback: (query) => ipcRenderer.invoke('admin:feedback', query),
+    /**
+     * The driver roster: `{ search?, sort? }` → `{ ok, rows[], signedOut?, error? }`.
+     * One row per account — name, email, app opens, last active. The only admin
+     * read that is per-person rather than aggregate; see the migration's note.
+     */
+    users: (query) => ipcRenderer.invoke('admin:users', query),
     /** Triage one item: `{ id, status }` → `{ ok, error? }`. */
     setFeedbackStatus: (payload) => ipcRenderer.invoke('admin:setFeedbackStatus', payload),
   },
