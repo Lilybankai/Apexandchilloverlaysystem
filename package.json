@@ -16,7 +16,7 @@
     "app:dist": "npm run build && npm run oauth:bake && electron-builder --win && npm run oauth:verify",
     "oauth:bake": "node scripts/write-oauth-client.js",
     "oauth:verify": "node scripts/verify-oauth-baked.js",
-    "release": "npm run build && npm run oauth:bake && electron-builder --win --publish always && npm run oauth:verify",
+    "release": "npm run build && npm run oauth:bake && electron-builder --win && npm run oauth:verify && electron-builder --win --publish always",
     "icons": "node scripts/make-icons.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\"",
     "test:delta": "node scripts/test-pacedelta.js",
