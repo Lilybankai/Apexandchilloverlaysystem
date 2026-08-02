@@ -1031,59 +1031,53 @@
 /* =========================================================================
  * FUEL WIDGET (mid-right) — calculator readout.
  * ========================================================================= */
-/* Gauges: litres in the tank and virtual energy remaining. The two budgets are
-   spent at different rates and topped up from different pit rows, so the widget
-   shows both in full at all times — it used to cycle FUEL and ENERGY every 20
-   seconds, which meant half the time the figure being looked down for was the
-   one not on screen. */
-.fuel__gauges {
+/* --- The top block: the answer, before any of the working -------------------
+   One budget per row — its bar, then its two cubes:
+
+     ▓▓▓▓▓▓▓▓░░░░░░   [ FUEL  50.9 L ] [ LAPS 12.3 ]
+     ▓▓▓▓▓░░░░░░░░░   [ ENERGY  62 % ] [ LAPS 10.1 ]
+
+   ONE grid for both rows, not a grid per row, so the two cube columns line up
+   between the budgets: the pair you want is then a POSITION (top right, bottom
+   right) rather than a label to read at 180 mph.
+
+   `minmax(0, 1fr) auto auto` is the whole responsive contract. The bar track is
+   the only flexible one, so every pixel the widget gains or loses horizontally
+   is taken from — or given to — the BARS, and the cubes stay at the size their
+   own type asks for. Squeezing a Tier 1 number to fit a narrower panel would
+   defeat the reason it is Tier 1; a bar at half its length still reads as a
+   fraction of a tank. The `minmax(0, …)` matters: a bare `1fr` floors at the
+   track's min-content width and would push the cubes out of the panel instead
+   of yielding to them. */
+.fuel__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-soft);
 }
-.fuel__gauge + .fuel__gauge { margin-top: 6px; }
-.fuel__gauge-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 3px;
+/* A car with no virtual energy loses that row whole — bar and both cubes — in
+   one attribute write from the widget. Drawing an empty energy bar would read
+   as "energy exhausted" rather than "this car has none". */
+.fuel__top[data-energy="off"] > [data-res="energy"] { display: none; }
+/* Taller than the old 6px gauge bar: it is now the only thing carrying the
+   shape of the budget (the numbers moved into the cubes beside it), and it is
+   the element that gets thinner as the panel narrows, so it starts with height
+   to spare. Stretched to the full row height instead would read as a block of
+   colour rather than as a level. */
+.fuel__topbar {
+  height: 12px;
+  min-width: 0; /* let the track shrink; see minmax(0, 1fr) above */
 }
-.fuel__gauge-label {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--fs-micro);
-  letter-spacing: 0.12em;
-  color: var(--text-muted);
-}
-.fuel__gauge[data-res="energy"] .fuel__gauge-label { color: var(--ac-cyan); }
-.fuel__gauge-val {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-value);
-  line-height: 1;
-  color: var(--text-primary);
-}
-.fuel__gauge-val small {
-  font-size: var(--fs-label);
-  color: var(--text-secondary);
-}
-/* Laps of range, beside the quantity it belongs to. `margin-left: auto` on the
-   value keeps the two as one right-hand group under the head's space-between,
-   so the pair reads as one statement rather than as three scattered figures. */
-.fuel__gauge-val { margin-left: auto; }
-.fuel__gauge-laps {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-label);
-  line-height: 1;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.fuel__gauge-bar { height: 6px; }
-/* The two bars are read side by side, so they must not look like one quantity
-   split in half — fuel keeps the house gradient, energy is flat cyan. */
-.fuel__gauge[data-res="energy"] .bar__fill { background: var(--ac-cyan); }
+/* Each bar takes its budget's own colour — the same green/cyan split as the
+   stripe on the cube it now sits beside, so a bar and its number are visibly
+   one quantity. The fuel bar wore the house gradient while it lived in a block
+   of its own; against a green-striped cube that read as a third colour with a
+   meaning nobody could name. */
+.fuel__topbar[data-res="fuel"] .bar__fill { background: var(--pos-gain); }
+.fuel__topbar[data-res="energy"] .bar__fill { background: var(--ac-cyan); }
 
 /* Block heading: names the budget the grid under it is denominated in (FUEL /
    VIRTUAL ENERGY). Both blocks are on screen together, so each has to say which
@@ -1181,30 +1175,21 @@
 .fuel__stat-value[data-state="marginal"] { color: var(--warn); }
 .fuel__stat-value[data-state="short"] { color: var(--pos-loss); }
 
-/* --- The four cubes: the answer, after all the working ---------------------
-   Below a rule at the foot of the panel, and deliberately a duplicate of figures
-   that appear above: everything else here is how the answer was reached — burn
-   rate, litres to the finish, margin at the flag — and this is the answer, in
-   the two units a driver acts on. How much is in it, and how far that goes.
+/* --- The four cubes: the answer, before all the working --------------------
+   Deliberately a duplicate of figures that appear below them: everything else
+   here is how the answer was reached — burn rate, litres to the finish, margin
+   at the flag — and this is the answer, in the two units a driver acts on. How
+   much is in it, and how far that goes.
 
-   Fuel across the top, energy across the bottom, so the pair you want is a
-   POSITION rather than a label to read: at 180 mph the eye finds "top right",
-   not "the cell labelled fuel laps". */
-.fuel__cubes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-soft);
-}
+   Sized to their own content and never squeezed (the bar track beside them
+   absorbs the width instead), because a Tier 1 number that shrinks with the
+   panel is no longer Tier 1. */
 .fuel__cube {
-  min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 8px;
   background: var(--bg-panel-2);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   /* The budget's own colour as a stripe — the same green/cyan split the two
-     gauges use, so a cube and its gauge are obviously the same quantity. */
+     bars use, so a cube and its bar are obviously the same quantity. */
   border-left: 3px solid var(--pos-gain);
 }
 .fuel__cube[data-res="energy"] { border-left-color: var(--ac-cyan); }
@@ -1219,7 +1204,10 @@
   text-overflow: ellipsis;
 }
 .fuel__cube[data-res="energy"] .fuel__cube-label { color: var(--ac-cyan); }
-/* Tier 1 throughout — these four are sized to be read without looking. */
+/* Tier 1 throughout — these four are sized to be read without looking.
+   `nowrap` is load-bearing now they size themselves: without it a narrowed
+   panel would break "50.9 L" across two lines instead of taking the width out
+   of the bar beside it. */
 .fuel__cube-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1227,16 +1215,13 @@
   line-height: 1.05;
   margin-top: 2px;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 .fuel__cube-value small {
   font-size: var(--fs-label);
   color: var(--text-secondary);
   margin-left: 1px;
 }
-/* A budget this car does not run. Dimmed to a dash rather than removed: the
-   grid is read by position, and a missing cell would move the other three. */
-.fuel__cube[data-na="true"] { opacity: 0.4; }
-.fuel__cube[data-na="true"] .fuel__cube-value { color: var(--text-muted); }
 
 /* =========================================================================
  * FUEL PLANNER WIDGET (left) — pre-race plan + VE stint timer + ratio control.

@@ -14,6 +14,12 @@
  *   data-glow-enabled  turns the change glow on critical values on or off
  *      (read by the crit() helpers in js/client.js).
  *
+ * …plus a per-widget override of the first one: `widgetOpacity` names widgets
+ * that opt out of the global alpha, so the whole set can be faded to 50% for a
+ * clean stream with the one panel that must be read at a glance kept solid.
+ * That lands on the widget's own section rather than on <html> (see
+ * paintWidgetAlpha, and the matching token block in css/theme.css).
+ *
  * …plus one that cannot be CSS: the radar's car-icon size (30..150%), which is a
  * metres-per-pixel scale for a canvas, not a style. It is handed to the widget as
  * a value with a subscription (`ApexAppearance.onRadarIcons`).
@@ -189,6 +195,84 @@
     audio.configure({ audioCues: cfg.audioCues, audioVolume: cfg.audioVolume });
   }
 
+  /* ------------------------ per-widget background ------------------------- */
+
+  /**
+   * A per-widget override of the global background alpha, `{ widgetId: 0..1 }`.
+   *
+   * The global slider answers "how much of the game do I want to see through
+   * the overlay"; this answers "…except that one". The case it exists for is
+   * the whole set faded to 50% for a clean stream, with the one panel that has
+   * to be read at a glance — fuel, the relative table — kept solid, and it has
+   * to be a per-widget edit rather than a second global mode, because which
+   * widget that is differs per driver and per session.
+   *
+   * A widget with no entry here follows the global value and is left completely
+   * alone: no inline style, no attribute, nothing for the default overlay to
+   * pay for.
+   */
+  var widgetAlpha = {};
+  /** Serialized `widgetAlpha` from the last repaint, so a poll that says the
+   *  same thing again costs one string compare rather than a DOM sweep. */
+  var alphaSig = null;
+
+  /**
+   * Push the per-widget alphas onto the widget sections.
+   *
+   * Both writes are needed. The custom property is what the re-declared surface
+   * tokens read (see the [data-alpha="own"] block in css/theme.css — a token
+   * resolves where it is DECLARED, so the widget has to re-declare them); the
+   * data-panel-bg attribute is the same "is this thing see-through" flag the
+   * global path sets on <html>, and it carries the text-shadow that replaces
+   * the panel behind the text.
+   */
+  function paintWidgetAlpha() {
+    var nodes = document.querySelectorAll("[data-widget]");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var id = el.getAttribute("data-widget");
+      // While the layout editor has the setting suspended EVERY panel is solid,
+      // including the ones with an override — you cannot drag what you cannot
+      // see, and that is exactly what suspend() means.
+      var a = suspended ? undefined : widgetAlpha[id];
+      if (a === undefined) {
+        if (!el.hasAttribute("data-alpha")) continue;
+        el.style.removeProperty("--panel-alpha");
+        el.removeAttribute("data-alpha");
+        el.removeAttribute("data-panel-bg");
+      } else {
+        el.style.setProperty("--panel-alpha", String(a));
+        el.setAttribute("data-alpha", "own");
+        el.setAttribute("data-panel-bg", a >= 1 ? "solid" : "translucent");
+      }
+    }
+  }
+
+  /** Accept a `{ widgetId: 0..100 }` map from the app or /appearance.json. */
+  function applyWidgetAlpha(next) {
+    if (!next || typeof next !== "object") next = {};
+    var map = {};
+    for (var id in next) {
+      if (!Object.prototype.hasOwnProperty.call(next, id)) continue;
+      var a = toAlpha(next[id]);
+      if (a !== null) map[id] = a;
+    }
+    var sig = JSON.stringify(map);
+    if (sig === alphaSig) return;
+    alphaSig = sig;
+    widgetAlpha = map;
+    paintWidgetAlpha();
+  }
+
+  // The widget sections do not exist yet — this file runs in <head>, before the
+  // first paint, which is the whole point of it. Anything that arrives before
+  // the body is parsed is held in widgetAlpha and painted here.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      if (alphaSig !== null) paintWidgetAlpha();
+    });
+  }
+
   /* --------------------------- per-widget modes --------------------------- */
 
   /** Current mode per widget id, and everyone who wants telling when it moves. */
@@ -235,10 +319,12 @@
     suspend: function () {
       suspended = true;
       write(1);
+      paintWidgetAlpha(); // a widget faded by its OWN setting has to come back too
     },
     resume: function () {
       suspended = false;
       write(wanted);
+      paintWidgetAlpha();
     },
     /** Current mode for a widget, or `dflt` when none has been set. */
     mode: function (widgetId, dflt) {
@@ -336,6 +422,10 @@
       if (!appearance) return;
       var a = toAlpha(appearance.panelOpacity);
       if (a !== null && !alphaPinned) apply(a);
+      // ?bg= pins the background for this source, per-widget overrides included:
+      // the param exists so an OBS source can look exactly one way regardless of
+      // the app, and honouring half of the setting would not be that.
+      if (!alphaPinned) applyWidgetAlpha(appearance.widgetOpacity);
       var s = toScale(appearance.textScale);
       if (s !== null && !scalePinned) applyScale(s);
       if (!glowPinned && appearance.changeGlow !== undefined) {
@@ -361,6 +451,7 @@
         if (!cfg) return;
         var a = toAlpha(cfg.panelOpacity);
         if (a !== null && !alphaPinned) apply(a);
+        if (!alphaPinned) applyWidgetAlpha(cfg.widgetOpacity);
         var s = toScale(cfg.textScale);
         if (s !== null && !scalePinned) applyScale(s);
         if (!glowPinned && cfg.changeGlow !== undefined) applyGlow(cfg.changeGlow);

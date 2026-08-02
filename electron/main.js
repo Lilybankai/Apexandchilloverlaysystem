@@ -194,6 +194,13 @@ function defaultSettings() {
     // uses its own default, so this stays out of the way until something is
     // deliberately switched. Delivered with panelOpacity (see applyAppearance).
     widgetModes: {},
+    // Per-widget background opacity, { [widgetId]: 0..100 } — an exception to
+    // panelOpacity above, not a second copy of it. A widget listed here ignores
+    // the global slider; one that is absent (the default, and the whole map on a
+    // fresh install) follows it. This is the "everything at 50% for a clean
+    // stream, except fuel" case, which cannot be a global setting because which
+    // widget has to stay solid differs by driver and by session.
+    widgetOpacity: {},
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
     // A `delta` action can take two buttons (an encoder's two directions); a
@@ -362,6 +369,7 @@ function loadSettings() {
     audioVolume: clamp(stored.audioVolume, 0, 100, defaults.audioVolume),
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
+    widgetOpacity: normalizeWidgetOpacity(stored),
     wheelBindings: normalizeWheelBindings(stored),
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
@@ -384,6 +392,23 @@ function normalizeWheelBindings(stored) {
       }
     }
     if (clean.inc || clean.dec) out[actionId] = clean;
+  }
+  return out;
+}
+
+/**
+ * Keep only background overrides for widgets that still exist, clamped to the
+ * slider's own range. A widget dropped from the catalog leaves its entry behind
+ * in config.json; keeping it would put an id on the appearance channel that
+ * nothing on the overlay side can ever match.
+ */
+function normalizeWidgetOpacity(stored) {
+  const out = {};
+  const from = stored && typeof stored.widgetOpacity === 'object' ? stored.widgetOpacity : null;
+  if (!from) return out;
+  for (const o of OVERLAY_CATALOG) {
+    const v = Number(from[o.id]);
+    if (Number.isFinite(v)) out[o.id] = Math.min(100, Math.max(0, Math.round(v)));
   }
   return out;
 }
@@ -502,6 +527,12 @@ async function startServer() {
     const config = buildServerConfig(settings);
     const mod = requireServer();
     shutdownFn = await mod.start(config);
+    // The ServerConfig carries the plain sliders in, but not the two per-widget
+    // maps (modes and background overrides) — they have no config field and the
+    // server boots them empty. Without this, a widget kept solid inside a faded
+    // overlay silently rejoined the rest of the set every time the app started
+    // or the port changed, until the operator touched a setting.
+    applyAppearance(settings);
     status.running = true;
     status.port = config.httpPort;
     status.error = null;
@@ -718,6 +749,7 @@ function applyAppearance(settings) {
     audioCues: s.audioCues,
     audioVolume: s.audioVolume,
     widgetModes: s.widgetModes || {},
+    widgetOpacity: s.widgetOpacity || {},
   };
   try {
     requireServer().setAppearance(payload);
@@ -755,7 +787,8 @@ function applySettings(partial) {
   // overlays need re-telling.
   if (
     (partial.panelOpacity !== undefined && partial.panelOpacity !== current.panelOpacity) ||
-    partial.widgetModes !== undefined
+    partial.widgetModes !== undefined ||
+    partial.widgetOpacity !== undefined
   ) {
     applyAppearance(next);
   }
@@ -995,6 +1028,11 @@ function overlaysForUi() {
     enabled: settings.enabledOverlays[o.id] !== false,
     ingame: isIngame(settings, o),
     url: `${base}/widget.html?w=${o.id}`,
+    // The widget's own background, and the global it would otherwise follow.
+    // `undefined` opacity is the card's "Auto" state — it has no override, and
+    // the global is what it needs to SHOW while that is true.
+    opacity: settings.widgetOpacity[o.id],
+    globalOpacity: settings.panelOpacity,
   }));
 }
 
@@ -1213,6 +1251,28 @@ function registerIpc() {
       if (partial.panelOpacity !== undefined) {
         next.panelOpacity = clamp(partial.panelOpacity, 0, 100, current.panelOpacity);
       }
+      // These two were missing from this handler while the control panel has
+      // been sending both since they were added: the Text size slider and the
+      // Change glow switch wrote to a key nothing here copied into `next`, so
+      // they were saved nowhere and pushed nowhere.
+      if (partial.textScale !== undefined) {
+        next.textScale = clamp(partial.textScale, 80, 120, current.textScale);
+      }
+      if (typeof partial.changeGlow === 'boolean') {
+        next.changeGlow = partial.changeGlow;
+      }
+      // Per-widget background overrides, merged key by key so a card can send
+      // just its own widget. `null` is the documented "hand this one back to the
+      // global slider" value — an override has to be removable, and a merge
+      // alone could only ever add.
+      if (partial.widgetOpacity && typeof partial.widgetOpacity === 'object') {
+        const merged = { ...current.widgetOpacity };
+        for (const [id, value] of Object.entries(partial.widgetOpacity)) {
+          if (value === null || value === undefined) delete merged[id];
+          else merged[id] = clamp(value, 0, 100, 100);
+        }
+        next.widgetOpacity = normalizeWidgetOpacity({ widgetOpacity: merged });
+      }
       if (partial.radarIconScale !== undefined) {
         next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
       }
@@ -1252,7 +1312,8 @@ function registerIpc() {
       next.changeGlow !== current.changeGlow ||
       next.radarIconScale !== current.radarIconScale ||
       next.audioCues !== current.audioCues ||
-      next.audioVolume !== current.audioVolume
+      next.audioVolume !== current.audioVolume ||
+      JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity)
     ) {
       applyAppearance(next);
     }

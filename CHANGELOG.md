@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.52.0 — 2026-08-03
+
+### Added
+
+- **A background slider on every widget card — fade the set, keep one solid.** The
+  **Widget background** slider in Appearance is all-or-nothing: it moves every panel
+  together, so an operator who wants the overlay at 50% over the track has no way to keep
+  the one panel they actually read at speed legible. Each card in **Overlays** now carries
+  its own `BG` slider, which is that widget's exception to the global one. A card on
+  **Auto** (the default, dimmed to say so) has no override and previews the global value
+  as you drag it; touching its slider creates the override, and the **Auto** button hands
+  the widget back. Overrides ride the same live channel as the global — in game and in
+  OBS sources already running, no reload — and `?bg=` on a URL still pins a source's
+  whole background, per-widget exceptions included.
+
+### Changed
+
+- **The fuel cubes moved to the top of the widget, beside the bars.** They were at the
+  foot, below all the working, which is the wrong way round for the four figures the panel
+  exists to produce. Each budget now reads as one row — its bar, then how much is in it,
+  then how far that goes — fuel above energy. The bar is the only part that flexes: narrow
+  the widget and the bars give up their width while the cubes stay exactly the size they
+  were, because a Tier 1 number that shrinks with the panel is no longer Tier 1. Each bar
+  also takes its own budget's colour (green for fuel, cyan for energy) to match the stripe
+  on the cube beside it — the fuel bar's brand gradient read as a third colour with no
+  meaning once the two sat together. A car with no virtual energy loses that whole row.
+
+- **The change glow is amber now, red when the news is bad — and much brighter.** Cyan
+  lost two fights at once: it is low contrast against sky and pale tarmac, and several
+  widgets already use the brand cyan as their own resting accent, so a cyan bloom landed
+  on things that were permanently cyan anyway. Amber appears nowhere in the resting
+  palette, so anything wearing it just changed. The bloom itself is four stacked stops
+  instead of two, and is held at full strength twice as long (240 ms) — it has to be
+  catchable by an eye that is on the track and only sweeps the overlay between corners.
+  A change landing on a value that is **already** bad news — fuel short at the flag, a
+  tyre past its wear limit, a repair over the budget — burns red instead, so the bloom
+  says how bad as well as that it moved.
+
+### Fixed
+
+- **Text size and Change glow did nothing.** The control panel had been sending both
+  since they were added, and the settings handler in the desktop app never copied either
+  one out of the message — so dragging the text slider or flipping the glow switch saved
+  nothing, pushed nothing, and reverted the moment the panel re-read its state.
+
+- **Per-widget settings were forgotten every time the app started.** Widget display modes
+  (and now background overrides) are carried on the appearance channel, which the server
+  boots empty because neither map has a config field. Nothing re-sent them after a
+  start or a port change, so a tyre widget left on `tread` — or a panel kept solid inside
+  a faded overlay — quietly rejoined the defaults until the operator touched a setting.
+
 ## 0.51.0 — 2026-08-02
 
 ### Changed

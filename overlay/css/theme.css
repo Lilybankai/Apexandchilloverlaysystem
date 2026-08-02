@@ -133,17 +133,32 @@
   --fs-crit-lg: calc(34px * var(--fs-scale));
 
   /* --- Change glow ---------------------------------------------------
-   * The bloom on a critical value that just changed. Cyan because one colour
-   * has to mean one thing — "this just changed" — everywhere, and the brand
-   * cyan sits outside the green/red state vocabulary, so it is never mistaken
-   * for good or bad news. */
-  --glow: var(--ac-cyan);
+   * The bloom on a critical value that just changed. AMBER, not the brand cyan
+   * it used to be: this signal has to survive being glanced at for a fifth of a
+   * second over live footage, and cyan lost that fight twice over — it is low
+   * contrast against sky and pale tarmac, and several widgets already use the
+   * brand cyan as their own accent (the energy budget, the tread view, block
+   * headings), so a cyan bloom landed on top of things that were permanently
+   * cyan anyway. Amber appears nowhere in the resting palette, so anything
+   * wearing it just changed.
+   *
+   * One colour still means one thing, with one deliberate escalation: a value
+   * that is BOTH changing and already in a bad state (fuel short at the flag, a
+   * tyre past its wear limit) re-points --glow at the red below, so the bloom
+   * says how bad as well as that it moved. See the .is-crit rules further down —
+   * every state does it by re-declaring the token, so there is still exactly one
+   * rule that draws a bloom. */
+  --glow: #ff9f1a;
   /* The wide outer bloom, pre-mixed rather than colour-mix()'d: OBS ships an
      older CEF than desktop Chrome and a glow that silently fails to render is
      worse than one that cannot be retinted. */
-  --glow-soft: rgba(34, 211, 238, 0.65);
+  --glow-soft: rgba(255, 159, 26, 0.72);
   /* Flat tint used instead of the bloom under prefers-reduced-motion. */
-  --glow-tint: rgba(34, 211, 238, 0.22);
+  --glow-tint: rgba(255, 159, 26, 0.26);
+  /* The escalation, for a change landing on a value that is already bad news. */
+  --glow-hot: #ff4d4d;
+  --glow-hot-soft: rgba(255, 77, 77, 0.75);
+  --glow-hot-tint: rgba(255, 77, 77, 0.3);
   --glow-fade: 550ms;
 
   /* --- Geometry ----------------------------------------------------- */
@@ -207,11 +222,42 @@ body {
   opacity: var(--panel-alpha);
 }
 
+/* =========================================================================
+ * PER-WIDGET BACKGROUND OVERRIDE
+ * The global "Widget background" slider sets one alpha for the whole overlay.
+ * A widget can opt out of it: js/appearance.js writes that widget's own
+ * --panel-alpha onto its section and marks it data-alpha="own".
+ *
+ * Which means the surface tokens have to be DECLARED again here. A custom
+ * property is substituted where it is declared, not where it is used, so
+ * --bg-panel has already resolved against the :root alpha by the time it
+ * inherits down to a widget — re-declaring --panel-alpha alone would change
+ * nothing but the two properties that read it directly (.panel's shadow and
+ * ::before). This block is therefore a deliberate mirror of the surface tokens
+ * at the top of this file: CHANGE ONE, CHANGE BOTH.
+ * ========================================================================= */
+[data-widget][data-alpha="own"] {
+  --bg-panel: rgba(12, 14, 24, var(--panel-alpha));
+  --bg-panel-2: rgba(16, 19, 31, var(--panel-alpha));
+  --bg-panel-3: rgba(22, 26, 41, var(--panel-alpha));
+  --bg-header: rgba(9, 10, 18, var(--panel-alpha));
+  --control-alpha: max(var(--panel-alpha), 0.85);
+  --bg-control: rgba(22, 26, 41, var(--control-alpha));
+  --border-control: rgba(49, 56, 80, var(--control-alpha));
+  --border-soft: rgba(35, 40, 56, var(--panel-alpha));
+  --border-strong: rgba(49, 56, 80, var(--panel-alpha));
+}
+
 /* Below a solid background the panel loses the dark backdrop that made its
    text readable, so the text carries its own. Scoped to the attribute
    js/appearance.js sets (not applied via a calc'd transparent shadow) so the
-   default, fully-opaque overlay pays nothing for a shadow it never shows. */
-html[data-panel-bg="translucent"] .panel {
+   default, fully-opaque overlay pays nothing for a shadow it never shows.
+
+   The second selector is the same thing for ONE widget: appearance.js writes
+   data-panel-bg onto a panel with its own alpha, exactly as it writes it onto
+   <html> for the global one. */
+html[data-panel-bg="translucent"] .panel,
+.panel[data-panel-bg="translucent"] {
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.9),
     0 0 6px rgba(0, 0, 0, 0.6);
@@ -222,6 +268,17 @@ html[data-panel-bg="translucent"] .panel {
      descendant that reads them. */
   --text-secondary: #e6ebf6;
   --text-muted: #c6cfe1;
+}
+
+/* …and the reverse: ONE widget turned back up to solid while the rest of the
+   overlay is faded. The rule above matches it through <html> and would leave it
+   wearing the lifted text and a halo it no longer needs — over its own dark
+   panel, that reads as a smudge. Values restated from :root deliberately; a
+   `revert` would go to the browser default, not to the token. */
+html[data-panel-bg="translucent"] .panel[data-panel-bg="solid"] {
+  text-shadow: none;
+  --text-secondary: #aeb6c8;
+  --text-muted: #6b7387;
 }
 
 .panel__header {
@@ -328,16 +385,43 @@ html[data-panel-bg="translucent"] .panel {
      signal that means "changed" has to look identical everywhere to be read
      without thinking.
 
+     FOUR stops, not two. The first is the black backing; then a tight core at
+     full strength, a mid halo, and a wide soft one. Stacking them is what makes
+     the bloom read as a light source rather than as a slightly fuzzy number —
+     the previous 4px + 14px pair was legible on a desk monitor and invisible in
+     peripheral vision at racing speed, which is the only place it has to work.
+
      The black shadow is repeated deliberately. The one on .panel below a solid
      background reaches this element by INHERITANCE, and a text-shadow declared
      directly on the element replaces it wholesale — so without this first stop a
      glowing value would lose its dark backing at the exact moment it is trying
      to be seen, over whatever pale tarmac is behind it. */
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.9),
-    0 0 4px var(--glow),
-    0 0 14px var(--glow-soft);
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 3px var(--glow),
+    0 0 9px var(--glow),
+    0 0 22px var(--glow-soft),
+    0 0 38px var(--glow-soft);
   transition: none; /* arrive instantly, leave on the fade */
+}
+
+/* The escalation: a change landing on a value that is ALREADY bad news burns
+   red instead of amber. Done by re-pointing the token rather than by writing a
+   second bloom, so there stays exactly one rule that knows how a bloom is drawn
+   — and so a state added later inherits the intensity for free.
+
+   The selectors are the house state vocabulary, wherever it lands on something
+   marked critical: the fuel/energy margin short at the flag, a tyre or a
+   component past its limit, and the generic danger/crit buckets. */
+.is-crit[data-state="short"],
+.is-crit[data-state="danger"],
+.is-crit[data-wear="crit"],
+[data-state="short"] .is-crit,
+[data-state="over"] .is-crit,
+[data-wear="crit"] .is-crit {
+  --glow: var(--glow-hot);
+  --glow-soft: var(--glow-hot-soft);
+  --glow-tint: var(--glow-hot-tint);
 }
 
 /* A bloom is a light effect, not motion, but it does animate — so honour the

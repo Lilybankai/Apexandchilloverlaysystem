@@ -219,6 +219,93 @@
   }
 
   /**
+   * The card's own background slider — this widget's exception to the global
+   * "Widget background" one in Appearance.
+   *
+   * It exists for a layout the global slider cannot express: the whole set faded
+   * to 50% so the track shows through, except the one panel that has to be read
+   * at a glance, which stays solid. Which panel that is differs per driver and
+   * per session, so it is an edit on one card rather than a second global mode.
+   *
+   * Two states, and the difference matters:
+   *   AUTO   no override. The slider SHOWS the global value and follows it as
+   *          the operator drags the global one — it is a preview of what this
+   *          widget is doing, not a stale copy.
+   *   own    an override. The widget ignores the global entirely, at any value,
+   *          including one that happens to equal it right now.
+   *
+   * Touching the slider takes the widget out of Auto; the button beside it puts
+   * it back. Without that button an override could only be approximated by
+   * dragging back to whatever the global happens to be, which would then stop
+   * tracking the global the moment it moved.
+   */
+  function opacityRow(o) {
+    const row = document.createElement('div');
+    row.className = 'ovcard__bg';
+    const auto = o.opacity === undefined || o.opacity === null;
+    // The LIVE global, read off its own slider rather than from the state this
+    // card was rendered from: the two sliders are on the same screen, and a card
+    // still on Auto has to agree with the one the operator just dragged.
+    const globalBg = () => {
+      const v = parseInt(bgRange.value, 10);
+      return Number.isFinite(v) ? v : (o.globalOpacity ?? 100);
+    };
+
+    const label = document.createElement('span');
+    label.className = 'ovcard__bg-label';
+    label.textContent = 'BG';
+
+    const range = document.createElement('input');
+    range.className = 'field__range ovcard__bg-range';
+    range.type = 'range';
+    range.min = '0';
+    range.max = '100';
+    range.step = '5';
+    range.value = String(auto ? globalBg() : o.opacity);
+    range.title = `Background for ${o.label} only`;
+    range.setAttribute('aria-label', `${o.label} background opacity`);
+
+    const echo = document.createElement('span');
+    echo.className = 'ovcard__bg-echo';
+
+    const autoBtn = document.createElement('button');
+    autoBtn.type = 'button';
+    autoBtn.className = 'ovcard__bg-auto';
+    autoBtn.textContent = 'Auto';
+    autoBtn.title = 'Follow the global Widget background slider';
+
+    /** Reflect the two states in one place, so they cannot disagree. */
+    const paint = (isAuto) => {
+      row.setAttribute('data-auto', String(isAuto));
+      echo.textContent = `${range.value}%`;
+      autoBtn.disabled = isAuto;
+      // The echo says WHY the number is what it is; a bare "50%" on a card that
+      // is merely following the global reads as an override that isn't there.
+      echo.title = isAuto ? 'Following the global slider' : 'This widget only';
+    };
+    paint(auto);
+
+    range.addEventListener('input', () => {
+      paint(false);
+      commitWidgetOpacity(o.id, parseInt(range.value, 10));
+    });
+
+    autoBtn.addEventListener('click', () => {
+      range.value = String(globalBg());
+      paint(true);
+      // null, not a number: the override is REMOVED (see the settings:update
+      // handler), which is what puts the widget back under the global slider.
+      commitWidgetOpacity(o.id, null);
+    });
+
+    row.appendChild(label);
+    row.appendChild(range);
+    row.appendChild(echo);
+    row.appendChild(autoBtn);
+    return row;
+  }
+
+  /**
    * One card per widget, in the design system's Overlays grid (`.ovgrid` /
    * `.ovcard` from Views.jsx). The kit's card carries a single switch; ours
    * carries the two destinations the app actually has — the OBS Browser-Source
@@ -345,6 +432,7 @@
       li.appendChild(head);
       li.appendChild(desc);
       li.appendChild(urlWrap);
+      li.appendChild(opacityRow(o));
       li.appendChild(foot);
       overlayList.appendChild(li);
     }
@@ -1252,8 +1340,33 @@
     await window.apex.updateSettings({ panelOpacity: value });
   }, 120);
 
+  /**
+   * Per-widget background override. Same live-push contract as the global
+   * slider — nothing restarts, the value goes straight out to the overlays — so
+   * the operator drags it with the widget in view. `null` clears the override
+   * and hands the widget back to the global slider.
+   */
+  const commitWidgetOpacity = debounce(async (id, value) => {
+    await window.apex.updateSettings({ widgetOpacity: { [id]: value } });
+  }, 120);
+
+  /**
+   * Keep every card still on Auto showing the global value as it is dragged.
+   * Those sliders are a preview of what the widget is actually doing, so one
+   * left sitting at the old number would be saying something untrue.
+   */
+  function syncAutoOpacityRows(value) {
+    overlayList.querySelectorAll('.ovcard__bg[data-auto="true"]').forEach((row) => {
+      const range = row.querySelector('.ovcard__bg-range');
+      const echo = row.querySelector('.ovcard__bg-echo');
+      if (range) range.value = String(value);
+      if (echo) echo.textContent = `${value}%`;
+    });
+  }
+
   bgRange.addEventListener('input', () => {
     bgEcho.textContent = bgRange.value;
+    syncAutoOpacityRows(parseInt(bgRange.value, 10));
     commitPanelOpacity(parseInt(bgRange.value, 10));
   });
 

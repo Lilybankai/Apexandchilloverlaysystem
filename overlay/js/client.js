@@ -131,8 +131,13 @@
    * transition (--glow-fade), so the visual fade is smooth and independent of
    * the widget's throttleMs — which is 250 ms for fuel, weather, damage and MFD
    * and would make a JS-driven decay visibly steppy.
+   *
+   * 240 ms, not the 120 it started at: the hold is the part of the bloom that
+   * can actually be caught by an eye that is on the track and only sweeps the
+   * overlay between corners. At 120 ms a change could arrive and be most of the
+   * way faded before the glance landed, which made the signal a matter of luck.
    */
-  var GLOW_HOLD_MS = 120;
+  var GLOW_HOLD_MS = 240;
 
   /** @type {WeakMap<Element, {v:*, until:number}>} last value + bloom deadline. */
   var critState = new WeakMap();

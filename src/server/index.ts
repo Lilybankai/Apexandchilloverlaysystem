@@ -124,6 +124,19 @@ export interface Appearance {
    * overlay, so a stale value can never break a widget.
    */
   widgetModes: Record<string, string>;
+  /**
+   * Per-widget override of {@link panelOpacity}, `{ [widgetId]: 0..100 }`.
+   *
+   * A widget named here ignores the global background slider and uses this
+   * value instead; one that is absent follows the global. The case is the whole
+   * overlay faded for a clean stream with a single panel — fuel, the relative
+   * table — kept solid, which is a per-widget decision because which panel that
+   * is differs by driver and by session.
+   *
+   * Sparse on purpose: the map holds only deliberate exceptions, so the default
+   * install ships `{}` and every widget keeps following one slider.
+   */
+  widgetOpacity: Record<string, number>;
 }
 
 /** URL the overlays read their appearance from. */
@@ -144,11 +157,16 @@ const appearance: Appearance = {
   audioCues: true,
   audioVolume: 60,
   widgetModes: {},
+  widgetOpacity: {},
 };
 
 /** Current appearance (a deep-enough copy — callers must not mutate the state). */
 export function getAppearance(): Appearance {
-  return { ...appearance, widgetModes: { ...appearance.widgetModes } };
+  return {
+    ...appearance,
+    widgetModes: { ...appearance.widgetModes },
+    widgetOpacity: { ...appearance.widgetOpacity },
+  };
 }
 
 /**
@@ -182,6 +200,19 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
         appearance.widgetModes[widget] = String(mode);
       }
     }
+  }
+  // Replaced wholesale rather than merged: this map's meaning is "the complete
+  // set of widgets that opt out of the global slider", so a widget handed back
+  // to the global has to be able to LEAVE it — a merge could only ever add.
+  if (next?.widgetOpacity && typeof next.widgetOpacity === 'object') {
+    const clean: Record<string, number> = {};
+    for (const [widget, value] of Object.entries(next.widgetOpacity)) {
+      if (!/^[a-z][a-z0-9]{0,23}$/i.test(widget)) continue;
+      const n = Number(value);
+      if (!Number.isFinite(n)) continue;
+      clean[widget] = Math.min(100, Math.max(0, Math.round(n)));
+    }
+    appearance.widgetOpacity = clean;
   }
   return getAppearance();
 }

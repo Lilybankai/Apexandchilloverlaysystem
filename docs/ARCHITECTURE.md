@@ -167,7 +167,12 @@ browser. There is no database, no message broker, no cloud round-trip.
 - **`js/appearance.js`** — applies the operator's global widget-background
   setting as the `--panel-alpha` token every surface colour in `theme.css`
   resolves through. Loaded synchronously in `<head>` so the value is in place
-  before the first paint. Like the sponsor manifest this is operator
+  before the first paint. A widget named in `widgetOpacity` opts out of that
+  global and gets its own alpha written onto its own section instead — which
+  means re-declaring the surface tokens there, since a custom property resolves
+  where it is *declared*, not where it is used (see the `[data-alpha="own"]`
+  block in `theme.css`, a deliberate mirror of the `:root` one). Like the
+  sponsor manifest this is operator
   configuration fetched over HTTP (`/appearance.json`), never telemetry — the
   in-game layer is pushed it over IPC instead, so the layer that draws over the
   sim does no polling at all.

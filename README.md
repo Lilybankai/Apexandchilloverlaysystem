@@ -306,10 +306,23 @@ they can still be clicked in interact mode (F7), and the in-game **layout
 editor** puts every panel back to solid while it is open, since a widget faded to
 nothing can be dragged but not found.
 
+**Per widget.** Every card in the **Overlays** tab carries its own `BG` slider,
+which is that widget's exception to the global one. Fade the whole set to 50% for
+a clean stream and keep the one panel you actually read at speed — fuel, the
+relative table — at 100%: it is a one-card edit, not a rebuild of the layout. A
+card sitting on **Auto** (the default, and dimmed to say so) has no override and
+follows the global slider as you drag it; touching its slider creates the
+override, and the **Auto** button beside it gives the widget back. Overrides
+travel on the same live channel as everything else here, so they reach the
+in-game layer and existing OBS sources with no reload.
+
 Per source, `?bg=` on the URL overrides the app's setting and pins that page
-(`?bg=0` for a bare HUD, `?bg=100` for solid, `?bg=40` for a light tint). This is
-separate from the Motion/Damage/MFD/Radar `?opacity=` control, which fades a
-single widget's **contents**; `bg` only ever touches the box behind them.
+(`?bg=0` for a bare HUD, `?bg=100` for solid, `?bg=40` for a light tint). It pins
+the per-widget overrides too — the param exists so one OBS source can look
+exactly one way regardless of the app, and honouring half the setting would not
+be that. This is separate from the Motion/Damage/MFD/Radar `?opacity=` control,
+which fades a single widget's **contents**; `bg` only ever touches the box behind
+them.
 
 ### Motion widget modes
 

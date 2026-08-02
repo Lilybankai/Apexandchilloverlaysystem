@@ -879,7 +879,9 @@
                 <span class="field__hint">
                   Fades the panel behind every widget — at <strong>0%</strong> the box,
                   border and header are gone and only the data floats over the game.
-                  Applies live, in game and in OBS.
+                  Applies live, in game and in OBS. Any single widget can opt out
+                  on its own card in <strong>Overlays</strong> — fade the set and
+                  keep one panel solid.
                 </span>
               </label>
 
@@ -957,8 +959,10 @@
                   <span class="switch__track"><span class="switch__thumb"></span></span>
                 </span>
                 <span class="field__hint">
-                  Blooms a critical value in cyan the moment it changes — a position
-                  gained, a lap of fuel lost, a brake-bias click landing.
+                  Blooms a critical value in amber the moment it changes — a position
+                  gained, a lap of fuel lost, a brake-bias click landing. Burns
+                  <strong>red</strong> instead when the value that moved is already
+                  bad news: fuel short at the flag, a tyre past its limit.
                 </span>
               </label>
             </div>

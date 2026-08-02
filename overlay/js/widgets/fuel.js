@@ -11,30 +11,43 @@
  * and qualifying, where there is no lap total to count towards. Every figure
  * below it is measured against that one.
  *
- * Two gauges at the top — litres in the tank and virtual energy remaining — are
- * permanent, because fuel and energy are separate budgets that drain at
- * different rates and are refilled from different rows of the pit menu.
+ * Across the top, above everything else, are the four cubes that carry the whole
+ * answer on their own — how much is in it, and how far that goes — laid out one
+ * budget per row beside that budget's own bar:
  *
- * **Nothing on this widget cycles.** Both budgets are shown in full, at once:
- * the FUEL block (per lap, laps left, to finish, margin at the flag) and, on
- * cars that run one, the VIRTUAL ENERGY block with the same four figures in its
- * own units. This used to rotate the two every 20 seconds, which meant that half
- * the time the number a driver looked down for was the one not on screen — and a
- * fuel call is made in the two seconds before the pit entry, not whenever the
- * rotation next comes round. Cars without VE simply have no energy block, and
- * the energy gauge is hidden rather than drawn empty.
+ *     ▓▓▓▓▓▓▓▓░░░░░░   [ FUEL  50.9 L ] [ LAPS 12.3 ]
+ *     ▓▓▓▓▓░░░░░░░░░   [ ENERGY  62 % ] [ LAPS 10.1 ]
  *
- * At the foot, past a rule, four cubes carry the whole answer on its own: litres
- * and laps of fuel on the top row, energy percent and laps of energy on the
- * bottom. Everything above them is the working; this is the readout to find from
- * the corner of an eye at 180 mph.
+ * The cubes sit at the TOP because they are the readout to find from the corner
+ * of an eye at 180 mph; everything below them is the working that produced them,
+ * and working belongs under its answer. The bar beside each pair is the same
+ * quantity as a shape, which is what makes "nearly empty" readable without
+ * reading a number at all.
+ *
+ * The row is a grid of `1fr auto auto`: the BAR absorbs every pixel of width the
+ * widget gains or loses, and the cubes never move off their own size. Squeezing
+ * a Tier 1 number to fit a narrower panel would defeat the reason it is Tier 1 —
+ * a bar squeezed to half its length still reads as a fraction of a tank.
+ *
+ * Fuel and energy are separate budgets that drain at different rates and are
+ * refilled from different rows of the pit menu, so both are permanent and
+ * neither is ever inferred from the other.
+ *
+ * **Nothing on this widget cycles.** Below the cubes both budgets are shown in
+ * full, at once: the FUEL block (per lap, laps left, to finish, margin at the
+ * flag) and, on cars that run one, the VIRTUAL ENERGY block with the same four
+ * figures in its own units. This used to rotate the two every 20 seconds, which
+ * meant that half the time the number a driver looked down for was the one not
+ * on screen — and a fuel call is made in the two seconds before the pit entry,
+ * not whenever the rotation next comes round. A car with no energy budget loses
+ * its energy row and its energy block entirely, rather than being drawn empty.
  */
 (function () {
   "use strict";
 
-  var header, overlapEl, energyHead;
+  var header, overlapEl, energyHead, topBox;
   var stats = {};
-  var gauges = {};
+  var bars = {};
   var cubes = {};
   var refuelEl, pitEl, setAlarm, setSession;
   var cache = {};
@@ -82,82 +95,51 @@
   }
 
   /**
-   * A permanent gauge: label, live quantity, laps of range, and a fill bar.
+   * One budget's row of the top block: its fill bar, then its two cubes.
    *
-   * Fuel and virtual energy are two separate budgets. They are burned at
-   * different rates, run out at different laps, and are refilled from different
-   * rows of the pit menu, so neither figure can be inferred from the other —
-   * which is why there are two of everything on this widget and never a single
-   * blended figure.
+   * The three go straight into the shared grid rather than into a wrapper of
+   * their own, so the fuel row's cubes and the energy row's cubes sit in the
+   * same two columns — the pair you want is a POSITION (top-right, bottom-right)
+   * rather than a label to read. `data-res` on all three is what lets the whole
+   * energy row be hidden with one attribute on the grid, and what colours the
+   * bar and the cube stripes per budget.
    *
-   * Each carries its own laps figure because litres and percent are not what a
-   * driver plans in — laps are. 50.9 L means nothing without the burn rate
+   * Each budget carries its own laps figure because litres and percent are not
+   * what a driver plans in — laps are. 50.9 L means nothing without the burn rate
    * beside it, and the two budgets do not run out on the same lap, so a single
    * shared figure would be wrong for one of them. This is the same pairing the
    * car's own dash makes ("83.0L (37.6 laps)"), kept per budget.
    */
-  function makeGauge(parent, key, label) {
-    var row = document.createElement("div");
-    row.className = "fuel__gauge";
-    row.setAttribute("data-res", key);
-    var head = document.createElement("div");
-    head.className = "fuel__gauge-head";
-    var l = document.createElement("div");
-    l.className = "fuel__gauge-label";
-    l.textContent = label;
-    var v = document.createElement("div");
-    v.className = "fuel__gauge-val";
-    v.textContent = "—";
-    var lp = document.createElement("div");
-    lp.className = "fuel__gauge-laps is-crit";
-    lp.textContent = "";
-    head.appendChild(l);
-    head.appendChild(v);
-    head.appendChild(lp);
+  function makeTopRow(parent, res, label) {
     var bar = document.createElement("div");
-    bar.className = "bar fuel__gauge-bar";
+    bar.className = "bar fuel__topbar";
+    bar.setAttribute("data-res", res);
     var fill = document.createElement("div");
     fill.className = "bar__fill";
     bar.appendChild(fill);
-    row.appendChild(head);
-    row.appendChild(bar);
-    parent.appendChild(row);
-    gauges[key] = { row: row, val: v, laps: lp, fill: fill };
+    parent.appendChild(bar);
+    bars[res] = fill;
+    // "LAPS", not "FUEL LAPS": at a narrow panel width the label is the first
+    // thing to run out of room, and the row it sits in already says which budget
+    // it belongs to — in its colour, its stripe and its position.
+    makeCube(parent, res + "Qty", label, res, false);
+    makeCube(parent, res + "Laps", "LAPS", res, true);
   }
 
   /**
-   * Write a gauge. `pct` drives the bar (tank fraction for fuel, the percentage
-   * itself for energy); `laps` is how far that budget will actually carry the
-   * car, shown beside the quantity and blooming when a whole lap of it is gone.
-   *
-   * `null` laps blanks the figure rather than printing a dash: for the first lap
-   * or two of a stint the burn rate genuinely is not known yet, and an empty
-   * space says that more honestly than a placeholder sitting where a number is
-   * about to appear.
+   * Write a budget's bar. `pct` is the tank fraction for fuel and the percentage
+   * itself for energy — the shape of the quantity, beside the number for it.
    */
-  function setGauge(key, html, pct, laps) {
-    var g = gauges[key];
-    if (!g) return;
-    var ck = "g_" + key;
-    if (cache[ck] !== html) {
-      cache[ck] = html;
-      g.val.innerHTML = html;
-    }
+  function setBar(res, pct) {
+    var fill = bars[res];
+    if (!fill) return;
     var w =
       (typeof pct === "number" && isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0).toFixed(1) +
       "%";
-    if (cache[ck + "_w"] !== w) {
-      cache[ck + "_w"] = w;
-      g.fill.style.width = w;
-    }
-    var lapTxt = typeof laps === "number" && isFinite(laps) && laps >= 0
-      ? laps.toFixed(1) + " laps"
-      : "";
-    if (cache[ck + "_laps"] !== lapTxt) {
-      cache[ck + "_laps"] = lapTxt;
-      g.laps.textContent = lapTxt;
-    }
-    pulseOnStep(g.laps, ck + "_step", laps);
+    var ck = "bar_" + res;
+    if (cache[ck] === w) return;
+    cache[ck] = w;
+    fill.style.width = w;
   }
 
   /**
@@ -176,18 +158,16 @@
   }
 
   /**
-   * One cube of the four-cube readout at the foot of the widget.
+   * One cube of the four-cube readout across the top of the widget.
    *
-   * The cubes are a deliberate duplicate of figures that appear above them, and
-   * that is the point: everything above is the working — burn rate, litres to
-   * the finish, the margin at the flag — and this is the answer, in the two units
-   * a driver acts on. How much is in it, and how far that goes. Fuel across the
-   * top, energy across the bottom, so the row you want is a position rather than
-   * a label to read.
+   * The cubes are a deliberate duplicate of figures that appear below them, and
+   * that is the point: everything under them is the working — burn rate, litres
+   * to the finish, the margin at the flag — and this is the answer, in the two
+   * units a driver acts on. How much is in it, and how far that goes.
    *
-   * `res` tags the budget so the energy pair can take the same cyan the energy
-   * gauge does, and so a car with no energy budget can dim its half rather than
-   * print a confident 0.0 for a thing it does not have.
+   * `res` tags the budget so the energy pair can take the same cyan its bar
+   * does, and so the whole energy row can be dropped on a car that has no energy
+   * budget rather than printing a confident 0.0 for a thing it does not have.
    */
   function makeCube(parent, key, label, res, glow) {
     var c = document.createElement("div");
@@ -218,17 +198,6 @@
     c.val.innerHTML = html;
   }
 
-  /** Dim a cube whose budget this car does not have, rather than printing 0. */
-  function setCubeNa(key, na) {
-    var c = cubes[key];
-    if (!c) return;
-    var ck = "cna_" + key;
-    if (cache[ck] === na) return;
-    cache[ck] = na;
-    if (na) c.root.setAttribute("data-na", "true");
-    else c.root.removeAttribute("data-na");
-  }
-
   function init(root) {
     header = root.querySelector('[data-role="tank"]');
     var mount = root.querySelector('[data-role="mount"]');
@@ -241,13 +210,15 @@
     // so the two panels cannot state a different number of laps to go.
     setSession = window.ApexOverlay.sessionStrip(mount, { small: true });
 
-    // Static gauges, built before the rotating views and never hidden by them.
-    var gaugeBox = document.createElement("div");
-    gaugeBox.className = "fuel__gauges";
-    makeGauge(gaugeBox, "fuel", "FUEL");
-    makeGauge(gaugeBox, "energy", "ENERGY");
-    mount.appendChild(gaugeBox);
-    grids.gauges = gaugeBox;
+    // The answer, first: a bar and its two cubes per budget, fuel above energy.
+    // One grid rather than two rows so the cube columns line up between the
+    // budgets, and so the bar column is the single flexible track that gives up
+    // its width when the widget is narrowed.
+    topBox = document.createElement("div");
+    topBox.className = "fuel__top";
+    makeTopRow(topBox, "fuel", "FUEL");
+    makeTopRow(topBox, "energy", "ENERGY");
+    mount.appendChild(topBox);
 
     // The fuel block, headed so it cannot be confused with the energy block
     // below it — both are on screen together now.
@@ -290,17 +261,6 @@
     margin.appendChild(refuelEl);
     margin.appendChild(pitEl);
     mount.appendChild(margin);
-
-    // The four cubes, last and below a rule: the answer, after all the working.
-    // Fuel across the top (how much, how far), energy across the bottom.
-    var cubeBox = document.createElement("div");
-    cubeBox.className = "fuel__cubes";
-    makeCube(cubeBox, "fuelQty", "FUEL", "fuel", false);
-    makeCube(cubeBox, "fuelLaps", "FUEL LAPS", "fuel", true);
-    makeCube(cubeBox, "energyQty", "ENERGY", "energy", false);
-    makeCube(cubeBox, "energyLaps", "ENERGY LAPS", "energy", true);
-    mount.appendChild(cubeBox);
-    grids.cubes = cubeBox;
 
     // Added last so it inserts itself ABOVE everything built above it — a call
     // the driver has one lap to act on belongs at the top of the panel.
@@ -402,11 +362,15 @@
     setAlarm(f.pitThisLap === true, pitCallText(f));
     updateOverlap(f);
 
-    // The energy block exists only on cars that run an energy budget. Everything
-    // else on the widget is permanent — no view is ever hidden behind another.
+    // The energy row and block exist only on cars that run an energy budget.
+    // Everything else on the widget is permanent — no view is ever hidden behind
+    // another. One attribute on the top grid takes its bar and both of its cubes
+    // out together (see .fuel__top[data-energy="off"]), which is also what keeps
+    // the fuel row's cubes in the columns they were already in.
     var hasEnergy = typeof f.virtualEnergyPct === "number";
     if (cache.hasEnergy !== hasEnergy) {
       cache.hasEnergy = hasEnergy;
+      topBox.setAttribute("data-energy", hasEnergy ? "on" : "off");
       grids.energy.style.display = hasEnergy ? "" : "none";
       energyHead.style.display = hasEnergy ? "" : "none";
     }
@@ -424,23 +388,11 @@
       typeof f.virtualEnergyLapsRemaining === "number" && f.virtualEnergyLapsRemaining >= 0
         ? f.virtualEnergyLapsRemaining
         : null;
-    setGauge(
-      "fuel",
-      lvl != null ? lvl.toFixed(1) + "<small> L</small>" : "—",
-      cap != null && lvl != null ? (lvl / cap) * 100 : 0,
-      fuelLaps
-    );
+    setBar("fuel", cap != null && lvl != null ? (lvl / cap) * 100 : 0);
     // A car with no energy budget has no second bar to draw — showing an empty
-    // one would read as "energy exhausted" rather than "not applicable".
-    if (gauges.energy.row.hidden === hasEnergy) gauges.energy.row.hidden = !hasEnergy;
-    if (hasEnergy) {
-      setGauge(
-        "energy",
-        f.virtualEnergyPct.toFixed(1) + "<small> %</small>",
-        f.virtualEnergyPct,
-        veLaps
-      );
-    }
+    // one would read as "energy exhausted" rather than "not applicable". The row
+    // is already gone (data-energy above); this just skips writing into it.
+    if (hasEnergy) setBar("energy", f.virtualEnergyPct);
 
     // The four cubes: how much is in it, and how far that goes, per budget.
     setCube("fuelQty", lvl != null ? lvl.toFixed(1) + "<small> L</small>" : "—");
@@ -450,8 +402,6 @@
       hasEnergy ? f.virtualEnergyPct.toFixed(1) + "<small> %</small>" : "—"
     );
     setCube("energyLaps", hasEnergy && veLaps != null ? veLaps.toFixed(1) : "—");
-    setCubeNa("energyQty", !hasEnergy);
-    setCubeNa("energyLaps", !hasEnergy);
     pulseOnStep(cubes.fuelLaps.val, "cubeFuelLapsStep", fuelLaps);
     if (hasEnergy) pulseOnStep(cubes.energyLaps.val, "cubeEnergyLapsStep", veLaps);
 
