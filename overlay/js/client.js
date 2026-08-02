@@ -116,6 +116,125 @@
   };
 
   /* ------------------------------------------------------------------ */
+  /*  Car-class identity — colour, short tag, full name                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * What a class LOOKS like, in one place.
+   *
+   * This block existed as a verbatim copy in standings.js and in radar.js, which
+   * is one edit away from the tower, the radar and the relative panel disagreeing
+   * about which green is GT3 — and a colour that means one thing in one widget
+   * and something else in the next is worse than no colour at all.
+   *
+   * Spellings are collapsed the way `src/telemetry/carClass.ts` collapses them
+   * (upper-case, strip everything but letters and digits, then alias). The
+   * provider already normalises what it sends, so this is belt and braces — but
+   * fixtures, older builds and hand-made frames do not, and a class that hashes
+   * to a random colour in one of those is a bug that only appears on stream.
+   * That file's ALIASES table and this one are a deliberate mirror (a browser
+   * IIFE cannot import a TS module): CHANGE ONE, CHANGE BOTH.
+   */
+  var CLASS_ALIASES = {
+    HYPERCAR: "HYPERCAR", HYPER: "HYPERCAR", LMH: "HYPERCAR", LMDH: "HYPERCAR",
+    GTP: "HYPERCAR", P1: "HYPERCAR", LMP1: "HYPERCAR",
+    LMP2: "LMP2", P2: "LMP2",
+    LMP3: "LMP3", P3: "LMP3",
+    GTE: "GTE", LMGTE: "GTE", GTEPRO: "GTE", GTEAM: "GTE",
+    GT3: "GT3", LMGT3: "GT3", GT3PRO: "GT3",
+    GT4: "GT4", LMGT4: "GT4",
+  };
+  var KNOWN_CLASS_COLORS = {
+    HYPERCAR: "#ff5470",
+    LMP2: "#4f8bff",
+    LMP3: "#22d3ee",
+    GTE: "#ffb020",
+    GT3: "#35d07f",
+    GT4: "#ffb020",
+  };
+  /**
+   * The tag a driver already says out loud. THREE characters at most, and that
+   * cap is a contract rather than a tidiness preference: the box it is drawn in
+   * is sized for three glyphs and does not grow, so a fourth would either clip
+   * or take width off the driver's name.
+   */
+  var KNOWN_CLASS_ABBREV = {
+    HYPERCAR: "HY", LMP2: "P2", LMP3: "P3", GTE: "GTE", GT3: "GT3", GT4: "GT4",
+  };
+  var CLASS_COLORS = ["#8b5cf6", "#22d3ee", "#ec4899", "#4f8bff", "#35d07f", "#ffb020"];
+
+  // Null-prototype: a class label is arbitrary text from a mod, and "constructor"
+  // is a string a mod is entirely free to use.
+  var colorCache = Object.create(null);
+  var abbrevCache = Object.create(null);
+
+  function classKey(cls) {
+    return String(cls).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  function canonClass(cls) {
+    var k = classKey(cls);
+    return typeof CLASS_ALIASES[k] === "string" ? CLASS_ALIASES[k] : k;
+  }
+
+  /**
+   * Stable display colour for a class. Known categories get an intuitive one;
+   * anything else hashes to a fallback, so a mod class still gets a distinct
+   * colour — the same one in every widget, and the same one next session.
+   *
+   * Memoised on the raw string the caller holds: this runs once per row per
+   * frame in the tower and once per blip per frame in the radar.
+   */
+  function classColor(cls) {
+    if (!cls) return "#6b7387";
+    if (colorCache[cls]) return colorCache[cls];
+    var canon = canonClass(cls);
+    if (typeof KNOWN_CLASS_COLORS[canon] === "string") {
+      return (colorCache[cls] = KNOWN_CLASS_COLORS[canon]);
+    }
+    var hash = 0;
+    for (var i = 0; i < canon.length; i++) hash = (hash * 31 + canon.charCodeAt(i)) | 0;
+    return (colorCache[cls] = CLASS_COLORS[Math.abs(hash) % CLASS_COLORS.length]);
+  }
+
+  /**
+   * Short tag for a class — "GT3", "P2", "HY".
+   *
+   * An unknown category is DERIVED rather than left blank: a colour with no
+   * letters beside it is exactly the puzzle the tag exists to remove. Initials
+   * for a multi-word name ("Porsche Carrera Cup" → PCC), otherwise the first
+   * three characters ("Clubsport" → CLU).
+   */
+  function classAbbrev(cls) {
+    if (!cls) return "";
+    if (abbrevCache[cls]) return abbrevCache[cls];
+    var known = KNOWN_CLASS_ABBREV[canonClass(cls)];
+    if (typeof known === "string") return (abbrevCache[cls] = known);
+    var words = String(cls).toUpperCase().split(/[^A-Z0-9]+/);
+    var kept = [];
+    for (var i = 0; i < words.length; i++) if (words[i]) kept.push(words[i]);
+    var tag;
+    if (!kept.length) tag = "?";
+    else if (kept[0].length <= 3) tag = kept[0];
+    else if (kept.length > 1) {
+      tag = "";
+      for (var j = 0; j < kept.length && tag.length < 3; j++) tag += kept[j].charAt(0);
+    } else tag = kept[0].slice(0, 3);
+    return (abbrevCache[cls] = tag);
+  }
+
+  /**
+   * Full name, for a group header or a tooltip. An unknown class keeps its own
+   * spacing and spelling ("TCR Cup" → "TCR CUP") — the stripped key above is a
+   * lookup key, not something to show anybody.
+   */
+  function classLabel(cls) {
+    if (!cls) return "OTHER";
+    var alias = CLASS_ALIASES[classKey(cls)];
+    return typeof alias === "string" ? alias : String(cls).toUpperCase();
+  }
+
+  /* ------------------------------------------------------------------ */
   /*  Critical-value writes + change glow                                */
   /* ------------------------------------------------------------------ */
 
@@ -281,6 +400,11 @@
     // apart on what to call the session or how long it is.
     sessionLabel: sessionLabel,
     sessionLength: sessionLength,
+    // Class identity, shared so the tower, the relative panel and the radar
+    // cannot drift apart on what a class looks like or what it is called.
+    classColor: classColor,
+    classAbbrev: classAbbrev,
+    classLabel: classLabel,
     // …and likewise for the consequence indicator, which the Track Limits
     // widget and the MFD both announce.
     consequenceMs: CONSEQUENCE_MS,
@@ -841,6 +965,13 @@
     // markup — and so the rule about which sessions count laps can be tested
     // headlessly rather than by squinting at a panel.
     sessionHeadline: sessionHeadline,
+    // Also on the module surface, not just on the update ctx: standings and
+    // radar reach for the colour at module-eval time (they are deferred scripts
+    // that run after this one), and a widget drawing to a canvas has no ctx in
+    // scope where it needs it.
+    classColor: classColor,
+    classAbbrev: classAbbrev,
+    classLabel: classLabel,
   };
 
   // Boot scheduling.

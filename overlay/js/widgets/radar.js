@@ -80,26 +80,15 @@
   "use strict";
 
   /* ------------------------------ class colours --------------------------- */
-  // Same palette as the standings/relative widgets so a blip's colour matches
-  // the tower. Known classes get a stable colour; anything else hashes to one.
-  var KNOWN_CLASS_COLORS = {
-    HYPERCAR: "#ff5470", HYPER: "#ff5470", LMH: "#ff5470", LMDH: "#ff5470", GTP: "#ff5470",
-    LMP2: "#4f8bff", LMP3: "#22d3ee",
-    GT3: "#35d07f", LMGT3: "#35d07f", GTE: "#ffb020", GT4: "#ffb020",
-  };
-  var CLASS_COLORS = ["#8b5cf6", "#22d3ee", "#ec4899", "#4f8bff", "#35d07f", "#ffb020"];
-  var classColorCache = {};
-  function classColor(cls) {
-    if (!cls) return "#6b7387";
-    if (classColorCache[cls]) return classColorCache[cls];
-    var known = KNOWN_CLASS_COLORS[String(cls).toUpperCase()];
-    if (known) return (classColorCache[cls] = known);
-    var hash = 0;
-    for (var i = 0; i < cls.length; i++) hash = (hash * 31 + cls.charCodeAt(i)) | 0;
-    var color = CLASS_COLORS[Math.abs(hash) % CLASS_COLORS.length];
-    classColorCache[cls] = color;
-    return color;
-  }
+  // The same palette as the standings tower and the relative panel — now by
+  // construction rather than by three copies of it staying in step. Lives in the
+  // shared runtime (js/client.js).
+  //
+  // `carFamily()` further down is NOT this and must not be folded into it: that
+  // maps a class onto which SILHOUETTE to draw, where every GT category collapses
+  // to one shape. Sharing the two would either give GTE a GT3 identity or give
+  // every mod car an LMP2 outline.
+  var classColor = window.ApexOverlay.classColor;
 
   /* -------------------------------- config -------------------------------- */
 

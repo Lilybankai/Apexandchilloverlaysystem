@@ -79,6 +79,14 @@
     posTd.className = "relative__cell relative__pos";
     var driverTd = document.createElement("td");
     driverTd.className = "relative__cell relative__driver";
+    // The class tag goes FIRST and never moves. This column is read DOWN — the
+    // eye is matching colours, not words — so the tag has to sit at the same x
+    // on every row; behind the ghost it would jump sideways the moment a car
+    // became traffic, in the one element being scanned for. The ghost is a
+    // transient state marker and belongs between the identity and the name.
+    var classTag = document.createElement("span");
+    classTag.className = "relative__class";
+    classTag.hidden = true; // no class on this entry yet — see update()
     // The ghost lives in its own span before the name, so toggling it never
     // rewrites the name text node (which the reconciler diffs).
     var ghostWrap = document.createElement("span");
@@ -87,6 +95,7 @@
     ghostWrap.title = "Backmarker ahead — you are catching this car";
     ghostWrap.appendChild(ghostSvg());
     var nameSpan = document.createElement("span");
+    driverTd.appendChild(classTag);
     driverTd.appendChild(ghostWrap);
     driverTd.appendChild(nameSpan);
     var deltaTd = document.createElement("td");
@@ -98,6 +107,7 @@
       tr: tr,
       posTd: posTd,
       driverTd: driverTd,
+      classTag: classTag,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
       deltaTd: deltaTd,
@@ -248,11 +258,37 @@
           (e.trafficAhead ? " relative__row--traffic" : ""));
       set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));
 
-      // Ghost on the backmarker you're arriving on.
-      var ghost = !!e.trafficAhead;
-      if (row.cache.ghost !== ghost) {
-        row.cache.ghost = ghost;
-        row.ghostWrap.hidden = !ghost;
+      // Which class this car is in, as a tag at the head of the cell. A driver
+      // reading this table is deciding whether the car arriving is a rival for
+      // position or a faster class coming through, and that is a different
+      // decision — the gap alone cannot tell them which.
+      //
+      // A class is fixed for the life of a slotId, so after the first frame all
+      // of this is cache hits: three comparisons per row per frame.
+      var cls = e.carClass || "";
+      var hasClass = !!cls;
+      if (row.cache.classOn !== hasClass) {
+        row.cache.classOn = hasClass;
+        row.classTag.hidden = !hasClass;
+      }
+      if (hasClass) {
+        set(row, "classText", row.classTag, "textContent", ctx.classAbbrev(cls));
+        var col = ctx.classColor(cls);
+        if (row.cache.classCol !== col) {
+          row.cache.classCol = col;
+          // ONE custom property drives both the text and the edge (see
+          // .relative__class): the two are the same fact, and writing them
+          // separately is how they come to disagree.
+          row.classTag.style.setProperty("--cls", col);
+        }
+        var full = ctx.classLabel(cls);
+        if (row.cache.classTitle !== full) {
+          // One guard, two writes: the tooltip and the accessible name are the
+          // same fact and must never be written apart.
+          row.cache.classTitle = full;
+          row.classTag.title = full;
+          row.classTag.setAttribute("aria-label", full);
+        }
       }
 
       var name = e.driverName || "—";

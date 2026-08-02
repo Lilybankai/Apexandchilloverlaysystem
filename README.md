@@ -147,7 +147,11 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
 (turn them down or off with **Widget background** — see below):
 
 - **Standings** (top-left) — full field, gaps, pit status
-- **Relative / timing** (top-right) — nearest cars on track, live delta
+- **Relative / timing** (top-right) — nearest cars on track, live delta, each
+  tagged with the class it is in (`HY`, `P2`, `P3`, `GT3`, `GTE`, `GT4`) in that
+  class's colour — the same colour the standings tower and the radar use, so a
+  car arriving is placed as a rival for position or as a faster class coming
+  through before the gap beside it is even read
 - **Pedal inputs** (bottom-center) — throttle/brake trace, trail-braking style
 - **Pedal inputs (vertical)** — the same channels a quarter-turn round: pedals as
   levels rising from the bottom, steering as a needle sweeping an arc from a

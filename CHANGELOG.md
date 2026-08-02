@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.53.0 — 2026-08-03
+
+### Added
+
+- **Every car in the Relative panel now says which class it is in.** A small square
+  at the head of each row carries the class — `HY`, `P2`, `P3`, `GT3`, `GTE`, `GT4` —
+  in that class's colour, the same colour the standings tower and the radar already
+  use. The gap alone never said whether the car closing on you is a rival for
+  position or a faster class coming through, and those are different decisions taken
+  at different moments. The letters take the class colour on a dark square rather
+  than the reverse: seven of these stack in one panel, and seven blocks of saturated
+  colour would out-shout the gap column, which is the thing actually being raced. A
+  class the palette has never seen still gets a tag derived from its name (`TCR Cup`
+  → `TCR`, `Porsche Carrera Cup` → `PCC`) rather than an unexplained colour.
+
+  The class palette, the abbreviations and the full names now live once in the shared
+  runtime. The colour table had been copy-pasted between the standings tower and the
+  radar, one edit away from the two disagreeing about which green is GT3.
+
+### Changed
+
+- **Three lap readouts got bigger.** The `N LAPS LEFT` line beside the session
+  counter (on Standings and Fuel) goes from 12px context text to Tier 1 — "8/16" has
+  to be subtracted before it means anything, and the number a driver fuels and paces
+  against is the one already subtracted. The Relative panel's own `LAP 8/16` goes
+  from 15px to 20px: it is the only statement of how much race is left on the panel
+  read most often. And in the Fuel widget the two **Laps Left** tiles are promoted
+  above their neighbours — laps are the unit a stint is planned in, and the figures
+  either side of them are the arithmetic that produced them.
+
+- The Fuel panel moved down the combined 1920×1080 stage to make room for the taller
+  Relative table. Measured at both ends of the text-size slider, not guessed.
+
+### Fixed
+
+- **The backmarker ghost was showing on every row of the Relative table**, including
+  the player's own, which made the one row it was supposed to mark mean nothing. The
+  widget hides it correctly; an author `display` rule silently outranks the browser's
+  own `[hidden]` rule, and this one had no counterpart. It only ever went wrong on
+  the OBS and browser pages — the in-game layer carries a catch-all that masked it.
+
+- **The two rows either side of you were never actually promoted.** Their gaps are
+  the ones being defended or attacked right now and are meant to be the only Tier 1
+  numbers in the table; a comment that closed one paragraph early left the rule that
+  did it as stray tokens for the CSS parser to swallow, along with the rule itself.
+  The panel had been sizing every row alike ever since.
+
 ## 0.52.0 — 2026-08-03
 
 ### Added

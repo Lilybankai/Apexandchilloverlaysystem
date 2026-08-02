@@ -82,6 +82,11 @@
   function makeStat(grid, key, label, hero) {
     var wrap = document.createElement("div");
     wrap.className = "fuel__stat";
+    // The tile's identity, so CSS can single one out without a class per stat.
+    // Both "laps left" tiles are promoted above their neighbours (see
+    // .fuel__stat[data-stat$="apsLeft"]): laps are the unit a stint is actually
+    // planned in, and litres-to-the-finish is arithmetic on the way there.
+    wrap.setAttribute("data-stat", key);
     var l = document.createElement("div");
     l.className = "fuel__stat-label";
     l.textContent = label;

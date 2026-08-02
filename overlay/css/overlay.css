@@ -102,10 +102,17 @@
    both grow ~30px there, which is what used to push fuel's header under the
    relative table. Damage sits inboard rather than under fuel because a fourth
    panel on the right edge is what put it on top of the tyres widget once its
-   brake-disc rows (?brakes=on) were on. */
+   brake-disc rows (?brakes=on) were on.
+
+   Fuel moved 330 → 392 when the relative table gained its class tags and got
+   its Tier 1 neighbour rows back: a full 7-row table (the most the provider ever
+   publishes — three each way) is 300px at 100% and 343px at 120%, against the
+   306px this gap used to allow. Measured, not guessed, and re-measured at both
+   ends of the text scale — at 120% fuel now ends at 744px with the tyre panel
+   starting at 766px. */
 #widget-damage    { top: 24px;    left: 1200px; width: 268px; }
 #widget-relative  { top: 24px;    right: 24px;  width: 400px; }
-#widget-fuel      { top: 330px;   right: 24px;  width: 400px; }
+#widget-fuel      { top: 392px;   right: 24px;  width: 400px; }
 #widget-tyres     { bottom: 24px; right: 24px;  width: 300px; }
 
 /* =========================================================================
@@ -227,15 +234,19 @@
 }
 @keyframes sessionstrip-clock-pulse { 50% { opacity: 0.45; } }
 /* Laps still to run, beside the counter (estimated, with a tilde, on a timed
-   race — LMU only gives a clock). Tier 2: the counter is the headline, this is
-   the number the driver actually fuels and paces against. */
+   race — LMU only gives a clock).
+   Promoted from 12px context text to Tier 1 beside the counter: "8/16" has to be
+   subtracted before it means anything, and the number a driver actually fuels
+   and paces against is the one already subtracted. It stays a step under the
+   counter rather than matching it, because the two are read together and two
+   identical sizes would give the eye nothing to land on first. */
 .sessionstrip__note {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--fs-body);
+  font-size: var(--fs-value);
   line-height: 1;
   letter-spacing: 0.05em;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
@@ -251,7 +262,7 @@
 .sessionstrip--sm .sessionstrip__clock {
   font-size: var(--fs-value);
 }
-.sessionstrip--sm .sessionstrip__note { font-size: var(--fs-label); }
+.sessionstrip--sm .sessionstrip__note { font-size: var(--fs-data); }
 
 /* =========================================================================
  * STANDINGS WIDGET (top-left)
@@ -812,10 +823,14 @@
 /* =========================================================================
  * RELATIVE / TIMING WIDGET (top-right)
  * ========================================================================= */
-/* Lap / time remaining in this panel's header — how much race is left. */
+/* Lap / time remaining in this panel's header — how much race is left. Tier 1,
+   not the 15px it was: it is the only statement of how much race is left on the
+   panel a driver looks at most, and every gap in the table below is worth
+   something different depending on it. */
 #widget-relative .panel__meta {
-  font-size: var(--fs-data);
+  font-size: var(--fs-value);
   font-weight: 700;
+  line-height: 1;
   color: var(--text-primary);
 }
 
@@ -892,12 +907,67 @@
 }
 .relative__row--traffic .relative__delta { color: var(--traffic-amber); }
 
+/* Class tag: a small square at the head of every driver cell carrying the class
+   the car is in. The COLOUR is the signal — the eye matches a colour down the
+   column long before it resolves three glyphs at this size — and the letters are
+   what settle it when two categories sit close together, or when the class is
+   one the palette has never seen and has only a hashed colour to offer.
+
+   The letters take the class colour on a DARK square, rather than dark letters
+   on a solid colour block. Nine of these stack in one panel, and nine solid
+   chips of saturated colour would be the loudest thing in a table whose loudest
+   thing must stay the gap column — the two numbers a driver is actually racing.
+   The class is an identity, not an alarm.
+
+   The fill is a fixed dark rather than a --bg-panel token on purpose: at 0%
+   widget background the tokens go to nothing, and coloured letters with no
+   backing land straight on whatever the car ahead is driving over. This one
+   square stays opaque so the tag survives the background slider that everything
+   around it is meant to disappear with.
+
+   Every dimension derives from the type tokens, so the tag grows with the Text
+   size slider instead of clipping "GT3" at 120%. The width is FIXED rather than
+   fitted to its text so every driver name starts at the same x — a ragged left
+   edge is what turns a dense table into something that has to be read. */
+.relative__class {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--fs-body) * 2.4);
+  height: calc(var(--fs-body) * 1.35);
+  margin-right: 6px;
+  vertical-align: middle;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(8, 10, 17, 0.82);
+  /* One custom property, written once per row by the widget, drives the letters
+     and the edge together — they are the same fact. */
+  color: var(--cls, var(--text-muted));
+  box-shadow: inset 0 0 0 1px var(--cls, var(--border-strong));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  /* The panel's translucent-mode shadow reaches this by inheritance and turns
+     coloured letters on a dark square to mud. The square is its own backing. */
+  text-shadow: none;
+}
 .relative__ghost-wrap {
   display: inline-flex;
   align-items: center;
   margin-right: 5px;
   vertical-align: middle;
 }
+/* Both of these set `display`, which outranks the browser's own
+   `[hidden] { display: none }` — an author rule beats a UA rule whatever the
+   specificity. Without this the backmarker ghost sat on every row of the table,
+   including the player's own, where it meant nothing; and a car with no class
+   would reserve a blank square. (ingame.css carries an !important catch-all, so
+   this only ever went wrong on the OBS and browser pages — which is most of
+   them.) The damage widget documents the same trap further down this file. */
+.relative__class[hidden],
+.relative__ghost-wrap[hidden] { display: none; }
 .relative__ghost {
   width: 12px;
   height: 12px;
@@ -911,11 +981,16 @@
 }
 /* Tier 1: the car immediately ahead and the car immediately behind. Those two
    gaps are the ones being defended or attacked right now, so they are the only
-   numbers in this table sized to be caught without reading it. */
+   numbers in this table sized to be caught without reading it.
+
    Size and weight only, deliberately no colour: the yield-blue and traffic-amber
    rules above are the same specificity and appear earlier, so setting a colour
    here would quietly outrank them and repaint the one distinction in this table
-   that must never be lost. */
+   that must never be lost.
+
+   (This comment used to close after its first paragraph, which left the four
+   lines below it as stray tokens for the parser to eat — taking the rule with
+   them. The promotion had been silently dead ever since.) */
 .relative__row--near .relative__delta {
   font-size: var(--fs-value);
   font-weight: 700;
@@ -1144,6 +1219,18 @@
    grid is read in one glance instead of four. */
 .fuel__stat-value--hero {
   font-size: var(--fs-crit);
+}
+/* …and one step above THAT for the two "Laps Left" tiles — the fuel one and the
+   virtual-energy one. Laps are the unit a stint is planned in: a driver decides
+   on "four more laps in it", not on 10.4 litres, and the two figures either side
+   of that decision (per lap, to finish) are the arithmetic that produced it. The
+   suffix match catches `lapsLeft` and `veLapsLeft` without naming both. */
+.fuel__stat[data-stat$="apsLeft"] .fuel__stat-value {
+  font-size: var(--fs-crit-lg);
+}
+.fuel__stat[data-stat$="apsLeft"] .fuel__stat-label {
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
 }
 .fuel__stat-value small { font-size: var(--fs-label); color: var(--text-muted); }
 /* Energy-overlap chip — a strategy call the driver may want at any moment. */

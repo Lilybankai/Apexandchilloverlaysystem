@@ -29,43 +29,13 @@
 (function () {
   "use strict";
 
-  // Known LMU/endurance classes get a stable, intuitive colour; anything else
-  // falls back to a hash so new classes still get a distinct, stable dot.
-  var KNOWN_CLASS_COLORS = {
-    HYPERCAR: "#ff5470",
-    HYPER: "#ff5470",
-    LMH: "#ff5470",
-    LMDH: "#ff5470",
-    GTP: "#ff5470",
-    LMP2: "#4f8bff",
-    LMP3: "#22d3ee",
-    GT3: "#35d07f",
-    LMGT3: "#35d07f",
-    GTE: "#ffb020",
-    GT4: "#ffb020",
-  };
-  var CLASS_COLORS = ["#8b5cf6", "#22d3ee", "#ec4899", "#4f8bff", "#35d07f", "#ffb020"];
-  var classColorCache = {};
-  function classColor(cls) {
-    if (!cls) return "#6b7387";
-    if (classColorCache[cls]) return classColorCache[cls];
-    var known = KNOWN_CLASS_COLORS[String(cls).toUpperCase()];
-    if (known) return (classColorCache[cls] = known);
-    var hash = 0;
-    for (var i = 0; i < cls.length; i++) hash = (hash * 31 + cls.charCodeAt(i)) | 0;
-    var color = CLASS_COLORS[Math.abs(hash) % CLASS_COLORS.length];
-    classColorCache[cls] = color;
-    return color;
-  }
-
-  // Prettify a class label for the group subheader (e.g. "Hyper" -> "HYPERCAR").
-  function classLabel(cls) {
-    if (!cls) return "OTHER";
-    var u = String(cls).toUpperCase();
-    if (u === "HYPER") return "HYPERCAR";
-    if (u === "LMGT3") return "GT3";
-    return u;
-  }
+  // What a class looks like and what it is called both come from the shared
+  // runtime (js/client.js). This palette and label map used to live here and
+  // AGAIN, verbatim, in radar.js — one edit away from the tower and the radar
+  // disagreeing about which green is GT3. The relative panel now draws the same
+  // colours a third time, which made keeping copies indefensible.
+  var classColor = window.ApexOverlay.classColor;
+  var classLabel = window.ApexOverlay.classLabel;
 
   // Broadcast-style name: "theo Pereira" -> "T. Pereira". Keeps already-short or
   // single-token names as-is, and preserves hyphenated / multi-part surnames.
