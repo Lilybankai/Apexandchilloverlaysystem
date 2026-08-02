@@ -1031,11 +1031,11 @@
 /* =========================================================================
  * FUEL WIDGET (mid-right) — calculator readout.
  * ========================================================================= */
-/* Permanent gauges: litres in the tank and virtual energy remaining. These do
-   NOT take part in the FUEL/ENERGY rotation below them — the two budgets are
-   spent at different rates and topped up from different pit rows, so hiding
-   either one behind a 20-second cycle removes half the picture exactly when the
-   driver is deciding what to ask for. */
+/* Gauges: litres in the tank and virtual energy remaining. The two budgets are
+   spent at different rates and topped up from different pit rows, so the widget
+   shows both in full at all times — it used to cycle FUEL and ENERGY every 20
+   seconds, which meant half the time the figure being looked down for was the
+   one not on screen. */
 .fuel__gauges {
   margin-bottom: 8px;
   padding-bottom: 8px;
@@ -1085,7 +1085,9 @@
    split in half — fuel keeps the house gradient, energy is flat cyan. */
 .fuel__gauge[data-res="energy"] .bar__fill { background: var(--ac-cyan); }
 
-/* View chip: names the rotating view (FUEL / VIRTUAL ENERGY). */
+/* Block heading: names the budget the grid under it is denominated in (FUEL /
+   VIRTUAL ENERGY). Both blocks are on screen together, so each has to say which
+   it is — otherwise the eight figures read as one confusing set of eight. */
 .fuel__mode {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1150,7 +1152,7 @@
   font-size: var(--fs-crit);
 }
 .fuel__stat-value small { font-size: var(--fs-label); color: var(--text-muted); }
-/* Energy-overlap chip: shown in both views, never hidden by the rotation. */
+/* Energy-overlap chip — a strategy call the driver may want at any moment. */
 .fuel__overlap {
   margin: 6px 0 4px;
   padding: 3px 7px;
@@ -1178,6 +1180,63 @@
 .fuel__stat-value[data-state="ok"] { color: var(--pos-gain); }
 .fuel__stat-value[data-state="marginal"] { color: var(--warn); }
 .fuel__stat-value[data-state="short"] { color: var(--pos-loss); }
+
+/* --- The four cubes: the answer, after all the working ---------------------
+   Below a rule at the foot of the panel, and deliberately a duplicate of figures
+   that appear above: everything else here is how the answer was reached — burn
+   rate, litres to the finish, margin at the flag — and this is the answer, in
+   the two units a driver acts on. How much is in it, and how far that goes.
+
+   Fuel across the top, energy across the bottom, so the pair you want is a
+   POSITION rather than a label to read: at 180 mph the eye finds "top right",
+   not "the cell labelled fuel laps". */
+.fuel__cubes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.fuel__cube {
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg-panel-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  /* The budget's own colour as a stripe — the same green/cyan split the two
+     gauges use, so a cube and its gauge are obviously the same quantity. */
+  border-left: 3px solid var(--pos-gain);
+}
+.fuel__cube[data-res="energy"] { border-left-color: var(--ac-cyan); }
+.fuel__cube-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fuel__cube[data-res="energy"] .fuel__cube-label { color: var(--ac-cyan); }
+/* Tier 1 throughout — these four are sized to be read without looking. */
+.fuel__cube-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-crit);
+  line-height: 1.05;
+  margin-top: 2px;
+  color: var(--text-primary);
+}
+.fuel__cube-value small {
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+  margin-left: 1px;
+}
+/* A budget this car does not run. Dimmed to a dash rather than removed: the
+   grid is read by position, and a missing cell would move the other three. */
+.fuel__cube[data-na="true"] { opacity: 0.4; }
+.fuel__cube[data-na="true"] .fuel__cube-value { color: var(--text-muted); }
 
 /* =========================================================================
  * FUEL PLANNER WIDGET (left) — pre-race plan + VE stint timer + ratio control.
@@ -2525,6 +2584,32 @@ body.ig-editing #widget-radar .panel__header {
 /* A command in flight: dim the value rather than the row, so the buttons stay
    readable and a second click is obviously still possible. */
 .mfd__value[data-busy="true"] { opacity: 0.45; }
+
+/* --- fuel emptied by an armed penalty -------------------------------------
+   Arming SERVE strips the stop back to no service, which takes the fuel with it.
+   A fuel row sitting at 0 is otherwise silent — it looks exactly like a row
+   nobody has set yet — so while a penalty is armed it flashes, and takes the
+   red for its stripe and tint as well as its value: at a glance the row should
+   read as "wrong", not as the ordinary green fuel row with a small number.
+
+   Only while armed (widgets/mfd.js decides): 0 fuel with nothing to serve is the
+   menu's resting state, and a widget that flashes red all race is one the driver
+   stops seeing. */
+.mfd__row[data-zeroed="true"] { --mfd-cat: var(--pos-loss); }
+.mfd__row[data-zeroed="true"]:not([data-selected="true"]) .mfd__value {
+  color: var(--pos-loss);
+}
+.mfd__row[data-zeroed="true"] .mfd__value {
+  animation: mfd-zeroed 0.55s ease-in-out infinite alternate;
+}
+@keyframes mfd-zeroed {
+  from { opacity: 1; }
+  to { opacity: 0.15; }
+}
+/* Reduced motion still gets the colour — it is the part carrying the meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .mfd__row[data-zeroed="true"] .mfd__value { animation: none; }
+}
 
 /* A refused command (usually "sim not focused"); the reason is in the title. */
 .mfd__row[data-error="true"] {

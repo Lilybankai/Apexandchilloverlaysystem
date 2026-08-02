@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.51.0 — 2026-08-02
+
+### Changed
+
+- **The fuel widget no longer rotates — everything is on screen at once.** It used to
+  cycle the FUEL and VIRTUAL ENERGY blocks every 20 seconds, which meant half the time
+  the figure you looked down for was the one not showing. A fuel call is made in the two
+  seconds before the pit entry, not whenever the rotation next comes round. Both blocks
+  are now permanent and headed, so which four figures are litres and which are percent is
+  never in question. Cars with no energy budget have no energy block at all rather than an
+  empty one.
+
+- **Four cubes at the foot of the fuel widget.** Below a rule, past all the working: fuel
+  litres and laps of fuel across the top, energy percent and laps of energy across the
+  bottom. How much is in it, and how far that goes, per budget — the answer the rest of
+  the panel is arriving at, sized to be read without looking, and found by position
+  rather than by reading a label. The laps cubes bloom when a whole lap of range goes;
+  the quantities do not, because a glow on every tick of a decimal strobes all race.
+
+### Fixed
+
+- **Serving a penalty no longer leaves you with an empty tank and no way to know.**
+  Arming `DRIVE-THRU` or `STOP/GO` on the MFD's SERVE row strips the next stop back to no
+  service, which is what makes a stop-and-go a stop-and-go — and it takes the fuel with
+  it. A fuel row sitting at 0 is silent: it looks exactly like a row nobody has set yet.
+  While a penalty is armed, `FUEL` and `VIRTUAL ENERGY` at zero now flash red and take
+  the red for their stripe and tint too, so the row reads as *wrong* rather than as the
+  ordinary green fuel line with a small number. Only while armed — 0 fuel with nothing to
+  serve is the menu's resting state, and a widget that flashes all race is one you stop
+  seeing. `FUEL RATIO` is left out of it, being a plan for later stops rather than an
+  amount going in now.
+
+- **Changing your mind about serving one now refills the car.** Scrolling SERVE back to
+  `OFF` puts fuel and virtual energy back to a full load. The rest of the cleared stop
+  stays cleared — the tyres, the damage choice and the driver change are gone and were
+  never copied anywhere, so restoring them would be inventing a pit stop rather than
+  returning the driver's. The **driver change in particular is left exactly where the
+  clear put it**: re-booking a swap nobody asked for costs a great deal more than a wrong
+  fuel load. Fuel is the one part with an unambiguous safe answer, and it is the part
+  that would otherwise end the race a lap after the change of mind.
+
+  The Control Panel's bindable **Serve stop/go** button (and `POST /api/mfd/servestopgo`)
+  now arm the SERVE row too. They strip the service exactly as the row does while knowing
+  nothing about it, which left the row reading `OFF` about a stop that had just been
+  emptied — no flash, and nothing to scroll back from. Arming it with the button and
+  cancelling it on the row now works. If the pit request itself fails to send, the row
+  lands on `DRIVE-THRU` rather than claiming a stop was booked.
+
 ## 0.50.0 — 2026-08-01
 
 ### Added

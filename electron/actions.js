@@ -57,6 +57,10 @@ function createActions(deps = {}) {
   const keybindsMod = tryRequire('server/lmuKeybinds.js');
   const mfdMod = tryRequire('telemetry/mfdControl.js');
   const cursorMod = tryRequire('server/pitCursor.js');
+  // The overlay-owned SERVE/PIT REQUEST rows. Required so the stop-and-go button
+  // below can tell the SERVE row what it just did — the server runs in-process
+  // here, so this is the same module state the MFD widget polls.
+  const raceRowsMod = tryRequire('server/raceControlRows.js');
 
   /** One KeySender for the process; it holds no per-press state. */
   const keys = keySenderMod ? new keySenderMod.KeySender({ verbose: false }) : null;
@@ -290,11 +294,19 @@ function createActions(deps = {}) {
           if (!c) return { ok: false, error: 'pit control unavailable' };
           const cleared = await c.clearPitService();
           if (!cleared.ok) return cleared;
+          // The service is stripped from here on, whatever the key does next, so
+          // the SERVE row has to know: it is what flashes an emptied fuel row on
+          // the MFD widget, and what refills it if the driver changes their mind
+          // and scrolls that row back to OFF.
+          const armed = (requested) => {
+            if (raceRowsMod && raceRowsMod.noteServeArmed) raceRowsMod.noteServeArmed(requested);
+          };
           const fresh = readBinds();
           const key = fresh && fresh.pit && fresh.pit.pitRequest;
           if (!key) {
             // The menu IS clear, which is most of the value — say so rather
             // than reporting a flat failure the driver would act on twice.
+            armed(false);
             return {
               ok: false,
               error:
@@ -304,6 +316,7 @@ function createActions(deps = {}) {
             };
           }
           const pressed = await keys.pressScan(key);
+          armed(pressed.ok === true);
           return pressed.ok ? { ...pressed, cleared: cleared.cleared } : pressed;
         },
       });

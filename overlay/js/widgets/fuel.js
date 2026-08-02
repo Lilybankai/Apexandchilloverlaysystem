@@ -12,25 +12,30 @@
  * below it is measured against that one.
  *
  * Two gauges at the top — litres in the tank and virtual energy remaining — are
- * permanent: they are written every frame and never take part in any rotation,
- * because fuel and energy are separate budgets that drain at different rates and
- * are refilled from different rows of the pit menu.
+ * permanent, because fuel and energy are separate budgets that drain at
+ * different rates and are refilled from different rows of the pit menu.
  *
- * Below them, when the car runs a **virtual energy** budget (LMU), the widget
- * rotates every 20 s between the FUEL view and an ENERGY view (remaining %, %
- * per lap, laps left on energy, margin at the flag) — energy is the resource
- * that usually limits an LMU stint. Cars without VE just show the fuel view
- * permanently, and the energy gauge is hidden rather than drawn empty.
+ * **Nothing on this widget cycles.** Both budgets are shown in full, at once:
+ * the FUEL block (per lap, laps left, to finish, margin at the flag) and, on
+ * cars that run one, the VIRTUAL ENERGY block with the same four figures in its
+ * own units. This used to rotate the two every 20 seconds, which meant that half
+ * the time the number a driver looked down for was the one not on screen — and a
+ * fuel call is made in the two seconds before the pit entry, not whenever the
+ * rotation next comes round. Cars without VE simply have no energy block, and
+ * the energy gauge is hidden rather than drawn empty.
+ *
+ * At the foot, past a rule, four cubes carry the whole answer on its own: litres
+ * and laps of fuel on the top row, energy percent and laps of energy on the
+ * bottom. Everything above them is the working; this is the readout to find from
+ * the corner of an eye at 180 mph.
  */
 (function () {
   "use strict";
 
-  /** How long each view is shown before rotating (ms). */
-  var ROTATE_MS = 20000;
-
-  var header, modeChip, overlapEl;
+  var header, overlapEl, energyHead;
   var stats = {};
   var gauges = {};
+  var cubes = {};
   var refuelEl, pitEl, setAlarm, setSession;
   var cache = {};
   var grids = {};
@@ -81,10 +86,9 @@
    *
    * Fuel and virtual energy are two separate budgets. They are burned at
    * different rates, run out at different laps, and are refilled from different
-   * rows of the pit menu, so neither figure can be inferred from the other.
-   * These two gauges sit OUTSIDE the rotating grids and never cycle: whichever
-   * view happens to be up, "how much is actually in the car" is answerable
-   * without waiting up to 20 seconds for a rotation to come back round.
+   * rows of the pit menu, so neither figure can be inferred from the other —
+   * which is why there are two of everything on this widget and never a single
+   * blended figure.
    *
    * Each carries its own laps figure because litres and percent are not what a
    * driver plans in — laps are. 50.9 L means nothing without the burn rate
@@ -156,6 +160,75 @@
     pulseOnStep(g.laps, ck + "_step", laps);
   }
 
+  /**
+   * A block heading. These name the two budgets now that both are on screen at
+   * once — with one view showing at a time the chip could say which it was, and
+   * with both showing, each grid has to say which it is or the eight figures
+   * below read as one confusing set of eight.
+   */
+  function makeSectionHead(parent, text, mode) {
+    var h = document.createElement("div");
+    h.className = "fuel__mode";
+    h.textContent = text;
+    h.setAttribute("data-mode", mode);
+    parent.appendChild(h);
+    return h;
+  }
+
+  /**
+   * One cube of the four-cube readout at the foot of the widget.
+   *
+   * The cubes are a deliberate duplicate of figures that appear above them, and
+   * that is the point: everything above is the working — burn rate, litres to
+   * the finish, the margin at the flag — and this is the answer, in the two units
+   * a driver acts on. How much is in it, and how far that goes. Fuel across the
+   * top, energy across the bottom, so the row you want is a position rather than
+   * a label to read.
+   *
+   * `res` tags the budget so the energy pair can take the same cyan the energy
+   * gauge does, and so a car with no energy budget can dim its half rather than
+   * print a confident 0.0 for a thing it does not have.
+   */
+  function makeCube(parent, key, label, res, glow) {
+    var c = document.createElement("div");
+    c.className = "fuel__cube";
+    c.setAttribute("data-res", res);
+    var l = document.createElement("div");
+    l.className = "fuel__cube-label";
+    l.textContent = label;
+    var v = document.createElement("div");
+    // Only the laps cubes bloom. Litres and percent drift continuously, and a
+    // glow on every tick of a decimal strobes for the whole race and stops
+    // meaning anything — losing a whole LAP of range is the event worth a look.
+    v.className = glow ? "fuel__cube-value is-crit" : "fuel__cube-value";
+    v.textContent = "—";
+    c.appendChild(l);
+    c.appendChild(v);
+    parent.appendChild(c);
+    cubes[key] = { root: c, val: v };
+  }
+
+  /** Write a cube's value. */
+  function setCube(key, html) {
+    var c = cubes[key];
+    if (!c) return;
+    var ck = "c_" + key;
+    if (cache[ck] === html) return;
+    cache[ck] = html;
+    c.val.innerHTML = html;
+  }
+
+  /** Dim a cube whose budget this car does not have, rather than printing 0. */
+  function setCubeNa(key, na) {
+    var c = cubes[key];
+    if (!c) return;
+    var ck = "cna_" + key;
+    if (cache[ck] === na) return;
+    cache[ck] = na;
+    if (na) c.root.setAttribute("data-na", "true");
+    else c.root.removeAttribute("data-na");
+  }
+
   function init(root) {
     header = root.querySelector('[data-role="tank"]');
     var mount = root.querySelector('[data-role="mount"]');
@@ -176,13 +249,9 @@
     mount.appendChild(gaugeBox);
     grids.gauges = gaugeBox;
 
-    // Mode chip: names the view currently shown (FUEL / ENERGY).
-    modeChip = document.createElement("div");
-    modeChip.className = "fuel__mode";
-    modeChip.textContent = "FUEL";
-    modeChip.style.display = "none"; // only shown once rotation is active
-    mount.appendChild(modeChip);
-
+    // The fuel block, headed so it cannot be confused with the energy block
+    // below it — both are on screen together now.
+    makeSectionHead(mount, "FUEL", "fuel");
     var fuelGrid = document.createElement("div");
     fuelGrid.className = "fuel__grid";
     makeStat(fuelGrid, "perLap", "Per Lap", false);
@@ -192,10 +261,12 @@
     mount.appendChild(fuelGrid);
     grids.fuel = fuelGrid;
 
-    // Energy view: same grid shape, VE-denominated stats.
+    // The energy block: same grid shape, VE-denominated stats. Hidden as a whole
+    // (heading included) on a car with no energy budget — there is nothing to say
+    // about it, and an empty block reads as an exhausted one.
+    energyHead = makeSectionHead(mount, "VIRTUAL ENERGY", "energy");
     var energyGrid = document.createElement("div");
     energyGrid.className = "fuel__grid";
-    energyGrid.style.display = "none";
     makeStat(energyGrid, "veRemain", "Remaining", true);
     makeStat(energyGrid, "vePerLap", "Per Lap", false);
     makeStat(energyGrid, "veLapsLeft", "Laps Left", true);
@@ -203,10 +274,8 @@
     mount.appendChild(energyGrid);
     grids.energy = energyGrid;
 
-    // Energy-overlap chip. Deliberately OUTSIDE the rotating grids: "how many
-    // cars ahead have to pit before me" is a strategy call the driver may need
-    // at any moment, and hiding it behind a 20-second rotation would mean the
-    // answer is absent exactly when they look for it.
+    // Energy-overlap chip: "how many cars ahead have to pit before me" is a
+    // strategy call the driver may need at any moment.
     overlapEl = document.createElement("div");
     overlapEl.className = "fuel__overlap";
     overlapEl.hidden = true;
@@ -222,9 +291,19 @@
     margin.appendChild(pitEl);
     mount.appendChild(margin);
 
-    // Added last so it inserts itself ABOVE everything built above it, and
-    // outside the rotating FUEL/ENERGY grids — a call the driver has one lap to
-    // act on cannot be hidden behind a 20-second rotation.
+    // The four cubes, last and below a rule: the answer, after all the working.
+    // Fuel across the top (how much, how far), energy across the bottom.
+    var cubeBox = document.createElement("div");
+    cubeBox.className = "fuel__cubes";
+    makeCube(cubeBox, "fuelQty", "FUEL", "fuel", false);
+    makeCube(cubeBox, "fuelLaps", "FUEL LAPS", "fuel", true);
+    makeCube(cubeBox, "energyQty", "ENERGY", "energy", false);
+    makeCube(cubeBox, "energyLaps", "ENERGY LAPS", "energy", true);
+    mount.appendChild(cubeBox);
+    grids.cubes = cubeBox;
+
+    // Added last so it inserts itself ABOVE everything built above it — a call
+    // the driver has one lap to act on belongs at the top of the panel.
     setAlarm = window.ApexOverlay.alarmBar(mount, "fuel");
   }
 
@@ -323,20 +402,15 @@
     setAlarm(f.pitThisLap === true, pitCallText(f));
     updateOverlap(f);
 
+    // The energy block exists only on cars that run an energy budget. Everything
+    // else on the widget is permanent — no view is ever hidden behind another.
     var hasEnergy = typeof f.virtualEnergyPct === "number";
-    // Rotate between views every ROTATE_MS while energy data exists.
-    var mode = hasEnergy && Math.floor(Date.now() / ROTATE_MS) % 2 === 1 ? "energy" : "fuel";
-    if (cache.mode !== mode || cache.hasEnergy !== hasEnergy) {
-      cache.mode = mode;
+    if (cache.hasEnergy !== hasEnergy) {
       cache.hasEnergy = hasEnergy;
-      grids.fuel.style.display = mode === "fuel" ? "" : "none";
-      grids.energy.style.display = mode === "energy" ? "" : "none";
-      modeChip.style.display = hasEnergy ? "" : "none";
-      modeChip.textContent = mode === "energy" ? "VIRTUAL ENERGY" : "FUEL";
-      modeChip.setAttribute("data-mode", mode);
+      grids.energy.style.display = hasEnergy ? "" : "none";
+      energyHead.style.display = hasEnergy ? "" : "none";
     }
 
-    // Static gauges — written every frame regardless of which grid is showing.
     // fmt.has screens out the UNKNOWN sentinel; an empty tank is a real 0.
     var lvl = fmt.has(f.levelLiters) ? f.levelLiters : null;
     var cap =
@@ -368,15 +442,37 @@
       );
     }
 
+    // The four cubes: how much is in it, and how far that goes, per budget.
+    setCube("fuelQty", lvl != null ? lvl.toFixed(1) + "<small> L</small>" : "—");
+    setCube("fuelLaps", fuelLaps != null ? fuelLaps.toFixed(1) : "—");
+    setCube(
+      "energyQty",
+      hasEnergy ? f.virtualEnergyPct.toFixed(1) + "<small> %</small>" : "—"
+    );
+    setCube("energyLaps", hasEnergy && veLaps != null ? veLaps.toFixed(1) : "—");
+    setCubeNa("energyQty", !hasEnergy);
+    setCubeNa("energyLaps", !hasEnergy);
+    pulseOnStep(cubes.fuelLaps.val, "cubeFuelLapsStep", fuelLaps);
+    if (hasEnergy) pulseOnStep(cubes.energyLaps.val, "cubeEnergyLapsStep", veLaps);
+
     // Header carries both budgets at once, so the panel answers "what is in the
-    // car" from its title bar alone even when the body is mid-rotation.
+    // car" from its title bar alone even when it is collapsed to the header.
     if (header) {
       var hdr = fmt.liters(f.levelLiters) + " L";
       if (hasEnergy) hdr += " · " + Math.round(f.virtualEnergyPct) + "%";
       if (cache.tank !== hdr) { cache.tank = hdr; header.textContent = hdr; }
     }
 
-    if (mode === "energy") {
+    setStat("perLap", fmt.liters(f.perLapAvgLiters), "L");
+    setStat("lapsLeft", fmt.intVal(f.lapsRemaining), null);
+    setStat("toFinish", fmt.liters(f.fuelToFinishLiters), "L");
+    setMargin("margin", f.fuelDeltaLiters, f.perLapAvgLiters, fmt, "L");
+    pulseOnStep(stats.lapsLeft, "lapsLeftStep", f.lapsRemaining);
+
+    // The energy block, in its own units, beside the fuel one rather than
+    // instead of it — on an LMU hypercar energy is usually what ends the stint,
+    // but which of the two bites first is exactly the question being asked.
+    if (hasEnergy) {
       setStat("veRemain", f.virtualEnergyPct.toFixed(1), "%");
       setStat(
         "vePerLap",
@@ -393,18 +489,7 @@
       setMargin("veMargin", f.virtualEnergyDeltaPct, f.virtualEnergyPerLapPct, fmt, "%");
       pulseOnStep(stats.veRemain, "veRemainStep", f.virtualEnergyPct);
       pulseOnStep(stats.veLapsLeft, "veLapsLeftStep", f.virtualEnergyLapsRemaining);
-
-      var eLine = "Virtual energy · rotates 20s";
-      if (cache.refuel !== eLine) { cache.refuel = eLine; refuelEl.textContent = eLine; }
-      if (cache.pit !== "") { cache.pit = ""; pitEl.textContent = ""; }
-      return;
     }
-
-    setStat("perLap", fmt.liters(f.perLapAvgLiters), "L");
-    setStat("lapsLeft", fmt.intVal(f.lapsRemaining), null);
-    setStat("toFinish", fmt.liters(f.fuelToFinishLiters), "L");
-    setMargin("margin", f.fuelDeltaLiters, f.perLapAvgLiters, fmt, "L");
-    pulseOnStep(stats.lapsLeft, "lapsLeftStep", f.lapsRemaining);
 
     // Bottom line: refuel-to-finish + pit window.
     var refuel = fmt.has(f.refuelToFinishLiters)

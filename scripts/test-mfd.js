@@ -24,6 +24,7 @@
 
 const {
   isAllFourTyreRow,
+  isFuelRow,
   isServiceRow,
   nextTyreOption,
   projectAids,
@@ -246,6 +247,30 @@ console.log('\n6) What a stop-and-go strips, and what it must not');
   check('pressures are not service', !isServiceRow('FL PRESS:'));
   check('an empty name is not service', !isServiceRow(''));
   check('an unknown row is left alone', !isServiceRow('SOME FUTURE ROW:'));
+}
+
+console.log('\n7) What scrolling SERVE back to OFF refills');
+
+{
+  // The narrower predicate: the rows that are an AMOUNT going into the car, and
+  // therefore the only part of a cleared stop that can be safely put back.
+  check('fuel is refilled', isFuelRow('FUEL:'));
+  check('virtual energy is refilled', isFuelRow('VIRTUAL ENERGY:'));
+  check('FUEL RATIO is NOT refilled', !isFuelRow('FUEL RATIO:'));
+  check('an empty name is not fuel', !isFuelRow(''));
+}
+
+{
+  // The point of the narrowness. A driver who changes their mind about serving a
+  // penalty must not be handed back a driver change or a tyre stop they never
+  // booked — those were cleared and were never copied anywhere to restore from.
+  check('a driver change is NOT refilled', !isFuelRow('DRIVER:'));
+  check('damage is NOT refilled', !isFuelRow('DAMAGE:'));
+  check('the tyres are NOT refilled', !CORNERS.some(isFuelRow));
+  // …and every row that IS refilled must have been one the clear emptied, or
+  // OFF would be setting something the penalty never touched.
+  check('everything refilled was cleared first',
+    ['FUEL:', 'VIRTUAL ENERGY:'].every((n) => isFuelRow(n) && isServiceRow(n)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

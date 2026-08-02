@@ -71,6 +71,27 @@
     return "other";
   }
 
+  /**
+   * Whether a pit row is an amount going INTO the car — fuel, or the virtual
+   * energy that stands in for it on the cars that run to an energy allowance.
+   *
+   * Deliberately the same rule as the server's `isFuelRow` (telemetry/mfdControl),
+   * including the `FUEL RATIO:` exclusion: that row reads as fuel and is a plan
+   * for later stops, so a zero on it is a normal setting rather than an empty
+   * tank, and flashing it red would cry wolf.
+   */
+  function isFuelRow(name) {
+    var n = String(name || "").toUpperCase();
+    if (n.indexOf("RATIO") >= 0) return false;
+    return n.indexOf("VIRTUAL ENERGY") === 0 || n.indexOf("FUEL") === 0;
+  }
+
+  /** Whether a row's value reads as nothing at all — "0", "0.0", "0%". */
+  function readsZero(text) {
+    var m = String(text == null ? "" : text).match(/-?\d+(?:\.\d+)?/);
+    return !!m && parseFloat(m[0]) === 0;
+  }
+
   /** Category (→ colour) for a driving aid, from its VM_ key. */
   function aidCategory(key) {
     var k = String(key || "").toUpperCase();
@@ -444,9 +465,43 @@
     }
   }
 
+  /* ------------------------ the emptied tank warning ----------------------
+   * Selecting a penalty on the SERVE row strips the whole stop back to no
+   * service, and that includes taking fuel — the row goes to 0 and stays there.
+   * That is correct for the stop-and-go itself and lethal one lap later, because
+   * an empty fuel row is silent: it looks exactly like a row nobody has set yet.
+   *
+   * So while a penalty is armed, a fuel row reading zero flashes. It is scoped to
+   * that state on purpose — 0 fuel with no penalty armed is the ordinary resting
+   * state of the menu, and a widget that flashes red at all times is a widget the
+   * driver learns to ignore by the end of the first stint.
+   * ------------------------------------------------------------------------ */
+
+  /** Whether SERVE is on a penalty rather than OFF — from the cursor poll. */
+  var serveArmed = false;
+  /** The pit rows as last rendered, so the mark can be re-applied on its own. */
+  var lastPitRows = [];
+
+  function markZeroedFuel() {
+    if (!pit.rowsEl) return;
+    lastPitRows.forEach(function (r) {
+      var refs = pit.rows[pitRowId(r)];
+      if (!refs) return;
+      var zero = serveArmed && isFuelRow(r.name) && readsZero(r.currentText);
+      // Only touch the attribute when it changes — same reason as the cursor
+      // highlight: this runs on every render, and a needless write is a needless
+      // style recalculation on a row that is mid-animation.
+      if (zero !== (refs.root.getAttribute("data-zeroed") === "true")) {
+        if (zero) refs.root.setAttribute("data-zeroed", "true");
+        else refs.root.removeAttribute("data-zeroed");
+      }
+    });
+  }
+
   function renderPit(rows) {
     if (!pit.container) return;
     if (!rows || rows.length === 0) {
+      lastPitRows = [];
       markEmpty(pit);
       return;
     }
@@ -490,6 +545,8 @@
       },
       pitRowKey,
     );
+    lastPitRows = rows;
+    markZeroedFuel();
     highlightCursor(false);
   }
 
@@ -583,6 +640,9 @@
     rcRows.box = null;
     rcRows.rowsEl = null;
     rcRows.sig = "";
+    // Same for the pit rows the zeroed-fuel mark is applied to — they are gone,
+    // and marking detached nodes is work nobody will ever see.
+    lastPitRows = [];
     var ph = document.createElement("div");
     ph.className = "placeholder";
     ph.textContent = "No MFD data — join a session in LMU";
@@ -716,6 +776,19 @@
       var row = rowByKey('race:' + r.name);
       if (row) critText(row.querySelector('.mfd__value'), r.text || '—');
     });
+
+    // A penalty being armed is what makes an empty fuel row worth shouting about,
+    // and it is only ever known here — SERVE is an overlay-owned row that rides
+    // in on this poll, not something the sim's pit menu reports.
+    var serve = null;
+    list.forEach(function (r) {
+      if (/^SERVE/i.test(String(r.name || ''))) serve = r;
+    });
+    var armed = !!(serve && serve.text && serve.text !== 'OFF' && serve.text !== '—');
+    if (armed !== serveArmed) {
+      serveArmed = armed;
+      markZeroedFuel();
+    }
   }
 
   /** The race-control group: what the sim is doing TO you, and the replies. */

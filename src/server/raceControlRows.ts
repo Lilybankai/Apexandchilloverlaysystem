@@ -26,6 +26,11 @@
  * running off the end cannot roll round into an action. It is the same risk
  * profile as the sim's own `DAMAGE:` row, which will equally happily book a
  * repair nobody asked for.
+ *
+ * The third thing that contains it is the way back: scrolling to `OFF` refills
+ * fuel and virtual energy. Most of the cleared stop cannot be restored — see the
+ * `OFF` branch — but the empty tank can be, and it is the part that would
+ * otherwise end the race a lap after the driver changed their mind.
  */
 
 import type { MfdController } from '../telemetry/mfdControl';
@@ -59,6 +64,27 @@ let requestState = 0;
 export function resetRaceControlRows(): void {
   serveState = SERVE_OFF;
   requestState = 0;
+}
+
+/**
+ * Records a stop-and-go armed from somewhere OTHER than this row — the Control
+ * Panel's bindable **Serve stop/go** button, or `POST /api/mfd/servestopgo`.
+ *
+ * Those do exactly what the row's own `STOP/GO` does (strip the service, request
+ * the stop) while knowing nothing about it, which left the row saying `OFF` about
+ * a stop that had just been stripped bare. That is not a cosmetic disagreement:
+ * the row's state is what tells the MFD widget to flash an emptied fuel row, and
+ * what puts the fuel back when the driver scrolls to `OFF`. Arming it by the
+ * button and cancelling it by the row has to work, so both doors set one state.
+ *
+ * `requested` is whether the pit request itself landed. When it did not, this
+ * lands on `DRIVE-THRU` for the same reason the row's own apply does: the menu is
+ * cleared either way, but claiming a stop was booked when it was not is the one
+ * lie that would have the driver sail past their box.
+ */
+export function noteServeArmed(requested: boolean): void {
+  serveState = requested ? SERVE_STOP_GO : SERVE_DRIVE_THROUGH;
+  if (requested) requestState = 1;
 }
 
 /** Presses LMU's own `Pit Request` bind. See mfdRoutes for why it is a key. */
@@ -99,10 +125,27 @@ export function buildRaceControlRows(
       apply: async (next) => {
         if (next === serveState) return { ok: true, applied: serveState };
         // Moving back to OFF cannot undo a cleared menu — the previous strategy
-        // is gone and we never held a copy of it. It only stops the row claiming
-        // a penalty is being served, which is worth having and is all it does.
+        // is gone and we never held a copy of it, so the tyres, the damage choice
+        // and the driver change stay as the clear left them.
+        //
+        // Fuel is the exception, and it is the one that would end the race: a
+        // driver who armed a penalty, changed their mind, and pitted on the
+        // strategy they THINK they still have takes on nothing and stops on the
+        // next lap. So the amount going in goes back to a full load — the one
+        // unambiguously safe answer — while the driver change stays where it is,
+        // because re-booking a swap nobody asked for costs far more than fuel.
         if (next === SERVE_OFF) {
+          // Set first, so cancelling holds even if the sim refuses the write. The
+          // row reports INTENT, and the intent here is "I am not serving one".
           serveState = SERVE_OFF;
+          const filled = await controller.restorePitFuel();
+          if (!filled.ok) {
+            return {
+              ok: false,
+              applied: serveState,
+              error: `Penalty cleared, but fuel is still at zero — ${filled.error ?? 'could not set it'}`,
+            };
+          }
           return { ok: true, applied: serveState };
         }
         const cleared = await controller.clearPitService();

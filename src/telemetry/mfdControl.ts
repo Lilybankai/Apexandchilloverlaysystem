@@ -299,6 +299,25 @@ function selectedOption(row: RawPitRow, set: TyreOptionSet): number {
 }
 
 /**
+ * Whether a pit row is an **amount going into the car** — fuel, or the virtual
+ * energy that stands in for it on the cars that run to an energy allowance.
+ *
+ * Both, always, and never one without the other: a hypercar's `FUEL:` row is
+ * driven by its energy allowance, so restoring one and leaving the other at zero
+ * would put the car on the grid with nothing in it and a row that says otherwise.
+ *
+ * `FUEL RATIO:` is excluded for the reason given on {@link isServiceRow} — it is
+ * a plan for later stops, not an amount being added now.
+ */
+export function isFuelRow(name: string): boolean {
+  const upper = String(name || '').toUpperCase();
+  if (!upper) return false;
+  if (upper.startsWith('VIRTUAL ENERGY')) return true;
+  if (upper.startsWith('FUEL') && !upper.includes('RATIO')) return true;
+  return false;
+}
+
+/**
  * Whether a pit row is **service** — work the crew does on the car, and
  * therefore something a stop-and-go must not have booked.
  *
@@ -319,8 +338,7 @@ export function isServiceRow(name: string): boolean {
   if (CORNER_TYRE_ROW.test(name)) return true;
   if (upper.startsWith('DAMAGE')) return true;
   if (upper.startsWith('DRIVER')) return true;
-  if (upper.startsWith('VIRTUAL ENERGY')) return true;
-  if (upper.startsWith('FUEL') && !upper.includes('RATIO')) return true;
+  if (isFuelRow(name)) return true;
   return false;
 }
 
@@ -550,6 +568,51 @@ export class MfdController {
     }
     const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
     return res.ok ? { ...res, cleared } : res;
+  }
+
+  /**
+   * Puts fuel and virtual energy back to a **full load** — the half of
+   * {@link clearPitService} that can be undone, for the driver who selects a
+   * penalty on the SERVE row and then thinks better of it.
+   *
+   * Only these rows, and only to the top of their own list. Nothing here tries
+   * to restore the *strategy* the clear wiped: the tyres, the damage choice and
+   * the driver change are gone and were never copied anywhere, so a guess at
+   * them would be an invented pit stop rather than the driver's. Fuel is the one
+   * that has an unambiguous safe answer — a car that leaves the box with a full
+   * tank finishes the stint, and a car that leaves with nothing does not get to
+   * the end of the lap.
+   *
+   * The DRIVER row is deliberately untouched, which matters most on the way back
+   * out: `clearPitService` set it to "no change", and re-booking a driver swap
+   * the driver did not ask for costs a great deal more than a wrong fuel load.
+   *
+   * "Full" is the LAST option in the row's own list, whatever the sim put there —
+   * `100%` on a virtual-energy row, the tank's capacity on a fuel one. A row with
+   * a single option (`N/A` — this car takes no fuel here) is left alone.
+   */
+  public async restorePitFuel(): Promise<MfdWriteResult & { restored?: string[] }> {
+    const menu = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
+    if (!Array.isArray(menu)) {
+      return { ok: false, status: 0, error: 'pit menu unavailable (not in a session?)' };
+    }
+    const restored: string[] = [];
+    for (const row of menu) {
+      const name = typeof row?.name === 'string' ? row.name : '';
+      if (!name || !isFuelRow(name)) continue;
+      const count = Array.isArray(row.settings) ? row.settings.length : 0;
+      if (count <= 1) continue; // nothing to choose (a lone "N/A")
+      const full = count - 1;
+      if (row.currentSetting !== full) restored.push(name);
+      row.currentSetting = full;
+    }
+    if (restored.length === 0) {
+      // Already full, or no fuel rows in this menu. Same contract as
+      // clearPitService: a state was asked for, and it holds.
+      return { ok: true, status: 200, restored };
+    }
+    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    return res.ok ? { ...res, restored } : res;
   }
 
   /**

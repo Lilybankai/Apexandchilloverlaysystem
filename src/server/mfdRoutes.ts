@@ -29,6 +29,7 @@ import type { KeySender } from './keySender';
 import { readLmuKeybinds } from './lmuKeybinds';
 import { stepAid } from './aidRows';
 import { getCursor, getRaceControlRows, moveCursorLive, selectRowLive, stepSelected } from './pitCursor';
+import { noteServeArmed } from './raceControlRows';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -195,7 +196,11 @@ export function handleMfdCommand(
           sendJson(res, 502, cleared);
           return;
         }
-        await handlePitRequest(res, keys, cleared.cleared);
+        const requested = await handlePitRequest(res, keys, cleared.cleared);
+        // The service IS stripped now, so the SERVE row has to say so — it is
+        // what flags the emptied fuel row in the widget, and what refills it if
+        // the driver scrolls back to OFF. See noteServeArmed.
+        noteServeArmed(requested);
         return;
       }
       if (action === 'cursor') {
@@ -259,16 +264,20 @@ export function handleMfdCommand(
  * on — bind "Pit Request" to a key in LMU's controls — rather than as a generic
  * error, because that is by far the most likely reason this route ever fails:
  * most drivers have it on a wheel button, which we cannot press.
+ *
+ * Answers the response itself and RETURNS whether the key actually landed, which
+ * the stop-and-go caller needs after the fact — the menu is stripped either way,
+ * but only a request that landed booked a stop.
  */
 async function handlePitRequest(
   res: ServerResponse,
   keys: KeySender,
   cleared?: string[],
-): Promise<void> {
+): Promise<boolean> {
   const binds = readLmuKeybinds();
   if (!binds.path) {
     sendJson(res, 503, { ok: false, error: 'LMU keyboard config not found', cleared });
-    return;
+    return false;
   }
   const key = binds.pit.pitRequest;
   if (!key) {
@@ -284,7 +293,7 @@ async function handlePitRequest(
       unbound: true,
       cleared,
     });
-    return;
+    return false;
   }
   if (!binds.keyboardSchemeActive) {
     sendJson(res, 409, {
@@ -292,10 +301,11 @@ async function handlePitRequest(
       error: 'LMU has its keyboard scheme disabled — the key would be ignored',
       cleared,
     });
-    return;
+    return false;
   }
   const result = await keys.pressScan(key);
   sendJson(res, result.ok ? 200 : 502, { ...result, cleared });
+  return result.ok === true;
 }
 
 async function handleAidKey(res: ServerResponse, body: unknown, keys: KeySender): Promise<void> {
