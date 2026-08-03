@@ -458,6 +458,7 @@ the track.
 | `?style=brand`   | The overlay's cyan→magenta running round the lap                          |
 | `?rotate=<deg>`  | Overrides the automatic orientation                                       |
 | `?tilt=0.55`     | How steeply the view looks down, 0.2 (flat plan) .. 0.9                    |
+| `?ground=0`      | Drops the ground plane and the extrusion, leaving the road floating       |
 
 **It is one material, lit by one light.** Not a light road with a coloured wall
 glued on — that reads as a paper cutout. Every segment's surface and sides are
@@ -485,6 +486,14 @@ distance and ride the centre of the road instead.
 across a 1.5 km footprint — under 2% of the map's width, invisible at true scale.
 The lift is scaled to a fixed share of the map's own size instead, so Spa's hill
 reads at a glance and a flat circuit stays flat.
+
+**And the elevation is a solid.** The circuit stands on a ground plane, with the
+road extruded down to meet it all the way round, so the height of that mass at
+any point is the height of the track there. The hill is no longer a gap between
+the road and its shadow that you have to notice — it is something with a foot,
+and a climb reads as the road pulling away from its own base. The plane itself is
+a soft pool of light rather than a plate, so it stays a surface rather than
+becoming a second panel when you run the widget background transparent.
 
 The ribbon is then drawn over its own silhouette, projected onto the ground plane
 with the lift removed and blurred. The shadow stays flat while the road climbs

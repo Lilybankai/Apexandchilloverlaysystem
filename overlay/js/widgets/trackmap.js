@@ -32,7 +32,8 @@
  *      true scale. So the lift is scaled to a fixed share of the map's own size
  *      ({@link ELEV_SHARE}), capped at {@link ELEV_MAX_GAIN}×: Spa's hill is
  *      unmistakable, and a flat circuit stays flat rather than being given
- *      terrain it does not have.
+ *      terrain it does not have. What the lift raises the road ABOVE is a real
+ *      plane with a real extrusion down to it — see below.
  *
  * ## Drawing order IS the depth buffer
  * There is no z-buffer in canvas 2-D, so the ribbon is drawn back to front:
@@ -42,6 +43,14 @@
  * near side. Cars are drawn after the whole ribbon, sorted among themselves —
  * deliberately on top of it, because a dot hidden under a bridge is a dot the
  * driver reads as "not on track".
+ *
+ * The sort key is the depth the projection implies, which includes HEIGHT, not
+ * just position on the plan. Where a circuit crosses itself the two roads share
+ * a footprint, so the planar depth alone is the same for both and the sort
+ * between them is a coin flip — with the extrusion below, that flip decides
+ * whether the bridge or the road beneath it wins, and it can land either way
+ * from one rebuild to the next. Adding the lift settles it the way the view
+ * already says it should: the higher road is the nearer one.
  *
  * ## The material, and why it is one material
  * The ribbon is ONE colour lit by ONE light, not a light road with a coloured
@@ -63,13 +72,25 @@
  * Ambient never reaches zero ({@link AMBIENT}), so an unlit wall is dark red
  * rather than a hole in the map.
  *
- * ## The shadow is the elevation
- * The ribbon is drawn over its own silhouette, projected with the elevation
- * lift removed and blurred. So the shadow lies on the ground plane while the
- * road climbs away from it: the gap between the two IS the hill, and a section
- * over a crest visibly floats. On a flat circuit the two nearly coincide and
- * the fixed {@link SHADOW_DX}/{@link SHADOW_DY} offset leaves an ordinary
- * contact shadow instead. One accumulated path, one blurred blit.
+ * ## The elevation is a solid, standing on a plane
+ * Under the circuit is a ground plane, and hanging from the underside of the
+ * road down to it is a curtain ({@link dropFace}) following the road all the
+ * way round. The height of that curtain at any point IS the elevation there:
+ * the hill stops being a gap you have to notice and becomes a mass with a
+ * visible foot. A climb reads as the road pulling away from its own base, and
+ * the two ends of a straight sit at obviously different heights.
+ *
+ * The plane is a pool of light rather than a plate — see {@link PLANE_TINT},
+ * which is also where the reason lives (this widget is drawn on a background
+ * the operator can turn off entirely, and a plate would put it back).
+ *
+ * The cast shadow survives all this, with a changed job. It used to be the ONLY
+ * elevation cue: the ribbon over its own lift-removed silhouette, blurred, and
+ * the gap between them was the hill. Now the curtain says that far more
+ * directly, and the shadow — offset by {@link SHADOW_DX}/{@link SHADOW_DY} —
+ * has become the contact shadow at the curtain's foot, which is what stops the
+ * solid from floating on its own plane. It is also the whole elevation cue
+ * again wherever there is no curtain: a flat circuit, or `?ground=0`.
  *
  * ## Cost
  * The ribbon is static: it is rendered ONCE to an offscreen canvas when the
@@ -79,6 +100,12 @@
  * shading is per-segment arithmetic inside that one render, so it costs nothing
  * per frame at all.
  *
+ * The extrusion roughly doubles that one render — measured at 36 ms → 66 ms for
+ * COTA at 428 px — because it adds two more faces per segment on top of the
+ * five already there. It is worth being clear that this is the whole price: it
+ * lands on a track change and on the rebuild after a resize settles, never on a
+ * frame, and a flat circuit pays none of it.
+ *
  * URL params (all optional):
  *   ?style=classic|brand  Palette. `classic` is the infographic red of a
  *                         printed circuit map (the default); `brand` runs the
@@ -86,6 +113,9 @@
  *                         lit by the same model — only the base hue differs.
  *   ?rotate=<deg>         Override the automatic orientation.
  *   ?tilt=<0.2..0.9>      Override how steeply the view looks down.
+ *   ?ground=0             Drop the ground plane and the extrusion down to it,
+ *                         leaving the road floating over its shadow as it was
+ *                         before v0.55.0.
  */
 (function () {
   "use strict";
@@ -191,6 +221,32 @@
    */
   var WALL_SPLIT = 0.45;
   var WALL_LOWER_MUL = 0.72;
+  /**
+   * The curtain: the face hanging from the road's underside down to the ground
+   * plane, so the gap between the two IS the elevation instead of implying it.
+   *
+   * It starts BELOW where the wall's lower band ends (0.72) and keeps falling.
+   * That step is not a seam to be hidden — it is the road's own contact shadow
+   * on the mass beneath it, and it is what separates "a wall" from "the wall,
+   * and then the hill under it". The foot is the darkest thing on the map: a
+   * curtain that stays bright all the way down is a solid block, and a block
+   * makes a hill read as LESS tall than it is, not more.
+   *
+   * Going darker than {@link WALL_LOWER_MUL} is only safe because the curtain
+   * now ENDS on a visible plane. The wall could not — see the note there about
+   * a ribbon dissolving from underneath on a near-black panel.
+   */
+  var CURTAIN_TOP_MUL = 0.62;
+  var CURTAIN_FOOT_MUL = 0.3;
+  /**
+   * Target height of one curtain band in px, and the ceiling on how many. The
+   * count comes from the drop rather than being fixed, so a long climb gets a
+   * falloff and a 3 px rise gets one flat quad instead of four hairlines.
+   */
+  var CURTAIN_BAND_PX = 9;
+  var CURTAIN_BANDS_MAX = 4;
+  /** Below this drop there is no hill to draw, only a seam. */
+  var CURTAIN_MIN_PX = 1.5;
   /** The cast shadow: fixed offset in px, blur, and opacity. */
   var SHADOW_DX = 3;
   var SHADOW_DY = 6;
@@ -198,6 +254,38 @@
   var SHADOW_BLUR_MIN = 3;
   var SHADOW_BLUR_MAX = 9;
   var SHADOW_ALPHA = 0.5;
+  /**
+   * ...and the same shadow once there is an extrusion for it to lie at the foot
+   * of. Its job has changed: without the curtain it is the only elevation cue
+   * and has to carry it alone, but under one it falls on an already-dark foot,
+   * where the full weight stacks into a bruise around the hill.
+   */
+  var SHADOW_ALPHA_SOLID = 0.4;
+
+  /* ------------------------------- the ground ------------------------------ */
+
+  /**
+   * The plane the circuit stands on: a pool of light under the map, fading to
+   * nothing well before it reaches an edge.
+   *
+   * A pool rather than a slab, for two reasons. This projection has no
+   * perspective, so any rectangle on the ground lands screen-axis-aligned — a
+   * plate with a rim would read as a card behind the map, not as a surface
+   * under it. And the operator can turn a widget's background down to zero
+   * (`--panel-alpha`); an opaque plate would quietly put back the box they
+   * switched off. Something that fades out has no edge to give itself away.
+   *
+   * Light, not dark: the panel is already near-black, so a dark plane is
+   * invisible at full opacity and a smudge at none. The plane is not really the
+   * feature — the CONTRAST between the curtain's dark foot and the plane is,
+   * and that needs the plane to be the lighter of the two.
+   */
+  var PLANE_TINT = "150,170,210";
+  var PLANE_ALPHA = 0.075;
+  /** Where the pool starts fading, as a share of its radius. */
+  var PLANE_FADE = 0.55;
+  /** How far past the circuit's own footprint it runs, as a share of that. */
+  var PLANE_BLEED = 0.1;
 
   /* -------------------------------- palettes ------------------------------- */
 
@@ -248,6 +336,8 @@
   var palette = PALETTES.classic;
   var rotateOverrideRad = null;
   var tilt = TILT;
+  /** The ground plane and the extrusion down to it. `?ground=0` turns both off. */
+  var ground = true;
 
   /* ------------------------------- the fetch ------------------------------- */
 
@@ -444,16 +534,30 @@
       var lift = (e[4] - view.minY) * view.elevGain;
       var lu = viewU(e[0], e[1], view.ca, view.sa), lv = viewV(e[0], e[1], view.ca, view.sa);
       var ru = viewU(e[2], e[3], view.ca, view.sa), rv = viewV(e[2], e[3], view.ca, view.sa);
-      var lY = lv * view.tilt - lift, rY = rv * view.tilt - lift;
+      var flY = lv * view.tilt, frY = rv * view.tilt;
+      var lY = flY - lift, rY = frY - lift;
       raw[i] = {
-        lx: lu, ly: lY, rx: ru, ry: rY, depth: (lv + rv) / 2,
+        lx: lu, ly: lY, rx: ru, ry: rY,
+        // Higher ground sorts as nearer. `v` alone cannot decide a crossover —
+        // the two roads share a footprint, so their `v` is the same and the
+        // sort is a coin flip. This is the orthogonal partner of the screen
+        // mapping above (`y = v*tilt - lift`), so it is the depth that mapping
+        // implies rather than a tie-break bolted onto it.
+        depth: (lv + rv) / 2 + lift * view.tilt,
         // The same two points with lift = 0: where the road would be if the
-        // circuit were flat, which is exactly where its shadow falls.
-        fly: lv * view.tilt, fry: rv * view.tilt,
+        // circuit were flat. That is where its shadow falls, and — a wall's
+        // height further down — where the ground plane sits and the extrusion
+        // lands. See {@link dropFace} for why the wall is part of that offset.
+        fly: flY, fry: frY,
         lu: lu, lv: lv, ru: ru, rv: rv, lift: lift,
       };
       minX = Math.min(minX, lu, ru); maxX = Math.max(maxX, lu, ru);
-      minSY = Math.min(minSY, lY, rY); maxSY = Math.max(maxSY, lY, rY);
+      // `lift` is never negative, so a rail's lit position is never BELOW its
+      // flat one: the top of the drawing is still a lit rail, and once there is
+      // an extrusion the bottom is always a flat one. The fit has to reserve
+      // that difference or the curtain hangs off the bottom of the panel.
+      minSY = Math.min(minSY, lY, rY);
+      maxSY = ground ? Math.max(maxSY, flY, frY) : Math.max(maxSY, lY, rY);
     }
 
     var boxW = Math.max(1, maxX - minX);
@@ -568,7 +672,17 @@
 
     var s = g.screen, n = s.length, i;
 
+    // The ground first: nothing in the scene is ever below it, so it needs no
+    // place in the depth sort. The cast shadow then lands ON it, which is what
+    // it was always pretending to do.
+    if (ground) drawPlane(x, s, n);
     drawShadow(x, s, n, g);
+
+    // Whether there is a hill to extrude at all. A circuit flatter than half a
+    // metre gets `elevGain = 0`, every lift is 0, and a curtain would be a run
+    // of zero-height quads — so the flat case pays nothing for this.
+    var extrude = ground && g.elevGain > 0;
+    var bands = extrude ? curtainBands(s, n) : 0;
 
     // Back to front. The index is carried through the sort because the base
     // colour is a function of position round the LAP, not of draw order.
@@ -577,6 +691,16 @@
     order.sort(function (a, b) {
       return (s[a].depth + s[(a + 1) % n].depth) - (s[b].depth + s[(b + 1) % n].depth);
     });
+
+    // Which rail is nearer, in PATH order. The sorted loop below cannot work
+    // this out for itself: a station needs a cap exactly when its two
+    // neighbouring segments disagree, and after the sort a segment's path
+    // neighbour is somewhere else entirely.
+    var nearer = new Array(n);
+    for (i = 0; i < n; i++) {
+      var na = s[i], nb = s[(i + 1) % n];
+      nearer[i] = (na.ly + nb.ly) > (na.ry + nb.ry);
+    }
 
     var wall = g.wallPx;
     // One bevel strip as a fraction of the width, from a px target — a share
@@ -606,13 +730,44 @@
 
       // Which edge is nearer the viewer decides the draw order within the
       // segment, and which rail's wall is the one actually facing us.
-      var leftNearer = (a.ly + b.ly) > (a.ry + b.ry);
+      var leftNearer = nearer[i];
       var nOutL = out;
       var nOutR = [-out[0], -out[1], 0];
 
+      // The road has turned through the depth axis at this station, so it is
+      // the one place the solid shows its cross-section.
+      var capAt = extrude && nearer[(i - 1 + n) % n] !== leftNearer;
+
+      // Far side first, then the road, then the near side — and each side's
+      // curtain with it, so the whole solid is built far-to-near in one pass.
+      //
+      // BOTH rails get a curtain, not just the near one. Where the road runs
+      // across the view the far curtain is hidden by the road above it and the
+      // near curtain below, and those fills are wasted. But where the road runs
+      // straight at the viewer the two rails project to separate vertical
+      // lines, neither hides the other, and drawing one leaves a gap down the
+      // side of the hill. Paying for the hidden case is cheaper than detecting
+      // it, on a ribbon that is rendered once and then blitted.
+      // The far curtain is lit as though it were the NEAR one. Its own normal
+      // faces away from the light and lands on {@link AMBIENT}, and the two
+      // shades are far enough apart that any sliver of it left showing — one
+      // pixel where the road doubles back and two parts of the lap land on the
+      // same column — reads as a black hairline ruled down the hill. It is
+      // never legitimately visible: wherever it does show it is standing in for
+      // the near face, so it should look like it.
+      if (extrude) curtain(x, a, b, leftNearer ? "r" : "l", wall, base, leftNearer ? nOutL : nOutR, bands);
       wallFace(x, a, b, leftNearer ? "r" : "l", wall, base, leftNearer ? nOutR : nOutL);
       surface(x, a, b, base, nTop, nOutL, nOutR, bevel);
       wallFace(x, a, b, leftNearer ? "l" : "r", wall, base, leftNearer ? nOutL : nOutR);
+      if (extrude) curtain(x, a, b, leftNearer ? "l" : "r", wall, base, leftNearer ? nOutL : nOutR, bands);
+      // Last, because at a station where the near rail swaps, the near curtain
+      // has narrowed to nothing and the FAR one — lit by the opposite normal,
+      // so much darker — is what shows through the gap it leaves. The cap is
+      // the face actually pointing at the viewer there, so it wins.
+      if (capAt) {
+        var toward = dv > 0 ? 1 : -1;
+        curtainCap(x, a, wall, base, [(du / run) * toward, (dv / run) * toward, 0], bands);
+      }
     }
 
     // Start/finish: a bar ACROSS the road, drawn as a stroke of fixed pixel
@@ -710,6 +865,152 @@
   }
 
   /**
+   * A vertical face from one height down to another, banded so it darkens as it
+   * falls. The curtain's only primitive.
+   *
+   * Bands rather than a gradient fill. There are two of these per segment and
+   * hundreds of segments, so a `createLinearGradient` per face is a thousand
+   * throwaway objects and a `fillStyle` change of exactly the kind the note in
+   * {@link renderRibbon} keeps count of. Bands cost one fill each and stop
+   * being distinguishable from a gradient at this size.
+   *
+   * `bands` is the SAME for every face on the ribbon, and it has to be. Sizing
+   * it per face — from that face's own drop — splits the bands at different
+   * shades either side of a segment boundary, and the curtain grows a vertical
+   * dark line everywhere the count steps from one to two. With a single count
+   * the bands are the same fractions of every face, the drop varies smoothly
+   * along the path because the road does, and the boundaries go with it.
+   *
+   * `x` never changes down a face — the lift only moves Y — so only the four Y
+   * values interpolate.
+   */
+  function dropFace(x, ax, ay, aFoot, bx, by, bFoot, base, k, bands) {
+    var dropA = aFoot - ay, dropB = bFoot - by;
+    var mean = (dropA + dropB) / 2;
+    if (mean < CURTAIN_MIN_PX) return;
+    for (var i = 0; i < bands; i++) {
+      var t0 = i / bands, t1 = (i + 1) / bands;
+      // Shade from the band's midpoint, so a one-band face lands halfway down
+      // the ramp rather than at its bright end.
+      var mid = (t0 + t1) / 2;
+      var mul = CURTAIN_TOP_MUL + (CURTAIN_FOOT_MUL - CURTAIN_TOP_MUL) * mid;
+      poly(
+        x,
+        [
+          ax, ay + dropA * t0, bx, by + dropB * t0,
+          bx, by + dropB * t1, ax, ay + dropA * t1,
+        ],
+        shade(base, k * mul),
+        true
+      );
+    }
+  }
+
+  /**
+   * One segment's curtain: the face hanging from the underside of a rail's wall
+   * down to that rail's own place on the ground plane.
+   *
+   * Both ends of the face are offset by the wall's height — the top because the
+   * road slab already hangs that far below the rail, and the plane because it
+   * sits a wall below the flat rails for exactly that reason. Measuring from
+   * the rail instead would make the drop `lift - wall`, which goes NEGATIVE on
+   * every segment lying lower than the wall is tall, and inverts the quad. With
+   * the offset the drop is exactly the lift, and a flat circuit gets zero.
+   *
+   * Lit by the wall's own normal, so the curtain is the same material as the
+   * face above it and the solid stays one object under one light.
+   */
+  function curtain(x, a, b, side, wall, base, nOut, bands) {
+    var ax = side === "l" ? a.lx : a.rx, ay = side === "l" ? a.ly : a.ry;
+    var bx = side === "l" ? b.lx : b.rx, by = side === "l" ? b.ly : b.ry;
+    var af = side === "l" ? a.fly : a.fry, bf = side === "l" ? b.fly : b.fry;
+    dropFace(x, ax, ay + wall, af + wall, bx, by + wall, bf + wall, base, lambert(nOut), bands);
+  }
+
+  /**
+   * The extrusion's end cap: the face ACROSS the road at one station, from the
+   * underside down to the plane.
+   *
+   * Needed only where the road runs at the viewer. There both rails project to
+   * the same vertical line, both rail curtains collapse to zero width, and the
+   * face the solid actually presents is its cross-section — which no rail face
+   * covers, because a rail face has no width to cover it with.
+   *
+   * Those stations are exactly where the near rail swaps, so the caller knows
+   * them already and does not have to test for the geometry. There are on the
+   * order of a couple of dozen a lap.
+   */
+  function curtainCap(x, p, wall, base, nCap, bands) {
+    dropFace(
+      x,
+      p.lx, p.ly + wall, p.fly + wall,
+      p.rx, p.ry + wall, p.fry + wall,
+      base, lambert(nCap), bands
+    );
+  }
+
+  /**
+   * How many bands every curtain on this ribbon is drawn in — from the TALLEST
+   * drop, so the deepest face gets its falloff and every other face is split
+   * the same way. See {@link dropFace} for why one count rather than one each.
+   */
+  function curtainBands(s, n) {
+    var maxDrop = 0;
+    for (var i = 0; i < n; i++) {
+      var dl = s[i].fly - s[i].ly, dr = s[i].fry - s[i].ry;
+      if (dl > maxDrop) maxDrop = dl;
+      if (dr > maxDrop) maxDrop = dr;
+    }
+    return clamp(Math.round(maxDrop / CURTAIN_BAND_PX), 1, CURTAIN_BANDS_MAX);
+  }
+
+  /**
+   * The ground the circuit stands on: a pool of light centred under its own
+   * footprint, fading out before it reaches anything that could look like an
+   * edge. See {@link PLANE_TINT} for why it is a pool and not a plate.
+   *
+   * Measured from the FLAT rails, so the pool is centred on where the circuit
+   * meets the ground rather than on the lifted ribbon — on a hilly circuit
+   * those are not the same place, and centring on the ribbon slides the light
+   * out from under the tall end.
+   */
+  function drawPlane(x, s, n) {
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, i;
+    for (i = 0; i < n; i++) {
+      var p = s[i];
+      if (p.lx < minX) minX = p.lx;
+      if (p.lx > maxX) maxX = p.lx;
+      if (p.rx < minX) minX = p.rx;
+      if (p.rx > maxX) maxX = p.rx;
+      if (p.fly < minY) minY = p.fly;
+      if (p.fly > maxY) maxY = p.fly;
+      if (p.fry < minY) minY = p.fry;
+      if (p.fry > maxY) maxY = p.fry;
+    }
+    if (!isFinite(minX) || !isFinite(minY)) return;
+
+    var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    var rx = Math.max(1, (maxX - minX) / 2) * (1 + PLANE_BLEED);
+    var ry = Math.max(1, (maxY - minY) / 2) * (1 + PLANE_BLEED);
+    // A circular gradient squashed into the ellipse, rather than an elliptical
+    // one: canvas has no elliptical gradient, and scaling the space is how the
+    // falloff stays even all the way round.
+    var grad = x.createRadialGradient(0, 0, 0, 0, 0, rx);
+    grad.addColorStop(0, "rgba(" + PLANE_TINT + "," + PLANE_ALPHA + ")");
+    grad.addColorStop(PLANE_FADE, "rgba(" + PLANE_TINT + "," + PLANE_ALPHA * 0.72 + ")");
+    grad.addColorStop(1, "rgba(" + PLANE_TINT + ",0)");
+
+    x.save();
+    x.translate(cx, cy);
+    x.scale(1, ry / rx);
+    x.fillStyle = grad;
+    x.beginPath();
+    x.arc(0, 0, rx, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  }
+
+  /**
    * The ribbon's silhouette on the ground plane, blurred and offset.
    *
    * Drawn from the FLAT rails, so where the circuit climbs the road separates
@@ -742,7 +1043,7 @@
     // not a shadow. Without it, no shadow at all is the better failure.
     if ("filter" in x) {
       x.filter = "blur(" + clamp(g.wallPx * SHADOW_BLUR_MUL, SHADOW_BLUR_MIN, SHADOW_BLUR_MAX) + "px)";
-      x.globalAlpha = SHADOW_ALPHA;
+      x.globalAlpha = ground && g.elevGain > 0 ? SHADOW_ALPHA_SOLID : SHADOW_ALPHA;
       x.drawImage(sc, 0, 0, cssW, cssH);
     }
     x.restore();
@@ -875,6 +1176,7 @@
     if (isFinite(rot)) rotateOverrideRad = (rot * Math.PI) / 180;
     var t = parseFloat(params.get("tilt"));
     if (isFinite(t)) tilt = clamp(t, 0.2, 0.9);
+    if (params.get("ground") === "0") ground = false;
 
     var wrap = document.createElement("div");
     wrap.className = "trackmap__wrap";

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.55.0 — 2026-08-03
+
+### Added
+
+- **The track map's elevation is now a solid.** The circuit stands on a ground
+  plane, and the road is extruded straight down to meet it all the way round, so
+  the depth of that mass at any point is the height of the track there. Before,
+  the only way to read a hill was the gap between the road and its own cast
+  shadow — a cue you had to already know to look for, and one that disappeared
+  entirely on a browser without canvas filters. Now a climb reads as the road
+  pulling away from its own base, and the two ends of a straight visibly sit at
+  different heights.
+
+  The plane is a soft pool of light rather than a plate with an edge. This
+  projection has no perspective, so any rectangle laid on the ground arrives
+  screen-aligned and reads as a card behind the map instead of a surface under
+  it — and the widget background is something an operator can turn off entirely,
+  which a plate would quietly put back. Something that fades out has no edge to
+  give itself away.
+
+  The curtain is lit by the wall above it and keeps falling, darkest at the
+  foot, so the solid stays one material under one light rather than a ribbon
+  with a skirt attached. The cast shadow keeps its place but changes job: it is
+  the contact shadow at the foot now, which is what stops the whole thing
+  floating on its own plane — and it goes back to carrying the elevation alone
+  on a flat circuit, where there is no curtain to draw.
+
+  Flat circuits pay nothing for any of this and are drawn exactly as before.
+  `?ground=0` returns the previous look.
+
+### Fixed
+
+- **A circuit crossing itself could sort the wrong way round.** Where a track
+  passes over itself the two roads share a footprint, so the depth sort saw them
+  as equally distant and picked between them arbitrarily — it could land either
+  way from one rebuild to the next. The sort now accounts for height, which is
+  what the view already implies: the higher road is the nearer one. Invisible
+  before, when the only thing at stake was six pixels of wall; not invisible
+  with a hill hanging underneath.
+
 ## 0.54.1 — 2026-08-03
 
 ### Fixed
