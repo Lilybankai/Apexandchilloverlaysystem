@@ -124,6 +124,10 @@
     // wifi arc, and this is the one icon whose job is to say "radar".
     radar:
       '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.6"/><path d="M12 12 18.4 7.6"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/>',
+    // Track map: a closed circuit outline with the start/finish on it. Lucide's
+    // `map` is a folded paper map, which reads as navigation rather than a lap.
+    circuit:
+      '<path d="M7.5 20.5c-3 0-5.2-1.6-5.2-3.9 0-2.6 3-3.4 6.4-4.1 2.9-.6 4.6-1 4.6-2.3 0-1.1-1.4-1.8-3.4-1.8-2.2 0-3.6.9-4.2 2"/><path d="M9.9 3.5c4.9 0 11.8 2 11.8 7.2 0 4.3-4.6 5.6-8.2 6.4"/><path d="M4.6 6.6 7 4.2"/>',
     // Reference pace: a target, because the feature is "how close to the mark".
     target:
       '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -171,6 +175,7 @@
     motion: 'orbit',
     damage: 'shield-alert',
     radar: 'radar',
+    trackmap: 'circuit',
     limits: 'alert', // the warning triangle; auth.html already ships this id
     mfd: 'sliders-horizontal',
   };

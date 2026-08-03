@@ -1,0 +1,972 @@
+/**
+ * widgets/trackmap.js — the circuit, drawn as a raised ribbon, with the field on it.
+ * -----------------------------------------------------------------------------
+ * A "2.5-D" track map: the road is extruded off a dark plane and viewed from an
+ * angle, so corners read as corners and the elevation of the place is visible
+ * rather than implied. Every car in the session is a dot moving on the surface.
+ *
+ * ## Where the shape comes from
+ * NOT from here, and not from the frame. The server learns the circuit from the
+ * car driving it and serves the result at `/trackmap.json`
+ * (see src/telemetry/trackMap.ts for why it is learned rather than shipped). The
+ * telemetry frame carries only `trackMap.revision`; this widget refetches when
+ * that number moves and otherwise never touches the network. Until a lap has
+ * been driven at a new circuit there is no shape, and the widget shows how far
+ * the learning has got instead of an empty panel.
+ *
+ * ## The projection, and why it is the whole widget
+ * Three transforms, applied in this order to every point:
+ *
+ *   1. **Rotate** the circuit in the world plane so its longest axis lies across
+ *      the widget. The angle comes from the shape itself (the principal axis of
+ *      the point cloud), so Le Mans lands wide and Monaco lands tall with no
+ *      per-track configuration — and it is deterministic, so a circuit is drawn
+ *      the same way every session.
+ *   2. **Tilt**: squash the depth axis by {@link TILT} and let it drive screen Y.
+ *      This is the oblique projection that turns a flat plan into a view — the
+ *      only reason a hairpin doubling back reads as a hairpin.
+ *   3. **Lift** by elevation. Real circuits move ±30 m vertically across a
+ *      1.5 km footprint, which is under 2% of the map's width — invisible at
+ *      true scale. So the lift is scaled to a fixed share of the map's own size
+ *      ({@link ELEV_SHARE}), capped at {@link ELEV_MAX_GAIN}×: Spa's hill is
+ *      unmistakable, and a flat circuit stays flat rather than being given
+ *      terrain it does not have.
+ *
+ * ## Drawing order IS the depth buffer
+ * There is no z-buffer in canvas 2-D, so the ribbon is drawn back to front:
+ * segments sorted by depth, and within each segment the far wall, then the road
+ * surface, then the near wall. That ordering is what lets a circuit cross over
+ * itself (every one of them does) without the far side punching through the
+ * near side. Cars are drawn after the whole ribbon, sorted among themselves —
+ * deliberately on top of it, because a dot hidden under a bridge is a dot the
+ * driver reads as "not on track".
+ *
+ * ## The material, and why it is one material
+ * The ribbon is ONE colour lit by ONE light, not a light road with a coloured
+ * wall glued to it. That is the whole difference between a solid object and a
+ * paper cutout, and it is what the printed circuit-map style has always done.
+ * Three things build it, all from the segment's own direction:
+ *
+ *   - **Lambert shading** against a fixed light in view space ({@link LIGHT}).
+ *     The road surface faces up and stays bright; a side wall's normal is
+ *     horizontal, so its shade swings with the heading — which is what makes a
+ *     straight and the corner it feeds read as different faces of one solid.
+ *   - **A bevel.** The surface is drawn as three strips across its width, the
+ *     outer two tilted {@link BEVEL_TILT} toward their own edge. The strip
+ *     facing the light lifts, the far one drops, and the road gains a rounded
+ *     profile — with no extra geometry and no gradient objects.
+ *   - **A rim** ({@link RIM_GAIN}) on the lit bevel only, cubed so it is a catch
+ *     on the edge rather than a general brightening.
+ *
+ * Ambient never reaches zero ({@link AMBIENT}), so an unlit wall is dark red
+ * rather than a hole in the map.
+ *
+ * ## The shadow is the elevation
+ * The ribbon is drawn over its own silhouette, projected with the elevation
+ * lift removed and blurred. So the shadow lies on the ground plane while the
+ * road climbs away from it: the gap between the two IS the hill, and a section
+ * over a crest visibly floats. On a flat circuit the two nearly coincide and
+ * the fixed {@link SHADOW_DX}/{@link SHADOW_DY} offset leaves an ordinary
+ * contact shadow instead. One accumulated path, one blurred blit.
+ *
+ * ## Cost
+ * The ribbon is static: it is rendered ONCE to an offscreen canvas when the
+ * shape or the widget's size changes, and every frame after that is one blit
+ * plus a few dozen dots. That is what makes a full-circuit map affordable on a
+ * streaming PC — redrawing 900 depth-sorted quads at 30 Hz would not be. The
+ * shading is per-segment arithmetic inside that one render, so it costs nothing
+ * per frame at all.
+ *
+ * URL params (all optional):
+ *   ?style=classic|brand  Palette. `classic` is the infographic red of a
+ *                         printed circuit map (the default); `brand` runs the
+ *                         overlay's own cyan→magenta round the lap. Both are
+ *                         lit by the same model — only the base hue differs.
+ *   ?rotate=<deg>         Override the automatic orientation.
+ *   ?tilt=<0.2..0.9>      Override how steeply the view looks down.
+ */
+(function () {
+  "use strict";
+
+  var classColor = window.ApexOverlay.classColor;
+
+  /* -------------------------------- config -------------------------------- */
+
+  /**
+   * How far the depth axis is squashed. 0.55 is a view from roughly 33° above
+   * the plane: shallow enough that the circuit keeps its shape (at 0.2 every
+   * corner is a flat line), steep enough to read as a view rather than a plan.
+   */
+  var TILT = 0.55;
+  /** Border inset in CSS px, so the widest part of the circuit isn't clipped. */
+  var PAD = 10;
+  /**
+   * The vertical lift given to the full elevation range, as a share of the map's
+   * planar width — see the module note on why elevation is exaggerated at all.
+   */
+  var ELEV_SHARE = 0.16;
+  /** Ceiling on the exaggeration, so a genuinely hilly circuit is not a wall. */
+  var ELEV_MAX_GAIN = 5;
+  /** Wall height as a share of the canvas height, clamped to these px bounds. */
+  var WALL_SHARE = 0.042;
+  var WALL_MIN_PX = 4;
+  var WALL_MAX_PX = 12;
+  /** How thick the start/finish bar is drawn, in px along the road. */
+  var LINE_PX = 4.5;
+  /** Height/width bounds for the canvas — a circuit's own aspect within reason. */
+  var ASPECT_MIN = 0.34;
+  var ASPECT_MAX = 0.8;
+  /**
+   * How long the panel must hold still before the ribbon is re-rendered.
+   *
+   * The ribbon costs tens of milliseconds to build and the layout editor resizes
+   * a widget continuously while it is dragged — rebuilding per tick would make
+   * the drag stutter for as long as it lasts. The cached bitmap is stretched to
+   * the new size in the meantime, which is momentarily soft and instantly
+   * correct again the moment the handle is released. The projection itself is
+   * NOT deferred: it is cheap, and it is what puts the cars in the right place.
+   */
+  var RESIZE_SETTLE_MS = 140;
+  /**
+   * Roughly how many ribbon segments to draw, whatever the source path's
+   * resolution. Le Mans arrives as 2000 points, which at map scale is a quarter
+   * of a pixel each — all cost, no detail. Decimating to about this many keeps
+   * every circuit at a similar draw cost and a similar smoothness.
+   */
+  var TARGET_SEGMENTS = 560;
+  /**
+   * The narrowest the road is ever drawn, in px.
+   *
+   * A whole circuit in a panel runs at a quarter of a pixel per metre, where a
+   * real 12 m road is a hairline and the map becomes a wire diagram with a wall
+   * on it. Every circuit map ever printed exaggerates the road for the same
+   * reason. The exaggeration only ever ADDS width (a track wide enough at this
+   * scale keeps its true one), and it never moves the centre line, so a car's
+   * position on the map is unaffected — only how much road is drawn under it.
+   */
+  var MIN_ROAD_PX = 11;
+  /** Dot radius in px for an opponent, and for the player. */
+  var DOT_R = 4.2;
+  var EGO_R = 5.6;
+
+  /* -------------------------------- lighting ------------------------------- */
+
+  /**
+   * The light, in view space: (u across the widget, v into the depth axis, up).
+   * Above and to the left, tipped slightly toward the viewer — the convention
+   * every printed circuit map uses, and the one that leaves the near walls
+   * legible instead of silhouetted.
+   */
+  var LIGHT = normalize3(-0.45, 0.3, 0.84);
+  /** Floor on shading, so an unlit face is dark paint rather than a hole. */
+  var AMBIENT = 0.36;
+  /**
+   * How far the outer surface strips tilt toward their own edge (0..1).
+   *
+   * Kept well under half: the bevel is a chamfer on a flat road, and tilting it
+   * further turns the two strips into the light and dark halves of a cylinder —
+   * at which point the ribbon reads as a pipe and the walls stop being walls.
+   */
+  var BEVEL_TILT = 0.45;
+  /**
+   * Width of one bevel strip as a share of the road, and its px bounds. Two
+   * bevels come out of the same road, so this must stay small — at 0.22 they
+   * take nearly half the surface and there is no flat top left to catch light.
+   */
+  var BEVEL_SHARE = 0.14;
+  var BEVEL_MIN_PX = 0.8;
+  var BEVEL_MAX_PX = 2;
+  /** Extra brightening on the lit bevel, cubed into an edge catch. */
+  var RIM_GAIN = 0.2;
+  /**
+   * Where the wall splits into its lit upper and occluded lower band, and how
+   * far the lower one drops.
+   *
+   * The multiplier is deliberately mild. This map is drawn on a near-black
+   * panel, not the white page a printed circuit map lives on: past about 0.6 the
+   * bottom of the wall matches the background, the solid loses its base and the
+   * ribbon starts to look like it is dissolving from underneath.
+   */
+  var WALL_SPLIT = 0.45;
+  var WALL_LOWER_MUL = 0.72;
+  /** The cast shadow: fixed offset in px, blur, and opacity. */
+  var SHADOW_DX = 3;
+  var SHADOW_DY = 6;
+  var SHADOW_BLUR_MUL = 0.9;
+  var SHADOW_BLUR_MIN = 3;
+  var SHADOW_BLUR_MAX = 9;
+  var SHADOW_ALPHA = 0.5;
+
+  /* -------------------------------- palettes ------------------------------- */
+
+  /**
+   * A palette is a base hue and nothing else — the lighting model above makes
+   * every other shade from it. `from`/`to` is the colour at the start and end of
+   * the lap: `classic` holds one red the whole way round (the printed
+   * circuit-map look), `brand` runs the overlay's own cyan→magenta, which also
+   * reads as *where* in the lap you are.
+   *
+   * The base is the colour of a FULLY LIT face; every drawn face is at or below
+   * it, so these sit deliberately brighter than the map's average.
+   */
+  var PALETTES = {
+    classic: {
+      from: [235, 45, 48],
+      to: [235, 45, 48],
+      line: "#141821",
+    },
+    brand: {
+      from: [34, 211, 238],
+      to: [246, 95, 176],
+      line: "#0b0e17",
+    },
+  };
+
+  /* --------------------------------- state -------------------------------- */
+
+  var canvas, gctx, statusEl, headerMeta;
+  var cssW = 0, cssH = 0, dpr = 1;
+
+  /** The fetched shape, and the revision/key it was fetched for. */
+  var shape = null;
+  var haveRevision = -1;
+  var haveKey = "";
+  var fetching = false;
+
+  /** Projected geometry + the offscreen ribbon, both keyed on shape × size. */
+  var geom = null;
+  var ribbon = null;
+  var ribbonKey = "";
+  /**
+   * Earliest time the ribbon may be re-rendered, as a guard against rebuilding
+   * it on every frame of a resize drag — see {@link RESIZE_SETTLE_MS}.
+   */
+  var ribbonDeferUntil = 0;
+
+  var palette = PALETTES.classic;
+  var rotateOverrideRad = null;
+  var tilt = TILT;
+
+  /* ------------------------------- the fetch ------------------------------- */
+
+  /**
+   * Pull the circuit for `key`/`revision` if we don't already have it.
+   *
+   * Guarded by a single in-flight flag rather than a queue: the trigger fires at
+   * most a few times a session (a track change), and a second request for the
+   * same revision would only ever return the same bytes.
+   */
+  function ensureShape(map) {
+    if (!map || !map.ready) return;
+    if (fetching) return;
+    if (shape && map.key === haveKey && map.revision === haveRevision) return;
+    fetching = true;
+    var wantKey = map.key, wantRev = map.revision;
+    fetch("/trackmap.json", { cache: "no-store" })
+      .then(function (r) {
+        // 204 = the server has no shape yet (a race between the frame saying
+        // ready and the file being published). Try again on the next change.
+        if (r.status === 204) return null;
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        fetching = false;
+        if (!data || !data.points || data.points.length < 8) return;
+        shape = data;
+        haveKey = wantKey;
+        haveRevision = wantRev;
+        geom = null;
+        ribbon = null;
+        sizeCanvas(true);
+      })
+      .catch(function () {
+        fetching = false; // the next revision change retries; no spin
+      });
+  }
+
+  /* ------------------------------ projection ------------------------------- */
+
+  /**
+   * The angle that lays the circuit's longest axis across the widget — the
+   * principal axis of the point cloud, which is the closed-form answer to "which
+   * way round wastes least of the panel".
+   */
+  function principalAngle(points) {
+    var n = points.length, mx = 0, mz = 0, i;
+    for (i = 0; i < n; i++) { mx += points[i][0]; mz += points[i][1]; }
+    mx /= n; mz /= n;
+    var sxx = 0, szz = 0, sxz = 0;
+    for (i = 0; i < n; i++) {
+      var dx = points[i][0] - mx, dz = points[i][1] - mz;
+      sxx += dx * dx; szz += dz * dz; sxz += dx * dz;
+    }
+    return 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  }
+
+  /**
+   * Decimate the source path down to about {@link TARGET_SEGMENTS} points,
+   * always keeping index 0 — that point is the start/finish line, and the one
+   * marker on the map whose position is a fact rather than a decoration.
+   */
+  function decimate(points) {
+    var n = points.length;
+    var step = Math.max(1, Math.floor(n / TARGET_SEGMENTS));
+    if (step === 1) return points.slice();
+    var out = [];
+    for (var i = 0; i < n; i += step) out.push(points[i]);
+    return out;
+  }
+
+  /**
+   * Build everything that depends on the shape AND the canvas size: the rotated,
+   * tilted, lifted screen positions of the road's two edges, the scale that fits
+   * them, and the depth key each segment is sorted by.
+   *
+   * Returns `null` when there is nothing to draw yet.
+   */
+  function buildGeometry() {
+    if (!shape || !cssW || !cssH) return null;
+    var pts = decimate(shape.points);
+    var n = pts.length;
+    if (n < 8) return null;
+
+    var ang = rotateOverrideRad !== null ? rotateOverrideRad : -principalAngle(shape.points);
+    var ca = Math.cos(ang), sa = Math.sin(ang);
+
+    // Elevation gain: fixed share of the planar width, capped. Computed from the
+    // rotated extents, so it is the width the operator actually sees.
+    var i, u, v, y;
+    var minU = Infinity, maxU = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (i = 0; i < n; i++) {
+      u = pts[i][0] * ca - pts[i][1] * sa;
+      y = pts[i][2] || 0;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    var elevRange = maxY - minY;
+    var elevGain = elevRange > 0.5
+      ? Math.min(ELEV_MAX_GAIN, (ELEV_SHARE * (maxU - minU)) / elevRange)
+      : 0;
+
+    var wallPx = clamp(cssH * WALL_SHARE, WALL_MIN_PX, WALL_MAX_PX);
+    var view = { ca: ca, sa: sa, minY: minY, elevGain: elevGain, tilt: tilt };
+
+    // Fit twice. The first pass is the bare centre path, purely to find out what
+    // a metre is worth in pixels; the road's drawn width is then set from that
+    // (see {@link MIN_ROAD_PX}) and the second pass fits the ribbon that width
+    // actually produces. One pass cannot do it: the width depends on the scale,
+    // and the scale depends on the width.
+    var probe = fitEdges(buildEdges(pts, 0), view, wallPx);
+    var half = shape.halfWidthM > 0 ? shape.halfWidthM : 6;
+    half = Math.max(half, MIN_ROAD_PX / (2 * probe.scale));
+    var f = fitEdges(buildEdges(pts, half), view, wallPx);
+
+    // How wide the road actually lands, in px. The bevel is sized from this
+    // rather than from `half`, because the exaggeration above means the metres
+    // and the pixels have stopped agreeing.
+    var roadPx = 0;
+    for (i = 0; i < f.screen.length; i++) {
+      var sc = f.screen[i];
+      roadPx += Math.hypot(sc.lx - sc.rx, sc.ly - sc.ry);
+    }
+    roadPx /= f.screen.length || 1;
+
+    return {
+      screen: f.screen,
+      wallPx: wallPx,
+      roadPx: roadPx,
+      // Everything a car needs to be put in the same space as the ribbon.
+      ca: ca, sa: sa, scale: f.scale, offX: f.offX, offY: f.offY,
+      elevGain: elevGain, minY: minY, tilt: tilt,
+      aspect: (f.boxH * f.scale + wallPx) / (f.boxW * f.scale),
+      // The fine path, for placing a car that only knows its lap fraction.
+      path: shape.points,
+    };
+  }
+
+  /**
+   * The road's two edges in world metres, `half` either side of the path along
+   * the perpendicular to its tangent. Which side is "left" does not matter, only
+   * that it is the same side all the way round the lap.
+   */
+  function buildEdges(pts, half) {
+    var n = pts.length;
+    var edges = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var p = pts[i], a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+      var tx = b[0] - a[0], tz = b[1] - a[1];
+      var len = Math.hypot(tx, tz) || 1;
+      var nx = tz / len, nz = -tx / len;
+      edges[i] = [
+        p[0] + nx * half, p[1] + nz * half,
+        p[0] - nx * half, p[1] - nz * half,
+        p[2] || 0,
+      ];
+    }
+    return edges;
+  }
+
+  /**
+   * Project a ribbon's edges and scale them to fill the canvas.
+   *
+   * Each entry carries three things the renderer needs and cannot recover later:
+   * the lit screen position, the SAME point with the elevation lift removed (the
+   * ground plane the shadow lands on), and the rails' raw view-space `u`/`v`,
+   * which are what every surface normal is built from. The last pair must be
+   * pre-tilt and pre-scale — the tilt is a squash of the depth axis, and a
+   * normal derived after it points the wrong way.
+   */
+  function fitEdges(edges, view, wallPx) {
+    var n = edges.length, i;
+    var raw = new Array(n);
+    var minX = Infinity, maxX = -Infinity, minSY = Infinity, maxSY = -Infinity;
+    for (i = 0; i < n; i++) {
+      var e = edges[i];
+      var lift = (e[4] - view.minY) * view.elevGain;
+      var lu = e[0] * view.ca - e[1] * view.sa, lv = e[0] * view.sa + e[1] * view.ca;
+      var ru = e[2] * view.ca - e[3] * view.sa, rv = e[2] * view.sa + e[3] * view.ca;
+      var lY = lv * view.tilt - lift, rY = rv * view.tilt - lift;
+      raw[i] = {
+        lx: lu, ly: lY, rx: ru, ry: rY, depth: (lv + rv) / 2,
+        // The same two points with lift = 0: where the road would be if the
+        // circuit were flat, which is exactly where its shadow falls.
+        fly: lv * view.tilt, fry: rv * view.tilt,
+        lu: lu, lv: lv, ru: ru, rv: rv, lift: lift,
+      };
+      minX = Math.min(minX, lu, ru); maxX = Math.max(maxX, lu, ru);
+      minSY = Math.min(minSY, lY, rY); maxSY = Math.max(maxSY, lY, rY);
+    }
+
+    var boxW = Math.max(1, maxX - minX);
+    var boxH = Math.max(1, maxSY - minSY);
+    var scale = Math.min(
+      (cssW - PAD * 2) / boxW,
+      (cssH - PAD * 2 - wallPx) / boxH
+    );
+    var offX = (cssW - boxW * scale) / 2 - minX * scale;
+    var offY = (cssH - wallPx - boxH * scale) / 2 - minSY * scale;
+
+    var screen = new Array(n);
+    for (i = 0; i < n; i++) {
+      var r = raw[i];
+      screen[i] = {
+        lx: r.lx * scale + offX, ly: r.ly * scale + offY,
+        rx: r.rx * scale + offX, ry: r.ry * scale + offY,
+        // Shadow rails share x with the lit ones — the lift only moves Y.
+        fly: r.fly * scale + offY, fry: r.fry * scale + offY,
+        depth: r.depth,
+        lu: r.lu, lv: r.lv, ru: r.ru, rv: r.rv, lift: r.lift,
+      };
+    }
+    return { screen: screen, scale: scale, offX: offX, offY: offY, boxW: boxW, boxH: boxH };
+  }
+
+  /** World position → canvas position + a depth key, through the same transform. */
+  function project(g, x, z, y) {
+    var lift = ((typeof y === "number" ? y : g.minY) - g.minY) * g.elevGain;
+    var u = x * g.ca - z * g.sa;
+    var v = x * g.sa + z * g.ca;
+    return {
+      x: u * g.scale + g.offX,
+      y: (v * g.tilt - lift) * g.scale + g.offY,
+      depth: v,
+    };
+  }
+
+  /** The point `f` (0..1) of the way round the lap, interpolated between samples. */
+  function pointAtFraction(g, f) {
+    var pts = g.path, n = pts.length;
+    var t = ((f % 1) + 1) % 1 * n;
+    var i = Math.floor(t), k = t - i;
+    var a = pts[i % n], b = pts[(i + 1) % n];
+    return [
+      a[0] + (b[0] - a[0]) * k,
+      a[1] + (b[1] - a[1]) * k,
+      (a[2] || 0) + ((b[2] || 0) - (a[2] || 0)) * k,
+    ];
+  }
+
+  /* -------------------------------- drawing -------------------------------- */
+
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  /* ------------------------------- the light ------------------------------- */
+
+  /** A unit vector. Declared, not assigned, so {@link LIGHT} can use it above. */
+  function normalize3(x, y, z) {
+    var l = Math.sqrt(x * x + y * y + z * z) || 1;
+    return [x / l, y / l, z / l];
+  }
+
+  /** How much of the light a face with normal `n` receives, floored at ambient. */
+  function lambert(n) {
+    var d = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
+    return AMBIENT + (1 - AMBIENT) * Math.max(0, d);
+  }
+
+  /** `a` tilted `t` of the way toward `b`, renormalised. */
+  function tiltToward(a, b, t) {
+    return normalize3(
+      a[0] * (1 - t) + b[0] * t,
+      a[1] * (1 - t) + b[1] * t,
+      a[2] * (1 - t) + b[2] * t
+    );
+  }
+
+  /** The lap's base colour at `t` (0..1), interpolated between the palette ends. */
+  function baseAt(t) {
+    var a = palette.from, b = palette.to;
+    return [
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+  }
+
+  /** A base colour under intensity `k`, as a css string. */
+  function shade(base, k) {
+    return "rgb(" +
+      Math.round(clamp(base[0] * k, 0, 255)) + "," +
+      Math.round(clamp(base[1] * k, 0, 255)) + "," +
+      Math.round(clamp(base[2] * k, 0, 255)) + ")";
+  }
+
+  /**
+   * Render the whole ribbon to an offscreen canvas — see the module note on why
+   * this happens once rather than every frame.
+   */
+  function renderRibbon(g) {
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(cssW * dpr));
+    c.height = Math.max(1, Math.round(cssH * dpr));
+    var x = c.getContext("2d");
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Set once for the whole ribbon: `poly` runs thousands of times and every
+    // avoided state change is real here. The start/finish stroke resets it after.
+    x.lineWidth = 1;
+
+    var s = g.screen, n = s.length, i;
+
+    drawShadow(x, s, n, g);
+
+    // Back to front. The index is carried through the sort because the base
+    // colour is a function of position round the LAP, not of draw order.
+    var order = new Array(n);
+    for (i = 0; i < n; i++) order[i] = i;
+    order.sort(function (a, b) {
+      return (s[a].depth + s[(a + 1) % n].depth) - (s[b].depth + s[(b + 1) % n].depth);
+    });
+
+    var wall = g.wallPx;
+    // One bevel strip as a fraction of the width, from a px target — a share
+    // alone would vanish on a long circuit and swallow the road on a short one.
+    var bevel = clamp(g.roadPx * BEVEL_SHARE, BEVEL_MIN_PX, BEVEL_MAX_PX) / Math.max(1, g.roadPx);
+    bevel = clamp(bevel, 0.05, 0.33);
+
+    for (var k = 0; k < n; k++) {
+      i = order[k];
+      var j = (i + 1) % n;
+      var a = s[i], b = s[j];
+      var base = baseAt(i / n);
+
+      // The segment's frame, in view space: du/dv is where the road is going,
+      // dh how much it climbs doing it, and `out` the horizontal normal of the
+      // LEFT rail — the right rail's is its negation, so only one is built.
+      var du = (b.lu + b.ru) / 2 - (a.lu + a.ru) / 2;
+      var dv = (b.lv + b.rv) / 2 - (a.lv + a.rv) / 2;
+      var dh = b.lift - a.lift;
+      var run = Math.hypot(du, dv) || 1;
+      var out = normalize3(
+        (a.lu - (a.lu + a.ru) / 2), (a.lv - (a.lv + a.rv) / 2), 0
+      );
+      // The surface normal: up, tipped back by however steeply the road climbs.
+      // `dh` is already in the same units as u and v, so the ratio is the slope.
+      var nTop = normalize3(-(dh * du) / (run * run), -(dh * dv) / (run * run), 1);
+
+      // Which edge is nearer the viewer decides the draw order within the
+      // segment, and which rail's wall is the one actually facing us.
+      var leftNearer = (a.ly + b.ly) > (a.ry + b.ry);
+      var nOutL = out;
+      var nOutR = [-out[0], -out[1], 0];
+
+      wallFace(x, a, b, leftNearer ? "r" : "l", wall, base, leftNearer ? nOutR : nOutL);
+      surface(x, a, b, base, nTop, nOutL, nOutR, bevel);
+      wallFace(x, a, b, leftNearer ? "l" : "r", wall, base, leftNearer ? nOutL : nOutR);
+    }
+
+    // Start/finish: a bar ACROSS the road, drawn as a stroke of fixed pixel
+    // width rather than as a run of segments. A run would be a chord — and where
+    // the line happens to sit on a curve (it does at Spa, at Zandvoort, on any
+    // circuit that starts near a corner) the chord cuts across the road instead
+    // of lying on it. One segment's two edge points always give the true
+    // perpendicular, and a stroke width keeps it visible at any circuit length.
+    var f0 = s[0];
+    x.strokeStyle = palette.line;
+    x.lineWidth = LINE_PX;
+    x.lineCap = "butt";
+    x.beginPath();
+    x.moveTo(f0.lx, f0.ly);
+    x.lineTo(f0.rx, f0.ry);
+    x.stroke();
+
+    return c;
+  }
+
+  /**
+   * Fill a polygon, optionally stroking its own outline in the same colour.
+   *
+   * The stroke is not decoration. Adjacent segments are separate fills, and
+   * canvas antialiases each one's edge against what is already there — which
+   * leaves a hairline of background between every pair. Half a pixel of stroke
+   * closes it, and the ribbon stops looking like 560 tiles.
+   *
+   * Every face needs it, including the walls — they were tried without and the
+   * ribbon grew a ladder of cross-ticks, because a wall's seam runs along the
+   * silhouette where there is background directly behind it to show through.
+   * The flag exists for the one case that genuinely does not: see the shadow.
+   */
+  function poly(x, pts, color, seam) {
+    x.fillStyle = color;
+    x.beginPath();
+    x.moveTo(pts[0], pts[1]);
+    for (var i = 2; i < pts.length; i += 2) x.lineTo(pts[i], pts[i + 1]);
+    x.closePath();
+    x.fill();
+    if (seam) {
+      x.strokeStyle = color;
+      x.stroke();
+    }
+  }
+
+  /** The point `f` of the way across the road at station `p` (0 = left rail). */
+  function across(p, f) {
+    return [p.lx + (p.rx - p.lx) * f, p.ly + (p.ry - p.ly) * f];
+  }
+
+  /**
+   * The road surface of one segment, as three strips: a bevel at each rail
+   * tilted toward its own edge, and the flat centre between them. See the module
+   * note on why this is what makes the ribbon read as rounded.
+   */
+  function surface(x, a, b, base, nTop, nOutL, nOutR, bevel) {
+    var strips = [
+      [0, bevel, tiltToward(nTop, nOutL, BEVEL_TILT), true],
+      [bevel, 1 - bevel, nTop, false],
+      [1 - bevel, 1, tiltToward(nTop, nOutR, BEVEL_TILT), true],
+    ];
+    for (var i = 0; i < strips.length; i++) {
+      var f0 = strips[i][0], f1 = strips[i][1], nrm = strips[i][2];
+      var k = lambert(nrm);
+      if (strips[i][3]) {
+        // The rim, on the bevels only. Cubed, so it is a catch on the edge that
+        // happens to face the light rather than a lift across the whole strip.
+        var d = Math.max(0, nrm[0] * LIGHT[0] + nrm[1] * LIGHT[1] + nrm[2] * LIGHT[2]);
+        k += RIM_GAIN * d * d * d;
+      }
+      var a0 = across(a, f0), a1 = across(a, f1);
+      var b0 = across(b, f0), b1 = across(b, f1);
+      poly(x, [a0[0], a0[1], b0[0], b0[1], b1[0], b1[1], a1[0], a1[1]], shade(base, k), true);
+    }
+  }
+
+  /**
+   * One wall face: the road edge dropped `wall` px to make a vertical side,
+   * split into a lit upper band and an occluded lower one. The split is what
+   * keeps a 6 px wall from reading as a flat coloured stripe.
+   */
+  function wallFace(x, a, b, side, wall, base, nOut) {
+    var ax = side === "l" ? a.lx : a.rx, ay = side === "l" ? a.ly : a.ry;
+    var bx = side === "l" ? b.lx : b.rx, by = side === "l" ? b.ly : b.ry;
+    var k = lambert(nOut);
+    var split = wall * WALL_SPLIT;
+    poly(x, [ax, ay, bx, by, bx, by + split, ax, ay + split], shade(base, k), true);
+    poly(
+      x,
+      [ax, ay + split, bx, by + split, bx, by + wall, ax, ay + wall],
+      shade(base, k * WALL_LOWER_MUL),
+      true
+    );
+  }
+
+  /**
+   * The ribbon's silhouette on the ground plane, blurred and offset.
+   *
+   * Drawn from the FLAT rails, so where the circuit climbs the road separates
+   * from its own shadow and the elevation becomes something you can see rather
+   * than infer. One accumulated path filled nonzero — the segments overlap
+   * heavily at every corner, and filling them individually would stack alpha
+   * into a darker smear exactly where the map is busiest.
+   */
+  function drawShadow(x, s, n, g) {
+    var sc = document.createElement("canvas");
+    sc.width = Math.max(1, Math.round(cssW * dpr));
+    sc.height = Math.max(1, Math.round(cssH * dpr));
+    var sx = sc.getContext("2d");
+    sx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    sx.fillStyle = "#000";
+    sx.beginPath();
+    for (var i = 0; i < n; i++) {
+      var a = s[i], b = s[(i + 1) % n];
+      sx.moveTo(a.lx + SHADOW_DX, a.fly + SHADOW_DY);
+      sx.lineTo(b.lx + SHADOW_DX, b.fly + SHADOW_DY);
+      sx.lineTo(b.rx + SHADOW_DX, b.fry + SHADOW_DY + g.wallPx);
+      sx.lineTo(a.rx + SHADOW_DX, a.fry + SHADOW_DY + g.wallPx);
+      sx.closePath();
+    }
+    sx.fill();
+
+    x.save();
+    // `filter` is Chromium-only among the engines this ships on, and it is the
+    // whole point of the pass — an unblurred silhouette reads as a second track,
+    // not a shadow. Without it, no shadow at all is the better failure.
+    if ("filter" in x) {
+      x.filter = "blur(" + clamp(g.wallPx * SHADOW_BLUR_MUL, SHADOW_BLUR_MIN, SHADOW_BLUR_MAX) + "px)";
+      x.globalAlpha = SHADOW_ALPHA;
+      x.drawImage(sc, 0, 0, cssW, cssH);
+    }
+    x.restore();
+  }
+
+  /**
+   * Where one car sits on the canvas, or `null` when the frame gave it neither
+   * placement. World position wins over lap fraction: it is the car's real spot
+   * on the road (and in the pit lane), where the fraction can only pin it to the
+   * centre of the path. See `TrackMapCar` in types.ts.
+   */
+  function carPoint(g, car) {
+    if (typeof car.x === "number" && typeof car.z === "number") {
+      return project(g, car.x, car.z, car.y);
+    }
+    if (typeof car.lapFraction === "number") {
+      var p = pointAtFraction(g, car.lapFraction);
+      return project(g, p[0], p[1], p[2]);
+    }
+    return null;
+  }
+
+  /** One car: a shadow on the road, then the dot. */
+  function drawCar(car, info, pos) {
+    var isEgo = car.isPlayer;
+    var r = isEgo ? EGO_R : DOT_R;
+    gctx.globalAlpha = car.inPit ? 0.42 : 1;
+
+    // Contact shadow — it is what makes a dot sit ON the road rather than float
+    // over it, and it costs one ellipse.
+    gctx.fillStyle = "rgba(0,0,0,0.38)";
+    gctx.beginPath();
+    gctx.ellipse(pos.x, pos.y + r * 0.55, r * 1.05, r * 0.5, 0, 0, Math.PI * 2);
+    gctx.fill();
+
+    gctx.beginPath();
+    gctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    gctx.fillStyle = isEgo ? "#ffffff" : classColor(info && info.carClass);
+    gctx.fill();
+    // A full-strength dark outline, not a softened one. The road is now a lit
+    // colour rather than near-white, and one class (Hypercar, #ff5470) sits
+    // close enough to the classic red that the ring is the only thing holding
+    // the dot off its background.
+    gctx.lineWidth = isEgo ? 2 : 1.6;
+    gctx.strokeStyle = "#0a0b12";
+    gctx.stroke();
+
+    // The player also gets a ring, so their own car is findable in a pack of
+    // same-class dots without hunting for the white one.
+    if (isEgo) {
+      gctx.beginPath();
+      gctx.arc(pos.x, pos.y, r + 3.2, 0, Math.PI * 2);
+      gctx.strokeStyle = "rgba(34,211,238,0.9)";
+      gctx.lineWidth = 1.6;
+      gctx.stroke();
+    }
+    gctx.globalAlpha = 1;
+  }
+
+  /* -------------------------------- sizing --------------------------------- */
+
+  /**
+   * Size the bitmap to the panel, and the panel's height to the circuit.
+   *
+   * The height is not a constant: a map's useful aspect is the circuit's own
+   * (Le Mans is long and thin, Zandvoort is square), and forcing every one into
+   * the same box either crops the wide ones or wastes half the panel on the
+   * square ones. The geometry is built once at a provisional height and the
+   * canvas is then set to the aspect it asked for, which is why this can run
+   * twice — cheap, and only on a resize or a track change.
+   */
+  function sizeCanvas(force) {
+    if (!canvas) return;
+    var w = canvas.clientWidth || 320;
+    var provisional = Math.round(w * 0.5);
+    var h = provisional;
+    var d = window.devicePixelRatio || 1;
+
+    if (w !== cssW || force) {
+      cssW = w; cssH = provisional; dpr = d;
+      var probe = buildGeometry();
+      if (probe) h = Math.round(w * clamp(probe.aspect, ASPECT_MIN, ASPECT_MAX));
+    } else {
+      h = cssH;
+    }
+
+    var bw = Math.round(w * d), bh = Math.round(h * d);
+    cssW = w; cssH = h; dpr = d;
+    canvas.style.height = cssH + "px";
+    // Add the border chrome back so the content box is exactly cssH tall and the
+    // bitmap is never squashed to fit (same fix as motion.js / radar.js).
+    var chrome = canvas.offsetHeight - canvas.clientHeight;
+    if (chrome > 0) canvas.style.height = cssH + chrome + "px";
+    canvas.width = bw; canvas.height = bh;
+    if (gctx) gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    geom = null;
+    // A forced call is a new circuit or a first paint — there is nothing worth
+    // keeping and nothing to stutter, so let it rebuild at once. An observed
+    // resize is the drag case, and waits.
+    ribbonDeferUntil = force ? 0 : Date.now() + RESIZE_SETTLE_MS;
+  }
+
+  function watchSize(el) {
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(function () { sizeCanvas(false); }).observe(el);
+    }
+    window.addEventListener("resize", function () { sizeCanvas(false); }, { passive: true });
+  }
+
+  /* ---------------------------------- init --------------------------------- */
+
+  function init(root) {
+    headerMeta = root.querySelector('[data-role="meta"]');
+    var mount = root.querySelector('[data-role="mount"]');
+    mount.innerHTML = "";
+
+    var params = new URLSearchParams(window.location.search);
+    var style = (params.get("style") || "").toLowerCase();
+    if (PALETTES[style]) palette = PALETTES[style];
+    else if (window.ApexAppearance && window.ApexAppearance.onModes) {
+      window.ApexAppearance.onModes(function (modes) {
+        var m = modes && modes.trackmap;
+        if (PALETTES[m] && PALETTES[m] !== palette) {
+          palette = PALETTES[m];
+          ribbon = null; // the shape is unchanged; only its paint is
+        }
+      });
+    }
+    var rot = parseFloat(params.get("rotate"));
+    if (isFinite(rot)) rotateOverrideRad = (rot * Math.PI) / 180;
+    var t = parseFloat(params.get("tilt"));
+    if (isFinite(t)) tilt = clamp(t, 0.2, 0.9);
+
+    var wrap = document.createElement("div");
+    wrap.className = "trackmap__wrap";
+    canvas = document.createElement("canvas");
+    canvas.className = "trackmap__canvas";
+    statusEl = document.createElement("div");
+    statusEl.className = "trackmap__status";
+    statusEl.textContent = "Awaiting telemetry…";
+    wrap.appendChild(canvas);
+    wrap.appendChild(statusEl);
+    mount.appendChild(wrap);
+
+    gctx = canvas.getContext("2d");
+    sizeCanvas(true);
+    watchSize(canvas);
+  }
+
+  /* --------------------------------- update -------------------------------- */
+
+  function update(frame) {
+    var map = frame && frame.trackMap;
+    if (!map) {
+      setStatus("Awaiting telemetry…");
+      if (gctx) gctx.clearRect(0, 0, cssW, cssH);
+      return;
+    }
+    ensureShape(map);
+
+    if (headerMeta) {
+      headerMeta.textContent = frame.session && frame.session.track
+        ? frame.session.track
+        : "—";
+    }
+
+    if (!shape) {
+      // No shape yet: say what the system is doing about it. The progress is the
+      // fraction of the lap the learner has seen, which moves as you drive and
+      // is the honest answer to "why is there no map".
+      setStatus(
+        map.ready
+          ? "Loading circuit…"
+          : "Learning the circuit — " + Math.round((map.progress || 0) * 100) + "%"
+      );
+      return;
+    }
+    setStatus("");
+
+    if (!geom) {
+      geom = buildGeometry();
+      ribbon = null;
+    }
+    if (!geom) return;
+    var key = haveKey + "|" + haveRevision + "|" + cssW + "x" + cssH + "|" + dpr;
+    if (ribbonKey !== key) {
+      // Never defer the FIRST ribbon: there is no cached bitmap to stretch, so
+      // waiting would show an empty panel rather than a soft one.
+      if (!ribbon || Date.now() >= ribbonDeferUntil) {
+        ribbon = renderRibbon(geom);
+        ribbonKey = key;
+      }
+    }
+
+    gctx.clearRect(0, 0, cssW, cssH);
+    // Stretched to the panel, which matters only in the gap between a resize and
+    // the rebuild above; the rest of the time the two sizes are identical.
+    gctx.drawImage(ribbon, 0, 0, cssW, cssH);
+
+    // Identity (class colour, and therefore which dot is which) lives on the
+    // standings rows; the map block carries only position. Joined by slot id
+    // rather than duplicated on the wire — see TrackMapCar in types.ts.
+    var byId = {};
+    var rows = frame.standings || [];
+    for (var i = 0; i < rows.length; i++) byId[rows[i].slotId] = rows[i];
+
+    // Project once, then draw furthest first so a dot in front covers one behind
+    // it rather than the other way round.
+    var drawable = [];
+    var ego = null;
+    var cars = map.cars || [];
+    for (i = 0; i < cars.length; i++) {
+      var pos = carPoint(geom, cars[i]);
+      if (!pos) continue;
+      var item = { car: cars[i], info: byId[cars[i].slotId], pos: pos };
+      // The player is held back and drawn last whatever its depth: it is the one
+      // dot that must never end up under another, and the one the eye looks for
+      // first.
+      if (cars[i].isPlayer) ego = item;
+      else drawable.push(item);
+    }
+    drawable.sort(function (a, b) { return a.pos.depth - b.pos.depth; });
+    for (i = 0; i < drawable.length; i++) {
+      drawCar(drawable[i].car, drawable[i].info, drawable[i].pos);
+    }
+    if (ego) drawCar(ego.car, ego.info, ego.pos);
+  }
+
+  function setStatus(text) {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.style.display = text ? "" : "none";
+  }
+
+  window.ApexOverlay.registerWidget("trackmap", {
+    // 20 Hz. The dots move continuously, but a whole circuit in a panel runs at
+    // metres per pixel — past this the movement is smaller than a pixel and the
+    // only thing going up is the CPU an OBS source costs.
+    throttleMs: 50,
+    init: init,
+    update: update,
+  });
+})();

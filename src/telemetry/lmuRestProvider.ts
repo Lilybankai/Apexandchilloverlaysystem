@@ -38,11 +38,17 @@ import http from 'node:http';
 import type { TelemetryProvider } from './provider';
 import { SimulatorProvider } from './simulatorProvider';
 import { FuelCalculator, resolvePitCall } from './fuelCalculator';
-import { LmuLocalCarReader, type AidSettings, type LocalCarPhysics } from './lmuLocalCar';
+import {
+  LmuLocalCarReader,
+  type AidSettings,
+  type LocalCarPhysics,
+  type RadarField,
+} from './lmuLocalCar';
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { LmuTraceLimitsReader } from './lmuTraceLimits';
 import { buildRadar, type RadarCar } from './radar';
+import { TrackMapBuilder } from './trackMap';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
@@ -67,6 +73,8 @@ import {
   type PitState,
   type MfdState,
   type TrackLimitsState,
+  type TrackMapCar,
+  type TrackMapState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
@@ -393,6 +401,8 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly trackLimits = new TrackLimitsTracker();
   /** Turns the driven car's lap boundaries into the lap database; see `lapLog.ts`. */
   private readonly lapRecorder = new LapRecorder();
+  /** Learns the circuit's shape from the driven car; see `trackMap.ts`. */
+  private readonly trackMap = new TrackMapBuilder();
   /**
    * Per-car relative-gap history, for the closing-rate derivation that drives
    * the backmarker / blue-flag alert. Keyed by slot id. See
@@ -971,10 +981,19 @@ export class LmuRestProvider implements TelemetryProvider {
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there).
     const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined, local?.aidSettings);
+    // One whole-field shared-memory sweep per poll, shared by the radar and the
+    // track map. Both want every car's world position; reading the buffer twice
+    // would double the cost of the most expensive read in the frame.
+    const field = playerCar ? this.localCar.readField(playerCar.slotID) : null;
     // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
-    // it reads that car's world position + orientation from shared memory, which
-    // exists only for the car driven on this PC. Omitted when spectating.
-    const radar = this.buildRadarBlips(playerCar, cars);
+    // it needs that car's world position + orientation, which shared memory only
+    // publishes for the car driven on this PC. Omitted when spectating.
+    const radar = this.buildRadarBlips(playerCar, cars, field);
+    // The circuit's shape, learned from the driven car, and where the field is
+    // on it. Fed the SCENE name as the layout — Monza's two layouts share a
+    // venue name, and a map keyed on the venue alone would draw one over the
+    // other (the same trap `refreshSimTrackName` exists to close for pace).
+    const trackMap = this.buildTrackMap(session, trackLen, playerCar, scoringCar, field, cars);
     // The lap database. Last, because it reads the results of everything above
     // (the excursion count, the pit flags) to decide whether the lap was clean.
     this.recordLap(playerCar, scoringCar, session, trackLimits, si, trackLen, nowMs);
@@ -989,6 +1008,7 @@ export class LmuRestProvider implements TelemetryProvider {
       standings,
       relative,
       ...(radar ? { radar } : {}),
+      ...(trackMap ? { trackMap } : {}),
       weather,
       fuel,
       ...(mfd ? { mfd } : {}),
@@ -1020,9 +1040,9 @@ export class LmuRestProvider implements TelemetryProvider {
   private buildRadarBlips(
     playerCar: RestStanding | undefined,
     cars: RestStanding[],
+    field: RadarField | null,
   ): RadarBlip[] | undefined {
     if (!playerCar) return undefined;
-    const field = this.localCar.readField(playerCar.slotID);
     if (!field) {
       // Bridge an occasional torn copy (the reader missed a single frame) so the
       // radar doesn't blink to "NO RADAR DATA"; a genuine drop outlasts the hold.
@@ -1057,6 +1077,83 @@ export class LmuRestProvider implements TelemetryProvider {
     this.lastRadar = blips;
     this.lastRadarAt = Date.now();
     return blips;
+  }
+
+  /**
+   * The track-map block: teaches {@link TrackMapBuilder} where the road goes
+   * from the driven car, and places every car on it.
+   *
+   * ## Two placements per car, because they fail differently
+   * World X/Z comes from the shared-memory sweep and is the truth — a car in the
+   * pit lane is drawn in the pit lane, a car running wide is drawn running wide.
+   * It is also absent whenever the sim publishes no physics (spectating a
+   * broadcast, the sim in menus). Lap fraction comes from the REST feed, is 1-D
+   * and can only pin a car TO the path, but it survives all of that. Both are
+   * sent and the widget prefers the first — the same "send what each source
+   * actually knows and let the consumer choose" split the frame draws between
+   * `motion` (driven car only) and `standings` (everyone).
+   *
+   * Returns `undefined` — omitted, not empty — when no track is loaded or no car
+   * can be placed at all, so the widget can tell "between sessions" from "the
+   * field is on the grid".
+   */
+  private buildTrackMap(
+    session: SessionState,
+    trackLen: number,
+    playerCar: RestStanding | undefined,
+    scoringCar: ScoringCar | null,
+    field: RadarField | null,
+    cars: RestStanding[],
+  ): TrackMapState | undefined {
+    if (trackLen <= 0) return undefined;
+
+    const status = this.trackMap.update({
+      trackName: session.track,
+      // The SCENE name, not the venue — see the call site.
+      ...(this.simTrackName ? { trackConfig: this.simTrackName } : {}),
+      lengthM: trackLen,
+      lapDistM:
+        playerCar && typeof playerCar.lapDistance === 'number' ? playerCar.lapDistance : -1,
+      pos: field ? field.playerPos : null,
+      inPit: playerCar ? isInPit(playerCar) : true,
+      edgeM: scoringCar ? scoringCar.trackEdgeM : null,
+    });
+
+    const posById = new Map<number, { x: number; y: number; z: number }>();
+    if (field) {
+      for (const c of field.cars) posById.set(c.slotId, c.pos);
+      if (playerCar) posById.set(playerCar.slotID, field.playerPos);
+    }
+
+    const mapCars: TrackMapCar[] = [];
+    for (const c of cars) {
+      const car: TrackMapCar = {
+        slotId: c.slotID,
+        inPit: isInPit(c),
+        isPlayer: playerCar !== undefined && c.slotID === playerCar.slotID,
+      };
+      const p = posById.get(c.slotID);
+      if (p) {
+        car.x = round2(p.x);
+        car.y = round2(p.y);
+        car.z = round2(p.z);
+      }
+      if (typeof c.lapDistance === 'number' && c.lapDistance >= 0 && c.lapDistance <= trackLen) {
+        car.lapFraction = Math.round((c.lapDistance / trackLen) * 10000) / 10000;
+      }
+      // A car with neither placement is a scoring record we cannot draw; sending
+      // it would put a dot on the start line for every car sitting in a garage.
+      if (car.x !== undefined || car.lapFraction !== undefined) mapCars.push(car);
+    }
+    if (!mapCars.length && !status.ready) return undefined;
+
+    return {
+      key: status.key,
+      revision: status.revision,
+      ready: status.ready,
+      progress: Math.round(status.progress * 1000) / 1000,
+      cars: mapCars,
+    };
   }
 
   private buildStandings(cars: RestStanding[], focusId: number): StandingEntry[] {

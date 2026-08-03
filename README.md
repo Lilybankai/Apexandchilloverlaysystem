@@ -162,6 +162,8 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
   countdown once the crew is on the car (see below; LMU only)
 - **Radar** — a spotter's-eye strip of the cars around you, drawn to scale, plus
   the pit-release light (see below)
+- **Track map** — the whole circuit as a raised 2.5-D ribbon with every car on
+  it, learned from your own first lap at each track (see below)
 - **Track limits** — how much of the points allowance you have left, what each
   cut cost you, and the sim's own penalties (see below)
 - **Tyre temps** — four-corner temperatures
@@ -440,6 +442,58 @@ inventing a target.
 > stationary. The clock itself runs on the server, so a browser source reloading
 > mid-stop rejoins the same countdown. See `PitState` in `src/telemetry/types.ts`.
 
+
+### Track map widget
+
+The circuit, extruded off the plane and viewed at an angle, with a dot for every
+car in the session — your own in white with a ring round it, everyone else in
+their class colour, cars in the pit lane faded. Where the radar answers "who is
+beside me", this answers "where is everybody" — traffic two corners ahead, how
+far back the car you are chasing really is, whether a yellow is on your part of
+the track.
+
+| Param            | Shows                                                                     |
+| ---------------- | ------------------------------------------------------------------------- |
+| `?style=classic` | The infographic red of a printed circuit map. The default                 |
+| `?style=brand`   | The overlay's cyan→magenta running round the lap                          |
+| `?rotate=<deg>`  | Overrides the automatic orientation                                       |
+| `?tilt=0.55`     | How steeply the view looks down, 0.2 (flat plan) .. 0.9                    |
+
+**It is one material, lit by one light.** Not a light road with a coloured wall
+glued on — that reads as a paper cutout. Every segment's surface and sides are
+shaded from the direction the road is actually going, so a straight and the
+corner it feeds are visibly two faces of one solid; the road's two edges are
+chamfered so they catch the light along the outside of the ribbon. The palette
+only sets the base hue, and the lighting makes every other shade from it.
+
+**The circuit is learned, not shipped.** LMU packs its tracks into encrypted
+archives, and no API publishes the shape of the road — but the sim does publish
+where your car is, thirty times a second, with a lap distance beside it. So the
+first time you drive a track the widget shows a progress read (`LEARNING THE
+CIRCUIT — 62%`) and builds the map as you go; from then on it is cached in
+`~/.apex-overlay/tracks/` and draws instantly, every session, forever. It works
+at every LMU and rF2 circuit, including ones that do not exist yet, and needs no
+per-track setup.
+
+Because the shape is measured in the sim's own world coordinates, the car dots
+need no fitting to sit on it — they are the same numbers. A car running wide is
+drawn running wide; a car in the pit lane is drawn in the pit lane. When the sim
+publishes no positions at all (spectating a broadcast), the dots fall back to lap
+distance and ride the centre of the road instead.
+
+**Elevation is exaggerated, deliberately.** A circuit moves ±30 m vertically
+across a 1.5 km footprint — under 2% of the map's width, invisible at true scale.
+The lift is scaled to a fixed share of the map's own size instead, so Spa's hill
+reads at a glance and a flat circuit stays flat.
+
+The ribbon is then drawn over its own silhouette, projected onto the ground plane
+with the lift removed and blurred. The shadow stays flat while the road climbs
+away from it, so the gap between the two *is* the hill — and on a genuinely flat
+circuit they nearly coincide and it becomes an ordinary contact shadow instead.
+
+One lap is one file of about 40 KB, fetched once over HTTP (`/trackmap.json`) and
+re-fetched only when the track changes; the ribbon is rendered once to an
+offscreen canvas and each frame after that is a blit plus the dots.
 
 ### Radar widget
 

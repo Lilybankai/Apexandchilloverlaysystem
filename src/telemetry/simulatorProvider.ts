@@ -33,6 +33,7 @@ import {
   type StandingEntry,
   type TelemetryFrame,
   type TrackLimitsState,
+  type TrackMapState,
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
@@ -44,6 +45,7 @@ import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
 import { TrackLimitsTracker } from './trackLimits';
+import { getPublishedTrackMap, setPublishedTrackMap, type TrackMapPath } from './trackMap';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /* --------------------------------- config --------------------------------- */
@@ -75,6 +77,69 @@ const BASE_LAP_SEC = 102.9;
 const DEMO_TRACK = 'Silverstone (ELMS)';
 const DEMO_TRACK_CONFIG = 'Grand Prix';
 const DEMO_TRACK_LENGTH_M = 5890;
+
+/**
+ * The demo circuit the track map draws — a closed curve with corners and
+ * elevation, scaled so its perimeter really is {@link DEMO_TRACK_LENGTH_M}.
+ *
+ * Built rather than copied from a real circuit, and not called Silverstone
+ * anywhere on the shape: this is invented geometry, and a map that claimed to be
+ * a real lap of Silverstone while being a lissajous would be the one piece of
+ * demo data an operator could mistake for the real thing. The harmonics give it
+ * a hairpin, two fast sweeps and a straight; the elevation gives the 2.5-D view
+ * something to lift, which is the whole point of the widget and would be invisible
+ * on a flat ring.
+ */
+const DEMO_MAP: TrackMapPath = buildDemoCircuit();
+
+/**
+ * Generates {@link DEMO_MAP}. The radius harmonics are what make it read as a
+ * circuit; the two-pass scaling is what makes its perimeter come out at the lap
+ * length the rest of the demo claims (a shape whose points are metres apart by a
+ * factor of three would make the ribbon's width look absurd).
+ */
+function buildDemoCircuit(): TrackMapPath {
+  const TAU_ = Math.PI * 2;
+  const n = 720;
+  const shape = (t: number): { x: number; z: number; y: number } => {
+    const a = t * TAU_;
+    // Phase-shifted so `t = 0` — the start/finish line — lands on a smooth
+    // stretch. Without the shift the harmonics stack into a point exactly there,
+    // and the demo map showed its start line on a spike no circuit has.
+    const r = 1 + 0.26 * Math.sin(3 * a + 1.15) + 0.11 * Math.cos(5 * a + 0.5) - 0.05 * Math.sin(7 * a);
+    return {
+      x: r * Math.cos(a),
+      z: r * Math.sin(a) * 0.72, // squashed, so it is a circuit and not a flower
+      y: 0.035 * Math.sin(2 * a + 0.7) + 0.018 * Math.sin(5 * a),
+    };
+  };
+  let perimeter = 0;
+  for (let i = 0; i < n; i++) {
+    const a = shape(i / n);
+    const b = shape((i + 1) / n);
+    perimeter += Math.hypot(b.x - a.x, b.z - a.z);
+  }
+  const scale = DEMO_TRACK_LENGTH_M / perimeter;
+  const points: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const p = shape(i / n);
+    points.push([
+      Math.round(p.x * scale * 10) / 10,
+      Math.round(p.z * scale * 10) / 10,
+      Math.round(p.y * scale * 10) / 10,
+    ]);
+  }
+  return {
+    key: 'demo-circuit',
+    name: 'Demo Circuit',
+    lengthM: DEMO_TRACK_LENGTH_M,
+    halfWidthM: 6,
+    binM: DEMO_TRACK_LENGTH_M / n,
+    points,
+    builtAt: new Date(0).toISOString(),
+    revision: 1,
+  };
+}
 /**
  * Class definitions for the synthetic field: how many cars, and how much slower
  * than {@link BASE_LAP_SEC} that class runs.
@@ -342,6 +407,7 @@ export class SimulatorProvider implements TelemetryProvider {
     const standings = this.buildStandings();
     const relative = this.buildRelative();
     const radar = this.buildRadarBlips(player);
+    const trackMap = this.buildTrackMap(player);
     const fuel = this.buildFuel(player);
     // Built once and shared: the chassis model is derived from the same motion
     // state the frame reports, so calling motionFor() twice would risk the two
@@ -438,6 +504,7 @@ export class SimulatorProvider implements TelemetryProvider {
       standings,
       relative,
       ...(radar ? { radar } : {}),
+      trackMap,
       weather: {
         trackTempC: 30 + Math.sin(this.weatherPhase) * 1.5 - this.rainIntensity * 6,
         ambientTempC: 22 + Math.sin(this.weatherPhase * 0.7) * 0.8 - this.rainIntensity * 3,
@@ -1308,6 +1375,38 @@ export class SimulatorProvider implements TelemetryProvider {
         return car;
       });
     return buildRadar({ playerPos, ori, cars }) ?? undefined;
+  }
+
+  /* ------------------------------- track map ------------------------------ */
+
+  /**
+   * The demo circuit, and the field's progress round it.
+   *
+   * Unlike every other block here this one does NOT go through the live path's
+   * machinery, and that is deliberate. {@link TrackMapBuilder} learns a circuit
+   * from the driven car's world positions, and demo mode's positions live on the
+   * small radar ellipse ({@link SIM_TRACK_A}) — a 630 m ring that exists to keep
+   * synthetic cars inside radar range, not to be a track. Feeding it to the
+   * learner would draw a fat donut and label it 5.9 km. So the demo publishes a
+   * shape of its own, once, and places its cars on it by lap fraction — which
+   * has the side benefit of being the exact path a spectated session takes (no
+   * shared memory, no world positions), so demo mode exercises the fallback the
+   * widget must never get wrong rather than the easy case.
+   */
+  private buildTrackMap(player: SimCar): TrackMapState {
+    if (getPublishedTrackMap()?.key !== DEMO_MAP.key) setPublishedTrackMap(DEMO_MAP);
+    return {
+      key: DEMO_MAP.key,
+      revision: DEMO_MAP.revision,
+      ready: true,
+      progress: 1,
+      cars: this.cars.map((c) => ({
+        slotId: c.slotId,
+        lapFraction: Math.round(clamp(c.progress, 0, 1) * 10000) / 10000,
+        inPit: c.inPit,
+        isPlayer: c.slotId === player.slotId,
+      })),
+    };
   }
 
   /* --------------------------------- fuel -------------------------------- */

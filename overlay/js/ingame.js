@@ -73,6 +73,10 @@
       // plus five component rows runs ~230px tall, and stacking it in that
       // column would push it up into the standings list.
       damage: { x: 340, y: vh - 300, w: 268 },
+      // Right of the pedal trace and left of the tyre/motion column — the one
+      // gap on a full screen wide enough for a circuit. Wider than the readout
+      // widgets because a map that is narrow is a map you cannot read.
+      trackmap: { x: Math.round(vw / 2 + 190), y: vh - 300, w: 430 },
       // Had no entry, so it fell through to the {24, 24} fallback and spawned on
       // top of standings — the same trap pacedelta hit above. Centre band, below
       // the pace-delta grid, where the driving-aid rows are reachable in

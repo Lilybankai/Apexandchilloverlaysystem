@@ -1046,6 +1046,76 @@ export interface RadarBlip {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Track map                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One car as the **track map** places it: a world position on the same ground
+ * plane as the learned centre path, plus how far round the lap it is.
+ *
+ * Two placements, deliberately, because they fail in different situations and
+ * the widget prefers whichever it has. {@link x}/{@link z} is the truth — the
+ * car's actual position, so it sits on its real line through a corner and in the
+ * pit lane rather than on the racing line — but it comes from shared memory,
+ * which is empty when the sim isn't publishing physics. {@link lapFraction}
+ * comes from the REST/scoring feed, is 1-D (it can only put the car ON the path)
+ * and survives everywhere, so it is the fallback that keeps the map populated
+ * while spectating.
+ */
+export interface TrackMapCar {
+  /** Stable per-session slot/entry id — join to {@link StandingEntry} for identity. */
+  slotId: number;
+  /** World X in metres, in the sim's axes. Omitted when not published. */
+  x?: number;
+  /** World Y (up) in metres — the dot's elevation. Omitted when not published. */
+  y?: number;
+  /** World Z in metres, in the sim's axes. Omitted when not published. */
+  z?: number;
+  /**
+   * Progress round the lap, `0`..`1` from the start/finish line. Omitted when
+   * the sim hasn't published a lap distance for this car.
+   */
+  lapFraction?: number;
+  /** `true` when the sim has this car in the pit lane or its garage stall. */
+  inPit: boolean;
+  /** `true` for the player's own car. */
+  isPlayer: boolean;
+}
+
+/**
+ * The **track map** block: which circuit shape the widget should be drawing, how
+ * far along learning it is, and where every car is on it.
+ *
+ * ## The shape itself is NOT on this block, on purpose
+ * A centre path is ~1500 points that change when the track changes — a handful
+ * of times a session — and putting it in the frame would repeat 40 KB thirty
+ * times a second for no reason. So the geometry is served over HTTP at
+ * `/trackmap.json` (the same channel `/appearance.json` and the sponsor manifest
+ * use) and this block carries only the {@link revision} the widget compares
+ * against what it has fetched. See `telemetry/trackMap.ts`.
+ */
+export interface TrackMapState {
+  /** Slug identifying the loaded track + layout + length; `""` when unknown. */
+  key: string;
+  /**
+   * Bumped whenever the served path changes. The widget refetches
+   * `/trackmap.json` when this differs from the revision it drew, and otherwise
+   * never touches the network.
+   */
+  revision: number;
+  /** `true` once a full lap of geometry exists and `/trackmap.json` will serve it. */
+  ready: boolean;
+  /**
+   * How much of the lap has been learned so far, `0`..`1`. Only meaningful while
+   * {@link ready} is `false` — the widget shows it as a "learning the track"
+   * progress read rather than an empty panel.
+   */
+  progress: number;
+  /** Every car on track, the player included. */
+  cars: TrackMapCar[];
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Weather                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -1372,6 +1442,15 @@ export interface TelemetryFrame {
    * information the widget renders differently from "no data". See {@link RadarBlip}.
    */
   radar?: RadarBlip[];
+  /**
+   * Where every car is on the circuit, for the 2.5-D track map. **Optional and
+   * omitted** — not an empty block — when no track is loaded or the provider
+   * cannot place a single car, so the widget can tell "between sessions" from
+   * "everyone is on the grid". The circuit's SHAPE is not here; it is fetched
+   * from `/trackmap.json` when {@link TrackMapState.revision} changes. See
+   * {@link TrackMapState}.
+   */
+  trackMap?: TrackMapState;
   /** Current weather plus forecast. */
   weather: WeatherState;
   /** Fuel state and strategy for the player's car. */

@@ -62,6 +62,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    trackmap:
+      '<section class="widget panel" id="widget-trackmap" data-widget="trackmap" aria-label="Track map — the circuit and where every car is on it">' +
+      '<header class="panel__header"><span class="panel__title">Track Map</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     limits:
       '<section class="widget panel" id="widget-limits" data-widget="limits" aria-label="Track limits — points left and penalties">' +
       '<header class="panel__header"><span class="panel__title">Track Limits</span>' +

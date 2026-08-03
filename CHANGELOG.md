@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.54.0 — 2026-08-03
+
+### Added
+
+- **A 2.5-D track map.** The whole circuit as a road raised off the plane and
+  viewed at an angle — corners read as corners, and the elevation of the place is
+  drawn rather than implied — with a dot for every car in the session: yours in
+  white with a ring round it, everyone else in their class colour, anyone in the
+  pit lane faded. It answers the question neither the radar nor the relative panel
+  can: not "who is beside me" or "how far back in seconds", but *where is
+  everybody*.
+
+  **The circuit is learned from your own first lap.** There was no shape to ship:
+  LMU packs each track into an encrypted archive, and no endpoint publishes the
+  road as geometry — only a lap *length*. What both sims do publish is where the
+  car is, thirty times a second, with a lap distance beside it, and one lap of
+  that IS the circuit. So a new track shows `LEARNING THE CIRCUIT — 62%` while you
+  drive it, then caches the shape in `~/.apex-overlay/tracks/` and draws instantly
+  in every session after. It works at all 17 LMU circuits, at rF2's, and at ones
+  that do not exist yet, with no per-track setup — and because the shape is
+  measured in the sim's own world coordinates, the car dots are the same numbers
+  as the road and need no fitting to land on it. A car running wide is drawn
+  running wide.
+
+  Elevation is exaggerated to a fixed share of the map's own size: ±30 m across a
+  1.5 km footprint is under 2% of the width and would be invisible at true scale.
+  So is the road's width, for the same reason and to the same end — every printed
+  circuit map does both. Neither ever moves the centre line, so where a car is
+  drawn is unaffected.
+
+  The ribbon is one material lit by one light, not a light road with a coloured
+  wall glued to it — which is the difference between a solid object and a paper
+  cutout. Each segment's surface and sides are shaded from the direction the road
+  is actually going, the two edges are chamfered so they catch the light, and the
+  whole thing is drawn over its own blurred silhouette projected onto the ground
+  plane. That last part is why the elevation reads: the shadow stays flat while
+  the road climbs away from it, so the gap between them *is* the hill.
+
+  Two palettes: `?style=classic` (the infographic red of a printed circuit map —
+  the default) and `?style=brand`, which runs the overlay's cyan→magenta round the
+  lap so the colour under your dot also says where in the lap you are. Both are
+  lit by the same model; only the base hue differs.
+
+  The shape is served over HTTP (`/trackmap.json`) rather than in the telemetry
+  frame — 40 KB that changes a handful of times a session has no business being
+  sent thirty times a second — and the ribbon is rendered once to an offscreen
+  canvas, so each frame is a blit plus the dots.
+
 ## 0.53.0 — 2026-08-03
 
 ### Added

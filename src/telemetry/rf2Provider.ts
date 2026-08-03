@@ -54,6 +54,8 @@ import {
   type SkyState,
   type StandingEntry,
   type TelemetryFrame,
+  type TrackMapCar,
+  type TrackMapState,
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
@@ -64,6 +66,7 @@ import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import { TrackLimitsTracker } from './trackLimits';
+import { TrackMapBuilder } from './trackMap';
 import type { RawCorner, RawCornerSet } from './chassis';
 
 /* ------------------------- Win32 / shared-memory ------------------------- */
@@ -315,6 +318,8 @@ export class RF2Provider implements TelemetryProvider {
    * tracker above — it has to survive between polls. See `trackLimits.ts`.
    */
   private readonly trackLimitsTracker = new TrackLimitsTracker();
+  /** Learns the circuit's shape from the driven car; see `trackMap.ts`. */
+  private readonly trackMap = new TrackMapBuilder();
   private readonly win32: Win32 | null;
   private telemetry: MappedBuffer | null = null;
   private scoring: MappedBuffer | null = null;
@@ -599,6 +604,16 @@ export class RF2Provider implements TelemetryProvider {
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
+    const trackMap = this.buildTrackMap(
+      scoring,
+      telem,
+      telemVehicles,
+      numVehicles,
+      playerScoringOff,
+      playerTelemOff,
+      playerId,
+      trackName,
+    );
     const sessionPhase = mapSessionPhase(gamePhase);
     // Track limits, from the player's own scoring record — here, the sim's
     // penalty count and nothing else. The POINTS behind a penalty come from
@@ -668,6 +683,7 @@ export class RF2Provider implements TelemetryProvider {
       standings,
       relative,
       ...(radar ? { radar } : {}),
+      ...(trackMap ? { trackMap } : {}),
       weather: {
         trackTempC: round1(trackTempC),
         ambientTempC: round1(ambientC),
@@ -848,6 +864,98 @@ export class RF2Provider implements TelemetryProvider {
 
     const blips = buildRadar({ playerPos, ori, cars });
     return blips ?? undefined;
+  }
+
+  /**
+   * The track-map block: the circuit learned from the driven car, and every car
+   * placed on it. The same contract as the LMU provider's (see its
+   * `buildTrackMap` for why each car carries both a world position and a lap
+   * fraction) — read from the two buffers this provider already has open rather
+   * than from a REST feed.
+   *
+   * rF2 publishes `mTrackEdge` per car exactly as LMU does, so the ribbon here is
+   * drawn at the road's real width, not the fallback.
+   */
+  private buildTrackMap(
+    scoring: Buffer,
+    telem: Buffer,
+    telemVehicles: number,
+    scoringVehicles: number,
+    playerScoringOff: number,
+    playerTelemOff: number,
+    playerId: number,
+    trackName: string,
+  ): TrackMapState | undefined {
+    const trackLenRaw = scoring.readDoubleLE(SI.base + SI.mLapDist);
+    if (!(trackLenRaw > 1)) return undefined;
+
+    // World positions come from the TELEMETRY buffer (keyed by mID, like the
+    // radar's); lap distances from the SCORING one. Two records per car, joined
+    // by id — the record INDEX is not the slot id in either buffer.
+    const posById = new Map<number, Vec3>();
+    for (let i = 0; i < telemVehicles; i++) {
+      const off = VT.base + i * VT.stride;
+      const id = telem.readInt32LE(off + VT.mID);
+      if (id < 0) continue;
+      const pos: Vec3 = {
+        x: telem.readDoubleLE(off + VT.mPos),
+        y: telem.readDoubleLE(off + VT.mPos + 8),
+        z: telem.readDoubleLE(off + VT.mPos + 16),
+      };
+      if (pos.x === 0 && pos.y === 0 && pos.z === 0) continue; // unspawned
+      posById.set(id, pos);
+    }
+
+    const playerInPit =
+      playerScoringOff >= 0 &&
+      (scoring.readUInt8(playerScoringOff + VS.mInPits) !== 0 ||
+        scoring.readUInt8(playerScoringOff + VS.mInGarageStall) !== 0);
+    const playerPos = playerTelemOff >= 0 ? (posById.get(playerId) ?? null) : null;
+    const status = this.trackMap.update({
+      trackName,
+      lengthM: trackLenRaw,
+      lapDistM:
+        playerScoringOff >= 0 ? scoring.readDoubleLE(playerScoringOff + VS.mLapDist) : -1,
+      pos: playerPos,
+      inPit: playerInPit,
+      edgeM:
+        playerScoringOff >= 0 ? scoring.readDoubleLE(playerScoringOff + VS.mTrackEdge) : null,
+    });
+
+    const mapCars: TrackMapCar[] = [];
+    for (let i = 0; i < scoringVehicles; i++) {
+      const off = SI.base + SI.sizeof + i * VS.stride;
+      if (off + VS.stride > scoring.length) break;
+      const id = scoring.readInt32LE(off + VS.mID);
+      if (id < 0) continue;
+      const car: TrackMapCar = {
+        slotId: id,
+        inPit:
+          scoring.readUInt8(off + VS.mInPits) !== 0 ||
+          scoring.readUInt8(off + VS.mInGarageStall) !== 0,
+        isPlayer: id === playerId,
+      };
+      const pos = posById.get(id);
+      if (pos) {
+        car.x = round2(pos.x);
+        car.y = round2(pos.y);
+        car.z = round2(pos.z);
+      }
+      const dist = scoring.readDoubleLE(off + VS.mLapDist);
+      if (Number.isFinite(dist) && dist >= 0 && dist <= trackLenRaw) {
+        car.lapFraction = Math.round((dist / trackLenRaw) * 10000) / 10000;
+      }
+      if (car.x !== undefined || car.lapFraction !== undefined) mapCars.push(car);
+    }
+    if (!mapCars.length && !status.ready) return undefined;
+
+    return {
+      key: status.key,
+      revision: status.revision,
+      ready: status.ready,
+      progress: Math.round(status.progress * 1000) / 1000,
+      cars: mapCars,
+    };
   }
 
   /** Verbose-only diagnostic (per-poll failures would otherwise spam at 30 Hz). */

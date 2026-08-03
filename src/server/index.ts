@@ -28,6 +28,7 @@ import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
+import { getPublishedTrackMap } from '../telemetry/trackMap';
 import { handleMfdCommand } from './mfdRoutes';
 import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows } from './aidRows';
@@ -286,6 +287,36 @@ function serveAppearance(res: ServerResponse): void {
   res.end(body);
 }
 
+/** URL the track-map widget fetches the learned circuit shape from. */
+const TRACKMAP_PATH = '/trackmap.json';
+
+/**
+ * Serves the circuit currently learned, as JSON.
+ *
+ * The shape rides HTTP rather than the telemetry frame for the same reason the
+ * sponsor manifest does: it is ~1500 points that change when the track changes,
+ * and putting it on a 30 Hz wire would repeat tens of kilobytes a second to say
+ * something that is still true. The frame carries only a revision number, and the
+ * widget refetches this when that moves. `204` — not `404` — before a circuit is
+ * learned: there is no error here, only a lap not yet driven, and the widget
+ * shows its learning read rather than a failed request.
+ */
+function serveTrackMap(res: ServerResponse): void {
+  const map = getPublishedTrackMap();
+  if (!map) {
+    res.writeHead(204, { 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+  const body = JSON.stringify(map);
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
 /** URL prefix the operator's sponsor logos are served under. */
 const SPONSOR_PREFIX = '/sponsors/';
 /** Image extensions accepted as sponsor logos. */
@@ -344,6 +375,11 @@ async function serveStatic(
   // Appearance is runtime state, not a file on disk.
   if (relPath === APPEARANCE_PATH) {
     serveAppearance(res);
+    return;
+  }
+  // Likewise the learned circuit — it lives in the running provider.
+  if (relPath === TRACKMAP_PATH) {
+    serveTrackMap(res);
     return;
   }
 

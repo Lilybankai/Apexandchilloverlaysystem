@@ -56,7 +56,8 @@ that.
   │  js/client.js WS connect → parse → dispatch     │
   │  js/widgets/  standings · relative · weather ·  │
   │               tyres · fuel · pedals · radar     │
-  │               (Canvas) · limits                 │
+  │               (Canvas) · trackmap (Canvas) ·    │
+  │               limits                            │
   │  js/audio.js  synthesised cues (no assets)      │
   └───────────────┬────────────────────────────────┘
                   │  rendered as an OBS Browser Source (Chromium/CEF)
@@ -128,6 +129,22 @@ browser. There is no database, no message broker, no cloud round-trip.
   client recomputes the desired state and sends it rather than maintaining a
   position in a stream that can desync from the data. `lap-sync.json` is a cache
   that stops redundant re-sends; deleting it costs bandwidth, never correctness.
+
+- **`trackMap.ts`** — the circuit's shape, learned from the driven car and cached
+  in `~/.apex-overlay/tracks/<key>.json`. Nothing in either sim publishes the road
+  as geometry (LMU's track archives are encrypted; the REST feed publishes a lap
+  *length* and no shape), but both publish where the car is, so one lap of world
+  positions binned by lap distance IS the circuit — and it comes out in the same
+  world axes as the live car positions, which is why the map needs no registration
+  and the dots need no fitting.
+
+  Same split as `lapLog.ts`: the learning is a pure fold with no IO
+  (`scripts/test-trackmap.js` drives a synthetic lap through it, including the
+  ways a lap lies — a mid-lap teleport, a lap down the pit lane, a poll rate so
+  slow the samples are 35 m apart). The shape rides HTTP at `/trackmap.json`
+  rather than the frame — it is ~40 KB that changes a handful of times a session —
+  and the frame carries only a revision number the widget compares against what it
+  has drawn.
 
 ### Server (`src/server/`)
 - **`index.ts`** — boots three things in one process: a tiny static HTTP server

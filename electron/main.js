@@ -75,6 +75,11 @@ const OVERLAY_CATALOG = [
   { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)" },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
   {
+    id: 'trackmap',
+    label: 'Track Map',
+    description: 'The circuit in 2.5-D with every car on it — learned from your first lap',
+  },
+  {
     id: 'limits',
     label: 'Track Limits',
     description: 'Excursions this session, the sim\'s penalties, and how much road is left',

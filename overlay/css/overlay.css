@@ -2338,6 +2338,36 @@
 }
 
 /* =========================================================================
+ * TRACK MAP — extruded circuit ribbon + car dots (widgets/trackmap.js)
+ * ========================================================================= */
+.trackmap__wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.trackmap__canvas {
+  display: block;
+  width: 100%;
+  background: transparent;
+}
+/* The learning / loading read, centred over the canvas rather than pushing it:
+   the panel keeps its size while the first lap is being driven, so the widget
+   does not jump the moment the map appears. */
+.trackmap__status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* =========================================================================
  * RADAR — spatial proximity strip (widgets/radar.js)
  * ========================================================================= */
 .radar__wrap {
