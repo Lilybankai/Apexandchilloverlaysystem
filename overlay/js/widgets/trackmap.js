@@ -24,7 +24,9 @@
  *      the same way every session.
  *   2. **Tilt**: squash the depth axis by {@link TILT} and let it drive screen Y.
  *      This is the oblique projection that turns a flat plan into a view — the
- *      only reason a hairpin doubling back reads as a hairpin.
+ *      only reason a hairpin doubling back reads as a hairpin. The depth axis
+ *      is negated on the way in; see {@link viewV} for why the map is a mirror
+ *      of the real circuit without that one sign.
  *   3. **Lift** by elevation. Real circuits move ±30 m vertically across a
  *      1.5 km footprint, which is under 2% of the map's width — invisible at
  *      true scale. So the lift is scaled to a fixed share of the map's own size
@@ -305,6 +307,20 @@
   }
 
   /**
+   * World plan (x, z) → view space (u, v), for a rotation given as its cos/sin.
+   *
+   * The minus on `v` is the map's handedness, and it is not cosmetic. The sim's
+   * Z axis runs one way across the circuit and the canvas' Y axis runs DOWN the
+   * screen, so feeding z straight into screen Y draws every circuit as its own
+   * mirror image — left-handers become right-handers and the shape stops
+   * matching the one on the wall. One sign here corrects the ribbon, its
+   * shadow, the lighting normals and the cars together, because all four are
+   * built from this pair and nothing else.
+   */
+  function viewU(x, z, ca, sa) { return x * ca - z * sa; }
+  function viewV(x, z, ca, sa) { return -(x * sa + z * ca); }
+
+  /**
    * Decimate the source path down to about {@link TARGET_SEGMENTS} points,
    * always keeping index 0 — that point is the start/finish line, and the one
    * marker on the map whose position is a fact rather than a decoration.
@@ -339,7 +355,7 @@
     var i, u, v, y;
     var minU = Infinity, maxU = -Infinity, minY = Infinity, maxY = -Infinity;
     for (i = 0; i < n; i++) {
-      u = pts[i][0] * ca - pts[i][1] * sa;
+      u = viewU(pts[i][0], pts[i][1], ca, sa);
       y = pts[i][2] || 0;
       if (u < minU) minU = u;
       if (u > maxU) maxU = u;
@@ -426,8 +442,8 @@
     for (i = 0; i < n; i++) {
       var e = edges[i];
       var lift = (e[4] - view.minY) * view.elevGain;
-      var lu = e[0] * view.ca - e[1] * view.sa, lv = e[0] * view.sa + e[1] * view.ca;
-      var ru = e[2] * view.ca - e[3] * view.sa, rv = e[2] * view.sa + e[3] * view.ca;
+      var lu = viewU(e[0], e[1], view.ca, view.sa), lv = viewV(e[0], e[1], view.ca, view.sa);
+      var ru = viewU(e[2], e[3], view.ca, view.sa), rv = viewV(e[2], e[3], view.ca, view.sa);
       var lY = lv * view.tilt - lift, rY = rv * view.tilt - lift;
       raw[i] = {
         lx: lu, ly: lY, rx: ru, ry: rY, depth: (lv + rv) / 2,
@@ -467,8 +483,8 @@
   /** World position → canvas position + a depth key, through the same transform. */
   function project(g, x, z, y) {
     var lift = ((typeof y === "number" ? y : g.minY) - g.minY) * g.elevGain;
-    var u = x * g.ca - z * g.sa;
-    var v = x * g.sa + z * g.ca;
+    var u = viewU(x, z, g.ca, g.sa);
+    var v = viewV(x, z, g.ca, g.sa);
     return {
       x: u * g.scale + g.offX,
       y: (v * g.tilt - lift) * g.scale + g.offY,

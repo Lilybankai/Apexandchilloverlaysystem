@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.54.1 — 2026-08-03
+
+### Fixed
+
+- **The track map was drawn as a mirror image of the circuit.** Every left-hander
+  came out a right-hander: at COTA the Turn 1 hairpin climbed *up* the panel and
+  the esses ran the wrong way down it. The projection fed the sim's depth axis
+  straight into screen Y, and screen Y grows downward — so the plan was flipped
+  before it was ever tilted. The sign is corrected at the one place the road, its
+  shadow, the lighting normals and the car dots are all built from, so the shape
+  now matches the map on the wall and a car turning left is drawn turning left.
+
 ## 0.54.0 — 2026-08-03
 
 ### Added
