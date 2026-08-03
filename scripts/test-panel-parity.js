@@ -229,7 +229,6 @@ const AUTH_CONTRACT = {
   'rg-name': 'input:text',
   'rg-email': 'input:email',
   'rg-pw': 'input:password',
-  'rg-sim': 'select',
   'rg-opt': 'input:checkbox',
   'rg-agree': 'input:checkbox',
 

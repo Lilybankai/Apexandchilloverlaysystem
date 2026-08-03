@@ -330,19 +330,6 @@ button { font-family: inherit; }
   letter-spacing: 0.18em;
 }
 
-.select {
-  appearance: none;
-  cursor: pointer;
-}
-
-.field__chev {
-  position: absolute;
-  right: 11px;
-  display: inline-flex;
-  pointer-events: none;
-  color: var(--text-muted);
-}
-
 .eye {
   position: absolute;
   right: 8px;

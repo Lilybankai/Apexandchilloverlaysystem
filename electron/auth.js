@@ -36,13 +36,12 @@ const SUPABASE_URL = process.env.APEX_SUPABASE_URL || 'https://svtyxuhbsbbodsecb
 const SUPABASE_KEY =
   process.env.APEX_SUPABASE_KEY || 'sb_publishable_Q-0gsoTW_r-AzgKQ6NqNSQ_vGegMK8w';
 
-/** Sim options offered by the register screen; also the whitelist we persist. */
-const PRIMARY_SIMS = [
-  'rFactor 2 / LMU',
-  'Assetto Corsa EVO',
-  'iRacing',
-  'Automobilista 2',
-];
+/**
+ * Whitelist of sims we persist against a profile. LMU is the only sim the app
+ * reads telemetry from today, so the register screen no longer asks — anything
+ * not on this list falls back to the first entry.
+ */
+const PRIMARY_SIMS = ['rFactor 2 / LMU'];
 
 /** Refresh the access token this long before it actually expires. */
 const REFRESH_SKEW_SEC = 60;

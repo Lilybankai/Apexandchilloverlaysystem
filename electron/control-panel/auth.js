@@ -250,7 +250,6 @@ $('#register-form').addEventListener('submit', (evt) => {
       displayName: $('#rg-name').value.trim(),
       email: $('#rg-email').value.trim(),
       password: $('#rg-pw').value,
-      primarySim: $('#rg-sim').value,
       marketingOptIn: $('#rg-opt').checked,
     });
     if (!res.ok) {
@@ -359,16 +358,6 @@ async function boot() {
     return;
   }
   const state = await auth.getState();
-
-  // Sim options come from the main process so the list can't drift from the
-  // whitelist it validates against.
-  const select = $('#rg-sim');
-  for (const sim of state.primarySims || []) {
-    const option = document.createElement('option');
-    option.value = sim;
-    option.textContent = sim;
-    select.appendChild(option);
-  }
 
   if (state.lastEmail) $('#si-email').value = state.lastEmail;
 
