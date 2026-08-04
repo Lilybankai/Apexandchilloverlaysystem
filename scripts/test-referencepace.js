@@ -230,16 +230,38 @@ for (const [want, lengthM] of BAHRAIN_LAYOUTS) {
 }
 
 {
-  const r = referenceFor({
+  // Le Mans names itself: the full circuit is "Circuit de la Sarthe" and the
+  // other layout is "Circuit de la Sarthe Mulsanne" (observed 2026-08-04 in
+  // UserData/Log/Results, from layoutMulsanne.mas). The full name is a strict
+  // PREFIX of the Mulsanne's, so this is also the test that whole-name matching
+  // holds: a substring test would score every Mulsanne lap 15 s slow.
+  for (const [track, want] of [
+    ['Circuit de la Sarthe', 'lemans_full'],
+    ['Circuit de la Sarthe Mulsanne', 'lemans_straight'],
+  ]) {
+    const r = referenceFor({ track, trackLengthM: 13624, carClass: 'GT3' });
+    check(
+      `${track} resolves to ${want}`,
+      r.ok && r.score.layoutId === want && r.score.via === 'course',
+      r.ok ? `${r.score.layoutId} via ${r.score.via}` : r.reason,
+    );
+  }
+
+  // And where the course name and the scene name name DIFFERENT layouts, that
+  // is a disagreement, not a resolution. Le Mans is the circuit where this can
+  // really happen, because its venue name and its full circuit's course name
+  // are the same string — so a venue sent where a course was expected looks
+  // exactly like the full circuit.
+  const conflict = referenceFor({
     track: 'Circuit de la Sarthe',
     simTrackName: 'LeMans_NoChicane',
     trackLengthM: 13624,
     carClass: 'GT3',
   });
   check(
-    'the scene name resolves the Mulsanne without chicanes',
-    r.ok && r.score.layoutId === 'lemans_straight',
-    r.score && r.score.layoutId,
+    'a course name contradicted by the scene name refuses to score',
+    !conflict.ok && conflict.reason === 'ambiguous-layout',
+    conflict.ok ? `scored anyway as ${conflict.score.layoutName}` : conflict.reason,
   );
 }
 
@@ -554,13 +576,13 @@ console.log('\nScoring a lap from a board row');
     monza.ok ? `${monza.score.layoutName} via ${monza.score.via}` : monza.reason,
   );
 
-  // ...and where even the name cannot help, it still refuses. Le Mans's two
-  // layouts share a length AND, until one has been observed, everything else:
-  // the Mulsanne-without-chicanes course name is not in the table, so claiming
-  // this one for the full circuit would be the 16-second guess the whole
+  // ...and where even the name cannot help, it still refuses. Both Le Mans
+  // layouts are 13,626 m on paper, so length can never separate them: a row
+  // carrying the VENUE rather than either course name has nothing left to go
+  // on, and claiming the full circuit would be the 15-second guess the whole
   // resolver exists to avoid.
   const sarthe = scoreLap({
-    track: 'Circuit de la Sarthe',
+    track: 'Le Mans',
     trackLengthM: 13_624,
     carClass: 'GT3',
     lapMs: 231_000,

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.57.7 — 2026-08-04
+
+### Fixed
+
+- **Le Mans laps score now.** It was the last circuit that always came back
+  "these laps can't be scored against the reference", on the pace widget and on
+  the league board alike, and the reason was a missing fact rather than a bug:
+  Circuit de la Sarthe has two layouts, both 13,626 m on paper, and the overlay
+  had never been told what the second one calls itself. Every other way of
+  telling them apart had already failed — identical length, no layout published
+  over the timing feed — so it refused rather than guess, which was right. The
+  two are **15 seconds a lap apart in GT3**: a guess would not have been a
+  slightly-worse number, it would have been a confidently wrong one, and always
+  in the same direction.
+
+  A session was finally run on the other layout and settled it. The full circuit
+  reports itself as **"Circuit de la Sarthe"**; the one without the Mulsanne
+  chicanes reports **"Circuit de la Sarthe Mulsanne"**. Both are now recognised,
+  so a Le Mans lap scores against the layout it was actually set on. A lap of
+  4:11.469 that showed nothing before now reads 106.7% — and 114.1% is what it
+  would have read had the wrong layout been assumed.
+
+- **Two sources that disagree about the layout no longer pick a winner.** Le
+  Mans publishes the venue and the full circuit's course name as the *same*
+  string, so a lap arriving with the venue where a course name was expected is
+  indistinguishable from one genuinely on the full circuit. Where something else
+  on the same lap says otherwise, that is a disagreement rather than an answer,
+  and it now scores nothing instead of believing whichever was checked first.
+  Same habit as everywhere else here: say what the sim published, and say
+  nothing where it did not.
+
 ## 0.57.6 — 2026-08-04
 
 ### Fixed

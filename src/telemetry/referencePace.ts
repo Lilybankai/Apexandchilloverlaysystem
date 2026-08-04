@@ -341,12 +341,29 @@ export function resolveLayout(
   };
 
   const byCourse = uniqueCourse(opts.trackName) || uniqueCourse(opts.simTrackName);
-  if (byCourse) return { circuit, layout: byCourse, via: 'course' };
-
   const bySim = uniqueHit((l) => l.sim, opts.simTrackName);
-  if (bySim) return { circuit, layout: bySim, via: 'sim-name' };
-
   const byConfig = uniqueHit((l) => l.config, opts.trackConfig);
+
+  /*
+   * Two hints naming DIFFERENT layouts is not a resolution, it is a
+   * disagreement, and the safe answer is to score nothing.
+   *
+   * This is not hypothetical. Le Mans publishes the venue and the full
+   * circuit's course under the same string — `<TrackVenue>` and `<TrackCourse>`
+   * are both "Circuit de la Sarthe" — so a provider that sends the venue where
+   * we expect the course is indistinguishable from one that is genuinely on the
+   * full circuit. If something else present says otherwise (a scene name
+   * carrying `nochicane`, say), believing the course name over it would score a
+   * Mulsanne lap against the full circuit: 15 s, always in the same direction.
+   *
+   * A hint that is absent is not a disagreement — only two hints that both
+   * resolved, to different layouts, count.
+   */
+  const named = [byCourse, bySim, byConfig].filter((l): l is RefLayout => !!l);
+  if (named.length > 1 && named.some((l) => l.id !== named[0]!.id)) return null;
+
+  if (byCourse) return { circuit, layout: byCourse, via: 'course' };
+  if (bySim) return { circuit, layout: bySim, via: 'sim-name' };
   if (byConfig) return { circuit, layout: byConfig, via: 'config' };
 
   const measured = opts.trackLengthM || 0;

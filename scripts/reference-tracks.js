@@ -58,11 +58,16 @@
  *     same road — Spa's ELMS/Endurance variants, Imola's, Portimao's all share a
  *     centreline and a lap time, and the sheet carries one row for them too.
  *
- * **Le Mans is deliberately left without one.** Only `layoutLeMans` has been
- * observed ("Circuit de la Sarthe"); the Mulsanne-without-chicanes layout has
- * not, and it is 16 s a lap quicker. If it turns out to publish that same
- * string, claiming it here would score it as the full circuit — the exact
- * failure this whole file exists to avoid. Run a session on it and add it.
+ * **Le Mans was the last venue waiting on this, and now has it.** It was left
+ * without a `course` because only `layoutLeMans` had ever been observed, and
+ * claiming "Circuit de la Sarthe" for it would have scored the Mulsanne layout
+ * as the full circuit if the two shared a name — 15 s a lap, in a fixed
+ * direction. A session was finally run on the other one (2026-08-04) and they
+ * do not share a name: `layoutMulsanne.mas` publishes **"Circuit de la Sarthe
+ * Mulsanne"**. Both are enumerated now, so Le Mans scores.
+ *
+ * That pair is also the clearest example of why `course` is matched whole: the
+ * full circuit's name is a strict prefix of the Mulsanne's.
  *
  * ## About `lengthM`
  * These are the layouts' NOMINAL (published) lengths. The sim's measured spline
@@ -288,16 +293,27 @@ const CIRCUITS = [
         sheet: 'Circuit de la Sarthe',
         lengthM: 13626,
         primary: true,
+        course: ['Circuit de la Sarthe'],
         config: ['full', '24h', 'chicane'],
         sim: ['24h', 'full'],
       },
       {
-        // The Mulsanne without its chicanes: same centreline length, 16 s a lap
-        // quicker in GT3. The pair that most needs the shared-memory hint.
+        // The Mulsanne without its chicanes: 15 s a lap quicker in GT3, and the
+        // two layouts measure 13624 against 13561 — 63 m apart, well inside the
+        // 150 m the length hint needs, so the course name is the only thing that
+        // can separate them.
+        //
+        // Note the full circuit's name is a strict PREFIX of this one. That is
+        // the Fuji Speedway / Fuji Speedway Classic trap, and it is why `course`
+        // is matched whole rather than as a substring: squashed, these are
+        // `circuitdelasarthe` and `circuitdelasarthemulsanne`, which are simply
+        // different strings. A substring test would hand every Mulsanne lap to
+        // the full circuit's row, 15 s in a fixed direction.
         id: 'lemans_straight',
         name: 'Mulsanne (no chicanes)',
         sheet: 'Circuit de la Sarthe (straight)',
         lengthM: 13626,
+        course: ['Circuit de la Sarthe Mulsanne'],
         config: ['straight', 'mulsanne', 'no chicane'],
         sim: ['straight', 'mulsanne', 'nochicane'],
       },
