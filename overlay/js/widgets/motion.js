@@ -626,7 +626,7 @@
       setText(elRoll, "roll", signed(m.roll, 1) + "°");
     }
 
-    setText(headerMeta, "meta", Math.round(m.speedMs * 3.6) + " kph");
+    setText(headerMeta, "meta", ctx.fmt.speedFromMs(m.speedMs));
   }
 
   window.ApexOverlay.registerWidget("motion", {

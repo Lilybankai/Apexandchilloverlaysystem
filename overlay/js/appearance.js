@@ -279,6 +279,48 @@
   var modes = {};
   var modeListeners = [];
 
+  /* ------------------------------ speed units ----------------------------- */
+
+  /**
+   * 'kph' or 'mph'. Not a per-widget setting: speed is shown by the inputs
+   * panels and by the motion widget, and a driver reading 168 on one and 104 on
+   * the other would be right to think something was broken. One preference,
+   * every readout, so they can only ever agree.
+   */
+  var speedUnit = "kph";
+  var speedUnitListeners = [];
+
+  function applySpeedUnit(next) {
+    var unit = next === "mph" ? "mph" : next === "kph" ? "kph" : null;
+    if (!unit || unit === speedUnit) return;
+    speedUnit = unit;
+    for (var i = 0; i < speedUnitListeners.length; i++) {
+      try {
+        speedUnitListeners[i](speedUnit);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
+  // `?units=mph` pins one OBS source, like every other override here: a source
+  // built for an American broadcast should not flip because the driver prefers
+  // kph on their own screen.
+  var unitPinned = false;
+  (function () {
+    try {
+      var raw = (new URLSearchParams(window.location.search).get("units") || "")
+        .trim()
+        .toLowerCase();
+      if (raw === "mph" || raw === "kph") {
+        speedUnit = raw;
+        unitPinned = true;
+      }
+    } catch (e) {
+      /* no URLSearchParams / no location — keep the default */
+    }
+  })();
+
   /* ----------------------- standings composition -------------------------- */
 
   /**
@@ -369,6 +411,14 @@
     onStandings: function (cb) {
       standingsListeners.push(cb);
       if (standings) cb(standings);
+    },
+    /** Current speed unit, and a subscription to it changing. */
+    speedUnit: function () {
+      return speedUnit;
+    },
+    onSpeedUnit: function (cb) {
+      speedUnitListeners.push(cb);
+      cb(speedUnit);
     },
     /**
      * Subscribe to the radar's icon size (percent). Called immediately IF a value
@@ -472,6 +522,7 @@
       if (!audioPinned) applyAudio(appearance);
       applyModes(appearance.widgetModes);
       applyStandings(appearance.standings);
+      if (!unitPinned) applySpeedUnit(appearance.speedUnit);
     });
     return; // the app pushes changes — nothing to poll
   }
@@ -495,6 +546,7 @@
         if (!audioPinned) applyAudio(cfg);
         applyModes(cfg.widgetModes);
         applyStandings(cfg.standings);
+        if (!unitPinned) applySpeedUnit(cfg.speedUnit);
       })
       .catch(function () {
         // Served from somewhere without the route (or the server is down):

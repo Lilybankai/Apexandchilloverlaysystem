@@ -950,6 +950,22 @@
               <h2 class="card__title"><svg class="icon"><use href="#i-palette" /></svg>Appearance</h2>
             </div>
             <div class="settings-grid">
+              <!-- App-wide, not per widget: both inputs panels and the motion
+                   widget show speed, and two of them disagreeing would read as
+                   a bug rather than a preference. -->
+              <label class="field">
+                <span class="field__label">Speed units</span>
+                <select class="field__input field__input--wide" id="speed-unit">
+                  <option value="kph">km/h — the sim's own</option>
+                  <option value="mph">mph</option>
+                </select>
+                <span class="field__hint">
+                  Applies to every speed the overlays show — both
+                  <strong>Inputs</strong> panels and <strong>Motion</strong> —
+                  live, with no restart.
+                </span>
+              </label>
+
               <label class="field">
                 <span class="field__label">Widget background</span>
                 <div class="rate-row">

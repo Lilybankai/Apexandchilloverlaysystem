@@ -30,6 +30,7 @@
   const radarIconsRange = $('#radar-icons-range');
   const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
+  const speedUnit = $('#speed-unit');
   const audioToggle = $('#audio-toggle');
   const audioRange = $('#audio-range');
   const audioEcho = $('#audio-echo');
@@ -183,6 +184,7 @@
     radarIconsRange.value = settings.radarIconScale;
     radarIconsEcho.textContent = settings.radarIconScale;
     glowToggle.checked = settings.changeGlow !== false;
+    if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
     audioEcho.textContent = settings.audioVolume;
@@ -1890,6 +1892,16 @@
   glowToggle.addEventListener('change', async () => {
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
   });
+
+  // Speed units ride the appearance channel, so every readout in every widget
+  // and every OBS source retunes without a restart.
+  if (speedUnit) {
+    speedUnit.addEventListener('change', async () => {
+      await window.apex.updateSettings({
+        speedUnit: speedUnit.value === 'mph' ? 'mph' : 'kph',
+      });
+    });
+  }
 
   // --- Audio cues ----------------------------------------------------------
 

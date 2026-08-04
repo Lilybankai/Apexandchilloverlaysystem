@@ -228,6 +228,14 @@ function defaultSettings() {
     // widget has to stay solid differs by driver and by session.
     widgetOpacity: {},
     /*
+     * Speed readouts: 'kph' (the sim's own unit) or 'mph'.
+     *
+     * App-wide rather than per widget, because three widgets show speed — both
+     * inputs panels and motion — and a driver reading 168 on one and 104 on the
+     * other would be right to think something was broken.
+     */
+    speedUnit: 'kph',
+    /*
      * How much of the field the standings tower shows.
      *
      * A whole grid is 20-30 rows, which is right for a broadcast and far too
@@ -434,6 +442,7 @@ function loadSettings() {
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     widgetOpacity: normalizeWidgetOpacity(stored),
+    speedUnit: stored.speedUnit === 'mph' ? 'mph' : defaults.speedUnit,
     standings: normalizeStandings(stored),
     wheelBindings: normalizeWheelBindings(stored),
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
@@ -963,6 +972,7 @@ function applyAppearance(settings) {
     widgetModes: s.widgetModes || {},
     widgetOpacity: s.widgetOpacity || {},
     standings: s.standings || defaultSettings().standings,
+    speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
   };
   try {
     requireServer().setAppearance(payload);
@@ -1002,7 +1012,8 @@ function applySettings(partial) {
     (partial.panelOpacity !== undefined && partial.panelOpacity !== current.panelOpacity) ||
     partial.widgetModes !== undefined ||
     partial.widgetOpacity !== undefined ||
-    partial.standings !== undefined
+    partial.standings !== undefined ||
+    partial.speedUnit !== undefined
   ) {
     applyAppearance(next);
   }
@@ -1569,6 +1580,9 @@ function registerIpc() {
           standings: { ...current.standings, ...partial.standings },
         });
       }
+      if (partial.speedUnit === 'kph' || partial.speedUnit === 'mph') {
+        next.speedUnit = partial.speedUnit;
+      }
       if (partial.radarIconScale !== undefined) {
         next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
       }
@@ -1610,7 +1624,8 @@ function registerIpc() {
       next.audioCues !== current.audioCues ||
       next.audioVolume !== current.audioVolume ||
       JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity) ||
-      JSON.stringify(next.standings) !== JSON.stringify(current.standings)
+      JSON.stringify(next.standings) !== JSON.stringify(current.standings) ||
+      next.speedUnit !== current.speedUnit
     ) {
       applyAppearance(next);
     }

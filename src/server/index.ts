@@ -153,6 +153,14 @@ export interface Appearance {
    * (URL override -> in-game push -> 1 s poll for OBS) is already solved.
    */
   standings: StandingsView;
+  /**
+   * Unit for every speed readout: `'kph'` (the sim's own) or `'mph'`.
+   *
+   * App-wide rather than per widget. Three widgets show speed — both inputs
+   * panels and motion — and a driver reading 168 on one and 104 on the other
+   * would be right to think something was broken.
+   */
+  speedUnit: 'kph' | 'mph';
 }
 
 /** @see Appearance.standings */
@@ -184,6 +192,7 @@ const appearance: Appearance = {
   widgetModes: {},
   widgetOpacity: {},
   standings: { limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3 },
+  speedUnit: 'kph',
 };
 
 /** Current appearance (a deep-enough copy — callers must not mutate the state). */
@@ -243,6 +252,9 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   }
   // Merged field by field, so a caller sending one number does not silently
   // reset the other four to whatever its own defaults happen to be.
+  if (next?.speedUnit === 'kph' || next?.speedUnit === 'mph') {
+    appearance.speedUnit = next.speedUnit;
+  }
   if (next?.standings && typeof next.standings === 'object') {
     const v = next.standings as Partial<StandingsView>;
     const count = (n: unknown, fallback: number): number => {

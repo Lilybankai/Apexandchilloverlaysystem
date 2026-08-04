@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.57.2 — 2026-08-04
+
+### Added
+
+- **Speed in mph, if that is how you read it.** Suggested by a beta tester.
+  **Settings → Appearance → Speed units** switches every speed the overlays show
+  between km/h and mph, live, with no restart.
+
+  It is one setting rather than one per widget on purpose. Three widgets show
+  speed — both **Inputs** panels and **Motion** — and the failure worth
+  preventing is not the wrong unit, it is two panels disagreeing: 168 on one and
+  104 on the next, which reads as a broken overlay rather than a preference. The
+  conversion now happens in one place for all three.
+
+  An OBS source can pin its own with `?units=mph`, so a source built for one
+  audience does not change because the driver prefers the other on their own
+  screen.
+
 ## 0.57.1 — 2026-08-04
 
 ### Added

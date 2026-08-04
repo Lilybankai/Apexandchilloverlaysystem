@@ -100,8 +100,53 @@
     return String(g);
   }
 
+  /* ------------------------------ speed units ------------------------------ */
+
+  /**
+   * The sim reports speed in km/h; some drivers read mph. The conversion lives
+   * here, once, because THREE widgets show speed (both inputs panels and
+   * motion) and a driver seeing 168 on one and 104 on the other would be right
+   * to think something was broken.
+   *
+   * The unit arrives on the appearance channel, so changing it retunes every
+   * readout live — no reload, no restart, and an OBS source can pin its own
+   * with `?units=mph`.
+   */
+  var speedUnit = "kph";
+  if (window.ApexAppearance && window.ApexAppearance.onSpeedUnit) {
+    window.ApexAppearance.onSpeedUnit(function (unit) {
+      // appearance.js already rejects anything that is not one of the two, but
+      // this is the last step before the number reaches a panel: a unit that
+      // got through would be printed verbatim next to a real speed.
+      if (unit === "kph" || unit === "mph") speedUnit = unit;
+    });
+  }
+
+  /** 1 mile = 1.609344 km, exactly. */
+  var KPH_PER_MPH = 1.609344;
+
+  /**
+   * A speed in km/h as the driver's chosen unit, with the unit on it:
+   * `168` -> `"168 kph"` or `"104 mph"`. Rounded, because a tenth of a mph is
+   * noise at a glance and this sits in a panel header.
+   */
+  function speed(kph) {
+    // The em dash keeps the unit beside it: a header that reads "— kph" says
+    // what it will be showing, which "—" alone does not.
+    if (!has(kph)) return "— " + speedUnit;
+    var v = speedUnit === "mph" ? kph / KPH_PER_MPH : kph;
+    return Math.round(v) + " " + speedUnit;
+  }
+
+  /** The same conversion for a value already in m/s (the motion widget's). */
+  function speedFromMs(ms) {
+    return has(ms) ? speed(ms * 3.6) : "— " + speedUnit;
+  }
+
   var fmt = {
     UNKNOWN: UNKNOWN,
+    speed: speed,
+    speedFromMs: speedFromMs,
     has: has,
     lapTime: lapTime,
     gap: gap,

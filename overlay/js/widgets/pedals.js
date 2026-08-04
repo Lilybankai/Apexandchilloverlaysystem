@@ -400,8 +400,9 @@
     // Header: gear + speed.
     if (headerGear) {
       var g = fmt.gearLabel(p.gear);
-      var spd = fmt.has(p.speedKph) ? Math.round(p.speedKph) : "—";
-      var text = g + " · " + spd + " kph";
+      // fmt.speed carries the driver's chosen unit (see client.js) — the same
+      // one the motion widget uses, so two panels can never disagree.
+      var text = g + " · " + fmt.speed(p.speedKph);
       if (cache.gear !== text) { cache.gear = text; headerGear.textContent = text; }
     }
   }

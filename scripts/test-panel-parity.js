@@ -71,6 +71,12 @@ const PANEL_CONTRACT = {
   'update-status': 'span',
   'update-check': 'button',
 
+  // Speed units (v0.57.2) — one app-wide preference behind three widgets'
+  // speed readouts. Contracted because a control that silently stops writing
+  // leaves the overlays showing kph to someone who set mph, which reads as the
+  // conversion being broken rather than the setting being unwired.
+  'speed-unit': 'select',
+
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop
   // working there is no second chance to notice, and the driver is left with a
