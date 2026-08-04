@@ -56,6 +56,22 @@ const PANEL_CONTRACT = {
   'update-banner': 'div',
   'update-text': 'span',
   'update-action': 'button',
+  // What the pending update contains, before installing it.
+  'update-notes': 'button',
+
+  // What's new — the release-notes sheet (v0.56.0). Contracted because it is
+  // shown automatically exactly once per update: if the close controls stop
+  // working there is no second chance to notice, and the driver is left with a
+  // modal they cannot dismiss.
+  whatsnew: 'div',
+  'whatsnew-scrim': 'div',
+  'whatsnew-title': 'h2',
+  'whatsnew-sub': 'p',
+  'whatsnew-body': 'div',
+  'whatsnew-close': 'button',
+  'whatsnew-done': 'button',
+  'whatsnew-all': 'a',
+  'whatsnew-open': 'button',
 
   // Dashboard stat tiles. v0.24.0 swapped these from SERVER stats (feed, port,
   // update rate) to the driver stats the design system's Dashboard specifies;
@@ -93,6 +109,8 @@ const PANEL_CONTRACT = {
   'board-count': 'span',
   'board-list': 'ul',
   'board-empty': 'p',
+  // Why a board's rows are not clickable, when the reference cannot score them.
+  'board-refnote': 'p',
 
   // The kit's RankBar, twice — Dashboard (`rank-*`) and Leaderboard (`lb-*`).
   // Contracted separately because they are the same component at two ids, and
@@ -106,6 +124,8 @@ const PANEL_CONTRACT = {
   'rank-dot': 'span',
   'rank-note': 'p',
   'lb-rank': 'section',
+  // Renamed after the driver selected on the board — "Your pace" by default.
+  'lb-rank-title': 'h2',
   'lb-pct': 'span',
   'lb-band': 'span',
   'lb-rank-name': 'span',

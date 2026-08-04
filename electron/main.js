@@ -34,6 +34,7 @@ const fs = require('node:fs');
 const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
+const changelog = require('./changelog');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
@@ -219,6 +220,10 @@ function defaultSettings() {
     // Last address that signed in, purely to prefill the sign-in field. Never a
     // credential — tokens live in session.json, handled by electron/auth.js.
     lastAuthEmail: '',
+    // The version whose release notes this driver has actually read. Empty on a
+    // fresh install, which is the difference between "new here" (say nothing)
+    // and "just updated" (show what changed) — see setupChangelogIpc.
+    lastSeenVersion: '',
   };
 }
 
@@ -379,6 +384,10 @@ function loadSettings() {
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
       typeof stored.lastAuthEmail === 'string' ? stored.lastAuthEmail : defaults.lastAuthEmail,
+    lastSeenVersion:
+      typeof stored.lastSeenVersion === 'string'
+        ? stored.lastSeenVersion
+        : defaults.lastSeenVersion,
   };
 }
 
@@ -1204,6 +1213,64 @@ function toggleIngameInteract() {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Pace scoring                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Score one lap against the reference table and shape it for the renderer.
+ *
+ * Extracted because three surfaces now score laps — the Leaderboard's own-bests
+ * list, the Dashboard's week bests, and a clicked row on a league board — and
+ * they must agree to the decimal. A second copy of this shaping would be a
+ * second definition of what "103.2%" means, which is the kind of drift nobody
+ * notices until two cards on the same screen disagree.
+ *
+ * `input` carries whatever layout hints the caller has. A board row has only
+ * the track's name and length; a local lap also knows the sim's scene name and
+ * the declared config. Fewer hints is not an error — it just makes an ambiguous
+ * layout more likely, and `scoreLap` says so rather than guessing.
+ */
+function paceRowFor(ref, input) {
+  const row = {
+    track: input.track,
+    carClass: input.carClass,
+    car: input.car,
+    lapMs: input.lapMs,
+  };
+  const scored = ref.scoreLap({
+    track: input.track,
+    trackConfig: input.trackConfig,
+    simTrackName: input.simTrackName,
+    trackLengthM: input.trackLengthM,
+    carClass: input.carClass,
+    car: input.car,
+    lapMs: input.lapMs,
+  });
+  if (!scored.ok || !scored.score) {
+    return { ...row, ok: false, reason: scored.reason, detail: scored.detail };
+  }
+  return {
+    ...row,
+    ok: true,
+    percent: scored.score.percent,
+    bandId: scored.score.bandId,
+    bandLabel: scored.score.bandLabel,
+    refMs: scored.score.refMs,
+    layoutName: scored.score.layoutName,
+    // The circuit as the reference table names it, which is not always what the
+    // sim called it — and a layout on its own ("Grand Prix") says nothing
+    // without the venue in front of it.
+    circuitName: scored.score.circuitName,
+    // How the layout was identified. `'only'` means the circuit has just one
+    // layout in the table, which is what lets the UI drop a meaningless
+    // "· Grand Prix" from a single-layout venue.
+    via: scored.score.via,
+    sheetClass: scored.score.sheetClass,
+    assumed: scored.score.assumed,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /*  IPC — the safe API the control panel calls (see preload.js)               */
 /* -------------------------------------------------------------------------- */
 
@@ -1512,9 +1579,8 @@ function registerIpc() {
       // All-time bests, not this week's: a personal best does not expire on
       // Sunday the way the rolling lap count does.
       const plan = lapLog.buildUploadPlan();
-      const rows = [];
-      for (const best of plan.bests) {
-        const scored = ref.scoreLap({
+      const rows = plan.bests.map((best) =>
+        paceRowFor(ref, {
           track: best.trackName,
           trackConfig: best.trackConfig,
           simTrackName: best.simTrackName,
@@ -1522,34 +1588,8 @@ function registerIpc() {
           carClass: best.carClass,
           car: best.car,
           lapMs: best.lapMs,
-        });
-        rows.push({
-          track: best.trackName,
-          carClass: best.carClass,
-          car: best.car,
-          lapMs: best.lapMs,
-          ok: !!scored.ok,
-          ...(scored.ok && scored.score
-            ? {
-                percent: scored.score.percent,
-                bandId: scored.score.bandId,
-                bandLabel: scored.score.bandLabel,
-                refMs: scored.score.refMs,
-                layoutName: scored.score.layoutName,
-                // The circuit as the reference table names it, which is not
-                // always what the sim called it — and a layout on its own
-                // ("Grand Prix") says nothing without the venue in front of it.
-                circuitName: scored.score.circuitName,
-                // How the layout was identified. `'only'` means the circuit has
-                // just one layout in the table, which is what lets the UI drop
-                // a meaningless "· Grand Prix" from a single-layout venue.
-                via: scored.score.via,
-                sheetClass: scored.score.sheetClass,
-                assumed: scored.score.assumed,
-              }
-            : { reason: scored.reason, detail: scored.detail }),
-        });
-      }
+        }),
+      );
       // Best first — the tile shows the single strongest result, and a driver
       // reading the list wants their high-water mark at the top.
       const scored = rows.filter((r) => r.ok).sort((a, b) => a.percent - b.percent);
@@ -1563,6 +1603,45 @@ function registerIpc() {
     } catch (err) {
       console.error('[app] pace scores unavailable:', err.message);
       return { rows: [], best: null, credit: null, sheetUpdated: '' };
+    }
+  });
+
+  /**
+   * Score an arbitrary set of laps — the same scoring as `laps:pace`, but for
+   * laps the caller already has rather than for the driver's own bests.
+   *
+   * Two callers, and neither could use `laps:pace`:
+   *   - the Dashboard's "best clean laps this week", which are THIS WEEK's
+   *     times. `laps:pace` reads all-time bests, so scoring a week row through
+   *     it would quietly show a faster lap than the one on the screen.
+   *   - a row clicked on a league board, which is another driver's lap and is
+   *     not in the local files at all.
+   *
+   * Scoring is pure and local — a table lookup and a division — so a batch of a
+   * full board costs less than the round trip that asked for it. Capped anyway:
+   * the renderer is trusted, but a channel that will loop over whatever array it
+   * is handed is a bad shape to leave lying around.
+   */
+  ipcMain.handle('laps:score', (_evt, laps) => {
+    if (!Array.isArray(laps) || !laps.length) return [];
+    try {
+      const ref = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
+      return laps.slice(0, 250).map((lap) =>
+        paceRowFor(ref, {
+          track: String((lap && lap.track) || ''),
+          trackConfig: lap && lap.trackConfig ? String(lap.trackConfig) : undefined,
+          simTrackName: lap && lap.simTrackName ? String(lap.simTrackName) : undefined,
+          trackLengthM: Number((lap && lap.trackLengthM) || 0),
+          carClass: String((lap && lap.carClass) || ''),
+          car: String((lap && lap.car) || ''),
+          lapMs: Number((lap && lap.lapMs) || 0),
+        }),
+      );
+    } catch (err) {
+      // Same degradation as the pace card: an unbuilt `dist/` costs the scores,
+      // not the screen. The renderer leaves those rows unscored and inert.
+      console.error('[app] lap scoring unavailable:', err.message);
+      return [];
     }
   });
 
@@ -1973,10 +2052,110 @@ function registerIpc() {
   });
 
   ipcMain.handle('overlay:openInBrowser', (_evt, url) => {
-    if (typeof url === 'string' && /^https?:\/\/127\.0\.0\.1:/.test(url)) {
+    if (typeof url === 'string' && (isLocalOverlayUrl(url) || isAllowedExternal(url))) {
       void shell.openExternal(url);
     }
     return true;
+  });
+}
+
+/** An overlay page served by our own server — the original reason this exists. */
+function isLocalOverlayUrl(url) {
+  return /^https?:\/\/127\.0\.0\.1:/.test(url);
+}
+
+/**
+ * The handful of outside sites the panel itself links to: the project's own
+ * releases page (What's New), and the credits/attribution links. An allowlist
+ * rather than "any https" because the release notes are rendered with clickable
+ * links, and a renderer that can hand ANY address to the system browser is a
+ * bigger surface than this app needs. HTTPS only, exact hosts only — no
+ * subdomain wildcards, so `github.com.evil.tld` cannot match.
+ */
+const EXTERNAL_HOSTS = new Set([
+  'github.com',
+  'www.youtube.com',
+  'youtube.com',
+  'docs.google.com',
+  'discord.gg',
+]);
+
+function isAllowedExternal(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && EXTERNAL_HOSTS.has(u.hostname);
+  } catch {
+    return false; // not a URL at all
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  What's new (release notes from the bundled CHANGELOG.md)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The release notes the panel draws. Read from the CHANGELOG.md shipped inside
+ * the package (see `build.files`), so an updated app can say what changed
+ * before it has spoken to the network — and can never show notes that differ
+ * from the release it is actually running.
+ */
+function setupChangelogIpc() {
+  /** Every parsed entry, newest first. Empty if the file is missing. */
+  const entries = () => changelog.loadEntries(app.getAppPath());
+
+  // The whole history, for the "release notes" view opened from the version in
+  // the footer. Capped: the file goes back to 0.4.0 and nobody scrolls that
+  // far, but the cap is generous enough that a driver who skipped a month
+  // still sees everything they missed.
+  ipcMain.handle('changelog:history', () => ({
+    current: app.getVersion(),
+    entries: entries().slice(0, 40),
+  }));
+
+  /**
+   * What to show on launch. Three cases, and the difference matters:
+   *   - no version recorded → a fresh install. Say nothing (there is no "new"
+   *     for someone who has never run an older build) and remember where we
+   *     came in, so the NEXT update does have something to compare against.
+   *   - recorded version older than this one → just updated. Return every entry
+   *     in between, so skipping two releases still shows both.
+   *   - anything else (same version, or a downgrade) → nothing to say.
+   */
+  ipcMain.handle('changelog:pending', () => {
+    const current = app.getVersion();
+    const settings = loadSettings();
+    const seen = settings.lastSeenVersion;
+
+    if (!seen) {
+      saveSettings({ ...settings, lastSeenVersion: current });
+      return { show: false, current, from: '', entries: [] };
+    }
+    if (changelog.compareVersions(seen, current) >= 0) {
+      return { show: false, current, from: seen, entries: [] };
+    }
+
+    const missed = changelog.entriesSince(entries(), seen, current);
+    // An update whose notes we cannot read (older CHANGELOG, hand-edited file)
+    // shows nothing rather than an empty box; the version is recorded anyway so
+    // it does not ask again on every launch.
+    if (!missed.length) {
+      saveSettings({ ...settings, lastSeenVersion: current });
+      return { show: false, current, from: seen, entries: [] };
+    }
+    return { show: true, current, from: seen, entries: missed };
+  });
+
+  /**
+   * Called when the driver closes the What's New panel — not when it opens, so
+   * a crash or a force-quit mid-read means they get another chance to read it.
+   */
+  ipcMain.handle('changelog:markSeen', () => {
+    const settings = loadSettings();
+    const current = app.getVersion();
+    if (settings.lastSeenVersion !== current) {
+      saveSettings({ ...settings, lastSeenVersion: current });
+    }
+    return { current };
   });
 }
 
@@ -1990,7 +2169,42 @@ const updateState = {
   version: null,
   percent: 0,
   error: null,
+  // Release notes for the version being offered, as plain text. They come from
+  // the GitHub release body (which `npm run release` fills from this same
+  // CHANGELOG), so the banner can say what the update contains BEFORE it is
+  // installed. Null when the feed carried none.
+  notes: null,
 };
+
+/**
+ * electron-updater hands release notes over as the GitHub release body, which
+ * arrives as HTML (and, with `fullChangelog`, as an array of releases). It is
+ * remote text, so it is flattened to plain paragraphs here and drawn with
+ * textContent in the renderer — no markup from the network ever reaches the
+ * panel's DOM.
+ */
+function plainReleaseNotes(raw) {
+  const parts = Array.isArray(raw)
+    ? raw.map((r) => (r && typeof r === 'object' ? r.note : r))
+    : [raw];
+  const text = parts
+    .filter((p) => typeof p === 'string' && p.trim())
+    .join('\n')
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<\/(p|div|li|h\d|tr)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text ? text.slice(0, 8000) : null;
+}
 
 function pushUpdate() {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2026,6 +2240,7 @@ function setupAutoUpdate() {
   autoUpdater.on('update-available', (info) => {
     updateState.status = 'available';
     updateState.version = info && info.version ? info.version : null;
+    updateState.notes = plainReleaseNotes(info && info.releaseNotes);
     pushUpdate();
   });
   autoUpdater.on('update-not-available', () => {
@@ -2040,6 +2255,7 @@ function setupAutoUpdate() {
   autoUpdater.on('update-downloaded', (info) => {
     updateState.status = 'ready';
     updateState.version = info && info.version ? info.version : updateState.version;
+    updateState.notes = plainReleaseNotes(info && info.releaseNotes) || updateState.notes;
     pushUpdate();
   });
   autoUpdater.on('error', (err) => {
@@ -2222,6 +2438,7 @@ app.whenReady().then(async () => {
     })
     .catch((err) => console.error('[auth] restore failed:', err.message));
 
+  setupChangelogIpc();
   setupAutoUpdate();
   pruneRemovedBindings();
   applyBindings(loadSettings());

@@ -375,6 +375,97 @@ console.log('\nCoverage of the shipped table');
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Scoring a lap off a league board                                          */
+/* -------------------------------------------------------------------------- */
+/*
+ * Clicking a row on a league board scores that driver's lap against the same
+ * reference — and a board row carries no track metadata at all. The RPC returns
+ * a ranking (name, car, lap, gap), not the laps' identity, so the ONLY layout
+ * hint available is the one hiding in the board's `track_id`: every lap is
+ * stored under `${slug(name)}_${metres}`, so the metres can be read back out.
+ *
+ * That inference is the whole reason a board row can be scored, and it is
+ * invisible from either end — the panel parses a string the lap log wrote. If
+ * `trackKeyOf` ever changes shape, the panel does not break loudly; it quietly
+ * stops resolving layouts and every board goes unscored. Hence these.
+ */
+
+console.log('\nScoring a lap from a board row');
+
+{
+  const { trackKeyOf } = require('../dist/telemetry/paceDelta');
+
+  /** The panel's own parse, kept here in the shape control-panel.js uses it. */
+  const lengthFromTrackId = (id) => {
+    const m = /_(\d+)$/.exec(String(id || ''));
+    return m ? Number(m[1]) : 0;
+  };
+
+  // Round trip: whatever the lap log wrote, the panel reads the metres back.
+  const key = trackKeyOf('Circuit de Spa-Francorchamps', 7004);
+  check('track id round-trips its length', lengthFromTrackId(key) === 7004, `${key} → 7004`);
+
+  // A track recorded before the length was known stores `_0`, which is no hint
+  // rather than a hint of zero metres — the scorer must treat it as absent.
+  check('an unknown length reads as 0', lengthFromTrackId(trackKeyOf('Fuji Speedway', 0)) === 0);
+
+  // The case this exists for. Paul Ricard has five layouts and a board row knows
+  // none of them by name; 3A is 1.4 km shorter than the next one, so the length
+  // recovered from the track id is enough on its own.
+  const ricard = scoreLap({
+    track: 'Circuit Paul Ricard',
+    trackLengthM: lengthFromTrackId(trackKeyOf('Circuit Paul Ricard', 3793)),
+    carClass: 'GT3',
+    lapMs: 105_000,
+  });
+  check(
+    'a board row resolves its layout by length alone',
+    ricard.ok && ricard.score.via === 'length' && ricard.score.layoutName.includes('3A'),
+    ricard.ok
+      ? `${ricard.score.layoutName} via ${ricard.score.via}`
+      : `${ricard.reason}: ${ricard.detail}`,
+  );
+
+  // And where length cannot help at all. Monza's two layouts are ~10 s apart in
+  // pace and IDENTICAL in recorded length, so the one hint a board row has is
+  // worthless here — no scene name, no config, and a measurement that fits both.
+  // It must go unscored rather than pick a side: a percentage against the wrong
+  // Monza is worse than no percentage, because it looks like an answer.
+  const monza = scoreLap({
+    track: 'Autodromo Nazionale Monza',
+    trackLengthM: lengthFromTrackId(trackKeyOf('Autodromo Nazionale Monza', 5793)),
+    carClass: 'GT3',
+    lapMs: 105_000,
+  });
+  check(
+    'an unresolvable board row refuses to score',
+    !monza.ok && monza.reason === 'ambiguous-layout',
+    monza.ok ? `scored anyway as ${monza.score.layoutName}` : monza.reason,
+  );
+
+  // Another driver's lap is scored by exactly the same rule as your own: same
+  // track, same class, same time must give the same number, or the Leaderboard
+  // card would contradict the Dashboard for a lap they both hold.
+  const mine = scoreLap({
+    track: 'Circuit de Spa-Francorchamps',
+    trackLengthM: 7004,
+    carClass: 'GT3',
+    lapMs: 140_000,
+  });
+  const theirs = scoreLap({
+    track: 'Circuit de Spa-Francorchamps',
+    trackLengthM: lengthFromTrackId(trackKeyOf('Circuit de Spa-Francorchamps', 7004)),
+    carClass: 'GT3',
+    lapMs: 140_000,
+  });
+  check(
+    'a board lap and a local lap score identically',
+    mine.ok && theirs.ok && mine.score.percent === theirs.score.percent,
+    mine.ok && theirs.ok ? `${mine.score.percent}% both` : 'one of them failed to score',
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

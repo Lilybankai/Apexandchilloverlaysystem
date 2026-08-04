@@ -128,14 +128,32 @@ write only their own row.
 The app checks GitHub Releases on launch (via `electron-updater`). When a newer
 version is published, a banner appears in the control panel: **Download &
 install** fetches it, then **Restart & update** applies it. Updates are never
-auto-installed, so a live stream is not interrupted.
+auto-installed, so a live stream is not interrupted. When the release carries
+notes, the banner also offers **What's new**, so the decision to restart
+mid-session is an informed one.
+
+The first launch on a new build opens **What's new**: every release between the
+build that was last opened and this one, read from the `CHANGELOG.md` packaged
+inside the app (so it needs no network and cannot disagree with the version
+running). The version in the footer re-opens it at any time.
 
 To publish a new version:
 
 ```bash
-# bump "version" in package.json, then:
+# 1. Write the release notes FIRST — a new section at the top of CHANGELOG.md:
+#      ## 0.57.0 — 2026-08-10
+#      ### Added / Changed / Fixed / Removed
+#      - **Headline in bold.** What changed, and why it matters to a driver.
+# 2. Bump "version" in package.json to match, then:
 GH_TOKEN=$(gh auth token) npm run release   # builds + uploads to GitHub Releases
 ```
+
+`npm run release` will not start unless `CHANGELOG.md` has a dated, non-stub
+section for the version in `package.json` — that check is `npm run
+changelog:check`, and it runs automatically as npm's `prerelease` hook. The same
+section becomes the GitHub release body (`scripts/release-notes.js` →
+`build/release-notes.md` → electron-builder's `releaseInfo`), so the release page
+no longer needs a hand-written `gh release edit --notes-file` afterwards.
 
 Existing installs (v0.4.0+) will offer the update automatically. Note: builds are
 unsigned, so Windows SmartScreen shows an "unknown publisher" prompt on first

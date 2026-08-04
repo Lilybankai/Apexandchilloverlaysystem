@@ -13,10 +13,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "app": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
-    "app:dist": "npm run build && npm run oauth:bake && electron-builder --win && npm run oauth:verify",
+    "app:dist": "npm run build && npm run oauth:bake && npm run release:notes && electron-builder --win && npm run oauth:verify",
     "oauth:bake": "node scripts/write-oauth-client.js",
     "oauth:verify": "node scripts/verify-oauth-baked.js",
-    "release": "npm run build && npm run oauth:bake && electron-builder --win && npm run oauth:verify && electron-builder --win --publish always",
+    "prerelease": "node scripts/check-changelog.js",
+    "release": "npm run build && npm run oauth:bake && npm run release:notes && electron-builder --win && npm run oauth:verify && electron-builder --win --publish always",
+    "release:notes": "node scripts/release-notes.js",
+    "changelog:check": "node scripts/check-changelog.js",
     "icons": "node scripts/make-icons.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\"",
     "test:delta": "node scripts/test-pacedelta.js",
@@ -24,7 +27,7 @@
     "test:multiclass": "node scripts/test-multiclass.js",
     "test:motion": "node scripts/test-motion.js",
     "test:chassis": "node scripts/test-chassis.js",
-    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:tyres && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:trackmap && npm run test:tracelimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:refpace && npm run test:lmubinder && npm run test:panel-parity && npm run test:session-headline && npm run test:carclass-ui && npm run test:chat",
+    "test": "npm run build && npm run test:delta && npm run test:fuel && npm run test:multiclass && npm run test:motion && npm run test:chassis && npm run test:tyres && npm run test:damage && npm run test:radar && npm run test:pitcursor && npm run test:tracklimits && npm run test:trackmap && npm run test:tracelimits && npm run test:mfd && npm run test:auth && npm run test:laplog && npm run test:lapupload && npm run test:refpace && npm run test:lmubinder && npm run test:changelog && npm run test:panel-parity && npm run test:session-headline && npm run test:carclass-ui && npm run test:chat && npm run test:triggers",
     "test:auth": "node scripts/test-auth.js",
     "test:laplog": "node scripts/test-laplog.js",
     "test:lapupload": "node scripts/test-lapupload.js",
@@ -37,9 +40,12 @@
     "test:session-headline": "node scripts/test-session-headline.js",
     "test:carclass-ui": "node scripts/test-carclass-ui.js",
     "test:tyres": "node scripts/test-tyres.js",
+    "test:changelog": "node scripts/test-changelog.js",
     "test:chat": "node scripts/test-chat.js",
     "test:trackmap": "node scripts/test-trackmap.js",
     "test:tracklimits": "node scripts/test-tracklimits.js",
+    "test:triggers": "node scripts/test-triggers.js",
+    "record": "node scripts/record-session.js",
     "test:tracelimits": "node scripts/test-tracelimits.js",
     "test:lmubinder": "node scripts/test-lmubinder.js",
     "reference-times": "node scripts/fetch-reference-times.js",
@@ -88,11 +94,15 @@
     "directories": {
       "output": "release"
     },
+    "releaseInfo": {
+      "releaseNotesFile": "build/release-notes.md"
+    },
     "files": [
       "electron/**/*",
       "dist/**/*",
       "overlay/**/*",
-      "package.json"
+      "package.json",
+      "CHANGELOG.md"
     ],
     "asarUnpack": [
       "**/node_modules/koffi/**"

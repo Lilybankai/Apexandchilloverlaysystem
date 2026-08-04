@@ -767,6 +767,17 @@ html, body { height: 100%; overflow: hidden; }
 #pace-list .lbrow__name { flex: 0 0 300px; }
 #pace-list .lbrow__time { flex: 0 0 92px; text-align: right; }
 
+/* The Dashboard's best-laps list runs the same four columns, so it takes the
+   same widths — the two lists show the same kind of row and a driver moving
+   between the tabs should not have to re-find the columns. Narrower only
+   because this card sits in the layout's right-hand column. */
+#week-bests-list .lbrow__name { flex: 0 0 190px; }
+#week-bests-list .lbrow__time { flex: 0 0 92px; text-align: right; }
+.lbhead--bests > :nth-child(1) { flex: 0 0 190px; }
+.lbhead--bests > :nth-child(2) { flex: 1 1 auto; }
+.lbhead--bests > :nth-child(3) { flex: 0 0 92px; text-align: right; }
+.lbhead--bests > :nth-child(4) { flex: 0 0 68px; text-align: right; }
+
 /* Class chip, plus the reason on a row that could not be scored. */
 .lbrow__mid {
   flex: 1 1 auto;
@@ -1083,6 +1094,29 @@ html, body { height: 100%; overflow: hidden; }
 .lbrow--board[data-you="true"] .lbrow__pos { color: var(--cyan); }
 .lbrow--board[data-you="true"] .lbrow__driver { color: var(--text); font-weight: 600; }
 
+/* A selected board row takes the band's colour on the rail, the way a selected
+   pace row does. This has to come AFTER the `[data-you]` rule above: the two
+   selectors have equal specificity, so on your own row source order is the only
+   thing deciding whether the rail says "this is you" or "this is the lap the
+   card is showing" — and while a selection is live, the second is the one that
+   is actually changing. The cyan is not lost; the row keeps its background. */
+.lbrow--board[data-selected="true"] { border-left-color: var(--band); }
+.lbrow--board[data-selected="true"] .lbrow__driver { color: var(--text); font-weight: 600; }
+
+/* Why a board of times has no clickable rows. Sits under the board, in the
+   quiet voice the panel uses for a limitation rather than an error — nothing
+   has gone wrong, the reference simply does not cover this combination. */
+.lbnote {
+  margin: 10px 0 0;
+  padding: 0 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+/* The "click a lap" hint on the board head. */
+.lbmain__hint { margin: 2px 0 0; }
+
 /* ------------------------------ attribution ----------------------------- */
 /*
  * The credit for Ohne Speed's reference times. Styled as a real block rather
@@ -1168,3 +1202,251 @@ html, body { height: 100%; overflow: hidden; }
 .syncline__dot[data-status="error"] { background: var(--bad); }
 /* Signed out is a state, not a fault — the laps are safely on disk. */
 .syncline__dot[data-status="signed-out"] { background: var(--text-3); }
+
+/* =========================================================================
+ * WHAT'S NEW — the release-notes sheet
+ * -------------------------------------------------------------------------
+ * A centred sheet over a dimmed panel rather than a corner toast: after an
+ * update this is the first thing the driver sees, and release notes written as
+ * prose need a column you can actually read — so the body is width-limited and
+ * scrolls, and the header and footer stay put while it does.
+ *
+ * Modal, but never trapping: the scrim, the ✕, "Got it" and Escape all close
+ * it, and closing is what records the version as read.
+ * ========================================================================= */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* above the toast (50) — it is the thing being answered */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 6, 12, 0.72);
+}
+
+.sheet__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+/* The brand gradient as a hairline along the top edge, the same signature the
+   power button carries — this is an app moment, not a system dialog. */
+.sheet__panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--grad);
+}
+
+.sheet__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet__icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(38, 187, 244, 0.12);
+  color: var(--cyan);
+}
+
+.sheet__titles { flex: 1; min-width: 0; }
+
+.sheet__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+.sheet__sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.sheet__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 22px 18px;
+}
+
+.sheet__foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.sheet__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-decoration: none;
+}
+.sheet__all:hover { color: var(--cyan); }
+.sheet__all .icon { width: 13px; height: 13px; }
+
+/* ----------------------------- one release ------------------------------ */
+
+.release + .release {
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.release__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 18px 0 2px;
+}
+
+.release__version {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* The build you are on now, when several releases are listed at once. */
+.release__badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(38, 187, 244, 0.14);
+  border: 1px solid rgba(38, 187, 244, 0.35);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.release__date {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ---- the parsed markdown ---- */
+
+.release__section {
+  margin: 16px 0 8px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+/* Added / Fixed / Changed / Removed carry a colour, because scanning for
+   "did they fix my thing" is the most common reason this sheet is open. */
+.release__section[data-kind="added"] { color: var(--ok); }
+.release__section[data-kind="fixed"] { color: var(--cyan); }
+.release__section[data-kind="changed"] { color: var(--warn); }
+.release__section[data-kind="removed"] { color: var(--bad); }
+
+.release__item {
+  position: relative;
+  margin: 0 0 14px;
+  padding-left: 16px;
+}
+.release__item::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+/* A nested bullet is a detail of the point above it, not a new one. */
+.release__item .release__item {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+.release__item .release__item::before { background: var(--line); }
+
+.release__para {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+.release__para:last-child { margin-bottom: 0; }
+/* The lead sentence of an entry is bolded in the source; let it read as the
+   headline it is. */
+.release__para b { color: var(--text); font-weight: 600; }
+.release__para i { color: var(--text); font-style: italic; }
+.release__para code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.release__para a { color: var(--cyan); text-decoration: none; }
+.release__para a:hover { text-decoration: underline; }
+
+/* Notes that arrived from the update feed as plain text (see
+   plainReleaseNotes) — shown as-is, wrapped, never as markup. */
+.release__raw {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.release__empty {
+  margin: 22px 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ------------------- the footer version, now a button ------------------- */
+
+.foot__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.foot__link:hover { color: var(--cyan); }

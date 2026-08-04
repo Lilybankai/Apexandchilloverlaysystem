@@ -8,6 +8,10 @@ dist/
 # Electron installer output
 release/
 
+# The GitHub release body, generated from CHANGELOG.md at build time by
+# scripts/release-notes.js. Derived text — the changelog is the source.
+build/release-notes.md
+
 # Logs
 logs/
 *.log
@@ -50,3 +54,8 @@ electron/oauth-client.generated.json
 
 # Local MCP server config — editor tooling, not part of the app.
 .mcp.json
+
+# Recorded telemetry sessions (scripts/record-session.js). Real races, tens of
+# megabytes each, kept locally to tune the race-engineer triggers against — the
+# detector is what ships, not the evidence it was tuned on.
+/recordings/

@@ -52,6 +52,7 @@
   const updateBanner = $('#update-banner');
   const updateText = $('#update-text');
   const updateAction = $('#update-action');
+  const updateNotes = $('#update-notes');
 
   // Human-readable label + dot colour per feed state.
   const FEED_LABEL = {
@@ -606,37 +607,166 @@
 
     const bests = Array.isArray(s.bests) ? s.bests : [];
     const wrap = $('#week-bests');
+    if (wrap) wrap.hidden = bests.length === 0;
+    // Each entry holds the lap and, once the main process answers, its score.
+    weekBests = bests.map((b) => ({ best: b, row: null }));
+    renderWeekBests();
+    scoreWeekBests();
+  }
+
+  /**
+   * This week's best laps, with their reference scores once they arrive.
+   *
+   * Held in module state for the same reason `lastPaceData` is: clicking a row
+   * has to repaint the list's selection, and re-reading the lap files to do that
+   * would make a highlight cost a disk scan.
+   */
+  let weekBests = [];
+  /** Guards a slow scoring reply from painting over a newer summary. */
+  let weekScoreRequest = 0;
+
+  /**
+   * Score the week's laps.
+   *
+   * These cannot come from `lapsPace()`, which reads ALL-TIME bests: at a track
+   * where you went quicker last month, that call would score a lap that is not
+   * the one on this list and print the percentage next to this week's time. So
+   * the rows are scored as themselves, through the same scorer.
+   */
+  function scoreWeekBests() {
+    if (!weekBests.length) return;
+    const ticket = ++weekScoreRequest;
+    const laps = weekBests.map(({ best: b }) => ({
+      track: b.track,
+      // The three layout hints the lap already carried when it was recorded.
+      // Without them a multi-layout circuit cannot be resolved and the row comes
+      // back unscored — which is the honest answer, not a reason to guess.
+      trackConfig: b.trackConfig,
+      simTrackName: b.simTrackName,
+      trackLengthM: b.trackLengthM,
+      carClass: b.carClass,
+      car: b.car,
+      lapMs: b.lapMs,
+    }));
+    window.apex
+      .lapsScore(laps)
+      .then((scored) => {
+        if (ticket !== weekScoreRequest) return;
+        // A short array means scoring was unavailable (an unbuilt `dist/`), and
+        // the rows stay unscored and inert rather than pairing up out of step.
+        if (!Array.isArray(scored) || scored.length !== weekBests.length) return;
+        weekBests.forEach((entry, i) => {
+          entry.row = scored[i];
+        });
+        renderWeekBests();
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * The week's bests as the pace list's row shape — track, class, lap, score.
+   *
+   * Still no position column, and that omission is the point. A position only
+   * means something within one track and one class; these rows span both, so
+   * numbering them would rank a 1:31 at Fuji above a 3:27 at Le Mans and call it
+   * a result. Same reasoning retires the purple "fastest" highlight here: it is
+   * the kit's signal for quickest in a comparable set, and nothing on this list
+   * is comparable. The percentage IS comparable across tracks, which is exactly
+   * why it can be added where a position cannot. The Leaderboard tab is where
+   * real positions belong.
+   */
+  function renderWeekBests() {
     const list = $('#week-bests-list');
-    if (!wrap || !list) return;
-    wrap.hidden = bests.length === 0;
+    if (!list) return;
     list.textContent = '';
 
-    // The design system's `.lbrow` shape, minus its position column — and that
-    // omission is the point. A position only means something within one track
-    // and one class; these rows span both, so numbering them would rank a 1:31
-    // at Fuji above a 3:27 at Le Mans and call it a result. Same reasoning
-    // retires the purple "fastest" highlight here: it is the kit's signal for
-    // quickest in a comparable set, and nothing on this list is comparable.
-    // The Leaderboard tab is where real positions belong.
-    for (const b of bests) {
+    // A week row is highlighted only when it was the one clicked. With nothing
+    // selected the cards are describing your ALL-TIME best, which is a lap from
+    // the other list — highlighting the week row that happens to share its key
+    // would point at a different time from the one on the card.
+    const shownKey =
+      selectedPace && selectedPace.source === 'week' ? selectedPace.key : '';
+
+    for (const { best: b, row } of weekBests) {
       const li = document.createElement('li');
       li.className = 'lbrow';
+      li.setAttribute('data-band', paceBandOf(row));
+
+      // Only a scored row is selectable, exactly as on the pace list: there is
+      // nothing for the card above to show for a lap whose reference could not
+      // be found, and a button that visibly does nothing is worse than a row
+      // that was never a button.
+      if (row && row.ok) {
+        const selected = String(paceKeyOf(row) === shownKey);
+        li.setAttribute('data-pick', 'true');
+        li.setAttribute('data-selected', selected);
+        li.tabIndex = 0;
+        li.setAttribute('role', 'button');
+        li.setAttribute('aria-pressed', selected);
+        li.title = 'Show this lap in Pace rank';
+        li.addEventListener('click', () => selectPaceRow(row, 'week'));
+        // Keyboard parity: the list is a column of buttons, so it has to be
+        // reachable without a mouse like every other control in the panel.
+        li.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectPaceRow(row, 'week');
+          }
+        });
+      }
+
       // createElement rather than innerHTML throughout: track and car names come
       // from the sim, and the panel's CSP would not save us from a mod pack with
       // a bracket in its name mangling the row.
       const track = document.createElement('span');
       track.className = 'lbrow__name';
-      track.textContent = b.track || '—';
+      // Once scored, the venue the reference table names — which is what the
+      // card above will say, and two names for one circuit on one screen reads
+      // as two circuits.
+      track.textContent = row && row.ok ? paceWhere(row) : b.track || '—';
+      track.title = track.textContent;
+
+      const mid = document.createElement('span');
+      mid.className = 'lbrow__mid';
       const cls = document.createElement('span');
       cls.className = 'chip';
-      cls.textContent = b.carClass || '—';
-      const car = document.createElement('span');
-      car.className = 'lbrow__car';
-      car.textContent = b.car || '';
+      cls.textContent = (row && row.ok && row.sheetClass) || b.carClass || '—';
+      mid.append(cls);
+      if (row && !row.ok) {
+        // The reason, where the eye already is. A driver who wonders why one row
+        // has no score is asking about that row, not about the feature.
+        const why = document.createElement('span');
+        why.className = 'lbrow__why';
+        why.textContent = row.detail || 'No reference for this combination.';
+        why.title = why.textContent;
+        mid.append(why);
+      } else {
+        const car = document.createElement('span');
+        car.className = 'lbrow__car';
+        car.textContent = b.car || '';
+        car.title = b.car || '';
+        mid.append(car);
+      }
+
       const time = document.createElement('span');
       time.className = 'lbrow__time';
       time.textContent = formatLapTime(b.lapMs);
-      li.append(track, cls, car, time);
+
+      const score = document.createElement('span');
+      score.className = 'lbrow__score';
+      if (row && row.ok) {
+        score.textContent = `${row.percent.toFixed(1)}%`;
+        score.title = row.assumed
+          ? `${row.bandLabel} — reference row partly assumed (${row.sheetClass})`
+          : `${row.bandLabel} — reference ${formatLapTime(row.refMs)}`;
+        // The assumption the scorer flagged gets a visible mark rather than
+        // being silently rounded away.
+        if (row.assumed) score.textContent += ' ?';
+      } else {
+        score.textContent = row ? '—' : '';
+      }
+
+      li.append(track, mid, time, score);
       list.append(li);
     }
   }
@@ -764,16 +894,27 @@
   }
 
   /**
-   * Which scored lap the two RankBar cards are describing.
+   * Which scored lap of YOURS the two RankBar cards are describing.
    *
    * It used to be hardwired to your single best result, which made the card a
    * headline rather than a tool: the lap you want to look at is almost never
-   * your best one, it is the one you just drove badly. So the list below is
-   * selectable and this holds the choice, keyed by track+class rather than by
-   * index — a refresh re-sorts the rows, and an index would quietly slide onto
-   * a different lap underneath you.
+   * your best one, it is the one you just drove badly. So the lists are
+   * selectable and this holds the choice, keyed by track+class+car rather than
+   * by index — a refresh re-sorts the rows, and an index would quietly slide
+   * onto a different lap underneath you.
+   *
+   * The SOURCE is part of the selection, not decoration. Two lists feed this and
+   * they hold different laps: the Leaderboard's are all-time bests, the
+   * Dashboard's are this week's. At a track where you went quicker last month
+   * both lists carry a row with the same track, class and car — the same key —
+   * and different times. Without the source, clicking the week's 2:20.4 would
+   * find the all-time row first and the card would answer with 2:19.5: a lap you
+   * did not click, three lines above a row that says otherwise.
+   *
+   * The row travels along so the card can always show the lap that was clicked,
+   * even when a refresh no longer carries it.
    */
-  let selectedPaceKey = null;
+  let selectedPace = null;
   /** Last payload, so a selection can re-render without another IPC round trip. */
   let lastPaceData = null;
 
@@ -781,23 +922,42 @@
     return row ? `${row.track}|${row.carClass}|${row.car || ''}` : '';
   }
 
-  /** The row the cards should show: the chosen one, or the best as the default. */
+  /** The row the cards should show: the chosen one, or your best as the default. */
   function selectedPaceRow(data) {
     const rows = (data && data.rows) || [];
     const scored = rows.filter((r) => r.ok);
-    if (selectedPaceKey) {
-      const hit = scored.find((r) => paceKeyOf(r) === selectedPaceKey);
-      if (hit) return hit;
+    if (selectedPace) {
+      // Re-resolve within the SAME list, so a refresh updates the numbers rather
+      // than freezing the click — and never crosses to the other list, where an
+      // equal key means a different lap.
+      const fresh =
+        selectedPace.source === 'week'
+          ? weekBests.map((e) => e.row).filter((r) => r && r.ok)
+          : scored;
+      return fresh.find((r) => paceKeyOf(r) === selectedPace.key) || selectedPace.row;
     }
     return (data && data.best) || scored[0] || null;
   }
 
-  function selectPaceRow(row) {
+  /**
+   * Load one of your laps into the cards.
+   *
+   * `source` is which list it came from — `'pace'` for the Leaderboard's
+   * all-time bests, `'week'` for the Dashboard's. Both lists are repainted
+   * because only one of them can hold the selection at a time, and the other has
+   * to let go of whatever it was showing as selected.
+   */
+  function selectPaceRow(row, source) {
+    if (!row || !row.ok) return;
     const key = paceKeyOf(row);
     // Clicking the selected row again clears back to your best, so the default
     // view is always one click away rather than requiring a tab round trip.
-    selectedPaceKey = selectedPaceKey === key ? null : key;
+    selectedPace =
+      selectedPace && selectedPace.source === source && selectedPace.key === key
+        ? null
+        : { source, key, row };
     renderPace(lastPaceData);
+    renderWeekBests();
   }
 
   function renderPace(data) {
@@ -839,19 +999,7 @@
       },
       shown,
     );
-    renderRankCard(
-      {
-        card: '#lb-rank',
-        pct: '#lb-pct',
-        band: '#lb-band',
-        rankName: '#lb-rank-name',
-        lap: '#lb-lap',
-        gap: '#lb-gap',
-        dot: '#lb-dot',
-        note: '#lb-note',
-      },
-      shown,
-    );
+    renderLbRank();
 
     // --- Leaderboard card ---
     const list = $('#pace-list');
@@ -860,7 +1008,12 @@
     list.textContent = '';
     empty.hidden = rows.length > 0;
 
-    const shownKey = paceKeyOf(shown);
+    // Highlight this list's own selection, or — with nothing selected — the best
+    // lap the cards default to. While a DASHBOARD row is selected nothing here
+    // is highlighted: the cards are describing a lap from that list, and a row
+    // here with the same key is a different time at the same track.
+    const shownKey =
+      selectedPace && selectedPace.source === 'week' ? '' : paceKeyOf(shown);
     for (const row of rows) {
       const li = document.createElement('li');
       li.className = 'lbrow';
@@ -879,13 +1032,13 @@
           String(paceKeyOf(row) === shownKey),
         );
         li.title = 'Show this lap against its reference';
-        li.addEventListener('click', () => selectPaceRow(row));
+        li.addEventListener('click', () => selectPaceRow(row, 'pace'));
         // Keyboard parity: the list is a column of buttons, so it has to be
         // reachable without a mouse like every other control in the panel.
         li.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            selectPaceRow(row);
+            selectPaceRow(row, 'pace');
           }
         });
       }
@@ -957,6 +1110,39 @@
         '#pace-credit-youtube': credit.youtubeUrl,
       };
     }
+  }
+
+  /**
+   * The Leaderboard tab's RankBar card, which answers about ONE driver at a time.
+   *
+   * By default that driver is you, and the card matches the Dashboard's. Click a
+   * name on a league board and it answers about them instead: the same
+   * percentage, band and ladder position, computed from the same spreadsheet —
+   * which is the question a board actually provokes. A board tells you someone
+   * is 1.4s up the road; it does not tell you whether that is alien pace or a
+   * quiet Tuesday, and the two want different things from you.
+   *
+   * Only this card follows a board selection. The Dashboard's Pace rank stays
+   * yours whatever is clicked here — a tab about your own driving that could be
+   * left showing a stranger's lap would be a trap, and you would find it days
+   * later wondering when you got quick at Sebring.
+   */
+  function renderLbRank() {
+    const focus = boardFocus || { row: selectedPaceRow(lastPaceData), who: null };
+    setText('#lb-rank-title', focus.who ? `${focus.who}'s pace` : 'Your pace');
+    renderRankCard(
+      {
+        card: '#lb-rank',
+        pct: '#lb-pct',
+        band: '#lb-band',
+        rankName: '#lb-rank-name',
+        lap: '#lb-lap',
+        gap: '#lb-gap',
+        dot: '#lb-dot',
+        note: '#lb-note',
+      },
+      focus.row,
+    );
   }
 
   /**
@@ -1077,12 +1263,72 @@
     carSel.disabled = cars.length < 2;
   }
 
-  function renderBoard(result) {
-    const list = $('#board-list');
-    const empty = $('#board-empty');
-    if (!list || !empty) return;
-    list.textContent = '';
+  /* ---- Scoring a board ----
+   *
+   * A board ranks its drivers against each other. Clicking one ranks that lap
+   * against the reference instead — the same spreadsheet, the same bands, the
+   * same ladder the pace cards use for your own laps. That turns "P4, 1.4s off"
+   * into "P4, and the whole board is inside 101%", which is a different fact
+   * about the same afternoon and the one that says whether the gap is worth
+   * chasing.
+   */
 
+  /** The board's rows, with their reference scores once those arrive. */
+  let boardEntries = [];
+  /** The driver whose lap the Leaderboard's RankBar card is showing, if not you. */
+  let boardFocus = null;
+  /** Guards a slow scoring reply from painting over a newer board. */
+  let boardScoreRequest = 0;
+
+  /**
+   * Identity of one board entry, for the selection.
+   *
+   * Name plus lap time rather than the rank: a refresh that adds a quicker
+   * driver renumbers everyone below them, and a selection keyed on rank would
+   * slide onto the next driver down without appearing to move.
+   */
+  function boardKeyOf(row) {
+    return row ? `${row.display_name || ''}|${row.lap_ms}` : '';
+  }
+
+  /**
+   * The track length behind a board's `track_id`, in metres.
+   *
+   * A board row carries no track metadata — the RPC returns a ranking, not the
+   * laps' identity — so the scorer would have nothing to tell one layout of a
+   * circuit from another. The id itself is the missing hint: every lap is stored
+   * under `${slug(name)}_${metres}` (paceDelta's `trackKeyOf`), so this reads
+   * back the same measurement the local scorer uses, from the same source.
+   *
+   * It is a hint, not an answer. Where it fails to separate two layouts the
+   * scorer says `ambiguous-layout` and the row stays unscored, exactly as a
+   * local lap would.
+   */
+  function boardTrackLengthM(trackId) {
+    const m = /_(\d+)$/.exec(String(trackId || ''));
+    return m ? Number(m[1]) : 0;
+  }
+
+  function selectBoardRow(entry) {
+    if (!entry.scored || !entry.scored.ok) return;
+    const key = boardKeyOf(entry.row);
+    // Clicking the selected driver again hands the card back to you.
+    boardFocus =
+      boardFocus && boardFocus.key === key
+        ? null
+        : {
+            key,
+            row: entry.scored,
+            // Your own row hands the card back too, rather than titling it
+            // "You's pace". It is still worth clicking: it is how you compare
+            // one board entry against another without leaving the tab.
+            who: entry.row.is_you ? null : entry.row.display_name || 'Driver',
+          };
+    renderBoardList();
+    renderLbRank();
+  }
+
+  function renderBoard(result) {
     const rows = (result && result.rows) || [];
     const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
     setText(
@@ -1096,26 +1342,96 @@
       rows.length ? `${rows.length} driver${rows.length === 1 ? '' : 's'}` : '',
     );
 
-    if (!result || !result.ok) {
-      empty.hidden = false;
-      empty.textContent =
-        (result && result.error) || 'The league boards could not be reached.';
-      return;
+    const empty = $('#board-empty');
+    if (empty) {
+      if (!result || !result.ok) {
+        empty.hidden = false;
+        empty.textContent =
+          (result && result.error) || 'The league boards could not be reached.';
+      } else if (!rows.length) {
+        empty.hidden = false;
+        empty.textContent =
+          'No laps on this board yet. Drive a clean lap here and it will appear.';
+      } else {
+        empty.hidden = true;
+      }
     }
-    if (!rows.length) {
-      empty.hidden = false;
-      empty.textContent =
-        'No laps on this board yet. Drive a clean lap here and it will appear.';
-      return;
-    }
-    empty.hidden = true;
 
-    for (const row of rows) {
+    boardEntries = (result && result.ok ? rows : []).map((row) => ({ row, scored: null }));
+    renderBoardList();
+    scoreBoardRows();
+  }
+
+  /**
+   * Ask the main process to score every lap on the board.
+   *
+   * The whole board at once rather than on each click: scoring is a table lookup
+   * and a division, so a board costs less than the round trip that fetched it,
+   * and doing it up front is what lets a row know whether it is clickable BEFORE
+   * anyone clicks it. A row that accepts a click and then reports there is no
+   * reference for it would have wasted the only click a driver gives it.
+   */
+  function scoreBoardRows() {
+    if (!boardEntries.length) return;
+    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
+    if (!track) return;
+    const ticket = ++boardScoreRequest;
+    const trackLengthM = boardTrackLengthM(boardPick.trackId);
+    const laps = boardEntries.map(({ row }) => ({
+      track: track.track_name,
+      trackLengthM,
+      // The board's class, not the row's: boards are keyed on (track, class) and
+      // the car is metadata that travelled with the time.
+      carClass: boardPick.carClass,
+      car: row.car || '',
+      lapMs: row.lap_ms,
+    }));
+    window.apex
+      .lapsScore(laps)
+      .then((scored) => {
+        if (ticket !== boardScoreRequest) return;
+        if (!Array.isArray(scored) || scored.length !== boardEntries.length) return;
+        boardEntries.forEach((entry, i) => {
+          entry.scored = scored[i];
+        });
+        renderBoardList();
+      })
+      .catch(() => {});
+  }
+
+  function renderBoardList() {
+    const list = $('#board-list');
+    if (!list) return;
+    list.textContent = '';
+
+    const focusKey = boardFocus ? boardFocus.key : '';
+    for (const entry of boardEntries) {
+      const { row, scored } = entry;
       const li = document.createElement('li');
       li.className = 'lbrow lbrow--board';
       // The kit marks your own row rather than only your position card: on a
       // board of names, finding yourself is the first thing anyone does.
       li.setAttribute('data-you', String(!!row.is_you));
+      li.setAttribute('data-band', paceBandOf(scored));
+
+      if (scored && scored.ok) {
+        const selected = String(boardKeyOf(row) === focusKey);
+        li.setAttribute('data-pick', 'true');
+        li.setAttribute('data-selected', selected);
+        li.tabIndex = 0;
+        li.setAttribute('role', 'button');
+        li.setAttribute('aria-pressed', selected);
+        li.title = `Score this lap against the reference — ${scored.bandLabel}, ${scored.percent.toFixed(1)}%`;
+        li.addEventListener('click', () => selectBoardRow(entry));
+        li.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectBoardRow(entry);
+          }
+        });
+      } else if (scored) {
+        li.title = scored.detail || 'This lap has no reference to score against.';
+      }
 
       const pos = document.createElement('span');
       pos.className = 'lbrow__pos';
@@ -1147,9 +1463,30 @@
       li.append(pos, driver, car, lap, gap);
       list.append(li);
     }
+
+    // Why a board full of times is not clickable, on the one screen where the
+    // question comes up. Every row fails for the same reason when it fails at
+    // all — they share a track and a class — so it is said once, under the
+    // board, rather than as sixteen identical tooltips.
+    const note = $('#board-refnote');
+    if (note) {
+      const scoredRows = boardEntries.filter((e) => e.scored);
+      const none = scoredRows.length > 0 && !scoredRows.some((e) => e.scored.ok);
+      note.hidden = !none;
+      if (none) {
+        note.textContent = `These laps can't be scored against the reference: ${
+          scoredRows[0].scored.detail || 'no reference covers this track and class.'
+        }`;
+      }
+    }
   }
 
   function refreshBoard() {
+    // A new board means the selected driver is no longer on screen, and a card
+    // still headed with their name over a board they are not on is worse than
+    // no selection at all.
+    boardFocus = null;
+    renderLbRank();
     if (!boardPick.trackId || !boardPick.carClass) {
       renderBoard({ ok: true, rows: [] });
       return;
@@ -2473,10 +2810,217 @@
 
   window.apex.chatLink.onChange(renderChatState);
 
+  // --- What's new ----------------------------------------------------------
+  /*
+   * The release notes, drawn from the CHANGELOG.md packaged with the app. Opens
+   * by itself once after an update — listing every release between the build
+   * that was last opened and this one — and on demand from the version in the
+   * footer.
+   *
+   * The main process sends parsed BLOCKS, never HTML (see electron/changelog.js),
+   * and everything below is built with createElement + textContent. That is the
+   * point: release notes are the one screen whose content comes from a file that
+   * travels with the release, and later from a GitHub release body, so nothing
+   * here may be able to inject markup into the panel.
+   */
+
+  const RELEASES_URL = 'https://github.com/Lilybankai/Apexandchilloverlaysystem/releases';
+
+  const sheet = $('#whatsnew');
+  const sheetBody = $('#whatsnew-body');
+  const sheetSub = $('#whatsnew-sub');
+  const sheetTitle = $('#whatsnew-title');
+
+  /** Inline spans → text nodes and the three elements the changelog uses. */
+  function appendSpans(parent, spans) {
+    for (const span of spans || []) {
+      if (span.t === 'b') {
+        const b = document.createElement('b');
+        b.textContent = span.s;
+        parent.appendChild(b);
+      } else if (span.t === 'i') {
+        const i = document.createElement('i');
+        i.textContent = span.s;
+        parent.appendChild(i);
+      } else if (span.t === 'code') {
+        const c = document.createElement('code');
+        c.textContent = span.s;
+        parent.appendChild(c);
+      } else if (span.t === 'link') {
+        // A real <a href> would navigate the panel window itself, so links go
+        // out through the main process like every other outbound URL here.
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = span.s;
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          window.apex.openInBrowser(span.href);
+        });
+        parent.appendChild(a);
+      } else {
+        parent.appendChild(document.createTextNode(span.s));
+      }
+    }
+  }
+
+  /** Blocks → DOM, recursing into nested bullets. */
+  function appendBlocks(parent, blocks) {
+    for (const block of blocks || []) {
+      if (block.type === 'heading') {
+        const h = document.createElement('p');
+        h.className = 'release__section';
+        h.textContent = block.text;
+        // Added / Fixed / Changed / Removed get their colour from the data
+        // attribute; anything else (the occasional prose heading in the file)
+        // is left neutral rather than mis-coloured.
+        const kind = String(block.text).trim().toLowerCase();
+        if (['added', 'fixed', 'changed', 'removed'].includes(kind)) h.dataset.kind = kind;
+        parent.appendChild(h);
+      } else if (block.type === 'item') {
+        const item = document.createElement('div');
+        item.className = 'release__item';
+        appendBlocks(item, block.body);
+        parent.appendChild(item);
+      } else if (block.type === 'para') {
+        const p = document.createElement('p');
+        p.className = 'release__para';
+        appendSpans(p, block.spans);
+        parent.appendChild(p);
+      }
+    }
+  }
+
+  /** One release: its version, date, and body. */
+  function appendRelease(parent, entry, currentVersion) {
+    const wrap = document.createElement('article');
+    wrap.className = 'release';
+
+    const head = document.createElement('header');
+    head.className = 'release__head';
+    const version = document.createElement('span');
+    version.className = 'release__version';
+    version.textContent = `v${entry.version}`;
+    head.appendChild(version);
+    if (entry.version === currentVersion) {
+      const badge = document.createElement('span');
+      badge.className = 'release__badge';
+      badge.textContent = 'Installed';
+      head.appendChild(badge);
+    }
+    if (entry.date) {
+      const date = document.createElement('span');
+      date.className = 'release__date';
+      date.textContent = entry.date;
+      head.appendChild(date);
+    }
+    wrap.appendChild(head);
+
+    appendBlocks(wrap, entry.blocks);
+    parent.appendChild(wrap);
+  }
+
+  /**
+   * Open the sheet. `mode` decides the framing, not the content:
+   *   'updated' — after an update, "here is what you missed"
+   *   'history' — opened deliberately from the footer
+   *   'pending' — notes for an update that is offered but not yet installed
+   */
+  function openSheet({ mode, current, from, entries, rawNotes, version }) {
+    sheetBody.textContent = '';
+
+    if (mode === 'pending') {
+      sheetTitle.textContent = `What's new in ${version || 'the update'}`;
+      sheetSub.textContent = 'From the release — this update is not installed yet.';
+      const pre = document.createElement('p');
+      pre.className = 'release__raw';
+      pre.textContent = rawNotes;
+      sheetBody.appendChild(pre);
+    } else {
+      const count = (entries || []).length;
+      if (mode === 'updated') {
+        sheetTitle.textContent = `Updated to v${current}`;
+        sheetSub.textContent =
+          count > 1
+            ? `${count} releases since v${from} — everything you missed.`
+            : `What changed since v${from}.`;
+      } else {
+        sheetTitle.textContent = 'Release notes';
+        sheetSub.textContent = `You are running v${current}.`;
+      }
+      if (!count) {
+        const empty = document.createElement('p');
+        empty.className = 'release__empty';
+        empty.textContent = 'No release notes were packaged with this build.';
+        sheetBody.appendChild(empty);
+      } else {
+        for (const entry of entries) appendRelease(sheetBody, entry, current);
+      }
+    }
+
+    // Unhide first: scrollTop does not take on a display:none element, and the
+    // sheet would open where the last read left off.
+    sheet.hidden = false;
+    sheetBody.scrollTop = 0;
+    const done = $('#whatsnew-done');
+    if (done) done.focus();
+  }
+
+  /**
+   * Close, and record this version as read — on close rather than on open, so
+   * a crash or a force-quit part-way through means the notes are offered again.
+   */
+  function closeSheet() {
+    if (sheet.hidden) return;
+    sheet.hidden = true;
+    void window.apex.changelog.markSeen();
+  }
+
+  for (const sel of ['#whatsnew-close', '#whatsnew-done', '#whatsnew-scrim']) {
+    const el = $(sel);
+    if (el) el.addEventListener('click', closeSheet);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSheet();
+  });
+  const sheetAll = $('#whatsnew-all');
+  if (sheetAll) {
+    sheetAll.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.apex.openInBrowser(RELEASES_URL);
+    });
+  }
+
+  const whatsnewOpen = $('#whatsnew-open');
+  if (whatsnewOpen) {
+    whatsnewOpen.addEventListener('click', async () => {
+      const h = await window.apex.changelog.history();
+      openSheet({ mode: 'history', current: h.current, entries: h.entries });
+    });
+  }
+
+  // The one automatic appearance: first launch on a new version.
+  window.apex.changelog
+    .pending()
+    .then((p) => {
+      if (p && p.show) openSheet({ mode: 'updated', ...p });
+    })
+    .catch(() => {
+      /* no notes packaged — the footer link still works */
+    });
+
   // --- App updates ---------------------------------------------------------
 
   function renderUpdate(u) {
     if (!u) return;
+    // "What's new" rides alongside the action for as long as an update is
+    // pending: the notes come off the release feed, so they exist before the
+    // download does and stay useful right up to the restart.
+    if (updateNotes) {
+      const pending = u.status === 'available' || u.status === 'downloading' || u.status === 'ready';
+      updateNotes.hidden = !(pending && u.notes);
+      updateNotes.onclick = () =>
+        openSheet({ mode: 'pending', version: u.version ? `v${u.version}` : '', rawNotes: u.notes });
+    }
     // Show the banner only when there's something actionable to report.
     switch (u.status) {
       case 'available':

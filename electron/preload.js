@@ -94,6 +94,17 @@ contextBridge.exposeInMainWorld('apex', {
    */
   lapsPace: () => ipcRenderer.invoke('laps:pace'),
 
+  /**
+   * Score laps the renderer already holds: `[{ track, trackLengthM, carClass,
+   * car, lapMs, trackConfig?, simTrackName? }]` → the same rows `lapsPace()`
+   * returns, in the same order.
+   *
+   * For the two lists `lapsPace()` cannot answer for — the Dashboard's laps
+   * from THIS WEEK (it reads all-time bests) and another driver's lap clicked
+   * on a league board (not a local lap at all).
+   */
+  lapsScore: (laps) => ipcRenderer.invoke('laps:score', laps),
+
   /* ---- League leaderboard ----
    *
    * Unlike everything else on this bridge, these two read the league's database
@@ -240,5 +251,20 @@ contextBridge.exposeInMainWorld('apex', {
     const listener = (_evt, payload) => callback(payload);
     ipcRenderer.on('update:state', listener);
     return () => ipcRenderer.removeListener('update:state', listener);
+  },
+
+  /* ---- What's new (release notes from the bundled CHANGELOG.md) ---- */
+
+  changelog: {
+    /**
+     * Releases this driver has not read yet, i.e. everything between the build
+     * they last opened and this one: `{ show, current, from, entries }`.
+     * `entries` are parsed block trees, never HTML — see electron/changelog.js.
+     */
+    pending: () => ipcRenderer.invoke('changelog:pending'),
+    /** The full release history, for the notes opened from the footer version. */
+    history: () => ipcRenderer.invoke('changelog:history'),
+    /** Record that the notes for this version have been read. */
+    markSeen: () => ipcRenderer.invoke('changelog:markSeen'),
   },
 });

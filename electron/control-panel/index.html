@@ -94,6 +94,10 @@
   <div class="update-banner" id="update-banner" hidden>
     <span class="update-banner__icon">⬆</span>
     <span class="update-banner__text" id="update-text"></span>
+    <!-- What the update contains, read from the release itself — so the choice
+         to interrupt a session is an informed one. Hidden when the feed carried
+         no notes rather than opening an empty sheet. -->
+    <button class="btn btn--ghost btn--sm" id="update-notes" type="button" hidden>What's new</button>
     <button class="btn btn--update" id="update-action" type="button"></button>
   </div>
   <div class="error-banner" id="error-banner" hidden>
@@ -285,6 +289,16 @@
           <h2 class="card__title">
             <svg class="icon"><use href="#i-trophy" /></svg>Best clean laps this week
           </h2>
+          <p class="card__desc">
+            Click a lap to load it into Pace rank above.
+          </p>
+
+          <!-- Same columns as the Leaderboard's pace list, and headed for the
+               same reason: a column of numbers ending in % reads as a gap just
+               as easily as a score. -->
+          <div class="lbhead lbhead--bests">
+            <span>Track</span><span>Class</span><span>Best lap</span><span>Pace</span>
+          </div>
           <ul class="lblist" id="week-bests-list"></ul>
         </section>
 
@@ -461,10 +475,22 @@
               <span class="card__meta" id="board-count"></span>
             </div>
 
+            <!-- Click a driver to score their lap against the reference. The
+                 hint is on the card rather than in a tooltip because a row that
+                 turns out to be a button is only discoverable by accident. Above
+                 the column headings, so those stay next to the rows they name. -->
+            <p class="card__desc lbmain__hint">
+              Click any lap to see how it ranks against the reference times.
+            </p>
+
             <div class="lbhead lbhead--board">
               <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span>
             </div>
+
             <ul class="lblist" id="board-list"></ul>
+
+            <!-- Why none of the rows are clickable, when none of them are. -->
+            <p class="lbnote" id="board-refnote" hidden></p>
 
             <p class="weekempty" id="board-empty">Loading the league boards…</p>
           </section>
@@ -480,7 +506,10 @@
              the kit already writes in terms of % pace. -->
         <section class="card bar-accent card--rank" id="lb-rank" hidden>
           <div class="card__head">
-            <h2 class="card__title">Your pace</h2>
+            <!-- Renamed after whichever driver is selected on the board above:
+                 the card answers about one lap, and which lap that is has to be
+                 readable from the card itself. -->
+            <h2 class="card__title" id="lb-rank-title">Your pace</h2>
           </div>
 
           <div class="rankhero">
@@ -1033,10 +1062,45 @@
     </span>
     <span class="foot__group">
       <span class="foot__item foot__hide-sm" id="foot-url">—</span>
-      <span class="foot__item"><span class="brand__version" id="app-version"></span></span>
+      <!-- The version doubles as the way back into the release notes: the one
+           place someone looks when they want to know what build they are on is
+           the same place they ask what changed in it. -->
+      <button class="foot__item foot__link" id="whatsnew-open" type="button"
+              title="What's new — release notes for this version">
+        <svg class="icon"><use href="#i-sparkles" /></svg><span class="brand__version" id="app-version"></span>
+      </button>
     </span>
   </footer>
 
+</div>
+
+<!-- ========================== WHAT'S NEW =============================
+     Shown once after an update, listing every release between the build
+     that was last opened and this one; also opened on demand from the
+     version in the footer. The notes are the packaged CHANGELOG.md, so
+     this works with no network and cannot disagree with what is running.
+     ================================================================= -->
+<div class="sheet" id="whatsnew" hidden role="dialog" aria-modal="true" aria-labelledby="whatsnew-title">
+  <div class="sheet__scrim" id="whatsnew-scrim"></div>
+  <section class="sheet__panel">
+    <header class="sheet__head">
+      <span class="sheet__icon"><svg class="icon"><use href="#i-sparkles" /></svg></span>
+      <span class="sheet__titles">
+        <h2 class="sheet__title" id="whatsnew-title">What's new</h2>
+        <p class="sheet__sub" id="whatsnew-sub"></p>
+      </span>
+      <button class="iconbtn" id="whatsnew-close" type="button" title="Close" aria-label="Close">
+        <svg class="icon"><use href="#i-x" /></svg>
+      </button>
+    </header>
+    <div class="sheet__body" id="whatsnew-body"><!-- releases injected by JS --></div>
+    <footer class="sheet__foot">
+      <a class="sheet__all" id="whatsnew-all" href="#" target="_blank" rel="noreferrer">
+        <svg class="icon"><use href="#i-external-link" /></svg>All releases on GitHub
+      </a>
+      <button class="btn btn--accent" id="whatsnew-done" type="button">Got it</button>
+    </footer>
+  </section>
 </div>
 
 <!-- Toast for copy confirmation -->

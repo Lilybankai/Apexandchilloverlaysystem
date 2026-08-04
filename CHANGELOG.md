@@ -1,5 +1,96 @@
 # Changelog
 
+## 0.56.0 — 2026-08-04
+
+### Added
+
+- **Every lap time on a league board is now clickable, and tells you where that
+  lap sits against the reference.** A board answers one question — who is
+  quickest — and then leaves the more useful one hanging: is the driver 1.4s up
+  the road running alien pace, or is the whole board having a quiet Tuesday?
+  Those two situations look identical in a gap column and mean opposite things
+  about whether the time is worth chasing. Click any row and the card beside the
+  board takes that driver's name and fills with their percentage, band, gap to
+  the reference and position on the ladder — the same spreadsheet, the same
+  bands, the same arithmetic used on your own laps. Click the row again to hand
+  the card back to yourself.
+
+  The whole board is scored when it loads rather than on each click, so a row
+  knows whether it can be scored before you click it, and one that cannot stays
+  inert instead of accepting a click and then admitting there was no answer.
+  Board rows carry no track metadata — the league returns a ranking, not the
+  laps' identity — so the layout is resolved from the length stored inside the
+  board's own track id. Where that cannot separate two layouts of one circuit
+  (Monza's are the same length to the metre) the rows go unscored and a line
+  under the board says why, because a percentage against the wrong Monza is
+  worse than no percentage: it looks like an answer.
+
+  Only that card follows the board. The Dashboard's Pace rank stays yours
+  whatever you click here — a tab about your own driving that could be left
+  showing a stranger's lap is a trap you would find days later, wondering when
+  you got quick at Sebring.
+
+- **The Dashboard's best laps this week are clickable too.** They now carry the
+  same Track / Class / Best lap / Pace columns as the Leaderboard's list, with
+  the band colour on each row, and clicking one loads that lap into Pace rank
+  above. Laps the reference cannot place are shown with the reason on the row
+  rather than dropped, so a known limitation stays a known limitation instead of
+  becoming a mystery.
+
+  The lap you are shown is the lap you clicked. This list holds *this week's*
+  bests and the Leaderboard's holds *all-time* bests, so at a track where you
+  went quicker last month both carry a row for the same track, class and car
+  with different times on them. The selection remembers which list it came from
+  for exactly that reason — otherwise clicking this week's 2:20.4 would answer
+  with the all-time 2:19.5, three lines above a row that says otherwise.
+
+  The stat tile still always reports your best. A tile that changed when you
+  clicked a list further down the page would stop being a stat.
+
+- **The app tells you what changed when it updates.** Until now an update was
+  silent: the banner said a new version was available, you clicked, the app
+  restarted, and whatever had been built for you was left to be discovered by
+  accident. The first launch on a new build now opens **What's new** — every
+  release between the build you last opened and this one, in full. Skip two
+  releases and you get both, newest first, rather than only the one you landed
+  on.
+
+  The notes are this file. `CHANGELOG.md` ships inside the package, so the panel
+  reads its own copy: it works with no network, it appears the instant the
+  window opens rather than after a round-trip, and it cannot disagree with the
+  version actually running. It is parsed in the main process into a block tree —
+  headings, bullets, paragraphs, bold, italic, code, links — and drawn with
+  `createElement` and `textContent`, so no markup from a file (or later, from a
+  GitHub release body) can reach the panel's DOM.
+
+  The version in the footer is now a button: the place you look to check which
+  build you are on is the same place you ask what was in it, and it opens the
+  same sheet with the last forty releases. Closing is what records the notes as
+  read, not opening — quit part-way through and they are offered again.
+
+- **The update banner can say what an update contains before you install it.**
+  Deciding whether to restart mid-session meant guessing. When the release feed
+  carries notes, the banner gains a **What's new** button next to the action, and
+  it stays available from "available" through to "ready to install". Those notes
+  come from the network, so they are flattened to plain text before they are
+  shown — never rendered as markup.
+
+### Changed
+
+- **A release cannot be published without notes any more.** `npm run release`
+  now runs `scripts/check-changelog.js` first (npm's `prerelease` hook), which
+  refuses to build unless this file has a dated, non-stub section for the version
+  in `package.json`. That gate exists because the app now *shows* the entry to
+  every driver: a missing one is no longer just undocumented, it is an update
+  that announces itself and then has nothing to say.
+
+- **The GitHub release body writes itself.** `scripts/release-notes.js` slices
+  this file's section for the version being built into `build/release-notes.md`,
+  which `build.releaseInfo.releaseNotesFile` hands to electron-builder. Every
+  release so far needed a follow-up `gh release edit --notes-file` by hand, and
+  a release page was blank whenever that was forgotten. One source of truth now:
+  the same text lands in the repo, on the release page, and in the app.
+
 ## 0.55.0 — 2026-08-03
 
 ### Added
