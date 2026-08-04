@@ -105,7 +105,18 @@ run('checking the changelog', path.join(__dirname, 'check-changelog.js'), [versi
 run('compiling the server', TSC, ['-p', 'tsconfig.json']);
 run('baking the YouTube OAuth client', path.join(__dirname, 'write-oauth-client.js'), []);
 run('writing the release notes', path.join(__dirname, 'release-notes.js'), [version]);
-run('packaging the installer', BUILDER, ['--win']);
+// `--publish never` matters more than it looks. With a GH_TOKEN in the
+// environment electron-builder publishes from THIS run too — observed on
+// v0.57.0, where the packaging step created the GitHub release before the
+// publish step ran. For a stable release that is merely untidy (the second run
+// overwrites the same assets). For a beta it is the failure this whole feature
+// exists to prevent: the release would exist as a FULL release, visible to
+// every install on the stable channel, for the minutes between the two runs —
+// long enough for a background update check to find it. The release is created
+// once, by the step below, with the prerelease flag already decided.
+run('packaging the installer', BUILDER, ['--win', '--publish', 'never'], {
+  EP_PRE_RELEASE: isBeta ? 'true' : 'false',
+});
 run('verifying the baked OAuth client', path.join(__dirname, 'verify-oauth-baked.js'), []);
 
 if (dryRun) {
@@ -126,6 +137,10 @@ if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
 // is a constant and the channel is not. The env var wins over `releaseType`
 // (see electron-publish/gitHubPublisher.js), which is exactly what is wanted:
 // the version number decides, every time, with nothing to keep in step.
+//
+// This is the step that CREATES the release, so the flag is right from the
+// moment it exists — the flag is never something that gets corrected later
+// while the build is already reachable.
 run('publishing to GitHub', BUILDER, ['--win', '--publish', 'always'], {
   EP_PRE_RELEASE: isBeta ? 'true' : 'false',
 });
