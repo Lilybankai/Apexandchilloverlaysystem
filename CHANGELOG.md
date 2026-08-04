@@ -4,6 +4,30 @@
 
 ### Fixed
 
+- **The track map no longer draws half a circuit with a line ruled across it.**
+  Reported by King. XILE GT, from Daytona: the final sector missing, a chord
+  closing the gap, and the field driving off the bottom-right of the panel
+  through the part that was never learned.
+
+  A lap distance that ticks backwards — a spin, a car rolling back out of the
+  gravel, a scoring read arriving out of order — was counted forward round the
+  lap instead, so a car that had moved a metre appeared to have covered nearly a
+  whole circuit. Every stretch of road not yet learned was filled in with the one
+  spot the car was standing on, the map declared itself complete, and it was both
+  drawn and saved that way.
+
+  Three checks now stand between that and your screen. A shape is refused if
+  neighbouring points are further apart than the road could be — complete is not
+  the same as continuous. Saved maps are asked the same question when they are
+  read, so a bad one already on disk is dropped rather than drawn. And the map is
+  checked against the car every frame: two hundred metres of road disagreeing
+  about where you are and it is thrown away and relearned, with the panel reading
+  **Rebuilding the circuit** so it is visibly a repair rather than a fault.
+
+  That last threshold is a length of road, not a number of frames, so a car sat
+  in the barriers or in its garage cannot cost you a good map however long it
+  stays there.
+
 - **ELMS LMP2 laps can be scored again.** Reported from the Daytona board, where
   a lap in the ELMS Oreca came back "No reference times for LMP2_ELMS" even
   though the reference sheet has had those times all along.
