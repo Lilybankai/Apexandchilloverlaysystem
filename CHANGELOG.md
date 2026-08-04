@@ -28,6 +28,8 @@
   the time is void and disappears when the stewards forgive it or the next lap
   starts. No more finding out at the line.
 
+## 0.57.7 — 2026-08-04
+
 ### Fixed
 
 - **Le Mans laps score now.** It was the last circuit that always came back
