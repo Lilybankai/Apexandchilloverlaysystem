@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.57.5 — 2026-08-04
 
 ### Fixed
 
@@ -31,6 +31,17 @@
   than filed against a car that has since moved on. The same Daytona lap that
   used to be rejected now completes and is saved, and the check that was firing
   is left exactly as strict as it was.
+
+  That check is also now asked of the finished, smoothed shape — the one that
+  actually gets saved and drawn — rather than of the rough one behind it. It had
+  been reading the rough version while the overlay's *other* copy of the same
+  check, the one that vets a map loaded back from disk, read the finished one, so
+  the two could disagree about the same circuit. They now agree, and measuring
+  the finished shape takes the last of the sampling scatter out of the reading
+  rather than out of the map: the Daytona lap clears the bound by 58% instead of
+  by 4%, so the quick circuits have real room rather than scraping past. A map
+  with a section missing is still refused — that shape measures eleven times over
+  the line, and there is a test holding it there.
 
 ## 0.57.4 — 2026-08-04
 

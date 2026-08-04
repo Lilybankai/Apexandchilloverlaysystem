@@ -700,16 +700,37 @@ export class TrackMapBuilder {
     // fit, so every car that drives through it leaves the widget entirely — and
     // being published means being saved, so the track is drawn that way for
     // good. Throwing the lap away costs one more lap of a progress read.
+    //
+    // The path is smoothed first. That is worth doing for its own sake — the
+    // samples carry a few centimetres of physics jitter, invisible on a straight
+    // at map scale but a fuzzy edge on the ribbon's wall, where the eye follows a
+    // silhouette — and the question is then asked of the SMOOTHED path, because
+    // that is the one that gets published, saved and drawn.
+    //
+    // Smoothing first is not a way of sneaking a lap
+    // past the bound — it is what makes this check and the identical one in
+    // {@link loadTrackMap} agree, which the note on {@link largestGap} says they
+    // must. The loader only ever sees stored points, and stored points are
+    // smoothed; checking the raw path here made commit the stricter of the two,
+    // so a shape could be refused on the way out and accepted on the way back in.
+    //
+    // It also removes the last of the sampling noise from the measurement rather
+    // than from the shape. The position and lap-distance feeds are read at
+    // different instants (see {@link sample}), which leaves a metre or two of
+    // scatter on each point; a five-point moving average takes that out, and what
+    // is left is the road. On the Daytona lap this check used to reject, the
+    // worst neighbour step falls from 17.3 m to 7.6 m against an 18 m bound —
+    // while a fragment of that circuit closed by a chord still measures 203 m,
+    // eleven times over the line. The failure this exists for is caught by more,
+    // not less, once the noise is out of the way.
+    const smooth = smoothClosed(full, 2);
     const jump = this.binM * MAX_STEP_FACTOR;
-    if (largestGap(n, (i) => full[i] as Vec3) > jump) {
+    if (largestGap(n, (i) => smooth[i] as Vec3) > jump) {
       this.relearn();
       return;
     }
 
-    // 4. Smooth. The samples carry a few centimetres of physics jitter, which at
-    // map scale is invisible on a straight and shows as a fuzzy edge on the
-    // ribbon's wall, where the eye follows a silhouette.
-    const smooth = smoothClosed(full, 2);
+    // 4. The road's width, from the sim where it published one.
     const halfWidthM = this.edges.length >= 50 ? median(this.edges) : DEFAULT_HALF_WIDTH_M;
 
     this.publish({

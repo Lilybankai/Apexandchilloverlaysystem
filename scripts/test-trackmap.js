@@ -472,6 +472,49 @@ function driveLap(b, stepM, over, laps = 1.08) {
     last.ready === true && last.path.points.length >= 200,
     last.ready ? `${last.path.points.length} points` : 'never published',
   );
+  // The continuity bound is asked of the smoothed path — the one that is saved
+  // and drawn — so that it and the identical check in loadTrackMap agree. That
+  // must not have cost the bound its teeth: the shape it exists to catch is a
+  // FRAGMENT of a circuit closed by a straight chord, and smoothing a chord that
+  // is hundreds of metres long leaves it hundreds of metres long.
+  if (last.ready) {
+    const round = loadTrackMap(last.path.key, undefined) || last.path;
+    check(
+      'a shape published this way is one the loader will accept back',
+      round.points.length === last.path.points.length,
+      'commit and loadTrackMap agree',
+    );
+  }
+}
+{
+  // Drive four fifths of a circuit and stop. Every bin that was reached is real
+  // road, so nothing above objects — but the shape closes with a chord across
+  // the fifth that was never driven, which is the map with a section missing and
+  // a line ruled through it. Smoothing does not soften a chord that size.
+  const b = new TrackMapBuilder(scratch());
+  let last = null;
+  for (let d = 0; d < LENGTH * 0.8; d += 4) {
+    last = b.update({
+      trackName: 'Test Circuit',
+      lengthM: LENGTH,
+      lapDistM: d,
+      pos: onCircle(d),
+      inPit: false,
+      edgeM: 7,
+    });
+  }
+  // Jump the car to the line so the remaining bins fill from one end.
+  for (let k = 0; k < 30; k++) {
+    last = b.update({
+      trackName: 'Test Circuit',
+      lengthM: LENGTH,
+      lapDistM: LENGTH * 0.8 + k * 8,
+      pos: onCircle(0),
+      inPit: false,
+      edgeM: 7,
+    });
+  }
+  check('a fifth of the circuit missing is still refused, not drawn', last.ready === false);
 }
 
 /* ------------------------- who is being served --------------------------- */
