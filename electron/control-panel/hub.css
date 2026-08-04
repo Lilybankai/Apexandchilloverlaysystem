@@ -1055,6 +1055,7 @@ html, body { height: 100%; overflow: hidden; }
 .lbhead--board > :nth-child(3) { flex: 1 1 auto; }
 .lbhead--board > :nth-child(4) { flex: 0 0 92px; text-align: right; }
 .lbhead--board > :nth-child(5) { flex: 0 0 76px; text-align: right; }
+.lbhead--board > :nth-child(6) { flex: 0 0 62px; text-align: right; }
 
 .lbrow--board .lbrow__pos {
   flex: 0 0 34px;
@@ -1079,6 +1080,11 @@ html, body { height: 100%; overflow: hidden; }
   font-size: 12px;
   color: var(--bad);
 }
+
+/* The reference grade, in the band's colour. Narrower than the pace list's 68px
+   because this board already carries five columns; the number is at most six
+   characters ("104.5%") and the heading above it is the shortest on the row. */
+.lbrow--board .lbrow__score { flex: 0 0 62px; }
 
 /* Quickest in a comparable set — the kit's purple, and the only place in the
    app it is used, because it is the only place the comparison holds. */

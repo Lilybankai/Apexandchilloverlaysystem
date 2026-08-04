@@ -475,16 +475,19 @@
               <span class="card__meta" id="board-count"></span>
             </div>
 
-            <!-- Click a driver to score their lap against the reference. The
-                 hint is on the card rather than in a tooltip because a row that
-                 turns out to be a button is only discoverable by accident. Above
-                 the column headings, so those stay next to the rows they name. -->
-            <p class="card__desc lbmain__hint">
-              Click any lap to see how it ranks against the reference times.
+            <!-- Click a driver to open their lap in the card below. The hint is
+                 on the card rather than in a tooltip because a row that turns
+                 out to be a button is only discoverable by accident — and it is
+                 hidden by the renderer when nothing on the board can be scored,
+                 because promising a click that does nothing is what made this
+                 look broken in v0.56.0. Above the column headings, so those stay
+                 next to the rows they name. -->
+            <p class="card__desc lbmain__hint" id="board-hint">
+              Click any lap for the full breakdown against the reference times.
             </p>
 
             <div class="lbhead lbhead--board">
-              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span>
+              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span><span>Pace</span>
             </div>
 
             <ul class="lblist" id="board-list"></ul>

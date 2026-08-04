@@ -1291,24 +1291,6 @@
     return row ? `${row.display_name || ''}|${row.lap_ms}` : '';
   }
 
-  /**
-   * The track length behind a board's `track_id`, in metres.
-   *
-   * A board row carries no track metadata — the RPC returns a ranking, not the
-   * laps' identity — so the scorer would have nothing to tell one layout of a
-   * circuit from another. The id itself is the missing hint: every lap is stored
-   * under `${slug(name)}_${metres}` (paceDelta's `trackKeyOf`), so this reads
-   * back the same measurement the local scorer uses, from the same source.
-   *
-   * It is a hint, not an answer. Where it fails to separate two layouts the
-   * scorer says `ambiguous-layout` and the row stays unscored, exactly as a
-   * local lap would.
-   */
-  function boardTrackLengthM(trackId) {
-    const m = /_(\d+)$/.exec(String(trackId || ''));
-    return m ? Number(m[1]) : 0;
-  }
-
   function selectBoardRow(entry) {
     if (!entry.scored || !entry.scored.ok) return;
     const key = boardKeyOf(entry.row);
@@ -1376,7 +1358,13 @@
     const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
     if (!track) return;
     const ticket = ++boardScoreRequest;
-    const trackLengthM = boardTrackLengthM(boardPick.trackId);
+    // The sim's measured lap distance, from the filter row. It is the only thing
+    // that can tell one layout of a circuit from another here — a board row
+    // carries no track metadata, because `leaderboard` returns a ranking rather
+    // than the laps' identity. Null on a track recorded before the length was
+    // known, which the scorer reads as "no hint" and answers `ambiguous-layout`
+    // for rather than guessing between layouts.
+    const trackLengthM = Number(track.track_length_m) || 0;
     const laps = boardEntries.map(({ row }) => ({
       track: track.track_name,
       trackLengthM,
@@ -1460,18 +1448,33 @@
       gap.textContent =
         typeof row.gap_ms === 'number' ? `+${(row.gap_ms / 1000).toFixed(3)}` : '—';
 
-      li.append(pos, driver, car, lap, gap);
+      // The grade, on the row. It used to be behind a click, which made an
+      // unscorable row indistinguishable from a broken one: you clicked, nothing
+      // happened, and the only explanation was a grey line under the board. A
+      // percentage in its own column answers the question without the click, and
+      // an em dash is visibly "no score" rather than a button that ignored you.
+      const score = document.createElement('span');
+      score.className = 'lbrow__score';
+      if (scored && scored.ok) {
+        score.textContent = `${scored.percent.toFixed(1)}%`;
+        if (scored.assumed) score.textContent += ' ?';
+      } else {
+        score.textContent = scored ? '—' : '';
+      }
+
+      li.append(pos, driver, car, lap, gap, score);
       list.append(li);
     }
 
-    // Why a board full of times is not clickable, on the one screen where the
+    // Why a board full of times has no scores, on the one screen where the
     // question comes up. Every row fails for the same reason when it fails at
     // all — they share a track and a class — so it is said once, under the
     // board, rather than as sixteen identical tooltips.
+    const scoredRows = boardEntries.filter((e) => e.scored);
+    const none = scoredRows.length > 0 && !scoredRows.some((e) => e.scored.ok);
+
     const note = $('#board-refnote');
     if (note) {
-      const scoredRows = boardEntries.filter((e) => e.scored);
-      const none = scoredRows.length > 0 && !scoredRows.some((e) => e.scored.ok);
       note.hidden = !none;
       if (none) {
         note.textContent = `These laps can't be scored against the reference: ${
@@ -1479,6 +1482,12 @@
         }`;
       }
     }
+
+    // Do not invite a click the board cannot honour. Telling someone to click a
+    // lap and then doing nothing when they do is what made this read as broken
+    // rather than as a limitation; the note above takes over instead.
+    const hint = $('#board-hint');
+    if (hint) hint.hidden = none || !boardEntries.length;
   }
 
   function refreshBoard() {

@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.56.1 — 2026-08-04
+
+### Fixed
+
+- **Clicking another driver's lap on a league board did nothing.** The feature
+  shipped yesterday scores a board lap against the reference times, and to do
+  that it has to know which LAYOUT of a circuit the lap was set on. It tried to
+  read the track's length out of the board's track id, on the assumption that
+  the id was the lap log's own `slug_metres` key. It is not — it is a database
+  UUID — so the length was never found and every board was scored with no layout
+  hint at all.
+
+  Circuits with a single layout were unaffected, which is why this got out: those
+  boards scored fine. Every multi-layout circuit came back "ambiguous layout",
+  and an unscorable row is deliberately not a button — so the whole thing
+  presented as a click that did nothing. Bahrain, Circuit of the Americas,
+  Lusail, Sebring and Silverstone are all scored on their boards again. The
+  length now comes from the leaderboard itself, which is the same measurement
+  the app already uses to score your own laps at the same place.
+
+  Four circuits still cannot be placed from a board row, and that is a limit of
+  the data rather than of this fix: Monza and Le Mans hold two layouts of
+  identical recorded length, Fuji's two are 37 m apart, and Paul Ricard's Grand
+  Prix shares its length with the 1A-V2. Nothing in a board row can separate
+  those, so they say so instead of guessing. Your own laps at the same circuits
+  are usually still scored, because a lap you drove also carries the sim's scene
+  name and its declared configuration — a board row carries neither.
+
+- **A board that genuinely cannot be scored now says so before you click.**
+  Some circuits cannot be resolved at all — Monza's two layouts are ten seconds
+  apart in pace and identical in recorded length, so nothing in a board row can
+  separate them, and refusing to score is the correct answer. It was also an
+  invisible one: the invitation to click a lap stayed on screen and the
+  explanation was a grey line under the board. That invitation is now hidden
+  when nothing on the board can be scored, so it never promises a click it
+  cannot honour.
+
+### Changed
+
+- **Boards carry a Pace column.** The grade used to be behind a click, which
+  made a lap with no score indistinguishable from a broken button. Every row now
+  shows its percentage where you can read the whole field at once, in the band's
+  colour, with an em dash where the reference cannot place the lap. Clicking a
+  row still opens the full breakdown beside the board.
+
 ## 0.56.0 — 2026-08-04
 
 ### Added

@@ -379,66 +379,87 @@ console.log('\nCoverage of the shipped table');
 /* -------------------------------------------------------------------------- */
 /*
  * Clicking a row on a league board scores that driver's lap against the same
- * reference — and a board row carries no track metadata at all. The RPC returns
- * a ranking (name, car, lap, gap), not the laps' identity, so the ONLY layout
- * hint available is the one hiding in the board's `track_id`: every lap is
- * stored under `${slug(name)}_${metres}`, so the metres can be read back out.
+ * reference — and a board row carries no track metadata at all. `leaderboard`
+ * returns a ranking (name, car, lap, gap), not the laps' identity, so the only
+ * layout hint the panel has is `track_length_m` off the filter row.
  *
- * That inference is the whole reason a board row can be scored, and it is
- * invisible from either end — the panel parses a string the lap log wrote. If
- * `trackKeyOf` ever changes shape, the panel does not break loudly; it quietly
- * stops resolving layouts and every board goes unscored. Hence these.
+ * ## The bug these pin (shipped in v0.56.0, fixed in 0.56.1)
+ * The first version tried to recover the length by parsing it out of the board's
+ * `track_id`, assuming that id was the lap log's `trackKey` string
+ * (`${slug}_${metres}`). It is not — `track_id` is the `tracks.id` UUID, so the
+ * parse matched nothing and every board was scored with NO length at all.
+ *
+ * That failure was near-invisible, which is why it reached a release: circuits
+ * with one layout in the table score fine without any length, so the boards
+ * anyone happened to look at first still worked. Only multi-layout circuits went
+ * unscored — and an unscored row is silently unclickable, so the symptom was
+ * "clicking that driver does nothing".
+ *
+ * The values below are the league's own, from `driver_best_laps`, so these fail
+ * if that pipeline changes shape again rather than only if the arithmetic does.
  */
 
 console.log('\nScoring a lap from a board row');
 
 {
-  const { trackKeyOf } = require('../dist/telemetry/paceDelta');
-
-  /** The panel's own parse, kept here in the shape control-panel.js uses it. */
-  const lengthFromTrackId = (id) => {
-    const m = /_(\d+)$/.exec(String(id || ''));
-    return m ? Number(m[1]) : 0;
-  };
-
-  // Round trip: whatever the lap log wrote, the panel reads the metres back.
-  const key = trackKeyOf('Circuit de Spa-Francorchamps', 7004);
-  check('track id round-trips its length', lengthFromTrackId(key) === 7004, `${key} → 7004`);
-
-  // A track recorded before the length was known stores `_0`, which is no hint
-  // rather than a hint of zero metres — the scorer must treat it as absent.
-  check('an unknown length reads as 0', lengthFromTrackId(trackKeyOf('Fuji Speedway', 0)) === 0);
-
-  // The case this exists for. Paul Ricard has five layouts and a board row knows
-  // none of them by name; 3A is 1.4 km shorter than the next one, so the length
-  // recovered from the track id is enough on its own.
-  const ricard = scoreLap({
-    track: 'Circuit Paul Ricard',
-    trackLengthM: lengthFromTrackId(trackKeyOf('Circuit Paul Ricard', 3793)),
+  // The bug, pinned from the front: COTA has two layouts ~1.8 km apart, so with
+  // no length it cannot be resolved. This is exactly what every board looked
+  // like in v0.56.0.
+  const cotaBlind = scoreLap({
+    track: 'Circuit of the Americas',
+    trackLengthM: 0,
     carClass: 'GT3',
-    lapMs: 105_000,
+    lapMs: 131_955,
   });
   check(
-    'a board row resolves its layout by length alone',
-    ricard.ok && ricard.score.via === 'length' && ricard.score.layoutName.includes('3A'),
-    ricard.ok
-      ? `${ricard.score.layoutName} via ${ricard.score.via}`
-      : `${ricard.reason}: ${ricard.detail}`,
+    'a board row with no length cannot resolve a multi-layout circuit',
+    !cotaBlind.ok && cotaBlind.reason === 'ambiguous-layout',
+    cotaBlind.ok ? `scored anyway as ${cotaBlind.score.layoutName}` : cotaBlind.reason,
   );
 
-  // And where length cannot help at all. Monza's two layouts are ~10 s apart in
-  // pace and IDENTICAL in recorded length, so the one hint a board row has is
-  // worthless here — no scene name, no config, and a measurement that fits both.
-  // It must go unscored rather than pick a side: a percentage against the wrong
-  // Monza is worse than no percentage, because it looks like an answer.
-  const monza = scoreLap({
-    track: 'Autodromo Nazionale Monza',
-    trackLengthM: lengthFromTrackId(trackKeyOf('Autodromo Nazionale Monza', 5793)),
+  // ...and the fix: the sim's measured 5497 m is 16 m from the Grand Prix layout
+  // and 1.8 km from the National, so the length settles it on its own.
+  const cota = scoreLap({
+    track: 'Circuit of the Americas',
+    trackLengthM: 5497,
     carClass: 'GT3',
-    lapMs: 105_000,
+    car: 'BMW GT3 Custom Team 2026 #397',
+    lapMs: 131_955,
   });
   check(
-    'an unresolvable board row refuses to score',
+    'the same row resolves once the track length is supplied',
+    cota.ok && cota.score.via === 'length',
+    cota.ok
+      ? `${cota.score.layoutName} via ${cota.score.via} — ${cota.score.percent}%`
+      : `${cota.reason}: ${cota.detail}`,
+  );
+
+  // Why the bug hid: a single-layout circuit needs no length, so these boards
+  // worked throughout and made the feature look fine.
+  const laguna = scoreLap({
+    track: 'WeatherTech Raceway Laguna Seca',
+    trackLengthM: 0,
+    carClass: 'GT3',
+    lapMs: 84_579,
+  });
+  check(
+    'a single-layout circuit scores with no length at all',
+    laguna.ok && laguna.score.via === 'only',
+    laguna.ok ? `via ${laguna.score.via} — ${laguna.score.percent}%` : laguna.reason,
+  );
+
+  // And where length genuinely cannot help. Monza's two layouts are ~10 s apart
+  // in pace and identical in recorded length, so even the real measurement fits
+  // both. It must go unscored rather than pick a side: a percentage against the
+  // wrong Monza is worse than none, because it looks like an answer.
+  const monza = scoreLap({
+    track: 'Autodromo Nazionale Monza',
+    trackLengthM: 5781,
+    carClass: 'LMP3',
+    lapMs: 109_016,
+  });
+  check(
+    'an unresolvable board row still refuses to score',
     !monza.ok && monza.reason === 'ambiguous-layout',
     monza.ok ? `scored anyway as ${monza.score.layoutName}` : monza.reason,
   );
@@ -447,16 +468,18 @@ console.log('\nScoring a lap from a board row');
   // track, same class, same time must give the same number, or the Leaderboard
   // card would contradict the Dashboard for a lap they both hold.
   const mine = scoreLap({
-    track: 'Circuit de Spa-Francorchamps',
-    trackLengthM: 7004,
+    track: 'WeatherTech Raceway Laguna Seca',
+    trackLengthM: 3590,
     carClass: 'GT3',
-    lapMs: 140_000,
+    car: 'Team WRT 2026 #32:WEC',
+    lapMs: 84_994,
   });
   const theirs = scoreLap({
-    track: 'Circuit de Spa-Francorchamps',
-    trackLengthM: lengthFromTrackId(trackKeyOf('Circuit de Spa-Francorchamps', 7004)),
+    track: 'WeatherTech Raceway Laguna Seca',
+    trackLengthM: 3590,
     carClass: 'GT3',
-    lapMs: 140_000,
+    car: 'BMW GT3 Custom Team 2026 #397',
+    lapMs: 84_994,
   });
   check(
     'a board lap and a local lap score identically',

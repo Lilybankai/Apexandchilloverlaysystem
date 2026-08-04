@@ -109,8 +109,10 @@ const PANEL_CONTRACT = {
   'board-count': 'span',
   'board-list': 'ul',
   'board-empty': 'p',
-  // Why a board's rows are not clickable, when the reference cannot score them.
+  // Why a board's laps have no scores, when the reference cannot place them —
+  // and the "click a lap" invitation, which is hidden in exactly that case.
   'board-refnote': 'p',
+  'board-hint': 'p',
 
   // The kit's RankBar, twice — Dashboard (`rank-*`) and Leaderboard (`lb-*`).
   // Contracted separately because they are the same component at two ids, and
