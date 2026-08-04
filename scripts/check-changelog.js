@@ -102,4 +102,31 @@ if (entries[0] && cl.compareVersions(entries[0].version, version) > 0) {
   );
 }
 
+/*
+ * Promoting a beta to stable means FOLDING its notes into the stable section,
+ * not shipping both. The betas of 0.58.0 are builds only we ran; a driver
+ * updating 0.57.0 → 0.58.0 would otherwise be shown "What's new in
+ * 0.58.0-beta.2" for three builds that never existed as far as they are
+ * concerned, and would have to piece the actual release together from them.
+ *
+ * So a stable release refuses to go out while its own betas are still listed
+ * separately. Beta releases are unaffected — during testing the per-beta
+ * sections are the whole point, since they are what the beta channel's What's
+ * New sheet shows.
+ */
+if (!/-/.test(version)) {
+  const leftovers = entries
+    .filter((e) => e.version.startsWith(`${version}-`))
+    .map((e) => e.version);
+  if (leftovers.length) {
+    fail(
+      `CHANGELOG.md still has ${leftovers.length} beta section(s) for ${version}:\n` +
+        `    ${leftovers.join(', ')}`,
+      `  Fold them into the ## ${version} section and delete the beta headings.\n` +
+        `  Drivers on stable never ran those builds — they need one set of notes\n` +
+        `  for the release, not a diary of how it got there.\n`,
+    );
+  }
+}
+
 console.log(`  CHANGELOG ok — ${version} (${entry.date}), ${length} characters of notes.`);

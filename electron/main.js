@@ -35,6 +35,7 @@ const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
 const changelog = require('./changelog');
+const updateChannel = require('./updateChannel');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
@@ -224,6 +225,11 @@ function defaultSettings() {
     // fresh install, which is the difference between "new here" (say nothing)
     // and "just updated" (show what changed) — see setupChangelogIpc.
     lastSeenVersion: '',
+    // Which GitHub Releases feed this install follows: 'stable' (the release
+    // everyone gets) or 'beta' (prereleases too, for the people building the
+    // thing). Defaults to stable, so an install that never touches this setting
+    // can never be handed an untested build — see setupAutoUpdate.
+    updateChannel: 'stable',
   };
 }
 
@@ -388,6 +394,7 @@ function loadSettings() {
       typeof stored.lastSeenVersion === 'string'
         ? stored.lastSeenVersion
         : defaults.lastSeenVersion,
+    updateChannel: updateChannel.normalizeChannel(stored.updateChannel),
   };
 }
 
@@ -2169,6 +2176,17 @@ const updateState = {
   version: null,
   percent: 0,
   error: null,
+  // Which feed this install is following ('stable' | 'beta'), and whether the
+  // build currently RUNNING is a prerelease. The two disagree for exactly as
+  // long as it takes a beta tester to switch back to stable and be moved onto
+  // it, which is the moment the panel most needs to explain itself.
+  channel: 'stable',
+  running: null, // e.g. '0.57.0-beta.2' — filled in at setup
+  runningIsBeta: false,
+  // Whether the version being OFFERED is a prerelease. A stable-channel install
+  // can never see one; a beta-channel install sees both, so the banner has to
+  // say which it is before someone installs it mid-league-night.
+  offeredIsBeta: false,
   // Release notes for the version being offered, as plain text. They come from
   // the GitHub release body (which `npm run release` fills from this same
   // CHANGELOG), so the banner can say what the update contains BEFORE it is
@@ -2213,14 +2231,63 @@ function pushUpdate() {
 }
 
 /**
+ * Point the updater at one of the two feeds. This is the whole of the channel
+ * mechanism on the app side; everything else here is about saying which one is
+ * on. The rule itself lives in electron/updateChannel.js, shared with the
+ * release script so the two can never drift apart.
+ */
+function applyUpdateChannel(channel) {
+  updateState.channel = updateChannel.normalizeChannel(channel);
+  if (!app.isPackaged) return;
+  const flags = updateChannel.updaterFlags(updateState.channel, updateState.running);
+  autoUpdater.allowPrerelease = flags.allowPrerelease;
+  autoUpdater.allowDowngrade = flags.allowDowngrade;
+}
+
+/**
  * Wires electron-updater to the GitHub Releases feed and relays progress to the
  * renderer so the panel can show a "new version available" banner. We do NOT
  * auto-download — the operator clicks to update, so a stream is never disrupted.
  */
 function setupAutoUpdate() {
+  updateState.running = app.getVersion();
+  updateState.runningIsBeta = updateChannel.isPrereleaseVersion(updateState.running);
+  applyUpdateChannel(loadSettings().updateChannel);
+
   // The IPC surface must exist even in a dev run (the panel always calls
   // update:getState on boot); only the updater wiring needs a packaged app.
   ipcMain.handle('update:getState', () => ({ ...updateState }));
+
+  /**
+   * Switch feeds. The setting is persisted first — a driver who picks beta and
+   * then quits before the check finishes is still on beta next launch — and the
+   * check runs immediately, because the only reason anyone touches this control
+   * is to get onto (or off) another build right now.
+   */
+  ipcMain.handle('update:setChannel', (_evt, channel) => {
+    const next = updateChannel.normalizeChannel(channel);
+    const settings = loadSettings();
+    if (settings.updateChannel !== next) {
+      saveSettings({ ...settings, updateChannel: next });
+    }
+    applyUpdateChannel(next);
+    // Whatever was found on the old feed no longer applies to this one.
+    updateState.status = 'idle';
+    updateState.version = null;
+    updateState.notes = null;
+    updateState.percent = 0;
+    updateState.error = null;
+    updateState.offeredIsBeta = false;
+    pushUpdate();
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdates().catch((e) => {
+        updateState.status = 'error';
+        updateState.error = String(e.message || e);
+        pushUpdate();
+      });
+    }
+    return { ...updateState };
+  });
 
   if (!app.isPackaged) {
     updateState.status = 'idle';
@@ -2240,6 +2307,7 @@ function setupAutoUpdate() {
   autoUpdater.on('update-available', (info) => {
     updateState.status = 'available';
     updateState.version = info && info.version ? info.version : null;
+    updateState.offeredIsBeta = updateChannel.isPrereleaseVersion(updateState.version);
     updateState.notes = plainReleaseNotes(info && info.releaseNotes);
     pushUpdate();
   });
@@ -2255,6 +2323,7 @@ function setupAutoUpdate() {
   autoUpdater.on('update-downloaded', (info) => {
     updateState.status = 'ready';
     updateState.version = info && info.version ? info.version : updateState.version;
+    updateState.offeredIsBeta = updateChannel.isPrereleaseVersion(updateState.version);
     updateState.notes = plainReleaseNotes(info && info.releaseNotes) || updateState.notes;
     pushUpdate();
   });

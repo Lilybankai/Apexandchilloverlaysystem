@@ -59,6 +59,18 @@ const PANEL_CONTRACT = {
   // What the pending update contains, before installing it.
   'update-notes': 'button',
 
+  // Release channel (v0.57.0) — the staff-only card in Settings that decides
+  // whether this install follows stable releases or the beta feed. Contracted
+  // because it is hidden by default: a broken control here looks exactly like
+  // the card correctly staying away, and the failure mode is a beta tester
+  // stuck on a build with no way back to stable.
+  'updates-card': 'section',
+  'update-channel': 'select',
+  'update-channel-hint': 'span',
+  'update-running': 'span',
+  'update-status': 'span',
+  'update-check': 'button',
+
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop
   // working there is no second chance to notice, and the driver is left with a

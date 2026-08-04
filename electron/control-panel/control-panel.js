@@ -53,6 +53,25 @@
   const updateText = $('#update-text');
   const updateAction = $('#update-action');
   const updateNotes = $('#update-notes');
+  const updatesCard = $('#updates-card');
+  const updateChannelSel = $('#update-channel');
+  const updateChannelHint = $('#update-channel-hint');
+  const updateRunning = $('#update-running');
+  const updateStatus = $('#update-status');
+  const updateCheck = $('#update-check');
+
+  // The Updates card is shown when EITHER is true, and the two answers arrive
+  // from different places at different times (admin:whoami over the network,
+  // the channel from the main process), so both are remembered rather than read
+  // back off the DOM — whichever lands second must not hide what the first one
+  // revealed.
+  let isStaffAccount = false;
+  let followingBeta = false;
+
+  /** League staff can switch channel; anyone already ON beta can switch back. */
+  function applyUpdatesCardVisibility() {
+    if (updatesCard) updatesCard.hidden = !(isStaffAccount || followingBeta);
+  }
 
   // Human-readable label + dot colour per feed state.
   const FEED_LABEL = {
@@ -2309,16 +2328,29 @@
     return Number.isFinite(Number(n)) ? String(Number(n)) : '—';
   }
 
-  /** Show or hide the Admin tab based on whether this account is an admin. */
+  /**
+   * Show or hide the staff-only surfaces: the Admin tab, and the Updates card
+   * that can put this install on the beta feed. Both are gated on the same
+   * answer because they are the same trust boundary — a driver testing the
+   * league's overlay should never be one dropdown away from a build we are
+   * still breaking. Neither is a security control: the beta releases are public
+   * on GitHub, and every admin READ is authorised again server-side.
+   */
   async function revealAdminTab() {
     const tab = $('#admin-tab');
-    if (!tab) return;
+    let isAdmin = false;
     try {
       const res = await window.apex.admin.whoami();
-      tab.hidden = !(res && res.ok && res.isAdmin);
+      isAdmin = !!(res && res.ok && res.isAdmin);
     } catch {
-      tab.hidden = true; // not admin, or offline — the tab stays away
+      isAdmin = false; // not admin, or offline — the staff surfaces stay away
     }
+    if (tab) tab.hidden = !isAdmin;
+    // Someone already following beta keeps the card whatever whoami says, so a
+    // dropped session can never hide the only control that gets them back onto
+    // stable.
+    isStaffAccount = isAdmin;
+    applyUpdatesCardVisibility();
   }
 
   function renderAdminOverview(data) {
@@ -3019,8 +3051,60 @@
 
   // --- App updates ---------------------------------------------------------
 
+  /**
+   * The Updates card in Settings (league staff only — see revealAdminTab).
+   *
+   * It answers three questions in the order they get asked: which feed am I on,
+   * what am I actually running, and did the last check find anything. The last
+   * one matters most right after a switch: picking "beta" when no beta has been
+   * published yet is indistinguishable from a broken toggle unless the card
+   * says "no beta build yet — you're on the newest there is".
+   */
+  function renderUpdatesCard(u) {
+    if (!updateChannelSel || !u) return;
+    const beta = u.channel === 'beta';
+    updateChannelSel.value = beta ? 'beta' : 'stable';
+    // Running a beta build counts as being on it, even if the setting has since
+    // been put back to stable and the stable feed has not caught up yet.
+    followingBeta = beta || !!u.runningIsBeta;
+    applyUpdatesCardVisibility();
+    updateChannelHint.textContent = beta
+      ? 'Prereleases included. These are ours to test — expect them to be rough.'
+      : 'Only full releases. This is what the league is running.';
+
+    if (updateRunning) {
+      updateRunning.textContent = u.running ? `v${u.running}` : '—';
+      updateRunning.setAttribute('data-beta', u.runningIsBeta ? 'true' : 'false');
+    }
+    if (!updateStatus) return;
+    switch (u.status) {
+      case 'checking':
+        updateStatus.textContent = 'Checking…';
+        break;
+      case 'available':
+      case 'downloading':
+      case 'ready':
+        updateStatus.textContent = `v${u.version}${u.offeredIsBeta ? ' (beta)' : ''} — see the banner at the top.`;
+        break;
+      case 'none':
+        // On stable while running a beta, "up to date" would be a lie: it means
+        // the stable feed has not caught up with the build in front of you yet.
+        updateStatus.textContent =
+          !beta && u.runningIsBeta
+            ? 'No stable release has passed this build yet — you stay on it until one does.'
+            : `Up to date on the ${beta ? 'beta' : 'stable'} channel.`;
+        break;
+      case 'error':
+        updateStatus.textContent = `Could not check: ${u.error || 'unknown error'}`;
+        break;
+      default:
+        updateStatus.textContent = '—';
+    }
+  }
+
   function renderUpdate(u) {
     if (!u) return;
+    renderUpdatesCard(u);
     // "What's new" rides alongside the action for as long as an update is
     // pending: the notes come off the release feed, so they exist before the
     // download does and stay useful right up to the restart.
@@ -3030,11 +3114,14 @@
       updateNotes.onclick = () =>
         openSheet({ mode: 'pending', version: u.version ? `v${u.version}` : '', rawNotes: u.notes });
     }
+    // A beta is named as one everywhere it is offered. The banner is the last
+    // thing seen before installing, so it is the last chance to say so.
+    const label = u.offeredIsBeta ? `Beta ${u.version}` : `Version ${u.version}`;
     // Show the banner only when there's something actionable to report.
     switch (u.status) {
       case 'available':
         updateBanner.hidden = false;
-        updateText.textContent = `Version ${u.version} is available.`;
+        updateText.textContent = `${label} is available.`;
         updateAction.hidden = false;
         updateAction.disabled = false;
         updateAction.textContent = 'Download & install';
@@ -3048,7 +3135,7 @@
         break;
       case 'ready':
         updateBanner.hidden = false;
-        updateText.textContent = `Version ${u.version} is ready to install.`;
+        updateText.textContent = `${label} is ready to install.`;
         updateAction.hidden = false;
         updateAction.disabled = false;
         updateAction.textContent = 'Restart & update';
@@ -3062,6 +3149,29 @@
         // idle / checking / none → keep the banner hidden.
         updateBanner.hidden = true;
     }
+  }
+
+  if (updateChannelSel) {
+    updateChannelSel.addEventListener('change', async () => {
+      const channel = updateChannelSel.value === 'beta' ? 'beta' : 'stable';
+      updateChannelSel.disabled = true;
+      try {
+        renderUpdate(await window.apex.setUpdateChannel(channel));
+        showToast(channel === 'beta' ? 'Following beta builds.' : 'Following stable releases.');
+      } finally {
+        updateChannelSel.disabled = false;
+      }
+    });
+  }
+  if (updateCheck) {
+    updateCheck.addEventListener('click', async () => {
+      updateCheck.disabled = true;
+      try {
+        renderUpdate(await window.apex.checkForUpdate());
+      } finally {
+        updateCheck.disabled = false;
+      }
+    });
   }
 
   window.apex.onUpdate(renderUpdate);

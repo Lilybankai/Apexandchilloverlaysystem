@@ -242,6 +242,11 @@ contextBridge.exposeInMainWorld('apex', {
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
   /** Manually check GitHub Releases for a newer version. */
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  /**
+   * Follow the 'stable' or 'beta' release feed. Persisted, and re-checks
+   * immediately — switching channel is only ever done to move build now.
+   */
+  setUpdateChannel: (channel) => ipcRenderer.invoke('update:setChannel', channel),
   /** Download the available update. */
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   /** Quit and install the downloaded update. */

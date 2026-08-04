@@ -80,3 +80,63 @@ if (live && live.length < Math.min(80, body.length)) {
 }
 
 console.log(`  publish-notes: ${tag} release notes set (${body.length} characters).`);
+
+/* -------------------------------------------------------------------------- */
+/*  The prerelease flag — the whole of the channel separation                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A beta reaches only the people who asked for betas because GitHub does not
+ * count a prerelease as `/releases/latest`, which is the single URL every
+ * stable install reads. That makes one boolean on the release page the entire
+ * boundary: get it wrong on a beta and all five testers are handed it within
+ * the hour, silently and automatically.
+ *
+ * scripts/release.js sets it at publish time via EP_PRE_RELEASE. This reads it
+ * back and repairs it, because "we set the env var" is a claim about our build
+ * script and this is the fact itself.
+ */
+const shouldBePrerelease = require('../electron/updateChannel').isPrereleaseVersion(version);
+
+let flagged = null;
+try {
+  flagged = gh(['release', 'view', tag, '--json', 'isPrerelease', '--jq', '.isPrerelease']).trim() === 'true';
+} catch (err) {
+  console.error(
+    `  publish-notes: could not read the prerelease flag on ${tag}. Check by hand:\n` +
+      `    gh release view ${tag} --json isPrerelease`,
+  );
+  process.exit(1);
+}
+
+if (flagged !== shouldBePrerelease) {
+  console.error(
+    `  publish-notes: ${tag} is ${flagged ? 'flagged as a prerelease' : 'a full release'}, ` +
+      `but ${version} should be ${shouldBePrerelease ? 'a prerelease (beta)' : 'a full release (stable)'} — fixing.`,
+  );
+  try {
+    gh([
+      'release',
+      'edit',
+      tag,
+      `--prerelease=${shouldBePrerelease}`,
+      `--latest=${!shouldBePrerelease}`,
+    ]);
+  } catch (err) {
+    const detail = String((err && (err.stderr || err.message)) || err).trim();
+    console.error(
+      `\n  publish-notes: COULD NOT FIX THE CHANNEL OF ${tag}.\n  ${detail}\n\n` +
+        (shouldBePrerelease
+          ? `  This release is visible to EVERY driver on the stable channel. Fix it now:\n` +
+            `    gh release edit ${tag} --prerelease=true --latest=false\n`
+          : `  This release is hidden from the stable channel. Fix it with:\n` +
+            `    gh release edit ${tag} --prerelease=false --latest=true\n`),
+    );
+    process.exit(1);
+  }
+}
+
+console.log(
+  `  publish-notes: ${tag} is on the ${shouldBePrerelease ? 'BETA' : 'STABLE'} channel ` +
+    `(prerelease: ${shouldBePrerelease}).`,
+);

@@ -858,6 +858,44 @@
         </div>
 
         <div class="two-col">
+          <!-- ---------------------- UPDATES ---------------------- -->
+          <!-- League staff only, like the Admin tab: hidden until admin:whoami
+               confirms this account is staff. Everyone else follows the stable
+               feed and never sees a control that could put them on a build we
+               are still testing. The hidden attribute is convenience, not a
+               boundary — the beta feed is public, it is just not advertised. -->
+          <section class="card" id="updates-card" hidden>
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-arrow-up" /></svg>Updates</h2>
+              <p class="card__desc">
+                <strong>Stable</strong> is what every driver gets.
+                <strong>Beta</strong> adds the builds we are still testing —
+                they arrive first, and they break first.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field__label">Release channel</span>
+                <select class="field__input field__input--wide" id="update-channel">
+                  <option value="stable">Stable — tested releases</option>
+                  <option value="beta">Beta — early builds</option>
+                </select>
+                <span class="field__hint" id="update-channel-hint"></span>
+              </label>
+
+              <div class="field">
+                <span class="field__label">This build</span>
+                <span class="rate-value" id="update-running">—</span>
+                <span class="field__hint" id="update-status">—</span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm" id="update-check" type="button">
+                    Check for updates
+                  </button>
+                </span>
+              </div>
+            </div>
+          </section>
+
           <!-- ---------------------- SERVER ---------------------- -->
           <section class="card">
             <div class="card__head">

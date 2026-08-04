@@ -550,6 +550,9 @@ html, body {
 
 .field__hint { font-size: 12px; color: var(--text-3); }
 
+/* A select whose options are sentences, not numbers — 130px would clip them. */
+.field__input--wide { width: 100%; max-width: 260px; font-family: var(--font-ui); }
+
 .rate-row { display: flex; align-items: center; gap: 12px; }
 
 .field__range {

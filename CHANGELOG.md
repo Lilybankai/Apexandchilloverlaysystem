@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.57.0 — 2026-08-04
+
+### Added
+
+- **Two release channels, so the app can be worked on and driven at the same
+  time.** Until now there was one kind of release and everyone got it the moment
+  it was published. That is the right answer for a finished thing and the wrong
+  one for a platform being tested by the community while it is still being
+  built: any change had to be either safe enough for everybody or held back
+  entirely.
+
+  There are now two feeds from the same place. **Stable** is what every driver
+  gets and what the league runs. **Beta** is the same installer published as a
+  prerelease, for the people building it — those builds arrive first, and they
+  break first. A stable install cannot be handed a beta by accident: it asks
+  GitHub for the latest release, and a prerelease is not one, whatever its
+  version number says.
+
+  Beta builds are not a separate branch of the app. A beta tester still receives
+  stable releases as they come, so a beta being promoted is a non-event for the
+  people who were testing it — they move onto the release like everyone else.
+
+- **A release channel picker in Settings.** League staff only, behind the same
+  check as the Admin tab. It is not a lock — the beta releases are public — but
+  a driver testing the overlay should not be one dropdown away from a build we
+  are midway through breaking.
+
+  Switching back to stable while running a beta does the thing you would expect
+  and the app previously could not: it moves you *back*. A beta is numerically
+  newer than every stable release, so without this the app would report "up to
+  date" and quietly leave you on it. This is the only case where the app will
+  ever install a version lower than the one it is running.
+
+  Anything offered from the beta feed is named as a beta everywhere it appears,
+  including the banner you press to install it.
+
+### Changed
+
+- **`npm run release` now decides the channel from the version number.** A
+  version of `0.57.1-beta.1` publishes to beta; a plain `0.57.1` publishes to
+  everyone. There is no flag to remember, because the failure that matters here
+  is handing a half-finished build to the people testing the platform, and a
+  flag you can forget is exactly how that happens. The published release is read
+  back afterwards and its channel repaired if it landed on the wrong one.
+
+  Promoting a beta means folding its notes into one section for the release: the
+  changelog gate refuses to publish `0.57.1` while `0.57.1-beta.*` sections are
+  still listed separately, since drivers on stable never ran those builds and
+  need the release rather than a diary of how it got there. The whole process is
+  written down in `docs/RELEASING.md`.
+
 ## 0.56.1 — 2026-08-04
 
 ### Fixed

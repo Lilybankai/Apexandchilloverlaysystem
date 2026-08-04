@@ -1,0 +1,127 @@
+# Releasing — stable and beta
+
+Two feeds, one repo, one command.
+
+| | Version looks like | Published as | Who receives it |
+|---|---|---|---|
+| **Stable** | `0.57.0` | a normal GitHub release | every install (the default) |
+| **Beta** | `0.57.1-beta.1` | a GitHub **prerelease** | only installs switched to the beta channel |
+
+The channel is **read off the version number in `package.json`**. There is no
+flag to remember and no second command to get wrong: give a build a `-beta.N`
+version and it publishes to beta; give it a plain `x.y.z` and it goes to
+everyone.
+
+---
+
+## Why the prerelease flag is the whole thing
+
+An installed app on the stable channel asks GitHub for
+`/repos/…/releases/latest`. GitHub's definition of "latest" **excludes
+prereleases**, so a build flagged as one is not merely unadvertised — it is
+unreachable for a stable install, whatever its version number.
+
+An install on the beta channel instead walks the full releases feed and takes
+the newest entry of either kind. Two consequences worth knowing:
+
+- **Beta testers still get stable releases.** `0.57.0` beats `0.57.0-beta.3`, so
+  promoting a beta to main is a non-event for the people who were testing it —
+  they move onto the release like everyone else.
+- **Nothing is "moved" between channels.** Promotion is publishing a new stable
+  version, not editing the beta's flag.
+
+`scripts/publish-notes.js` reads the flag back off the published release and
+repairs it if it landed wrong, because "we set the env var" is a claim about the
+build script, and this is the fact itself.
+
+---
+
+## Cutting a beta
+
+1. `git fetch origin` first — another builder pushes to this repo (see
+   `parallel-builder-repo` in the agent memory). Decide the version **after** the
+   fetch.
+2. Land the work as a `feat(...)` / `fix(...)` commit that carries the code **and**
+   its `CHANGELOG.md` section, headed with the beta version:
+
+   ```markdown
+   ## 0.57.1-beta.1 — 2026-08-05
+
+   ### Added
+
+   - **What changed, in a sentence.** Then the paragraph that says why it
+     matters to someone driving.
+   ```
+
+3. Bump `package.json` to `0.57.1-beta.1` in its own `chore(release):` commit.
+4. Publish:
+
+   ```bash
+   GH_TOKEN=$(gh auth token) npm run release
+   ```
+
+   It prints the channel it has decided on before it does anything. Read that
+   line.
+5. The next beta is `-beta.2`, and so on. Each gets its own changelog section —
+   that is what the beta channel's What's New sheet shows.
+
+`npm run release:dry` builds the installer and the notes without publishing
+anything, if you want to check the pipeline.
+
+## Promoting a beta to stable
+
+1. **Fold the beta sections into one.** Replace `## 0.57.1-beta.1`,
+   `-beta.2`, … with a single `## 0.57.1 — <date>` section describing the
+   release as a whole. `check-changelog.js` refuses to publish a stable version
+   while any `x.y.z-beta.*` section for it still exists: drivers on stable never
+   ran those builds and need the release, not a diary of how it got there.
+2. Bump `package.json` to `0.57.1`.
+3. `GH_TOKEN=$(gh auth token) npm run release`.
+
+Everyone on stable is offered it at their next check; everyone on beta is too,
+since it is newer than the last beta.
+
+## Switching channels in the app
+
+**Settings → Updates**, visible only to league staff — the same `admin:whoami`
+gate as the Admin tab. It is not a security boundary (the beta releases are
+public on GitHub); it keeps the five people testing the platform from being one
+dropdown away from a build we are midway through breaking. The card also stays
+visible to anyone *already running* a beta, so nobody can lose the control that
+gets them back.
+
+Switching to stable while running a beta turns on `allowDowngrade`, so the app
+offers the newest stable release even though it is numerically older. That is
+the only case where this app will ever install a lower version than it is
+running.
+
+## What a release must carry
+
+Unchanged from before, and still true for betas: **installer + `.blockmap` +
+`latest.yml`**, with hyphenated filenames. `npm run release` gets this right;
+hand-uploading with `gh release upload` does not (it turns spaces into dots and
+the manifest stops matching). Verify with:
+
+```bash
+gh release view v0.57.1 --json assets --jq '.assets[].name'
+```
+
+Note that a beta publishes `latest.yml`, not `beta.yml` — for the GitHub
+provider, electron-builder puts the manifest under the release's own tag and the
+prerelease flag does the separating.
+
+## If something goes out on the wrong channel
+
+```bash
+# published a beta as a full release — hide it, now
+gh release edit v0.57.1-beta.1 --prerelease=true --latest=false
+
+# published a stable release flagged as a prerelease — nobody is being offered it
+gh release edit v0.57.1 --prerelease=false --latest=true
+```
+
+Then check what `/releases/latest` actually resolves to:
+
+```bash
+gh release view --json tagName,isPrerelease
+```
