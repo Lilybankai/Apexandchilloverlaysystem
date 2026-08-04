@@ -21,8 +21,23 @@
  *
  * ## The hand-built data format
  * `c_dfDIJoystick2` lives in dinput8.lib, not the DLL, so it cannot be looked up
- * at runtime. We therefore build a `DIDATAFORMAT` describing 128 buttons mapped
- * to one byte each — verified accepted by DirectInput on a real device.
+ * at runtime. We therefore build a `DIDATAFORMAT` covering 8 axes, 4 POV hats
+ * and 128 buttons — verified accepted by DirectInput on a real device.
+ *
+ * ## Why POV hats are read, not just buttons
+ * This used to describe buttons alone, which is why the bindings UI worked on a
+ * MOZA rim but not a **Simagic** one. MOZA reports its directional switch as
+ * four ordinary buttons; Simagic reports the GT Neo's two 7-way "funky"
+ * switches as **POV hats**, and a button-only data format cannot see a hat at
+ * all — the presses simply never arrived. Hat directions are surfaced to the
+ * rest of the app as synthetic button numbers ({@link POV_BUTTON_BASE}), so a
+ * binding stays a plain `{ device, button }` pair whatever the vendor did.
+ *
+ * Axes are described too, but deliberately raise no binding events: the same
+ * list holds the steering, throttle and brake, which move constantly and would
+ * hijack every capture. They are read only to report what a device exposes.
+ * A Simagic knob left in "absolute value mode" is an axis for this reason —
+ * switch it back to incremental in SimPro Manager to bind it.
  *
  * ## Cost
  * Polling only runs while something is actually bound to a wheel button
@@ -39,19 +54,69 @@ const DI8DEVCLASS_GAMECTRL = 4;
 const DIEDFL_ATTACHEDONLY = 1;
 const DISCL_NONEXCLUSIVE = 0x00000002;
 const DISCL_BACKGROUND = 0x00000008;
+/* 0x01 is DIDFT_RELAXIS; declaring one of those inside a DIDF_ABSAXIS format is
+ * a contradiction DirectInput rejects with E_INVALIDARG, taking the whole
+ * device with it. */
+const DIDFT_ABSAXIS = 0x00000002;
+const DIDFT_POV = 0x00000010;
 const DIDFT_PSHBUTTON = 0x00000004;
 const DIDFT_TGLBUTTON = 0x00000008;
 const DIDFT_ANYINSTANCE = 0x00ffff00;
+/**
+ * Marks a data-format object the device is allowed not to have.
+ *
+ * Without it `SetDataFormat` rejects the **whole format** with E_INVALIDARG the
+ * moment it describes one more object of a type than the device really has —
+ * measured on a MOZA R5: 128 buttons is accepted, 129 is not. That is the real
+ * reason button mapping "only worked on MOZA": the R5 reports exactly 128
+ * buttons, so the old fixed 128-button format happened to fit it and nothing
+ * else. Any wheel reporting fewer failed here and was dropped silently.
+ */
+const DIDFT_OPTIONAL = 0x80000000;
 const DIDF_ABSAXIS = 0x00000001;
 
 /** Buttons we describe in the data format. 128 is DirectInput's ceiling. */
 const NUM_BUTTONS = 128;
-/** Size of DIOBJECTDATAFORMAT / DIDATAFORMAT / DIDEVICEINSTANCEW on x64. */
+/** Axes described. Read for reporting only — see the header note on capture. */
+const NUM_AXES = 8;
+/** POV hats described. DirectInput's own ceiling, and no rim comes close. */
+const NUM_POVS = 4;
+
+/* State buffer layout. Axes first so the whole thing stays 4-byte aligned,
+ * which `dwDataSize` requires. */
+const AXES_OFS = 0;
+const POVS_OFS = AXES_OFS + NUM_AXES * 4;
+const BUTTONS_OFS = POVS_OFS + NUM_POVS * 4;
+const STATE_SIZE = BUTTONS_OFS + NUM_BUTTONS;
+
+/**
+ * Hat directions are reported as button numbers starting here, past anything a
+ * physical button can occupy (DirectInput stops at 128). Hat `h` direction `d`
+ * is `POV_BUTTON_BASE + h * 8 + d + 1`, i.e. 201-232.
+ */
+const POV_BUTTON_BASE = 200;
+const POV_DIRS = ['up', 'up-right', 'right', 'down-right', 'down', 'down-left', 'left', 'up-left'];
+
+/** Size of DIOBJECTDATAFORMAT / DIDATAFORMAT / DIDEVICEINSTANCEW / DIDEVCAPS. */
 const OBJ_SIZE = 24;
 const FORMAT_SIZE = 32;
 const DEVINST_SIZE = 1100;
+const DEVCAPS_SIZE = 44;
 /** Poll period. ~125 Hz: fast enough that an encoder detent is never missed. */
 const POLL_MS = 8;
+
+/**
+ * Human-readable name for a button number, including the synthetic hat ones.
+ * Used for binding labels so a chip reads "hat 1 up" and not "btn 201".
+ */
+function describeButton(button) {
+  const n = Number(button);
+  if (n > POV_BUTTON_BASE && n <= POV_BUTTON_BASE + NUM_POVS * 8) {
+    const i = n - POV_BUTTON_BASE - 1;
+    return `hat ${Math.floor(i / 8) + 1} ${POV_DIRS[i % 8]}`;
+  }
+  return `btn ${n}`;
+}
 
 /**
  * Reads controller buttons and reports edges.
@@ -66,12 +131,15 @@ class GamepadReader {
     this.verbose = options.verbose || false;
     this.koffi = null;
     this.di = null;
-    this.devices = []; // { id, product, dev, state, prev }
+    this.devices = []; // { id, product, caps, dev, state, prev }
+    /** Devices DirectInput listed but we could not open, with the reason. */
+    this.problems = [];
     this.timer = null;
     this.enumFn = null;
     // Held on the instance so the GC cannot collect a buffer DirectInput still
     // has a pointer to — rgodf in particular is referenced by the live format.
     this.buffers = [];
+    this.iidBuffer = null;
     this.failed = null;
   }
 
@@ -80,9 +148,13 @@ class GamepadReader {
     return this.failed === null;
   }
 
-  /** Attached controllers, for the bindings UI. */
+  /**
+   * Attached controllers, for the bindings UI. `caps` is what the device really
+   * exposes — the fastest way to tell a tester whose rim "does nothing" whether
+   * their controls are buttons, hats or axes.
+   */
   list() {
-    return this.devices.map((d) => ({ id: d.id, product: d.product }));
+    return this.devices.map((d) => ({ id: d.id, product: d.product, caps: d.caps }));
   }
 
   /**
@@ -102,6 +174,40 @@ class GamepadReader {
       clearInterval(this.timer);
       this.timer = null;
     }
+    return true;
+  }
+
+  /**
+   * Re-enumerate attached controllers, releasing the ones held now.
+   *
+   * Enumeration used to happen once, on first open, so a wheel plugged in after
+   * the app had started could never be bound however many times the bindings
+   * page was opened — the device list simply kept answering with what was
+   * attached at boot.
+   */
+  rescan() {
+    if (!this.di) return this._open();
+    const wasPolling = this.timer !== null;
+    if (wasPolling) this.setActive(false);
+    for (const d of this.devices) {
+      try {
+        this._vcall(d.dev, 2, this.P.Release);
+      } catch {
+        /* already gone */
+      }
+    }
+    this.devices = [];
+    // The old rgodf/state buffers belonged to the devices just released, so
+    // dropping them here is what stops a rescan leaking one set per call.
+    this.buffers = this.iidBuffer ? [this.iidBuffer] : [];
+    try {
+      this.koffi.unregister(this.enumFn);
+    } catch {
+      /* ignore */
+    }
+    this.enumFn = null;
+    this._enumerate();
+    if (wasPolling) this.setActive(true);
     return true;
   }
 
@@ -135,6 +241,7 @@ class GamepadReader {
       this.enumFn = null;
     }
     this.buffers = [];
+    this.iidBuffer = null;
   }
 
   /* ------------------------------ internals ----------------------------- */
@@ -158,6 +265,7 @@ class GamepadReader {
 
       this.P = {
         Release: koffi.proto('uint32 __stdcall P_Release(void*)'),
+        GetCapabilities: koffi.proto('int32 __stdcall P_GetCapabilities(void*, void*)'),
         CreateDevice: koffi.proto('int32 __stdcall P_CreateDevice(void*, void*, _Out_ void**, void*)'),
         EnumDevices: koffi.proto('int32 __stdcall P_EnumDevices(void*, uint32, void*, void*, uint32)'),
         SetDataFormat: koffi.proto('int32 __stdcall P_SetDataFormat(void*, void*)'),
@@ -186,6 +294,9 @@ class GamepadReader {
       iid.writeUInt16LE(0x483a, 4);
       iid.writeUInt16LE(0x4da2, 6);
       Buffer.from([0xaa, 0x99, 0x5d, 0x64, 0xed, 0x36, 0x97, 0x00]).copy(iid, 8);
+      // Kept by name as well as in `buffers`: a rescan clears `buffers` and
+      // this one must survive it.
+      this.iidBuffer = iid;
       this.buffers.push(iid);
 
       const out = [null];
@@ -213,6 +324,7 @@ class GamepadReader {
   _enumerate() {
     const koffi = this.koffi;
     const found = [];
+    this.problems = [];
     this.enumFn = koffi.register((lpddi) => {
       try {
         const buf = Buffer.from(koffi.decode(lpddi, 0, koffi.array('uint8', DEVINST_SIZE)));
@@ -229,83 +341,164 @@ class GamepadReader {
     this._vcall(this.di, 4, this.P.EnumDevices, DI8DEVCLASS_GAMECTRL, this.enumFn, null,
       DIEDFL_ATTACHEDONLY);
 
+    // A base and a rim plugged in on its own USB port can report the same
+    // product string; bindings key on it, so make the duplicates distinct.
+    const seen = new Map();
+    for (const f of found) {
+      const n = (seen.get(f.product) || 0) + 1;
+      seen.set(f.product, n);
+      f.id = n === 1 ? f.product : `${f.product} #${n}`;
+    }
+
     for (const f of found) {
       const dev = this._openDevice(f);
       if (dev) this.devices.push(dev);
     }
   }
 
+  /**
+   * Builds the data format and opens one device.
+   *
+   * On failure this records *why* in {@link problems} rather than returning a
+   * bare null: a device that vanishes from the list with no reason is the
+   * hardest kind of report to act on when a tester's wheel "isn't detected".
+   */
   _openDevice(found) {
     const koffi = this.koffi;
-    const out = [null];
-    if (this._vcall(this.di, 3, this.P.CreateDevice, found.guid, out, null) !== 0 || !out[0]) {
+    const fail = (why) => {
+      this.problems.push({ product: found.product, error: why });
+      if (this.verbose) console.warn(`[gamepad] ${found.product}: ${why}`);
       return null;
-    }
+    };
+
+    const out = [null];
+    const rc = this._vcall(this.di, 3, this.P.CreateDevice, found.guid, out, null);
+    if (rc !== 0 || !out[0]) return fail(`CreateDevice failed 0x${(rc >>> 0).toString(16)}`);
     const dev = out[0];
 
-    // 128 buttons, one byte of our state each. pguid NULL + ANYINSTANCE lets
-    // DirectInput assign the device's buttons in order.
-    const rgodf = Buffer.alloc(OBJ_SIZE * NUM_BUTTONS);
-    for (let i = 0; i < NUM_BUTTONS; i++) {
+    // Axes, then hats, then buttons — matching the state buffer layout. pguid
+    // NULL + ANYINSTANCE lets DirectInput assign the device's own objects to
+    // these slots in order, so nothing here is vendor-specific.
+    const numObjs = NUM_AXES + NUM_POVS + NUM_BUTTONS;
+    const rgodf = Buffer.alloc(OBJ_SIZE * numObjs);
+    const put = (i, ofs, type) => {
       const o = i * OBJ_SIZE;
-      rgodf.writeBigUInt64LE(0n, o);
-      rgodf.writeUInt32LE(i, o + 8);
-      rgodf.writeUInt32LE(DIDFT_PSHBUTTON | DIDFT_TGLBUTTON | DIDFT_ANYINSTANCE, o + 12);
+      rgodf.writeBigUInt64LE(0n, o); // pguid: NULL, i.e. match any object
+      rgodf.writeUInt32LE(ofs, o + 8);
+      // OPTIONAL on every object: this format is a superset of any wheel, and
+      // without it the surplus slots would fail the device outright.
+      rgodf.writeUInt32LE((type | DIDFT_ANYINSTANCE | DIDFT_OPTIONAL) >>> 0, o + 12);
       rgodf.writeUInt32LE(0, o + 16);
+    };
+    let idx = 0;
+    for (let i = 0; i < NUM_AXES; i++) put(idx++, AXES_OFS + i * 4, DIDFT_ABSAXIS);
+    for (let i = 0; i < NUM_POVS; i++) put(idx++, POVS_OFS + i * 4, DIDFT_POV);
+    for (let i = 0; i < NUM_BUTTONS; i++) {
+      put(idx++, BUTTONS_OFS + i, DIDFT_PSHBUTTON | DIDFT_TGLBUTTON);
     }
+
     const df = Buffer.alloc(FORMAT_SIZE);
     df.writeUInt32LE(FORMAT_SIZE, 0);
     df.writeUInt32LE(OBJ_SIZE, 4);
     df.writeUInt32LE(DIDF_ABSAXIS, 8);
-    df.writeUInt32LE(NUM_BUTTONS, 12);
-    df.writeUInt32LE(NUM_BUTTONS, 16);
+    df.writeUInt32LE(STATE_SIZE, 12);
+    df.writeUInt32LE(numObjs, 16);
     df.writeBigUInt64LE(BigInt(koffi.address(rgodf)), 24);
     // DirectInput keeps a pointer to rgodf for the device's lifetime.
     this.buffers.push(rgodf, df);
 
-    if (this._vcall(dev, 11, this.P.SetDataFormat, df) !== 0) return null;
+    const fmtRc = this._vcall(dev, 11, this.P.SetDataFormat, df);
+    if (fmtRc !== 0) return fail(`SetDataFormat failed 0x${(fmtRc >>> 0).toString(16)}`);
     // BACKGROUND is the whole point: read while the sim owns the foreground.
     // NONEXCLUSIVE so the game keeps using the same device normally.
-    if (this._vcall(dev, 13, this.P.SetCoopLevel, null, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE) !== 0) {
-      return null;
-    }
+    const coopRc = this._vcall(dev, 13, this.P.SetCoopLevel, null,
+      DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+    if (coopRc !== 0) return fail(`SetCooperativeLevel failed 0x${(coopRc >>> 0).toString(16)}`);
     this._vcall(dev, 7, this.P.Acquire);
 
-    const state = Buffer.alloc(NUM_BUTTONS);
+    // What the device actually has. Hats and buttons past these counts are
+    // slots DirectInput never fills, and an unfilled hat reads as 0 — which is
+    // "up" — so the count is what stops a phantom press every single poll.
+    const caps = { axes: 0, povs: 0, buttons: 0 };
+    const capsBuf = Buffer.alloc(DEVCAPS_SIZE);
+    capsBuf.writeUInt32LE(DEVCAPS_SIZE, 0);
+    if (this._vcall(dev, 3, this.P.GetCapabilities, capsBuf) === 0) {
+      caps.axes = Math.min(capsBuf.readUInt32LE(12), NUM_AXES);
+      caps.buttons = Math.min(capsBuf.readUInt32LE(16), NUM_BUTTONS);
+      caps.povs = Math.min(capsBuf.readUInt32LE(20), NUM_POVS);
+    } else {
+      // Never seen in practice, but a device that will not describe itself is
+      // better read conservatively than not read at all.
+      caps.buttons = NUM_BUTTONS;
+    }
+    this.buffers.push(capsBuf);
+
+    const state = Buffer.alloc(STATE_SIZE);
     this.buffers.push(state);
     return {
-      id: found.product,
+      id: found.id || found.product,
       product: found.product,
+      caps,
       dev,
       state,
-      prev: Buffer.alloc(NUM_BUTTONS),
+      // Hats start centred, which is the resting value POV_CENTERED matches.
+      prev: Buffer.alloc(STATE_SIZE),
+      pov: new Array(NUM_POVS).fill(-1),
     };
+  }
+
+  /** Deliver one edge, never letting a bad handler stop the polling loop. */
+  _emit(device, button, down) {
+    try {
+      this.onButton(device, button, down);
+    } catch (err) {
+      console.error('[gamepad] button handler failed:', err.message);
+    }
   }
 
   _poll() {
     for (const d of this.devices) {
-      const rc = this._vcall(d.dev, 9, this.P.GetDeviceState, NUM_BUTTONS, d.state);
+      const rc = this._vcall(d.dev, 9, this.P.GetDeviceState, STATE_SIZE, d.state);
       if (rc !== 0) {
         // Focus changes and device sleep drop the acquisition; re-take it and
         // pick up on the next tick rather than treating it as an error.
         this._vcall(d.dev, 7, this.P.Acquire);
         continue;
       }
-      for (let i = 0; i < NUM_BUTTONS; i++) {
-        const down = (d.state[i] & 0x80) !== 0;
-        const was = (d.prev[i] & 0x80) !== 0;
-        if (down !== was) {
-          try {
-            this.onButton(d.id, i + 1, down);
-          } catch (err) {
-            // One bad handler must not stop the polling loop.
-            console.error('[gamepad] button handler failed:', err.message);
-          }
-        }
+
+      for (let i = 0; i < d.caps.buttons; i++) {
+        const o = BUTTONS_OFS + i;
+        const down = (d.state[o] & 0x80) !== 0;
+        const was = (d.prev[o] & 0x80) !== 0;
+        if (down !== was) this._emit(d.id, i + 1, down);
       }
+
+      // Hats. A hat is one object holding a direction, so an edge means the
+      // previous direction released and the new one pressed — that is what
+      // turns a Simagic funky switch into bindable presses.
+      for (let h = 0; h < d.caps.povs; h++) {
+        const dir = this._povDirection(d.state.readUInt32LE(POVS_OFS + h * 4));
+        if (dir === d.pov[h]) continue;
+        if (d.pov[h] >= 0) this._emit(d.id, POV_BUTTON_BASE + h * 8 + d.pov[h] + 1, false);
+        if (dir >= 0) this._emit(d.id, POV_BUTTON_BASE + h * 8 + dir + 1, true);
+        d.pov[h] = dir;
+      }
+
       d.state.copy(d.prev);
     }
   }
+
+  /**
+   * POV value (hundredths of a degree clockwise from up) to one of 8 compass
+   * directions, or -1 for centred. Centred is documented as 0xFFFF in the low
+   * word, but drivers also use -1 and 0xFFFFFFFF, and anything past a full
+   * circle is not a real bearing — so treat all of them as centred rather than
+   * quantising a sentinel into a phantom "up".
+   */
+  _povDirection(raw) {
+    if ((raw & 0xffff) === 0xffff || raw > 36000) return -1;
+    return Math.round(raw / 4500) % 8;
+  }
 }
 
-module.exports = { GamepadReader };
+module.exports = { GamepadReader, describeButton };

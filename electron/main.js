@@ -1098,7 +1098,10 @@ function onWheelButton(device, button, down) {
   if (wheelCapture) {
     const capture = wheelCapture;
     wheelCapture = null;
-    capture.resolve({ ok: true, device, button });
+    // The label is carried with the binding because "hat 1 up" only makes sense
+    // next to the device that reported it — the number alone reads as "btn 201".
+    const { describeButton } = require('./gamepad');
+    capture.resolve({ ok: true, device, button, label: describeButton(button) });
     syncGamepad();
     return;
   }
@@ -2141,11 +2144,13 @@ function registerIpc() {
 
   ipcMain.handle('wheel:devices', () => {
     const g = getGamepad();
-    // Opening is idempotent; this also picks up a wheel plugged in since boot.
+    // A full re-enumeration, so a wheel plugged in since boot is picked up —
+    // opening alone never did that, whatever the old comment here claimed.
+    g.rescan();
     g.setActive(true);
     const devices = g.list();
     syncGamepad();
-    return { available: g.available, error: g.failed, devices };
+    return { available: g.available, error: g.failed, devices, problems: g.problems };
   });
 
   /**
@@ -2189,7 +2194,9 @@ function registerIpc() {
     const current = loadSettings();
     const entry = { ...(current.wheelBindings[actionId] || {}) };
     if (binding && typeof binding.device === 'string' && Number.isFinite(binding.button)) {
-      entry[dir] = { device: binding.device, button: Math.round(binding.button) };
+      const button = Math.round(binding.button);
+      const { describeButton } = require('./gamepad');
+      entry[dir] = { device: binding.device, button, label: describeButton(button) };
     } else {
       delete entry[dir];
     }

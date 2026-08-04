@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.57.6 — 2026-08-04
+
+### Fixed
+
+- **Wheel button mapping now works on every wheel, not just MOZA.** Reported by a
+  tester on a Simagic Alpha base with a GT Neo rim, who could not bind anything
+  at all. The cause was not Simagic-specific in the end, and it was worse than it
+  looked: the overlay asked DirectInput for a fixed block of **128 buttons**, and
+  `SetDataFormat` rejects the *entire* format with `E_INVALIDARG` the moment it
+  describes even one more control than the device actually has. Measured on a
+  MOZA R5 here: 128 buttons is accepted, 129 is refused.
+
+  A MOZA R5 reports exactly 128 buttons. That is the only reason it ever worked
+  — the request happened to fit it precisely. Any wheel reporting fewer failed
+  this call, and the failure was discarded without a word, so the device simply
+  never appeared and there was nothing to bind to and nothing to explain it.
+  Every control on the format is now marked optional, so the request is a
+  superset that fits any wheel instead of a shape only one wheel happens to be.
+
+- **A rim's 7-way "funky" switches can be bound.** The overlay described buttons
+  only, and a POV hat is not a button — MOZA reports its directional switch as
+  four ordinary buttons, Simagic reports the GT Neo's two funky switches as
+  hats, so those presses were not being missed so much as never delivered. Hats
+  are now read and offered as eight directions each, shown as "hat 1 up" rather
+  than a raw number, and existing bindings are untouched.
+
+  One Simagic setting still matters: a knob switched to **absolute value mode**
+  becomes an axis rather than a button, and an axis cannot be bound here — the
+  steering and pedals live in that same list and would seize every capture.
+  Leave the knob in incremental mode, which is its default, and it binds.
+
+- **A wheel plugged in after the app started is now found.** Enumeration only
+  ever ran once, on first use, so the bindings page kept answering with whatever
+  was attached at boot however many times it was reopened — despite a comment in
+  the code claiming otherwise. It now re-scans on request.
+
+### Added
+
+- **"Scan for wheels" on the Bindings page**, listing each controller with what
+  it really exposes — buttons, hats and axes — plus any device that could not be
+  opened and why. "My wheel does nothing" has two causes that look identical
+  from outside: the device is not being seen at all, or it is, but the control
+  being pressed is not a button. This tells the two apart at a glance.
+
 ## 0.57.5 — 2026-08-04
 
 ### Fixed

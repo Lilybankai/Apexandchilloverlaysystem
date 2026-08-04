@@ -2245,10 +2245,13 @@
       chip.type = 'button';
       chip.className = 'hotkey__key binding-row__wheel';
       const glyph = action.kind === 'delta' ? (dir === 'dec' ? '− ' : '+ ') : '';
-      chip.textContent = bound ? glyph + 'btn ' + bound.button : glyph + 'wheel';
+      // `label` names hat directions ("hat 1 up") that a bare number cannot.
+      // Bindings saved before hats existed have none, so fall back to the number.
+      const boundLabel = bound ? bound.label || `btn ${bound.button}` : '';
+      chip.textContent = bound ? glyph + boundLabel : glyph + 'wheel';
       chip.setAttribute('data-empty', String(!bound));
       chip.title = bound
-        ? `${bound.device} button ${bound.button} — click to rebind, right-click to clear`
+        ? `${bound.device} ${boundLabel} — click to rebind, right-click to clear`
         : 'Click, then press a wheel button';
       chip.addEventListener('click', async () => {
         chip.setAttribute('data-capturing', 'true');
@@ -2261,7 +2264,7 @@
           return;
         }
         await window.apex.wheelBind(action.id, dir, { device: res.device, button: res.button });
-        showToast(`Bound to ${res.device} button ${res.button}`);
+        showToast(`Bound to ${res.device} ${res.label || `button ${res.button}`}`);
         await renderBindings();
       });
       // Right-click clears, keeping the row from growing a third control.
@@ -2314,6 +2317,41 @@
       bindingList.appendChild(li);
     }
   }
+
+  /*
+   * Which controllers the app can actually see, and what each one exposes.
+   *
+   * Worth a place in the UI because "my wheel does nothing" has two very
+   * different causes that look identical from the outside: the device is not
+   * being enumerated at all, or it is, but the control being pressed is not a
+   * button. Showing the hat/axis counts separates those in one glance — a rim
+   * whose funky switches are hats reads as such here, and a knob left in
+   * Simagic's "absolute value mode" shows up in the axis count instead of the
+   * button count, which is exactly why it refuses to bind.
+   */
+  const wheelDevicesScan = document.getElementById('wheel-devices-scan');
+  const wheelDevicesOut = document.getElementById('wheel-devices-out');
+
+  async function renderWheelDevices() {
+    wheelDevicesOut.textContent = ' scanning…';
+    const res = await window.apex.wheelDevices();
+    if (!res || res.available === false) {
+      wheelDevicesOut.textContent = ` controller input unavailable: ${
+        (res && res.error) || 'unknown reason'}`;
+      return;
+    }
+    const parts = (res.devices || []).map((d) => {
+      const c = d.caps;
+      const spec = c ? ` (${c.buttons} buttons, ${c.povs} hats, ${c.axes} axes)` : '';
+      return d.product + spec;
+    });
+    for (const p of res.problems || []) parts.push(`${p.product} — could not open: ${p.error}`);
+    wheelDevicesOut.textContent = parts.length
+      ? ` ${parts.join(' · ')}`
+      : ' no controllers attached';
+  }
+
+  wheelDevicesScan.addEventListener('click', () => void renderWheelDevices());
 
   // --- LMU's own controls file ----------------------------------------------
   /*
