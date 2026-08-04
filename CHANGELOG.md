@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.57.4 — 2026-08-04
+
+### Fixed
+
+- **The lap delta no longer measures you against a lap that cut the track.**
+  Reported by a beta tester, who proved it by blazing through the first corners
+  at Monza: that lap came back as the fastest of the session, the delta took it
+  as the one to beat, and every clean lap afterwards read seconds down against a
+  time that had not been driven round the circuit.
+
+  The delta timed each lap itself, checked it was a plausible whole lap, and
+  adopted the fastest one — with no notion of whether the stewards had charged
+  it. The same lap is also saved as your all-time best and preferred over
+  anything learned later, so one cut lap could sit there setting an impossible
+  target at that track for good.
+
+  It now asks the question the rest of the overlay already asks. Your weekly
+  clean-lap count and the league board both refuse a lap the stewards charged,
+  and the delta was the last place taking the stopwatch at its word: a lap with a
+  cut, a penalty or a pit stop in it can no longer become your session best or
+  your all-time best.
+
+  **Last lap is deliberately unchanged.** It still shows the lap you just drove,
+  cut or not — when you have run wide, what it cost you is exactly the thing
+  worth knowing.
+
+  Two things to expect the first time you run this. All-time bests saved before
+  today cannot say whether they were clean, so they are set aside and your first
+  clean flying lap in each car writes a new one — if a delta reads as unknown for
+  a lap, that is why. And the sim reports a cut up to twenty-five seconds after
+  you take it, so a cut in the final corner can be charged to the lap that
+  follows it; that lap is passed over as a reference and the next clean one takes
+  its place.
+
 ## 0.57.3 — 2026-08-04
 
 ### Fixed
