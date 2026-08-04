@@ -227,6 +227,35 @@ function defaultSettings() {
     // stream, except fuel" case, which cannot be a global setting because which
     // widget has to stay solid differs by driver and by session.
     widgetOpacity: {},
+    /*
+     * How much of the field the standings tower shows.
+     *
+     * A whole grid is 20-30 rows, which is right for a broadcast and far too
+     * much screen for someone driving. Rather than a single row cap — which in a
+     * multiclass field means a GT3 driver watching a Hypercar-only tower — the
+     * view is composed from two ideas that together cover what anyone actually
+     * asks for:
+     *
+     *   top     the leaders, always shown
+     *   ahead   cars in front of you
+     *   behind  cars behind you
+     *
+     * and `scope`, which decides whether those are counted within YOUR CLASS or
+     * across the whole field. So "three in front, three behind" is
+     * top 0 / ahead 3 / behind 3, and "top ten of each class" is top 10 with
+     * scope 'class' — the same three numbers, no modes to enumerate.
+     *
+     * `limit: 'all'` is the default and means the tower behaves exactly as it
+     * always has. The numbers are kept while it is set, so turning the cap off
+     * and on again returns to the same view rather than to a guess.
+     */
+    standings: {
+      limit: 'all', // 'all' | 'custom'
+      scope: 'class', // 'class' | 'field'
+      top: 0,
+      ahead: 3,
+      behind: 3,
+    },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
     // A `delta` action can take two buttons (an encoder's two directions); a
@@ -405,6 +434,7 @@ function loadSettings() {
     actionBindings: normalizeBindings(stored, defaults),
     widgetModes: normalizeWidgetModes(stored),
     widgetOpacity: normalizeWidgetOpacity(stored),
+    standings: normalizeStandings(stored),
     wheelBindings: normalizeWheelBindings(stored),
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
@@ -434,6 +464,27 @@ function normalizeWheelBindings(stored) {
     if (clean.inc || clean.dec) out[actionId] = clean;
   }
   return out;
+}
+
+/**
+ * Validate the standings composition from disk or the UI.
+ *
+ * Every field falls back independently, so a config carrying only `limit` (or
+ * only a changed `ahead`) is still a complete, sane object by the time anything
+ * renders from it. The counts are capped at 30 — beyond a full grid the numbers
+ * stop meaning anything, and an unbounded value here is a row count the overlay
+ * would try to lay out.
+ */
+function normalizeStandings(stored) {
+  const d = defaultSettings().standings;
+  const from = stored && typeof stored.standings === 'object' ? stored.standings : {};
+  return {
+    limit: from.limit === 'custom' ? 'custom' : d.limit,
+    scope: from.scope === 'field' ? 'field' : d.scope,
+    top: clamp(from.top, 0, 30, d.top),
+    ahead: clamp(from.ahead, 0, 30, d.ahead),
+    behind: clamp(from.behind, 0, 30, d.behind),
+  };
 }
 
 /**
@@ -911,6 +962,7 @@ function applyAppearance(settings) {
     audioVolume: s.audioVolume,
     widgetModes: s.widgetModes || {},
     widgetOpacity: s.widgetOpacity || {},
+    standings: s.standings || defaultSettings().standings,
   };
   try {
     requireServer().setAppearance(payload);
@@ -949,7 +1001,8 @@ function applySettings(partial) {
   if (
     (partial.panelOpacity !== undefined && partial.panelOpacity !== current.panelOpacity) ||
     partial.widgetModes !== undefined ||
-    partial.widgetOpacity !== undefined
+    partial.widgetOpacity !== undefined ||
+    partial.standings !== undefined
   ) {
     applyAppearance(next);
   }
@@ -1194,6 +1247,10 @@ function overlaysForUi() {
     // the global is what it needs to SHOW while that is true.
     opacity: settings.widgetOpacity[o.id],
     globalOpacity: settings.panelOpacity,
+    // Only the standings tower has one, and only its card draws the control.
+    // Sent on every overlay so the card builder stays a plain map over the
+    // catalog rather than a special case that has to know which id it is on.
+    view: o.id === 'standings' ? settings.standings : undefined,
   }));
 }
 
@@ -1505,6 +1562,13 @@ function registerIpc() {
         }
         next.widgetOpacity = normalizeWidgetOpacity({ widgetOpacity: merged });
       }
+      // Standings composition, merged field by field so the panel can send one
+      // number without restating the other four.
+      if (partial.standings && typeof partial.standings === 'object') {
+        next.standings = normalizeStandings({
+          standings: { ...current.standings, ...partial.standings },
+        });
+      }
       if (partial.radarIconScale !== undefined) {
         next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
       }
@@ -1545,7 +1609,8 @@ function registerIpc() {
       next.radarIconScale !== current.radarIconScale ||
       next.audioCues !== current.audioCues ||
       next.audioVolume !== current.audioVolume ||
-      JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity)
+      JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity) ||
+      JSON.stringify(next.standings) !== JSON.stringify(current.standings)
     ) {
       applyAppearance(next);
     }

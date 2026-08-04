@@ -151,7 +151,151 @@
     el[prop] = value;
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  How much of the field to draw                                      */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * A full grid is 20-30 rows: right for a broadcast, far too much screen for
+   * someone driving. `view` says how much of it to keep.
+   *
+   *   limit   'all' draws the field, exactly as this tower always has.
+   *   top     leaders always kept
+   *   ahead   cars in front of you
+   *   behind  cars behind you
+   *   scope   whether those are counted inside YOUR CLASS or across the field
+   *
+   * Two ideas rather than a list of layout modes, because they compose: "three
+   * in front, three behind" is top 0 with a 3/3 window, and "top ten of each
+   * class" is top 10, scope class. Anything anyone has asked for so far is one
+   * of those two with different numbers.
+   */
+  var view = { limit: "all", scope: "class", top: 0, ahead: 3, behind: 3 };
+  var viewPinned = false;
+
+  /**
+   * `?standings=all` or `?standings=top=10,scope=class,ahead=3,behind=3` pins
+   * the composition for one OBS source. Same contract as the tyres widget's
+   * `?tyres=`: a source set up to show the front of the race must not change
+   * because a driver pressed something.
+   */
+  function initView(params) {
+    var raw = (params.get("standings") || "").trim().toLowerCase();
+    if (raw) {
+      viewPinned = true;
+      if (raw === "all") {
+        view = { limit: "all", scope: "class", top: 0, ahead: 0, behind: 0 };
+      } else {
+        var next = { limit: "custom", scope: "class", top: 0, ahead: 0, behind: 0 };
+        var parts = raw.split(",");
+        for (var i = 0; i < parts.length; i++) {
+          var kv = parts[i].split("=");
+          var key = (kv[0] || "").trim();
+          var val = (kv[1] || "").trim();
+          if (key === "scope") next.scope = val === "field" ? "field" : "class";
+          else if (key === "top" || key === "ahead" || key === "behind") {
+            var n = parseInt(val, 10);
+            if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
+          }
+        }
+        view = next;
+      }
+      return;
+    }
+    if (window.ApexAppearance && window.ApexAppearance.onStandings) {
+      window.ApexAppearance.onStandings(function (next) {
+        if (viewPinned || !next) return;
+        view = next;
+      });
+    }
+  }
+
+  /** Index of the player in a list, or -1 when they are not in it. */
+  function playerIndex(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].isPlayer) return i;
+    }
+    return -1;
+  }
+
+  /** Keep the first `n` of `list`. */
+  function keepTop(list, n, keep) {
+    for (var i = 0; i < n && i < list.length; i++) keep[list[i].slotId] = true;
+  }
+
+  /**
+   * Keep a window around the player: `ahead` in front, `behind` behind, and the
+   * player themselves.
+   *
+   * With no player in the list — a spectator feed, a replay — the window is
+   * anchored at the leader instead of vanishing, so the same setting still
+   * draws the same NUMBER of cars. A tower that empties itself the moment you
+   * leave the car would look broken rather than configured.
+   */
+  function keepWindow(list, idx, ahead, behind, keep) {
+    var anchor = idx < 0 ? 0 : idx;
+    var from = idx < 0 ? 0 : anchor - ahead;
+    var to = idx < 0 ? ahead + behind : anchor + behind;
+    for (var i = Math.max(0, from); i <= to && i < list.length; i++) {
+      keep[list[i].slotId] = true;
+    }
+  }
+
+  /**
+   * The cars this tower draws, in the order the server sent them.
+   *
+   * Selection only — the caller still groups by class and renders, so a filtered
+   * tower is the same tower with fewer rows in it, not a second layout to keep
+   * in step with the first.
+   */
+  function selectField(list) {
+    if (!view || view.limit !== "custom") return list;
+
+    var keep = {};
+    var fieldPlayer = playerIndex(list);
+    if (view.scope === "field") {
+      keepTop(list, view.top, keep);
+      keepWindow(list, fieldPlayer, view.ahead, view.behind, keep);
+    } else {
+      var byClass = {};
+      var order = [];
+      for (var i = 0; i < list.length; i++) {
+        var k = list[i].carClass || "—";
+        if (!byClass[k]) {
+          byClass[k] = [];
+          order.push(k);
+        }
+        byClass[k].push(list[i]);
+      }
+      for (var g = 0; g < order.length; g++) {
+        var members = byClass[order[g]];
+        keepTop(members, view.top, keep);
+        var pIdx = playerIndex(members);
+        // Only the player's own class gets a window — a 3-ahead/3-behind view
+        // means the cars racing YOU, not three arbitrary cars from every class.
+        // With nobody driving at all (spectating, a replay) there is no "you" to
+        // be racing, so every class anchors its window at its own leader. That
+        // keeps the two scopes consistent: the same setting draws the same
+        // number of cars whether or not anyone is in a car.
+        if (pIdx >= 0) keepWindow(members, pIdx, view.ahead, view.behind, keep);
+        else if (fieldPlayer < 0) keepWindow(members, -1, view.ahead, view.behind, keep);
+      }
+    }
+
+    // You are never filtered out of your own standings.
+    if (fieldPlayer >= 0) keep[list[fieldPlayer].slotId] = true;
+
+    var out = [];
+    for (var j = 0; j < list.length; j++) {
+      if (keep[list[j].slotId]) out.push(list[j]);
+    }
+    // A composition that selects nobody would draw an empty panel, which reads
+    // as a broken widget rather than a configured one.
+    return out.length ? out : list;
+  }
+
   function init(root) {
+    initView(new URLSearchParams(window.location.search));
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -282,7 +426,13 @@
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var now = Date.now();
-    var list = frame.standings || [];
+    // `full` is the field; `list` is what this tower draws. The two differ only
+    // when the operator has capped the view — and everything that is a fact
+    // about the RACE rather than about the panel (the purple lap, each class's
+    // benchmark, how many cars are in a class) is still read from the full
+    // field. A trimmed tower must not claim GT3 has three cars in it.
+    var full = frame.standings || [];
+    var list = selectField(full);
     var seen = new Set();
 
     setSession(frame.session);
@@ -295,17 +445,17 @@
     var fastestEntry = null;
     /** @type {Object<string, {sec: number, slot: number}>} */
     var classFastest = {};
-    for (var f = 0; f < list.length; f++) {
-      var b = list[f].bestLapSec;
+    for (var f = 0; f < full.length; f++) {
+      var b = full[f].bestLapSec;
       if (!fmt.has(b)) continue;
       if (b < fastestSec) {
         fastestSec = b;
-        fastestSlot = list[f].slotId;
-        fastestEntry = list[f];
+        fastestSlot = full[f].slotId;
+        fastestEntry = full[f];
       }
-      var ck = list[f].carClass || "—";
+      var ck = full[f].carClass || "—";
       if (!classFastest[ck] || b < classFastest[ck].sec) {
-        classFastest[ck] = { sec: b, slot: list[f].slotId };
+        classFastest[ck] = { sec: b, slot: full[f].slotId };
       }
     }
     updateFastestBanner(fastestEntry, fastestSec, fmt);
@@ -321,6 +471,13 @@
         order.push(key);
       }
       byClass[key].push(list[i]);
+    }
+
+    // True class sizes, so a capped tower still says how big the class is.
+    var classTotal = {};
+    for (var t = 0; t < full.length; t++) {
+      var tk = full[t].carClass || "—";
+      classTotal[tk] = (classTotal[tk] || 0) + 1;
     }
 
     var seenGroups = new Set();
@@ -342,7 +499,12 @@
         grp.tr.style.setProperty("--class-color", col);
       }
       set(grp, "label", grp.label, "textContent", classLabel(cls));
-      set(grp, "count", grp.count, "textContent", members.length + (members.length === 1 ? " CAR" : " CARS"));
+      var total = classTotal[cls] || members.length;
+      var countText =
+        members.length < total
+          ? members.length + " OF " + total + " CARS"
+          : total + (total === 1 ? " CAR" : " CARS");
+      set(grp, "count", grp.count, "textContent", countText);
       tbody.appendChild(grp.tr);
 
       // Member rows.

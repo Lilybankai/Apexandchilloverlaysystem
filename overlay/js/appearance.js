@@ -279,6 +279,33 @@
   var modes = {};
   var modeListeners = [];
 
+  /* ----------------------- standings composition -------------------------- */
+
+  /**
+   * How much of the field the standings tower draws. Delivered on this channel
+   * for the same reason the modes are: it changes a handful of times a session,
+   * so the tower subscribes instead of re-reading it every frame.
+   *
+   * Null until something has actually said — the tower keeps its own default
+   * (the whole field) rather than being handed a placeholder it would draw once
+   * and immediately redraw away from.
+   */
+  var standings = null;
+  var standingsListeners = [];
+
+  function applyStandings(next) {
+    if (!next || typeof next !== "object") return;
+    if (standings && JSON.stringify(standings) === JSON.stringify(next)) return;
+    standings = next;
+    for (var i = 0; i < standingsListeners.length; i++) {
+      try {
+        standingsListeners[i](standings);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
   /**
    * Apply a `{ widgetId: mode }` map. Widgets subscribe rather than poll: a mode
    * changes a handful of times a session, so re-reading it every frame would be
@@ -334,6 +361,14 @@
     onModes: function (cb) {
       modeListeners.push(cb);
       cb(modes);
+    },
+    /**
+     * Subscribe to the standings composition. Called immediately only if a value
+     * has arrived, like onRadarIcons — see `standings` above.
+     */
+    onStandings: function (cb) {
+      standingsListeners.push(cb);
+      if (standings) cb(standings);
     },
     /**
      * Subscribe to the radar's icon size (percent). Called immediately IF a value
@@ -436,6 +471,7 @@
       }
       if (!audioPinned) applyAudio(appearance);
       applyModes(appearance.widgetModes);
+      applyStandings(appearance.standings);
     });
     return; // the app pushes changes — nothing to poll
   }
@@ -458,6 +494,7 @@
         if (!iconsPinned && cfg.radarIconScale !== undefined) applyIcons(cfg.radarIconScale);
         if (!audioPinned) applyAudio(cfg);
         applyModes(cfg.widgetModes);
+        applyStandings(cfg.standings);
       })
       .catch(function () {
         // Served from somewhere without the route (or the server is down):

@@ -138,6 +138,30 @@ export interface Appearance {
    * install ships `{}` and every widget keeps following one slider.
    */
   widgetOpacity: Record<string, number>;
+  /**
+   * How much of the field the standings tower draws.
+   *
+   * `limit: 'all'` is the whole grid, exactly as the tower has always read.
+   * `'custom'` composes the view from the leaders (`top`) plus a window around
+   * the player (`ahead`/`behind`), each counted either within the player's own
+   * class or across the field (`scope`). Those three numbers express both
+   * "three in front, three behind" and "top ten of each class", so there is no
+   * list of layout modes to invent and keep in step with a UI.
+   *
+   * Rides the appearance channel with everything else here: it is operator
+   * look-and-feel, changed a handful of times a session, and the delivery
+   * (URL override -> in-game push -> 1 s poll for OBS) is already solved.
+   */
+  standings: StandingsView;
+}
+
+/** @see Appearance.standings */
+export interface StandingsView {
+  limit: 'all' | 'custom';
+  scope: 'class' | 'field';
+  top: number;
+  ahead: number;
+  behind: number;
 }
 
 /** URL the overlays read their appearance from. */
@@ -159,6 +183,7 @@ const appearance: Appearance = {
   audioVolume: 60,
   widgetModes: {},
   widgetOpacity: {},
+  standings: { limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3 },
 };
 
 /** Current appearance (a deep-enough copy — callers must not mutate the state). */
@@ -167,6 +192,7 @@ export function getAppearance(): Appearance {
     ...appearance,
     widgetModes: { ...appearance.widgetModes },
     widgetOpacity: { ...appearance.widgetOpacity },
+    standings: { ...appearance.standings },
   };
 }
 
@@ -214,6 +240,22 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
       clean[widget] = Math.min(100, Math.max(0, Math.round(n)));
     }
     appearance.widgetOpacity = clean;
+  }
+  // Merged field by field, so a caller sending one number does not silently
+  // reset the other four to whatever its own defaults happen to be.
+  if (next?.standings && typeof next.standings === 'object') {
+    const v = next.standings as Partial<StandingsView>;
+    const count = (n: unknown, fallback: number): number => {
+      const x = Number(n);
+      return Number.isFinite(x) ? Math.min(30, Math.max(0, Math.round(x))) : fallback;
+    };
+    appearance.standings = {
+      limit: v.limit === 'custom' || v.limit === 'all' ? v.limit : appearance.standings.limit,
+      scope: v.scope === 'field' || v.scope === 'class' ? v.scope : appearance.standings.scope,
+      top: count(v.top, appearance.standings.top),
+      ahead: count(v.ahead, appearance.standings.ahead),
+      behind: count(v.behind, appearance.standings.behind),
+    };
   }
   return getAppearance();
 }

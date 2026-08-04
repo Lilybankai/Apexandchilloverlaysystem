@@ -259,6 +259,133 @@
    * dragging back to whatever the global happens to be, which would then stop
    * tracking the global the moment it moved.
    */
+  /**
+   * How much of the field the standings tower draws.
+   *
+   * A full grid is 20-30 rows: right for a broadcast, far too much screen for
+   * someone driving. Rather than a list of layout presets, the view is composed
+   * from the leaders plus a window around you, counted either inside your class
+   * or across the field — so "three in front, three behind" and "top ten of
+   * each class" are the same three numbers with different values, and anything
+   * between them works without anyone having thought of it first.
+   *
+   * Only the standings card gets this (see `view` in overlaysForUi).
+   */
+  function standingsRow(o) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ovcard__view';
+
+    const v = o.view;
+
+    // Sends one field; main merges it over the rest, so the row never has to
+    // restate the whole object and two controls cannot race each other.
+    const send = async (patch) => {
+      await window.apex.updateSettings({ standings: patch });
+    };
+
+    const label = document.createElement('span');
+    label.className = 'ovcard__bg-label';
+    label.textContent = 'SHOW';
+
+    const limit = document.createElement('select');
+    limit.className = 'field__input field__input--inline';
+    limit.id = 'standings-limit';
+    for (const [value, text] of [
+      ['all', 'Whole field'],
+      ['custom', 'Just these cars…'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      limit.appendChild(opt);
+    }
+    limit.value = v.limit;
+    limit.title = 'How much of the field the standings tower draws';
+
+    // The four numbers, hidden wholesale while the tower shows everything —
+    // there is nothing to tune in that state, and four disabled spinners read
+    // as a broken card rather than an inapplicable one.
+    const detail = document.createElement('div');
+    detail.className = 'ovcard__view-detail';
+
+    const num = (id, key, text, hint) => {
+      const field = document.createElement('label');
+      field.className = 'ovcard__view-num';
+      const cap = document.createElement('span');
+      cap.className = 'ovcard__view-cap';
+      cap.textContent = text;
+      const input = document.createElement('input');
+      input.className = 'field__input';
+      input.id = id;
+      input.type = 'number';
+      input.min = '0';
+      input.max = '30';
+      input.step = '1';
+      input.value = String(v[key]);
+      input.title = hint;
+      input.addEventListener('change', () => {
+        let n = parseInt(input.value, 10);
+        if (!Number.isFinite(n)) n = 0;
+        n = Math.min(30, Math.max(0, n));
+        input.value = String(n);
+        void send({ [key]: n });
+      });
+      field.appendChild(cap);
+      field.appendChild(input);
+      return field;
+    };
+
+    const scope = document.createElement('select');
+    // Short labels on purpose: this sits in a half-width cell on a card, and a
+    // clipped option is worse than a terse one.
+    scope.className = 'field__input';
+    scope.id = 'standings-scope';
+    for (const [value, text] of [
+      ['class', 'My class'],
+      ['field', 'All classes'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      scope.appendChild(opt);
+    }
+    scope.value = v.scope;
+    scope.title =
+      'Whether the counts below mean cars in your own class, or cars anywhere in the field';
+    scope.addEventListener('change', () => void send({ scope: scope.value }));
+
+    const scopeWrap = document.createElement('label');
+    scopeWrap.className = 'ovcard__view-num';
+    const scopeCap = document.createElement('span');
+    scopeCap.className = 'ovcard__view-cap';
+    scopeCap.textContent = 'Counted';
+    scopeWrap.appendChild(scopeCap);
+    scopeWrap.appendChild(scope);
+
+    detail.appendChild(num('standings-top', 'top', 'Leaders', 'Cars at the front, always shown'));
+    detail.appendChild(num('standings-ahead', 'ahead', 'Ahead', 'Cars in front of you'));
+    detail.appendChild(num('standings-behind', 'behind', 'Behind', 'Cars behind you'));
+    detail.appendChild(scopeWrap);
+
+    const paint = () => {
+      detail.hidden = limit.value !== 'custom';
+    };
+    limit.addEventListener('change', () => {
+      paint();
+      void send({ limit: limit.value });
+    });
+    paint();
+
+    const head = document.createElement('div');
+    head.className = 'ovcard__view-head';
+    head.appendChild(label);
+    head.appendChild(limit);
+
+    wrap.appendChild(head);
+    wrap.appendChild(detail);
+    return wrap;
+  }
+
   function opacityRow(o) {
     const row = document.createElement('div');
     row.className = 'ovcard__bg';
@@ -453,6 +580,7 @@
       li.appendChild(desc);
       li.appendChild(urlWrap);
       li.appendChild(opacityRow(o));
+      if (o.view) li.appendChild(standingsRow(o));
       li.appendChild(foot);
       overlayList.appendChild(li);
     }

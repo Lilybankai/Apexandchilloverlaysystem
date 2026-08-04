@@ -2,6 +2,34 @@
 
 ## 0.57.1 — 2026-08-04
 
+### Added
+
+- **Choose how much of the field the standings tower shows.** Suggested by a
+  beta tester. A full grid is 20–30 rows — right for a broadcast, most of your
+  screen while driving.
+
+  On the **Overlays** tab the Standings card now has a **Show** setting. Leave it
+  on *Whole field* and nothing changes. Switch it to *Just these cars…* and you
+  get three numbers: how many **leaders** to keep, how many cars **ahead** of
+  you, and how many **behind** — counted either within your own class or across
+  the whole field.
+
+  Those three cover the things people actually ask for, including the two that
+  prompted it: "three in front and three behind" is 0 leaders with a 3/3 window,
+  and "top ten of each class" is 10 leaders counted per class. Anything between
+  them works too, without it having to be a preset someone thought of first.
+
+  Two rules the tower keeps whatever you set it to. **You are never filtered out
+  of your own standings** — if the numbers would drop you, your row stays
+  anyway. And **the numbers on screen still describe the race, not the panel**:
+  the purple fastest lap, each class's benchmark and the car counts on the class
+  headers are all read from the full field, so a trimmed tower says "3 OF 9
+  CARS" rather than pretending GT3 has three cars in it.
+
+  An OBS source can pin its own view with `?standings=all` or
+  `?standings=top=10,scope=class`, so a source set up to show the front of the
+  race does not change because a driver adjusted theirs.
+
 ### Changed
 
 - **The overlay hotkey now cycles: shown → off → edit layout → shown.** Suggested
