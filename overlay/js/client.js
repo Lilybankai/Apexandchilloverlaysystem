@@ -184,6 +184,7 @@
     HYPERCAR: "HYPERCAR", HYPER: "HYPERCAR", LMH: "HYPERCAR", LMDH: "HYPERCAR",
     GTP: "HYPERCAR", P1: "HYPERCAR", LMP1: "HYPERCAR",
     LMP2: "LMP2", P2: "LMP2",
+    LMP2ELMS: "LMP2_ELMS", P2ELMS: "LMP2_ELMS",
     LMP3: "LMP3", P3: "LMP3",
     GTE: "GTE", LMGTE: "GTE", GTEPRO: "GTE", GTEAM: "GTE",
     GT3: "GT3", LMGT3: "GT3", GT3PRO: "GT3",
@@ -192,6 +193,10 @@
   var KNOWN_CLASS_COLORS = {
     HYPERCAR: "#ff5470",
     LMP2: "#4f8bff",
+    // The ELMS LMP2 is its own category in LMU, so it gets its own colour — a
+    // lighter shade of the same blue rather than a new hue, because the two are
+    // the same car in different trim and the tower should read that way.
+    LMP2_ELMS: "#9dc0ff",
     LMP3: "#22d3ee",
     GTE: "#ffb020",
     GT3: "#35d07f",
@@ -204,8 +209,15 @@
    * or take width off the driver's name.
    */
   var KNOWN_CLASS_ABBREV = {
-    HYPERCAR: "HY", LMP2: "P2", LMP3: "P3", GTE: "GTE", GT3: "GT3", GT4: "GT4",
+    HYPERCAR: "HY", LMP2: "P2", LMP2_ELMS: "P2E",
+    LMP3: "P3", GTE: "GTE", GT3: "GT3", GT4: "GT4",
   };
+  /**
+   * Where the canonical key is not a name anyone would write down. Only the ELMS
+   * LMP2 needs this: the key has to match what the provider and the lap database
+   * send (`LMP2_ELMS`), and an underscore does not belong on a group header.
+   */
+  var KNOWN_CLASS_LABELS = { LMP2_ELMS: "LMP2 ELMS" };
   var CLASS_COLORS = ["#8b5cf6", "#22d3ee", "#ec4899", "#4f8bff", "#35d07f", "#ffb020"];
 
   // Null-prototype: a class label is arbitrary text from a mod, and "constructor"
@@ -276,7 +288,8 @@
   function classLabel(cls) {
     if (!cls) return "OTHER";
     var alias = CLASS_ALIASES[classKey(cls)];
-    return typeof alias === "string" ? alias : String(cls).toUpperCase();
+    if (typeof alias !== "string") return String(cls).toUpperCase();
+    return typeof KNOWN_CLASS_LABELS[alias] === "string" ? KNOWN_CLASS_LABELS[alias] : alias;
   }
 
   /* ------------------------------------------------------------------ */

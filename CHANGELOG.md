@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.57.3 — 2026-08-04
+
+### Fixed
+
+- **ELMS LMP2 laps can be scored again.** Reported from the Daytona board, where
+  a lap in the ELMS Oreca came back "No reference times for LMP2_ELMS" even
+  though the reference sheet has had those times all along.
+
+  LMU races the two LMP2 rulesets as separate categories and says so — its entry
+  lists carry `LMP2` and `LMP2_ELMS`, and the ELMS car is a different power level,
+  around three and a half seconds a lap at Bahrain. Only the first of those two
+  names was recognised, so the second was treated as a category nobody had ever
+  heard of: no reference, no colour of its own in the standings tower, and a
+  two-letter tag derived from the spelling.
+
+  It is now a class in its own right. It reads the sheet's ELMS row outright —
+  with nothing assumed, because the sim already said which ruleset it was — and
+  it reads as **LMP2 ELMS** wherever a class is named, in its own shade of the
+  LMP2 blue.
+
+  The two boards stay separate, which is the point: they are different cars, and
+  a single LMP2 board would rank them against each other.
+
+- **Monza, Fuji and Paul Ricard laps now score, on your board and everyone
+  else's.** These used to answer "…has 2 layouts with reference times and the sim
+  did not say which one this is", which turned out not to be true.
+
+  LMU's track name is the **course** name, not the venue name — the same string
+  it writes into its own result files — and the course *is* the layout. The venue
+  is a separate field that never reaches us. "Autodromo Nazionale Monza" is the
+  Grand Prix layout; the other one arrives as "Monza Curva Grande Circuit", and
+  the two are around ten seconds a lap apart. The names were being read as though
+  they said nothing.
+
+  They are matched whole rather than by fragment, which matters more than it
+  sounds: "Fuji Speedway" is the start of "Fuji Speedway Classic", and those two
+  are 3.8% apart. A layout is listed only where a real session on it has been
+  played and its name read off LMU's output, so a name we have not seen still
+  scores nothing rather than something wrong.
+
+  This is also what makes **other people's** laps scoreable at those circuits. A
+  league board row carries a track name and a lap time and nothing else, so no
+  amount of extra detail recorded alongside your own laps could ever have reached
+  it.
+
+  Le Mans is deliberately still unscored. Only the full circuit has been
+  observed, and the Mulsanne without its chicanes is sixteen seconds a lap
+  quicker — a wrong number there would look exactly as authoritative as a right
+  one.
+
+- Reference times re-baked from Ohne Speed's sheet as updated 4 August.
+
 ## 0.57.2 — 2026-08-04
 
 ### Added

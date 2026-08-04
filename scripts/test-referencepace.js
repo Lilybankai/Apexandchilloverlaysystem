@@ -173,20 +173,50 @@ for (const [want, lengthM] of BAHRAIN_LAYOUTS) {
 }
 
 {
-  // Monza's two layouts share a centreline and are ~9% apart in pace. With
-  // nothing but the venue name and a length, the only correct answer is "no".
-  const r = referenceFor({
+  // Monza's two layouts share a centreline and are ~9% apart in pace, so length
+  // can never separate them. What does is the track name itself: LMU publishes
+  // the COURSE name, and these two are different courses. Both strings below are
+  // copied from LMU's own result files.
+  const gp = referenceFor({
     track: 'Autodromo Nazionale Monza',
     trackLengthM: 5781,
     carClass: 'GT3',
   });
-  check('Monza refuses to guess a layout', !r.ok && r.reason === 'ambiguous-layout', r.reason);
+  check(
+    'the course name resolves Monza GP',
+    gp.ok && gp.score.layoutId === 'monza_gp',
+    gp.score ? gp.score.layoutId : gp.reason,
+  );
+  check('...and reports how', gp.ok && gp.score.via === 'course', gp.score && gp.score.via);
+
+  const grande = referenceFor({
+    track: 'Monza Curva Grande Circuit',
+    trackLengthM: 5745,
+    carClass: 'GT3',
+  });
+  check(
+    'the course name resolves Monza Curva Grande',
+    grande.ok && grande.score.layoutId === 'monza_curva_grande',
+    grande.score ? grande.score.layoutId : grande.reason,
+  );
+  check(
+    '...and the two are scored against different references',
+    gp.ok && grande.ok && gp.score.refMs !== grande.score.refMs,
+  );
+}
+
+{
+  // A name that identifies the venue but not the course still has to refuse.
+  // Whole-name matching is what makes that true: "Monza" is a substring of both
+  // course names and must not select either.
+  const r = referenceFor({ track: 'Monza', trackLengthM: 5781, carClass: 'GT3' });
+  check('a venue-only name refuses to guess a layout', !r.ok && r.reason === 'ambiguous-layout', r.reason);
   check('...and says why', !r.ok && /layouts/.test(r.detail || ''), r.detail);
 }
 
 {
   const r = referenceFor({
-    track: 'Autodromo Nazionale Monza',
+    track: 'Monza',
     simTrackName: 'Monza_CurvaGrande_2024',
     trackLengthM: 5781,
     carClass: 'GT3',
@@ -216,10 +246,31 @@ for (const [want, lengthM] of BAHRAIN_LAYOUTS) {
 {
   // Fuji's two layouts are 37 m apart on paper — inside the tolerance the spline
   // itself needs — and 3.8% apart in pace. Length must not be allowed to decide.
-  const bare = referenceFor({ track: 'Fuji Speedway', trackLengthM: 4536, carClass: 'GT3' });
+  const bare = referenceFor({ track: 'Fuji', trackLengthM: 4536, carClass: 'GT3' });
   check('Fuji refuses on length alone', !bare.ok && bare.reason === 'ambiguous-layout', bare.reason);
+
+  // "Fuji Speedway" is a PREFIX of "Fuji Speedway Classic". A substring match
+  // would hand every Classic lap to the GP row, 3.8% adrift; whole-name matching
+  // is the only reason this pair works.
+  const gp = referenceFor({ track: 'Fuji Speedway', trackLengthM: 4536, carClass: 'GT3' });
+  check(
+    'the course name resolves Fuji GP',
+    gp.ok && gp.score.layoutId === 'fuji_gp',
+    gp.score ? gp.score.layoutId : gp.reason,
+  );
+  const classic = referenceFor({
+    track: 'Fuji Speedway Classic',
+    trackLengthM: 4502,
+    carClass: 'GT3',
+  });
+  check(
+    'the course name resolves Fuji Classic',
+    classic.ok && classic.score.layoutId === 'fuji_classic',
+    classic.score ? classic.score.layoutId : classic.reason,
+  );
+
   const hinted = referenceFor({
-    track: 'Fuji Speedway',
+    track: 'Fuji',
     trackConfig: 'Classic Circuit',
     trackLengthM: 4536,
     carClass: 'GT3',
@@ -268,6 +319,23 @@ for (const [want, lengthM] of BAHRAIN_LAYOUTS) {
     !tie.ok && tie.reason === 'ambiguous-layout',
     tie.reason || (tie.score && tie.score.layoutId),
   );
+
+  // The same nesting, in the course names LMU actually publishes. "Paul Ricard -
+  // 1A" is a prefix of both the others and 1A-V2 shares the ELMS layout's length
+  // exactly, so this is the pair that only a whole-name match can call.
+  const courses = [
+    ['Paul Ricard - 1A', 'paul_ricard_1a'],
+    ['Paul Ricard - 1A-V2', 'paul_ricard_1av2'],
+    ['Paul Ricard - 1A-V2-Short', 'paul_ricard_1av2_short'],
+  ];
+  for (const [course, want] of courses) {
+    const r = referenceFor({ track: course, trackLengthM: 5800, carClass: 'GT3' });
+    check(
+      `course "${course}" resolves ${want}`,
+      r.ok && r.score.layoutId === want && r.score.via === 'course',
+      r.score ? `${r.score.layoutId} via ${r.score.via}` : r.reason,
+    );
+  }
 }
 
 {
@@ -335,6 +403,25 @@ for (const [canonical, sheet] of CLASS_ROWS) {
   check('...and admits the assumption', vague.ok && vague.score.assumed === true);
 }
 
+{
+  // LMU does not make you read the car name: it races the two rulesets as
+  // separate classes and says `LMP2_ELMS` outright. That class must reach the
+  // ELMS row on its own — a league board carries the class, and the car beside
+  // it is whatever that driver happened to enter.
+  const r = referenceFor({
+    track: 'Daytona International Speedway Road Course',
+    trackLengthM: 5734,
+    carClass: 'LMP2_ELMS',
+    car: '',
+  });
+  check(
+    "LMU's LMP2_ELMS class reads the ELMS row",
+    r.ok && r.score.sheetClass === 'LMP2elms',
+    r.ok ? r.score.sheetClass : r.detail,
+  );
+  check('...with nothing assumed', r.ok && r.score.assumed === false);
+}
+
 check(
   'GT4 is unrated rather than mis-scored',
   referenceFor({ track: 'Bahrain International Circuit', trackLengthM: 5412, carClass: 'GT4' })
@@ -379,9 +466,11 @@ console.log('\nCoverage of the shipped table');
 /* -------------------------------------------------------------------------- */
 /*
  * Clicking a row on a league board scores that driver's lap against the same
- * reference — and a board row carries no track metadata at all. `leaderboard`
+ * reference — and a board row carries almost no track metadata. `leaderboard`
  * returns a ranking (name, car, lap, gap), not the laps' identity, so the only
- * layout hint the panel has is `track_length_m` off the filter row.
+ * layout hints the panel has are the board's track NAME and its `track_length_m`
+ * off the filter row. No `trackConfig`, no scene name: whatever those two can
+ * settle is what another driver's lap can be scored against.
  *
  * ## The bug these pin (shipped in v0.56.0, fixed in 0.56.1)
  * The first version tried to recover the length by parsing it out of the board's
@@ -448,10 +537,11 @@ console.log('\nScoring a lap from a board row');
     laguna.ok ? `via ${laguna.score.via} — ${laguna.score.percent}%` : laguna.reason,
   );
 
-  // And where length genuinely cannot help. Monza's two layouts are ~10 s apart
-  // in pace and identical in recorded length, so even the real measurement fits
-  // both. It must go unscored rather than pick a side: a percentage against the
-  // wrong Monza is worse than none, because it looks like an answer.
+  // Where length genuinely cannot help — Monza's two layouts are ~10 s apart in
+  // pace and 35 m apart in measured length — the track NAME does, and a board row
+  // has one. This is the whole reason the course names were worth chasing down:
+  // it makes other people's laps at multi-layout circuits scoreable, which no
+  // amount of extra hints on the local lap record could have done.
   const monza = scoreLap({
     track: 'Autodromo Nazionale Monza',
     trackLengthM: 5781,
@@ -459,9 +549,26 @@ console.log('\nScoring a lap from a board row');
     lapMs: 109_016,
   });
   check(
+    'a board row at Monza is placed by its course name',
+    monza.ok && monza.score.layoutId === 'monza_gp' && monza.score.via === 'course',
+    monza.ok ? `${monza.score.layoutName} via ${monza.score.via}` : monza.reason,
+  );
+
+  // ...and where even the name cannot help, it still refuses. Le Mans's two
+  // layouts share a length AND, until one has been observed, everything else:
+  // the Mulsanne-without-chicanes course name is not in the table, so claiming
+  // this one for the full circuit would be the 16-second guess the whole
+  // resolver exists to avoid.
+  const sarthe = scoreLap({
+    track: 'Circuit de la Sarthe',
+    trackLengthM: 13_624,
+    carClass: 'GT3',
+    lapMs: 231_000,
+  });
+  check(
     'an unresolvable board row still refuses to score',
-    !monza.ok && monza.reason === 'ambiguous-layout',
-    monza.ok ? `scored anyway as ${monza.score.layoutName}` : monza.reason,
+    !sarthe.ok && sarthe.reason === 'ambiguous-layout',
+    sarthe.ok ? `scored anyway as ${sarthe.score.layoutName}` : sarthe.reason,
   );
 
   // Another driver's lap is scored by exactly the same rule as your own: same

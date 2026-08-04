@@ -19,8 +19,25 @@
 
 import { UNKNOWN_VALUE, type StandingEntry } from './types';
 
-/** Canonical class labels, fastest category first. */
-export const CLASS_ORDER = ['HYPERCAR', 'LMP2', 'LMP3', 'GTE', 'GT3', 'GT4'] as const;
+/**
+ * Canonical class labels, fastest category first.
+ *
+ * LMP2 and LMP2_ELMS are two entries on purpose. LMU races them as separate
+ * categories — its entry lists say `LMP2` and `LMP2_ELMS`, and the ELMS car is a
+ * different power level, ~3.5 s a lap at Bahrain. Collapsing them would put one
+ * group in the tower that is really two, and score both against one reference.
+ * They sit adjacent because they are adjacent in pace: the ELMS car is the
+ * slower of the two, so it ranks just behind.
+ */
+export const CLASS_ORDER = [
+  'HYPERCAR',
+  'LMP2',
+  'LMP2_ELMS',
+  'LMP3',
+  'GTE',
+  'GT3',
+  'GT4',
+] as const;
 
 /** A canonical class label, or `undefined` when the class is unrecognised. */
 export type CanonicalClass = (typeof CLASS_ORDER)[number];
@@ -40,6 +57,9 @@ const ALIASES: Record<string, CanonicalClass> = {
   LMP1: 'HYPERCAR',
   LMP2: 'LMP2',
   P2: 'LMP2',
+  // LMU spells it `LMP2_ELMS`; the key strips the underscore.
+  LMP2ELMS: 'LMP2_ELMS',
+  P2ELMS: 'LMP2_ELMS',
   LMP3: 'LMP3',
   P3: 'LMP3',
   GTE: 'GTE',

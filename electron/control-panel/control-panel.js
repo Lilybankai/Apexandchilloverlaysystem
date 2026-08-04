@@ -879,7 +879,7 @@
       mid.className = 'lbrow__mid';
       const cls = document.createElement('span');
       cls.className = 'chip';
-      cls.textContent = (row && row.ok && row.sheetClass) || b.carClass || '—';
+      cls.textContent = (row && row.ok && row.sheetClass) || classLabel(b.carClass) || '—';
       mid.append(cls);
       if (row && !row.ok) {
         // The reason, where the eye already is. A driver who wonders why one row
@@ -946,6 +946,21 @@
   /** Where a percentage sits on the band ladder, for the row's tint. */
   function paceBandOf(row) {
     return row && row.ok ? row.bandId || 'none' : 'none';
+  }
+
+  /**
+   * A car class as a person would write it.
+   *
+   * Boards are keyed on the canonical class the provider sends, and one of those
+   * carries LMU's own punctuation: `LMP2_ELMS`. The key has to stay as it is —
+   * it is what the lap database stores and what the reference table looks up —
+   * but an underscore has no business on a filter chip. Mirrors the same map in
+   * `overlay/js/client.js`; there is no import between a renderer and the overlay
+   * bundle, so this is a deliberate two-line copy.
+   */
+  const CLASS_LABELS = { LMP2_ELMS: 'LMP2 ELMS' };
+  function classLabel(cls) {
+    return CLASS_LABELS[cls] || cls || '';
   }
 
   /**
@@ -1208,7 +1223,7 @@
       mid.className = 'lbrow__mid';
       const cls = document.createElement('span');
       cls.className = 'chip';
-      cls.textContent = row.sheetClass || row.carClass || '—';
+      cls.textContent = row.sheetClass || classLabel(row.carClass) || '—';
       mid.append(cls);
       if (!row.ok) {
         const why = document.createElement('span');
@@ -1375,7 +1390,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'clschip';
-      btn.textContent = cls;
+      btn.textContent = classLabel(cls);
       btn.setAttribute('data-active', String(cls === boardPick.carClass));
       btn.addEventListener('click', () => {
         boardPick.carClass = cls;
@@ -1465,7 +1480,7 @@
     setText(
       '#board-title',
       boardPick.carClass && track
-        ? `${boardPick.carClass} · ${track.track_name}`
+        ? `${classLabel(boardPick.carClass)} · ${track.track_name}`
         : 'Leaderboard',
     );
     setText(

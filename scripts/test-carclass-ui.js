@@ -142,17 +142,22 @@ console.log('\n5) A colour is stable, and stable across spellings');
   check('an unknown class hashes on its normalised form, so case cannot fork it',
     classColor('TCR Cup') === classColor('tcr-cup'),
     classColor('TCR Cup') + ' vs ' + classColor('tcr-cup'));
-  check('every known class has a colour', ['HYPERCAR', 'LMP2', 'LMP3', 'GT3', 'GTE', 'GT4']
+  check('every known class has a colour', ['HYPERCAR', 'LMP2', 'LMP2_ELMS', 'LMP3', 'GT3', 'GTE', 'GT4']
     .every((c) => /^#[0-9a-f]{6}$/i.test(classColor(c))));
+  // The two LMP2 rulesets share a grid in LMU and must not share a colour: they
+  // are the pair a viewer is most likely to mistake for one group.
+  check('the two LMP2 classes are told apart on sight',
+    classColor('LMP2') !== classColor('LMP2_ELMS'),
+    classColor('LMP2') + ' vs ' + classColor('LMP2_ELMS'));
   check('no class gives the grey reserved for "no class"',
     classColor('GT3') !== '#6b7387' && classColor('') === '#6b7387');
   // Known classes must be distinguishable from each other on screen. GTE and GT4
   // deliberately share amber today — they are never on the same grid in LMU —
   // and this counts the distinct colours so that stays a decision rather than a
   // drift.
-  const known = ['HYPERCAR', 'LMP2', 'LMP3', 'GT3', 'GTE', 'GT4'].map(classColor);
-  check('five distinct colours across the six known classes',
-    new Set(known).size === 5, new Set(known).size + ' distinct');
+  const known = ['HYPERCAR', 'LMP2', 'LMP2_ELMS', 'LMP3', 'GT3', 'GTE', 'GT4'].map(classColor);
+  check('six distinct colours across the seven known classes',
+    new Set(known).size === 6, new Set(known).size + ' distinct');
 }
 
 console.log('\n6) The full name, for a group header or a tooltip');
@@ -164,6 +169,11 @@ console.log('\n6) The full name, for a group header or a tooltip');
     classLabel('TCR Cup') === 'TCR CUP', classLabel('TCR Cup'));
   check('no class reads as OTHER, not as empty',
     classLabel('') === 'OTHER' && classLabel(undefined) === 'OTHER');
+  // The canonical key has to stay `LMP2_ELMS` — it is what the provider sends and
+  // what the lap database stores — but nobody writes an underscore on a grid.
+  check('the ELMS LMP2 is named, not spelled',
+    classLabel('LMP2_ELMS') === 'LMP2 ELMS' && classAbbrev('LMP2_ELMS') === 'P2E',
+    classLabel('LMP2_ELMS') + '/' + classAbbrev('LMP2_ELMS'));
 }
 
 console.log('\n7) The overlay table still agrees with the server\'s');

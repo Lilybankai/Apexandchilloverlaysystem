@@ -26,16 +26,23 @@
  * defined on the race-pace column alone.
  *
  * ## Why a lap can come back unscored, and why that is the point
- * LMU's REST feed names the VENUE ("Autodromo Nazionale Monza") and never the
- * layout. Monza's two layouts are ~10 s apart in GT3 and Le Mans's are ~16 s
- * apart, so picking one at random does not produce a slightly-worse score, it
- * produces a wrong one — and a driver who is told they are 9% off the pace when
- * they are on it will stop reading the number entirely.
+ * Monza's two layouts are ~10 s apart in GT3 and Le Mans's are ~16 s apart, so
+ * picking one at random does not produce a slightly-worse score, it produces a
+ * wrong one — and a driver who is told they are 9% off the pace when they are on
+ * it will stop reading the number entirely.
  *
- * So resolution is tried three ways ({@link resolveLayout}) and, when none of
+ * So resolution is tried four ways ({@link resolveLayout}) and, when none of
  * them settles it, {@link scoreLap} returns `ok: false` with a reason the UI can
  * explain. Same habit as the clean-lap rule and the damage widget: say what the
  * sim actually published, and say nothing where it did not.
+ *
+ * The first of the four is the track name itself, and it carries further than it
+ * looks: LMU's `sessionInfo.trackName` is the **course** name, not the venue
+ * name — the same string its own result files write as `<TrackCourse>` — and
+ * that string names the layout. "Autodromo Nazionale Monza" IS the Grand Prix
+ * layout; the other one comes through as "Monza Curva Grande Circuit". See
+ * `scripts/reference-tracks.js` for the observed names and why they are matched
+ * whole rather than by substring.
  */
 
 import * as fs from 'node:fs';
@@ -70,6 +77,11 @@ interface RefLayout {
   sheet: string;
   lengthM: number;
   primary?: boolean;
+  /**
+   * The sim's own name(s) for this course, matched WHOLE against the display
+   * track name. Not substrings — see {@link resolveLayout}.
+   */
+  course?: string[];
   /** Substrings tested against `session.trackConfig`. */
   config?: string[];
   /** Substrings tested against the sim's internal (scene) track name. */
@@ -251,7 +263,13 @@ function resolveCircuit(t: RefTable, trackName: string): RefCircuit | null {
 }
 
 /** What identified a layout — carried through so the UI can hedge honestly. */
-export type LayoutVia = 'only' | 'sim-name' | 'config' | 'length' | 'assumed-primary';
+export type LayoutVia =
+  | 'only'
+  | 'course'
+  | 'sim-name'
+  | 'config'
+  | 'length'
+  | 'assumed-primary';
 
 export interface LayoutMatch {
   circuit: RefCircuit;
@@ -262,15 +280,22 @@ export interface LayoutMatch {
 /**
  * Pick the layout inside a circuit.
  *
- * Order matters and is not arbitrary: the scene name is the only channel that
- * *states* the layout, `trackConfig` is the only one a provider declares
- * deliberately, and length is a measurement that has to be interpreted. Each
- * hint is used only when exactly one layout matches it — two matches mean the
- * hint failed to discriminate, which is different from it saying nothing.
+ * Order matters and is not arbitrary: the course name is the sim's own name for
+ * the thing that got loaded, the scene name states the layout too, `trackConfig`
+ * is the one a provider declares deliberately, and length is a measurement that
+ * has to be interpreted. Each hint is used only when exactly one layout matches
+ * it — two matches mean the hint failed to discriminate, which is different from
+ * it saying nothing.
  */
 export function resolveLayout(
   circuit: RefCircuit,
-  opts: { simTrackName?: string; trackConfig?: string; trackLengthM?: number },
+  opts: {
+    /** The track name as the sim displays it — in LMU, the course name. */
+    trackName?: string;
+    simTrackName?: string;
+    trackConfig?: string;
+    trackLengthM?: number;
+  },
   times: Record<string, Record<string, RefEntry>>,
 ): LayoutMatch | null {
   const layouts = circuit.layouts;
@@ -295,6 +320,28 @@ export function resolveLayout(
     const winners = scored.filter((h) => h.n === best);
     return winners.length === 1 ? winners[0]!.l : null;
   };
+
+  /**
+   * The one layout that IS this course, or `null`.
+   *
+   * Whole-string, not substring, and that is the entire safety property. LMU's
+   * course names nest badly — "Fuji Speedway" is a prefix of "Fuji Speedway
+   * Classic", which is 3.8% quicker — so a substring test would hand every
+   * Classic lap to the GP row. Matched whole, a name we have never seen matches
+   * nothing and falls through to the hints below, which already refuse when they
+   * cannot separate two layouts. That is why an un-enumerated layout costs a
+   * score rather than producing a wrong one.
+   */
+  const uniqueCourse = (value: string | undefined) => {
+    if (!value) return null;
+    const want = squash(value);
+    if (!want) return null;
+    const hits = layouts.filter((l) => (l.course || []).some((c) => squash(c) === want));
+    return hits.length === 1 ? hits[0]! : null;
+  };
+
+  const byCourse = uniqueCourse(opts.trackName) || uniqueCourse(opts.simTrackName);
+  if (byCourse) return { circuit, layout: byCourse, via: 'course' };
 
   const bySim = uniqueHit((l) => l.sim, opts.simTrackName);
   if (bySim) return { circuit, layout: bySim, via: 'sim-name' };
@@ -392,7 +439,11 @@ export type PaceUnknownReason =
 
 /** Everything needed to identify and score one lap. */
 export interface PaceInput {
-  /** Track name as the sim displays it. */
+  /**
+   * Track name as the sim displays it. In LMU this is the COURSE name, so it
+   * usually names the layout as well as the venue — it is the first hint
+   * {@link resolveLayout} tries, and the only one a league board row carries.
+   */
   track: string;
   /** Layout name when the provider publishes one. */
   trackConfig?: string;
@@ -483,6 +534,7 @@ export function referenceFor(
   const match = resolveLayout(
     circuit,
     {
+      trackName: input.track,
       simTrackName: input.simTrackName,
       trackConfig: input.trackConfig,
       trackLengthM: input.trackLengthM,
