@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The track map no longer gets stuck learning the circuit forever at fast
+  tracks.** Found live at Daytona, where the map never appeared: the learning
+  read climbed to 99%, reset to nothing, and started again — every lap, with no
+  way out of it. Fast, banked circuits were the worst affected, and a map that
+  never publishes is also a map that never gets saved, so every session at that
+  track started from zero.
+
+  The circuit is learned by pairing where the car IS with how far round the lap
+  it is, and LMU publishes those two things at very different rates: positions
+  come from shared memory every frame, lap distance arrives over the timing feed
+  about every 150 ms — twelve position updates per distance update, measured on
+  track. Every one of those frames was being filed, so a stretch of road ended
+  up recorded as a position from the start of one distance update sitting right
+  next to a position from the end of another. On Daytona's banking that put two
+  points 24 metres apart in the world where the road between them is 6 metres.
+
+  The overlay has a check that asks whether a learned shape is a continuous
+  circuit at all, so that a half-learned map with a line ruled across it is never
+  drawn or saved. That check is what kept firing — correctly, on evidence that
+  had been distorted before it got there. The faster the circuit, the worse the
+  distortion, so the tracks that failed were the quick ones, which is precisely
+  backwards for a check meant to catch something broken.
+
+  Frames that only repeat a lap distance already recorded are now skipped rather
+  than filed against a car that has since moved on. The same Daytona lap that
+  used to be rejected now completes and is saved, and the check that was firing
+  is left exactly as strict as it was.
+
 ## 0.57.4 — 2026-08-04
 
 ### Fixed

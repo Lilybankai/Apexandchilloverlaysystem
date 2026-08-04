@@ -432,6 +432,48 @@ function driveLap(b, stepM, over, laps = 1.08) {
   check('forgetting a circuit that was never learned is not an error', true);
 }
 
+{
+  // A fast car on a slow distance feed. Found live at Daytona, where the map
+  // never finished: LMU publishes the car's POSITION from shared memory every
+  // frame and its LAP DISTANCE over REST roughly every 150 ms — measured at 12
+  // position frames per distance tick, with the car covering up to 24.8 m of
+  // road in between.
+  //
+  // Every one of those frames used to be filed. `put()` keeps the first position
+  // to reach a bin and `prev` keeps the latest, so one bin held the position from
+  // the start of a distance tick and its neighbour the position from the end of
+  // one — two bins that are 6 m of road apart holding positions 24 m apart in the
+  // world. That is over the bound `commit()` uses to ask whether the shape is a
+  // circuit at all, so the lap was thrown away and relearned, every lap, forever:
+  // the widget showed a progress read that reset at 99% and never drew a map.
+  //
+  // The circuits that fail are the fastest ones, which is the wrong way round for
+  // a check meant to catch a BROKEN shape — nothing here is broken, the car is
+  // just quick. A lap driven this way has to publish.
+  const STEP = 24; // metres of road per distance tick, as a banked lap gives
+  const SUB = 12; // position frames inside one tick
+  const b = new TrackMapBuilder(scratch());
+  let last = null;
+  for (let d = 0; d < LENGTH * 1.08; d += STEP) {
+    for (let k = 0; k < SUB; k++) {
+      last = b.update({
+        trackName: 'Test Circuit',
+        lengthM: LENGTH,
+        lapDistM: d % LENGTH, // frozen for the whole tick…
+        pos: onCircle((d + (k * STEP) / SUB) % LENGTH), // …while the car moves on
+        inPit: false,
+        edgeM: 7,
+      });
+    }
+  }
+  check('a fast car on a slow distance feed still publishes a map', last.ready === true);
+  check(
+    'and the published shape is the circuit, not a stretched one',
+    last.ready === true && last.path.points.length >= 200,
+    last.ready ? `${last.path.points.length} points` : 'never published',
+  );
+}
+
 /* ------------------------- who is being served --------------------------- */
 {
   // The live provider drops to the simulator whenever the sim is unreachable, and

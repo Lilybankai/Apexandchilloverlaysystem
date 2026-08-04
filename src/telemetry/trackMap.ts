@@ -341,6 +341,11 @@ export class TrackMapBuilder {
   private pathState: TrackMapPath | null = null;
   /** Last accepted sample, for the straight-line fill between frames. */
   private prev: { bin: number; pos: Vec3 } | null = null;
+  /**
+   * Lap distance of the last ACCEPTED sample, so a frame that merely repeats it
+   * can be skipped. See {@link sample} for why repeating it is not harmless.
+   */
+  private lastDist: number | null = null;
   /** Bumped on every publish — the widget's refetch trigger. */
   private revision = 0;
   /** Set once a key has been looked for on disk, so a miss is not retried. */
@@ -421,6 +426,7 @@ export class TrackMapBuilder {
     this.edges = [];
     this.pathState = null;
     this.prev = null;
+    this.lastDist = null;
     this.diskChecked = false;
     this.triedAt = -1;
     this.mismatchM = 0;
@@ -519,6 +525,7 @@ export class TrackMapBuilder {
     this.filled = 0;
     this.edges = [];
     this.prev = null;
+    this.lastDist = null;
     this.triedAt = -1;
     this.mismatchM = 0;
     this.mismatchAt = null;
@@ -539,12 +546,38 @@ export class TrackMapBuilder {
     // pits. Nothing about a lap in the pit lane describes the road.
     if (s.inPit || !s.pos || posBad(s.pos)) {
       this.prev = null; // and the road back to it is not a road either
+      this.lastDist = null;
       return;
     }
     if (!finite(s.lapDistM) || s.lapDistM < 0 || s.lapDistM > this.lengthM) {
       this.prev = null;
+      this.lastDist = null;
       return;
     }
+    // A frame whose lap distance REPEATS the last accepted one is not another
+    // reading of the road — it is the same reading, next to a car that has since
+    // moved. The two feeds run at different rates (LMU publishes positions from
+    // shared memory every frame and lap distance over REST roughly every 150 ms,
+    // measured live at ~12x), so most frames land on a distance that has not
+    // ticked yet, and filing one pairs a MOVED position with a STALE distance.
+    //
+    // Taking them is not merely redundant, it bends the map. `put()` keeps the
+    // first position to reach a bin while `prev` keeps the latest, so a bin ends
+    // up holding the position from the START of a distance plateau and its
+    // neighbour the position from the END of one — a whole plateau of travel
+    // between two bins that are one bin-length of road apart. Measured on a
+    // Daytona lap that is up to 24.8 m between neighbours where the road is 6 m,
+    // which is over the {@link MAX_STEP_FACTOR} bound that asks whether the shape
+    // is a circuit at all: the lap is rejected, `relearn()` throws the evidence
+    // away, and the widget shows a progress read that resets every lap forever.
+    // The fastest, most-banked circuits fail first, which is exactly backwards.
+    //
+    // Skipping them costs nothing. Both endpoints are then sampled at the moment
+    // their own distance reading first appeared, the fill between them spans real
+    // road, and the same lap comes out at 17.3 m worst step instead of 23.5 m.
+    if (this.lastDist !== null && s.lapDistM === this.lastDist) return;
+    this.lastDist = s.lapDistM;
+
     const n = this.bins.length;
     const bin = clampInt(Math.floor(s.lapDistM / this.binM), 0, n - 1);
     const pos = { x: s.pos.x, y: s.pos.y, z: s.pos.z };
@@ -698,6 +731,7 @@ export class TrackMapBuilder {
     this.bins = new Array(this.bins.length).fill(null);
     this.filled = 0;
     this.prev = null;
+    this.lastDist = null;
     this.triedAt = -1;
   }
 
