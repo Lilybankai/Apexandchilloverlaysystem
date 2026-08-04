@@ -93,11 +93,61 @@ const POS_TAU_SEC = 1.0;
 const POS_SNAP_M = 50;
 
 /** A reference lap: its ordered trace and the lap time it was set at. */
-interface Reference {
+export interface Reference {
   trace: Sample[];
   lapSec: number;
   /** Whether the trace covers the whole lap (captured flag-to-flag). */
   full: boolean;
+  /**
+   * Whether the lap was driven inside the white lines — see {@link LapValidity}.
+   * `false` on a lap with a cut, a penalty or a pit stop in it, and on any lap
+   * driven while the caller could not tell us either way.
+   */
+  clean: boolean;
+}
+
+/**
+ * What the caller knows about track limits on the lap being driven, when it
+ * knows anything at all.
+ *
+ * ## Why the delta needs this
+ * A best-lap reference the driver did not drive is worse than none. Cut the
+ * first chicane at Monza and the engine timed a genuine 1:19 — the fastest lap
+ * of the session, by a route that is not the circuit — adopted it as the
+ * session best, wrote it to the PB store as the all-time best, and every honest
+ * lap afterwards read seconds down against a lap nobody can drive. The rest of
+ * the app already refuses those laps (`lapLog.ts` marks them `limits`, and the
+ * weekly card and the league board both skip them); the delta was the one place
+ * that took the stopwatch at its word.
+ *
+ * ## Counters, not verdicts
+ * These are the sim's own running totals for the SESSION, and this module
+ * baselines them at its own lap boundaries. That keeps the rule identical to the
+ * one the lap log applies — a total that rises during a lap voids that lap —
+ * without the two having to agree on where a lap begins, which they measure
+ * differently (line crossings here, `lapsCompleted` there).
+ *
+ * Every field is optional, and a caller that omits one is saying "no
+ * information", not "nothing happened". A spectated car has no such channel at
+ * all, so its references behave exactly as they did before this existed.
+ *
+ * The charge lands up to ~25 s after the cut that earned it (the sim flushes its
+ * log a block at a time), so a cut in the last corner can be counted against the
+ * lap that follows it. That is the same imprecision the lap log documents and
+ * accepts, and it fails the safe way round for a reference: the worst case is a
+ * clean lap declined, which the next clean lap replaces, rather than a cut lap
+ * kept — which lasts until someone deletes a file.
+ */
+export interface LapValidity {
+  /**
+   * Cuts the sim has CHARGED for this session. Not our own geometry estimate —
+   * the stewards' count, as `trackLimits.charged` publishes it.
+   */
+  cuts?: number;
+  /** The sim's outstanding-penalty count for this car. */
+  penalties?: number;
+  /** `true` while the car is in the pit lane or its garage stall. */
+  inPit?: boolean;
 }
 
 /**
@@ -270,6 +320,15 @@ export class LocalPaceDeltaTracker {
     vLast: new Channel(),
   };
 
+  /**
+   * Faults collected since the current lap crossed the line, and the counter
+   * readings it started from. `null` baselines mean the caller has not told us
+   * anything yet — see {@link LapValidity}.
+   */
+  private lapDirty = false;
+  private cutsAtStart: number | null = null;
+  private penaltiesAtStart: number | null = null;
+
   private session: Reference | null = null;
   private allTime: Reference | null = null;
   private last: Reference | null = null;
@@ -291,7 +350,45 @@ export class LocalPaceDeltaTracker {
     this.last = null;
     this.lastLapSec = UNKNOWN_VALUE;
     this.lastOut = EMPTY_PACE_DELTAS;
+    this.startLapValidity();
     // allTime is NOT cleared on a session reset — it spans sessions.
+  }
+
+  /**
+   * Begin a lap with a clean sheet, and no baseline until the caller next says
+   * what the counters read.
+   *
+   * Re-baselining is deliberately NOT done from the last known values: a session
+   * change zeroes the sim's counters, and a baseline carried across that would
+   * read the zeroing as "the count went down" on one lap and then charge the
+   * next lap for every cut of the previous session as the total climbed back.
+   */
+  private startLapValidity(): void {
+    this.lapDirty = false;
+    this.cutsAtStart = null;
+    this.penaltiesAtStart = null;
+  }
+
+  /**
+   * Fold one poll's validity reading into the lap being driven.
+   *
+   * A counter that has risen since this lap began is a fault ON this lap. The
+   * first reading of a lap only sets the baseline — it cannot itself be a rise,
+   * which is what stops every lap after a cut inheriting the blame for it.
+   */
+  private noteValidity(v: LapValidity | undefined): void {
+    if (!v) return;
+    if (v.inPit === true) this.lapDirty = true;
+    const cuts = countOf(v.cuts);
+    if (cuts !== null) {
+      if (this.cutsAtStart === null) this.cutsAtStart = cuts;
+      else if (cuts > this.cutsAtStart) this.lapDirty = true;
+    }
+    const pens = countOf(v.penalties);
+    if (pens !== null) {
+      if (this.penaltiesAtStart === null) this.penaltiesAtStart = pens;
+      else if (pens > this.penaltiesAtStart) this.lapDirty = true;
+    }
   }
 
   private resetFilters(): void {
@@ -320,8 +417,14 @@ export class LocalPaceDeltaTracker {
    *                     all-time best, so swapping cars mid-session adopts the
    *                     right reference without a restart.
    */
-  public update(d: number, elapsedSec: number, restBest: number, trackKey: string): PaceDeltas {
-    const at = this.advance(d, elapsedSec, restBest, trackKey);
+  public update(
+    d: number,
+    elapsedSec: number,
+    restBest: number,
+    trackKey: string,
+    lap?: LapValidity,
+  ): PaceDeltas {
+    const at = this.advance(d, elapsedSec, restBest, trackKey, lap);
     if (at === null) return this.lastOut;
     this.lastOut = this.compute(at.t, at.d);
     return this.lastOut;
@@ -336,8 +439,14 @@ export class LocalPaceDeltaTracker {
    * point; it is {@link compute} (six interpolations over the traces) that is
    * worth skipping for the cars nobody is looking at.
    */
-  public observe(d: number, elapsedSec: number, restBest: number, trackKey: string): void {
-    this.advance(d, elapsedSec, restBest, trackKey);
+  public observe(
+    d: number,
+    elapsedSec: number,
+    restBest: number,
+    trackKey: string,
+    lap?: LapValidity,
+  ): void {
+    this.advance(d, elapsedSec, restBest, trackKey, lap);
   }
 
   /**
@@ -351,11 +460,19 @@ export class LocalPaceDeltaTracker {
     elapsedSec: number,
     restBest: number,
     trackKey: string,
+    lap?: LapValidity,
   ): { t: number; d: number } | null {
     if (d < 0 || d > 1 || typeof elapsedSec !== 'number' || elapsedSec <= 0) {
       this.lastOut = EMPTY_PACE_DELTAS;
       return null;
     }
+    // Before the boundary check below, so a cut charged on the same poll as the
+    // line crossing is counted against the lap that is ENDING. The sim's charge
+    // is already late by the time we see it (see {@link LapValidity}), so the
+    // lap just driven is the likelier owner of it — and of the two ways to be
+    // wrong, declining a clean lap costs one lap and keeping a cut one costs
+    // every delta until the file is deleted.
+    this.noteValidity(lap);
 
     // Track change → (re)load the persisted all-time best for the new track.
     if (trackKey && trackKey !== this.trackKey) {
@@ -415,6 +532,7 @@ export class LocalPaceDeltaTracker {
       this.samples = [];
       this.lapStartElapsed = crossET;
       this.fromLine = true;
+      this.startLapValidity(); // the new lap starts on a clean sheet
       this.resetFilters(); // the delta legitimately snaps to ~0 on a new lap
     }
     this.prevD = d;
@@ -478,13 +596,21 @@ export class LocalPaceDeltaTracker {
       if (trace[i]!.d - trace[i - 1]!.d > 0.1) return;
     }
 
-    const ref: Reference = { trace, lapSec, full: true };
+    const ref: Reference = { trace, lapSec, full: true, clean: !this.lapDirty };
 
-    // Last lap: always the most recent usable lap.
+    // Last lap: always the most recent usable lap, cut or not. LAST is a
+    // description of what just happened rather than a claim about it — a driver
+    // who ran wide still wants to know what the lap cost them, and blanking the
+    // column would answer a different question than the one it asks.
     this.last = ref;
     this.lastLapSec = lapSec;
 
-    // Session best / all-time best: adopt when genuinely faster.
+    // The two BESTS are claims, and a lap that left the circuit cannot support
+    // one. Cutting the first chicane at Monza sets a time no clean lap can beat,
+    // and adopting it here poisons the session best AND writes it to the PB
+    // store as the all-time best — every honest lap afterwards reading seconds
+    // down against a route that is not the track. See {@link LapValidity}.
+    if (!ref.clean) return;
     if (!this.session || lapSec < this.session.lapSec) this.session = ref;
     if (!this.allTime || lapSec < this.allTime.lapSec) {
       this.allTime = ref;
@@ -599,6 +725,19 @@ function round2(v: number): number {
 }
 
 /**
+ * A session counter as a number, or `null` when the caller has no reading.
+ *
+ * The sentinel matters: these channels publish {@link UNKNOWN_VALUE} when there
+ * is no source for them (plain rF2, an LMU install whose log directory could not
+ * be found), and treating that as a count would make the step up to a real zero
+ * look like a cut.
+ */
+function countOf(v: number | undefined): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
+  return v;
+}
+
+/**
  * Round to 4 decimals. This is the wire precision, deliberately finer than the
  * widgets' 2-decimal display: the filters in {@link Channel} integrate over
  * successive frames, so rounding the transported value to display precision
@@ -611,18 +750,23 @@ function round4(v: number): number {
 /* ---------------------------- all-time persistence ------------------------ */
 
 /** Directory holding persisted per-track all-time-best traces. */
-function pbDir(): string {
+export function pbDir(): string {
   return path.join(os.homedir(), '.apex-overlay', 'pb');
 }
 
-function pbFile(trackKey: string): string {
-  return path.join(pbDir(), `${trackKey}.json`);
+function pbFile(trackKey: string, dir: string): string {
+  return path.join(dir, `${trackKey}.json`);
 }
 
-/** Load a persisted all-time-best reference for a track, or null. */
-function loadAllTime(trackKey: string): Reference | null {
+/**
+ * Load a persisted all-time-best reference for a track, or `null`.
+ *
+ * The directory is injectable for the same reason the track-map cache's is: a
+ * test that exercises the PB store must never read or write the driver's own.
+ */
+export function loadAllTime(trackKey: string, dir = pbDir()): Reference | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(pbFile(trackKey), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(pbFile(trackKey, dir), 'utf8'));
     if (
       raw &&
       Array.isArray(raw.trace) &&
@@ -642,8 +786,17 @@ function loadAllTime(trackKey: string): Reference | null {
       // it would never be replaced because nothing can beat an impossible time.
       const from = trace[0]!.d;
       const to = trace[trace.length - 1]!.d;
+      // …and reject one that does not SAY it was driven inside the white lines.
+      // Files written before track limits were considered here cannot say, and
+      // the ones worth worrying about are exactly the fast ones: a lap that cut
+      // is a lap nothing clean will ever beat, so it would sit in this file
+      // forever, poisoning every delta, with no way for a driver to know that
+      // the fix is a file they have never heard of. One clean flying lap writes
+      // a marked one back, which is the same price the key change in
+      // {@link refKeyOf} charged for the same kind of repair.
+      if (raw.clean !== true) return null;
       if (trace.length >= 8 && from <= 0.05 && to >= 0.9) {
-        return { trace, lapSec: raw.lapSec, full: true };
+        return { trace, lapSec: raw.lapSec, full: true, clean: true };
       }
     }
   } catch {
@@ -653,10 +806,10 @@ function loadAllTime(trackKey: string): Reference | null {
 }
 
 /** Persist an all-time-best reference for a track (best-effort). */
-function saveAllTime(trackKey: string, ref: Reference): void {
+export function saveAllTime(trackKey: string, ref: Reference, dir = pbDir()): void {
   try {
-    fs.mkdirSync(pbDir(), { recursive: true });
-    fs.writeFileSync(pbFile(trackKey), JSON.stringify(ref), 'utf8');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(pbFile(trackKey, dir), JSON.stringify(ref), 'utf8');
   } catch {
     /* non-fatal — persistence is a convenience, not required for live delta */
   }

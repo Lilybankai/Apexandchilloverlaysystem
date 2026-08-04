@@ -24,22 +24,34 @@ const check = (name, ok, detail) => {
 function car(tr, restBest, startFrac) {
   let elapsed = 1000, dist = (startFrac || 0) * TRACK;
   let restDist = dist, restAt = -1e9, restVel = 0;
+  // The stewards' running totals for the session, exactly as the provider hands
+  // them over: monotone counts, never reset mid-session. `-1` is UNKNOWN_VALUE,
+  // which is what a car with no source for them publishes.
+  let cuts = 0, penalties = 0;
   return {
-    /** Drive one lap in `lapSec`; returns every tSession seen during it. */
-    lap(lapSec) {
+    /**
+     * Drive one lap in `lapSec`; returns every tSession seen during it.
+     *
+     * @param cutAt - Lap fraction at which the sim charges a track-limits cut,
+     *                if this lap is one where the driver ran wide.
+     * @param how   - `{cuts:-1}` to drive with no stewards' feed at all.
+     */
+    lap(lapSec, cutAt, how) {
+      if (how && typeof how.cuts === 'number') cuts = how.cuts;
       const speed = TRACK / lapSec;
       const remain = lapSec * (1 - (dist / TRACK - Math.floor(dist / TRACK)));
       const vals = [];
       let frames = 0;
+      let charged = false;
       for (let k = 0; k < Math.round(remain / FRAME); k++) {
         elapsed += FRAME; dist += speed * FRAME;
         const nowMs = elapsed * 1000;
-        let fresh = false;
-        if (nowMs - restAt >= REST_MS) { restAt = nowMs; restDist = dist; restVel = speed; fresh = true; }
+        if (nowMs - restAt >= REST_MS) { restAt = nowMs; restDist = dist; restVel = speed; }
         const age = Math.min(0.5, (nowMs - restAt) / 1000);
         const l = (restDist + restVel * age) / TRACK;
         const d = Math.min(1, Math.max(0, l - Math.floor(l)));
-        const r = tr.update(d, elapsed, restBest, '', fresh);
+        if (cutAt !== undefined && !charged && d >= cutAt && cuts >= 0) { cuts++; charged = true; }
+        const r = tr.update(d, elapsed, restBest, '', { cuts, penalties, inPit: false });
         frames++;
         if (r.tSession !== -1) vals.push(r.tSession);
       }
@@ -318,6 +330,95 @@ console.log('\n7) A long gap re-anchors instead of banking a bogus lap');
     'last=' + tr.last.lapSec.toFixed(2));
   check('delta recovers after the gap', after.vals.length > 0,
     'samples=' + after.vals.length);
+}
+
+/* ---------------------------------------------------------------------------
+ * 8) Track limits. A best-lap reference the driver did not drive is worse than
+ * none: cut the first chicane at Monza and the engine times a genuine fastest
+ * lap by a route that is not the circuit, adopts it, writes it to the PB store,
+ * and every honest lap afterwards reads seconds down against it.
+ * ------------------------------------------------------------------------- */
+console.log('\n8) A lap the stewards charged cannot become the best');
+{
+  const tr = new LocalPaceDeltaTracker();
+  const c = car(tr, 95, 0.51);
+  c.lap(95); c.lap(95);                       // fragment, then a clean reference
+  const clean = tr.session.lapSec;
+  c.lap(88, 0.2);                             // faster — by cutting, 20% round
+  check('the cut lap does not take the session best',
+    Math.abs(tr.session.lapSec - clean) < 0.01, 'session=' + tr.session.lapSec.toFixed(2));
+  check('nor the all-time best, which would be written to disk',
+    Math.abs(tr.allTime.lapSec - clean) < 0.01, 'allTime=' + tr.allTime.lapSec.toFixed(2));
+  check('but it is still the LAST lap, which is a description not a claim',
+    tr.last !== null && Math.abs(tr.last.lapSec - 88) < 0.5,
+    'last=' + (tr.last && tr.last.lapSec.toFixed(2)));
+  check('and it is marked for what it was', tr.last.clean === false);
+}
+
+console.log('\n9) The charge lands on its own lap, not the one after it');
+{
+  const tr = new LocalPaceDeltaTracker();
+  const c = car(tr, 95, 0.51);
+  c.lap(95); c.lap(95);
+  c.lap(88, 0.2);                             // the cut lap
+  c.lap(93);                                  // a clean lap, faster than the 95
+  check('the clean lap after a cut IS adopted',
+    Math.abs(tr.session.lapSec - 93) < 0.5, 'session=' + tr.session.lapSec.toFixed(2));
+  check('and it is marked clean', tr.session.clean === true);
+}
+
+console.log('\n10) No stewards feed changes nothing');
+{
+  // Plain rF2, or an LMU install whose log directory could not be found: the
+  // count is UNKNOWN_VALUE, which must read as "no information" and not as a
+  // cut — otherwise the delta would quietly stop having a reference at all.
+  const tr = new LocalPaceDeltaTracker();
+  const c = car(tr, 95, 0.51);
+  c.lap(95, undefined, { cuts: -1 });
+  c.lap(95, undefined, { cuts: -1 });
+  check('laps are still adopted with no limits channel',
+    tr.session !== null && Math.abs(tr.session.lapSec - 95) < 0.5,
+    'session=' + (tr.session && tr.session.lapSec.toFixed(2)));
+}
+
+/* ---------------------------------------------------------------------------
+ * 11) The PB store, which is where a cut lap does its lasting damage: it is
+ * preferred over learning a new one at every session after, so a poisoned file
+ * is a permanently wrong delta until someone deletes a file they have never
+ * heard of.
+ * ------------------------------------------------------------------------- */
+console.log('\n11) The persisted all-time best');
+{
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { loadAllTime, saveAllTime } = require(
+    require('path').join(__dirname, '..', 'dist', 'telemetry', 'paceDelta.js'),
+  );
+  const dir = path.join(os.tmpdir(), 'apex-pb-test-' + process.pid + '-' + Math.random().toString(36).slice(2));
+  fs.mkdirSync(dir, { recursive: true });
+
+  const trace = [];
+  for (let i = 0; i <= 20; i++) trace.push({ d: i / 20, t: (i / 20) * 95 });
+
+  saveAllTime('somewhere_4655__car', { trace, lapSec: 95, full: true, clean: true }, dir);
+  const back = loadAllTime('somewhere_4655__car', dir);
+  check('a clean best round-trips', back !== null && Math.abs(back.lapSec - 95) < 0.01);
+  check('and it says so, so the next build can still trust it', back && back.clean === true);
+
+  // A file written before track limits were considered here. It cannot say
+  // whether it was driven inside the white lines, and the fast ones are exactly
+  // the ones worth doubting — nothing clean will ever beat a lap that cut, so it
+  // would sit there forever.
+  fs.writeFileSync(
+    path.join(dir, 'legacy_4655__car.json'),
+    JSON.stringify({ trace, lapSec: 88, full: true }),
+    'utf8',
+  );
+  check('an unmarked file from an older build is not loaded',
+    loadAllTime('legacy_4655__car', dir) === null);
+
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

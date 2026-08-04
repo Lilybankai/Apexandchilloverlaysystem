@@ -78,7 +78,13 @@ import {
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
-import { EMPTY_PACE_DELTAS, LocalPaceDeltaTracker, RoadPosition, refKeyOf } from './paceDelta';
+import {
+  EMPTY_PACE_DELTAS,
+  LocalPaceDeltaTracker,
+  RoadPosition,
+  refKeyOf,
+  type LapValidity,
+} from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap } from './lapLog';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
@@ -894,6 +900,22 @@ export class LmuRestProvider implements TelemetryProvider {
     // resolved once here rather than where the delta happens to use it.
     const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
     const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
+    // Track limits ride on the DRIVEN car (like the radar) rather than the
+    // broadcast focus, which may be a rival being spectated while the player
+    // sits in their garage.
+    //
+    // Read BEFORE the delta rather than after it, which is where this used to
+    // sit: the delta engine needs the stewards' cut count to know whether the
+    // lap being driven can stand as a reference (see `LapValidity`), and a
+    // frame-old count would attach a cut taken on the line to the wrong lap.
+    const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
+    // The penalty's KIND rides on the track-limits block because that is where
+    // its count already lives, and the two are read together or not at all.
+    const trackLimits =
+      limitsBase && limitsBase.penalties > 0
+        ? { ...limitsBase, ...this.buildPenaltyType() }
+        : limitsBase;
+
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running). When the
     // focused car is the one driven on this PC it gets the shared-memory lap
@@ -907,7 +929,18 @@ export class LmuRestProvider implements TelemetryProvider {
     // Runs for the whole field on every frame, including while the driven car
     // has focus: stop feeding it and the first cut to a rival has no reference
     // lap to compare against.
-    const restDeltas = this.lapDelta.update(cars, focus, trackLen, deltaClock, restAgeSec);
+    const playerLapValidity: LapValidity = {
+      ...(trackLimits ? { cuts: trackLimits.charged, penalties: trackLimits.penalties } : {}),
+      inPit: playerCar ? isInPit(playerCar) : false,
+    };
+    const restDeltas = this.lapDelta.update(
+      cars,
+      focus,
+      trackLen,
+      deltaClock,
+      restAgeSec,
+      playerCar ? { slotId: playerCar.slotID, lap: playerLapValidity } : undefined,
+    );
     let deltaSec: number;
     let paceDeltas: PaceDeltas | undefined;
     if (
@@ -942,6 +975,11 @@ export class LmuRestProvider implements TelemetryProvider {
         local!.elapsedSec,
         focus!.bestLapTime,
         refKeyOf(si.trackName || '', trackLen, this.playerVehicleName, playerCar?.carClass),
+        // What the stewards have charged this car, so a lap that left the
+        // circuit cannot become the lap every other one is measured against.
+        // The same three faults the lap log voids a lap for, from the same
+        // channels — see `lapLog.ts` and `LapValidity`.
+        playerLapValidity,
       );
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
@@ -955,16 +993,6 @@ export class LmuRestProvider implements TelemetryProvider {
       paceDeltas = restDeltas;
       deltaSec = restDeltas.tSession;
     }
-    // Track limits ride on the DRIVEN car (like the radar) rather than the
-    // broadcast focus, which may be a rival being spectated while the player
-    // sits in their garage.
-    const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
-    // The penalty's KIND rides on the track-limits block because that is where
-    // its count already lives, and the two are read together or not at all.
-    const trackLimits =
-      limitsBase && limitsBase.penalties > 0
-        ? { ...limitsBase, ...this.buildPenaltyType() }
-        : limitsBase;
     // Which LAYOUT is loaded — read before the pace score, which cannot resolve
     // Monza, Le Mans, Fuji or Paul Ricard without it.
     this.refreshSimTrackName(session.track, nowMs);
@@ -2585,12 +2613,22 @@ class LapDeltaTracker {
    * @param ageSec   - Age of the REST snapshot, for dead-reckoning positions.
    * @returns The focused car's deltas, or {@link EMPTY_PACE_DELTAS}.
    */
+  /**
+   * @param player - The DRIVEN car's slot and what the stewards have charged it,
+   *                 when there is one on this PC. Only that car has a
+   *                 track-limits channel — a rival's cuts are not in any feed we
+   *                 read — so only that car's references can refuse a lap for
+   *                 leaving the circuit. This path serves the driven car's own
+   *                 delta whenever shared memory is unavailable, which is
+   *                 exactly when it would otherwise still adopt a cut lap.
+   */
   public update(
     cars: RestStanding[],
     focus: RestStanding | undefined,
     trackLen: number,
     clockSec: number,
     ageSec: number,
+    player?: { slotId: number; lap: LapValidity },
   ): PaceDeltas {
     if (trackLen <= 0 || !(clockSec > 0)) return EMPTY_PACE_DELTAS;
     let out: PaceDeltas = EMPTY_PACE_DELTAS;
@@ -2619,10 +2657,11 @@ class LapDeltaTracker {
       // jitter lands in the position, not in the velocity.
       const distM = st.pos.step(clockSec, c.lapDistance + v * ageSec, v, trackLen);
       const d = clamp01(distM / trackLen);
+      const lap = player && player.slotId === c.slotID ? player.lap : undefined;
       if (focus && c.slotID === focus.slotID) {
-        out = st.engine.update(d, clockSec, c.bestLapTime, '');
+        out = st.engine.update(d, clockSec, c.bestLapTime, '', lap);
       } else {
-        st.engine.observe(d, clockSec, c.bestLapTime, '');
+        st.engine.observe(d, clockSec, c.bestLapTime, '', lap);
       }
     }
 
