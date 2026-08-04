@@ -85,7 +85,7 @@
   /** How many charges the strip will show, however many the frame carries. */
   var STRIP_MAX = 5;
 
-  var root, countEl, labelEl, penaltyEl, bannerEl, barEl, barFillEl, chargesEl, headerMeta;
+  var root, countEl, labelEl, lapEl, penaltyEl, bannerEl, barEl, barFillEl, chargesEl, headerMeta;
   var metaCache = "";
   /** Last state written, so the DOM is touched only on a real change. */
   var stateCache = "";
@@ -119,6 +119,16 @@
     labelEl = document.createElement("div");
     labelEl.className = "limits__label";
     labelEl.textContent = "LIMITS";
+    // The sim's LIVE lap-validity verdict (countLapFlag), surfaced the moment
+    // it flips rather than at the end of the lap. Amber and stateful, not a
+    // flash: it stays up exactly as long as the sim holds the lap void, and it
+    // disappears again when the stewards restore it — both of which were
+    // observed live inside a single excursion. Hidden while the lap counts;
+    // a permanent "VALID" chip would be a reminder of nothing.
+    lapEl = document.createElement("div");
+    lapEl.className = "limits__lap";
+    lapEl.textContent = "LAP INVALID";
+    lapEl.hidden = true;
     // The sim's penalty, in its own place. Hidden entirely at zero: a "0 PEN"
     // chip is a permanent reminder of something that has not happened.
     penaltyEl = document.createElement("div");
@@ -126,6 +136,7 @@
     penaltyEl.hidden = true;
     head.appendChild(countEl);
     head.appendChild(labelEl);
+    head.appendChild(lapEl);
     head.appendChild(penaltyEl);
 
     // The allowance, spatially: full at the start of a session, empty at the
@@ -198,9 +209,16 @@
     // No block at all — spectating, no shared memory, or out of a session. Say
     // so rather than showing a clean sheet nobody has earned.
     if (!tl) {
+      lapEl.hidden = true;
       blank("NO DATA");
       return;
     }
+
+    // The validity chip rides every path below, including unknown-points: it
+    // comes from the REST feed, which is alive even when the stewards' log is
+    // not. Strictly `=== false` — an absent channel must not read as invalid.
+    var invalid = tl.lapValid === false;
+    if (lapEl.hidden !== !invalid) lapEl.hidden = !invalid;
 
     /* ------------------------------ the counts --------------------------- */
 
@@ -332,7 +350,13 @@
     setMeta(enforced ? pts(remaining) + " / " + pts(limit) : pts(points) + " PTS");
   }
 
-  /** Everything cleared, with a reason under the dash. */
+  /**
+   * Everything cleared, with a reason under the dash.
+   *
+   * Deliberately does NOT touch the lap-validity chip: it is set once per
+   * frame above, and this runs on the unknown-points path too — where the
+   * stewards' log is missing but the REST validity channel is still alive.
+   */
   function blank(label) {
     if (countEl.textContent !== "—") countEl.textContent = "—";
     if (labelEl.textContent !== label) labelEl.textContent = label;

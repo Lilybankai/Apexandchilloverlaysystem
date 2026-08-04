@@ -25,6 +25,7 @@ import {
   type PaceDeltas,
   type PaceScoreState,
   type PedalInputs,
+  type FlagState,
   type PitPhase,
   type PitState,
   type SessionPhase,
@@ -470,6 +471,13 @@ export class SimulatorProvider implements TelemetryProvider {
         serverName: 'Apex & Chill — Midweek Endurance',
         notStarted: preSession !== null,
         scheduledLengthSec: SimulatorProvider.DEMO_SESSION_LENGTH_SEC,
+        // The start gantry walks its five reds through the demo countdown —
+        // one lamp a second, like a standing start — so the widget's lamp
+        // strip can be laid out without booting the sim. LMU keeps the
+        // channel published (frame 0) outside the sequence, so the demo does
+        // too. Frame 6 (= lights out) shows for the first beat of green.
+        startLights: this.buildStartLights(preSession, dt),
+        sectorFlags: this.buildSectorFlags(dt),
       },
       player: {
         slotId: player.slotId,
@@ -891,6 +899,23 @@ export class SimulatorProvider implements TelemetryProvider {
     // would show a car on track while the widget counts its stop down.
     this.player().inPit = phase !== 'none';
 
+    // The race-control extras, on the same cycle: the pit entry approaches at
+    // a demo-realistic 22 m/s for the last half-kilometre before `enterAt`,
+    // goes negative past the commit point, and disappears in between — exactly
+    // the envelope the marker widget has to handle. The limiter comes on just
+    // before the entry and off just after the exit, so both prompt edges are
+    // reachable in demo mode.
+    const APPROACH_MPS = 22;
+    const toEntrySec = enterAt - t;
+    const entryDistM =
+      toEntrySec < 25 && toEntrySec > -lane
+        ? Math.round(toEntrySec * APPROACH_MPS)
+        : undefined;
+    const extras = {
+      ...(entryDistM !== undefined ? { entryDistM } : {}),
+      limiterOn: t > enterAt - 4 && t < releaseAt + lane * 0.6,
+    };
+
     if (phase !== 'stopped') {
       return {
         phase,
@@ -898,6 +923,7 @@ export class SimulatorProvider implements TelemetryProvider {
         elapsedSec: UNKNOWN_VALUE,
         plannedSec: UNKNOWN_VALUE,
         slackSec: UNKNOWN_VALUE,
+        ...extras,
       };
     }
     return {
@@ -906,6 +932,7 @@ export class SimulatorProvider implements TelemetryProvider {
       elapsedSec: round1(t - stopAt),
       plannedSec: this.pitWork ? this.pitWork.plannedSec : UNKNOWN_VALUE,
       slackSec: this.pitWork ? this.pitWork.slackSec : UNKNOWN_VALUE,
+      ...extras,
     };
   }
 
@@ -937,6 +964,46 @@ export class SimulatorProvider implements TelemetryProvider {
 
   /** Seconds since the demo booted, capped once the session has gone green. */
   private preSessionClockSec = 0;
+
+  /** Clock for the demo's periodic sector yellow; independent of the pit cycle. */
+  private flagClockSec = 0;
+
+  /**
+   * The demo gantry: dark until the countdown phase, one red per second
+   * through it (the standing-start cadence the live probe could not produce),
+   * and lights-out — frame `total + 1` — for the first two seconds of green.
+   */
+  private buildStartLights(
+    preSession: SessionPhase | null,
+    dt: number,
+  ): { frame: number; total: number } {
+    const t = this.preSessionClockSec;
+    const countdownFrom = 15; // PRE_SESSION: countdown runs 15..20 s
+    if (preSession === 'countdown') {
+      return { frame: Math.max(1, Math.min(5, 1 + Math.floor(t - countdownFrom))), total: 5 };
+    }
+    if (preSession === null) {
+      // Its own clock: preSessionClockSec freezes at the changeover, so "just
+      // went green" cannot be read off it.
+      this.greenClockSec += dt;
+      if (this.greenClockSec < 2) return { frame: 6, total: 5 };
+    }
+    return { frame: 0, total: 5 };
+  }
+
+  /** Seconds since the demo went green; drives the two-second lights-out frame. */
+  private greenClockSec = 0;
+
+  /**
+   * A sector-2 yellow for twelve seconds out of every ninety, so the flag rail
+   * has both states in demo without a car having to crash for it.
+   */
+  private buildSectorFlags(dt: number): [FlagState, FlagState, FlagState] {
+    this.flagClockSec += dt;
+    const m = this.flagClockSec % 90;
+    const yellow = m >= 40 && m < 52;
+    return ['none', yellow ? 'yellow' : 'none', 'none'];
+  }
 
   /**
    * Advances the run-up and returns the phase, or `null` once green. Freezes
@@ -1045,6 +1112,10 @@ export class SimulatorProvider implements TelemetryProvider {
       charged: this.demoCharged,
       msSinceCharge: this.demoChargeAt ? nowMs - this.demoChargeAt : UNKNOWN_VALUE,
       pointsLimitEnforced: true,
+      // The live validity verdict rides the same cycle: each demo charge voids
+      // the lap for a few seconds, then the stewards "restore" it — both edges
+      // of the real countLapFlag behaviour, on a clock a fixture can catch.
+      lapValid: this.demoChargeAt !== 0 && nowMs - this.demoChargeAt < 3000 ? false : true,
     };
   }
 

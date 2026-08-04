@@ -86,6 +86,11 @@ const OVERLAY_CATALOG = [
     label: 'Track Limits',
     description: 'Excursions this session, the sim\'s penalties, and how much road is left',
   },
+  {
+    id: 'racecontrol',
+    label: 'Race Control',
+    description: 'Start lights, green flag, sector yellows, and the pit-limiter prompts (LMU only)',
+  },
   // A clickable control page, not a HUD graphic: it belongs in a browser tab
   // (or an OBS source as a readout), never the locked, click-through in-game
   // layer — so it defaults out of the in-game set.

@@ -179,6 +179,7 @@
     radar: 'radar',
     trackmap: 'circuit',
     limits: 'alert', // the warning triangle; auth.html already ships this id
+    racecontrol: 'flag',
     mfd: 'sliders-horizontal',
   };
 })();

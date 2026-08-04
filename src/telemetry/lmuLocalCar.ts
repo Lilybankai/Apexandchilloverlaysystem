@@ -105,6 +105,12 @@ const VT = {
   mFilteredBrake: 428,
   mFuel: 524,
   mEngineMaxRPM: 532,
+  // uint8 pit-speed-limiter state, 0 = off / 1 = on. NOT the documented rF2
+  // offset — pinned live 2026-08-04 by diffing 5 Hz snapshots of this record
+  // against the driver toggling the limiter on the formation lap (six flips in
+  // exact sync, off again one second after the green, on again through a pit
+  // stop). See docs/race-control-signals.md.
+  mSpeedLimiter: 604,
   mFuelCapacity: 608,
   // Live rear brake bias (fraction, 0..1 = share of braking on the rear) — the
   // value the driver adjusts on the fly, and the one thing the REST garage API
@@ -265,6 +271,12 @@ export interface LocalCarPhysics {
   rearBrakeBias: number;
   fuelLiters: number;
   capacityLiters: number;
+  /**
+   * Pit-speed-limiter state: `true` on, `false` off, `null` when the byte reads
+   * outside 0/1 (unknown layout on this build — report nothing rather than a
+   * wrong prompt; the race-control widget's limiter callouts stay silent).
+   */
+  limiterOn: boolean | null;
   /**
    * Per-corner tyre **surface** temperature in °C `[FL, FR, RL, RR]`, each the
    * mean of the inner/centre/outer bands. `UNKNOWN_VALUE` (-1) when the car
@@ -892,6 +904,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     rearBrakeBias: plausibleFraction(rec.readDoubleLE(VT.mRearBrakeBias)),
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
+    limiterOn: rec[VT.mSpeedLimiter] === 1 ? true : rec[VT.mSpeedLimiter] === 0 ? false : null,
     tyreTempsC,
     tyreHudTempsC,
     tyreSurfaceBandsC,

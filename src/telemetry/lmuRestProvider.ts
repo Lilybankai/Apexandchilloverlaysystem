@@ -220,6 +220,25 @@ interface RestStanding {
   gamePhase?: string;
   flag?: string;
   underYellow?: boolean;
+  /**
+   * The sim's live lap-validity verdict: `COUNT_LAP_AND_TIME` while the lap
+   * stands, `COUNT_LAP_ONLY` the instant a cut voids its time (and back, if
+   * forgiven), `COUNT_NEITHER` on out-laps. Probed live 2026-08-04.
+   */
+  countLapFlag?: string;
+}
+
+/**
+ * Fields we consume from `/rest/sessions/GetGameState` — the channel that
+ * carries the phase as a STRING (`GPHASE_FORMATION`, `GPHASE_GREEN`, …) plus
+ * the live pit-entry distance. Probed live 2026-08-04; see
+ * docs/race-control-signals.md.
+ */
+interface RestGameState {
+  gamePhase?: string;
+  /** Signed along-track metres to the pit-entry commit point; negative = past it. */
+  PitEntryDist?: number;
+  PitState?: string;
 }
 
 /** Fields we consume from `/rest/watch/sessionInfo`. */
@@ -240,8 +259,14 @@ interface RestSession {
   timeRemainingInGamePhase?: number;
   maximumLaps?: number;
   numberOfVehicles?: number;
+  /** Per-sector flag strings, e.g. `["UNKNOWN","YELLOW","UNKNOWN"]`. */
   sectorFlag?: unknown;
+  /** Full-course-yellow / safety-car channel; `"NONE"` when clear. */
   yellowFlagState?: unknown;
+  /** Lit lamps on the start gantry; > numRedLights means lights-out/green. */
+  startLightFrame?: number;
+  /** How many red lamps the gantry has (5 at every track probed). */
+  numRedLights?: number;
 }
 
 /** One forecast metric node, e.g. `{ currentValue: 51, stringValue: "51%" }`. */
@@ -427,6 +452,7 @@ export class LmuRestProvider implements TelemetryProvider {
 
   private standings: RestStanding[] | null = null;
   private session: RestSession | null = null;
+  private gameState: RestGameState | null = null;
   private lastOkAt = 0;
   private timer: NodeJS.Timeout | null = null;
   private live = false;
@@ -609,12 +635,19 @@ export class LmuRestProvider implements TelemetryProvider {
 
   private async refresh(): Promise<void> {
     try {
-      const [standings, session] = await Promise.all([
+      const [standings, session, gameState] = await Promise.all([
         this.getJson<RestStanding[]>('/rest/watch/standings'),
         this.getJson<RestSession>('/rest/watch/sessionInfo'),
+        // The phase as a string plus the live pit-entry distance. Fetched on
+        // the fast timer with the other two: the green flag and the pit-entry
+        // countdown are exactly the events a 150 ms cadence exists for. Its
+        // absence (older build, endpoint 404) must not take standings down
+        // with it, hence the catch to null rather than a shared failure.
+        this.getJson<RestGameState>('/rest/sessions/GetGameState').catch(() => null),
       ]);
       if (Array.isArray(standings)) this.standings = standings;
       if (session && typeof session === 'object') this.session = session;
+      if (gameState && typeof gameState === 'object') this.gameState = gameState;
       if (Array.isArray(standings) && session) this.lastOkAt = Date.now();
     } catch (err) {
       // Leave the cache in place; the staleness check flips us to the simulator.
@@ -894,7 +927,7 @@ export class LmuRestProvider implements TelemetryProvider {
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
-    const session = this.buildSession(cars, si, focus);
+    const session = this.buildSession(cars, si, focus, this.gameState);
     const weather = this.buildWeather(si, session.type);
     // Lap length is needed by the fuel call as well as the delta, so it is
     // resolved once here rather than where the delta happens to use it.
@@ -911,10 +944,19 @@ export class LmuRestProvider implements TelemetryProvider {
     const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
     // The penalty's KIND rides on the track-limits block because that is where
     // its count already lives, and the two are read together or not at all.
-    const trackLimits =
+    const withType =
       limitsBase && limitsBase.penalties > 0
         ? { ...limitsBase, ...this.buildPenaltyType() }
         : limitsBase;
+    // The sim's LIVE lap-validity verdict (countLapFlag). Only a definite
+    // yes/no is forwarded: COUNT_NEITHER (out-lap, garage) and an absent
+    // channel both leave the field off, so the widget shows nothing rather
+    // than a stale INVALID over a car in its box.
+    const clf = playerCar ? asUpper(playerCar.countLapFlag) : '';
+    const lapValid =
+      clf === 'COUNT_LAP_AND_TIME' ? true : clf === 'COUNT_LAP_ONLY' ? false : undefined;
+    const trackLimits =
+      withType && lapValid !== undefined ? { ...withType, lapValid } : withType;
 
     // Live delta to the focused car's own best lap (predictive; UNKNOWN until a
     // reference lap has been driven while the overlay is running). When the
@@ -1383,6 +1425,7 @@ export class LmuRestProvider implements TelemetryProvider {
     cars: RestStanding[],
     si: RestSession,
     focus: RestStanding | undefined,
+    gs: RestGameState | null,
   ): SessionState {
     const leaderLaps = cars.reduce((m, c) => Math.max(m, c.lapsCompleted | 0), 0);
     const endET = typeof si.endEventTime === 'number' ? si.endEventTime : 0;
@@ -1422,9 +1465,11 @@ export class LmuRestProvider implements TelemetryProvider {
       maxLaps === 0 && timeRemaining > 0 && leaderPace > 0
         ? Math.max(1, Math.ceil(timeRemaining / leaderPace))
         : UNKNOWN_VALUE;
-    // Prefer the focused car's flag/phase strings (reliable); sessionInfo's
-    // gamePhase can be numeric, so fall back to it only as a string.
-    const phaseStr = focus?.gamePhase ?? si.gamePhase;
+    // Prefer the focused car's flag/phase strings (reliable); then
+    // GetGameState's GPHASE_* string, which exists even before any car does
+    // (GPHASE_BEFORE while the session loads); sessionInfo's gamePhase is
+    // numeric and only stands in when it happens to arrive as a string.
+    const phaseStr = focus?.gamePhase ?? gs?.gamePhase ?? si.gamePhase;
     const phase = mapPhase(phaseStr);
     // The full booked length, which is `endEventTime` — LMU publishes that as
     // soon as the session is loaded, well before the clock starts running, which
@@ -1434,10 +1479,39 @@ export class LmuRestProvider implements TelemetryProvider {
     // green flag (badly wrong — a "5 MIN" practice session that is actually 30).
     const scheduledLengthSec =
       endET > 0 && endET < 100000 ? Math.round(endET) : UNKNOWN_VALUE;
+    // The start gantry, passed through whenever the channel is present — the
+    // widget needs the resting frame 0 too, so it can tell "gantry dark" from
+    // "no gantry channel at all".
+    const startLights =
+      typeof si.startLightFrame === 'number' &&
+      typeof si.numRedLights === 'number' &&
+      si.numRedLights > 0 &&
+      si.numRedLights <= 10 &&
+      si.startLightFrame >= 0
+        ? { frame: si.startLightFrame, total: si.numRedLights }
+        : undefined;
+    // Per-sector marshalling. LMU writes "UNKNOWN" for a clear sector and
+    // "YELLOW" for one with a hazard; anything unrecognised reads as clear
+    // rather than inventing a flag the sim is not showing.
+    const rawSectors = Array.isArray(si.sectorFlag) ? si.sectorFlag : null;
+    const sectorFlags =
+      rawSectors && rawSectors.length >= 3
+        ? (rawSectors.slice(0, 3).map((s) => (asUpper(s) === 'YELLOW' ? 'yellow' : 'none')) as [
+            FlagState,
+            FlagState,
+            FlagState,
+          ])
+        : undefined;
+    // The FCY/safety-car channel outranks the per-car strings for the global
+    // flag: it is the one place a full-course yellow is published (per-car
+    // flags stayed GREEN through every probe).
+    const fcy = asUpper(si.yellowFlagState);
+    const flag: FlagState =
+      fcy && fcy !== 'NONE' ? 'yellow' : mapFlag(focus?.flag ?? phaseStr);
     return {
       type: mapSessionType(si.session),
       phase,
-      flag: mapFlag(focus?.flag ?? phaseStr),
+      flag,
       track: si.trackName || 'Unknown',
       timeRemainingSec: timeRemaining,
       totalLaps: maxLaps,
@@ -1446,6 +1520,8 @@ export class LmuRestProvider implements TelemetryProvider {
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
       notStarted: isPreGreen(phase),
       scheduledLengthSec,
+      ...(startLights ? { startLights } : {}),
+      ...(sectorFlags ? { sectorFlags } : {}),
     };
   }
 
@@ -1869,7 +1945,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const surfaceTemps = local ? local.tyreTempsC : null;
     const hudTemps = local ? local.tyreHudTempsC : null;
     const speedKph = local ? local.speedKph : restSpeed;
-    const pit = this.buildPit(focus, speedKph);
+    const pit = this.buildPit(focus, speedKph, local, this.gameState);
     // Compound + optimal temperature, while the reading is fresh. Held to the
     // same staleness rule as wear: in the menus or after leaving the session
     // these describe a car that is no longer there.
@@ -2294,17 +2370,33 @@ export class LmuRestProvider implements TelemetryProvider {
    * place with the repair screen to hand at the instant work begins, which is
    * when the booked stop length has to be captured — see {@link PitState}.
    */
-  private buildPit(focus: RestStanding | undefined, speedKph: number): PitState | undefined {
+  private buildPit(
+    focus: RestStanding | undefined,
+    speedKph: number,
+    local: LocalCarPhysics | null,
+    gs: RestGameState | null,
+  ): PitState | undefined {
     if (!focus) {
       this.pitWork = null;
       return undefined;
     }
+    // The two live extras ride on every pit block, whatever the phase: the
+    // entry-distance marker exists precisely while the phase is still `none`,
+    // and the limiter prompt around the race start likewise. Both are omitted
+    // rather than guessed when their channel is absent — the limiter is the
+    // DRIVEN car's shared memory, so it disappears while spectating.
+    const extras = {
+      ...(gs && typeof gs.PitEntryDist === 'number' && Math.abs(gs.PitEntryDist) < 100000
+        ? { entryDistM: Math.round(gs.PitEntryDist) }
+        : {}),
+      ...(local && local.limiterOn !== null ? { limiterOn: local.limiterOn } : {}),
+    };
     const phase = pitPhase(focus, speedKph);
     if (phase !== 'stopped') {
       // Anything other than stationary-in-the-box ends the stop, including the
       // car simply vanishing from the feed. The next stop starts a fresh clock.
       this.pitWork = null;
-      return { phase, working: false, elapsedSec: UNKNOWN_VALUE, plannedSec: UNKNOWN_VALUE, slackSec: UNKNOWN_VALUE };
+      return { phase, working: false, elapsedSec: UNKNOWN_VALUE, plannedSec: UNKNOWN_VALUE, slackSec: UNKNOWN_VALUE, ...extras };
     }
     const now = Date.now();
     if (!this.pitWork) {
@@ -2324,6 +2416,7 @@ export class LmuRestProvider implements TelemetryProvider {
       elapsedSec: round1((now - this.pitWork.startedAt) / 1000),
       plannedSec: this.pitWork.plannedSec,
       slackSec: this.pitWork.slackSec,
+      ...extras,
     };
   }
 }
@@ -2418,7 +2511,12 @@ function mapSessionType(session: string | undefined): SessionType {
 }
 
 function mapPhase(phase: unknown): SessionPhase {
-  switch (asUpper(phase)) {
+  // GetGameState speaks with a GPHASE_ prefix ("GPHASE_FORMATION"); the
+  // per-car strings do not ("FORMATION"). One vocabulary after stripping it.
+  switch (asUpper(phase).replace(/^GPHASE_/, '')) {
+    case 'BEFORE':
+      // GPHASE_BEFORE — the session exists but nothing is running yet.
+      return 'garage';
     case 'GARAGE':
       return 'garage';
     case 'GRIDWALK':
@@ -2446,7 +2544,7 @@ function mapPhase(phase: unknown): SessionPhase {
 }
 
 function mapFlag(phase: unknown): FlagState {
-  switch (asUpper(phase)) {
+  switch (asUpper(phase).replace(/^GPHASE_/, '')) {
     case 'GREEN':
     case 'GREENFLAG':
       return 'green';

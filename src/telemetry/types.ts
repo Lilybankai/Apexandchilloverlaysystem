@@ -157,6 +157,23 @@ export interface SessionState {
    * when the sim has not published a length.
    */
   scheduledLengthSec: number;
+  /**
+   * The start-light gantry, when the sim publishes one. `total` is how many red
+   * lamps the gantry has; `frame` is how many are currently lit — `0` dark,
+   * `1..total` the red countdown, and **greater than `total`** means
+   * lights-out/green (LMU jumps straight from 0 to `total + 1` on a rolling
+   * start; the intermediate frames are expected only on a standing start).
+   * Probed live 2026-08-04 — see docs/race-control-signals.md. Omitted when
+   * the source has no gantry channel.
+   */
+  startLights?: { frame: number; total: number };
+  /**
+   * Per-sector flag state `[S1, S2, S3]` — the sim's own marshalling, not an
+   * inference. LMU publishes `"YELLOW"` per sector with a car stopped on track
+   * and clears it when the hazard moves; anything it does not mark yellow reads
+   * `'none'` here. Omitted when the source has no sector channel.
+   */
+  sectorFlags?: [FlagState, FlagState, FlagState];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -657,6 +674,21 @@ export interface PitState {
    * anything being wrong. {@link UNKNOWN_VALUE} when the sim published no caps.
    */
   slackSec: number;
+  /**
+   * Live signed along-track distance to the pit-entry commit point, metres —
+   * counts down as the car approaches and goes **negative** once past it
+   * (verified live: LMU's `GetGameState.PitEntryDist` ticks every frame).
+   * This is what a "pit entry ahead — limiter" marker keys off. Omitted when
+   * the source does not publish it.
+   */
+  entryDistM?: number;
+  /**
+   * Whether the pit-speed limiter is engaged on the DRIVEN car, from shared
+   * memory (see `lmuLocalCar.ts` `mSpeedLimiter`). Omitted when unknown —
+   * spectating, plain rF2, or the byte reading implausibly — and the limiter
+   * prompts must stay silent rather than guess.
+   */
+  limiterOn?: boolean;
 }
 
 /**
@@ -851,6 +883,19 @@ export interface TrackLimitsState {
    * number on this widget they will change their driving for.
    */
   pointsLimitEnforced?: boolean;
+  /**
+   * The sim's own live verdict on whether the lap being driven still counts
+   * for TIME — LMU's `countLapFlag`, which drops from `COUNT_LAP_AND_TIME` to
+   * `COUNT_LAP_ONLY` the instant a cut voids the lap and **restores** if the
+   * sim decides no advantage was gained (observed flipping both ways inside a
+   * single five-second excursion). `false` = this lap's time is currently
+   * void; `true` = it counts. Omitted when the channel reads `COUNT_NEITHER`
+   * (out-lap / garage — validity is not a live question) or is unavailable.
+   *
+   * This is the signal the old geometry-based "LIFT" callout wanted to be: it
+   * is the stewards' own state, so showing it cannot disagree with them.
+   */
+  lapValid?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

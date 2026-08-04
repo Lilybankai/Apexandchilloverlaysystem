@@ -3194,3 +3194,127 @@ body.ig-editing #widget-radar .panel__header {
   min-width: 28px;
   text-align: right;
 }
+
+/* =========================================================================
+ * RACE CONTROL (widgets/racecontrol.js)
+ * The race director's channel: start gantry, flag banners, limiter prompts
+ * and the per-sector rail. Loud states borrow the limits pulses — one visual
+ * language for "the stewards are talking to you".
+ * ========================================================================= */
+.racecontrol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+/* The gantry. Lamps are the sim's own count (five at every track probed), lit
+   left to right; the off state keeps a faint red rim so a dark gantry still
+   reads as a gantry and not as a row of missing icons. */
+.racecontrol__lights {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 4px 0 2px;
+}
+.racecontrol__lamp {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-panel-2);
+  border: 1px solid rgba(255, 84, 112, 0.35);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.racecontrol__lamp[data-lit="1"] {
+  background: var(--pos-loss);
+  box-shadow: 0 0 12px rgba(255, 84, 112, 0.8);
+}
+/* The banner pair: the instruction, and the reason under it. Display face at
+   the critical step — this widget speaks a handful of times a race, and when
+   it does it has to carry across a cockpit at racing speed. */
+.racecontrol__msg {
+  font-family: var(--font-display);
+  font-size: var(--fs-crit);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.racecontrol__sub {
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--warn);
+}
+/* The sector rail — always present, so "all clear" is a reading and not an
+   absence. Chips light amber from the sim's own per-sector flags. */
+.racecontrol__sectors {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.racecontrol__sector {
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  border: 1px solid transparent;
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.racecontrol__sector[data-flag="yellow"] {
+  background: rgba(255, 176, 32, 0.18);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+/* States. Green is good news and gets the gain colour; the limiter states are
+   the red ones — they are the only messages here whose cost is measured in
+   drive-throughs. FCY is the whole circuit under caution, so the panel itself
+   breathes amber, same cadence as a limits charge. */
+#widget-racecontrol[data-race="green"] .racecontrol__msg { color: var(--pos-gain); }
+#widget-racecontrol[data-race="fcy"] .racecontrol__msg { color: var(--warn); }
+#widget-racecontrol[data-race="pitentry"] .racecontrol__msg { color: var(--text-secondary); }
+#widget-racecontrol[data-race="limiter"] .racecontrol__msg,
+#widget-racecontrol[data-race="limiter"] .racecontrol__sub { color: var(--pos-loss); }
+#widget-racecontrol[data-race="fcy"] .panel__body,
+#widget-racecontrol[data-race="yellow"] .panel__body {
+  animation: limits-pulse 0.9s ease-in-out infinite;
+}
+#widget-racecontrol[data-race="limiter"] .panel__body {
+  animation: limits-pulse-bad 0.9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  #widget-racecontrol[data-race="fcy"] .panel__body,
+  #widget-racecontrol[data-race="yellow"] .panel__body,
+  #widget-racecontrol[data-race="limiter"] .panel__body {
+    animation: none;
+  }
+}
+
+/* --- limits: the live lap-validity chip ----------------------------------
+   The sim's own countLapFlag, surfaced beside the penalty chip. Amber, not
+   red: an invalid lap is a warning about THIS lap, and it un-happens when the
+   stewards restore it — red is reserved for consequences that must be served. */
+.limits__lap {
+  margin-left: auto;
+  align-self: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 176, 32, 0.16);
+  border: 1px solid var(--warn);
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+  white-space: nowrap;
+}
+/* When both chips are up they share the right edge as a pair. */
+.limits__lap:not([hidden]) + .limits__penalty { margin-left: 8px; }

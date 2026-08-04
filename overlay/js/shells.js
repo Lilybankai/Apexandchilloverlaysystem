@@ -34,6 +34,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    racecontrol:
+      '<section class="widget panel" id="widget-racecontrol" data-widget="racecontrol" aria-label="Race control — start sequence, flags and limiter prompts">' +
+      '<header class="panel__header"><span class="panel__title">Race Control</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     refpace:
       '<section class="widget panel" id="widget-refpace" data-widget="refpace" aria-label="Reference pace — your lap against the class benchmark">' +
       '<header class="panel__header"><span class="panel__title">Reference Pace</span>' +

@@ -45,6 +45,10 @@
       // fell through to the {24, 24} fallback and spawned exactly on top of
       // standings, where it looked like the overlay had failed to load.
       pacedelta: { x: Math.round(vw / 2 - 170), y: 280, w: 340 },
+      // Centre band between the weather strip and the delta pill — race-start
+      // banners and flag calls belong on the driver's eyeline, and this is the
+      // one centre slot nothing else claims. (No entry = the {24,24} trap.)
+      racecontrol: { x: Math.round(vw / 2 - 170), y: 128, w: 340 },
       // Right column, under the fuel panel. This one is read between stints
       // rather than mid-corner, so it stays out of the centre band where the
       // delta and pace-delta live. Not the left column, which `fuelplan`
