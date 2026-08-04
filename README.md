@@ -150,10 +150,19 @@ GH_TOKEN=$(gh auth token) npm run release   # builds + uploads to GitHub Release
 
 `npm run release` will not start unless `CHANGELOG.md` has a dated, non-stub
 section for the version in `package.json` — that check is `npm run
-changelog:check`, and it runs automatically as npm's `prerelease` hook. The same
-section becomes the GitHub release body (`scripts/release-notes.js` →
-`build/release-notes.md` → electron-builder's `releaseInfo`), so the release page
-no longer needs a hand-written `gh release edit --notes-file` afterwards.
+changelog:check`, and it runs automatically as npm's `prerelease` hook.
+
+The same section becomes the GitHub release body: `scripts/release-notes.js`
+writes it to `build/release-notes.md`, and `scripts/publish-notes.js` puts it on
+the release afterwards (npm's `postrelease` hook), so the release page no longer
+needs a hand-written `gh release edit --notes-file`. electron-builder is *also*
+pointed at that file via `build.releaseInfo`, but it published v0.56.0 with an
+empty body regardless — hence the explicit step, which reads the body back to
+prove it took. If a release ever does go out blank, repair it with:
+
+```bash
+npm run release:body            # or: node scripts/publish-notes.js 0.56.0
+```
 
 Existing installs (v0.4.0+) will offer the update automatically. Note: builds are
 unsigned, so Windows SmartScreen shows an "unknown publisher" prompt on first
