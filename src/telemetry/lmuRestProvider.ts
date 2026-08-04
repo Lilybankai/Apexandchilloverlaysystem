@@ -1152,6 +1152,7 @@ export class LmuRestProvider implements TelemetryProvider {
       revision: status.revision,
       ready: status.ready,
       progress: Math.round(status.progress * 1000) / 1000,
+      ...(status.relearning ? { relearning: true } : {}),
       cars: mapCars,
     };
   }

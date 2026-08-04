@@ -25,6 +25,7 @@ const {
   trackKey,
   loadTrackMap,
   saveTrackMap,
+  deleteTrackMap,
   smoothClosed,
   getPublishedTrackMap,
   setPublishedTrackMap,
@@ -178,6 +179,64 @@ function driveLap(b, stepM, over, laps = 1.08) {
   }
 }
 
+/* --------------------- a lap distance that ticks back -------------------- */
+{
+  // A spin, a car rolling back out of the gravel, a scoring read that arrives
+  // out of order: the lap distance goes DOWN a few metres while the car is
+  // still where it was. Counted forward round the lap — which is the only way
+  // to count it, because that is the direction the road goes — that is a step
+  // of very nearly a whole circuit, taken by a car that has moved a metre.
+  //
+  // It used to be filled in as road: every bin still empty ANYWHERE on the
+  // track got the one spot the car was standing on, coverage hit 1.0 on the
+  // spot, and the map was published and saved as the fragment driven so far
+  // closed by a straight chord. That is the Daytona map with half the circuit
+  // missing and the field driving off the edge of the widget.
+  const b = new TrackMapBuilder(scratch());
+  const frame = (dist, pos) => ({
+    trackName: 'Test Circuit',
+    lengthM: LENGTH,
+    lapDistM: dist,
+    pos,
+    inPit: false,
+    edgeM: 7,
+  });
+  const stopAt = LENGTH * 0.65;
+  let last = null;
+  for (let d = 0; d < stopAt; d += 8) last = b.update(frame(d, onCircle(d)));
+  last = b.update(frame(stopAt - 12, onCircle(stopAt)));
+  check(
+    'a lap distance that ticks backwards invents no circuit',
+    last.ready === false,
+    `progress ${last.progress}`,
+  );
+
+  for (let d = stopAt; d < LENGTH * 1.08; d += 8) {
+    const at = d % LENGTH;
+    last = b.update(frame(at, onCircle(at)));
+  }
+  check('and the lap it interrupted still finishes', last.ready === true, `progress ${last.progress}`);
+  if (last.ready) {
+    let worst = 0;
+    for (const [x, z] of last.path.points) worst = Math.max(worst, Math.abs(Math.hypot(x, z) - R));
+    check('as the circuit that was actually driven', worst < 5, `worst ${worst.toFixed(2)} m`);
+  }
+}
+
+/* ----------------------- a fragment with a chord ------------------------- */
+{
+  // Every bin filled, so coverage says the map is complete — but a run of them
+  // holds positions from somewhere else entirely. No single point is an outlier
+  // (inside the run each one agrees with its neighbours), so what would come
+  // out is a shape closed by a straight line ruled across the map, saved and
+  // drawn at that track for good. Complete is not the same as continuous.
+  const b = new TrackMapBuilder(scratch());
+  const done = driveLap(b, 4, (d) =>
+    d > 900 && d < 1500 ? { pos: { x: onCircle(d).x + 600, y: 0, z: onCircle(d).z + 600 } } : null,
+  );
+  check('a shape that closes with a chord is refused, not drawn', done.ready === false, `progress ${done.progress}`);
+}
+
 /* ------------------------------ persistence ------------------------------ */
 {
   const dir = scratch();
@@ -201,6 +260,176 @@ function driveLap(b, stepM, over, laps = 1.08) {
     'a track that has never been driven is not ready',
     loadTrackMap('never-been-here-1234', dir) === null,
   );
+}
+{
+  // The same shape, but already on disk — written by a build from before the
+  // check above existed. Publishing means saving, so everyone who hit that bug
+  // has one of these, and the cache is preferred to learning a new one: without
+  // this it is drawn at that track forever. Rejecting it here is the whole
+  // repair, and it costs the driver one lap.
+  const dir = scratch();
+  const points = [];
+  const bins = 600;
+  for (let i = 0; i < 400; i++) {
+    const a = (i / bins) * Math.PI * 2;
+    points.push([R * Math.cos(a), R * Math.sin(a), 0]);
+  }
+  saveTrackMap(
+    {
+      key: 'fragment-1234',
+      name: 'Two thirds of a circuit',
+      lengthM: LENGTH,
+      halfWidthM: 6,
+      binM: LENGTH / bins,
+      points,
+      builtAt: new Date().toISOString(),
+      revision: 1,
+    },
+    dir,
+  );
+  check('a cached map with a chord across it is thrown away', loadTrackMap('fragment-1234', dir) === null);
+}
+
+/* ---------------------- a map that is simply wrong ------------------------ */
+{
+  // The case neither guard above can see: a well-formed circuit, saved and
+  // loaded, that is not the one being driven. Here it is the same circuit
+  // rotated — every point continuous, every neighbour a bin apart, and 300 m
+  // from where the car actually is. Something has to notice, or it is drawn at
+  // this track for good and every dot sits off the road.
+  const dir = scratch();
+  const bins = 500;
+  const wrong = [];
+  for (let i = 0; i < bins; i++) {
+    const a = (i / bins) * Math.PI * 2 + 0.9; // the same shape, turned
+    wrong.push([R * Math.cos(a), R * Math.sin(a), 0]);
+  }
+  saveTrackMap(
+    {
+      key: trackKey('Test Circuit', undefined, LENGTH),
+      name: 'Test Circuit',
+      lengthM: LENGTH,
+      halfWidthM: 6,
+      binM: LENGTH / bins,
+      points: wrong,
+      builtAt: new Date().toISOString(),
+      revision: 1,
+    },
+    dir,
+  );
+
+  const b = new TrackMapBuilder(dir);
+  const loaded = b.update({
+    trackName: 'Test Circuit',
+    lengthM: LENGTH,
+    lapDistM: 0,
+    pos: onCircle(0),
+    inPit: false,
+  });
+  check('a saved circuit is drawn before a lap is driven', loaded.ready === true);
+
+  // Drive the first corner of it. Nothing has to be reported, nothing has to be
+  // clicked: the map is being marked against the car all the way round.
+  let last = loaded;
+  for (let d = 0; d < 400 && last.ready; d += 8) {
+    last = b.update({
+      trackName: 'Test Circuit',
+      lengthM: LENGTH,
+      lapDistM: d,
+      pos: onCircle(d),
+      inPit: false,
+      edgeM: 7,
+    });
+  }
+  check('driving it throws it away without being asked', last.ready === false, `progress ${last.progress}`);
+  check(
+    'and the file goes with it, so the next session does not load it back',
+    loadTrackMap(trackKey('Test Circuit', undefined, LENGTH), dir) === null,
+  );
+
+  // …and the lap that condemned it is the lap that replaces it.
+  const rebuilt = driveLap(b, 4);
+  check('the circuit is relearned on the spot', rebuilt.ready === true, `progress ${rebuilt.progress}`);
+  let worst = 0;
+  for (const [x, z] of rebuilt.path.points) worst = Math.max(worst, Math.abs(Math.hypot(x, z) - R));
+  check('as the one that was actually driven', worst < 5, `worst ${worst.toFixed(2)} m`);
+  check(
+    'and it is saved again, so this costs one lap and not every lap',
+    loadTrackMap(trackKey('Test Circuit', undefined, LENGTH), dir) !== null,
+  );
+}
+{
+  // The other half of that: an accident must NOT cost a driver their map. A car
+  // that spins off, or sits in a barrier a long way from the road, is measured
+  // in the road it covers while it is out there — and a stationary car covers
+  // none. The threshold is a length of circuit for exactly this reason.
+  const dir = scratch();
+  const b = new TrackMapBuilder(dir);
+  driveLap(b, 4);
+  let last = null;
+  for (let i = 0; i < 600; i++) {
+    last = b.update({
+      trackName: 'Test Circuit',
+      lengthM: LENGTH,
+      lapDistM: 1200 + i * 0.05, // beached: 30 m of lap distance over 600 frames
+      pos: { x: 900, y: 0, z: 900 }, // …and 800 m from the road, in the scenery
+      inPit: false,
+    });
+  }
+  check('a car parked off the circuit does not condemn the map', last.ready === true);
+  check('and the map is still the one on disk', loadTrackMap(last.key, dir) !== null);
+}
+{
+  // A lap in the pit lane is not evidence either: the pit lane runs alongside
+  // the track at the same lap distances and the map has never claimed to
+  // describe it, which is why nothing is learned from it in the first place.
+  const dir = scratch();
+  const b = new TrackMapBuilder(dir);
+  driveLap(b, 4);
+  const done = driveLap(b, 4, (d) => ({ inPit: true, pos: { x: onCircle(d).x + 300, y: 0, z: onCircle(d).z + 300 } }));
+  check('a lap down the pit lane does not condemn the map', done.ready === true);
+}
+{
+  // The same condemnation, polled the way the live provider actually polls it:
+  // world position comes from shared memory every frame and lap distance from a
+  // REST feed about every 150 ms, so most frames repeat the distance the last
+  // one gave. The evidence is a length of ROAD, so five frames reporting the
+  // same metre have to count as that one metre — not as five breaks in the run.
+  const dir = scratch();
+  const bins = 500;
+  const wrong = [];
+  for (let i = 0; i < bins; i++) {
+    const a = (i / bins) * Math.PI * 2 + 0.9;
+    wrong.push([R * Math.cos(a), R * Math.sin(a), 0]);
+  }
+  const key = trackKey('Test Circuit', undefined, LENGTH);
+  saveTrackMap(
+    { key, name: 'Test Circuit', lengthM: LENGTH, halfWidthM: 6, binM: LENGTH / bins, points: wrong, builtAt: new Date().toISOString(), revision: 1 },
+    dir,
+  );
+  const b = new TrackMapBuilder(dir);
+  let last = null;
+  for (let d = 0; d < 400; d += 8) {
+    for (let repeat = 0; repeat < 5; repeat++) {
+      last = b.update({
+        trackName: 'Test Circuit',
+        lengthM: LENGTH,
+        lapDistM: d, // held for five frames, as a 150 ms feed read at 30 Hz is
+        pos: onCircle(d + repeat * 1.6), // …while the car keeps moving
+        inPit: false,
+      });
+    }
+    if (!last.ready) break;
+  }
+  check('a repeated lap distance does not stall the check', last.ready === false);
+  check('the rebuild is reported as a rebuild, not a first learn', last.relearning === true);
+}
+{
+  // And the deletion itself: asked to make sure there is no cached circuit,
+  // when there never was one.
+  const dir = scratch();
+  deleteTrackMap('never-been-here-1234', dir);
+  check('forgetting a circuit that was never learned is not an error', true);
 }
 
 /* ------------------------- who is being served --------------------------- */

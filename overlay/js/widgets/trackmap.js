@@ -349,7 +349,24 @@
    * same revision would only ever return the same bytes.
    */
   function ensureShape(map) {
-    if (!map || !map.ready) return;
+    if (!map) return;
+    // A shape can be WITHDRAWN, not only replaced. The server marks the map it
+    // is serving against the car driving it and throws the map away when the two
+    // disagree for a couple of hundred metres — a map that does not describe
+    // this circuit (see src/telemetry/trackMap.ts). Holding on to the last one
+    // fetched would go on drawing the circuit that was just condemned, which is
+    // precisely the one that sends the field off the edge of the panel. The
+    // moment the frame stops saying `ready`, or names a different track, what is
+    // cached here is not a map of what is being driven.
+    if (shape && (!map.ready || map.key !== haveKey)) {
+      shape = null;
+      geom = null;
+      ribbon = null;
+      ribbonKey = "";
+      haveKey = "";
+      haveRevision = -1;
+    }
+    if (!map.ready) return;
     if (fetching) return;
     if (shape && map.key === haveKey && map.revision === haveRevision) return;
     fetching = true;
@@ -1215,11 +1232,24 @@
       // No shape yet: say what the system is doing about it. The progress is the
       // fraction of the lap the learner has seen, which moves as you drive and
       // is the honest answer to "why is there no map".
+      //
+      // "Rebuilding" is the same read after a map has been thrown away for not
+      // matching the circuit. Without the distinction, a map that was on screen
+      // last lap and is a progress bar this lap reads as the overlay breaking,
+      // when it is the overlay repairing itself — and the driver has one lap of
+      // wondering whether to restart something.
       setStatus(
         map.ready
           ? "Loading circuit…"
-          : "Learning the circuit — " + Math.round((map.progress || 0) * 100) + "%"
+          : (map.relearning ? "Rebuilding the circuit — " : "Learning the circuit — ") +
+              Math.round((map.progress || 0) * 100) + "%"
       );
+      // Nothing painted this canvas but us, and until a map could be WITHDRAWN
+      // this branch only ever ran before the first paint, so there was never
+      // anything on it to remove. There is now: the ribbon of the map that was
+      // just condemned, which would sit there under the progress read looking
+      // like a live map with the wrong circuit on it.
+      if (gctx) gctx.clearRect(0, 0, cssW, cssH);
       return;
     }
     setStatus("");

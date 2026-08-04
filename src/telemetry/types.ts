@@ -1111,6 +1111,17 @@ export interface TrackMapState {
    * progress read rather than an empty panel.
    */
   progress: number;
+  /**
+   * `true` when this progress is a REBUILD: a map that had been learned was
+   * found not to describe the circuit being driven and was thrown away
+   * (`telemetry/trackMap.ts`).
+   *
+   * Only the wording changes, and it is worth the field. A map that was on
+   * screen last lap and is a progress bar this lap looks like something broken
+   * unless the panel says what happened — and what happened is the overlay
+   * fixing itself, which is the opposite of broken.
+   */
+  relearning?: boolean;
   /** Every car on track, the player included. */
   cars: TrackMapCar[];
 }
