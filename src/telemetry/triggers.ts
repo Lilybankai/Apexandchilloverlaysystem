@@ -1,0 +1,864 @@
+/**
+ * @file src/telemetry/triggers.ts
+ * @module telemetry/triggers
+ *
+ * **When the race engineer speaks.** The edge-detection and debounce layer that
+ * decides which moments in a session are worth one calm line on the radio — and,
+ * far more often, that this moment is not one of them.
+ *
+ * This is Phase 0 of the race-engineer feature and it deliberately contains no
+ * network, no model, no prompt and no words. It answers exactly one question:
+ * *should the engineer say something right now, and about what*. Everything
+ * downstream — the summary builder, the cloud proxy, the voice — is a separate
+ * concern that can be built and replaced without touching this file, and this
+ * file can be tuned against real races before a single token is spent
+ * (`scripts/test-triggers.js`, including its `--replay` mode).
+ *
+ * ## The rule that makes the whole feature affordable: never per frame
+ * The overlay's brief is to stay light on a streaming PC, and the single design
+ * decision that keeps this feature inside that brief is that it fires on
+ * discrete **edges** in state, not on frames. The 30 Hz loop already does the
+ * hard work — reading the sim, computing fuel, tracking penalties — so all this
+ * does per tick is a handful of scalar compares against the previous tick, with
+ * no allocation on the path where nothing happened. A cue object is built only
+ * at the instant one is actually emitted, which on a clean race is a few times
+ * an hour.
+ *
+ * That is also what pins the eventual API cost near zero: a trigger layer that
+ * cannot fire per frame cannot run up a bill per frame.
+ *
+ * ## Four separate gates, because one shunt is not twenty radio calls
+ * A crash reads as "damaged" for several seconds and a safety car churns the
+ * flag state; a naive detector turns each into a burst. So a candidate has to
+ * pass all of:
+ *
+ *   1. **Edge only** — the transition, never the level. `false → true` fires;
+ *      `true` sitting there does not.
+ *   2. **Per-trigger cooldown** — the same kind cannot fire again for
+ *      {@link DEFAULT_COOLDOWN_MS} (overridden per kind in {@link COOLDOWN_MS}),
+ *      so a car grinding down the barrier is one call, not eight.
+ *   3. **Coalesce window** — candidates are buffered for
+ *      {@link DEFAULT_COALESCE_MS} and emitted as one cue carrying the whole
+ *      set, priority-ordered. Contact, a penalty and a position loss inside two
+ *      seconds are one thing that happened, and a real engineer says it in one
+ *      sentence.
+ *   4. **Global minimum interval** — at most one cue every
+ *      {@link DEFAULT_GLOBAL_MIN_INTERVAL_MS}, whatever fired.
+ *
+ * ## Held lines expire rather than queue
+ * When the global gate is shut, buffered candidates are held — but only for
+ * {@link DEFAULT_MAX_HOLD_MS}. After that they are dropped and counted in
+ * {@link TriggerStats}. This is the one place where a queue would have been the
+ * obvious implementation and the wrong one: an engineer telling you about
+ * contact twenty-five seconds after you felt it is not late information, it is
+ * wrong information, and it arrives while you are dealing with whatever came
+ * next. Silence is the better failure.
+ *
+ * ## Priming, and why nothing fires on the first frame
+ * Every detector needs the previous value, so the first frame after a reset only
+ * records levels. Without that rule, attaching the overlay to a car that already
+ * has damage would announce the damage — the driver knows, they were there — and
+ * every session would open with a burst of phantom edges.
+ *
+ * A session change ({@link sessionKeyOf}) resets everything, for the same reason
+ * `trackLimits.ts` does: a penalty served in qualifying is not news in the race.
+ */
+
+import { UNKNOWN_VALUE, isPreGreen } from './types';
+import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
+
+/* -------------------------------------------------------------------------- */
+/*  What the engineer can be told about                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The kinds of moment worth a radio call.
+ *
+ * Deliberately a closed, short list. Every entry here is a **state change the
+ * telemetry can prove**, which is the same line the feature's remit draws: the
+ * engineer comments on what it can see. There is no `slowPace` or `rivalPitted`
+ * kind, not because they would be hard to detect but because acting on them
+ * means asserting a strategy we cannot verify.
+ */
+export type EngineerTriggerKind =
+  /** The race has gone green from the grid, the formation lap or the countdown. */
+  | 'raceStart'
+  /** A full-course yellow / safety car has been called. */
+  | 'fullCourseYellow'
+  /** The session has been red-flagged. */
+  | 'redFlag'
+  /** Racing has resumed after a full-course yellow or a red flag. */
+  | 'restart'
+  /** The car has picked up damage it did not have. */
+  | 'incident'
+  /** The sim has issued a penalty. */
+  | 'penalty'
+  /** The sim's penalty count came back down — one has been discharged. */
+  | 'penaltyServed'
+  /** Fuel or energy is down to the last few laps; the pit window is here. */
+  | 'fuelWindow'
+  /** Come in at the end of this lap or you will not get back (`fuel.pitThisLap`). */
+  | 'fuelCritical'
+  /** The white flag — last lap. */
+  | 'finalLap'
+  /** The chequered flag. */
+  | 'checkered';
+
+/**
+ * Relative importance, higher wins. Used to order a coalesced cue and to choose
+ * its leading kind, so a cue that carries both contact and a penalty leads with
+ * the contact — which is what the driver is dealing with in that second.
+ *
+ * The ordering is the plan's: red flag > full-course yellow > incident > penalty
+ * > pit/fuel > everything else.
+ */
+export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
+  redFlag: 100,
+  fullCourseYellow: 90,
+  incident: 85,
+  penalty: 75,
+  fuelCritical: 70,
+  checkered: 65,
+  finalLap: 60,
+  penaltyServed: 55,
+  restart: 50,
+  raceStart: 45,
+  fuelWindow: 40,
+};
+
+/**
+ * Kinds that can only meaningfully happen once in a session. A second "race
+ * start" is always a detector artefact — a flag state flickering, a feed
+ * dropping and recovering — never a second start.
+ *
+ * The red flag is pointedly NOT in here: a session can be stopped twice.
+ */
+const ONCE_PER_SESSION: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>([
+  'raceStart',
+  'finalLap',
+  'checkered',
+]);
+
+/**
+ * Kinds that only make sense in a **race**. Fuel, damage and penalties matter in
+ * any session — a driver burning a set of tyres in practice still wants to know
+ * they picked up damage — but a "green flag, P7, 24 cars" call during a
+ * qualifying out-lap is noise, and there is no last lap of a practice session.
+ */
+const RACE_ONLY: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>([
+  'raceStart',
+  'finalLap',
+  'checkered',
+  'restart',
+]);
+
+/* -------------------------------------------------------------------------- */
+/*  Tunables                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** How long candidates are buffered before being emitted as one cue, ms. */
+export const DEFAULT_COALESCE_MS = 1500;
+
+/** Default per-kind cooldown, ms — the same kind cannot re-fire inside it. */
+export const DEFAULT_COOLDOWN_MS = 30_000;
+
+/** At most one cue this often, ms, whatever fired. */
+export const DEFAULT_GLOBAL_MIN_INTERVAL_MS = 15_000;
+
+/**
+ * How long a candidate may sit waiting for the global gate before it is dropped,
+ * ms. See the module note on why this is not a queue.
+ */
+export const DEFAULT_MAX_HOLD_MS = 4_000;
+
+/** Laps of fuel/energy left at which the pit window is called. */
+export const DEFAULT_FUEL_WINDOW_LAPS = 3;
+
+/**
+ * Per-kind cooldown overrides. The shapes differ: damage keeps reading damaged
+ * for as long as the car is bent, so its cooldown is about not re-announcing the
+ * same shunt; fuel moves over minutes, so a second fuel call inside a minute is
+ * always the same news twice.
+ */
+const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
+  incident: 25_000,
+  penalty: 20_000,
+  penaltyServed: 20_000,
+  fuelWindow: 90_000,
+  fuelCritical: 60_000,
+  fullCourseYellow: 30_000,
+  restart: 30_000,
+};
+
+/**
+ * How far {@link DamageState.worst} has to JUMP between two consecutive frames
+ * before it counts as a second impact, `0..1`.
+ *
+ * A jump rather than a level ("worse than when I last spoke") on purpose: a level
+ * stays true, so it would re-announce the moment the cooldown expired — telling
+ * the driver their car is worse than they thought half a minute after they hit
+ * the wall. An impact is a step change, and a step change is an edge.
+ */
+const DAMAGE_WORSENED_STEP = 0.15;
+
+/** Tunables, all optional — anything omitted takes the default above. */
+export interface EngineerTriggerConfig {
+  /** Buffer window before a cue is emitted, ms. */
+  coalesceMs?: number;
+  /** Default per-kind cooldown, ms. */
+  cooldownMs?: number;
+  /** Minimum gap between cues of any kind, ms. */
+  globalMinIntervalMs?: number;
+  /** How long a held candidate stays fresh, ms. */
+  maxHoldMs?: number;
+  /** Laps of fuel remaining that opens the pit-window call. */
+  fuelWindowLaps?: number;
+  /**
+   * Whether frames with `connected: false` are ignored. On by default: those are
+   * the simulator's placeholder frames, and an engineer talking over demo data
+   * would be talking about a car nobody is driving. The replay harness turns it
+   * off when replaying a recording made from the simulator.
+   */
+  ignoreDisconnected?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  What comes out                                                             */
+/* -------------------------------------------------------------------------- */
+
+/** One detected edge, before any coalescing. */
+export interface EngineerTrigger {
+  /** Which kind of moment this is. */
+  kind: EngineerTriggerKind;
+  /** Frame time at which the edge was detected, ms. */
+  atMs: number;
+  /** {@link TRIGGER_PRIORITY} for this kind, copied so consumers need not look it up. */
+  priority: number;
+  /**
+   * A short factual phrase describing the edge — `"contact, damage now moderate"`.
+   *
+   * This is **not** what the engineer says. It is the tuning log's rendering of
+   * what was detected, and the raw material the P2 summary builder will turn into
+   * a prompt. Keeping the two apart is what lets this layer be judged on whether
+   * it fired at the right moment, separately from whether the words were good.
+   */
+  detail: string;
+  /**
+   * Machine-readable facts about this specific edge, deliberately small and
+   * already bucketed where a raw number would be noise (damage severity is
+   * `"light"`/`"moderate"`/`"heavy"`, not `0.37`).
+   */
+  facts: Readonly<Record<string, string | number | boolean>>;
+}
+
+/** The race-wide context a cue is emitted into — read once, at emit time. */
+export interface EngineerCueContext {
+  /** Session category, e.g. `"race"`. */
+  sessionType: string;
+  /** Session phase at the moment of the cue. */
+  phase: SessionPhase;
+  /** Global flag at the moment of the cue. */
+  flag: string;
+  /** Track name as the sim gave it. */
+  track: string;
+  /** Overall race position, or {@link UNKNOWN_VALUE}. */
+  position: number;
+  /** Position within the player's class, or {@link UNKNOWN_VALUE}. */
+  classPosition: number;
+  /** Canonical class label, or `""` when unknown. */
+  carClass: string;
+  /** Cars in the session. */
+  numCars: number;
+  /** Leader's lap, or {@link UNKNOWN_VALUE}. */
+  currentLap: number;
+  /** Laps still to run, or {@link UNKNOWN_VALUE}. */
+  lapsRemaining: number;
+}
+
+/**
+ * One moment the engineer should speak about — the unit this layer produces, and
+ * the unit P1/P2 will turn into a request and a line of speech.
+ */
+export interface EngineerCue {
+  /** Frame time the cue was emitted, ms. */
+  atMs: number;
+  /** The highest-priority kind in {@link triggers} — what the line should lead with. */
+  kind: EngineerTriggerKind;
+  /** Every edge folded into this cue, highest priority first, at least one. */
+  triggers: EngineerTrigger[];
+  /** Race-wide context at the moment of the cue. */
+  context: EngineerCueContext;
+  /**
+   * The tuning log's one-line rendering of the whole cue. Again: not the
+   * engineer's words — see {@link EngineerTrigger.detail}.
+   */
+  line: string;
+}
+
+/** Why a candidate never became a cue. */
+export type SuppressionReason = 'cooldown' | 'once' | 'sessionType' | 'global' | 'stale';
+
+/**
+ * Running counts, for tuning. The suppressions matter more than the fires: a
+ * replay whose `global` count is high is telling you the minimum interval is
+ * eating real news, and one whose `cooldown` count is high is telling you the
+ * detector is chattering.
+ */
+export interface TriggerStats {
+  /** Frames seen since the last reset. */
+  frames: number;
+  /** Cues emitted, by kind. */
+  fired: Partial<Record<EngineerTriggerKind, number>>;
+  /** Total cues emitted. */
+  cues: number;
+  /** Candidates suppressed, by reason. */
+  suppressed: Record<SuppressionReason, number>;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Session identity                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An identity for the session a frame belongs to. Changing it wipes the
+ * detector's memory.
+ *
+ * Track + session type + car count, because those are the three things that
+ * cannot stay the same across a session boundary in practice, and none of them
+ * flickers within one. Deliberately not the lap or the clock — both move
+ * constantly, and a key that changes mid-session would reset the detector every
+ * tick and therefore never fire anything.
+ */
+export function sessionKeyOf(frame: TelemetryFrame): string {
+  return `${frame.source}|${frame.session.track}|${frame.session.type}|${frame.session.numCars}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Small helpers                                                              */
+/* -------------------------------------------------------------------------- */
+
+/** `true` when a numeric channel actually carries a value. */
+function known(n: number | undefined): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n !== UNKNOWN_VALUE;
+}
+
+/**
+ * Damage severity in the three words a driver would use. Bucketed here rather
+ * than passed through as `0..1` because the difference between 0.31 and 0.34 is
+ * not a thing anyone can act on, and a stable label is what stops a prompt (and
+ * a log) churning while a number wobbles.
+ */
+function damageBucket(worst: number): string {
+  if (worst >= 0.5) return 'heavy';
+  if (worst >= 0.2) return 'moderate';
+  return 'light';
+}
+
+/**
+ * Laps left on whichever budget is **tighter**. LMU cars run a fuel tank and a
+ * virtual-energy allowance at the same time and either can be the binding one —
+ * the driver has to pit for whichever runs out first, so that is the one the
+ * window is measured against. `Infinity` when neither is published.
+ */
+function tighterFuelLaps(frame: TelemetryFrame): number {
+  const fuel = frame.fuel;
+  if (!fuel) return Infinity;
+  const byFuel = known(fuel.lapsRemaining) ? fuel.lapsRemaining : Infinity;
+  const byEnergy = known(fuel.virtualEnergyLapsRemaining)
+    ? fuel.virtualEnergyLapsRemaining
+    : Infinity;
+  return Math.min(byFuel, byEnergy);
+}
+
+/** The player's row in the standings, when there is one. */
+function playerRow(frame: TelemetryFrame): StandingEntry | undefined {
+  return frame.standings?.find((s) => s.isPlayer);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The detector                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Watches a stream of {@link TelemetryFrame}s and emits an {@link EngineerCue}
+ * on the rare frames that deserve one.
+ *
+ * Feed it every frame; it returns `null` on almost all of them. Stateful — it
+ * holds the previous tick's scalars and the debounce clocks — which is why it is
+ * a class, and why it lives here rather than in a provider: one implementation,
+ * shared by all three sources, testable headless.
+ *
+ * ```ts
+ * const triggers = new EngineerTriggers();
+ * // …in the loop, after the frame is built:
+ * const cue = triggers.update(frame);
+ * if (cue) console.log(cue.line);   // P1 will send it instead
+ * ```
+ */
+export class EngineerTriggers {
+  private readonly coalesceMs: number;
+  private readonly cooldownMs: number;
+  private readonly globalMinIntervalMs: number;
+  private readonly maxHoldMs: number;
+  private readonly fuelWindowLaps: number;
+  private readonly ignoreDisconnected: boolean;
+
+  /** Session this detector's memory belongs to; a change wipes it. */
+  private sessionKey = '';
+  /** `false` until a frame has been seen, so nothing fires on the first one. */
+  private primed = false;
+
+  /* ---- previous-tick levels, one per detector ---------------------------- */
+  /** Session type of the last frame seen — the {@link RACE_ONLY} gate reads it. */
+  private lastSessionType = 'unknown';
+  private prevPhase: SessionPhase = 'unknown';
+  private prevFlag = '';
+  private prevNotStarted = true;
+  private prevHasDamage: boolean | undefined;
+  /** Last frame's worst-component severity — the baseline a second impact jumps from. */
+  private prevDamageWorst = 0;
+  private prevPenalties: number = UNKNOWN_VALUE;
+  private prevPitThisLap = false;
+  /** `true` once the fuel-window call has been made and not yet re-armed. */
+  private fuelWindowArmed = true;
+  /** `true` once the session has gone green at least once (so green = restart). */
+  private seenGreen = false;
+
+  /* ---- debounce clocks --------------------------------------------------- */
+  private lastFiredAt = new Map<EngineerTriggerKind, number>();
+  private firedOnce = new Set<EngineerTriggerKind>();
+  private lastCueAt = 0;
+  private pending: EngineerTrigger[] = [];
+  private pendingSince = 0;
+
+  private stats: TriggerStats = freshStats();
+
+  public constructor(config: EngineerTriggerConfig = {}) {
+    this.coalesceMs = config.coalesceMs ?? DEFAULT_COALESCE_MS;
+    this.cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+    this.globalMinIntervalMs = config.globalMinIntervalMs ?? DEFAULT_GLOBAL_MIN_INTERVAL_MS;
+    this.maxHoldMs = config.maxHoldMs ?? DEFAULT_MAX_HOLD_MS;
+    this.fuelWindowLaps = config.fuelWindowLaps ?? DEFAULT_FUEL_WINDOW_LAPS;
+    this.ignoreDisconnected = config.ignoreDisconnected ?? true;
+  }
+
+  /** Everything counted since the last {@link resetStats}. */
+  public getStats(): TriggerStats {
+    return {
+      frames: this.stats.frames,
+      cues: this.stats.cues,
+      fired: { ...this.stats.fired },
+      suppressed: { ...this.stats.suppressed },
+    };
+  }
+
+  /** Zero the counters without disturbing the detector's memory. */
+  public resetStats(): void {
+    this.stats = freshStats();
+  }
+
+  /**
+   * Forget the session — every level, clock and held candidate. Called
+   * automatically when {@link sessionKeyOf} changes; public so a caller that
+   * knows better (the feed dropped, the driver left the car) can say so.
+   */
+  public reset(): void {
+    this.primed = false;
+    this.prevPhase = 'unknown';
+    this.prevFlag = '';
+    this.prevNotStarted = true;
+    this.prevHasDamage = undefined;
+    this.prevDamageWorst = 0;
+    this.prevPenalties = UNKNOWN_VALUE;
+    this.prevPitThisLap = false;
+    this.fuelWindowArmed = true;
+    this.seenGreen = false;
+    this.lastFiredAt.clear();
+    this.firedOnce.clear();
+    this.lastCueAt = 0;
+    this.pending = [];
+    this.pendingSince = 0;
+  }
+
+  /**
+   * Advance by one frame.
+   *
+   * @param frame - The frame just built by the provider.
+   * @param nowMs - Clock to judge cooldowns against. Defaults to the frame's own
+   *   timestamp, which is what makes a replay run at the pace the race did
+   *   rather than at the pace the file is read.
+   * @returns A cue when this frame's edges (or ones held from just before it)
+   *   have earned one — otherwise `null`, which is the overwhelmingly common case.
+   */
+  public update(frame: TelemetryFrame, nowMs?: number): EngineerCue | null {
+    const now = known(nowMs) ? nowMs : frame.timestamp;
+
+    if (this.ignoreDisconnected && !frame.connected) {
+      // Placeholder data. Not a reset — the sim reconnecting mid-session should
+      // resume, not re-announce — but nothing is learned from it either, so the
+      // levels stay as they were and the next real frame re-primes against them.
+      return null;
+    }
+
+    const key = sessionKeyOf(frame);
+    if (key !== this.sessionKey) {
+      this.sessionKey = key;
+      this.reset();
+    }
+
+    this.stats.frames++;
+
+    // A backwards clock is a replay looping or a feed being re-attached; either
+    // way every cooldown below is now in the future and would gate everything
+    // forever.
+    if (this.lastCueAt > now || this.pendingSince > now) this.reset();
+
+    if (!this.primed) {
+      this.record(frame);
+      // The fuel window is the one detector whose condition is a LEVEL rather
+      // than an edge, so priming has to arm it from where the car actually is:
+      // attaching to a driver who is already three laps from empty must not
+      // open with a pit-window call about a window they have been in for a lap.
+      this.fuelWindowArmed = tighterFuelLaps(frame) > this.fuelWindowLaps;
+      this.primed = true;
+      return null;
+    }
+
+    this.detect(frame, now);
+    this.record(frame);
+    return this.flush(frame, now);
+  }
+
+  /* ---- detection: one small method per edge ------------------------------ */
+
+  /** Runs every detector against this frame, offering what it finds. */
+  private detect(frame: TelemetryFrame, now: number): void {
+    this.detectSessionFlags(frame, now);
+    this.detectDamage(frame, now);
+    this.detectPenalties(frame, now);
+    this.detectFuel(frame, now);
+  }
+
+  /** Green, yellow, red, white, chequered — the session's own lifecycle. */
+  private detectSessionFlags(frame: TelemetryFrame, now: number): void {
+    const { phase, flag } = frame.session;
+
+    // Red flag: phase or flag, whichever the provider expresses it through.
+    if ((phase === 'redFlag' && this.prevPhase !== 'redFlag') || (flag === 'red' && this.prevFlag !== 'red')) {
+      this.offer('redFlag', now, 'session red-flagged', { phase, flag });
+    }
+
+    // Full-course yellow. The flag alone is not enough — a local yellow shows as
+    // `yellow` too, and a driver does not need a radio call for a marshal post
+    // two corners away — so the phase is what is trusted, with the flag only
+    // corroborating when the provider does not move the phase.
+    const wasFcy = this.prevPhase === 'fullCourseYellow';
+    const isFcy = phase === 'fullCourseYellow' || flag === 'doubleYellow';
+    if (isFcy && !wasFcy && this.prevFlag !== 'doubleYellow') {
+      this.offer('fullCourseYellow', now, 'full-course yellow', { phase, flag });
+    }
+
+    // Green. The first one in a race is the start; a later one is a restart, and
+    // the driver needs to hear those differently — "lights out" versus "we go
+    // again, you're P7".
+    const goneGreen = phase === 'green' && this.prevPhase !== 'green';
+    const startedFromGrid = this.prevNotStarted && !frame.session.notStarted;
+    if (goneGreen || startedFromGrid) {
+      if (this.seenGreen && isPreGreen(this.prevPhase) === false) {
+        this.offer('restart', now, 'racing resumes', { from: this.prevPhase });
+      } else {
+        this.offer('raceStart', now, 'green flag', { numCars: frame.session.numCars });
+      }
+      this.seenGreen = true;
+    }
+
+    if (flag === 'white' && this.prevFlag !== 'white') {
+      this.offer('finalLap', now, 'white flag — last lap', {
+        position: frame.player?.position ?? UNKNOWN_VALUE,
+      });
+    }
+
+    if ((flag === 'checkered' && this.prevFlag !== 'checkered') ||
+        (phase === 'checkered' && this.prevPhase !== 'checkered')) {
+      this.offer('checkered', now, 'chequered flag', {
+        position: frame.player?.position ?? UNKNOWN_VALUE,
+      });
+    }
+  }
+
+  /**
+   * Contact. Fires on the car acquiring damage it did not have, and again on a
+   * genuine second impact — a jump of {@link DAMAGE_WORSENED_STEP} between
+   * consecutive frames, not the same bodywork still being bent.
+   *
+   * The block is absent on providers that cannot see it and while spectating, and
+   * absent is not clean: an undefined previous reading means the detector has
+   * nothing to compare and stays quiet rather than announcing a car it has only
+   * just started watching.
+   */
+  private detectDamage(frame: TelemetryFrame, now: number): void {
+    const damage = frame.player?.damage;
+    if (!damage) return;
+    if (this.prevHasDamage === undefined) return;
+
+    const worst = known(damage.worst) ? damage.worst : 0;
+    const appeared = damage.hasDamage && !this.prevHasDamage;
+    const struckAgain = damage.hasDamage && worst - this.prevDamageWorst >= DAMAGE_WORSENED_STEP;
+    if (!appeared && !struckAgain) return;
+
+    const severity = damageBucket(worst);
+    const facts: Record<string, string | number | boolean> = {
+      severity,
+      repeat: !appeared,
+    };
+    if (known(damage.repairSeconds)) facts.repairSeconds = Math.round(damage.repairSeconds);
+    if (known(damage.partsDetached) && damage.partsDetached > 0) {
+      facts.partsDetached = damage.partsDetached;
+    }
+    if (known(frame.player?.position)) facts.position = frame.player.position;
+
+    this.offer(
+      'incident',
+      now,
+      appeared ? `contact — ${severity} damage` : `contact again — damage now ${severity}`,
+      facts,
+    );
+  }
+
+  /**
+   * The stewards. Both directions are news and they are different news: a
+   * penalty appearing is something to plan around, and the count coming back
+   * down is the only confirmation the sim ever gives that a drive-through
+   * counted (see `trackLimits.ts`).
+   */
+  private detectPenalties(frame: TelemetryFrame, now: number): void {
+    const penalties = frame.player?.trackLimits?.penalties;
+    if (!known(penalties)) return;
+    if (!known(this.prevPenalties)) return;
+
+    if (penalties > this.prevPenalties) {
+      const facts: Record<string, string | number | boolean> = { outstanding: penalties };
+      const type = frame.player.trackLimits?.penaltyType;
+      if (type) facts.penaltyType = type;
+      this.offer('penalty', now, type ? `penalty issued — ${type}` : 'penalty issued', facts);
+    } else if (penalties < this.prevPenalties) {
+      this.offer('penaltyServed', now, 'penalty served', { outstanding: penalties });
+    }
+  }
+
+  /**
+   * Fuel and energy. Two calls with different jobs:
+   *
+   * - **`fuelCritical`** rides `fuel.pitThisLap`, which the fuel calculator
+   *   already computes as a projection to the start/finish line. It is the only
+   *   fuel fact this layer treats as urgent, and it is deliberately taken from
+   *   there rather than re-derived: one place owns that arithmetic.
+   * - **`fuelWindow`** is the advisory one, fired when the laps remaining first
+   *   crosses down through the threshold. It re-arms only once the figure climbs
+   *   a clear lap back above it, so a number hovering on the boundary — which is
+   *   exactly what it does as consumption averages settle — cannot chatter.
+   */
+  private detectFuel(frame: TelemetryFrame, now: number): void {
+    const fuel = frame.fuel;
+    if (!fuel) return;
+
+    const pitThisLap = fuel.pitThisLap === true;
+    if (pitThisLap && !this.prevPitThisLap) {
+      this.offer('fuelCritical', now, `pit this lap for ${fuel.pitThisLapReason ?? 'fuel'}`, {
+        reason: fuel.pitThisLapReason ?? 'fuel',
+        lapsRemaining: known(fuel.lapsRemaining) ? Math.round(fuel.lapsRemaining * 10) / 10 : UNKNOWN_VALUE,
+      });
+    }
+
+    const fuelLaps = known(fuel.lapsRemaining) ? fuel.lapsRemaining : Infinity;
+    const energyLaps = known(fuel.virtualEnergyLapsRemaining)
+      ? fuel.virtualEnergyLapsRemaining
+      : Infinity;
+    const laps = tighterFuelLaps(frame);
+    if (!Number.isFinite(laps)) return;
+
+    if (laps <= this.fuelWindowLaps && this.fuelWindowArmed && !this.cooling('fuelWindow', now)) {
+      if (
+        this.offer('fuelWindow', now, `pit window — ${laps.toFixed(1)} laps of ${energyLaps < fuelLaps ? 'energy' : 'fuel'} left`, {
+          budget: energyLaps < fuelLaps ? 'energy' : 'fuel',
+          lapsLeft: Math.round(laps * 10) / 10,
+          lapsToFinish: known(fuel.lapsToFinish) ? fuel.lapsToFinish : UNKNOWN_VALUE,
+        })
+      ) {
+        this.fuelWindowArmed = false;
+      }
+    } else if (laps > this.fuelWindowLaps + 1) {
+      // A clear lap above the threshold — the car has been refuelled (or the
+      // average has settled), so the call is worth making again.
+      this.fuelWindowArmed = true;
+    }
+  }
+
+  /* ---- the gates --------------------------------------------------------- */
+
+  /**
+   * Whether this kind is inside its cooldown. Read by the detectors whose
+   * condition is a level rather than an edge, so they can stay quiet without
+   * offering the same suppressed candidate on every frame.
+   */
+  private cooling(kind: EngineerTriggerKind, atMs: number): boolean {
+    const last = this.lastFiredAt.get(kind);
+    return last !== undefined && atMs - last < (COOLDOWN_MS[kind] ?? this.cooldownMs);
+  }
+
+  /**
+   * Offer a detected edge to the debounce gates. Returns whether it was accepted
+   * into the pending buffer — the callers that keep their own re-arm state
+   * (damage, fuel) need to know, so a suppressed call is not silently treated as
+   * having been made.
+   */
+  private offer(
+    kind: EngineerTriggerKind,
+    atMs: number,
+    detail: string,
+    facts: Record<string, string | number | boolean>,
+  ): boolean {
+    if (this.firedOnce.has(kind)) {
+      this.stats.suppressed.once++;
+      return false;
+    }
+    if (RACE_ONLY.has(kind) && this.lastSessionType !== 'race') {
+      this.stats.suppressed.sessionType++;
+      return false;
+    }
+    const last = this.lastFiredAt.get(kind);
+    const cooldown = COOLDOWN_MS[kind] ?? this.cooldownMs;
+    if (last !== undefined && atMs - last < cooldown) {
+      this.stats.suppressed.cooldown++;
+      return false;
+    }
+    // Already waiting to be said — the same edge detected twice inside the
+    // coalesce window is one thing that happened.
+    if (this.pending.some((t) => t.kind === kind)) return false;
+
+    if (this.pending.length === 0) this.pendingSince = atMs;
+    this.pending.push({ kind, atMs, priority: TRIGGER_PRIORITY[kind], detail, facts });
+    return true;
+  }
+
+  /**
+   * Emit the buffered candidates if the coalesce window has closed and the
+   * global gate is open; drop them if they have gone stale waiting.
+   */
+  private flush(frame: TelemetryFrame, now: number): EngineerCue | null {
+    if (this.pending.length === 0) return null;
+    if (now - this.pendingSince < this.coalesceMs) return null;
+
+    if (this.lastCueAt !== 0 && now - this.lastCueAt < this.globalMinIntervalMs) {
+      if (now - this.pendingSince > this.maxHoldMs) {
+        this.stats.suppressed.stale += this.pending.length;
+        this.pending = [];
+      } else {
+        this.stats.suppressed.global++;
+      }
+      return null;
+    }
+
+    const triggers = this.pending.sort((a, b) => b.priority - a.priority || a.atMs - b.atMs);
+    this.pending = [];
+    const lead = triggers[0];
+    if (!lead) return null;
+
+    for (const t of triggers) {
+      this.lastFiredAt.set(t.kind, now);
+      if (ONCE_PER_SESSION.has(t.kind)) this.firedOnce.add(t.kind);
+      this.stats.fired[t.kind] = (this.stats.fired[t.kind] ?? 0) + 1;
+    }
+    this.lastCueAt = now;
+    this.stats.cues++;
+
+    const context = contextOf(frame);
+    return {
+      atMs: now,
+      kind: lead.kind,
+      triggers,
+      context,
+      line: renderLine(triggers, context),
+    };
+  }
+
+  /* ---- level recording --------------------------------------------------- */
+
+  /** Remember this frame's levels for the next tick's comparisons. */
+  private record(frame: TelemetryFrame): void {
+    this.lastSessionType = frame.session.type;
+    this.prevPhase = frame.session.phase;
+    this.prevFlag = frame.session.flag;
+    this.prevNotStarted = frame.session.notStarted === true;
+    if (frame.session.phase === 'green') this.seenGreen = true;
+
+    const damage = frame.player?.damage;
+    if (damage) {
+      this.prevHasDamage = damage.hasDamage;
+      this.prevDamageWorst = known(damage.worst) ? damage.worst : 0;
+    }
+
+    const penalties = frame.player?.trackLimits?.penalties;
+    if (known(penalties)) this.prevPenalties = penalties;
+
+    this.prevPitThisLap = frame.fuel?.pitThisLap === true;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Rendering (the tuning log only — the engineer's words are P2's job)        */
+/* -------------------------------------------------------------------------- */
+
+/** Zeroed counters. */
+function freshStats(): TriggerStats {
+  return {
+    frames: 0,
+    cues: 0,
+    fired: {},
+    suppressed: { cooldown: 0, once: 0, sessionType: 0, global: 0, stale: 0 },
+  };
+}
+
+/** Race-wide context, read once at the moment a cue is emitted. */
+function contextOf(frame: TelemetryFrame): EngineerCueContext {
+  const row = playerRow(frame);
+  const classPosition = row?.classPosition;
+  return {
+    sessionType: frame.session.type,
+    phase: frame.session.phase,
+    flag: frame.session.flag,
+    track: frame.session.track,
+    position: known(frame.player?.position) ? frame.player.position : UNKNOWN_VALUE,
+    classPosition: known(classPosition) ? classPosition : UNKNOWN_VALUE,
+    carClass: row?.carClass ?? '',
+    numCars: frame.session.numCars,
+    currentLap: known(frame.session.currentLap) ? frame.session.currentLap : UNKNOWN_VALUE,
+    lapsRemaining: known(frame.session.lapsRemaining) ? frame.session.lapsRemaining : UNKNOWN_VALUE,
+  };
+}
+
+/**
+ * One log line for a cue: what fired, and where the driver was when it did.
+ * Exported so the replay harness and any future dry-run switch render identically
+ * — a tuning log whose format drifts between tools is a tuning log you cannot
+ * diff against yesterday's.
+ */
+export function renderLine(triggers: EngineerTrigger[], context: EngineerCueContext): string {
+  const what = triggers.map((t) => t.detail).join(' + ');
+  const where: string[] = [];
+  if (context.position !== UNKNOWN_VALUE) {
+    where.push(
+      context.classPosition !== UNKNOWN_VALUE && context.carClass
+        ? `P${context.position} (${context.carClass} P${context.classPosition})`
+        : `P${context.position}`,
+    );
+  }
+  if (context.currentLap !== UNKNOWN_VALUE) {
+    where.push(
+      context.lapsRemaining !== UNKNOWN_VALUE
+        ? `lap ${context.currentLap}, ${context.lapsRemaining} to go`
+        : `lap ${context.currentLap}`,
+    );
+  }
+  return where.length ? `${what} · ${where.join(' · ')}` : what;
+}
