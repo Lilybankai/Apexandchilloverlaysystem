@@ -855,10 +855,10 @@ offsets are version-sensitive.
 
 ```bash
 npm install      # install dependencies (ws + TypeScript toolchain)
-npm start        # builds and starts the server (http://127.0.0.1:8080)
+npm start        # builds and starts the server (http://127.0.0.1:17080)
 ```
 
-Then add `http://127.0.0.1:8080/` as an OBS Browser Source (see
+Then add `http://127.0.0.1:17080/` as an OBS Browser Source (see
 `docs/OBS-SETUP.md`).
 
 ### Development
@@ -876,7 +876,7 @@ All settings are environment variables with lightweight defaults
 | Variable           | Default     | Description                                   |
 | ------------------ | ----------- | --------------------------------------------- |
 | `APEX_HOST`        | `127.0.0.1` | Bind host                                     |
-| `APEX_HTTP_PORT`   | `8080`      | HTTP + overlay port                           |
+| `APEX_HTTP_PORT`   | `17080`     | HTTP + overlay port                           |
 | `APEX_WS_PORT`     | = HTTP port | WebSocket port (shares HTTP server)           |
 | `APEX_WS_PATH`     | `/ws`       | WebSocket endpoint path                       |
 | `APEX_UPDATE_HZ`   | `30`        | Telemetry broadcast rate (1–120 Hz)           |

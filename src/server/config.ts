@@ -135,8 +135,13 @@ export interface ServerConfig {
 /** Default configuration used when no environment override is present. */
 export const DEFAULT_CONFIG: Readonly<ServerConfig> = Object.freeze({
   host: '127.0.0.1',
-  httpPort: 8080,
-  wsPort: 8080,
+  // 17080 since v0.57.1 — 8080 is the most contested alternate-HTTP port on
+  // Windows and frequently sits inside a Hyper-V/WSL port reservation, which is
+  // refused with EACCES and no process to blame. See defaultSettings() in
+  // electron/main.js for the full reasoning; the two must agree, since the
+  // desktop app and `npm start` serve the same overlays to the same OBS.
+  httpPort: 17080,
+  wsPort: 17080,
   wsPath: '/ws',
   updateRateHz: 30,
   overlayDir: 'overlay',
@@ -213,7 +218,7 @@ function clamp(value: number, min: number, max: number): number {
  * over {@link DEFAULT_CONFIG}. Recognised variables:
  *
  * - `APEX_HOST` — bind host (default `127.0.0.1`)
- * - `APEX_HTTP_PORT` — HTTP/overlay port, clamped to 1..65535 (default `8080`)
+ * - `APEX_HTTP_PORT` — HTTP/overlay port, clamped to 1..65535 (default `17080`)
  * - `APEX_WS_PORT` — WebSocket port, clamped to 1..65535 (default = HTTP port)
  * - `APEX_WS_PATH` — WebSocket path (default `/ws`)
  * - `APEX_UPDATE_HZ` — broadcast rate, clamped to 1..120 (default `30`)

@@ -125,7 +125,26 @@ function defaultSettings() {
     ingameOverlays[o.id] = o.ingameDefault !== false;
   }
   return {
-    httpPort: 8080,
+    /*
+     * 17080, not the 8080 this shipped with until v0.57.1.
+     *
+     * 8080 is the most contested alternate-HTTP port on Windows — Jenkins,
+     * Tomcat, dev servers, routers, NAS boxes, printers and (the one that
+     * matters here) SimHub's web server all gravitate to the 8000-9999 band.
+     * Worse, Hyper-V/WSL/Docker reserve contiguous blocks of ports, and a port
+     * inside one is refused with EACCES and no process to point at: a beta
+     * tester on v0.57.0 could not start the app at all for exactly that reason.
+     *
+     * 17080 is clear of that band, clear of the things a sim racer actually
+     * runs (4455 OBS WebSocket, 6463-6472 Discord, 27015+ Steam, 6397 LMU's own
+     * API), and well below the Windows dynamic range (49152+) that the
+     * reservations are drawn from. The trailing 80 reads as HTTP for whoever is
+     * typing it into OBS.
+     *
+     * This is a DEFAULT, so it only applies to installs with no stored port —
+     * anyone already running keeps theirs, and their OBS sources keep working.
+     */
+    httpPort: 17080,
     updateRateHz: 30,
     forceSimulator: false,
     provider: 'lmu', // 'lmu' | 'rf2' | 'simulator'
@@ -538,6 +557,37 @@ function requireServer() {
   return serverModule;
 }
 
+/**
+ * Whether a failed bind means "this port is not available to us" rather than a
+ * real fault. Two codes, two different causes, one answer — try another port:
+ *
+ *   EADDRINUSE — something else is listening there.
+ *   EACCES     — nothing is listening, but Windows will not hand the port over.
+ *                Usually Hyper-V/WSL2/Docker, which RESERVE contiguous blocks of
+ *                ports (`netsh interface ipv4 show excludedportrange tcp`); a
+ *                port inside one is refused with no process to point at. This is
+ *                what a first beta tester hit on 8080 in v0.57.0, where it
+ *                surfaced as the raw "listen EACCES: permission denied".
+ */
+function isPortUnavailable(err) {
+  return /EADDRINUSE|EACCES/.test(String((err && (err.code || err.message)) || ''));
+}
+
+/**
+ * Ports to try, in order, starting from the configured one.
+ *
+ * The small steps cover a single busy neighbour. The big jumps exist because a
+ * Windows reservation is a BLOCK, routinely dozens or hundreds of ports wide —
+ * walking +1, +2, +3 out of a blocked 8080 can land inside the same reservation
+ * every time, which looks exactly like the app being broken.
+ */
+function portCandidates(configured) {
+  const seen = new Set();
+  return [configured, ...[1, 2, 3, 250, 1000].map((s) => configured + s), 18080, 28080].filter(
+    (p) => p >= MIN_PORT && p <= MAX_PORT && !seen.has(p) && seen.add(p),
+  );
+}
+
 /** Start (or restart) the telemetry server with the current settings. */
 async function startServer() {
   if (starting) return;
@@ -545,9 +595,34 @@ async function startServer() {
   try {
     await stopServer();
     const settings = loadSettings();
-    const config = buildServerConfig(settings);
     const mod = requireServer();
-    shutdownFn = await mod.start(config);
+
+    /*
+     * A port the machine will not give us must not be the end of the app. The
+     * overlays are served over loopback to OBS and to the in-game layer, so the
+     * exact number matters only in that it has to be written down somewhere —
+     * and refusing to start teaches a driver nothing except that it is broken.
+     * So: take the first port that binds, then say plainly that it moved,
+     * because their OBS browser sources point at the old one.
+     */
+    let config = null;
+    let lastErr = null;
+    for (const port of portCandidates(settings.httpPort)) {
+      config = buildServerConfig({ ...settings, httpPort: port });
+      try {
+        shutdownFn = await mod.start(config);
+        lastErr = null;
+        break;
+      } catch (err) {
+        shutdownFn = null;
+        lastErr = err;
+        config = null;
+        // Anything that is not a port problem is a real failure: report it as
+        // itself rather than hiding it behind eight more attempts at the same.
+        if (!isPortUnavailable(err)) break;
+      }
+    }
+    if (lastErr) throw lastErr;
     // The ServerConfig carries the plain sliders in, but not the two per-widget
     // maps (modes and background overrides) — they have no config field and the
     // server boots them empty. Without this, a widget kept solid inside a faded
@@ -557,16 +632,42 @@ async function startServer() {
     status.running = true;
     status.port = config.httpPort;
     status.error = null;
+
+    // Moving port is not an error — the app is running — but it is not silent
+    // either: every OBS browser source the operator has already added points at
+    // the old number and will show nothing until it is changed.
+    if (config.httpPort !== settings.httpPort) {
+      const moved = { ...settings, httpPort: config.httpPort };
+      saveSettings(moved);
+      pushSettings(moved);
+      status.error =
+        `This PC would not let the overlays use port ${settings.httpPort}, so they moved to ` +
+        `${config.httpPort}. Everything works — but any OBS browser source you have already ` +
+        `added still points at the old port. Copy the new links from the Overlays tab.`;
+      console.warn(`[app] port ${settings.httpPort} unavailable — moved to ${config.httpPort}`);
+    }
+
     connectStatusFeed(config.httpPort, config.wsPath);
     syncOverlayWindow();
     console.log(`[app] server started on port ${config.httpPort}`);
   } catch (err) {
     status.running = false;
     status.feed = 'stopped';
-    // Translate the most common failure (busy port) into plain language.
-    status.error = /EADDRINUSE/.test(err.message)
-      ? `Port ${loadSettings().httpPort} is already in use. Change the port and try again.`
-      : err.message;
+    // Every port we tried was refused. Say which failure it was, because the two
+    // have completely different fixes and the raw Node message ("listen EACCES:
+    // permission denied 127.0.0.1:8080") tells a driver nothing at all.
+    const port = loadSettings().httpPort;
+    if (/EACCES/.test(err.message)) {
+      status.error =
+        `Windows is blocking port ${port} and the alternatives tried after it. This is usually ` +
+        `Hyper-V, WSL or Docker reserving a block of ports. Set a different port in ` +
+        `Settings → Server, or run "net stop winnat" then "net start winnat" in an admin ` +
+        `Command Prompt to release the reservations.`;
+    } else if (/EADDRINUSE/.test(err.message)) {
+      status.error = `Port ${port} is already in use. Change the port and try again.`;
+    } else {
+      status.error = err.message;
+    }
     console.error('[app] failed to start server:', err.message);
   } finally {
     starting = false;
@@ -735,17 +836,56 @@ function applyChatConfig(cfg) {
 }
 
 /**
- * Flip the "Show in game" setting and reflect it everywhere: persist, re-sync
- * the overlay window, and update the control panel. Invoked by the global
- * hotkey (and reusable elsewhere).
+ * Set "Show in game" and reflect it everywhere: persist, re-sync the overlay
+ * window, and update the control panel.
  */
-function toggleIngame() {
+function setIngameEnabled(enabled) {
   const settings = loadSettings();
-  const next = { ...settings, ingameEnabled: !settings.ingameEnabled };
+  const next = { ...settings, ingameEnabled: !!enabled };
   saveSettings(next);
   syncOverlayWindow();
   pushStatus();
   pushSettings(next);
+}
+
+/**
+ * The in-game hotkey, which walks the three states the layer actually has:
+ *
+ *     Show ──▶ Off ──▶ Edit layout ──▶ Show ──▶ …
+ *
+ * One key instead of two, because the thing it replaces was worse: moving a
+ * widget meant alt-tabbing out of the game to the control panel, clicking Edit
+ * layout, tabbing back, dragging, and tabbing out again to finish. Laying out
+ * an overlay is something you do *while looking at it over the game*, so the
+ * way in has to be reachable from inside the game.
+ *
+ * The cost of folding three states into one key is that the trip back from Off
+ * to Show goes through Edit layout — press it twice. That is the trade the
+ * cycle makes: nothing is lost by passing through (a layout only changes if you
+ * drag something), and the alternative is a second hotkey for a mode most
+ * drivers touch once and then never again.
+ *
+ * Edit is skipped when there is no layer to edit — with the server stopped this
+ * degrades to a plain on/off toggle rather than a mode with nothing in it.
+ */
+function cycleIngame() {
+  // Edit → Show. Leave the mode; the layer stays where it is.
+  if (ingameEditing) {
+    setIngameEdit(false);
+    return;
+  }
+
+  const settings = loadSettings();
+
+  // Show → Off.
+  if (settings.ingameEnabled) {
+    setIngameEnabled(false);
+    return;
+  }
+
+  // Off → Edit layout. The layer has to come back before it can be edited.
+  setIngameEnabled(true);
+  if (overlayWin && !overlayWin.isDestroyed()) setIngameEdit(true);
 }
 
 /**
@@ -823,7 +963,7 @@ function getActions() {
     actions = createActions({
       loadSettings,
       applySettings,
-      toggleIngame,
+      cycleIngame,
       toggleIngameInteract,
       resetLayout: () => {
         const settings = loadSettings();
@@ -1144,10 +1284,23 @@ function syncOverlayWindow() {
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   applyIngameMouse(); // click-through unless edit/interact is already on
   overlayWin.ingameUrl = url;
-  // The layer is push-fed its appearance (it deliberately does no polling), so
+  // The layer is push-fed everything (it deliberately does no polling), so
   // every load — including the reloads triggered by a widget-list change — has
-  // to be re-told the current value.
-  overlayWin.webContents.on('did-finish-load', () => applyAppearance());
+  // to be re-told the current state.
+  //
+  // Edit and interact are re-sent for the same reason, and it matters more than
+  // it looks. A `send()` to a page that has not loaded yet is simply dropped, so
+  // entering edit mode in the same breath as creating the window — which is what
+  // the Off → Edit step of the hotkey cycle does — would flip every flag in the
+  // main process and leave the layer itself with no handles on it. The same gap
+  // let a widget-list change reload the page out of edit mode while the app
+  // still believed it was in one.
+  overlayWin.webContents.on('did-finish-load', () => {
+    applyAppearance();
+    if (!overlayWin || overlayWin.isDestroyed()) return;
+    overlayWin.webContents.send('ingame:edit', ingameEditing);
+    overlayWin.webContents.send('ingame:interact', ingameInteractive);
+  });
   void overlayWin.loadURL(url);
   overlayWin.on('closed', () => {
     overlayWin = null;

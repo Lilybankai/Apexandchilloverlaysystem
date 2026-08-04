@@ -21,7 +21,7 @@ Double-click **`scripts\launch.bat`** (or run it from a terminal).
 
   ```
   OBS Browser Source URL (size 1920 x 1080):
-      http://127.0.0.1:8080/
+      http://127.0.0.1:17080/
   ```
 
 Leave that window open while you stream. Press **Ctrl+C** in it to stop.
@@ -30,8 +30,8 @@ Leave that window open while you stream. Press **Ctrl+C** in it to stop.
 
 | Command | Effect |
 |---|---|
-| `launch.bat` | Start on the default port `8080`. |
-| `launch.bat 9000` | Start on a custom port (if `8080` is taken). |
+| `launch.bat` | Start on the default port `17080`. |
+| `launch.bat 9000` | Start on a custom port (if `17080` is taken). |
 | `launch.bat sim` | Force the built-in **demo/simulator** feed — useful for setting up and positioning the overlay with no game running. |
 
 The server auto-detects the game when it is running (via the rF2/LMU shared-memory
@@ -48,7 +48,7 @@ shows data.
 
    | Field | Value |
    |---|---|
-   | **URL** | `http://127.0.0.1:8080/` (match the port from the launcher) |
+   | **URL** | `http://127.0.0.1:17080/` (match the port from the launcher) |
    | **Width** | `1920` |
    | **Height** | `1080` |
    | **Use custom frame rate** | ✅ enabled |
@@ -99,7 +99,7 @@ peeks out at the edges, nudge that widget by tweaking its position in
 
 ## 4. Verify it's working
 
-- With the server running, open `http://127.0.0.1:8080/` in any browser — you
+- With the server running, open `http://127.0.0.1:17080/` in any browser — you
   should see the six branded panels.
 - The small pill at the top-centre shows the link state: **LIVE** (connected),
   **CONNECTING**, or **RECONNECTING**.

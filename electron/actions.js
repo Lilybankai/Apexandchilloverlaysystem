@@ -45,7 +45,7 @@ function tryRequire(rel) {
  *   registered as something that throws when triggered.
  * @param {() => object} deps.loadSettings
  * @param {(partial: object) => void} deps.applySettings  persist + push a change
- * @param {() => void} [deps.toggleIngame]
+ * @param {() => void} [deps.cycleIngame]
  * @param {() => void} [deps.toggleIngameInteract]
  * @param {() => void} [deps.resetLayout]
  * @param {(widgetId: string) => void} [deps.cycleWidgetMode]
@@ -96,14 +96,17 @@ function createActions(deps = {}) {
   /*  Overlay actions — no game involvement, always available          */
   /* ---------------------------------------------------------------- */
 
-  if (deps.toggleIngame) {
+  if (deps.cycleIngame) {
     define({
       id: 'overlay.toggle',
-      label: 'Show / hide overlay',
+      // One key, three states: Show → Off → Edit layout → Show. Named for what
+      // it does rather than left as "Show / hide" — someone rebinding this needs
+      // to know edit mode is on the same key before they land in it mid-session.
+      label: 'Show / hide / edit overlay',
       group: 'Overlay',
       kind: 'pulse',
       run: async () => {
-        deps.toggleIngame();
+        deps.cycleIngame();
         return { ok: true };
       },
     });

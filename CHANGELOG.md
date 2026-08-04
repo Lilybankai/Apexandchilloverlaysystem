@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.57.1 — 2026-08-04
+
+### Changed
+
+- **The overlay hotkey now cycles: shown → off → edit layout → shown.** Suggested
+  by a beta tester. Moving a widget used to mean alt-tabbing out of the game to
+  the control panel, clicking Edit layout, tabbing back to drag it, and tabbing
+  out again to finish — for a thing you can only judge by looking at it over the
+  running game. Edit layout is now on the same key as showing the overlay, so
+  laying it out never means leaving the sim.
+
+  The trade is that coming back from off to shown passes through edit layout —
+  press it twice. Nothing is lost on the way through: a layout only changes if
+  you drag something, and edit mode is obvious when you are in it.
+
+  Interact mode (F7 by default) is unchanged and still has its own key.
+
+- **New installs use port 17080 instead of 8080.** 8080 is the most contested
+  alternate-HTTP port on Windows — dev servers, routers, NAS boxes, printers and
+  SimHub's own web server all reach for that band — and it is one of the ports
+  most likely to sit inside one of those Windows reservations. 17080 is clear of
+  all of it, clear of the things a sim racer actually runs (OBS's WebSocket,
+  Discord, Steam, LMU's own API), and below the range Windows draws its
+  reservations from.
+
+  **Nothing changes for anyone already running.** This is only the starting
+  point for a fresh install; your port is saved, so your OBS sources keep
+  working exactly as they are.
+
+### Fixed
+
+- **"listen EACCES: permission denied 127.0.0.1:8080" — the app could refuse to
+  start at all.** Reported by the first beta tester, within a day of the first
+  five going out.
+
+  That message means something different from the one it looks like. It is not
+  "port 8080 is busy" — that would say `EADDRINUSE`. It means *nothing* is
+  listening there and Windows still will not hand the port over, which is what
+  happens when Hyper-V, WSL or Docker has reserved a block of ports covering it.
+  There is no process to find and close, so the only advice the app was offering
+  was a Node error string.
+
+  The app now moves itself. If the port it is told to use is refused, it tries
+  the next few, then jumps well clear — a Windows reservation is a *block*,
+  routinely hundreds of ports wide, so nudging up by one can land inside the
+  same reservation every time. It starts on the first port that works, remembers
+  it, and says plainly that it moved and that any OBS browser source you already
+  added is pointing at the old number.
+
+  If every port it tries is refused, it now names the actual cause and what to
+  do about it, instead of repeating the error verbatim.
+
 ## 0.57.0 — 2026-08-04
 
 ### Added

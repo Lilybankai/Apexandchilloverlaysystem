@@ -733,8 +733,8 @@
 
     var proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     var host = window.location.hostname || "127.0.0.1";
-    // Default port/path match src/server/config.ts (httpPort 8080, wsPath /ws).
-    var port = params.get("port") || window.location.port || "8080";
+    // Default port/path match src/server/config.ts (httpPort 17080, wsPath /ws).
+    var port = params.get("port") || window.location.port || "17080";
     var path = params.get("path") || "/ws";
     return proto + "//" + host + ":" + port + path;
   }

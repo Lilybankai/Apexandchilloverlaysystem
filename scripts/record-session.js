@@ -12,7 +12,7 @@
  *
  *   node scripts/record-session.js                       # ./recordings/<stamp>.jsonl
  *   node scripts/record-session.js my-race.jsonl
- *   node scripts/record-session.js --url ws://127.0.0.1:8080/ws --hz 4 --full
+ *   node scripts/record-session.js --url ws://127.0.0.1:17080/ws --hz 4 --full
  *
  * Ctrl-C to stop. The file is flushed as it goes, so a recording survives the
  * session crashing, the sim hanging, or the PC being turned off at the wall.
@@ -45,7 +45,7 @@ const flag = (name, fallback) => {
 };
 const has = (name) => argv.includes(name);
 
-const url = flag('--url', 'ws://127.0.0.1:8080/ws');
+const url = flag('--url', 'ws://127.0.0.1:17080/ws');
 const hz = Number(flag('--hz', 4));
 const full = has('--full');
 const stopAfterSec = Number(flag('--seconds', 0));

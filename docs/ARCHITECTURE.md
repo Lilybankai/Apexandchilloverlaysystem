@@ -45,8 +45,8 @@ that.
   │  • Serves overlay/ over HTTP (one port)        │
   │  • Broadcasts each frame as JSON over ws://…/ws │
   └───────────────┬────────────────────────────────┘
-                  │  ws://127.0.0.1:8080/ws   (JSON TelemetryFrame @ 30 Hz)
-                  │  http://127.0.0.1:8080/   (overlay assets)
+                  │  ws://127.0.0.1:17080/ws  (JSON TelemetryFrame @ 30 Hz)
+                  │  http://127.0.0.1:17080/  (overlay assets)
                   ▼
   ┌──────────────────────────────────────────────┐
   │  Overlay (browser)              overlay/       │
@@ -155,7 +155,7 @@ browser. There is no database, no message broker, no cloud round-trip.
 - **`wsServer.ts`** — attaches a `ws` server to the same HTTP server (so OBS
   only needs one URL/port) and broadcasts each frame as JSON.
 - **`config.ts`** — all tunables in one place, resolved from `APEX_*` environment
-  variables over frozen defaults (host `127.0.0.1`, port `8080`, path `/ws`, rate
+  variables over frozen defaults (host `127.0.0.1`, port `17080`, path `/ws`, rate
   `30 Hz`, clamped 1..120).
 
 ### Overlay (`overlay/`)

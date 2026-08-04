@@ -7,7 +7,7 @@ rem  WebSocket broadcast). Add http://127.0.0.1:<port>/ to OBS as a Browser
 rem  Source at 1920x1080 - see docs\OBS-SETUP.md.
 rem
 rem  Usage:
-rem    launch.bat            Start on the default port (8080).
+rem    launch.bat            Start on the default port (17080).
 rem    launch.bat 9000       Start on port 9000.
 rem    launch.bat sim        Force the demo/simulator feed (no game needed).
 rem
@@ -47,7 +47,7 @@ if /i "%~1"=="sim" (
 )
 
 rem Default port for the banner + server if not otherwise provided.
-if not defined APEX_HTTP_PORT set "APEX_HTTP_PORT=8080"
+if not defined APEX_HTTP_PORT set "APEX_HTTP_PORT=17080"
 
 rem --- Install dependencies on first run ------------------------------------
 if not exist "node_modules" (

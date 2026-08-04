@@ -102,7 +102,7 @@
     if (explicit) return explicit;
     var proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     var host = window.location.hostname || "127.0.0.1";
-    var port = params.get("port") || window.location.port || "8080";
+    var port = params.get("port") || window.location.port || "17080";
     return proto + "//" + host + ":" + port + "/chat";
   }
 

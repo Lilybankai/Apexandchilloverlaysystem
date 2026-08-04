@@ -187,6 +187,14 @@
               In-game display needs the sim in <strong>Borderless / Windowed</strong>
               mode (exclusive fullscreen draws over everything).
             </p>
+            <!-- Said in the open, not just in the hotkey's tooltip: the key does
+                 something new as of v0.57.1, and the whole point is reaching edit
+                 mode without coming back to this window to find out it exists. -->
+            <p class="hero__hint">
+              The overlay hotkey <strong>cycles</strong> — press it to go
+              shown → off → <strong>edit layout</strong> → shown. So you can move
+              a widget without leaving the game.
+            </p>
           </div>
           <div class="hero__actions">
             <label class="ingame-switch" for="ingame-toggle">
@@ -200,8 +208,10 @@
               <button class="btn btn--accent" id="ig-edit-btn" type="button" disabled>Edit layout</button>
               <button class="btn btn--ghost" id="ig-reset-btn" type="button">Reset layout</button>
             </div>
-            <div class="hotkey" title="Global hotkey that toggles Show in game — works while the sim has focus.">
-              <span class="hotkey__label">Toggle hotkey</span>
+            <!-- One key walks all three states, so laying the overlay out never
+                 means alt-tabbing back to this window mid-session. -->
+            <div class="hotkey" title="Global hotkey — press to cycle: shown → off → edit layout → shown. Works while the sim has focus.">
+              <span class="hotkey__label">Overlay hotkey</span>
               <button class="hotkey__key" id="ig-hotkey" type="button">F8</button>
               <button class="hotkey__clear" id="ig-hotkey-clear" type="button" title="Clear hotkey">&times;</button>
             </div>
@@ -905,7 +915,7 @@
               <label class="field">
                 <span class="field__label">Server port</span>
                 <input class="field__input" id="port-input" type="number" min="1" max="65535" step="1" />
-                <span class="field__hint">Overlays are served at 127.0.0.1:<span id="port-echo">8080</span></span>
+                <span class="field__hint">Overlays are served at 127.0.0.1:<span id="port-echo">17080</span></span>
               </label>
 
               <label class="field">
