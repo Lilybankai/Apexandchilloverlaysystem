@@ -821,6 +821,14 @@ export interface TrackLimitsState {
   /** How many cuts the sim has charged for since its last reset. */
   charged: number;
   /**
+   * The sim's own lap numbers for the laps it charged, newest first.
+   *
+   * Carried so the lap database can void the lap that actually cut rather than
+   * the one being driven when the news arrived — the trace runs up to ~25 s
+   * behind. Empty when no trace is readable. Not for display.
+   */
+  chargedLaps?: number[];
+  /**
    * Milliseconds since the total last went **up**, so a widget can flash on the
    * charge itself rather than on the value of the number.
    * {@link UNKNOWN_VALUE} when nothing has been charged this session.

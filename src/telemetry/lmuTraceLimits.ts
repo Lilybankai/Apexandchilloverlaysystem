@@ -265,6 +265,16 @@ export interface TraceIncident {
  */
 export const CHARGE_HISTORY = 5;
 
+/**
+ * How many charged LAP NUMBERS to remember.
+ *
+ * Only ever read to judge the lap that has just finished, so this needs to
+ * outlive the trace's ~25 s lateness and nothing more. 64 is a couple of hours
+ * of laps at any circuit LMU runs — long enough that the question can never
+ * outrun the answer, small enough to stay a fixed cost in a 24-hour race.
+ */
+export const CHARGED_LAP_HISTORY = 64;
+
 /** What the reader currently knows. */
 export interface TraceLimitsState {
   /** Points accumulated since the last discharge. A derivation, not a reading. */
@@ -292,6 +302,22 @@ export interface TraceLimitsState {
   /** Incidents seen since the last reset — the count the sim actually charged for. */
   charged: number;
   /**
+   * The sim's own LAP NUMBER for each lap it has charged something to, newest
+   * first, capped at {@link CHARGED_LAP_HISTORY}.
+   *
+   * This is what lets a lap be judged on its own cuts rather than on when the
+   * news of them arrived. The trace reaches us up to ~25 s late, so a cut taken
+   * at the end of a lap routinely lands while the NEXT one is being driven; a
+   * caller watching {@link charged} move can only blame whichever lap was in
+   * progress at the time, which is the wrong one twice over — the guilty lap
+   * goes free and a clean one is voided. Every charge carries `Lap:` in the
+   * trace, so the answer was always there to be read.
+   *
+   * A lap appears once however many times it was charged: callers ask whether a
+   * lap was charged at all, never how often.
+   */
+  chargedLaps: number[];
+  /**
    * How many excursions the sim has **ruled on** this session, charged or not.
    *
    * Distinct from {@link charged} because "ruled and charged nothing" is a verdict
@@ -315,6 +341,7 @@ export interface TraceLimitsState {
 export class TraceLimitsAccumulator {
   private points = 0;
   private charges: number[] = [];
+  private chargedLaps: number[] = [];
   private chargeSeq = 0;
   private charged = 0;
   private settled = 0;
@@ -343,6 +370,12 @@ export class TraceLimitsAccumulator {
         this.points = 0;
         this.charged = 0;
         this.charges = [];
+        // `chargedLaps` deliberately SURVIVES a discharge. Serving the
+        // drive-through settles the account, not the history: a lap that was
+        // cut was still cut, and clearing this would quietly hand a driver a
+        // clean leaderboard time for the very lap that earned the penalty.
+        // It is cleared only by a session reset (below), where the sim's lap
+        // numbering starts again at 1 and stale entries would collide.
       }
       return;
     }
@@ -386,6 +419,12 @@ export class TraceLimitsAccumulator {
     this.charged += 1;
     this.chargeSeq += 1;
     this.charges = [parsed.warnPts, ...this.charges].slice(0, CHARGE_HISTORY);
+    // The verdict line carries the lap; the breakdown that pairs with it does
+    // not always, hence the same fallback the incident below uses.
+    const chargedLap = parsed.lap ?? pending?.lap ?? null;
+    if (chargedLap !== null && !this.chargedLaps.includes(chargedLap)) {
+      this.chargedLaps = [chargedLap, ...this.chargedLaps].slice(0, CHARGED_LAP_HISTORY);
+    }
     this.lastIncident = {
       atGameSec: parsed.atGameSec,
       warnPts: parsed.warnPts,
@@ -408,6 +447,8 @@ export class TraceLimitsAccumulator {
       lastIncident: this.lastIncident,
       lastPenalty: this.lastPenalty,
       charged: this.charged,
+      chargedLaps: [...this.chargedLaps], // copied for the same reason as `charges`
+
       settled: this.settled,
       session: this.session,
     };
@@ -422,6 +463,7 @@ export class TraceLimitsAccumulator {
   public reset(): void {
     this.points = 0;
     this.charges = [];
+    this.chargedLaps = [];
     this.chargeSeq = 0;
     this.charged = 0;
     this.settled = 0;

@@ -152,6 +152,41 @@ export interface LapRecord {
 const MIN_LAP_MS = 5_000;
 const MAX_LAP_MS = 3_600_000;
 
+/**
+ * How long a finished lap is held before it is written, waiting for the sim's
+ * track-limits verdict on it.
+ *
+ * LMU buffers its trace log ~4 KB at a time, which measured out at up to ~25 s
+ * of lag between a cut happening and the charge for it reaching us (see
+ * `docs/TRACK-LIMITS-POINTS.md`). 40 s clears that with room to spare and is
+ * still far inside a lap at every circuit LMU runs, so the hold never overlaps
+ * the lap after next. Nothing a driver sees depends on it: the lap is on disk
+ * long before the session ends, and the upload reads the file, not this class.
+ */
+export const VERDICT_HOLD_MS = 40_000;
+
+/** A finished lap waiting for its verdict. */
+interface HeldLap {
+  record: LapRecord;
+  /** The sim's number for this lap, to match against what it charged. */
+  lapNo: number;
+  /** `nowMs` past which the verdict can no longer change anything. */
+  until: number;
+}
+
+/** Whether the sim charged a cut to this lap. */
+function chargedTo(chargedLaps: number[] | undefined, lapNo: number): boolean {
+  if (!chargedLaps || lapNo === UNKNOWN_VALUE) return false;
+  return chargedLaps.includes(lapNo);
+}
+
+/** The same record with `limits` added — records are rebuilt, never mutated. */
+function withLimits(rec: LapRecord): LapRecord {
+  if (rec.dirty.includes('limits')) return rec;
+  const dirty: DirtyReason[] = [...rec.dirty, 'limits'];
+  return { ...rec, dirty, clean: false };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Recorder                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -182,14 +217,33 @@ export interface LapInput {
   inPit: boolean;
   /**
    * How many track-limit cuts the sim has **charged** for this session, or
-   * {@link UNKNOWN_VALUE} when unreadable. A move during the lap dirties it.
+   * {@link UNKNOWN_VALUE} when unreadable.
    *
-   * The stewards' own count, since the geometry estimate was retired. It arrives
-   * up to ~25 s late (the sim flushes its log a block at a time), so a cut taken
-   * at the end of a lap can land on the next one — the flag is the sim's verdict
-   * rather than a guess, at the cost of occasionally attaching it a lap late.
+   * The stewards' own count, since the geometry estimate was retired. Kept as
+   * the fallback signal for when {@link chargedLaps} cannot say anything: it
+   * still detects that *a* cut happened, it just cannot say whose lap it was.
    */
   limitWarnings: number;
+  /**
+   * The sim's own lap numbers for the laps it has charged something to.
+   *
+   * This is the channel that actually decides `limits`, because it is the only
+   * one that names the guilty lap. See {@link TraceLimitsState.chargedLaps} for
+   * why the count alone could never do it. Empty when the trace is unreadable
+   * (no LMU log directory, rF2, the simulator provider), which is when the
+   * count above takes over.
+   */
+  chargedLaps?: number[];
+  /**
+   * The sim's lap number for the lap being driven right now, or
+   * {@link UNKNOWN_VALUE} when the provider cannot say.
+   *
+   * LMU's trace numbers the lap **in progress**, one-based, so this is one more
+   * than the completed-lap count. Kept as an input rather than derived here so
+   * the mapping lives at the provider that knows the sim's conventions, and so
+   * a sim that numbers differently can say so without this class caring.
+   */
+  currentLapNo?: number;
   /** The sim's penalty count, or {@link UNKNOWN_VALUE} when unreadable. */
   penalties: number;
   /** Track surface temp, °C. */
@@ -217,10 +271,14 @@ export class LapRecorder {
   /** Counter baselines taken when the current lap began. */
   private limitsAtStart: number = UNKNOWN_VALUE;
   private penaltiesAtStart: number = UNKNOWN_VALUE;
+  /** The sim's lap number for the lap being driven, when the provider says. */
+  private lapNo: number = UNKNOWN_VALUE;
+  /** A finished lap waiting for the stewards' verdict to arrive — see below. */
+  private held: HeldLap | null = null;
 
   /**
-   * Feed one poll's state. Returns a record on the poll where a lap completed,
-   * otherwise `null`.
+   * Feed one poll's state. Returns a record once a lap has completed **and** its
+   * verdict has settled, otherwise `null`.
    */
   public update(input: LapInput, nowMs: number): LapRecord | null {
     // A stint is one car at one track in one session type. Any change of those
@@ -229,9 +287,13 @@ export class LapRecorder {
     // than emit one nonsense lap across the boundary.
     const key = `${input.track}|${input.sessionType}|${input.car}|${input.carClass}`;
     if (key !== this.key) {
+      // Whatever was held belongs to the stint that is ending, so it goes out
+      // now rather than being dropped — an unheard verdict is not grounds for
+      // losing the lap, only for judging it on what we did hear.
+      const flushed = this.flush();
       this.key = key;
       this.reset(input);
-      return null;
+      return flushed;
     }
 
     const laps = input.lapsCompleted;
@@ -252,13 +314,16 @@ export class LapRecorder {
     // garage that the stint key did not catch (same track, same car, same
     // session type — e.g. "restart race"). Re-baseline; nothing completed.
     if (laps < this.prevLaps) {
+      // A restart renumbers the sim's laps from 1, so a held lap can never be
+      // judged against the trace again — let it go with what it has.
+      const flushed = this.flush();
       this.reset(input);
       this.prevLaps = laps;
       this.dirty.add('partial');
-      return null;
+      return flushed;
     }
 
-    if (laps === this.prevLaps) return null;
+    if (laps === this.prevLaps) return this.settle(input, nowMs);
 
     // A jump of more than one means we missed a lap boundary entirely (the feed
     // dropped, or the app was asleep). Credit nothing: the one thing worse than
@@ -267,20 +332,69 @@ export class LapRecorder {
     const stepped = laps - this.prevLaps;
     this.prevLaps = laps;
     if (stepped !== 1) {
+      const flushed = this.flush();
       this.startLap(input);
       this.dirty.add('partial');
-      return null;
+      return flushed;
     }
 
-    const record = this.build(input, nowMs);
+    // The lap is finished but not yet judged: its own cuts may still be sitting
+    // in the sim's log buffer. Hold it, keep watching, and let `settle()` emit
+    // it once the stewards have had their say. Anything still held from an
+    // earlier lap goes out now, so laps are written in the order they were
+    // driven — only reachable on a lap shorter than the hold, which the
+    // plausibility floor already calls not-a-lap.
+    const flushed = this.flush();
+    this.held = { record: this.build(input, nowMs), lapNo: this.lapNo, until: nowMs + VERDICT_HOLD_MS };
     this.startLap(input);
-    return record;
+    return flushed;
+  }
+
+  /**
+   * Emit a held lap once its verdict can no longer change, folding in any cut
+   * the sim charged to it while it waited.
+   *
+   * This is the whole point of holding. LMU writes its track-limits ruling to a
+   * log it flushes a block at a time, so a cut taken on the last corner of a lap
+   * routinely surfaces ~25 s into the NEXT one. Judging at the line therefore
+   * got it wrong twice: the lap that cut was written clean, and the following
+   * lap — often the driver's answer to the mistake, and their best of the run —
+   * was voided for it. Waiting costs nothing a driver can perceive (the lap is
+   * on disk before they reach the next corner) and buys the right answer.
+   */
+  private settle(input: LapInput, nowMs: number): LapRecord | null {
+    const held = this.held;
+    if (!held) return null;
+    if (chargedTo(input.chargedLaps, held.lapNo)) held.record = withLimits(held.record);
+    if (nowMs < held.until) return null;
+    this.held = null;
+    return held.record;
+  }
+
+  /** Hand back a held lap unjudged, for the cases where waiting is pointless. */
+  private flush(): LapRecord | null {
+    const held = this.held;
+    this.held = null;
+    return held ? held.record : null;
   }
 
   /** Fold this poll's state into the current lap's fault set. */
   private observe(input: LapInput): void {
     if (input.inPit) this.dirty.add('pit');
-    if (
+    // `this.lapNo` is deliberately NOT refreshed here — it is set once, at the
+    // line, by `startLap`. The provider derives it from the completed-lap
+    // count, so on the poll that crosses the line it has ALREADY become the
+    // next lap's number; adopting it here would stamp the lap being finished
+    // with its successor's number and charge every cut to the wrong lap — the
+    // exact fault this whole mechanism exists to remove.
+    // Named laps first: when the sim has told us WHICH lap it charged, that
+    // answer is exact and the running count adds nothing. The count is only
+    // consulted when no lap numbers are available at all — rF2, the simulator
+    // provider, or LMU with no readable trace — where "a cut happened during
+    // this lap" remains the best that can be said.
+    if (input.chargedLaps && input.chargedLaps.length > 0) {
+      if (chargedTo(input.chargedLaps, this.lapNo)) this.dirty.add('limits');
+    } else if (
       this.limitsAtStart !== UNKNOWN_VALUE &&
       input.limitWarnings !== UNKNOWN_VALUE &&
       input.limitWarnings > this.limitsAtStart
@@ -333,6 +447,10 @@ export class LapRecorder {
     this.dirty = new Set();
     this.limitsAtStart = input.limitWarnings;
     this.penaltiesAtStart = input.penalties;
+    // The number the sim will charge this lap under. Read at the line rather
+    // than carried forward, so a provider that renumbers (or starts publishing
+    // one mid-stint) is followed rather than argued with.
+    this.lapNo = typeof input.currentLapNo === 'number' ? input.currentLapNo : UNKNOWN_VALUE;
     // The car is usually still ON the line when this runs, but if it is in the
     // pit lane the new lap is already compromised.
     if (input.inPit) this.dirty.add('pit');
@@ -341,6 +459,7 @@ export class LapRecorder {
   /** Full reset — new stint, or a rewound lap count. */
   private reset(input: LapInput): void {
     this.prevLaps = -1;
+    this.held = null;
     this.startLap(input);
   }
 }

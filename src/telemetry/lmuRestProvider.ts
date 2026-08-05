@@ -2124,6 +2124,7 @@ export class LmuRestProvider implements TelemetryProvider {
       points: trace.points,
       charges: trace.charges,
       charged: trace.charged,
+      chargedLaps: trace.chargedLaps,
       msSinceCharge: this.lastChargeAt ? nowMs - this.lastChargeAt : UNKNOWN_VALUE,
       pointsLimitEnforced: enforced,
     };
@@ -2348,9 +2349,20 @@ export class LmuRestProvider implements TelemetryProvider {
         // Both pit sources, because either alone misses a case: the scoring
         // record sees the garage stall, the standings row sees the lane.
         inPit: (scoringCar ? scoringCar.inPit : false) || isInPit(playerCar),
-        // The sim's own count of cuts it charged for. Late by up to ~25 s, so a
-        // cut at the end of a lap can dirty the next one — see LapInput.
+        // The sim's own count of cuts it charged for — the fallback signal now
+        // that the laps below name the guilty lap outright.
         limitWarnings: trackLimits ? trackLimits.charged : UNKNOWN_VALUE,
+        ...(trackLimits?.chargedLaps ? { chargedLaps: trackLimits.chargedLaps } : {}),
+        // LMU's trace numbers the lap IN PROGRESS, one-based, so the lap being
+        // driven is one past the completed count: a driver on their first lap
+        // has completed none and the trace writes `Lap: 1`. This single
+        // expression is the whole mapping between the sim's numbering and ours
+        // — if a session type ever proves to number differently (a formation
+        // lap counted, say), this is the one line that changes.
+        ...(typeof playerCar.lapsCompleted === 'number' &&
+        Number.isFinite(playerCar.lapsCompleted)
+          ? { currentLapNo: playerCar.lapsCompleted + 1 }
+          : {}),
         penalties: scoringCar ? scoringCar.penalties : UNKNOWN_VALUE,
         ...(typeof si.trackTemp === 'number' ? { trackTempC: si.trackTemp } : {}),
         ...(typeof si.ambientTemp === 'number' ? { ambientTempC: si.ambientTemp } : {}),

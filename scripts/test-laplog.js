@@ -26,6 +26,7 @@ const path = require('node:path');
 
 const {
   LapRecorder,
+  VERDICT_HOLD_MS,
   appendLap,
   readDay,
   summarize,
@@ -73,26 +74,67 @@ function rig(overrides) {
     ...overrides,
   };
 
+  /**
+   * One poll, exactly as the provider builds it.
+   *
+   * `currentLapNo` is DERIVED here rather than left to the tests, because the
+   * provider derives it — `lapsCompleted + 1`, every frame, so the new lap's
+   * number is already current on the poll that crosses the line. A test setting
+   * it by hand could let it lag by a lap, which no real session does, and would
+   * then be testing a state the recorder never sees.
+   */
+  const send = () => {
+    const numbered = state.chargedLaps !== undefined;
+    return r.update(
+      { ...state, ...(numbered ? { currentLapNo: state.lapsCompleted + 1 } : {}) },
+      now,
+    );
+  };
+
   /** Advance a few polls without completing a lap. */
   const poll = (times = 1) => {
     let out = null;
     for (let i = 0; i < times; i++) {
       now += 150;
-      out = r.update({ ...state }, now) || out;
+      out = send() || out;
     }
     return out;
   };
 
-  /** Complete one lap: the sim's counter ticks and lastLapTime lands. */
+  /**
+   * Complete one lap: the sim's counter ticks and lastLapTime lands.
+   *
+   * A finished lap is HELD while the sim's track-limits verdict catches up (see
+   * `VERDICT_HOLD_MS`), so the record lands on a later poll rather than on the
+   * one that crossed the line. The provider lives with exactly that; the tests
+   * just skip the wait by jumping the clock and polling once more.
+   */
   const lap = (sec = LAP_SEC) => {
     poll(4); // mid-lap polls, where the faults get observed
     state.lapsCompleted += 1;
     state.lastLapSec = sec;
     now += 150;
-    return r.update({ ...state }, now);
+    const atLine = send();
+    now += VERDICT_HOLD_MS + 1_000;
+    return send() || atLine;
   };
 
-  return { r, state, poll, lap, now: () => now };
+  /** Cross the line and stop there, leaving the lap held and unjudged. */
+  const cross = (sec = LAP_SEC) => {
+    poll(4);
+    state.lapsCompleted += 1;
+    state.lastLapSec = sec;
+    now += 150;
+    return send();
+  };
+
+  /** Wait out a held lap without driving another one. */
+  const settle = () => {
+    now += VERDICT_HOLD_MS + 1_000;
+    return send();
+  };
+
+  return { r, state, poll, lap, cross, settle, now: () => now };
 }
 
 console.log('\nlap recorder\n');
@@ -143,6 +185,57 @@ console.log('\nlap recorder\n');
 
   const after = t.lap();
   check('a standing warning does not void later laps', after && after.clean, after && after.dirty.join(','));
+}
+
+{
+  // The reason the whole hold exists.
+  //
+  // LMU buffers its trace log, so a cut taken on the last corner of a lap
+  // surfaces ~25 s into the NEXT one. Judged at the line, that voided the wrong
+  // lap twice over: the lap that actually cut went to the board clean, and the
+  // driver's answer to the mistake — often their best of the run — was thrown
+  // out for it. Now every charge names its own lap and the record waits to hear.
+  const t = rig({ chargedLaps: [] });
+  t.lap(); // burn the partial (lap 1)
+
+  // Lap 2 cuts on its last corner. Nothing is charged yet — the sim's log is
+  // still in its buffer — so the line is crossed with a clean sheet.
+  const atLine = t.cross();
+  check('nothing is emitted while the verdict is pending', atLine === null);
+
+  // …and now, a lap late, the trace catches up and names lap 2.
+  t.state.chargedLaps = [2];
+  const judged = t.settle();
+  check('the cut is charged back to the lap that took it', judged && judged.dirty.includes('limits'), judged && judged.dirty.join(','));
+
+  // Lap 3 — the lap that was being driven when the news landed — keeps its time.
+  const nextLap = t.lap();
+  check('the lap it landed on stays clean', nextLap && nextLap.clean, nextLap && nextLap.dirty.join(','));
+}
+
+{
+  // A cut on the lap being driven still voids it — the named-lap rule has to
+  // convict as well as acquit, or it is just a way of never flagging anything.
+  const t = rig({ chargedLaps: [] });
+  t.lap();
+  t.poll(2);
+  t.state.chargedLaps = [2]; // charged promptly, to the lap in progress
+  const cut = t.lap();
+  check('a cut charged to this lap voids it', cut && cut.dirty.includes('limits'), cut && cut.dirty.join(','));
+
+  const after = t.lap();
+  check('…and a charge already accounted for does not void the next', after && after.clean, after && after.dirty.join(','));
+}
+
+{
+  // No trace (rF2, the simulator provider, LMU with no log directory): the
+  // running count is all there is, and it must go on working exactly as before.
+  const t = rig();
+  t.lap();
+  t.poll(2);
+  t.state.limitWarnings = 1;
+  const wide = t.lap();
+  check('with no lap numbers the count still voids the lap', wide && wide.dirty.includes('limits'), wide && wide.dirty.join(','));
 }
 
 {
