@@ -104,6 +104,8 @@ const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
 /** The plugin maps 128 vehicle slots; bound every scan by this, not by trust. */
 const MAX_VEHICLES = 128;
+/** Worst-case bytes we might need (clamped to the real region on open). */
+const MAX_BYTES = SI.base + SI.sizeof + MAX_VEHICLES * VS.stride;
 
 /** The scoring channels for one car that nothing else in the feed carries. */
 export interface ScoringCar {
@@ -254,10 +256,21 @@ export class LmuScoringReader {
         w.CloseHandle(handle);
         return;
       }
+      const region = w.regionSize(view);
       this.handle = handle;
       this.view = view;
-      this.size = w.regionSize(view);
-      if (this.size <= 0) this.stop();
+      // `regionSize` is a best-effort VirtualQuery: it returns 0 when the call
+      // fails, which is NOT the same as the mapping being empty. Treating that
+      // as fatal used to tear the reader down on machines where the query
+      // misreports, and since every later read re-opens and re-fails, the
+      // scoring buffer stayed dark for the whole session — no car name on a
+      // driver's uploaded laps, no track limits, no penalty count — while the
+      // telemetry buffer (a separate mapping, and the one that feeds pedals)
+      // carried on working and made the app look healthy. Fall back to the
+      // worst case we could need instead, exactly as lmuLocalCar does; every
+      // scan is bounded by MAX_VEHICLES either way, so nothing reads further
+      // than it did before.
+      this.size = region > 0 ? Math.min(region, MAX_BYTES) : MAX_BYTES;
     } catch {
       this.view = null;
       this.handle = null;
