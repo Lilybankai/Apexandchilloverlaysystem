@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.58.0-beta.2 — 2026-08-05
+
+### Changed
+
+- **The lap-invalid warning now speaks while you can still do something about
+  it.** First live session with the beta.1 chip confirmed the channel works —
+  and showed the message arrived wearing the wrong words. When the sim voids
+  your lap it holds a few seconds' grace to lift and give the time back, and
+  through that window the chip said **LAP INVALID** as if the verdict were
+  already in. Now it opens as an amber **EVALUATING** — the whole Track Limits
+  panel glows and breathes with it, so it catches the corner of your eye at
+  racing speed — and if you lift in time the panel simply goes quiet, lap
+  saved. Only when the sim stops being willing to forgive does it harden into
+  a steady red **LAP INVALID**, which stands until you start a lap that counts
+  again. Loud while there's something to do, calm once there isn't.
+
 ## 0.58.0-beta.1 — 2026-08-04
 
 ### Added
