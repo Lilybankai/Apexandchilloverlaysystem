@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.60.0 — 2026-08-05
+
+Four things drivers told us about this week, all fixed.
+
+### Fixed
+
+- **Your track map no longer vanishes mid-session.** If the app decided the
+  shipped circuit didn't match where your car actually was, it threw the map
+  away and started learning again from scratch — usually somewhere in the
+  middle of a stint, at a track that had been drawing perfectly fine, and it
+  wouldn't come back the next time you loaded either. That check is gone for
+  good. Once a circuit is on screen it stays on screen. **If you already lost a
+  map this way, you get it back the first time you open this version** — nothing
+  to delete, nothing to reinstall.
+
+- **A cut on the last corner no longer voids your *next* lap.** The sim tells
+  us about a track-limits cut up to 25 seconds after you take it, which is
+  often most of the way round the following lap — so the lap that ran wide was
+  going on the board clean, and the good lap after it was being thrown out for
+  a mistake it didn't make. Every lap is now judged on its own cuts, using the
+  sim's own record of which lap it charged. Nothing else about the rule has
+  changed: a cut LMU charges you points for still voids the lap, and one it
+  waves through still doesn't.
+
+- **No delta, no track map and a blank car name on some PCs.** The app reads
+  two separate data feeds from the sim, and one of them gave up permanently the
+  first time Windows answered a routine question about it oddly — no error,
+  nothing in the app to say so. Everything else kept working, which is exactly
+  why it was hard to spot. If your pedals showed but your delta never armed and
+  your map never drew, this was why.
+
+### Changed
+
+- **Widgets can be resized from the top and left as well.** Every widget now
+  has handles on all four sides and both corners, so one that's ended up with
+  its bottom edge below the screen can still be made smaller — previously the
+  only handles were on the bottom and right, and if those were off-screen your
+  only way out was resetting the whole layout. Anything already hanging off the
+  screen is pulled back into view when you enter edit mode. Double-click any
+  handle to reset that dimension, same as before.
+
 ## 0.59.0 — 2026-08-05
 
 ### Added
