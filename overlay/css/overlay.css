@@ -3299,9 +3299,13 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* --- limits: the live lap-validity chip ----------------------------------
-   The sim's own countLapFlag, surfaced beside the penalty chip. Amber, not
-   red: an invalid lap is a warning about THIS lap, and it un-happens when the
-   stewards restore it — red is reserved for consequences that must be served. */
+   The sim's own countLapFlag, staged by the widget (data-lap on the section):
+   EVALUATING while the sim can still be talked round — lift and give the time
+   back and the chip clears — hardening to LAP INVALID once it no longer can.
+   The evaluating stage is the loud one, because it is the only one the driver
+   can act on: the chip pulses and the whole panel lights amber for the few
+   seconds a lift still saves the lap. The verdict is red and STEADY — nothing
+   left to do, so nothing left to flash about. */
 .limits__lap {
   margin-left: auto;
   align-self: center;
@@ -3318,3 +3322,36 @@ body.ig-editing #widget-radar .panel__header {
 }
 /* When both chips are up they share the right edge as a pair. */
 .limits__lap:not([hidden]) + .limits__penalty { margin-left: 8px; }
+
+/* The lift-now window: panel chrome glows amber and the body breathes with
+   the same cadence as a charge. Guarded off the penalty state so a fresh
+   drive-through's red pulse is never repainted amber by a later rule. */
+#widget-limits[data-lap="evaluating"] {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px var(--warn), 0 0 18px rgba(255, 176, 32, 0.45);
+}
+#widget-limits[data-lap="evaluating"]:not([data-limits="penalty"]) .panel__body {
+  animation: limits-pulse 0.9s ease-in-out infinite;
+}
+#widget-limits[data-lap="evaluating"] .limits__lap {
+  animation: limits-pulse 0.9s ease-in-out infinite;
+}
+
+/* The verdict: the chip and the panel edge go red and hold there. */
+#widget-limits[data-lap="invalid"] {
+  border-color: var(--pos-loss);
+  box-shadow: 0 0 0 1px var(--pos-loss);
+}
+#widget-limits[data-lap="invalid"] .limits__lap {
+  background: rgba(255, 84, 112, 0.16);
+  border-color: var(--pos-loss);
+  color: var(--pos-loss);
+}
+
+/* The steady chrome states above carry the message without the motion. */
+@media (prefers-reduced-motion: reduce) {
+  #widget-limits[data-lap="evaluating"]:not([data-limits="penalty"]) .panel__body,
+  #widget-limits[data-lap="evaluating"] .limits__lap {
+    animation: none;
+  }
+}

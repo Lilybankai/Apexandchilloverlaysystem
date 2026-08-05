@@ -78,6 +78,19 @@
    */
   var ALARM_MS = 2000;
 
+  /**
+   * How long the sim gets to change its mind about the lap, ms.
+   *
+   * countLapFlag drops the moment the car leaves the road and comes BACK if
+   * the driver lifts and gives the time back — both observed live inside a
+   * single excursion. While that window is open the verdict is provisional,
+   * so the chip reads EVALUATING and the panel lights up: it is the one
+   * moment the driver can still do something about it. A flag still down
+   * this long after the drop has not been seen to recover, so it hardens to
+   * LAP INVALID and stays until the sim starts a lap that counts again.
+   */
+  var LAP_EVAL_MS = 4000;
+
   // How long a fresh penalty is announced for lives in the runtime as
   // `ctx.consequenceMs` (4 s), because the MFD announces the same event and the
   // two must agree — see the consequence-indicator block in js/client.js.
@@ -98,6 +111,10 @@
    * it lands rather than on every frame of the two seconds it stays fresh.
    */
   var wasFresh = false;
+  /** Wall-clock ms when the validity flag last dropped; 0 while the lap counts. */
+  var lapDownSince = 0;
+  /** Last chip stage written ("", "evaluating", "invalid"), to skip DOM writes. */
+  var lapCache = null;
 
   function init(rootEl) {
     root = rootEl;
@@ -119,15 +136,12 @@
     labelEl = document.createElement("div");
     labelEl.className = "limits__label";
     labelEl.textContent = "LIMITS";
-    // The sim's LIVE lap-validity verdict (countLapFlag), surfaced the moment
-    // it flips rather than at the end of the lap. Amber and stateful, not a
-    // flash: it stays up exactly as long as the sim holds the lap void, and it
-    // disappears again when the stewards restore it — both of which were
-    // observed live inside a single excursion. Hidden while the lap counts;
-    // a permanent "VALID" chip would be a reminder of nothing.
+    // The sim's LIVE lap-validity verdict (countLapFlag), staged by setLap():
+    // EVALUATING while the stewards can still be talked round, LAP INVALID
+    // once they no longer can. Hidden while the lap counts; a permanent
+    // "VALID" chip would be a reminder of nothing.
     lapEl = document.createElement("div");
     lapEl.className = "limits__lap";
-    lapEl.textContent = "LAP INVALID";
     lapEl.hidden = true;
     // The sim's penalty, in its own place. Hidden entirely at zero: a "0 PEN"
     // chip is a permanent reminder of something that has not happened.
@@ -172,6 +186,31 @@
     root.setAttribute("data-limits", state);
   }
 
+  /**
+   * The validity chip, staged: the drop is provisional for LAP_EVAL_MS (lift
+   * NOW and the sim restores the lap), final after. The stage also rides the
+   * section as `data-lap`, so the CSS can light the whole panel through the
+   * window a lift can still save — a chip alone was missed at racing speed.
+   *
+   * The timer restarts on each true→false edge, so a second excursion later
+   * in the same lap opens its own evaluation window rather than inheriting
+   * the first one's expired clock.
+   */
+  function setLap(invalid) {
+    var stage = "";
+    if (!invalid) {
+      lapDownSince = 0;
+    } else {
+      if (!lapDownSince) lapDownSince = Date.now();
+      stage = Date.now() - lapDownSince >= LAP_EVAL_MS ? "invalid" : "evaluating";
+    }
+    if (lapCache === stage) return;
+    lapCache = stage;
+    lapEl.hidden = !stage;
+    if (stage) lapEl.textContent = stage === "invalid" ? "LAP INVALID" : "EVALUATING";
+    root.setAttribute("data-lap", stage || "ok");
+  }
+
   /** How healthy the allowance is: `ok` / `low` / `crit`, for the bar's colour. */
   function setAllow(level) {
     if (allowCache === level) return;
@@ -209,7 +248,7 @@
     // No block at all — spectating, no shared memory, or out of a session. Say
     // so rather than showing a clean sheet nobody has earned.
     if (!tl) {
-      lapEl.hidden = true;
+      setLap(false);
       blank("NO DATA");
       return;
     }
@@ -217,8 +256,7 @@
     // The validity chip rides every path below, including unknown-points: it
     // comes from the REST feed, which is alive even when the stewards' log is
     // not. Strictly `=== false` — an absent channel must not read as invalid.
-    var invalid = tl.lapValid === false;
-    if (lapEl.hidden !== !invalid) lapEl.hidden = !invalid;
+    setLap(tl.lapValid === false);
 
     /* ------------------------------ the counts --------------------------- */
 

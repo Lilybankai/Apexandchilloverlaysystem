@@ -1113,9 +1113,11 @@ export class SimulatorProvider implements TelemetryProvider {
       msSinceCharge: this.demoChargeAt ? nowMs - this.demoChargeAt : UNKNOWN_VALUE,
       pointsLimitEnforced: true,
       // The live validity verdict rides the same cycle: each demo charge voids
-      // the lap for a few seconds, then the stewards "restore" it — both edges
-      // of the real countLapFlag behaviour, on a clock a fixture can catch.
-      lapValid: this.demoChargeAt !== 0 && nowMs - this.demoChargeAt < 3000 ? false : true,
+      // the lap, then the stewards "restore" it — both edges of the real
+      // countLapFlag behaviour, on a clock a fixture can catch. Held past the
+      // widget's 4 s evaluation window so the demo walks BOTH chip stages:
+      // EVALUATING first, the hardened LAP INVALID after.
+      lapValid: this.demoChargeAt !== 0 && nowMs - this.demoChargeAt < 7000 ? false : true,
     };
   }
 

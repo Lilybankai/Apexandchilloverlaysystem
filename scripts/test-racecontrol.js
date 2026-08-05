@@ -152,7 +152,7 @@ console.log('\nracecontrol widget states, against a DOM stub\n');
 function makeElement(tag) {
   return {
     tagName: tag, className: '', textContent: '', innerHTML: '', hidden: false,
-    children: [], attrs: {},
+    children: [], attrs: {}, style: {},
     appendChild(c) { this.children.push(c); return c; },
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
@@ -260,6 +260,97 @@ function makeElement(tag) {
       rail.children[0].getAttribute('data-flag') === 'none',
   );
   check('…and the panel takes the quiet yellow state', st() === 'yellow', st());
+}
+
+/* ---------------------------------------------------------------------------
+ * The limits widget's lap-validity chip — the STAGED half of the same live
+ * channel: countLapFlag dropping opens a provisional EVALUATING (the window a
+ * lift still saves the lap), hardening to LAP INVALID only if the sim never
+ * restores it. The staging is a clock-driven state machine inside limits.js,
+ * so it gets the same fake-clock treatment as the green flash above.
+ * ------------------------------------------------------------------------- */
+
+console.log('\nlimits lap-validity chip staging, against a DOM stub\n');
+
+{
+  let widgetDef = null;
+  let nowMs = 5_000_000;
+  const sandbox = {
+    window: { ApexOverlay: { registerWidget: (name, def) => { if (name === 'limits') widgetDef = def; } } },
+    document: { createElement: makeElement },
+    Date: { now: () => nowMs },
+    Math,
+    Array,
+    String,
+    console,
+  };
+  vm.createContext(sandbox);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'js', 'widgets', 'limits.js'), 'utf8');
+  vm.runInContext(src, sandbox);
+
+  check('limits widget registers', !!widgetDef);
+
+  const meta = makeElement('span');
+  const mount = makeElement('div');
+  const root = makeElement('section');
+  root.querySelector = (sel) => (sel.indexOf('meta') !== -1 ? meta : mount);
+  widgetDef.init(root);
+
+  // The chip lives in the head row: wrap > head > [count, label, lap, penalty].
+  const lapEl = mount.children[0].children[0].children[2];
+
+  // The slice of ctx the widget actually reaches for, quiet on every channel
+  // that is not the one under test.
+  const ctx = {
+    fmt: { has: (v) => typeof v === 'number' && v >= 0 },
+    crit: (el, text) => { el.textContent = text; },
+    penaltyCount: () => 0,
+    consequenceFresh: () => false,
+    servedFresh: () => false,
+    penaltyLabel: () => 'PENALTY',
+  };
+  const frame = (lapValid) => ({
+    player: { trackLimits: { points: 0, pointsLimit: 5, msSinceCharge: -1, charges: [], lapValid } },
+  });
+  const stage = () => root.getAttribute('data-lap');
+
+  widgetDef.update(frame(true), ctx);
+  check('a counting lap keeps the chip hidden', lapEl.hidden === true && stage() === 'ok', stage());
+
+  widgetDef.update(frame(false), ctx);
+  check(
+    'the flag dropping opens as EVALUATING',
+    stage() === 'evaluating' && lapEl.textContent === 'EVALUATING' && lapEl.hidden === false,
+    stage(),
+  );
+
+  nowMs += 2_000;
+  widgetDef.update(frame(false), ctx);
+  check('still provisional inside the lift window', stage() === 'evaluating', stage());
+
+  widgetDef.update(frame(true), ctx);
+  check('a lift that gives the time back clears it', lapEl.hidden === true && stage() === 'ok', stage());
+
+  widgetDef.update(frame(false), ctx);
+  check('a second excursion opens its own window', stage() === 'evaluating', stage());
+
+  nowMs += 4_000;
+  widgetDef.update(frame(false), ctx);
+  check(
+    'held past the window it hardens to LAP INVALID',
+    stage() === 'invalid' && lapEl.textContent === 'LAP INVALID',
+    stage(),
+  );
+
+  nowMs += 30_000;
+  widgetDef.update(frame(false), ctx);
+  check('…and the verdict stands for the rest of the lap', stage() === 'invalid', stage());
+
+  widgetDef.update(frame(true), ctx);
+  check('a lap that counts again clears the verdict', lapEl.hidden === true && stage() === 'ok', stage());
+
+  widgetDef.update({ player: { trackLimits: null } }, ctx);
+  check('losing the block entirely hides the chip too', lapEl.hidden === true && stage() === 'ok');
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
