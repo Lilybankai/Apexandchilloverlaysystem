@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.58.0 — 2026-08-05
+
+Everything below shipped to the beta channel as 0.58.0-beta.1 and beta.2 and
+was proven in a live session before coming to stable.
+
+### Added
+
+- **Race Control widget — the calls the stock HUD makes, without the stock
+  HUD.** Turn LMU's own overlays off and you also lose the moments race control
+  talks to you: nobody says engage your limiter before the start, nobody counts
+  the lights down, nobody tells you it's green, or yellow, or that the pit
+  entry is coming up. The game publishes every one of those — we went and found
+  where, in an instrumented race with deliberate rule-breaking — and the new
+  widget gives them back: **ENGAGE PIT LIMITER** on the formation lap while
+  yours is off, the start gantry lamp by lamp, a four-second **GREEN FLAG**
+  (replaced by **LIMITER STILL ON** if that's the truer news), **FULL COURSE
+  YELLOW**, a live **PIT ENTRY** countdown in metres once you've requested a
+  stop — with a limiter alarm inside the last 150 m — and an S1/S2/S3 rail lit
+  from the sim's own per-sector flags. Every prompt is the sim's own state, and
+  the limiter prompts say nothing at all when the limiter can't be read
+  (spectating, plain rF2) rather than guess at a race start. Find it in the
+  overlay list as **Race Control** — it's on by default in the in-game layer.
+
+- **Track Limits now warns you *during* the lap — while a lift can still save
+  it.** The sim decides live whether the lap you're on still counts: it voids
+  the time the moment you leave the road at a policed corner, holds a few
+  seconds' grace to give the time back, and quietly restores the lap if you
+  do — exactly what its own HUD shows as the yellow "calculating" that turns
+  green. That verdict now reaches the Track Limits widget as it happens. The
+  instant the time is void the panel lights up — an amber **EVALUATING** chip
+  with the whole box glowing and breathing, built to catch the corner of your
+  eye at racing speed — and if you lift in time it simply goes quiet, lap
+  saved. Only when the sim stops being willing to forgive does it harden into
+  a steady red **LAP INVALID**, which stands until you start a lap that
+  counts. Loud while there's something to do, calm once there isn't. No more
+  finding out at the line.
+
 ## 0.58.0-beta.2 — 2026-08-05
 
 ### Changed
