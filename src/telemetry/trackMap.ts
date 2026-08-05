@@ -36,32 +36,36 @@
  *
  * The learner stays, and it is not a legacy path: it is what covers the tracks
  * that are not in the bundle — a new season's circuit, a layout nobody here has
- * driven, a mod, rF2 — and what repairs a bundled map that turns out to be wrong
- * (see {@link TrackMapBuilder.audit}). Bundling is an optimisation on the first
- * lap, not a replacement for being able to learn.
+ * driven, a mod, rF2. Bundling is an optimisation on the first lap, not a
+ * replacement for being able to learn.
  *
  * The precedence is: the machine's own file in `~/.apex-overlay/tracks` first,
- * then the bundled one, then learn. A map the driver's own car produced — or one
- * relearned after a bundled shape was condemned — always beats the shipped one.
+ * then the bundled one, then learn. A map the driver's own car produced always
+ * beats the shipped one.
  *
- * ## "Forever" is why a wrong map has to repair itself
- * That cache is the reason a bad map is a different class of bug from a bad
- * frame. Publishing a shape SAVES it, and a saved shape is preferred over
- * learning a new one at every session after — so a circuit that comes out wrong
- * once is drawn wrong until somebody works out that there is a file, where it
- * lives, and that deleting it is the fix. Nobody works that out. They report
- * that the map is missing half the track.
+ * ## Why a map on screen is never taken back
+ * A published map used to be marked against the car every frame and thrown away
+ * — file and all — once the two disagreed for a couple of hundred metres of
+ * road, on the reasoning that a wrong map cached forever is worse than a lap
+ * spent relearning. That check is gone, and the reasoning is what killed it.
  *
- * So there are three checks, and they are in the order of how much they know.
- * {@link TrackMapBuilder.commit} asks whether a shape is a circuit at all
- * (see {@link MAX_STEP_FACTOR}) and refuses to publish one that is a fragment
- * with a chord across it. {@link loadTrackMap} asks the same of every file it
- * reads, so a shape saved before that check existed is dropped rather than
- * drawn. And {@link TrackMapBuilder.audit} asks the only question the other two
- * cannot — whether this well-formed circuit is the one being DRIVEN — by
- * marking the map against the car every frame, and throwing it away, file and
- * all, when the two have disagreed for a couple of hundred metres of road. All
- * three land in the same place: a progress read, and a correct map a lap later.
+ * It only ever fired on the bundled shapes, because a map learned from your own
+ * car agrees with your own car by construction. So the whole cost landed on the
+ * feature it was meant to protect: drivers watched the circuit vanish in the
+ * middle of a session, at a track that had been drawing perfectly, with the
+ * shipped shape then blacklisted so it did not come back the next time either.
+ * Whatever the check was catching, it was not worth that — a map that is
+ * slightly wrong is still a map you can place the field on, and a map that
+ * disappears mid-stint is nothing at all.
+ *
+ * Two checks remain, and both run BEFORE a shape reaches the screen, which is
+ * the difference that matters. {@link TrackMapBuilder.commit} asks whether a
+ * newly learned shape is a circuit at all (see {@link MAX_STEP_FACTOR}) and
+ * refuses to publish a fragment with a chord across it; {@link loadTrackMap}
+ * asks the same of every file it reads, bundled or cached, so a bad shape is
+ * dropped rather than drawn. Nothing revokes a map that has passed them. If a
+ * shipped circuit is ever genuinely wrong, the fix is a corrected file in the
+ * next release, not a driver losing their map mid-race.
  *
  * ## What is learned is the LINE, not the centre line
  * The samples are wherever the car actually was, so the stored path is a driven
@@ -130,8 +134,7 @@ export interface TrackMapPath {
   /**
    * `true` when this shape came out of the bundle rather than off this machine
    * (see {@link builtinTrackMapDir}). Set by the loader, never by the learner,
-   * and the reason {@link TrackMapBuilder.audit} can condemn a shipped map
-   * without leaving it to come back on the next launch.
+   * so a shipped shape can be told from one the driver's own car produced.
    */
   builtin?: boolean;
 }
@@ -269,37 +272,6 @@ const MAX_STEP_FACTOR = 3;
 /** Beyond this share of outliers the lap is not a lap; relearn instead. */
 const MAX_OUTLIER_SHARE = 0.08;
 
-/**
- * How far the driven car may be from the place the published map puts its lap
- * distance, before that stretch of road counts as one the map has wrong.
- *
- * The two disagree a little all the time and none of it is a fault: the stored
- * path is a driven line rather than the centre (see the module note), a bin is
- * {@link TARGET_BIN_M} of road, and a car in the gravel is genuinely off the
- * road it is being compared to. 75 m is well clear of all three together, and
- * far under the hundreds of metres that a map with a section missing is out by.
- */
-const MISMATCH_M = 75;
-/**
- * How much lap distance the disagreement has to cover, continuously, before the
- * map is thrown away and learned again.
- *
- * Measured in road rather than in frames or seconds, because the poll rate is
- * the operator's to choose (1..120 Hz) and a frame count means something
- * different at each end of that. It also disposes of the stationary cases for
- * free: a car parked in a barrier or sat in its garage covers no lap distance,
- * so it can disagree with the map for as long as it likes without condemning it.
- * 200 m is a corner and its exit — long enough that no single incident spans it,
- * short enough to be caught within the sector it happens in.
- */
-const MISMATCH_RUN_M = 200;
-/**
- * A jump in lap distance larger than this breaks the run rather than extending
- * it, so a lap crossing the line (or a teleport) cannot bank a whole lap of
- * disagreement in one step.
- */
-const MISMATCH_MAX_STEP_M = 100;
-
 /** Cap on stored edge readings — a median needs a sample, not a session. */
 const MAX_EDGE_SAMPLES = 4000;
 
@@ -379,17 +351,11 @@ export class TrackMapBuilder {
   /** Filled-bin count at the last commit attempt; see {@link update}. */
   private triedAt = -1;
   /**
-   * How much lap distance the car has covered continuously while disagreeing
-   * with the published map, and where it last did so. See {@link audit}.
+   * Kept only so a map relearned by an older build still reports as rebuilding.
+   * Nothing sets it any more: a published map is never condemned (see the module
+   * header), so `relearning` can only ever be false now.
    */
-  private mismatchM = 0;
-  private mismatchAt: number | null = null;
-  /**
-   * Set when a map for THIS track has been condemned, so the progress read can
-   * say it is rebuilding rather than learning. Cleared by {@link reset}, because
-   * a different circuit's map was never the one in question.
-   */
-  private condemned = false;
+  private readonly condemned = false;
 
   /** Where learned shapes are cached. Injectable so tests never touch `$HOME`. */
   public constructor(private readonly dir: string = trackMapDir()) {}
@@ -411,14 +377,16 @@ export class TrackMapBuilder {
       if (cached && cached.points.length >= MIN_BINS) this.publish(cached);
     }
     if (this.pathState) {
-      // Shape known — stop sampling, but keep MARKING it against the car that is
-      // driving it (see {@link audit}), and make sure it is still the shape being
+      // Shape known — stop sampling, and make sure it is still the shape being
       // SERVED: when the live provider drops to the simulator and back (LMU
       // closed for a moment, a session change), the demo publishes its own
       // circuit over ours, and nothing would ever put the real one back. The
       // frame would then name this track while `/trackmap.json` handed out the
       // demo oval, which reads as a widget drawing the wrong circuit.
-      if (this.audit(s)) return this.status(); // condemned; back to learning
+      //
+      // A published map is NOT marked against the car any more — see the note
+      // on "why a published map is left alone" in the module header. Once a
+      // circuit is on screen it stays on screen.
       if (getPublishedTrackMap() !== this.pathState) setPublishedTrackMap(this.pathState);
       return this.status();
     }
@@ -455,116 +423,6 @@ export class TrackMapBuilder {
     this.lastDist = null;
     this.diskChecked = false;
     this.triedAt = -1;
-    this.mismatchM = 0;
-    this.mismatchAt = null;
-    this.condemned = false;
-  }
-
-  /**
-   * Marks the published map against the car driving the circuit, and throws the
-   * map away when it is provably describing somewhere else. Returns `true` when
-   * it did, meaning the caller is back to learning.
-   *
-   * ## Why a published map is checked at all
-   * The guards in {@link commit} decide whether a shape is a plausible CIRCUIT.
-   * They cannot decide whether it is THIS circuit — a fragment closed by a chord
-   * is a perfectly well-formed loop, so is the shape of a layout the venue no
-   * longer runs, and so is one saved by a build whose bug nobody has found yet.
-   * A map is also written to disk the moment it is published and preferred over
-   * learning a new one ever after, so anything wrong that gets past commit is
-   * wrong at that track forever. That is too long a sentence for a cache.
-   *
-   * The car itself settles it. It is driving the actual road, and it says which
-   * lap distance it is at, so the map's answer for that lap distance can be
-   * compared to where the car really is — an O(1) lookup per frame, no search.
-   * Where the map is right the two agree within a road's width; where a section
-   * is missing they are hundreds of metres apart, for the whole of that section.
-   *
-   * The condemning threshold is deliberately a length of road rather than a
-   * count of frames or seconds ({@link MISMATCH_RUN_M}), so the one thing this
-   * must never do — throw away a good map because a car had an accident on it —
-   * is ruled out by the measure itself rather than by tuning.
-   */
-  private audit(s: TrackMapSample): boolean {
-    const p = this.pathState;
-    const n = p ? p.points.length : 0;
-    if (!p || n < MIN_BINS || !(p.lengthM > 0)) return false;
-    // Nothing to compare: no physics (spectating), or a car in the pit lane,
-    // which is a road the map has never claimed to describe.
-    if (s.inPit || !s.pos || posBad(s.pos)) {
-      this.mismatchAt = null;
-      return false;
-    }
-    if (!finite(s.lapDistM) || s.lapDistM < 0 || s.lapDistM > p.lengthM) {
-      this.mismatchAt = null;
-      return false;
-    }
-
-    // The map's own bin count, not this session's: a re-measured lap length can
-    // put the two a bin apart, and the point being read is the map's.
-    const idx = clampInt(Math.floor((s.lapDistM / p.lengthM) * n), 0, n - 1);
-    const at = p.points[idx] as number[];
-    const off = Math.hypot(s.pos.x - (at[0] as number), s.pos.z - (at[1] as number));
-    if (off <= MISMATCH_M) {
-      this.mismatchM = 0;
-      this.mismatchAt = s.lapDistM;
-      return false;
-    }
-
-    // Disagreeing. Add the road covered since the last disagreeing sample —
-    // forward round the lap, and only when it is a step a car could have taken.
-    if (this.mismatchAt !== null) {
-      const step = (((s.lapDistM - this.mismatchAt) % p.lengthM) + p.lengthM) % p.lengthM;
-      // A step of ZERO adds nothing and breaks nothing, which is the whole point
-      // of measuring in road: the position feed and the lap-distance feed run at
-      // different rates (shared memory every frame, REST about every 150 ms), so
-      // at any decent poll rate most frames repeat the distance the last one
-      // reported. Treating that as a break in the run — it was — means the run
-      // never reaches anything and the check quietly never fires.
-      if (step <= MISMATCH_MAX_STEP_M) this.mismatchM += step;
-      else this.mismatchM = 0;
-    } else {
-      this.mismatchM = 0;
-    }
-    this.mismatchAt = s.lapDistM;
-    if (this.mismatchM < MISMATCH_RUN_M) return false;
-
-    this.discard();
-    return true;
-  }
-
-  /**
-   * Throw away a map that has been shown to be wrong — from memory, from the
-   * served slot, and from disk — and start learning the circuit again.
-   *
-   * The file goes too, and that is the point of the whole exercise: leaving it
-   * there means the next session loads it before a lap has been driven and draws
-   * the same wrong circuit, and the driver is back to being told to delete a
-   * file they have no reason to know exists.
-   *
-   * A BUNDLED shape has no file here to delete — it lives inside the
-   * installation — so the same intent is served by a note beside the cache
-   * ({@link rejectBuiltinTrackMap}) saying that this one has been disproved.
-   * Either way the rule is the same: a map that has been shown to be wrong does
-   * not come back on the next launch.
-   */
-  private discard(): void {
-    const condemnedPath = this.pathState;
-    if (condemnedPath?.builtin) rejectBuiltinTrackMap(this.key, condemnedPath, this.dir);
-    deleteTrackMap(this.key, this.dir);
-    this.condemned = true;
-    this.pathState = null;
-    setPublishedTrackMap(null);
-    this.bins = new Array(this.bins.length).fill(null);
-    this.filled = 0;
-    this.edges = [];
-    this.prev = null;
-    this.lastDist = null;
-    this.triedAt = -1;
-    this.mismatchM = 0;
-    this.mismatchAt = null;
-    // The file is gone; there is nothing on disk left to look for.
-    this.diskChecked = true;
   }
 
   /** Drop one frame's position into its bin, filling the road behind it. */
@@ -988,9 +846,16 @@ export function loadTrackMap(key: string, dir = trackMapDir()): TrackMapPath | n
   if (!bundle) return null;
   const shipped = readTrackMapFile(path.join(bundle, `${safeName(key)}.json`));
   if (!shipped) return null;
-  // A shipped map the car has already disproved on this machine must not be
-  // handed back every launch; {@link rejectBuiltinTrackMap} leaves a note.
-  if (isBuiltinRejected(key, dir, shipped)) return null;
+  // Rejection notes left by earlier builds are deliberately NOT consulted.
+  //
+  // While a published map could be condemned mid-session, a note beside the
+  // cache stopped the shipped shape coming back on the next launch — which was
+  // the right call when the condemning was trusted, and is exactly the wrong
+  // one now that it is gone: anyone whose map was thrown away under the old
+  // rule would otherwise be left with no circuit at that track forever, with
+  // nothing in the app to tell them why or a file they could know to delete.
+  // Ignoring the notes hands those maps straight back on the next launch.
+  // `clearRejectedTrackMaps` sweeps the files themselves.
   return { ...shipped, builtin: true };
 }
 
@@ -1051,62 +916,39 @@ export function deleteTrackMap(key: string, dir = trackMapDir()): void {
   }
 }
 
-/** Marker left beside the cache when a shipped map has been disproved here. */
-function rejectFile(key: string, dir: string): string {
-  return path.join(dir, `${safeName(key)}.rejected`);
-}
+/** Suffix earlier builds used for the note beside a condemned map. */
+const REJECT_SUFFIX = '.rejected';
 
 /**
- * Record that the BUNDLED shape for a track has been shown to be wrong on this
- * machine, so it is never loaded here again.
+ * Delete the rejection notes earlier builds wrote, for every track.
  *
- * Deleting is what {@link TrackMapBuilder.discard} does to a learned map, and it
- * is not available here — the bundled file is inside the installation (and
- * inside `app.asar`, where nothing can be deleted), it is reinstated by every
- * update, and it is shared by every track this build ships. So the note goes in
- * the writable cache instead: one empty-ish file per condemned key, which
- * {@link loadTrackMap} checks before it reaches for the bundle.
+ * Those builds could condemn a published map mid-session and leave a note so
+ * the bundled shape was never handed back. The condemning is gone, so the notes
+ * are now nothing but a record of a rule that no longer exists — and one that
+ * would go on costing a driver the circuit at that track if anything ever read
+ * them again. {@link loadTrackMap} already ignores them; this clears them off
+ * disk so a downgrade cannot resurrect them either.
  *
- * The window this covers is small and real: the car condemns the map, the driver
- * closes the app before finishing the relearning lap, and nothing has yet been
- * written to `~/.apex-overlay/tracks` to take precedence. Without the note the
- * next launch draws the same wrong circuit, and the audit has to spend another
- * 200 m of road proving the same thing — every session, forever.
- *
- * The note names the SHAPE it condemns (`builtAt`, which is stamped when the map
- * is learned and copied into the bundle unchanged), not just the track. A later
- * release that fixes that circuit ships a different shape, the note no longer
- * matches it, and the fix arrives on its own — which is the whole reason a
- * verdict about one build's data is not allowed to be permanent.
+ * Called once at startup. Silent and best-effort by design: a cache that cannot
+ * be tidied is not a reason to fail a launch, and nothing depends on the
+ * outcome — the notes are inert either way.
  */
-export function rejectBuiltinTrackMap(key: string, p: TrackMapPath, dir = trackMapDir()): void {
+export function clearRejectedTrackMaps(dir = trackMapDir()): number {
+  let cleared = 0;
   try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      rejectFile(key, dir),
-      JSON.stringify({ key, builtAt: p.builtAt ?? null, rejectedAt: new Date().toISOString() }),
-      'utf8',
-    );
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith(REJECT_SUFFIX)) continue;
+      try {
+        fs.rmSync(path.join(dir, name), { force: true });
+        cleared++;
+      } catch {
+        /* one stubborn file is not worth abandoning the rest */
+      }
+    }
   } catch {
-    /* worst case the shipped map is condemned again next session */
+    /* no cache directory yet — nothing to clear */
   }
-}
-
-/**
- * Whether THIS bundled shape has been condemned on this machine. A note for a
- * shape the bundle no longer contains does not count — see
- * {@link rejectBuiltinTrackMap}.
- */
-function isBuiltinRejected(key: string, dir: string, shipped: TrackMapPath): boolean {
-  try {
-    const raw = fs.readFileSync(rejectFile(key, dir), 'utf8');
-    const note = JSON.parse(raw) as { builtAt?: string | null };
-    // A note without a stamp came from a build that wrote them that way; it can
-    // only have meant the shape shipping at the time, so honour it.
-    return note.builtAt == null || note.builtAt === shipped.builtAt;
-  } catch {
-    return false; // no note, or an unreadable one — nothing is condemned
-  }
+  return cleared;
 }
 
 /** Keys are already slugs; this is the belt-and-braces against a path escape. */

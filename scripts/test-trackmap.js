@@ -26,6 +26,7 @@ const {
   loadTrackMap,
   saveTrackMap,
   deleteTrackMap,
+  clearRejectedTrackMaps,
   smoothClosed,
   getPublishedTrackMap,
   setPublishedTrackMap,
@@ -290,13 +291,19 @@ function driveLap(b, stepM, over, laps = 1.08) {
   check('a cached map with a chord across it is thrown away', loadTrackMap('fragment-1234', dir) === null);
 }
 
-/* ---------------------- a map that is simply wrong ------------------------ */
+/* ------------------- a map on screen is never taken back ------------------ */
 {
-  // The case neither guard above can see: a well-formed circuit, saved and
-  // loaded, that is not the one being driven. Here it is the same circuit
-  // rotated — every point continuous, every neighbour a bin apart, and 300 m
-  // from where the car actually is. Something has to notice, or it is drawn at
-  // this track for good and every dot sits off the road.
+  // A well-formed circuit, saved and loaded, that is NOT the one being driven:
+  // the same circuit rotated — every point continuous, every neighbour a bin
+  // apart, and 300 m from where the car actually is.
+  //
+  // This used to be condemned on the spot. It is not any more, and that is the
+  // point of the test. The check only ever fired on shipped maps (a map learned
+  // from your own car agrees with your own car by construction), so its whole
+  // cost landed on drivers watching the circuit vanish mid-session at a track
+  // that had been drawing perfectly. A map that is wrong is still a map you can
+  // place the field on; a map that disappears mid-stint is nothing at all. A bad
+  // shipped shape is now fixed by shipping a corrected one.
   const dir = scratch();
   const bins = 500;
   const wrong = [];
@@ -328,10 +335,9 @@ function driveLap(b, stepM, over, laps = 1.08) {
   });
   check('a saved circuit is drawn before a lap is driven', loaded.ready === true);
 
-  // Drive the first corner of it. Nothing has to be reported, nothing has to be
-  // clicked: the map is being marked against the car all the way round.
+  // Drive a whole lap of disagreement — far more than the old check needed.
   let last = loaded;
-  for (let d = 0; d < 400 && last.ready; d += 8) {
+  for (let d = 0; d < LENGTH; d += 8) {
     last = b.update({
       trackName: 'Test Circuit',
       lengthM: LENGTH,
@@ -341,22 +347,25 @@ function driveLap(b, stepM, over, laps = 1.08) {
       edgeM: 7,
     });
   }
-  check('driving it throws it away without being asked', last.ready === false, `progress ${last.progress}`);
+  check('driving a whole lap against it does not take it away', last.ready === true, `progress ${last.progress}`);
+  check('and it is still the shape being served', getPublishedTrackMap() !== null);
   check(
-    'and the file goes with it, so the next session does not load it back',
-    loadTrackMap(trackKey('Test Circuit', undefined, LENGTH), dir) === null,
-  );
-
-  // …and the lap that condemned it is the lap that replaces it.
-  const rebuilt = driveLap(b, 4);
-  check('the circuit is relearned on the spot', rebuilt.ready === true, `progress ${rebuilt.progress}`);
-  let worst = 0;
-  for (const [x, z] of rebuilt.path.points) worst = Math.max(worst, Math.abs(Math.hypot(x, z) - R));
-  check('as the one that was actually driven', worst < 5, `worst ${worst.toFixed(2)} m`);
-  check(
-    'and it is saved again, so this costs one lap and not every lap',
+    'and the file is still on disk for the next session',
     loadTrackMap(trackKey('Test Circuit', undefined, LENGTH), dir) !== null,
   );
+}
+{
+  // The repair path for a shipped shape that really is wrong: a corrected file
+  // in the next release. Rejection notes from the builds that could condemn a
+  // map are ignored on load and swept off disk, so a driver who lost a circuit
+  // under the old rule gets it back by updating and nothing else.
+  const dir = scratch();
+  fs.mkdirSync(dir, { recursive: true });
+  const key = trackKey('Test Circuit', undefined, LENGTH);
+  fs.writeFileSync(path.join(dir, `${key}.rejected`), JSON.stringify({ key, builtAt: null }), 'utf8');
+  const cleared = clearRejectedTrackMaps(dir);
+  check('a stale rejection note is cleared', cleared === 1, `cleared ${cleared}`);
+  check('and clearing again is not an error', clearRejectedTrackMaps(dir) === 0);
 }
 {
   // The other half of that: an accident must NOT cost a driver their map. A car
@@ -388,41 +397,6 @@ function driveLap(b, stepM, over, laps = 1.08) {
   driveLap(b, 4);
   const done = driveLap(b, 4, (d) => ({ inPit: true, pos: { x: onCircle(d).x + 300, y: 0, z: onCircle(d).z + 300 } }));
   check('a lap down the pit lane does not condemn the map', done.ready === true);
-}
-{
-  // The same condemnation, polled the way the live provider actually polls it:
-  // world position comes from shared memory every frame and lap distance from a
-  // REST feed about every 150 ms, so most frames repeat the distance the last
-  // one gave. The evidence is a length of ROAD, so five frames reporting the
-  // same metre have to count as that one metre — not as five breaks in the run.
-  const dir = scratch();
-  const bins = 500;
-  const wrong = [];
-  for (let i = 0; i < bins; i++) {
-    const a = (i / bins) * Math.PI * 2 + 0.9;
-    wrong.push([R * Math.cos(a), R * Math.sin(a), 0]);
-  }
-  const key = trackKey('Test Circuit', undefined, LENGTH);
-  saveTrackMap(
-    { key, name: 'Test Circuit', lengthM: LENGTH, halfWidthM: 6, binM: LENGTH / bins, points: wrong, builtAt: new Date().toISOString(), revision: 1 },
-    dir,
-  );
-  const b = new TrackMapBuilder(dir);
-  let last = null;
-  for (let d = 0; d < 400; d += 8) {
-    for (let repeat = 0; repeat < 5; repeat++) {
-      last = b.update({
-        trackName: 'Test Circuit',
-        lengthM: LENGTH,
-        lapDistM: d, // held for five frames, as a 150 ms feed read at 30 Hz is
-        pos: onCircle(d + repeat * 1.6), // …while the car keeps moving
-        inPit: false,
-      });
-    }
-    if (!last.ready) break;
-  }
-  check('a repeated lap distance does not stall the check', last.ready === false);
-  check('the rebuild is reported as a rebuild, not a first learn', last.relearning === true);
 }
 {
   // And the deletion itself: asked to make sure there is no cached circuit,

@@ -28,7 +28,7 @@ import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
-import { getPublishedTrackMap } from '../telemetry/trackMap';
+import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
 import { handleMfdCommand } from './mfdRoutes';
 import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows } from './aidRows';
@@ -148,6 +148,10 @@ export interface Appearance {
    * "three in front, three behind" and "top ten of each class", so there is no
    * list of layout modes to invent and keep in step with a UI.
    *
+   * `gap` is a separate axis: what the GAP column counts, cumulative to the
+   * leader or the interval to the car in front. Any composition works with
+   * either, so it is a field here rather than a mode multiplied into the rest.
+   *
    * Rides the appearance channel with everything else here: it is operator
    * look-and-feel, changed a handful of times a session, and the delivery
    * (URL override -> in-game push -> 1 s poll for OBS) is already solved.
@@ -170,6 +174,8 @@ export interface StandingsView {
   top: number;
   ahead: number;
   behind: number;
+  /** What the GAP column counts: the class leader, or the car directly ahead. */
+  gap: 'leader' | 'ahead';
 }
 
 /** URL the overlays read their appearance from. */
@@ -191,7 +197,7 @@ const appearance: Appearance = {
   audioVolume: 60,
   widgetModes: {},
   widgetOpacity: {},
-  standings: { limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3 },
+  standings: { limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader' },
   speedUnit: 'kph',
 };
 
@@ -267,6 +273,7 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
       top: count(v.top, appearance.standings.top),
       ahead: count(v.ahead, appearance.standings.ahead),
       behind: count(v.behind, appearance.standings.behind),
+      gap: v.gap === 'ahead' || v.gap === 'leader' ? v.gap : appearance.standings.gap,
     };
   }
   return getAppearance();
@@ -562,6 +569,13 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     else if (pathname === chatPath) chatWsServer.handleUpgrade(req, socket, head);
     else socket.destroy();
   });
+
+  // Hand back any circuit an earlier build condemned. Those builds could throw
+  // a published map away mid-session and leave a note so the shipped shape was
+  // never loaded again; the note outlives the rule that wrote it, so it is
+  // cleared here rather than left to cost someone their map forever.
+  const revived = clearRejectedTrackMaps();
+  if (revived > 0) console.log(`[server] restored ${revived} track map(s) condemned by an earlier build`);
 
   const provider = selectProvider(config);
   await provider.start();

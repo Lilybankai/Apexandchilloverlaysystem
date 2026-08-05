@@ -33,6 +33,7 @@ const {
   saveTrackMap,
   builtinTrackMapDir,
   resetBuiltinTrackMapDir,
+  clearRejectedTrackMaps,
 } = require('../dist/telemetry/trackMap');
 
 let passed = 0;
@@ -131,12 +132,14 @@ check('it holds circuits', files.length > 0, `${files.length} maps`);
   );
 }
 
-/* --------------- a shipped map the car disproves stays gone --------------- */
+/* ------------- a shipped map stays on screen, right or wrong -------------- */
 {
-  // The audit can condemn a bundled shape exactly as it condemns a learned one,
-  // and there is no file here to delete — the bundle is inside the installation.
-  // Without a note beside the cache the next launch loads the same wrong circuit
-  // and the driver re-proves it, 200 m at a time, every session forever.
+  // A bundled shape used to be condemned the moment the car disagreed with it
+  // for 200 m of road, with a note beside the cache so it did not come back.
+  // Both are gone. The check could only ever fire on shipped maps — a map learned
+  // from your own car agrees with your own car — so every cost of it landed on
+  // the drivers the bundle was meant to help, who watched the circuit disappear
+  // part-way through a session and not return the next time either.
   const cache = scratch();
   const key = files.find((f) => !/sarthe/.test(f)).replace(/\.json$/i, '');
   const shipped = loadTrackMap(key, cache);
@@ -152,11 +155,10 @@ check('it holds circuits', files.length > 0, `${files.length} maps`);
   });
   check('a shipped circuit is drawn on the very first frame', first.ready === true, key);
 
-  // Drive somewhere else entirely, and keep covering ground: nothing about a car
-  // parked in a barrier should condemn a map, so the threshold is metres of road.
-  let condemned = null;
+  // Drive nowhere near it, for a long way — the strongest possible disagreement.
+  let after = null;
   for (let d = 0; d < 400; d += 5) {
-    condemned = builder.update({
+    after = builder.update({
       trackName: shipped.name,
       trackConfig: shipped.config,
       lengthM: shipped.lengthM,
@@ -165,24 +167,18 @@ check('it holds circuits', files.length > 0, `${files.length} maps`);
       inPit: false,
     });
   }
-  check('a shipped circuit the car disproves is thrown away', condemned.ready === false);
-  check('and the widget says it is rebuilding, not learning', condemned.relearning === true);
+  check('a shipped circuit is not taken away by the car disagreeing', after.ready === true);
+  check('and it is never reported as rebuilding', after.relearning !== true);
 
   resetBuiltinTrackMapDir();
-  check('and the next launch does not load it again', loadTrackMap(key, cache) === null);
+  check('and the next launch loads it again', loadTrackMap(key, cache) !== null);
 
-  // The verdict is about one SHAPE, not the track: a later release that fixes
-  // that circuit ships a different one, and the fix has to be able to arrive.
-  const fixed = path.join(scratch(), 'trackmaps');
-  fs.mkdirSync(fixed, { recursive: true });
-  const reshaped = { ...shipped, builtAt: '2099-01-01T00:00:00.000Z' };
-  delete reshaped.builtin;
-  fs.writeFileSync(path.join(fixed, `${key}.json`), JSON.stringify(reshaped), 'utf8');
-  process.env.APEX_BUILTIN_TRACKMAP_DIR = fixed;
+  // A note left by one of those older builds must not go on costing the driver
+  // their circuit: it is ignored on load, and swept off disk at startup.
+  fs.writeFileSync(path.join(cache, `${key}.rejected`), JSON.stringify({ key, builtAt: null }), 'utf8');
   resetBuiltinTrackMapDir();
-  check('but a later release shipping a new shape for it is not blocked', loadTrackMap(key, cache) !== null);
-  delete process.env.APEX_BUILTIN_TRACKMAP_DIR;
-  resetBuiltinTrackMapDir();
+  check('a rejection note from an older build is ignored', loadTrackMap(key, cache) !== null);
+  check('and swept off disk', clearRejectedTrackMaps(cache) === 1);
 }
 
 /* ------------------------ the bundle can be opted out --------------------- */
