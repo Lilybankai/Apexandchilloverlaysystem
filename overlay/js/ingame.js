@@ -6,13 +6,16 @@
  *     defaults mirroring the OBS combined page;
  *   - in edit mode (toggled by the app through window.apexIngame) lets the
  *     operator drag widgets to move them and resize them three ways:
- *       · the RIGHT edge sets the widget's width — the widget reflows into it,
+ *       · a SIDE edge sets the widget's width — the widget reflows into it,
  *         so a wider standings tower gives its driver names more room rather
  *         than magnifying the whole thing;
- *       · the BOTTOM edge sets its height — the body is boxed and clipped to
+ *       · a TOP/BOTTOM edge sets its height — the body is boxed and clipped to
  *         that height, which is how a 20-car field is cropped to the top few;
- *       · the CORNER scales the whole widget uniformly (transform: scale), the
+ *       · a CORNER scales the whole widget uniformly (transform: scale), the
  *         original behaviour — nothing inside reflows.
+ *     Each gesture has a handle on both sides (left/right, top/bottom,
+ *     top-left/bottom-right): a widget whose bottom edge has ended up below the
+ *     screen would otherwise have no reachable way to be made smaller.
  *     Double-clicking a handle clears that dimension back to automatic.
  *   - persists placement through the preload bridge, falling back to
  *     localStorage when the page is opened in a plain browser.
@@ -170,6 +173,37 @@
 
   var toolbar = document.getElementById("ig-toolbar");
 
+  /**
+   * Pull anything hanging off the screen back onto it. Resize handles ride on
+   * the widget's own edges, so a panel taller than the room below it — a fully
+   * populated MFD, say — leaves its bottom handle somewhere no pointer can go,
+   * and the widget can then only be shrunk by resetting the whole layout. The
+   * top/left handles cover most of that, but a widget nudged off the bottom
+   * still wants bringing back. Runs on the way INTO edit mode, and again after
+   * each resize, so the operator watches it happen and can drag it wherever
+   * they actually wanted it — never while merely moving one (see onPointerUp).
+   */
+  function ensureOnScreen() {
+    var moved = false;
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      var l = layout[el.getAttribute("data-id")];
+      if (!l || !el.offsetHeight) continue;
+      var s = l.scale || 1;
+      // Widgets bigger than the window pin to the top-left corner: that is the
+      // corner whose handles can then reach them.
+      var x = Math.max(0, Math.min(l.x, window.innerWidth - el.offsetWidth * s));
+      var y = Math.max(0, Math.min(l.y, window.innerHeight - el.offsetHeight * s));
+      if (x !== l.x || y !== l.y) {
+        l.x = Math.round(x);
+        l.y = Math.round(y);
+        applyItem(el);
+        moved = true;
+      }
+    }
+    if (moved) saveLayout();
+  }
+
   function setEditing(on) {
     editing = !!on;
     document.body.classList.toggle("ig-editing", editing);
@@ -182,6 +216,7 @@
       if (editing) window.ApexAppearance.suspend();
       else window.ApexAppearance.resume();
     }
+    if (editing) ensureOnScreen();
   }
 
   document.getElementById("ig-done").addEventListener("click", function () {
@@ -219,9 +254,15 @@
 
   /**
    * One drag session. `mode` is "move" (anywhere on the widget) or the handle's
-   * own data-resize: "width" (right edge), "height" (bottom edge) or "scale"
-   * (corner). offsetWidth/offsetHeight are the UNSCALED box, which is what the
-   * width/height we store describe.
+   * own data-resize: "width"/"width-w" (right/left edge), "height"/"height-n"
+   * (bottom/top edge) or "scale"/"scale-nw" (bottom-right/top-left corner).
+   * offsetWidth/offsetHeight are the UNSCALED box, which is what the width and
+   * height we store describe.
+   *
+   * The "-n"/"-w"/"-nw" variants are the same three gestures driven from the
+   * other side, so they pin the opposite edge instead of the left/top one:
+   * `right` and `bottom` below are that anchor, in screen pixels, frozen for
+   * the session.
    */
   var drag = null;
 
@@ -244,6 +285,8 @@
       baseW: item.offsetWidth,
       baseH: item.offsetHeight,
     };
+    drag.right = drag.origX + drag.baseW * drag.origScale;
+    drag.bottom = drag.origY + drag.baseH * drag.origScale;
     ev.preventDefault();
   }
 
@@ -257,6 +300,13 @@
       // Dragging the corner: new scale = scaled width / natural width.
       var s = (drag.baseW * drag.origScale + dxScreen) / drag.baseW;
       l.scale = Math.round(clampNum(s, MIN_SCALE, MAX_SCALE) * 100) / 100;
+    } else if (drag.mode === "scale-nw") {
+      // Same, from the top-left: the bottom-right corner is what stays put, so
+      // dragging away from the widget grows it and x/y follow the pointer.
+      var sn = (drag.baseW * drag.origScale - dxScreen) / drag.baseW;
+      l.scale = Math.round(clampNum(sn, MIN_SCALE, MAX_SCALE) * 100) / 100;
+      l.x = Math.round(Math.max(0, drag.right - drag.baseW * l.scale));
+      l.y = Math.round(Math.max(0, drag.bottom - drag.baseH * l.scale));
     } else if (drag.mode === "width" || drag.mode === "height") {
       // The box is drawn scaled, so the cursor travels `scale` screen pixels for
       // every pixel of box: divide, or the edge runs away from the pointer on a
@@ -267,6 +317,22 @@
       } else {
         var h = drag.baseH + dyScreen / drag.origScale;
         l.h = Math.round(clampNum(h, MIN_H, window.innerHeight));
+      }
+    } else if (drag.mode === "width-w" || drag.mode === "height-n") {
+      // The mirror of the above: the box grows as the pointer moves away from
+      // the widget, and the anchored edge holds while x/y absorb the change.
+      // Capped so the anchor cannot drag the moving edge off the top or left —
+      // that is how a widget becomes unreachable in the first place.
+      if (drag.mode === "width-w") {
+        var wn = drag.baseW - dxScreen / drag.origScale;
+        var capW = Math.max(MIN_W, Math.min(window.innerWidth, drag.right / drag.origScale));
+        l.w = Math.round(clampNum(wn, MIN_W, capW));
+        l.x = Math.round(Math.max(0, drag.right - l.w * drag.origScale));
+      } else {
+        var hn = drag.baseH - dyScreen / drag.origScale;
+        var capH = Math.max(MIN_H, Math.min(window.innerHeight, drag.bottom / drag.origScale));
+        l.h = Math.round(clampNum(hn, MIN_H, capH));
+        l.y = Math.round(Math.max(0, drag.bottom - l.h * drag.origScale));
       }
     } else {
       var x = drag.origX + dxScreen;
@@ -282,7 +348,16 @@
 
   function onPointerUp() {
     if (!drag) return;
+    var wasResize = drag.mode !== "move";
     drag = null;
+    // Settle a resize back into the window. Moving is left alone — the drag
+    // clamp above deliberately lets a widget hang off the left edge, and
+    // undoing that on every release would fight the operator. Resizing has no
+    // such intent behind it, and a widget grown past the bottom is exactly the
+    // state whose handles cannot be reached again. Doing it here also lets a
+    // widget taller than the screen converge: each pull of the top edge
+    // shortens it, and the release brings the new bottom back into view.
+    if (wasResize) ensureOnScreen();
     saveLayout();
   }
 
@@ -298,7 +373,8 @@
     var item = ev.target.closest(".ig-item");
     if (!handle || !item) return;
     var l = layout[item.getAttribute("data-id")];
-    var mode = handle.getAttribute("data-resize") || "scale";
+    // Either side of a pair resets the same dimension: "height-n" → "height".
+    var mode = (handle.getAttribute("data-resize") || "scale").split("-")[0];
     if (mode === "width") delete l.w;
     else if (mode === "height") delete l.h;
     else l.scale = 1;

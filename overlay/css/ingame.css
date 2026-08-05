@@ -74,7 +74,10 @@ body.ig-editing .ig-item:hover {
   outline-style: solid;
 }
 
-/* --- resize handles: right edge (width), bottom edge (height), corner (scale) */
+/* --- resize handles: width (left/right edges), height (top/bottom edges),
+       scale (top-left/bottom-right corners). Each side is doubled so a widget
+       whose bottom or right has ended up past the edge of the screen can still
+       be resized from the side that is on it. */
 
 .ig-item__handle {
   display: none;
@@ -90,34 +93,59 @@ body.ig-editing .ig-item__handle {
 }
 
 /* Edge handles are bars centred on their edge, so they read as "stretch this
-   side" rather than as three identical corner dots. */
-.ig-item__handle--e {
+   side" rather than as identical corner dots. */
+.ig-item__handle--e,
+.ig-item__handle--w {
   top: 50%;
-  right: -5px;
   width: 10px;
   height: 34px;
   margin-top: -17px;
   cursor: ew-resize;
 }
 
+.ig-item__handle--e {
+  right: -5px;
+}
+
+.ig-item__handle--w {
+  left: -5px;
+}
+
+.ig-item__handle--n,
 .ig-item__handle--s {
   left: 50%;
-  bottom: -5px;
   width: 34px;
   height: 10px;
   margin-left: -17px;
   cursor: ns-resize;
 }
 
-/* The corner keeps the original uniform-scale behaviour, and sits above the two
-   edge bars where they meet it. */
-.ig-item__handle--se {
-  right: -7px;
-  bottom: -7px;
+.ig-item__handle--s {
+  bottom: -5px;
+}
+
+.ig-item__handle--n {
+  top: -5px;
+}
+
+/* The corners keep the original uniform-scale behaviour, and sit above the
+   edge bars where they meet them. */
+.ig-item__handle--se,
+.ig-item__handle--nw {
   width: 14px;
   height: 14px;
   cursor: nwse-resize;
   z-index: 3;
+}
+
+.ig-item__handle--se {
+  right: -7px;
+  bottom: -7px;
+}
+
+.ig-item__handle--nw {
+  left: -7px;
+  top: -7px;
 }
 
 /* ------------------------------- toolbar -------------------------------- */
