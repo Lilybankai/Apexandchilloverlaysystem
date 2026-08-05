@@ -1,0 +1,323 @@
+{
+  "maps": [
+    {
+      "key": "algarve-international-circuit-4640",
+      "name": "Algarve International Circuit",
+      "config": "Algarve International Circuit",
+      "lengthM": 4635.3,
+      "halfWidthM": 6.7,
+      "binM": 6,
+      "points": 773,
+      "builtAt": "2026-08-05T16:00:26.073Z"
+    },
+    {
+      "key": "aut-dromo-jos-carlos-pace-aut-4270",
+      "name": "Autódromo José Carlos Pace",
+      "config": "Aut",
+      "lengthM": 4273.2,
+      "halfWidthM": 5.3,
+      "binM": 6,
+      "points": 712,
+      "builtAt": "2026-08-05T16:10:15.436Z"
+    },
+    {
+      "key": "autodromo-enzo-e-dino-ferrari-4900",
+      "name": "Autodromo Enzo e Dino Ferrari",
+      "config": "Autodromo Enzo e Dino Ferrari",
+      "lengthM": 4900.7,
+      "halfWidthM": 5.1,
+      "binM": 6,
+      "points": 817,
+      "builtAt": "2026-08-05T16:03:41.710Z"
+    },
+    {
+      "key": "autodromo-nazionale-monza-5780",
+      "name": "Autodromo Nazionale Monza",
+      "lengthM": 5780.6,
+      "halfWidthM": 5.7,
+      "binM": 6,
+      "points": 963,
+      "builtAt": "2026-08-05T15:56:30.822Z"
+    },
+    {
+      "key": "bahrain-endurance-circuit-6260",
+      "name": "Bahrain Endurance Circuit",
+      "config": "Bahrain Endurance Circuit",
+      "lengthM": 6256.9,
+      "halfWidthM": 6.7,
+      "binM": 6,
+      "points": 1043,
+      "builtAt": "2026-08-05T16:19:14.460Z"
+    },
+    {
+      "key": "bahrain-international-circuit-5390",
+      "name": "Bahrain International Circuit",
+      "config": "Bahrain International Circuit",
+      "lengthM": 5386.8,
+      "halfWidthM": 7.1,
+      "binM": 6,
+      "points": 898,
+      "builtAt": "2026-08-05T16:14:59.705Z"
+    },
+    {
+      "key": "bahrain-outer-circuit-3510",
+      "name": "Bahrain Outer Circuit",
+      "config": "Bahrain Outer Circuit",
+      "lengthM": 3511.1,
+      "halfWidthM": 7.2,
+      "binM": 6,
+      "points": 585,
+      "builtAt": "2026-08-05T16:22:56.804Z"
+    },
+    {
+      "key": "bahrain-paddock-circuit-3810",
+      "name": "Bahrain Paddock Circuit",
+      "config": "Bahrain Paddock Circuit",
+      "lengthM": 3810.8,
+      "halfWidthM": 7.1,
+      "binM": 6,
+      "points": 635,
+      "builtAt": "2026-08-05T16:25:41.653Z"
+    },
+    {
+      "key": "circuit-de-barcelona-4660",
+      "name": "Circuit de Barcelona",
+      "config": "Circuit de Barcelona",
+      "lengthM": 4655.1,
+      "halfWidthM": 6.1,
+      "binM": 6,
+      "points": 776,
+      "builtAt": "2026-08-05T16:28:49.346Z"
+    },
+    {
+      "key": "circuit-de-la-sarthe-13620",
+      "name": "Circuit de la Sarthe",
+      "config": "Circuit de la Sarthe",
+      "lengthM": 13624,
+      "halfWidthM": 6.4,
+      "binM": 6.81,
+      "points": 2000,
+      "builtAt": "2026-08-05T17:14:37.657Z"
+    },
+    {
+      "key": "circuit-de-la-sarthe-mulsanne-13560",
+      "name": "Circuit de la Sarthe Mulsanne",
+      "config": "Circuit de la Sarthe Mulsanne",
+      "lengthM": 13560.9,
+      "halfWidthM": 6.4,
+      "binM": 6.78,
+      "points": 2000,
+      "builtAt": "2026-08-05T17:20:50.359Z"
+    },
+    {
+      "key": "circuit-de-spa-francorchamps-6980",
+      "name": "Circuit de Spa-Francorchamps",
+      "config": "Circuit de Spa-Francorchamps",
+      "lengthM": 6981.6,
+      "halfWidthM": 10.1,
+      "binM": 6,
+      "points": 1164,
+      "builtAt": "2026-08-05T17:03:25.432Z"
+    },
+    {
+      "key": "circuit-de-spa-francorchamps-endurance-6980",
+      "name": "Circuit de Spa-Francorchamps Endurance",
+      "config": "Circuit de Spa-Francorchamps Endurance",
+      "lengthM": 6981.6,
+      "halfWidthM": 5,
+      "binM": 6,
+      "points": 1164,
+      "builtAt": "2026-08-05T17:07:54.656Z"
+    },
+    {
+      "key": "circuit-of-the-americas-5500",
+      "name": "Circuit of the Americas",
+      "config": "Circuit of the Americas",
+      "lengthM": 5497.4,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 916,
+      "builtAt": "2026-08-05T17:13:43.779Z"
+    },
+    {
+      "key": "cota-national-circuit-3710",
+      "name": "COTA National Circuit",
+      "config": "COTA National Circuit",
+      "lengthM": 3707,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 618,
+      "builtAt": "2026-08-05T17:19:04.357Z"
+    },
+    {
+      "key": "daytona-international-speedway-road-course-5730",
+      "name": "Daytona International Speedway Road Course",
+      "config": "Daytona International Speedway Road Course",
+      "lengthM": 5733.8,
+      "halfWidthM": 10.9,
+      "binM": 6,
+      "points": 956,
+      "builtAt": "2026-08-05T09:25:37.221Z"
+    },
+    {
+      "key": "fuji-speedway-4540",
+      "name": "Fuji Speedway",
+      "config": "Fuji Speedway",
+      "lengthM": 4535.8,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 756,
+      "builtAt": "2026-08-05T17:04:52.416Z"
+    },
+    {
+      "key": "fuji-speedway-classic-4500",
+      "name": "Fuji Speedway Classic",
+      "config": "Fuji Speedway Classic",
+      "lengthM": 4502,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 750,
+      "builtAt": "2026-08-05T17:07:54.222Z"
+    },
+    {
+      "key": "lusail-international-circuit-5410",
+      "name": "Lusail International Circuit",
+      "config": "Lusail International Circuit",
+      "lengthM": 5405.4,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 901,
+      "builtAt": "2026-08-05T16:58:02.021Z"
+    },
+    {
+      "key": "lusail-short-circuit-3680",
+      "name": "Lusail Short Circuit",
+      "config": "Lusail Short Circuit",
+      "lengthM": 3676.3,
+      "halfWidthM": 6.8,
+      "binM": 6,
+      "points": 613,
+      "builtAt": "2026-08-04T22:44:20.055Z"
+    },
+    {
+      "key": "monza-curva-grande-circuit-5750",
+      "name": "Monza Curva Grande Circuit",
+      "config": "Monza Curva Grande Circuit",
+      "lengthM": 5745.1,
+      "halfWidthM": 5.1,
+      "binM": 6,
+      "points": 958,
+      "builtAt": "2026-08-05T16:07:06.705Z"
+    },
+    {
+      "key": "paul-ricard-1a-5700",
+      "name": "Paul Ricard - 1A",
+      "config": "Paul Ricard - 1A",
+      "lengthM": 5698.6,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 950,
+      "builtAt": "2026-08-05T16:34:18.896Z"
+    },
+    {
+      "key": "paul-ricard-1a-v2-5760",
+      "name": "Paul Ricard - 1A-V2",
+      "config": "Paul Ricard - 1A-V2",
+      "lengthM": 5758.3,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 960,
+      "builtAt": "2026-08-05T16:43:26.410Z"
+    },
+    {
+      "key": "paul-ricard-1a-v2-short-5160",
+      "name": "Paul Ricard - 1A-V2-Short",
+      "config": "Paul Ricard - 1A-V2-Short",
+      "lengthM": 5161.9,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 860,
+      "builtAt": "2026-08-05T16:47:35.252Z"
+    },
+    {
+      "key": "paul-ricard-3a-3750",
+      "name": "Paul Ricard - 3A",
+      "config": "Paul Ricard - 3A",
+      "lengthM": 3752.4,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 625,
+      "builtAt": "2026-08-05T16:53:27.446Z"
+    },
+    {
+      "key": "paul-ricard-elms-5810",
+      "name": "Paul Ricard - ELMS",
+      "config": "Paul Ricard - ELMS",
+      "lengthM": 5807.3,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 968,
+      "builtAt": "2026-08-05T16:30:29.128Z"
+    },
+    {
+      "key": "sebring-international-raceway-5820",
+      "name": "Sebring International Raceway",
+      "config": "Sebring International Raceway",
+      "lengthM": 5820.3,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 970,
+      "builtAt": "2026-08-05T16:18:55.844Z"
+    },
+    {
+      "key": "sebring-school-circuit-3080",
+      "name": "Sebring School Circuit",
+      "config": "Sebring School Circuit",
+      "lengthM": 3083.3,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 514,
+      "builtAt": "2026-08-05T16:23:47.303Z"
+    },
+    {
+      "key": "silverstone-grand-prix-circuit-wec-5870",
+      "name": "Silverstone Grand Prix Circuit - WEC",
+      "config": "Silverstone Grand Prix Circuit - WEC",
+      "lengthM": 5869.2,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 978,
+      "builtAt": "2026-08-05T16:06:49.567Z"
+    },
+    {
+      "key": "silverstone-international-circuit-2960",
+      "name": "Silverstone International Circuit",
+      "config": "Silverstone International Circuit",
+      "lengthM": 2962.1,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 494,
+      "builtAt": "2026-08-05T16:10:31.623Z"
+    },
+    {
+      "key": "silverstone-national-circuit-2630",
+      "name": "Silverstone National Circuit",
+      "config": "Silverstone National Circuit",
+      "lengthM": 2633.5,
+      "halfWidthM": 6,
+      "binM": 6,
+      "points": 439,
+      "builtAt": "2026-08-05T16:14:19.838Z"
+    },
+    {
+      "key": "weathertech-raceway-laguna-seca-3590",
+      "name": "WeatherTech Raceway Laguna Seca",
+      "config": "WeatherTech Raceway Laguna Seca",
+      "lengthM": 3590.4,
+      "halfWidthM": 6.2,
+      "binM": 6,
+      "points": 598,
+      "builtAt": "2026-08-05T16:02:29.292Z"
+    }
+  ]
+}

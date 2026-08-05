@@ -494,14 +494,26 @@ corner it feeds are visibly two faces of one solid; the road's two edges are
 chamfered so they catch the light along the outside of the ribbon. The palette
 only sets the base hue, and the lighting makes every other shade from it.
 
-**The circuit is learned, not shipped.** LMU packs its tracks into encrypted
-archives, and no API publishes the shape of the road — but the sim does publish
-where your car is, thirty times a second, with a lap distance beside it. So the
-first time you drive a track the widget shows a progress read (`LEARNING THE
-CIRCUIT — 62%`) and builds the map as you go; from then on it is cached in
-`~/.apex-overlay/tracks/` and draws instantly, every session, forever. It works
-at every LMU and rF2 circuit, including ones that do not exist yet, and needs no
-per-track setup.
+**The circuits come with the app — and any that don't, it learns.** LMU packs
+its tracks into encrypted archives and no API publishes the shape of the road,
+but the sim does publish where your car is, thirty times a second, with a lap
+distance beside it, which is enough to build the map by driving it. Because those
+positions are in the *sim's* world axes, a circuit learned on one machine is
+correct on every other one — so the laps have been driven here and the results
+ship with the installer. **32 circuits and layouts draw on your first lap of
+your first session, with nothing to set up and nothing to register** — the full
+list is `data/trackmaps/index.json`.
+
+Anywhere else, the learner takes over exactly as before: a new season's track, a
+layout nobody has driven yet, a mod, rF2. The widget shows a progress read
+(`LEARNING THE CIRCUIT — 62%`) and builds the map as you go, then caches it in
+`~/.apex-overlay/tracks/` so it draws instantly ever after.
+
+Your own map always wins over the bundled one, and a bundled map that turns out
+to be wrong repairs itself: if the car disagrees with it for 200 m of road, it is
+thrown out, relearned from your lap, and not loaded again on that machine.
+Set `APEX_BUILTIN_TRACKMAPS=0` to ignore the bundle entirely and learn everything
+from the car.
 
 Because the shape is measured in the sim's own world coordinates, the car dots
 need no fitting to sit on it — they are the same numbers. A car running wide is

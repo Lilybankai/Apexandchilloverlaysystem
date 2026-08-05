@@ -138,6 +138,18 @@ browser. There is no database, no message broker, no cloud round-trip.
   world axes as the live car positions, which is why the map needs no registration
   and the dots need no fitting.
 
+  Those axes are the SIM's, not the machine's, which is what makes a learned map
+  portable — so the laps are driven once, here, and 32 circuits ship in
+  `data/trackmaps/` (inside `app.asar`; `builtinTrackMapDir()` finds it from
+  `dist/telemetry` in a clone and in the installed app alike). Precedence is
+  own cache → bundle → learn, and it is one-directional: a bundled shape the
+  audit condemns leaves a `<key>.rejected` note beside the cache so it cannot
+  return on the next launch, stamped with the shape's `builtAt` so a later
+  release that fixes that circuit is not blocked by an old verdict.
+  `scripts/import-trackmaps.js` builds the bundle and validates every candidate
+  by calling the app's own `loadTrackMap()` rather than reimplementing its rules;
+  `scripts/test-bundled-trackmaps.js` then holds the bundle to them.
+
   Same split as `lapLog.ts`: the learning is a pure fold with no IO
   (`scripts/test-trackmap.js` drives a synthetic lap through it, including the
   ways a lap lies — a mid-lap teleport, a lap down the pit lane, a poll rate so

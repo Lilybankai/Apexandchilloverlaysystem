@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.59.0 — 2026-08-05
+
+### Added
+
+- **Every circuit now draws on your first lap — the track maps ship with the
+  app.** The map has always been learned from your own car, because nothing in
+  LMU will tell us the shape of the road, and that meant a lap of `LEARNING THE
+  CIRCUIT — 62%` the first time you visited anywhere. But the positions the map
+  is built from are the *sim's* coordinates, not your PC's, so a circuit learned
+  on one machine is exactly right on every other one — the lap only ever had to
+  be driven once, by anybody. So we drove them, and **32 circuits and layouts
+  now ship inside the installer**: both Sarthe configurations, five Paul Ricard
+  layouts, four Bahrains, three Silverstones, Spa and Spa Endurance, Monza and
+  Curva Grande, COTA and COTA National, Fuji and Fuji Classic, Sebring and the
+  School circuit, Lusail long and short, plus Daytona, Imola, Interlagos,
+  Barcelona, Algarve and Laguna Seca. Fresh install, first session, no laps:
+  the circuit is there.
+
+  Nothing about learning has gone away — it is what covers a track that isn't in
+  the box, and it always will be: a new season's circuit, a layout nobody has
+  driven yet, a mod, rF2. Your own maps still win over the shipped ones, so a
+  circuit you have already learned is still drawn from your lap. And a shipped
+  map is not privileged: if your car disagrees with it for 200 m of road it is
+  thrown out and relearned from you, exactly as a bad cached map always was, and
+  it will not come back on the next launch.
+
 ## 0.58.0 — 2026-08-05
 
 Everything below shipped to the beta channel as 0.58.0-beta.1 and beta.2 and

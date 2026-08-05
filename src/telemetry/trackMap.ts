@@ -2,10 +2,11 @@
  * @file src/telemetry/trackMap.ts
  * @module telemetry/trackMap
  *
- * Learns the **shape of the circuit** from the car that is driving it, and keeps
- * it on disk so every later session at that track draws instantly.
+ * Learns the **shape of the circuit** from the car that is driving it, keeps it
+ * on disk so every later session at that track draws instantly — and ships with
+ * the circuits already learned, so for most drivers there is no first lap at all.
  *
- * ## Why the shape is learned rather than shipped
+ * ## Why the shape is learned rather than read out of the game
  * The obvious source is the game's own track data, and it is unreachable: LMU
  * packs each location into an encrypted `.mas` archive (magic `m1!`, filenames
  * obfuscated) — nothing readable, and not something to be prising open. The REST
@@ -17,13 +18,31 @@
  * and the path that comes out is in the SAME world axes as the live car
  * positions, which is the property that matters most: the dots need no fitting,
  * no scaling and no per-track calibration to land on the ribbon, because they are
- * measured in the same frame as it. A shipped map would have to be registered
- * against the sim's coordinates for all 17 tracks, and would cover exactly the
- * 17 tracks it shipped with — no mods, no new season, no rF2.
+ * measured in the same frame as it.
  *
- * The cost is one lap: the first time at a circuit the widget draws a progress
- * read instead of a map. After that the file in `~/.apex-overlay/tracks` makes it
- * instant, for that track, forever.
+ * ## Why the learned shapes are then SHIPPED
+ * That last property is also what makes a learned map portable, and it took a
+ * while to see it. The world axes are the SIM's, not the machine's — the same
+ * circuit loaded on any install puts the car at the same coordinates — so a
+ * shape learned on one PC lands on the cars on every other PC, with no
+ * registration step and nothing per-user about it. The lap that has to be driven
+ * to learn a circuit therefore only has to be driven ONCE, by anybody, ever.
+ *
+ * So it is driven here and the result is bundled: `data/trackmaps/` holds one
+ * file per circuit, in exactly the format {@link saveTrackMap} writes, and
+ * {@link loadTrackMap} falls back to it when the machine has no map of its own
+ * (see {@link builtinTrackMapDir}). A driver who has never opened the app sees
+ * the circuit drawn on the installation lap of their first session.
+ *
+ * The learner stays, and it is not a legacy path: it is what covers the tracks
+ * that are not in the bundle — a new season's circuit, a layout nobody here has
+ * driven, a mod, rF2 — and what repairs a bundled map that turns out to be wrong
+ * (see {@link TrackMapBuilder.audit}). Bundling is an optimisation on the first
+ * lap, not a replacement for being able to learn.
+ *
+ * The precedence is: the machine's own file in `~/.apex-overlay/tracks` first,
+ * then the bundled one, then learn. A map the driver's own car produced — or one
+ * relearned after a bundled shape was condemned — always beats the shipped one.
  *
  * ## "Forever" is why a wrong map has to repair itself
  * That cache is the reason a bad map is a different class of bug from a bad
@@ -108,6 +127,13 @@ export interface TrackMapPath {
    * as last frame" from "a new track, refetch" with one integer compare.
    */
   revision: number;
+  /**
+   * `true` when this shape came out of the bundle rather than off this machine
+   * (see {@link builtinTrackMapDir}). Set by the loader, never by the learner,
+   * and the reason {@link TrackMapBuilder.audit} can condemn a shipped map
+   * without leaving it to come back on the next launch.
+   */
+  builtin?: boolean;
 }
 
 /** One frame of evidence about where the road goes. */
@@ -515,8 +541,16 @@ export class TrackMapBuilder {
    * there means the next session loads it before a lap has been driven and draws
    * the same wrong circuit, and the driver is back to being told to delete a
    * file they have no reason to know exists.
+   *
+   * A BUNDLED shape has no file here to delete — it lives inside the
+   * installation — so the same intent is served by a note beside the cache
+   * ({@link rejectBuiltinTrackMap}) saying that this one has been disproved.
+   * Either way the rule is the same: a map that has been shown to be wrong does
+   * not come back on the next launch.
    */
   private discard(): void {
+    const condemnedPath = this.pathState;
+    if (condemnedPath?.builtin) rejectBuiltinTrackMap(this.key, condemnedPath, this.dir);
     deleteTrackMap(this.key, this.dir);
     this.condemned = true;
     this.pathState = null;
@@ -893,10 +927,83 @@ export function trackMapDir(): string {
   return path.join(os.homedir(), '.apex-overlay', 'tracks');
 }
 
-/** Read a learned circuit, or `null` when there isn't one (or it is unreadable). */
+/**
+ * Directory holding the circuits that ship WITH the app — one file per track, in
+ * exactly the format {@link saveTrackMap} writes, produced by
+ * `scripts/import-trackmaps.js` from laps driven here.
+ *
+ * Four candidates, because the same module is loaded three different ways and
+ * the data has to be found in all of them: `npm start` from a clone, `electron .`
+ * from a clone, and the installed app, where `dist/` and `data/` are both inside
+ * `app.asar` (Electron's `fs` reads through it, so no unpacking is needed).
+ * `__dirname` is `dist/telemetry` in every one of those, which is why it leads.
+ *
+ * Resolved once and remembered — this is on the poll path via {@link update}.
+ */
+export function builtinTrackMapDir(): string | null {
+  if (builtinDir !== undefined) return builtinDir;
+  builtinDir = null;
+  if (!/^(1|true|yes|on)$/i.test(process.env.APEX_BUILTIN_TRACKMAPS ?? '1')) return builtinDir;
+  const override = (process.env.APEX_BUILTIN_TRACKMAP_DIR ?? '').trim();
+  // `resourcesPath` exists only under Electron, and this module is also loaded
+  // by plain node (`npm start`, the test scripts) where the type does not have it.
+  const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  const candidates = [
+    ...(override ? [override] : []),
+    path.join(__dirname, '..', '..', 'data', 'trackmaps'),
+    ...(resources ? [path.join(resources, 'data', 'trackmaps')] : []),
+    path.join(process.cwd(), 'data', 'trackmaps'),
+  ];
+  for (const c of candidates) {
+    try {
+      if (fs.statSync(c).isDirectory()) {
+        builtinDir = c;
+        break;
+      }
+    } catch {
+      /* next candidate */
+    }
+  }
+  return builtinDir;
+}
+let builtinDir: string | null | undefined;
+
+/** Forget the resolved bundle location — for tests that move it about. */
+export function resetBuiltinTrackMapDir(): void {
+  builtinDir = undefined;
+}
+
+/**
+ * Read a circuit: this machine's own first, the bundled one after that, `null`
+ * when there is neither (or neither is fit to draw).
+ *
+ * The order is the point. A file in `dir` was either learned from the driver's
+ * own car or written by {@link TrackMapBuilder.commit} after a bundled shape was
+ * condemned, and in both cases it knows something the bundle does not.
+ */
 export function loadTrackMap(key: string, dir = trackMapDir()): TrackMapPath | null {
+  const own = readTrackMapFile(path.join(dir, `${safeName(key)}.json`));
+  if (own) return own;
+  const bundle = builtinTrackMapDir();
+  if (!bundle) return null;
+  const shipped = readTrackMapFile(path.join(bundle, `${safeName(key)}.json`));
+  if (!shipped) return null;
+  // A shipped map the car has already disproved on this machine must not be
+  // handed back every launch; {@link rejectBuiltinTrackMap} leaves a note.
+  if (isBuiltinRejected(key, dir, shipped)) return null;
+  return { ...shipped, builtin: true };
+}
+
+/**
+ * Read and validate one map file, wherever it came from.
+ *
+ * Bundled and learned maps go through the SAME guards on purpose: being shipped
+ * is not evidence of being right, and a build that let a bad shape into the
+ * bundle would otherwise put it on every machine at once.
+ */
+function readTrackMapFile(file: string): TrackMapPath | null {
   try {
-    const raw = fs.readFileSync(path.join(dir, `${safeName(key)}.json`), 'utf8');
+    const raw = fs.readFileSync(file, 'utf8');
     const p = JSON.parse(raw) as TrackMapPath;
     if (!p || !Array.isArray(p.points) || p.points.length < MIN_BINS) return null;
     if (!finite(p.lengthM) || !finite(p.halfWidthM)) return null;
@@ -941,6 +1048,64 @@ export function deleteTrackMap(key: string, dir = trackMapDir()): void {
     fs.rmSync(path.join(dir, `${safeName(key)}.json`), { force: true });
   } catch {
     /* a cache that cannot be cleared is one more session of a progress read */
+  }
+}
+
+/** Marker left beside the cache when a shipped map has been disproved here. */
+function rejectFile(key: string, dir: string): string {
+  return path.join(dir, `${safeName(key)}.rejected`);
+}
+
+/**
+ * Record that the BUNDLED shape for a track has been shown to be wrong on this
+ * machine, so it is never loaded here again.
+ *
+ * Deleting is what {@link TrackMapBuilder.discard} does to a learned map, and it
+ * is not available here — the bundled file is inside the installation (and
+ * inside `app.asar`, where nothing can be deleted), it is reinstated by every
+ * update, and it is shared by every track this build ships. So the note goes in
+ * the writable cache instead: one empty-ish file per condemned key, which
+ * {@link loadTrackMap} checks before it reaches for the bundle.
+ *
+ * The window this covers is small and real: the car condemns the map, the driver
+ * closes the app before finishing the relearning lap, and nothing has yet been
+ * written to `~/.apex-overlay/tracks` to take precedence. Without the note the
+ * next launch draws the same wrong circuit, and the audit has to spend another
+ * 200 m of road proving the same thing — every session, forever.
+ *
+ * The note names the SHAPE it condemns (`builtAt`, which is stamped when the map
+ * is learned and copied into the bundle unchanged), not just the track. A later
+ * release that fixes that circuit ships a different shape, the note no longer
+ * matches it, and the fix arrives on its own — which is the whole reason a
+ * verdict about one build's data is not allowed to be permanent.
+ */
+export function rejectBuiltinTrackMap(key: string, p: TrackMapPath, dir = trackMapDir()): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      rejectFile(key, dir),
+      JSON.stringify({ key, builtAt: p.builtAt ?? null, rejectedAt: new Date().toISOString() }),
+      'utf8',
+    );
+  } catch {
+    /* worst case the shipped map is condemned again next session */
+  }
+}
+
+/**
+ * Whether THIS bundled shape has been condemned on this machine. A note for a
+ * shape the bundle no longer contains does not count — see
+ * {@link rejectBuiltinTrackMap}.
+ */
+function isBuiltinRejected(key: string, dir: string, shipped: TrackMapPath): boolean {
+  try {
+    const raw = fs.readFileSync(rejectFile(key, dir), 'utf8');
+    const note = JSON.parse(raw) as { builtAt?: string | null };
+    // A note without a stamp came from a build that wrote them that way; it can
+    // only have meant the shape shipping at the time, so honour it.
+    return note.builtAt == null || note.builtAt === shipped.builtAt;
+  } catch {
+    return false; // no note, or an unreadable one — nothing is condemned
   }
 }
 
