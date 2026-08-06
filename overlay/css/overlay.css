@@ -279,20 +279,35 @@
   line-height: 1;
 }
 
-/* Fastest-lap-of-the-race banner, under the session strip. */
+/* Fastest-lap banner, under the session strip. One line for the race, or one
+   per class when the operator has set FASTEST LAP to "Each class" — hence a
+   container plus lines rather than a single styled div. The banner's one border
+   sits on the container, so four class lines read as one block and not as four
+   stacked banners. */
 .standings__fastest {
-  padding: 3px 10px 3px calc(10px + var(--accent-bar-w));
   border-bottom: 1px solid var(--border-strong);
   background: var(--bg-header);
-  box-shadow: inset 3px 0 0 var(--purple-fastest);
+}
+.standings__fastest-line {
+  /* Per-class lines set --fastest-color to the class colour; the overall line
+     leaves it unset and falls back to the purple this banner has always been —
+     which is the same purple the lap wears down in the tower. */
+  --fastest-color: var(--purple-fastest);
+  padding: 3px 10px 3px calc(10px + var(--accent-bar-w));
+  box-shadow: inset 3px 0 0 var(--fastest-color);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: var(--fs-label);
   letter-spacing: 0.08em;
-  color: var(--purple-fastest);
+  color: var(--fastest-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Hairlines BETWEEN class lines only — a rule under the last one would double up
+   with the container's border. */
+.standings__fastest-line + .standings__fastest-line {
+  border-top: 1px solid var(--border-soft);
 }
 
 .standings__table {

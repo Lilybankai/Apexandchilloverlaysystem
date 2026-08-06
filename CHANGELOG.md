@@ -19,16 +19,16 @@
 - **A fastest lap for every class, not just the quickest car on track.** The
   banner above the standings tower has always reported one lap: the fastest in
   the session. In a multiclass race that lap is always a Hypercar's, so a GT3
-  driver has been reading a number from a race they aren't in. On the Overlays
-  tab, the Standings card now has a **Fastest lap** setting: *Fastest overall*
-  (unchanged, still the default) or *Fastest in each class*, which gives the
-  banner one line per class — HYPERCAR, LMP2, GT3 — each in its class colour,
-  with the car and driver holding it. The purple in the BEST column follows the
-  same setting, so in per-class mode each class's benchmark wears the purple
-  instead of the one car leading the whole field. Classes appear in the same
-  order the tower groups them, a class with no lap set yet is simply left out
-  rather than shown as a dash, and it works with any tower size. OBS sources can
-  pin it with `?standings=fastest=class`.
+  driver has been reading a number from a race they aren't in. It now reports
+  **one fastest lap per class** — HYPERCAR, LMP2, GT3 — each on its own line in
+  its class colour, with the car and driver holding it. The purple in the BEST
+  column follows suit, marking each class's benchmark rather than the one car
+  leading the whole field. Classes appear in the same order the tower groups
+  them, a class with nobody's lap in yet is simply left out rather than shown as
+  a dash, and a single-class field still draws exactly one line. This is the new
+  default and needs nothing set up; if you want the old single-lap banner back
+  it's on the Overlays tab, Standings card, **Fastest** → *Fastest overall*, and
+  OBS sources can pin that with `?standings=fastest=overall`.
 
 ## 0.62.0 — 2026-08-06
 

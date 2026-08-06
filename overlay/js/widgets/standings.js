@@ -22,8 +22,14 @@
  * GAP counts either the cumulative gap to the class leader (the default) or the
  * interval to the car directly in front — an operator setting, because a
  * broadcast tower wants the first and a driver usually wants the second.
+ * FASTEST LAP reports one lap per class (the default) or the one fastest lap in
+ * the race — an operator setting. Per class is the default because in a
+ * multiclass field the overall fastest belongs to the quickest category and says
+ * nothing at all about the race the other three are having; a single-class field
+ * gets a single line either way, so the default costs nothing there.
  * Highlighting:
- *   - the overall fastest lap of the race is shown in purple, persistently;
+ *   - the fastest lap of the race (or of each class) is shown in purple,
+ *     persistently;
  *   - a car setting a new personal-best lap flashes its LAST time green for a
  *     few seconds, then fades.
  *
@@ -74,6 +80,11 @@
   var track = new Map();
   /** @type {Map<string, object>} classKey -> cached subheader element. */
   var groups = new Map();
+  /**
+   * @type {Map<string, object>} banner line key -> cached element. One entry
+   * under `__overall`, or one per class in `fastest=class`.
+   */
+  var fastestLines = new Map();
 
   function createRow() {
     var tr = document.createElement("tr");
@@ -231,7 +242,15 @@
    * class" is top 10, scope class. Anything anyone has asked for so far is one
    * of those two with different numbers.
    */
-  var view = { limit: "all", scope: "class", top: 0, ahead: 3, behind: 3, gap: "leader" };
+  var view = {
+    limit: "all",
+    scope: "class",
+    top: 0,
+    ahead: 3,
+    behind: 3,
+    gap: "leader",
+    fastest: "class",
+  };
   var viewPinned = false;
 
   /**
@@ -240,14 +259,25 @@
    * `?tyres=`: a source set up to show the front of the race must not change
    * because a driver pressed something.
    *
-   * `gap=ahead` switches the GAP column to intervals and is independent of the
-   * rest, so `?standings=all,gap=ahead` is the whole field with intervals.
+   * `gap=ahead` switches the GAP column to intervals, and `fastest=overall`
+   * collapses the banner's per-class lines to the one fastest lap of the race.
+   * Both are independent of the composition, so
+   * `?standings=all,gap=ahead,fastest=overall` is the whole field with intervals
+   * and a single fastest lap.
    */
   function initView(params) {
     var raw = (params.get("standings") || "").trim().toLowerCase();
     if (raw) {
       viewPinned = true;
-      var next = { limit: "custom", scope: "class", top: 0, ahead: 0, behind: 0, gap: "leader" };
+      var next = {
+        limit: "custom",
+        scope: "class",
+        top: 0,
+        ahead: 0,
+        behind: 0,
+        gap: "leader",
+        fastest: "class",
+      };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
         var part = parts[i].trim();
@@ -262,6 +292,7 @@
         var val = (kv[1] || "").trim();
         if (key === "scope") next.scope = val === "field" ? "field" : "class";
         else if (key === "gap") next.gap = val === "ahead" ? "ahead" : "leader";
+        else if (key === "fastest") next.fastest = val === "overall" ? "overall" : "class";
         else if (key === "top" || key === "ahead" || key === "behind") {
           var n = parseInt(val, 10);
           if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
@@ -447,8 +478,10 @@
     // left.
     setSession = window.ApexOverlay.sessionStrip(mount, { flush: true });
 
-    // Fastest-lap-of-the-race banner: who holds it and what it is. Sits on its
-    // own line under the session strip so it never squeezes the lap counter.
+    // Fastest-lap banner: who holds it and what it is. Sits on its own line
+    // under the session strip so it never squeezes the lap counter. A container
+    // rather than a single line, because in `fastest=class` it carries one line
+    // per class (see updateFastestBanner).
     sessFastest = document.createElement("div");
     sessFastest.className = "standings__fastest";
     sessFastest.hidden = true;
@@ -634,15 +667,24 @@
 
     setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
-    // Fastest lap of the race (purple) and fastest lap per class (green). In a
-    // multiclass field only one car can hold the purple, so without the
-    // per-class pass the GT3 and LMP2 benchmarks are invisible.
+    // Fastest lap of the race and fastest lap per class. Both are always
+    // derived: which one the banner and the purple actually mean is the
+    // `fastest` setting, and the other still feeds the green benchmark below.
+    // Class order here follows the field, so the banner lists classes in the
+    // same order the tower groups them.
     var fastestSlot = -1;
     var fastestSec = Infinity;
     var fastestEntry = null;
-    /** @type {Object<string, {sec: number, slot: number}>} */
+    /** @type {Object<string, {sec: number, slot: number, entry: object}>} */
     var classFastest = {};
+    /** @type {string[]} class keys, in leader order. */
+    var classOrder = [];
     for (var f = 0; f < full.length; f++) {
+      var ck = full[f].carClass || "—";
+      if (!classFastest[ck]) {
+        classFastest[ck] = null;
+        classOrder.push(ck);
+      }
       var b = full[f].bestLapSec;
       if (!fmt.has(b)) continue;
       if (b < fastestSec) {
@@ -650,12 +692,15 @@
         fastestSlot = full[f].slotId;
         fastestEntry = full[f];
       }
-      var ck = full[f].carClass || "—";
       if (!classFastest[ck] || b < classFastest[ck].sec) {
-        classFastest[ck] = { sec: b, slot: full[f].slotId };
+        classFastest[ck] = { sec: b, slot: full[f].slotId, entry: full[f] };
       }
     }
-    updateFastestBanner(fastestEntry, fastestSec, fmt);
+    // Tested against 'overall' rather than for 'class' so that a view arriving
+    // without the field at all — an older config, a server that has not been
+    // updated — lands on the default rather than silently on the other mode.
+    var perClass = !view || view.fastest !== "overall";
+    updateFastestBanner(perClass, classOrder, classFastest, fastestEntry, fastestSec, fmt);
 
     // Group entries by class, preserving position order within a class and
     // ordering the classes by their best (lowest) position.
@@ -704,10 +749,15 @@
       set(grp, "count", grp.count, "textContent", countText);
       tbody.appendChild(grp.tr);
 
-      // Member rows.
+      // Member rows. Which lap wears the purple is the `fastest` setting: the
+      // one fastest lap in the race, or this class's. In per-class mode the
+      // green benchmark is dropped rather than moved — it exists to surface the
+      // class best when the purple cannot, and there the purple already is it.
       var clsFastestSlot = classFastest[cls] ? classFastest[cls].slot : -1;
+      var purpleSlot = perClass ? clsFastestSlot : fastestSlot;
+      var greenSlot = perClass ? -1 : clsFastestSlot;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot, ctx, intervals);
+        renderRow(members[m], fmt, now, purpleSlot, greenSlot, ctx, intervals);
         seen.add(members[m].slotId);
       }
     }
@@ -729,24 +779,94 @@
     });
   }
 
+  /** "#7 M. Slater", or just the name when the car carries no number. */
+  function holderName(entry) {
+    var who = displayName(entry.driverName);
+    return entry.carNumber ? "#" + entry.carNumber + " " + who : who;
+  }
+
   /**
-   * Fastest-lap-of-the-race banner. Persists once set — a fastest lap is a race
-   * fact, not a transient state, so it stays visible after the holder pits or
-   * retires (which is exactly when a viewer most wants to be reminded of it).
+   * Fastest-lap banner. Persists once set — a fastest lap is a race fact, not a
+   * transient state, so it stays visible after the holder pits or retires (which
+   * is exactly when a viewer most wants to be reminded of it).
+   *
+   * By default it draws one line per class rather than one for the race: the
+   * overall fastest lap in a multiclass field is always a Hypercar's, and it
+   * tells the GT3 runner nothing about the race they are in. `fastest=overall`
+   * collapses it back to the single lap. Lines are keyed by class and reconciled
+   * in place, like every other repeated node in this tower, so a lap landing
+   * somewhere down the field does not rebuild the banner.
    */
-  function updateFastestBanner(entry, sec, fmt) {
-    if (!entry || !fmt.has(sec)) {
+  function updateFastestBanner(perClass, classOrder, classFastest, entry, sec, fmt) {
+    /** @type {Array<{key: string, label: string, color: string|null, entry: object, sec: number}>} */
+    var lines = [];
+    if (perClass) {
+      for (var i = 0; i < classOrder.length; i++) {
+        var cls = classOrder[i];
+        var cf = classFastest[cls];
+        if (!cf || !fmt.has(cf.sec)) continue;
+        lines.push({
+          key: cls,
+          label: classLabel(cls),
+          color: classColor(cls),
+          entry: cf.entry,
+          sec: cf.sec,
+        });
+      }
+    } else if (entry && fmt.has(sec)) {
+      lines.push({ key: "__overall", label: "FASTEST LAP", color: null, entry: entry, sec: sec });
+    }
+
+    if (!lines.length) {
       if (!sessFastest.hidden) sessFastest.hidden = true;
       return;
     }
-    var who = displayName(entry.driverName);
-    if (entry.carNumber) who = "#" + entry.carNumber + " " + who;
-    var txt = "FASTEST LAP · " + who + " · " + fmt.lapTime(sec);
-    if (sessFastest.textContent !== txt) sessFastest.textContent = txt;
+
+    for (var n = 0; n < lines.length; n++) {
+      var ln = lines[n];
+      var el = fastestLines.get(ln.key);
+      if (!el) {
+        el = { div: document.createElement("div"), cache: {} };
+        el.div.className = "standings__fastest-line";
+        fastestLines.set(ln.key, el);
+      }
+      // A per-class line carries its class colour on the left bar and the label;
+      // the overall line keeps the purple the banner has always been, which is
+      // also what the purple lap in the tower is.
+      if (el.cache.color !== ln.color) {
+        el.cache.color = ln.color;
+        if (ln.color) el.div.style.setProperty("--fastest-color", ln.color);
+        else el.div.style.removeProperty("--fastest-color");
+      }
+      var txt = ln.label + " · " + holderName(ln.entry) + " · " + fmt.lapTime(ln.sec);
+      if (el.cache.txt !== txt) {
+        el.cache.txt = txt;
+        el.div.textContent = txt;
+      }
+      // appendChild on an existing child is a move, so this also fixes the order
+      // when a class's leader position changes.
+      sessFastest.appendChild(el.div);
+    }
+
+    // Drop lines for classes that are no longer in the field — and, on a switch
+    // between the two modes, the lines the other mode left behind.
+    var keep = new Set();
+    for (var k = 0; k < lines.length; k++) keep.add(lines[k].key);
+    fastestLines.forEach(function (el, key) {
+      if (keep.has(key)) return;
+      if (el.div.parentNode) el.div.parentNode.removeChild(el.div);
+      fastestLines.delete(key);
+    });
+
     if (sessFastest.hidden) sessFastest.hidden = false;
   }
 
-  function renderRow(e, fmt, now, fastestSlot, classFastestSlot, ctx, intervals) {
+  /**
+   * `purpleSlot` is whichever car's BEST wears the purple in this group — the
+   * race's fastest lap, or the class's, per the `fastest` setting. `greenSlot`
+   * is the class benchmark, and is -1 when the purple already marks it.
+   */
+  function renderRow(e, fmt, now, purpleSlot, greenSlot, ctx, intervals) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -772,7 +892,7 @@
     }
     if (fmt.has(e.bestLapSec)) t.best = e.bestLapSec;
 
-    var isFastest = e.slotId === fastestSlot && fmt.has(e.bestLapSec);
+    var isFastest = e.slotId === purpleSlot && fmt.has(e.bestLapSec);
     var flashing = now < t.flashUntil;
 
     // Player highlight (+ carries the fastest-lap purple accent on the row).
@@ -894,15 +1014,16 @@
     set(row, "gap", row.gapTd, "textContent", gapText);
     set(row, "gapTitle", row.gapTd, "title", gapTitle);
 
-    // BEST: purple for the fastest lap of the race, green for the fastest lap of
-    // this class (the benchmark that is otherwise invisible in a multiclass
-    // field, since only one car can hold the purple).
+    // BEST: purple for the fastest lap the `fastest` setting means (the race's,
+    // or this class's), green for the fastest lap of this class where the purple
+    // is the race's — the benchmark that is otherwise invisible in a multiclass
+    // field, since only one car can hold an overall purple.
     set(row, "best", row.bestTd, "textContent", fmt.lapTime(e.bestLapSec));
     var bestState = !fmt.has(e.bestLapSec)
       ? ""
       : isFastest
         ? "fastest"
-        : e.slotId === classFastestSlot
+        : e.slotId === greenSlot
           ? "classbest"
           : "";
     if (row.cache.bestState !== bestState) {

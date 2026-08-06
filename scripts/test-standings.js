@@ -49,7 +49,7 @@ function makeElement(tag) {
     children: [],
     attrs: {},
     parentNode: null,
-    style: { setProperty() {} },
+    style: { setProperty() {}, removeProperty() {} },
     appendChild(c) {
       // A real appendChild MOVES an existing node. The tower relies on that to
       // reorder rows without rebuilding, so the stub has to do it too — without
@@ -201,6 +201,22 @@ function mount(search) {
         for (const c of e.children) walk(c);
       };
       walk(root);
+      return out;
+    },
+    /**
+     * Text of every fastest-lap line the banner is currently drawing, in order,
+     * or [] while the banner is hidden. Hidden is not the same as empty: the
+     * lines stay in the DOM between frames, so a reader that ignored `hidden`
+     * would report a banner nobody can see.
+     */
+    banner: () => {
+      const out = [];
+      const walk = (e, hidden) => {
+        const off = hidden || e.hidden;
+        if (!off && e.className === 'standings__fastest-line') out.push(e.textContent);
+        for (const c of e.children) walk(c, off);
+      };
+      walk(root, false);
       return out;
     },
   };
@@ -362,8 +378,109 @@ console.log('\nRace-wide facts stay true when the tower is trimmed');
 }
 
 /* -------------------------------------------------------------------------- */
+console.log('\nFastest lap — overall, or one per class');
+/* -------------------------------------------------------------------------- */
+
+// Best laps are 100 + position, so the race's fastest is Hypercar #7 (101.000)
+// and GT3's own benchmark is #39 (107.000). #39 is the lap the default banner
+// can never show, and the only one a GT3 driver is racing.
+
+{
+  const w = mount();
+  w.update(field());
+  const lines = w.banner();
+  check('the default banner draws a line for each class', lines.length === 2, lines.join(' | '));
+  check(
+    'the classes are in leader order, each with its own holder',
+    /^Hypercar · #7 .*101\.000$/.test(lines[0]) && /^GT3 · #39 .*107\.000$/.test(lines[1]),
+    lines.join(' | '),
+  );
+}
+
+{
+  // The whole point: a GT3 driver reading the banner sees a GT3 lap. The overall
+  // fastest is a Hypercar's in every multiclass race there is, which is why per
+  // class is what an install gets without touching a setting.
+  const w = mount();
+  w.update(field());
+  const mine = w.banner().find((l) => /^GT3/.test(l));
+  check("the player's class has its own benchmark on screen", !!mine && /#39/.test(mine), mine);
+}
+
+{
+  // A view that predates the setting — an older config, or a server that has
+  // not been updated — must land on the default, not the other mode.
+  const w = mount();
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader' });
+  w.update(field());
+  check('a view with no fastest field still draws per class', w.banner().length === 2, w.banner().join(' | '));
+}
+
+{
+  const w = mount();
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader', fastest: 'overall' });
+  w.update(field());
+  const lines = w.banner();
+  check('overall collapses it to one line', lines.length === 1, lines.join(' | '));
+  check(
+    'and it is the fastest lap of the race',
+    /FASTEST LAP/.test(lines[0]) && /#7/.test(lines[0]) && /101\.000/.test(lines[0]),
+    lines[0],
+  );
+}
+
+{
+  // A class where nobody has set a lap yet contributes nothing rather than a
+  // line reading "—": the first minutes of a session are exactly when a banner
+  // full of dashes would be most in the way.
+  const w = mount();
+  w.update(field().map((r) => (r.carClass === 'GT3' ? { ...r, bestLapSec: -1 } : r)));
+  const lines = w.banner();
+  check('a class with no lap set yet gets no line', lines.length === 1, lines.join(' | '));
+  check('and the class that has one still does', /^Hypercar/.test(lines[0]), lines[0]);
+}
+
+{
+  // Nobody has lapped at all — the banner is gone, not a row of dashes.
+  const w = mount();
+  w.update(field().map((r) => ({ ...r, bestLapSec: -1 })));
+  check('an unlapped session shows no banner at all', w.banner().length === 0, w.banner().join(' | '));
+}
+
+{
+  // Switching modes live must not leave the other mode's lines behind — the two
+  // are keyed differently ("__overall" vs the class names), so a reconciler that
+  // only added would stack them.
+  const w = mount();
+  w.update(field());
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader', fastest: 'overall' });
+  w.update(field());
+  const overall = w.banner();
+  check('switching to overall drops the class lines', overall.length === 1, overall.join(' | '));
+  check('and shows the overall lap', /FASTEST LAP/.test(overall[0]), overall[0]);
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader', fastest: 'class' });
+  w.update(field());
+  check('and switching back drops the overall line', w.banner().length === 2, w.banner().join(' | '));
+}
+
+/* -------------------------------------------------------------------------- */
 console.log('\nOBS pinning via ?standings=');
 /* -------------------------------------------------------------------------- */
+
+{
+  const w = mount('?standings=all,fastest=overall');
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader', fastest: 'class' });
+  w.update(field());
+  check('a pinned source keeps its single-lap banner', w.banner().length === 1, w.banner().join(' | '));
+}
+
+{
+  // A pin that says nothing about the banner gets the default, like everything
+  // else — `?standings=all` has never meant "and change the fastest lap".
+  const w = mount('?standings=all');
+  w.update(field());
+  check('an unrelated pin leaves the banner on the default', w.banner().length === 2, w.banner().join(' | '));
+}
 
 {
   const w = mount('?standings=top=3,scope=class');

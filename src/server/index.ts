@@ -176,6 +176,12 @@ export interface StandingsView {
   behind: number;
   /** What the GAP column counts: the class leader, or the car directly ahead. */
   gap: 'leader' | 'ahead';
+  /**
+   * What the fastest-lap banner reports: one lap per class (the default), or the
+   * single fastest lap of the race. Only one car in a multiclass field can hold
+   * the overall, and it is always in the quickest category.
+   */
+  fastest: 'class' | 'overall';
 }
 
 /** URL the overlays read their appearance from. */
@@ -197,7 +203,15 @@ const appearance: Appearance = {
   audioVolume: 60,
   widgetModes: {},
   widgetOpacity: {},
-  standings: { limit: 'all', scope: 'class', top: 0, ahead: 3, behind: 3, gap: 'leader' },
+  standings: {
+    limit: 'all',
+    scope: 'class',
+    top: 0,
+    ahead: 3,
+    behind: 3,
+    gap: 'leader',
+    fastest: 'class',
+  },
   speedUnit: 'kph',
 };
 
@@ -274,6 +288,10 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
       ahead: count(v.ahead, appearance.standings.ahead),
       behind: count(v.behind, appearance.standings.behind),
       gap: v.gap === 'ahead' || v.gap === 'leader' ? v.gap : appearance.standings.gap,
+      fastest:
+        v.fastest === 'class' || v.fastest === 'overall'
+          ? v.fastest
+          : appearance.standings.fastest,
     };
   }
   return getAppearance();

@@ -267,6 +267,12 @@ function defaultSettings() {
      * reading) or 'ahead' (the interval to the car in front, which is what a
      * driver is actually racing). Independent of the composition above: any
      * amount of the field can be shown either way.
+     *
+     * `fastest` is what the fastest-lap banner reports — 'class' (one lap per
+     * class, the default) or 'overall' (one lap, the quickest in the race). Per
+     * class leads because in a multiclass field the overall fastest is always
+     * the top category's, so a GT3 driver reading it learns nothing about their
+     * own race; a single-class field draws one line under either setting.
      */
     standings: {
       limit: 'all', // 'all' | 'custom'
@@ -275,6 +281,7 @@ function defaultSettings() {
       ahead: 3,
       behind: 3,
       gap: 'leader', // 'leader' | 'ahead'
+      fastest: 'class', // 'class' | 'overall'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -506,6 +513,7 @@ function normalizeStandings(stored) {
     ahead: clamp(from.ahead, 0, 30, d.ahead),
     behind: clamp(from.behind, 0, 30, d.behind),
     gap: from.gap === 'ahead' ? 'ahead' : d.gap,
+    fastest: from.fastest === 'overall' ? 'overall' : d.fastest,
   };
 }
 

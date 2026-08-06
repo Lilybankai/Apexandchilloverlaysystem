@@ -413,9 +413,45 @@
     gapHead.appendChild(gapLabel);
     gapHead.appendChild(gap);
 
+    // What the fastest-lap banner reports. Also its own row, and for the same
+    // reason as GAP: it is a fact about the race rather than about the panel's
+    // composition, so it has to stay reachable however much of the field is
+    // showing.
+    const flLabel = document.createElement('span');
+    flLabel.className = 'ovcard__bg-label';
+    // "FASTEST", not "FASTEST LAP": the labels in this card set the width every
+    // dropdown aligns to (see .ovcard__view-head), and the longer wording buys
+    // nothing next to a control that says "Fastest overall".
+    flLabel.textContent = 'FASTEST';
+
+    const fastest = document.createElement('select');
+    fastest.className = 'field__input field__input--inline';
+    fastest.id = 'standings-fastest';
+    for (const [value, text] of [
+      ['class', 'Fastest in each class'],
+      ['overall', 'Fastest overall'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      fastest.appendChild(opt);
+    }
+    fastest.value = v.fastest;
+    fastest.title =
+      'Whether the banner reports one fastest lap per class, or the single ' +
+      'fastest lap of the race — in a multiclass field the overall fastest ' +
+      'always belongs to the quickest category';
+    fastest.addEventListener('change', () => void send({ fastest: fastest.value }));
+
+    const flHead = document.createElement('div');
+    flHead.className = 'ovcard__view-head';
+    flHead.appendChild(flLabel);
+    flHead.appendChild(fastest);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
+    wrap.appendChild(flHead);
     return wrap;
   }
 
