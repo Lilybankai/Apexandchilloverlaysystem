@@ -320,16 +320,71 @@
   border-bottom: 1px solid var(--border-soft);
 }
 .standings__row:last-child { border-bottom: none; }
+/* The driver's own row.
+ *
+ * Marked FOUR independent ways — a tag, a tint, a bracket and the weight of the
+ * text — because this row is not information about the race, it is the answer to
+ * "where am I", and the driver asks it at 200km/h with one eye. Testers were
+ * losing themselves in a 30-row tower when the whole treatment was a 6-shade
+ * background lift and a 3px bar: findable once you knew where to look, which is
+ * precisely the wrong test.
+ *
+ * No single one of these carries it alone, on purpose. Hue cannot: every class
+ * already owns a colour, and LMP3's IS this cyan. Background cannot: it rides
+ * --panel-alpha, so it vanishes on a transparent overlay. The tag is the one
+ * that always survives, and the rest make the row easy to *land* on once the
+ * tag has told the eye what it is looking for. */
 .standings__row--player {
-  background: var(--bg-panel-3);
-  box-shadow: inset 3px 0 0 var(--ac-cyan);
+  /* Tinted with the accent rather than lifted to --bg-panel-3 (which is 6 shades
+     off the row beside it). Mixed against `transparent`, NOT through the panel
+     tokens, so the tint keeps its strength as the Widget background slider comes
+     down — the setup where finding yourself is hardest is the one where the rows
+     around you have gone. */
+  background: color-mix(in srgb, var(--ac-cyan) 16%, transparent);
+  /* Bracketed both edges. A left bar alone is the same mark the class subheader
+     three rows up is wearing; a rule that closes on the right belongs to nothing
+     else in the tower and gives the eye a full-width target. */
+  box-shadow: inset 4px 0 0 var(--ac-cyan), inset -3px 0 0 var(--ac-cyan);
+}
+/* Your own numbers, at full strength — the rest of the field is context and is
+   drawn as such. Specificity (0,2,0) clears the per-column colours below without
+   an !important; the delta arrows and the VE readout set their own state colours
+   at the same weight or on their own element and are deliberately left alone. */
+.standings__row--player .standings__cell { color: var(--text-primary); }
+.standings__row--player .standings__pos { color: var(--ac-cyan); }
+.standings__row--player .standings__driver { font-weight: 700; }
+/* "YOU" — the only inverted mark in the tower. Solid fill with dark text, where
+   every other mark here is coloured text or a hairline, so it separates by SHAPE
+   and not only by hue; and it carries its own opaque backing, so it still reads
+   against tarmac at 0% panel background (same reasoning as .pit-flag). Sized off
+   the type tokens to ride the Text size slider. */
+.standings__you {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  vertical-align: middle;
+  background: var(--ac-cyan);
+  color: var(--text-invert);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  /* The translucent panel's text shadow turns dark glyphs on a bright chip to
+     mud; the chip is its own backing. */
+  text-shadow: none;
 }
 /* Race-fastest-lap holder: a subtle purple left accent on the row. */
 .standings__row--fastest {
   box-shadow: inset 3px 0 0 var(--purple-fastest);
 }
+/* Both at once: the purple sits INSIDE the player's cyan rather than replacing
+   it, so neither fact is lost on the one row where they coincide. */
 .standings__row--player.standings__row--fastest {
-  box-shadow: inset 3px 0 0 var(--ac-cyan), inset 6px 0 0 var(--purple-fastest);
+  box-shadow:
+    inset 4px 0 0 var(--ac-cyan),
+    inset 8px 0 0 var(--purple-fastest),
+    inset -3px 0 0 var(--ac-cyan);
 }
 .standings__cell {
   /* 5px sides, not 6: with seven columns the extra pixel per side is 14px off

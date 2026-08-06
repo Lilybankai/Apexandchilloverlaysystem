@@ -219,6 +219,25 @@ function mount(search) {
       walk(root, false);
       return out;
     },
+    /**
+     * Car numbers whose row is currently wearing the "YOU" tag. Read the same
+     * way a driver reads it — is the tag VISIBLE on that row — because the rows
+     * are pooled by slotId and reused across frames, so a tag left behind on a
+     * car that is no longer you is a tag that renders.
+     */
+    you: () => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className && /standings__driver/.test(e.className)) {
+          const tag = e.children.find((c) => c.className === 'standings__you');
+          const m = /#(\d+)/.exec(e.children.map((c) => c.textContent || '').join(' '));
+          if (tag && !tag.hidden && m) out.push(m[1]);
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
   };
 }
 
@@ -261,6 +280,31 @@ console.log('\nDefault — the whole field, as it always was');
   w.update(field());
   check('every car is drawn', w.shown().length === 12, w.shown().length + ' rows');
   check('no header claims a trimmed class', w.headers().every((h) => !/ OF /.test(h)), w.headers().join(' | '));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nFinding yourself — the "YOU" tag');
+/* -------------------------------------------------------------------------- */
+
+/* Testers were losing their own car in a full tower, so the row carries a word
+   and not only a colour (see .standings__row--player). What matters is that
+   exactly ONE row wears it and it is the right one: a tag on two rows is worse
+   than no tag at all, because the driver stops trusting it. */
+{
+  const w = mount();
+  w.update(field());
+  check('the player wears it', w.you().join(',') === '19', w.you().join(',') || 'nobody');
+
+  // Rows are pooled by slotId and reused, so the tag has to be taken OFF a car
+  // that stops being the player — a replay, a driver swap, or simply a session
+  // where the tower saw a different car first.
+  const swapped = field().map((r) => ({ ...r, isPlayer: r.carNumber === '43' }));
+  w.update(swapped);
+  check('and it moves with them', w.you().join(',') === '43', w.you().join(',') || 'nobody');
+
+  // Spectating: nobody is the player, so nothing claims to be.
+  w.update(field().map((r) => ({ ...r, isPlayer: false })));
+  check('a spectator feed tags nobody', w.you().length === 0, w.you().join(',') || 'nobody');
 }
 
 /* -------------------------------------------------------------------------- */

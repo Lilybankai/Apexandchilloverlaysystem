@@ -43,6 +43,20 @@
   it's on the Overlays tab, Standings card, **Fastest** → *Fastest overall*, and
   OBS sources can pin that with `?standings=fastest=overall`.
 
+### Changed
+
+- **Your own car is now impossible to miss in the standings.** Finding yourself
+  in a thirty-row tower meant hunting for a slightly lighter row with a thin
+  blue edge — findable if you already knew where to look, which is not the same
+  as findable at 200km/h. Your row now carries a **YOU** tag at the head of the
+  driver column, sits on a proper cyan tint, is bracketed down both edges, and
+  draws its numbers at full brightness while the rest of the field stays as
+  context. The tag is there because a colour alone can't do this job: every
+  class already owns one — LMP3's is the very cyan the highlight uses — and the
+  tint disappears as you wind the Widget background slider down. The word
+  doesn't. If you're also holding the fastest lap, the purple sits inside the
+  cyan so you keep both.
+
 ## 0.62.0 — 2026-08-06
 
 ### Added

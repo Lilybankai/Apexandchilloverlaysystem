@@ -99,6 +99,22 @@
 
     var driverTd = document.createElement("td");
     driverTd.className = "standings__cell standings__driver";
+    // "YOU", first thing in the cell, on the driver's own row and nowhere else.
+    // The row highlight is a colour, and in this tower a colour is ambiguous by
+    // construction: every class already owns one, the palette LMP3 hashes to is
+    // the same cyan the player accent uses, and the purple and green on the lap
+    // times are colours too. A word is not ambiguous. It is also the only mark
+    // that still reads when the Widget background slider is at 0 and there is
+    // tarmac behind the row.
+    //
+    // Leading rather than trailing: it costs the player's row a few pixels of
+    // name, which is the one row whose name the driver already knows, and it
+    // lands at the same x as every other row's class dot — so the eye running
+    // DOWN the tower meets it without having to read across.
+    var you = document.createElement("span");
+    you.className = "standings__you";
+    you.textContent = "YOU";
+    you.hidden = true;
     var classDot = document.createElement("span");
     classDot.className = "standings__class";
     // Manufacturer badge, between the class dot and the name — the game's own
@@ -113,6 +129,7 @@
       badge.hidden = true;
     };
     var nameSpan = document.createElement("span");
+    driverTd.appendChild(you);
     driverTd.appendChild(classDot);
     driverTd.appendChild(badge);
     driverTd.appendChild(nameSpan);
@@ -182,6 +199,7 @@
       posTd: posTd,
       deltaTd: deltaTd,
       driverTd: driverTd,
+      you: you,
       classDot: classDot,
       badge: badge,
       nameSpan: nameSpan,
@@ -896,10 +914,18 @@
     var flashing = now < t.flashUntil;
 
     // Player highlight (+ carries the fastest-lap purple accent on the row).
+    var isPlayer = !!e.isPlayer;
     var cls = "standings__row";
-    if (e.isPlayer) cls += " standings__row--player";
+    if (isPlayer) cls += " standings__row--player";
     if (isFastest) cls += " standings__row--fastest";
     set(row, "cls", row.tr, "className", cls);
+    // `hidden`, not the pit flag's `is-off`: that flag holds a column open on
+    // every row and must keep its box, whereas this tag exists on one row in the
+    // tower and every other row wants the space back for its driver's name.
+    if (row.cache.you !== isPlayer) {
+      row.cache.you = isPlayer;
+      row.you.hidden = !isPlayer;
+    }
 
     // Rows are grouped under a class subheader, so the number that belongs in
     // the position column is the position IN CLASS — that is what the driver is
