@@ -210,6 +210,25 @@ const TYRE_MAX_C = 200;
 // NB: the header's mNumVehicles (offset 12) undercounts LMU's telemetry buffer,
 // so the record scan is bounded by how many records fit the region, not by it.
 const MMF_TELEMETRY = '$rFactor2SMMP_Telemetry$';
+/**
+ * The Scoring buffer, mapped ONLY for its header. Two bytes matter here, both
+ * verified live 2026-08-07 (Daytona, byte-diff probe against deliberate screen
+ * changes — see the session-ontrack-signal memory):
+ *
+ *   - byte 120: ScoringInfo's mGamePhase (matched REST's numeric phase all
+ *     session) — read purely as a sanity check that the header is laid out
+ *     the way we think.
+ *   - byte 127: mInRealtime — `1` with the driver in the world, `0` on the
+ *     sim's garage/pit-strategy/setup pages. This is the ONE channel that
+ *     catches those pages: REST's numeric gamePhase stays 5 (green) on all
+ *     of them and only reports 9 for the ESC/monitor screen.
+ *
+ * (Layout: 12-byte MMF version header + ScoringInfo, whose mPlayerName sits at
+ * 128 — "Carl Jones" read back there during the probe, pinning the offsets.)
+ */
+const MMF_SCORING = '$rFactor2SMMP_Scoring$';
+const SCORING_GAME_PHASE_OFFSET = 120;
+const SCORING_IN_REALTIME_OFFSET = 127;
 const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
 /** Worst-case bytes we might need (clamped to the real region on open). */
@@ -483,6 +502,9 @@ export class LmuLocalCarReader {
   private handle: unknown = null;
   private view: unknown = null;
   private size = 0;
+  /** Scoring-header mapping (see MMF_SCORING) — only bytes 120/127 are read. */
+  private scoringHandle: unknown = null;
+  private scoringView: unknown = null;
   /** Record index of the driven car found last poll — probed first next poll. */
   private cachedIdx = -1;
   /**
@@ -519,6 +541,72 @@ export class LmuLocalCarReader {
     this.handle = null;
     this.size = 0;
     this.cachedIdx = -1;
+    this.stopScoring();
+  }
+
+  private stopScoring(): void {
+    const w = this.win32;
+    if (w && this.scoringView) {
+      try {
+        w.UnmapViewOfFile(this.scoringView);
+        if (this.scoringHandle) w.CloseHandle(this.scoringHandle);
+      } catch {
+        /* best-effort */
+      }
+    }
+    this.scoringView = null;
+    this.scoringHandle = null;
+  }
+
+  private openScoring(): void {
+    const w = this.win32;
+    if (w === null || this.scoringView) return;
+    try {
+      const handle = w.OpenFileMappingW(FILE_MAP_READ, false, MMF_SCORING);
+      if (!handle) return;
+      const view = w.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
+      if (!view) {
+        w.CloseHandle(handle);
+        return;
+      }
+      this.scoringHandle = handle;
+      this.scoringView = view;
+    } catch {
+      this.scoringView = null;
+      this.scoringHandle = null;
+    }
+  }
+
+  /**
+   * Whether the driver is IN THE WORLD — at the wheel, on track or in the
+   * stall — as opposed to on the sim's garage / pit-strategy / setup pages.
+   * `null` when the answer isn't trustworthy (no shared memory, sim closed,
+   * or the header doesn't look like the ScoringInfo we probed), and callers
+   * must treat `null` as "don't hide anything".
+   *
+   * Single-byte reads, so torn reads aren't a concern; the phase byte is a
+   * cheap layout check, not data. A frozen mapping after the sim closes is
+   * harmless here: the REST feed dies with the sim and its staleness fallback
+   * outranks this flag.
+   */
+  public inRealtime(): boolean | null {
+    const w = this.win32;
+    if (w === null) return null;
+    if (!this.scoringView) {
+      this.openScoring();
+      if (!this.scoringView) return null;
+    }
+    try {
+      const phase = w.readBytes(this.scoringView, SCORING_GAME_PHASE_OFFSET, 1)[0];
+      if (phase === undefined || phase > 10) return null; // not the layout we verified
+      const flag = w.readBytes(this.scoringView, SCORING_IN_REALTIME_OFFSET, 1)[0];
+      if (flag !== 0 && flag !== 1) return null;
+      return flag === 1;
+    } catch {
+      // Mapping may have gone away (sim closed); drop it so we re-open later.
+      this.stopScoring();
+      return null;
+    }
   }
 
   private open(): void {

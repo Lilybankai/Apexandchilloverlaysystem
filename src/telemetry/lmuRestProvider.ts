@@ -1638,15 +1638,25 @@ export class LmuRestProvider implements TelemetryProvider {
     const fcy = asUpper(si.yellowFlagState);
     const flag: FlagState =
       fcy && fcy !== 'NONE' ? 'yellow' : mapFlag(focus?.flag ?? phaseStr);
-    // sessionInfo's NUMERIC gamePhase is the one channel that tracks the local
-    // driver rather than the session: it flips to 9 the instant they are
-    // looking at any game screen (ESC/monitor, garage, setup) and back to the
-    // running phase the instant they return to the car — probed live
-    // 2026-08-06 at Daytona, ~10 menu round-trips, flipped correctly every
-    // time while the string phases above stayed GREEN throughout. Anything
-    // other than a readable 9 counts as at-the-wheel, so a missing or
-    // string-typed field can never hide an overlay.
+    // Two independent reads of "is the driver actually at the wheel", because
+    // LMU splits the truth between them (both probed live, 2026-08-06/07,
+    // Daytona):
+    //
+    //   - sessionInfo's NUMERIC gamePhase flips to 9 for the ESC/monitor
+    //     screen — but stays at the running phase (5) for the garage pages:
+    //     pit strategy, car setup. ~10 round-trips, no false reads.
+    //   - shared memory's mInRealtime is 0 on exactly those garage pages and
+    //     1 in the car — but does NOT flip for the ESC screen (the driver is
+    //     still in the world, the sim is just paused over it).
+    //
+    // So each covers the other's blind spot and hiding needs either to say
+    // "in menus". Both fail safe: a missing/string-typed phase and a dead
+    // shared-memory mapping (null) each count as at-the-wheel, so on a rig
+    // where a channel is broken the overlays can never be wrongly hidden —
+    // that rig just keeps a smaller set of screens that auto-hide.
     const uiPhase = Number(si.gamePhase);
+    const inEscMenu = Number.isFinite(uiPhase) && uiPhase === 9;
+    const inGaragePages = this.localCar.inRealtime() === false;
     return {
       type: mapSessionType(si.session),
       phase,
@@ -1659,7 +1669,7 @@ export class LmuRestProvider implements TelemetryProvider {
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
       notStarted: isPreGreen(phase),
       scheduledLengthSec,
-      onTrack: !(Number.isFinite(uiPhase) && uiPhase === 9),
+      onTrack: !inEscMenu && !inGaragePages,
       ...(startLights ? { startLights } : {}),
       ...(sectorFlags ? { sectorFlags } : {}),
     };

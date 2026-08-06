@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.63.1 — 2026-08-07
+
+### Fixed
+
+- **The overlays now hide on the pit menu and car setup pages too.** 0.63.0's
+  auto show/hide caught the ESC menu but left the overlays sitting over the
+  garage pages — pit strategy, car setup — because the sim reports those
+  screens differently. The overlays now read the sim's own "driver is in the
+  car" flag as well, so every one of its screens hides them and getting back
+  in the car brings them straight back. On a PC where that flag isn't
+  readable, behaviour simply stays as it was in 0.63.0 — the overlays are
+  never wrongly hidden.
+
 ## 0.63.0 — 2026-08-07
 
 ### Added
