@@ -39,6 +39,7 @@ const updateChannel = require('./updateChannel');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
+const { overlayGeometryFrom } = require('./overlay-geometry');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — every widget, each addable to OBS as its own source.    */
@@ -1284,9 +1285,9 @@ function overlaysForUi() {
 /*  In-game overlay layer                                                      */
 /* -------------------------------------------------------------------------- */
 /*
- * ONE transparent, frameless, always-on-top window spanning the primary
- * display hosts every in-game widget (a single renderer process — far lighter
- * than a window per widget). While locked it is fully click-through
+ * ONE transparent, frameless, always-on-top window spanning the whole desktop
+ * hosts every in-game widget (a single renderer process — far lighter than a
+ * window per widget). While locked it is fully click-through
  * (setIgnoreMouseEvents) and non-focusable, so the game never loses input.
  * "Edit layout" re-enables mouse events so the operator can drag/resize
  * widgets on screen; placement is persisted to settings.ingameLayout.
@@ -1299,6 +1300,89 @@ function overlaysForUi() {
 let overlayWin = null;
 let ingameEditing = false;
 let ingameInteractive = false;
+
+/**
+ * Where the in-game layer lives, and the geometry it lays widgets out against.
+ * The maths — and the reasoning behind the coordinate space, which is what makes
+ * this change invisible to everyone on one monitor — is in
+ * electron/overlay-geometry.js, so it can be tested against monitor
+ * arrangements nobody here owns.
+ */
+function overlayGeometry() {
+  return overlayGeometryFrom(
+    screen.getAllDisplays().map((d) => d.bounds),
+    screen.getPrimaryDisplay().bounds,
+  );
+}
+
+/**
+ * Force the layer onto the current desktop rectangle, and (unless it is still
+ * loading) tell the page its new geometry.
+ *
+ * THIS IS NOT OPTIONAL POLISH — it is how the window gets its size at all.
+ * BrowserWindow's constructor silently clamps the initial size to the PRIMARY
+ * DISPLAY'S WORK AREA, and no combination of resizable/maximizable/
+ * fullscreenable prevents it: asking for the 4480×1440 union of a two-monitor
+ * desktop hands back 2560×1392. `setBounds` after construction is not clamped,
+ * so the size in the constructor is only a starting guess and this is what makes
+ * it true. Measured on Electron 33, 2026-08-06.
+ *
+ * That clamp had already cost us something nobody had connected: 1392 is the
+ * work area, i.e. the screen less the 48px taskbar, so the layer has always been
+ * a taskbar shorter than the screen it claimed to cover. Every bottom-anchored
+ * widget default (tyres, pedals, damage) sat that much high, and the bottom
+ * strip of the screen could not be used at all.
+ *
+ * Also called on display add/remove/metrics-changed, so plugging in the third
+ * monitor or changing a resolution does not need the overlay toggled off and on
+ * again. The bounds comparison matters there: `display-metrics-changed` fires
+ * for things that leave the desktop rectangle alone — a work-area change when
+ * the taskbar auto-hides, most obviously — and this window is drawn over a
+ * running race, so it must not be touched for those.
+ */
+function applyOverlayGeometry({ notify = true } = {}) {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const geom = overlayGeometry();
+  const cur = overlayWin.getBounds();
+  const changed =
+    cur.x !== geom.bounds.x ||
+    cur.y !== geom.bounds.y ||
+    cur.width !== geom.bounds.width ||
+    cur.height !== geom.bounds.height;
+  if (changed) {
+    // The window is created non-resizable and non-movable so the operator can
+    // never drag or stretch the layer itself. Windows enforces that against
+    // setBounds too, so both are lifted for the width of the call.
+    try {
+      overlayWin.setResizable(true);
+      overlayWin.setMovable(true);
+      overlayWin.setBounds(geom.bounds);
+    } finally {
+      overlayWin.setResizable(false);
+      overlayWin.setMovable(false);
+    }
+  }
+  if (notify) overlayWin.webContents.send('ingame:screens', geom.screens);
+}
+
+/**
+ * Watch for the desktop changing shape. Debounced because these events arrive
+ * in bursts — a single monitor being plugged in fires several — and each one
+ * would otherwise re-bound the window the driver is looking through.
+ */
+let overlayGeometryTimer = null;
+function watchDisplays() {
+  const onChange = () => {
+    if (overlayGeometryTimer) clearTimeout(overlayGeometryTimer);
+    overlayGeometryTimer = setTimeout(() => {
+      overlayGeometryTimer = null;
+      applyOverlayGeometry();
+    }, 400);
+  };
+  screen.on('display-added', onChange);
+  screen.on('display-removed', onChange);
+  screen.on('display-metrics-changed', onChange);
+}
 
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
@@ -1321,6 +1405,9 @@ function syncOverlayWindow() {
 
   const url = ingameUrl(settings);
   if (overlayWin && !overlayWin.isDestroyed()) {
+    // Catch a desktop that changed shape while the layer was hidden — the
+    // watcher only fires while it is up.
+    applyOverlayGeometry();
     if (overlayWin.ingameUrl !== url) {
       overlayWin.ingameUrl = url;
       void overlayWin.loadURL(url);
@@ -1328,7 +1415,7 @@ function syncOverlayWindow() {
     return;
   }
 
-  const bounds = screen.getPrimaryDisplay().bounds;
+  const { bounds } = overlayGeometry();
   overlayWin = new BrowserWindow({
     x: bounds.x,
     y: bounds.y,
@@ -1363,6 +1450,11 @@ function syncOverlayWindow() {
       autoplayPolicy: 'no-user-gesture-required',
     },
   });
+  // The constructor's size is only a starting guess — Windows clamps it to the
+  // primary display's work area no matter what is asked for. This is what
+  // actually sizes the layer to the desktop; see applyOverlayGeometry. No
+  // notify: the page has not loaded yet and fetches its own geometry at boot.
+  applyOverlayGeometry({ notify: false });
   // 'screen-saver' level floats above borderless-fullscreen game windows.
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   applyIngameMouse(); // click-through unless edit/interact is already on
@@ -1764,6 +1856,12 @@ function registerIpc() {
   });
 
   ipcMain.handle('ingame:layoutGet', () => loadSettings().ingameLayout);
+
+  // Desktop geometry for the layer: how many screens there are, where they sit
+  // relative to the primary one, and how far the window's own top-left is from
+  // it. Fetched once at boot; pushed again over 'ingame:screens' if the desktop
+  // changes shape underneath a running layer.
+  ipcMain.handle('ingame:screensGet', () => overlayGeometry().screens);
 
   ipcMain.handle('ingame:layoutSave', (_evt, layout) => {
     if (!layout || typeof layout !== 'object') return false;
@@ -2732,6 +2830,8 @@ app.whenReady().then(async () => {
   // the window opens on.
   authService.init(app.getPath('userData'));
   registerIpc();
+  // Needs the app ready — screen is unusable before it.
+  watchDisplays();
   createWindow();
 
   // Turn a remembered refresh token into a live session in the background — a

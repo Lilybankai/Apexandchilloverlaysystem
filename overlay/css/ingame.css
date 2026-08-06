@@ -148,6 +148,53 @@ body.ig-editing .ig-item__handle {
   top: -7px;
 }
 
+/* ---------------------------- screen outlines ---------------------------- */
+/* On a multi-monitor rig the layer spans the whole desktop, so edit mode marks
+   where each screen is — otherwise the operator is dragging across one
+   unbroken sheet of transparency and cannot tell which monitor a widget will
+   land on. js/ingame.js only builds these when there are two or more screens;
+   a single-monitor rig never has one in the DOM. Locked, they are gone twice
+   over: no .ig-editing class, and nothing to hit-test. */
+
+.ig-screens {
+  position: absolute;
+  inset: 0;
+  display: none;
+  /* Never in the way of a drag. Staying BEHIND the widgets is DOM order's job
+     (this element precedes #ig-stage) — both sit at the auto z-level, so a
+     z-index here would only put the outlines in front. */
+  pointer-events: none;
+}
+
+body.ig-editing .ig-screens {
+  display: block;
+}
+
+.ig-screen {
+  position: absolute;
+  border: 1px dashed rgba(38, 187, 244, 0.45);
+  border-radius: 4px;
+  /* Barely-there wash: enough to read the extent of a screen against a black
+     desktop, not enough to obscure what is behind the layer. */
+  background: rgba(38, 187, 244, 0.03);
+  box-sizing: border-box;
+}
+
+.ig-screen__tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(12, 14, 24, 0.82);
+  border: 1px solid #313850;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 /* ------------------------------- toolbar -------------------------------- */
 
 .ig-toolbar {

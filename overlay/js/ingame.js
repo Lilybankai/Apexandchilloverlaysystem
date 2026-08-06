@@ -20,6 +20,12 @@
  *   - persists placement through the preload bridge, falling back to
  *     localStorage when the page is opened in a plain browser.
  *
+ * MULTI-MONITOR: the window spans the whole desktop, not one screen, so widgets
+ * can be dragged onto a side monitor of a triple-screen rig that is not running
+ * NVIDIA Surround. Placement is stored relative to the PRIMARY display, so a
+ * one-screen rig is unaffected in every particular and a widget on a left-hand
+ * screen simply carries a negative x — see the geometry section below.
+ *
  * While locked, no listeners do any work (pointer events never reach the
  * click-through window), so the layer adds nothing to steady-state cost.
  */
@@ -34,8 +40,151 @@
   var MIN_W = 120;
   var MIN_H = 56;
 
+  /** Ceiling on a stored width/height, matching normalizeLayoutEntry in main. */
+  var MAX_ITEM = 4000;
+
   function clampNum(v, min, max) {
     return Math.min(max, Math.max(min, v));
+  }
+
+  /* ------------------------------- geometry ------------------------------- */
+  /*
+   * The window spans the WHOLE desktop, not one screen, so that a triple-screen
+   * rig without NVIDIA Surround — where Windows reports three separate displays
+   * rather than one wide one — has somewhere to drag a widget to. On a single
+   * monitor (and under Surround, which presents as a single monitor) the desktop
+   * IS that screen and every number below collapses to what it always was.
+   *
+   * Layout coordinates are measured from the top-left of the PRIMARY display,
+   * which is why saved layouts did not have to move when the window grew: a
+   * widget at {x: 24} is still 24px from the left of the main screen. Widgets on
+   * a left-hand screen carry a negative x, so nothing here may assume 0 is the
+   * left edge — `minX()`/`minY()` are that edge, and they are only 0 when
+   * nothing is placed left of / above the primary display.
+   */
+
+  /** Geometry for a plain browser, where there is no app to ask: one screen. */
+  function fallbackSpan() {
+    return {
+      padX: 0,
+      padY: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      primary: { width: window.innerWidth, height: window.innerHeight },
+      rects: [{ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }],
+    };
+  }
+
+  /** Accept only a complete, sane geometry — anything else falls back. */
+  function normalizeSpan(s) {
+    if (!s || !isFinite(s.width) || !isFinite(s.height) || s.width <= 0 || s.height <= 0) {
+      return fallbackSpan();
+    }
+    var rects = [];
+    if (Object.prototype.toString.call(s.rects) === "[object Array]") {
+      for (var i = 0; i < s.rects.length; i++) {
+        var r = s.rects[i];
+        if (r && isFinite(r.x) && isFinite(r.y) && r.width > 0 && r.height > 0) {
+          rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+        }
+      }
+    }
+    var pw = s.primary && s.primary.width > 0 ? s.primary.width : s.width;
+    var ph = s.primary && s.primary.height > 0 ? s.primary.height : s.height;
+    if (!rects.length) rects = [{ x: 0, y: 0, width: pw, height: ph }];
+    return {
+      padX: isFinite(s.padX) ? s.padX : 0,
+      padY: isFinite(s.padY) ? s.padY : 0,
+      width: s.width,
+      height: s.height,
+      primary: { width: pw, height: ph },
+      rects: rects,
+    };
+  }
+
+  /*
+   * Seeded with the one-screen fallback rather than left empty until the real
+   * geometry arrives: the app pushes edit mode as soon as the page loads (the
+   * Off → Edit step of the hotkey cycle does exactly that), which can land
+   * before the fetch resolves, and everything that positions a widget reads it.
+   */
+  var span = fallbackSpan();
+
+  /* The desktop's edges, in layout coordinates. */
+  function minX() {
+    return -span.padX;
+  }
+  function minY() {
+    return -span.padY;
+  }
+  function maxX() {
+    return -span.padX + span.width;
+  }
+  function maxY() {
+    return -span.padY + span.height;
+  }
+
+  function rectsOverlap(a, b) {
+    return (
+      a.x < b.x + b.width &&
+      a.x + a.width > b.x &&
+      a.y < b.y + b.height &&
+      a.y + a.height > b.y
+    );
+  }
+
+  /** The screen whose centre is closest to this box's — the rescue target. */
+  function nearestScreen(box) {
+    var cx = box.x + box.width / 2;
+    var cy = box.y + box.height / 2;
+    var best = span.rects[0];
+    var bestD = Infinity;
+    for (var i = 0; i < span.rects.length; i++) {
+      var r = span.rects[i];
+      var dx = r.x + r.width / 2 - cx;
+      var dy = r.y + r.height / 2 - cy;
+      var d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The rectangle a widget is allowed to settle inside: the screens it currently
+   * touches, merged.
+   *
+   *   - one screen — the single-monitor case, and the normal triple-screen one —
+   *     gives back that screen, so this behaves exactly as the old clamp to the
+   *     window did;
+   *   - two, because it has been deliberately straddled across a bezel, gives
+   *     back both, so the straddle survives being tidied up but the widget still
+   *     cannot run off the bottom;
+   *   - none, because it has been dropped in the dead space that a staggered or
+   *     L-shaped arrangement leaves inside the desktop rectangle, gives back the
+   *     nearest screen. That is the rescue: without it a widget dragged into a
+   *     gap between two differently-sized monitors is simply invisible, on no
+   *     screen at all, with no handle to drag it back by.
+   */
+  function homeRect(box) {
+    var hit = [];
+    for (var i = 0; i < span.rects.length; i++) {
+      if (rectsOverlap(box, span.rects[i])) hit.push(span.rects[i]);
+    }
+    if (!hit.length) hit = [nearestScreen(box)];
+    var l = Infinity;
+    var t = Infinity;
+    var r = -Infinity;
+    var b = -Infinity;
+    for (var j = 0; j < hit.length; j++) {
+      l = Math.min(l, hit[j].x);
+      t = Math.min(t, hit[j].y);
+      r = Math.max(r, hit[j].x + hit[j].width);
+      b = Math.max(b, hit[j].y + hit[j].height);
+    }
+    return { x: l, y: t, width: r - l, height: b - t };
   }
 
   /** Default placement per widget id (px, for a generic 16:9 screen). */
@@ -104,7 +253,12 @@
 
   function applyItem(el) {
     var id = el.getAttribute("data-id");
-    var d = defaultsFor(id, window.innerWidth, window.innerHeight);
+    // Sized to the PRIMARY display, never to the whole desktop: a default layout
+    // is a starting point on the screen the driver is looking through, and
+    // spreading it over 5760px would scatter the widgets across three monitors
+    // and read as a broken overlay. The side screens start empty and stay that
+    // way until something is dragged onto them.
+    var d = defaultsFor(id, span.primary.width, span.primary.height);
     var l = layout[id] || { x: d.x, y: d.y, scale: 1 };
     layout[id] = l;
     // Width: the operator's stretched width when they have set one, otherwise
@@ -120,13 +274,46 @@
       el.style.height = "";
       el.removeAttribute("data-sized-h");
     }
-    el.style.left = l.x + "px";
-    el.style.top = l.y + "px";
+    // Layout coordinates are measured from the primary display; the window
+    // starts at the top-left of the whole desktop. padX/padY bridge the two, and
+    // are 0 unless there is a screen left of / above the main one.
+    el.style.left = l.x + span.padX + "px";
+    el.style.top = l.y + span.padY + "px";
     el.style.transform = l.scale === 1 ? "" : "scale(" + l.scale + ")";
   }
 
   function applyAll() {
     for (var i = 0; i < items.length; i++) applyItem(items[i]);
+  }
+
+  /**
+   * Outline each monitor while editing, so the operator can see which screen
+   * they are dropping a widget onto. Nothing is drawn on a single-monitor rig —
+   * there is only one screen and its edges are the edges of everything — so this
+   * is chrome that only ever appears where it is needed. The elements live in
+   * the DOM only while editing, and CSS keeps them display:none regardless
+   * outside .ig-editing, so the locked layer paints none of it.
+   */
+  var screensEl = document.getElementById("ig-screens");
+
+  function renderScreenGuides() {
+    if (!screensEl) return;
+    screensEl.textContent = "";
+    if (span.rects.length < 2) return;
+    for (var i = 0; i < span.rects.length; i++) {
+      var r = span.rects[i];
+      var g = document.createElement("div");
+      g.className = "ig-screen";
+      g.style.left = r.x + span.padX + "px";
+      g.style.top = r.y + span.padY + "px";
+      g.style.width = r.width + "px";
+      g.style.height = r.height + "px";
+      var tag = document.createElement("span");
+      tag.className = "ig-screen__tag";
+      tag.textContent = "Screen " + (i + 1) + " · " + r.width + "×" + r.height;
+      g.appendChild(tag);
+      screensEl.appendChild(g);
+    }
   }
 
   /* ------------------------------ persistence ---------------------------- */
@@ -190,10 +377,16 @@
       var l = layout[el.getAttribute("data-id")];
       if (!l || !el.offsetHeight) continue;
       var s = l.scale || 1;
-      // Widgets bigger than the window pin to the top-left corner: that is the
+      var box = { x: l.x, y: l.y, width: el.offsetWidth * s, height: el.offsetHeight * s };
+      // Settle into the screen(s) the widget is already on rather than into the
+      // window: on a triple-screen rig the window is all three, so clamping to
+      // it would leave a widget hanging over a bezel into a screen the driver
+      // cannot see it on, and would never rescue one dropped between two.
+      var home = homeRect(box);
+      // Widgets bigger than their screen pin to its top-left corner: that is the
       // corner whose handles can then reach them.
-      var x = Math.max(0, Math.min(l.x, window.innerWidth - el.offsetWidth * s));
-      var y = Math.max(0, Math.min(l.y, window.innerHeight - el.offsetHeight * s));
+      var x = clampNum(l.x, home.x, Math.max(home.x, home.x + home.width - box.width));
+      var y = clampNum(l.y, home.y, Math.max(home.y, home.y + home.height - box.height));
       if (x !== l.x || y !== l.y) {
         l.x = Math.round(x);
         l.y = Math.round(y);
@@ -305,50 +498,88 @@
       // dragging away from the widget grows it and x/y follow the pointer.
       var sn = (drag.baseW * drag.origScale - dxScreen) / drag.baseW;
       l.scale = Math.round(clampNum(sn, MIN_SCALE, MAX_SCALE) * 100) / 100;
-      l.x = Math.round(Math.max(0, drag.right - drag.baseW * l.scale));
-      l.y = Math.round(Math.max(0, drag.bottom - drag.baseH * l.scale));
+      l.x = Math.round(Math.max(minX(), drag.right - drag.baseW * l.scale));
+      l.y = Math.round(Math.max(minY(), drag.bottom - drag.baseH * l.scale));
     } else if (drag.mode === "width" || drag.mode === "height") {
       // The box is drawn scaled, so the cursor travels `scale` screen pixels for
       // every pixel of box: divide, or the edge runs away from the pointer on a
       // widget that has also been scaled up.
       if (drag.mode === "width") {
         var w = drag.baseW + dxScreen / drag.origScale;
-        l.w = Math.round(clampNum(w, MIN_W, window.innerWidth));
+        l.w = Math.round(clampNum(w, MIN_W, Math.min(span.width, MAX_ITEM)));
       } else {
         var h = drag.baseH + dyScreen / drag.origScale;
-        l.h = Math.round(clampNum(h, MIN_H, window.innerHeight));
+        l.h = Math.round(clampNum(h, MIN_H, Math.min(span.height, MAX_ITEM)));
       }
     } else if (drag.mode === "width-w" || drag.mode === "height-n") {
       // The mirror of the above: the box grows as the pointer moves away from
       // the widget, and the anchored edge holds while x/y absorb the change.
-      // Capped so the anchor cannot drag the moving edge off the top or left —
-      // that is how a widget becomes unreachable in the first place.
+      // Capped so the anchor cannot drag the moving edge off the top or left of
+      // the desktop — that is how a widget becomes unreachable in the first
+      // place. The cap is the run from the anchored edge back to that edge, so
+      // it has to be measured from minX/minY rather than from 0: on a left-hand
+      // screen the anchor's own coordinate is negative, and dividing that
+      // straight through would collapse the cap to the minimum and refuse to
+      // widen the widget at all.
       if (drag.mode === "width-w") {
         var wn = drag.baseW - dxScreen / drag.origScale;
-        var capW = Math.max(MIN_W, Math.min(window.innerWidth, drag.right / drag.origScale));
+        var runW = (drag.right - minX()) / drag.origScale;
+        var capW = Math.max(MIN_W, Math.min(MAX_ITEM, runW));
         l.w = Math.round(clampNum(wn, MIN_W, capW));
-        l.x = Math.round(Math.max(0, drag.right - l.w * drag.origScale));
+        l.x = Math.round(Math.max(minX(), drag.right - l.w * drag.origScale));
       } else {
         var hn = drag.baseH - dyScreen / drag.origScale;
-        var capH = Math.max(MIN_H, Math.min(window.innerHeight, drag.bottom / drag.origScale));
+        var runH = (drag.bottom - minY()) / drag.origScale;
+        var capH = Math.max(MIN_H, Math.min(MAX_ITEM, runH));
         l.h = Math.round(clampNum(hn, MIN_H, capH));
-        l.y = Math.round(Math.max(0, drag.bottom - l.h * drag.origScale));
+        l.y = Math.round(Math.max(minY(), drag.bottom - l.h * drag.origScale));
       }
     } else {
       var x = drag.origX + dxScreen;
       var y = drag.origY + dyScreen;
-      // Keep at least a grabbable sliver on screen.
-      var maxX = window.innerWidth - 40;
-      var maxY = window.innerHeight - 40;
-      l.x = Math.round(Math.min(maxX, Math.max(40 - drag.el.offsetWidth * l.scale, x)));
-      l.y = Math.round(Math.min(maxY, Math.max(0, y)));
+      // Keep at least a grabbable sliver on the desktop — which on a
+      // triple-screen rig is all three screens, so a widget can be carried from
+      // the middle one to either side in a single drag. Bezels are not stopped
+      // at: the pointer crosses them freely and onPointerUp settles the widget
+      // onto whichever screen it was let go over.
+      l.x = Math.round(
+        clampNum(x, minX() + 40 - drag.el.offsetWidth * l.scale, maxX() - 40),
+      );
+      l.y = Math.round(clampNum(y, minY(), maxY() - 40));
     }
     applyItem(drag.el);
+  }
+
+  /**
+   * Pull back a widget that has been let go somewhere no screen actually is.
+   *
+   * Only fires when the widget overlaps NO display, which on a single monitor
+   * cannot happen — the drag clamp always keeps 40px of it inside the one
+   * screen — so this costs one-monitor rigs nothing and never fights the
+   * deliberate hang-off-the-edge that onPointerUp protects below. What it
+   * catches is the triple-screen case: three monitors of different heights, or
+   * a side screen in portrait, leave gaps inside the desktop rectangle that a
+   * widget can be dropped into and vanish, with no handle left to drag it back.
+   */
+  function rescueOffScreen(el, l) {
+    if (!el.offsetHeight) return false;
+    var s = l.scale || 1;
+    var box = { x: l.x, y: l.y, width: el.offsetWidth * s, height: el.offsetHeight * s };
+    for (var i = 0; i < span.rects.length; i++) {
+      if (rectsOverlap(box, span.rects[i])) return false;
+    }
+    var home = nearestScreen(box);
+    l.x = Math.round(clampNum(l.x, home.x, Math.max(home.x, home.x + home.width - box.width)));
+    l.y = Math.round(clampNum(l.y, home.y, Math.max(home.y, home.y + home.height - box.height)));
+    applyItem(el);
+    return true;
   }
 
   function onPointerUp() {
     if (!drag) return;
     var wasResize = drag.mode !== "move";
+    var movedEl = drag.el;
+    var movedLayout = layout[drag.id];
     drag = null;
     // Settle a resize back into the window. Moving is left alone — the drag
     // clamp above deliberately lets a widget hang off the left edge, and
@@ -358,6 +589,7 @@
     // widget taller than the screen converge: each pull of the top edge
     // shortens it, and the release brings the new bottom back into view.
     if (wasResize) ensureOnScreen();
+    else if (movedLayout) rescueOffScreen(movedEl, movedLayout);
     saveLayout();
   }
 
@@ -402,12 +634,36 @@
     bridge.onLayoutReset(function () {
       resetLayout();
     });
+    if (bridge.onScreens) {
+      // The desktop changed shape under a running layer (monitor plugged in,
+      // resolution changed). Re-place every widget, because the window's own
+      // origin may have moved and padX/padY with it — but leave the saved
+      // coordinates alone. A screen that disappears takes its widgets out of
+      // view rather than collapsing them onto the survivors, so plugging it
+      // back in restores the layout instead of having destroyed it; entering
+      // edit mode is what tidies up anything genuinely stranded.
+      bridge.onScreens(function (s) {
+        span = normalizeSpan(s);
+        renderScreenGuides();
+        applyAll();
+      });
+    }
   } else {
     // Plain-browser preview: allow editing directly for a quick play.
     setEditing(true);
   }
 
-  loadLayout().then(function (saved) {
+  /** Desktop geometry from the app; one screen when opened in a browser. */
+  function loadScreens() {
+    if (bridge && bridge.getScreens) {
+      return Promise.resolve(bridge.getScreens()).then(normalizeSpan, fallbackSpan);
+    }
+    return Promise.resolve(fallbackSpan());
+  }
+
+  Promise.all([loadLayout(), loadScreens()]).then(function (res) {
+    var saved = res[0];
+    span = res[1];
     if (saved && typeof saved === "object") {
       for (var id in saved) {
         var l = saved[id];
@@ -419,12 +675,13 @@
           };
           // Width/height are optional: absent means "the widget's own size",
           // which is not the same as a stored value of 0.
-          if (isFinite(l.w) && l.w > 0) entry.w = Math.round(clampNum(l.w, MIN_W, 4000));
-          if (isFinite(l.h) && l.h > 0) entry.h = Math.round(clampNum(l.h, MIN_H, 4000));
+          if (isFinite(l.w) && l.w > 0) entry.w = Math.round(clampNum(l.w, MIN_W, MAX_ITEM));
+          if (isFinite(l.h) && l.h > 0) entry.h = Math.round(clampNum(l.h, MIN_H, MAX_ITEM));
           layout[id] = entry;
         }
       }
     }
+    renderScreenGuides();
     applyAll();
   });
 })();

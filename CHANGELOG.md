@@ -16,6 +16,33 @@
   you're really chasing, not to whichever row happens to be above yours. OBS
   sources can pin it per source with `?standings=gap=ahead`.
 
+### Fixed
+
+- **Triple screens: you can put widgets on your side monitors.** If you run
+  three screens *without* NVIDIA Surround, Windows treats them as three separate
+  displays — and the in-game layer was only ever your middle one, so there was
+  simply nowhere to drag a widget to. Nothing you could change in the sim or in
+  the app would have helped; borderless windowed was never the problem. The
+  layer now covers all three. Hit **edit layout** and drag anything where you
+  want it: delta on the right screen, standings in the middle, tyres on the
+  left. Edit mode outlines each monitor so you can see where one ends and the
+  next begins, and a widget dropped in a gap between two mismatched screens is
+  pulled back onto the nearest one instead of disappearing. **Your current
+  layout doesn't move** — everything stays exactly where you put it, and if
+  you're on one monitor or on Surround, nothing about this changes for you.
+
+- **The overlay reached to the bottom of your screen.** It was actually stopping
+  short by the height of your taskbar — about 48 pixels on a normal setup — so
+  the widgets that sit along the bottom (tyres, pedals, damage) were riding
+  that bit high, and the strip underneath them couldn't be used at all. The
+  layer now covers the whole screen. Bottom-anchored widgets you've placed
+  yourself stay put; if you've never moved them, they'll settle a little lower,
+  where they were meant to be.
+
+- **Plugging in a monitor mid-session no longer needs the overlay switched off
+  and on.** Adding, removing or changing the resolution of a screen now resizes
+  the layer straight away.
+
 ## 0.60.0 — 2026-08-05
 
 Four things drivers told us about this week, all fixed.

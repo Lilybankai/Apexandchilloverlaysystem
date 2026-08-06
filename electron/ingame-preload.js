@@ -17,6 +17,21 @@ contextBridge.exposeInMainWorld('apexIngame', {
   /** Persist widget placement (merged per-widget in the main process). */
   saveLayout: (layout) => ipcRenderer.invoke('ingame:layoutSave', layout),
 
+  /**
+   * Desktop geometry the layout is expressed against:
+   * `{ padX, padY, width, height, primary: {width, height}, rects: [...] }`.
+   * The window spans every display, so on a triple-screen rig this is what
+   * tells the page that there is canvas either side of the main screen —
+   * and where the bezels fall, so a widget cannot be dropped into the dead
+   * space a staggered arrangement leaves in the desktop rectangle.
+   */
+  getScreens: () => ipcRenderer.invoke('ingame:screensGet'),
+
+  /** Desktop changed shape (monitor plugged in, resolution changed). */
+  onScreens: (callback) => {
+    ipcRenderer.on('ingame:screens', (_evt, screens) => callback(screens));
+  },
+
   /** Leave edit mode (the page's "Done" button); re-locks the window. */
   editDone: () => ipcRenderer.invoke('ingame:editDone'),
 

@@ -31,6 +31,15 @@
   <script src="js/appearance.js"></script>
 </head>
 <body class="ingame">
+  <!-- Screen outlines, drawn by js/ingame.js in edit mode only, and only when
+       there is more than one monitor. The layer spans the whole desktop on a
+       triple-screen rig, so without these the operator is dragging widgets
+       across an unbroken sheet of transparency with no way to tell where one
+       screen ends and the next begins. Before the stage on purpose: both it and
+       the widgets sit at the auto z-level, so DOM order is what keeps the
+       outlines behind them. -->
+  <div class="ig-screens" id="ig-screens" aria-hidden="true"></div>
+
   <!-- Widget wrappers injected here synchronously by the inline script. -->
   <div id="ig-stage"></div>
 
