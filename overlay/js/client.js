@@ -751,14 +751,116 @@
     };
   }
 
+  /* --------------------- the standings header's position ------------------- */
+
+  /**
+   * Which position the standings header reports: the driver's place in the whole
+   * field (the default, and what the panel has always shown) or in their own
+   * class.
+   *
+   * In a multiclass race the overall number is the one nobody is racing for — a
+   * GT3 running 35th of 38 can be leading its class — and the header saying 35
+   * is then the only line on the panel that disagrees with the tower under it,
+   * where the rows already count in class. Overall stays the default because a
+   * single-class field is the common case and both readings are identical there.
+   *
+   * Delivered on the appearance channel with the rest of the standings view, so
+   * changing it retunes the header live; an OBS source pins its own with
+   * `?standings=pos=class`, on the same terms standings.js pins the composition.
+   */
+  var posMode = "overall";
+  var posPinned = false;
+  (function () {
+    try {
+      var raw = (new URLSearchParams(window.location.search).get("standings") || "")
+        .trim()
+        .toLowerCase();
+      // Any `?standings=` at all pins this too, exactly as it pins the tower's
+      // composition — a source set up for a broadcast must not change because
+      // the operator changed the app's setting for their own screen.
+      if (!raw) return;
+      posPinned = true;
+      var parts = raw.split(",");
+      for (var i = 0; i < parts.length; i++) {
+        var kv = parts[i].split("=");
+        if ((kv[0] || "").trim() !== "pos") continue;
+        posMode = (kv[1] || "").trim() === "class" ? "class" : "overall";
+      }
+    } catch (e) {
+      /* no URLSearchParams / no location — keep the default */
+    }
+  })();
+  if (window.ApexAppearance && window.ApexAppearance.onStandings) {
+    window.ApexAppearance.onStandings(function (next) {
+      if (posPinned || !next) return;
+      // Tested for 'class' rather than against 'overall' so a view arriving
+      // without the field — an older config, a server not yet updated — lands
+      // on the default rather than silently on the other mode.
+      posMode = next.pos === "class" ? "class" : "overall";
+    });
+  }
+
+  /** The driver's own standings row, or null when the field has no player in it. */
+  function playerRow(frame) {
+    var list = frame && frame.standings;
+    if (!list || !list.length) return null;
+    // The flag first, across the WHOLE list, and only then the slot id: the two
+    // are filled by different providers, and a list where both are available
+    // must not depend on which of the two rows happens to come first.
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].isPlayer) return list[i];
+    }
+    var slot = frame.player ? frame.player.slotId : UNKNOWN;
+    if (!has(slot)) return null;
+    for (var j = 0; j < list.length; j++) {
+      if (list[j] && list[j].slotId === slot) return list[j];
+    }
+    return null;
+  }
+
+  /**
+   * What the standings header reports — `"35 / 38"`, or `"GT3 10 / 13"` when the
+   * operator asked for the class reading.
+   *
+   * The class figure carries its class tag because without it the header is two
+   * numbers that changed meaning silently; with it, it says the same thing the
+   * subheader below it does. Cars are counted by the RAW `carClass` string, the
+   * same key the tower groups on, so the header and the "13 CARS" beside the
+   * class name can never disagree.
+   *
+   * Falls back to the overall reading whenever the class one cannot be told
+   * honestly (no player row yet, a sim that publishes no class, a class position
+   * the provider left out) — a header reading "— / —" mid-race is worse than one
+   * answering a slightly different question.
+   *
+   * @param {object} frame  A telemetry frame.
+   * @param {string} [mode]  `'class'` or `'overall'`; the live setting by default.
+   * @returns {string} The header text.
+   */
+  function positionMeta(frame, mode) {
+    var overall = intVal(frame.player.position) + " / " + intVal(frame.session.numCars);
+    if ((mode || posMode) !== "class") return overall;
+    var me = playerRow(frame);
+    if (!me || !me.carClass || !has(me.classPosition) || me.classPosition <= 0) return overall;
+    var total = 0;
+    for (var i = 0; i < frame.standings.length; i++) {
+      if (frame.standings[i] && frame.standings[i].carClass === me.carClass) total++;
+    }
+    // A class of one is the whole field under another name; the tag alone would
+    // be noise, and "1 / 1" is not news either — say what the field says.
+    if (total <= 1) return overall;
+    return classAbbrev(me.carClass) + " " + me.classPosition + " / " + total;
+  }
+
   function updateSessionMeta(frame) {
-    // Standings header: position / field size. Tier 1 and glow-eligible — your
-    // own position changing is the single most consequential discrete event in a
-    // race, and it is the one the driver most often misses while driving.
+    // Standings header: position / field size, or the driver's class position
+    // when they asked for it. Tier 1 and glow-eligible — your own position
+    // changing is the single most consequential discrete event in a race, and it
+    // is the one the driver most often misses while driving.
     var s = document.querySelector('#widget-standings [data-role="session"]');
     if (s && frame.player && frame.session) {
       if (!s.classList.contains("is-crit")) s.classList.add("is-crit");
-      crit(s, fmt.intVal(frame.player.position) + " / " + fmt.intVal(frame.session.numCars));
+      crit(s, positionMeta(frame));
     }
     // Relative header: current lap / total (or time remaining for timed races),
     // and before the flag drops, which session is about to run.
@@ -1074,6 +1176,10 @@
     sessionHeadline: sessionHeadline,
     // The driver's own lap tally, for the panels that feed the strip.
     playerLapsCompleted: playerLapsCompleted,
+    // The standings header's position reading, as data — so the rule about when
+    // the class figure can be told honestly is testable headlessly rather than
+    // by putting a multiclass field on screen and squinting at one corner of it.
+    positionMeta: positionMeta,
     // Also on the module surface, not just on the update ctx: standings and
     // radar reach for the colour at module-eval time (they are deferred scripts
     // that run after this one), and a widget drawing to a canvas has no ctx in

@@ -43,6 +43,19 @@
   it's on the Overlays tab, Standings card, **Fastest** → *Fastest overall*, and
   OBS sources can pin that with `?standings=fastest=overall`.
 
+- **The standings header can show your class position instead of your overall
+  one.** In a multiclass race the big number at the top of the tower has been
+  the one nobody is racing for: a GT3 running 35th of 38 can be leading its own
+  class, and 35 was the only figure on the panel that disagreed with the rows
+  underneath it, which already count in class. Set **Position** → *In my class*
+  on the Overlays tab, Standings card, and the header reads `GT3 10 / 13` — your
+  place among your own category, with the class named so there's no doubt which
+  race it's describing. Overall stays the default (in a single-class field the
+  two readings are the same anyway), a class with only your car in it keeps
+  showing the field figure rather than a meaningless `1 / 1`, and anything the
+  sim can't tell us about your class quietly falls back to the reading you've
+  always had. OBS sources pin their own with `?standings=pos=class`.
+
 ### Changed
 
 - **Your own car is now impossible to miss in the standings.** Finding yourself

@@ -21,6 +21,13 @@
  * the two panels ("29 laps left, 14 laps of fuel"). One of them counting the lap
  * being run and the other not would be off by one, silently, all race.
  *
+ * The last section covers the other readout in that header, the driver's own
+ * position: the field reading ("35 / 38") or their class one ("GT3 10 / 13"),
+ * an operator setting. What is asserted there is mostly the FALLBACK — every
+ * way the class figure can fail to be known has to land back on the field
+ * reading, because a header showing "— / —" mid-race is worse than one
+ * answering a slightly different question.
+ *
  * No test framework in this repo — plain node, run with
  * `npm run test:session-headline`. The overlay is browser-side IIFE script, so
  * client.js is evaluated here against a minimal DOM stub rather than imported.
@@ -94,7 +101,8 @@ function loadRuntime() {
 }
 
 const sandbox = loadRuntime();
-const { sessionHeadline, sessionStrip, playerLapsCompleted } = sandbox.window.ApexOverlay;
+const { sessionHeadline, sessionStrip, playerLapsCompleted, positionMeta } =
+  sandbox.window.ApexOverlay;
 
 /** A green, running session; every field the headline reads, overridable. */
 const session = (over) => Object.assign({
@@ -286,6 +294,93 @@ console.log('\n9) The strip draws what the headline says');
   set(null);
   check('a missing session leaves the strip alone', primary.textContent === 'LAP 6',
     primary.textContent);
+}
+
+console.log('\n10) The header position reads the field, or the driver\'s own class');
+{
+  // A multiclass field: the player is a GT3 mid-pack overall and near the front
+  // of their own category — the case the class reading exists for, and the one
+  // where getting it wrong still looks plausible.
+  // 38 cars: 25 in the quicker categories, then a 13-car GT3 class the player
+  // sits 10th in — 35th overall.
+  const field = [];
+  for (let i = 1; i <= 25; i++) {
+    field.push({ slotId: 200 + i, position: i, carClass: 'Hypercar', classPosition: i });
+  }
+  for (let i = 1; i <= 13; i++) {
+    const slot = 100 + i;
+    field.push({
+      slotId: i === 10 ? 7 : slot,
+      position: 25 + i,
+      carClass: 'GT3',
+      classPosition: i,
+      ...(i === 10 ? { isPlayer: true } : {}),
+    });
+  }
+
+  const frame = (over) => Object.assign({
+    player: { slotId: 7, position: 35 },
+    session: { numCars: 38 },
+    standings: field,
+  }, over);
+
+  check('the default reading is the whole field',
+    positionMeta(frame()) === '35 / 38', positionMeta(frame()));
+  check('the class reading counts inside the class, and names it',
+    positionMeta(frame(), 'class') === 'GT3 10 / 13', positionMeta(frame(), 'class'));
+
+  // Every way the class reading can fail falls back to the field one: a header
+  // reading "— / —" mid-race is worse than one answering the other question.
+  const noClass = frame({
+    standings: [{ slotId: 7, position: 35, isPlayer: true }],
+  });
+  check('a sim with no class falls back to the field',
+    positionMeta(noClass, 'class') === '35 / 38', positionMeta(noClass, 'class'));
+
+  const noClassPos = frame({
+    standings: [{ slotId: 7, position: 35, carClass: 'GT3', isPlayer: true }],
+  });
+  check('a missing class position falls back too',
+    positionMeta(noClassPos, 'class') === '35 / 38', positionMeta(noClassPos, 'class'));
+
+  const spectating = frame({ standings: [] });
+  check('no player row falls back rather than blanking',
+    positionMeta(spectating, 'class') === '35 / 38', positionMeta(spectating, 'class'));
+
+  // A single-class field: the two readings are the same numbers, and the tag is
+  // what says so. A class of ONE is different — there is no race in it to report.
+  const oneMake = frame({
+    player: { slotId: 7, position: 3 },
+    session: { numCars: 3 },
+    standings: [
+      { slotId: 5, position: 1, carClass: 'GT3', classPosition: 1 },
+      { slotId: 6, position: 2, carClass: 'GT3', classPosition: 2 },
+      { slotId: 7, position: 3, carClass: 'GT3', classPosition: 3, isPlayer: true },
+    ],
+  });
+  check('a single-class field still names the class it counted',
+    positionMeta(oneMake, 'class') === 'GT3 3 / 3', positionMeta(oneMake, 'class'));
+
+  const alone = frame({
+    player: { slotId: 7, position: 35 },
+    standings: [
+      { slotId: 1, position: 1, carClass: 'Hypercar', classPosition: 1 },
+      { slotId: 7, position: 35, carClass: 'GT3', classPosition: 1, isPlayer: true },
+    ],
+  });
+  check('a class of one says nothing a class of one can say',
+    positionMeta(alone, 'class') === '35 / 38', positionMeta(alone, 'class'));
+
+  // The player row found by slotId rather than the isPlayer flag — rF2 fills one
+  // and LMU the other on some frames.
+  const bySlot = frame({
+    standings: [
+      { slotId: 1, position: 1, carClass: 'GT3', classPosition: 1 },
+      { slotId: 7, position: 35, carClass: 'GT3', classPosition: 2 },
+    ],
+  });
+  check('the driver is found by slot when nothing is flagged',
+    positionMeta(bySlot, 'class') === 'GT3 2 / 2', positionMeta(bySlot, 'class'));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

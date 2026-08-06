@@ -182,6 +182,14 @@ export interface StandingsView {
    * the overall, and it is always in the quickest category.
    */
   fastest: 'class' | 'overall';
+  /**
+   * Which position the tower's header reports: the driver's place in the field
+   * (`'overall'`, the default) or in their own class (`'class'` — "GT3 10/13").
+   * In a multiclass race the overall number is the one nobody is racing for: a
+   * GT3 running 35th of 38 can be leading its class, and the header saying 35
+   * is the only line on the panel that disagrees with the tower under it.
+   */
+  pos: 'overall' | 'class';
 }
 
 /** URL the overlays read their appearance from. */
@@ -211,6 +219,7 @@ const appearance: Appearance = {
     behind: 3,
     gap: 'leader',
     fastest: 'class',
+    pos: 'overall',
   },
   speedUnit: 'kph',
 };
@@ -292,6 +301,7 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
         v.fastest === 'class' || v.fastest === 'overall'
           ? v.fastest
           : appearance.standings.fastest,
+      pos: v.pos === 'class' || v.pos === 'overall' ? v.pos : appearance.standings.pos,
     };
   }
   return getAppearance();

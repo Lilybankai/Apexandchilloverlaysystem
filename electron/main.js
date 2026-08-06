@@ -282,6 +282,13 @@ function defaultSettings() {
      * class leads because in a multiclass field the overall fastest is always
      * the top category's, so a GT3 driver reading it learns nothing about their
      * own race; a single-class field draws one line under either setting.
+     *
+     * `pos` is which position the panel header reports — 'overall' (your place
+     * in the field, the default and what it has always shown) or 'class' (your
+     * place among your own category, "GT3 10/13"). Overall stays the default
+     * because a single-class field is the common case and the two readings are
+     * identical there; in a multiclass race the class number is usually the one
+     * being raced for, which is why it is offered at all.
      */
     standings: {
       limit: 'all', // 'all' | 'custom'
@@ -291,6 +298,7 @@ function defaultSettings() {
       behind: 3,
       gap: 'leader', // 'leader' | 'ahead'
       fastest: 'class', // 'class' | 'overall'
+      pos: 'overall', // 'overall' | 'class'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -525,6 +533,7 @@ function normalizeStandings(stored) {
     behind: clamp(from.behind, 0, 30, d.behind),
     gap: from.gap === 'ahead' ? 'ahead' : d.gap,
     fastest: from.fastest === 'overall' ? 'overall' : d.fastest,
+    pos: from.pos === 'class' ? 'class' : d.pos,
   };
 }
 

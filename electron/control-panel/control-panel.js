@@ -451,10 +451,45 @@
     flHead.appendChild(flLabel);
     flHead.appendChild(fastest);
 
+    // Which position the panel header reports. Its own row for the same reason
+    // again: it is a fact about the driver's race, not about how many rows are
+    // drawn, and in a multiclass field it is the setting that decides whether
+    // the biggest number on the panel is the one being raced for.
+    const posLabel = document.createElement('span');
+    posLabel.className = 'ovcard__bg-label';
+    posLabel.textContent = 'POSITION';
+
+    const pos = document.createElement('select');
+    pos.className = 'field__input field__input--inline';
+    pos.id = 'standings-pos';
+    for (const [value, text] of [
+      ['overall', 'In the field'],
+      ['class', 'In my class'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      pos.appendChild(opt);
+    }
+    // Defensive default: a config written by an older build has no `pos` at all,
+    // and a select handed undefined shows an empty box rather than a setting.
+    pos.value = v.pos === 'class' ? 'class' : 'overall';
+    pos.title =
+      'Whether the number in the standings header is your place in the whole ' +
+      'field or in your own class — in a multiclass race a GT3 running 35th ' +
+      'of 38 can be leading its class';
+    pos.addEventListener('change', () => void send({ pos: pos.value }));
+
+    const posHead = document.createElement('div');
+    posHead.className = 'ovcard__view-head';
+    posHead.appendChild(posLabel);
+    posHead.appendChild(pos);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
     wrap.appendChild(flHead);
+    wrap.appendChild(posHead);
     return wrap;
   }
 

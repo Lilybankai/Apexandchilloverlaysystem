@@ -525,10 +525,11 @@ html, body { height: 100%; overflow: hidden; }
 .ovcard__view { display: flex; flex-direction: column; gap: 8px; }
 .ovcard__view-head { display: flex; align-items: center; gap: 8px; }
 .ovcard__view-head .field__input { flex: 1; min-width: 0; font-family: var(--font-ui); }
-/* SHOW, GAP and FASTEST are different lengths; without a floor on the label the
-   dropdowns start at different x and the card reads as misaligned. The floor is
-   the widest of them — raise it if a longer label is ever added, or that one
-   pushes its own dropdown out of line with the other two. */
+/* SHOW, GAP, FASTEST and POSITION are different lengths; without a floor on the
+   label the dropdowns start at different x and the card reads as misaligned. The
+   floor clears the widest of them (POSITION measures 51px in Bahnschrift at this
+   size, FASTEST 46px) — raise it if a longer label is ever added, or that one
+   pushes its own dropdown out of line with the rest. */
 .ovcard__view-head .ovcard__bg-label { min-width: 58px; }
 
 /* Four small controls, two up on a narrow card so the numbers stay readable

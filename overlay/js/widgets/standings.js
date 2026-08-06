@@ -282,6 +282,12 @@
    * Both are independent of the composition, so
    * `?standings=all,gap=ahead,fastest=overall` is the whole field with intervals
    * and a single fastest lap.
+   *
+   * One more key rides this same param and is NOT read here: `pos=class` puts
+   * the driver's class position in the panel HEADER rather than their place in
+   * the field. That readout is written by the shared runtime (`updateSessionMeta`
+   * in js/client.js), which parses the param for that key alone — the header
+   * belongs to the panel shell, not to the tower.
    */
   function initView(params) {
     var raw = (params.get("standings") || "").trim().toLowerCase();
