@@ -146,6 +146,9 @@ function mount(search) {
         classColor: () => '#fff',
         classLabel: (c) => String(c),
         sessionStrip: () => () => {},
+        // The session strip's own contract is tested in test-session-headline.js;
+        // here it only has to exist, because the tower feeds it every frame.
+        playerLapsCompleted: () => -1,
       },
       ApexAppearance: {
         onStandings: (cb) => {

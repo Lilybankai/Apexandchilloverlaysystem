@@ -361,7 +361,7 @@
     // fact about the session, and it is still true (and still worth showing) on
     // a car the calculator has nothing to say about — a spectated entry, or the
     // first laps before a burn rate exists.
-    setSession(frame.session);
+    setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
     if (!f) return;
 
     setAlarm(f.pitThisLap === true, pitCallText(f));

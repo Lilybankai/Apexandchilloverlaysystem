@@ -7,12 +7,14 @@
  *
  *   lap-limited     LAP 12/40   · 29 LAPS LEFT
  *   timed race      LAP 12      · 28:14 · ~24 LAPS LEFT
- *   practice/quali  PRACTICE    · 28:14
+ *   practice/quali  LAP 5       · 28:14 · PRACTICE
  *
- * That last row is the one worth a test. Practice and qualifying have a clock
- * but no lap total, so a counter there is a personal tally being shown where a
- * position in the session belongs — "LAP 5" with nothing to be five of. The rule
- * is easy to write and just as easy to undo by adding a case above it.
+ * That last row is the one worth a test. Practice and qualifying have no lap
+ * total, so the counter there is the DRIVER's tally — laps they have completed,
+ * counting up — rather than where the session is up to, and it is read off
+ * their own standings row rather than off `session.currentLap`, which is the
+ * leader's. Wiring it to the wrong one would look right in a single-car test
+ * session and be wrong the moment anyone else is on track.
  *
  * Both panels take the wording from the same function so they cannot disagree
  * about how many laps are to go, which is a subtraction the driver makes between
@@ -92,7 +94,7 @@ function loadRuntime() {
 }
 
 const sandbox = loadRuntime();
-const { sessionHeadline, sessionStrip } = sandbox.window.ApexOverlay;
+const { sessionHeadline, sessionStrip, playerLapsCompleted } = sandbox.window.ApexOverlay;
 
 /** A green, running session; every field the headline reads, overridable. */
 const session = (over) => Object.assign({
@@ -148,30 +150,76 @@ console.log('\n3) A timed race counts laps too, with the clock beside them');
   check('and the last lap is singular there too', end.note === '~1 LAP LEFT', end.note);
 }
 
-console.log('\n4) Practice and qualifying show the session, not a lap tally');
+console.log('\n4) Practice and qualifying count the laps the DRIVER has done');
 {
   for (const [type, label] of [
     ['practice', 'PRACTICE'], ['qualifying', 'QUALIFYING'],
     ['warmup', 'WARM-UP'], ['testday', 'TEST DAY'],
   ]) {
-    const h = sessionHeadline(session({ type, currentLap: 5, timeRemainingSec: 1694 }));
-    check(type + ' is named rather than counted', h.primary === label, h.primary);
+    // currentLap here is 12 — the LEADER's lap, and deliberately nothing like
+    // the driver's 5. Reading the wrong one is the whole failure mode.
+    const h = sessionHeadline(session({ type, currentLap: 12, timeRemainingSec: 1694 }), 5);
+    check(type + ' counts the driver\'s own laps', h.primary === 'LAP 5', h.primary);
     check('  with its clock', h.clock === '28:14', h.clock);
-    check('  and no laps-left claim', h.note === '', h.note);
+    check('  and keeps the session named beside it', h.note === label, h.note);
   }
 }
 
-console.log('\n5) The lap limit decides, not the name');
+console.log('\n5) That tally counts completed laps, from zero, with no total');
+{
+  const out = sessionHeadline(session({ type: 'practice', timeRemainingSec: 1694 }), 0);
+  check('an out-lap has completed nothing', out.primary === 'LAP 0', out.primary);
+  const first = sessionHeadline(session({ type: 'practice', timeRemainingSec: 1694 }), 1);
+  check('one lap in the books reads LAP 1', first.primary === 'LAP 1', first.primary);
+  const ten = sessionHeadline(session({ type: 'practice', timeRemainingSec: 1694 }), 10);
+  check('and it keeps counting up', ten.primary === 'LAP 10', ten.primary);
+  check('never inventing a total to be out of', !ten.primary.includes('/'), ten.primary);
+
+  // Spectating or replaying: there is no driver whose laps these would be, so
+  // the counter has nothing honest to say and the session's name takes the slot.
+  const none = sessionHeadline(session({ type: 'practice', timeRemainingSec: 1694 }), -1);
+  check('no player row falls back to the session name', none.primary === 'PRACTICE',
+    none.primary);
+  check('  and claims nothing beside it', none.note === '', none.note);
+  const absent = sessionHeadline(session({ type: 'practice', timeRemainingSec: 1694 }));
+  check('an omitted tally does the same', absent.primary === 'PRACTICE', absent.primary);
+}
+
+console.log('\n6) The tally comes off the player\'s own standings row');
+{
+  const field = (over) => [
+    { slotId: 1, isPlayer: false, lapsCompleted: 12 },
+    Object.assign({ slotId: 2, isPlayer: true, lapsCompleted: 5 }, over),
+    { slotId: 3, isPlayer: false, lapsCompleted: 9 },
+  ];
+  check('the player row wins, not the leader',
+    playerLapsCompleted({ standings: field() }) === 5,
+    String(playerLapsCompleted({ standings: field() })));
+  check('a player yet to complete one is zero, not unknown',
+    playerLapsCompleted({ standings: field({ lapsCompleted: 0 }) }) === 0,
+    String(playerLapsCompleted({ standings: field({ lapsCompleted: 0 }) })));
+  check('an unpublished count is zero too',
+    playerLapsCompleted({ standings: field({ lapsCompleted: -1 }) }) === 0,
+    String(playerLapsCompleted({ standings: field({ lapsCompleted: -1 }) })));
+  check('a field with no player at all is unknown',
+    playerLapsCompleted({ standings: field({ isPlayer: false }) }) === -1,
+    String(playerLapsCompleted({ standings: field({ isPlayer: false }) })));
+  check('and so is a frame with no field yet',
+    playerLapsCompleted({}) === -1 && playerLapsCompleted(null) === -1, '');
+}
+
+console.log('\n7) The lap limit decides, not the name');
 {
   // A lap-limited qualifying session is unusual and entirely legal. The reason
-  // practice loses the counter is that there is no total to count towards — so
-  // when there is one, the counter is right again.
-  const h = sessionHeadline(session({ type: 'qualifying', currentLap: 3, totalLaps: 8 }));
+  // practice counts the driver's own laps is that there is no total to count
+  // towards — so when there is one, the race-shaped counter is right again, and
+  // it beats the tally even when one is passed in.
+  const h = sessionHeadline(session({ type: 'qualifying', currentLap: 3, totalLaps: 8 }), 5);
   check('a lap-limited qualifying counts laps', h.primary === 'LAP 3/8', h.primary);
   check('and says what is left', h.note === '6 LAPS LEFT', h.note);
 }
 
-console.log('\n6) Before the flag drops, the strip introduces the session');
+console.log('\n8) Before the flag drops, the strip introduces the session');
 {
   const grid = sessionHeadline(session({
     type: 'race', phase: 'countdown', notStarted: true,
@@ -184,7 +232,9 @@ console.log('\n6) Before the flag drops, the strip introduces the session');
   const garage = sessionHeadline(session({
     type: 'practice', phase: 'garage', notStarted: true,
     currentLap: 0, scheduledLengthSec: 1800, timeRemainingSec: 300,
-  }));
+  }), 0);
+  check('a session yet to go green is named, not counted',
+    garage.primary === 'PRACTICE', garage.primary);
   check('a booked length beats the remaining clock', garage.clock === '30 MIN', garage.clock);
   check('the garage adds nothing', garage.note === '', garage.note);
 
@@ -194,7 +244,7 @@ console.log('\n6) Before the flag drops, the strip introduces the session');
   check('an unpublished length invents no duration', unbooked.clock === '', unbooked.clock);
 }
 
-console.log('\n7) The strip draws what the headline says');
+console.log('\n9) The strip draws what the headline says');
 {
   const parent = makeElement('div');
   const set = sessionStrip(parent, { small: true });
@@ -214,23 +264,27 @@ console.log('\n7) The strip draws what the headline says');
   check('  and shows the laps left', note.textContent === '29 LAPS LEFT' && note.hidden === false,
     note.textContent + ' hidden=' + note.hidden);
 
-  set(session({ type: 'practice', currentLap: 5, totalLaps: 0, timeRemainingSec: 1694 }));
-  check('switching to practice renames the counter', primary.textContent === 'PRACTICE',
-    primary.textContent);
+  set(session({ type: 'practice', currentLap: 12, totalLaps: 0, timeRemainingSec: 1694 }), 5);
+  check('switching to practice keeps a counter in the same slot',
+    primary.textContent === 'LAP 5', primary.textContent);
   check('  shows the clock', clock.textContent === '28:14' && clock.hidden === false,
     clock.textContent + ' hidden=' + clock.hidden);
-  check('  and retires the stale laps-left', note.hidden === true, String(note.hidden));
+  check('  and replaces the stale laps-left with the session name',
+    note.textContent === 'PRACTICE' && note.hidden === false,
+    note.textContent + ' hidden=' + note.hidden);
 
-  set(session({ type: 'practice', currentLap: 5, totalLaps: 0, timeRemainingSec: 30 }));
+  set(session({ type: 'practice', currentLap: 12, totalLaps: 0, timeRemainingSec: 30 }), 6);
+  check('the counter follows the driver across the line',
+    primary.textContent === 'LAP 6', primary.textContent);
   check('the final minute flashes the clock', clock.classList.contains('is-urgent'), '');
-  set(session({ type: 'practice', currentLap: 5, totalLaps: 0, timeRemainingSec: 300 }));
+  set(session({ type: 'practice', currentLap: 12, totalLaps: 0, timeRemainingSec: 300 }), 6);
   check('and stops flashing when it is no longer true',
     !clock.classList.contains('is-urgent'), '');
 
   // A frame with no session block at all (a widget bound before the first
   // frame lands) must leave the strip as it was rather than blanking it.
   set(null);
-  check('a missing session leaves the strip alone', primary.textContent === 'PRACTICE',
+  check('a missing session leaves the strip alone', primary.textContent === 'LAP 6',
     primary.textContent);
 }
 

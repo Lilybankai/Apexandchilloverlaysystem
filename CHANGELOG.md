@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.62.0 — 2026-08-06
+
+### Added
+
+- **Practice and qualifying now count your laps.** A race has always shown
+  `LAP 1/16` at the top of the standings tower, but a practice session had no
+  lap total to count towards, so that spot only carried the session name and the
+  clock. It now counts the laps *you* have completed — `LAP 1` once the first
+  one is in the books, `LAP 10` at ten — in exactly the place the race counter
+  sits, with the session's name moved alongside it. It is your own tally, read
+  off your row rather than the leader's, so a busy practice session with cars on
+  every different schedule still tells you how much running **you** have done.
+  The fuel panel's strip counts the same way.
+
 ## 0.61.0 — 2026-08-06
 
 ### Added

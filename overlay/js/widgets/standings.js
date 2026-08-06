@@ -520,7 +520,7 @@
     // view never reads it.
     var intervals = view && view.gap === "ahead" ? computeIntervals(full, fmt) : null;
 
-    setSession(frame.session);
+    setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
     // Fastest lap of the race (purple) and fastest lap per class (green). In a
     // multiclass field only one car can hold the purple, so without the

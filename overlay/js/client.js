@@ -629,6 +629,33 @@
   }
 
   /**
+   * How many laps the DRIVER has completed this session, read from their own
+   * standings row — the one place every provider fills it in.
+   *
+   * Not `session.currentLap`, which is the LEADER's lap: in a race those two
+   * questions have nearly the same answer, but in a practice session with a
+   * dozen cars circulating on their own schedules they have nothing to do with
+   * each other, and the driver's tally is the one being asked for.
+   *
+   * @param {object} frame  A telemetry frame.
+   * @returns {number} Laps completed, or `-1` when there is no player row at all
+   *   (a spectator feed, a replay, or the frames before the field lands).
+   */
+  function playerLapsCompleted(frame) {
+    var list = frame && frame.standings;
+    if (!list) return UNKNOWN;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].isPlayer) {
+        var n = list[i].lapsCompleted;
+        // A player row with no lap count yet is still a player: they have
+        // completed nothing, which is 0 laps rather than "unknown".
+        return has(n) ? Math.max(0, Math.floor(n)) : 0;
+      }
+    }
+    return UNKNOWN;
+  }
+
+  /**
    * The one-line answer to *where are we in this session* — the headline every
    * panel carrying a session strip shows.
    *
@@ -643,17 +670,23 @@
    *   and tyred for — and asking a driver to subtract mid-corner is asking for
    *   the wrong answer.
    * - **Timed, no lap limit.** A race still counts laps, with the laps-to-go
-   *   estimated from the clock and the leader's pace (all LMU gives us). Practice
-   *   and qualifying do not: there is no total to count towards, so the lap
-   *   number is a personal tally rather than a position in the session. What the
-   *   driver wants there is which session this is and how much of it is left, so
-   *   the counter gives way to the session's own name.
+   *   estimated from the clock and the leader's pace (all LMU gives us).
+   *   Practice and qualifying have no total to count towards, so the counter
+   *   there is the driver's OWN tally — laps completed, counting up, "LAP 1"
+   *   once the first one is in the books. It is a different question from the
+   *   race counter ("how much running have I done" rather than "where is the
+   *   race up to") but it belongs in the same place, because it is the thing a
+   *   driver looks at that corner of the panel to find out. The session's name
+   *   moves to the note beside it rather than being dropped.
    *
    * @param {object} session  `frame.session` (SessionState).
+   * @param {number} [lapsDone]  Laps the driver has completed, from
+   *   {@link playerLapsCompleted}. Only read for practice/qualifying; `-1` or
+   *   omitted there falls back to naming the session, as before.
    * @returns {{primary: string, clock: string, note: string, urgent: boolean}}
    *   `clock`/`note` are `""` when they have nothing to say and should be hidden.
    */
-  function sessionHeadline(session) {
+  function sessionHeadline(session, lapsDone) {
     if (!session) return { primary: "", clock: "", note: "", urgent: false };
 
     if (session.notStarted) {
@@ -693,6 +726,19 @@
     var urgent = clock !== "" && rem <= 60;
 
     if (session.type !== "race") {
+      // The driver's own tally, in the slot the race counter uses. "LAP 0" until
+      // the first one is completed — an honest zero, and it keeps the counter in
+      // place from the moment the session goes green rather than having the
+      // strip re-shuffle itself as you cross the line for the first time.
+      if (has(lapsDone)) {
+        return {
+          primary: "LAP " + Math.max(0, Math.round(lapsDone)),
+          clock: clock,
+          note: sessionLabel(session.type),
+          urgent: urgent,
+        };
+      }
+      // Nobody to count for — spectating, or a replay. Name the session instead.
       return { primary: sessionLabel(session.type), clock: clock, note: "", urgent: urgent };
     }
 
@@ -965,7 +1011,10 @@
    *   header padding and rule (the standings tower). `small` drops the readouts
    *   a tier, for a panel too narrow to carry Tier 1 across three fields
    *   (the 400px fuel panel, which already has its own Tier 1 stats below).
-   * @returns {function(object): void} `set(session)`, cheap to call every frame.
+   * @returns {function(object, number=): void} `set(session, lapsDone)`, cheap to
+   *   call every frame. `lapsDone` is {@link playerLapsCompleted} of the frame —
+   *   the driver's own lap tally, which is what the counter shows in practice
+   *   and qualifying where there is no lap total to count towards.
    */
   function sessionStrip(parent, opts) {
     opts = opts || {};
@@ -990,9 +1039,9 @@
     el.appendChild(noteEl);
     parent.appendChild(el);
 
-    return function set(session) {
+    return function set(session, lapsDone) {
       if (!session) return;
-      var h = sessionHeadline(session);
+      var h = sessionHeadline(session, lapsDone);
       crit(primaryEl, h.primary);
 
       if (h.clock) {
@@ -1023,6 +1072,8 @@
     // markup — and so the rule about which sessions count laps can be tested
     // headlessly rather than by squinting at a panel.
     sessionHeadline: sessionHeadline,
+    // The driver's own lap tally, for the panels that feed the strip.
+    playerLapsCompleted: playerLapsCompleted,
     // Also on the module surface, not just on the update ctx: standings and
     // radar reach for the colour at module-eval time (they are deferred scripts
     // that run after this one), and a widget drawing to a canvas has no ctx in
