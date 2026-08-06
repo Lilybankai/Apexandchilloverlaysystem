@@ -1,74 +1,50 @@
 # Changelog
 
-## Unreleased
+## 0.63.0 — 2026-08-07
 
 ### Added
 
-- **The in-game overlays now come and go with your session by themselves.**
-  Leave "Show in game" on and forget it: the widgets appear the moment you're
-  at the wheel and disappear the moment you're anywhere else — the ESC menu,
-  the monitor, the garage and setup screens, or out of the session entirely.
-  Load into the next race and they're simply there again; no more finding the
-  hotkey mid-outlap or driving your menus around under a fuel panel. This is
-  how it works from this update on; if you preferred the layer staying up
-  everywhere, switch **Auto show & hide** off next to "Show in game" — and
-  edit layout always shows the layer regardless, so you can arrange widgets
-  from any screen. Demo mode still shows everything (there's no session to
-  follow), and OBS Browser Sources are untouched — your stream scenes stay
-  yours.
+- **The overlays now appear and disappear by themselves.** Get in the car and
+  they're on screen; press ESC, sit in the garage, or leave the session and
+  they're gone — back the moment you drive again. No more toggling the
+  overlay hotkey every session. Nothing to set up: leave **Show in game** on
+  and it just works. If you preferred the overlays staying up everywhere,
+  turn off **Auto show & hide** next to "Show in game". Edit layout always
+  brings the overlays up so you can arrange them from any screen, and OBS
+  Browser Sources are not affected.
 
-- **Every lap you drive now records how it was driven.** Alongside the lap
-  time, the overlay now keeps the lap's full driving trace — throttle, brake,
-  steering, gear, speed and G-forces, sampled every few metres of road — plus
-  the sector splits the sim publishes for a valid lap. Traces live on your own
-  machine (`~/.apex-overlay/traces`, kept for 60 days), and the one belonging
-  to your best clean lap per track and class travels up with it to the league
-  board. Nothing changes on screen yet: this is the groundwork for the
-  training feature, where you'll click a lap time on the leaderboard and study
-  exactly where that driver brakes, turns in and picks the throttle up. The
-  laps you drive from today are the ones there will be something to learn
-  from.
+- **A fastest lap for every class, not just the fastest car on track.** In a
+  multiclass race the fastest-lap banner was always a Hypercar's lap — nothing
+  to do with your race if you're in a GT3. The banner now shows one fastest
+  lap per class, each in its class colour with the driver who holds it, and
+  the purple BEST times in the tower mark each class's benchmark too. Want
+  the old single-lap banner? Overlays tab → Standings card → **Fastest** →
+  *Fastest overall* (OBS: `?standings=fastest=overall`).
 
-- **A fastest lap for every class, not just the quickest car on track.** The
-  banner above the standings tower has always reported one lap: the fastest in
-  the session. In a multiclass race that lap is always a Hypercar's, so a GT3
-  driver has been reading a number from a race they aren't in. It now reports
-  **one fastest lap per class** — HYPERCAR, LMP2, GT3 — each on its own line in
-  its class colour, with the car and driver holding it. The purple in the BEST
-  column follows suit, marking each class's benchmark rather than the one car
-  leading the whole field. Classes appear in the same order the tower groups
-  them, a class with nobody's lap in yet is simply left out rather than shown as
-  a dash, and a single-class field still draws exactly one line. This is the new
-  default and needs nothing set up; if you want the old single-lap banner back
-  it's on the Overlays tab, Standings card, **Fastest** → *Fastest overall*, and
-  OBS sources can pin that with `?standings=fastest=overall`.
+- **The standings header can count your position in class.** A GT3 running
+  35th overall can be leading its class — but 35 was the big number on the
+  panel. Set **Position** → *In my class* (Overlays tab, Standings card) and
+  the header reads `GT3 10 / 13` instead. The default is unchanged, and if
+  the sim can't say what class you're in you get the overall figure as
+  before (OBS: `?standings=pos=class`).
 
-- **The standings header can show your class position instead of your overall
-  one.** In a multiclass race the big number at the top of the tower has been
-  the one nobody is racing for: a GT3 running 35th of 38 can be leading its own
-  class, and 35 was the only figure on the panel that disagreed with the rows
-  underneath it, which already count in class. Set **Position** → *In my class*
-  on the Overlays tab, Standings card, and the header reads `GT3 10 / 13` — your
-  place among your own category, with the class named so there's no doubt which
-  race it's describing. Overall stays the default (in a single-class field the
-  two readings are the same anyway), a class with only your car in it keeps
-  showing the field figure rather than a meaningless `1 / 1`, and anything the
-  sim can't tell us about your class quietly falls back to the reading you've
-  always had. OBS sources pin their own with `?standings=pos=class`.
+- **Every lap you drive now records how it was driven.** Throttle, brake,
+  steering, gear, speed and G-forces are kept alongside the lap time, sampled
+  every few metres, with sector splits for valid laps. Traces stay on your own
+  machine (60 days), and only your best clean lap per track and class goes up
+  to the league board with its time. Nothing changes on screen yet — this is
+  the groundwork for the training feature, where you'll click a leaderboard
+  time and see exactly where that driver brakes and gets back on the power.
+  Laps driven from today onwards are the ones you'll be able to study.
 
 ### Changed
 
-- **Your own car is now impossible to miss in the standings.** Finding yourself
-  in a thirty-row tower meant hunting for a slightly lighter row with a thin
-  blue edge — findable if you already knew where to look, which is not the same
-  as findable at 200km/h. Your row now carries a **YOU** tag at the head of the
-  driver column, sits on a proper cyan tint, is bracketed down both edges, and
-  draws its numbers at full brightness while the rest of the field stays as
-  context. The tag is there because a colour alone can't do this job: every
-  class already owns one — LMP3's is the very cyan the highlight uses — and the
-  tint disappears as you wind the Widget background slider down. The word
-  doesn't. If you're also holding the fastest lap, the purple sits inside the
-  cyan so you keep both.
+- **Your own row in the standings is now impossible to miss.** It carries a
+  **YOU** tag, sits on a cyan tint bracketed down both edges, and keeps its
+  numbers at full brightness while the rest of the field dims to context. The
+  tag matters because colour alone can't do the job — the tint fades out as
+  you wind the Widget background slider down, but the word stays. Hold the
+  fastest lap too and the purple sits inside the cyan, so you keep both.
 
 ## 0.62.0 — 2026-08-06
 
