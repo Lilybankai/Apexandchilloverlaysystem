@@ -419,6 +419,39 @@
 .standings__gap { width: 62px; color: var(--text-secondary); }
 .standings__best { width: 70px; color: var(--text-secondary); }
 .standings__last { width: 70px; }
+/* Pit flag column, at the right edge of the row. No left padding and a hair of
+   right: the colgroup gives this column 18px, and the cell default of 5px a
+   side would leave 8px for a chip that needs 14. */
+.standings__pit {
+  width: 18px;
+  padding-left: 0;
+  padding-right: 3px;
+  text-align: right;
+}
+/* Column headings. Placed AFTER the per-column rules above on purpose: the
+   headings carry those same classes so they inherit each column's alignment and
+   width for free, and a single class cannot outrank another on specificity — so
+   the type these rules override has to be declared before them.
+
+   The quietest text in the widget by some distance. A heading is read once, when
+   someone first meets the panel; the rows under it are read all race, and a
+   heading that competes with them has cost more than it explained. */
+.standings__headrow { border-bottom: 1px solid var(--border-strong); }
+.standings__head {
+  padding: 3px 5px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* The driver heading is the one that sits over a left-aligned column, and it
+   starts at the class dot rather than the name — 1px of raggedness at the top
+   of the tower reads as a misalignment, so it lines up with the dot instead. */
+.standings__head.standings__driver { text-align: left; }
 /* Small coloured class tag before the driver name. */
 .standings__class {
   display: inline-block;
@@ -442,6 +475,41 @@
   vertical-align: middle;
   object-fit: contain;
 }
+/* Pit flag — one rule for both tables, because the two are the same fact drawn
+   the same way: a car that is in the pit lane and therefore not on the road.
+   Amber, matching the caution sense the palette already gives --warn, on its own
+   opaque backing so the chip survives the background slider the panel around it
+   is meant to disappear with. Sized off the type tokens so it rides the Text
+   size slider instead of clipping out of an 18px column at 120%. */
+.pit-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--fs-body) * 1.15);
+  height: calc(var(--fs-body) * 1.15);
+  vertical-align: middle;
+  border-radius: 3px;
+  background: rgba(8, 10, 17, 0.82);
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px var(--warn);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  line-height: 1;
+  /* The panel's translucent-mode text shadow turns a coloured glyph on a dark
+     square to mud; the square is its own backing. */
+  text-shadow: none;
+}
+/* An off flag is turned off with `visibility`, NOT `display: none`: it keeps its
+   box, which is what holds the column at one width on every row and in every
+   session. Collapse it and the relative panel's gap numbers would jump sideways
+   the moment the first car pitted. (visibility:hidden also takes it out of the
+   accessibility tree, so nothing announces an invisible "P".)
+   A CLASS, not the `hidden` attribute every other toggle in these tables uses,
+   because ingame.css carries a `[hidden] { display: none !important }` catch-all
+   for the edit toolbar — `hidden` here would collapse the box on the one page
+   that matters most, and only there. */
+.pit-flag.is-off { visibility: hidden; }
 /* Rotating sponsor strip under the tower. Two stacked images cross-fade; only
    opacity animates, so the compositor handles it with no layout or paint. */
 .standings__sponsors {
@@ -1024,6 +1092,16 @@
   width: calc(var(--fs-value) * 4.2);
   text-align: right;
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+/* Pit flag column, past the gap at the right edge. No width: this table is
+   auto-layout, so the column sizes itself to the flag — and because an off flag
+   keeps its box (see .pit-flag.is-off) that size is the same on every row and
+   in every session. The padding is trimmed from the cell default of 8px a side
+   to keep the reservation to what the chip actually needs. */
+.relative__pit {
+  padding-left: 0;
+  padding-right: 4px;
+  text-align: right;
 }
 
 /* =========================================================================

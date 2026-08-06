@@ -4,8 +4,10 @@
  * Renders `frame.standings` (StandingEntry[]) as a class-grouped timing tower:
  *
  *   ┌ session strip ─ LAP x/y · laps left · clock (or the session name) ──┐
+ *   ├ FASTEST LAP · #20 Robin Frijns · 1:37.833 ──────────────────────────┤
+ *   │ POS  ±  DRIVER            GAP     LAST      BEST    VE               │
  *   ├ HYPERCAR · 6 CARS ─────────────────────────────────────────────────┤
- *   │  P  ±   Driver            VE     GAP        LAST                     │
+ *   │  1   ▲2  ● #7 Kamui Kobayashi   —  1:38.412  1:37.833  57%      [P] │
  *   ├ GT3 · 9 CARS ───────────────────────────────────────────────────────┤
  *   │  ...                                                                 │
  *   └─────────────────────────────────────────────────────────────────────┘
@@ -15,6 +17,8 @@
  *     `gridPosition`.
  *   - VE virtual-energy % remaining (`virtualEnergy`, LMU's per-car budget) with
  *     a thin fill bar behind it.
+ *   - P  a flag on cars in the pit lane (`inPit`), at the right edge of the row
+ *     rather than appended to the name — see createRow.
  * GAP counts either the cumulative gap to the class leader (the default) or the
  * interval to the car directly in front — an operator setting, because a
  * broadcast tower wants the first and a driver usually wants the second.
@@ -40,21 +44,30 @@
   var classColor = window.ApexOverlay.classColor;
   var classLabel = window.ApexOverlay.classLabel;
 
-  // Broadcast-style name: "theo Pereira" -> "T. Pereira". Keeps already-short or
-  // single-token names as-is, and preserves hyphenated / multi-part surnames.
-  function shortName(name) {
+  /**
+   * The name as the driver entered it, tidied of stray whitespace and nothing
+   * else. Names that outrun the column are cut with an ellipsis by the CSS.
+   *
+   * This used to render the broadcast form, "theo Pereira" -> "T. Pereira", and
+   * that is the wrong trade for a field of people you race with by name: an
+   * initial is unrecognisable in a sim field where several drivers share a
+   * surname and everyone knows each other by their first name. It is also a
+   * false economy — the abbreviation saved a handful of pixels on the names that
+   * already fitted, and the long ones it was supposed to rescue still clipped.
+   * Where a name does not fit, the cut now falls at the END of it, so the first
+   * name always survives (relative.js has always drawn names this way).
+   */
+  function displayName(name) {
     if (!name) return "—";
-    var parts = name.trim().split(/\s+/);
-    if (parts.length < 2) return name;
-    var first = parts[0];
-    var last = parts.slice(1).join(" ");
-    return first.charAt(0).toUpperCase() + ". " + last;
+    return name.trim().replace(/\s+/g, " ");
   }
 
   /** How long a new personal-best lap flashes green (ms). */
   var PB_FLASH_MS = 5000;
 
   var mount, setSession, sessFastest, tbody;
+  /** The GAP column heading — its wording follows the operator's gap mode. */
+  var headGap = null;
   /** @type {Map<number, object>} slotId -> cached row element + last values. */
   var rows = new Map();
   /** @type {Map<number, object>} slotId -> { laps, best, flashUntil }. */
@@ -115,18 +128,49 @@
     // changes every lap, and 32 rows blooming in sequence is wallpaper.
     lastTd.className = "standings__cell standings__last is-crit";
 
+    // Pit flag: a marker at the far RIGHT of the row rather than a " ·PIT"
+    // glued to the driver's name. The name column is the one the eye reads
+    // DOWN the tower, and a suffix there put a transient state inside an
+    // identity — it moved with the name, took four more characters off the
+    // column that has none to give, and vanished into the text around it. In
+    // its own column the flag lands at the same x on every row, which is what
+    // makes a pit lane scannable at a glance.
+    var pitTd = document.createElement("td");
+    pitTd.className = "standings__cell standings__pit";
+    var pitFlag = document.createElement("span");
+    // `is-off`, not the `hidden` attribute the badge above uses: the flag has to
+    // keep its box when it is off or the column would resize as the pit lane
+    // fills and empties. See .pit-flag.is-off.
+    pitFlag.className = "pit-flag is-off";
+    pitFlag.textContent = "P";
+    pitFlag.title = "In the pit lane";
+    pitTd.appendChild(pitFlag);
+
+    // VE goes to the RIGHT of the lap times, not between the name and the gap.
+    // The tower reads left to right as identity then race — who the car is, then
+    // where it is and how fast it is going — and energy is neither: it is the
+    // strategy fact you consult after you have read the race, and it was
+    // interrupting the run of times to sit where it did. Its bar is also the only
+    // non-text mark in the table, and against the driver names it was the loudest
+    // thing in a column that is meant to be scanned, not looked at.
+    // LAST sits next to GAP, BEST outside it. The two of them are read together:
+    // the gap tells you where a car is and its last lap tells you whether that
+    // gap is about to change. BEST is a season-long fact by comparison — it
+    // answers what a car is capable of, which is a question you ask once.
     tr.appendChild(posTd);
     tr.appendChild(deltaTd);
     tr.appendChild(driverTd);
-    tr.appendChild(veTd);
     tr.appendChild(gapTd);
-    tr.appendChild(bestTd);
     tr.appendChild(lastTd);
+    tr.appendChild(bestTd);
+    tr.appendChild(veTd);
+    tr.appendChild(pitTd);
 
     return {
       tr: tr,
       posTd: posTd,
       deltaTd: deltaTd,
+      driverTd: driverTd,
       classDot: classDot,
       badge: badge,
       nameSpan: nameSpan,
@@ -136,6 +180,7 @@
       gapTd: gapTd,
       bestTd: bestTd,
       lastTd: lastTd,
+      pitFlag: pitFlag,
       cache: {},
     };
   }
@@ -146,7 +191,7 @@
     tr.className = "standings__grouprow";
     var td = document.createElement("td");
     td.className = "standings__group";
-    td.colSpan = 7;
+    td.colSpan = 8;
     var dot = document.createElement("span");
     dot.className = "standings__group-dot";
     var label = document.createElement("span");
@@ -416,10 +461,17 @@
     // the browser split the table into equal columns and starve the driver name.
     // The driver column has no width, so it absorbs the remaining space.
     var colgroup = document.createElement("colgroup");
-    // pos, ±, driver(rest), VE, gap, best, last. The six fixed columns total
-    // 298px of the panel's 474px, leaving ~176px for the driver name. The three
-    // time columns are sized for a full "1:58.492" — undersize them and the
-    // tenths silently clip off the right.
+    // pos, ±, driver(rest), gap, last, best, VE, pit — the order the cells are
+    // appended in createRow, and it has to stay in step with it (as does the
+    // heading row in createHead). The seven fixed columns total 316px of the
+    // panel's 474px, leaving ~158px for the driver name. The three time columns
+    // are sized for a full "1:58.492" — undersize them and the tenths silently
+    // clip off the right.
+    //
+    // The pit column is 18px of mostly-empty table, and it is reserved on every
+    // row on purpose: sizing it to the field's current pit lane would shift
+    // every name sideways each time the lane emptied, and the name column is
+    // the one being read.
     //
     // Given in em, NOT px, because these widths are only correct relative to the
     // text they hold and that text now scales with --fs-scale (the operator's
@@ -428,18 +480,53 @@
     // inherits from the table, which is --fs-body — so the divisor here is the
     // 12px --fs-body is defined as, and the ratios hold at every scale.
     var BASE_PX = 12;
-    var widths = [26, 28, 0, 42, 62, 70, 70];
+    var widths = [26, 28, 0, 62, 70, 70, 42, 18];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
       colgroup.appendChild(col);
     }
     table.appendChild(colgroup);
+    table.appendChild(createHead());
     tbody = document.createElement("tbody");
     table.appendChild(tbody);
     mount.appendChild(table);
 
     initSponsors(mount);
+  }
+
+  /**
+   * Column headings, one row, above the first class group.
+   *
+   * Six of these columns are numbers with no units, and until now the only way
+   * to know that the third of them was the car's BEST lap rather than its last
+   * was to have been told. That is fine for the operator who configured the
+   * panel and useless to everyone watching it.
+   *
+   * They are deliberately the quietest text in the widget — micro, muted, in the
+   * display face — because a heading is read once and then never again, while
+   * the rows under it are read all race. The GAP heading is the exception that
+   * changes: it says what the column is actually counting, which is an operator
+   * setting (see the gap logic in renderRow) and not something a viewer can
+   * infer from the numbers. The pit column has no heading — a three-letter word
+   * does not fit in 18px, and the flag under it carries its own tooltip.
+   */
+  function createHead() {
+    var thead = document.createElement("thead");
+    var tr = document.createElement("tr");
+    tr.className = "standings__headrow";
+    var labels = ["POS", "±", "DRIVER", "GAP", "LAST", "BEST", "VE", ""];
+    var classes = ["pos", "delta", "driver", "gap", "last", "best", "ve", "pit"];
+    for (var i = 0; i < labels.length; i++) {
+      var th = document.createElement("th");
+      th.className = "standings__head standings__" + classes[i];
+      th.scope = "col";
+      th.textContent = labels[i];
+      tr.appendChild(th);
+    }
+    headGap = tr.children[3];
+    thead.appendChild(tr);
+    return thead;
   }
 
   /* ------------------------------ sponsor strip ---------------------------- */
@@ -533,6 +620,17 @@
     // pass over the field every frame is cheap, but not free, and the default
     // view never reads it.
     var intervals = view && view.gap === "ahead" ? computeIntervals(full, fmt) : null;
+
+    // The GAP heading says which of the two readings the column holds. Written
+    // here rather than in init because the mode is a view setting read from the
+    // URL, and this is the one place that already knows which way it went.
+    var gapHead = intervals ? "INT" : "GAP";
+    if (headGap && headGap.textContent !== gapHead) {
+      headGap.textContent = gapHead;
+      headGap.title = intervals
+        ? "Interval to the car directly ahead"
+        : "Gap to the class leader";
+    }
 
     setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
@@ -641,7 +739,7 @@
       if (!sessFastest.hidden) sessFastest.hidden = true;
       return;
     }
-    var who = shortName(entry.driverName);
+    var who = displayName(entry.driverName);
     if (entry.carNumber) who = "#" + entry.carNumber + " " + who;
     var txt = "FASTEST LAP · " + who + " · " + fmt.lapTime(sec);
     if (sessFastest.textContent !== txt) sessFastest.textContent = txt;
@@ -736,10 +834,21 @@
       }
     }
 
-    var name = shortName(e.driverName);
+    var name = displayName(e.driverName);
     if (e.carNumber) name = "#" + e.carNumber + " " + name;
-    if (e.inPit) name = name + " ·PIT";
     set(row, "name", row.nameSpan, "textContent", name);
+    // Full names are drawn in full and cut by the CSS where they do not fit, so
+    // the cell carries the whole thing for the pages that have a cursor (the
+    // browser source and OBS). The in-game layer never sees a hover and pays
+    // nothing for it but the attribute.
+    set(row, "nameTitle", row.driverTd, "title", name);
+
+    // Pit state, flagged in the right-hand column (see createRow).
+    var inPit = !!e.inPit;
+    if (row.cache.inPit !== inPit) {
+      row.cache.inPit = inPit;
+      row.pitFlag.classList.toggle("is-off", !inPit);
+    }
 
     // Virtual energy: % + a fill bar behind the number.
     var hasVe = fmt.has(e.virtualEnergy) && e.virtualEnergy >= 0;

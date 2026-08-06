@@ -111,9 +111,23 @@
     driverTd.appendChild(nameSpan);
     var deltaTd = document.createElement("td");
     deltaTd.className = "relative__cell relative__delta";
+    // Pit flag, in its own column past the gap rather than a " ·PIT" on the
+    // name — same reasoning as the standings tower: a state marker inside the
+    // identity moves with it and reads as part of it. The column is reserved on
+    // every row so the gap numbers never shift when someone pits.
+    var pitTd = document.createElement("td");
+    pitTd.className = "relative__cell relative__pit";
+    var pitFlag = document.createElement("span");
+    // `is-off`, not `hidden`: the flag keeps its box when off so the column
+    // holds one width whatever the pit lane is doing. See .pit-flag.is-off.
+    pitFlag.className = "pit-flag is-off";
+    pitFlag.textContent = "P";
+    pitFlag.title = "In the pit lane";
+    pitTd.appendChild(pitFlag);
     tr.appendChild(posTd);
     tr.appendChild(driverTd);
     tr.appendChild(deltaTd);
+    tr.appendChild(pitTd);
     return {
       tr: tr,
       posTd: posTd,
@@ -123,6 +137,7 @@
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
       deltaTd: deltaTd,
+      pitFlag: pitFlag,
       cache: {},
     };
   }
@@ -320,11 +335,17 @@
 
       var name = e.driverName || "—";
       if (e.carNumber) name = "#" + e.carNumber + " " + name;
-      if (e.inPit) name = name + " ·PIT";
       set(row, "name", row.nameSpan, "textContent", name);
 
       var gapText = e.isPlayer ? "—" : fmt.relGap(e.relativeGapSec);
       set(row, "delta", row.deltaTd, "textContent", gapText);
+
+      // Pit state, flagged past the gap (see createRow).
+      var inPit = !!e.inPit;
+      if (row.cache.inPit !== inPit) {
+        row.cache.inPit = inPit;
+        row.pitFlag.classList.toggle("is-off", !inPit);
+      }
 
       tbody.appendChild(row.tr);
     }
