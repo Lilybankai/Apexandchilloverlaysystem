@@ -87,6 +87,16 @@
     var classTag = document.createElement("span");
     classTag.className = "relative__class";
     classTag.hidden = true; // no class on this entry yet — see update()
+    // Manufacturer badge, part of the identity block with the class tag — same
+    // contract as the standings tower: hidden until a manufacturer is known,
+    // re-hidden if its file fails to load.
+    var badge = document.createElement("img");
+    badge.className = "relative__badge";
+    badge.alt = "";
+    badge.hidden = true;
+    badge.onerror = function () {
+      badge.hidden = true;
+    };
     // The ghost lives in its own span before the name, so toggling it never
     // rewrites the name text node (which the reconciler diffs).
     var ghostWrap = document.createElement("span");
@@ -96,6 +106,7 @@
     ghostWrap.appendChild(ghostSvg());
     var nameSpan = document.createElement("span");
     driverTd.appendChild(classTag);
+    driverTd.appendChild(badge);
     driverTd.appendChild(ghostWrap);
     driverTd.appendChild(nameSpan);
     var deltaTd = document.createElement("td");
@@ -108,6 +119,7 @@
       posTd: posTd,
       driverTd: driverTd,
       classTag: classTag,
+      badge: badge,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
       deltaTd: deltaTd,
@@ -288,6 +300,21 @@
           row.cache.classTitle = full;
           row.classTag.title = full;
           row.classTag.setAttribute("aria-label", full);
+        }
+      }
+
+      // Manufacturer badge. `hidden` is cleared on every src change — a
+      // previous name's load error may have hidden the element, and the error
+      // handler only fires for the file it belongs to.
+      var manu = e.manufacturer || "";
+      if (row.cache.manu !== manu) {
+        row.cache.manu = manu;
+        if (manu) {
+          row.badge.src = "/carbadges/" + encodeURIComponent(manu) + ".svg";
+          row.badge.hidden = false;
+        } else {
+          row.badge.removeAttribute("src");
+          row.badge.hidden = true;
         }
       }
 

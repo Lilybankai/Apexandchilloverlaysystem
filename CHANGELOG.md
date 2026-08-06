@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Manufacturer badges in the standings and relative panels.** Every car's row
+  now carries its maker's badge — the Ferrari shield, the Porsche crest, the
+  BMW roundel — sitting between the class marker and the driver's name, the way
+  a broadcast timing tower reads. The artwork is Le Mans Ultimate's own badge
+  set, matched through the sim's car list, so every entry down to a custom team
+  resolves to the right brand with nothing to set up; a car the sim can't name
+  gets its neutral badge instead. The badges scale with the Text size slider,
+  and OBS on a second PC gets them too — the overlay serves them itself rather
+  than pointing at the game. Other sims and demo mode draw exactly the rows
+  they always did.
+
 - **Practice and qualifying now count your laps.** A race has always shown
   `LAP 1/16` at the top of the standings tower, but a practice session had no
   lap total to count towards, so that spot only carried the session name and the

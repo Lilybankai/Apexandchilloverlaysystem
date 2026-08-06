@@ -77,8 +77,20 @@
     driverTd.className = "standings__cell standings__driver";
     var classDot = document.createElement("span");
     classDot.className = "standings__class";
+    // Manufacturer badge, between the class dot and the name — the game's own
+    // brand artwork, proxied by our server (see renderRow). Hidden until a
+    // manufacturer is known, and re-hidden if its file fails to load, so a sim
+    // with no badge set (rF2, demo) renders exactly the tower it always did.
+    var badge = document.createElement("img");
+    badge.className = "standings__badge";
+    badge.alt = "";
+    badge.hidden = true;
+    badge.onerror = function () {
+      badge.hidden = true;
+    };
     var nameSpan = document.createElement("span");
     driverTd.appendChild(classDot);
+    driverTd.appendChild(badge);
     driverTd.appendChild(nameSpan);
 
     // Virtual energy: a bar-backed % cell.
@@ -116,6 +128,7 @@
       posTd: posTd,
       deltaTd: deltaTd,
       classDot: classDot,
+      badge: badge,
       nameSpan: nameSpan,
       veTd: veTd,
       veBar: veBar,
@@ -381,11 +394,12 @@
     mount.innerHTML = "";
 
     // Session strip: the lap counter, the laps still to run, and a countdown
-    // clock for timed sessions — or the session's name in practice and
-    // qualifying, which have a clock but no lap total to count towards. The
-    // runtime owns all of that wording (client.js `sessionHeadline`) so this
-    // strip and the fuel panel's cannot end up disagreeing about how much of
-    // the session is left.
+    // clock for timed sessions. Practice and qualifying have a clock but no lap
+    // total to count towards, so the counter there is the driver's own tally of
+    // laps completed and the session's name moves beside it. The runtime owns
+    // all of that wording (client.js `sessionHeadline`) so this strip and the
+    // fuel panel's cannot end up disagreeing about how much of the session is
+    // left.
     setSession = window.ApexOverlay.sessionStrip(mount, { flush: true });
 
     // Fastest-lap-of-the-race banner: who holds it and what it is. Sits on its
@@ -705,6 +719,21 @@
     if (row.cache.dot !== dotColor) {
       row.cache.dot = dotColor;
       row.classDot.style.background = dotColor;
+    }
+
+    // Manufacturer badge. `hidden` is cleared on every src change — a previous
+    // name's load error may have hidden the element, and the error handler only
+    // fires for the file it belongs to.
+    var manu = e.manufacturer || "";
+    if (row.cache.manu !== manu) {
+      row.cache.manu = manu;
+      if (manu) {
+        row.badge.src = "/carbadges/" + encodeURIComponent(manu) + ".svg";
+        row.badge.hidden = false;
+      } else {
+        row.badge.removeAttribute("src");
+        row.badge.hidden = true;
+      }
     }
 
     var name = shortName(e.driverName);

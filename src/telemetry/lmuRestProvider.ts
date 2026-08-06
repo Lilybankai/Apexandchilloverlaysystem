@@ -188,6 +188,8 @@ const CLOSING_WINDOW_MS = 800;
 interface RestStanding {
   slotID: number;
   position: number;
+  /** Stable car hash — the same id `/rest/race/car` keys its entries by. */
+  carId?: string;
   /** Grid / qualifying position (1-based) — drives positions gained/lost. */
   qualification?: number;
   /** Virtual-energy fraction remaining, 0..1 (LMU energy budget). */
@@ -240,6 +242,26 @@ interface RestGameState {
   PitEntryDist?: number;
   PitState?: string;
 }
+
+/**
+ * One entry from `/rest/race/car` — LMU's full installed-car list. Only the id
+ * (which matches a standing's `carId`) and the manufacturer are consumed; the
+ * payload also carries image/thumbnail routes, but they 404 on current builds
+ * (probed live 2026-08-06), so the badge artwork is served from the game's
+ * static UI assets instead (see the server's `/carbadges/` route).
+ */
+interface RestRaceCar {
+  id?: string;
+  manufacturer?: string;
+}
+
+/**
+ * Minimum time between `/rest/race/car` fetches (ms). The list is ~450 KB for
+ * 500+ cars and only changes when content is installed, so it is fetched once
+ * and then only re-fetched when a standings row shows a carId we cannot name —
+ * a new session with cars we have not seen — and never more often than this.
+ */
+const CAR_LIST_RETRY_MS = 60_000;
 
 /** Fields we consume from `/rest/watch/sessionInfo`. */
 interface RestSession {
@@ -502,6 +524,16 @@ export class LmuRestProvider implements TelemetryProvider {
   private cutsAllowed: number | null = null;
   private rulesTimer: NodeJS.Timeout | null = null;
   /**
+   * carId → manufacturer, from `/rest/race/car`. Filled lazily: the first
+   * standings payload with an id this map cannot name triggers a (rate-limited)
+   * fetch of the car list. See {@link maybeRefreshCarList}.
+   */
+  private readonly manufacturerById = new Map<string, string>();
+  /** When `/rest/race/car` was last fetched (attempted), for the rate limit. */
+  private lastCarListAt = 0;
+  /** Guards against overlapping car-list fetches while one is in flight. */
+  private carListInFlight = false;
+  /**
    * Reads the sim's own track-limit charges from its trace log — the only live
    * source for them. See `telemetry/lmuTraceLimits.ts` for why a log file, and for
    * what was ruled out first.
@@ -645,7 +677,10 @@ export class LmuRestProvider implements TelemetryProvider {
         // with it, hence the catch to null rather than a shared failure.
         this.getJson<RestGameState>('/rest/sessions/GetGameState').catch(() => null),
       ]);
-      if (Array.isArray(standings)) this.standings = standings;
+      if (Array.isArray(standings)) {
+        this.standings = standings;
+        this.maybeRefreshCarList(standings);
+      }
       if (session && typeof session === 'object') this.session = session;
       if (gameState && typeof gameState === 'object') this.gameState = gameState;
       if (Array.isArray(standings) && session) this.lastOkAt = Date.now();
@@ -653,6 +688,45 @@ export class LmuRestProvider implements TelemetryProvider {
       // Leave the cache in place; the staleness check flips us to the simulator.
       if (this.verbose) console.error('[lmu] refresh failed:', (err as Error).message);
     }
+  }
+
+  /**
+   * Fetches `/rest/race/car` when the current field contains a car we cannot
+   * name a manufacturer for — which is what puts the brand badge on a standings
+   * row.
+   *
+   * Lazy rather than on a timer: the list is the largest payload the game
+   * serves (~450 KB) and changes only when content is installed, so polling it
+   * would be all cost and no information. Once every id in the field resolves,
+   * this is a Map lookup per refresh and no HTTP at all. The rate limit covers
+   * the one genuinely unresolvable case — a custom car absent from the list —
+   * which would otherwise re-fetch 450 KB every 150 ms for the whole session.
+   */
+  private maybeRefreshCarList(standings: RestStanding[]): void {
+    const unresolved = standings.some((c) => c.carId && !this.manufacturerById.has(c.carId));
+    if (!unresolved || this.carListInFlight) return;
+    const now = Date.now();
+    if (now - this.lastCarListAt < CAR_LIST_RETRY_MS) return;
+    this.lastCarListAt = now;
+    this.carListInFlight = true;
+    this.getJson<RestRaceCar[]>('/rest/race/car')
+      .then((cars) => {
+        if (!Array.isArray(cars)) return;
+        for (const car of cars) {
+          if (car && typeof car.id === 'string' && car.id && typeof car.manufacturer === 'string' && car.manufacturer) {
+            this.manufacturerById.set(car.id, car.manufacturer);
+          }
+        }
+        if (this.verbose) {
+          console.log(`[lmu] car list loaded — ${this.manufacturerById.size} manufacturers mapped`);
+        }
+      })
+      .catch((err) => {
+        if (this.verbose) console.error('[lmu] car list fetch failed:', (err as Error).message);
+      })
+      .finally(() => {
+        this.carListInFlight = false;
+      });
   }
 
   /**
@@ -1234,6 +1308,7 @@ export class LmuRestProvider implements TelemetryProvider {
       driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
       carNumber: c.carNumber || undefined,
       carClass: normalizeClass(c.carClass),
+      manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
       gridPosition:
         typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
@@ -1349,6 +1424,7 @@ export class LmuRestProvider implements TelemetryProvider {
         driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
         carNumber: c.carNumber || undefined,
         carClass,
+        manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
         relativeGapSec: round2(gap),
         lapsDifference,
         inPit,

@@ -429,6 +429,19 @@
   vertical-align: middle;
   background: var(--ac-purple);
 }
+/* Manufacturer brand badge beside the driver name — one rule for both tables,
+   because the two badges are the same element doing the same job. Sized in em
+   so it rides the operator's text-size slider with the name it sits against;
+   the artwork is the game's own 64×64 SVG set, drawn for a dark background. */
+.standings__badge,
+.relative__badge {
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  margin-right: 5px;
+  vertical-align: middle;
+  object-fit: contain;
+}
 /* Rotating sponsor strip under the tower. Two stacked images cross-fade; only
    opacity animates, so the compositor handles it with no layout or paint. */
 .standings__sponsors {

@@ -975,6 +975,13 @@ export interface StandingEntry {
   pitStops?: number;
   /** Fitted tyre compound, when known. */
   tyreCompound?: string;
+  /**
+   * Car manufacturer ("Ferrari", "Porsche", "Mercedes-AMG", …) as LMU's own car
+   * list spells it. Drives the brand badge in the standings tower — the overlay
+   * server proxies the game's badge artwork at `/carbadges/<manufacturer>.svg`.
+   * Omitted when the sim doesn't publish a car list (rF2, demo).
+   */
+  manufacturer?: string;
   /** `true` for the player's own row (for highlight). */
   isPlayer: boolean;
 }
@@ -996,6 +1003,11 @@ export interface RelativeEntry {
   carNumber?: string;
   /** Car class label, when available. */
   carClass?: string;
+  /**
+   * Car manufacturer, as on {@link StandingEntry.manufacturer} — drives the
+   * brand badge, served at `/carbadges/<manufacturer>.svg`.
+   */
+  manufacturer?: string;
   /**
    * Signed on-track time gap to the player in seconds.
    * Positive = ahead of the player, negative = behind. `0` for the player row.

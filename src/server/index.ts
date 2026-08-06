@@ -16,7 +16,7 @@
  * choice that keeps the tool light on a streaming PC.
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, get as httpGet, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, promises as fs } from 'node:fs';
 import { extname, normalize, resolve, sep } from 'node:path';
 import { frameIntervalMs, loadConfig, type ServerConfig } from './config';
@@ -378,6 +378,91 @@ function serveTrackMap(res: ServerResponse): void {
   res.end(body);
 }
 
+/** URL prefix the manufacturer brand badges are served under. */
+const BADGE_PREFIX = '/carbadges/';
+/**
+ * Badge bytes by manufacturer name, `null` = "the game has no badge for this
+ * name" (negative result cached so an unbadged manufacturer costs one upstream
+ * request per server run, not one per row per page load).
+ */
+const badgeCache = new Map<string, Buffer | null>();
+
+/** Fetches one badge SVG from the game's own web server; `null` on any miss. */
+function fetchBadge(name: string, lmuApiPort: number): Promise<Buffer | null> {
+  return new Promise((resolveBadge) => {
+    const path = `/start/images/manufacturer/${encodeURIComponent(`Brand=${name}`)}.svg`;
+    const req = httpGet({ host: '127.0.0.1', port: lmuApiPort, path, timeout: 4000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        resolveBadge(null);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolveBadge(Buffer.concat(chunks)));
+    });
+    req.on('error', () => resolveBadge(null));
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+  });
+}
+
+/**
+ * Serves `/carbadges/<manufacturer>.svg` — the brand badge the standings tower
+ * puts beside each driver.
+ *
+ * The artwork is LMU's own: the game's web server publishes its UI's badge set
+ * (`/start/images/manufacturer/Brand=<Name>.svg`, one per manufacturer,
+ * matching the `manufacturer` strings its car list uses). Proxied through here
+ * rather than hotlinked because the overlay is often viewed from another
+ * machine (OBS on a second PC), where the game's `localhost:6397` does not
+ * resolve — this server always runs beside the game. Cached in memory for the
+ * life of the process, including the game's "no such badge" answer; a name the
+ * game cannot draw falls back to its own `Default` badge, and only when even
+ * that is unreachable (game closed before the first fetch) does the route 404 —
+ * which the widget treats as "show no badge".
+ */
+async function serveCarBadge(
+  res: ServerResponse,
+  rawPath: string,
+  lmuApiPort: number,
+): Promise<void> {
+  const name = rawPath.slice(BADGE_PREFIX.length).replace(/\.svg$/i, '').trim();
+  // Manufacturer names are words ("Aston Martin", "Mercedes-AMG", "Isotta
+  // Fraschini"); anything outside that shape is not a name the game knows.
+  if (!name || name.length > 64 || !/^[\w .&-]+$/.test(name)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found');
+    return;
+  }
+  let svg = badgeCache.get(name);
+  if (svg === undefined) {
+    svg = await fetchBadge(name, lmuApiPort);
+    badgeCache.set(name, svg);
+  }
+  if (!svg) {
+    let fallback = badgeCache.get('Default');
+    if (fallback === undefined) {
+      fallback = await fetchBadge('Default', lmuApiPort);
+      // A live "no Default either" is worth caching; an unreachable game is
+      // not — the fetch is retried next time so badges appear once it is up.
+      if (fallback) badgeCache.set('Default', fallback);
+    }
+    svg = fallback ?? null;
+  }
+  if (!svg) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found');
+    return;
+  }
+  res.writeHead(200, {
+    'Content-Type': 'image/svg+xml',
+    'Content-Length': svg.length,
+    // Stable per game install; let the browser keep it for the session.
+    'Cache-Control': 'public, max-age=3600',
+  });
+  res.end(svg);
+}
+
 /** URL prefix the operator's sponsor logos are served under. */
 const SPONSOR_PREFIX = '/sponsors/';
 /** Image extensions accepted as sponsor logos. */
@@ -534,6 +619,18 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.
     if (handleMfdCommand(req, res, mfdDeps)) return;
+    // Brand badges are proxied from the game, not read from disk — routed here
+    // because only this scope knows which port the game's API is on.
+    if ((req.url ?? '').startsWith(BADGE_PREFIX)) {
+      let rawPath = '';
+      try {
+        rawPath = decodeURIComponent((req.url ?? '').split('?')[0] ?? '');
+      } catch {
+        /* malformed escape — falls through to the 404 inside */
+      }
+      void serveCarBadge(res, rawPath, config.lmuApiPort);
+      return;
+    }
     void serveStatic(req, res, overlayRoot, sponsorRoot, config.sponsorIntervalSec);
   });
 
