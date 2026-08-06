@@ -214,6 +214,17 @@
               </span>
               <span class="ingame-switch__label">Show in game</span>
             </label>
+            <!-- Auto show/hide rides the session: overlays appear when the
+                 driver is at the wheel and hide on the sim's own screens
+                 (ESC/monitor, garage, setup) and outside a session. -->
+            <label class="ingame-switch ingame-switch--auto" for="ingame-auto-toggle"
+                   title="Overlays appear when you're driving and hide on the sim's menus, garage and setup screens — and whenever you're not in a session.">
+              <span class="switch">
+                <input type="checkbox" id="ingame-auto-toggle" />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="ingame-switch__label">Auto show &amp; hide</span>
+            </label>
             <div class="hero__buttons">
               <button class="btn btn--accent" id="ig-edit-btn" type="button" disabled>Edit layout</button>
               <button class="btn btn--ghost" id="ig-reset-btn" type="button">Reset layout</button>

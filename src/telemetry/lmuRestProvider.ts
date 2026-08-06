@@ -1638,6 +1638,15 @@ export class LmuRestProvider implements TelemetryProvider {
     const fcy = asUpper(si.yellowFlagState);
     const flag: FlagState =
       fcy && fcy !== 'NONE' ? 'yellow' : mapFlag(focus?.flag ?? phaseStr);
+    // sessionInfo's NUMERIC gamePhase is the one channel that tracks the local
+    // driver rather than the session: it flips to 9 the instant they are
+    // looking at any game screen (ESC/monitor, garage, setup) and back to the
+    // running phase the instant they return to the car — probed live
+    // 2026-08-06 at Daytona, ~10 menu round-trips, flipped correctly every
+    // time while the string phases above stayed GREEN throughout. Anything
+    // other than a readable 9 counts as at-the-wheel, so a missing or
+    // string-typed field can never hide an overlay.
+    const uiPhase = Number(si.gamePhase);
     return {
       type: mapSessionType(si.session),
       phase,
@@ -1650,6 +1659,7 @@ export class LmuRestProvider implements TelemetryProvider {
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
       notStarted: isPreGreen(phase),
       scheduledLengthSec,
+      onTrack: !(Number.isFinite(uiPhase) && uiPhase === 9),
       ...(startLights ? { startLights } : {}),
       ...(sectorFlags ? { sectorFlags } : {}),
     };

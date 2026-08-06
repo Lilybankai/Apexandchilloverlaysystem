@@ -4,6 +4,19 @@
 
 ### Added
 
+- **The in-game overlays now come and go with your session by themselves.**
+  Leave "Show in game" on and forget it: the widgets appear the moment you're
+  at the wheel and disappear the moment you're anywhere else — the ESC menu,
+  the monitor, the garage and setup screens, or out of the session entirely.
+  Load into the next race and they're simply there again; no more finding the
+  hotkey mid-outlap or driving your menus around under a fuel panel. This is
+  how it works from this update on; if you preferred the layer staying up
+  everywhere, switch **Auto show & hide** off next to "Show in game" — and
+  edit layout always shows the layer regardless, so you can arrange widgets
+  from any screen. Demo mode still shows everything (there's no session to
+  follow), and OBS Browser Sources are untouched — your stream scenes stay
+  yours.
+
 - **Every lap you drive now records how it was driven.** Alongside the lap
   time, the overlay now keeps the lap's full driving trace — throttle, brake,
   steering, gear, speed and G-forces, sampled every few metres of road — plus

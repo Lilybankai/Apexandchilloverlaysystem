@@ -463,6 +463,12 @@ html, body {
   text-transform: uppercase;
 }
 
+/* The auto switch is a refinement of "Show in game", not a peer — quieter. */
+.ingame-switch--auto .ingame-switch__label {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
 /* =============================== BANNERS ================================ */
 
 .update-banner,

@@ -36,6 +36,7 @@
   const audioEcho = $('#audio-echo');
   const audioTest = $('#audio-test');
   const ingameToggle = $('#ingame-toggle');
+  const ingameAutoToggle = $('#ingame-auto-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
   const igHotkeyBtn = $('#ig-hotkey');
@@ -192,6 +193,8 @@
     sponsorRange.value = settings.sponsorIntervalSec;
     sponsorEcho.textContent = settings.sponsorIntervalSec;
     ingameToggle.checked = !!settings.ingameEnabled;
+    // Missing (pre-update config) reads as ON — the setting ships enabled.
+    ingameAutoToggle.checked = settings.ingameAutoHide !== false;
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
@@ -2129,6 +2132,12 @@
     if (ingameToggle.checked && !state.status.running) {
       showToast('Press Start to show the overlays');
     }
+  });
+
+  ingameAutoToggle.addEventListener('change', async () => {
+    const state = await window.apex.updateSettings({ ingameAutoHide: ingameAutoToggle.checked });
+    renderSettings(state.settings);
+    renderStatus(state.status);
   });
 
   igEditBtn.addEventListener('click', async () => {

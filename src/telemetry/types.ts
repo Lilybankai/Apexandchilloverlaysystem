@@ -174,6 +174,19 @@ export interface SessionState {
    * `'none'` here. Omitted when the source has no sector channel.
    */
   sectorFlags?: [FlagState, FlagState, FlagState];
+  /**
+   * Where the LOCAL driver's eyes are, not where the session is: `false` while
+   * they are looking at any of the sim's own screens — the ESC/monitor menu,
+   * the garage and setup pages — and `true` while they are at the wheel.
+   *
+   * Deliberately separate from {@link phase}: the session stays `green` and
+   * every car keeps racing while one driver sits in their garage menus, so no
+   * session-lifecycle field can carry this. It exists so the in-game layer can
+   * show itself only when there is a windscreen to draw over (auto show/hide).
+   * Omitted when the source cannot tell — absent means "assume at the wheel",
+   * so nothing ever hides on a missing field.
+   */
+  onTrack?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */

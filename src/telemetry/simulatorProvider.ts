@@ -471,6 +471,9 @@ export class SimulatorProvider implements TelemetryProvider {
         serverName: 'Apex & Chill — Midweek Endurance',
         notStarted: preSession !== null,
         scheduledLengthSec: SimulatorProvider.DEMO_SESSION_LENGTH_SEC,
+        // The demo driver never opens a menu — and auto show/hide must never
+        // blank a layer someone is previewing in demo mode.
+        onTrack: true,
         // The start gantry walks its five reds through the demo countdown —
         // one lamp a second, like a standing start — so the widget's lamp
         // strip can be laid out without booting the sim. LMU keeps the

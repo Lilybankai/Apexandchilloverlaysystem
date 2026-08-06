@@ -159,6 +159,15 @@ function defaultSettings() {
     // In-game display: overlays rendered over the sim itself (transparent
     // click-through window) instead of / as well as OBS Browser Sources.
     ingameEnabled: false,
+    // Auto show/hide: the layer appears when the driver is actually at the
+    // wheel and hides on every one of the sim's own screens — ESC/monitor,
+    // garage, setup — and outside a session entirely. Driven by the feed's
+    // session.onTrack flag (see the status-feed watcher). With this on,
+    // "Show in game" means ARMED rather than "on screen right now"; edit and
+    // interact modes still force the layer visible so it can always be laid
+    // out. On by default: it is what every overlay tool does, and the driver
+    // who wants the layer over their menus can switch it off.
+    ingameAutoHide: true,
     ingameOverlays,
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
@@ -436,6 +445,8 @@ function loadSettings() {
     enabledOverlays,
     ingameEnabled:
       typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
+    ingameAutoHide:
+      typeof stored.ingameAutoHide === 'boolean' ? stored.ingameAutoHide : defaults.ingameAutoHide,
     ingameOverlays,
     ingameLayout,
     ingameToggleShortcut: normalizeShortcut(
@@ -791,6 +802,23 @@ let statusWs = null;
 let lastFrameAt = 0;
 let feedWatchTimer = null;
 
+/**
+ * Whether the live feed currently says the driver is at the wheel — the input
+ * to auto show/hide. `false` covers every way of not being on track: the sim's
+ * menu/monitor/garage screens (session.onTrack === false), no session loaded
+ * (the provider falls back to demo within ~2 s of the REST API going quiet),
+ * the game not running at all, and the feed simply not flowing. Only a live
+ * frame that does not say otherwise sets it true.
+ */
+let feedOnTrack = false;
+
+/** Record a feed verdict and reflect a change on the in-game layer at once. */
+function setFeedOnTrack(onTrack) {
+  if (onTrack === feedOnTrack) return;
+  feedOnTrack = onTrack;
+  applyIngameVisibility();
+}
+
 function connectStatusFeed(port, wsPath) {
   disconnectStatusFeed();
   lastFrameAt = 0;
@@ -808,6 +836,12 @@ function connectStatusFeed(port, wsPath) {
       // client.js treats connected === false as the demo/simulator feed.
       const demo = !!(frame && frame.connected === false);
       const feed = demo ? 'demo' : 'live';
+      // At the wheel = a live frame whose session does not say onTrack:false.
+      // Absent counts as true (a source without the channel must never hide
+      // the layer); a demo frame counts as false (no session to draw over —
+      // DELIBERATE demo mode is exempted inside ingameShouldBeVisible, not
+      // here, so the flag keeps meaning one thing).
+      setFeedOnTrack(!demo && !!(frame && (!frame.session || frame.session.onTrack !== false)));
       // Push only on a genuine transition. Frames arrive at the broadcast rate
       // (up to 120/s) and the feed flag changes perhaps twice a session, so an
       // unconditional push here would be far worse than the 1 Hz churn this
@@ -835,6 +869,7 @@ function connectStatusFeed(port, wsPath) {
   feedWatchTimer = setInterval(() => {
     if (!status.running) return;
     const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
+    if (stale) setFeedOnTrack(false);
     if (stale && status.feed !== 'no-data') {
       status.feed = 'no-data';
       pushStatus();
@@ -844,6 +879,7 @@ function connectStatusFeed(port, wsPath) {
 }
 
 function disconnectStatusFeed() {
+  setFeedOnTrack(false);
   if (feedWatchTimer) {
     clearInterval(feedWatchTimer);
     feedWatchTimer = null;
@@ -1420,6 +1456,7 @@ function syncOverlayWindow() {
       overlayWin.ingameUrl = url;
       void overlayWin.loadURL(url);
     }
+    applyIngameVisibility(settings);
     return;
   }
 
@@ -1429,6 +1466,10 @@ function syncOverlayWindow() {
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
+    // Born hidden; applyIngameVisibility below decides whether it appears.
+    // With auto show/hide on and the driver in the menus, creating-then-hiding
+    // would flash a frame of overlay over their screen.
+    show: false,
     transparent: true,
     frame: false,
     resizable: false,
@@ -1466,6 +1507,7 @@ function syncOverlayWindow() {
   // 'screen-saver' level floats above borderless-fullscreen game windows.
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   applyIngameMouse(); // click-through unless edit/interact is already on
+  applyIngameVisibility(settings); // shown now, or when the feed says on-track
   overlayWin.ingameUrl = url;
   // The layer is push-fed everything (it deliberately does no polling), so
   // every load — including the reloads triggered by a widget-list change — has
@@ -1500,6 +1542,43 @@ function destroyOverlayWindow() {
 }
 
 /**
+ * Auto show/hide: whether the layer should be ON SCREEN right now. Distinct
+ * from `wanted` in syncOverlayWindow, which decides whether the layer should
+ * EXIST — the window lives for the whole time the sim might come back (so a
+ * menu visit costs a hide/show, not a renderer teardown and page reload), and
+ * this decides whether it is currently drawn.
+ *
+ *   - Edit / interact mode always shows: both exist to be used while looking
+ *     at the layer, and edit is reachable from the control panel while the
+ *     driver is sitting in the menus.
+ *   - Auto off = the pre-auto behaviour: visible whenever it exists.
+ *   - Deliberate demo mode (forced simulator, or the simulator chosen as the
+ *     provider) is a preview with no session to key off, so it always shows.
+ *     The FALLBACK to demo — LMU stopped answering — keeps auto in force;
+ *     that distinction is why this checks settings rather than the feed flag.
+ *   - Otherwise the feed decides: live frames whose session says the driver
+ *     is at the wheel (see setFeedOnTrack).
+ */
+function ingameShouldBeVisible(settings) {
+  if (ingameEditing || ingameInteractive) return true;
+  const s = settings || loadSettings();
+  if (!s.ingameAutoHide) return true;
+  if (s.forceSimulator || s.provider === 'simulator') return true;
+  return feedOnTrack;
+}
+
+/** Reflect ingameShouldBeVisible on the layer window, if there is one. */
+function applyIngameVisibility(settings) {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  const want = ingameShouldBeVisible(settings);
+  if (want === overlayWin.isVisible()) return;
+  // showInactive, never show: the window is non-focusable and must not take
+  // input from the game even for the moment it appears.
+  if (want) overlayWin.showInactive();
+  else overlayWin.hide();
+}
+
+/**
  * Derives the window's mouse/focus state from the edit + interact flags. The
  * layer captures the mouse (and becomes focusable, so text fields and dropdowns
  * work) whenever either mode is active; otherwise it is fully click-through and
@@ -1521,6 +1600,10 @@ function setIngameEdit(editing) {
   ingameEditing = !!editing;
   if (overlayWin && !overlayWin.isDestroyed()) {
     applyIngameMouse();
+    // Editing forces the layer on screen even when auto show/hide has it
+    // hidden (laying out from the sim's menus must work); leaving edit mode
+    // hands the decision back.
+    applyIngameVisibility();
     overlayWin.webContents.send('ingame:edit', ingameEditing);
   }
   pushStatus();
@@ -1536,6 +1619,7 @@ function setIngameInteract(on) {
   ingameInteractive = !!on;
   if (overlayWin && !overlayWin.isDestroyed()) {
     applyIngameMouse();
+    applyIngameVisibility(); // same forcing rule as edit mode
     // Focus the layer so keyboard input (Race min, etc.) works; release on exit
     // so the sim regains input.
     try {
@@ -1647,6 +1731,9 @@ function registerIpc() {
       }
       if (typeof partial.ingameEnabled === 'boolean') {
         next.ingameEnabled = partial.ingameEnabled;
+      }
+      if (typeof partial.ingameAutoHide === 'boolean') {
+        next.ingameAutoHide = partial.ingameAutoHide;
       }
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
