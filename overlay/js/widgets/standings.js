@@ -15,6 +15,9 @@
  *     `gridPosition`.
  *   - VE virtual-energy % remaining (`virtualEnergy`, LMU's per-car budget) with
  *     a thin fill bar behind it.
+ * GAP counts either the cumulative gap to the class leader (the default) or the
+ * interval to the car directly in front — an operator setting, because a
+ * broadcast tower wants the first and a driver usually wants the second.
  * Highlighting:
  *   - the overall fastest lap of the race is shown in purple, persistently;
  *   - a car setting a new personal-best lap flashes its LAST time green for a
@@ -170,7 +173,7 @@
    * class" is top 10, scope class. Anything anyone has asked for so far is one
    * of those two with different numbers.
    */
-  var view = { limit: "all", scope: "class", top: 0, ahead: 3, behind: 3 };
+  var view = { limit: "all", scope: "class", top: 0, ahead: 3, behind: 3, gap: "leader" };
   var viewPinned = false;
 
   /**
@@ -178,28 +181,35 @@
    * the composition for one OBS source. Same contract as the tyres widget's
    * `?tyres=`: a source set up to show the front of the race must not change
    * because a driver pressed something.
+   *
+   * `gap=ahead` switches the GAP column to intervals and is independent of the
+   * rest, so `?standings=all,gap=ahead` is the whole field with intervals.
    */
   function initView(params) {
     var raw = (params.get("standings") || "").trim().toLowerCase();
     if (raw) {
       viewPinned = true;
-      if (raw === "all") {
-        view = { limit: "all", scope: "class", top: 0, ahead: 0, behind: 0 };
-      } else {
-        var next = { limit: "custom", scope: "class", top: 0, ahead: 0, behind: 0 };
-        var parts = raw.split(",");
-        for (var i = 0; i < parts.length; i++) {
-          var kv = parts[i].split("=");
-          var key = (kv[0] || "").trim();
-          var val = (kv[1] || "").trim();
-          if (key === "scope") next.scope = val === "field" ? "field" : "class";
-          else if (key === "top" || key === "ahead" || key === "behind") {
-            var n = parseInt(val, 10);
-            if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
-          }
+      var next = { limit: "custom", scope: "class", top: 0, ahead: 0, behind: 0, gap: "leader" };
+      var parts = raw.split(",");
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i].trim();
+        // `all` is a bare token rather than a key=value, so the long-standing
+        // `?standings=all` keeps working — and still combines with `gap=`.
+        if (part === "all") {
+          next.limit = "all";
+          continue;
         }
-        view = next;
+        var kv = part.split("=");
+        var key = (kv[0] || "").trim();
+        var val = (kv[1] || "").trim();
+        if (key === "scope") next.scope = val === "field" ? "field" : "class";
+        else if (key === "gap") next.gap = val === "ahead" ? "ahead" : "leader";
+        else if (key === "top" || key === "ahead" || key === "behind") {
+          var n = parseInt(val, 10);
+          if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
+        }
       }
+      view = next;
       return;
     }
     if (window.ApexAppearance && window.ApexAppearance.onStandings) {
@@ -292,6 +302,77 @@
     // A composition that selects nobody would draw an empty panel, which reads
     // as a broken widget rather than a configured one.
     return out.length ? out : list;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  What the GAP column counts                                         */
+  /* ------------------------------------------------------------------ */
+
+  /** Whole laps behind, treating an absent count as "same lap". */
+  function lapsOf(n) {
+    return typeof n === "number" && n > 0 ? n : 0;
+  }
+
+  /**
+   * One GAP cell: a dash when there is nobody in front, whole laps when the
+   * deficit is a lap or more, otherwise seconds. Both readings of the column
+   * (to the leader, to the car ahead) go through here so they stay one shape.
+   */
+  function gapCell(isFirst, laps, sec, fmt) {
+    if (isFirst) return "—";
+    if (laps > 0) return "+" + laps + "L";
+    return fmt.gap(sec);
+  }
+
+  /**
+   * Interval to the car directly in front, keyed by slotId.
+   *
+   * Derived rather than read from `gapToAheadSec`, which is the sim's gap to the
+   * next car OVERALL: under a class subheader showing in-class positions, an
+   * interval to a Hypercar that happens to be sitting between two GT3s is not
+   * the number the row appears to be claiming. Differencing two cars' gaps to
+   * their shared class leader cancels the leader term and leaves exactly the
+   * in-class interval; `gapToAheadSec` stays as the fallback for a field with no
+   * class information, and for a pair the sim gives no class gaps for.
+   *
+   * Computed from the FULL field, never the drawn rows — with the tower capped
+   * to a few cars, the row above yours on screen is usually not the car you are
+   * actually chasing.
+   */
+  function computeIntervals(full, fmt) {
+    var out = {};
+    var prevInClass = {};
+    for (var i = 0; i < full.length; i++) {
+      var e = full[i];
+      var inClass = fmt.has(e.classPosition) && e.classPosition > 0;
+      var key = e.carClass || "—";
+      var prev = inClass ? prevInClass[key] : full[i - 1];
+      if (inClass) prevInClass[key] = e;
+
+      // Nobody ahead: a class leader when we are counting in class, P1 when we
+      // are not. Same dash the leader reading shows, for the same reason.
+      if (!prev) {
+        out[e.slotId] = { lead: true, laps: 0, sec: -1 };
+        continue;
+      }
+
+      var laps = inClass
+        ? lapsOf(e.classLapsBehind) - lapsOf(prev.classLapsBehind)
+        : lapsOf(e.lapsBehind) - lapsOf(prev.lapsBehind);
+      var sec = -1;
+      if (inClass && fmt.has(e.gapToClassLeaderSec) && fmt.has(prev.gapToClassLeaderSec)) {
+        // Clamped at zero: two gaps sampled a frame apart can cross by a
+        // millisecond, and a negative interval to the car in FRONT of you reads
+        // as a broken widget rather than as noise.
+        sec = Math.max(0, e.gapToClassLeaderSec - prev.gapToClassLeaderSec);
+      } else if (prev === full[i - 1]) {
+        // No class gaps to difference, but the car ahead in class is also the
+        // car ahead overall — so the sim's own figure is the same interval.
+        sec = e.gapToAheadSec;
+      }
+      out[e.slotId] = { lead: false, laps: laps > 0 ? laps : 0, sec: sec };
+    }
+    return out;
   }
 
   function init(root) {
@@ -434,6 +515,10 @@
     var full = frame.standings || [];
     var list = selectField(full);
     var seen = new Set();
+    // Intervals are only derived when the column is actually showing them — a
+    // pass over the field every frame is cheap, but not free, and the default
+    // view never reads it.
+    var intervals = view && view.gap === "ahead" ? computeIntervals(full, fmt) : null;
 
     setSession(frame.session);
 
@@ -510,7 +595,7 @@
       // Member rows.
       var clsFastestSlot = classFastest[cls] ? classFastest[cls].slot : -1;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot, ctx);
+        renderRow(members[m], fmt, now, fastestSlot, clsFastestSlot, ctx, intervals);
         seen.add(members[m].slotId);
       }
     }
@@ -549,7 +634,7 @@
     if (sessFastest.hidden) sessFastest.hidden = false;
   }
 
-  function renderRow(e, fmt, now, fastestSlot, classFastestSlot, ctx) {
+  function renderRow(e, fmt, now, fastestSlot, classFastestSlot, ctx, intervals) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -639,21 +724,37 @@
       row.veTd.setAttribute("data-ve", veState);
     }
 
-    // Gap to the leader OF THIS CLASS, matching the in-class position beside it —
-    // an overall gap under a class subheader reads as a contradiction (a GT3 P1
-    // showing +2 laps). Falls back to the overall gap when the class is unknown.
-    // Laps-behind takes precedence over seconds; a class leader shows a dash.
-    var gapText;
+    // GAP. Two readings, and which one is drawn is the operator's choice (the
+    // Hub's standings card, or `?standings=gap=ahead`):
+    //
+    //   leader  cumulative to the leader OF THIS CLASS, matching the in-class
+    //           position beside it — an overall gap under a class subheader
+    //           reads as a contradiction (a GT3 P1 showing +2 laps). Falls back
+    //           to the overall gap when the class is unknown.
+    //   ahead   the interval to the car directly in front, which is what a
+    //           driver is actually racing; the leader gap says nothing about
+    //           whether the car ahead is coming back to you.
+    //
+    // Whichever is shown, the other goes on the title so nothing is lost.
     var useClass = hasClassPos && fmt.has(e.gapToClassLeaderSec);
-    var lapsBehind = useClass ? e.classLapsBehind : e.lapsBehind;
-    if (useClass ? e.classPosition === 1 : e.position === 1) gapText = "—";
-    else if (lapsBehind && lapsBehind > 0) gapText = "+" + lapsBehind + "L";
-    else gapText = fmt.gap(useClass ? e.gapToClassLeaderSec : e.gapToLeaderSec);
-    set(row, "gap", row.gapTd, "textContent", gapText);
-    set(row, "gapTitle", row.gapTd, "title",
+    var toLeader = gapCell(
+      useClass ? e.classPosition === 1 : e.position === 1,
+      lapsOf(useClass ? e.classLapsBehind : e.lapsBehind),
+      useClass ? e.gapToClassLeaderSec : e.gapToLeaderSec,
+      fmt
+    );
+    var gapText = toLeader;
+    var gapTitle =
       useClass && e.position !== 1
         ? "to race leader " + (e.lapsBehind > 0 ? "+" + e.lapsBehind + "L" : fmt.gap(e.gapToLeaderSec))
-        : "");
+        : "";
+    if (intervals) {
+      var iv = intervals[e.slotId];
+      gapText = iv ? gapCell(iv.lead, iv.laps, iv.sec, fmt) : "—";
+      gapTitle = toLeader === "—" ? "" : "to " + (useClass ? "class leader " : "leader ") + toLeader;
+    }
+    set(row, "gap", row.gapTd, "textContent", gapText);
+    set(row, "gapTitle", row.gapTd, "title", gapTitle);
 
     // BEST: purple for the fastest lap of the race, green for the fastest lap of
     // this class (the benchmark that is otherwise invisible in a multiclass

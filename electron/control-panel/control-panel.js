@@ -383,8 +383,39 @@
     head.appendChild(label);
     head.appendChild(limit);
 
+    // What the GAP column counts. Its own row rather than part of the detail
+    // block above: this applies to every row the tower draws, so it must stay
+    // reachable while the tower is showing the whole field.
+    const gapLabel = document.createElement('span');
+    gapLabel.className = 'ovcard__bg-label';
+    gapLabel.textContent = 'GAP';
+
+    const gap = document.createElement('select');
+    gap.className = 'field__input field__input--inline';
+    gap.id = 'standings-gap';
+    for (const [value, text] of [
+      ['leader', 'To the leader'],
+      ['ahead', 'To the car ahead'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      gap.appendChild(opt);
+    }
+    gap.value = v.gap;
+    gap.title =
+      'Whether the GAP column counts the cumulative gap to the class leader, ' +
+      'or the interval to the car directly in front';
+    gap.addEventListener('change', () => void send({ gap: gap.value }));
+
+    const gapHead = document.createElement('div');
+    gapHead.className = 'ovcard__view-head';
+    gapHead.appendChild(gapLabel);
+    gapHead.appendChild(gap);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
+    wrap.appendChild(gapHead);
     return wrap;
   }
 

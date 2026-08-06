@@ -525,6 +525,9 @@ html, body { height: 100%; overflow: hidden; }
 .ovcard__view { display: flex; flex-direction: column; gap: 8px; }
 .ovcard__view-head { display: flex; align-items: center; gap: 8px; }
 .ovcard__view-head .field__input { flex: 1; min-width: 0; font-family: var(--font-ui); }
+/* SHOW and GAP are different lengths; without a floor on the label the two
+   dropdowns start at different x and the card reads as misaligned. */
+.ovcard__view-head .ovcard__bg-label { min-width: 34px; }
 
 /* Four small controls, two up on a narrow card so the numbers stay readable
    rather than shrinking to fit one line. */

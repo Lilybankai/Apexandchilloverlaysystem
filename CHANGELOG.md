@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.61.0 — 2026-08-06
+
+### Added
+
+- **The standings GAP column can show the gap to the car in front.** It has
+  always counted the gap to the leader of your class, which is the right number
+  for a broadcast and the wrong one when you're racing the car you can see. On
+  the Overlays tab, the Standings card now has a **Gap** setting: *To the
+  leader* (unchanged, still the default) or *To the car ahead*, which shows the
+  interval to the car directly in front of you in your class. Everything else
+  about the column is the same — a class leader shows a dash, a lap down shows
+  +1L — and hovering a gap tells you the other number. It works with any tower
+  size, including one trimmed to a few cars: the interval is always to the car
+  you're really chasing, not to whichever row happens to be above yours. OBS
+  sources can pin it per source with `?standings=gap=ahead`.
+
 ## 0.60.0 — 2026-08-05
 
 Four things drivers told us about this week, all fixed.

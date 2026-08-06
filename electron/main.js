@@ -261,6 +261,11 @@ function defaultSettings() {
      * `limit: 'all'` is the default and means the tower behaves exactly as it
      * always has. The numbers are kept while it is set, so turning the cap off
      * and on again returns to the same view rather than to a guess.
+     *
+     * `gap` is what the GAP column counts — 'leader' (cumulative, the broadcast
+     * reading) or 'ahead' (the interval to the car in front, which is what a
+     * driver is actually racing). Independent of the composition above: any
+     * amount of the field can be shown either way.
      */
     standings: {
       limit: 'all', // 'all' | 'custom'
@@ -268,6 +273,7 @@ function defaultSettings() {
       top: 0,
       ahead: 3,
       behind: 3,
+      gap: 'leader', // 'leader' | 'ahead'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -498,6 +504,7 @@ function normalizeStandings(stored) {
     top: clamp(from.top, 0, 30, d.top),
     ahead: clamp(from.ahead, 0, 30, d.ahead),
     behind: clamp(from.behind, 0, 30, d.behind),
+    gap: from.gap === 'ahead' ? 'ahead' : d.gap,
   };
 }
 
