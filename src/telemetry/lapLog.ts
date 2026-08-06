@@ -48,6 +48,7 @@
  * their own history either way.
  */
 
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -87,8 +88,20 @@ export interface LapRecord {
    * both are optional, and a v1 lap simply cannot be pace-scored at a venue with
    * more than one layout — which is the correct outcome, since at the time it
    * was written we genuinely did not record which layout it was.
+   *
+   * `3` added {@link id} and the sector splits. Same story: a v1/v2 lap has no
+   * trace file to point at and no sectors to show, and nothing downstream
+   * requires either.
    */
-  v: 1 | 2;
+  v: 1 | 2 | 3;
+  /**
+   * Unique id for this lap (UUID), minted when the record is built. This is the
+   * join key between the lap database and everything recorded ABOUT the lap —
+   * today the driving trace at `traces/<day>/<id>.json` (see `lapTrace.ts`),
+   * later whatever else the training feature wants to attach. Absent on laps
+   * written before v3.
+   */
+  id?: string;
   /** Wall-clock completion time, ISO 8601. */
   at: string;
   /** Which sim produced it (`"lmu"`, `"rf2"`, `"simulator"`). */
@@ -134,6 +147,17 @@ export interface LapRecord {
   ambientTempC?: number;
   /** `true` when there was standing water / rain during the lap. */
   wet?: boolean;
+  /**
+   * Sector **split** times in whole milliseconds, when the sim published them —
+   * S1, S2 and S3 as the durations a timing screen shows, not the cumulative
+   * boundary times LMU's feed carries (see {@link LapInput.sector1Sec}). All
+   * three are present or none: a partial set means the feed glitched at the
+   * boundary, and two real sectors plus one wrong one reads as a timing screen
+   * that lies.
+   */
+  s1Ms?: number;
+  s2Ms?: number;
+  s3Ms?: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -178,6 +202,30 @@ interface HeldLap {
 function chargedTo(chargedLaps: number[] | undefined, lapNo: number): boolean {
   if (!chargedLaps || lapNo === UNKNOWN_VALUE) return false;
   return chargedLaps.includes(lapNo);
+}
+
+/**
+ * Cumulative sector boundary times → the three splits, or nothing.
+ *
+ * All-or-nothing on purpose (see the field note on `LapRecord.s1Ms`): the
+ * boundaries must be strictly ordered inside the lap time, each split must be
+ * plausible on its own, and any failure drops the whole set. The one glitch
+ * this guards against was observed live — a boundary read of `0`/`-1` while the
+ * feed catches up with a crossing — and a record with no sectors is honest
+ * where one with an invented split is not.
+ */
+function sectorSplits(
+  s1Sec: number | undefined,
+  s2Sec: number | undefined,
+  lapMs: number,
+): Pick<LapRecord, 's1Ms' | 's2Ms' | 's3Ms'> | Record<string, never> {
+  if (typeof s1Sec !== 'number' || typeof s2Sec !== 'number') return {};
+  if (!Number.isFinite(s1Sec) || !Number.isFinite(s2Sec)) return {};
+  const s1 = Math.round(s1Sec * 1000);
+  const s2 = Math.round(s2Sec * 1000) - s1;
+  const s3 = lapMs - Math.round(s2Sec * 1000);
+  if (s1 <= 0 || s2 <= 0 || s3 <= 0) return {};
+  return { s1Ms: s1, s2Ms: s2, s3Ms: s3 };
 }
 
 /** The same record with `limits` added — records are rebuilt, never mutated. */
@@ -252,6 +300,17 @@ export interface LapInput {
   ambientTempC?: number;
   /** `true` when it is raining or the surface is wet. */
   wet?: boolean;
+  /**
+   * The just-completed lap's sector boundary times, seconds, **cumulative from
+   * the lap's start** — LMU's `lastSectorTime1/2` convention: `sector1Sec` is
+   * the clock at the S1 line, `sector2Sec` at the S2 line, and the lap time
+   * itself closes S3. Only meaningful on the poll where {@link lapsCompleted}
+   * increments, which is when the recorder reads them; {@link LapRecorder.build}
+   * converts them to the splits a timing screen shows. Omit when the feed has
+   * no sector channel (rF2, the simulator provider).
+   */
+  sector1Sec?: number;
+  sector2Sec?: number;
 }
 
 /**
@@ -421,7 +480,8 @@ export class LapRecorder {
 
     const reasons = [...dirty];
     return {
-      v: 2,
+      v: 3,
+      id: crypto.randomUUID(),
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
       track: input.track,
@@ -439,6 +499,7 @@ export class LapRecorder {
       ...(typeof input.trackTempC === 'number' ? { trackTempC: input.trackTempC } : {}),
       ...(typeof input.ambientTempC === 'number' ? { ambientTempC: input.ambientTempC } : {}),
       ...(input.wet !== undefined ? { wet: !!input.wet } : {}),
+      ...sectorSplits(input.sector1Sec, input.sector2Sec, lapMs),
     };
   }
 
@@ -721,6 +782,13 @@ export interface PendingBest {
   lapMs: number;
   setAt: string;
   conditions: Record<string, unknown>;
+  /**
+   * The best lap's {@link LapRecord.id}, when it has one — the key to its local
+   * trace file, which is what the trace uploader sends up beside the time.
+   * Absent for a best set before v3 records existed, in which case there is no
+   * trace to send and the board entry simply has nothing to teach yet.
+   */
+  lapId?: string;
 }
 
 /** Everything the local files say the league database should contain. */
@@ -816,6 +884,7 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
           car: rec.car || '',
           lapMs: rec.lapMs,
           setAt: rec.at,
+          ...(rec.id ? { lapId: rec.id } : {}),
           conditions: {
             sessionType: rec.sessionType || '',
             ...(typeof rec.trackTempC === 'number' ? { trackTempC: rec.trackTempC } : {}),
@@ -852,12 +921,19 @@ export interface SyncCache {
   activity: Record<string, string>;
   /** `sim|trackKey|class` → the best lap time last accepted, in ms. */
   bests: Record<string, number>;
+  /**
+   * `sim|trackKey|class` → the lap time (ms) whose TRACE was last dealt with —
+   * either accepted by the server or found to have no local file, both of which
+   * mean "nothing more to do for this best". A faster lap changes the time and
+   * so re-arms the entry; see `traceSettled`/`markTraceSettled`.
+   */
+  traces: Record<string, number>;
   /** Keys the server permanently refused, with its reason. */
   rejected: Record<string, string>;
 }
 
 export function emptySyncCache(): SyncCache {
-  return { activity: {}, bests: {}, rejected: {} };
+  return { activity: {}, bests: {}, traces: {}, rejected: {} };
 }
 
 /** Stable identity for an activity row. */
@@ -922,4 +998,24 @@ export function markBestSent(cache: SyncCache, row: PendingBest): void {
 /** Record a permanent refusal so it is never retried. */
 export function markRejected(cache: SyncCache, key: string, reason: string): void {
   cache.rejected[key] = reason;
+}
+
+/**
+ * Whether this best's trace still needs sending.
+ *
+ * True only when the row names a lap id (older laps have no trace at all) and
+ * the cache has not settled a trace for this exact lap time. Keyed by time, not
+ * lap id, deliberately: the server only keeps the trace of the CURRENT board
+ * lap, so what matters is whether the trace for *this time* was dealt with —
+ * and a re-driven identical time changes nothing worth re-sending.
+ */
+export function traceNeedsSend(row: PendingBest, cache: SyncCache): boolean {
+  if (!row.lapId) return false;
+  return (cache.traces || {})[bestKey(row)] !== row.lapMs;
+}
+
+/** Record that this best's trace needs no further attention (sent, or no file). */
+export function markTraceSettled(cache: SyncCache, row: PendingBest): void {
+  if (!cache.traces) cache.traces = {};
+  cache.traces[bestKey(row)] = row.lapMs;
 }

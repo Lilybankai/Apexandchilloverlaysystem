@@ -45,6 +45,8 @@ let userDataDir = null;
 let auth = null;
 /** Lazily required from `dist/`, like the panel's summary handler. */
 let lapLog = null;
+/** Lazily required beside it — the trace store (`readTrace`). */
+let lapTrace = null;
 
 /**
  * How often to try, in ms. Laps arrive continuously while someone is driving,
@@ -63,6 +65,14 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
  * because the plan is recomputed each time, "the remainder" needs no bookkeeping.
  */
 const MAX_PER_RUN = 40;
+
+/**
+ * Most driving TRACES to send in one run — far fewer than the row kinds above,
+ * because each is tens of KB where a row is tens of bytes. Five per run still
+ * drains any realistic backlog within an evening (a new best per track per
+ * class is a rare event), without ever turning a sync into an upload session.
+ */
+const MAX_TRACES_PER_RUN = 5;
 
 /** Current state, mirrored to the renderer so a driver can see it working. */
 const state = {
@@ -101,6 +111,7 @@ function loadCache() {
     return {
       activity: raw && typeof raw.activity === 'object' ? raw.activity : empty.activity,
       bests: raw && typeof raw.bests === 'object' ? raw.bests : empty.bests,
+      traces: raw && typeof raw.traces === 'object' ? raw.traces : empty.traces,
       rejected: raw && typeof raw.rejected === 'object' ? raw.rejected : empty.rejected,
     };
   } catch {
@@ -136,6 +147,21 @@ function requireLapLog() {
 }
 
 /**
+ * Require the compiled trace store, or null. Separate from `requireLapLog`
+ * because a build that predates traces must still sync laps — a missing module
+ * only means every trace reads as "no local file", which settles harmlessly.
+ */
+function requireLapTrace() {
+  if (lapTrace) return lapTrace;
+  try {
+    lapTrace = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapTrace.js'));
+  } catch {
+    return null;
+  }
+  return lapTrace;
+}
+
+/**
  * Send everything the local files say is missing from the league database.
  *
  * Never throws and never rejects: it is called from a timer and from IPC, and
@@ -154,7 +180,14 @@ async function sync({ reason = 'timer' } = {}) {
     const plan = lapLog.buildUploadPlan();
     const cache = loadCache();
     const pending = lapLog.diffPlan(plan, cache);
-    const total = pending.activity.length + pending.bests.length;
+    // Traces pend independently of their best row: a best can be cached as sent
+    // while its trace is not — the feature shipped later, or a run stopped
+    // between the two — and the plan is recomputed each run either way.
+    const pendingTraces =
+      typeof lapLog.traceNeedsSend === 'function'
+        ? plan.bests.filter((row) => lapLog.traceNeedsSend(row, cache))
+        : [];
+    const total = pending.activity.length + pending.bests.length + pendingTraces.length;
 
     if (total === 0) {
       setState({ status: 'ok', pending: 0, sent: 0, lastOkAt: Date.now(), error: null });
@@ -176,6 +209,16 @@ async function sync({ reason = 'timer' } = {}) {
     }
     for (const row of activity) {
       const res = await sendActivity(row, cache);
+      if (res.stop) return finish(res, sent, total, dirty, cache);
+      if (res.sent) sent++;
+      dirty = dirty || res.cached;
+    }
+    // Traces last: the biggest payloads carrying the least urgent data. Every
+    // best they describe has already been offered above, so the server-side
+    // "is this the board lap" check can only fail for reasons that are
+    // permanent — which is exactly what settling the cache entry records.
+    for (const row of pendingTraces.slice(0, MAX_TRACES_PER_RUN)) {
+      const res = await sendTrace(row, cache);
       if (res.stop) return finish(res, sent, total, dirty, cache);
       if (res.sent) sent++;
       dirty = dirty || res.cached;
@@ -261,6 +304,49 @@ async function sendBest(row, cache) {
     if (out.body && out.body.improved) {
       console.log(`[laps] new best ${row.trackName} ${row.carClass}: P${out.body.rank}`);
     }
+  }
+  return out;
+}
+
+/**
+ * Send one best lap's driving trace, when a local trace file exists for it.
+ *
+ * "No file" is settled, not retried: the trace was either never recorded
+ * (spectating, shared memory down, a lap from before the recorder shipped) or
+ * has been pruned, and neither changes on a five-minute timer. The entry
+ * re-arms by itself when a faster lap replaces the best — see
+ * `traceNeedsSend` in lapLog.ts.
+ */
+async function sendTrace(row, cache) {
+  const traces = requireLapTrace();
+  const file = traces ? traces.readTrace(row.lapId, row.setAt) : null;
+  if (!file) {
+    lapLog.markTraceSettled(cache, row);
+    return { sent: false, cached: true, stop: false };
+  }
+  const res = await auth.rpc('submit_lap_trace', {
+    p_sim: row.sim,
+    p_track_key: row.trackKey,
+    p_track_name: row.trackName,
+    p_track_length_m: row.trackLengthM,
+    p_car_class: row.carClass,
+    p_car: row.car,
+    p_lap_ms: row.lapMs,
+    p_set_at: row.setAt,
+    p_s1_ms: file.s1Ms ?? null,
+    p_s2_ms: file.s2Ms ?? null,
+    p_s3_ms: file.s3Ms ?? null,
+    p_data: file.trace,
+    p_app_version: appVersion,
+  });
+  const out = classify(res, `trace:${lapLog.bestKey(row)}`, cache);
+  // Accepted and refused both settle: a refusal here (`not_board_lap`,
+  // `trace_too_large`) is a judgement about this exact lap, and this exact lap
+  // will never change. `classify` already recorded refusals in `rejected`;
+  // settling by lap time is what lets a FUTURE faster lap try again.
+  if (out.cached) lapLog.markTraceSettled(cache, row);
+  if (out.sent) {
+    console.log(`[laps] trace uploaded for ${row.trackName} ${row.carClass}`);
   }
   return out;
 }

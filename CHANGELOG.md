@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Every lap you drive now records how it was driven.** Alongside the lap
+  time, the overlay now keeps the lap's full driving trace — throttle, brake,
+  steering, gear, speed and G-forces, sampled every few metres of road — plus
+  the sector splits the sim publishes for a valid lap. Traces live on your own
+  machine (`~/.apex-overlay/traces`, kept for 60 days), and the one belonging
+  to your best clean lap per track and class travels up with it to the league
+  board. Nothing changes on screen yet: this is the groundwork for the
+  training feature, where you'll click a lap time on the leaderboard and study
+  exactly where that driver brakes, turns in and picks the throttle up. The
+  laps you drive from today are the ones there will be something to learn
+  from.
+
+- **A fastest lap for every class, not just the quickest car on track.** The
+  banner above the standings tower has always reported one lap: the fastest in
+  the session. In a multiclass race that lap is always a Hypercar's, so a GT3
+  driver has been reading a number from a race they aren't in. On the Overlays
+  tab, the Standings card now has a **Fastest lap** setting: *Fastest overall*
+  (unchanged, still the default) or *Fastest in each class*, which gives the
+  banner one line per class — HYPERCAR, LMP2, GT3 — each in its class colour,
+  with the car and driver holding it. The purple in the BEST column follows the
+  same setting, so in per-class mode each class's benchmark wears the purple
+  instead of the one car leading the whole field. Classes appear in the same
+  order the tower groups them, a class with no lap set yet is simply left out
+  rather than shown as a dash, and it works with any tower size. OBS sources can
+  pin it with `?standings=fastest=class`.
+
 ## 0.62.0 — 2026-08-06
 
 ### Added

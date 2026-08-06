@@ -86,7 +86,14 @@ import {
   type LapValidity,
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
-import { LapRecorder, appendLap } from './lapLog';
+import { LapRecorder, appendLap, type LapRecord } from './lapLog';
+import {
+  LapTraceRecorder,
+  pruneTraces,
+  writeTrace,
+  type CompletedTrace,
+  type TraceChannels,
+} from './lapTrace';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
@@ -200,6 +207,15 @@ interface RestStanding {
   carClass?: string;
   bestLapTime: number;
   lastLapTime: number;
+  /**
+   * The completed lap's sector boundary times, seconds, **cumulative** from its
+   * start — `lastSectorTime1` is the clock at the S1 line, `lastSectorTime2` at
+   * the S2 line. Adopted from `currentSectorTime1/2` at the crossing. `-1` (or
+   * `0` before the first lap) when the sim withheld one, which it does for a
+   * lap it invalidated — probed live 2026-08-06 on a race server.
+   */
+  lastSectorTime1?: number;
+  lastSectorTime2?: number;
   timeBehindLeader: number;
   timeBehindNext: number;
   lapsBehindLeader: number;
@@ -454,6 +470,19 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly trackLimits = new TrackLimitsTracker();
   /** Turns the driven car's lap boundaries into the lap database; see `lapLog.ts`. */
   private readonly lapRecorder = new LapRecorder();
+  /**
+   * Per-lap driving-trace recorder for the driven car — the training feature's
+   * capture side. Fed at frame rate beside the delta engine with the same
+   * filtered position and clock, so its laps are the delta's laps.
+   */
+  private readonly lapTrace = new LapTraceRecorder();
+  /**
+   * Traces whose lap record has not been written yet. The lap log holds every
+   * record ~40 s for the stewards' verdict (see `VERDICT_HOLD_MS`), so a
+   * completed trace waits here until its record lands, matched by the wall
+   * clock both sides stamped at the crossing. A handful deep at most.
+   */
+  private pendingTraces: { trace: CompletedTrace; wallMs: number }[] = [];
   /** Learns the circuit's shape from the driven car; see `trackMap.ts`. */
   private readonly trackMap = new TrackMapBuilder();
   /**
@@ -566,6 +595,9 @@ export class LmuRestProvider implements TelemetryProvider {
     this.localCar.start(); // best-effort shared-memory reader for the driven car
     this.scoring.start(); // …and the scoring buffer, for track limits + penalties
     this.traceLimits.start(); // …and the trace log, for the sim's own points
+    // Age out old driving traces once per app run — they are the one thing the
+    // lap store keeps that is big enough to be worth pruning. See lapTrace.ts.
+    pruneTraces(Date.now());
     await this.refresh(); // prime the cache before the first poll
     this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.timer.unref?.();
@@ -1097,6 +1129,28 @@ export class LmuRestProvider implements TelemetryProvider {
         // channels — see `lapLog.ts` and `LapValidity`.
         playerLapValidity,
       );
+      // The training trace rides the same (d, clock) the delta just consumed,
+      // plus the input/motion channels of this frame. A lap completed here
+      // waits in `pendingTraces` for its lap record — see `recordLap`.
+      const m = local!.motion;
+      const doneTrace = this.lapTrace.update(d, local!.elapsedSec, {
+        throttle: local!.throttle,
+        brake: local!.brake,
+        steer: local!.steer,
+        gear: local!.gear,
+        speedKph: local!.speedKph,
+        latG: m ? m.latG : 0,
+        lonG: m ? m.lonG : 0,
+        tc: local!.tc,
+        abs: local!.abs,
+      } satisfies TraceChannels);
+      if (doneTrace) {
+        this.pendingTraces.push({ trace: doneTrace, wallMs: nowMs });
+        // A trace whose record never arrived is not worth keeping past the
+        // hold window: matching it to some later lap would be worse than
+        // losing it.
+        this.pendingTraces = this.pendingTraces.filter((p) => nowMs - p.wallMs < 120_000).slice(-4);
+      }
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
       deltaSec =
@@ -2443,10 +2497,73 @@ export class LmuRestProvider implements TelemetryProvider {
         ...(typeof si.trackTemp === 'number' ? { trackTempC: si.trackTemp } : {}),
         ...(typeof si.ambientTemp === 'number' ? { ambientTempC: si.ambientTemp } : {}),
         wet: (si.raining ?? 0) > 0 || (si.maxPathWetness ?? 0) > 0,
+        // The completed lap's cumulative sector boundaries, read on the same
+        // poll `lapsCompleted` moved on. LMU withholds them (`-1`) for a lap it
+        // invalidated; `lapLog.sectorSplits` filters those out.
+        ...(typeof playerCar.lastSectorTime1 === 'number'
+          ? { sector1Sec: playerCar.lastSectorTime1 }
+          : {}),
+        ...(typeof playerCar.lastSectorTime2 === 'number'
+          ? { sector2Sec: playerCar.lastSectorTime2 }
+          : {}),
       },
       nowMs,
     );
-    if (lap) appendLap(lap);
+    if (lap) {
+      appendLap(lap);
+      this.attachTrace(lap);
+    }
+  }
+
+  /**
+   * Pair a just-written lap record with the driving trace recorded for it, and
+   * write the trace file the record's `id` names.
+   *
+   * The two sides observe the same crossing through different channels — the
+   * trace recorder sees the road position wrap at frame rate, the lap recorder
+   * sees `lapsCompleted` move on a REST poll — so they are matched on the wall
+   * clock each stamped at that crossing: the record's `at` is the poll that
+   * completed the lap, the trace's `wallMs` the frame, and the two land within
+   * a poll interval of each other. The record then spends ~40 s in the verdict
+   * hold before arriving here, which is why the pending list exists at all.
+   *
+   * When the sim published a lap time, it must also agree with the trace's
+   * measured one — a mismatch means the wall-clock pairing lied (a trace from
+   * a fragment beside a record from a real lap), and no trace beats a wrong one.
+   */
+  private attachTrace(lap: LapRecord): void {
+    if (!lap.id) return;
+    const atMs = Date.parse(lap.at);
+    if (!Number.isFinite(atMs)) return;
+    let bestIdx = -1;
+    let bestGap = 5000; // ms — a real pair lands within one REST poll
+    for (let i = 0; i < this.pendingTraces.length; i++) {
+      const gap = Math.abs(atMs - this.pendingTraces[i]!.wallMs);
+      if (gap < bestGap) {
+        bestGap = gap;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) return;
+    const { trace } = this.pendingTraces[bestIdx]!;
+    this.pendingTraces.splice(bestIdx, 1);
+    if (lap.lapMs > 0 && Math.abs(trace.lapSec * 1000 - lap.lapMs) > 2000) return;
+    writeTrace({
+      v: 1,
+      lapId: lap.id,
+      at: lap.at,
+      sim: lap.sim,
+      trackKey: lap.trackKey,
+      track: lap.track,
+      trackLengthM: lap.trackLengthM,
+      car: lap.car,
+      carClass: lap.carClass,
+      lapMs: lap.lapMs,
+      ...(lap.s1Ms ? { s1Ms: lap.s1Ms } : {}),
+      ...(lap.s2Ms ? { s2Ms: lap.s2Ms } : {}),
+      ...(lap.s3Ms ? { s3Ms: lap.s3Ms } : {}),
+      trace,
+    });
   }
 
   /**
