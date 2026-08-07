@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.64.0-beta.4 — 2026-08-07
 
 ### Fixed
 
