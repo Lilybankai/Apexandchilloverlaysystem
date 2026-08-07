@@ -131,13 +131,35 @@ browser. There is no database, no message broker, no cloud round-trip.
   that stops redundant re-sends; deleting it costs bandwidth, never correctness.
 
 - **The hybrid battery** (`lmuLocalCar.ts` → `PlayerState.hybrid`). ISI's electric
-  boost block: state of charge plus **signed** motor torque, so deploy and
-  harvest are distinguishable rather than inferred. The offsets were not scanned
-  for — they are **bracketed by offsets already verified live**, the same
-  evidence that fixes the motion block: `mRearBrakeBias` at 664 puts the block at
-  696, and it closes on `mWheels[0]` at 848, which is itself verified twice over.
-  `scripts/probe-lmu-hybrid.js` confirms them against a moving car, and is worth
-  re-running after an LMU update like every offset in that file.
+  boost block at 704: state of charge plus **signed** motor torque, so deploy and
+  harvest are distinguishable rather than inferred.
+
+  This block is the file's cautionary tale about *bracketing*. It was first
+  placed at 696 by counting the ISI struct forward from the verified
+  `mRearBrakeBias` at 664 — the same reasoning that legitimately fixes the motion
+  block — and it was wrong by one double, because LMU carries eight bytes there
+  that stock rF2 does not. Bracketing is strong evidence when both ends are
+  verified and the gap has no slack; it is only a hypothesis when the layout
+  itself is the thing in question.
+
+  What settled it was a lap: five channels agreeing at once, each in its own
+  units — charge rising under braking and staying in 0–1, torque at −177 Nm on
+  the brakes, motor RPM tracking road speed, two plausible temperatures, and a
+  state byte flipping on regen. `scripts/probe-lmu-hybrid.js` reproduces it.
+
+  The guards are why the mistake cost nothing: a charge outside 0–1 is discarded
+  and the block is only published once a car has shown a non-zero one, so a wrong
+  offset produced *no gauge* rather than a false reading.
+
+- **The Hypercar aids** (`lmuLocalCar.ts` → `MfdState.aids`). Brake migration,
+  front ARB and rear ARB are live value/max byte pairs at 760/762/764, found by
+  correlating the driven car's record against `getPlayerGarageData` — all eight
+  aid pairs in that run matching on both halves at once, which is what makes them
+  read rather than guessed. **Regen is not in the buffer at all** and comes from
+  the garage endpoint, which can report a setup value; that asymmetry is recorded
+  in `mfdControl.projectAids` rather than smoothed over, because it changes how
+  much a driver should trust the row. `scripts/probe-lmu-aids.js` shows both
+  sources side by side.
 
   The block is **latched per car, not tested per frame**. A GT3 reads a constant
   zero because it has no hybrid; a Hypercar reads zero at the end of a straight

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.64.0-beta.2 — 2026-08-07
+
+### Fixed
+
+- **The battery gauge never appeared, and the offset it was reading was wrong.**
+  The beta.1 notes flagged that the hybrid channel had been derived from the
+  struct layout rather than watched moving on a real car. It has now been watched,
+  and it was wrong by exactly one double: LMU carries eight bytes there that the
+  stock rF2 layout does not, so the overlay was reading a field that sits at a
+  hard `0.000` on a Hypercar at any speed — indistinguishable from a car with no
+  hybrid at all, which is why the gauge simply never showed up.
+
+  The corrected block was confirmed against a moving GR010, and not by one
+  channel agreeing but by five: the charge rises **while the brake is applied**
+  and stays inside 0–1, the motor torque reads −177 Nm on the brakes and ~0
+  coasting, the motor RPM tracks road speed, two plausible temperatures follow
+  it, and the state byte flips the moment regen engages. `npm run` the probe
+  (`node scripts/probe-lmu-hybrid.js`) to reproduce it.
+
+  The guards are what made this a non-event rather than a wrong number on screen:
+  a charge outside 0–1 is discarded, and the block is only published once a car
+  has shown a non-zero one. A bad offset produced *no gauge*, never a false one.
+
+- **Optional readouts were not actually being hidden.** The battery, virtual
+  energy and aid chips are meant to disappear on a car or feed that does not have
+  them — an empty gauge is a claim, no gauge is not. `display: flex` on the stat
+  block silently outranked the browser's own `[hidden]` rule, so instead of
+  vanishing they rendered as a label over a dash. Caught on a live Hypercar whose
+  battery was legitimately absent and which showed "BATTERY —" anyway. Now
+  covered by a test, because the bug is invisible to both the JS and a screenshot
+  of a car that happens to have every channel.
+
+### Added
+
+- **Regen, front ARB, rear ARB and brake migration in the MFD's driving aids.**
+  All four are Hypercar controls, and they appear only on a car that offers them.
+  Three are read **live from shared memory** at offsets confirmed by correlating
+  the driven car's record against the sim's own garage data — every value *and*
+  every maximum matching across eight independent aid pairs at once.
+
+  Regen is the exception and is worth knowing about: it is **not in the telemetry
+  buffer at all** — a scan of the whole record found nothing matching what the sim
+  was simultaneously reporting — so it comes from the garage endpoint instead.
+  That endpoint can lag what is on the wheel, so treat the regen row as usually
+  right rather than instantaneous. Everything else on that section is live.
+
+  Where the sim has its own word for a setting, that is now what is shown —
+  `200kW`, `P6`, `1.5% F` — rather than a raw step index. The index is still the
+  fallback when the two sources disagree about which step they are describing,
+  because a confident label on the wrong setting is worse than a number.
+
+- **A regen readout on the Speedo cluster.** A `REGEN` chip carrying the selected
+  level, lit **green** whenever charge is actually flowing back in — green because
+  it is the one indicator on that panel reporting something going the driver's
+  way; every other lit chip is a system taking something away. The battery bar
+  turns green with it, and the label under it reads `▼ REGEN` rather than
+  `▼ HARVEST`, which is the word on the driver's own wheel.
+
+- **`scripts/probe-lmu-aids.js`** — every driving aid, shared memory against the
+  garage endpoint, side by side with a disagreement flag. This is how the offsets
+  get re-checked after an LMU update, and how to tell whether a given control is
+  live or a setup value.
+
 ## 0.64.0-beta.1 — 2026-08-07
 
 ### Added

@@ -854,7 +854,24 @@ export class SimulatorProvider implements TelemetryProvider {
       step('tcSlip', 'TC Slip', 4, 9),
       step('tcCut', 'TC Power Cut', 6, 9),
       step('abs', 'ABS', 9, 9),
-      step('motorMap', 'Motor Map', 3, 6),
+      // The Hypercar aids. Rendered in the sim's OWN words rather than as an
+      // index, because that is what the live path produces once the garage
+      // endpoint names the step — a demo showing "6/15" where the real thing
+      // shows "P6" would hide a formatting regression rather than expose it.
+      { key: 'motorMap', label: 'Motor Map', value: 7, minValue: 0, maxValue: 10, text: '140kW' },
+      {
+        key: 'brakeMigration',
+        label: 'Brake Migration',
+        value: 2,
+        minValue: 0,
+        maxValue: 5,
+        text: '1.5% F',
+      },
+      { key: 'frontARB', label: 'Front ARB', value: 6, minValue: 0, maxValue: 15, text: 'P6' },
+      { key: 'rearARB', label: 'Rear ARB', value: 1, minValue: 0, maxValue: 15, text: 'P1' },
+      // Regen has no shared-memory source on the live path either — it comes
+      // from the garage endpoint, so the demo publishes it the same shape.
+      { key: 'regen', label: 'Regen', value: 10, minValue: 0, maxValue: 10, text: '200kW' },
     ];
   }
 

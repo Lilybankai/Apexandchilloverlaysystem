@@ -117,38 +117,51 @@ const VT = {
   // only ever reports at its frozen SETUP value. This is the ISI-standard offset,
   // verified live on LMU v1.3000 FOR THE PLAYER'S OWN RECORD: it tracked an
   // on-track front sweep (0.478 → 0.43). (A value at 696 moves in the pits but
-  // reads 0 on track and is not this — it is the battery charge below, seen in a
-  // car whose pack was flat on track.) Like every offset here it is
-  // version-sensitive and may shift on an LMU update.
+  // reads 0 on track and is not this. It is not the battery charge either —
+  // that is at 704; 696 stays a hard 0.000 on a Hypercar at every speed.) Like
+  // every offset here it is version-sensitive and may shift on an LMU update.
   mRearBrakeBias: 664,
   /* ------------------------ Electric boost block -------------------------
    * ISI's hybrid/ERS block, which LMU's Hypercars populate and everything else
    * leaves at zero:
    *
-   *   696 double mBatteryChargeFraction      (0..1 state of charge)
-   *   704 double mElectricBoostMotorTorque   (Nm, signed: +deploy / −harvest)
-   *   712 double mElectricBoostMotorRPM
-   *   720 double mElectricBoostMotorTemperature
-   *   728 double mElectricBoostWaterTemperature
-   *   736 unsigned char mElectricBoostMotorState
-   *   737 unsigned char mExpansion[111]
+   *   704 double mBatteryChargeFraction      (0..1 state of charge)
+   *   712 double mElectricBoostMotorTorque   (Nm, signed: +deploy / −harvest)
+   *   720 double mElectricBoostMotorRPM
+   *   728 double mElectricBoostMotorTemperature
+   *   736 double mElectricBoostWaterTemperature
+   *   744 unsigned char mElectricBoostMotorState
    *
-   * Pinned from both sides by offsets already verified live, the same evidence
-   * that fixes the motion block. `mRearBrakeBias` at 664 puts
-   * `mTurboBoostPressure` at 672, `mPhysicsToGraphicsOffset[3]` at 680 and
-   * `mPhysicalSteeringWheelRange` at 692, so the block starts at 696 — and it
-   * closes on `mWheels[0]` at 848, which is independently verified twice over
-   * (the surface-temp triplet at 976 and the brake-disc temp at 872). 737 + 111
-   * is 848 exactly. LMU's aid bytes at 746..759 live INSIDE that 111-byte
-   * expansion tail, which is the same finding recorded below, from the other end.
+   * ## These were VERIFIED MOVING, and the layout guess was wrong
+   * They were first placed at 696/704 by counting the ISI struct forward from
+   * the verified `mRearBrakeBias` at 664. That reasoning was clean and it was
+   * WRONG BY ONE DOUBLE — LMU has eight bytes there that the stock layout does
+   * not, and 696 reads a hard 0.000 on a Hypercar at any speed. Had the guards
+   * below not existed, the overlay would have shipped a battery gauge pinned at
+   * empty on the only class that has one.
    *
-   * Both channels are guarded on read: a charge outside `[0,1]` or a torque past
-   * any plausible motor is discarded rather than published, so an offset that
-   * shifts on an LMU update degrades to "no hybrid" instead of a wrong gauge.
-   * `scripts/probe-lmu-hybrid.js` is how you watch them move on a real car.
+   * What settles it is a lap, not an argument. On a GR010 accelerating and
+   * braking, all five doubles behave as their names claim and nothing else in
+   * the record does:
+   *
+   *   704  0.992 → 0.997, rising WHILE THE BRAKE IS APPLIED — a pack charging
+   *        on regen, and always inside [0,1]
+   *   712  −1 Nm coasting, −177 Nm on the brakes: signed, negative on harvest
+   *   720  tracks road speed (≈52 × km/h) — a motor geared to the wheels
+   *   728  37.5 °C, 736  35.5 °C — two plausible, slowly-drifting temperatures
+   *   744  1 while idling, 3 the moment regen engages
+   *
+   * Five independent channels agreeing at once, each in its own units, is what
+   * makes this read rather than derived. `scripts/probe-lmu-hybrid.js` reproduces
+   * it, and should be re-run after an LMU update like every offset in this file.
+   *
+   * Both published channels stay guarded on read: a charge outside `[0,1]` or a
+   * torque past any plausible motor is discarded rather than published, so a
+   * future shift degrades to "no hybrid" instead of a wrong gauge — which is
+   * exactly the failure mode that caught the original mistake.
    */
-  mBatteryChargeFraction: 696,
-  mElectricBoostMotorTorque: 704,
+  mBatteryChargeFraction: 704,
+  mElectricBoostMotorTorque: 712,
   /* ----------------------- LMU's driving-aid block -----------------------
    * TC, its two sub-settings, ABS and the motor map, live, for the player's
    * own car — each a single BYTE, paired with the maximum the car allows.
@@ -182,6 +195,36 @@ const VT = {
   mABSMax: 757,
   mMotorMap: 758,
   mMotorMapMax: 759,
+  /* --------------- The Hypercar aids, continuing the same run ---------------
+   * Three more value/max byte pairs immediately after the motor map, found by
+   * correlating this record against `getPlayerGarageData` on a Toyota GR010 with
+   * the aids set to distinct values. All three matched on BOTH bytes at once:
+   *
+   *   760/761  brake migration  raw 2/5   REST value 2, maxValue 6
+   *   762/763  front ARB        raw 6/15  REST value 6, maxValue 16
+   *   764/765  rear ARB         raw 1/15  REST value 1, maxValue 16
+   *
+   * The `maxValue = raw max + 1` relation is not an assumption fitted to these
+   * three — it holds across every pair already verified in this block (TC 7/11
+   * vs REST max 12, slip, power cut, ABS 0/0 vs max 1, motor map 7/10 vs max
+   * 11). Eight independent pairs agreeing on both halves is what makes these
+   * offsets read rather than guessed.
+   *
+   * REGEN LEVEL IS DELIBERATELY ABSENT. The car publishes one over REST
+   * (`VM_REGEN_LEVEL`, value 10 of max 11) and it is NOT in this buffer: a scan
+   * of all 1888 bytes found no adjacent `10,10` pair anywhere, and everything
+   * past 766 is zeros, then floats, then the car-model string. Byte 759 holds a
+   * 10 and would fit regen numerically — but it is the motor map's MAX, which
+   * is what keeps the strict value/max pairing intact across the whole run and
+   * matches the "motor map 1/1" reading verified live earlier. So regen comes
+   * from the garage endpoint instead; see `mfdControl.projectAids`.
+   */
+  mBrakeMigration: 760,
+  mBrakeMigrationMax: 761,
+  mFrontARB: 762,
+  mFrontARBMax: 763,
+  mRearARB: 764,
+  mRearARBMax: 765,
   // mWheels[4] (FL, FR, RL, RR). Each LMU rF2Wheel record is 260 bytes; its
   // mTemperature[3] band array (inner/centre/outer, in KELVIN) sits at the
   // wheel base +0/+8/+16. Verified live vs SimHub — all 12 bands matched to
@@ -444,6 +487,16 @@ export interface AidSettings {
   tcCut: AidStep;
   abs: AidStep;
   motorMap: AidStep;
+  /**
+   * How much brake bias migrates forward as the car slows, in the sim's own
+   * steps. A Hypercar control; `max` is 0 on cars that do not offer it, which is
+   * how the MFD knows not to show a row.
+   */
+  brakeMigration: AidStep;
+  /** Front anti-roll bar position. Adjustable from the cockpit on a Hypercar. */
+  frontARB: AidStep;
+  /** Rear anti-roll bar position. */
+  rearARB: AidStep;
   /** True while the system is actually intervening, as of this frame. */
   tcActive: boolean;
   absActive: boolean;
@@ -1072,6 +1125,12 @@ function parseAidSettings(rec: Buffer): AidSettings | null {
   const tcCut = step(VT.mTCCut);
   const abs = step(VT.mABS);
   const motorMap = step(VT.mMotorMap);
+  const brakeMigration = step(VT.mBrakeMigration);
+  const frontARB = step(VT.mFrontARB);
+  const rearARB = step(VT.mRearARB);
+  // The Hypercar trio is NOT part of the emptiness test. A GT3 offers none of
+  // them, so requiring one would reject a perfectly good GT3 aid block; and a
+  // record where only they are populated is not something the sim produces.
   if (!tc.max && !tcSlip.max && !tcCut.max && !abs.max && !motorMap.max) return null;
   return {
     tc,
@@ -1079,6 +1138,9 @@ function parseAidSettings(rec: Buffer): AidSettings | null {
     tcCut,
     abs,
     motorMap,
+    brakeMigration,
+    frontARB,
+    rearARB,
     tcActive: (rec[VT.mTCActive] ?? 0) !== 0,
     absActive: (rec[VT.mABSActive] ?? 0) !== 0,
   };

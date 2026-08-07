@@ -168,7 +168,7 @@
   var elSpeed, elUnit, elGear, elRpm;
   var elFuel, elFuelSub, elVeWrap, elVe, elVeSub;
   var elProj, elProjDelta, elBattWrap, elBattFill, elBattVal, elBattFlow;
-  var elChips, chipLimiter, chipTc, chipCut, chipSlip, chipAbs;
+  var elChips, chipLimiter, chipRegen, chipTc, chipCut, chipSlip, chipAbs;
   var headerMeta;
   var cache = {};
 
@@ -384,6 +384,11 @@
     // limiter and styling it that way would eventually paint TC cyan.
     chipLimiter.classList.add("is-limiter");
     chipLimiter.hidden = true;
+    // Regen sits with the limiter rather than with TC/ABS: like the limiter it
+    // is a state the driver has chosen and can be caught out by, not a system
+    // trimming an input. It gets its own colour for the same reason.
+    chipRegen = chip(elChips, "REGEN —");
+    chipRegen.classList.add("is-regen");
     chipTc = chip(elChips, "TC —");
     chipCut = chip(elChips, "PWR —");
     chipSlip = chip(elChips, "SLIP —");
@@ -432,7 +437,11 @@
       return;
     }
     setHidden(node, "hide-" + label, false);
-    ctx.crit(node, label + " " + aid.value + "/" + aid.maxValue);
+    // The sim's OWN rendering of the step — "200kW", "P6", "1.5% F" — which is
+    // what the driver sees on the wheel. It falls back to the raw index in
+    // mfdControl, so a TC map still reads "7/11"; using `value/maxValue` here
+    // instead would throw the good labels away for the aids that have them.
+    ctx.crit(node, label + " " + (aid.text || aid.value + "/" + aid.maxValue));
     var on = active === true;
     if (cache["on-" + label] !== on) {
       cache["on-" + label] = on;
@@ -504,8 +513,15 @@
     set(elProjDelta, "projd", d === null ? "—" : fmt.delta(d));
     ctx.critAttr(elProjDelta, "data-state", d === null ? "none" : d < 0 ? "up" : "down");
 
-    /* --- hybrid battery --- */
+    /* --- hybrid battery + regen --- */
     var hy = p.hybrid;
+    // Which way the motor is working, as one value the battery block and the
+    // regen chip both read, so they can never contradict each other. The 5 Nm
+    // deadband keeps a coasting car from flickering between the two states.
+    var torque = hy && typeof hy.motorTorqueNm === "number" ? hy.motorTorqueNm : 0;
+    var regenerating = hy ? torque < -5 : false;
+    var deploying = hy ? torque > 5 : false;
+
     setHidden(elBattWrap, "batt", !hy);
     if (hy) {
       var pctN = Math.round(hy.chargeFraction * 100);
@@ -518,16 +534,17 @@
       // Bucketed state, so the bar's colour changes on a threshold rather than
       // fading imperceptibly — and so crossing one blooms.
       ctx.critAttr(elBattFill, "data-state", pctN <= 15 ? "low" : pctN <= 40 ? "mid" : "ok");
-      // Which way the charge is going. Only this says whether an emptying
-      // battery is being spent or is about to come back.
-      var t = hy.motorTorqueNm;
-      var flow =
-        typeof t !== "number" || t === -1 || Math.abs(t) < 5
-          ? ""
-          : t > 0
-            ? "▲ DEPLOY"
-            : "▼ HARVEST";
-      set(elBattFlow, "flow", flow);
+      // Which way the charge is going — the only thing that says whether an
+      // emptying battery is being spent or is about to come back. Called REGEN
+      // rather than HARVEST because that is the word on the driver's own wheel.
+      set(elBattFlow, "flow", deploying ? "▲ DEPLOY" : regenerating ? "▼ REGEN" : "");
+      // Recolours the bar while charge is flowing in, so the battery reads as
+      // recovering at a glance rather than only through the label.
+      ctx.critAttr(
+        elBattWrap,
+        "data-flow",
+        deploying ? "deploy" : regenerating ? "regen" : "idle",
+      );
     }
 
     /* --- chips --- */
@@ -546,6 +563,10 @@
     // weight of an ABS event and blur the line this widget is careful about
     // elsewhere: a SETTING is what the driver chose, an intervention is what
     // just happened to them.
+    // Regen carries BOTH halves of the answer: the level the driver selected,
+    // and whether it is actually recovering right now. The level alone would not
+    // say the car is charging; the live state alone would not say how hard.
+    aidChip(chipRegen, ctx, "REGEN", findAid(mfd, "regen"), regenerating);
     aidChip(chipTc, ctx, "TC", findAid(mfd, "tc"), (ped.tc || 0) > 0.02);
     aidChip(chipCut, ctx, "PWR", findAid(mfd, "tcCut"), false);
     aidChip(chipSlip, ctx, "SLIP", findAid(mfd, "tcSlip"), false);

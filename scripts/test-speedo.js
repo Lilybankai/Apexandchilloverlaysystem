@@ -176,5 +176,44 @@ check(
 
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+
+console.log('\nthe optional blocks must actually disappear');
+
+/*
+ * Three readouts are hidden rather than emptied when their block is absent —
+ * the battery (no hybrid), virtual energy (no energy budget) and the aid chips
+ * (not LMU). The widget expresses that with the `hidden` attribute, which the
+ * user agent honours with `[hidden] { display: none }` — a rule ANY `display`
+ * declaration on the element outranks.
+ *
+ * This is asserted here because it broke exactly that way and nothing caught
+ * it: `.speedo__stat { display: flex }` quietly beat the UA rule, so a live
+ * Hypercar with no battery channel rendered "BATTERY —" instead of nothing.
+ * The bug is invisible to the JS (the attribute was set correctly) and to a
+ * screenshot of a car that happens to have every channel — so the CSS is what
+ * gets checked.
+ */
+const css = fs.readFileSync(
+  path.join(__dirname, '..', 'overlay', 'css', 'overlay.css'),
+  'utf8',
+);
+
+// Every speedo selector that sets a display, and therefore needs the override.
+const displayed = [...css.matchAll(/(\.speedo[^{]*)\{([^}]*)\}/g)]
+  .filter(([, , body]) => /(^|[;\s])display\s*:/.test(body))
+  .map(([, sel]) => sel.trim())
+  .filter((sel) => !sel.includes('[hidden]'));
+
+check(
+  '.speedo__stat sets a display (the rule that caused the bug)',
+  displayed.some((s) => s.includes('.speedo__stat')),
+  displayed.find((s) => s.includes('.speedo__stat')),
+);
+check(
+  '.speedo__stat[hidden] restores display:none',
+  /\.speedo__stat\[hidden\]\s*\{[^}]*display\s*:\s*none/.test(css),
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

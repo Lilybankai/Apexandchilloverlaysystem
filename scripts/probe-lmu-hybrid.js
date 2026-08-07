@@ -2,25 +2,28 @@
  * scripts/probe-lmu-hybrid.js — verify the pit limiter and hybrid battery
  * offsets against a running car.
  * -----------------------------------------------------------------------------
- * Both channels the Speedo widget added are read from offsets that were PINNED
- * rather than scanned for: they fall out of the ISI struct order between
- * neighbours already verified live in `src/telemetry/lmuLocalCar.ts`.
+ * This script exists because counting the ISI struct forward from a verified
+ * neighbour is NOT the same as watching a field move, and on this block the
+ * difference mattered: the battery was first placed at 696 by exactly that kind
+ * of reasoning, and it was wrong by one double. LMU carries eight bytes there
+ * that the stock layout does not. 696 reads a hard 0.000 on a Hypercar at any
+ * speed, which looks precisely like a car with no hybrid.
  *
- *   604  unsigned char mSpeedLimiter        between mCurrentSector(600) and the
- *                                           verified mFuelCapacity(608)
- *   696  double mBatteryChargeFraction      after the verified mRearBrakeBias
- *                                           (664) + turbo + the two float runs,
- *                                           and closing exactly on the verified
- *                                           mWheels[0](848)
- *   704  double mElectricBoostMotorTorque
+ * The offsets below are the corrected ones, each confirmed against a moving
+ * GR010 (see `lmuLocalCar.ts` for the full evidence):
  *
- * That is strong evidence, and it is not the same thing as having watched them
- * move. This script is how you watch them move — and it is worth running after
- * any LMU update, because every offset in that file is version-sensitive.
+ *   604  unsigned char mSpeedLimiter        flips with the limiter button
+ *   704  double mBatteryChargeFraction      rises under braking, always in [0,1]
+ *   712  double mElectricBoostMotorTorque   −177 Nm on the brakes, ~0 coasting
+ *   720  double mElectricBoostMotorRPM      tracks road speed
  *
- * It also prints the two NEIGHBOURS of each field, because the failure mode of a
- * shifted struct is not garbage: it is a plausible number from the wrong field.
- * A charge that reads 0.49 and never moves is a brake bias.
+ * Re-run it after any LMU update: every offset in that file is version-sensitive,
+ * and this block has already moved once.
+ *
+ * It also prints the NEIGHBOURS of each field, because the failure mode of a
+ * shifted struct is not garbage — it is a plausible number from the wrong field.
+ * A charge that reads 0.49 and never moves is a brake bias; one that reads 0.000
+ * and never moves is the mistake described above.
  *
  * Usage — in LMU, in your own car:
  *   node scripts/probe-lmu-hybrid.js [--slot <id>]
@@ -56,13 +59,13 @@ const OFF_REAR_BRAKE_BIAS = 664;
 
 /* Under test. */
 const OFF_SPEED_LIMITER = 604;
-const OFF_BATTERY = 696;
-const OFF_MOTOR_TORQUE = 704;
+const OFF_BATTERY = 704;
+const OFF_MOTOR_TORQUE = 712;
 
 /* Neighbours, printed so a shifted struct is visible rather than plausible. */
 const OFF_MAX_GEARS = 605;
 const OFF_TURBO = 672;
-const OFF_MOTOR_RPM = 712;
+const OFF_MOTOR_RPM = 720;
 
 const argSlot = process.argv.indexOf('--slot');
 const wantId = argSlot >= 0 ? Number(process.argv[argSlot + 1]) : null;

@@ -3574,6 +3574,13 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__side--r { align-items: flex-end; text-align: right; }
 
 .speedo__stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* `display: flex` above OUTRANKS the user-agent's `[hidden] { display: none }`,
+   so without this the widget's whole "hide it rather than show it empty" rule
+   silently does nothing: the battery block on a GT3 and the energy block on a
+   car with no budget both render as a label over a dash. Caught on a live feed,
+   where the Hypercar's battery was legitimately absent and the panel showed
+   "BATTERY —" anyway — which is exactly the claim those blocks must never make. */
+.speedo__stat[hidden] { display: none; }
 .speedo__stat-k {
   font-family: var(--font-display);
   font-size: var(--fs-micro);
@@ -3726,4 +3733,19 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__chip.is-limiter[data-on="true"] {
   background: var(--ac-cyan);
   border-color: var(--ac-cyan);
+}
+/* Regen lit = charge is flowing back IN. Green, because it is the one indicator
+   on this widget that reports something going the driver's way — every other lit
+   chip is a system taking something away. */
+.speedo__chip.is-regen[data-on="true"] {
+  background: var(--pos-gain);
+  border-color: var(--pos-gain);
+}
+/* The battery bar follows the same two states, so the block reads as recovering
+   without having to get to the label underneath it. */
+.speedo__stat[data-flow="regen"] .speedo__batt-fill {
+  background: var(--pos-gain);
+}
+.speedo__stat[data-flow="regen"] .speedo__batt-track {
+  border-color: var(--pos-gain);
 }

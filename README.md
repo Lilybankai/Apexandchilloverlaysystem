@@ -224,10 +224,12 @@ charge — the one that empties down a straight and comes back under braking —
 it is *not* virtual energy, which is the stint allowance that only goes down. The
 arrow under it says which way the charge is going: ▲ DEPLOY or ▼ HARVEST.
 
-Underneath, a chip strip: the **pit limiter**, and the **TC** map with its two
-sub-settings (**PWR**, the power cut, and **SLIP**, the slip threshold) plus
-**ABS**. TC and ABS light amber while they are actually intervening; the settings
-themselves flash when you change them.
+Underneath, a chip strip: the **pit limiter**, **REGEN** (your selected level,
+lit green whenever charge is actually flowing back in), and the **TC** map with
+its two sub-settings (**PWR**, the power cut, and **SLIP**, the slip threshold)
+plus **ABS**. TC and ABS light amber while they are actually intervening; the
+settings themselves flash when you change them. Where the sim has its own word
+for a setting — `200kW`, `P6`, `1.5% F` — that is what is shown, not an index.
 
 Three of these are hidden rather than shown empty when the car or the feed does
 not have them — the battery on anything without a hybrid, virtual energy on a
@@ -819,7 +821,7 @@ onto a brake duct or, worse, resolve one section's row against another's.
 | Param         | Shows                                                                 |
 | ------------- | --------------------------------------------------------------------- |
 | `?pit=off`    | Hide the pit-strategy section (fuel, energy, tyres, wing, pressures, ducts, repairs) |
-| `?aids=off`   | Hide the driving-aids section (brake bias, TC, ABS, motor map)        |
+| `?aids=off`   | Hide the driving-aids section (brake bias, TC, ABS, motor map, and on a Hypercar brake migration, both anti-roll bars and regen) |
 | `?opacity=0.4`| Panel opacity, same contract as the Motion/Damage widgets             |
 
 Pit strategy is read from LMU's REST garage API and projected in

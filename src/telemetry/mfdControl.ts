@@ -174,8 +174,32 @@ export function projectAids(
     // `max` of 0 means this car does not offer the control at all (a GT3 with no
     // motor map, say). Skipped rather than shown as a permanent 0, which would
     // read as "turned off" — a different and alarming thing to tell a driver.
-    const row = (key: string, label: string, step: AidStep): void => {
+    /**
+     * The sim's own wording for a step, when the garage endpoint is describing
+     * the SAME step the live block is reporting.
+     *
+     * Shared memory gives the number and nothing else, so a "7/11" is all a raw
+     * row can say. The garage publishes a rendered label for the same control —
+     * `"P6"` for an anti-roll bar, `"1.5% F"` for brake migration, `"140kW"` for
+     * a motor map — which is what the driver sees on the wheel and is far more
+     * use than an index.
+     *
+     * Guarded on the two agreeing. The garage value can lag the live one (it is
+     * a different endpoint answering a different question), and a label that
+     * belongs to a step the driver has already moved off is worse than no label:
+     * it would confidently name the wrong setting. On a mismatch this returns
+     * null and the row falls back to the honest index.
+     */
+    const simLabel = (garageKey: string, liveValue: number): string | null => {
+      const g = garageRaw ? garageRaw[garageKey] : undefined;
+      if (!g || typeof g.value !== 'number' || g.value !== liveValue) return null;
+      const s = typeof g.stringValue === 'string' ? g.stringValue.trim() : '';
+      return s && s !== 'N/A' ? s : null;
+    };
+
+    const row = (key: string, label: string, step: AidStep, garageKey?: string): void => {
       if (step.max <= 0) return;
+      const named = garageKey ? simLabel(garageKey, step.value) : null;
       aids.push({
         key,
         label,
@@ -183,15 +207,56 @@ export function projectAids(
         minValue: 0,
         maxValue: step.max,
         // The sim counts these from 1 in its own MFD, but publishes the raw
-        // step; shown as "7/11" so the driver can see the headroom either way.
-        text: `${step.value}/${step.max}`,
+        // step; shown as "7/11" so the driver can see the headroom either way —
+        // or in the sim's own words when the garage agrees which step it is.
+        text: named ?? `${step.value}/${step.max}`,
       });
     };
     row('tc', 'Traction Control', liveAids.tc);
     row('tcSlip', 'TC Slip', liveAids.tcSlip);
     row('tcCut', 'TC Power Cut', liveAids.tcCut);
     row('abs', 'ABS', liveAids.abs);
-    row('motorMap', 'Motor Map', liveAids.motorMap);
+    row('motorMap', 'Motor Map', liveAids.motorMap, 'VM_ELECTRIC_MOTOR_MAP');
+    // The Hypercar trio. Each is skipped by the `max <= 0` guard on a car that
+    // does not offer it, so a GT3 simply gets no such rows.
+    row('brakeMigration', 'Brake Migration', liveAids.brakeMigration, 'VM_BRAKE_MIGRATION');
+    row('frontARB', 'Front ARB', liveAids.frontARB, 'VM_FRONT_ANTISWAY');
+    row('rearARB', 'Rear ARB', liveAids.rearARB, 'VM_REAR_ANTISWAY');
+  }
+
+  /**
+   * Regen level — the only aid here with **no shared-memory source at all**.
+   *
+   * The others are read live from the driven car's own record. This one is not
+   * in that buffer: a scan of the whole 1888-byte record found no pair matching
+   * the value the sim was simultaneously reporting over REST, and the bytes past
+   * the aid run are zeros (see `lmuLocalCar.ts` `mBrakeMigration`). So it comes
+   * from the garage endpoint, which is the same fallback brake bias uses when
+   * there is no live car.
+   *
+   * That carries the garage endpoint's known weakness — it can report a SETUP
+   * value rather than a live one — so this row can lag what the driver has on
+   * the wheel. It is published anyway because a regen level that is usually
+   * right is far more use to a Hypercar driver than no regen row at all, and
+   * because the label is the sim's own ("200kW"), not a number we derived.
+   */
+  const regen = garageRaw ? garageRaw['VM_REGEN_LEVEL'] : undefined;
+  if (
+    regen &&
+    typeof regen.value === 'number' &&
+    typeof regen.maxValue === 'number' &&
+    regen.maxValue > 1 &&
+    typeof regen.stringValue === 'string' &&
+    regen.stringValue.trim() !== 'N/A'
+  ) {
+    aids.push({
+      key: 'regen',
+      label: 'Regen',
+      value: regen.value,
+      minValue: 0,
+      maxValue: inclusiveMax(0, regen.maxValue),
+      text: regen.stringValue.trim(),
+    });
   }
 
   return aids;
