@@ -107,6 +107,19 @@ export function isPitRequestLive(): boolean {
 }
 
 /**
+ * The PIT REQUEST row's current 0/1 — for the bound action's after-press look.
+ *
+ * The action needs a before/after pair around a press it could NOT make (no
+ * key to press): the same physical button is very often also bound inside
+ * LMU, in which case the game books the stop itself and the only honest test
+ * is whether the sim's flag moved. Exposed as a function so the action reads
+ * the same module state the frames are feeding, not a copy.
+ */
+export function getPitRequestState(): number {
+  return requestState;
+}
+
+/**
  * Records a stop-and-go armed from somewhere OTHER than this row — the Control
  * Panel's bindable **Serve stop/go** button, or `POST /api/mfd/servestopgo`.
  *

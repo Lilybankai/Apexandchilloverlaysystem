@@ -372,6 +372,10 @@ console.log('\n4) Live operations against a stub sim');
 
     check('a landed press toggles from the synced state', rc.notePitRequestPressed() === 'NO');
     check('…and back', rc.notePitRequestPressed() === 'YES');
+    check(
+      'getPitRequestState reads the same state the row shows',
+      rc.getPitRequestState() === requestRow().current,
+    );
 
     rc.resetRaceControlRows();
     rc.noteServeArmed(true);

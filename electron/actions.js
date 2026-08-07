@@ -268,26 +268,49 @@ function createActions(deps = {}) {
       run: async () => {
         const fresh = readBinds();
         const key = fresh && fresh.pit && fresh.pit.pitRequest;
-        if (!key) {
-          return {
-            ok: false,
-            error:
-              '"Pit Request" is not bound to a KEY in LMU — bind it under ' +
+        const canPress = !!key && fresh.keyboardSchemeActive;
+
+        if (canPress) {
+          const pressed = await keys.pressScan(key);
+          if (pressed.ok && raceRowsMod && raceRowsMod.notePitRequestPressed) {
+            // Flip the PIT REQUEST row's intent so the MFD widget shows the
+            // press, and carry the new state as a notice for the in-game layer
+            // — a driver without the MFD widget on screen gets told too. While
+            // frames flow, the sim's own flag overwrites this within a beat.
+            const state = raceRowsMod.notePitRequestPressed();
+            return { ...pressed, notice: `Pit request: ${state}` };
+          }
+          return pressed;
+        }
+
+        // No key to press — but that is not yet a failure. The same physical
+        // button is very often ALSO bound inside LMU, in which case the game
+        // just booked the stop itself and this action merely rode along. The
+        // PIT REQUEST row reads the sim now, so wait a beat and look: if the
+        // sim's flag moved, the driver got exactly what they pressed for, and
+        // a red error over a working button is a false alarm that teaches
+        // them to ignore real ones.
+        if (
+          raceRowsMod &&
+          raceRowsMod.isPitRequestLive &&
+          raceRowsMod.isPitRequestLive() &&
+          raceRowsMod.getPitRequestState
+        ) {
+          const before = raceRowsMod.getPitRequestState();
+          await new Promise((r) => setTimeout(r, 900));
+          const after = raceRowsMod.getPitRequestState();
+          if (after !== before) {
+            return { ok: true, notice: `Pit request: ${after ? 'YES' : 'NO'}` };
+          }
+        }
+
+        return {
+          ok: false,
+          error: key
+            ? 'LMU has its keyboard scheme disabled'
+            : '"Pit Request" is not bound to a KEY in LMU — bind it under ' +
               'Controls → Keyboard (a wheel button cannot be pressed from here).',
-          };
-        }
-        if (!fresh.keyboardSchemeActive) {
-          return { ok: false, error: 'LMU has its keyboard scheme disabled' };
-        }
-        const pressed = await keys.pressScan(key);
-        if (pressed.ok && raceRowsMod && raceRowsMod.notePitRequestPressed) {
-          // Flip the PIT REQUEST row's intent so the MFD widget shows the
-          // press, and carry the new state as a notice for the in-game layer —
-          // a driver without the MFD widget on screen gets told too.
-          const state = raceRowsMod.notePitRequestPressed();
-          return { ...pressed, notice: `Pit request: ${state}` };
-        }
-        return pressed;
+        };
       },
     });
 

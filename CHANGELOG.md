@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.64.0-beta.6 — 2026-08-07
+
+### Fixed
+
+- **No more false alarm when the game itself books your stop.** If your
+  pit-request button is bound in both places — LMU's own controls *and*
+  Apex — every press worked (LMU handled it) but still flashed the red
+  *"Pit Request" is not bound to a KEY* notice, because Apex's half of the
+  press had nothing to press. Apex now waits a beat and checks the sim's own
+  request flag first: if it moved, your press did exactly what you meant and
+  you get the quiet *Pit request: YES* confirmation instead of an error. The
+  red notice still appears when nothing happened at all — which is when you
+  actually need it.
+
 ## 0.64.0-beta.5 — 2026-08-07
 
 ### Changed
