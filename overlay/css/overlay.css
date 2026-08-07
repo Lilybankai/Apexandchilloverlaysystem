@@ -3442,6 +3442,10 @@ body.ig-editing #widget-radar .panel__header {
 #widget-racecontrol[data-race="green"] .racecontrol__msg { color: var(--pos-gain); }
 #widget-racecontrol[data-race="fcy"] .racecontrol__msg { color: var(--warn); }
 #widget-racecontrol[data-race="pitentry"] .racecontrol__msg { color: var(--text-secondary); }
+/* A booked stop is good news the driver asked to see; its cancellation is a
+   deliberate act worth a beat of amber before the panel goes quiet again. */
+#widget-racecontrol[data-race="pitrequest"] .racecontrol__msg { color: var(--pos-gain); }
+#widget-racecontrol[data-race="pitcancel"] .racecontrol__msg { color: var(--warn); }
 #widget-racecontrol[data-race="limiter"] .racecontrol__msg,
 #widget-racecontrol[data-race="limiter"] .racecontrol__sub { color: var(--pos-loss); }
 #widget-racecontrol[data-race="fcy"] .panel__body,

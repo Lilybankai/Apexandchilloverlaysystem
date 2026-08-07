@@ -250,6 +250,36 @@ function makeElement(tag) {
   );
   check('pit request at 640 m → pitentry state', st() === 'pitentry', st());
 
+  // A booked stop beyond the countdown envelope: the steady confirmation the
+  // driver glances for after pressing the button — from the sim's own flag,
+  // so a stop booked through the game's OWN bind shows exactly the same.
+  widgetDef.def.update(
+    frame({ phase: 'green', flag: 'green' }, { phase: 'request', entryDistM: 1400, limiterOn: true }),
+  );
+  check('pit request beyond 900 m → PIT REQUESTED', st() === 'pitrequest', st());
+  check('…says PIT REQUESTED', msgEl.textContent === 'PIT REQUESTED', msgEl.textContent);
+
+  // No entry channel at all (spectating-grade feed): the confirmation stands.
+  widgetDef.def.update(frame({ phase: 'green', flag: 'green' }, { phase: 'request' }));
+  check('…with no entry channel too', st() === 'pitrequest', st());
+
+  // Toggled off on track: the cancel flash, then quiet.
+  widgetDef.def.update(frame({ phase: 'green', flag: 'green' }, { phase: 'none', limiterOn: false }));
+  check('request toggled off → cancelled flash', st() === 'pitcancel', st());
+  check('…says PIT REQUEST CANCELLED', msgEl.textContent === 'PIT REQUEST CANCELLED', msgEl.textContent);
+  nowMs += 5_000;
+  widgetDef.def.update(frame({ phase: 'green', flag: 'green' }, { phase: 'none', limiterOn: false }));
+  check('…and expires back to quiet', st() === 'idle', st());
+
+  // A request consumed by actually entering the lane is NOT a cancellation.
+  widgetDef.def.update(
+    frame({ phase: 'green', flag: 'green' }, { phase: 'request', entryDistM: 40, limiterOn: true }),
+  );
+  widgetDef.def.update(frame({ phase: 'green', flag: 'green' }, { phase: 'entering', limiterOn: true }));
+  check('request → entering stays quiet, no cancel', st() === 'idle', st());
+  widgetDef.def.update(frame({ phase: 'green', flag: 'green' }, { phase: 'none', limiterOn: false }));
+  check('…and leaving the lane does not flash either', st() === 'idle', st());
+
   // Sector rail from the sim's own flags.
   widgetDef.def.update(
     frame({ phase: 'green', flag: 'green', sectorFlags: ['none', 'yellow', 'none'] }, { phase: 'none' }),

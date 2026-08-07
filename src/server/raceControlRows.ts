@@ -167,7 +167,8 @@ async function pressPitRequest(keys: KeySender): Promise<{ ok: boolean; error?: 
     return {
       ok: false,
       error:
-        '"Pit Request" is not bound to a KEY in LMU — run scripts/bind-lmu-key.js with the game closed',
+        '"Pit Request" is not bound to a KEY in LMU — with the game closed, use ' +
+        'Settings → LMU controls → Apply (a wheel-button bind cannot be pressed from here)',
     };
   }
   if (!binds.keyboardSchemeActive) {

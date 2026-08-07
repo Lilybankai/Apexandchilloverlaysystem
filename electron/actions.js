@@ -274,11 +274,10 @@ function createActions(deps = {}) {
           const pressed = await keys.pressScan(key);
           if (pressed.ok && raceRowsMod && raceRowsMod.notePitRequestPressed) {
             // Flip the PIT REQUEST row's intent so the MFD widget shows the
-            // press, and carry the new state as a notice for the in-game layer
-            // — a driver without the MFD widget on screen gets told too. While
-            // frames flow, the sim's own flag overwrites this within a beat.
-            const state = raceRowsMod.notePitRequestPressed();
-            return { ...pressed, notice: `Pit request: ${state}` };
+            // press. No notice: the racecontrol widget shows PIT REQUESTED /
+            // CANCELLED from the sim's own flag, which is the confirmation —
+            // a pop-up on top of it would say everything twice.
+            raceRowsMod.notePitRequestPressed();
           }
           return pressed;
         }
@@ -299,9 +298,10 @@ function createActions(deps = {}) {
           const before = raceRowsMod.getPitRequestState();
           await new Promise((r) => setTimeout(r, 900));
           const after = raceRowsMod.getPitRequestState();
-          if (after !== before) {
-            return { ok: true, notice: `Pit request: ${after ? 'YES' : 'NO'}` };
-          }
+          // Confirmed by the sim — and the racecontrol widget is already
+          // showing PIT REQUESTED / CANCELLED from the same flag, so there is
+          // nothing left for a pop-up to add.
+          if (after !== before) return { ok: true };
         }
 
         return {

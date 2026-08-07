@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.64.0-beta.7 — 2026-08-08
+
+### Changed
+
+- **Pit-request confirmations live in the Race Control bar now.** Instead of a
+  floating pop-up, the Race Control widget shows a steady green
+  **PIT REQUESTED** while the sim says a stop is booked — whoever booked it,
+  the game's own bind included — and flashes an amber **PIT REQUEST
+  CANCELLED** for four seconds when it is toggled off out on track. Driving
+  into the lane consumes the request quietly (the existing PIT ENTRY countdown
+  takes over inside 900 m), and the cancelled flash never sits over a limiter
+  warning. The *Pit request: YES/NO* pop-up is gone; the red failure notice
+  still appears when a press achieved nothing.
+
+### Fixed
+
+- **The MFD row's "not bound" message now names the fix.** Stepping the
+  PIT REQUEST row without a usable key used to point at a developer script;
+  it now points at **Settings → LMU controls → Apply** like everywhere else.
+
 ## 0.64.0-beta.6 — 2026-08-07
 
 ### Fixed

@@ -19,9 +19,15 @@
  *                on track, at racing phase, with the limiter engaged, the
  *                widget must not be polite about it.
  *   FCY          "FULL COURSE YELLOW" while the session flag says so.
- *   pit request  the live pit-entry countdown (`entryDistM` ticks every frame),
- *                with LIMITER added once inside 150 m of the commit point with
- *                the limiter still off.
+ *   pit request  a steady "PIT REQUESTED" while the sim says a stop is booked
+ *                (`pit.phase === 'request'` — the sim's own flag, so a stop
+ *                booked through the game's own bind shows too), becoming the
+ *                live pit-entry countdown (`entryDistM` ticks every frame)
+ *                inside 900 m, with LIMITER added once inside 150 m of the
+ *                commit point with the limiter still off. Toggling the
+ *                request OFF flashes "PIT REQUEST CANCELLED" for four
+ *                seconds — a request consumed by actually entering the lane
+ *                is not a cancellation and stays quiet.
  *   sectors      an S1/S2/S3 rail, lit from the sim's own per-sector flags.
  *
  * ## What it deliberately does NOT do
@@ -52,6 +58,12 @@
   var prevPhase = null;
   /** Wall-clock until which the green banner stays up, 0 when not flashing. */
   var greenUntil = 0;
+  /** How long the request-cancelled banner flashes, ms. */
+  var CANCEL_FLASH_MS = 4000;
+  /** The previous frame's pit phase, for the request -> none (cancel) edge. */
+  var prevPitPhase = null;
+  /** Wall-clock until which the cancelled banner stays up, 0 when quiet. */
+  var cancelUntil = 0;
 
   function init(rootEl) {
     root = rootEl;
@@ -179,6 +191,15 @@
     if (phase !== "green" && !lightsOut) greenUntil = 0;
     prevPhase = phase;
 
+    // The cancel edge: the request toggled OFF while still out on track — the
+    // driver un-booked the stop (LMU's request key is a toggle, so a double
+    // press does exactly this). Strictly request→none: a request that becomes
+    // `entering` was consumed, not cancelled, and an absent pit block says
+    // nothing at all. A fresh request silences any flash still running.
+    if (prevPitPhase === "request" && pit.phase === "none") cancelUntil = now + CANCEL_FLASH_MS;
+    if (pit.phase === "request") cancelUntil = 0;
+    prevPitPhase = pit.phase || null;
+
     /* ---------------------------- the sectors ----------------------------- */
 
     var sectors = Array.isArray(s.sectorFlags) ? s.sectorFlags : null;
@@ -247,11 +268,23 @@
         state = "limiter";
         sub = "LIMITER";
       }
+    } else if (pit.phase === "request") {
+      // A stop is booked but the entry is not yet the story (beyond the
+      // countdown envelope, or no entry channel at all). Steady, not flashed:
+      // this is the confirmation the driver glances for after pressing the
+      // button, and it holds until the request is consumed or cancelled.
+      state = "pitrequest";
+      msg = "PIT REQUESTED";
     } else if (phase === "green" && limiterKnown && pit.limiterOn === true && pit.phase === "none") {
       // Left the pits with the limiter engaged — the mistake that loses
       // half the field before turn one of an out-lap.
       state = "limiter";
       msg = "LIMITER ON";
+    } else if (cancelUntil > now) {
+      // Ranked under the limiter warning on purpose: four seconds of
+      // confirmation must never sit over "you are driving at 60".
+      state = "pitcancel";
+      msg = "PIT REQUEST CANCELLED";
     } else if (anySectorYellow) {
       // Nothing louder to say: name the hazard the rail is showing.
       state = "yellow";
