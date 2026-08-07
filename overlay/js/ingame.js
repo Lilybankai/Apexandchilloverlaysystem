@@ -625,9 +625,42 @@
   document.addEventListener("pointerup", onPointerUp);
   document.addEventListener("dblclick", onDoubleClick);
 
+  /* -------------------------------- notices ------------------------------ */
+
+  /**
+   * Transient feedback for a bound button (`ingame:notice` from main). A wheel
+   * press whose action fails silently reads as a dead button — the driver is
+   * looking at the track, not at a console — so the result is shown here, on
+   * the layer that is already over the sim. Stacked newest-last; errors stay
+   * long enough to read a sentence, confirmations are a glance.
+   */
+  var noticeBox = null;
+  function showNotice(n) {
+    if (!n || !n.text) return;
+    if (!noticeBox) {
+      noticeBox = document.createElement("div");
+      noticeBox.className = "ig-notices";
+      noticeBox.setAttribute("aria-live", "polite");
+      document.body.appendChild(noticeBox);
+    }
+    var el = document.createElement("div");
+    el.className = "ig-notice" + (n.kind === "error" ? " ig-notice--error" : "");
+    el.textContent = n.text;
+    noticeBox.appendChild(el);
+    // Keep a burst of presses readable rather than a tower of stale ones.
+    while (noticeBox.children.length > 3) noticeBox.removeChild(noticeBox.firstChild);
+    setTimeout(function () {
+      el.setAttribute("data-hide", "true");
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 400);
+    }, n.kind === "error" ? 6000 : 2500);
+  }
+
   /* --------------------------------- boot -------------------------------- */
 
   if (bridge) {
+    if (bridge.onNotice) bridge.onNotice(showNotice);
     bridge.onEdit(function (on) {
       setEditing(on);
     });

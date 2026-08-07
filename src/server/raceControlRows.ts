@@ -87,6 +87,24 @@ export function noteServeArmed(requested: boolean): void {
   if (requested) requestState = 1;
 }
 
+/**
+ * Records a pit-request key press that LANDED, from either of the doors that
+ * press the key without going through the row itself: the bindable
+ * `pit.request` action and `POST /api/mfd/pitrequest`.
+ *
+ * Those pressed exactly the key this row's own apply presses while knowing
+ * nothing about the row, which left the widget saying `NO` about a stop that
+ * had just been requested — a press with no visible result anywhere, which
+ * reads as a dead button. LMU's request is a toggle and cannot be read back,
+ * so the intent flips with each landed press, same as the row.
+ *
+ * Returns the new state's display text so the caller can show it.
+ */
+export function notePitRequestPressed(): string {
+  requestState = requestState ? 0 : 1;
+  return REQUEST_OPTIONS[requestState] ?? 'NO';
+}
+
 /** Presses LMU's own `Pit Request` bind. See mfdRoutes for why it is a key. */
 async function pressPitRequest(keys: KeySender): Promise<{ ok: boolean; error?: string }> {
   const binds = readLmuKeybinds();

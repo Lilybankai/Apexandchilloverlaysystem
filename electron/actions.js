@@ -279,7 +279,15 @@ function createActions(deps = {}) {
         if (!fresh.keyboardSchemeActive) {
           return { ok: false, error: 'LMU has its keyboard scheme disabled' };
         }
-        return keys.pressScan(key);
+        const pressed = await keys.pressScan(key);
+        if (pressed.ok && raceRowsMod && raceRowsMod.notePitRequestPressed) {
+          // Flip the PIT REQUEST row's intent so the MFD widget shows the
+          // press, and carry the new state as a notice for the in-game layer —
+          // a driver without the MFD widget on screen gets told too.
+          const state = raceRowsMod.notePitRequestPressed();
+          return { ...pressed, notice: `Pit request: ${state}` };
+        }
+        return pressed;
       },
     });
 
@@ -320,7 +328,13 @@ function createActions(deps = {}) {
           }
           const pressed = await keys.pressScan(key);
           armed(pressed.ok === true);
-          return pressed.ok ? { ...pressed, cleared: cleared.cleared } : pressed;
+          return pressed.ok
+            ? {
+                ...pressed,
+                cleared: cleared.cleared,
+                notice: 'Stop/go armed — service cleared, stop requested',
+              }
+            : pressed;
         },
       });
     }

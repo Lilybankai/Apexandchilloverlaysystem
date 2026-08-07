@@ -15,6 +15,22 @@
   night). Plug a wheel in while Apex is running and it's usable within a couple
   of seconds. The **Scan** button still does the same thing on demand.
 
+- **A bound button that can't do its job now says so, on screen.** Press your
+  pit-request button and nothing happens — no message, no change on the MFD —
+  and the button reads as dead. It wasn't: the action was failing quietly, and
+  the reason only went to a log nobody has open while driving. Any bound
+  button whose action fails now puts the reason over the sim in a small notice
+  — for a pit request that's almost always *"Pit Request" is not bound to a
+  KEY in LMU*, which the **LMU controls** card in Settings fixes in one click
+  (with the game closed).
+
+- **Requesting a pit stop now shows on the MFD widget.** A press that lands
+  flips the **PIT REQUEST** row to YES (and back — LMU treats the key as a
+  toggle), and a small *Pit request: YES* notice appears over the sim, so the
+  press is confirmed even when the MFD widget isn't on screen. Previously the
+  row only moved when it was changed through the widget itself, so a wheel
+  button or the Serve stop/go flow left it stuck on NO.
+
 ## 0.64.0-beta.3 — 2026-08-07
 
 ### Added

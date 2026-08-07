@@ -195,6 +195,48 @@ body.ig-editing .ig-screens {
   white-space: nowrap;
 }
 
+/* ------------------------------- notices -------------------------------- */
+/* Transient bound-button feedback (js/ingame.js showNotice). Upper-centre so
+   it reads at a glance from the driver's eyeline without sitting over the
+   car; pointer-events off because the layer window is click-through. */
+
+.ig-notices {
+  position: fixed;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.ig-notice {
+  padding: 8px 14px;
+  background: #0c0e18;
+  border: 1px solid #313850;
+  border-left: 3px solid #26bbf4;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--text-primary, #e8ecf8);
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.35s ease;
+}
+
+.ig-notice--error {
+  border-left-color: #e5484d;
+}
+
+.ig-notice[data-hide="true"] {
+  opacity: 0;
+}
+
 /* ------------------------------- toolbar -------------------------------- */
 
 .ig-toolbar {

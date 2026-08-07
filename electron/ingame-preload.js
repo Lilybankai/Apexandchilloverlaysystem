@@ -57,6 +57,16 @@ contextBridge.exposeInMainWorld('apexIngame', {
   },
 
   /**
+   * Transient feedback for a bound button: `{ kind: 'ok'|'error', text }`.
+   * Pushed by main when an action fails (or confirms something invisible,
+   * like a pit request), so the result lands on the layer the driver is
+   * actually looking at rather than in a console nobody has open.
+   */
+  onNotice: (callback) => {
+    ipcRenderer.on('ingame:notice', (_evt, notice) => callback(notice));
+  },
+
+  /**
    * Widget-background opacity pushed from the control panel's slider:
    * `{ panelOpacity: 0..100 }`. Consumed by overlay/js/appearance.js, which
    * uses this instead of polling the server precisely because this layer

@@ -197,8 +197,10 @@ export function projectAids(
       return s && s !== 'N/A' ? s : null;
     };
 
-    const row = (key: string, label: string, step: AidStep, garageKey?: string): void => {
-      if (step.max <= 0) return;
+    const row = (key: string, label: string, step: AidStep | undefined, garageKey?: string): void => {
+      // No step at all is the same statement as max 0 — this source does not
+      // carry the control (an aids block from before the Hypercar trio, say).
+      if (!step || step.max <= 0) return;
       const named = garageKey ? simLabel(garageKey, step.value) : null;
       aids.push({
         key,

@@ -1189,13 +1189,37 @@ function onWheelButton(device, button, down) {
   }
 }
 
-/** Run an action by id, logging failures rather than letting them escape. */
+/**
+ * Run an action by id, putting the outcome where the driver can see it.
+ *
+ * A bound button is pressed with both hands on the wheel and no terminal in
+ * sight, so a failure that only reaches console.warn reads as a dead button —
+ * which is exactly how an unbound Pit Request key presented. Failures go to
+ * the in-game layer as a transient notice, named after the action's label so
+ * the message says what was pressed; successes stay silent unless the action
+ * carried its own `notice`, because most of them (overlay toggle, a pit value
+ * stepping) are their own feedback.
+ */
 async function runAction(id, dir) {
   const result = await getActions().run(id, dir);
   if (result && result.ok === false) {
     console.warn(`[action] ${id} failed: ${result.error}`);
+    const action = getActions().get(id);
+    sendIngameNotice({
+      kind: 'error',
+      text: `${(action && action.label) || id}: ${result.error || 'failed'}`,
+    });
+  } else if (result && result.notice) {
+    sendIngameNotice({ kind: 'ok', text: result.notice });
   }
   return result;
+}
+
+/** Push a transient notice to the in-game layer, if it is up to show one. */
+function sendIngameNotice(notice) {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.webContents.send('ingame:notice', notice);
+  }
 }
 
 /**

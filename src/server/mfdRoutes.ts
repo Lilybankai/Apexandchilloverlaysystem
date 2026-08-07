@@ -29,7 +29,7 @@ import type { KeySender } from './keySender';
 import { readLmuKeybinds } from './lmuKeybinds';
 import { stepAid } from './aidRows';
 import { getCursor, getRaceControlRows, moveCursorLive, selectRowLive, stepSelected } from './pitCursor';
-import { noteServeArmed } from './raceControlRows';
+import { notePitRequestPressed, noteServeArmed } from './raceControlRows';
 
 /** URL prefix all MFD control routes live under. */
 export const MFD_API_PREFIX = '/api/mfd/';
@@ -304,7 +304,12 @@ async function handlePitRequest(
     return false;
   }
   const result = await keys.pressScan(key);
-  sendJson(res, result.ok ? 200 : 502, { ...result, cleared });
+  // A landed press flips the PIT REQUEST row's intent, so the widget shows the
+  // change on its next cursor poll instead of insisting NO about a stop the
+  // driver just requested. The stop-and-go caller overrides this straight
+  // after via noteServeArmed, which is the authority for that path.
+  const request = result.ok === true ? notePitRequestPressed() : undefined;
+  sendJson(res, result.ok ? 200 : 502, { ...result, cleared, request });
   return result.ok === true;
 }
 
