@@ -32,7 +32,7 @@ import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/track
 import { handleMfdCommand } from './mfdRoutes';
 import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows } from './aidRows';
-import { buildRaceControlRows } from './raceControlRows';
+import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
 import { KeySender } from './keySender';
 
 /** Maps file extensions to Content-Type headers for the static server. */
@@ -751,6 +751,10 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     lastPollMs = now;
     try {
       const frame = provider.poll(now, dt);
+      // The PIT REQUEST row reads the sim's own request flag off the frame —
+      // it is how the row stays truthful when the stop is booked through the
+      // game's own wheel bind, which never passes through this app at all.
+      noteLivePitPhase(frame.player.pit ? frame.player.pit.phase : null);
       wsServer.broadcast(frame);
     } catch (err) {
       // A provider must never take down the loop; log and keep broadcasting.

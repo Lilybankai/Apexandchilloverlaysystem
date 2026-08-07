@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.64.0-beta.5 — 2026-08-07
+
+### Changed
+
+- **The PIT REQUEST row now reads the sim, not its own memory.** It turns out
+  LMU publishes the pit request on its standings feed — found by watching the
+  feed live while the button was pressed. The row on the MFD widget now shows
+  that reading directly: book a stop with the game's **own** wheel bind,
+  Apex's bound button, or the row itself, and it flips to **YES** either way —
+  and flips back when the game cancels it (LMU treats the request as a
+  toggle, so two presses book it and un-book it). Previously the row only
+  knew about presses made through Apex, which is why a button bound inside
+  LMU never moved it.
+
+  One reminder that falls out of this: keep the request on **one** binding —
+  either LMU's own controller bind *or* Apex's — because the same physical
+  button bound in both places will toggle the request twice per press once
+  both paths work.
+
 ## 0.64.0-beta.4 — 2026-08-07
 
 ### Fixed

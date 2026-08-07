@@ -52,18 +52,58 @@ const REQUEST_OPTIONS = ['NO', 'YES'] as const;
  *
  * Module-level for the same reason the cursor is: the server runs in-process
  * inside Electron, so a wheel button, an HTTP call from the widget and a click
- * are all looking at one value. Neither row can be read back from the sim —
- * there is no "which penalty am I serving" channel and no way to interrogate the
- * pit-request toggle — so this is the only record of intent there is, and it is
- * presented as intent rather than as a reading.
+ * are all looking at one value. SERVE cannot be read back from the sim — there
+ * is no "which penalty am I serving" channel — so it is presented as intent.
+ *
+ * PIT REQUEST is different since 2026-08-07: the sim DOES publish the request
+ * (`pitState: REQUEST` on `/rest/watch/standings`, verified live by pressing
+ * the game's own bind and watching the feed), so whenever a live frame is
+ * flowing, {@link noteLivePitPhase} keeps `requestState` synced to the truth
+ * and the row is a reading. The intent value remains as the fallback for when
+ * no frame carries a pit phase (demo pages, provider down) — and it is what a
+ * press updates optimistically in the beat before the next frame confirms it.
  */
 let serveState: number = SERVE_OFF;
 let requestState = 0;
+
+/** When {@link noteLivePitPhase} last saw a frame with a pit phase in it. */
+let livePhaseAtMs = 0;
+
+/** How long a live reading stays authoritative with no fresh frame behind it. */
+const LIVE_PHASE_FRESH_MS = 5000;
 
 /** Reset both rows — a new session has no penalty and no request outstanding. */
 export function resetRaceControlRows(): void {
   serveState = SERVE_OFF;
   requestState = 0;
+  livePhaseAtMs = 0;
+}
+
+/**
+ * Feed the player's live pit phase from the telemetry loop, every frame.
+ *
+ * `request` means the sim itself says a stop is booked; any other phase means
+ * it is not (or has moved on into the lane, where the racecontrol widget takes
+ * over the story). Syncing `requestState` — rather than keeping a second
+ * variable the row prefers — means every consumer agrees: the row's YES/NO,
+ * the no-op check in its apply, and the toggle bookkeeping in
+ * {@link notePitRequestPressed} all work against what the sim last said. This
+ * is what keeps the row honest when the driver books the stop through the
+ * game's OWN bind, which the overlay otherwise never hears about.
+ *
+ * `null`/`undefined` (a frame with no pit block) leaves the intent value
+ * untouched; a phase older than {@link LIVE_PHASE_FRESH_MS} simply stops
+ * arriving, so intent naturally takes back over.
+ */
+export function noteLivePitPhase(phase: string | null | undefined): void {
+  if (phase == null) return;
+  requestState = phase === 'request' ? 1 : 0;
+  livePhaseAtMs = Date.now();
+}
+
+/** Whether the PIT REQUEST row is currently a reading rather than intent. */
+export function isPitRequestLive(): boolean {
+  return livePhaseAtMs > 0 && Date.now() - livePhaseAtMs < LIVE_PHASE_FRESH_MS;
 }
 
 /**
@@ -203,9 +243,10 @@ export function buildRaceControlRows(
         if (next === requestState) return { ok: true, applied: requestState };
         if (!keys) return { ok: false, applied: requestState, error: 'key sender unavailable' };
         // LMU's pit request is a TOGGLE, so both directions are the same press.
-        // What we cannot do is read whether it took: nothing in the API or the
-        // shared memory reports the request flag, so this row tracks intent, and
-        // the pit phase on the telemetry frame is what actually confirms it.
+        // The press is recorded optimistically; while frames are flowing,
+        // noteLivePitPhase overwrites this with the sim's own answer
+        // (`pitState: REQUEST`) within a frame or two, so a press the game
+        // ignored cannot leave the row lying for more than a beat.
         const pressed = await pressPitRequest(keys);
         if (!pressed.ok) {
           return { ok: false, applied: requestState, error: pressed.error };

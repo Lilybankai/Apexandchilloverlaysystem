@@ -341,6 +341,44 @@ console.log('\n4) Live operations against a stub sim');
     check('clearing the providers removes their rows', composeRows(collide, null).length === 2);
   }
 
+  /* ---------------------------------------------------------------------- */
+  console.log('\nPIT REQUEST is a READING while frames flow (verified live 2026-08-07)');
+  {
+    // The sim publishes the request itself (`pitState: REQUEST` on standings),
+    // so the row must follow the sim — including a stop booked through the
+    // game's OWN wheel bind, which never passes through this app at all.
+    const rc = require('../dist/server/raceControlRows');
+    const requestRow = () =>
+      rc.buildRaceControlRows(null, null).find((r) => r.name === 'PIT REQUEST:');
+
+    rc.resetRaceControlRows();
+    check('a fresh session starts at NO', requestRow().current === 0);
+    check('…and is intent, not a reading', rc.isPitRequestLive() === false);
+
+    rc.noteLivePitPhase('request');
+    check('the sim saying REQUEST reads as YES', requestRow().current === 1);
+    check('…and the row is now live', rc.isPitRequestLive() === true);
+
+    rc.noteLivePitPhase('none');
+    check('the sim clearing it reads as NO', requestRow().current === 0);
+
+    rc.noteLivePitPhase('request');
+    rc.noteLivePitPhase('entering');
+    check('a car already in the lane is no longer "requested"', requestRow().current === 0);
+
+    rc.noteLivePitPhase('request');
+    rc.noteLivePitPhase(null);
+    check('a frame with no pit block leaves the reading alone', requestRow().current === 1);
+
+    check('a landed press toggles from the synced state', rc.notePitRequestPressed() === 'NO');
+    check('…and back', rc.notePitRequestPressed() === 'YES');
+
+    rc.resetRaceControlRows();
+    rc.noteServeArmed(true);
+    check('arming a stop/go still reports the request', requestRow().current === 1);
+    rc.resetRaceControlRows();
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 })();
