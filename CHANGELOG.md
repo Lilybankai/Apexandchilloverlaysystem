@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.64.0-beta.1 — 2026-08-07
+
+### Added
+
+- **Speedo cluster — the panel lights up with the revs.** One widget carrying
+  everything you read on a straight: speed and gear big in the middle, a
+  segmented rev bar across the top, and the four budgets around them — fuel and
+  virtual energy on the left, projected lap and the hybrid battery on the right,
+  with a chip strip for the pit limiter, TC (plus its power-cut and slip
+  sub-settings) and ABS.
+
+  The headline is the **background illumination**: the panel fills from the floor
+  upward as the revs rise, green through amber to red, and flashes at the
+  limiter. That is the whole reason the widget exists. A rev counter you have to
+  focus on is useless at 300 km/h — the shift point has to be readable with your
+  eyes still on the braking zone, and a panel that turns red underneath you is.
+
+  The bands are fractions of your **own** car's rev limit, which is what lets one
+  widget serve the whole field: a Hypercar at 9000 and a GT3 at 7200 go amber,
+  red and shift at the same point in their own range.
+
+  The battery is the Hypercar's ERS charge — the one that empties down a straight
+  and comes back under braking. It is deliberately kept apart from virtual
+  energy, which is the stint allowance that only goes down; showing one where the
+  other was meant would have a driver lifting to save something that recharges
+  itself. An arrow says which way it is flowing: ▲ DEPLOY or ▼ HARVEST.
+
+  Three readouts are hidden rather than shown empty when your car or the feed
+  does not have them — the battery on anything without a hybrid, virtual energy
+  on a class with no energy budget, the TC chips outside LMU. An empty gauge is a
+  claim; no gauge is not.
+
+  Speed follows the app's kph/mph setting like every other panel, so the cluster
+  and the pedal traces can never disagree.
+
+  **Beta note.** The battery is read from a shared-memory offset that was derived
+  from the struct layout rather than watched moving on a real car — every
+  neighbour on both sides is verified, but the field itself is not yet. If your
+  Hypercar shows no battery gauge, or a GT3 shows one, that is the thing to
+  report. `node scripts/probe-lmu-hybrid.js` prints a verdict from a lap.
+
+### Fixed
+
+- **The demo car's revs ignored the gear**, so they sat at 8400 of 8600 whenever
+  it was flat and never sawtoothed. The Speedo's shift band was unreachable
+  without a sim running — the widget's most important state, visible only on
+  track. The revs now climb through each gear's speed band and drop on the
+  upshift, off the same table the gear indicator uses so the two cannot drift.
+- **Demo mode published no driving-aid settings at all**, so the MFD's aid
+  section and the Speedo's TC chips could only ever be seen empty. It now
+  publishes them. The pit menu stays empty on purpose: it is a read/write mirror
+  of a real menu, and fabricating rows would give the MFD buttons that write to a
+  sim that is not there.
+
 ## 0.63.1 — 2026-08-07
 
 ### Fixed
