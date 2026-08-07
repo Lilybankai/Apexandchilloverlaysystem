@@ -116,10 +116,39 @@ const VT = {
   // value the driver adjusts on the fly, and the one thing the REST garage API
   // only ever reports at its frozen SETUP value. This is the ISI-standard offset,
   // verified live on LMU v1.3000 FOR THE PLAYER'S OWN RECORD: it tracked an
-  // on-track front sweep (0.478 → 0.43). (A garage-menu preview value at 696
-  // moves in the pits but reads 0 on track and is not this.) Like every offset
-  // here it is version-sensitive and may shift on an LMU update.
+  // on-track front sweep (0.478 → 0.43). (A value at 696 moves in the pits but
+  // reads 0 on track and is not this — it is the battery charge below, seen in a
+  // car whose pack was flat on track.) Like every offset here it is
+  // version-sensitive and may shift on an LMU update.
   mRearBrakeBias: 664,
+  /* ------------------------ Electric boost block -------------------------
+   * ISI's hybrid/ERS block, which LMU's Hypercars populate and everything else
+   * leaves at zero:
+   *
+   *   696 double mBatteryChargeFraction      (0..1 state of charge)
+   *   704 double mElectricBoostMotorTorque   (Nm, signed: +deploy / −harvest)
+   *   712 double mElectricBoostMotorRPM
+   *   720 double mElectricBoostMotorTemperature
+   *   728 double mElectricBoostWaterTemperature
+   *   736 unsigned char mElectricBoostMotorState
+   *   737 unsigned char mExpansion[111]
+   *
+   * Pinned from both sides by offsets already verified live, the same evidence
+   * that fixes the motion block. `mRearBrakeBias` at 664 puts
+   * `mTurboBoostPressure` at 672, `mPhysicsToGraphicsOffset[3]` at 680 and
+   * `mPhysicalSteeringWheelRange` at 692, so the block starts at 696 — and it
+   * closes on `mWheels[0]` at 848, which is independently verified twice over
+   * (the surface-temp triplet at 976 and the brake-disc temp at 872). 737 + 111
+   * is 848 exactly. LMU's aid bytes at 746..759 live INSIDE that 111-byte
+   * expansion tail, which is the same finding recorded below, from the other end.
+   *
+   * Both channels are guarded on read: a charge outside `[0,1]` or a torque past
+   * any plausible motor is discarded rather than published, so an offset that
+   * shifts on an LMU update degrades to "no hybrid" instead of a wrong gauge.
+   * `scripts/probe-lmu-hybrid.js` is how you watch them move on a real car.
+   */
+  mBatteryChargeFraction: 696,
+  mElectricBoostMotorTorque: 704,
   /* ----------------------- LMU's driving-aid block -----------------------
    * TC, its two sub-settings, ABS and the motor map, live, for the player's
    * own car — each a single BYTE, paired with the maximum the car allows.
@@ -296,6 +325,19 @@ export interface LocalCarPhysics {
    * wrong prompt; the race-control widget's limiter callouts stay silent).
    */
   limiterOn: boolean | null;
+  /**
+   * Hybrid state of charge, `0`..`1`, or `UNKNOWN_VALUE` when the channel reads
+   * outside that range — which is what a torn read or a shifted offset looks
+   * like. A car with no hybrid reads a legitimate, constant `0`; separating that
+   * from a Hypercar sitting flat is not this function's job (it is stateless) and
+   * is done by the per-car latch in the provider.
+   */
+  batteryCharge: number;
+  /**
+   * Electric motor torque in Nm, signed (+ deploying / − harvesting), or
+   * `UNKNOWN_VALUE` when implausible. See {@link VT.mBatteryChargeFraction}.
+   */
+  motorTorqueNm: number;
   /**
    * Per-corner tyre **surface** temperature in °C `[FL, FR, RL, RR]`, each the
    * mean of the inner/centre/outer bands. `UNKNOWN_VALUE` (-1) when the car
@@ -993,6 +1035,8 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     fuelLiters: round1(rec.readDoubleLE(VT.mFuel)),
     capacityLiters: round1(rec.readDoubleLE(VT.mFuelCapacity)),
     limiterOn: rec[VT.mSpeedLimiter] === 1 ? true : rec[VT.mSpeedLimiter] === 0 ? false : null,
+    batteryCharge: plausibleCharge(rec.readDoubleLE(VT.mBatteryChargeFraction)),
+    motorTorqueNm: plausibleTorque(rec.readDoubleLE(VT.mElectricBoostMotorTorque)),
     tyreTempsC,
     tyreHudTempsC,
     tyreSurfaceBandsC,
@@ -1082,6 +1126,26 @@ function clamp01(v: number): number {
  *  a torn read or a wrong offset can't publish a nonsense brake bias. */
 function plausibleFraction(v: number): number {
   return Number.isFinite(v) && v > 0 && v < 1 ? Math.round(v * 1000) / 1000 : UNKNOWN_VALUE;
+}
+/**
+ * A state of charge. Unlike a brake bias this may legitimately sit at either
+ * end — a battery really can be flat or brim-full — so the range is INCLUSIVE.
+ * Anything outside it is a bad read, not an empty battery.
+ */
+function plausibleCharge(v: number): number {
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? Math.round(v * 1000) / 1000 : UNKNOWN_VALUE;
+}
+/**
+ * Electric motor torque, Nm. Signed on purpose — the sign is the deploy/harvest
+ * distinction. The bound is deliberately generous (no racing MGU is near it)
+ * because its job is to reject a wrong offset's garbage, not to second-guess a
+ * car's spec.
+ */
+const MAX_MOTOR_TORQUE_NM = 5000;
+function plausibleTorque(v: number): number {
+  return Number.isFinite(v) && Math.abs(v) <= MAX_MOTOR_TORQUE_NM
+    ? Math.round(v * 10) / 10
+    : UNKNOWN_VALUE;
 }
 function clampInt(v: number, min: number, max: number): number {
   return Math.round(clamp(v, min, max));

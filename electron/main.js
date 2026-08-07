@@ -72,6 +72,12 @@ const OVERLAY_CATALOG = [
     ingameDefault: false,
   },
   { id: 'tyres', label: 'Tyre Temps', description: 'Four-corner temperatures' },
+  {
+    id: 'speedo',
+    label: 'Speedo Cluster',
+    description:
+      'Speed, revs, gear + fuel, energy and hybrid battery — the panel lights up with the revs',
+  },
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },

@@ -130,6 +130,22 @@ browser. There is no database, no message broker, no cloud round-trip.
   position in a stream that can desync from the data. `lap-sync.json` is a cache
   that stops redundant re-sends; deleting it costs bandwidth, never correctness.
 
+- **The hybrid battery** (`lmuLocalCar.ts` → `PlayerState.hybrid`). ISI's electric
+  boost block: state of charge plus **signed** motor torque, so deploy and
+  harvest are distinguishable rather than inferred. The offsets were not scanned
+  for — they are **bracketed by offsets already verified live**, the same
+  evidence that fixes the motion block: `mRearBrakeBias` at 664 puts the block at
+  696, and it closes on `mWheels[0]` at 848, which is itself verified twice over.
+  `scripts/probe-lmu-hybrid.js` confirms them against a moving car, and is worth
+  re-running after an LMU update like every offset in that file.
+
+  The block is **latched per car, not tested per frame**. A GT3 reads a constant
+  zero because it has no hybrid; a Hypercar reads zero at the end of a straight
+  because it just spent one. Those are the same frame and opposite facts, so the
+  provider decides once — on the first non-zero charge from a given vehicle — and
+  omits the block entirely otherwise. Testing the live value instead would make
+  the Hypercar's gauge disappear at exactly the moment its driver wants it.
+
 - **`trackMap.ts`** — the circuit's shape, learned from the driven car and cached
   in `~/.apex-overlay/tracks/<key>.json`. Nothing in either sim publishes the road
   as geometry (LMU's track archives are encrypted; the REST feed publishes a lap
@@ -186,6 +202,35 @@ browser. There is no database, no message broker, no cloud round-trip.
   is simulated.
 - **`js/widgets/*.js`** — one self-contained module per widget, registered
   against the `window.ApexOverlay` runtime.
+- **`js/widgets/speedo.js`** — the driver's cluster, and the one widget besides
+  the pedal traces that runs at `throttleMs 0`: a rev counter is a rate
+  instrument, and at 250 ms the bar advances in eight steps between upshifts and
+  the shift light lands a quarter-second late.
+
+  The illumination and the rev bar go on a **canvas**, the readouts stay in the
+  DOM. Doing the illumination in CSS means writing a custom property a
+  `background-image` resolves through — a style recalc plus a full-panel repaint,
+  thirty times a second, for the life of the stream; on a canvas it is two fills.
+  The canvas is blended `screen`, not alpha-composited: a red wash over the
+  near-black panel comes out brown, and brown is the one colour a shift cue
+  cannot be.
+
+  The rev bands are fractions of the car's **own** `maxRpm`, which is the whole
+  reason one widget serves a Hypercar and a GT3. That ramp is the only part with
+  a right answer rather than a look, so it is pure and exposed as
+  `window.ApexSpeedo` for `scripts/test-speedo.js` — the same split `audio.js`
+  makes for the cue scheduler. The case that bites is an unknown `maxRpm`, which
+  a naive divide turns into a red panel on an idling car.
+
+  Speed is formatted by `fmt.speedValue` / `fmt.speedUnitLabel`, not here: the
+  cluster needs the number and the unit at different type sizes, and splitting
+  `fmt.speed()`'s output would have been a second copy of the conversion this
+  codebase deliberately keeps in one place (`scripts/test-speedunit.js` asserts
+  the pair reconstructs it exactly).
+
+  Three readouts are **hidden rather than emptied** when their block is absent —
+  the battery, virtual energy and the aid chips. An empty gauge is a claim about
+  the car; no gauge is not.
 - **`js/audio.js`** — the cue engine: three short tones, **synthesised** with an
   oscillator and a gain envelope rather than shipped as sound files. Same
   rationale as the no-Electron and no-web-fonts choices above — an asset would

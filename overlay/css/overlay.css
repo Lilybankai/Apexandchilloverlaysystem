@@ -3516,3 +3516,214 @@ body.ig-editing #widget-radar .panel__header {
     animation: none;
   }
 }
+
+/* =========================================================================
+ * SPEEDO CLUSTER — speed, revs, gear + the four budgets.
+ *
+ * The panel body is padding-free and `position: relative` so the canvas can sit
+ * edge to edge behind everything: the rev illumination has to reach the panel's
+ * own corners, and an inset glow reads as a rectangle drawn ON the widget rather
+ * than as the widget lighting up.
+ *
+ * Everything above the canvas is laid out in ONE grid row — budgets, speed,
+ * gear, budgets — because the eye's path across a cluster is horizontal, and a
+ * stacked layout would put the gear below the speed, which is the one pairing a
+ * driver reads as a unit.
+ * ========================================================================= */
+.speedo {
+  position: relative;
+  overflow: hidden;
+  padding: 0 0 6px;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+/* The illumination + rev bar. Behind the readouts and out of the hit-testing
+   path, so the in-game layer's drag handles still work over it.
+ *
+ * `screen`, not normal compositing. Alpha-blending a colour over the near-black
+ * panel pulls it toward the surface: the red wash at the top of the rev range
+ * came out BROWN, which is the one colour a shift cue must not be. Screen adds
+ * light instead, so the hue keeps its saturation and the panel reads as
+ * illuminated rather than tinted — which is the whole point of the effect.
+ * Unlike backdrop-filter (banned here, and rightly) this is a per-pixel blend of
+ * two things already in the layer tree, not a readback of the backdrop. */
+.speedo__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.speedo__grid {
+  position: relative;
+  /* budgets · speed · gear · budgets. The two side columns are equal so the
+     speed sits on the panel's true centre line whatever the numbers do. */
+  display: grid;
+  grid-template-columns: 1fr auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 12px 4px;
+}
+.speedo__side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.speedo__side--r { align-items: flex-end; text-align: right; }
+
+.speedo__stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.speedo__stat-k {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.speedo__stat-v {
+  font-family: var(--font-mono);
+  font-size: var(--fs-data);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.05;
+  /* The illumination runs behind these, so they carry their own backing rather
+     than relying on the panel being dark — at full revs it is not. */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.speedo__stat-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.speedo__stat-sub:empty { display: none; }
+
+/* --- centre: the two Tier-1 readouts ---------------------------------- */
+.speedo__core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.speedo__speed { display: flex; align-items: baseline; gap: 4px; }
+.speedo__speed-v {
+  font-family: var(--font-display);
+  /* Deliberately above --fs-crit-lg: this is a widget whose whole job is one
+     number, read in peripheral vision at 300 km/h. It still multiplies through
+     --fs-scale, so the operator's Text size slider governs it like everything
+     else. */
+  font-size: calc(58px * var(--fs-scale));
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+.speedo__speed-u {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  color: var(--text-secondary);
+}
+.speedo__rpm {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* The gear glyph, framed the way a cluster frames it. The border tints with the
+   rev band, so the frame itself is a second, coarser shift cue. */
+.speedo__gear {
+  font-family: var(--font-display);
+  font-size: calc(40px * var(--fs-scale));
+  font-weight: 700;
+  line-height: 1;
+  min-width: calc(52px * var(--fs-scale));
+  padding: 6px 4px 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  transition: border-color 140ms linear;
+}
+.speedo__gear[data-rev="amber"] { border-color: var(--warn); }
+.speedo__gear[data-rev="red"] { border-color: var(--pos-loss); }
+.speedo__gear[data-rev="shift"] {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* --- projected-lap delta ---------------------------------------------- */
+.speedo__delta[data-state="up"] { color: var(--pos-gain); }
+.speedo__delta[data-state="down"] { color: var(--pos-loss); }
+.speedo__delta[data-state="none"] { color: var(--text-muted); }
+
+/* --- hybrid battery ---------------------------------------------------- */
+.speedo__batt { display: flex; align-items: center; gap: 6px; }
+.speedo__batt-track {
+  width: 62px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.speedo__batt-fill {
+  height: 100%;
+  width: 0;
+  background: var(--ac-cyan);
+  transition: width 120ms linear;
+}
+.speedo__batt-fill[data-state="mid"] { background: var(--warn); }
+.speedo__batt-fill[data-state="low"] { background: var(--pos-loss); }
+.speedo__batt-v {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* --- chip strip -------------------------------------------------------- */
+.speedo__chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+}
+.speedo__chip {
+  font-family: var(--font-display);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+/* Lit = the system is intervening right now (TC/ABS). Amber is the aid colour
+   the pedal trace uses, so one colour keeps meaning one thing across the two
+   widgets that show driver aids. */
+.speedo__chip[data-on="true"] {
+  color: #0a0b12;
+  background: var(--aid-tc);
+  border-color: var(--aid-tc);
+}
+/* The limiter is not an aid trimming an input — it is a hard cap the driver
+   chose, and leaving it on out of the pit lane is the most expensive mistake
+   this widget can catch. Its own colour, so it never blends into the TC row. */
+.speedo__chip.is-limiter[data-on="true"] {
+  background: var(--ac-cyan);
+  border-color: var(--ac-cyan);
+}

@@ -495,6 +495,21 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Last good local physics + when, to bridge single missed reads (flicker). */
   private lastLocal: LocalCarPhysics | null = null;
   private lastLocalAt = 0;
+  /**
+   * Whether the car currently being driven has a hybrid system at all — latched
+   * `true` the first time it publishes a non-zero state of charge, and re-armed
+   * by {@link hybridLatchCar} whenever the car changes.
+   *
+   * A latch rather than a live test, because the two things that must not be
+   * confused look identical in any single frame: a GT3 reads a constant `0`
+   * because it has no battery, and a Hypercar reads `0` at the end of a long
+   * straight because it has just spent one. Gating on the instantaneous value
+   * would make the Hypercar's gauge vanish at exactly the moment its driver most
+   * wants to see it, so the question is asked once per car instead of per frame.
+   */
+  private hasHybrid = false;
+  /** Vehicle the {@link hasHybrid} latch was decided for; a change re-arms it. */
+  private hybridLatchCar = '';
   /** Last good radar blips + when, to bridge a single torn readField() (flicker). */
   private lastRadar: RadarBlip[] | null = null;
   private lastRadarAt = 0;
@@ -1030,6 +1045,15 @@ export class LmuRestProvider implements TelemetryProvider {
     // reading the buffer twice per poll to serve two callers would be pure waste.
     const scoringCar = playerCar ? this.scoring.read(playerCar.slotID) : null;
     if (scoringCar && scoringCar.vehicleName) this.playerVehicleName = scoringCar.vehicleName;
+
+    // Hybrid latch — keyed on the CAR, because whether there is a battery is a
+    // property of the machinery, not of the session. Swapping cars between
+    // sessions must re-ask the question; a red flag must not.
+    if (this.playerVehicleName !== this.hybridLatchCar) {
+      this.hybridLatchCar = this.playerVehicleName;
+      this.hasHybrid = false;
+    }
+    if (rawLocal && rawLocal.batteryCharge > 0) this.hasHybrid = true;
 
     const standings = this.buildStandings(cars, focusId);
     const relative = this.buildRelative(cars, focus, si);
@@ -2197,6 +2221,17 @@ export class LmuRestProvider implements TelemetryProvider {
         ? { damage: this.damage }
         : {}),
       ...(pit ? { pit } : {}),
+      // Hybrid: gated on the per-car latch, not on the current reading, because a
+      // Hypercar that has just emptied its battery down the Mulsanne reads
+      // exactly like a GT3 that never had one. See `hasHybrid`.
+      ...(local && this.hasHybrid && local.batteryCharge !== UNKNOWN_VALUE
+        ? {
+            hybrid: {
+              chargeFraction: local.batteryCharge,
+              motorTorqueNm: local.motorTorqueNm,
+            },
+          }
+        : {}),
       // Like motion and chassis, this exists only for the car driven on this PC
       // — it is read from that car's own scoring record — so spectating omits it
       // rather than reporting a clean sheet nobody earned.

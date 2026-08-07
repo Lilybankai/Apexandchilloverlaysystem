@@ -104,6 +104,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    speedo:
+      '<section class="widget panel widget--speedo" id="widget-speedo" data-widget="speedo" aria-label="Speedo cluster — speed, revs, gear, fuel, energy and battery">' +
+      '<header class="panel__header"><span class="panel__title">Speedo</span>' +
+      '<span class="panel__meta" data-role="meta">— · —</span></header>' +
+      '<div class="panel__body panel__body--flush" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     pedals:
       '<section class="widget panel" id="widget-pedals" data-widget="pedals" aria-label="Pedal inputs">' +
       '<header class="panel__header"><span class="panel__title">Inputs</span>' +

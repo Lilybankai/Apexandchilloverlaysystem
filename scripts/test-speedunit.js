@@ -99,6 +99,8 @@ console.log('\nThe runtime exposes one speed formatter');
 
 check('fmt.speed exists', typeof fmt.speed === 'function');
 check('fmt.speedFromMs exists', typeof fmt.speedFromMs === 'function');
+check('fmt.speedValue exists', typeof fmt.speedValue === 'function');
+check('fmt.speedUnitLabel exists', typeof fmt.speedUnitLabel === 'function');
 
 /* -------------------------------------------------------------------------- */
 console.log('\nkph — the sim\'s own unit, and the default');
@@ -148,6 +150,39 @@ check(
 check('the m/s sentinel is a dash too', fmt.speedFromMs(-1) === '— kph', fmt.speedFromMs(-1));
 
 /* -------------------------------------------------------------------------- */
+console.log('\nValue and unit apart — the Speedo cluster sizes them differently');
+/* -------------------------------------------------------------------------- */
+
+// The cluster prints the number at 58px and the unit at 9px, so it needs the
+// two separately. They must be VIEWS on the same arithmetic, never a second copy
+// of it — so the pair is asserted to reconstruct fmt.speed() exactly.
+setUnit('kph');
+check('the value alone carries no unit', fmt.speedValue(168) === '168', fmt.speedValue(168));
+check('the label alone is the unit', fmt.speedUnitLabel() === 'kph', fmt.speedUnitLabel());
+check(
+  'value + label reconstructs fmt.speed',
+  `${fmt.speedValue(168)} ${fmt.speedUnitLabel()}` === fmt.speed(168),
+  `${fmt.speedValue(168)} ${fmt.speedUnitLabel()}`,
+);
+setUnit('mph');
+check('the value converts with the unit', fmt.speedValue(168) === '104', fmt.speedValue(168));
+check('the label follows too', fmt.speedUnitLabel() === 'mph', fmt.speedUnitLabel());
+check(
+  'they still reconstruct after a unit change',
+  `${fmt.speedValue(320)} ${fmt.speedUnitLabel()}` === fmt.speed(320),
+  `${fmt.speedValue(320)} ${fmt.speedUnitLabel()}`,
+);
+// The sentinel must be a BARE dash here, not '— mph': the cluster puts the unit
+// in its own element, so a dash carrying one would print the unit twice.
+check('the sentinel is a bare dash', fmt.speedValue(-1) === '—', fmt.speedValue(-1));
+check(
+  'undefined is a bare dash too',
+  fmt.speedValue(undefined) === '—',
+  String(fmt.speedValue(undefined)),
+);
+setUnit('kph');
+
+/* -------------------------------------------------------------------------- */
 console.log('\nA nonsense unit must not blank the readout');
 /* -------------------------------------------------------------------------- */
 
@@ -158,7 +193,7 @@ check('an unknown unit is ignored, not adopted', fmt.speed(180) === '180 kph', f
 console.log('\nNo widget formats speed on its own any more');
 /* -------------------------------------------------------------------------- */
 
-for (const w of ['pedals', 'pedalsv', 'motion']) {
+for (const w of ['pedals', 'pedalsv', 'motion', 'speedo']) {
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'overlay', 'js', 'widgets', `${w}.js`), 'utf8');
   check(`${w}.js carries no unit string of its own`, !/["'] ?(kph|mph)["']|\* 3\.6/.test(src));

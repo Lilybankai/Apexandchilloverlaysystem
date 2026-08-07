@@ -143,10 +143,35 @@
     return has(ms) ? speed(ms * 3.6) : "— " + speedUnit;
   }
 
+  /**
+   * The converted NUMBER on its own, and the unit label on its own.
+   *
+   * `speed()` returns them joined ("248 kph"), which is right for a panel header
+   * but not for the Speedo cluster, where the number is the biggest thing on the
+   * screen and the unit is a small label beside it — they need different type.
+   * Splitting `speed()`'s output on the space would work until a locale or a
+   * unit with a space in it made it not, so the pair is exposed properly instead.
+   *
+   * The conversion still happens in exactly one place, which is the whole point
+   * of this section: these two are views on the same arithmetic, not a second
+   * copy of it.
+   */
+  function speedValue(kph) {
+    if (!has(kph)) return "—";
+    return String(Math.round(speedUnit === "mph" ? kph / KPH_PER_MPH : kph));
+  }
+
+  /** The driver's current unit as a bare label — `"kph"` or `"mph"`. */
+  function speedUnitLabel() {
+    return speedUnit;
+  }
+
   var fmt = {
     UNKNOWN: UNKNOWN,
     speed: speed,
     speedFromMs: speedFromMs,
+    speedValue: speedValue,
+    speedUnitLabel: speedUnitLabel,
     has: has,
     lapTime: lapTime,
     gap: gap,

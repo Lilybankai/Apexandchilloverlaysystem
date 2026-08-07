@@ -216,6 +216,11 @@
       // clear of the standings tower, so its inputs are reachable in edit mode.
       fuelplan: { x: 24, y: 300, w: 340 },
       tyres: { x: vw - 324, y: vh - 260, w: 300 },
+      // Dead centre along the bottom edge, and wider than the readout widgets:
+      // it is a cluster, read the way a real one is — straight ahead, in
+      // peripheral vision. An id with no entry here spawns at {24, 24} on top
+      // of standings, which reads as the overlay having failed to load.
+      speedo: { x: Math.round(vw / 2 - 245), y: vh - 210, w: 490 },
       pedals: { x: Math.round(vw / 2 - 180), y: vh - 220, w: 360 },
       // Clear of `pedals` on purpose: the two are alternates and get compared
       // side by side, so spawning them on the same centre line would stack one

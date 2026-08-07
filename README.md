@@ -179,6 +179,9 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
   class's colour — the same colour the standings tower and the radar use, so a
   car arriving is placed as a rival for position or as a faster class coming
   through before the gap beside it is even read
+- **Speedo cluster** (bottom-centre) — speed, revs and gear with the whole panel
+  lighting up from the floor as the revs rise, green through amber to red, plus
+  fuel, virtual energy, projected lap and the hybrid battery (see below)
 - **Pedal inputs** (bottom-center) — throttle/brake trace, trail-braking style
 - **Pedal inputs (vertical)** — the same channels a quarter-turn round: pedals as
   levels rising from the bottom, steering as a needle sweeping an arc from a
@@ -201,6 +204,39 @@ Positioned to sit on top of the LMU/RaceLab HUD with solid, opaque backgrounds
 - **Reference pace** — your best lap as a percentage of the pace an alien runs
   in the same class at the same track layout, on the Alien → Offline ladder.
   See below
+
+### Speedo cluster
+
+Everything you read on a straight, in one panel, with the shift point readable
+without looking at it: **the background illuminates from the bottom up as the
+revs rise**, green through amber to red, and the top of the range flashes. That
+is the point of the widget. A rev number you have to focus on is no use at
+300 km/h; a panel that goes red underneath you is.
+
+The bands are fractions of your own car's rev limit, so a Hypercar revving to
+9000 and a GT3 to 7200 light up at the same place in their own range — one widget
+for every car in the field.
+
+Around the speed and gear sit the four budgets: **fuel** and **virtual energy**
+on the left, each with the laps it is worth; **projected lap time** and the
+**hybrid battery** on the right. The battery is the Hypercar's ERS state of
+charge — the one that empties down a straight and comes back under braking — and
+it is *not* virtual energy, which is the stint allowance that only goes down. The
+arrow under it says which way the charge is going: ▲ DEPLOY or ▼ HARVEST.
+
+Underneath, a chip strip: the **pit limiter**, and the **TC** map with its two
+sub-settings (**PWR**, the power cut, and **SLIP**, the slip threshold) plus
+**ABS**. TC and ABS light amber while they are actually intervening; the settings
+themselves flash when you change them.
+
+Three of these are hidden rather than shown empty when the car or the feed does
+not have them — the battery on anything without a hybrid, virtual energy on a
+class that does not run an energy budget, the TC chips outside LMU. An empty
+gauge is a claim; no gauge is not.
+
+Speed follows the app's own kph/mph setting like every other panel, so the
+cluster and the pedal traces can never disagree. Browser Source options:
+`?bg=off` drops the illumination, `?rev=off` drops the rev bar.
 
 ### Reference pace
 

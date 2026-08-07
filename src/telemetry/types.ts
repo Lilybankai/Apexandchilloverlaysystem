@@ -769,6 +769,12 @@ export interface PlayerState {
    */
   pit?: PitState;
   /**
+   * Hybrid/ERS battery state of charge and which way it is flowing. Omitted for
+   * any car that has never published a charge — see {@link HybridState}, which
+   * explains why an absent block and a zeroed one had to be different things.
+   */
+  hybrid?: HybridState;
+  /**
    * The stewards' track-limit points and the sim's own penalty count. Omitted —
    * absent, not zeroed — when the player has no scoring record at all
    * (spectating, no shared memory, out of a session), so a clean sheet is never
@@ -917,6 +923,45 @@ export interface TrackLimitsState {
    * is the stewards' own state, so showing it cannot disagree with them.
    */
   lapValid?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Hybrid system                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The **hybrid/ERS** state of the player's car — the battery a Hypercar deploys
+ * and harvests, as distinct from the two budgets in {@link FuelState}.
+ *
+ * ## Why this is not virtual energy
+ * They are easy to conflate and a driver must not. {@link
+ * FuelState.virtualEnergyPct} is a **stint** budget: a per-car allowance for the
+ * whole run that only goes down, and running it out sends you to the pits. This
+ * is a **lap** budget: a physical state of charge that empties down a straight
+ * and refills under braking, and running it out costs you the deployment out of
+ * the next corner. A widget that showed one where the other was meant would have
+ * the driver lifting to save something that recharges itself.
+ *
+ * ## Present only when the car actually has one
+ * Omitted — absent, not zeroed — for any car that has never published a charge.
+ * A GT3 has no battery, and its record reads a constant `0`, which is
+ * indistinguishable from a Hypercar sitting flat. So the provider latches this
+ * block on the first non-zero charge it sees and never fabricates one; a car
+ * without a hybrid simply has no `hybrid` field and the widget draws no gauge
+ * rather than a permanent, alarming empty one.
+ */
+export interface HybridState {
+  /** State of charge, `0` (flat) .. `1` (full). */
+  chargeFraction: number;
+  /**
+   * Electric motor torque in Nm, **signed**: positive = deploying (the motor is
+   * driving the car), negative = harvesting (it is being driven, recharging the
+   * battery). {@link UNKNOWN_VALUE} when the channel reads implausibly.
+   *
+   * The sign is the whole value of the channel — a charge percentage says how
+   * much is in the battery, and only this says which way it is currently going.
+   */
+  motorTorqueNm: number;
 }
 
 /* -------------------------------------------------------------------------- */

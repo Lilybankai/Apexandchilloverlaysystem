@@ -21,6 +21,7 @@ import {
   type ChassisState,
   type DamageState,
   type FuelState,
+  type MfdAid,
   type MotionState,
   type PaceDeltas,
   type PaceScoreState,
@@ -236,6 +237,19 @@ const DRIVER_NAMES: readonly string[] = [
 
 /* --------------------------------- helpers -------------------------------- */
 
+/**
+ * The demo car's rev range. Named rather than inlined because the three numbers
+ * only make sense together: the shift point has to sit inside the Speedo
+ * widget's own shift band (98.5% of max) or the demo can never show a shift
+ * light, and the post-shift figure has to drop clear of the red band or every
+ * gear would spend its whole length flashing.
+ */
+const SIM_MAX_RPM = 8600;
+/** Where the demo car upshifts — inside the shift band, deliberately. */
+const SIM_RPM_SHIFT_AT = 8560;
+/** Where the revs land after an upshift: mid-range, well clear of amber. */
+const SIM_RPM_AFTER_SHIFT = 5600;
+
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
@@ -321,6 +335,10 @@ export class SimulatorProvider implements TelemetryProvider {
   private pedals: PedalInputs = { throttle: 1, brake: 0, clutch: 0, steer: 0 };
   private tyreTemps = { fl: 78, fr: 80, rl: 82, rr: 84 };
   private tyreWear = { fl: 1, fr: 1, rl: 1, rr: 1 };
+  /** Demo hybrid state of charge, 0..1. Stepped by {@link stepHybrid}. */
+  private battery = 0.55;
+  /** Demo electric motor torque, Nm, signed (+ deploy / − harvest). */
+  private motorTorqueNm = 0;
   private rainIntensity = 0;
   /** Which way the demo track is going, for the weather widget's trend arrow. */
   private wetTrend: 'drying' | 'wetting' | 'steady' = 'steady';
@@ -490,7 +508,7 @@ export class SimulatorProvider implements TelemetryProvider {
         gear: this.gearFor(this.pedals),
         speedKph: this.speedFor(this.pedals),
         rpm: this.rpmFor(this.pedals),
-        maxRpm: 8600,
+        maxRpm: SIM_MAX_RPM,
         lap: {
           current: player.progress * player.lapSec,
           last: player.lastLapSec,
@@ -509,6 +527,14 @@ export class SimulatorProvider implements TelemetryProvider {
         ...(chassis ? { chassis } : {}),
         ...(damage ? { damage } : {}),
         pit,
+        // The demo car is a Hypercar, so it carries the channel and the real
+        // gating shape is exercised: `hybrid` is a PRESENT block whose charge
+        // swings all the way down, never an omitted one — which is what a GT3
+        // would produce, and is the branch the widget hides its gauge on.
+        hybrid: {
+          chargeFraction: round2(this.battery),
+          motorTorqueNm: Math.round(this.motorTorqueNm * 10) / 10,
+        },
         ...(trackLimits ? { trackLimits } : {}),
         ...(paceScore ? { paceScore } : {}),
       },
@@ -531,6 +557,7 @@ export class SimulatorProvider implements TelemetryProvider {
         forecast: this.buildForecast(),
       },
       fuel,
+      mfd: { pit: [], aids: this.buildAids(nowMs) },
     };
   }
 
@@ -694,16 +721,12 @@ export class SimulatorProvider implements TelemetryProvider {
       tc: round2(tc),
       abs: round2(abs),
     };
+
+    this.stepHybrid(dt, smThrottle, smBrake);
   }
 
   private gearFor(pedals: PedalInputs): number {
-    const speed = this.speedFor(pedals);
-    if (speed < 70) return 2;
-    if (speed < 110) return 3;
-    if (speed < 150) return 4;
-    if (speed < 190) return 5;
-    if (speed < 230) return 6;
-    return 7;
+    return SimulatorProvider.gearBand(this.speedFor(pedals)).gear;
   }
 
   private speedFor(pedals: PedalInputs): number {
@@ -712,8 +735,127 @@ export class SimulatorProvider implements TelemetryProvider {
     return Math.round(base - pedals.brake * 40);
   }
 
+  /**
+   * Which gear a speed is in, and the speed band that gear spans.
+   *
+   * One table, consulted by both {@link gearFor} and {@link rpmFor}, because the
+   * whole point of the rev model below is that the revs and the gear agree — two
+   * copies of these edges would eventually drift and produce a car that upshifts
+   * somewhere other than where it hits the limiter.
+   */
+  private static gearBand(speedKph: number): { gear: number; lo: number; hi: number } {
+    const EDGES = [0, 70, 110, 150, 190, 230, 265];
+    for (let i = 0; i < EDGES.length - 1; i++) {
+      if (speedKph < (EDGES[i + 1] as number) || i === EDGES.length - 2) {
+        return { gear: i + 2, lo: EDGES[i] as number, hi: EDGES[i + 1] as number };
+      }
+    }
+    return { gear: 7, lo: 230, hi: 265 };
+  }
+
+  /**
+   * Engine speed, derived from where the car is **within its current gear**.
+   *
+   * It used to be a straight function of throttle position, which meant the demo
+   * car's revs never sawtoothed and never came near the limiter: they sat at
+   * 8400 of 8600 whenever it was flat, so the Speedo's shift band — the widget's
+   * single most important state — was unreachable without a sim running. That is
+   * the same defect as a battery pinned at one rail: the gauge looks alive while
+   * the one thing it exists for can never happen.
+   *
+   * Now the revs climb through each gear's speed band and drop on the upshift,
+   * which is what a rev counter does and what makes the shift light testable.
+   */
   private rpmFor(pedals: PedalInputs): number {
-    return Math.round(lerp(4200, 8400, clamp01(pedals.throttle)) - pedals.brake * 800);
+    const speed = this.speedFor(pedals);
+    const band = SimulatorProvider.gearBand(speed);
+    const through = clamp01((speed - band.lo) / Math.max(1, band.hi - band.lo));
+    return Math.round(lerp(SIM_RPM_AFTER_SHIFT, SIM_RPM_SHIFT_AT, through));
+  }
+
+  /**
+   * The demo Hypercar's battery: spent on throttle, harvested on the brakes.
+   *
+   * Deliberately NOT a decorative sine wave. The point of the Speedo's battery
+   * gauge is that deployment and harvesting read as a cycle tied to what the
+   * driver is doing, so the demo has to produce that cycle — a gauge swinging on
+   * its own timer would look identical while hiding the one bug that matters, a
+   * deploy/harvest sign the wrong way round.
+   */
+  private stepHybrid(dt: number, throttle: number, brake: number): void {
+    /**
+     * Peak rates. The equilibrium these settle at is set by the TAPERS below,
+     * not by these numbers being balanced against the demo lap — which matters,
+     * because balancing them by hand was tried and got it wrong in both
+     * directions: a harvest rate merely "bigger than" the deploy rate ran the
+     * pack flat inside a minute, and correcting that pinned it at 100% for 43%
+     * of a stint. Both look like a working gauge on a broken car.
+     */
+    const DEPLOY_PER_SEC = 0.09;
+    const HARVEST_PER_SEC = 0.16;
+    const PEAK_MOTOR_NM = 380;
+
+    /**
+     * Both flows taper toward their own rail: you cannot deploy charge that is
+     * not there, and you cannot harvest into a pack that is full. That is what a
+     * real ERS does, and it also makes the demo **self-limiting** — the charge
+     * has a stable equilibrium strictly inside 0..1 wherever the duty cycle
+     * happens to sit, so it keeps cycling without either end being tuned for. A
+     * hard cut at each rail has no such equilibrium: it drifts until it hits a
+     * rail and then sits there.
+     */
+    const deploy = throttle * DEPLOY_PER_SEC * this.battery;
+    const harvest = brake * HARVEST_PER_SEC * (1 - this.battery);
+    this.battery = clamp01(this.battery + (harvest - deploy) * dt);
+
+    // Signed, matching the live channel: positive drives the car, negative
+    // recharges. Normalised on the peak deploy rate and clamped, so it reads as
+    // a torque rather than as whatever the rate constants happen to be.
+    const nm = ((deploy - harvest) / DEPLOY_PER_SEC) * PEAK_MOTOR_NM;
+    this.motorTorqueNm = clamp(nm, -PEAK_MOTOR_NM, PEAK_MOTOR_NM);
+  }
+
+  /**
+   * The demo's live driving-aid settings.
+   *
+   * Aids only — the pit menu stays empty, because it is a read/write mirror of a
+   * real menu and fabricating rows would give the MFD widget buttons that write
+   * to a sim that is not there. The aids are pure readout, and without them the
+   * Speedo's TC / TC-power / TC-slip chips and the MFD's aid section could only
+   * ever be seen in their empty state — which is exactly the gap demo mode
+   * exists to close.
+   *
+   * TC steps between two maps on a slow cycle. A driver really does change it
+   * mid-stint, and it is the only way the change glow on a discrete setting is
+   * reachable without a wheel plugged in; the cycle is long enough (45 s) that
+   * it reads as someone adjusting rather than as a value that flickers.
+   */
+  private buildAids(nowMs: number): MfdAid[] {
+    const step = (key: string, label: string, value: number, maxValue: number): MfdAid => ({
+      key,
+      label,
+      value,
+      minValue: 0,
+      maxValue,
+      text: `${value}/${maxValue}`,
+    });
+
+    const tc = Math.floor(nowMs / 45000) % 2 === 0 ? 7 : 5;
+    return [
+      {
+        key: 'BRAKE_BIAS',
+        label: 'Brake Bias',
+        value: 54,
+        minValue: 0,
+        maxValue: 100,
+        text: '54.0:46.0',
+      },
+      step('tc', 'Traction Control', tc, 11),
+      step('tcSlip', 'TC Slip', 4, 9),
+      step('tcCut', 'TC Power Cut', 6, 9),
+      step('abs', 'ABS', 9, 9),
+      step('motorMap', 'Motor Map', 3, 6),
+    ];
   }
 
   /* -------------------------------- motion ------------------------------- */
