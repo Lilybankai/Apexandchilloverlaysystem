@@ -215,5 +215,44 @@ check(
   /\.speedo__stat\[hidden\]\s*\{[^}]*display\s*:\s*none/.test(css),
 );
 
+/* -------------------------------------------------------------------------- */
+
+console.log('\nevery styled element is one the widget actually builds');
+
+/*
+ * The other way this widget's CSS goes quietly wrong: a class gets renamed in
+ * the JS and the rules that targeted it keep parsing, keep validating, and
+ * simply stop matching anything. Nothing errors and the panel still renders —
+ * it just loses a colour, a glow, or a layout rule. The battery bar became a
+ * battery icon exactly this way.
+ *
+ * So every `.speedo__*` class the stylesheet targets has to be one the widget
+ * (or its shell) puts in the DOM.
+ */
+const widgetSrc = fs.readFileSync(
+  path.join(__dirname, '..', 'overlay', 'js', 'widgets', 'speedo.js'),
+  'utf8',
+);
+const shellSrc = fs.readFileSync(
+  path.join(__dirname, '..', 'overlay', 'js', 'shells.js'),
+  'utf8',
+);
+const markup = widgetSrc + shellSrc;
+
+const styled = [...new Set([...css.matchAll(/\.(speedo__[a-z0-9-]+)/g)].map((m) => m[1]))];
+const orphans = styled.filter((cls) => !markup.includes(cls));
+check(
+  'no styled .speedo__* class is missing from the markup',
+  orphans.length === 0,
+  orphans.length ? `orphaned: ${orphans.join(', ')}` : `${styled.length} classes checked`,
+);
+
+// And the regen glow specifically, since it is the readout most easily lost to
+// a rename: it must target the battery icon, not whatever it used to be called.
+check(
+  'the regen state lights the battery icon',
+  /\[data-flow="regen"\][^{]*\.speedo__batt-icon\s*\{/.test(css),
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

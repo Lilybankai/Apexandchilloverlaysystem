@@ -221,8 +221,12 @@ Around the speed and gear sit the four budgets: **fuel** and **virtual energy**
 on the left, each with the laps it is worth; **projected lap time** and the
 **hybrid battery** on the right. The battery is the Hypercar's ERS state of
 charge — the one that empties down a straight and comes back under braking — and
-it is *not* virtual energy, which is the stint allowance that only goes down. The
-arrow under it says which way the charge is going: ▲ DEPLOY or ▼ HARVEST.
+it is *not* virtual energy, which is the stint allowance that only goes down.
+
+It is drawn as a **battery icon**, and it **lights up green and glows whenever
+regen is feeding charge back in** — which is the part you can catch without
+looking straight at it. The arrow under it says which way the charge is going:
+▲ DEPLOY or ▼ REGEN.
 
 Underneath, a chip strip: the **pit limiter**, **REGEN** (your selected level,
 lit green whenever charge is actually flowing back in), and the **TC** map with

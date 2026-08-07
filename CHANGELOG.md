@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.64.0-beta.3 — 2026-08-07
+
+### Added
+
+- **A battery icon that lights up under regen.** The hybrid charge was a plain
+  horizontal bar; it is now a proper battery glyph — cell outline, terminal nub,
+  filling with charge — and **the whole cell goes green and blooms whenever
+  charge is flowing back in**.
+
+  The chip and the label already said REGEN, but neither survives being glanced
+  at for a fifth of a second over live footage. A battery that visibly lights up
+  does, which is the same argument the rev illumination is built on. It breathes
+  rather than blinks, because regen lasts as long as the braking zone and a hard
+  flash for that long is an irritation on a panel you are trying to read past;
+  under `prefers-reduced-motion` it becomes a flat green tint with no movement,
+  the same contract the change glow uses.
+
+  The icon scales with the **Text size** slider like every readout beside it.
+
+### Fixed
+
+- **A guard against CSS that quietly stops matching.** Two bugs in this feature
+  were stylesheet rules that parsed fine, validated fine and simply targeted
+  nothing — one from a `display` override, one from a renamed class. Neither
+  errors, neither shows up in a screenshot of a car that happens to have every
+  channel, and both cost a readout. Every `.speedo__*` class the stylesheet
+  targets is now asserted to exist in the markup that builds it.
+
 ## 0.64.0-beta.2 — 2026-08-07
 
 ### Fixed

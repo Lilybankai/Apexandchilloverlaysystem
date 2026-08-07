@@ -360,10 +360,14 @@
     var batt = el("div", "speedo__stat");
     batt.appendChild(el("span", "speedo__stat-k", "BATTERY"));
     var battRow = el("div", "speedo__batt");
-    var track = el("div", "speedo__batt-track");
+    // A battery GLYPH, not a plain bar: a cell outline with a terminal nub,
+    // filling with charge. It reads as a battery at a glance and at any size,
+    // which a bare bar does not — and it is the thing that lights up when charge
+    // is flowing back in, so it has to be recognisable in peripheral vision.
+    var icon = el("span", "speedo__batt-icon");
     elBattFill = el("div", "speedo__batt-fill");
-    track.appendChild(elBattFill);
-    battRow.appendChild(track);
+    icon.appendChild(elBattFill);
+    battRow.appendChild(icon);
     elBattVal = el("span", "speedo__batt-v", "—");
     battRow.appendChild(elBattVal);
     batt.appendChild(battRow);

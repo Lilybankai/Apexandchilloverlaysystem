@@ -3673,20 +3673,42 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__delta[data-state="none"] { color: var(--text-muted); }
 
 /* --- hybrid battery ---------------------------------------------------- */
-.speedo__batt { display: flex; align-items: center; gap: 6px; }
-.speedo__batt-track {
-  width: 62px;
-  height: 8px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
-  overflow: hidden;
+.speedo__batt { display: flex; align-items: center; gap: 9px; }
+/* The battery glyph: a cell outline plus a terminal nub, filling with charge.
+   Sized in --fs-scale units so it grows with the operator's Text size slider
+   like every readout beside it. */
+.speedo__batt-icon {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: calc(34px * var(--fs-scale));
+  height: calc(15px * var(--fs-scale));
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid var(--text-muted);
+  border-radius: 3px;
+  transition: border-color 140ms linear, box-shadow 200ms ease-out;
+}
+/* The terminal. Outside the box on the right, so the outline stays a clean
+   rectangle the fill can run edge to edge inside. */
+.speedo__batt-icon::after {
+  content: "";
+  position: absolute;
+  right: calc(-3px * var(--fs-scale));
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(3px * var(--fs-scale));
+  height: calc(7px * var(--fs-scale));
+  background: var(--text-muted);
+  border-radius: 0 2px 2px 0;
+  transition: background-color 140ms linear;
 }
 .speedo__batt-fill {
   height: 100%;
   width: 0;
   background: var(--ac-cyan);
-  transition: width 120ms linear;
+  border-radius: 1px;
+  transition: width 120ms linear, background-color 140ms linear;
 }
 .speedo__batt-fill[data-state="mid"] { background: var(--warn); }
 .speedo__batt-fill[data-state="low"] { background: var(--pos-loss); }
@@ -3741,11 +3763,43 @@ body.ig-editing #widget-radar .panel__header {
   background: var(--pos-gain);
   border-color: var(--pos-gain);
 }
-/* The battery bar follows the same two states, so the block reads as recovering
-   without having to get to the label underneath it. */
-.speedo__stat[data-flow="regen"] .speedo__batt-fill {
-  background: var(--pos-gain);
-}
-.speedo__stat[data-flow="regen"] .speedo__batt-track {
+/* The battery glyph LIGHTS UP while charge is flowing back in — the whole cell
+   goes green and blooms, and the terminal with it.
+ *
+ * This is the readout a driver actually catches: the chip and the label under
+ * the icon both say REGEN, but neither survives being glanced at for a fifth of
+ * a second over live footage, and a battery that visibly glows does. It is the
+ * same argument the rev illumination is built on.
+ *
+ * The bloom is pre-mixed rgba rather than colour-mix()'d, for the reason
+ * theme.css gives about --glow-soft: OBS ships an older CEF than desktop Chrome
+ * and a glow that silently fails to render is worse than one that cannot be
+ * retinted. */
+.speedo__stat[data-flow="regen"] .speedo__batt-fill { background: var(--pos-gain); }
+.speedo__stat[data-flow="regen"] .speedo__batt-icon::after { background: var(--pos-gain); }
+.speedo__stat[data-flow="regen"] .speedo__batt-icon {
   border-color: var(--pos-gain);
+  animation: speedo-batt-charge 900ms ease-in-out infinite;
+}
+/* Breathing rather than blinking. Regen lasts as long as the braking zone, so
+   this runs for seconds at a time; a hard flash at that duration is an
+   irritation on a panel the driver is trying to read past. */
+@keyframes speedo-batt-charge {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(53, 208, 127, 0.9), 0 0 11px rgba(53, 208, 127, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(53, 208, 127, 1), 0 0 22px rgba(53, 208, 127, 0.8);
+  }
+}
+/* Same contract theme.css uses for the change glow: under reduced motion the
+   bloom becomes a flat tint, so the state is still legible without anything
+   moving or pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .speedo__stat[data-flow="regen"] .speedo__batt-icon {
+    animation: none;
+    box-shadow: none;
+    background: rgba(53, 208, 127, 0.26);
+  }
 }
