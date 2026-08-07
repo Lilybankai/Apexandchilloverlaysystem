@@ -39,6 +39,15 @@
  * A Simagic knob left in "absolute value mode" is an axis for this reason —
  * switch it back to incremental in SimPro Manager to bind it.
  *
+ * ## The device list repairs itself
+ * Enumeration happens on open, which is not once and for all: a rig that boots
+ * the app before the wheel's driver, or power-cycles the base mid-session, ends
+ * up polling a list that describes nothing. That is invisible from the outside —
+ * every wheel binding just stops working, with no error — so the poll loop
+ * re-enumerates on its own when the list is empty or a device has gone
+ * persistently unreadable ({@link RESCAN_MIN_POLLS}). The Scan button on the
+ * bindings page is the same call made by hand, not the only way back.
+ *
  * ## Cost
  * Polling only runs while something is actually bound to a wheel button
  * ({@link GamepadReader.setActive}); with no wheel bindings this module opens no
@@ -106,6 +115,26 @@ const DEVCAPS_SIZE = 44;
 const POLL_MS = 8;
 
 /**
+ * Automatic re-enumeration while the device list is wrong, in polls.
+ *
+ * Enumeration happens once per open, so a reader that came up with no devices —
+ * the app launched before the wheel's driver, or the base was power-cycled since
+ * — polled an empty list forever and every wheel binding silently did nothing.
+ * The only way back was the Scan button on the bindings page, which is not
+ * something a driver can be expected to know. These retry from ~2 s, backing off
+ * to ~30 s so a rig that genuinely has no wheel attached is not re-enumerating
+ * every few seconds for the rest of the session.
+ */
+const RESCAN_MIN_POLLS = 250;
+const RESCAN_MAX_POLLS = 3750;
+/**
+ * Consecutive failed reads before a device counts as lost, ~1 s. Well past the
+ * brief unacquired spell a focus change or a screen lock causes, so those still
+ * recover through the cheap re-Acquire in {@link GamepadReader._poll} alone.
+ */
+const LOST_POLLS = 125;
+
+/**
  * Human-readable name for a button number, including the synthetic hat ones.
  * Used for binding labels so a chip reads "hat 1 up" and not "btn 201".
  */
@@ -141,6 +170,9 @@ class GamepadReader {
     this.buffers = [];
     this.iidBuffer = null;
     this.failed = null;
+    /** Polls since the last enumeration, and the gap before the next retry. */
+    this.pollsSinceScan = 0;
+    this.rescanAfter = RESCAN_MIN_POLLS;
   }
 
   /** Whether the reader could be used at all on this host. */
@@ -184,8 +216,12 @@ class GamepadReader {
    * the app had started could never be bound however many times the bindings
    * page was opened — the device list simply kept answering with what was
    * attached at boot.
+   *
+   * Called by the Scan button and, since the list going wrong is invisible from
+   * the outside, automatically from {@link GamepadReader._poll}.
    */
   rescan() {
+    this.rescanAfter = RESCAN_MIN_POLLS;
     if (!this.di) return this._open();
     const wasPolling = this.timer !== null;
     if (wasPolling) this.setActive(false);
@@ -258,6 +294,9 @@ class GamepadReader {
       this.failed = 'not Windows';
       return false;
     }
+    // Cleared so a retry that succeeds does not leave a stale reason behind,
+    // which `available` would keep reporting as a permanent failure.
+    this.failed = null;
     try {
       // eslint-disable-next-line global-require
       const koffi = require('koffi'); // optional dep, as elsewhere in the app
@@ -309,8 +348,8 @@ class GamepadReader {
 
       this._enumerate();
       if (this.devices.length === 0) {
-        // Not an error: no wheel plugged in yet. Leave `available` true so a
-        // later setActive() re-enumerates.
+        // Not an error: no wheel plugged in yet. `available` stays true, and
+        // the poll loop keeps re-enumerating until one turns up.
         if (this.verbose) console.log('[gamepad] no controllers attached');
       }
       return true;
@@ -325,6 +364,7 @@ class GamepadReader {
     const koffi = this.koffi;
     const found = [];
     this.problems = [];
+    this.pollsSinceScan = 0;
     this.enumFn = koffi.register((lpddi) => {
       try {
         const buf = Buffer.from(koffi.decode(lpddi, 0, koffi.array('uint8', DEVINST_SIZE)));
@@ -444,6 +484,8 @@ class GamepadReader {
       // Hats start centred, which is the resting value POV_CENTERED matches.
       prev: Buffer.alloc(STATE_SIZE),
       pov: new Array(NUM_POVS).fill(-1),
+      /** Consecutive unreadable polls — see LOST_POLLS. */
+      misses: 0,
     };
   }
 
@@ -457,14 +499,25 @@ class GamepadReader {
   }
 
   _poll() {
+    this.pollsSinceScan++;
+    // An empty list is itself the fault worth retrying: it is what a reader that
+    // opened before the wheel's driver was ready looks like, and it reports no
+    // buttons at all rather than failing visibly.
+    let stale = this.devices.length === 0;
+
     for (const d of this.devices) {
       const rc = this._vcall(d.dev, 9, this.P.GetDeviceState, STATE_SIZE, d.state);
       if (rc !== 0) {
         // Focus changes and device sleep drop the acquisition; re-take it and
-        // pick up on the next tick rather than treating it as an error.
+        // pick up on the next tick rather than treating it as an error. A device
+        // that stays unreadable is a different thing — a base that was
+        // power-cycled leaves a handle no Acquire will ever recover — so past
+        // LOST_POLLS stop trying to reacquire this pointer and re-enumerate.
         this._vcall(d.dev, 7, this.P.Acquire);
+        if (++d.misses >= LOST_POLLS) stale = true;
         continue;
       }
+      d.misses = 0;
 
       for (let i = 0; i < d.caps.buttons; i++) {
         const o = BUTTONS_OFS + i;
@@ -485,6 +538,16 @@ class GamepadReader {
       }
 
       d.state.copy(d.prev);
+    }
+
+    // After the loop, so the re-enumeration is never replacing `devices` while
+    // it is being iterated.
+    if (stale && this.pollsSinceScan >= this.rescanAfter) {
+      const backedOff = Math.min(this.rescanAfter * 2, RESCAN_MAX_POLLS);
+      this.rescan();
+      // Only keep backing off while it is still coming up empty; a rig that has
+      // its wheel back should retry promptly the next time one goes away.
+      this.rescanAfter = this.devices.length > 0 ? RESCAN_MIN_POLLS : backedOff;
     }
   }
 

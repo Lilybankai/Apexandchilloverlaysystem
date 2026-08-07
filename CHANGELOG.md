@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Wheel buttons no longer go dead until you press "Scan".** If Apex started
+  before your wheel was ready — a boot-with-Windows rig, or a base switched on
+  after the app — it never looked for the wheel again, so every wheel binding
+  silently did nothing. The MFD controls were the obvious casualty: ▲ ▼ + −
+  on the wheel did nothing at all, and the only cure was the **Scan** button
+  buried in Settings → Bindings. Apex now looks again by itself, both when it
+  finds no wheel at startup and when a wheel disappears mid-session (a base
+  power-cycled between sessions used to kill the bindings for the rest of the
+  night). Plug a wheel in while Apex is running and it's usable within a couple
+  of seconds. The **Scan** button still does the same thing on demand.
+
 ## 0.64.0-beta.3 — 2026-08-07
 
 ### Added
