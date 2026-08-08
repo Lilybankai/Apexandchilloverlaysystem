@@ -1185,7 +1185,14 @@
         var m = modes && modes.trackmap;
         if (PALETTES[m] && PALETTES[m] !== palette) {
           palette = PALETTES[m];
-          ribbon = null; // the shape is unchanged; only its paint is
+          // The shape is unchanged; only its paint is. `ribbonKey` has to go
+          // too, and that is not tidiness: the key is what DECIDES whether the
+          // ribbon is rebuilt (see the guard below). Nulling the bitmap while
+          // leaving the key matching means the rebuild is skipped and the draw
+          // lands on `drawImage(null, …)`, which throws on every frame for the
+          // rest of the session — the map simply stops, from a palette change.
+          ribbon = null;
+          ribbonKey = "";
         }
       });
     }
@@ -1256,7 +1263,13 @@
 
     if (!geom) {
       geom = buildGeometry();
+      // The invariant, and it holds everywhere `ribbon` is nulled: the bitmap
+      // and its key die together. `sizeCanvas` drops `geom` without dropping
+      // `ribbon`, so a size that changes and comes back before the next frame
+      // arrives here with a ribbon whose key still matches — the rebuild below
+      // is skipped and the draw lands on `drawImage(null, …)`.
       ribbon = null;
+      ribbonKey = "";
     }
     if (!geom) return;
     var key = haveKey + "|" + haveRevision + "|" + cssW + "x" + cssH + "|" + dpr;
