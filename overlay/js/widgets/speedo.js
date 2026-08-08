@@ -33,6 +33,18 @@
  * places where they want them. They are standalone widgets, and this widget does
  * not reason about them at all.
  *
+ * ## The BG slider reaches the canvas
+ * Every other widget's background is `--bg-panel`, an rgba() that resolves
+ * through `--panel-alpha`, so the operator's "BG" slider fades it for free. This
+ * one paints its own shell into a bitmap, where a custom property means nothing
+ * — so the slider used to move with no effect on the cluster at all, its only
+ * visible consequence being the lifted text tokens that come with
+ * `data-panel-bg="translucent"`. The alpha is therefore read back out of the
+ * cascade and multiplied into the shell, the hood, the bezel and the wells (see
+ * {@link panelAlpha}). The illumination, the bars and the readouts are DATA and
+ * are left alone: at 0 the boxes go and the live values float over the game,
+ * which is what that slider means everywhere else in the overlay.
+ *
  * ## Why it draws to a canvas
  * The illumination and both rev bars change every single frame, and doing that in
  * CSS means writing a custom property that a `background-image` resolves
@@ -111,11 +123,34 @@
   var BAND_RED = 0.93;
   var BAND_SHIFT = 0.985;
 
-  /* Ramp stops, matching the theme's own status tokens so this widget's green
-   * and red mean what they mean everywhere else in the overlay. */
-  var C_GREEN = [53, 208, 127]; /* --pos-gain  #35d07f */
-  var C_AMBER = [255, 176, 32]; /* --warn      #ffb020 */
-  var C_RED = [255, 84, 112]; /* --pos-loss  #ff5470 */
+  /**
+   * Ramp stops.
+   *
+   * Green and amber are still the theme's own status tokens, so this widget's
+   * "there is room" and "the shift is coming" mean what they mean everywhere
+   * else. But this ramp is a LIGHT SOURCE, not a row of status chips — it is
+   * drawn as a half-transparent wash over a near-black shell — and two of the
+   * stops had to be tuned for that:
+   *
+   *   • a YELLOW between green and amber. Straight green→amber passes through
+   *     olive, and at the partial alpha the wash uses, a dark warm hue is simply
+   *     BROWN: the middle of the rev range read as mud rather than as a warning.
+   *     Yellow keeps the luminance up across that stretch, so the same alpha
+   *     lands on gold instead.
+   *   • a true RED at the top. `--pos-loss` (#ff5470) is a DELTA colour, picked
+   *     to stay legible as small text on a dark row; filling the top half of a
+   *     cluster with it reads as pink, and pink is not a shift light.
+   *
+   * Across the whole ramp the red channel never falls and the green channel
+   * never rises — asserted in `scripts/test-speedo.js`, because a ramp that dips
+   * back reads as the car calming down while it runs out of gear. That is why
+   * the yellow's green channel sits exactly at the green stop's own value, and
+   * why the green stop is lifted a shade from #35d07f to clear it.
+   */
+  var C_GREEN = [48, 216, 124]; /* --pos-gain, lifted to clear the yellow  */
+  var C_YELLOW = [232, 216, 52]; /* the bridge stop — see above             */
+  var C_AMBER = [255, 176, 32]; /* --warn      #ffb020                     */
+  var C_RED = [255, 46, 42]; /* a shift-light red, not the delta pink   */
 
   /** Below this the ramp is flat green — a car off the throttle is not "cold". */
   var RAMP_GREEN_UNTIL = 0.55;
@@ -153,18 +188,31 @@
   }
 
   /**
-   * The illumination colour for a rev fraction: green → amber → red.
+   * The illumination colour for a rev fraction: green → yellow → amber → red.
    *
-   * Continuous rather than three flat buckets, because the brief is a panel that
+   * Continuous rather than four flat buckets, because the brief is a panel that
    * *gradually* changes: a driver watching the colour drift toward amber has
    * more information than one waiting for it to snap.
+   *
+   * The stops land ON the band edges — full yellow where the amber band opens,
+   * full amber where the red band opens, full red on the limiter — so the colour
+   * and the band can never tell the driver two different things.
    */
   function revRgb(f) {
     if (f <= RAMP_GREEN_UNTIL) return C_GREEN;
-    if (f <= BAND_RED) {
-      return mix(C_GREEN, C_AMBER, (f - RAMP_GREEN_UNTIL) / (BAND_RED - RAMP_GREEN_UNTIL));
+    if (f <= BAND_AMBER) {
+      return mix(C_GREEN, C_YELLOW, (f - RAMP_GREEN_UNTIL) / (BAND_AMBER - RAMP_GREEN_UNTIL));
     }
-    return mix(C_AMBER, C_RED, (f - BAND_RED) / (1 - BAND_RED));
+    if (f <= BAND_RED) {
+      return mix(C_YELLOW, C_AMBER, (f - BAND_AMBER) / (BAND_RED - BAND_AMBER));
+    }
+    // Eased, not linear. The eye does not read a mix as RED until its green
+    // channel is well down, and straight interpolation does not get there until
+    // two-thirds of the way along — inside a band that is only 7% of the range
+    // wide. So the top of the rev range came out orange, which is the amber cue
+    // over again rather than a new one. The curve front-loads the move to red
+    // without changing where the band starts or what it ends on.
+    return mix(C_AMBER, C_RED, Math.pow((f - BAND_RED) / (1 - BAND_RED), 0.45));
   }
 
   function rgba(c, a) {
@@ -410,6 +458,48 @@
   var sizeTick = 0;
 
   /**
+   * The operator's background opacity, 0..1 — the "BG" slider, global or this
+   * widget's own override.
+   *
+   * Every other widget gets this for free: their background is `--bg-panel`,
+   * which is declared as an rgba() resolving through `--panel-alpha`, so the
+   * slider fades the panel and that is that. This one draws its own shell into a
+   * canvas, where a CSS custom property means nothing — so for one release the
+   * slider moved and the cluster did not, and the only visible effect was the
+   * `[data-panel-bg="translucent"]` text tokens brightening the labels, which
+   * looks exactly like a text-brightness slider that has been mislabelled.
+   *
+   * So the value is READ back out of the cascade (it inherits down to the stage
+   * from wherever appearance.js wrote it) and multiplied into the shell, the
+   * hood shadow, the bezel and the wells — everything that is background. The
+   * illumination, the bars and the readouts are data and keep their own alpha:
+   * at 0 the boxes go and the live values float over the game, which is what the
+   * slider means everywhere else in the overlay.
+   */
+  var panelAlpha = 1;
+
+  /** How often update() re-reads it — ~3×/s at the broadcast rate. */
+  var ALPHA_TICKS = 10;
+
+  function readPanelAlpha() {
+    if (!stageEl || typeof window.getComputedStyle !== "function") return 1;
+    var raw = window.getComputedStyle(stageEl).getPropertyValue("--panel-alpha");
+    var n = parseFloat(raw);
+    if (!isFinite(n)) return 1;
+    return n < 0 ? 0 : n > 1 ? 1 : n;
+  }
+
+  /** Sampled rather than subscribed, so a slider drag repaints the shell. */
+  function pollPanelAlpha() {
+    var a = readPanelAlpha();
+    if (a === panelAlpha) return;
+    panelAlpha = a;
+    // The shell lives in the baked layers, so this has to reach buildStatic —
+    // which it does through staticKey, exactly like a resize.
+    lastFrameKey = "";
+  }
+
+  /**
    * The static artwork, baked once per size — the bezel below the illumination,
    * and the wells, unlit tracks and tick scales above it.
    *
@@ -518,12 +608,23 @@
     g.closePath();
   }
 
+  /**
+   * The shell: the hood shadow, the dark fill and the bezel edge.
+   *
+   * Every alpha here is multiplied by {@link panelAlpha}, so the operator's BG
+   * slider fades the whole background together — including the hood shadow,
+   * which has to go with it for the same reason `.panel`'s box-shadow does: a
+   * drop shadow with nothing casting it is a grey smudge on the track.
+   */
   function drawShell(g) {
+    var pa = panelAlpha;
+    if (pa <= 0.001) return;
+
     /* the hood: a soft dark halo that lifts the cluster off the game feed */
     g.save();
     g.shadowBlur = 46;
-    g.shadowColor = "rgba(0,0,0,0.95)";
-    g.fillStyle = "#0b1111";
+    g.shadowColor = "rgba(0,0,0," + 0.95 * pa + ")";
+    g.fillStyle = "rgba(11,17,17," + pa + ")";
     shellPath(g);
     g.fill();
     g.restore();
@@ -531,9 +632,9 @@
     /* the bezel edge — brightest along the top, where a real one catches light */
     g.save();
     var edge = g.createLinearGradient(0, 0, 0, DH);
-    edge.addColorStop(0, "rgba(205,245,245,0.80)");
-    edge.addColorStop(0.4, "rgba(130,185,185,0.30)");
-    edge.addColorStop(1, "rgba(100,155,155,0.16)");
+    edge.addColorStop(0, "rgba(205,245,245," + 0.8 * pa + ")");
+    edge.addColorStop(0.4, "rgba(130,185,185," + 0.3 * pa + ")");
+    edge.addColorStop(1, "rgba(100,155,155," + 0.16 * pa + ")");
     g.strokeStyle = edge;
     g.lineWidth = 2;
     shellPath(g);
@@ -570,10 +671,19 @@
     var grad = g.createLinearGradient(0, DH, 0, top);
     // Peak opacity climbs with the revs too, so the cluster gets both taller and
     // brighter — the two cues reinforce rather than competing.
-    var peak = 0.2 + 0.55 * revF;
+    //
+    // The floor is 0.3, not the 0.2 it started at: a warm hue drawn at a low
+    // alpha over a near-black shell is a DARK warm hue, which is brown however
+    // clean the ramp is. Keeping the wash's brightness up through the middle of
+    // the range is the other half of the fix the yellow stop makes (see C_YELLOW).
+    var peak = 0.3 + 0.5 * revF;
     if (flashing) peak = 0.95;
     grad.addColorStop(0, rgba(rgb, peak));
-    grad.addColorStop(0.45, rgba(rgb, peak * 0.42));
+    // 0.62 of the peak at the midpoint, not 0.42: the body of the wash is the
+    // part the eye actually judges the colour by, and at 0.42 it was dark enough
+    // to turn every warm hue to mud regardless of the stop feeding it. The fade
+    // to nothing still happens — it happens over the top half.
+    grad.addColorStop(0.45, rgba(rgb, peak * 0.62));
     grad.addColorStop(1, rgba(rgb, 0));
     g.fillStyle = grad;
     g.fillRect(0, top, DW, DH - top);
@@ -589,14 +699,18 @@
    * up around them.
    */
   function drawWells(g) {
+    var pa = panelAlpha;
+    if (pa <= 0.001) return;
     g.save();
     for (var i = 0; i < WELLS.length; i++) {
       wellPath(g, WELLS[i], 16);
       // Nearly opaque, not a tint: at 0.34 the illumination flooded straight
-      // through and the readouts went green with the panel.
-      g.fillStyle = "rgba(0,0,0,0.86)";
+      // through and the readouts went green with the panel. Faded by the BG
+      // slider like every other surface — the four budgets keep their own
+      // text-shadow, so they stay readable once their well has gone.
+      g.fillStyle = "rgba(0,0,0," + 0.86 * pa + ")";
       g.fill();
-      g.strokeStyle = "rgba(140,200,200,0.13)";
+      g.strokeStyle = "rgba(140,200,200," + 0.13 * pa + ")";
       g.lineWidth = 1;
       g.stroke();
     }
@@ -653,7 +767,9 @@
     g.lineJoin = "round";
     g.strokeStyle = "rgba(255,255,255,0.055)";
     strokeBetween(g, pts, 0, BAND_RED, 0);
-    g.strokeStyle = "rgba(255,84,112,0.17)";
+    // From C_RED, not a literal: the limit zone and the colour the band arrives
+    // in there are the same claim, and two copies of it drift.
+    g.strokeStyle = rgba(C_RED, 0.17);
     strokeBetween(g, pts, BAND_RED, 1, 0);
     g.restore();
 
@@ -779,7 +895,9 @@
    * which is the house reference for this pattern.
    */
   function buildStatic() {
-    var key = cssW + "x" + cssH + "|" + dpr;
+    // The background alpha is an input to both layers, so it belongs in the key
+    // — a boolean dirty flag is exactly what this pattern exists to avoid.
+    var key = cssW + "x" + cssH + "|" + dpr + "|" + panelAlpha;
     if (staticKey === key && layerBelow && layerAbove) return;
     staticKey = key;
 
@@ -931,8 +1049,13 @@
     var speedLine = el("div", "speedo__speed");
     elSpeed = el("span", "speedo__speed-v", "—");
     elUnit = el("small", "speedo__speed-u", ctx.fmt.speedUnitLabel().toUpperCase());
-    speedLine.appendChild(elSpeed);
+    // The unit CAPS the number rather than trailing it: hung off the last digit
+    // it moved with the digit count, so "KPH" sat in a different place at 98 and
+    // at 312 and the eye had to re-find the number it belongs to. Above and
+    // centred it is a fixed label on a fixed axis, and the widest thing in the
+    // centre column is the speed itself.
     speedLine.appendChild(elUnit);
+    speedLine.appendChild(elSpeed);
     core.appendChild(speedLine);
     elRpm = el("div", "speedo__rpm", "— RPM");
     core.appendChild(elRpm);
@@ -1008,6 +1131,10 @@
     placeBox(elChips, BOXES.chips);
 
     gctx = canvas.getContext("2d");
+    // Before the first bake, so the cluster opens at the operator's chosen
+    // background rather than painting solid and correcting a third of a second
+    // later — the same reason appearance.js loads in <head>.
+    panelAlpha = readPanelAlpha();
     sizeCanvas();
     watchSize(canvas);
   }
@@ -1075,6 +1202,12 @@
     // page is not producing frames, and an in-game widget can be dragged in
     // exactly that state. Same backstop motion.js keeps.
     if (++sizeTick % 30 === 0) sizeCanvas();
+    // Sampled, not subscribed: the alpha reaches this widget through the CSS
+    // cascade (global slider, per-widget override, or the layout editor forcing
+    // every panel solid), and there is no event for "a custom property changed".
+    // One getComputedStyle three times a second is far below the cost of the
+    // frame it sits in, and it only rebakes when the number actually moves.
+    if (sizeTick % ALPHA_TICKS === 0) pollPanelAlpha();
 
     /* --- revs: the cluster's headline signal --- */
     revF = revFraction(p.rpm, p.maxRpm);

@@ -150,6 +150,54 @@ check(
   ),
 );
 
+/*
+ * The two ways this ramp has actually looked wrong on a stream, both of them
+ * invisible to the checks above — the monotonicity tests pass happily on a ramp
+ * made entirely of mud.
+ *
+ *   • BROWN THROUGH THE MIDDLE. The wash is drawn at partial alpha over a
+ *     near-black shell, so its brightness is the ramp's brightness times that
+ *     alpha: a stop that dips in luminance comes out as a dark warm hue, which
+ *     is brown. Green→amber interpolated straight passes through olive at
+ *     exactly the revs a driver spends most of a lap in. So no stop anywhere on
+ *     the ramp is allowed to be dim.
+ *   • PINK AT THE TOP. --pos-loss (#ff5470) is the delta colour and has more
+ *     BLUE in it than green — fine as small text on a dark row, unmistakably
+ *     pink once it is filling half a cluster. Blue running ahead of green is the
+ *     signature of that mistake, so that is what is asserted, rather than a
+ *     specific triple a retune would have to come here and edit.
+ */
+let dimmest = 255;
+let dimmestAt = 0;
+for (let i = 0; i <= 1000; i++) {
+  const m = Math.max(...api.revRgb(i / 1000));
+  if (m < dimmest) {
+    dimmest = m;
+    dimmestAt = i / 1000;
+  }
+}
+check(
+  'no stop on the ramp is dim (nothing dims to brown)',
+  dimmest >= 210,
+  `dimmest ${dimmest}/255 at f=${dimmestAt}`,
+);
+
+const pinkish = [];
+for (let i = Math.round(api.BAND_RED * 1000); i <= 1000; i++) {
+  const c = api.revRgb(i / 1000);
+  if (c[2] > c[1]) pinkish.push(i / 1000);
+}
+check(
+  'the top of the ramp is red, not pink',
+  pinkish.length === 0,
+  pinkish.length ? `blue leads green at ${pinkish.length} points` : 'blue never leads green',
+);
+check(
+  'the limiter colour is a saturated red',
+  red[0] >= 240 && red[1] < 80 && red[2] < 80,
+  red.join(','),
+);
+
 /* -------------------------------------------------------------------------- */
 
 console.log('\none widget, two cars');
@@ -394,6 +442,51 @@ check(
   'the in-game injector plays no favourites between widgets',
   !/indexOf\("speedo"\)/.test(ingameSrc),
   'the cluster no longer drops the loose radar/trackmap',
+);
+
+/* -------------------------------------------------------------------------- */
+
+console.log('\nthe BG slider reaches the canvas');
+
+/*
+ * The cluster paints its own background into a bitmap, so it is the one widget
+ * the operator's background slider cannot reach through CSS. It went a release
+ * that way: --panel-alpha moved, the shell did not, and the ONLY visible effect
+ * was the [data-panel-bg="translucent"] text tokens lifting the labels — a
+ * background slider that appears to control text brightness.
+ *
+ * The fix is structural (read the cascade, multiply it into the baked layers),
+ * and so is the check. What must stay true:
+ *   • the shell and the wells are drawn THROUGH the alpha, not at a literal;
+ *   • it is part of the bake's cache key, or the layers never rebuild;
+ *   • the illumination is NOT faded by it — the wash is the shift cue, and a
+ *     driver who turned the panel down did not ask to lose it.
+ */
+const bodyOf = (name) =>
+  (new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n {2}\\}`).exec(widgetSrc) || [''])[0];
+
+check(
+  'the shell is drawn through the panel alpha',
+  /panelAlpha/.test(bodyOf('drawShell')) && !/#0b1111/.test(widgetSrc),
+  'no literal shell fill left',
+);
+check('the wells fade with it too', /panelAlpha/.test(bodyOf('drawWells')));
+check(
+  'the alpha is part of the bake key',
+  /var key = [^;]*panelAlpha/.test(bodyOf('buildStatic')),
+);
+check(
+  'a change to it forces a repaint',
+  /panelAlpha = a;\s*\n(\s*\/\/[^\n]*\n)*\s*lastFrameKey = "";/.test(widgetSrc),
+);
+check(
+  'the illumination is NOT faded by it',
+  !/panelAlpha/.test(bodyOf('drawGlow')),
+  'the shift cue is data, not background',
+);
+check(
+  'the alpha is read from the cascade, not guessed',
+  /getComputedStyle\(stageEl\)[\s\S]{0,80}--panel-alpha/.test(widgetSrc),
 );
 
 /* -------------------------------------------------------------------------- */

@@ -3681,7 +3681,15 @@ body.ig-editing #widget-radar .panel__header {
   justify-content: center;
   gap: calc(4px * var(--sp-scale, 1));
 }
-.speedo__speed { display: flex; align-items: baseline; gap: calc(4px * var(--sp-scale, 1)); }
+/* The unit sits ABOVE the number, centred on the same axis — not baseline-hung
+   off the last digit, where it shifted sideways every time the speed crossed a
+   hundred and the eye had to re-find the number it labels. */
+.speedo__speed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(1px * var(--sp-scale, 1));
+}
 .speedo__speed-v {
   font-family: var(--font-display);
   /* The single biggest thing on the cluster: this is a widget whose whole job is
@@ -3699,8 +3707,15 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__speed-u {
   font-family: var(--font-display);
   font-size: calc(15px * var(--sp-scale, 1));
+  line-height: 1;
+  /* The tracking is what keeps a three-letter word from reading as a cramped
+     cap over a 76px number; the indent balances it, since letter-spacing adds
+     its gap after the final letter too and would otherwise sit the word a
+     fraction left of the axis it is meant to be centred on. */
   letter-spacing: 0.16em;
+  text-indent: 0.16em;
   color: var(--text-secondary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 .speedo__rpm {
   font-family: var(--font-mono);
@@ -3711,26 +3726,37 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* The gear glyph, framed the way a cluster frames it. The border tints with the
-   rev band, so the frame itself is a second, coarser shift cue. */
+   rev band, so the frame itself is a second, coarser shift cue.
+
+   Sized as a Tier-1 readout alongside the speed rather than a caption under it:
+   the centre column had ~100 design px of slack below the chin, and gear is the
+   one value a driver checks mid-corner without moving their eyes. It stays under
+   the speed's 76px, because the speed is still the headline. */
 .speedo__gear {
   font-family: var(--font-display);
-  font-size: calc(50px * var(--sp-scale, 1));
+  font-size: calc(68px * var(--sp-scale, 1));
   font-weight: 700;
   line-height: 1;
-  min-width: calc(64px * var(--sp-scale, 1));
+  min-width: calc(88px * var(--sp-scale, 1));
   padding: calc(6px * var(--sp-scale, 1)) calc(4px * var(--sp-scale, 1))
     calc(4px * var(--sp-scale, 1));
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  background: rgba(0, 0, 0, 0.42);
+  /* The frame fades with the BG slider, the glyph does not — see the chip strip
+     below for the same split. The gear itself keeps its text-shadow, so it stays
+     readable once its box has gone. */
+  background: rgba(0, 0, 0, calc(0.42 * var(--panel-alpha)));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
   transition: border-color 140ms linear;
 }
 .speedo__gear[data-rev="amber"] { border-color: var(--warn); }
-.speedo__gear[data-rev="red"] { border-color: var(--pos-loss); }
+/* The ramp's own red (C_RED in speedo.js), not --pos-loss: that token is the
+   delta pink, and a frame in one red beside a bar and a wash in another reads as
+   two different warnings. Keep the two in step. */
+.speedo__gear[data-rev="red"] { border-color: #ff2e2a; }
 .speedo__gear[data-rev="shift"] {
   border-color: #fff;
   background: rgba(255, 255, 255, 0.14);
@@ -3810,7 +3836,12 @@ body.ig-editing #widget-radar .panel__header {
   padding: calc(2px * var(--sp-scale, 1)) calc(7px * var(--sp-scale, 1));
   border-radius: 3px;
   color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.45);
+  /* Through --panel-alpha like every other surface in the cluster (the canvas
+     does the same to the shell and the wells): an UNLIT chip is a slot, not a
+     reading, and a row of black pills left floating under a cluster the operator
+     had faded out is the tell that one box missed the setting. A LIT chip keeps
+     its solid colour below — that one IS the reading. */
+  background: rgba(0, 0, 0, calc(0.45 * var(--panel-alpha)));
   border: 1px solid var(--border-soft);
   white-space: nowrap;
 }
