@@ -3585,58 +3585,6 @@ body.ig-editing #widget-radar .panel__header {
   padding: 0;
 }
 
-/* The pods, holding the nested radar and track map sections. Positioned by the
-   widget; everything here is only about making a full panel behave as a pane. */
-.speedo__pod {
-  position: absolute;
-  /* A backstop, not the mechanism: both nested widgets derive their canvas
-     height from their own width, so the fit is arranged by giving each the width
-     its aspect needs (see RADAR_ASPECT in speedo.js). This only guarantees that
-     if one ever does overshoot, it is cropped by the well rather than drawn
-     across the bezel. */
-  overflow: hidden;
-}
-.speedo__pod > .widget {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-/* Inside a pod both widgets are bare panes: the cluster already draws the well
-   they sit in, so a second border and a title would be a frame around a frame. */
-.speedo__pod .panel__header,
-.speedo__pod .widget::before {
-  display: none;
-}
-/* No padding: the pod box is already inset from the drawn well by POD_PAD, and
-   padding here would be subtracted from the width the aspect fit depends on.
-   Centred both ways, so whichever axis the instrument does not fill reads as
-   well rather than as the widget having slipped. */
-.speedo__pod .panel__body {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  height: 100%;
-  padding: 0;
-  margin: 0 auto;
-}
-/* …including in the in-game layout editor, which restores the radar's header
-   and border so a bare HUD can be found and positioned. Nested, that does not
-   apply: the thing being positioned is the CLUSTER, and the pod is part of its
-   artwork rather than a widget the operator places. */
-body.ig-editing .speedo__pod > .widget {
-  background: transparent;
-  border-color: transparent;
-}
-body.ig-editing .speedo__pod .panel__header {
-  display: none;
-}
 /* The bezel, the illumination and both rev bars. Behind the readouts and out of
    the hit-testing path, so the in-game layer's drag handles still work over it.
  *
@@ -3667,20 +3615,28 @@ body.ig-editing .speedo__pod .panel__header {
   position: absolute;
 }
 
-/* The two budget strips, tucked under their pods. Four numbers on one baseline
-   rather than a stack, because the strip is 44 design px tall and a label over a
-   value over a sub-line is the one arrangement that cannot fit in it. */
+/* The two budget panels, standing in the wells the canvas draws. Each holds two
+   stats spaced down the well, so a label, a value and a sub-line all get room —
+   these spent a release in a 44px strip where the sub-line was clipped, and the
+   sub-line ("≈ 8.2 LAPS") is the half of the read a driver acts on. */
 .speedo__budgets {
   display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
   align-items: flex-start;
-  justify-content: flex-start;
-  gap: calc(22px * var(--sp-scale, 1));
+  text-align: left;
 }
 .speedo__budgets--r {
-  justify-content: flex-end;
+  align-items: flex-end;
+  text-align: right;
 }
 
-.speedo__stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.speedo__stat {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--sp-scale, 1));
+  min-width: 0;
+}
 /* `display: flex` above OUTRANKS the user-agent's `[hidden] { display: none }`,
    so without this the widget's whole "hide it rather than show it empty" rule
    silently does nothing: the battery block on a GT3 and the energy block on a
@@ -3690,14 +3646,14 @@ body.ig-editing .speedo__pod .panel__header {
 .speedo__stat[hidden] { display: none; }
 .speedo__stat-k {
   font-family: var(--font-display);
-  font-size: calc(12px * var(--sp-scale, 1));
+  font-size: calc(15px * var(--sp-scale, 1));
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .speedo__stat-v {
   font-family: var(--font-mono);
-  font-size: calc(19px * var(--sp-scale, 1));
+  font-size: calc(32px * var(--sp-scale, 1));
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.05;
@@ -3707,7 +3663,7 @@ body.ig-editing .speedo__pod .panel__header {
 }
 .speedo__stat-sub {
   font-family: var(--font-mono);
-  font-size: calc(12px * var(--sp-scale, 1));
+  font-size: calc(15px * var(--sp-scale, 1));
   color: var(--text-secondary);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
@@ -3794,8 +3750,8 @@ body.ig-editing .speedo__pod .panel__header {
   position: relative;
   display: block;
   box-sizing: border-box;
-  width: calc(30px * var(--sp-scale, 1));
-  height: calc(13px * var(--sp-scale, 1));
+  width: calc(44px * var(--sp-scale, 1));
+  height: calc(20px * var(--sp-scale, 1));
   padding: 2px;
   background: rgba(0, 0, 0, 0.55);
   border: 1.5px solid var(--text-muted);
@@ -3827,7 +3783,7 @@ body.ig-editing .speedo__pod .panel__header {
 .speedo__batt-fill[data-state="low"] { background: var(--pos-loss); }
 .speedo__batt-v {
   font-family: var(--font-mono);
-  font-size: calc(14px * var(--sp-scale, 1));
+  font-size: calc(28px * var(--sp-scale, 1));
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;

@@ -12,33 +12,6 @@
 (function () {
   "use strict";
 
-  /**
-   * The radar and the track map each appear TWICE below: once as a standalone
-   * shell, and once nested into the speedo cluster's pods. They are built from
-   * one string apiece so the two copies cannot drift — a nested section with a
-   * stale aria-label or a renamed data-role would bind to nothing and show an
-   * empty pod, which looks exactly like a widget waiting for telemetry.
-   *
-   * Note that only ONE of the two copies can ever be live on a page: both
-   * modules keep module-level state and client.js binds a single root per
-   * widget, so whichever comes first in the DOM wins and the other stays a
-   * placeholder. See the injector in ingame.html, which drops the loose copies
-   * when the cluster is present.
-   */
-  var RADAR =
-    '<section class="widget panel" id="widget-radar" data-widget="radar" aria-label="Proximity radar">' +
-    '<header class="panel__header"><span class="panel__title">Radar</span>' +
-    '<span class="panel__meta" data-role="meta">— m</span></header>' +
-    '<div class="panel__body" data-role="mount">' +
-    '<div class="placeholder">Awaiting telemetry…</div></div></section>';
-
-  var TRACKMAP =
-    '<section class="widget panel" id="widget-trackmap" data-widget="trackmap" aria-label="Track map — the circuit and where every car is on it">' +
-    '<header class="panel__header"><span class="panel__title">Track Map</span>' +
-    '<span class="panel__meta" data-role="meta">—</span></header>' +
-    '<div class="panel__body" data-role="mount">' +
-    '<div class="placeholder">Awaiting telemetry…</div></div></section>';
-
   window.ApexShells = {
     standings:
       '<section class="widget panel" id="widget-standings" data-widget="standings" aria-label="Race standings">' +
@@ -89,9 +62,19 @@
       '<div class="panel__body panel__body--flush" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
-    radar: RADAR,
+    radar:
+      '<section class="widget panel" id="widget-radar" data-widget="radar" aria-label="Proximity radar">' +
+      '<header class="panel__header"><span class="panel__title">Radar</span>' +
+      '<span class="panel__meta" data-role="meta">— m</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
-    trackmap: TRACKMAP,
+    trackmap:
+      '<section class="widget panel" id="widget-trackmap" data-widget="trackmap" aria-label="Track map — the circuit and where every car is on it">' +
+      '<header class="panel__header"><span class="panel__title">Track Map</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
     limits:
       '<section class="widget panel" id="widget-limits" data-widget="limits" aria-label="Track limits — points left and penalties">' +
@@ -128,28 +111,18 @@
      * it — the in-game editor drags from anywhere on a widget, not from the
      * header, and the drawn shell is what makes the cluster findable there.
      *
-     * The stage's children are ordered back to front: the canvas (bezel, glow,
-     * rev bars), then the readout layer the widget builds into, then the two
-     * pods. The pods and the canvas are declared HERE rather than created in
-     * speedo.js init() for one specific reason — init() clears its own mount,
-     * and client.js binds widget roots in script-load order. A pod created
-     * during speedo's init would either be wiped by a later re-init or race the
-     * bind loop, depending on load order. Declared in the shell, the nested
-     * sections exist from injection time and the ordering question never comes
-     * up.
+     * The stage's two children are ordered back to front: the canvas (bezel,
+     * illumination, rev bars, wells) and then the readout layer the widget
+     * builds into. Both are declared here rather than created in speedo.js
+     * init(), so the stacking order is fixed by the markup instead of by the
+     * order things happen to be appended.
      */
     speedo:
-      '<section class="widget panel widget--speedo" id="widget-speedo" data-widget="speedo" aria-label="Speedo cluster — speed, revs, gear, the proximity radar and the track map">' +
+      '<section class="widget panel widget--speedo" id="widget-speedo" data-widget="speedo" aria-label="Speedo cluster — speed, revs, gear, fuel, energy and battery">' +
       '<div class="panel__body panel__body--flush">' +
       '<div class="speedo" data-role="stage">' +
       '<canvas class="speedo__bg"></canvas>' +
       '<div class="speedo__layer" data-role="cluster"></div>' +
-      '<div class="speedo__pod speedo__pod--l">' +
-      RADAR +
-      "</div>" +
-      '<div class="speedo__pod speedo__pod--r">' +
-      TRACKMAP +
-      "</div>" +
       "</div></div></section>",
 
     pedals:

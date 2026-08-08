@@ -286,12 +286,20 @@ check(
   escaped.length ? `outside: ${escaped.map(([k]) => k).join(', ')}` : `${boxes.length} boxes`,
 );
 
-// The pods must not overlap the centre column, or the readouts land on top of
-// the radar. They are separate instruments and must not share pixels.
-const { podL, podR, core } = api.BOXES;
-check('the left pod clears the centre column', podL.x + podL.w <= core.x, `${podL.x + podL.w} <= ${core.x}`);
-check('the right pod clears the centre column', core.x + core.w <= podR.x, `${core.x + core.w} <= ${podR.x}`);
-check('the pods are mirror images', podL.x === DW - podR.x - podR.w);
+// The budget wells must not overlap the centre column, or the four budgets land
+// on top of the speed and the gear.
+const { budgetL, budgetR, core } = api.BOXES;
+check(
+  'the left well clears the centre column',
+  budgetL.x + budgetL.w <= core.x,
+  `${budgetL.x + budgetL.w} <= ${core.x}`,
+);
+check(
+  'the right well clears the centre column',
+  core.x + core.w <= budgetR.x,
+  `${core.x + core.w} <= ${budgetR.x}`,
+);
+check('the wells are mirror images', budgetL.x === DW - budgetR.x - budgetR.w);
 
 // The two bars are one shape and its mirror, so they must measure the same.
 // A difference here means one side reaches the shift point first.
@@ -342,48 +350,32 @@ check(
   api.barPointAt(left, 0.75, false).ny < -0.5 && api.barPointAt(right, 0.75, true).ny < -0.5,
 );
 
-// The duplicated constant. This is the check that earns this block.
-const radarSrc = fs.readFileSync(
-  path.join(__dirname, '..', 'overlay', 'js', 'widgets', 'radar.js'),
-  'utf8',
-);
-const radarAspect = /var\s+ASPECT\s*=\s*([\d.]+)/.exec(radarSrc);
-const speedoAspect = /var\s+RADAR_ASPECT\s*=\s*([\d.]+)/.exec(widgetSrc);
-check(
-  'the pod sizes against the radar\'s real aspect',
-  !!radarAspect && !!speedoAspect && radarAspect[1] === speedoAspect[1],
-  `radar.js=${radarAspect && radarAspect[1]} speedo.js=${speedoAspect && speedoAspect[1]}`,
-);
-// And that the radar actually fits the pod at that aspect.
-check(
-  'the radar fits inside its pod at that aspect',
-  podL.h / Number(speedoAspect[1]) <= podL.w,
-  `needs ${(podL.h / Number(speedoAspect[1])).toFixed(1)} of ${podL.w} available`,
-);
-
 /* -------------------------------------------------------------------------- */
 
-console.log('\nthe cluster owns the widgets it nests');
+console.log('\nthe cluster stands alone');
 
 /*
- * The pods hold the REAL radar and trackmap sections, and client.js binds one
- * root per widget. If the shell ever stops nesting them the pods render as empty
- * wells; if ingame.html ever stops dropping the loose copies, the nested ones
- * lose the selector and do the same. Both failures look identical to a dead feed.
+ * The cluster nested the real radar and trackmap sections in its wells for one
+ * release. It worked, but both modules keep module-level state and client.js
+ * binds one root per widget, so the nested copies had to be the ONLY ones on the
+ * page — you could have the cluster or a standalone radar, never both.
+ *
+ * These assertions keep it reverted. Re-nesting without first making those two
+ * widgets multi-instance would silently kill whichever copy lost the selector,
+ * and an empty well looks exactly like a widget waiting for telemetry.
  */
 // Just the speedo entry. Shell entries are separated by a blank line; matching
-// against the whole file instead would run straight into the next widget's
-// markup, which is how the header check below passed for the wrong reason.
+// against the whole file instead runs straight into the next widget's markup.
 const speedoShell = (/\n {4}speedo:([\s\S]*?)\r?\n\r?\n/.exec(shellSrc) || [, ''])[1];
 
 check('the speedo entry was found in the shells', speedoShell.length > 0);
 check(
-  'the speedo shell nests the radar and the track map',
-  /speedo__pod--l[\s\S]*?RADAR[\s\S]*?speedo__pod--r[\s\S]*?TRACKMAP/.test(speedoShell),
+  'the cluster shell nests no other widget',
+  !/data-widget=/.test(speedoShell.replace(/data-widget=\\?"speedo\\?"/, '')),
 );
 check(
-  'the nested sections are built from the same strings as the standalone ones',
-  /radar:\s*RADAR/.test(shellSrc) && /trackmap:\s*TRACKMAP/.test(shellSrc),
+  'radar and trackmap are still their own shells',
+  /radar:\s*\n?\s*'<section/.test(shellSrc) && /trackmap:\s*\n?\s*'<section/.test(shellSrc),
 );
 check(
   'the cluster shell has no panel header',
@@ -399,8 +391,9 @@ const ingameSrc = fs.readFileSync(
   'utf8',
 );
 check(
-  'the in-game injector drops the loose radar/trackmap when the cluster is up',
-  /indexOf\("speedo"\)[\s\S]{0,300}"radar"[\s\S]{0,120}"trackmap"/.test(ingameSrc),
+  'the in-game injector plays no favourites between widgets',
+  !/indexOf\("speedo"\)/.test(ingameSrc),
+  'the cluster no longer drops the loose radar/trackmap',
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

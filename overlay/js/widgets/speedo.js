@@ -16,28 +16,22 @@
  *     whole reason for existing: a number you have to look at is no use at
  *     300 km/h, and a panel that turns red underneath you is;
  *   • SPEED and GEAR in the middle, the two Tier-1 readouts;
- *   • two PODS carrying the proximity radar and the track map — the nearest
- *     thing a driver has to mirrors and a pit board, framed by the rev bars;
- *   • FUEL and VIRTUAL ENERGY under the left pod, PROJECTED LAP and the HYBRID
- *     BATTERY under the right — the four budgets, two of distance and two of
- *     pace;
+ *   • two WELLS carrying the four budgets — FUEL and VIRTUAL ENERGY on the left,
+ *     PROJECTED LAP and the HYBRID BATTERY on the right, two of distance and two
+ *     of pace, each with the "≈ n LAPS" line that turns a status into a decision;
  *   • a chip strip in the chin: pit limiter, regen, and the TC map with its two
  *     sub-settings (power cut and slip) plus ABS.
  *
- * ## The pods are the REAL widgets, nested
- * `shells.js` builds the radar and track map sections inside this one's shell,
- * and `client.js` binds them exactly as it would anywhere else — they keep their
- * own throttles, their own state and, critically, their own contracts. The radar
- * in particular has a property worth more than any styling: one scale, real car
- * footprints, so icons touch exactly when cars touch. Redrawing a "simplified
- * radar" inside this canvas would have thrown that away and then quietly drifted
- * from it. Nothing here reasons about their contents.
- *
- * The consequence, and it is a real one: the two nested sections are the ONLY
- * instances of those widgets on the page, because both modules keep module-level
- * state and `client.js` binds one root per widget. A page showing this cluster
- * cannot also show a standalone radar — see the note in `ingame.html`, which
- * drops the loose copies when the cluster is present.
+ * ## The radar and the track map are NOT in here
+ * They were, for one release, nested as real widget sections inside the wells.
+ * It worked, but it cost more than it bought: both modules keep module-level
+ * state and `client.js` binds one root per widget, so the nested copies had to be
+ * the ONLY ones on the page — you could have the cluster or a standalone radar,
+ * never both. Making both possible meant a multi-instance refactor of two large,
+ * carefully-tuned widgets whose failure mode is silent. The cluster is a driving
+ * instrument; the radar and the map are situational-awareness panels an operator
+ * places where they want them. They are standalone widgets, and this widget does
+ * not reason about them at all.
  *
  * ## Why it draws to a canvas
  * The illumination and both rev bars change every single frame, and doing that in
@@ -197,7 +191,7 @@
   var A_X = 40; /* inset of the vertical run from the edge  */
   var A_Y = 40; /* inset of the horizontal run from the top */
   var A_R = 92; /* corner radius of the bar centreline      */
-  var A_Y0 = 372; /* where the bar starts, at the bottom      */
+  var A_Y0 = 404; /* where the bar starts, at the bottom      */
   var A_KNEE1 = 306; /* where the top run meets the chamfer      */
   var A_KNEE2 = 358; /* where the chamfer lands on the plateau   */
   var A_Y2 = 92; /* the plateau run's y                      */
@@ -212,41 +206,32 @@
   /* --- the boxes the DOM sits in ---
    * Exported and applied by placeBox(), so the stylesheet never carries a
    * second copy of these numbers to drift from. */
-  var POD_W = 286, POD_H = 246, POD_Y = 98, POD_INSET = 96;
+  var POD_W = 286, POD_H = 312, POD_Y = 96, POD_INSET = 96;
 
-  /** The wells the canvas draws. The pods sit inside them, by POD_PAD. */
+  /** The wells the canvas draws. The budget panels sit inside them, by POD_PAD. */
   var WELLS = [
     { x: POD_INSET, y: POD_Y, w: POD_W, h: POD_H },
     { x: DW - POD_INSET - POD_W, y: POD_Y, w: POD_W, h: POD_H },
   ];
-  var POD_PAD = 8;
+  var POD_PAD = 12;
 
   function inset(b, p) {
     return { x: b.x + p, y: b.y + p, w: b.w - 2 * p, h: b.h - 2 * p };
   }
 
   /**
-   * The radar's own aspect — `ASPECT` in radar.js, which sizes its canvas as
-   * `height = width × ASPECT` from its own clientWidth and nothing else.
+   * The four budgets live in the two wells, at a size worth reading.
    *
-   * Duplicated here because the radar owns it privately and the pod has to know
-   * it: given a pod wider than 1:1.5, a full-width radar computes a canvas
-   * TALLER than the well and overflows it, which pushes the player's own car off
-   * the centre of the visible area. That is the one thing a proximity display
-   * cannot do — the whole widget is built on where things are relative to you.
-   * `scripts/test-speedo.js` asserts the two constants still agree.
+   * They spent one release in a 66 px strip underneath, which fit a label and a
+   * value and then clipped every "≈ n LAPS" — the half of a fuel or energy read
+   * that actually changes a driver's plan, and the only part of it that is a
+   * decision rather than a status. A well each gives all four a label, a value
+   * and a sub-line with room to spare.
    */
-  var RADAR_ASPECT = 1.5;
-
   var BOXES = {
-    podL: inset(WELLS[0], POD_PAD),
-    podR: inset(WELLS[1], POD_PAD),
-    core: { x: NOTCH_L + 30, y: 108, w: DW - 2 * (NOTCH_L + 30), h: 244 },
-    // Deep enough for a label over a value over a sub-line at the sizes the
-    // stylesheet asks for. Sized short first, which clipped every "≈ n LAPS" —
-    // the half of a fuel read that actually changes a driver's plan.
-    budgetL: { x: POD_INSET, y: 352, w: POD_W, h: 66 },
-    budgetR: { x: DW - POD_INSET - POD_W, y: 352, w: POD_W, h: 66 },
+    core: { x: NOTCH_L + 30, y: 108, w: DW - 2 * (NOTCH_L + 30), h: 292 },
+    budgetL: inset(WELLS[0], POD_PAD),
+    budgetR: inset(WELLS[1], POD_PAD),
     chips: { x: CHIN_L + 8, y: 428, w: CHIN_R - CHIN_L - 16, h: 38 },
   };
 
@@ -527,21 +512,19 @@
   }
 
   /**
-   * The pod wells, drawn AFTER the illumination so they stay dark.
+   * The wells the budget panels sit in, drawn AFTER the illumination.
    *
-   * Deliberate: the wash is mood lighting for the shell, but the radar and the
-   * track map are instruments, and washing a rising green-to-red gradient across
-   * a proximity display would recolour the very blips it exists to make legible.
-   * The cluster lights up around them.
+   * Deliberate: the wash is mood lighting for the bezel, but the wells hold four
+   * numbers a driver reads under load, and a rising green-to-red gradient behind
+   * "≈ 2.1 LAPS" is exactly the wrong place to spend contrast. The cluster lights
+   * up around them.
    */
   function drawWells(g) {
     g.save();
     for (var i = 0; i < WELLS.length; i++) {
       wellPath(g, WELLS[i], 16);
-      // Nearly opaque, not a tint. At 0.34 the illumination behind flooded
-      // straight through and washed both instruments green — which on a
-      // proximity display recolours the very blips it exists to make legible.
-      // The cluster lights up AROUND the pods; the pods stay instruments.
+      // Nearly opaque, not a tint: at 0.34 the illumination flooded straight
+      // through and the readouts went green with the panel.
       g.fillStyle = "rgba(0,0,0,0.86)";
       g.fill();
       g.strokeStyle = "rgba(140,200,200,0.13)";
@@ -760,11 +743,9 @@
   }
 
   function init(root, ctx) {
-    // The stage, the canvas and the two pods come from the SHELL, not from
-    // here — the pods hold the nested radar/trackmap sections that client.js
-    // binds independently, and rebuilding them on init would either wipe those
-    // sections or race the bind loop depending on script order. This widget
-    // owns exactly one child of the stage: its own readout layer.
+    // The stage and the canvas come from the SHELL; this widget builds only its
+    // readout layer. Keeping the canvas in the markup fixes the stacking order
+    // in one place rather than depending on the order things are appended here.
     var stage = root.querySelector('[data-role="stage"]');
     var mount = root.querySelector('[data-role="cluster"]');
     if (!stage || !mount) return;
@@ -797,7 +778,7 @@
     core.appendChild(elGear);
     mount.appendChild(core);
 
-    /* --- under the left pod: the two distance budgets --- */
+    /* --- left well: the two distance budgets --- */
     var budgetL = el("div", "speedo__budgets");
     var fuel = stat(budgetL, "FUEL");
     elFuel = fuel.value;
@@ -809,7 +790,7 @@
     elVeWrap.hidden = true;
     mount.appendChild(budgetL);
 
-    /* --- under the right pod: pace, and the lap-scale energy budget --- */
+    /* --- right well: pace, and the lap-scale energy budget --- */
     var budgetR = el("div", "speedo__budgets speedo__budgets--r");
     var proj = stat(budgetR, "PROJECTED");
     elProj = proj.value;
@@ -861,19 +842,6 @@
     placeBox(budgetL, BOXES.budgetL);
     placeBox(budgetR, BOXES.budgetR);
     placeBox(elChips, BOXES.chips);
-    placeBox(stage.querySelector(".speedo__pod--l"), BOXES.podL);
-    placeBox(stage.querySelector(".speedo__pod--r"), BOXES.podR);
-
-    // The radar gets exactly the width its fixed aspect needs to stand the full
-    // height of its pod — see RADAR_ASPECT. The leftover either side is well,
-    // not radar, which is the correct reading: the pod is a hole in the bezel
-    // and the instrument sits centred in it. The track map needs no equivalent,
-    // because it is always landscape and therefore always shorter than the pod.
-    var radarBody = stage.querySelector(".speedo__pod--l .panel__body");
-    if (radarBody) {
-      var fitW = BOXES.podL.h / RADAR_ASPECT;
-      radarBody.style.width = (fitW / BOXES.podL.w) * 100 + "%";
-    }
 
     gctx = canvas.getContext("2d");
     sizeCanvas();
