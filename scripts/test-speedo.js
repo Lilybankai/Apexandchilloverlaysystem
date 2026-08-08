@@ -396,5 +396,69 @@ check(
   'the cluster no longer drops the loose radar/trackmap',
 );
 
+/* -------------------------------------------------------------------------- */
+
+console.log('\nthe frame stays cheap');
+
+/*
+ * The reason this block exists: the first version of the rev bars set a
+ * `shadowBlur` per band run, so the per-frame cost rose WITH THE REVS and the
+ * widget stuttered hardest at the exact moment it exists to be read — while
+ * starving the radar and the track map on the same page. A blurred stroke is not
+ * marginally dearer than a plain one; it is a separate rasterise-and-convolve
+ * pass, and there were up to 90 of them a frame at 30 Hz.
+ *
+ * Nothing here can measure a frame. What it CAN do is hold the two structural
+ * decisions that made it cheap, both of which are easy to undo by accident while
+ * making the bars prettier.
+ */
+/*
+ * `shadowBlur` is not banned — it is confined. The hood shadow under the bezel
+ * is a blur of the whole silhouette and it looks right, but it belongs in the
+ * baked layer, where it costs once per resize. So: every shadow in the file must
+ * be inside `drawShell`, which only ever runs from `buildStatic`.
+ */
+// Assignments only. The file TALKS about shadowBlur in two comments explaining
+// why the bars no longer use one, and a check that counts prose would fail the
+// moment someone documents the decision properly.
+const SHADOW_SET = /\.shadowBlur\s*=/g;
+const shellBody = (/function drawShell\(g\) \{[\s\S]*?\n {2}\}/.exec(widgetSrc) || [''])[0];
+const shadowsTotal = (widgetSrc.match(SHADOW_SET) || []).length;
+const shadowsInShell = (shellBody.match(SHADOW_SET) || []).length;
+check(
+  'every shadowBlur is in the baked layer, none on the frame path',
+  shadowsTotal > 0 && shadowsTotal === shadowsInShell,
+  `${shadowsInShell} of ${shadowsTotal} inside drawShell`,
+);
+// And drawShell must not be reachable from draw() — only from the bake.
+check(
+  'the bezel is drawn only from buildStatic',
+  /layerBelow = layer\(drawShell\)/.test(widgetSrc) &&
+    !/^\s*drawShell\(gctx\)/m.test(widgetSrc),
+);
+check(
+  'the static artwork is baked into offscreen layers',
+  /function buildStatic\(\)/.test(widgetSrc) && /staticKey/.test(widgetSrc),
+);
+check(
+  'the bake is keyed on the canvas size, not a dirty flag',
+  /staticKey\s*===\s*key/.test(widgetSrc),
+);
+check(
+  'an unchanged frame is skipped entirely',
+  /lastFrameKey/.test(widgetSrc) && /key === lastFrameKey/.test(widgetSrc),
+);
+check(
+  'a resize forces the next frame to redraw',
+  /lastFrameKey = "";/.test(widgetSrc),
+  'otherwise the old artwork survives on a resized canvas',
+);
+// The band colours and step boundaries are pure functions of the constants, so
+// rebuilding them per frame is 48 wasted string builds and 24 wasted array scans.
+check(
+  'the band colours and step indices are precomputed',
+  /BAND_RGBA/.test(widgetSrc) && /BAND_IDX/.test(widgetSrc),
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

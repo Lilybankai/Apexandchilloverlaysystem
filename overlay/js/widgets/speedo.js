@@ -6,7 +6,7 @@
  * eye lands on the biggest thing first and never has to hunt:
  *
  *   • TWIN REV BARS that start at the bottom outer corners, climb the outer
- *     edges, cross the tops of the pods and dive down onto the centre plateau,
+ *     edges, cross the tops of the wells and dive down onto the centre plateau,
  *     meeting head-on above the speed readout. They flash white together at the
  *     limiter. The convergence IS the shift cue: two things arriving at one
  *     point is legible in peripheral vision in a way a bar filling up is not;
@@ -41,6 +41,16 @@
  * a bitmap the size of the panel, which is the same bargain `radar`, `motion` and
  * `trackmap` already take. The readouts stay in the DOM on top, where they get
  * the house change-glow and cost nothing on the frames they don't move.
+ *
+ * ## What a frame actually costs
+ * Two blits, one gradient, and the lit part of two bars. Everything that does not
+ * change with the revs — the hood shadow, the bezel, the wells, the unlit tracks
+ * and 54 tick marks — is baked into two offscreen layers keyed on the canvas
+ * size ({@link buildStatic}), the way `trackmap.js` bakes its ribbon. The bars
+ * carry NO `shadowBlur`: the first version set a shadow per band run, so the
+ * per-frame cost rose with the revs and the widget stuttered hardest at the exact
+ * moment it exists to be read — and starved every other widget on the page while
+ * doing it. See {@link drawBand}.
  *
  * ## Why it runs at the full broadcast rate (throttleMs 0)
  * A rev counter is a rate instrument: at the 250 ms every other widget uses, the
@@ -200,8 +210,15 @@
   var BAND_W = 13; /* thickness of the lit band                */
   var TRACK_W = 15; /* thickness of the unlit track             */
   var TICKS = 26; /* tick marks along each bar                */
-  /** Short runs the band is drawn in, so each carries its own colour. */
-  var BAND_STEPS = 44;
+  /**
+   * Short runs the band is drawn in, so each carries its own colour.
+   *
+   * 24, not the 44 this started at. Every step is a separate `stroke()` because
+   * every step is a different colour, so the count is a straight per-frame cost
+   * paid twice over (both bars) — and past about 20 the difference between one
+   * step and the next is under a shade on a 13 px band. See {@link drawBand}.
+   */
+  var BAND_STEPS = 24;
 
   /* --- the boxes the DOM sits in ---
    * Exported and applied by placeBox(), so the stylesheet never carries a
@@ -296,6 +313,35 @@
   var BAR_LEN = BAR_L[BAR_L.length - 1].len;
 
   /**
+   * The band's per-step colours, and where each step starts in the polyline.
+   *
+   * Both are pure functions of the constants above, so both are built once. The
+   * colours because `revRgb` plus a string concatenation ran `BAND_STEPS × 2`
+   * times a frame to produce the same 24 strings forever; the indices because
+   * {@link strokeStep} would otherwise re-walk the whole 176-point array from
+   * zero for every step, which is the same scan 24 times over per bar.
+   */
+  var BAND_RGBA = [];
+  var BAND_WHITE = [];
+  var BAND_IDX = [];
+  (function () {
+    var i, j;
+    for (i = 0; i <= BAND_STEPS; i++) {
+      var at = i / BAND_STEPS;
+      BAND_RGBA.push(rgba(revRgb(at), 0.96));
+      // Pre-resolved rather than branched in the loop: at the limiter every step
+      // past the red band swaps to white on alternate frames, and that is the
+      // one moment the draw must not get more expensive.
+      BAND_WHITE.push(at >= BAND_RED ? "rgba(255,255,255,0.96)" : BAND_RGBA[i]);
+      var target = BAR_LEN * at;
+      for (j = 1; j < BAR_L.length; j++) {
+        if (BAR_L[j].len >= target) break;
+      }
+      BAND_IDX.push(j - 1 < 0 ? 0 : j - 1);
+    }
+  })();
+
+  /**
    * The point at a fraction along a bar, with the OUTWARD normal there.
    *
    * The normal is what the tick marks hang off. Outward is to the left of
@@ -363,6 +409,24 @@
   var stageEl = null;
   var sizeTick = 0;
 
+  /**
+   * The static artwork, baked once per size — the bezel below the illumination,
+   * and the wells, unlit tracks and tick scales above it.
+   *
+   * TWO layers rather than one because the illumination goes BETWEEN them: it
+   * lights the inside of the bezel, and the wells sit on top of it so the
+   * budgets stay legible against a panel that has gone red. Everything in both
+   * layers is a pure function of the canvas size, so a frame costs two blits
+   * instead of a hood shadow, two silhouette fills, four track strokes and 54
+   * tick marks.
+   *
+   * `staticKey` is the whole cache contract, following `trackmap.js`: a string
+   * of every input that affects the bitmaps, not a boolean dirty flag.
+   */
+  var layerBelow = null, layerAbove = null, staticKey = "";
+  /** Signature of the last frame actually drawn — see {@link draw}. */
+  var lastFrameKey = "";
+
   var elSpeed, elUnit, elGear, elRpm;
   var elFuel, elFuelSub, elVeWrap, elVe, elVeSub;
   var elProj, elProjDelta, elBattWrap, elBattFill, elBattVal, elBattFlow;
@@ -401,6 +465,11 @@
     dpr = d;
     canvas.width = bw;
     canvas.height = bh;
+    // Both caches are keyed on the size, so buildStatic() rebakes on the next
+    // frame by itself. The frame signature is cleared explicitly because a
+    // resize changes the bitmap without changing the revs, and the early return
+    // in draw() would otherwise leave the old artwork on a resized canvas.
+    lastFrameKey = "";
     if (stageEl) stageEl.style.setProperty("--sp-scale", String(w / DW));
   }
 
@@ -512,7 +581,7 @@
   }
 
   /**
-   * The wells the budget panels sit in, drawn AFTER the illumination.
+   * The wells the budget panels sit in, drawn ABOVE the illumination.
    *
    * Deliberate: the wash is mood lighting for the bezel, but the wells hold four
    * numbers a driver reads under load, and a rising green-to-red gradient behind
@@ -534,13 +603,21 @@
     g.restore();
   }
 
-  /** Strokes a bar's polyline between two fractions of its length. */
-  function strokeBetween(g, pts, f0, f1) {
+  /**
+   * Strokes a bar's polyline between two fractions, starting the walk at a known
+   * index rather than from zero.
+   *
+   * The index is the whole point: the band is drawn as `BAND_STEPS` consecutive
+   * runs, and scanning the full 176-point array to find the start of each one
+   * meant re-walking the same array 24 times per bar per frame. {@link BAND_IDX}
+   * has those starts precomputed, so each run touches only its own points.
+   */
+  function strokeBetween(g, pts, f0, f1, fromIdx) {
     var t0 = BAR_LEN * f0, t1 = BAR_LEN * f1;
     if (t1 <= t0) return;
     g.beginPath();
     var started = false;
-    for (var i = 1; i < pts.length; i++) {
+    for (var i = fromIdx > 0 ? fromIdx : 1; i < pts.length; i++) {
       var p0 = pts[i - 1], p1 = pts[i];
       if (p1.len < t0) continue;
       if (!started) {
@@ -561,32 +638,29 @@
   }
 
   /**
-   * One rev bar: the unlit track with its red limit zone, the tick scale, the
-   * lit band, and the leading cap.
+   * The STATIC half of one rev bar: the unlit track with its red limit zone, and
+   * the tick scale. Both depend only on the geometry, so both are baked.
    */
-  function drawBar(g, pts, mirror, flashing) {
-    var i, at, p;
+  function drawBarTrack(g, pts, mirror) {
+    var i, p;
 
-    /* --- the unlit track. The limit zone is a red SECTION of the scale rather
-       than a separate mark, so the driver can see where the shift point is
-       BEFORE reaching it — a mark that only appears once you are on it is a
-       mark that arrives too late to use. --- */
+    /* The limit zone is a red SECTION of the scale rather than a separate mark,
+       so the driver can see where the shift point is BEFORE reaching it — a mark
+       that only appears once you are on it arrives too late to use. */
     g.save();
     g.lineWidth = TRACK_W;
     g.lineCap = "round";
     g.lineJoin = "round";
     g.strokeStyle = "rgba(255,255,255,0.055)";
-    strokeBetween(g, pts, 0, BAND_RED);
+    strokeBetween(g, pts, 0, BAND_RED, 0);
     g.strokeStyle = "rgba(255,84,112,0.17)";
-    strokeBetween(g, pts, BAND_RED, 1);
+    strokeBetween(g, pts, BAND_RED, 1, 0);
     g.restore();
 
-    /* --- tick marks, just outside the track --- */
     g.save();
     g.lineWidth = 2;
     for (i = 0; i <= TICKS; i++) {
-      at = i / TICKS;
-      p = barPointAt(pts, at, mirror);
+      p = barPointAt(pts, i / TICKS, mirror);
       var major = i % 5 === 0;
       var lenTick = major ? 9 : 5;
       var off = TRACK_W / 2 + 4;
@@ -597,7 +671,26 @@
       g.stroke();
     }
     g.restore();
+  }
 
+  /**
+   * The LIVE half of one rev bar: the lit band and its leading cap.
+   *
+   * ## No `shadowBlur`
+   * This used to set a shadow per band run — one blurred stroke for every lit
+   * step, both bars, every frame. The cost therefore rose WITH THE REVS, so the
+   * widget stuttered hardest at exactly the moment it exists to be read, and it
+   * starved every other widget on the page while doing it. The bloom is now the
+   * house technique (`radar.js` uses it for the blip halo): one wide translucent
+   * stroke under the crisp one. That is 1 + N plain strokes per bar instead of N
+   * blurred ones, and a blurred stroke is not a little more expensive than a
+   * plain one — it is a separate rasterise-and-convolve pass.
+   *
+   * The band is still drawn in short runs so each carries ITS OWN colour;
+   * colouring every lit run with the live colour would make the whole bar change
+   * hue at once and destroy the "how much room is left" read that is the point.
+   */
+  function drawBand(g, pts, mirror, flashing) {
     if (revF <= 0.002) return;
 
     /* Past the shift point the bar is functionally full, so it is drawn full:
@@ -605,39 +698,48 @@
        between each bar's tip and the keystone, and the entire point of the
        convergence is that the top reads as ONE bar. */
     var fill = revF >= BAND_SHIFT ? 1 : revF;
+    var colours = flashing ? BAND_WHITE : BAND_RGBA;
+    var i;
 
-    /* --- the lit band, in short runs so each carries ITS OWN colour. Colouring
-       every lit run with the live colour would make the whole bar change hue at
-       once and destroy the "how much room is left" read that is the point of a
-       bar. --- */
     g.save();
     g.lineCap = "butt";
     g.lineJoin = "round";
+
+    /* the bloom: one wide, faint pass under the whole lit length */
+    g.lineWidth = BAND_W + 12;
+    g.strokeStyle = rgba(flashing ? [255, 255, 255] : revRgb(revF), 0.16);
+    strokeBetween(g, pts, 0, fill, 0);
+
+    /* the band itself */
     g.lineWidth = BAND_W;
-    g.shadowBlur = 16;
     for (i = 0; i < BAND_STEPS; i++) {
-      var a0 = i / BAND_STEPS, a1 = (i + 1) / BAND_STEPS;
+      var a0 = i / BAND_STEPS;
       if (a0 >= fill) break;
-      var col = flashing && a0 >= BAND_RED ? [255, 255, 255] : revRgb(a0);
-      g.strokeStyle = rgba(col, 0.96);
-      g.shadowColor = rgba(col, 0.85);
-      strokeBetween(g, pts, a0, Math.min(a1, fill));
+      g.strokeStyle = colours[i];
+      strokeBetween(g, pts, a0, Math.min((i + 1) / BAND_STEPS, fill), BAND_IDX[i]);
     }
     g.restore();
 
     /* --- the leading cap: a bright edge at the current value. Dropped at the
        shift point, where the bar is full and the flash IS the cue. --- */
     if (revF >= BAND_SHIFT) return;
-    p = barPointAt(pts, revF, mirror);
+    var p = barPointAt(pts, revF, mirror);
     var capCol = revRgb(revF);
+    var reach = BAND_W / 2 + 3;
     g.save();
+    g.lineCap = "round";
+    // Same two-pass bloom, at cap scale.
+    g.strokeStyle = rgba(capCol, 0.3);
+    g.lineWidth = 9;
+    g.beginPath();
+    g.moveTo(p.x + p.nx * reach, p.y + p.ny * reach);
+    g.lineTo(p.x - p.nx * reach, p.y - p.ny * reach);
+    g.stroke();
     g.strokeStyle = rgba(capCol, 1);
     g.lineWidth = 3.5;
-    g.shadowBlur = 22;
-    g.shadowColor = rgba(capCol, 1);
     g.beginPath();
-    g.moveTo(p.x + p.nx * (BAND_W / 2 + 3), p.y + p.ny * (BAND_W / 2 + 3));
-    g.lineTo(p.x - p.nx * (BAND_W / 2 + 3), p.y - p.ny * (BAND_W / 2 + 3));
+    g.moveTo(p.x + p.nx * reach, p.y + p.ny * reach);
+    g.lineTo(p.x - p.nx * reach, p.y - p.ny * reach);
     g.stroke();
     g.restore();
   }
@@ -653,46 +755,108 @@
     var l = BAR_L[BAR_L.length - 1];
     var r = BAR_R[BAR_R.length - 1];
     var lit = revF >= BAND_SHIFT;
+    var x = l.x, y = l.y - BAND_W / 2, w = r.x - l.x;
     g.save();
-    if (lit && flashing) {
-      g.fillStyle = "#ffffff";
-      g.shadowBlur = 30;
-      g.shadowColor = "rgba(255,255,255,0.95)";
-    } else if (lit) {
-      g.fillStyle = rgba(C_RED, 0.95);
-      g.shadowBlur = 24;
-      g.shadowColor = rgba(C_RED, 0.9);
+    if (lit) {
+      // The halo, as a plain translucent rect rather than a shadow — this fires
+      // on alternate frames at the limiter, which is the worst possible moment
+      // to add a blur pass.
+      g.fillStyle = flashing ? "rgba(255,255,255,0.28)" : rgba(C_RED, 0.26);
+      g.fillRect(x - 4, y - 6, w + 8, BAND_W + 12);
+      g.fillStyle = flashing ? "#ffffff" : rgba(C_RED, 0.95);
     } else {
       g.fillStyle = "rgba(255,255,255,0.06)";
     }
-    g.beginPath();
-    g.rect(l.x, l.y - BAND_W / 2, r.x - l.x, BAND_W);
-    g.fill();
+    g.fillRect(x, y, w, BAND_W);
     g.restore();
   }
 
+  /**
+   * Bakes the two static layers at the current size.
+   *
+   * Plain `document.createElement("canvas")` rather than `OffscreenCanvas`, and a
+   * string cache key rather than a dirty flag — both to match `trackmap.js`,
+   * which is the house reference for this pattern.
+   */
+  function buildStatic() {
+    var key = cssW + "x" + cssH + "|" + dpr;
+    if (staticKey === key && layerBelow && layerAbove) return;
+    staticKey = key;
+
+    var s = Math.min(cssW / DW, cssH / DH);
+    var ox = (cssW - DW * s) / 2;
+    var oy = (cssH - DH * s) / 2;
+
+    function layer(paint) {
+      var c = document.createElement("canvas");
+      c.width = Math.round(cssW * dpr);
+      c.height = Math.round(cssH * dpr);
+      var g = c.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.translate(ox, oy);
+      g.scale(s, s);
+      paint(g);
+      return c;
+    }
+
+    layerBelow = layer(drawShell);
+    layerAbove = layer(function (g) {
+      drawWells(g);
+      if (showRev) {
+        drawBarTrack(g, BAR_L, false);
+        drawBarTrack(g, BAR_R, true);
+      }
+    });
+  }
+
+  /**
+   * One frame: two blits, the illumination, and the live half of the two bars.
+   *
+   * ## It returns early when nothing moved
+   * The signature is quantised revs plus the flash phase, which is everything
+   * that can change the bitmap. A canvas keeps its contents, so an unchanged
+   * frame needs no work at all — and this widget runs at the full broadcast rate
+   * on a feed that keeps sending frames while the car sits in the pits or on the
+   * grid. The quantum is 1/400 of the range, well under one pixel of bar travel,
+   * so nothing visible is ever skipped. Same "signature, not dirty flag"
+   * technique `weather.js` and `mfd.js` use for their DOM writes.
+   */
   function draw() {
     if (!gctx || !cssW || !cssH) return;
+    buildStatic();
+
+    var flashing = revStageNow === "shift" && Math.floor(Date.now() / FLASH_MS) % 2 === 0;
+    var key = staticKey + "|" + Math.round(revF * 400) + "|" + (flashing ? 1 : 0);
+    if (key === lastFrameKey) return;
+    lastFrameKey = key;
+
     gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     gctx.clearRect(0, 0, cssW, cssH);
+
+    // The two static layers are baked at this exact size, so they blit 1:1 in
+    // device pixels — no scaling, no smoothing.
+    gctx.drawImage(layerBelow, 0, 0, cssW, cssH);
 
     // The stage carries the design box's aspect ratio in CSS, so this is a
     // uniform scale — see the header on why the axes are never scaled apart.
     var s = Math.min(cssW / DW, cssH / DH);
+    gctx.save();
     gctx.translate((cssW - DW * s) / 2, (cssH - DH * s) / 2);
     gctx.scale(s, s);
+    if (showBg) drawGlow(gctx, revRgb(revF), flashing);
+    gctx.restore();
 
-    var rgb = revRgb(revF);
-    var flashing = revStageNow === "shift" && Math.floor(Date.now() / FLASH_MS) % 2 === 0;
+    gctx.drawImage(layerAbove, 0, 0, cssW, cssH);
 
-    drawShell(gctx);
-    if (showBg) drawGlow(gctx, rgb, flashing);
-    drawWells(gctx);
+    gctx.save();
+    gctx.translate((cssW - DW * s) / 2, (cssH - DH * s) / 2);
+    gctx.scale(s, s);
     if (showRev) {
-      drawBar(gctx, BAR_L, false, flashing);
-      drawBar(gctx, BAR_R, true, flashing);
+      drawBand(gctx, BAR_L, false, flashing);
+      drawBand(gctx, BAR_R, true, flashing);
       drawKeystone(gctx, flashing);
     }
+    gctx.restore();
   }
 
   /* ---------------------------------------------------------------------- */
