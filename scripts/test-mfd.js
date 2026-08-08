@@ -280,6 +280,84 @@ console.log('\n5b) Every aid the MFD shows is one the driver can change');
       !!aid && !!aid.incFunction && !!aid.decFunction,
       aid ? `${aid.incFunction} / ${aid.decFunction}` : 'no entry');
   }
+
+  /*
+   * Brake migration's `+` is REARWARD, and it looks wrong every time someone
+   * reads it next to brake bias, whose `+` is Forward. It shipped that
+   * "consistent" way for one beta and stepped the car the wrong way: bias is a
+   * position, migration is an amount of travel, and the game's own step counts
+   * up as the bias is allowed to migrate rearward. Confirmed on the car, so it
+   * is pinned here — the tidy-minded fix is to swap it back.
+   */
+  const mig = findAid(binds, 'brakeMigration');
+  check('brake migration counts up REARWARD, unlike brake bias',
+    mig.incFunction === 'Brake Migration Rearward', mig.incFunction);
+}
+
+console.log('\n5c) The cursor stops only on rows that are on screen');
+
+{
+  /*
+   * The phantom row, reported from a live LMP2: ▼ walking the MFD stopped
+   * between TC Power Cut and Motor Map on nothing at all, and ± there pressed a
+   * key the car ignored.
+   *
+   * The two lists were built from two different questions. The widget draws the
+   * aids off the frame, where `projectAids` has already dropped anything the car
+   * does not offer; the cursor built its list from the driver's KEY BINDS. A
+   * prototype has no ABS — but the driver has ABS bound, because they also race
+   * a GT3 — so the cursor kept a row the widget had correctly stopped drawing.
+   * Its position in the bind order is exactly where the phantom appeared.
+   */
+  const { selectAidRows } = require('../dist/server/aidRows');
+
+  // A bind set with everything bound, shaped like the real one.
+  const bind = (id, aliases) => ({
+    id,
+    vmKey: '',
+    aliases,
+    label: id,
+    decFunction: 'd',
+    incFunction: 'i',
+    dec: { scancode: 1, extended: false, dik: 1 },
+    inc: { scancode: 2, extended: false, dik: 2 },
+  });
+  const allBound = {
+    path: 'x',
+    keyboardSchemeActive: true,
+    aids: [
+      bind('brakeBias', ['BRAKE_BIAS']),
+      bind('tc', []),
+      bind('tcCut', []),
+      bind('abs', []),
+      bind('motorMap', []),
+      bind('regen', []),
+    ],
+    pit: {},
+    all: {},
+  };
+
+  // What an LMP2 publishes: no ABS, and no regen either.
+  const lmp2 = ['BRAKE_BIAS', 'tc', 'tcCut', 'motorMap'];
+  const rows = selectAidRows(allBound, lmp2).map((a) => a.id);
+  check('an aid the car does not offer is not a cursor stop', !rows.includes('abs'), rows.join());
+  check('…nor is one the car never reported', !rows.includes('regen'), rows.join());
+  check('the rows are the car\'s, in the car\'s order',
+    rows.join() === 'brakeBias,tc,tcCut,motorMap', rows.join());
+
+  // The other half of the rule has to survive: a row the car HAS but the driver
+  // has not bound cannot be stepped, so it is not a stop either.
+  const halfBound = { ...allBound, aids: allBound.aids.map((a) =>
+    a.id === 'tc' ? { ...a, inc: null, dec: null } : a) };
+  const noTc = selectAidRows(halfBound, lmp2).map((a) => a.id);
+  check('an unbound aid is still skipped', !noTc.includes('tc'), noTc.join());
+
+  // No live car at all (spectating, game not up) must not empty the cursor —
+  // an unknown car is not a car with no controls.
+  const blind = selectAidRows(allBound, null).map((a) => a.id);
+  check('with no frame behind it, every bound aid is offered', blind.length === 6, blind.join());
+  check('…and an empty list means the same thing, not "no aids"',
+    selectAidRows(allBound, []).length === 6);
 }
 
 console.log('\n6) What a stop-and-go strips, and what it must not');
