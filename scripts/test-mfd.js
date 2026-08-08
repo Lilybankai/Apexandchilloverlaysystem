@@ -228,6 +228,60 @@ console.log('\n5) The driving aids are READINGS, not guesses');
   check('and with no live car at all, the setup value stands in', setup.length === 1, setup.length);
 }
 
+console.log('\n5b) Every aid the MFD shows is one the driver can change');
+
+{
+  /*
+   * The bug this exists to prevent, which shipped: brake migration, both ARBs
+   * and regen were READ live and drawn as rows, and none of them had an entry
+   * in the aid table — so an aid with no `inc`/`dec` function name has nothing
+   * to press, the widget offers no ±, and the row is a number the driver can
+   * look at and not touch. It went unnoticed because it only shows on a
+   * Hypercar, an LMP2 or an LMP3: a GT3 never renders those rows at all.
+   *
+   * A reading with no control is a legitimate state (it is what a spectator
+   * gets), so what is asserted is the LINK: every key `projectAids` can emit
+   * must resolve in `lmuKeybinds`, whether or not the driver has a key bound
+   * to it today. Binding is the driver's business; knowing the function name
+   * is ours.
+   */
+  const { findAid, readLmuKeybinds } = require('../dist/server/lmuKeybinds');
+  // An explicit path that cannot exist, so the table comes back with every aid
+  // and no keys — this must not depend on whether LMU is installed here.
+  const binds = readLmuKeybinds(' no-such-file');
+
+  const everyAid = {
+    tc: { value: 7, max: 11 },
+    tcSlip: { value: 7, max: 11 },
+    tcCut: { value: 7, max: 11 },
+    abs: { value: 9, max: 9 },
+    motorMap: { value: 1, max: 8 },
+    brakeMigration: { value: 3, max: 9 },
+    frontARB: { value: 4, max: 11 },
+    rearARB: { value: 6, max: 11 },
+    tcActive: false,
+    absActive: false,
+  };
+  const garage = {
+    VM_REGEN_LEVEL: { value: 5, maxValue: 9, stringValue: '200kW' },
+  };
+  const rows = projectAids(garage, 0.51, everyAid);
+
+  check('a prototype reports every aid row', rows.length === 10, rows.map((r) => r.key).join());
+  const orphans = rows.filter((r) => !findAid(binds, r.key)).map((r) => r.key);
+  check('every projected aid resolves to a bindable function', orphans.length === 0,
+    orphans.length ? 'no function name for: ' + orphans.join(', ') : rows.length + ' rows checked');
+
+  // The four that were readout-only, named individually so a regression says
+  // which one came loose rather than just "one of them".
+  for (const key of ['brakeMigration', 'frontARB', 'rearARB', 'regen']) {
+    const aid = findAid(binds, key);
+    check(`${key} has both directions named`,
+      !!aid && !!aid.incFunction && !!aid.decFunction,
+      aid ? `${aid.incFunction} / ${aid.decFunction}` : 'no entry');
+  }
+}
+
 console.log('\n6) What a stop-and-go strips, and what it must not');
 
 {

@@ -28,7 +28,13 @@
 
 'use strict';
 
-const { FKEY_SCANCODES, KEY_POOL, WANTED, planLmuBindings } = require('../dist/server/lmuBinder');
+const {
+  ABNT_SCANCODES,
+  FKEY_SCANCODES,
+  KEY_POOL,
+  WANTED,
+  planLmuBindings,
+} = require('../dist/server/lmuBinder');
 
 let passed = 0;
 let failed = 0;
@@ -60,9 +66,22 @@ console.log('\n1) The pool is keys nobody can press');
   // Above 0x80 the codes resolve to E0-prefixed scancodes — the media keys —
   // so binding one would mute the driver's music every time we changed a bias.
   check('…so none of them can resolve to a media key', KEY_POOL.every((k) => (k.dik & 0x80) === 0));
-  // Every pooled key was pressed into the running game and moved a real value.
-  check('every pooled key is verified against the game', KEY_POOL.every((k) => k.proven),
-    KEY_POOL.filter((k) => k.proven).length + ' of ' + KEY_POOL.length);
+  // The fifteen original keys were each pressed into the running game and moved
+  // a real value. The reserve added with the prototype aids has had only the
+  // offline half of that check (Windows resolves it to no usable key), so the
+  // rule is no longer "all proven" but "proven FIRST": a rig spends every
+  // verified key before it can reach an unverified one, and most never do.
+  const provenCount = KEY_POOL.filter((k) => k.proven).length;
+  check('the verified keys still cover the original wish list', provenCount >= 13,
+    provenCount + ' verified of ' + KEY_POOL.length);
+  const firstUnproven = KEY_POOL.findIndex((k) => !k.proven);
+  check('no verified key sits behind an unverified one',
+    firstUnproven === -1 || KEY_POOL.slice(firstUnproven).every((k) => !k.proven),
+    'first unverified at index ' + firstUnproven);
+  // 115 and 126 look like the rest of the unmapped range and are not: Windows
+  // resolves them to VK_ABNT_C1/C2, two real keys on a Brazilian ABNT2 board.
+  check('no ABNT keyboard key is in the pool',
+    !KEY_POOL.some((k) => ABNT_SCANCODES.includes(k.dik)), ABNT_SCANCODES.join());
   // F16-F24 work perfectly and are still disqualified: a Stream Deck emits them.
   check('no F-key scancode is in the pool',
     !KEY_POOL.some((k) => FKEY_SCANCODES.includes(k.dik)), KEY_POOL.map((k) => k.dik).join());
@@ -113,6 +132,64 @@ console.log('\n4) A bare rig gets full coverage');
   // Pit Request has no REST equivalent anywhere in LMU's API, so it goes first.
   check('the first key goes to Pit Request', rowFor(plan, 'Pit Request').proposedDik === KEY_POOL[0].dik,
     rowFor(plan, 'Pit Request').proposedLabel);
+}
+
+console.log('\n5) Every aid we press is a function the binder can bind');
+
+{
+  /*
+   * Two lists have to agree or a control is dead on arrival: the aid table says
+   * which LMU function steps an aid, and WANTED says which functions the binder
+   * will find a key for. An aid named in the first and missing from the second
+   * can never be bound, so it can never be pressed — which is exactly the state
+   * brake migration, both ARBs and regen were in.
+   */
+  const { readLmuKeybinds } = require('../dist/server/lmuKeybinds');
+  const table = readLmuKeybinds(' no-such-file');
+  const wanted = new Set(WANTED.map((w) => w.fn));
+  const missing = [];
+  for (const aid of table.aids) {
+    if (!wanted.has(aid.incFunction)) missing.push(aid.incFunction);
+    if (!wanted.has(aid.decFunction)) missing.push(aid.decFunction);
+  }
+  check('every aid direction is on the binder\'s wish list', missing.length === 0,
+    missing.length ? 'not bindable: ' + missing.join(', ') : table.aids.length * 2 + ' directions');
+}
+
+console.log('\n6) The function names are LMU\'s own');
+
+{
+  /*
+   * The names are matched by LMU as literal strings, and nothing about them is
+   * guessable: the eight prototype-aid functions alone use four different
+   * verb schemes — Forward/Rearward, Inc/Dec, Increment/Decrement, Up/Down —
+   * and `Inc Front ARB` is the only abbreviated one in the game. A typo binds
+   * nothing, presses nothing, and reports no error anywhere: the row simply
+   * stays dead, which is indistinguishable from the driver not having bound it.
+   *
+   * So each name is checked against the game's OWN control-function table,
+   * which lives as a run of null-terminated strings inside the executable —
+   * the same list LMU compares `keyboard.json`'s keys against.
+   *
+   * Skipped, not failed, where LMU is not installed: this suite runs on
+   * machines that have never seen the game.
+   */
+  const fs = require('node:fs');
+  const { findKeyboardConfig } = require('../dist/server/lmuKeybinds');
+  const cfg = findKeyboardConfig();
+  const exe = cfg ? require('node:path').join(cfg, '..', '..', '..', 'Le Mans Ultimate.exe') : null;
+
+  if (!exe || !fs.existsSync(exe)) {
+    console.log('  SKIP  LMU is not installed here — function names unverified');
+  } else {
+    const buf = fs.readFileSync(exe);
+    // Null-terminated on both sides, so a name cannot pass by being a substring
+    // of a longer one ("Traction Control Up" inside "Traction Control Up 2").
+    const present = (fn) => buf.indexOf(Buffer.from('\0' + fn + '\0', 'latin1')) >= 0;
+    const unknown = WANTED.map((w) => w.fn).filter((fn) => !present(fn));
+    check('every function name appears in LMU\'s own control table', unknown.length === 0,
+      unknown.length ? 'not a function LMU knows: ' + unknown.join(', ') : WANTED.length + ' names');
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

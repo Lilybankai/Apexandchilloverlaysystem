@@ -136,6 +136,77 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
     decFunction: 'Decrement Motor Map',
     incFunction: 'Increment Motor Map',
   },
+  /*
+   * The prototype-class controls — brake migration, both anti-roll bars and
+   * regeneration. A GT3 offers none of them and its rows never appear (the
+   * `max <= 0` guard in `projectAids`), so in practice these are the Hypercar,
+   * LMP2 and LMP3 rows.
+   *
+   * They were READ live for several releases and could not be changed: the MFD
+   * showed four numbers with no ± beside them, because an aid with no entry in
+   * this table has nothing to press. The names below close that.
+   *
+   * ## Where these names come from
+   * Not guesswork, and not a config file — LMU only writes a function into
+   * `keyboard.json` once it is BOUND, so an unbound function leaves no trace on
+   * disk and cannot be discovered by reading the profile (which is what made
+   * the TC sub-settings above such a hunt). They were read out of the game's own
+   * control-function table inside `Le Mans Ultimate.exe`, the list LMU matches
+   * these strings against, so they are verbatim by construction.
+   *
+   * That table also explains why no naming convention would have found them:
+   * the eight functions use four different schemes — `Forward`/`Rearward`,
+   * `Inc`/`Dec`, `Increment`/`Decrement`, and (for the aids above) `Up`/`Down`.
+   * `Inc Front ARB` in particular is the ONLY aid in the game whose verb is
+   * abbreviated, and `Increment Regeneration` sits three entries away from it
+   * spelled out in full.
+   */
+  {
+    id: 'brakeMigration',
+    vmKey: 'VM_BRAKE_MIGRATION',
+    aliases: ['BRAKE_MIGRATION'],
+    label: 'Brake Migration',
+    // Forward is `inc`, matching brake bias directly above: on both controls
+    // "forward" is the end of the range that moves braking toward the front,
+    // and a driver who has learned one should not find the other reversed.
+    decFunction: 'Brake Migration Rearward',
+    incFunction: 'Brake Migration Forward',
+  },
+  {
+    id: 'frontARB',
+    vmKey: 'VM_FRONT_ANTISWAY',
+    aliases: ['FRONT_ARB', 'FRONT_ANTISWAY'],
+    label: 'Front ARB',
+    decFunction: 'Dec Front ARB',
+    incFunction: 'Inc Front ARB',
+  },
+  {
+    id: 'rearARB',
+    vmKey: 'VM_REAR_ANTISWAY',
+    aliases: ['REAR_ARB', 'REAR_ANTISWAY'],
+    label: 'Rear ARB',
+    decFunction: 'Dec Rear ARB',
+    incFunction: 'Inc Rear ARB',
+  },
+  /*
+   * Regen is the one aid here whose READING cannot confirm its own press.
+   * Every other row is read live from the car's telemetry record, so the next
+   * frame shows what the game did with the key. Regen has no shared-memory
+   * source at all (see `projectAids`) and comes from the garage endpoint, which
+   * is polled every 3 s and can report a setup value rather than a live one. So
+   * the press lands immediately and the number catches up, or doesn't. That is
+   * a reason to caveat the row, not to withhold the control: a Hypercar driver
+   * changing deployment on the Mulsanne wants the change, and has the sim's own
+   * label ("200kW") on the wheel to confirm it by.
+   */
+  {
+    id: 'regen',
+    vmKey: 'VM_REGEN_LEVEL',
+    aliases: ['REGEN', 'REGEN_LEVEL'],
+    label: 'Regen',
+    decFunction: 'Decrement Regeneration',
+    incFunction: 'Increment Regeneration',
+  },
 ];
 
 /**

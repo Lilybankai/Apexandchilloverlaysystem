@@ -105,7 +105,52 @@ export const KEY_POOL: readonly PoolKey[] = [
   { dik: 123, label: 'NOCONVERT (Japanese 無変換)', proven: true },
   { dik: 111, label: 'unmapped 0x6F (OEM)', proven: true },
   { dik: 113, label: 'unmapped 0x71 (OEM)', proven: true },
+
+  /*
+   * ── The reserve, added with the prototype aids ──
+   *
+   * {@link WANTED} grew from 13 functions to 21 when brake migration, both ARBs
+   * and regeneration were wired up, so the fifteen keys above no longer cover a
+   * rig with nothing bound. These six are the codes the original note named as
+   * "the same class of code, needing only the same test".
+   *
+   * They are NOT `proven` and that word is load-bearing: every key above was
+   * bound to a real LMU function, pressed with `SendInput`, and the car's own
+   * value watched in shared memory. These have had the half of that check which
+   * does not need the game — `MapVirtualKeyW(scancode, MAPVK_VSC_TO_VK_EX)` plus
+   * `GetKeyNameTextW`, confirming Windows resolves each to either no virtual key
+   * at all (85) or an unassigned OEM slot (90–95), and gives none of them a key
+   * name. That is the SAFETY property, and it is the one that matters most: an
+   * unproven key that LMU refuses to bind leaves a control that does nothing,
+   * which is visible and harmless. A key that some keyboard can actually produce
+   * would fire an aid change under the driver's hands, which is neither.
+   *
+   * They sort AFTER every proven key, so a rig only reaches them once the
+   * fifteen are spent — most rigs never will.
+   *
+   * Deliberately excluded from this block: 115 and 126. They look identical in
+   * the DIK table and they are not — Windows resolves them to `VK_ABNT_C1` and
+   * `VK_ABNT_C2`, the two extra keys on a **Brazilian ABNT2 keyboard**. Those
+   * are real keys with real keycaps for that layout, which is exactly the
+   * collision this pool exists to avoid.
+   */
+  { dik: 85, label: 'unmapped 0x55', proven: false },
+  { dik: 90, label: 'unmapped 0x5A (OEM)', proven: false },
+  { dik: 91, label: 'unmapped 0x5B (OEM)', proven: false },
+  { dik: 92, label: 'unmapped 0x5C (OEM)', proven: false },
+  { dik: 94, label: 'unmapped 0x5E (OEM)', proven: false },
+  { dik: 95, label: 'unmapped 0x5F (OEM)', proven: false },
 ];
+
+/**
+ * Scancodes that resolve to a real key on a **Brazilian ABNT2** layout.
+ *
+ * `VK_ABNT_C1` (0xC1) and `VK_ABNT_C2` (0xC2) — the extra `/?°` key by the
+ * right shift and the numpad `.` on that layout. They sit in the same
+ * "unmapped-looking" DIK range as the reserve above and would have been swept
+ * in with it. Named so the test can assert they stay out.
+ */
+export const ABNT_SCANCODES: readonly number[] = [115, 126];
 
 /**
  * What each function is worth, most valuable first — the pool is smaller than
@@ -137,6 +182,21 @@ export const WANTED: readonly Bindable[] = [
   { fn: 'Traction Control 2 Down', label: 'TC power cut −' },
   { fn: 'Traction Control Slip Angle Up', label: 'TC slip angle +' },
   { fn: 'Traction Control Slip Angle Down', label: 'TC slip angle −' },
+  /*
+   * The prototype aids, last on purpose. Every car in the game has traction
+   * control, ABS, a brake bias and a motor map; only the Hypercars, LMP2s and
+   * LMP3s have these, so on the rig where the pool runs short it is right that
+   * a GT3 driver loses nothing. Within the four, regen leads: it is the one a
+   * Hypercar driver changes lap to lap rather than at a setup screen.
+   */
+  { fn: 'Increment Regeneration', label: 'Regen +' },
+  { fn: 'Decrement Regeneration', label: 'Regen −' },
+  { fn: 'Brake Migration Forward', label: 'Brake migration forward' },
+  { fn: 'Brake Migration Rearward', label: 'Brake migration rearward' },
+  { fn: 'Inc Front ARB', label: 'Front ARB +' },
+  { fn: 'Dec Front ARB', label: 'Front ARB −' },
+  { fn: 'Inc Rear ARB', label: 'Rear ARB +' },
+  { fn: 'Dec Rear ARB', label: 'Rear ARB −' },
 ];
 
 /** One row of the plan the UI shows before anything is written. */
