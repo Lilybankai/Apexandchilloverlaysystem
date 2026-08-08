@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.64.0-beta.13 — 2026-08-08
+
+### Fixed
+
+- **Brake migration reads as a percentage again, at every step.** It was
+  dropping to a bare "5/5" as soon as you touched it — the right setting in the
+  wrong units, next to a car showing "1.0% F". The game only publishes the
+  wording for one step and never updates it once you change the control in the
+  car, so the row had nothing to show. It now works the percentage out from the
+  game's own figure and steps it in half-points down to disabled, matching the
+  in-car MFD exactly. On a car whose migration works in different increments it
+  goes back to showing the step number rather than a figure it cannot stand
+  behind.
+- **Brake migration's `+` goes back to increasing the percentage.** It was
+  swapped last beta after being reported as stepping the wrong way. The press
+  was always right — the row beside it was showing a raw step number that counts
+  the opposite way to the percentage, so a press taking 1.5% up to 2.0% appeared
+  as "1.5% F" turning into "1/5". With the percentage showing properly, `+`
+  raises the number you are looking at.
+- **Regen no longer shows a figure it cannot see.** It was reporting 200kW on a
+  car wound down to zero — the worst possible moment to be wrong. Regen is the
+  one control the game publishes no live value for anywhere; the number the
+  overlay had was the setup figure, correct until the first change and wrong
+  from then on. The row now shows a dash once anything has moved it, and gets a
+  real number back when you next visit the garage. The + and − still work: it is
+  the reading that was unreliable, not the control.
+
 ## 0.64.0-beta.12 — 2026-08-08
 
 ### Fixed
