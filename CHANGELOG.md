@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.64.0-beta.11 — 2026-08-08
+
+### Added
+
+- **The prototype MFD rows are controls now, not just numbers.** Brake
+  migration, both anti-roll bars and regen were showing you a live reading with
+  no + and − beside them, so they could be watched and not touched. They are the
+  rows only a Hypercar, LMP2 or LMP3 has — a GT3 never shows them — which is why
+  the gap only turned up on the cars that actually have the controls. All four
+  now step from the widget, from a wheel button, or from the MFD cursor's
+  ▲ ▼ + −, exactly like traction control and ABS already did.
+
+  **This needs the keys writing once.** Open the LMU bindings section of the
+  control panel with **Le Mans Ultimate closed** and press Apply — eight new
+  rows are waiting there — then start the game so it picks them up. The game
+  rewrites its own key config when it exits, so a write made while it is running
+  would be thrown away; the app refuses to write in that state rather than let
+  you think it worked.
+
+  Two things worth knowing. Brake migration's **forward** direction is the `+`,
+  matching brake bias directly above it — if your car steps the other way, say
+  so and it is a one-line change. And **regen** is the only one of the four
+  whose reading cannot confirm its own press: the game publishes no live value
+  for it anywhere, so the number comes from a slower source and can lag by a
+  couple of seconds or sit on a setup value. The press itself lands immediately.
+
 ## 0.64.0-beta.10 — 2026-08-08
 
 ### Fixed
