@@ -239,7 +239,11 @@
   var R_BOT = 52; /* outer bottom corner radius          */
   var CH = 46; /* chamfer run                         */
   var NOTCH_L = 352, NOTCH_R = 648; /* top plateau span      */
-  var CHIN_L = 278, CHIN_R = 722; /* chin span               */
+  /* Wide enough for six chips at a font a driver can read from the wheel — the
+     first cut was 278..722 with 11px chip text, which at a 600px cluster came
+     out at 6.6px: a strip of unreadable smudges under the one widget built on
+     the argument that small text is no use at speed. */
+  var CHIN_L = 220, CHIN_R = 780; /* chin span               */
 
   /* --- the rev bar centreline, left side (the right is its mirror) ---
    * Five runs: up the outer edge, round the corner, across the pod top, down
@@ -560,7 +564,13 @@
     // resize changes the bitmap without changing the revs, and the early return
     // in draw() would otherwise leave the old artwork on a resized canvas.
     lastFrameKey = "";
-    if (stageEl) stageEl.style.setProperty("--sp-scale", String(w / DW));
+    // The ARTWORK's scale, not w / DW: the two differ whenever the stage has
+    // been height-boxed out of the design ratio, and the readouts have to stay
+    // in proportion to the silhouette they sit on, not to the box around it.
+    if (stageEl) {
+      stageEl.style.setProperty("--sp-scale", String(Math.min(w / DW, h / DH)));
+    }
+    placeBoxes();
   }
 
   function watchSize(el) {
@@ -1008,20 +1018,49 @@
   }
 
   /**
-   * Positions a DOM box over its rectangle in the design box, as percentages.
+   * Registers a DOM box against its rectangle in the design box. The actual
+   * write happens in {@link placeBoxes}, on every resize.
+   */
+  var placed = [];
+
+  function placeBox(node, b) {
+    if (!node) return;
+    placed.push({ node: node, box: b });
+  }
+
+  /**
+   * Positions every registered DOM box over its rectangle, in px, through the
+   * SAME uniform scale and letterbox offsets the canvas draws with.
    *
-   * Percentages rather than pixels because the stage is fixed-aspect: one set of
-   * numbers then holds at every size the operator drags the widget to, with no
-   * per-resize write. And they come from {@link BOXES} — the same constants the
+   * These were percentages once, on the theory that the stage is fixed-aspect
+   * so one set of numbers holds at every size. The stage is NOT reliably
+   * fixed-aspect: its CSS width is definite (900px capped by max-width), and a
+   * definite width beats `aspect-ratio`, so a height-boxed widget in the
+   * in-game editor gives the stage the wrapper's ratio, not the design's. The
+   * canvas responds by letterboxing its artwork — uniform scale, centred — but
+   * percentage-placed readouts kept spreading over the FULL stage, sliding the
+   * budget columns outboard into the rev bars: "FUEL" printed over a lit green
+   * bar the moment the operator dragged the cluster's bottom edge. Placing in
+   * px from the drawing's own transform keeps the readouts on the artwork at
+   * any wrapper shape.
+   *
+   * The rectangles still come from {@link BOXES} — the same constants the
    * canvas draws from — because the alternative is the stylesheet carrying a
    * second copy of the geometry that silently stops agreeing with the drawing.
    */
-  function placeBox(node, b) {
-    if (!node) return;
-    node.style.left = (b.x / DW) * 100 + "%";
-    node.style.top = (b.y / DH) * 100 + "%";
-    node.style.width = (b.w / DW) * 100 + "%";
-    node.style.height = (b.h / DH) * 100 + "%";
+  function placeBoxes() {
+    if (!cssW || !cssH) return;
+    var s = Math.min(cssW / DW, cssH / DH);
+    var ox = (cssW - DW * s) / 2;
+    var oy = (cssH - DH * s) / 2;
+    for (var i = 0; i < placed.length; i++) {
+      var b = placed[i].box;
+      var st = placed[i].node.style;
+      st.left = ox + b.x * s + "px";
+      st.top = oy + b.y * s + "px";
+      st.width = b.w * s + "px";
+      st.height = b.h * s + "px";
+    }
   }
 
   function init(root, ctx) {
@@ -1035,6 +1074,7 @@
     canvas = stage.querySelector(".speedo__bg");
     mount.innerHTML = "";
     cache = {};
+    placed = [];
 
     var params = new URLSearchParams(window.location.search);
     var off = function (name) {
@@ -1136,6 +1176,10 @@
     // later — the same reason appearance.js loads in <head>.
     panelAlpha = readPanelAlpha();
     sizeCanvas();
+    // sizeCanvas() places the boxes too, but returns early when the bitmap
+    // already matches — which is exactly the case on a re-init, where the
+    // canvas survives and the readouts above are brand-new nodes.
+    placeBoxes();
     watchSize(canvas);
   }
 

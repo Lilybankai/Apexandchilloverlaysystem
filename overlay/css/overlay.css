@@ -3827,13 +3827,19 @@ body.ig-editing #widget-radar .panel__header {
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: calc(4px * var(--sp-scale, 1));
+  gap: calc(3px * var(--sp-scale, 1));
 }
 .speedo__chip {
   font-family: var(--font-display);
-  font-size: calc(11px * var(--sp-scale, 1));
-  letter-spacing: 0.08em;
-  padding: calc(2px * var(--sp-scale, 1)) calc(7px * var(--sp-scale, 1));
+  /* 15px, not the 11px it launched at: chip text scales with the cluster, and
+     at a 600px-wide cluster 11px renders at 6.6px — TC/PWR/SLIP were smudges.
+     15px matches the budget labels, and the chin is drawn wide enough for six
+     chips at this size (see CHIN_L/CHIN_R in speedo.js). */
+  font-size: calc(15px * var(--sp-scale, 1));
+  /* Tighter tracking and padding than the launch values: the size increase is
+     spent on the glyphs, not on air, so six chips still fit the chin. */
+  letter-spacing: 0.05em;
+  padding: calc(2px * var(--sp-scale, 1)) calc(5px * var(--sp-scale, 1));
   border-radius: 3px;
   color: var(--text-muted);
   /* Through --panel-alpha like every other surface in the cluster (the canvas

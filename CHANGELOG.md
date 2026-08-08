@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.64.0-beta.14 — 2026-08-08
+
+### Fixed
+
+- **The cluster's chip strip is readable now.** LIMITER, REGEN, TC and the rest
+  were drawn at 11px *before* being scaled down with the cluster — on a
+  600px-wide cluster they came out under 7px, a row of smudges on the one
+  widget built on the argument that text you cannot read at speed is not a
+  reading. The chips now match the budget labels for size, and the chin is
+  drawn wider so all six still fit.
+- **FUEL, ENERGY, PROJECTED and BATTERY stay in their wells, off the rev
+  bars.** Dragging the cluster's bottom edge in the overlay editor squashed the
+  drawn silhouette into the middle of the box — but the readouts kept spreading
+  across the full width, sliding the budget columns outboard until "FUEL" was
+  printed over a lit green rev bar. The readouts are now placed through the
+  same transform the artwork is drawn with, so they sit on the silhouette at
+  any shape you drag the widget to — and their text scales with the artwork,
+  not the box.
+
 ## 0.64.0-beta.13 — 2026-08-08
 
 ### Fixed
