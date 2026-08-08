@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.64.0-beta.10 — 2026-08-08
+
+### Fixed
+
+- **The Speedo cluster's background slider now does something.** Moving it left
+  or right changed nothing about the cluster itself — the only visible effect
+  was the fuel, projected and battery text getting brighter or dimmer, which
+  made a background control look like a mislabelled text one. The cluster is the
+  one widget that draws its own bezel, wells and hood rather than using a normal
+  panel background, and that drawing was ignoring the setting outright. The
+  whole background now fades with the slider, down to nothing at 0% — where the
+  speed, gear, budgets and rev bars are left floating over the game, exactly
+  what that slider does on every other widget. The rev illumination stays at
+  full strength whatever you set: it is the shift cue, not background.
+- **The rev colours are no longer brown through the middle or pink at the top.**
+  The wash that rises up the cluster with the revs took a muddy route from green
+  to amber, and at the partial brightness it is drawn at, that middle stretch —
+  where you spend most of a lap — came out brown. It now passes through yellow
+  and reads as gold. At the top of the range it was reaching for the same pink
+  the lap-delta uses, which is a colour chosen for small text on a dark row and
+  is not a shift light; the red band is now an actual red, on the wash, on the
+  bars, and on the frame around the gear.
+
+### Changed
+
+- **KPH sits centred above the speed** instead of hanging off the last digit,
+  where it slid sideways every time you crossed a hundred and the eye had to
+  find the number again.
+- **The current gear is larger** — roughly a third bigger, sized as a headline
+  readout alongside the speed rather than a caption underneath it.
+
 ## 0.64.0-beta.9 — 2026-08-08
 
 ### Changed
