@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.64.0-beta.12 — 2026-08-08
+
+### Fixed
+
+- **Brake migration was stepping the wrong way.** `+` moved it forward, to match
+  the brake bias row above it. They are not the same kind of control — bias is a
+  position, migration is how far the bias is allowed to travel as you slow — and
+  the game counts migration up as it goes rearward. `+` now agrees with the car.
+- **The MFD cursor no longer stops on a row that isn't there.** Scrolling the
+  rows landed on an invisible entry between TC Power Cut and Motor Map, where
+  + and − did nothing. It was ABS: a Hypercar, LMP2 and LMP3 don't have it, so
+  the widget correctly stopped drawing the row — but the cursor was working from
+  the keys you have bound rather than from what the car in front of you actually
+  offers, and you have ABS bound because you also race a GT3. The cursor now
+  walks exactly the rows on screen, in the order they are on screen, so the two
+  cannot drift apart again. Nothing changes for a car that does have ABS.
+
 ## 0.64.0-beta.11 — 2026-08-08
 
 ### Added
