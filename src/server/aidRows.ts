@@ -35,6 +35,7 @@ import {
   type AidBind,
   type LmuKeybinds,
 } from './lmuKeybinds';
+import { noteRegenStepped } from '../telemetry/mfdControl';
 import type { AidRow } from './pitCursor';
 
 /** Direction an aid is stepped in, in LMU's own terms. */
@@ -112,6 +113,12 @@ export async function stepAid(
 
   const repeat = Math.min(20, Math.max(1, Math.round(Number(opts.repeat) || 1)));
   const result = await keys.pressScanTimes(bound, repeat, { requireSim: opts.requireSim ?? true });
+
+  // Regen is the one aid with no live source, so its garage reading is only
+  // true until something moves it — and this is the something. Told before the
+  // result is inspected, deliberately: a press we are not sure landed is
+  // exactly when the number should stop being presented as fact.
+  if (aid.id === 'regen') noteRegenStepped();
 
   return {
     ok: result.ok,

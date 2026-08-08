@@ -251,17 +251,106 @@ export function projectAids(
     typeof regen.stringValue === 'string' &&
     regen.stringValue.trim() !== 'N/A'
   ) {
+    // Once regen has been stepped in the car, the garage's number is a claim we
+    // can no longer make — see `noteRegenStepped`. The row stays, with its ±,
+    // because the CONTROL still works; only the reading goes.
+    const stale = isRegenStale(regen.value);
     aids.push({
       key: 'regen',
       label: 'Regen',
       value: regen.value,
       minValue: 0,
       maxValue: inclusiveMax(0, regen.maxValue),
-      text: regen.stringValue.trim(),
+      text: stale ? UNKNOWN_TEXT : regen.stringValue.trim(),
     });
   }
 
   return aids;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Regen: controllable, and — once moved — unreadable                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the regen row shows when its value can no longer be trusted.
+ *
+ * A dash, not the last number we saw. The distinction matters most at exactly
+ * the moment the row is worst: a driver who has wound deployment down to save
+ * energy would otherwise be looking at "200kW" while the car runs at 60.
+ */
+const UNKNOWN_TEXT = '—';
+
+/**
+ * The garage value at the moment regen was last stepped, or null while the
+ * reading is still believed.
+ *
+ * ## Why this exists
+ * Regen is the only aid with **no live source anywhere**. Every other row is
+ * read from the car's own telemetry record, so a press is confirmed by the next
+ * frame. Regen is not in that record — established twice, and the second time
+ * properly: a differential scan of all 1888 bytes of the player's record, taken
+ * at 10 Hz while the driver stepped regen through its whole range, saw nothing
+ * move but tyre and brake temperatures (`scripts/probe-lmu-diffscan.js`). The
+ * first scan had searched for the value `getPlayerGarageData` was reporting,
+ * which could only ever have worked if that endpoint were live — and the same
+ * run showed it is not: it sat on `10 "200kW"` throughout. LMU's REST API has no
+ * other candidate; 179 paths, nothing hybrid- or energy-shaped.
+ *
+ * So the garage value is right until the first change and wrong forever after,
+ * and nothing in the system can tell the difference — except us, because we are
+ * the ones pressing the key.
+ */
+let regenStale = false;
+
+/**
+ * The garage value first seen AFTER the press, which is the thing the endpoint
+ * has to move off before it is worth believing again. Captured on the next
+ * projection rather than at the press, because the press site has no garage
+ * data in hand — and a sentinel there would clear itself on the very next frame.
+ */
+let regenAnchor: number | null = null;
+
+/**
+ * Record that regen has been stepped, from the one place that presses its key.
+ *
+ * Called by `server/aidRows.stepAid`. It is deliberately not conditional on the
+ * press succeeding: a press we are unsure about is exactly the case where the
+ * reading should stop being trusted.
+ */
+export function noteRegenStepped(): void {
+  regenStale = true;
+  regenAnchor = null;
+}
+
+/**
+ * Whether the garage's regen value should be believed.
+ *
+ * It comes back to life on its own: if the endpoint ever reports a DIFFERENT
+ * value from the one it held when we marked it stale, the garage has learned
+ * something — the driver went back to the setup screen, or the session reset —
+ * and it is once again the best information available. Without that, one press
+ * would blank the row for the rest of the session including a return to the
+ * garage, which is worse than the problem it fixes.
+ */
+function isRegenStale(currentValue: number): boolean {
+  if (!regenStale) return false;
+  if (regenAnchor === null) {
+    regenAnchor = currentValue;
+    return true;
+  }
+  if (currentValue !== regenAnchor) {
+    regenStale = false;
+    regenAnchor = null;
+    return false;
+  }
+  return true;
+}
+
+/** Forget that regen was stepped — a new session starts from the setup value. */
+export function resetRegenStale(): void {
+  regenStale = false;
+  regenAnchor = null;
 }
 
 /**

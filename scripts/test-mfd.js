@@ -294,6 +294,51 @@ console.log('\n5b) Every aid the MFD shows is one the driver can change');
     mig.incFunction === 'Brake Migration Rearward', mig.incFunction);
 }
 
+console.log('\n5d) Regen stops claiming a value it can no longer read');
+
+{
+  /*
+   * Regen is the only aid with no live source anywhere. That was established
+   * twice: first by scanning the player's telemetry record for the value the
+   * garage endpoint reported, and then — properly — by DIFFING all 1888 bytes at
+   * 10 Hz while the driver stepped regen through its whole range, which saw
+   * nothing move but tyre and brake temperatures. The first method could only
+   * ever have worked if the garage endpoint were live, and the same run proved
+   * it is not: it sat on `10 "200kW"` throughout, while the driver wound the car
+   * down to zero.
+   *
+   * So the row was showing 200kW on a car deploying nothing — not merely stale,
+   * but most wrong exactly when a Hypercar driver is leaning on it. The value
+   * now goes to a dash once anything has moved it, and comes back if the garage
+   * ever reports something new.
+   */
+  const { noteRegenStepped, resetRegenStale } = require('../dist/telemetry/mfdControl');
+  const at = (v, s) => ({ VM_REGEN_LEVEL: { value: v, maxValue: 11, stringValue: s } });
+  const text = (g) => projectAids(g, 0.51, null).find((r) => r.key === 'regen').text;
+
+  resetRegenStale();
+  check('before anything moves it, the setup value stands', text(at(10, '200kW')) === '200kW');
+
+  noteRegenStepped();
+  check('after a press the value goes, not stale-but-shown', text(at(10, '200kW')) === '—',
+    text(at(10, '200kW')));
+  check('…and stays gone while the endpoint repeats itself', text(at(10, '200kW')) === '—');
+
+  // The row must not be blanked for the rest of the session: a driver who goes
+  // back to the garage should get their number back.
+  check('a garage that reports something new is believed again',
+    text(at(7, '140kW')) === '140kW', text(at(7, '140kW')));
+  check('…and keeps being believed', text(at(7, '140kW')) === '140kW');
+
+  // The control itself is untouched — the point is to lose the false reading,
+  // not the working ±.
+  noteRegenStepped();
+  const row = projectAids(at(10, '200kW'), 0.51, null).find((r) => r.key === 'regen');
+  check('the row and its bounds survive so ± still works',
+    !!row && row.maxValue === 10 && row.value === 10, JSON.stringify(row));
+  resetRegenStale();
+}
+
 console.log('\n5c) The cursor stops only on rows that are on screen');
 
 {
