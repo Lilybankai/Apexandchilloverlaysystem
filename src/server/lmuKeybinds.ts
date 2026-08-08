@@ -166,15 +166,24 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
     vmKey: 'VM_BRAKE_MIGRATION',
     aliases: ['BRAKE_MIGRATION'],
     label: 'Brake Migration',
-    // `Rearward` is the one that RAISES the step the car reports, so it is
-    // `inc`. It was the other way round for one beta, on the reasoning that
-    // brake bias directly above has Forward as its `+` and the two should
-    // agree — but they are not the same quantity. Bias is a position and
-    // forward moves it forward; migration is an AMOUNT of travel, and the
-    // game's own step counts up as the bias is allowed to migrate rearward.
-    // Confirmed on the car: `+` was stepping it the wrong way.
-    decFunction: 'Brake Migration Forward',
-    incFunction: 'Brake Migration Rearward',
+    /*
+     * `Forward` is `+`, matching brake bias above it — and this went round the
+     * houses, so the reasoning is worth keeping.
+     *
+     * The step index and the percentage run in OPPOSITE directions. Read off
+     * the car: step 0 is 2.5% F, step 5 is disabled. So `Forward` — more
+     * migration, a higher percentage — walks the raw step DOWN.
+     *
+     * It shipped this way, was reported as stepping the wrong way, and was
+     * swapped. The report was real but the cause was the row beside it: with
+     * the garage label stale the row showed a bare step index, so a press that
+     * correctly took 1.5% F up to 2.0% F was displayed as "1.5% F" → "1/5",
+     * which reads as a decrease. Now that the row derives the real percentage
+     * (see `migrationLabel`), `+` visibly increases the number the driver is
+     * looking at, which is what it was always doing to the car.
+     */
+    decFunction: 'Brake Migration Rearward',
+    incFunction: 'Brake Migration Forward',
   },
   {
     id: 'frontARB',

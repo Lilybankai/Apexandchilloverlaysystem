@@ -197,11 +197,65 @@ export function projectAids(
       return s && s !== 'N/A' ? s : null;
     };
 
-    const row = (key: string, label: string, step: AidStep | undefined, garageKey?: string): void => {
+    /**
+     * Brake migration's wording, worked out for the step the car is ACTUALLY on.
+     *
+     * The garage publishes the sim's own label for exactly one step and never
+     * follows an in-car change (proven: `mem 5` against `rest 2 "1.5% F"` on a
+     * live capture). So the moment a driver touches this control the label stops
+     * matching, and the row used to fall back to a bare "5/5" — the right value
+     * in the wrong units, next to a car showing a percentage. That is what got
+     * reported as wrong values.
+     *
+     * The ladder is linear, 0.5 points per step, and DESCENDING — more steps
+     * means less migration, ending at disabled. Read off the car directly:
+     *
+     *   0 → 2.5% F   1 → 2.0% F   2 → 1.5% F   3 → 1.0% F   4 → 0.5% F   5 → disabled
+     *
+     * Only the increment and the direction are constants here. The POSITION
+     * comes from the garage's own current sample, so this self-calibrates to
+     * whatever car is loaded rather than assuming every car starts at 2.5% —
+     * with the anchor at `2 → 1.5% F` the formula reproduces that whole table,
+     * including "disabled" falling out as the step where the percentage reaches
+     * zero rather than being a special case bolted on.
+     *
+     * Returns null — and the row keeps its honest step index — whenever the
+     * anchor is missing, is not a percentage, or the arithmetic lands outside
+     * the ladder. A car whose migration is not in half-point steps would be
+     * wrong here, so it fails to a number that cannot be.
+     */
+    const MIGRATION_STEP_PCT = 0.5;
+    const migrationLabel = (liveValue: number, max: number): string | null => {
+      const g = garageRaw ? garageRaw['VM_BRAKE_MIGRATION'] : undefined;
+      if (!g || typeof g.value !== 'number' || typeof g.stringValue !== 'string') return null;
+      const m = /^([0-9]+(?:\.[0-9]+)?)\s*%\s*F$/i.exec(g.stringValue.trim());
+      if (!m) return null;
+      const anchor = parseFloat(m[1] ?? '');
+      if (!isFinite(anchor)) return null;
+      if (liveValue < 0 || liveValue > max) return null;
+      const pct = anchor - (liveValue - g.value) * MIGRATION_STEP_PCT;
+      // Off the bottom or the top of the ladder means the increment is not what
+      // this car uses; say nothing rather than something confident and wrong.
+      if (pct < -1e-9 || pct > 100) return null;
+      if (pct < 1e-9) return 'Disabled';
+      return `${pct.toFixed(1)}% F`;
+    };
+
+    const row = (
+      key: string,
+      label: string,
+      step: AidStep | undefined,
+      garageKey?: string,
+      derive?: (liveValue: number, max: number) => string | null,
+    ): void => {
       // No step at all is the same statement as max 0 — this source does not
       // carry the control (an aids block from before the Hypercar trio, say).
       if (!step || step.max <= 0) return;
-      const named = garageKey ? simLabel(garageKey, step.value) : null;
+      // The sim's own words first, then a ladder derived from them, then the
+      // honest step. Never a label belonging to a step the driver has left.
+      const named =
+        (garageKey ? simLabel(garageKey, step.value) : null) ??
+        (derive ? derive(step.value, step.max) : null);
       aids.push({
         key,
         label,
@@ -221,7 +275,7 @@ export function projectAids(
     row('motorMap', 'Motor Map', liveAids.motorMap, 'VM_ELECTRIC_MOTOR_MAP');
     // The Hypercar trio. Each is skipped by the `max <= 0` guard on a car that
     // does not offer it, so a GT3 simply gets no such rows.
-    row('brakeMigration', 'Brake Migration', liveAids.brakeMigration, 'VM_BRAKE_MIGRATION');
+    row('brakeMigration', 'Brake Migration', liveAids.brakeMigration, 'VM_BRAKE_MIGRATION', migrationLabel);
     row('frontARB', 'Front ARB', liveAids.frontARB, 'VM_FRONT_ANTISWAY');
     row('rearARB', 'Rear ARB', liveAids.rearARB, 'VM_REAR_ANTISWAY');
   }

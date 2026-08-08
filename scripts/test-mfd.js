@@ -282,16 +282,61 @@ console.log('\n5b) Every aid the MFD shows is one the driver can change');
   }
 
   /*
-   * Brake migration's `+` is REARWARD, and it looks wrong every time someone
-   * reads it next to brake bias, whose `+` is Forward. It shipped that
-   * "consistent" way for one beta and stepped the car the wrong way: bias is a
-   * position, migration is an amount of travel, and the game's own step counts
-   * up as the bias is allowed to migrate rearward. Confirmed on the car, so it
-   * is pinned here — the tidy-minded fix is to swap it back.
+   * Brake migration's `+` is FORWARD, and the raw step it moves goes DOWN —
+   * step 0 is 2.5% F on the car and step 5 is disabled, so more migration is a
+   * lower index. Pinned because this was reported as stepping the wrong way and
+   * swapped, wrongly: the press was always right, but the row beside it was
+   * showing a bare step index (the garage label having gone stale), so
+   * 1.5% F → 2.0% F was displayed as "1.5% F" → "1/5" and read as a decrease.
+   * The row derives the real percentage now; see the ladder test below.
    */
   const mig = findAid(binds, 'brakeMigration');
-  check('brake migration counts up REARWARD, unlike brake bias',
-    mig.incFunction === 'Brake Migration Rearward', mig.incFunction);
+  check('brake migration + is FORWARD, and walks the raw step down',
+    mig.incFunction === 'Brake Migration Forward', mig.incFunction);
+}
+
+console.log('\n5e) Brake migration reads in the car\'s own words at every step');
+
+{
+  /*
+   * The garage publishes the sim's wording for ONE step and never follows an
+   * in-car change — caught live as `mem 5` against `rest 2 "1.5% F"`. So the row
+   * used to drop to "5/5" the moment the driver touched it: the right value in
+   * the wrong units, beside a car showing a percentage.
+   *
+   * The ladder, read off the car, is linear and descending at half a point per
+   * step, ending at disabled. Only the increment and the direction are assumed;
+   * the position is anchored on whatever sample the garage is holding, so it
+   * calibrates itself to the loaded car rather than assuming every car starts
+   * at 2.5%.
+   */
+  const anchor = { VM_BRAKE_MIGRATION: { value: 2, maxValue: 6, stringValue: '1.5% F' } };
+  const base = {
+    tc: { value: 8, max: 11 }, tcSlip: { value: 10, max: 11 }, tcCut: { value: 7, max: 11 },
+    abs: { value: 0, max: 0 }, motorMap: { value: 6, max: 10 },
+    frontARB: { value: 6, max: 15 }, rearARB: { value: 1, max: 15 },
+    tcActive: false, absActive: false,
+  };
+  const at = (v, g) => projectAids(g ?? anchor, 0.51, { ...base, brakeMigration: { value: v, max: 5 } })
+    .find((r) => r.key === 'brakeMigration').text;
+
+  // The exact table the driver read off the in-car MFD.
+  const LADDER = ['2.5% F', '2.0% F', '1.5% F', '1.0% F', '0.5% F', 'Disabled'];
+  const got = LADDER.map((_, v) => at(v));
+  check('every step reads as the car reads it', got.join('|') === LADDER.join('|'), got.join(', '));
+
+  // The anchor is the sim's own sample, so a car sitting on a different step
+  // produces the same ladder rather than one shifted by the difference.
+  const other = { VM_BRAKE_MIGRATION: { value: 4, maxValue: 6, stringValue: '0.5% F' } };
+  const shifted = LADDER.map((_, v) => at(v, other));
+  check('a different anchor gives the same ladder', shifted.join('|') === LADDER.join('|'),
+    shifted.join(', '));
+
+  // And it declines to guess rather than inventing a figure it cannot support.
+  const unparseable = { VM_BRAKE_MIGRATION: { value: 2, maxValue: 6, stringValue: 'P4' } };
+  check('an anchor it cannot read falls back to the honest step',
+    at(0, unparseable) === '0/5', at(0, unparseable));
+  check('no anchor at all does the same', at(0, {}) === '0/5', at(0, {}));
 }
 
 console.log('\n5d) Regen stops claiming a value it can no longer read');
