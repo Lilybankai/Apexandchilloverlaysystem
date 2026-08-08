@@ -5,33 +5,68 @@
  * One panel carrying everything a driver reads on a straight, arranged so the
  * eye lands on the biggest thing first and never has to hunt:
  *
- *   • a segmented REV BAR across the top, green through amber to red, with the
- *     shift band flashing at the limiter;
- *   • the BACKGROUND ILLUMINATION — the panel lights from the floor upward as
- *     the revs rise, in the same colour the bar is showing, so the shift point
- *     is readable in peripheral vision with the eyes still on the braking zone.
- *     This is the widget's whole reason for existing: a number you have to look
- *     at is no use at 300 km/h, and a panel that turns red underneath you is;
+ *   • TWIN REV BARS that start at the bottom outer corners, climb the outer
+ *     edges, cross the tops of the pods and dive down onto the centre plateau,
+ *     meeting head-on above the speed readout. They flash white together at the
+ *     limiter. The convergence IS the shift cue: two things arriving at one
+ *     point is legible in peripheral vision in a way a bar filling up is not;
+ *   • the BACKGROUND ILLUMINATION — the cluster lights from the floor upward as
+ *     the revs rise, in the same colour the bars are showing, so the shift point
+ *     is readable with the eyes still on the braking zone. This is the widget's
+ *     whole reason for existing: a number you have to look at is no use at
+ *     300 km/h, and a panel that turns red underneath you is;
  *   • SPEED and GEAR in the middle, the two Tier-1 readouts;
- *   • FUEL and VIRTUAL ENERGY on the left, PROJECTED LAP and the HYBRID BATTERY
- *     on the right — the four budgets, two of distance and two of pace;
- *   • a chip strip: pit limiter, and the TC map with its two sub-settings
- *     (power cut and slip) plus ABS.
+ *   • two PODS carrying the proximity radar and the track map — the nearest
+ *     thing a driver has to mirrors and a pit board, framed by the rev bars;
+ *   • FUEL and VIRTUAL ENERGY under the left pod, PROJECTED LAP and the HYBRID
+ *     BATTERY under the right — the four budgets, two of distance and two of
+ *     pace;
+ *   • a chip strip in the chin: pit limiter, regen, and the TC map with its two
+ *     sub-settings (power cut and slip) plus ABS.
+ *
+ * ## The pods are the REAL widgets, nested
+ * `shells.js` builds the radar and track map sections inside this one's shell,
+ * and `client.js` binds them exactly as it would anywhere else — they keep their
+ * own throttles, their own state and, critically, their own contracts. The radar
+ * in particular has a property worth more than any styling: one scale, real car
+ * footprints, so icons touch exactly when cars touch. Redrawing a "simplified
+ * radar" inside this canvas would have thrown that away and then quietly drifted
+ * from it. Nothing here reasons about their contents.
+ *
+ * The consequence, and it is a real one: the two nested sections are the ONLY
+ * instances of those widgets on the page, because both modules keep module-level
+ * state and `client.js` binds one root per widget. A page showing this cluster
+ * cannot also show a standalone radar — see the note in `ingame.html`, which
+ * drops the loose copies when the cluster is present.
  *
  * ## Why it draws to a canvas
- * The illumination and the rev bar change every single frame, and doing that in
+ * The illumination and both rev bars change every single frame, and doing that in
  * CSS means writing a custom property that a `background-image` resolves
  * through — a style recalc plus a repaint of a full-panel element, thirty times
- * a second, for the life of the stream. On a canvas it is two fills into a
- * bitmap the size of the panel, which is the same bargain `radar`, `motion` and
+ * a second, for the life of the stream. On a canvas it is a handful of fills into
+ * a bitmap the size of the panel, which is the same bargain `radar`, `motion` and
  * `trackmap` already take. The readouts stay in the DOM on top, where they get
  * the house change-glow and cost nothing on the frames they don't move.
  *
  * ## Why it runs at the full broadcast rate (throttleMs 0)
  * A rev counter is a rate instrument: at the 250 ms every other widget uses, the
- * bar advances in eight visible steps between upshifts and the shift light lands
+ * bars advance in eight visible steps between upshifts and the shift light lands
  * a quarter of a second late, which on this widget is not a cosmetic problem —
  * it is the widget being wrong about the only moment it exists for.
+ *
+ * ## The design box, and why the geometry is fixed-aspect
+ * The silhouette is authored once in a {@link DW}×{@link DH} box and scaled to
+ * fit. It has a real aspect ratio: stretching the axes independently would turn
+ * the corner arcs into ellipses and break the 45° chamfers the bars follow. So
+ * the stage carries `aspect-ratio` in CSS, the canvas fills it exactly, and the
+ * DOM readouts are positioned FROM THE SAME CONSTANTS as the drawing (see
+ * {@link placeBoxes}) rather than from percentages copied into the stylesheet —
+ * which is the version of this that drifts.
+ *
+ * For the same reason the readouts scale with the WIDGET (`--sp-scale`, written
+ * on resize) and not with the operator's Text size slider. On a panel whose
+ * boxes are fixed by a drawn silhouette, a text slider can only overflow them;
+ * the way to make this cluster bigger is to make the cluster bigger.
  *
  * ## What it does NOT invent
  * Three readouts are optional on the wire and are **hidden entirely** rather
@@ -49,7 +84,7 @@
  *
  * Browser Source URL options:
  *   ?bg=on|off       the background illumination (default on)
- *   ?rev=on|off      the segmented rev bar (default on)
+ *   ?rev=on|off      the twin rev bars (default on)
  */
 (function () {
   "use strict";
@@ -132,11 +167,184 @@
     return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")";
   }
 
+  /* ---------------------------------------------------------------------- */
+  /*  The design box — the silhouette and the bars, in fixed coordinates     */
+  /* ---------------------------------------------------------------------- */
+
+  /** The authoring box. Everything below is in these units. */
+  var DW = 1000;
+  var DH = 470;
+
+  /* --- the shell silhouette ---
+   * A binocular outline: two pods with heavily rounded outer corners, a centre
+   * that steps DOWN from the pod tops on a chamfer, and a chin that hangs BELOW
+   * the pod floor to carry the chip strip. The transitions are chamfers rather
+   * than curves; that is what stops the shape reading as a generic squircle. */
+  var POD_BOT = 424; /* the pod floor                       */
+  var CHIN_BOT = 470; /* the chin's floor                    */
+  var NOTCH_TOP = 52; /* the top centre plateau              */
+  var R_TOP = 74; /* outer top corner radius             */
+  var R_BOT = 52; /* outer bottom corner radius          */
+  var CH = 46; /* chamfer run                         */
+  var NOTCH_L = 352, NOTCH_R = 648; /* top plateau span      */
+  var CHIN_L = 278, CHIN_R = 722; /* chin span               */
+
+  /* --- the rev bar centreline, left side (the right is its mirror) ---
+   * Five runs: up the outer edge, round the corner, across the pod top, down
+   * the chamfer onto the plateau, and inward to the meeting point. It is an
+   * OFFSET OF THE SILHOUETTE, not a circular arc — that is what makes it read
+   * as a light strip inside the bezel rather than a gauge floating on top. */
+  var A_X = 40; /* inset of the vertical run from the edge  */
+  var A_Y = 40; /* inset of the horizontal run from the top */
+  var A_R = 92; /* corner radius of the bar centreline      */
+  var A_Y0 = 372; /* where the bar starts, at the bottom      */
+  var A_KNEE1 = 306; /* where the top run meets the chamfer      */
+  var A_KNEE2 = 358; /* where the chamfer lands on the plateau   */
+  var A_Y2 = 92; /* the plateau run's y                      */
+  var A_X1 = 476; /* where the bar ends, at top centre        */
+
+  var BAND_W = 13; /* thickness of the lit band                */
+  var TRACK_W = 15; /* thickness of the unlit track             */
+  var TICKS = 26; /* tick marks along each bar                */
+  /** Short runs the band is drawn in, so each carries its own colour. */
+  var BAND_STEPS = 44;
+
+  /* --- the boxes the DOM sits in ---
+   * Exported and applied by placeBox(), so the stylesheet never carries a
+   * second copy of these numbers to drift from. */
+  var POD_W = 286, POD_H = 246, POD_Y = 98, POD_INSET = 96;
+
+  /** The wells the canvas draws. The pods sit inside them, by POD_PAD. */
+  var WELLS = [
+    { x: POD_INSET, y: POD_Y, w: POD_W, h: POD_H },
+    { x: DW - POD_INSET - POD_W, y: POD_Y, w: POD_W, h: POD_H },
+  ];
+  var POD_PAD = 8;
+
+  function inset(b, p) {
+    return { x: b.x + p, y: b.y + p, w: b.w - 2 * p, h: b.h - 2 * p };
+  }
+
   /**
-   * The pure half of the widget, exposed so the ramp can be exercised headlessly
-   * (`scripts/test-speedo.js`) rather than by squinting at a running sim. Same
-   * bargain `ApexAudio` takes for the cue scheduler: the part that has to be
-   * right about a threshold is reachable without a canvas.
+   * The radar's own aspect — `ASPECT` in radar.js, which sizes its canvas as
+   * `height = width × ASPECT` from its own clientWidth and nothing else.
+   *
+   * Duplicated here because the radar owns it privately and the pod has to know
+   * it: given a pod wider than 1:1.5, a full-width radar computes a canvas
+   * TALLER than the well and overflows it, which pushes the player's own car off
+   * the centre of the visible area. That is the one thing a proximity display
+   * cannot do — the whole widget is built on where things are relative to you.
+   * `scripts/test-speedo.js` asserts the two constants still agree.
+   */
+  var RADAR_ASPECT = 1.5;
+
+  var BOXES = {
+    podL: inset(WELLS[0], POD_PAD),
+    podR: inset(WELLS[1], POD_PAD),
+    core: { x: NOTCH_L + 30, y: 108, w: DW - 2 * (NOTCH_L + 30), h: 244 },
+    // Deep enough for a label over a value over a sub-line at the sizes the
+    // stylesheet asks for. Sized short first, which clipped every "≈ n LAPS" —
+    // the half of a fuel read that actually changes a driver's plan.
+    budgetL: { x: POD_INSET, y: 352, w: POD_W, h: 66 },
+    budgetR: { x: DW - POD_INSET - POD_W, y: 352, w: POD_W, h: 66 },
+    chips: { x: CHIN_L + 8, y: 428, w: CHIN_R - CHIN_L - 16, h: 38 },
+  };
+
+  /**
+   * Walks one rev bar into a dense polyline carrying cumulative length.
+   *
+   * Canvas 2D has no `getTotalLength()`, so progressive fill along a path that
+   * is part line and part arc means precomputing the points and stroking up to
+   * a length. Built once at load — it depends on nothing but the constants
+   * above — and shared by every frame and both bars.
+   *
+   * @param {boolean} mirror  Mirror in x, for the right-hand bar.
+   * @returns {Array<{x:number,y:number,len:number}>}
+   */
+  function buildBar(mirror) {
+    var pts = [];
+    var i, t, n;
+
+    function push(x, y) {
+      if (mirror) x = DW - x;
+      var prev = pts[pts.length - 1];
+      var d = prev ? Math.sqrt((x - prev.x) * (x - prev.x) + (y - prev.y) * (y - prev.y)) : 0;
+      pts.push({ x: x, y: y, len: (prev ? prev.len : 0) + d });
+    }
+
+    /* 1. up the outer edge */
+    n = 40;
+    for (i = 0; i <= n; i++) {
+      t = i / n;
+      push(A_X, A_Y0 + (A_Y + A_R - A_Y0) * t);
+    }
+    /* 2. round the corner, 180° → 270° */
+    n = 48;
+    var cx = A_X + A_R, cy = A_Y + A_R;
+    for (i = 1; i <= n; i++) {
+      var a = Math.PI + (Math.PI / 2) * (i / n);
+      push(cx + Math.cos(a) * A_R, cy + Math.sin(a) * A_R);
+    }
+    /* 3. across the top of the pod */
+    n = 40;
+    for (i = 1; i <= n; i++) {
+      t = i / n;
+      push(A_X + A_R + (A_KNEE1 - A_X - A_R) * t, A_Y);
+    }
+    /* 4. down the chamfer onto the centre plateau */
+    n = 14;
+    for (i = 1; i <= n; i++) {
+      t = i / n;
+      push(A_KNEE1 + (A_KNEE2 - A_KNEE1) * t, A_Y + (A_Y2 - A_Y) * t);
+    }
+    /* 5. inward along the plateau, to the meeting point */
+    n = 34;
+    for (i = 1; i <= n; i++) {
+      t = i / n;
+      push(A_KNEE2 + (A_X1 - A_KNEE2) * t, A_Y2);
+    }
+    return pts;
+  }
+
+  var BAR_L = buildBar(false);
+  var BAR_R = buildBar(true);
+  var BAR_LEN = BAR_L[BAR_L.length - 1].len;
+
+  /**
+   * The point at a fraction along a bar, with the OUTWARD normal there.
+   *
+   * The normal is what the tick marks hang off. Outward is to the left of
+   * travel on the left-hand bar; mirroring reverses the direction of travel, so
+   * the handedness flips with it — which is the whole content of `s`. Getting
+   * that sign wrong puts every tick on the inside of the bar, where they read as
+   * debris over the pods instead of as a scale.
+   */
+  function barPointAt(pts, frac, mirror) {
+    var target = BAR_LEN * frac;
+    for (var i = 1; i < pts.length; i++) {
+      if (pts[i].len >= target) {
+        var p0 = pts[i - 1], p1 = pts[i];
+        var t = (target - p0.len) / (p1.len - p0.len || 1);
+        var dx = p1.x - p0.x, dy = p1.y - p0.y;
+        var m = Math.sqrt(dx * dx + dy * dy) || 1;
+        var s = mirror ? -1 : 1;
+        return {
+          x: p0.x + dx * t,
+          y: p0.y + dy * t,
+          nx: (dy / m) * s,
+          ny: (-dx / m) * s,
+        };
+      }
+    }
+    var last = pts[pts.length - 1];
+    return { x: last.x, y: last.y, nx: 0, ny: -1 };
+  }
+
+  /**
+   * The pure half of the widget, exposed so the ramp and the geometry can be
+   * exercised headlessly (`scripts/test-speedo.js`) rather than by squinting at
+   * a running sim. Same bargain `ApexAudio` takes for the cue scheduler: the
+   * part that has to be right about a threshold is reachable without a canvas.
    */
   window.ApexSpeedo = {
     BAND_AMBER: BAND_AMBER,
@@ -145,31 +353,35 @@
     revFraction: revFraction,
     revStage: revStage,
     revRgb: revRgb,
+    /* the design box and its furniture, for the geometry tests */
+    DESIGN: { w: DW, h: DH },
+    BOXES: BOXES,
+    buildBar: buildBar,
+    barPointAt: barPointAt,
+    barLength: function () {
+      return BAR_LEN;
+    },
   };
 
   /* ---------------------------------------------------------------------- */
   /*  Module state                                                           */
   /* ---------------------------------------------------------------------- */
 
-  /** Segments in the rev bar. Enough to read as a bar, few enough to count. */
-  var SEGMENTS = 32;
   /** Shift-light flash period, ms. Fast enough to be urgent, slow enough to see. */
   var FLASH_MS = 110;
-  /** Height of the rev bar strip at the top of the panel, CSS px. */
-  var BAR_H = 10;
 
   var showBg = true;
   var showRev = true;
 
   var canvas, gctx, dpr = 1;
   var cssW = 0, cssH = 0;
+  var stageEl = null;
   var sizeTick = 0;
 
   var elSpeed, elUnit, elGear, elRpm;
   var elFuel, elFuelSub, elVeWrap, elVe, elVeSub;
   var elProj, elProjDelta, elBattWrap, elBattFill, elBattVal, elBattFlow;
   var elChips, chipLimiter, chipRegen, chipTc, chipCut, chipSlip, chipAbs;
-  var headerMeta;
   var cache = {};
 
   /** Live rev fraction + stage, written by update() and read by the draw. */
@@ -181,10 +393,14 @@
   /* ---------------------------------------------------------------------- */
 
   /**
-   * Matches the canvas bitmap to the element's CSS size. Same contract as
-   * `motion.js`: idempotent, so a ResizeObserver watching the element cannot
-   * feed itself. The canvas is stretched over the panel by CSS (`inset: 0`), so
-   * both dimensions come from the layout rather than being assigned here.
+   * Matches the canvas bitmap to the element's CSS size, and republishes the
+   * design-box scale as `--sp-scale` for the DOM readouts to size themselves by.
+   *
+   * Same contract as `motion.js`: idempotent, so a ResizeObserver watching the
+   * element cannot feed itself. Writing a custom property here is not the thing
+   * the header warns about — that is a per-FRAME write resolving through a
+   * `background-image`. This is once per resize, and it is what keeps the text
+   * locked to the silhouette it has to fit inside.
    */
   function sizeCanvas() {
     if (!canvas) return;
@@ -200,7 +416,7 @@
     dpr = d;
     canvas.width = bw;
     canvas.height = bh;
-    if (gctx) gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (stageEl) stageEl.style.setProperty("--sp-scale", String(w / DW));
   }
 
   function watchSize(el) {
@@ -210,63 +426,289 @@
     window.addEventListener("resize", sizeCanvas, { passive: true });
   }
 
-  function draw() {
-    if (!gctx || !cssW || !cssH) return;
-    gctx.clearRect(0, 0, cssW, cssH);
+  /* ---------------------------------------------------------------------- */
+  /*  Drawing                                                                */
+  /* ---------------------------------------------------------------------- */
 
-    var rgb = revRgb(revF);
-    var flashing = revStageNow === "shift" && Math.floor(Date.now() / FLASH_MS) % 2 === 0;
+  /** The shell silhouette, as a path on the context. */
+  function shellPath(g) {
+    g.beginPath();
+    g.moveTo(R_TOP, 0);
+    g.lineTo(NOTCH_L - CH, 0);
+    g.lineTo(NOTCH_L, NOTCH_TOP);
+    g.lineTo(NOTCH_R, NOTCH_TOP);
+    g.lineTo(NOTCH_R + CH, 0);
+    g.lineTo(DW - R_TOP, 0);
+    g.arcTo(DW, 0, DW, R_TOP, R_TOP);
+    g.lineTo(DW, POD_BOT - R_BOT);
+    g.arcTo(DW, POD_BOT, DW - R_BOT, POD_BOT, R_BOT);
+    g.lineTo(CHIN_R + CH, POD_BOT);
+    g.lineTo(CHIN_R, CHIN_BOT);
+    g.lineTo(CHIN_L, CHIN_BOT);
+    g.lineTo(CHIN_L - CH, POD_BOT);
+    g.lineTo(R_BOT, POD_BOT);
+    g.arcTo(0, POD_BOT, 0, POD_BOT - R_BOT, R_BOT);
+    g.lineTo(0, R_TOP);
+    g.arcTo(0, 0, R_TOP, 0, R_TOP);
+    g.closePath();
+  }
 
-    if (showBg) drawGlow(rgb, flashing);
-    if (showRev) drawBar(flashing);
+  /** A rounded rectangle, as the pod wells are. */
+  function wellPath(g, b, r) {
+    g.beginPath();
+    g.moveTo(b.x + r, b.y);
+    g.arcTo(b.x + b.w, b.y, b.x + b.w, b.y + r, r);
+    g.arcTo(b.x + b.w, b.y + b.h, b.x + b.w - r, b.y + b.h, r);
+    g.arcTo(b.x, b.y + b.h, b.x, b.y + b.h - r, r);
+    g.arcTo(b.x, b.y, b.x + r, b.y, r);
+    g.closePath();
+  }
+
+  function drawShell(g) {
+    /* the hood: a soft dark halo that lifts the cluster off the game feed */
+    g.save();
+    g.shadowBlur = 46;
+    g.shadowColor = "rgba(0,0,0,0.95)";
+    g.fillStyle = "#0b1111";
+    shellPath(g);
+    g.fill();
+    g.restore();
+
+    /* the bezel edge — brightest along the top, where a real one catches light */
+    g.save();
+    var edge = g.createLinearGradient(0, 0, 0, DH);
+    edge.addColorStop(0, "rgba(205,245,245,0.80)");
+    edge.addColorStop(0.4, "rgba(130,185,185,0.30)");
+    edge.addColorStop(1, "rgba(100,155,155,0.16)");
+    g.strokeStyle = edge;
+    g.lineWidth = 2;
+    shellPath(g);
+    g.stroke();
+    g.restore();
   }
 
   /**
-   * The illumination: a wash rising from the floor of the panel to a height set
-   * by the revs, fading out at its top edge.
+   * The illumination: a wash rising from the floor of the cluster to a height
+   * set by the revs, fading out at its top edge, clipped to the silhouette.
+   *
+   * `screen`, not normal compositing. Alpha-blending a colour over the near-black
+   * shell pulls it toward the surface: the red wash at the top of the rev range
+   * came out BROWN, which is the one colour a shift cue must not be. Screen adds
+   * light instead, so the hue keeps its saturation and the cluster reads as
+   * illuminated rather than tinted — which is the whole point of the effect.
+   * It used to be a CSS `mix-blend-mode` on the canvas element, which worked only
+   * while the canvas held nothing but the wash; now that the shell is drawn into
+   * the same bitmap, screening the element would erase the shell's own dark fill
+   * (screen against black is a no-op), so the blend moved inside the canvas where
+   * it composites against the shell instead of against the page.
    *
    * Drawn as one gradient-filled rect rather than a full-panel fill with moving
    * colour stops, so at low revs the work is proportionally small — an idling
    * car costs a sliver at the bottom of the bitmap, not a full-panel composite.
    */
-  function drawGlow(rgb, flashing) {
+  function drawGlow(g, rgb, flashing) {
     if (revF <= 0.001) return;
-    var top = cssH * (1 - revF);
-    var g = gctx.createLinearGradient(0, cssH, 0, top);
-    // Peak opacity climbs with the revs too, so the panel gets both taller and
+    g.save();
+    shellPath(g);
+    g.clip();
+    g.globalCompositeOperation = "screen";
+    var top = DH * (1 - revF);
+    var grad = g.createLinearGradient(0, DH, 0, top);
+    // Peak opacity climbs with the revs too, so the cluster gets both taller and
     // brighter — the two cues reinforce rather than competing.
     var peak = 0.2 + 0.55 * revF;
     if (flashing) peak = 0.95;
-    g.addColorStop(0, rgba(rgb, peak));
-    g.addColorStop(0.45, rgba(rgb, peak * 0.42));
-    g.addColorStop(1, rgba(rgb, 0));
-    gctx.fillStyle = g;
-    gctx.fillRect(0, top, cssW, cssH - top);
+    grad.addColorStop(0, rgba(rgb, peak));
+    grad.addColorStop(0.45, rgba(rgb, peak * 0.42));
+    grad.addColorStop(1, rgba(rgb, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, top, DW, DH - top);
+    g.restore();
   }
 
   /**
-   * The segmented rev bar. Each segment is coloured by ITS OWN position in the
-   * range, not by the current revs, so the bar reads as a fixed scale that fills
-   * up — which is what a shift light is. Colouring every lit segment with the
-   * live colour would make the whole bar change hue at once and destroy the
-   * "how much room is left" read that is the point of a bar.
+   * The pod wells, drawn AFTER the illumination so they stay dark.
+   *
+   * Deliberate: the wash is mood lighting for the shell, but the radar and the
+   * track map are instruments, and washing a rising green-to-red gradient across
+   * a proximity display would recolour the very blips it exists to make legible.
+   * The cluster lights up around them.
    */
-  function drawBar(flashing) {
-    var gap = 2;
-    var segW = (cssW - gap * (SEGMENTS - 1)) / SEGMENTS;
-    if (segW <= 0) return;
-    for (var i = 0; i < SEGMENTS; i++) {
-      var at = (i + 1) / SEGMENTS;
-      var lit = revF >= at - 1 / SEGMENTS / 2;
-      var x = i * (segW + gap);
-      if (lit) {
-        gctx.fillStyle = flashing && at >= BAND_RED ? "#ffffff" : rgba(revRgb(at), 0.95);
-      } else {
-        // Unlit segments stay faintly visible so the scale is readable at idle
-        // and the bar doesn't appear to grow out of nothing.
-        gctx.fillStyle = "rgba(255,255,255,0.07)";
+  function drawWells(g) {
+    g.save();
+    for (var i = 0; i < WELLS.length; i++) {
+      wellPath(g, WELLS[i], 16);
+      // Nearly opaque, not a tint. At 0.34 the illumination behind flooded
+      // straight through and washed both instruments green — which on a
+      // proximity display recolours the very blips it exists to make legible.
+      // The cluster lights up AROUND the pods; the pods stay instruments.
+      g.fillStyle = "rgba(0,0,0,0.86)";
+      g.fill();
+      g.strokeStyle = "rgba(140,200,200,0.13)";
+      g.lineWidth = 1;
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  /** Strokes a bar's polyline between two fractions of its length. */
+  function strokeBetween(g, pts, f0, f1) {
+    var t0 = BAR_LEN * f0, t1 = BAR_LEN * f1;
+    if (t1 <= t0) return;
+    g.beginPath();
+    var started = false;
+    for (var i = 1; i < pts.length; i++) {
+      var p0 = pts[i - 1], p1 = pts[i];
+      if (p1.len < t0) continue;
+      if (!started) {
+        var ta = (t0 - p0.len) / (p1.len - p0.len || 1);
+        g.moveTo(p0.x + (p1.x - p0.x) * ta, p0.y + (p1.y - p0.y) * ta);
+        started = true;
       }
-      gctx.fillRect(x, 0, segW, BAR_H);
+      if (p1.len >= t1) {
+        // Interpolate the final partial segment so the leading edge lands
+        // exactly on the value rather than snapping to the nearest sample.
+        var tb = (t1 - p0.len) / (p1.len - p0.len || 1);
+        g.lineTo(p0.x + (p1.x - p0.x) * tb, p0.y + (p1.y - p0.y) * tb);
+        break;
+      }
+      g.lineTo(p1.x, p1.y);
+    }
+    g.stroke();
+  }
+
+  /**
+   * One rev bar: the unlit track with its red limit zone, the tick scale, the
+   * lit band, and the leading cap.
+   */
+  function drawBar(g, pts, mirror, flashing) {
+    var i, at, p;
+
+    /* --- the unlit track. The limit zone is a red SECTION of the scale rather
+       than a separate mark, so the driver can see where the shift point is
+       BEFORE reaching it — a mark that only appears once you are on it is a
+       mark that arrives too late to use. --- */
+    g.save();
+    g.lineWidth = TRACK_W;
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    g.strokeStyle = "rgba(255,255,255,0.055)";
+    strokeBetween(g, pts, 0, BAND_RED);
+    g.strokeStyle = "rgba(255,84,112,0.17)";
+    strokeBetween(g, pts, BAND_RED, 1);
+    g.restore();
+
+    /* --- tick marks, just outside the track --- */
+    g.save();
+    g.lineWidth = 2;
+    for (i = 0; i <= TICKS; i++) {
+      at = i / TICKS;
+      p = barPointAt(pts, at, mirror);
+      var major = i % 5 === 0;
+      var lenTick = major ? 9 : 5;
+      var off = TRACK_W / 2 + 4;
+      g.strokeStyle = "rgba(255,255,255," + (major ? 0.4 : 0.17) + ")";
+      g.beginPath();
+      g.moveTo(p.x + p.nx * off, p.y + p.ny * off);
+      g.lineTo(p.x + p.nx * (off + lenTick), p.y + p.ny * (off + lenTick));
+      g.stroke();
+    }
+    g.restore();
+
+    if (revF <= 0.002) return;
+
+    /* Past the shift point the bar is functionally full, so it is drawn full:
+       the last half-percent would otherwise leave a few pixels of unlit track
+       between each bar's tip and the keystone, and the entire point of the
+       convergence is that the top reads as ONE bar. */
+    var fill = revF >= BAND_SHIFT ? 1 : revF;
+
+    /* --- the lit band, in short runs so each carries ITS OWN colour. Colouring
+       every lit run with the live colour would make the whole bar change hue at
+       once and destroy the "how much room is left" read that is the point of a
+       bar. --- */
+    g.save();
+    g.lineCap = "butt";
+    g.lineJoin = "round";
+    g.lineWidth = BAND_W;
+    g.shadowBlur = 16;
+    for (i = 0; i < BAND_STEPS; i++) {
+      var a0 = i / BAND_STEPS, a1 = (i + 1) / BAND_STEPS;
+      if (a0 >= fill) break;
+      var col = flashing && a0 >= BAND_RED ? [255, 255, 255] : revRgb(a0);
+      g.strokeStyle = rgba(col, 0.96);
+      g.shadowColor = rgba(col, 0.85);
+      strokeBetween(g, pts, a0, Math.min(a1, fill));
+    }
+    g.restore();
+
+    /* --- the leading cap: a bright edge at the current value. Dropped at the
+       shift point, where the bar is full and the flash IS the cue. --- */
+    if (revF >= BAND_SHIFT) return;
+    p = barPointAt(pts, revF, mirror);
+    var capCol = revRgb(revF);
+    g.save();
+    g.strokeStyle = rgba(capCol, 1);
+    g.lineWidth = 3.5;
+    g.shadowBlur = 22;
+    g.shadowColor = rgba(capCol, 1);
+    g.beginPath();
+    g.moveTo(p.x + p.nx * (BAND_W / 2 + 3), p.y + p.ny * (BAND_W / 2 + 3));
+    g.lineTo(p.x - p.nx * (BAND_W / 2 + 3), p.y - p.ny * (BAND_W / 2 + 3));
+    g.stroke();
+    g.restore();
+  }
+
+  /**
+   * The keystone bridging the two bar tips — the shift signal itself.
+   *
+   * A plain block rather than a shaped badge, so that at the limit the two bars
+   * and the bridge read as ONE unbroken bar across the plateau. The convergence
+   * is the message; anything that visibly seams it weakens the message.
+   */
+  function drawKeystone(g, flashing) {
+    var l = BAR_L[BAR_L.length - 1];
+    var r = BAR_R[BAR_R.length - 1];
+    var lit = revF >= BAND_SHIFT;
+    g.save();
+    if (lit && flashing) {
+      g.fillStyle = "#ffffff";
+      g.shadowBlur = 30;
+      g.shadowColor = "rgba(255,255,255,0.95)";
+    } else if (lit) {
+      g.fillStyle = rgba(C_RED, 0.95);
+      g.shadowBlur = 24;
+      g.shadowColor = rgba(C_RED, 0.9);
+    } else {
+      g.fillStyle = "rgba(255,255,255,0.06)";
+    }
+    g.beginPath();
+    g.rect(l.x, l.y - BAND_W / 2, r.x - l.x, BAND_W);
+    g.fill();
+    g.restore();
+  }
+
+  function draw() {
+    if (!gctx || !cssW || !cssH) return;
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gctx.clearRect(0, 0, cssW, cssH);
+
+    // The stage carries the design box's aspect ratio in CSS, so this is a
+    // uniform scale — see the header on why the axes are never scaled apart.
+    var s = Math.min(cssW / DW, cssH / DH);
+    gctx.translate((cssW - DW * s) / 2, (cssH - DH * s) / 2);
+    gctx.scale(s, s);
+
+    var rgb = revRgb(revF);
+    var flashing = revStageNow === "shift" && Math.floor(Date.now() / FLASH_MS) % 2 === 0;
+
+    drawShell(gctx);
+    if (showBg) drawGlow(gctx, rgb, flashing);
+    drawWells(gctx);
+    if (showRev) {
+      drawBar(gctx, BAR_L, false, flashing);
+      drawBar(gctx, BAR_R, true, flashing);
+      drawKeystone(gctx, flashing);
     }
   }
 
@@ -300,9 +742,34 @@
     return c;
   }
 
+  /**
+   * Positions a DOM box over its rectangle in the design box, as percentages.
+   *
+   * Percentages rather than pixels because the stage is fixed-aspect: one set of
+   * numbers then holds at every size the operator drags the widget to, with no
+   * per-resize write. And they come from {@link BOXES} — the same constants the
+   * canvas draws from — because the alternative is the stylesheet carrying a
+   * second copy of the geometry that silently stops agreeing with the drawing.
+   */
+  function placeBox(node, b) {
+    if (!node) return;
+    node.style.left = (b.x / DW) * 100 + "%";
+    node.style.top = (b.y / DH) * 100 + "%";
+    node.style.width = (b.w / DW) * 100 + "%";
+    node.style.height = (b.h / DH) * 100 + "%";
+  }
+
   function init(root, ctx) {
-    headerMeta = root.querySelector('[data-role="meta"]');
-    var mount = root.querySelector('[data-role="mount"]');
+    // The stage, the canvas and the two pods come from the SHELL, not from
+    // here — the pods hold the nested radar/trackmap sections that client.js
+    // binds independently, and rebuilding them on init would either wipe those
+    // sections or race the bind loop depending on script order. This widget
+    // owns exactly one child of the stage: its own readout layer.
+    var stage = root.querySelector('[data-role="stage"]');
+    var mount = root.querySelector('[data-role="cluster"]');
+    if (!stage || !mount) return;
+    stageEl = stage;
+    canvas = stage.querySelector(".speedo__bg");
     mount.innerHTML = "";
     cache = {};
 
@@ -314,25 +781,6 @@
     showBg = !off("bg");
     showRev = !off("rev");
 
-    var wrap = el("div", "speedo");
-
-    canvas = el("canvas", "speedo__bg");
-    wrap.appendChild(canvas);
-
-    var grid = el("div", "speedo__grid");
-
-    /* --- left: the two distance budgets --- */
-    var left = el("div", "speedo__side");
-    var fuel = stat(left, "FUEL");
-    elFuel = fuel.value;
-    elFuelSub = fuel.sub;
-    var ve = stat(left, "ENERGY");
-    elVeWrap = ve.wrap;
-    elVe = ve.value;
-    elVeSub = ve.sub;
-    elVeWrap.hidden = true;
-    grid.appendChild(left);
-
     /* --- centre: the two Tier-1 readouts --- */
     var core = el("div", "speedo__core");
     var speedLine = el("div", "speedo__speed");
@@ -343,16 +791,27 @@
     core.appendChild(speedLine);
     elRpm = el("div", "speedo__rpm", "— RPM");
     core.appendChild(elRpm);
-    grid.appendChild(core);
-
-    // The gear sits outside the centre column so it can be its own bordered
-    // glyph against the illumination, the way a real cluster frames it.
+    // The gear is framed as its own glyph, the way a real cluster frames it, and
+    // sits directly under the speed: the two are read as a unit.
     elGear = el("div", "speedo__gear is-crit", "—");
-    grid.appendChild(elGear);
+    core.appendChild(elGear);
+    mount.appendChild(core);
 
-    /* --- right: pace, and the lap-scale energy budget --- */
-    var right = el("div", "speedo__side speedo__side--r");
-    var proj = stat(right, "PROJECTED");
+    /* --- under the left pod: the two distance budgets --- */
+    var budgetL = el("div", "speedo__budgets");
+    var fuel = stat(budgetL, "FUEL");
+    elFuel = fuel.value;
+    elFuelSub = fuel.sub;
+    var ve = stat(budgetL, "ENERGY");
+    elVeWrap = ve.wrap;
+    elVe = ve.value;
+    elVeSub = ve.sub;
+    elVeWrap.hidden = true;
+    mount.appendChild(budgetL);
+
+    /* --- under the right pod: pace, and the lap-scale energy budget --- */
+    var budgetR = el("div", "speedo__budgets speedo__budgets--r");
+    var proj = stat(budgetR, "PROJECTED");
     elProj = proj.value;
     elProjDelta = proj.sub;
     elProjDelta.className = "speedo__stat-sub speedo__delta";
@@ -373,14 +832,12 @@
     batt.appendChild(battRow);
     elBattFlow = el("span", "speedo__stat-sub", "");
     batt.appendChild(elBattFlow);
-    right.appendChild(batt);
+    budgetR.appendChild(batt);
     elBattWrap = batt;
     elBattWrap.hidden = true;
-    grid.appendChild(right);
+    mount.appendChild(budgetR);
 
-    wrap.appendChild(grid);
-
-    /* --- chips --- */
+    /* --- chips, in the chin --- */
     elChips = el("div", "speedo__chips");
     chipLimiter = chip(elChips, "LIMITER");
     // Its own class, not a positional selector: the chip strip's membership
@@ -397,9 +854,26 @@
     chipCut = chip(elChips, "PWR —");
     chipSlip = chip(elChips, "SLIP —");
     chipAbs = chip(elChips, "ABS —");
-    wrap.appendChild(elChips);
+    mount.appendChild(elChips);
 
-    mount.appendChild(wrap);
+    /* --- everything onto its rectangle in the design box --- */
+    placeBox(core, BOXES.core);
+    placeBox(budgetL, BOXES.budgetL);
+    placeBox(budgetR, BOXES.budgetR);
+    placeBox(elChips, BOXES.chips);
+    placeBox(stage.querySelector(".speedo__pod--l"), BOXES.podL);
+    placeBox(stage.querySelector(".speedo__pod--r"), BOXES.podR);
+
+    // The radar gets exactly the width its fixed aspect needs to stand the full
+    // height of its pod — see RADAR_ASPECT. The leftover either side is well,
+    // not radar, which is the correct reading: the pod is a hole in the bezel
+    // and the instrument sits centred in it. The track map needs no equivalent,
+    // because it is always landscape and therefore always shorter than the pod.
+    var radarBody = stage.querySelector(".speedo__pod--l .panel__body");
+    if (radarBody) {
+      var fitW = BOXES.podL.h / RADAR_ASPECT;
+      radarBody.style.width = (fitW / BOXES.podL.w) * 100 + "%";
+    }
 
     gctx = canvas.getContext("2d");
     sizeCanvas();
@@ -470,7 +944,7 @@
     // exactly that state. Same backstop motion.js keeps.
     if (++sizeTick % 30 === 0) sizeCanvas();
 
-    /* --- revs: the panel's headline signal --- */
+    /* --- revs: the cluster's headline signal --- */
     revF = revFraction(p.rpm, p.maxRpm);
     revStageNow = revStage(revF);
     draw();
@@ -575,11 +1049,6 @@
     aidChip(chipCut, ctx, "PWR", findAid(mfd, "tcCut"), false);
     aidChip(chipSlip, ctx, "SLIP", findAid(mfd, "tcSlip"), false);
     aidChip(chipAbs, ctx, "ABS", findAid(mfd, "abs"), (ped.abs || 0) > 0.02);
-
-    /* --- header --- */
-    if (headerMeta) {
-      set(headerMeta, "meta", fmt.gearLabel(p.gear) + " · " + fmt.speed(p.speedKph));
-    }
   }
 
   window.ApexOverlay.registerWidget("speedo", {

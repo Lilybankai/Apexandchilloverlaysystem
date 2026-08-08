@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.64.0-beta.8 — 2026-08-08
+
+### Changed
+
+- **The Speedo is now a full instrument cluster.** It has grown a drawn
+  surround with two rev bars that start at the bottom outer corners, climb the
+  outer edges and meet head-on just above the speed — flashing white together
+  at the moment you should be pulling the next gear. Two things arriving at one
+  point catch the eye in a way a bar filling up never did, and they do it while
+  you are still looking at the braking zone. Nothing about *when* they light has
+  changed: green while there is room, amber, red, and the flash on the limiter,
+  all measured against your own car's rev limit — so a Hypercar and a GT3 still
+  light up at the same point in their own range.
+- **The radar and the track map now sit inside the cluster**, in a pod either
+  side of the speed. They are the same widgets you already had — same scale,
+  same learned circuit, same everything — just framed. The panel still lights
+  up from the floor as the revs rise, and now keeps that light out of the two
+  pods, so a car alongside you can never be tinted red by your own rev counter.
+- **The cluster has no title bar.** It draws its own bezel, and a "Speedo"
+  caption sitting above it read as a mistake.
+
+### Worth knowing before you update
+
+- The cluster is **wider than the old Speedo panel and keeps a fixed shape**, so
+  it will need dragging back into place once in the in-game editor. Drag a
+  corner to size it — the whole thing scales together, text included, so there
+  is only one dimension to get right.
+- While the cluster is on screen it **owns** the radar and the track map, and
+  those two are no longer placed separately in the in-game layer. If you would
+  rather position them yourself, turn the Speedo off.
+
 ## 0.64.0-beta.7 — 2026-08-08
 
 ### Changed

@@ -254,5 +254,154 @@ check(
   /\[data-flow="regen"\][^{]*\.speedo__batt-icon\s*\{/.test(css),
 );
 
+/* -------------------------------------------------------------------------- */
+
+console.log('\nthe cluster geometry');
+
+/*
+ * The silhouette is drawn from constants and the DOM is positioned from the SAME
+ * constants, so most of the layout cannot drift. Three things still can, and all
+ * three are silent when they do:
+ *
+ *   • a box escaping the design behaviour box — a pod half outside the bezel
+ *     still renders, it just looks like a rendering fault;
+ *   • the two rev bars disagreeing about length, which would make one reach the
+ *     shift point before the other and destroy the convergence the widget is
+ *     built around;
+ *   • the radar's aspect, which lives in radar.js and is duplicated into
+ *     speedo.js because the pod has to size against it. If radar.js changes it,
+ *     the radar overflows its well and the player's own car stops being centred.
+ */
+const { w: DW, h: DH } = api.DESIGN;
+
+check('the design box is the reference cluster aspect', DW > DH * 2, `${DW}x${DH}`);
+
+const boxes = Object.entries(api.BOXES);
+const escaped = boxes.filter(
+  ([, b]) => b.x < 0 || b.y < 0 || b.x + b.w > DW || b.y + b.h > DH,
+);
+check(
+  'every positioned box is inside the design box',
+  escaped.length === 0,
+  escaped.length ? `outside: ${escaped.map(([k]) => k).join(', ')}` : `${boxes.length} boxes`,
+);
+
+// The pods must not overlap the centre column, or the readouts land on top of
+// the radar. They are separate instruments and must not share pixels.
+const { podL, podR, core } = api.BOXES;
+check('the left pod clears the centre column', podL.x + podL.w <= core.x, `${podL.x + podL.w} <= ${core.x}`);
+check('the right pod clears the centre column', core.x + core.w <= podR.x, `${core.x + core.w} <= ${podR.x}`);
+check('the pods are mirror images', podL.x === DW - podR.x - podR.w);
+
+// The two bars are one shape and its mirror, so they must measure the same.
+// A difference here means one side reaches the shift point first.
+const left = api.buildBar(false);
+const right = api.buildBar(true);
+check(
+  'both rev bars are the same length',
+  Math.abs(left[left.length - 1].len - right[right.length - 1].len) < 1e-9,
+  `${left[left.length - 1].len.toFixed(3)} vs ${right[right.length - 1].len.toFixed(3)}`,
+);
+check(
+  'the bars start at the bottom outer corners',
+  left[0].x < DW / 2 && right[0].x > DW / 2 && left[0].y === right[0].y,
+  `left x=${left[0].x} right x=${right[0].x} y=${left[0].y}`,
+);
+check(
+  'the bars meet at the top middle, without crossing',
+  left[left.length - 1].x < DW / 2 &&
+    right[right.length - 1].x > DW / 2 &&
+    left[left.length - 1].y === right[right.length - 1].y,
+  `tips at ${left[left.length - 1].x} / ${right[right.length - 1].x}`,
+);
+// Cumulative length must be strictly non-decreasing, or stroking to a fraction
+// walks backwards and the band renders in pieces.
+check(
+  'bar length is monotonic along the path',
+  left.every((p, i) => i === 0 || p.len >= left[i - 1].len),
+);
+
+// The tick marks hang off the outward normal. Pointing inward puts them over the
+// pods, where they read as debris rather than as a scale — the sign of `s` in
+// barPointAt is the whole content of this check.
+const midLeft = api.barPointAt(left, 0.1, false);
+const midRight = api.barPointAt(right, 0.1, true);
+check(
+  'the left bar\'s ticks point outward (left)',
+  midLeft.nx < -0.5,
+  `nx=${midLeft.nx.toFixed(3)}`,
+);
+check(
+  'the right bar\'s ticks point outward (right)',
+  midRight.nx > 0.5,
+  `nx=${midRight.nx.toFixed(3)}`,
+);
+// …and at the top of the run, outward is UP on both sides.
+check(
+  'ticks along the top point up on both bars',
+  api.barPointAt(left, 0.75, false).ny < -0.5 && api.barPointAt(right, 0.75, true).ny < -0.5,
+);
+
+// The duplicated constant. This is the check that earns this block.
+const radarSrc = fs.readFileSync(
+  path.join(__dirname, '..', 'overlay', 'js', 'widgets', 'radar.js'),
+  'utf8',
+);
+const radarAspect = /var\s+ASPECT\s*=\s*([\d.]+)/.exec(radarSrc);
+const speedoAspect = /var\s+RADAR_ASPECT\s*=\s*([\d.]+)/.exec(widgetSrc);
+check(
+  'the pod sizes against the radar\'s real aspect',
+  !!radarAspect && !!speedoAspect && radarAspect[1] === speedoAspect[1],
+  `radar.js=${radarAspect && radarAspect[1]} speedo.js=${speedoAspect && speedoAspect[1]}`,
+);
+// And that the radar actually fits the pod at that aspect.
+check(
+  'the radar fits inside its pod at that aspect',
+  podL.h / Number(speedoAspect[1]) <= podL.w,
+  `needs ${(podL.h / Number(speedoAspect[1])).toFixed(1)} of ${podL.w} available`,
+);
+
+/* -------------------------------------------------------------------------- */
+
+console.log('\nthe cluster owns the widgets it nests');
+
+/*
+ * The pods hold the REAL radar and trackmap sections, and client.js binds one
+ * root per widget. If the shell ever stops nesting them the pods render as empty
+ * wells; if ingame.html ever stops dropping the loose copies, the nested ones
+ * lose the selector and do the same. Both failures look identical to a dead feed.
+ */
+// Just the speedo entry. Shell entries are separated by a blank line; matching
+// against the whole file instead would run straight into the next widget's
+// markup, which is how the header check below passed for the wrong reason.
+const speedoShell = (/\n {4}speedo:([\s\S]*?)\r?\n\r?\n/.exec(shellSrc) || [, ''])[1];
+
+check('the speedo entry was found in the shells', speedoShell.length > 0);
+check(
+  'the speedo shell nests the radar and the track map',
+  /speedo__pod--l[\s\S]*?RADAR[\s\S]*?speedo__pod--r[\s\S]*?TRACKMAP/.test(speedoShell),
+);
+check(
+  'the nested sections are built from the same strings as the standalone ones',
+  /radar:\s*RADAR/.test(shellSrc) && /trackmap:\s*TRACKMAP/.test(shellSrc),
+);
+check(
+  'the cluster shell has no panel header',
+  !speedoShell.includes('panel__header'),
+);
+check(
+  'the cluster shell carries the stage and readout-layer roles',
+  /data-role=\\?"stage\\?"/.test(speedoShell) && /data-role=\\?"cluster\\?"/.test(speedoShell),
+);
+
+const ingameSrc = fs.readFileSync(
+  path.join(__dirname, '..', 'overlay', 'ingame.html'),
+  'utf8',
+);
+check(
+  'the in-game injector drops the loose radar/trackmap when the cluster is up',
+  /indexOf\("speedo"\)[\s\S]{0,300}"radar"[\s\S]{0,120}"trackmap"/.test(ingameSrc),
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

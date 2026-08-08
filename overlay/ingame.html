@@ -74,6 +74,18 @@
         .filter(function (s) { return !!window.ApexShells[s]; });
       if (wanted.length === 0) wanted = Object.keys(window.ApexShells);
 
+      // The speedo cluster NESTS the radar and the track map in its pods. Both
+      // modules keep module-level state and client.js binds one root per widget,
+      // so a loose copy sitting earlier in the DOM wins the selector and leaves
+      // the cluster's pods as permanent "Awaiting telemetry…" placeholders —
+      // which looks like a dead feed rather than a duplicated widget. When the
+      // cluster is on screen it owns them; drop the loose copies.
+      if (wanted.indexOf("speedo") !== -1) {
+        wanted = wanted.filter(function (s) {
+          return s !== "radar" && s !== "trackmap";
+        });
+      }
+
       var stage = document.getElementById("ig-stage");
       // Six resize handles per widget (see js/ingame.js): a side edge sets
       // width, a top/bottom edge sets height, a corner scales the whole widget.

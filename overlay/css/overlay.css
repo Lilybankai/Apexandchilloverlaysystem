@@ -3522,34 +3522,131 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* =========================================================================
- * SPEEDO CLUSTER — speed, revs, gear + the four budgets.
+ * SPEEDO CLUSTER — the binocular instrument panel.
  *
- * The panel body is padding-free and `position: relative` so the canvas can sit
- * edge to edge behind everything: the rev illumination has to reach the panel's
- * own corners, and an inset glow reads as a rectangle drawn ON the widget rather
- * than as the widget lighting up.
+ * The widget draws its own silhouette, its own illumination and both rev bars
+ * into one canvas; everything here is the layer of DOM readouts sitting on top
+ * of it, plus the two pods that hold the nested radar and track map.
  *
- * Everything above the canvas is laid out in ONE grid row — budgets, speed,
- * gear, budgets — because the eye's path across a cluster is horizontal, and a
- * stacked layout would put the gear below the speed, which is the one pairing a
- * driver reads as a unit.
+ * ## Two rules govern this whole block
+ *
+ * 1. **Nothing here carries a coordinate.** Every box is positioned by
+ *    speedo.js from the same constants the canvas draws from (see BOXES and
+ *    placeBox there). A stylesheet holding its own copy of "the left pod starts
+ *    at 9.6%" is a stylesheet that silently stops agreeing with the drawing the
+ *    first time the silhouette is retuned — and the failure looks like a radar
+ *    hanging slightly out of its well, which reads as a rendering bug rather
+ *    than a stale number.
+ *
+ * 2. **Text scales with the WIDGET, not with the Text size slider.** The
+ *    readouts sit in boxes fixed by a drawn shell, so `--fs-scale` can only
+ *    overflow them; `--sp-scale` (written on resize, = stage width / design
+ *    width) keeps every glyph in proportion to the silhouette at any size. The
+ *    way to make this cluster bigger is to drag the cluster bigger.
  * ========================================================================= */
+
+/* The stage. Fixed-aspect because the silhouette has a real aspect ratio:
+   scaling the axes apart would turn the corner arcs into ellipses and break the
+   45° chamfers the rev bars follow. The operator drags ONE dimension and the
+   other follows; `max-height` lets a height-constrained layout shrink the width
+   to match rather than overflow. */
 .speedo {
   position: relative;
+  /* A STATED natural width, not `100%`. Every other widget gets its intrinsic
+     size from the text inside it; this one is nothing but absolute boxes over a
+     canvas, so it has no content to measure — and widget.html shrink-wraps the
+     single panel it serves (`.single-page` is inline-block). A percentage width
+     inside a shrink-to-fit parent resolves against a containing block that is
+     itself waiting on the content, and the whole chain collapses to zero: a
+     blank OBS source with no error anywhere to explain it.
+     `max-width` then lets the in-game layer, which DOES set an explicit width,
+     size it down as normal. */
+  width: 900px;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1000 / 470;
+  margin: 0 auto;
   overflow: hidden;
-  padding: 0 0 6px;
-  border-radius: 0 0 var(--radius) var(--radius);
 }
-/* The illumination + rev bar. Behind the readouts and out of the hit-testing
-   path, so the in-game layer's drag handles still work over it.
+
+/* The cluster draws its own bezel, hood shadow and background, so the panel
+   chrome underneath is a second, squarer frame around the first — and the brand
+   accent bar runs down the outside of a silhouette that has its own edge. All of
+   it goes, the same treatment (and for the same reason) as the radar's. */
+#widget-speedo {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+#widget-speedo::before {
+  display: none;
+}
+#widget-speedo .panel__body {
+  padding: 0;
+}
+
+/* The pods, holding the nested radar and track map sections. Positioned by the
+   widget; everything here is only about making a full panel behave as a pane. */
+.speedo__pod {
+  position: absolute;
+  /* A backstop, not the mechanism: both nested widgets derive their canvas
+     height from their own width, so the fit is arranged by giving each the width
+     its aspect needs (see RADAR_ASPECT in speedo.js). This only guarantees that
+     if one ever does overshoot, it is cropped by the well rather than drawn
+     across the bezel. */
+  overflow: hidden;
+}
+.speedo__pod > .widget {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Inside a pod both widgets are bare panes: the cluster already draws the well
+   they sit in, so a second border and a title would be a frame around a frame. */
+.speedo__pod .panel__header,
+.speedo__pod .widget::before {
+  display: none;
+}
+/* No padding: the pod box is already inset from the drawn well by POD_PAD, and
+   padding here would be subtracted from the width the aspect fit depends on.
+   Centred both ways, so whichever axis the instrument does not fill reads as
+   well rather than as the widget having slipped. */
+.speedo__pod .panel__body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  height: 100%;
+  padding: 0;
+  margin: 0 auto;
+}
+/* …including in the in-game layout editor, which restores the radar's header
+   and border so a bare HUD can be found and positioned. Nested, that does not
+   apply: the thing being positioned is the CLUSTER, and the pod is part of its
+   artwork rather than a widget the operator places. */
+body.ig-editing .speedo__pod > .widget {
+  background: transparent;
+  border-color: transparent;
+}
+body.ig-editing .speedo__pod .panel__header {
+  display: none;
+}
+/* The bezel, the illumination and both rev bars. Behind the readouts and out of
+   the hit-testing path, so the in-game layer's drag handles still work over it.
  *
- * `screen`, not normal compositing. Alpha-blending a colour over the near-black
- * panel pulls it toward the surface: the red wash at the top of the rev range
- * came out BROWN, which is the one colour a shift cue must not be. Screen adds
- * light instead, so the hue keeps its saturation and the panel reads as
- * illuminated rather than tinted — which is the whole point of the effect.
- * Unlike backdrop-filter (banned here, and rightly) this is a per-pixel blend of
- * two things already in the layer tree, not a readback of the backdrop. */
+ * There is deliberately NO `mix-blend-mode` here any more. The screen blend that
+ * keeps the illumination from going brown still exists — it moved INSIDE the
+ * canvas (see drawGlow), because this element now holds the shell's own dark
+ * fill as well as the wash, and screening the whole element against the page
+ * would erase the shell (screen against black is a no-op). Blending inside the
+ * bitmap composites the wash against the shell, which is what it was always
+ * meant to be measured against. */
 .speedo__bg {
   position: absolute;
   inset: 0;
@@ -3557,25 +3654,31 @@ body.ig-editing #widget-radar .panel__header {
   height: 100%;
   display: block;
   pointer-events: none;
-  mix-blend-mode: screen;
 }
-.speedo__grid {
-  position: relative;
-  /* budgets · speed · gear · budgets. The two side columns are equal so the
-     speed sits on the panel's true centre line whatever the numbers do. */
-  display: grid;
-  grid-template-columns: 1fr auto auto 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 12px 4px;
+
+/* The readout layer. Transparent to the pointer so the whole cluster stays one
+   drag target in the in-game editor — the readouts are output, never controls. */
+.speedo__layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
-.speedo__side {
+.speedo__layer > * {
+  position: absolute;
+}
+
+/* The two budget strips, tucked under their pods. Four numbers on one baseline
+   rather than a stack, because the strip is 44 design px tall and a label over a
+   value over a sub-line is the one arrangement that cannot fit in it. */
+.speedo__budgets {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: calc(22px * var(--sp-scale, 1));
 }
-.speedo__side--r { align-items: flex-end; text-align: right; }
+.speedo__budgets--r {
+  justify-content: flex-end;
+}
 
 .speedo__stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 /* `display: flex` above OUTRANKS the user-agent's `[hidden] { display: none }`,
@@ -3587,14 +3690,14 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__stat[hidden] { display: none; }
 .speedo__stat-k {
   font-family: var(--font-display);
-  font-size: var(--fs-micro);
+  font-size: calc(12px * var(--sp-scale, 1));
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .speedo__stat-v {
   font-family: var(--font-mono);
-  font-size: var(--fs-data);
+  font-size: calc(19px * var(--sp-scale, 1));
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.05;
@@ -3604,27 +3707,32 @@ body.ig-editing #widget-radar .panel__header {
 }
 .speedo__stat-sub {
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: calc(12px * var(--sp-scale, 1));
   color: var(--text-secondary);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 .speedo__stat-sub:empty { display: none; }
 
 /* --- centre: the two Tier-1 readouts ---------------------------------- */
+/* Speed over RPM over gear, centred in the column between the pods. Stacked
+   rather than side by side because the centre column is only 176 design px
+   wide — and because speed and gear ARE the pairing a driver reads as a unit,
+   so they belong on one vertical axis under the point the rev bars meet. */
 .speedo__core {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  justify-content: center;
+  gap: calc(4px * var(--sp-scale, 1));
 }
-.speedo__speed { display: flex; align-items: baseline; gap: 4px; }
+.speedo__speed { display: flex; align-items: baseline; gap: calc(4px * var(--sp-scale, 1)); }
 .speedo__speed-v {
   font-family: var(--font-display);
-  /* Deliberately above --fs-crit-lg: this is a widget whose whole job is one
-     number, read in peripheral vision at 300 km/h. It still multiplies through
-     --fs-scale, so the operator's Text size slider governs it like everything
-     else. */
-  font-size: calc(58px * var(--fs-scale));
+  /* The single biggest thing on the cluster: this is a widget whose whole job is
+     one number, read in peripheral vision at 300 km/h. Sized against the stage
+     rather than the Text size slider — see the block header on why a fixed
+     silhouette cannot take an independent text scale. */
+  font-size: calc(76px * var(--sp-scale, 1));
   font-weight: 700;
   line-height: 0.9;
   letter-spacing: -0.02em;
@@ -3634,13 +3742,13 @@ body.ig-editing #widget-radar .panel__header {
 }
 .speedo__speed-u {
   font-family: var(--font-display);
-  font-size: var(--fs-micro);
+  font-size: calc(15px * var(--sp-scale, 1));
   letter-spacing: 0.16em;
   color: var(--text-secondary);
 }
 .speedo__rpm {
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: calc(13px * var(--sp-scale, 1));
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
@@ -3650,11 +3758,12 @@ body.ig-editing #widget-radar .panel__header {
    rev band, so the frame itself is a second, coarser shift cue. */
 .speedo__gear {
   font-family: var(--font-display);
-  font-size: calc(40px * var(--fs-scale));
+  font-size: calc(50px * var(--sp-scale, 1));
   font-weight: 700;
   line-height: 1;
-  min-width: calc(52px * var(--fs-scale));
-  padding: 6px 4px 4px;
+  min-width: calc(64px * var(--sp-scale, 1));
+  padding: calc(6px * var(--sp-scale, 1)) calc(4px * var(--sp-scale, 1))
+    calc(4px * var(--sp-scale, 1));
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -3677,16 +3786,16 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__delta[data-state="none"] { color: var(--text-muted); }
 
 /* --- hybrid battery ---------------------------------------------------- */
-.speedo__batt { display: flex; align-items: center; gap: 9px; }
+.speedo__batt { display: flex; align-items: center; gap: calc(8px * var(--sp-scale, 1)); }
 /* The battery glyph: a cell outline plus a terminal nub, filling with charge.
-   Sized in --fs-scale units so it grows with the operator's Text size slider
-   like every readout beside it. */
+   Sized in --sp-scale units so it stays in proportion to the silhouette at every
+   size the cluster is dragged to, like every readout beside it. */
 .speedo__batt-icon {
   position: relative;
   display: block;
   box-sizing: border-box;
-  width: calc(34px * var(--fs-scale));
-  height: calc(15px * var(--fs-scale));
+  width: calc(30px * var(--sp-scale, 1));
+  height: calc(13px * var(--sp-scale, 1));
   padding: 2px;
   background: rgba(0, 0, 0, 0.55);
   border: 1.5px solid var(--text-muted);
@@ -3698,11 +3807,11 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__batt-icon::after {
   content: "";
   position: absolute;
-  right: calc(-3px * var(--fs-scale));
+  right: calc(-3px * var(--sp-scale, 1));
   top: 50%;
   transform: translateY(-50%);
-  width: calc(3px * var(--fs-scale));
-  height: calc(7px * var(--fs-scale));
+  width: calc(3px * var(--sp-scale, 1));
+  height: calc(7px * var(--sp-scale, 1));
   background: var(--text-muted);
   border-radius: 0 2px 2px 0;
   transition: background-color 140ms linear;
@@ -3718,7 +3827,7 @@ body.ig-editing #widget-radar .panel__header {
 .speedo__batt-fill[data-state="low"] { background: var(--pos-loss); }
 .speedo__batt-v {
   font-family: var(--font-mono);
-  font-size: var(--fs-label);
+  font-size: calc(14px * var(--sp-scale, 1));
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -3726,19 +3835,23 @@ body.ig-editing #widget-radar .panel__header {
 }
 
 /* --- chip strip -------------------------------------------------------- */
+/* The chip strip lives in the chin — the tab that hangs below the pod floor.
+   `nowrap` rather than wrapping: the chin is a drawn box with a fixed height, so
+   a second row would spill out of the silhouette. Chips that have no data hide
+   themselves, which is what keeps the row inside its budget on feeds that carry
+   every aid. */
 .speedo__chips {
-  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 0 12px;
+  gap: calc(4px * var(--sp-scale, 1));
 }
 .speedo__chip {
   font-family: var(--font-display);
-  font-size: var(--fs-micro);
+  font-size: calc(11px * var(--sp-scale, 1));
   letter-spacing: 0.08em;
-  padding: 2px 7px;
+  padding: calc(2px * var(--sp-scale, 1)) calc(7px * var(--sp-scale, 1));
   border-radius: 3px;
   color: var(--text-muted);
   background: rgba(0, 0, 0, 0.45);
