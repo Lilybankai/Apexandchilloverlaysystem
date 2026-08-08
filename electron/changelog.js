@@ -38,6 +38,38 @@ function splitVersion(v) {
 }
 
 /**
+ * Compare two prerelease tags — `beta.9` against `beta.10` — the way semver
+ * does: dot-separated identifiers, left to right, NUMERIC ones compared as
+ * numbers and everything else as text, with a number sorting below a word.
+ *
+ * The whole tag used to be one string compare, and that is right for exactly as
+ * long as a beta series stays in single digits: `"beta.10" < "beta.9"` is true
+ * of strings and false of releases. It shipped that way until 0.64.0-beta.10,
+ * where it put the newest entry second in the file and — the part that actually
+ * costs something — made `entriesSince` drop it, so the first driver to update
+ * from beta.9 would have got a What's New panel with nothing in it.
+ */
+function comparePre(a, b) {
+  const A = a.split('.');
+  const B = b.split('.');
+  for (let i = 0; i < Math.max(A.length, B.length); i += 1) {
+    // A tag that has run out of identifiers is the smaller one: beta < beta.1.
+    if (A[i] === undefined) return -1;
+    if (B[i] === undefined) return 1;
+    if (A[i] === B[i]) continue;
+    const na = /^\d+$/.test(A[i]) ? +A[i] : null;
+    const nb = /^\d+$/.test(B[i]) ? +B[i] : null;
+    if (na !== null && nb !== null) return na < nb ? -1 : 1;
+    // Mixed kinds: semver says numeric identifiers always sort below textual
+    // ones, so `1.0.0-1` comes before `1.0.0-alpha`.
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+    return A[i] < B[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
  * Compare two semver-ish strings: -1 / 0 / 1. A prerelease sorts BEFORE its
  * release (0.9.0-rc.1 < 0.9.0), which is what electron-updater does too.
  * Unparseable input sorts last so a malformed heading can never be mistaken
@@ -55,7 +87,7 @@ function compareVersions(a, b) {
   if (A.pre === B.pre) return 0;
   if (!A.pre) return 1; // release beats its own prerelease
   if (!B.pre) return -1;
-  return A.pre < B.pre ? -1 : 1;
+  return comparePre(A.pre, B.pre);
 }
 
 /* -------------------------------------------------------------------------- */

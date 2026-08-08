@@ -49,8 +49,50 @@ console.log('\ncompareVersions');
   check('patch wins', c('0.47.2', '0.47.10') === -1);
   check('release beats its prerelease', c('0.9.0', '0.9.0-rc.1') === 1);
   check('prerelease ordering', c('0.9.0-rc.1', '0.9.0-rc.2') === -1);
+  // The same string-compare trap the minor/patch cases above cover, one level
+  // deeper — and this one actually shipped. Until 0.64.0-beta.10 the prerelease
+  // tag was compared whole, as text, so "beta.10" sorted BELOW "beta.9": the
+  // newest entry landed second in the file and entriesSince dropped it, which
+  // is a What's New panel with nothing in it for everyone updating from beta.9.
+  check('beta ordering is numeric, not textual', c('0.64.0-beta.10', '0.64.0-beta.9') === 1);
+  check('…and the reverse', c('0.64.0-beta.9', '0.64.0-beta.10') === -1);
+  check('two-digit betas keep ordering', c('0.64.0-beta.11', '0.64.0-beta.10') === 1);
+  check('a bare tag sorts below a numbered one', c('1.0.0-beta', '1.0.0-beta.1') === -1);
+  check('numeric identifiers sort below textual', c('1.0.0-1', '1.0.0-alpha') === -1);
+  check('identical betas are equal', c('0.64.0-beta.10', '0.64.0-beta.10') === 0);
+  check('a release still beats a two-digit beta', c('0.64.0', '0.64.0-beta.10') === 1);
   check('v prefix tolerated', c('v1.0.0', '1.0.0') === 0);
   check('garbage sorts last', c('not-a-version', '0.0.1') === -1);
+}
+
+/* -------------------------------------------------------------------------- */
+
+{
+  /*
+   * The consequence, end to end: the panel a driver sees after updating. This
+   * is the assertion the bug above would have failed — compareVersions is only
+   * interesting because entriesSince is built on it.
+   */
+  const entries = cl.parseChangelog(
+    [
+      '# Changelog',
+      '',
+      '## 0.64.0-beta.10',
+      '',
+      '- the newest one',
+      '',
+      '## 0.64.0-beta.9',
+      '',
+      '- the one they already have',
+      '',
+    ].join('\n'),
+  );
+  const shown = cl.entriesSince(entries, '0.64.0-beta.9', '0.64.0-beta.10');
+  check(
+    'updating from beta.9 to beta.10 shows beta.10',
+    shown.length === 1 && shown[0].version === '0.64.0-beta.10',
+    shown.map((e) => e.version).join(',') || 'nothing shown',
+  );
 }
 
 /* -------------------------------------------------------------------------- */

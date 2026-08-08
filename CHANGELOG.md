@@ -14,6 +14,12 @@
   speed, gear, budgets and rev bars are left floating over the game, exactly
   what that slider does on every other widget. The rev illumination stays at
   full strength whatever you set: it is the shift cue, not background.
+- **What's New would have been empty for this very release.** Beta numbers were
+  being sorted as text rather than as numbers, so "beta.10" counted as older
+  than "beta.9" — the first two-digit beta this app has cut. Everyone updating
+  from the last beta would have opened the app to a What's New panel with
+  nothing in it. Fixed, with the ordering now done the way version numbers
+  actually work.
 - **The rev colours are no longer brown through the middle or pink at the top.**
   The wash that rises up the cluster with the revs took a muddy route from green
   to amber, and at the partial brightness it is drawn at, that middle stretch —
