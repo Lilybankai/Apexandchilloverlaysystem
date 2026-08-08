@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.64.0-beta.9 — 2026-08-08
+
+### Changed
+
+- **The radar and the track map are separate widgets again.** The last beta put
+  them inside the Speedo cluster, and that turned out to cost more than it was
+  worth: with them nested you could have the cluster **or** a standalone radar,
+  never both, because only one copy of each can be live at a time. Rather than
+  leave you with that choice, they have gone back to being their own widgets —
+  placed wherever you like, switched on and off independently in the Overlays
+  list, exactly as they were before beta.8. Nothing about how they look or work
+  has changed.
+- **The cluster's two pods now carry the four budgets, at a size worth reading.**
+  Fuel and energy on the left, projected lap and the hybrid battery on the
+  right — each with its "≈ n laps" line, which was being clipped when the four
+  were squeezed into a strip along the bottom. That line is the half of a fuel
+  read you actually plan around, so it gets the room. The numbers are roughly
+  two-thirds larger than in the last beta.
+
+### Fixed
+
+- **The Speedo no longer stutters near the shift point.** It was getting more
+  expensive to draw the closer you were to the limiter — the exact moment it
+  exists to be read — because of how the glow on the rev bars was being
+  produced. Everything that does not change with the revs is now drawn once and
+  reused, the glow is done a cheaper way, and a frame where nothing has moved is
+  skipped entirely. If the radar or the track map felt choppy alongside the
+  cluster, that was very likely the same cause and should be gone with it.
+- **The track map no longer goes blank for good when you change its style.**
+  Switching between the classic and brand looks could stop the map dead for the
+  rest of the session, needing a restart to bring it back. A second, rarer
+  version of the same fault — triggered by resizing the widget — is fixed too.
+
 ## 0.64.0-beta.8 — 2026-08-08
 
 ### Changed
