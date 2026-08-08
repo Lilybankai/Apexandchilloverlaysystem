@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.64.0-beta.15 — 2026-08-08
+
+### Added
+
+- **Aid changes show under the gear.** Step traction control, brake bias, TC
+  slip, TC power cut or ABS — in the MFD or on a wheel button — and the new
+  setting pops under the gear glyph for a few seconds ("TC 9/11", "BIAS
+  56.5:43.5"), in the same short labels the chin chips use. The press gets its
+  acknowledgement in the middle of the cluster, without the MFD widget on
+  screen and without moving your eyes off the road. Latest change wins: work a
+  control through three steps and the pop shows where you landed, not the
+  journey.
+- **The pit limiter turns the whole cluster purple.** The limiter is the most
+  expensive thing to forget on a car, and it had one small cyan chip in the
+  chin to its name. With the limiter on, the cluster's illumination now holds
+  full-height Apex purple — the same wash the revs paint green through red, in
+  a colour the rev range can never produce — so the state is unmissable in
+  peripheral vision, exactly where a driver leaving the pit lane is not
+  looking. The rev bars keep showing the revs; the chip still lights.
+
+### Changed
+
+- **The Fuel Planner is offline while it is rebuilt.** The widget now shows a
+  REBUILDING banner instead of its numbers. The panel stays in saved layouts —
+  it says why it is empty and will come back in place when the rebuild ships.
+
 ## 0.64.0-beta.14 — 2026-08-08
 
 ### Fixed

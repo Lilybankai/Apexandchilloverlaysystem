@@ -1066,7 +1066,36 @@
 
   /* --------------------------------- init --------------------------------- */
 
+  /**
+   * The planner is OFFLINE while it is rebuilt.
+   *
+   * Every install that updates gets this banner instead of the widget: the
+   * planner's numbers had drifted far enough from what the sim actually burns
+   * that a confident wrong plan is worse than no plan, and a widget that is
+   * half-trusted colours how much the rest of the overlay is trusted. The
+   * banner (rather than removing the widget) keeps saved layouts intact — the
+   * panel stays where the operator put it, says why it is empty, and comes
+   * back in place when the rebuild ships. Flip to false to bring it back.
+   */
+  var REBUILDING = true;
+
   function init(root) {
+    if (REBUILDING) {
+      var meta0 = root.querySelector('[data-role="meta"]');
+      if (meta0) meta0.textContent = "OFFLINE";
+      var m0 = root.querySelector('[data-role="mount"]');
+      if (m0) {
+        m0.innerHTML =
+          '<div class="fuelplan__rebuilding">' +
+          '<span class="fuelplan__rebuilding-badge">REBUILDING</span>' +
+          '<span class="fuelplan__rebuilding-note">The Fuel Planner is being rebuilt ' +
+          "and is disabled for now. It will return in a later update.</span>" +
+          "</div>";
+      }
+      // `mounted` stays false, so update() keeps no-opping and nothing below
+      // this widget's registration ever runs against live frames.
+      return;
+    }
     if (!RD) {
       var m = root.querySelector('[data-role="mount"]');
       if (m) m.innerHTML = '<div class="placeholder">racedata.js not loaded</div>';

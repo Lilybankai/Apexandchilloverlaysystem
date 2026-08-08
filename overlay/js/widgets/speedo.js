@@ -20,7 +20,13 @@
  *     PROJECTED LAP and the HYBRID BATTERY on the right, two of distance and two
  *     of pace, each with the "≈ n LAPS" line that turns a status into a decision;
  *   • a chip strip in the chin: pit limiter, regen, and the TC map with its two
- *     sub-settings (power cut and slip) plus ABS.
+ *     sub-settings (power cut and slip) plus ABS. While the limiter is ON the
+ *     whole illumination goes full-height brand purple (see {@link C_LIMITER})
+ *     — a mode, not a reading, and one the driver must not miss;
+ *   • the AID POP under the gear: any change to brake bias, TC, TC slip, TC
+ *     power cut or ABS — from the MFD or a wheel button — shows its new value
+ *     for a few seconds, so a press gets its ack without the MFD widget on
+ *     screen (see {@link AID_POP}).
  *
  * ## The radar and the track map are NOT in here
  * They were, for one release, nested as real widget sections inside the wells.
@@ -151,6 +157,17 @@
   var C_YELLOW = [232, 216, 52]; /* the bridge stop — see above             */
   var C_AMBER = [255, 176, 32]; /* --warn      #ffb020                     */
   var C_RED = [255, 46, 42]; /* a shift-light red, not the delta pink   */
+
+  /**
+   * The pit limiter's colour — the brand purple (`--ac-purple`, #8b5cf6), and
+   * deliberately NOTHING the rev ramp can produce. While the limiter is on the
+   * whole illumination holds full-height purple instead of tracking the revs:
+   * the limiter is a mode, not a reading, and the one mistake this exists to
+   * catch — driving out of the pit lane with it still on — is exactly when the
+   * driver is not looking at a chip in the chin. A cluster that has visibly
+   * changed colour is readable in peripheral vision the way the shift wash is.
+   */
+  var C_LIMITER = [139, 92, 246];
 
   /** Below this the ramp is flat green — a car off the throttle is not "cold". */
   var RAMP_GREEN_UNTIL = 0.55;
@@ -525,11 +542,39 @@
   var elFuel, elFuelSub, elVeWrap, elVe, elVeSub;
   var elProj, elProjDelta, elBattWrap, elBattFill, elBattVal, elBattFlow;
   var elChips, chipLimiter, chipRegen, chipTc, chipCut, chipSlip, chipAbs;
+  var elAidPop, elAidPopK, elAidPopV;
+  var aidPopTimer = null;
+  /** Last seen wording per watched aid — the pop's change detector. */
+  var aidPrev = {};
   var cache = {};
+
+  /**
+   * The aids whose changes surface under the gear glyph.
+   *
+   * A driver stepping TC on a wheel button today gets their confirmation from
+   * the MFD widget — which they may not be running, and should not need for a
+   * one-glance ack. Any change to these five pops the new setting under the
+   * gear for a few seconds, in the same short labels the chin chips use, so
+   * the two never name one control two ways. Deliberately NOT every aid: the
+   * ARBs, motor map and the rest are pit-lane furniture, and a pop that fires
+   * for everything is a pop the eye learns to ignore.
+   */
+  var AID_POP = [
+    { key: "BRAKE_BIAS", label: "BIAS" },
+    { key: "tc", label: "TC" },
+    { key: "tcSlip", label: "SLIP" },
+    { key: "tcCut", label: "PWR" },
+    { key: "abs", label: "ABS" },
+  ];
+
+  /** How long a change stays up, ms — read at a glance, gone before it nags. */
+  var AID_POP_MS = 2800;
 
   /** Live rev fraction + stage, written by update() and read by the draw. */
   var revF = 0;
   var revStageNow = "low";
+  /** Pit limiter on — turns the illumination purple. See {@link C_LIMITER}. */
+  var limiterNow = false;
 
   /* ---------------------------------------------------------------------- */
   /*  Canvas                                                                 */
@@ -671,13 +716,13 @@
    * colour stops, so at low revs the work is proportionally small — an idling
    * car costs a sliver at the bottom of the bitmap, not a full-panel composite.
    */
-  function drawGlow(g, rgb, flashing) {
-    if (revF <= 0.001) return;
+  function drawGlow(g, rgb, flashing, frac) {
+    if (frac <= 0.001) return;
     g.save();
     shellPath(g);
     g.clip();
     g.globalCompositeOperation = "screen";
-    var top = DH * (1 - revF);
+    var top = DH * (1 - frac);
     var grad = g.createLinearGradient(0, DH, 0, top);
     // Peak opacity climbs with the revs too, so the cluster gets both taller and
     // brighter — the two cues reinforce rather than competing.
@@ -686,7 +731,7 @@
     // alpha over a near-black shell is a DARK warm hue, which is brown however
     // clean the ramp is. Keeping the wash's brightness up through the middle of
     // the range is the other half of the fix the yellow stop makes (see C_YELLOW).
-    var peak = 0.3 + 0.5 * revF;
+    var peak = 0.3 + 0.5 * frac;
     if (flashing) peak = 0.95;
     grad.addColorStop(0, rgba(rgb, peak));
     // 0.62 of the peak at the midpoint, not 0.42: the body of the wash is the
@@ -954,7 +999,13 @@
     buildStatic();
 
     var flashing = revStageNow === "shift" && Math.floor(Date.now() / FLASH_MS) % 2 === 0;
-    var key = staticKey + "|" + Math.round(revF * 400) + "|" + (flashing ? 1 : 0);
+    var key =
+      staticKey +
+      "|" +
+      Math.round(revF * 400) +
+      "|" +
+      (flashing ? 1 : 0) +
+      (limiterNow ? "|L" : "");
     if (key === lastFrameKey) return;
     lastFrameKey = key;
 
@@ -971,7 +1022,13 @@
     gctx.save();
     gctx.translate((cssW - DW * s) / 2, (cssH - DH * s) / 2);
     gctx.scale(s, s);
-    if (showBg) drawGlow(gctx, revRgb(revF), flashing);
+    // The limiter takes the illumination over entirely: full height, brand
+    // purple, steady — a mode, not a reading. The rev BARS keep reporting the
+    // revs; it is only the wash that changes meaning while the limiter is on.
+    if (showBg) {
+      if (limiterNow) drawGlow(gctx, C_LIMITER, false, 1);
+      else drawGlow(gctx, revRgb(revF), flashing, revF);
+    }
     gctx.restore();
 
     gctx.drawImage(layerAbove, 0, 0, cssW, cssH);
@@ -1103,6 +1160,21 @@
     // sits directly under the speed: the two are read as a unit.
     elGear = el("div", "speedo__gear is-crit", "—");
     core.appendChild(elGear);
+    // The aid pop, under the gear: absolutely positioned at the column's foot
+    // rather than flowed after the gear, so appearing and vanishing never
+    // shifts the two readouts a driver keeps a fix on.
+    elAidPop = el("div", "speedo__aidpop");
+    elAidPop.setAttribute("data-show", "false");
+    elAidPopK = el("span", "speedo__aidpop-k", "");
+    elAidPopV = el("span", "speedo__aidpop-v", "");
+    elAidPop.appendChild(elAidPopK);
+    elAidPop.appendChild(elAidPopV);
+    core.appendChild(elAidPop);
+    aidPrev = {};
+    if (aidPopTimer) {
+      clearTimeout(aidPopTimer);
+      aidPopTimer = null;
+    }
     mount.appendChild(core);
 
     /* --- left well: the two distance budgets --- */
@@ -1238,6 +1310,57 @@
     return null;
   }
 
+  /**
+   * Shows one aid change under the gear, replacing whatever was there.
+   *
+   * Latest-wins on purpose: two changes inside the window means the driver is
+   * working a control, and the number they need is the one they just reached —
+   * a queue would still be replaying the journey after they had finished it.
+   */
+  function showAidPop(label, text) {
+    if (!elAidPop) return;
+    elAidPopK.textContent = label;
+    elAidPopV.textContent = text;
+    elAidPop.setAttribute("data-show", "true");
+    // Replay the entrance even when one change lands on top of another — the
+    // scale pop is the "this just moved" cue, and a second step that arrives
+    // without it reads as the panel not having heard.
+    elAidPop.style.animation = "none";
+    void elAidPop.offsetWidth;
+    elAidPop.style.animation = "";
+    if (aidPopTimer) clearTimeout(aidPopTimer);
+    aidPopTimer = setTimeout(function () {
+      elAidPop.setAttribute("data-show", "false");
+      aidPopTimer = null;
+    }, AID_POP_MS);
+  }
+
+  /**
+   * The change detector behind the pop, run once per frame.
+   *
+   * Compares the aid's rendered WORDING, not its raw value — the wording is
+   * what the pop shows and what the driver's wheel shows, and for brake bias
+   * it moves on half-steps the integer value cannot see. An aid that leaves
+   * the frame (car swap, spectate) forgets its history rather than popping a
+   * "change" when it comes back: the first sighting of a value is a state,
+   * not an event.
+   */
+  function watchAids(mfd) {
+    for (var i = 0; i < AID_POP.length; i++) {
+      var w = AID_POP[i];
+      var aid = findAid(mfd, w.key);
+      var text = aid ? aid.text || aid.value + "/" + aid.maxValue : null;
+      if (text === null) {
+        delete aidPrev[w.key];
+      } else {
+        if (aidPrev[w.key] !== undefined && aidPrev[w.key] !== text) {
+          showAidPop(w.label, text);
+        }
+        aidPrev[w.key] = text;
+      }
+    }
+  }
+
   function update(frame, ctx) {
     var p = frame.player;
     var fmt = ctx.fmt;
@@ -1256,6 +1379,13 @@
     /* --- revs: the cluster's headline signal --- */
     revF = revFraction(p.rpm, p.maxRpm);
     revStageNow = revStage(revF);
+    // Read BEFORE draw(), because the limiter recolours the illumination this
+    // very frame — set after it, the purple would land a frame late, on the
+    // widget whose whole argument is that the panel changes the moment the
+    // state does.
+    var limiter = p.pit ? p.pit.limiterOn : undefined;
+    var hasLimiter = typeof limiter === "boolean";
+    limiterNow = limiter === true;
     draw();
 
     /* --- speed + gear --- */
@@ -1337,13 +1467,12 @@
     /* --- chips --- */
     // The limiter chip exists only when the feed can actually see the limiter —
     // `pit.limiterOn` is omitted, not defaulted, when the byte is unreadable.
-    var limiter = p.pit ? p.pit.limiterOn : undefined;
-    var hasLimiter = typeof limiter === "boolean";
     setHidden(chipLimiter, "lim", !hasLimiter);
     if (hasLimiter) ctx.critAttr(chipLimiter, "data-on", String(limiter));
 
     var mfd = frame.mfd;
     var ped = p.pedals || {};
+    watchAids(mfd);
     // Only the TC map and ABS light on live intervention. The power-cut and slip
     // chips are the map's two sub-settings, not systems of their own — lighting
     // all three off one `pedals.tc` would give a TC event three times the visual
