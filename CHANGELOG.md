@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.67.0-beta.2 — 2026-08-10
+
+### Changed
+
+- **The Setups tab's car is a still image for now.** The live 3D wireframe is
+  parked while the editor itself gets tested — in its place, a neon cutaway
+  render that sets the tone without costing a single frame. The Hide/Show
+  button still works, and remembers your choice. The 3D car (and the 700 KB
+  three.js bundle that came with it) is out of the installer entirely; it
+  lives on in git history for the day it earns its way back.
+
 ## 0.67.0-beta.1 — 2026-08-10
 
 ### Added
