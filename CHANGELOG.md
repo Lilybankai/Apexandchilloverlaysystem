@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.65.1 — 2026-08-10
+
+### Fixed
+
+- **Reopening from the tray no longer brings back a dead panel.** Opening the
+  app again after minimising it could bring up a window that painted but
+  ignored every click — it looked frozen, and only quitting from the tray and
+  relaunching recovered it. Windows had been asked to restore the window in an
+  order it can't honour (un-minimise while still hidden), which left the window
+  believing it was on screen while the OS had never actually put it back. It is
+  now shown first and restored second, which Windows honours every time.
+
+- **Reopening while the sim is running now puts the panel in front of it.**
+  Opening the app from its icon mid-session used to leave the panel behind the
+  game where it appeared to have not opened at all — Windows refuses to hand
+  focus across processes, and asking politely just flashes the taskbar. The
+  panel now lifts itself above everything for the moment it opens, so "open
+  the app" means the app is what you're looking at.
+
 ## 0.65.0 — 2026-08-10
 
 The release the app stops being a window you have to manage.

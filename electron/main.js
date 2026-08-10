@@ -2984,10 +2984,13 @@ function createWindow() {
   /*
    * Minimise → notification area, when the operator has asked for it.
    *
-   * preventDefault() on 'minimize' stops the animation into the taskbar, so the
-   * window goes straight to the tray instead of appearing to do both. Guarded on
-   * the tray actually existing: hiding a window whose only handle failed to be
-   * created would strand the app with no way back to it.
+   * NOTE the preventDefault() is a no-op: Electron fires 'minimize' after the
+   * OS has already minimized the window, so the hide() below lands on a window
+   * that is genuinely iconic — the window ends BOTH hidden and minimized. That
+   * combination is why showMainWindow must un-hide before it un-minimizes (see
+   * the ghost-window note there). Guarded on the tray actually existing:
+   * hiding a window whose only handle failed to be created would strand the
+   * app with no way back to it.
    */
   mainWindow.on('minimize', (evt) => {
     if (!loadSettings().minimizeToTray || !tray) return;
@@ -3089,8 +3092,22 @@ function showMainWindow() {
     }
     return;
   }
+  // show() BEFORE restore(). A tray-hidden window on Windows is hidden AND
+  // iconic at once — the 'minimize' event fires after the OS has already
+  // minimized (its preventDefault is not honored), so hide() stacks on top of
+  // a real minimize. Calling restore() on that still-hidden window leaves a
+  // ghost: a window that reports visible and focused while the OS never
+  // re-maps it, so it paints nothing and takes no clicks. Reproduced and
+  // measured 2026-08-10 — an OS hit test at the "restored" window's own centre
+  // named a different app, in every ordering except un-hide-first.
+  mainWindow.show();
   if (mainWindow.isMinimized()) mainWindow.restore();
-  if (!mainWindow.isVisible()) mainWindow.show();
+  // A deliberate open must also end on TOP — including over a borderless
+  // fullscreen sim. focus() cannot take the foreground from another process on
+  // Windows (the OS just flashes the taskbar instead), so ride above
+  // everything for one beat and drop back into the normal band.
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.setAlwaysOnTop(false);
   mainWindow.focus();
 }
 
