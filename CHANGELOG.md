@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.67.0-beta.1 — 2026-08-10
+
+### Added
+
+- **The Setups tab is real: a live editor for the whole car.** Every setting
+  the garage has — 170 of them on a GT3, from tyre pressures and camber per
+  corner to third springs, diff ramps and gear stacks — laid out across the
+  same six pages the game uses (Basic, Powertrain, Wheels & Brakes, Suspension,
+  Dampers, Chassis & Aero). It is the same car the sim is holding: drag a
+  slider here and the garage screen moves before you look up; change something
+  in the game and the panel shows it within a second. Values the ruleset fixes
+  show a padlock, values your car simply doesn't have don't appear at all —
+  an LMP2 never sees an ABS row — and an amber dot marks anything that differs
+  from your saved setup file, exactly like the game's own asterisk.
+- **Every control explains itself.** The ⓘ next to each setting says what the
+  part physically does and which way to turn it for which handling change —
+  camber's tread-temperature window, why rear toe-in calms the car, what a
+  third spring is actually for. Written once, true for any car.
+- **A race engineer's panel.** Ten intent sliders — front turn-in, rear
+  traction, top speed, softer over kerbs, braking stability and friends — each
+  moving a weighted set of real settings at once. Nothing touches the car
+  while you drag: affected rows preview old → new, the count says what's
+  staged, and one Apply sends the lot (Revert forgets it). Settings the
+  ruleset locks are skipped and say so. On a Hypercar the same sliders know
+  about torque split; on a GT3 they simply don't reach for it.
+- **A wireframe car that mirrors the setup.** A neon line-art GT on the tab —
+  drag to orbit, double-click to let it spin. Raise the rear ride height and
+  the body takes on rake; stiffen a spring and its coil shifts cyan → purple;
+  camber tilts the wheels, the rear wing angles and brightens with its
+  setting, brake bias moves the disc glow front to rear. Staged engineer
+  changes preview on the car before you apply them.
+- **It costs nothing until you open it.** The tab polls the sim only while it
+  is on screen and stops the moment you switch away or minimise — no timers,
+  no frames, no requests from a closed tab. The 3D view loads on first open
+  only, and can be hidden entirely on low-end machines.
+
 ## 0.66.1 — 2026-08-10
 
 ### Changed
