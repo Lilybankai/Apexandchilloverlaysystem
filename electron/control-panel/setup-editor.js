@@ -8,11 +8,15 @@
  * value and wording, edits POST through main to LMU, and in-game changes land
  * on the next poll tick.
  *
- * THE RESOURCE RULE — this tab costs nothing while closed. The only timer and
- * the only animation frame in the whole panel live here, and both run solely
- * while (a) the setups view is the active tab AND (b) the document is visible.
- * The tab router calls window.apexSetup.shown()/hidden() on every switch;
- * visibilitychange covers the minimised window. There is no other entry point.
+ * THE RESOURCE RULE — this tab costs nothing while closed. The only timer in
+ * the whole panel lives here, and it runs solely while (a) the setups view is
+ * the active tab AND (b) the document is visible. The tab router calls
+ * window.apexSetup.shown()/hidden() on every switch; visibilitychange covers
+ * the minimised window. There is no other entry point.
+ *
+ * The car card is a still image for now — the live three.js wireframe was
+ * removed in v0.67.0-beta.2 (recoverable from git along with vendor/ and
+ * setup-3d/); only its hide/show preference survives it.
  *
  * Rows are built with createElement and kept references (the opacityRow()
  * pattern in control-panel.js) — never per-key element ids, which would defeat
@@ -73,9 +77,6 @@
   let writesFrozen = false;
   let failedWrites = 0;
 
-  // 3D scene — lazy-loaded on first show, optional forever after.
-  let scene = null;
-  let sceneLoading = false;
   const THREE_D_PREF_KEY = 'apex.setup.3d';
 
   /* ====================================================================== */
@@ -87,8 +88,6 @@
     if (document.visibilityState !== 'visible') return; // visibilitychange will call back
     active = true;
     schedulePoll(0);
-    ensureScene();
-    if (scene && !canvasCollapsed()) scene.start();
   }
 
   function hidden() {
@@ -97,7 +96,6 @@
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    if (scene) scene.stop();
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -193,8 +191,6 @@
     }
     const wroteOk = failedWrites === 0;
     if (wroteOk) writesFrozen = false;
-
-    if (scene) scene.applySetup(settingsMap, staged);
   }
 
   /* ---- sub-tabs ----------------------------------------------------------- */
@@ -496,7 +492,6 @@
           // The sim may have clamped or reworded — a flash says "this is what took".
           if (row.flash && res.setting.value !== value) row.flash();
         }
-        if (scene) scene.applySetup(settingsMap, staged);
       }
     } else {
       failedWrites += 1;
@@ -596,7 +591,6 @@
         `${staged.size} setting${staged.size === 1 ? '' : 's'} staged` +
         (skippedCount ? ` · ${skippedCount} skipped (locked or not on this car)` : '');
     }
-    if (scene) scene.applySetup(settingsMap, staged);
   }
 
   function resetMacros() {
@@ -674,14 +668,17 @@
   });
 
   /* ====================================================================== */
-  /*  3D scene (lazy, optional)                                             */
+  /*  Car card                                                              */
   /* ====================================================================== */
+  /* A still image, hide/show only. The preference keeps the key the live 3D
+   * view used, so anyone who hid the old canvas keeps their choice when (if)
+   * the wireframe returns. */
 
   function canvasCollapsed() {
     return localStorage.getItem(THREE_D_PREF_KEY) === 'off';
   }
 
-  function paint3dToggle() {
+  function paintCarToggle() {
     const off = canvasCollapsed();
     el3dToggle.textContent = off ? 'Show' : 'Hide';
     elCanvasWrap.setAttribute('data-collapsed', String(off));
@@ -694,60 +691,8 @@
     } catch {
       /* storage disabled */
     }
-    paint3dToggle();
-    if (scene) {
-      if (off) scene.stop();
-      else if (active) {
-        scene.start();
-        if (lastState) scene.applySetup(settingsMap, staged);
-      }
-    } else if (!off) {
-      ensureScene();
-    }
+    paintCarToggle();
   });
 
-  /** Loads a classic script once; resolves when it has executed. */
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) {
-        resolve();
-        return;
-      }
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error(`failed to load ${src}`));
-      document.body.appendChild(s);
-    });
-  }
-
-  function ensureScene() {
-    if (scene || sceneLoading || canvasCollapsed()) return;
-    sceneLoading = true;
-    // Classic scripts injected in dependency order, not ES modules: module
-    // loading over file:// is exactly the kind of environment-sensitive
-    // machinery this panel avoids, and three is vendored as an IIFE anyway.
-    // ~700 KB parses once, only when someone actually opens the 3D card.
-    loadScript('vendor/three.bundle.js')
-      .then(() => loadScript('setup-3d/car-model.js'))
-      .then(() => loadScript('setup-3d/car-scene.js'))
-      .then(() => {
-        scene = window.ApexCarScene.createCarScene(elCanvasWrap);
-        sceneLoading = false;
-        if (active && !canvasCollapsed()) {
-          scene.start();
-          if (lastState && lastState.connected) scene.applySetup(settingsMap, staged);
-        }
-      })
-      .catch((err) => {
-        sceneLoading = false;
-        console.error('[setups] 3D scene unavailable:', err);
-        const hint = document.createElement('span');
-        hint.className = 'su-canvas__hint';
-        hint.textContent = '3D view unavailable';
-        elCanvasWrap.appendChild(hint);
-      });
-  }
-
-  paint3dToggle();
+  paintCarToggle();
 })();

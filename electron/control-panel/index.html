@@ -699,7 +699,12 @@
                 <h2 class="card__title">Car</h2>
                 <button id="setup-3d-toggle" class="btn btn--ghost btn--sm" type="button">Hide</button>
               </div>
-              <div id="setup-canvas-wrap" class="su-canvas"></div>
+              <!-- A still, for now: the live three.js wireframe (removed in
+                   v0.67.0-beta.2, recoverable from git) drew the setup onto
+                   the car; this is its placeholder while that idea rests. -->
+              <div id="setup-canvas-wrap" class="su-canvas">
+                <img class="su-canvas__img" src="assets/setup-car-sketch.jpg" alt="" />
+              </div>
             </div>
             <div class="card su-card">
               <div class="card__head">

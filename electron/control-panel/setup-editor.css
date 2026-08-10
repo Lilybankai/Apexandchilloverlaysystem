@@ -291,15 +291,16 @@
 .su-canvas {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 2;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: radial-gradient(ellipse at 50% 60%, #0a1220 0%, #05080f 70%);
 }
-.su-canvas canvas {
+.su-canvas__img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 .su-canvas[data-collapsed='true'] {
   display: none;
