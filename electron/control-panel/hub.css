@@ -455,6 +455,40 @@ html, body { height: 100%; overflow: hidden; }
 
 .ovcard { display: flex; flex-direction: column; gap: 9px; }
 
+/* A band across the top of a card whose widget has just been reworked (see
+ * `banner` in OVERLAY_CATALOG). Full-bleed: negative margins take it back out
+ * through the card's own 14px/15px padding to the border, so it reads as a
+ * banner ACROSS the card rather than as another chip inside it — which is the
+ * whole point, since a chip is what the eye skips on a four-across grid.
+ *
+ * It wears the brand gradient, the strongest mark the panel has. Dark text, not
+ * light: the gradient's cyan end is bright enough that white would fail against
+ * it, and this is the same inverted treatment the "YOU" tag and the accent
+ * icons already use.
+ *
+ * It rounds its own top corners rather than relying on the card to clip it —
+ * .card has a radius but no `overflow: hidden`, and adding one to make a banner
+ * work would quietly change what every other card can draw outside itself.
+ * Minus 1px because the banner sits inside the card's 1px border. */
+.ovcard__banner {
+  margin: -14px -15px 1px;
+  padding: 5px 15px;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  background: var(--grad);
+  color: #06121b;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
+/* The card dims its name and description when the widget is off in OBS. The
+ * banner is news about the widget, not a readout of its state, so it stays at
+ * full strength on a card the operator has switched off — that is exactly the
+ * card the news is aimed at. */
+.ovcard[data-enabled="false"] .ovcard__banner { opacity: 1; }
+
 /* Two lines reserved for the name whether it needs them or not, so every card
  * in a row starts its description at the same height. Clamping to one line
  * instead would truncate labels like "Pedal Inputs (Vertical)" to nonsense. */

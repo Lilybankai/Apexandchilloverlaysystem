@@ -489,13 +489,19 @@
 .standings__gap { width: 62px; color: var(--text-secondary); }
 .standings__best { width: 70px; color: var(--text-secondary); }
 .standings__last { width: 70px; }
-/* Pit flag column, at the right edge of the row. No left padding and a hair of
-   right: the colgroup gives this column 18px, and the cell default of 5px a
-   side would leave 8px for a chip that needs 14. */
+/* Pit flag column, at the right edge of the row. No left padding — the chip is
+   its own hard-edged box and needs no gutter between it and a right-aligned
+   number — and 8px on the right, which is the inset the class subheader's
+   right-floated car count and the fastest-lap banner already use. At the 3px it
+   shipped with, the chip sat almost against the panel border while everything
+   above and below it stood 8px clear, and against footage that reads as the
+   flag having fallen off the edge of the tower rather than as a tight column.
+   The colgroup was widened to match (see standings.js) so the extra gutter came
+   out of the panel, not out of the chip. */
 .standings__pit {
-  width: 18px;
+  width: 23px;
   padding-left: 0;
-  padding-right: 3px;
+  padding-right: 8px;
   text-align: right;
 }
 /* Column headings. Placed AFTER the per-column rules above on purpose: the

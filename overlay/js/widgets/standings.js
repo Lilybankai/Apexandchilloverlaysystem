@@ -520,15 +520,17 @@
     var colgroup = document.createElement("colgroup");
     // pos, ±, driver(rest), gap, last, best, VE, pit — the order the cells are
     // appended in createRow, and it has to stay in step with it (as does the
-    // heading row in createHead). The seven fixed columns total 316px of the
-    // panel's 474px, leaving ~158px for the driver name. The three time columns
+    // heading row in createHead). The seven fixed columns total 321px of the
+    // panel's 474px, leaving ~153px for the driver name. The three time columns
     // are sized for a full "1:58.492" — undersize them and the tenths silently
     // clip off the right.
     //
-    // The pit column is 18px of mostly-empty table, and it is reserved on every
+    // The pit column is 23px of mostly-empty table, and it is reserved on every
     // row on purpose: sizing it to the field's current pit lane would shift
     // every name sideways each time the lane emptied, and the name column is
-    // the one being read.
+    // the one being read. Only ~15px of the 23 is chip: the rest is the 8px
+    // right gutter that stands it off the panel edge, matching the inset the
+    // class subheader and the fastest-lap banner use (see .standings__pit).
     //
     // Given in em, NOT px, because these widths are only correct relative to the
     // text they hold and that text now scales with --fs-scale (the operator's
@@ -537,7 +539,7 @@
     // inherits from the table, which is --fs-body — so the divisor here is the
     // 12px --fs-body is defined as, and the ratios hold at every scale.
     var BASE_PX = 12;
-    var widths = [26, 28, 0, 62, 70, 70, 42, 18];
+    var widths = [26, 28, 0, 62, 70, 70, 42, 23];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
@@ -566,7 +568,8 @@
    * changes: it says what the column is actually counting, which is an operator
    * setting (see the gap logic in renderRow) and not something a viewer can
    * infer from the numbers. The pit column has no heading — a three-letter word
-   * does not fit in 18px, and the flag under it carries its own tooltip.
+   * does not fit in the ~15px of chip it allows, and the flag under it carries
+   * its own tooltip.
    */
   function createHead() {
     var thead = document.createElement("thead");

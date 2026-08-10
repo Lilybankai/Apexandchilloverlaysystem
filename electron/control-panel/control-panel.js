@@ -585,6 +585,17 @@
       li.className = 'card ovcard';
       li.setAttribute('data-enabled', String(o.enabled));
 
+      /* -- banner: a widget that has been reworked says so, across the top of
+       * its own card. Driven entirely by `banner` on the catalog entry (see
+       * OVERLAY_CATALOG in main.js), so this stays a plain map over the catalog
+       * and no widget id is named here. */
+      let bannerEl = null;
+      if (o.banner) {
+        bannerEl = document.createElement('div');
+        bannerEl.className = 'ovcard__banner';
+        bannerEl.textContent = o.banner;
+      }
+
       /* -- header: icon, name, OBS switch -- */
       const head = document.createElement('div');
       head.className = 'ovcard__head';
@@ -690,6 +701,9 @@
       foot.appendChild(obsDest);
       foot.appendChild(igDest);
 
+      // Before the head so it reads as a band across the top of the card; the
+      // CSS pulls it out to the card's edges through the card padding.
+      if (bannerEl) li.appendChild(bannerEl);
       li.appendChild(head);
       li.appendChild(desc);
       li.appendChild(urlWrap);

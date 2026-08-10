@@ -32,6 +32,22 @@ The release the app stops being a window you have to manage.
   while the window is already hidden brings it straight back, and the first
   minimise says where the window went so it can't be mistaken for the app quitting.
 
+### Changed
+
+- **The pit flag stands off the edge of the standings tower.** The `P` on a car
+  in the pit lane sat 3px from the panel border while the class subheader's car
+  count and the fastest-lap banner directly above it stood 8px clear — against
+  footage that read as the flag having fallen off the edge rather than as a tight
+  column. It now uses the same 8px inset, and the column was widened to match so
+  the gutter came out of the panel rather than out of the chip. The driver-name
+  column gives up 5px for it.
+
+- **The Fuel Planner card says it has been rebuilt.** A banner across the top of
+  its card on the Overlays screen. A reworked widget is invisible to everyone who
+  already made their mind up about the old one — a driver who switched the planner
+  off a season ago never opens its card again — and the card is where the decision
+  to use a widget actually gets made.
+
 ### Fixed
 
 - **A second launch opens the app you already have running.** Double-clicking the

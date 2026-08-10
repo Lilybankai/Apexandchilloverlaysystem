@@ -74,6 +74,17 @@ const OVERLAY_CATALOG = [
     label: 'Fuel Planner',
     description: 'Pre-race fuel/VE plan, live stint timer, fuel-ratio control (LMU only)',
     ingameDefault: false,
+    // A banner across this card on the Overlays screen. The field is generic
+    // rather than a fuelplan special case, so the next widget to be reworked
+    // says so by adding one line here and nothing in the renderer.
+    //
+    // It is worth having at all because a rebuilt widget is invisible to
+    // everyone who already made up their mind about the old one: a driver who
+    // turned the planner off a season ago never opens its card again, and the
+    // release notes only reach whoever reads them. The card is where the
+    // decision to use a widget is actually made, so that is where the news
+    // belongs. Remove the line when it stops being news.
+    banner: 'Rebuilt',
   },
   { id: 'tyres', label: 'Tyre Temps', description: 'Four-corner temperatures' },
   {
