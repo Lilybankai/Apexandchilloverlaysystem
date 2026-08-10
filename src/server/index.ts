@@ -30,6 +30,8 @@ import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
 import { handleMfdCommand } from './mfdRoutes';
+import { handleSetupCommand } from './setupRoutes';
+import { SetupController } from '../telemetry/setupControl';
 import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows, noteLiveAids } from './aidRows';
 import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
@@ -635,6 +637,11 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   if (!mfdDeps.keys.available) {
     console.log('[apex-overlay] keystroke injection unavailable — live aid keys disabled.');
   }
+  // The setup editor's control plane. Does work only per-request — no timer —
+  // which is what keeps the Setups tab free when it is closed.
+  const setupDeps = {
+    controller: new SetupController({ lmuApiPort: config.lmuApiPort, verbose: config.verbose }),
+  };
 
   // Everything the MFD can change goes into the one list the cursor walks — the
   // overlay's own rows (SERVE, PIT REQUEST) ahead of the sim's pit menu, the
@@ -647,6 +654,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.
     if (handleMfdCommand(req, res, mfdDeps)) return;
+    if (handleSetupCommand(req, res, setupDeps)) return;
     // Brand badges are proxied from the game, not read from disk — routed here
     // because only this scope knows which port the game's API is on.
     if ((req.url ?? '').startsWith(BADGE_PREFIX)) {

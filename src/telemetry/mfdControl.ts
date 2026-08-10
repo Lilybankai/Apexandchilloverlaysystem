@@ -28,6 +28,7 @@
  */
 
 import http from 'node:http';
+import { GARAGE_WRITE_KEY } from './setupState';
 import type { AidSettings, AidStep } from './lmuLocalCar';
 import {
   UNKNOWN_VALUE,
@@ -993,6 +994,24 @@ export class MfdController {
    */
   public getGarageData(): Promise<Record<string, RawGarageVal> | null> {
     return this.getJson<Record<string, RawGarageVal>>('/rest/garage/getPlayerGarageData');
+  }
+
+  /**
+   * The raw garage write: `POST /rest/garage/<key>` with `{ value }`. Accepts
+   * the full setup surface — flat `VM_*` keys AND per-corner `WM_*-W_FL` keys —
+   * which is what separates it from {@link setAid} (VM_ only, self-clamping).
+   *
+   * Deliberately does NOT read-and-clamp: its caller is the setup editor's
+   * `SetupController`, which has already read the garage data this write is
+   * based on (it needs the lock/availability fields anyway), and a second read
+   * here would double the traffic of every slider drag. Do not expose this to
+   * anything that has not clamped against the sim's own bounds first.
+   */
+  public postGarageValue(key: string, value: number): Promise<MfdWriteResult> {
+    if (!GARAGE_WRITE_KEY.test(key)) {
+      return Promise.resolve({ ok: false, status: 0, error: `illegal garage key: ${key}` });
+    }
+    return this.post(`/rest/garage/${key}`, { value });
   }
 
   /* ------------------------------- HTTP glue ------------------------------ */

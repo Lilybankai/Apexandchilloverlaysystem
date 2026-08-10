@@ -9,6 +9,8 @@
   <!-- Second, so the Hub shell's frame rules win over the original
        single-scrolling-page layout in control-panel.css. -->
   <link rel="stylesheet" href="hub.css" />
+  <!-- Setup editor styles — after hub.css for the same precedence reason. -->
+  <link rel="stylesheet" href="setup-editor.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -39,7 +41,6 @@
       </button>
       <button class="tab" type="button" data-tab="setups">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
-        <svg class="icon tab__lock"><use href="#i-lock" /></svg>
       </button>
       <button class="tab" type="button" data-tab="suggestions">
         <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
@@ -658,44 +659,69 @@
     </section>
 
     <!-- ========================== SETUPS ============================== -->
+    <!-- The live setup editor. All rows are built by setup-editor.js from the
+         sim's own key set (cars differ), so only the frame is static markup.
+         Nothing here polls or renders until the tab is shown — the zero-cost-
+         when-closed rule is owned by the tab router calling apexSetup.shown()/
+         hidden(). -->
     <section class="view" data-view="setups">
       <div class="wrap">
-        <div class="soon">
-          <span class="soon__icon"><svg class="icon"><use href="#i-sliders-horizontal" /></svg></span>
-          <h2 class="soon__title">Setups — coming soon</h2>
-          <p class="soon__desc">
-            Save, share and load car setups per track and class.
-          </p>
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Setups</h1>
+            <p class="view__sub">
+              The live car — edits here land in the garage instantly, and garage changes appear here.
+            </p>
+          </div>
+          <div class="su-ident">
+            <span id="setup-status" class="su-status" data-state="offline">OFFLINE</span>
+            <span id="setup-car" class="su-car"></span>
+            <span id="setup-class" class="su-class" hidden></span>
+            <span id="setup-sym" class="su-sym" hidden title="Symmetric setup — left and right corners move together">
+              <svg class="icon"><use href="#i-link" /></svg>Symmetric
+            </span>
+          </div>
         </div>
-        <div class="soon__label">On the roadmap</div>
-        <div class="ovgrid">
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-graduation-cap" /></svg></span>
-              <span class="ovcard__name">Training mode</span>
-            </div>
-            <p class="ovcard__desc">One switch for the lap database, trace capture and audio.</p>
+
+        <div id="setup-offline" class="su-offline">
+          <svg class="icon"><use href="#i-sliders-horizontal" /></svg>
+          <p>Start Le Mans Ultimate and enter the garage to edit the car&rsquo;s setup.</p>
+        </div>
+
+        <div id="setup-body" class="su-body" hidden>
+          <div class="su-main">
+            <nav id="setup-tabs" class="seg su-tabs" aria-label="Setup pages"></nav>
+            <div id="setup-rows" class="su-rows"></div>
           </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-volume-2" /></svg></span>
-              <span class="ovcard__name">Audio markers</span>
+          <aside class="su-side">
+            <div class="card su-card">
+              <div class="card__head">
+                <h2 class="card__title">Car</h2>
+                <button id="setup-3d-toggle" class="btn btn--ghost btn--sm" type="button">Hide</button>
+              </div>
+              <div id="setup-canvas-wrap" class="su-canvas"></div>
             </div>
-            <p class="ovcard__desc">Brake and turn-in tones learned from a reference lap.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-clipboard-list" /></svg></span>
-              <span class="ovcard__name">Setup sharing</span>
+            <div class="card su-card">
+              <div class="card__head">
+                <h2 class="card__title">Race engineer</h2>
+                <p class="card__desc">Each slider stages a balanced set of changes — nothing reaches the car until Apply.</p>
+              </div>
+              <div id="setup-macro-list" class="su-macros"></div>
+              <div id="setup-staged" class="su-staged" hidden>
+                <span id="setup-staged-count" class="su-staged__count"></span>
+                <button id="setup-apply" class="btn btn--accent btn--sm" type="button">Apply</button>
+                <button id="setup-revert" class="btn btn--ghost btn--sm" type="button">Revert</button>
+              </div>
             </div>
-            <p class="ovcard__desc">Per track and class, so a team can run the same car.</p>
-          </div>
-          <div class="card ovcard">
-            <div class="ovcard__head">
-              <span class="ovIcon"><svg class="icon"><use href="#i-activity" /></svg></span>
-              <span class="ovcard__name">Benchmark pace</span>
-            </div>
-            <p class="ovcard__desc">A reference bar for what a good lap is at this track.</p>
+          </aside>
+        </div>
+
+        <!-- One shared info popover, filled per-setting from setup-info.js. -->
+        <div id="setup-info-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 id="setup-info-title" class="su-pop__title"></h3>
+            <div id="setup-info-body" class="su-pop__body"></div>
+            <button id="setup-info-close" class="btn btn--ghost btn--sm" type="button">Close</button>
           </div>
         </div>
       </div>
@@ -1231,5 +1257,12 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="control-panel.js"></script>
+<!-- Setup editor: three data files (pure lookup tables), then the editor.
+     After control-panel.js so the tab router exists before apexSetup does —
+     the router calls window.apexSetup?.shown() and tolerates its absence. -->
+<script src="setup-groups.js"></script>
+<script src="setup-info.js"></script>
+<script src="setup-macros.js"></script>
+<script src="setup-editor.js"></script>
 </body>
 </html>

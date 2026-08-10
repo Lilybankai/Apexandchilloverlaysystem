@@ -105,6 +105,23 @@ contextBridge.exposeInMainWorld('apex', {
    */
   lapsScore: (laps) => ipcRenderer.invoke('laps:score', laps),
 
+  /* ---- Setup editor ----
+   *
+   * The Setups tab's line to the car. Each call is one fresh read or write
+   * against LMU's local REST API — no cache, no timer, so the tab costs
+   * nothing while closed. Goes over IPC (not fetch) because the panel's CSP
+   * has no connect-src, and because setup editing must work with the overlay
+   * server stopped.
+   */
+  setup: {
+    /** The whole current setup: `{ connected, car, carClass, symmetric, settings[] }`. */
+    state: () => ipcRenderer.invoke('setup:state'),
+    /** Write one setting (clamped server-side): `{ ok, applied?, appliedText?, setting? }`. */
+    write: (key, value) => ipcRenderer.invoke('setup:write', { key, value }),
+    /** Apply a staged macro: `{ ok, results[], state }` — skips locked keys, reports each. */
+    writeBatch: (writes) => ipcRenderer.invoke('setup:writeBatch', { writes }),
+  },
+
   /* ---- League leaderboard ----
    *
    * Unlike everything else on this bridge, these two read the league's database

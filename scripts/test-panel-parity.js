@@ -257,6 +257,31 @@ const PANEL_CONTRACT = {
   'adm-users-empty': 'p',
   'adm-users-note': 'p',
 
+  // Setup editor (v0.65.0). Only the static frame is contracted — every
+  // setting row is built at runtime from the sim's own key set, so rows have
+  // no ids at all (kept references instead, per the opacityRow() pattern).
+  // A broken id here strands the whole tab, not one control: the poll loop,
+  // the apply button and the offline card all hang off these.
+  'setup-status': 'span',
+  'setup-car': 'span',
+  'setup-class': 'span',
+  'setup-sym': 'span',
+  'setup-offline': 'div',
+  'setup-body': 'div',
+  'setup-tabs': 'nav',
+  'setup-rows': 'div',
+  'setup-3d-toggle': 'button',
+  'setup-canvas-wrap': 'div',
+  'setup-macro-list': 'div',
+  'setup-staged': 'div',
+  'setup-staged-count': 'span',
+  'setup-apply': 'button',
+  'setup-revert': 'button',
+  'setup-info-pop': 'div',
+  'setup-info-title': 'h3',
+  'setup-info-body': 'div',
+  'setup-info-close': 'button',
+
   // Floating
   toast: 'div',
 };
@@ -463,7 +488,11 @@ function verifyPage({ label, htmlFile, jsFiles, contract, ignoreUnused = [] }) {
 verifyPage({
   label: 'Control panel — index.html <-> control-panel.js',
   htmlFile: 'index.html',
-  jsFiles: ['control-panel.js'],
+  // The setup editor's files are part of the same page. The data files carry
+  // no DOM wiring but are scanned anyway — free, and future-proof. The
+  // setup-3d/ modules and vendor/ are deliberately NOT scanned: they touch no
+  // ids (the canvas is created inside #setup-canvas-wrap by the editor).
+  jsFiles: ['control-panel.js', 'setup-editor.js', 'setup-groups.js', 'setup-info.js', 'setup-macros.js'],
   contract: PANEL_CONTRACT,
 });
 

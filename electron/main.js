@@ -2176,6 +2176,64 @@ function registerIpc() {
     }
   });
 
+  /* ---- Setup editor ----
+   *
+   * The Setups tab's whole data path: a fresh read-through of LMU's garage API
+   * per call, writes validated server-side against the sim's own bounds. No
+   * cache and no timer here on purpose — the renderer polls only while the tab
+   * is visible, so a closed tab costs literally nothing.
+   *
+   * Talks to LMU directly (not through the overlay server) so setup editing
+   * works with the stream server stopped. The controller is rebuilt when the
+   * configured LMU port changes and kept otherwise — it is stateless, but
+   * requiring dist/ on every slider tick would be silly.
+   */
+  let setupController = null;
+  let setupControllerPort = 0;
+  const getSetupController = () => {
+    const settings = loadSettings();
+    const port = Number.isFinite(settings.lmuApiPort) ? settings.lmuApiPort : 6397;
+    if (!setupController || setupControllerPort !== port) {
+      const mod = require(path.join(__dirname, '..', 'dist', 'telemetry', 'setupControl.js'));
+      setupController = new mod.SetupController({ lmuApiPort: port });
+      setupControllerPort = port;
+    }
+    return setupController;
+  };
+
+  ipcMain.handle('setup:state', async () => {
+    try {
+      return await getSetupController().getState();
+    } catch (err) {
+      // An unbuilt dist/ degrades to the tab's offline card, not a dead panel.
+      console.error('[app] setup state unavailable:', err.message);
+      return { connected: false, car: '', carClass: '', symmetric: false, settings: [] };
+    }
+  });
+
+  ipcMain.handle('setup:write', async (_evt, payload) => {
+    try {
+      const key = String((payload && payload.key) || '');
+      const value = Number(payload && payload.value);
+      if (!key || !Number.isFinite(value)) return { ok: false, error: 'needs { key, value }' };
+      return await getSetupController().setValue(key, value);
+    } catch (err) {
+      console.error('[app] setup write failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setup:writeBatch', async (_evt, payload) => {
+    try {
+      const writes = payload && Array.isArray(payload.writes) ? payload.writes : [];
+      if (!writes.length) return { ok: false, error: 'needs { writes: [...] }' };
+      return await getSetupController().setBatch(writes);
+    } catch (err) {
+      console.error('[app] setup batch failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
   /* ---- League leaderboard ----
    *
    * The boards themselves live in Postgres, because a leaderboard is the one

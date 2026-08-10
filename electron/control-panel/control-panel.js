@@ -3032,6 +3032,13 @@
     if (target === 'admin') {
       void loadAdmin();
     }
+    // The setup editor is the one tab with a poll loop (and an animation
+    // frame), and this is where its zero-cost-when-hidden rule is enforced:
+    // shown() starts everything, hidden() stops everything, and the router is
+    // the single owner of which view is active. Optional-chained because the
+    // editor lives in setup-editor.js, loaded after this file.
+    if (target === 'setups') window.apexSetup?.shown();
+    else window.apexSetup?.hidden();
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
