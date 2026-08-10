@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.65.0 — 2026-08-10
+
+The release the app stops being a window you have to manage.
+
+### Added
+
+- **It opens full screen.** The panel now maximises on launch instead of opening
+  at a fixed 1180×820 in the middle of the screen. The Hub's nav — five tabs, the
+  mode toggle, the feed pill, the account chip — was always laid out for room it
+  wasn't being given, and the leaderboard and lap tables have wanted the width
+  since they arrived. Un-maximise and it still restores to the old size, so the
+  small window is a choice rather than the starting point.
+
+- **Launch on startup** (Settings → Application). Apex starts with Windows and
+  goes straight to the notification area — the server is up, the in-game layer is
+  armed and your laps are logging before you've opened the sim, with no window
+  thrown over whatever you were doing at boot. Off by default; nothing installs
+  itself into your startup without being asked.
+
+- **Minimise to tray** (Settings → Application, on by default). The minimise
+  button sends the panel to the notification area instead of the taskbar.
+  Double-click the icon to bring it back, or use **Quit** there to close
+  everything down.
+
+  **Nothing slows down while it is away.** The telemetry server, the in-game
+  overlays and the lap uploader all live outside the panel window and never saw
+  it in the first place; the panel's own renderer is explicitly exempted from
+  Chromium's hidden-window timer throttling, so the feed watcher and lap sync keep
+  their normal tick rather than dropping to once a minute. Turning the setting off
+  while the window is already hidden brings it straight back, and the first
+  minimise says where the window went so it can't be mistaken for the app quitting.
+
+### Fixed
+
+- **A second launch opens the app you already have running.** Double-clicking the
+  desktop shortcut while Apex sat in the tray used to start a whole second copy,
+  which then failed to bind the server port and reported it as busy — from the
+  outside, clicking the icon appeared to do nothing except break the running app.
+  The second launch now hands its request to the first one and brings the window
+  forward.
+
 ## 0.64.0 — 2026-08-10
 
 The release the Speedo becomes an instrument cluster, the Hypercar's own

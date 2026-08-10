@@ -965,6 +965,51 @@
             </div>
           </section>
 
+          <!-- ------------------- APPLICATION -------------------- -->
+          <!-- Where the app itself lives — nothing here touches the overlays,
+               which is exactly why it is its own card rather than more switches
+               under Server. -->
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-monitor" /></svg>Application</h2>
+              <p class="card__desc">
+                How the app starts and where it goes when you are done with the
+                window. The server, the in-game layer and lap uploads keep running
+                either way.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <label class="field field--toggle">
+                <span class="field__label">Launch on startup</span>
+                <span class="switch">
+                  <input type="checkbox" id="startup-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">
+                  Starts with Windows and goes straight to the notification area —
+                  no window in your face at boot. Open it from the tray icon when
+                  you want it.
+                </span>
+              </label>
+
+              <label class="field field--toggle">
+                <span class="field__label">Minimise to tray</span>
+                <span class="switch">
+                  <input type="checkbox" id="tray-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">
+                  The minimise button sends the panel to the notification area
+                  instead of the taskbar. <strong>Nothing slows down</strong> —
+                  the telemetry server and the in-game overlays run outside this
+                  window and are untouched by it being away. Double-click the tray
+                  icon to bring it back; <strong>Quit</strong> there closes
+                  everything.
+                </span>
+              </label>
+            </div>
+          </section>
+
           <!-- -------------------- APPEARANCE -------------------- -->
           <section class="card">
             <div class="card__head">
