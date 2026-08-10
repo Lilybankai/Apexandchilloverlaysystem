@@ -6,6 +6,23 @@ The release the app stops being a window you have to manage.
 
 ### Added
 
+- **Driver badges in the standings and relative panels.** The safety badge LMU
+  shows beside names in an online session — Rookie, Good Driver, Trusted Racer,
+  the contact Warning, plus the special grants like the Studio 397 mark — now
+  sits between the car's brand and the driver's name in both tables, using the
+  game's own artwork. It is the same fact the game shows in its own entry list,
+  read from the game on the same PC (`/rest/multiplayer/teams`), so the panels
+  and the sim can never disagree about who wears what. Hover a badge for what it
+  means.
+
+  That badge is deliberately the whole feature. The Driver Rating and Safety
+  Rating **numbers** live behind the game's authenticated online service — the
+  game itself only shows them on its lobby and profile screens, never in-session
+  beside a name — so the overlay shows exactly what the game publishes locally
+  and invents nothing. Most drivers carry no badge at all, and their rows render
+  exactly as before; offline and AI sessions show none, because the game grants
+  none there.
+
 - **It opens full screen.** The panel now maximises on launch instead of opening
   at a fixed 1180×820 in the middle of the screen. The Hub's nav — five tabs, the
   mode toggle, the feed pill, the account chip — was always laid out for room it

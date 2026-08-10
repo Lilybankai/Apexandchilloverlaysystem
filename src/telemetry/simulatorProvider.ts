@@ -314,7 +314,29 @@ interface SimCar {
   bestLapSec: number;
   inPit: boolean;
   pitStops: number;
+  /** Profile badge, as on {@link StandingEntry.driverBadge}; most cars none. */
+  driverBadge?: string;
 }
+
+/**
+ * Badges sprinkled over the demo grid so both tables exercise the badge slot —
+ * sparse (most `undefined`) because that is the live shape: on a real server
+ * the unbadged driver is the common case. Indexed by car slot, cycling.
+ */
+const SIM_BADGES: Array<string | undefined> = [
+  undefined,
+  'sr-clean',
+  undefined,
+  undefined,
+  'sr-rookie',
+  undefined,
+  'sr-saint',
+  undefined,
+  undefined,
+  'sr-warning',
+  undefined,
+  undefined,
+];
 
 /* ------------------------------ the provider ------------------------------ */
 
@@ -396,6 +418,7 @@ export class SimulatorProvider implements TelemetryProvider {
         bestLapSec: BASE_LAP_SEC + paceOffset - 0.3,
         inPit: false,
         pitStops: 0,
+        driverBadge: SIM_BADGES[i % SIM_BADGES.length],
       });
     }
     this.started = true;
@@ -1464,6 +1487,7 @@ export class SimulatorProvider implements TelemetryProvider {
         driverName: car.name,
         carNumber: car.carNumber,
         carClass: car.carClass,
+        driverBadge: car.driverBadge,
         virtualEnergy: round2(car.virtualEnergy),
         gapToLeaderSec: lapsBehind >= 1 ? UNKNOWN_VALUE : behindTotal * refLap,
         gapToAheadSec: Math.max(0, gapToAheadSec),
@@ -1514,6 +1538,7 @@ export class SimulatorProvider implements TelemetryProvider {
         driverName: car.name,
         carNumber: car.carNumber,
         carClass: car.carClass,
+        driverBadge: car.driverBadge,
         relativeGapSec: Math.round(gapSec * 100) / 100,
         lapsDifference,
         inPit: car.inPit,

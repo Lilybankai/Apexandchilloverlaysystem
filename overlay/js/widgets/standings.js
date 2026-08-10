@@ -128,10 +128,24 @@
     badge.onerror = function () {
       badge.hidden = true;
     };
+    // Driver profile badge — LMU's own safety/reputation mark (Rookie, Good
+    // Driver, Warning, …), between the car's brand and the driver's name: the
+    // cell reads car-then-driver, and this mark belongs to the DRIVER. Same
+    // contract as the brand badge: hidden until the frame names a badge,
+    // re-hidden if its artwork fails to load, so offline sessions and sims
+    // without the feed render exactly the tower they always did.
+    var srBadge = document.createElement("img");
+    srBadge.className = "standings__srbadge";
+    srBadge.alt = "";
+    srBadge.hidden = true;
+    srBadge.onerror = function () {
+      srBadge.hidden = true;
+    };
     var nameSpan = document.createElement("span");
     driverTd.appendChild(you);
     driverTd.appendChild(classDot);
     driverTd.appendChild(badge);
+    driverTd.appendChild(srBadge);
     driverTd.appendChild(nameSpan);
 
     // Virtual energy: a bar-backed % cell.
@@ -202,6 +216,7 @@
       you: you,
       classDot: classDot,
       badge: badge,
+      srBadge: srBadge,
       nameSpan: nameSpan,
       veTd: veTd,
       veBar: veBar,
@@ -986,6 +1001,22 @@
       } else {
         row.badge.removeAttribute("src");
         row.badge.hidden = true;
+      }
+    }
+
+    // Driver profile badge, same contract as the brand badge above. The badge
+    // artwork ships with the overlay (overlay/driverbadges/), so the src is a
+    // static file, not a proxy route.
+    var srb = e.driverBadge || "";
+    if (row.cache.srb !== srb) {
+      row.cache.srb = srb;
+      if (srb) {
+        row.srBadge.src = "/driverbadges/" + encodeURIComponent(srb) + ".svg";
+        row.srBadge.title = ctx.driverBadgeLabel(srb);
+        row.srBadge.hidden = false;
+      } else {
+        row.srBadge.removeAttribute("src");
+        row.srBadge.hidden = true;
       }
     }
 

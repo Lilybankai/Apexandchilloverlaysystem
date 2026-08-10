@@ -97,6 +97,17 @@
     badge.onerror = function () {
       badge.hidden = true;
     };
+    // Driver profile badge — LMU's own safety/reputation mark, part of the
+    // identity block after the car's brand: the cell reads car-then-driver and
+    // this mark belongs to the driver. Same hidden-until-known contract as the
+    // brand badge; the transient ghost marker stays between identity and name.
+    var srBadge = document.createElement("img");
+    srBadge.className = "relative__srbadge";
+    srBadge.alt = "";
+    srBadge.hidden = true;
+    srBadge.onerror = function () {
+      srBadge.hidden = true;
+    };
     // The ghost lives in its own span before the name, so toggling it never
     // rewrites the name text node (which the reconciler diffs).
     var ghostWrap = document.createElement("span");
@@ -107,6 +118,7 @@
     var nameSpan = document.createElement("span");
     driverTd.appendChild(classTag);
     driverTd.appendChild(badge);
+    driverTd.appendChild(srBadge);
     driverTd.appendChild(ghostWrap);
     driverTd.appendChild(nameSpan);
     var deltaTd = document.createElement("td");
@@ -134,6 +146,7 @@
       driverTd: driverTd,
       classTag: classTag,
       badge: badge,
+      srBadge: srBadge,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
       deltaTd: deltaTd,
@@ -330,6 +343,21 @@
         } else {
           row.badge.removeAttribute("src");
           row.badge.hidden = true;
+        }
+      }
+
+      // Driver profile badge, same contract as the brand badge above. Static
+      // artwork shipped with the overlay (overlay/driverbadges/).
+      var srb = e.driverBadge || "";
+      if (row.cache.srb !== srb) {
+        row.cache.srb = srb;
+        if (srb) {
+          row.srBadge.src = "/driverbadges/" + encodeURIComponent(srb) + ".svg";
+          row.srBadge.title = ctx.driverBadgeLabel(srb);
+          row.srBadge.hidden = false;
+        } else {
+          row.srBadge.removeAttribute("src");
+          row.srBadge.hidden = true;
         }
       }
 

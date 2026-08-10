@@ -279,6 +279,38 @@ interface RestRaceCar {
  */
 const CAR_LIST_RETRY_MS = 60_000;
 
+/**
+ * One connected player from `/rest/multiplayer/teams` — the `drivers` map is
+ * keyed by player name. Only the badge is consumed. This endpoint is the ONLY
+ * place the game locally publishes anything of a driver's online reputation:
+ * the DR/SR numbers behind it live on its authenticated cloud service and are
+ * deliberately not chased (probed live 2026-08-10 — full swagger enumerated,
+ * nothing else rating-shaped answers on localhost).
+ */
+interface RestTeamsDriver {
+  /**
+   * The profile badge LMU's own session UI shows beside the name — a safety
+   * tier (`sr-rookie` … `sr-saint`) or a special grant (`s397`, `irl-driver`,
+   * …); `"none"` for the (common) unbadged driver.
+   */
+  badge?: string;
+}
+
+/** `/rest/multiplayer/teams` payload (only the fields we consume). */
+interface RestMultiplayerTeams {
+  drivers?: Record<string, RestTeamsDriver>;
+}
+
+/**
+ * How often to pull `/rest/multiplayer/teams` for driver badges (ms).
+ *
+ * Lazy on purpose: a badge is a property of a driver's PROFILE, not of the
+ * race — the set only changes when someone joins the server. The one cost of
+ * missing that for a few seconds is a badge appearing late beside a name that
+ * just appeared itself.
+ */
+const TEAMS_REFRESH_INTERVAL_MS = 10_000;
+
 /** Fields we consume from `/rest/watch/sessionInfo`. */
 interface RestSession {
   trackName?: string;
@@ -578,6 +610,15 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Guards against overlapping car-list fetches while one is in flight. */
   private carListInFlight = false;
   /**
+   * Normalized player name → profile badge, from `/rest/multiplayer/teams`.
+   * Only drivers with a real badge are kept (`"none"` is the common case and
+   * would make every lookup a hit that says nothing). Empty outside multiplayer
+   * — the endpoint doesn't answer there, and {@link refreshTeams} clears the
+   * map so a badge can never outlive the server that granted it.
+   */
+  private readonly badgeByName = new Map<string, string>();
+  private teamsTimer: NodeJS.Timeout | null = null;
+  /**
    * Reads the sim's own track-limit charges from its trace log — the only live
    * source for them. See `telemetry/lmuTraceLimits.ts` for why a log file, and for
    * what was ruled out first.
@@ -638,6 +679,9 @@ export class LmuRestProvider implements TelemetryProvider {
     void this.refreshRules();
     this.rulesTimer = setInterval(() => void this.refreshRules(), RULES_REFRESH_INTERVAL_MS);
     this.rulesTimer.unref?.();
+    void this.refreshTeams();
+    this.teamsTimer = setInterval(() => void this.refreshTeams(), TEAMS_REFRESH_INTERVAL_MS);
+    this.teamsTimer.unref?.();
     if (this.lastOkAt > 0) {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
     } else {
@@ -672,6 +716,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.rulesTimer) {
       clearInterval(this.rulesTimer);
       this.rulesTimer = null;
+    }
+    if (this.teamsTimer) {
+      clearInterval(this.teamsTimer);
+      this.teamsTimer = null;
     }
     if (this.tyreSpecTimer) {
       clearInterval(this.tyreSpecTimer);
@@ -805,6 +853,44 @@ export class LmuRestProvider implements TelemetryProvider {
       // Endpoint is only alive inside a session; keep the last data until stale.
       if (this.verbose) console.error('[lmu] garage refresh failed:', (err as Error).message);
     }
+  }
+
+  /**
+   * Pulls `/rest/multiplayer/teams` and rebuilds the name → badge map.
+   *
+   * The map is rebuilt (not merged) on every answer, and CLEARED when the
+   * endpoint stops answering: it only answers on a multiplayer server, so a
+   * failure here is the normal single-player state, and holding the old map
+   * would carry one server's badges into the next session under whatever names
+   * happen to repeat.
+   */
+  private async refreshTeams(): Promise<void> {
+    try {
+      const teams = await this.getJson<RestMultiplayerTeams>('/rest/multiplayer/teams');
+      this.badgeByName.clear();
+      if (!teams || typeof teams.drivers !== 'object' || teams.drivers === null) return;
+      for (const [name, info] of Object.entries(teams.drivers)) {
+        const badge = info && typeof info.badge === 'string' ? info.badge.trim() : '';
+        if (!badge || badge.toLowerCase() === 'none') continue;
+        this.badgeByName.set(normalizeDriverName(name), badge);
+      }
+    } catch {
+      this.badgeByName.clear();
+    }
+  }
+
+  /**
+   * The profile badge for a standings row's driver, or `undefined`.
+   *
+   * Joined by NAME because that is the only key the two feeds share: the teams
+   * map is keyed by the player's profile name, while a standings row carries
+   * whatever name is in the car — which LMU can suffix with a `#1234`
+   * discriminator. {@link normalizeDriverName} strips that on both sides, so
+   * the join tolerates the one decoration the game is known to add.
+   */
+  private driverBadgeFor(driverName: string | undefined): string | undefined {
+    if (!driverName || this.badgeByName.size === 0) return undefined;
+    return this.badgeByName.get(normalizeDriverName(driverName));
   }
 
   /**
@@ -1387,6 +1473,7 @@ export class LmuRestProvider implements TelemetryProvider {
       carNumber: c.carNumber || undefined,
       carClass: normalizeClass(c.carClass),
       manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
+      driverBadge: this.driverBadgeFor(c.driverName),
       gridPosition:
         typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
@@ -1503,6 +1590,7 @@ export class LmuRestProvider implements TelemetryProvider {
         carNumber: c.carNumber || undefined,
         carClass,
         manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
+        driverBadge: this.driverBadgeFor(c.driverName),
         relativeGapSec: round2(gap),
         lapsDifference,
         inPit,
@@ -2868,6 +2956,16 @@ function skyRainIntensity(sky: SkyState, chance: number): number {
 /** Coerces any value to an upper-cased string (numbers, undefined → safe). */
 function asUpper(v: unknown): string {
   return typeof v === 'string' ? v.toUpperCase() : v == null ? '' : String(v).toUpperCase();
+}
+
+/**
+ * One spelling of a driver name for the badge join: trimmed, case-folded, and
+ * with LMU's `#1234` uniqueness discriminator stripped — `/rest/watch/standings`
+ * carries it on the in-car name, `/rest/multiplayer/teams` keys by the bare
+ * profile name.
+ */
+function normalizeDriverName(name: string): string {
+  return name.replace(/#\d+\s*$/, '').trim().toLowerCase();
 }
 
 function num(v: unknown): number {

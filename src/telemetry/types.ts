@@ -1040,6 +1040,18 @@ export interface StandingEntry {
    * Omitted when the sim doesn't publish a car list (rF2, demo).
    */
   manufacturer?: string;
+  /**
+   * The driver's profile badge, as LMU's own session UI shows beside names in
+   * multiplayer — a safety-reputation tier (`"sr-rookie"`, `"sr-warning"`,
+   * `"sr-clean"`, `"sr-saint"`, …) or a special grant (`"s397"`,
+   * `"irl-driver"`, …). Sourced from `/rest/multiplayer/teams`, which is the
+   * ONLY rating-adjacent fact the game publishes locally (DR/SR numbers live
+   * behind its authenticated cloud service). The artwork ships with the overlay
+   * at `/driverbadges/<badge>.svg`. Omitted for `"none"`, offline sessions and
+   * sims without the endpoint — so nothing renders unless the game itself would
+   * show a badge.
+   */
+  driverBadge?: string;
   /** `true` for the player's own row (for highlight). */
   isPlayer: boolean;
 }
@@ -1066,6 +1078,11 @@ export interface RelativeEntry {
    * brand badge, served at `/carbadges/<manufacturer>.svg`.
    */
   manufacturer?: string;
+  /**
+   * The driver's profile badge, as on {@link StandingEntry.driverBadge} —
+   * drives the badge beside the name, served at `/driverbadges/<badge>.svg`.
+   */
+  driverBadge?: string;
   /**
    * Signed on-track time gap to the player in seconds.
    * Positive = ahead of the player, negative = behind. `0` for the player row.

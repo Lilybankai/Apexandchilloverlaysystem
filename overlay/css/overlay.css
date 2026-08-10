@@ -551,6 +551,20 @@
   vertical-align: middle;
   object-fit: contain;
 }
+/* Driver profile badge (LMU's safety/reputation mark) beside the name — one
+   rule for both tables, like the brand badge above. A touch smaller than the
+   brand mark: the shield artwork is drawn edge-to-edge where the brand set
+   carries its own padding, so equal boxes drew the shield visually louder than
+   the car it sat next to. */
+.standings__srbadge,
+.relative__srbadge {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 5px;
+  vertical-align: middle;
+  object-fit: contain;
+}
 /* Pit flag — one rule for both tables, because the two are the same fact drawn
    the same way: a car that is in the pit lane and therefore not on the road.
    Amber, matching the caution sense the palette already gives --warn, on its own

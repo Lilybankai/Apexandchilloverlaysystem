@@ -317,6 +317,35 @@
     return typeof KNOWN_CLASS_LABELS[alias] === "string" ? KNOWN_CLASS_LABELS[alias] : alias;
   }
 
+  /**
+   * Tooltip names for the driver profile badges (`StandingEntry.driverBadge`),
+   * matching what LMU's own UI calls each one. Shared here so the tower and the
+   * relative panel cannot drift apart on what a badge means. An id outside the
+   * table (a badge added in a game patch) falls back to the raw id — the
+   * artwork request will 404 and hide the element anyway, so the label is only
+   * ever read alongside art we actually have.
+   */
+  var DRIVER_BADGE_LABELS = {
+    "sr-noob": "Rookie",
+    "sr-rookie": "Rookie",
+    "sr-probation": "Probation",
+    "sr-warning": "Warning — high recent contact",
+    "sr-danger": "Warning — under review for contact",
+    "sr-clean": "Good Driver",
+    "sr-saint": "Trusted Racer",
+    s397: "Studio 397 staff",
+    "content-creator": "Content creator",
+    "irl-driver": "Real-world racing driver",
+    "early-access": "Early access player",
+    "test-driver": "LMU test driver",
+  };
+
+  /** Human name for a driver badge id, for tooltips. */
+  function driverBadgeLabel(badge) {
+    if (!badge) return "";
+    return DRIVER_BADGE_LABELS[badge] || String(badge);
+  }
+
   /* ------------------------------------------------------------------ */
   /*  Critical-value writes + change glow                                */
   /* ------------------------------------------------------------------ */
@@ -488,6 +517,7 @@
     classColor: classColor,
     classAbbrev: classAbbrev,
     classLabel: classLabel,
+    driverBadgeLabel: driverBadgeLabel,
     // …and likewise for the consequence indicator, which the Track Limits
     // widget and the MFD both announce.
     consequenceMs: CONSEQUENCE_MS,
