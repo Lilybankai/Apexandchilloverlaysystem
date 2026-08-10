@@ -108,6 +108,21 @@
     srBadge.onerror = function () {
       srBadge.hidden = true;
     };
+    // DR + SR rank shields, lobby order (DR first) — see standings.js.
+    var drRank = document.createElement("img");
+    drRank.className = "relative__rank";
+    drRank.alt = "";
+    drRank.hidden = true;
+    drRank.onerror = function () {
+      drRank.hidden = true;
+    };
+    var srRank = document.createElement("img");
+    srRank.className = "relative__rank";
+    srRank.alt = "";
+    srRank.hidden = true;
+    srRank.onerror = function () {
+      srRank.hidden = true;
+    };
     // The ghost lives in its own span before the name, so toggling it never
     // rewrites the name text node (which the reconciler diffs).
     var ghostWrap = document.createElement("span");
@@ -118,6 +133,8 @@
     var nameSpan = document.createElement("span");
     driverTd.appendChild(classTag);
     driverTd.appendChild(badge);
+    driverTd.appendChild(drRank);
+    driverTd.appendChild(srRank);
     driverTd.appendChild(srBadge);
     driverTd.appendChild(ghostWrap);
     driverTd.appendChild(nameSpan);
@@ -147,6 +164,8 @@
       classTag: classTag,
       badge: badge,
       srBadge: srBadge,
+      drRank: drRank,
+      srRank: srRank,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
       deltaTd: deltaTd,
@@ -345,6 +364,10 @@
           row.badge.hidden = true;
         }
       }
+
+      // DR + SR rank shields, via the shared writer (see client.js).
+      ctx.applyRankBadge(row.drRank, row.cache, "drRank", "dr", e.driverRank);
+      ctx.applyRankBadge(row.srRank, row.cache, "srRank", "sr", e.safetyRank);
 
       // Driver profile badge, same contract as the brand badge above. Static
       // artwork shipped with the overlay (overlay/driverbadges/).

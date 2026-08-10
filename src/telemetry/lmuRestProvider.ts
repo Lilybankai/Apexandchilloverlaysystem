@@ -96,6 +96,7 @@ import {
 } from './lapTrace';
 import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
+import { RaceosRanksClient, type DriverRanks } from './raceosRanks';
 
 /** Config subset this provider needs. */
 export interface LmuRestConfig {
@@ -619,6 +620,13 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly badgeByName = new Map<string, string>();
   private teamsTimer: NodeJS.Timeout | null = null;
   /**
+   * DR/SR rank badges from the game's online service, keyed by player name.
+   * Fed exclusively with the CONNECTED-PLAYER names from `/rest/multiplayer/
+   * teams` — never standings names, whose AI roster entries could collide with
+   * a real account. See `telemetry/raceosRanks` for the whole story.
+   */
+  private ranks: RaceosRanksClient | null = null;
+  /**
    * Reads the sim's own track-limit charges from its trace log — the only live
    * source for them. See `telemetry/lmuTraceLimits.ts` for why a log file, and for
    * what was ruled out first.
@@ -679,6 +687,8 @@ export class LmuRestProvider implements TelemetryProvider {
     void this.refreshRules();
     this.rulesTimer = setInterval(() => void this.refreshRules(), RULES_REFRESH_INTERVAL_MS);
     this.rulesTimer.unref?.();
+    this.ranks = new RaceosRanksClient(this.port, this.verbose);
+    this.ranks.start();
     void this.refreshTeams();
     this.teamsTimer = setInterval(() => void this.refreshTeams(), TEAMS_REFRESH_INTERVAL_MS);
     this.teamsTimer.unref?.();
@@ -720,6 +730,10 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.teamsTimer) {
       clearInterval(this.teamsTimer);
       this.teamsTimer = null;
+    }
+    if (this.ranks) {
+      this.ranks.stop();
+      this.ranks = null;
     }
     if (this.tyreSpecTimer) {
       clearInterval(this.tyreSpecTimer);
@@ -874,9 +888,19 @@ export class LmuRestProvider implements TelemetryProvider {
         if (!badge || badge.toLowerCase() === 'none') continue;
         this.badgeByName.set(normalizeDriverName(name), badge);
       }
+      // These keys are the connected HUMANS — exactly the set whose DR/SR rank
+      // badges exist to be fetched, and the only names safe to send (see the
+      // field note on `ranks`).
+      this.ranks?.noteNames(Object.keys(teams.drivers));
     } catch {
       this.badgeByName.clear();
     }
+  }
+
+  /** The DR/SR rank badges for a standings row's driver, if resolved. */
+  private driverRanksFor(driverName: string | undefined): DriverRanks | undefined {
+    if (!driverName || !this.ranks) return undefined;
+    return this.ranks.get(driverName);
   }
 
   /**
@@ -1466,7 +1490,9 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   private buildStandings(cars: RestStanding[], focusId: number): StandingEntry[] {
-    const rows = cars.map((c) => ({
+    const rows = cars.map((c) => {
+      const ranks = this.driverRanksFor(c.driverName);
+      return {
       slotId: c.slotID,
       position: c.position,
       driverName: c.driverName || `#${c.carNumber ?? c.slotID}`,
@@ -1474,6 +1500,8 @@ export class LmuRestProvider implements TelemetryProvider {
       carClass: normalizeClass(c.carClass),
       manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
       driverBadge: this.driverBadgeFor(c.driverName),
+      driverRank: ranks?.driver,
+      safetyRank: ranks?.safety,
       gridPosition:
         typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
@@ -1494,7 +1522,8 @@ export class LmuRestProvider implements TelemetryProvider {
         typeof c.veFraction === 'number' && c.veFraction > 0 ? clamp01(c.veFraction) : undefined,
       // Highlight the car currently in broadcast focus.
       isPlayer: c.slotID === focusId,
-    }));
+      };
+    });
     rows.sort((a, b) => a.position - b.position);
     assignClassPositions(rows);
     return rows;
@@ -1583,6 +1612,7 @@ export class LmuRestProvider implements TelemetryProvider {
       const carClass = normalizeClass(c.carClass);
       const lapsDifference = isPlayer ? 0 : (c.lapsCompleted | 0) - focusLaps;
       const inPit = isInPit(c);
+      const ranks = this.driverRanksFor(c.driverName);
       const entry: RelativeEntry = {
         slotId: c.slotID,
         position: c.position,
@@ -1591,6 +1621,8 @@ export class LmuRestProvider implements TelemetryProvider {
         carClass,
         manufacturer: c.carId ? this.manufacturerById.get(c.carId) : undefined,
         driverBadge: this.driverBadgeFor(c.driverName),
+        driverRank: ranks?.driver,
+        safetyRank: ranks?.safety,
         relativeGapSec: round2(gap),
         lapsDifference,
         inPit,

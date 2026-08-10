@@ -346,6 +346,30 @@
     return DRIVER_BADGE_LABELS[badge] || String(badge);
   }
 
+  /**
+   * Writes a DR/SR rank shield (`{rank, tier}` from the frame) into its <img>:
+   * artwork, tooltip and visibility in one guarded write, so the tower and the
+   * relative panel cannot drift on how a rank is drawn. Cached on the
+   * "<Rank><tier>" identity — a frame that changes nothing costs one string
+   * compare per badge. `kind` is "dr" or "sr": it picks the artwork set and
+   * the tooltip prefix. A malformed rank (unknown id → 404) is hidden by the
+   * img's own onerror, same as every other badge.
+   */
+  function applyRankBadge(img, cache, key, kind, rank) {
+    var id = rank && rank.rank && typeof rank.tier === "number" ? rank.rank + rank.tier : "";
+    if (cache[key] === id) return;
+    cache[key] = id;
+    if (id) {
+      img.src = "/rankbadges/" + kind + "/" + encodeURIComponent(id) + ".svg";
+      img.title =
+        (kind === "dr" ? "Driver Rating: " : "Safety Rating: ") + rank.rank + " " + rank.tier;
+      img.hidden = false;
+    } else {
+      img.removeAttribute("src");
+      img.hidden = true;
+    }
+  }
+
   /* ------------------------------------------------------------------ */
   /*  Critical-value writes + change glow                                */
   /* ------------------------------------------------------------------ */
@@ -518,6 +542,7 @@
     classAbbrev: classAbbrev,
     classLabel: classLabel,
     driverBadgeLabel: driverBadgeLabel,
+    applyRankBadge: applyRankBadge,
     // …and likewise for the consequence indicator, which the Track Limits
     // widget and the MFD both announce.
     consequenceMs: CONSEQUENCE_MS,

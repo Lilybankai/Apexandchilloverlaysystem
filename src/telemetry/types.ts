@@ -1052,6 +1052,17 @@ export interface StandingEntry {
    * show a badge.
    */
   driverBadge?: string;
+  /**
+   * The driver's **Driver Rating** rank badge (Bronze→Platinum + tier 0..3) —
+   * the shield LMU's lobby shows beside every driver. From the game's online
+   * service via `telemetry/raceosRanks`; only ever set for connected human
+   * players in an online session, and omitted entirely when the service is
+   * unreachable (the widgets then render exactly the pre-badge row). Artwork
+   * ships with the overlay at `/rankbadges/dr/<Rank><tier>.svg`.
+   */
+  driverRank?: { rank: string; tier: number };
+  /** The **Safety Rating** rank badge — as {@link driverRank}, `sr` artwork. */
+  safetyRank?: { rank: string; tier: number };
   /** `true` for the player's own row (for highlight). */
   isPlayer: boolean;
 }
@@ -1083,6 +1094,10 @@ export interface RelativeEntry {
    * drives the badge beside the name, served at `/driverbadges/<badge>.svg`.
    */
   driverBadge?: string;
+  /** Driver Rating rank badge, as on {@link StandingEntry.driverRank}. */
+  driverRank?: { rank: string; tier: number };
+  /** Safety Rating rank badge, as on {@link StandingEntry.safetyRank}. */
+  safetyRank?: { rank: string; tier: number };
   /**
    * Signed on-track time gap to the player in seconds.
    * Positive = ahead of the player, negative = behind. `0` for the player row.

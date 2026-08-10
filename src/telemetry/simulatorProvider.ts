@@ -316,6 +316,10 @@ interface SimCar {
   pitStops: number;
   /** Profile badge, as on {@link StandingEntry.driverBadge}; most cars none. */
   driverBadge?: string;
+  /** DR rank badge, as on {@link StandingEntry.driverRank}. */
+  driverRank?: { rank: string; tier: number };
+  /** SR rank badge, as on {@link StandingEntry.safetyRank}. */
+  safetyRank?: { rank: string; tier: number };
 }
 
 /**
@@ -336,6 +340,27 @@ const SIM_BADGES: Array<string | undefined> = [
   'sr-warning',
   undefined,
   undefined,
+];
+
+/**
+ * DR/SR rank badges for the demo grid — every car gets both, because on a real
+ * server every human carries both (the live shape verified 2026-08-10: 21/21
+ * drivers resolved). Spread across the whole Bronze→Platinum range so the
+ * artwork set is exercised.
+ */
+const SIM_RANKS: Array<{ dr: [string, number]; sr: [string, number] }> = [
+  { dr: ['Bronze', 3], sr: ['Gold', 1] },
+  { dr: ['Silver', 1], sr: ['Platinum', 3] },
+  { dr: ['Gold', 2], sr: ['Silver', 2] },
+  { dr: ['Bronze', 1], sr: ['Bronze', 0] },
+  { dr: ['Platinum', 1], sr: ['Platinum', 2] },
+  { dr: ['Silver', 2], sr: ['Gold', 3] },
+  { dr: ['Bronze', 3], sr: ['Silver', 1] },
+  { dr: ['Gold', 1], sr: ['Gold', 2] },
+  { dr: ['Silver', 3], sr: ['Platinum', 1] },
+  { dr: ['Bronze', 2], sr: ['Gold', 1] },
+  { dr: ['Platinum', 2], sr: ['Platinum', 3] },
+  { dr: ['Silver', 1], sr: ['Silver', 3] },
 ];
 
 /* ------------------------------ the provider ------------------------------ */
@@ -397,6 +422,7 @@ export class SimulatorProvider implements TelemetryProvider {
       // Pace = the car's class offset, plus a small within-class spread so the
       // order inside a class still moves around, plus per-car noise.
       const cls = classOf[i] ?? { name: 'GT3', lapOffsetSec: 11 };
+      const simRank = SIM_RANKS[i % SIM_RANKS.length]!;
       const paceOffset = cls.lapOffsetSec + (WITHIN_CLASS_SPREAD[i % 4] ?? 0) + jitter(0.15);
       // Spread the field around the lap in START_ORDER, so the on-track order is
       // a mixed-class grid rather than every class in a block.
@@ -419,6 +445,8 @@ export class SimulatorProvider implements TelemetryProvider {
         inPit: false,
         pitStops: 0,
         driverBadge: SIM_BADGES[i % SIM_BADGES.length],
+        driverRank: { rank: simRank.dr[0], tier: simRank.dr[1] },
+        safetyRank: { rank: simRank.sr[0], tier: simRank.sr[1] },
       });
     }
     this.started = true;
@@ -1488,6 +1516,8 @@ export class SimulatorProvider implements TelemetryProvider {
         carNumber: car.carNumber,
         carClass: car.carClass,
         driverBadge: car.driverBadge,
+        driverRank: car.driverRank,
+        safetyRank: car.safetyRank,
         virtualEnergy: round2(car.virtualEnergy),
         gapToLeaderSec: lapsBehind >= 1 ? UNKNOWN_VALUE : behindTotal * refLap,
         gapToAheadSec: Math.max(0, gapToAheadSec),
@@ -1539,6 +1569,8 @@ export class SimulatorProvider implements TelemetryProvider {
         carNumber: car.carNumber,
         carClass: car.carClass,
         driverBadge: car.driverBadge,
+        driverRank: car.driverRank,
+        safetyRank: car.safetyRank,
         relativeGapSec: Math.round(gapSec * 100) / 100,
         lapsDifference,
         inPit: car.inPit,

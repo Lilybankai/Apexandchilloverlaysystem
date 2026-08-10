@@ -565,6 +565,26 @@
   vertical-align: middle;
   object-fit: contain;
 }
+/* DR/SR rank plaques (Bronze→Platinum), drawn as a tight pair in the game's
+   lobby order. The artwork is a WIDE two-panel plaque (112×52 — rank mark on
+   the left, tier on the right), so the height is fixed and the width rides the
+   native ratio; forcing a square crushed it to an unreadable strip. 3px
+   between the pair but the full 5px gutter before the name, so the two read
+   as one rating block rather than two more icons in a row of icons. */
+.standings__rank,
+.relative__rank {
+  display: inline-block;
+  height: 1.05em;
+  width: auto;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+.standings__rank + .standings__srbadge,
+.relative__rank + .relative__srbadge,
+.standings__rank + span,
+.relative__rank + span {
+  margin-left: 2px;
+}
 /* Pit flag — one rule for both tables, because the two are the same fact drawn
    the same way: a car that is in the pit lane and therefore not on the road.
    Amber, matching the caution sense the palette already gives --warn, on its own

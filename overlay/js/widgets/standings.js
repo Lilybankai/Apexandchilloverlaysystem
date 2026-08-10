@@ -141,10 +141,27 @@
     srBadge.onerror = function () {
       srBadge.hidden = true;
     };
+    // The Driver Rating rank plaque (Bronze→Platinum + tier). The DR plaque
+    // ONLY, not the DR+SR pair the relative panel carries: the plaques are
+    // wide (112×52 artwork) and this cell is the tower's tightest — the pair
+    // measurably cost every row half its name. The tower is the performance
+    // ladder, so the performance rating is the one that stays; the safety
+    // rating lives in the relative panel, where "who is this car next to me"
+    // is the question being asked. Same hidden-until-known contract as every
+    // badge in this cell, so an offline session or an unreachable rating
+    // service renders exactly the row it always did.
+    var drRank = document.createElement("img");
+    drRank.className = "standings__rank";
+    drRank.alt = "";
+    drRank.hidden = true;
+    drRank.onerror = function () {
+      drRank.hidden = true;
+    };
     var nameSpan = document.createElement("span");
     driverTd.appendChild(you);
     driverTd.appendChild(classDot);
     driverTd.appendChild(badge);
+    driverTd.appendChild(drRank);
     driverTd.appendChild(srBadge);
     driverTd.appendChild(nameSpan);
 
@@ -217,6 +234,7 @@
       classDot: classDot,
       badge: badge,
       srBadge: srBadge,
+      drRank: drRank,
       nameSpan: nameSpan,
       veTd: veTd,
       veBar: veBar,
@@ -1003,6 +1021,11 @@
         row.badge.hidden = true;
       }
     }
+
+    // The DR rank plaque, via the shared writer (see client.js). DR only in
+    // the tower — see createRow for why the SR half of the pair lives in the
+    // relative panel instead.
+    ctx.applyRankBadge(row.drRank, row.cache, "drRank", "dr", e.driverRank);
 
     // Driver profile badge, same contract as the brand badge above. The badge
     // artwork ships with the overlay (overlay/driverbadges/), so the src is a

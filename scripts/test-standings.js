@@ -174,7 +174,26 @@ function mount(search) {
       if (onStandings) onStandings(view);
     },
     update: (standings) =>
-      widget.update({ standings, session: {}, player: {} }, { fmt }),
+      widget.update({ standings, session: {}, player: {} }, {
+        fmt,
+        // Faithful copies of client.js's badge helpers, so rows carrying
+        // driverBadge / driverRank fields render instead of throwing — and so
+        // an assertion can read the src the widget actually wrote.
+        driverBadgeLabel: (b) => b || '',
+        applyRankBadge: (img, cache, key, kind, rank) => {
+          const id =
+            rank && rank.rank && typeof rank.tier === 'number' ? rank.rank + rank.tier : '';
+          if (cache[key] === id) return;
+          cache[key] = id;
+          if (id) {
+            img.src = `/rankbadges/${kind}/${id}.svg`;
+            img.hidden = false;
+          } else {
+            img.removeAttribute('src');
+            img.hidden = true;
+          }
+        },
+      }),
     /**
      * Car numbers currently in the tower, in the order drawn — read out of the
      * driver cell the panel actually renders ("#19 D. 19"), not from any hook

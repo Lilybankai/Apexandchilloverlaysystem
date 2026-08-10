@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.66.0 — 2026-08-10
+
+### Added
+
+- **Every driver's rating badges, live in the panels.** The Bronze→Platinum
+  rank plaques from the game's lobby — Driver Rating and Safety Rating, tier
+  and all — now appear beside the names of every connected driver in an online
+  session. The relative panel carries the full pair (DR then SR, the lobby's
+  order), because "who is this car alongside me and how do they drive" is
+  exactly what that panel is for. The standings tower carries the DR plaque
+  alone: the pair measurably cost every row half its driver name, and the
+  tower is the performance ladder, so the performance rating is the one that
+  earns the space. Hover either plaque for the full reading.
+
+  How it works, plainly: the ranks live behind the game's own online service,
+  not in anything it publishes on your PC — so the overlay signs in exactly the
+  way the game's lobby does, using the same Steam ticket your running game
+  already hands out, and asks for the drivers in your session by name. Only
+  ranks come back (the service keeps everyone's actual rating numbers private
+  to their owner, which is why the panels show shields and not numbers — there
+  are no numbers to show). Nothing is stored, nothing extra is sent, and if
+  the service is unreachable — or a driver has no racecontrol account — those
+  badges simply don't appear and the rows render exactly as they did before.
+  AI drivers never get a badge: ranks are only looked up for the humans the
+  server lists as connected, so a roster name can never wear a real person's
+  shield.
+
 ## 0.65.2 — 2026-08-10
 
 ### Changed
