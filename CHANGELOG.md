@@ -1,449 +1,168 @@
 # Changelog
 
-## 0.64.0-beta.15 — 2026-08-08
+## 0.64.0 — 2026-08-10
+
+The release the Speedo becomes an instrument cluster, the Hypercar's own
+controls arrive on the MFD, and a pit request finally works whichever button
+you press it with.
 
 ### Added
 
-- **Aid changes show under the gear.** Step traction control, brake bias, TC
-  slip, TC power cut or ABS — in the MFD or on a wheel button — and the new
-  setting pops under the gear glyph for a few seconds ("TC 9/11", "BIAS
-  56.5:43.5"), in the same short labels the chin chips use. The press gets its
-  acknowledgement in the middle of the cluster, without the MFD widget on
-  screen and without moving your eyes off the road. Latest change wins: work a
-  control through three steps and the pop shows where you landed, not the
-  journey.
-- **The pit limiter turns the whole cluster purple.** The limiter is the most
-  expensive thing to forget on a car, and it had one small cyan chip in the
-  chin to its name. With the limiter on, the cluster's illumination now holds
-  full-height Apex purple — the same wash the revs paint green through red, in
-  a colour the rev range can never produce — so the state is unmissable in
-  peripheral vision, exactly where a driver leaving the pit lane is not
-  looking. The rev bars keep showing the revs; the chip still lights.
-
-### Changed
-
-- **The Fuel Planner is offline while it is rebuilt.** The widget now shows a
-  REBUILDING banner instead of its numbers. The panel stays in saved layouts —
-  it says why it is empty and will come back in place when the rebuild ships.
-
-## 0.64.0-beta.14 — 2026-08-08
-
-### Fixed
-
-- **The cluster's chip strip is readable now.** LIMITER, REGEN, TC and the rest
-  were drawn at 11px *before* being scaled down with the cluster — on a
-  600px-wide cluster they came out under 7px, a row of smudges on the one
-  widget built on the argument that text you cannot read at speed is not a
-  reading. The chips now match the budget labels for size, and the chin is
-  drawn wider so all six still fit.
-- **FUEL, ENERGY, PROJECTED and BATTERY stay in their wells, off the rev
-  bars.** Dragging the cluster's bottom edge in the overlay editor squashed the
-  drawn silhouette into the middle of the box — but the readouts kept spreading
-  across the full width, sliding the budget columns outboard until "FUEL" was
-  printed over a lit green rev bar. The readouts are now placed through the
-  same transform the artwork is drawn with, so they sit on the silhouette at
-  any shape you drag the widget to — and their text scales with the artwork,
-  not the box.
-
-## 0.64.0-beta.13 — 2026-08-08
-
-### Fixed
-
-- **Brake migration reads as a percentage again, at every step.** It was
-  dropping to a bare "5/5" as soon as you touched it — the right setting in the
-  wrong units, next to a car showing "1.0% F". The game only publishes the
-  wording for one step and never updates it once you change the control in the
-  car, so the row had nothing to show. It now works the percentage out from the
-  game's own figure and steps it in half-points down to disabled, matching the
-  in-car MFD exactly. On a car whose migration works in different increments it
-  goes back to showing the step number rather than a figure it cannot stand
-  behind.
-- **Brake migration's `+` goes back to increasing the percentage.** It was
-  swapped last beta after being reported as stepping the wrong way. The press
-  was always right — the row beside it was showing a raw step number that counts
-  the opposite way to the percentage, so a press taking 1.5% up to 2.0% appeared
-  as "1.5% F" turning into "1/5". With the percentage showing properly, `+`
-  raises the number you are looking at.
-- **Regen no longer shows a figure it cannot see.** It was reporting 200kW on a
-  car wound down to zero — the worst possible moment to be wrong. Regen is the
-  one control the game publishes no live value for anywhere; the number the
-  overlay had was the setup figure, correct until the first change and wrong
-  from then on. The row now shows a dash once anything has moved it, and gets a
-  real number back when you next visit the garage. The + and − still work: it is
-  the reading that was unreliable, not the control.
-
-## 0.64.0-beta.12 — 2026-08-08
-
-### Fixed
-
-- **Brake migration was stepping the wrong way.** `+` moved it forward, to match
-  the brake bias row above it. They are not the same kind of control — bias is a
-  position, migration is how far the bias is allowed to travel as you slow — and
-  the game counts migration up as it goes rearward. `+` now agrees with the car.
-- **The MFD cursor no longer stops on a row that isn't there.** Scrolling the
-  rows landed on an invisible entry between TC Power Cut and Motor Map, where
-  + and − did nothing. It was ABS: a Hypercar, LMP2 and LMP3 don't have it, so
-  the widget correctly stopped drawing the row — but the cursor was working from
-  the keys you have bound rather than from what the car in front of you actually
-  offers, and you have ABS bound because you also race a GT3. The cursor now
-  walks exactly the rows on screen, in the order they are on screen, so the two
-  cannot drift apart again. Nothing changes for a car that does have ABS.
-
-## 0.64.0-beta.11 — 2026-08-08
-
-### Added
-
-- **The prototype MFD rows are controls now, not just numbers.** Brake
-  migration, both anti-roll bars and regen were showing you a live reading with
-  no + and − beside them, so they could be watched and not touched. They are the
-  rows only a Hypercar, LMP2 or LMP3 has — a GT3 never shows them — which is why
-  the gap only turned up on the cars that actually have the controls. All four
-  now step from the widget, from a wheel button, or from the MFD cursor's
-  ▲ ▼ + −, exactly like traction control and ABS already did.
-
-  **This needs the keys writing once.** Open the LMU bindings section of the
-  control panel with **Le Mans Ultimate closed** and press Apply — eight new
-  rows are waiting there — then start the game so it picks them up. The game
-  rewrites its own key config when it exits, so a write made while it is running
-  would be thrown away; the app refuses to write in that state rather than let
-  you think it worked.
-
-  Two things worth knowing. Brake migration's **forward** direction is the `+`,
-  matching brake bias directly above it — if your car steps the other way, say
-  so and it is a one-line change. And **regen** is the only one of the four
-  whose reading cannot confirm its own press: the game publishes no live value
-  for it anywhere, so the number comes from a slower source and can lag by a
-  couple of seconds or sit on a setup value. The press itself lands immediately.
-
-## 0.64.0-beta.10 — 2026-08-08
-
-### Fixed
-
-- **The Speedo cluster's background slider now does something.** Moving it left
-  or right changed nothing about the cluster itself — the only visible effect
-  was the fuel, projected and battery text getting brighter or dimmer, which
-  made a background control look like a mislabelled text one. The cluster is the
-  one widget that draws its own bezel, wells and hood rather than using a normal
-  panel background, and that drawing was ignoring the setting outright. The
-  whole background now fades with the slider, down to nothing at 0% — where the
-  speed, gear, budgets and rev bars are left floating over the game, exactly
-  what that slider does on every other widget. The rev illumination stays at
-  full strength whatever you set: it is the shift cue, not background.
-- **What's New would have been empty for this very release.** Beta numbers were
-  being sorted as text rather than as numbers, so "beta.10" counted as older
-  than "beta.9" — the first two-digit beta this app has cut. Everyone updating
-  from the last beta would have opened the app to a What's New panel with
-  nothing in it. Fixed, with the ordering now done the way version numbers
-  actually work.
-- **The rev colours are no longer brown through the middle or pink at the top.**
-  The wash that rises up the cluster with the revs took a muddy route from green
-  to amber, and at the partial brightness it is drawn at, that middle stretch —
-  where you spend most of a lap — came out brown. It now passes through yellow
-  and reads as gold. At the top of the range it was reaching for the same pink
-  the lap-delta uses, which is a colour chosen for small text on a dark row and
-  is not a shift light; the red band is now an actual red, on the wash, on the
-  bars, and on the frame around the gear.
-
-### Changed
-
-- **KPH sits centred above the speed** instead of hanging off the last digit,
-  where it slid sideways every time you crossed a hundred and the eye had to
-  find the number again.
-- **The current gear is larger** — roughly a third bigger, sized as a headline
-  readout alongside the speed rather than a caption underneath it.
-
-## 0.64.0-beta.9 — 2026-08-08
-
-### Changed
-
-- **The radar and the track map are separate widgets again.** The last beta put
-  them inside the Speedo cluster, and that turned out to cost more than it was
-  worth: with them nested you could have the cluster **or** a standalone radar,
-  never both, because only one copy of each can be live at a time. Rather than
-  leave you with that choice, they have gone back to being their own widgets —
-  placed wherever you like, switched on and off independently in the Overlays
-  list, exactly as they were before beta.8. Nothing about how they look or work
-  has changed.
-- **The cluster's two pods now carry the four budgets, at a size worth reading.**
-  Fuel and energy on the left, projected lap and the hybrid battery on the
-  right — each with its "≈ n laps" line, which was being clipped when the four
-  were squeezed into a strip along the bottom. That line is the half of a fuel
-  read you actually plan around, so it gets the room. The numbers are roughly
-  two-thirds larger than in the last beta.
-
-### Fixed
-
-- **The Speedo no longer stutters near the shift point.** It was getting more
-  expensive to draw the closer you were to the limiter — the exact moment it
-  exists to be read — because of how the glow on the rev bars was being
-  produced. Everything that does not change with the revs is now drawn once and
-  reused, the glow is done a cheaper way, and a frame where nothing has moved is
-  skipped entirely. If the radar or the track map felt choppy alongside the
-  cluster, that was very likely the same cause and should be gone with it.
-- **The track map no longer goes blank for good when you change its style.**
-  Switching between the classic and brand looks could stop the map dead for the
-  rest of the session, needing a restart to bring it back. A second, rarer
-  version of the same fault — triggered by resizing the widget — is fixed too.
-
-## 0.64.0-beta.8 — 2026-08-08
-
-### Changed
-
-- **The Speedo is now a full instrument cluster.** It has grown a drawn
-  surround with two rev bars that start at the bottom outer corners, climb the
-  outer edges and meet head-on just above the speed — flashing white together
-  at the moment you should be pulling the next gear. Two things arriving at one
-  point catch the eye in a way a bar filling up never did, and they do it while
-  you are still looking at the braking zone. Nothing about *when* they light has
-  changed: green while there is room, amber, red, and the flash on the limiter,
-  all measured against your own car's rev limit — so a Hypercar and a GT3 still
-  light up at the same point in their own range.
-- **The radar and the track map now sit inside the cluster**, in a pod either
-  side of the speed. They are the same widgets you already had — same scale,
-  same learned circuit, same everything — just framed. The panel still lights
-  up from the floor as the revs rise, and now keeps that light out of the two
-  pods, so a car alongside you can never be tinted red by your own rev counter.
-- **The cluster has no title bar.** It draws its own bezel, and a "Speedo"
-  caption sitting above it read as a mistake.
-
-### Worth knowing before you update
-
-- The cluster is **wider than the old Speedo panel and keeps a fixed shape**, so
-  it will need dragging back into place once in the in-game editor. Drag a
-  corner to size it — the whole thing scales together, text included, so there
-  is only one dimension to get right.
-- While the cluster is on screen it **owns** the radar and the track map, and
-  those two are no longer placed separately in the in-game layer. If you would
-  rather position them yourself, turn the Speedo off.
-
-## 0.64.0-beta.7 — 2026-08-08
-
-### Changed
-
-- **Pit-request confirmations live in the Race Control bar now.** Instead of a
-  floating pop-up, the Race Control widget shows a steady green
-  **PIT REQUESTED** while the sim says a stop is booked — whoever booked it,
-  the game's own bind included — and flashes an amber **PIT REQUEST
-  CANCELLED** for four seconds when it is toggled off out on track. Driving
-  into the lane consumes the request quietly (the existing PIT ENTRY countdown
-  takes over inside 900 m), and the cancelled flash never sits over a limiter
-  warning. The *Pit request: YES/NO* pop-up is gone; the red failure notice
-  still appears when a press achieved nothing.
-
-### Fixed
-
-- **The MFD row's "not bound" message now names the fix.** Stepping the
-  PIT REQUEST row without a usable key used to point at a developer script;
-  it now points at **Settings → LMU controls → Apply** like everywhere else.
-
-## 0.64.0-beta.6 — 2026-08-07
-
-### Fixed
-
-- **No more false alarm when the game itself books your stop.** If your
-  pit-request button is bound in both places — LMU's own controls *and*
-  Apex — every press worked (LMU handled it) but still flashed the red
-  *"Pit Request" is not bound to a KEY* notice, because Apex's half of the
-  press had nothing to press. Apex now waits a beat and checks the sim's own
-  request flag first: if it moved, your press did exactly what you meant and
-  you get the quiet *Pit request: YES* confirmation instead of an error. The
-  red notice still appears when nothing happened at all — which is when you
-  actually need it.
-
-## 0.64.0-beta.5 — 2026-08-07
-
-### Changed
-
-- **The PIT REQUEST row now reads the sim, not its own memory.** It turns out
-  LMU publishes the pit request on its standings feed — found by watching the
-  feed live while the button was pressed. The row on the MFD widget now shows
-  that reading directly: book a stop with the game's **own** wheel bind,
-  Apex's bound button, or the row itself, and it flips to **YES** either way —
-  and flips back when the game cancels it (LMU treats the request as a
-  toggle, so two presses book it and un-book it). Previously the row only
-  knew about presses made through Apex, which is why a button bound inside
-  LMU never moved it.
-
-  One reminder that falls out of this: keep the request on **one** binding —
-  either LMU's own controller bind *or* Apex's — because the same physical
-  button bound in both places will toggle the request twice per press once
-  both paths work.
-
-## 0.64.0-beta.4 — 2026-08-07
-
-### Fixed
-
-- **Wheel buttons no longer go dead until you press "Scan".** If Apex started
-  before your wheel was ready — a boot-with-Windows rig, or a base switched on
-  after the app — it never looked for the wheel again, so every wheel binding
-  silently did nothing. The MFD controls were the obvious casualty: ▲ ▼ + −
-  on the wheel did nothing at all, and the only cure was the **Scan** button
-  buried in Settings → Bindings. Apex now looks again by itself, both when it
-  finds no wheel at startup and when a wheel disappears mid-session (a base
-  power-cycled between sessions used to kill the bindings for the rest of the
-  night). Plug a wheel in while Apex is running and it's usable within a couple
-  of seconds. The **Scan** button still does the same thing on demand.
-
-- **A bound button that can't do its job now says so, on screen.** Press your
-  pit-request button and nothing happens — no message, no change on the MFD —
-  and the button reads as dead. It wasn't: the action was failing quietly, and
-  the reason only went to a log nobody has open while driving. Any bound
-  button whose action fails now puts the reason over the sim in a small notice
-  — for a pit request that's almost always *"Pit Request" is not bound to a
-  KEY in LMU*, which the **LMU controls** card in Settings fixes in one click
-  (with the game closed).
-
-- **Requesting a pit stop now shows on the MFD widget.** A press that lands
-  flips the **PIT REQUEST** row to YES (and back — LMU treats the key as a
-  toggle), and a small *Pit request: YES* notice appears over the sim, so the
-  press is confirmed even when the MFD widget isn't on screen. Previously the
-  row only moved when it was changed through the widget itself, so a wheel
-  button or the Serve stop/go flow left it stuck on NO.
-
-## 0.64.0-beta.3 — 2026-08-07
-
-### Added
-
-- **A battery icon that lights up under regen.** The hybrid charge was a plain
-  horizontal bar; it is now a proper battery glyph — cell outline, terminal nub,
-  filling with charge — and **the whole cell goes green and blooms whenever
-  charge is flowing back in**.
-
-  The chip and the label already said REGEN, but neither survives being glanced
-  at for a fifth of a second over live footage. A battery that visibly lights up
-  does, which is the same argument the rev illumination is built on. It breathes
-  rather than blinks, because regen lasts as long as the braking zone and a hard
-  flash for that long is an irritation on a panel you are trying to read past;
-  under `prefers-reduced-motion` it becomes a flat green tint with no movement,
-  the same contract the change glow uses.
-
-  The icon scales with the **Text size** slider like every readout beside it.
-
-### Fixed
-
-- **A guard against CSS that quietly stops matching.** Two bugs in this feature
-  were stylesheet rules that parsed fine, validated fine and simply targeted
-  nothing — one from a `display` override, one from a renamed class. Neither
-  errors, neither shows up in a screenshot of a car that happens to have every
-  channel, and both cost a readout. Every `.speedo__*` class the stylesheet
-  targets is now asserted to exist in the markup that builds it.
-
-## 0.64.0-beta.2 — 2026-08-07
-
-### Fixed
-
-- **The battery gauge never appeared, and the offset it was reading was wrong.**
-  The beta.1 notes flagged that the hybrid channel had been derived from the
-  struct layout rather than watched moving on a real car. It has now been watched,
-  and it was wrong by exactly one double: LMU carries eight bytes there that the
-  stock rF2 layout does not, so the overlay was reading a field that sits at a
-  hard `0.000` on a Hypercar at any speed — indistinguishable from a car with no
-  hybrid at all, which is why the gauge simply never showed up.
-
-  The corrected block was confirmed against a moving GR010, and not by one
-  channel agreeing but by five: the charge rises **while the brake is applied**
-  and stays inside 0–1, the motor torque reads −177 Nm on the brakes and ~0
-  coasting, the motor RPM tracks road speed, two plausible temperatures follow
-  it, and the state byte flips the moment regen engages. `npm run` the probe
-  (`node scripts/probe-lmu-hybrid.js`) to reproduce it.
-
-  The guards are what made this a non-event rather than a wrong number on screen:
-  a charge outside 0–1 is discarded, and the block is only published once a car
-  has shown a non-zero one. A bad offset produced *no gauge*, never a false one.
-
-- **Optional readouts were not actually being hidden.** The battery, virtual
-  energy and aid chips are meant to disappear on a car or feed that does not have
-  them — an empty gauge is a claim, no gauge is not. `display: flex` on the stat
-  block silently outranked the browser's own `[hidden]` rule, so instead of
-  vanishing they rendered as a label over a dash. Caught on a live Hypercar whose
-  battery was legitimately absent and which showed "BATTERY —" anyway. Now
-  covered by a test, because the bug is invisible to both the JS and a screenshot
-  of a car that happens to have every channel.
-
-### Added
-
-- **Regen, front ARB, rear ARB and brake migration in the MFD's driving aids.**
-  All four are Hypercar controls, and they appear only on a car that offers them.
-  Three are read **live from shared memory** at offsets confirmed by correlating
-  the driven car's record against the sim's own garage data — every value *and*
-  every maximum matching across eight independent aid pairs at once.
-
-  Regen is the exception and is worth knowing about: it is **not in the telemetry
-  buffer at all** — a scan of the whole record found nothing matching what the sim
-  was simultaneously reporting — so it comes from the garage endpoint instead.
-  That endpoint can lag what is on the wheel, so treat the regen row as usually
-  right rather than instantaneous. Everything else on that section is live.
-
-  Where the sim has its own word for a setting, that is now what is shown —
-  `200kW`, `P6`, `1.5% F` — rather than a raw step index. The index is still the
-  fallback when the two sources disagree about which step they are describing,
-  because a confident label on the wrong setting is worse than a number.
-
-- **A regen readout on the Speedo cluster.** A `REGEN` chip carrying the selected
-  level, lit **green** whenever charge is actually flowing back in — green because
-  it is the one indicator on that panel reporting something going the driver's
-  way; every other lit chip is a system taking something away. The battery bar
-  turns green with it, and the label under it reads `▼ REGEN` rather than
-  `▼ HARVEST`, which is the word on the driver's own wheel.
-
-- **`scripts/probe-lmu-aids.js`** — every driving aid, shared memory against the
-  garage endpoint, side by side with a disagreement flag. This is how the offsets
-  get re-checked after an LMU update, and how to tell whether a given control is
-  live or a setup value.
-
-## 0.64.0-beta.1 — 2026-08-07
-
-### Added
-
-- **Speedo cluster — the panel lights up with the revs.** One widget carrying
-  everything you read on a straight: speed and gear big in the middle, a
-  segmented rev bar across the top, and the four budgets around them — fuel and
-  virtual energy on the left, projected lap and the hybrid battery on the right,
-  with a chip strip for the pit limiter, TC (plus its power-cut and slip
-  sub-settings) and ABS.
-
-  The headline is the **background illumination**: the panel fills from the floor
-  upward as the revs rise, green through amber to red, and flashes at the
-  limiter. That is the whole reason the widget exists. A rev counter you have to
-  focus on is useless at 300 km/h — the shift point has to be readable with your
-  eyes still on the braking zone, and a panel that turns red underneath you is.
+- **The Speedo is now a full instrument cluster, and it lights up with the
+  revs.** One widget carrying everything you read on a straight: speed and gear
+  big in the middle, the four budgets in a pod either side — fuel and virtual
+  energy on the left, projected lap and the hybrid battery on the right, each
+  with its "≈ n laps" line — and a chip strip along the chin for the pit
+  limiter, TC (with its power-cut and slip sub-settings), ABS and regen.
+
+  The headline is the **illumination**. Two rev bars start at the bottom outer
+  corners, climb the outer edges and meet head-on just above the speed, and the
+  panel itself fills from the floor upward as the revs rise — green, through
+  gold, into red, with both bars flashing white together at the moment to pull
+  the next gear. A rev counter you have to focus on is useless at 300 km/h; the
+  shift point has to be readable with your eyes still on the braking zone, and a
+  panel that turns red underneath you is. Two things arriving at one point catch
+  the eye in a way a bar filling up never did.
 
   The bands are fractions of your **own** car's rev limit, which is what lets one
   widget serve the whole field: a Hypercar at 9000 and a GT3 at 7200 go amber,
   red and shift at the same point in their own range.
 
   The battery is the Hypercar's ERS charge — the one that empties down a straight
-  and comes back under braking. It is deliberately kept apart from virtual
-  energy, which is the stint allowance that only goes down; showing one where the
-  other was meant would have a driver lifting to save something that recharges
-  itself. An arrow says which way it is flowing: ▲ DEPLOY or ▼ HARVEST.
+  and comes back under braking — drawn as a proper battery glyph that **goes
+  green and blooms whenever charge is flowing back in**. It is deliberately kept
+  apart from virtual energy, which is the stint allowance that only ever goes
+  down; showing one where the other was meant would have a driver lifting to save
+  something that recharges itself. An arrow says which way it is flowing:
+  ▲ DEPLOY or ▼ REGEN.
 
-  Three readouts are hidden rather than shown empty when your car or the feed
-  does not have them — the battery on anything without a hybrid, virtual energy
-  on a class with no energy budget, the TC chips outside LMU. An empty gauge is a
-  claim; no gauge is not.
+  Readouts your car or the feed does not have are hidden rather than shown empty
+  — the battery on anything without a hybrid, virtual energy on a class with no
+  energy budget, the TC chips outside LMU. An empty gauge is a claim; no gauge is
+  not. Speed follows the app's kph/mph setting like every other panel, so the
+  cluster and the pedal traces can never disagree.
 
-  Speed follows the app's kph/mph setting like every other panel, so the cluster
-  and the pedal traces can never disagree.
+- **Aid changes pop under the gear.** Step traction control, brake bias, TC slip,
+  TC power cut or ABS — in the MFD or on a wheel button — and the new setting
+  appears under the gear glyph for a few seconds ("TC 9/11", "BIAS 56.5:43.5").
+  The press gets its acknowledgement in the middle of the cluster, without the
+  MFD widget on screen and without moving your eyes off the road. Latest change
+  wins: work a control through three steps and the pop shows where you landed,
+  not the journey.
 
-  **Beta note.** The battery is read from a shared-memory offset that was derived
-  from the struct layout rather than watched moving on a real car — every
-  neighbour on both sides is verified, but the field itself is not yet. If your
-  Hypercar shows no battery gauge, or a GT3 shows one, that is the thing to
-  report. `node scripts/probe-lmu-hybrid.js` prints a verdict from a lap.
+- **The pit limiter turns the whole cluster purple.** The limiter is the most
+  expensive thing to forget on a car, and it had one small cyan chip to its name.
+  With the limiter on, the cluster's illumination now holds full-height Apex
+  purple — a colour the rev range can never produce — so the state is unmissable
+  in peripheral vision, exactly where a driver leaving the pit lane is not
+  looking. The rev bars keep showing the revs; the chip still lights.
+
+- **The prototype driving aids arrive on the MFD, as controls.** Regen, front
+  anti-roll bar, rear anti-roll bar and brake migration — the rows only a
+  Hypercar, LMP2 or LMP3 has, which is why a GT3 never shows them. All four read
+  live and all four step from the widget, from a wheel button, or from the MFD
+  cursor's ▲ ▼ + −, exactly like traction control and ABS already did. Brake
+  migration reads as the percentage the in-car MFD shows, not a raw step index,
+  and its `+` raises the number you are looking at.
+
+  **This needs the keys writing once.** Open the LMU bindings section of the
+  control panel with **Le Mans Ultimate closed** and press Apply — eight new rows
+  are waiting there — then start the game so it picks them up. The game rewrites
+  its own key config when it exits, so a write made while it is running would be
+  thrown away; the app refuses to write in that state rather than let you think
+  it worked.
+
+  One row behaves differently and it is worth knowing why. **Regen is the only
+  control the game publishes no live value for anywhere.** Its number comes from
+  the garage, which is right until you change it and then stale — so the row shows
+  a dash once anything has moved it, rather than a figure it cannot stand behind,
+  and gets a real number back next time you visit the garage. The + and − work
+  normally; it is the reading that is unreliable, not the control.
+
+- **Settings are shown in the sim's own words** where it has one — `200kW`, `P6`,
+  `1.5% F` — rather than a step index. The index is still the fallback when the
+  two sources disagree about which step they are describing, because a confident
+  label on the wrong setting is worse than a number.
+
+### Changed
+
+- **The PIT REQUEST row reads the sim, not its own memory.** LMU publishes the
+  pit request on its standings feed, and the MFD row now shows that reading
+  directly: book a stop with the game's **own** wheel bind, with Apex's bound
+  button, or from the row itself, and it flips to **YES** either way — and flips
+  back when the game cancels it, since LMU treats the request as a toggle.
+  Previously the row only knew about presses made through Apex, which is why a
+  button bound inside LMU never moved it.
+
+  One reminder falls out of this: keep the request on **one** binding — either
+  LMU's own controller bind *or* Apex's — because the same physical button bound
+  in both places will now toggle the request twice per press.
+
+- **Pit-request confirmations live in the Race Control bar.** Instead of a
+  floating pop-up, Race Control shows a steady green **PIT REQUESTED** while the
+  sim says a stop is booked — whoever booked it — and flashes an amber **PIT
+  REQUEST CANCELLED** for four seconds when it is toggled off out on track.
+  Driving into the lane consumes the request quietly, with the existing PIT ENTRY
+  countdown taking over inside 900 m, and the cancelled flash never sits over a
+  limiter warning. The red failure notice still appears when a press achieved
+  nothing.
+
+- **The Fuel Planner is offline while it is rebuilt.** The widget shows a
+  REBUILDING banner instead of its numbers. It stays in saved layouts — it says
+  why it is empty and will come back in place when the rebuild ships.
 
 ### Fixed
 
-- **The demo car's revs ignored the gear**, so they sat at 8400 of 8600 whenever
-  it was flat and never sawtoothed. The Speedo's shift band was unreachable
-  without a sim running — the widget's most important state, visible only on
-  track. The revs now climb through each gear's speed band and drop on the
-  upshift, off the same table the gear indicator uses so the two cannot drift.
-- **Demo mode published no driving-aid settings at all**, so the MFD's aid
-  section and the Speedo's TC chips could only ever be seen empty. It now
-  publishes them. The pit menu stays empty on purpose: it is a read/write mirror
-  of a real menu, and fabricating rows would give the MFD buttons that write to a
-  sim that is not there.
+- **Wheel buttons no longer go dead until you press "Scan".** If Apex started
+  before your wheel was ready — a boot-with-Windows rig, or a base switched on
+  after the app — it never looked for the wheel again, so every wheel binding
+  silently did nothing. The MFD controls were the obvious casualty: ▲ ▼ + − on
+  the wheel did nothing at all, and the only cure was the **Scan** button buried
+  in Settings → Bindings. Apex now looks again by itself, both when it finds no
+  wheel at startup and when a wheel disappears mid-session — a base power-cycled
+  between sessions used to kill the bindings for the rest of the night. Plug a
+  wheel in while Apex is running and it is usable within a couple of seconds. The
+  **Scan** button still does the same thing on demand.
+
+- **A bound button that can't do its job now says so, on screen.** Press your
+  pit-request button, nothing happens, and the button reads as dead. It wasn't:
+  the action was failing quietly and the reason only went to a log nobody has
+  open while driving. Any bound button whose action fails now puts the reason
+  over the sim in a small notice — for a pit request that is almost always
+  *"Pit Request" is not bound to a KEY in LMU*, which the **LMU controls** card in
+  Settings fixes in one click with the game closed. And when your button is bound
+  in *both* places, Apex checks the sim's own request flag before crying wolf, so
+  a press the game handled gets a quiet confirmation rather than a red error.
+
+- **The track map no longer goes blank for good when you change its style.**
+  Switching between the classic and brand looks could stop the map dead for the
+  rest of the session, needing a restart to bring it back. A second, rarer version
+  of the same fault — triggered by resizing the widget — is fixed too.
+
+- **The MFD cursor no longer stops on a row that isn't there.** Scrolling the rows
+  could land on an invisible entry where + and − did nothing. It was ABS: a
+  Hypercar, LMP2 and LMP3 don't have it, so the widget correctly stopped drawing
+  the row — but the cursor was working from the keys you have bound rather than
+  from what the car in front of you actually offers, and you have ABS bound
+  because you also race a GT3. The cursor now walks exactly the rows on screen, in
+  the order they are on screen. Nothing changes for a car that does have ABS.
+
+- **Demo mode drives like a car again.** The demo revs ignored the gear, so they
+  sat pinned near the limiter and never sawtoothed — leaving the Speedo's shift
+  band unreachable without a sim running — and demo published no driving-aid
+  settings at all, so the MFD's aid section and the TC chips could only ever be
+  seen empty. Both fixed. The pit menu stays empty on purpose: it is a read/write
+  mirror of a real menu, and fabricating rows would give the MFD buttons that
+  write to a sim that is not there.
+
+### Worth knowing before you update
+
+- **The cluster is wider than the old Speedo panel and keeps a fixed shape**, so
+  it will need dragging back into place once in the in-game editor. Drag a corner
+  to size it — the whole thing scales together, text included, so there is only
+  one dimension to get right.
+- The radar and the track map are **still separate widgets**, placed and switched
+  on independently, exactly as they were in 0.63.1.
 
 ## 0.63.1 — 2026-08-07
 
