@@ -155,6 +155,14 @@ you press it with.
   mirror of a real menu, and fabricating rows would give the MFD buttons that
   write to a sim that is not there.
 
+- **What's New could open empty after an update.** Version numbers were compared
+  with their prerelease tag treated as one lump of text, which holds up only
+  while a beta series stays in single digits — "beta.10" counts as *older* than
+  "beta.9" that way. This release is the first with a double-digit beta behind
+  it, and anyone stepping over that boundary would have opened the app to a
+  panel with nothing in it. Numbers are now compared as numbers, in the same one
+  place the app's "have they seen this yet?" check reads.
+
 ### Worth knowing before you update
 
 - **The cluster is wider than the old Speedo panel and keeps a fixed shape**, so
