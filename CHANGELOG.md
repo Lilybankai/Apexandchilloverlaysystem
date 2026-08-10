@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.66.1 — 2026-08-10
+
+### Changed
+
+- **Minimising is just minimising now.** The notification-area icon is gone
+  entirely. Since 0.65.0 the minimise button made the panel vanish into the
+  tray overflow flyout — the little hidden-icons panel by the clock — which
+  read as the app disappearing somewhere weird rather than as a minimised app.
+  The window now behaves like every other app on the machine: minimise puts a
+  button in the taskbar, clicking it brings the panel back, closing the window
+  shuts the whole app down. Everything still runs while it is minimised — the
+  server, the in-game overlays and lap uploads never lived in that window.
+  "Launch on startup" now starts the app minimised to the taskbar.
+
 ## 0.66.0 — 2026-08-10
 
 ### Added

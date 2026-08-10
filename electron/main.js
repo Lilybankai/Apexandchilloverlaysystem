@@ -28,9 +28,6 @@ const {
   screen,
   globalShortcut,
   dialog,
-  Tray,
-  Menu,
-  nativeImage,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -333,17 +330,17 @@ function defaultSettings() {
      * looked at.
      *
      * `launchOnStartup` writes a Windows Run-key entry pointing at this exe with
-     * `--hidden`, so a boot brings the app back to the TRAY rather than throwing
-     * a window over whatever the person is doing. Off by default: an app that
-     * installs itself into someone's boot without being asked is a bad citizen.
+     * `--hidden`, so a boot starts the app MINIMISED in the taskbar rather than
+     * throwing a maximised window over whatever the person is doing. Off by
+     * default: an app that installs itself into someone's boot without being
+     * asked is a bad citizen.
      *
-     * Minimise-to-tray is NOT a setting any more. It shipped as one
-     * (`minimizeToTray`, default on) and the toggle's off position bought
-     * nothing but a taskbar button for a window whose whole job happens while
-     * nobody is looking at it — and every config where it ended up off read as
-     * "the app stopped living in the tray". The tray is now unconditional: a
-     * stored `minimizeToTray` is ignored, minimise always goes to the
-     * notification area, and nothing is throttled while hidden (see
+     * There is deliberately NO notification-area icon and NO minimise-to-tray.
+     * Both shipped in 0.65.0 and were removed on driver feedback: minimising
+     * made the window vanish into the tray overflow flyout, which reads as the
+     * app having gone somewhere weird rather than as a minimised app. The
+     * window now behaves like any other: minimise puts it in the taskbar,
+     * close quits the whole app. Nothing is throttled while minimised (see
      * createWindow's backgroundThrottling).
      */
     launchOnStartup: false,
@@ -2899,10 +2896,6 @@ function setupAutoUpdate() {
 /* -------------------------------------------------------------------------- */
 
 let mainWindow = null;
-/** The notification-area icon. Always wanted; null only if the OS refused it. */
-let tray = null;
-/** Whether this run has already explained where the window went. */
-let trayNoticeShown = false;
 
 /** Remember the address that just signed in, to prefill the field next time. */
 function rememberEmail(email) {
@@ -2929,13 +2922,7 @@ function loadPage(page) {
 }
 
 function createWindow() {
-  // `!!tray`, not a setting: the tray is always wanted, but it is a request to
-  // the OS that can fail (see ensureTray). Asking for a tray start that no icon
-  // arrived for would leave a running app with no window and nothing to click.
-  const mode = startup.initialWindowMode({
-    argv: process.argv,
-    trayAvailable: !!tray,
-  });
+  const mode = startup.initialWindowMode({ argv: process.argv });
 
   mainWindow = new BrowserWindow({
     // The Hub shell's nav carries five tabs, the mode toggle, the feed pill, the
@@ -2961,12 +2948,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // The panel keeps working while it is in the tray. Chromium throttles a
-      // hidden window's timers to once a minute, which would stall the feed
-      // watcher, the lap-sync ticks and the update poll for as long as the
-      // window is away — exactly the hours this app is meant to be minding
-      // things. The telemetry server and the in-game layer live outside this
-      // renderer and were never affected either way.
+      // The panel keeps working while it is minimised or covered. Chromium
+      // throttles an unseen window's timers to once a minute, which would
+      // stall the feed watcher, the lap-sync ticks and the update poll for as
+      // long as the window is away — exactly the hours this app is meant to be
+      // minding things. The telemetry server and the in-game layer live
+      // outside this renderer and were never affected either way.
       backgroundThrottling: false,
     },
   });
@@ -2974,26 +2961,11 @@ function createWindow() {
   mainWindow.removeMenu?.();
   loadPage(initialPage());
 
-  /*
-   * Minimise → notification area, always. This was briefly a setting
-   * (`minimizeToTray`); the off position bought nothing but a taskbar button
-   * and got reported as the app having stopped living in the tray, so the
-   * behaviour is unconditional again.
-   *
-   * NOTE the preventDefault() is a no-op: Electron fires 'minimize' after the
-   * OS has already minimized the window, so the hide() below lands on a window
-   * that is genuinely iconic — the window ends BOTH hidden and minimized. That
-   * combination is why showMainWindow must un-hide before it un-minimizes (see
-   * the ghost-window note there). Guarded on the tray actually existing:
-   * hiding a window whose only handle failed to be created would strand the
-   * app with no way back to it — with no icon, the taskbar is the right place.
-   */
-  mainWindow.on('minimize', (evt) => {
-    if (!tray) return;
-    evt.preventDefault();
-    mainWindow.hide();
-    notifyTrayOnce();
-  });
+  // There is deliberately NO 'minimize' handler here. Minimise-to-tray shipped
+  // in 0.65.0 and was removed on driver feedback: a window that vanishes into
+  // the notification-area overflow reads as the app having gone somewhere
+  // weird, not as a minimised app. Minimise now does what it does everywhere
+  // else — the window sits in the taskbar until it is clicked.
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -3002,84 +2974,34 @@ function createWindow() {
     destroyOverlayWindow();
   });
 
-  // 'tray' means this launch came from the login item with the tray available:
-  // the window is built and loaded but never shown, which is what makes opening
-  // it later instant rather than a cold start.
   if (mode === 'maximized') {
     mainWindow.maximize();
     mainWindow.show();
-  } else if (mode === 'minimized') {
+  } else {
+    // A login-item launch: on screen only as a taskbar button, maximised when
+    // the operator clicks it.
     mainWindow.maximize(); // the size it restores to when they click it
     mainWindow.minimize();
     mainWindow.show();
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Notification-area icon                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The tray is created once at startup and lives for the whole run — it is the
- * app's permanent home, not a feature with a switch. It is still destroyed
- * explicitly on quit, because on Windows a Tray that is never destroyed leaves
- * a ghost icon behind until the mouse passes over it.
- */
-function ensureTray() {
-  if (tray && !tray.isDestroyed?.()) return tray;
-  const iconPath = path.join(__dirname, 'control-panel', 'assets', 'icon.png');
-  try {
-    // Windows draws the tray at 16px; handing it the full-size app icon gets a
-    // blurry downscale, so resize it ourselves.
-    const image = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-    tray = new Tray(image.isEmpty() ? iconPath : image);
-  } catch (err) {
-    console.error('[app] tray unavailable:', err.message);
-    tray = null;
-    return null;
-  }
-  tray.setToolTip('Apex Overlay System');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open Apex Overlay System', click: () => showMainWindow() },
-      { type: 'separator' },
-      // Quit rather than "close the window": the window may be hidden, or may
-      // not exist at all on a tray-mode launch, and either way the thing being
-      // asked for is the whole app going down — server, layer and all.
-      { label: 'Quit', click: () => app.quit() },
-    ]),
-  );
-  // Windows convention: double-click the icon to get the window back. The
-  // single click belongs to the context menu.
-  tray.on('double-click', () => showMainWindow());
-  return tray;
-}
-
-function destroyTray() {
-  if (tray && !tray.isDestroyed?.()) tray.destroy();
-  tray = null;
-}
-
-/** Bring the control panel back — from the tray, a second launch, or the dock. */
+/** Bring the control panel back — from a second launch, or the macOS dock. */
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
-    // A tray-mode launch builds the window without showing it; this path is a
-    // deliberate open, so it always ends on screen.
+    // A deliberate open always ends on screen, whatever mode createWindow
+    // picked for this launch's argv.
     if (mainWindow && !mainWindow.isVisible()) {
       mainWindow.maximize();
       mainWindow.show();
     }
     return;
   }
-  // show() BEFORE restore(). A tray-hidden window on Windows is hidden AND
-  // iconic at once — the 'minimize' event fires after the OS has already
-  // minimized (its preventDefault is not honored), so hide() stacks on top of
-  // a real minimize. Calling restore() on that still-hidden window leaves a
-  // ghost: a window that reports visible and focused while the OS never
-  // re-maps it, so it paints nothing and takes no clicks. Reproduced and
-  // measured 2026-08-10 — an OS hit test at the "restored" window's own centre
-  // named a different app, in every ordering except un-hide-first.
+  // show() before restore() — harmless when the window is merely minimised,
+  // and the safe order if it is ever hidden too (a hidden window restored
+  // before being shown comes back as a ghost that paints nothing; reproduced
+  // and measured 2026-08-10 while minimise still hid to the tray).
   mainWindow.show();
   if (mainWindow.isMinimized()) mainWindow.restore();
   // A deliberate open must also end on TOP — including over a borderless
@@ -3089,25 +3011,6 @@ function showMainWindow() {
   mainWindow.setAlwaysOnTop(true);
   mainWindow.setAlwaysOnTop(false);
   mainWindow.focus();
-}
-
-/**
- * Say "it's still running, it's over here" the first time a minimise makes the
- * window vanish — once per run, because the second time it is not news. Without
- * it, the first minimise reads as the app having quit.
- */
-function notifyTrayOnce() {
-  if (trayNoticeShown || !tray) return;
-  trayNoticeShown = true;
-  try {
-    tray.displayBalloon?.({
-      title: 'Apex Overlay System is still running',
-      content: 'The overlays keep working. Double-click this icon to open the panel again.',
-      iconType: 'info',
-    });
-  } catch {
-    /* balloons are Windows-only and best-effort — never worth an error */
-  }
 }
 
 /**
@@ -3182,12 +3085,10 @@ async function captureWindowsAndQuit(dir) {
 /*
  * One instance, always.
  *
- * This mattered little while the app was a window you closed; it matters now
- * that it can be sitting in the tray with no window on screen. Double-clicking
- * the desktop shortcut then LOOKS like nothing happened — while a second copy
- * boots behind it, fails to bind the server port, and reports the port as busy.
- * The second launch hands its request to the running copy instead, which is
- * what the operator meant by clicking: show me the app.
+ * A second copy would boot behind the first, fail to bind the server port, and
+ * report the port as busy — while the double-click that started it looked like
+ * it did nothing. The second launch hands its request to the running copy
+ * instead, which is what the operator meant by clicking: show me the app.
  */
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -3205,13 +3106,10 @@ app.whenReady().then(async () => {
   // Needs the app ready — screen is unusable before it.
   watchDisplays();
 
-  // Both before createWindow(): the tray has to exist before a login-item
-  // launch can put the window into it, and reapplying the Run-key entry on
-  // every launch is what keeps the switch honest after an update or a reinstall
-  // has replaced the exe the old entry pointed at.
-  const launchSettings = loadSettings();
-  applyLaunchOnStartup(launchSettings);
-  ensureTray();
+  // Reapplying the Run-key entry on every launch is what keeps the switch
+  // honest after an update or a reinstall has replaced the exe the old entry
+  // pointed at.
+  applyLaunchOnStartup(loadSettings());
   createWindow();
 
   // Turn a remembered refresh token into a live session in the background — a
@@ -3267,9 +3165,8 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    // macOS dock click, and the tray's own "Open": either way the window has to
-    // end up on screen, which showMainWindow guarantees and createWindow alone
-    // no longer does (a tray-mode launch builds it hidden).
+    // macOS dock click: the window has to end up on screen, which
+    // showMainWindow guarantees whatever state it is in.
     showMainWindow();
   });
 });
@@ -3281,9 +3178,6 @@ app.on('window-all-closed', async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  // Windows keeps drawing a tray icon whose process has gone until the mouse
-  // passes over it; destroying it explicitly avoids the ghost.
-  destroyTray();
   // Release the DirectInput devices; leaving them acquired holds COM objects
   // alive past process teardown.
   if (gamepad) gamepad.close();

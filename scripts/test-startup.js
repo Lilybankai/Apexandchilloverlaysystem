@@ -6,8 +6,8 @@
  *   - A bad Run-key entry does nothing at all today. It shows up at the next
  *     reboot, on someone else's machine, as an app that either never comes back
  *     or comes back as a blank Electron window.
- *   - A bad start mode leaves a running process with no window and no tray
- *     icon — reachable only through Task Manager.
+ *   - A bad start mode leaves a running process with no window anywhere the
+ *     operator can find it — reachable only through Task Manager.
  *
  * Neither is visible in a screenshot or a typecheck, so the rules are asserted
  * directly here. Everything is pure: no Electron, no registry, no window.
@@ -87,20 +87,16 @@ check('no arguments at all is refused', startup.loginItemSettingsFor() === null)
 console.log('\ninitialWindowMode — where this launch opens');
 /* -------------------------------------------------------------------------- */
 
-const mode = (argv, trayAvailable) => startup.initialWindowMode({ argv, trayAvailable });
+const mode = (argv) => startup.initialWindowMode({ argv });
 
-check('a double-click opens maximised', mode([EXE], true) === 'maximized');
-check('...even if the tray icon failed', mode([EXE], false) === 'maximized');
-check('a boot with the tray up goes to the tray', mode([EXE, '--hidden'], true) === 'tray');
-// The case that would otherwise strand the app: started by Windows, hidden, and
-// the OS refused the tray icon. It goes to the taskbar instead — the only place
-// left that the operator can find it.
-check(
-  'a boot with no tray icon goes to the taskbar',
-  mode([EXE, '--hidden'], false) === 'minimized',
-  'never hidden with no way back',
-);
-check('every mode is one of the three', ['maximized', 'tray', 'minimized'].includes(mode([], true)));
+check('a double-click opens maximised', mode([EXE]) === 'maximized');
+// A boot launch is a taskbar button, never a hidden window and never a tray
+// icon: the notification-area home was removed on driver feedback — a window
+// that vanishes into the tray overflow reads as the app having gone somewhere
+// weird, not as a minimised app.
+check('a boot goes to the taskbar, minimised', mode([EXE, '--hidden']) === 'minimized');
+check('there is no tray mode any more', mode([EXE, '--hidden']) !== 'tray');
+check('every mode is one of the two', ['maximized', 'minimized'].includes(mode([])));
 
 /* -------------------------------------------------------------------------- */
 console.log('\nWiring — main.js uses these rules rather than its own copy');
@@ -111,13 +107,13 @@ console.log('\nWiring — main.js uses these rules rather than its own copy');
   check('main.js requires the module', /require\((['"])\.\/startup\1\)/.test(src));
   check('and asks it for the window mode', /startup\.initialWindowMode\(/.test(src));
   check('and asks it what to register', /startup\.loginItemSettingsFor\(/.test(src));
-  // The whole point of minimise-to-tray is that nothing stops working while the
-  // window is away; Chromium throttles a hidden renderer's timers to 1/minute
-  // unless this is set.
+  // Nothing may stop working while the window is minimised or covered;
+  // Chromium throttles an unseen renderer's timers to 1/minute unless this is
+  // set.
   check(
-    'the panel is not throttled while hidden',
+    'the panel is not throttled while unseen',
     /backgroundThrottling:\s*false/.test(src.slice(src.indexOf('function createWindow'))),
-    'the tray must not slow the app down',
+    'minimising must not slow the app down',
   );
   // Two copies of the app cannot share the server port; with a tray icon the
   // second launch is otherwise invisible and just reports the port as busy.

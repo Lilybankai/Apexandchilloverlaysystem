@@ -5,8 +5,8 @@
  *
  *   1. What do we write into Windows' Run key so the app comes back after a
  *      reboot — and, just as importantly, when must we write NOTHING?
- *   2. Given how this process was started, does the window belong on screen, in
- *      the tray, or on the taskbar?
+ *   2. Given how this process was started, does the window belong on screen or
+ *      minimised on the taskbar?
  *
  * Both are one-liners with a trap underneath, and both are invisible from the
  * running app: a wrong Run-key entry only shows up at the next reboot, on
@@ -64,20 +64,17 @@ function loginItemSettingsFor({ enabled, execPath, isPackaged } = {}) {
  * Where this launch's window goes:
  *
  *   'maximized'  the operator opened the app — fill the screen
- *   'tray'       Windows opened it and the tray icon exists — go there
- *   'minimized'  Windows opened it but the OS refused the tray icon — the
- *                taskbar is the only place left the operator can find it again
+ *   'minimized'  Windows opened it (the login item) — a taskbar button, not a
+ *                window thrown over whatever the person is doing at boot
  *
- * `trayAvailable` is a fact about this run (did the Tray actually get
- * created?), not a preference: minimise-to-tray used to be a setting, and its
- * off position was nothing but a taskbar button people read as a regression.
- * The third case is why this is a function and not a boolean — starting hidden
- * with no tray icon would leave a running app with no way back to it short of
- * Task Manager.
+ * There used to be a third mode, 'tray', and a notification-area icon to go
+ * with it. Both were removed on driver feedback: a window that vanishes into
+ * the tray overflow flyout reads as the app having gone somewhere weird, not
+ * as a minimised app. The taskbar is where a minimised app lives, so the
+ * taskbar is where every quiet launch goes.
  */
-function initialWindowMode({ argv, trayAvailable } = {}) {
-  if (!wantsHiddenStart(argv)) return 'maximized';
-  return trayAvailable ? 'tray' : 'minimized';
+function initialWindowMode({ argv } = {}) {
+  return wantsHiddenStart(argv) ? 'minimized' : 'maximized';
 }
 
 module.exports = {

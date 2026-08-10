@@ -2032,14 +2032,13 @@
   // Application behaviour. Confirmed with a toast rather than left silent: the
   // switch has no visible effect at the moment it moves — it pays off at the
   // next boot — so without a word back there is nothing to tell a working
-  // switch from a dead one. (Minimise-to-tray is no longer a switch: the panel
-  // always minimises to the notification area.)
+  // switch from a dead one.
   if (startupToggle) {
     startupToggle.addEventListener('change', async () => {
       await window.apex.updateSettings({ launchOnStartup: startupToggle.checked });
       showToast(
         startupToggle.checked
-          ? 'Apex will start with Windows, in the tray.'
+          ? 'Apex will start with Windows, minimised.'
           : 'Apex will no longer start with Windows.',
       );
     });
