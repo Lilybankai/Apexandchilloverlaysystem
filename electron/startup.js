@@ -64,17 +64,20 @@ function loginItemSettingsFor({ enabled, execPath, isPackaged } = {}) {
  * Where this launch's window goes:
  *
  *   'maximized'  the operator opened the app — fill the screen
- *   'tray'       Windows opened it and the tray is available — go there
- *   'minimized'  Windows opened it with the tray switched off — the taskbar is
- *                the only place left that the operator can find it again
+ *   'tray'       Windows opened it and the tray icon exists — go there
+ *   'minimized'  Windows opened it but the OS refused the tray icon — the
+ *                taskbar is the only place left the operator can find it again
  *
- * The third case is why this is a function and not a boolean. Starting hidden
+ * `trayAvailable` is a fact about this run (did the Tray actually get
+ * created?), not a preference: minimise-to-tray used to be a setting, and its
+ * off position was nothing but a taskbar button people read as a regression.
+ * The third case is why this is a function and not a boolean — starting hidden
  * with no tray icon would leave a running app with no way back to it short of
  * Task Manager.
  */
-function initialWindowMode({ argv, minimizeToTray } = {}) {
+function initialWindowMode({ argv, trayAvailable } = {}) {
   if (!wantsHiddenStart(argv)) return 'maximized';
-  return minimizeToTray ? 'tray' : 'minimized';
+  return trayAvailable ? 'tray' : 'minimized';
 }
 
 module.exports = {

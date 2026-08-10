@@ -202,11 +202,11 @@ const PANEL_CONTRACT = {
   'rate-echo': 'span',
   'demo-toggle': 'input:checkbox',
 
-  // Settings — application behaviour. Contracted because neither switch shows
-  // its work: a dead "launch on startup" looks identical to a live one until the
-  // operator reboots, and a dead "minimise to tray" until they minimise.
+  // Settings — application behaviour. Contracted because the switch doesn't
+  // show its work: a dead "launch on startup" looks identical to a live one
+  // until the operator reboots. (Minimise-to-tray is deliberately NOT here any
+  // more — it is no longer a setting; the panel always minimises to the tray.)
   'startup-toggle': 'input:checkbox',
-  'tray-toggle': 'input:checkbox',
 
   // Settings — appearance (all three ride the live appearance channel)
   'bg-range': 'input:range',

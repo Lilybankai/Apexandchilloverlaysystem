@@ -330,23 +330,23 @@ function defaultSettings() {
     wheelBindings: {},
     /*
      * Desktop app behaviour — where the app lives when it isn't the thing being
-     * looked at. Both default to the least surprising answer for a new install.
+     * looked at.
      *
      * `launchOnStartup` writes a Windows Run-key entry pointing at this exe with
      * `--hidden`, so a boot brings the app back to the TRAY rather than throwing
      * a window over whatever the person is doing. Off by default: an app that
      * installs itself into someone's boot without being asked is a bad citizen.
      *
-     * `minimizeToTray` sends the minimise button to the notification area
-     * instead of the taskbar. On by default because the app's whole job — the
-     * server, the feed, the in-game layer, the lap uploader — happens while
-     * nobody is looking at the control panel; the panel is the least useful part
-     * of it to keep a taskbar button for. Nothing about it is throttled while
-     * hidden (see createWindow's backgroundThrottling), so this is a question of
-     * where the window goes, never of what the app is still doing.
+     * Minimise-to-tray is NOT a setting any more. It shipped as one
+     * (`minimizeToTray`, default on) and the toggle's off position bought
+     * nothing but a taskbar button for a window whose whole job happens while
+     * nobody is looking at it — and every config where it ended up off read as
+     * "the app stopped living in the tray". The tray is now unconditional: a
+     * stored `minimizeToTray` is ignored, minimise always goes to the
+     * notification area, and nothing is throttled while hidden (see
+     * createWindow's backgroundThrottling).
      */
     launchOnStartup: false,
-    minimizeToTray: true,
     // Account: the operator picked "Continue offline" on the sign-in screen, so
     // don't show it again on launch (they can still sign in from the top bar).
     offlineMode: false,
@@ -527,8 +527,6 @@ function loadSettings() {
       typeof stored.launchOnStartup === 'boolean'
         ? stored.launchOnStartup
         : defaults.launchOnStartup,
-    minimizeToTray:
-      typeof stored.minimizeToTray === 'boolean' ? stored.minimizeToTray : defaults.minimizeToTray,
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
       typeof stored.lastAuthEmail === 'string' ? stored.lastAuthEmail : defaults.lastAuthEmail,
@@ -1870,9 +1868,6 @@ function registerIpc() {
       if (typeof partial.launchOnStartup === 'boolean') {
         next.launchOnStartup = partial.launchOnStartup;
       }
-      if (typeof partial.minimizeToTray === 'boolean') {
-        next.minimizeToTray = partial.minimizeToTray;
-      }
       if (typeof partial.audioCues === 'boolean') {
         next.audioCues = partial.audioCues;
       }
@@ -1922,7 +1917,6 @@ function registerIpc() {
     // registry entry on quit would be indistinguishable from a broken one until
     // the operator rebooted.
     if (next.launchOnStartup !== current.launchOnStartup) applyLaunchOnStartup(next);
-    if (next.minimizeToTray !== current.minimizeToTray) applyTraySetting(next);
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map
     // rather than per-key: a rebind, a clear and a brand-new binding all need
@@ -2905,7 +2899,7 @@ function setupAutoUpdate() {
 /* -------------------------------------------------------------------------- */
 
 let mainWindow = null;
-/** The notification-area icon, while "minimise to tray" is on. */
+/** The notification-area icon. Always wanted; null only if the OS refused it. */
 let tray = null;
 /** Whether this run has already explained where the window went. */
 let trayNoticeShown = false;
@@ -2935,13 +2929,12 @@ function loadPage(page) {
 }
 
 function createWindow() {
-  const settings = loadSettings();
-  // `minimizeToTray && tray`, not the setting alone: the tray is a request to
+  // `!!tray`, not a setting: the tray is always wanted, but it is a request to
   // the OS that can fail (see ensureTray). Asking for a tray start that no icon
   // arrived for would leave a running app with no window and nothing to click.
   const mode = startup.initialWindowMode({
     argv: process.argv,
-    minimizeToTray: settings.minimizeToTray && !!tray,
+    trayAvailable: !!tray,
   });
 
   mainWindow = new BrowserWindow({
@@ -2982,7 +2975,10 @@ function createWindow() {
   loadPage(initialPage());
 
   /*
-   * Minimise → notification area, when the operator has asked for it.
+   * Minimise → notification area, always. This was briefly a setting
+   * (`minimizeToTray`); the off position bought nothing but a taskbar button
+   * and got reported as the app having stopped living in the tray, so the
+   * behaviour is unconditional again.
    *
    * NOTE the preventDefault() is a no-op: Electron fires 'minimize' after the
    * OS has already minimized the window, so the hide() below lands on a window
@@ -2990,10 +2986,10 @@ function createWindow() {
    * combination is why showMainWindow must un-hide before it un-minimizes (see
    * the ghost-window note there). Guarded on the tray actually existing:
    * hiding a window whose only handle failed to be created would strand the
-   * app with no way back to it.
+   * app with no way back to it — with no icon, the taskbar is the right place.
    */
   mainWindow.on('minimize', (evt) => {
-    if (!loadSettings().minimizeToTray || !tray) return;
+    if (!tray) return;
     evt.preventDefault();
     mainWindow.hide();
     notifyTrayOnce();
@@ -3024,10 +3020,10 @@ function createWindow() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The tray is created only when it is wanted (see applyTraySetting) — an icon
- * sitting in someone's notification area for a feature they turned off is
- * clutter, and on Windows a Tray that is never destroyed leaves a ghost icon
- * behind until the mouse passes over it.
+ * The tray is created once at startup and lives for the whole run — it is the
+ * app's permanent home, not a feature with a switch. It is still destroyed
+ * explicitly on quit, because on Windows a Tray that is never destroyed leaves
+ * a ghost icon behind until the mouse passes over it.
  */
 function ensureTray() {
   if (tray && !tray.isDestroyed?.()) return tray;
@@ -3062,22 +3058,6 @@ function ensureTray() {
 function destroyTray() {
   if (tray && !tray.isDestroyed?.()) tray.destroy();
   tray = null;
-}
-
-/**
- * Create or tear down the tray to match the setting.
- *
- * Turning it OFF while the window is already hidden has to put the window back
- * first: destroying the icon is destroying the only way to reach it.
- */
-function applyTraySetting(settings) {
-  if (settings.minimizeToTray) {
-    ensureTray();
-    return;
-  }
-  const stranded = mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible();
-  destroyTray();
-  if (stranded) showMainWindow();
 }
 
 /** Bring the control panel back — from the tray, a second launch, or the dock. */
@@ -3231,7 +3211,7 @@ app.whenReady().then(async () => {
   // has replaced the exe the old entry pointed at.
   const launchSettings = loadSettings();
   applyLaunchOnStartup(launchSettings);
-  applyTraySetting(launchSettings);
+  ensureTray();
   createWindow();
 
   // Turn a remembered refresh token into a live session in the background — a

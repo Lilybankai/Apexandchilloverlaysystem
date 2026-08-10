@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.65.2 — 2026-08-10
+
+### Changed
+
+- **Minimising always goes to the notification area again.** The "Minimise to
+  tray" switch introduced in 0.65.0 is gone: its off position bought nothing
+  but a taskbar button for a window whose whole job carries on while nobody is
+  looking at it, and any install where it ended up off read as the app having
+  stopped living in the tray. The tray icon is now always there, minimise
+  always sends the panel to it, and nothing slows down while it is away — the
+  server, the in-game overlays and lap uploads run outside the panel window.
+  "Launch on startup" is unchanged, and still brings the app back straight to
+  the tray after a boot.
+
 ## 0.65.1 — 2026-08-10
 
 ### Fixed

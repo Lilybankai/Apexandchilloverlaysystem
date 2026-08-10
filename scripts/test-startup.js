@@ -87,15 +87,16 @@ check('no arguments at all is refused', startup.loginItemSettingsFor() === null)
 console.log('\ninitialWindowMode — where this launch opens');
 /* -------------------------------------------------------------------------- */
 
-const mode = (argv, minimizeToTray) => startup.initialWindowMode({ argv, minimizeToTray });
+const mode = (argv, trayAvailable) => startup.initialWindowMode({ argv, trayAvailable });
 
 check('a double-click opens maximised', mode([EXE], true) === 'maximized');
-check('...whatever the tray setting says', mode([EXE], false) === 'maximized');
-check('a boot with the tray on goes to the tray', mode([EXE, '--hidden'], true) === 'tray');
+check('...even if the tray icon failed', mode([EXE], false) === 'maximized');
+check('a boot with the tray up goes to the tray', mode([EXE, '--hidden'], true) === 'tray');
 // The case that would otherwise strand the app: started by Windows, hidden, and
-// no tray icon to get it back. It goes to the taskbar instead.
+// the OS refused the tray icon. It goes to the taskbar instead — the only place
+// left that the operator can find it.
 check(
-  'a boot with the tray OFF goes to the taskbar',
+  'a boot with no tray icon goes to the taskbar',
   mode([EXE, '--hidden'], false) === 'minimized',
   'never hidden with no way back',
 );

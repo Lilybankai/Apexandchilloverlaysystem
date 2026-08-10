@@ -31,7 +31,6 @@
   const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
   const startupToggle = $('#startup-toggle');
-  const trayToggle = $('#tray-toggle');
   const speedUnit = $('#speed-unit');
   const audioToggle = $('#audio-toggle');
   const audioRange = $('#audio-range');
@@ -188,10 +187,6 @@
     radarIconsEcho.textContent = settings.radarIconScale;
     glowToggle.checked = settings.changeGlow !== false;
     if (startupToggle) startupToggle.checked = !!settings.launchOnStartup;
-    // Absent (a config written before this shipped) reads as ON — it is the
-    // shipped default, and reading it as OFF would show the switch disagreeing
-    // with what the app actually does on the next minimise.
-    if (trayToggle) trayToggle.checked = settings.minimizeToTray !== false;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
@@ -2034,10 +2029,11 @@
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
   });
 
-  // Application behaviour. Both are confirmed with a toast rather than left
-  // silent: neither has any visible effect at the moment it is switched — one
-  // pays off at the next boot, the other at the next minimise — so without a
-  // word back there is nothing to tell a working switch from a dead one.
+  // Application behaviour. Confirmed with a toast rather than left silent: the
+  // switch has no visible effect at the moment it moves — it pays off at the
+  // next boot — so without a word back there is nothing to tell a working
+  // switch from a dead one. (Minimise-to-tray is no longer a switch: the panel
+  // always minimises to the notification area.)
   if (startupToggle) {
     startupToggle.addEventListener('change', async () => {
       await window.apex.updateSettings({ launchOnStartup: startupToggle.checked });
@@ -2045,17 +2041,6 @@
         startupToggle.checked
           ? 'Apex will start with Windows, in the tray.'
           : 'Apex will no longer start with Windows.',
-      );
-    });
-  }
-
-  if (trayToggle) {
-    trayToggle.addEventListener('change', async () => {
-      await window.apex.updateSettings({ minimizeToTray: trayToggle.checked });
-      showToast(
-        trayToggle.checked
-          ? 'Minimising sends Apex to the notification area.'
-          : 'Minimising sends Apex to the taskbar.',
       );
     });
   }
