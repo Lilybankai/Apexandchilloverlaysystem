@@ -2,7 +2,30 @@
 
 ## 0.67.0-beta.8 — 2026-08-11
 
-### Fixed
+### Added
+
+- **Community setups — share your tunes, and grab everyone else's.** A new
+  card on the Setups tab lists every setup the league has published, and with
+  the sim running it automatically follows the car and track you're in (a
+  "Follow my car & track" toggle brings back manual filters). Share any
+  library entry with the new "Publish to the community…" option: write a note
+  ("my race setup for Spa — give it a try"), and the app suggests character
+  chips read from the setup's own numbers — Sharp turn-in, Stable & safe,
+  Low drag, High downforce and friends — which you can adjust before it goes
+  up. Unpublish any time; your local files are never touched.
+- **Downloads land where you actually need them.** Get a setup and the .svm
+  is written straight into LMU's own setup folder for that track — it appears
+  in the game's setup screen, no restart — and filed into your library so you
+  can stage and Apply it from the panel like any of your own.
+- **Ratings you can trust: stars, gated on proof.** Only drivers who have
+  downloaded a setup can rate it (1–5 stars), never its author, and every
+  pace shown next to an opinion is read from the lap database, never typed.
+  Better still, every lap you record from this build on quietly remembers
+  which setup it was driven on — so when your best clean lap was set on the
+  very setup you're rating (or publishing), the card marks it with a ✓ as
+  driven on that exact setup. Laps from before this build can't prove what
+  the car was running, so they show as your plain track best, dimmed and
+  labelled — shown, but not sworn to.
 
 - **Abbreviated driver names now actually fit — the rating marks stand
   aside for them.** Picking "M.Haskins" or "Matt.H" barely changed what you
