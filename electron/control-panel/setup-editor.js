@@ -55,6 +55,27 @@
   const elPopBody = $('#setup-info-body');
   const elPopClose = $('#setup-info-close');
 
+  // Library card + its two dialogs.
+  const elLibImport = $('#setup-lib-import');
+  const elLibSave = $('#setup-lib-save');
+  const elLibTrack = $('#setup-lib-track');
+  const elLibCar = $('#setup-lib-car');
+  const elLibSession = $('#setup-lib-session');
+  const elLibColors = $('#setup-lib-colors');
+  const elLibSort = $('#setup-lib-sort');
+  const elLibList = $('#setup-lib-list');
+  const elLibEmpty = $('#setup-lib-empty');
+  const elSavePop = $('#setup-save-pop');
+  const elSaveName = $('#setup-save-name');
+  const elSaveSession = $('#setup-save-session');
+  const elSaveColors = $('#setup-save-colors');
+  const elSaveConfirm = $('#setup-save-confirm');
+  const elSaveCancel = $('#setup-save-cancel');
+  const elLoadPop = $('#setup-load-pop');
+  const elLoadText = $('#setup-load-text');
+  const elLoadConfirm = $('#setup-load-confirm');
+  const elLoadCancel = $('#setup-load-cancel');
+
   /* ---- state -------------------------------------------------------------- */
 
   const POLL_MS = 750; // in-game edits appear within one tick
@@ -88,6 +109,7 @@
     if (document.visibilityState !== 'visible') return; // visibilitychange will call back
     active = true;
     schedulePoll(0);
+    void refreshLibrary(); // one read per show, never on a timer
   }
 
   function hidden() {
@@ -151,6 +173,8 @@
   /* ====================================================================== */
 
   function paintOffline(message) {
+    const wasConnected = Boolean(lastState && lastState.connected);
+    lastState = null;
     elStatus.textContent = 'OFFLINE';
     elStatus.setAttribute('data-state', 'offline');
     elOffline.hidden = false;
@@ -161,11 +185,15 @@
     elBody.hidden = true;
     writesFrozen = false;
     failedWrites = 0;
+    elLibSave.disabled = true;
+    if (wasConnected) renderLibraryList(); // Load buttons pick up the new state
   }
 
   function applyState(state) {
     const firstPaint = !lastState || !lastState.connected;
     lastState = state;
+    elLibSave.disabled = false;
+    if (firstPaint) renderLibraryList(); // arm the Load buttons
     settingsMap = new Map();
     for (const s of state.settings) settingsMap.set(s.key, s);
 
@@ -585,12 +613,16 @@
       if (dirtyLocal.has(key)) continue;
       row.paint(settingsMap.get(key), staged.has(key) ? staged.get(key) : null);
     }
-    elStaged.hidden = staged.size === 0;
-    if (staged.size > 0) {
-      elStagedCount.textContent =
-        `${staged.size} setting${staged.size === 1 ? '' : 's'} staged` +
-        (skippedCount ? ` · ${skippedCount} skipped (locked or not on this car)` : '');
-    }
+    // The Apply bar never hides — it arms. A control that only appears after
+    // an invisible precondition is a control nobody finds.
+    elStaged.setAttribute('data-ready', String(staged.size > 0));
+    elApply.disabled = staged.size === 0;
+    elRevert.disabled = staged.size === 0;
+    elStagedCount.textContent =
+      staged.size > 0
+        ? `${staged.size} setting${staged.size === 1 ? '' : 's'} staged` +
+          (skippedCount ? ` · ${skippedCount} skipped (locked or not on this car)` : '')
+        : 'Drag a slider to stage changes.';
   }
 
   function resetMacros() {
@@ -613,24 +645,22 @@
     } catch {
       res = null;
     }
-    elApply.disabled = false;
     resetMacros();
     staged = new Map();
     if (res && res.state && res.state.connected) {
       const okCount = (res.results || []).filter((r) => r.ok).length;
       const skipped = (res.results || []).filter((r) => r.skipped);
       applyState(res.state);
-      elStaged.hidden = false;
+      restage(); // repaints rows and disarms the bar
       elStagedCount.textContent =
         `Applied ${okCount} change${okCount === 1 ? '' : 's'}` +
         (skipped.length ? ` · ${skipped.length} skipped` : '');
       setTimeout(() => {
-        if (staged.size === 0) elStaged.hidden = true;
+        if (staged.size === 0) elStagedCount.textContent = 'Drag a slider to stage changes.';
       }, 4000);
     } else {
-      elStaged.hidden = false;
-      elStagedCount.textContent = 'Apply failed — is the sim still in the garage?';
       restage();
+      elStagedCount.textContent = 'Apply failed — is the sim still in the garage?';
     }
   });
 
@@ -664,7 +694,391 @@
     if (e.target === elPop) elPop.hidden = true;
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !elPop.hidden) elPop.hidden = true;
+    if (e.key !== 'Escape') return;
+    if (!elPop.hidden) elPop.hidden = true;
+    if (!elSavePop.hidden) elSavePop.hidden = true;
+    if (!elLoadPop.hidden) elLoadPop.hidden = true;
+  });
+
+  /* ====================================================================== */
+  /*  Setup library                                                         */
+  /* ====================================================================== */
+  /* App-owned .svm archive. Reads/writes go through window.apex.setup.lib*;
+   * the list refreshes on tab show and after every mutation — never on a
+   * timer, keeping the zero-cost rule intact. */
+
+  const LIB_COLORS = ['', 'red', 'amber', 'green', 'cyan', 'purple', 'pink'];
+  let libEntries = [];
+  const libFilter = { track: '', carClass: '', session: '', color: null };
+  const saveDraft = { session: '', color: '' };
+  let loadTarget = null;
+
+  function fmtLap(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '';
+    const m = Math.floor(ms / 60000);
+    const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, '0');
+    return `${m}:${s}`;
+  }
+
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+  }
+
+  /** A colour dot button. */
+  function colorChip(color, onPick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'su-color';
+    b.setAttribute('data-color', color);
+    b.title = color || 'no colour';
+    b.addEventListener('click', () => onPick(color, b));
+    return b;
+  }
+
+  function paintChipSelection(container, selected) {
+    for (const chip of container.querySelectorAll('.su-color')) {
+      chip.setAttribute('data-active', String(chip.getAttribute('data-color') === selected));
+    }
+  }
+
+  /** A .seg group built from [value, label] pairs. */
+  function segGroup(container, options, selected, onPick) {
+    container.textContent = '';
+    for (const [value, label] of options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('data-active', String(value === selected));
+      b.addEventListener('click', () => {
+        for (const o of container.children) o.setAttribute('data-active', String(o === b));
+        onPick(value);
+      });
+      container.appendChild(b);
+    }
+  }
+
+  async function refreshLibrary() {
+    if (!window.apex || !window.apex.setup || !window.apex.setup.libList) return;
+    let res = null;
+    try {
+      res = await window.apex.setup.libList();
+    } catch {
+      res = null;
+    }
+    libEntries = res && res.ok ? res.entries : [];
+    renderLibraryFilters();
+    renderLibraryList();
+  }
+
+  function renderLibraryFilters() {
+    const fill = (select, values, allLabel, current) => {
+      select.textContent = '';
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = allLabel;
+      select.appendChild(all);
+      for (const v of values) {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        select.appendChild(o);
+      }
+      select.value = values.includes(current) ? current : '';
+    };
+    fill(
+      elLibTrack,
+      [...new Set(libEntries.map((e) => e.trackName || e.trackFolder).filter(Boolean))],
+      'All tracks',
+      libFilter.track,
+    );
+    fill(
+      elLibCar,
+      [...new Set(libEntries.map((e) => e.carClass).filter(Boolean))],
+      'All classes',
+      libFilter.carClass,
+    );
+    if (!elLibSession.childElementCount) {
+      segGroup(
+        elLibSession,
+        [['', 'All'], ['race', 'Race'], ['quali', 'Quali']],
+        libFilter.session,
+        (v) => {
+          libFilter.session = v;
+          renderLibraryList();
+        },
+      );
+    }
+    if (!elLibColors.childElementCount) {
+      for (const c of LIB_COLORS.slice(1)) {
+        elLibColors.appendChild(
+          colorChip(c, (color) => {
+            // Clicking the active filter chip clears the filter.
+            libFilter.color = libFilter.color === color ? null : color;
+            paintChipSelection(elLibColors, libFilter.color ?? '—none—');
+            renderLibraryList();
+          }),
+        );
+      }
+    }
+  }
+
+  function libRow(entry) {
+    const li = document.createElement('li');
+    li.className = 'su-lib__row';
+
+    // Colour dot — clicking cycles the palette, which IS the categorisation.
+    const dot = colorChip(entry.color || '', async () => {
+      const next = LIB_COLORS[(LIB_COLORS.indexOf(entry.color || '') + 1) % LIB_COLORS.length];
+      entry.color = next;
+      dot.setAttribute('data-color', next);
+      try {
+        await window.apex.setup.libUpdate(entry.id, { color: next });
+      } catch {
+        /* next list refresh corrects it */
+      }
+    });
+    dot.setAttribute('data-color', entry.color || '');
+    li.appendChild(dot);
+
+    const name = document.createElement('span');
+    name.className = 'su-lib__name';
+    name.textContent = entry.name;
+    name.title = [entry.vehicleClass, entry.notes].filter(Boolean).join('\n');
+    li.appendChild(name);
+
+    const meta = document.createElement('span');
+    meta.className = 'su-lib__meta';
+    const chips = [
+      entry.trackName || entry.trackFolder,
+      entry.carClass,
+      fmtDate(entry.savedAt),
+    ].filter(Boolean);
+    for (const text of chips) {
+      const c = document.createElement('span');
+      c.className = 'su-chip';
+      c.textContent = text;
+      meta.appendChild(c);
+    }
+    if (entry.sessionType) {
+      const c = document.createElement('span');
+      c.className = `su-chip su-chip--${entry.sessionType}`;
+      c.textContent = entry.sessionType === 'race' ? 'RACE' : 'QUALI';
+      meta.appendChild(c);
+    }
+    li.appendChild(meta);
+
+    const lap = document.createElement('span');
+    lap.className = 'su-lib__lap';
+    const best = entry.bestLap && fmtLap(entry.bestLap.lapMs);
+    lap.textContent = best || 'no lap';
+    lap.setAttribute('data-none', String(!best));
+    lap.title = best ? 'Your best clean lap on this track in this class' : 'No clean lap on record yet';
+    li.appendChild(lap);
+
+    const buttons = document.createElement('span');
+    buttons.className = 'su-lib__buttons';
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button';
+    loadBtn.className = 'btn btn--accent btn--sm';
+    loadBtn.textContent = 'Load';
+    loadBtn.disabled = !(lastState && lastState.connected);
+    loadBtn.title = loadBtn.disabled ? 'Start LMU and enter the garage to load' : 'Load into the garage';
+    loadBtn.addEventListener('click', () => openLoadPop(entry));
+    buttons.appendChild(loadBtn);
+
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.className = 'btn btn--ghost btn--sm';
+    shareBtn.textContent = 'Share';
+    shareBtn.title = 'Save the .svm somewhere to send to a teammate';
+    shareBtn.addEventListener('click', () => void window.apex.setup.libExport(entry.id));
+    buttons.appendChild(shareBtn);
+
+    // Two-step delete: arm, then confirm within 3 s.
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn btn--ghost btn--sm';
+    delBtn.textContent = 'Delete';
+    let armTimer = null;
+    delBtn.addEventListener('click', async () => {
+      if (delBtn.getAttribute('data-armed') !== 'true') {
+        delBtn.setAttribute('data-armed', 'true');
+        delBtn.textContent = 'Sure?';
+        armTimer = setTimeout(() => {
+          delBtn.setAttribute('data-armed', 'false');
+          delBtn.textContent = 'Delete';
+        }, 3000);
+        return;
+      }
+      clearTimeout(armTimer);
+      try {
+        await window.apex.setup.libDelete(entry.id);
+      } catch {
+        /* refresh below shows the truth either way */
+      }
+      void refreshLibrary();
+    });
+    buttons.appendChild(delBtn);
+
+    li.appendChild(buttons);
+    return li;
+  }
+
+  function renderLibraryList() {
+    const track = elLibTrack.value;
+    const carClass = elLibCar.value;
+    libFilter.track = track;
+    libFilter.carClass = carClass;
+
+    let rows = libEntries.filter(
+      (e) =>
+        (!track || (e.trackName || e.trackFolder) === track) &&
+        (!carClass || e.carClass === carClass) &&
+        (!libFilter.session || e.sessionType === libFilter.session) &&
+        (libFilter.color === null || e.color === libFilter.color),
+    );
+    const sort = elLibSort.value;
+    if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === 'bestlap') {
+      rows.sort((a, b) => (a.bestLap?.lapMs ?? Infinity) - (b.bestLap?.lapMs ?? Infinity));
+    } else rows.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+
+    elLibList.textContent = '';
+    for (const e of rows) elLibList.appendChild(libRow(e));
+    elLibEmpty.hidden = libEntries.length > 0;
+    if (libEntries.length > 0 && rows.length === 0) {
+      elLibEmpty.hidden = false;
+      elLibEmpty.textContent = 'Nothing matches these filters.';
+    } else if (libEntries.length === 0) {
+      elLibEmpty.textContent =
+        'Nothing saved yet — get the car how you like it and hit “Save current setup”.';
+    }
+  }
+
+  elLibTrack.addEventListener('change', renderLibraryList);
+  elLibCar.addEventListener('change', renderLibraryList);
+  elLibSort.addEventListener('change', renderLibraryList);
+
+  elLibImport.addEventListener('click', async () => {
+    try {
+      const res = await window.apex.setup.libImport();
+      if (res && res.ok) void refreshLibrary();
+    } catch {
+      /* dialog cancelled or bridge missing — nothing to show */
+    }
+  });
+
+  /* ---- save dialog -------------------------------------------------------- */
+
+  function openSavePop() {
+    if (!lastState || !lastState.connected) return;
+    const trackBit = lastState.trackName || '';
+    const sess = String(lastState.session || '').toUpperCase();
+    saveDraft.session = sess.includes('RACE') ? 'race' : sess.includes('QUAL') ? 'quali' : '';
+    saveDraft.color = '';
+    elSaveName.value = [trackBit, lastState.carClass, fmtDate(new Date().toISOString())]
+      .filter(Boolean)
+      .join(' — ');
+    segGroup(
+      elSaveSession,
+      [['', 'Untagged'], ['race', 'Race'], ['quali', 'Quali']],
+      saveDraft.session,
+      (v) => (saveDraft.session = v),
+    );
+    if (!elSaveColors.childElementCount) {
+      for (const c of LIB_COLORS) {
+        elSaveColors.appendChild(
+          colorChip(c, (color) => {
+            saveDraft.color = color;
+            paintChipSelection(elSaveColors, color);
+          }),
+        );
+      }
+    }
+    paintChipSelection(elSaveColors, saveDraft.color);
+    elSavePop.hidden = false;
+    elSaveName.focus();
+    elSaveName.select();
+  }
+
+  elLibSave.addEventListener('click', openSavePop);
+  elSaveCancel.addEventListener('click', () => (elSavePop.hidden = true));
+  elSavePop.addEventListener('click', (e) => {
+    if (e.target === elSavePop) elSavePop.hidden = true;
+  });
+
+  elSaveConfirm.addEventListener('click', async () => {
+    elSaveConfirm.disabled = true;
+    let res = null;
+    try {
+      res = await window.apex.setup.libSave({
+        name: elSaveName.value,
+        sessionType: saveDraft.session,
+        color: saveDraft.color,
+      });
+    } catch {
+      res = null;
+    }
+    elSaveConfirm.disabled = false;
+    if (res && res.ok) {
+      elSavePop.hidden = true;
+      void refreshLibrary();
+    } else {
+      elSaveConfirm.textContent = res && res.error ? 'Failed' : 'Failed — in garage?';
+      elSaveConfirm.title = (res && res.error) || '';
+      setTimeout(() => {
+        elSaveConfirm.textContent = 'Save';
+        elSaveConfirm.title = '';
+      }, 2500);
+    }
+  });
+
+  /* ---- load dialog ---------------------------------------------------------- */
+
+  function openLoadPop(entry) {
+    loadTarget = entry;
+    const warnings = [];
+    if (entry.carClass && lastState?.carClass && entry.carClass !== lastState.carClass) {
+      warnings.push(
+        `saved for ${entry.carClass}, the garage holds a ${lastState.carClass} — the sim may refuse or partially apply it`,
+      );
+    }
+    if (entry.trackName && lastState?.trackName && entry.trackName !== lastState.trackName) {
+      warnings.push(`saved at ${entry.trackName}, you are at ${lastState.trackName}`);
+    }
+    elLoadText.textContent =
+      `Load “${entry.name}” into the garage? This replaces the current setup.` +
+      (warnings.length ? ` Note: ${warnings.join('; ')}.` : '');
+    elLoadConfirm.textContent = 'Load';
+    elLoadPop.hidden = false;
+  }
+
+  elLoadCancel.addEventListener('click', () => (elLoadPop.hidden = true));
+  elLoadPop.addEventListener('click', (e) => {
+    if (e.target === elLoadPop) elLoadPop.hidden = true;
+  });
+
+  elLoadConfirm.addEventListener('click', async () => {
+    if (!loadTarget) return;
+    elLoadConfirm.disabled = true;
+    elLoadConfirm.textContent = 'Loading…';
+    let res = null;
+    try {
+      res = await window.apex.setup.libLoad(loadTarget.id);
+    } catch {
+      res = null;
+    }
+    elLoadConfirm.disabled = false;
+    if (res && res.ok) {
+      elLoadPop.hidden = true;
+      loadTarget = null;
+      schedulePoll(0); // pull the freshly loaded values into the rows now
+    } else {
+      elLoadConfirm.textContent = 'Load';
+      elLoadText.textContent = `Load failed: ${(res && res.error) || 'no response from the sim'}.`;
+    }
   });
 
   /* ====================================================================== */

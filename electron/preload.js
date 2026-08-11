@@ -120,6 +120,21 @@ contextBridge.exposeInMainWorld('apex', {
     write: (key, value) => ipcRenderer.invoke('setup:write', { key, value }),
     /** Apply a staged macro: `{ ok, results[], state }` — skips locked keys, reports each. */
     writeBatch: (writes) => ipcRenderer.invoke('setup:writeBatch', { writes }),
+
+    /* ---- the setup library (save/load/share .svm files) ---- */
+    /** All saved setups, each with `bestLap: {lapMs, setAt}|null` for its track+class. */
+    libList: () => ipcRenderer.invoke('setuplib:list'),
+    /** Archive the sim's CURRENT garage setup: `{ name, sessionType?, color? }`. */
+    libSave: (meta) => ipcRenderer.invoke('setuplib:save', meta),
+    /** Load an entry into the live garage — replaces the current setup. */
+    libLoad: (id) => ipcRenderer.invoke('setuplib:load', { id }),
+    /** Edit name/colour/session/notes. */
+    libUpdate: (id, patch) => ipcRenderer.invoke('setuplib:update', { id, patch }),
+    libDelete: (id) => ipcRenderer.invoke('setuplib:delete', { id }),
+    /** Share: OS save dialog handing out the raw .svm. */
+    libExport: (id) => ipcRenderer.invoke('setuplib:export', { id }),
+    /** Import a .svm someone sent you (OS open dialog). */
+    libImport: () => ipcRenderer.invoke('setuplib:import'),
   },
 
   /* ---- League leaderboard ----

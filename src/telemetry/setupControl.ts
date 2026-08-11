@@ -66,12 +66,18 @@ export class SetupController {
   }
 
   /**
-   * The full setup, fresh from the sim (~15 ms), plus the current car identity.
+   * The full setup, fresh from the sim (~15 ms), plus the current car identity
+   * and session context (track + session type, for the library's labelling).
    * `connected: false` (never a throw) when LMU is closed or between sessions.
    */
-  public async getState(): Promise<SetupState> {
-    const [garage, identity] = await Promise.all([this.mfd.getGarageData(), this.identity()]);
-    return projectSetupState(garage, identity.car, identity.carClass);
+  public async getState(): Promise<SetupState & { trackName?: string; session?: string }> {
+    const [garage, identity, session] = await Promise.all([
+      this.mfd.getGarageData(),
+      this.identity(),
+      this.sessionInfo(),
+    ]);
+    const state = projectSetupState(garage, identity.car, identity.carClass);
+    return { ...state, trackName: session.trackName, session: session.session };
   }
 
   /**
@@ -159,6 +165,94 @@ export class SetupController {
     return { ok: outcomes.every((o) => o.ok || o.skipped !== undefined), results: outcomes, state };
   }
 
+  /* ---- setup FILES (.svm) ------------------------------------------------
+   *
+   * Semantics read out of LMU's own UI bundle (Bin/UI.zip, app-*.js), which is
+   * the authority on this API — and they are the reverse of the obvious guess:
+   *
+   *   saveSetup(folderAndName)   POST /rest/garage/setup     (raw text body)
+   *   loadSetup(folderAndName)   PUT  /rest/garage/setup     (raw text body)
+   *   deleteSetup(folderAndName) DELETE /rest/garage/setup/<encodeURI(name)>
+   *   refreshSetups()            POST /rest/garage/refreshsetups  (json null)
+   *
+   * `folderAndName` is the track-folder-relative name without extension, e.g.
+   * "Spa\\MY RACE TUNE". A LOAD of a name that does not exist returns 200 and
+   * does nothing — success alone proves nothing, always verify the effect.
+   */
+
+  /** Saves the sim's CURRENT garage setup to `<Settings>/<folderAndName>.svm`. */
+  public saveSetupFile(folderAndName: string): Promise<MfdWriteResult> {
+    return this.text('POST', '/rest/garage/setup', folderAndName);
+  }
+
+  /** Loads a saved setup into the live garage — replaces the current setup. */
+  public loadSetupFile(folderAndName: string): Promise<MfdWriteResult> {
+    return this.text('PUT', '/rest/garage/setup', folderAndName);
+  }
+
+  /** Deletes a saved setup file from the sim's Settings tree. */
+  public deleteSetupFile(folderAndName: string): Promise<MfdWriteResult> {
+    return this.text('DELETE', `/rest/garage/setup/${encodeURI(folderAndName)}`);
+  }
+
+  /** Tells the sim to re-scan its Settings tree (after we add a file to it). */
+  public refreshSetupFiles(): Promise<MfdWriteResult> {
+    return this.text('POST', '/rest/garage/refreshsetups', 'null', 'application/json');
+  }
+
+  /** The sim's own setup-file list: `{ name: "Track\\File", created, … }[]`. */
+  public listSetupFiles(): Promise<Array<{ name?: string }> | null> {
+    return this.getJson<Array<{ name?: string }>>('/rest/garage/setup');
+  }
+
+  /**
+   * The garage summary — the sim's OWN statement of which Settings subfolder
+   * the current track saves under, plus the real car identity. This is the
+   * same source the game's save dialog uses (`setupSummary.currentTrackFolder`
+   * in its UI bundle). An earlier heuristic — the bare "Folder\\" entry in the
+   * setups list — was proven wrong live: it returned Bahrain during a Spa
+   * session, and the sim will happily save into whatever wrong folder it is
+   * told, where the game's setup screen for the actual track never looks.
+   */
+  public async garageSummary(): Promise<{
+    trackFolder: string | null;
+    carModel: string;
+    unsavedChanges: boolean;
+  }> {
+    const s = await this.getJson<{
+      currentTrackFolder?: string;
+      unsavedChanges?: boolean;
+      car?: { fullPathTree?: string };
+    }>('/rest/garage/summary');
+    const folder = s?.currentTrackFolder;
+    const tree = s?.car?.fullPathTree ?? '';
+    // "WEC 2025, GT3, Lexus RCF LMGT3" — the last segment is the car model.
+    const carModel = tree.includes(',') ? tree.split(',').pop()!.trim() : tree.trim();
+    return {
+      trackFolder: typeof folder === 'string' && folder.length > 0 ? folder : null,
+      carModel,
+      unsavedChanges: s?.unsavedChanges === true,
+    };
+  }
+
+  /** The Settings subfolder the CURRENT track's setups live under. */
+  public async currentTrackFolder(): Promise<string | null> {
+    return (await this.garageSummary()).trackFolder;
+  }
+
+  /** Track and session type of the live session, for categorising a save. */
+  public async sessionInfo(): Promise<{ trackName: string; session: string }> {
+    const si = await this.getJson<{ trackName?: string; session?: string }>(
+      '/rest/watch/sessionInfo',
+    );
+    return { trackName: si?.trackName ?? '', session: si?.session ?? '' };
+  }
+
+  /** Public face of identity(), for callers labelling a saved setup. */
+  public getIdentity(): Promise<{ car: string; carClass: string }> {
+    return this.identity();
+  }
+
   /**
    * Who are we setting up? Class comes from the player's standings row (the
    * same source the provider trusts); the label falls back through team name
@@ -175,6 +269,47 @@ export class SetupController {
       car: me.fullTeamName || me.driverName || '',
       carClass: normalizeClass(me.carClass) ?? '',
     };
+  }
+
+  /**
+   * A raw-body request, matching the game UI's postText/putText/del helpers.
+   * The setup-file routes take the name as PLAIN TEXT — JSON-quoting it makes
+   * the sim look for a file with quotes in its name, which "succeeds" (200)
+   * and does nothing.
+   */
+  private text(
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body?: string,
+    contentType = 'text/plain',
+  ): Promise<MfdWriteResult> {
+    return new Promise<MfdWriteResult>((resolve) => {
+      const payload = body === undefined ? null : Buffer.from(body, 'utf8');
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: this.port,
+          path,
+          method,
+          timeout: 4000,
+          headers: payload
+            ? { 'Content-Type': contentType, 'Content-Length': payload.length }
+            : {},
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          res.resume();
+          res.on('end', () => {
+            const ok = status >= 200 && status < 300;
+            resolve(ok ? { ok, status } : { ok, status, error: `HTTP ${status}` });
+          });
+        },
+      );
+      req.on('error', (err) => resolve({ ok: false, status: 0, error: err.message }));
+      req.on('timeout', () => req.destroy(new Error('timeout')));
+      if (payload) req.write(payload);
+      req.end();
+    });
   }
 
   private getJson<T>(path: string): Promise<T | null> {

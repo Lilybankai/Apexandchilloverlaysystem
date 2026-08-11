@@ -281,6 +281,29 @@ const PANEL_CONTRACT = {
   'setup-info-title': 'h3',
   'setup-info-body': 'div',
   'setup-info-close': 'button',
+  // Setup library (v0.67.0-beta.3): the .svm archive below the editor. Rows
+  // and filter options are runtime-built; the frame, the two dialogs and the
+  // filter controls are static and contracted.
+  'setup-library': 'section',
+  'setup-lib-import': 'button',
+  'setup-lib-save': 'button',
+  'setup-lib-track': 'select',
+  'setup-lib-car': 'select',
+  'setup-lib-session': 'nav',
+  'setup-lib-colors': 'div',
+  'setup-lib-sort': 'select',
+  'setup-lib-list': 'ul',
+  'setup-lib-empty': 'p',
+  'setup-save-pop': 'div',
+  'setup-save-name': 'input:text',
+  'setup-save-session': 'nav',
+  'setup-save-colors': 'div',
+  'setup-save-confirm': 'button',
+  'setup-save-cancel': 'button',
+  'setup-load-pop': 'div',
+  'setup-load-text': 'p',
+  'setup-load-confirm': 'button',
+  'setup-load-cancel': 'button',
 
   // Floating
   toast: 'div',

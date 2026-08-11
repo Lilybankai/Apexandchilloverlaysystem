@@ -2234,6 +2234,135 @@ function registerIpc() {
     }
   });
 
+  /* ---- Setup library ----
+   *
+   * Named, colour-tagged copies of real .svm files under the app's own
+   * userData — the sim writes them (save) and reads them back (load) via its
+   * REST API, the app owns the catalogue. Sharing is the raw .svm through OS
+   * save/open dialogs: the artifact works for ANY LMU player, app or not.
+   *
+   * Every list is enriched with the driver's best lap for the entry's track
+   * and class from the local lap database — that join happens here because
+   * main already owns lapLog, and freezing the lap into the entry at save
+   * time would show a stale best forever after.
+   */
+  let setupLibrary = null;
+  const getSetupLibrary = () => {
+    const controller = getSetupController();
+    if (!setupLibrary || setupLibrary.__controller !== controller) {
+      const lib = require(path.join(__dirname, '..', 'dist', 'telemetry', 'setupLibrary.js'));
+      const kb = require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
+      const kbPath = kb.findKeyboardConfig();
+      const settingsDir = kbPath ? path.join(path.dirname(kbPath), 'Settings') : null;
+      setupLibrary = new lib.SetupLibrary(
+        path.join(app.getPath('userData'), 'setups'),
+        controller,
+        settingsDir && fs.existsSync(settingsDir) ? settingsDir : null,
+      );
+      setupLibrary.__controller = controller;
+    }
+    return setupLibrary;
+  };
+
+  /** Best clean lap per (trackName, carClass) from the local lap files. */
+  const bestLapFor = (bests, entry) => {
+    if (!Array.isArray(bests)) return null;
+    const hit = bests.find(
+      (b) =>
+        b &&
+        (b.trackName || '').toLowerCase() === (entry.trackName || '').toLowerCase() &&
+        (b.carClass || '').toUpperCase() === (entry.carClass || '').toUpperCase(),
+    );
+    return hit ? { lapMs: hit.lapMs, setAt: hit.setAt } : null;
+  };
+
+  ipcMain.handle('setuplib:list', () => {
+    try {
+      const entries = getSetupLibrary().list();
+      let bests = [];
+      try {
+        const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
+        bests = lapLog.buildUploadPlan().bests;
+      } catch {
+        /* no lap database — entries simply carry no best lap */
+      }
+      return {
+        ok: true,
+        entries: entries.map((e) => ({ ...e, bestLap: bestLapFor(bests, e) })),
+      };
+    } catch (err) {
+      console.error('[app] setup library list failed:', err.message);
+      return { ok: false, error: err.message, entries: [] };
+    }
+  });
+
+  ipcMain.handle('setuplib:save', async (_evt, meta) => {
+    try {
+      return await getSetupLibrary().saveCurrent(meta || {});
+    } catch (err) {
+      console.error('[app] setup library save failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setuplib:load', async (_evt, payload) => {
+    try {
+      return await getSetupLibrary().load(String(payload && payload.id));
+    } catch (err) {
+      console.error('[app] setup library load failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setuplib:update', (_evt, payload) => {
+    try {
+      return getSetupLibrary().update(String(payload && payload.id), (payload && payload.patch) || {});
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setuplib:delete', (_evt, payload) => {
+    try {
+      return getSetupLibrary().remove(String(payload && payload.id));
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Share = hand the raw .svm to the OS. The save dialog defaults to the
+  // entry's readable name so what lands in a Discord DM says what it is.
+  ipcMain.handle('setuplib:export', async (_evt, payload) => {
+    try {
+      const lib = getSetupLibrary();
+      const entry = lib.list().find((e) => e.id === String(payload && payload.id));
+      if (!entry) return { ok: false, error: 'setup not in library' };
+      const res = await dialog.showSaveDialog({
+        title: 'Share setup',
+        defaultPath: `${entry.name}.svm`,
+        filters: [{ name: 'LMU setup', extensions: ['svm'] }],
+      });
+      if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+      return lib.exportTo(entry.id, res.filePath);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setuplib:import', async () => {
+    try {
+      const res = await dialog.showOpenDialog({
+        title: 'Import setup',
+        properties: ['openFile'],
+        filters: [{ name: 'LMU setup', extensions: ['svm'] }],
+      });
+      if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+      return getSetupLibrary().importFrom(res.filePaths[0], {});
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   /* ---- League leaderboard ----
    *
    * The boards themselves live in Postgres, because a leaderboard is the one

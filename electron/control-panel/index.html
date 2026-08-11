@@ -712,13 +712,81 @@
                 <p class="card__desc">Each slider stages a balanced set of changes — nothing reaches the car until Apply.</p>
               </div>
               <div id="setup-macro-list" class="su-macros"></div>
-              <div id="setup-staged" class="su-staged" hidden>
-                <span id="setup-staged-count" class="su-staged__count"></span>
-                <button id="setup-apply" class="btn btn--accent btn--sm" type="button">Apply</button>
-                <button id="setup-revert" class="btn btn--ghost btn--sm" type="button">Revert</button>
+              <!-- Always visible: an Apply that only exists after you stage
+                   something is an Apply nobody discovers. It sits disabled
+                   until a macro stages changes, then lights up and pulses. -->
+              <div id="setup-staged" class="su-staged">
+                <span id="setup-staged-count" class="su-staged__count">Drag a slider to stage changes.</span>
+                <button id="setup-apply" class="btn btn--accent btn--sm" type="button" disabled>Apply</button>
+                <button id="setup-revert" class="btn btn--ghost btn--sm" type="button" disabled>Revert</button>
               </div>
             </div>
           </aside>
+        </div>
+
+        <!-- ================== SETUP LIBRARY ========================= -->
+        <!-- Saved .svm tunes, app-owned. Rows and filter options are built
+             from the library index at runtime; only the frame is static. -->
+        <section class="card su-lib" id="setup-library">
+          <div class="card__head su-lib__head">
+            <div>
+              <h2 class="card__title">Setup library</h2>
+              <p class="card__desc">
+                Saved tunes per track and car — load one into the garage, or share the .svm with a teammate.
+              </p>
+            </div>
+            <div class="su-lib__actions">
+              <button id="setup-lib-import" class="btn btn--ghost btn--sm" type="button">Import…</button>
+              <button id="setup-lib-save" class="btn btn--accent btn--sm" type="button" disabled>Save current setup…</button>
+            </div>
+          </div>
+          <div class="su-lib__filters">
+            <select id="setup-lib-track" class="field__input" title="Filter by track"></select>
+            <select id="setup-lib-car" class="field__input" title="Filter by car class"></select>
+            <nav id="setup-lib-session" class="seg" aria-label="Session filter"></nav>
+            <div id="setup-lib-colors" class="su-colors" title="Filter by colour"></div>
+            <select id="setup-lib-sort" class="field__input" title="Sort">
+              <option value="newest">Newest first</option>
+              <option value="bestlap">Best lap</option>
+              <option value="name">Name</option>
+            </select>
+          </div>
+          <ul id="setup-lib-list" class="su-lib__list"></ul>
+          <p id="setup-lib-empty" class="su-lib__empty">
+            Nothing saved yet — get the car how you like it and hit “Save current setup”.
+          </p>
+        </section>
+
+        <!-- Save-current-setup dialog. -->
+        <div id="setup-save-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Save current setup</h3>
+            <div class="su-pop__body">
+              <label class="field"><span class="field__label">Name</span>
+                <input id="setup-save-name" class="field__input field__input--wide" type="text" maxlength="60" />
+              </label>
+              <div class="su-pop__row">
+                <nav id="setup-save-session" class="seg" aria-label="Session type"></nav>
+                <div id="setup-save-colors" class="su-colors"></div>
+              </div>
+            </div>
+            <div class="su-pop__buttons">
+              <button id="setup-save-confirm" class="btn btn--accent btn--sm" type="button">Save</button>
+              <button id="setup-save-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Load confirmation — loading replaces the whole garage setup. -->
+        <div id="setup-load-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Load setup</h3>
+            <div class="su-pop__body"><p id="setup-load-text"></p></div>
+            <div class="su-pop__buttons">
+              <button id="setup-load-confirm" class="btn btn--accent btn--sm" type="button">Load</button>
+              <button id="setup-load-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            </div>
+          </div>
         </div>
 
         <!-- One shared info popover, filled per-setting from setup-info.js. -->
