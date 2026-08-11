@@ -137,6 +137,20 @@ contextBridge.exposeInMainWorld('apex', {
     libClip: (id) => ipcRenderer.invoke('setuplib:clip', { id }),
     /** Import a .svm someone sent you (OS open dialog). */
     libImport: () => ipcRenderer.invoke('setuplib:import'),
+
+    /* ---- community setups (cloud) ----
+     * The library's public half. All five can come back `{ ok: false,
+     * signedOut: true }` — a state, not an error, same as the leaderboard. */
+    /** Every published setup, light rows: `{ ok, rows[], signedOut?, error? }`. */
+    cloudList: () => ipcRenderer.invoke('setupcloud:list'),
+    /** Publish a library entry: `{ id, name?, notes?, tags? }` — main attaches the verified lap. */
+    cloudPublish: (payload) => ipcRenderer.invoke('setupcloud:publish', payload),
+    /** Take your own share down (the cloud copy only; local files stay). */
+    cloudUnpublish: (id) => ipcRenderer.invoke('setupcloud:unpublish', { id }),
+    /** Fetch into the sim's Settings tree AND the library: `{ ok, inGame, entry }`. */
+    cloudDownload: (id) => ipcRenderer.invoke('setupcloud:download', { id }),
+    /** Rate a downloaded setup 1–5: `{ id, stars, trackName, carClass }` — main attaches your verified lap. */
+    cloudRate: (payload) => ipcRenderer.invoke('setupcloud:rate', payload),
   },
 
   /* ---- League leaderboard ----

@@ -76,6 +76,28 @@
   const elShareCopy = $('#setup-share-copy');
   const elShareFile = $('#setup-share-file');
   const elShareCancel = $('#setup-share-cancel');
+  const elSharePublish = $('#setup-share-publish');
+
+  // Community card + publish/rate dialogs.
+  const elComFollow = $('#setup-com-follow');
+  const elComRefresh = $('#setup-com-refresh');
+  const elComTrack = $('#setup-com-track');
+  const elComClass = $('#setup-com-class');
+  const elComSort = $('#setup-com-sort');
+  const elComList = $('#setup-com-list');
+  const elComEmpty = $('#setup-com-empty');
+  const elPubPop = $('#setup-pub-pop');
+  const elPubName = $('#setup-pub-name');
+  const elPubNotes = $('#setup-pub-notes');
+  const elPubTags = $('#setup-pub-tags');
+  const elPubTagHint = $('#setup-pub-taghint');
+  const elPubLap = $('#setup-pub-lap');
+  const elPubConfirm = $('#setup-pub-confirm');
+  const elPubCancel = $('#setup-pub-cancel');
+  const elRatePop = $('#setup-rate-pop');
+  const elRateText = $('#setup-rate-text');
+  const elRateStars = $('#setup-rate-stars');
+  const elRateCancel = $('#setup-rate-cancel');
 
   /* ---- state -------------------------------------------------------------- */
 
@@ -103,6 +125,19 @@
 
   const THREE_D_PREF_KEY = 'apex.setup.3d';
 
+  // Community card state — declared HERE, above the lifecycle self-start,
+  // because shown() (which can run synchronously at load) kicks off
+  // refreshCommunity() and these must exist by then.
+  const TAGAPI = window.APEX_SETUP_TAGS;
+  const COM_FOLLOW_KEY = 'apex.setup.community.follow';
+  let comRows = [];
+  let comState = 'loading'; // 'loading' | 'ok' | 'signedOut' | 'error'
+  let comError = '';
+  let comRequest = 0; // monotonic guard against out-of-order replies
+  let pubTarget = null; // library entry being published
+  let pubTags = new Set(); // chips currently toggled on
+  let rateTarget = null; // community row being rated
+
   /* ====================================================================== */
   /*  Lifecycle                                                             */
   /* ====================================================================== */
@@ -113,6 +148,7 @@
     active = true;
     schedulePoll(0);
     void refreshLibrary(); // one read per show, never on a timer
+    void refreshCommunity(); // ditto — one cloud read per show
   }
 
   function hidden() {
@@ -189,14 +225,20 @@
     writesFrozen = false;
     failedWrites = 0;
     elLibSave.disabled = true;
-    if (wasConnected) renderLibraryList(); // Load buttons pick up the new state
+    if (wasConnected) {
+      renderLibraryList(); // Load buttons pick up the new state
+      renderCommunityList(); // follow-mode falls back to manual filters
+    }
   }
 
   function applyState(state) {
     const firstPaint = !lastState || !lastState.connected;
     lastState = state;
     elLibSave.disabled = false;
-    if (firstPaint) renderLibraryList(); // arm the Load buttons
+    if (firstPaint) {
+      renderLibraryList(); // arm the Load buttons
+      renderCommunityList(); // follow-mode locks onto this car & track
+    }
 
     // The Car card shows THIS car, in its own livery — a custom paint comes
     // from raceos.gg, stock art from the game — fetched once per .VEH and
@@ -751,6 +793,8 @@
     if (!elPop.hidden) elPop.hidden = true;
     if (!elSavePop.hidden) elSavePop.hidden = true;
     if (!elSharePop.hidden) elSharePop.hidden = true;
+    if (!elPubPop.hidden) elPubPop.hidden = true;
+    if (!elRatePop.hidden) elRatePop.hidden = true;
   });
 
   /* ====================================================================== */
@@ -1168,6 +1212,467 @@
     } catch {
       /* dialog cancelled */
     }
+  });
+
+  /* ====================================================================== */
+  /*  Community setups                                                      */
+  /* ====================================================================== */
+  /* The cloud half of the library. One read per tab show (plus Refresh and
+   * after any mutation) — the zero-cost-when-closed rule holds. Rows are
+   * filtered and sorted locally; in follow mode, with the sim connected, the
+   * filters lock onto the garage's own track and class. */
+
+  const comFollowing = () =>
+    elComFollow.checked && Boolean(lastState && lastState.connected && lastState.trackName);
+
+  try {
+    elComFollow.checked = localStorage.getItem(COM_FOLLOW_KEY) !== 'off';
+  } catch {
+    /* storage disabled — default stays on */
+  }
+
+  async function refreshCommunity() {
+    if (!window.apex || !window.apex.setup || !window.apex.setup.cloudList) return;
+    const req = ++comRequest;
+    let res = null;
+    try {
+      res = await window.apex.setup.cloudList();
+    } catch {
+      res = null;
+    }
+    if (req !== comRequest) return; // a newer refresh superseded this one
+    if (res && res.ok) {
+      comRows = res.rows || [];
+      comState = 'ok';
+    } else {
+      comRows = [];
+      comState = res && res.signedOut ? 'signedOut' : 'error';
+      comError = (res && res.error) || 'Community unavailable.';
+    }
+    renderCommunityFilters();
+    renderCommunityList();
+  }
+
+  function renderCommunityFilters() {
+    const fill = (select, values, allLabel, current) => {
+      select.textContent = '';
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = allLabel;
+      select.appendChild(all);
+      for (const v of values) {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = v;
+        select.appendChild(o);
+      }
+      select.value = values.includes(current) ? current : '';
+    };
+    fill(
+      elComTrack,
+      [...new Set(comRows.map((r) => r.trackName || r.trackFolder).filter(Boolean))],
+      'All tracks',
+      elComTrack.value,
+    );
+    fill(
+      elComClass,
+      [...new Set(comRows.map((r) => r.carClass).filter(Boolean))],
+      'All classes',
+      elComClass.value,
+    );
+  }
+
+  function fmtStars(row) {
+    if (!row.ratingCount) return 'unrated';
+    return `★ ${Number(row.avgStars).toFixed(1)} (${row.ratingCount})`;
+  }
+
+  function communityRow(row) {
+    const li = document.createElement('li');
+    li.className = 'su-lib__row su-com__row';
+
+    const who = document.createElement('span');
+    who.className = 'su-lib__name su-com__who';
+    const name = document.createElement('span');
+    name.textContent = row.name;
+    name.title = row.notes || '';
+    who.appendChild(name);
+    const by = document.createElement('span');
+    by.className = 'su-com__owner';
+    by.textContent = row.mine ? 'by you' : `by ${row.ownerName}`;
+    who.appendChild(by);
+    li.appendChild(who);
+
+    const meta = document.createElement('span');
+    meta.className = 'su-lib__meta';
+    const chips = [row.trackName || row.trackFolder, row.carClass].filter(Boolean);
+    for (const text of chips) {
+      const c = document.createElement('span');
+      c.className = 'su-chip';
+      c.textContent = text;
+      meta.appendChild(c);
+    }
+    if (row.sessionType) {
+      const c = document.createElement('span');
+      c.className = `su-chip su-chip--${row.sessionType}`;
+      c.textContent = row.sessionType === 'race' ? 'RACE' : 'QUALI';
+      meta.appendChild(c);
+    }
+    for (const tag of row.tags || []) {
+      const c = document.createElement('span');
+      c.className = 'su-chip su-chip--tag';
+      c.textContent = tag;
+      meta.appendChild(c);
+    }
+    if (row.notes) {
+      const noteLine = document.createElement('span');
+      noteLine.className = 'su-com__notes';
+      noteLine.textContent = row.notes;
+      noteLine.title = row.notes;
+      meta.appendChild(noteLine);
+    }
+    li.appendChild(meta);
+
+    // Pace column: the uploader's verified lap, and under it the community's
+    // proof — the fastest verified lap any rater has done with it.
+    const lap = document.createElement('span');
+    lap.className = 'su-lib__lap su-com__lap';
+    const best = fmtLap(row.bestLapMs);
+    const maker = document.createElement('span');
+    maker.textContent = best || 'no lap';
+    maker.setAttribute('data-none', String(!best));
+    maker.title = best
+      ? `${row.mine ? 'Your' : `${row.ownerName}'s`} verified best clean lap with this setup's track & class`
+      : 'The uploader had no clean lap on record';
+    lap.appendChild(maker);
+    const stars = document.createElement('span');
+    stars.className = 'su-com__stars';
+    stars.setAttribute('data-none', String(!row.ratingCount));
+    stars.textContent = `${fmtStars(row)} · ${row.downloads}↓`;
+    const ratersBest = fmtLap(row.ratersBestMs);
+    stars.title =
+      (row.ratingCount
+        ? `${row.ratingCount} rating${row.ratingCount === 1 ? '' : 's'} from drivers who downloaded it`
+        : 'No ratings yet') +
+      ` · ${row.downloads} download${row.downloads === 1 ? '' : 's'}` +
+      (ratersBest ? ` · fastest rater: ${ratersBest}` : '');
+    lap.appendChild(stars);
+    li.appendChild(lap);
+
+    const buttons = document.createElement('span');
+    buttons.className = 'su-lib__buttons';
+
+    const getBtn = document.createElement('button');
+    getBtn.type = 'button';
+    getBtn.className = 'btn btn--accent btn--sm';
+    getBtn.textContent = row.downloaded ? 'Get again' : 'Get';
+    getBtn.title = 'Download into the game’s setup screen and your library';
+    getBtn.addEventListener('click', async () => {
+      getBtn.disabled = true;
+      getBtn.textContent = '…';
+      let res = null;
+      try {
+        res = await window.apex.setup.cloudDownload(row.id);
+      } catch {
+        res = null;
+      }
+      if (res && res.ok) {
+        if (!row.downloaded && !row.mine) row.downloads += 1;
+        row.downloaded = true;
+        getBtn.textContent = res.inGame ? 'In the game ✓' : 'In library ✓';
+        getBtn.title = res.inGame
+          ? 'Saved into LMU’s setup folder — load it from the game’s setup screen'
+          : 'LMU install not found — saved to your library only';
+        void refreshLibrary();
+        renderCommunityList();
+      } else {
+        getBtn.disabled = false;
+        getBtn.textContent = 'Failed';
+        getBtn.title = (res && res.error) || 'Download failed.';
+        setTimeout(() => (getBtn.textContent = row.downloaded ? 'Get again' : 'Get'), 2500);
+      }
+    });
+    buttons.appendChild(getBtn);
+
+    if (row.mine) {
+      // Two-step unpublish, same idiom as library delete. Local copies stay.
+      const rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn--ghost btn--sm';
+      rmBtn.textContent = 'Unpublish';
+      rmBtn.title = 'Take it off the community list — your local files stay';
+      let armTimer = null;
+      rmBtn.addEventListener('click', async () => {
+        if (rmBtn.getAttribute('data-armed') !== 'true') {
+          rmBtn.setAttribute('data-armed', 'true');
+          rmBtn.textContent = 'Sure?';
+          armTimer = setTimeout(() => {
+            rmBtn.setAttribute('data-armed', 'false');
+            rmBtn.textContent = 'Unpublish';
+          }, 3000);
+          return;
+        }
+        clearTimeout(armTimer);
+        try {
+          await window.apex.setup.cloudUnpublish(row.id);
+        } catch {
+          /* refresh shows the truth */
+        }
+        void refreshCommunity();
+      });
+      buttons.appendChild(rmBtn);
+    } else {
+      const rateBtn = document.createElement('button');
+      rateBtn.type = 'button';
+      rateBtn.className = 'btn btn--ghost btn--sm';
+      rateBtn.textContent = row.myStars ? `★ ${row.myStars}` : 'Rate';
+      rateBtn.disabled = !row.downloaded;
+      rateBtn.title = row.downloaded
+        ? row.myStars
+          ? 'Change your rating'
+          : 'Score it — how good is it really?'
+        : 'Download it first — only drivers who tried a setup can rate it';
+      rateBtn.addEventListener('click', () => openRatePop(row));
+      buttons.appendChild(rateBtn);
+    }
+
+    li.appendChild(buttons);
+    return li;
+  }
+
+  function renderCommunityList() {
+    const following = comFollowing();
+    elComTrack.disabled = following;
+    elComClass.disabled = following;
+    if (following) {
+      // The selects display what follow mode locked onto.
+      const track = lastState.trackName || '';
+      const cls = lastState.carClass || '';
+      if (![...elComTrack.options].some((o) => o.value === track)) {
+        const o = document.createElement('option');
+        o.value = track;
+        o.textContent = track;
+        elComTrack.appendChild(o);
+      }
+      if (cls && ![...elComClass.options].some((o) => o.value === cls)) {
+        const o = document.createElement('option');
+        o.value = cls;
+        o.textContent = cls;
+        elComClass.appendChild(o);
+      }
+      elComTrack.value = track;
+      elComClass.value = cls;
+    }
+
+    if (comState !== 'ok') {
+      elComList.textContent = '';
+      elComEmpty.hidden = false;
+      elComEmpty.textContent =
+        comState === 'loading'
+          ? 'Loading community setups…'
+          : comState === 'signedOut'
+            ? 'Sign in (Account tab) to browse and share community setups.'
+            : comError;
+      return;
+    }
+
+    const track = elComTrack.value;
+    const cls = elComClass.value;
+    const eq = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+    let rows = comRows.filter(
+      (r) =>
+        (!track || eq(r.trackName || r.trackFolder, track)) && (!cls || eq(r.carClass, cls)),
+    );
+    const sort = elComSort.value;
+    if (sort === 'stars') {
+      rows.sort((a, b) => (b.avgStars ?? -1) - (a.avgStars ?? -1) || b.ratingCount - a.ratingCount);
+    } else if (sort === 'downloads') rows.sort((a, b) => b.downloads - a.downloads);
+    else if (sort === 'bestlap') {
+      rows.sort((a, b) => (a.bestLapMs ?? Infinity) - (b.bestLapMs ?? Infinity));
+    } else rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+    elComList.textContent = '';
+    for (const r of rows) elComList.appendChild(communityRow(r));
+
+    if (rows.length > 0) {
+      elComEmpty.hidden = true;
+    } else {
+      elComEmpty.hidden = false;
+      elComEmpty.textContent =
+        comRows.length === 0
+          ? 'Nothing shared yet — be the first: Share a saved setup, then “Publish to the community”.'
+          : following
+            ? 'Nothing shared for this car and track yet — you could be first.'
+            : 'Nothing matches these filters.';
+    }
+  }
+
+  elComTrack.addEventListener('change', renderCommunityList);
+  elComClass.addEventListener('change', renderCommunityList);
+  elComSort.addEventListener('change', renderCommunityList);
+  elComRefresh.addEventListener('click', () => void refreshCommunity());
+  elComFollow.addEventListener('change', () => {
+    try {
+      localStorage.setItem(COM_FOLLOW_KEY, elComFollow.checked ? 'on' : 'off');
+    } catch {
+      /* storage disabled */
+    }
+    renderCommunityList();
+  });
+
+  /* ---- publish dialog ------------------------------------------------------ */
+
+  function paintPubTags() {
+    elPubTags.textContent = '';
+    for (const tag of TAGAPI.PRESETS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'su-tag';
+      b.textContent = tag;
+      b.setAttribute('data-active', String(pubTags.has(tag)));
+      b.addEventListener('click', () => {
+        if (pubTags.has(tag)) pubTags.delete(tag);
+        else if (pubTags.size < 8) pubTags.add(tag);
+        b.setAttribute('data-active', String(pubTags.has(tag)));
+      });
+      elPubTags.appendChild(b);
+    }
+  }
+
+  function openPublishPop(entry) {
+    pubTarget = entry;
+    elPubName.value = entry.name;
+    elPubNotes.value = entry.notes || '';
+
+    // Auto-suggest character tags from the tune — honest only when the same
+    // car is in the garage (the bounds are the car's own). Otherwise the
+    // uploader picks by hand.
+    const canSuggest =
+      lastState &&
+      lastState.connected &&
+      entry.values &&
+      (!entry.carClass || !lastState.carClass || entry.carClass === lastState.carClass);
+    const suggested = canSuggest ? TAGAPI.suggest(entry.values, settingsMap) : [];
+    pubTags = new Set(suggested);
+    paintPubTags();
+    elPubTagHint.textContent = suggested.length
+      ? 'Suggested from the setup’s own values — tap to adjust before publishing.'
+      : canSuggest
+        ? 'Pick the chips that match how it drives.'
+        : 'Start LMU with this car in the garage for automatic suggestions — or pick by hand.';
+
+    const best = entry.bestLap && fmtLap(entry.bestLap.lapMs);
+    elPubLap.textContent = best
+      ? `Verified lap attached: ${best} — your best clean lap for this track & class.`
+      : 'No clean lap on record for this track & class — it publishes without a time.';
+    elPubLap.setAttribute('data-none', String(!best));
+
+    elPubConfirm.disabled = false;
+    elPubConfirm.textContent = 'Publish';
+    elSharePop.hidden = true;
+    elPubPop.hidden = false;
+    elPubName.focus();
+  }
+
+  elSharePublish.addEventListener('click', () => {
+    if (shareTarget) openPublishPop(shareTarget);
+  });
+  elPubCancel.addEventListener('click', () => (elPubPop.hidden = true));
+  elPubPop.addEventListener('click', (e) => {
+    if (e.target === elPubPop) elPubPop.hidden = true;
+  });
+
+  elPubConfirm.addEventListener('click', async () => {
+    if (!pubTarget) return;
+    elPubConfirm.disabled = true;
+    elPubConfirm.textContent = 'Publishing…';
+    let res = null;
+    try {
+      res = await window.apex.setup.cloudPublish({
+        id: pubTarget.id,
+        name: elPubName.value,
+        notes: elPubNotes.value,
+        tags: [...pubTags],
+      });
+    } catch {
+      res = null;
+    }
+    if (res && res.ok) {
+      elPubPop.hidden = true;
+      void refreshCommunity();
+    } else {
+      elPubConfirm.disabled = false;
+      elPubConfirm.textContent = 'Failed — retry';
+      elPubConfirm.title = (res && res.error) || 'Publish failed.';
+      elPubTagHint.textContent = (res && res.error) || 'Publish failed.';
+    }
+  });
+
+  /* ---- rate dialog --------------------------------------------------------- */
+
+  function openRatePop(row) {
+    rateTarget = row;
+    elRateText.textContent = `“${row.name}” by ${row.ownerName} — how good is it really?`;
+    elRateStars.textContent = '';
+    for (let n = 1; n <= 5; n++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'su-star';
+      b.textContent = '★';
+      b.setAttribute('aria-label', `${n} star${n === 1 ? '' : 's'}`);
+      b.setAttribute('data-lit', String(Boolean(row.myStars && n <= row.myStars)));
+      b.addEventListener('mouseenter', () => {
+        for (let i = 0; i < 5; i++) {
+          elRateStars.children[i].setAttribute('data-lit', String(i < n));
+        }
+      });
+      b.addEventListener('click', () => void submitRating(n));
+      elRateStars.appendChild(b);
+    }
+    elRatePop.hidden = false;
+  }
+
+  // One listener for the popover's lifetime — openRatePop rebuilds only the
+  // star buttons, so binding here would stack a copy per open.
+  elRateStars.addEventListener('mouseleave', () => {
+    for (let i = 0; i < elRateStars.children.length; i++) {
+      elRateStars.children[i].setAttribute(
+        'data-lit',
+        String(Boolean(rateTarget && rateTarget.myStars && i < rateTarget.myStars)),
+      );
+    }
+  });
+
+  async function submitRating(stars) {
+    if (!rateTarget) return;
+    const row = rateTarget;
+    let res = null;
+    try {
+      res = await window.apex.setup.cloudRate({
+        id: row.id,
+        stars,
+        trackName: row.trackName || '',
+        carClass: row.carClass || '',
+      });
+    } catch {
+      res = null;
+    }
+    elRatePop.hidden = true;
+    if (res && res.ok) {
+      row.myStars = stars;
+      row.avgStars = res.avgStars;
+      row.ratingCount = res.ratingCount;
+      renderCommunityList();
+    } else {
+      elComEmpty.hidden = false;
+      elComEmpty.textContent = (res && res.error) || 'Rating failed.';
+      setTimeout(() => renderCommunityList(), 3000);
+    }
+  }
+
+  elRateCancel.addEventListener('click', () => (elRatePop.hidden = true));
+  elRatePop.addEventListener('click', (e) => {
+    if (e.target === elRatePop) elRatePop.hidden = true;
   });
 
   /* ====================================================================== */

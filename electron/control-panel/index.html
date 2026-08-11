@@ -757,6 +757,85 @@
           </p>
         </section>
 
+        <!-- ================== COMMUNITY SETUPS ====================== -->
+        <!-- Published tunes from every driver in the league. Rows come from
+             browse_setups() and are filtered locally; with the sim running
+             the list follows the garage's own track and class. -->
+        <section class="card su-lib su-com" id="setup-community">
+          <div class="card__head su-lib__head">
+            <div>
+              <h2 class="card__title">Community setups</h2>
+              <p class="card__desc">
+                Shared by the league — a download lands in the game&rsquo;s own setup screen and in your library.
+              </p>
+            </div>
+            <div class="su-lib__actions">
+              <label class="su-com__follow" title="With LMU running, show only setups for the car and track you are in">
+                <input type="checkbox" id="setup-com-follow" checked />
+                Follow my car &amp; track
+              </label>
+              <button id="setup-com-refresh" class="btn btn--ghost btn--sm" type="button">Refresh</button>
+            </div>
+          </div>
+          <div class="su-lib__filters">
+            <select id="setup-com-track" class="field__input" title="Filter by track"></select>
+            <select id="setup-com-class" class="field__input" title="Filter by car class"></select>
+            <select id="setup-com-sort" class="field__input" title="Sort">
+              <option value="newest">Newest first</option>
+              <option value="stars">Best rated</option>
+              <option value="downloads">Most downloaded</option>
+              <option value="bestlap">Fastest verified lap</option>
+            </select>
+          </div>
+          <ul id="setup-com-list" class="su-lib__list"></ul>
+          <p id="setup-com-empty" class="su-lib__empty">Loading community setups…</p>
+        </section>
+
+        <!-- Publish-to-community dialog: notes, character tags (auto-suggested
+             from the tune when the right car is in the garage), verified lap. -->
+        <div id="setup-pub-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Publish to the community</h3>
+            <div class="su-pop__body">
+              <label class="field"><span class="field__label">Name</span>
+                <input id="setup-pub-name" class="field__input field__input--wide" type="text" maxlength="60" />
+              </label>
+              <label class="field"><span class="field__label">Notes — what&rsquo;s it like to drive?</span>
+                <textarea id="setup-pub-notes" class="field__input field__input--wide su-pub__notes" rows="3"
+                  maxlength="500" placeholder="e.g. My race setup for Spa — easy on tyres, try it."></textarea>
+              </label>
+              <div class="field">
+                <span class="field__label">Character tags</span>
+                <div id="setup-pub-tags" class="su-tags"></div>
+                <p id="setup-pub-taghint" class="su-pub__hint"></p>
+              </div>
+              <p id="setup-pub-lap" class="su-pub__lap"></p>
+            </div>
+            <div class="su-pop__buttons">
+              <button id="setup-pub-confirm" class="btn btn--accent btn--sm" type="button">Publish</button>
+              <button id="setup-pub-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rate-a-setup dialog: five stars, submitted on click. The rater's
+             verified lap for the setup's track+class travels automatically. -->
+        <div id="setup-rate-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Rate this setup</h3>
+            <div class="su-pop__body">
+              <p id="setup-rate-text"></p>
+              <div id="setup-rate-stars" class="su-stars" role="radiogroup" aria-label="Stars"></div>
+              <p class="su-pub__hint">
+                Your best clean lap on this track &amp; class is attached automatically as your verified pace.
+              </p>
+            </div>
+            <div class="su-pop__buttons">
+              <button id="setup-rate-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Save-current-setup dialog. -->
         <div id="setup-save-pop" class="su-pop" hidden>
           <div class="su-pop__box">
@@ -785,7 +864,10 @@
               <p id="setup-share-text"></p>
             </div>
             <div class="su-pop__buttons su-pop__buttons--stack">
-              <button id="setup-share-copy" class="btn btn--accent btn--sm" type="button">
+              <button id="setup-share-publish" class="btn btn--accent btn--sm" type="button">
+                Publish to the community…
+              </button>
+              <button id="setup-share-copy" class="btn btn--ghost btn--sm" type="button">
                 Copy file — paste into Discord / WhatsApp
               </button>
               <button id="setup-share-file" class="btn btn--ghost btn--sm" type="button">Save as file…</button>
@@ -1341,6 +1423,7 @@
 <script src="setup-groups.js"></script>
 <script src="setup-info.js"></script>
 <script src="setup-macros.js"></script>
+<script src="setup-tags.js"></script>
 <script src="setup-editor.js"></script>
 </body>
 </html>

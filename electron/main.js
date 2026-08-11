@@ -2522,6 +2522,171 @@ function registerIpc() {
    */
   ipcMain.handle('laps:sync', () => lapUpload.sync({ reason: 'manual' }));
 
+  /* ---- Community setups ----
+   *
+   * The setup library's cloud half: publish a library entry (the raw .svm
+   * travels whole, alongside its parsed values), browse everyone's shares,
+   * download one back into BOTH the sim's own Settings tree (so it appears in
+   * the game's setup screen) and the local library (so the panel can stage
+   * it), and rate what you have downloaded. All five are thin wrappers over
+   * security-definer RPCs — the server owns the download gate and the
+   * one-rating-per-driver rule.
+   *
+   * "Verified" lap times are attached HERE, in main, never typed by the
+   * renderer: the uploader's (and rater's) best clean lap for the setup's
+   * track+class comes straight from the local lap database.
+   */
+
+  /** The renderer never invents a lap time; main looks it up or sends null. */
+  const verifiedBestMs = (trackName, carClass) => {
+    try {
+      const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
+      const hit = bestLapFor(lapLog.buildUploadPlan().bests, { trackName, carClass });
+      return hit ? hit.lapMs : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const cloudFail = (res, verb) => ({
+    ok: false,
+    signedOut: !!res.signedOut,
+    error: res.signedOut ? `Sign in to ${verb} community setups.` : res.error || 'Community unavailable.',
+  });
+
+  /** Every public setup, light rows — the renderer filters/sorts locally. */
+  ipcMain.handle('setupcloud:list', async () => {
+    const res = await authService.rpc('browse_setups', {});
+    if (!res.ok) return { ...cloudFail(res, 'browse'), rows: [] };
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  ipcMain.handle('setupcloud:publish', async (_evt, payload) => {
+    const p = payload || {};
+    try {
+      const lib = getSetupLibrary();
+      const entry = lib.list().find((e) => e.id === String(p.id));
+      if (!entry) return { ok: false, error: 'setup not in library' };
+      if (!entry.trackFolder) {
+        // Imported files carry no track; only garage-saved entries know theirs.
+        return { ok: false, error: 'This setup has no track attached — re-save it from the garage first.' };
+      }
+      const svmText = fs.readFileSync(
+        path.join(app.getPath('userData'), 'setups', 'files', entry.fileName),
+        'utf8',
+      );
+      const res = await authService.rpc('publish_setup', {
+        p_name: String(p.name || entry.name).slice(0, 60),
+        p_notes: String(p.notes ?? entry.notes ?? '').slice(0, 500),
+        p_track_folder: entry.trackFolder,
+        p_track_name: entry.trackName || '',
+        p_car: entry.car || '',
+        p_car_class: entry.carClass || '',
+        p_vehicle_class: entry.vehicleClass || '',
+        p_session_type: entry.sessionType || '',
+        p_tags: Array.isArray(p.tags) ? p.tags.map((t) => String(t).slice(0, 24)).slice(0, 8) : [],
+        p_values: entry.values || {},
+        p_svm: svmText,
+        p_best_lap_ms: verifiedBestMs(entry.trackName, entry.carClass),
+        p_app_version: app.getVersion(),
+      });
+      if (!res.ok) return cloudFail(res, 'publish');
+      const body = res.body || {};
+      if (!body.ok) return { ok: false, error: `Publish refused (${body.reason || 'unknown'}).` };
+      return { ok: true, id: body.id };
+    } catch (err) {
+      console.error('[app] setup publish failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setupcloud:unpublish', async (_evt, payload) => {
+    const res = await authService.rpc('unpublish_setup', { p_id: String(payload && payload.id) });
+    if (!res.ok) return cloudFail(res, 'manage');
+    return { ok: !!(res.body && res.body.ok) };
+  });
+
+  /**
+   * Download = three landings from one fetch: the raw .svm into the sim's own
+   * Settings/<trackFolder>/ (that alone makes it loadable in-game), a copy
+   * into the local library via the normal import path, and — when LMU is
+   * running — a refreshsetups poke so the game's list updates without a
+   * restart. The sim tree being missing degrades to library-only, reported.
+   */
+  ipcMain.handle('setupcloud:download', async (_evt, payload) => {
+    const res = await authService.rpc('download_setup', { p_id: String(payload && payload.id) });
+    if (!res.ok) return cloudFail(res, 'download');
+    const body = res.body || {};
+    if (!body.ok || !body.setup) return { ok: false, error: `Download refused (${body.reason || 'unknown'}).` };
+    const s = body.setup;
+    try {
+      const safe =
+        String(s.name)
+          .replace(/[<>:"/\\|?*]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 60) || 'Community setup';
+
+      // Stage the file once under its readable name, then let the normal
+      // import path file it into the library with full metadata.
+      const stagingDir = path.join(app.getPath('userData'), 'setups', 'share');
+      fs.mkdirSync(stagingDir, { recursive: true });
+      const staged = path.join(stagingDir, `${safe}.svm`);
+      fs.writeFileSync(staged, s.svm);
+      const imported = getSetupLibrary().importFrom(staged, {
+        name: s.name,
+        trackFolder: s.trackFolder,
+        trackName: s.trackName,
+        sessionType: s.sessionType,
+      });
+
+      // Into the sim's own tree, where the in-game setup screen looks.
+      let inGame = false;
+      const kb = require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
+      const kbPath = kb.findKeyboardConfig();
+      const settingsDir = kbPath ? path.join(path.dirname(kbPath), 'Settings') : null;
+      if (settingsDir && fs.existsSync(settingsDir) && s.trackFolder) {
+        const dir = path.join(settingsDir, s.trackFolder);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, `${safe}.svm`), s.svm);
+        inGame = true;
+        // Only works while LMU runs; failing to poke a closed sim is fine —
+        // it rescans the folder on its next launch anyway.
+        try {
+          await getSetupController().refreshSetupFiles();
+        } catch {
+          /* sim not running */
+        }
+      }
+      return { ok: true, inGame, entry: imported.ok ? imported.entry : null, setup: { ...s, svm: undefined } };
+    } catch (err) {
+      console.error('[app] setup download failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setupcloud:rate', async (_evt, payload) => {
+    const p = payload || {};
+    const stars = Math.max(1, Math.min(5, Math.round(Number(p.stars) || 0)));
+    const res = await authService.rpc('rate_setup', {
+      p_id: String(p.id),
+      p_stars: stars,
+      p_lap_ms: verifiedBestMs(String(p.trackName || ''), String(p.carClass || '')),
+    });
+    if (!res.ok) return cloudFail(res, 'rate');
+    const body = res.body || {};
+    if (!body.ok) {
+      const why =
+        body.reason === 'not_downloaded'
+          ? 'Download the setup before rating it.'
+          : body.reason === 'own_setup'
+            ? 'You cannot rate your own setup.'
+            : `Rating refused (${body.reason || 'unknown'}).`;
+      return { ok: false, error: why };
+    }
+    return { ok: true, avgStars: body.avgStars, ratingCount: body.ratingCount };
+  });
+
   /* ---- Feedback + admin panel ----
    *
    * Thin, like the leaderboard handlers: auth.js owns the token and the call,
