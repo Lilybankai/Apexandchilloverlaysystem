@@ -89,6 +89,16 @@ const OVERLAY_CATALOG = [
     label: 'Speedo Cluster',
     description:
       'Speed, revs, gear + fuel, energy and hybrid battery — the panel lights up with the revs',
+    // Selectable cluster designs, drawn as a dropdown on the card. Generic
+    // machinery: any widget can grow one by declaring `designs` here plus a
+    // matching WIDGET_MODES entry — the card builder and the settings handler
+    // never name a widget id. Ids must satisfy the server's mode-slug rule
+    // (short alnum), and the FIRST entry is the default and must preserve the
+    // widget's original behaviour.
+    designs: [
+      { id: 'apex', label: 'Apex — twin rev bars' },
+      { id: 'lmp2', label: 'LMP2 — Cosworth CDU' },
+    ],
   },
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
@@ -388,6 +398,10 @@ const WIDGET_MODES = {
   // four-tyre graphic; it comes last so the three number views stay one press
   // apart from each other, as they were before it existed.
   tyres: ['auto', 'temp', 'surface', 'tread', 'map'],
+  // The cluster's selectable designs. 'apex' is the house twin-rev-bar cluster;
+  // 'lmp2' is the Cosworth-CDU-style LMP2 dash. Kept in step with the `designs`
+  // list on the speedo catalog entry, which is what the card's dropdown renders.
+  speedo: ['apex', 'lmp2'],
 };
 
 /** Action ids whose binding is mirrored by a legacy single-purpose setting. */
@@ -1417,6 +1431,9 @@ function overlaysForUi() {
     // Sent on every overlay so the card builder stays a plain map over the
     // catalog rather than a special case that has to know which id it is on.
     view: o.id === 'standings' ? settings.standings : undefined,
+    // The selected design for widgets that declare `designs` in the catalog —
+    // absent from settings means the first (default) entry.
+    design: o.designs ? settings.widgetModes[o.id] || o.designs[0].id : undefined,
   }));
 }
 
@@ -1870,6 +1887,19 @@ function registerIpc() {
         }
         next.widgetOpacity = normalizeWidgetOpacity({ widgetOpacity: merged });
       }
+      // Per-widget mode/design choices, merged key by key so a card can send
+      // just its own widget. `null` removes the entry (back to the default).
+      // Until this branch existed only the hotkey/wheel action path could write
+      // widgetModes — a panel dropdown's update arrived here and was silently
+      // dropped on the floor.
+      if (partial.widgetModes && typeof partial.widgetModes === 'object') {
+        const merged = { ...current.widgetModes };
+        for (const [id, value] of Object.entries(partial.widgetModes)) {
+          if (value === null || value === undefined) delete merged[id];
+          else merged[id] = value;
+        }
+        next.widgetModes = normalizeWidgetModes({ widgetModes: merged });
+      }
       // Standings composition, merged field by field so the panel can send one
       // number without restating the other four.
       if (partial.standings && typeof partial.standings === 'object') {
@@ -1924,6 +1954,7 @@ function registerIpc() {
       next.audioCues !== current.audioCues ||
       next.audioVolume !== current.audioVolume ||
       JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity) ||
+      JSON.stringify(next.widgetModes) !== JSON.stringify(current.widgetModes) ||
       JSON.stringify(next.standings) !== JSON.stringify(current.standings) ||
       next.speedUnit !== current.speedUnit
     ) {

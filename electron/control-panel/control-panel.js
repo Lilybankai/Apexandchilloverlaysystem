@@ -571,6 +571,45 @@
     return wrap;
   }
 
+  /**
+   * The design dropdown, for widgets whose catalog entry declares `designs`
+   * (today: the speedo cluster's Apex / LMP2 skins). Entirely data-driven — the
+   * options come off the catalog entry and the choice is stored per widget id in
+   * `widgetModes`, so the next widget to grow designs adds a list in main.js and
+   * nothing here. Selecting the FIRST (default) entry sends `null`, which
+   * removes the stored override instead of pinning the default — a config that
+   * never chose anything stays silent about it.
+   */
+  function designRow(o) {
+    const row = document.createElement('div');
+    row.className = 'ovcard__bg';
+
+    const label = document.createElement('span');
+    label.className = 'ovcard__bg-label';
+    label.textContent = 'DESIGN';
+
+    const select = document.createElement('select');
+    select.className = 'field__input field__input--inline';
+    select.id = `design-${o.id}`;
+    for (const d of o.designs) {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.label;
+      select.appendChild(opt);
+    }
+    select.value = o.design || o.designs[0].id;
+    select.title = `Which design the ${o.label} draws — applies live, in OBS and in game`;
+    select.setAttribute('aria-label', `${o.label} design`);
+    select.addEventListener('change', () => {
+      const value = select.value === o.designs[0].id ? null : select.value;
+      void window.apex.updateSettings({ widgetModes: { [o.id]: value } });
+    });
+
+    row.appendChild(label);
+    row.appendChild(select);
+    return row;
+  }
+
   function opacityRow(o) {
     const row = document.createElement('div');
     row.className = 'ovcard__bg';
@@ -779,6 +818,7 @@
       li.appendChild(desc);
       li.appendChild(urlWrap);
       li.appendChild(opacityRow(o));
+      if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
       li.appendChild(foot);
       overlayList.appendChild(li);

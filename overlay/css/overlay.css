@@ -4016,3 +4016,253 @@ body.ig-editing #widget-radar .panel__header {
     background: rgba(53, 208, 127, 0.26);
   }
 }
+
+/* ====================== speedo · the LMP2 design ========================= */
+/* The Cosworth-CDU-style dash (speedo-lmp2.js). The stage swaps to the donor
+   dash's aspect and the canvas — the Apex design's whole renderer — is parked;
+   this design is DOM boxes over one black plate, so a frame costs nothing but
+   the text that changed. */
+.speedo[data-design="lmp2"] {
+  aspect-ratio: 1200 / 720;
+}
+.speedo[data-design="lmp2"] .speedo__bg {
+  display: none;
+}
+
+/* The frame: letterboxed to the design aspect by size() in speedo-lmp2.js,
+   which also writes --s (the design-box scale) — every font below rides on it
+   so the type is locked to the plate, exactly like the Apex design's
+   --sp-scale. A CDU is a mono display; the stack keeps that without shipping
+   the donor's licensed TTF. */
+.splmp2 {
+  position: absolute;
+  font-family: "Consolas", "Roboto Mono", "Segoe UI Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  color: #e8edf5;
+}
+
+/* The CDU's screen. A layer of its own rather than a background on the frame,
+   so the operator's BG slider fades it without touching the digits — the same
+   shell/data split the Apex design draws into its canvas. Faded with OPACITY,
+   not color-mix: OBS ships an older CEF than desktop Chrome, and a background
+   that silently fails to render is worse than one that cannot be retinted
+   (see the regen bloom note above). */
+.splmp2__plate {
+  position: absolute;
+  inset: 0;
+  background: #05070c;
+  opacity: var(--panel-alpha, 1);
+  border-radius: calc(var(--s, 1) * 10px);
+}
+
+/* --- the labelled boxes --- */
+.splmp2__box {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* Coloured fills ride a ::before at the slider's alpha, under the text. */
+.splmp2__box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--panel-alpha, 1);
+}
+.splmp2__box--navy::before { background: #0f1941; }
+.splmp2__box--gold::before { background: #ffd700; }
+.splmp2__box--blue::before { background: #002dc8; }
+.splmp2__box--purple::before { background: #2d0f64; }
+/* The donor's grey-on-gold — the one box whose text is dark. */
+.splmp2__box--gold { color: #3a3f47; }
+
+.splmp2__k {
+  position: relative;
+  height: calc(var(--s, 1) * 52px);
+  display: flex;
+  align-items: center;
+  font-size: calc(var(--s, 1) * 32px);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.splmp2__v {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  font-size: calc(var(--s, 1) * 82px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+/* The sim's own wording for bias is twice the digits of a TC step; a long
+   reading steps down a size instead of clipping (data-small from setValue). */
+.splmp2__v[data-small="true"] {
+  font-size: calc(var(--s, 1) * 46px);
+}
+.splmp2__v[data-small="tiny"] {
+  font-size: calc(var(--s, 1) * 34px);
+}
+
+/* A changed setting's box flashes green with dark text — the donor's in-place
+   acknowledgement, doing the job the Apex design gives its aid pop. It is an
+   alert, so it ignores the BG slider. No keyframes: a state that holds for a
+   second and drops is legible under prefers-reduced-motion by construction. */
+.splmp2__box[data-flash="true"]::before {
+  background: #41c328;
+  opacity: 1;
+}
+.splmp2__box[data-flash="true"] {
+  color: #04140a;
+}
+
+/* --- the top band: lap time | gear | delta --- */
+.splmp2__lap,
+.splmp2__delta {
+  flex-direction: row;
+  justify-content: center;
+}
+.splmp2__bigv {
+  position: relative;
+  font-size: calc(var(--s, 1) * 64px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+/* A new personal best holds the box in the donor's best-lap gold. */
+.splmp2__lap[data-state="best"]::before {
+  background: #ffd700;
+  opacity: 1;
+}
+.splmp2__lap[data-state="best"] {
+  color: #1a1500;
+}
+.splmp2__delta[data-state="up"] .splmp2__bigv { color: var(--pos-gain); }
+.splmp2__delta[data-state="down"] .splmp2__bigv { color: var(--pos-loss); }
+
+.splmp2__gear {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--s, 1) * 200px);
+  font-weight: 700;
+  line-height: 1;
+}
+.splmp2__gear::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #0f1941;
+  opacity: var(--panel-alpha, 1);
+}
+/* The glyph itself sits above its box's fill. */
+.splmp2__gearv { position: relative; }
+
+/* --- the tyre grid: pressure big, temperature small, per corner --- */
+.splmp2__tyres {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: calc(var(--s, 1) * 3px);
+}
+.splmp2__tyres::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #0f1941;
+  opacity: var(--panel-alpha, 1);
+}
+.splmp2__cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.splmp2__cell-t {
+  font-size: calc(var(--s, 1) * 28px);
+  color: #9fb0c8;
+}
+.splmp2__cell-p {
+  font-size: calc(var(--s, 1) * 60px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* --- the wordmark strip the donor gives to the ECU vendor --- */
+.splmp2__mark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--s, 1) * 28px);
+  font-weight: 600;
+  letter-spacing: 0.55em;
+  text-indent: 0.55em; /* recentre: letter-spacing trails the last glyph */
+  color: rgba(232, 237, 245, 0.32);
+}
+
+/* --- pedal strips: brake left, throttle right, growing out from centre --- */
+.splmp2__bar {
+  position: absolute;
+  overflow: hidden;
+}
+.splmp2__bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: var(--panel-alpha, 1);
+}
+.splmp2__bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+}
+.splmp2__bar--brake .splmp2__bar-fill {
+  right: 0;
+  background: #ff3b30;
+}
+.splmp2__bar--throttle .splmp2__bar-fill {
+  left: 0;
+  background: #41c328;
+}
+
+/* --- the banner states, over everything --- */
+.splmp2__banner {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--s, 1) * 48px);
+  font-size: calc(var(--s, 1) * 62px);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  z-index: 2;
+}
+.splmp2__banner[data-kind="limiter"] {
+  display: flex;
+  background: #41c327;
+  color: #04140a;
+}
+/* Over the pit-lane speed with the limiter on: the same banner, gone red —
+   the donor's own escalation, and the one moment this panel shouts. */
+.splmp2__banner[data-kind="limiter"][data-over="true"] {
+  background: #ff2e2a;
+  color: #fff;
+}
+.splmp2__banner[data-kind="stall"] {
+  display: flex;
+  background: #ff2e2a;
+  color: #fff;
+}
+.splmp2__banner-clutch {
+  font-size: calc(var(--s, 1) * 68px);
+  font-weight: 700;
+}
