@@ -2537,14 +2537,23 @@ function registerIpc() {
    * track+class comes straight from the local lap database.
    */
 
-  /** The renderer never invents a lap time; main looks it up or sends null. */
-  const verifiedBestMs = (trackName, carClass) => {
+  /**
+   * The renderer never invents a lap time; main looks it up or sends null.
+   * With a fingerprint, the lap log is asked for the best clean lap DRIVEN ON
+   * that setup first (`onSetup: true` — attribution proven by the stamp each
+   * v4 lap carries); the plain track+class best is the labelled fallback.
+   */
+  const verifiedBest = (trackName, carClass, fingerprint) => {
     try {
       const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
+      if (fingerprint) {
+        const on = lapLog.bestOnSetup(trackName, carClass, fingerprint);
+        if (on) return { lapMs: on.lapMs, onSetup: true };
+      }
       const hit = bestLapFor(lapLog.buildUploadPlan().bests, { trackName, carClass });
-      return hit ? hit.lapMs : null;
+      return { lapMs: hit ? hit.lapMs : null, onSetup: false };
     } catch {
-      return null;
+      return { lapMs: null, onSetup: false };
     }
   };
 
@@ -2575,6 +2584,9 @@ function registerIpc() {
         path.join(app.getPath('userData'), 'setups', 'files', entry.fileName),
         'utf8',
       );
+      const fp = require(path.join(__dirname, '..', 'dist', 'telemetry', 'setupFingerprint.js'))
+        .fingerprintValues(entry.values || {});
+      const best = verifiedBest(entry.trackName, entry.carClass, fp);
       const res = await authService.rpc('publish_setup', {
         p_name: String(p.name || entry.name).slice(0, 60),
         p_notes: String(p.notes ?? entry.notes ?? '').slice(0, 500),
@@ -2587,8 +2599,10 @@ function registerIpc() {
         p_tags: Array.isArray(p.tags) ? p.tags.map((t) => String(t).slice(0, 24)).slice(0, 8) : [],
         p_values: entry.values || {},
         p_svm: svmText,
-        p_best_lap_ms: verifiedBestMs(entry.trackName, entry.carClass),
+        p_best_lap_ms: best.lapMs,
         p_app_version: app.getVersion(),
+        p_fingerprint: fp,
+        p_best_lap_on_setup: best.onSetup,
       });
       if (!res.ok) return cloudFail(res, 'publish');
       const body = res.body || {};
@@ -2668,10 +2682,16 @@ function registerIpc() {
   ipcMain.handle('setupcloud:rate', async (_evt, payload) => {
     const p = payload || {};
     const stars = Math.max(1, Math.min(5, Math.round(Number(p.stars) || 0)));
+    const best = verifiedBest(
+      String(p.trackName || ''),
+      String(p.carClass || ''),
+      String(p.fingerprint || ''),
+    );
     const res = await authService.rpc('rate_setup', {
       p_id: String(p.id),
       p_stars: stars,
-      p_lap_ms: verifiedBestMs(String(p.trackName || ''), String(p.carClass || '')),
+      p_lap_ms: best.lapMs,
+      p_lap_on_setup: best.onSetup,
     });
     if (!res.ok) return cloudFail(res, 'rate');
     const body = res.body || {};

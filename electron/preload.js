@@ -149,7 +149,8 @@ contextBridge.exposeInMainWorld('apex', {
     cloudUnpublish: (id) => ipcRenderer.invoke('setupcloud:unpublish', { id }),
     /** Fetch into the sim's Settings tree AND the library: `{ ok, inGame, entry }`. */
     cloudDownload: (id) => ipcRenderer.invoke('setupcloud:download', { id }),
-    /** Rate a downloaded setup 1–5: `{ id, stars, trackName, carClass }` — main attaches your verified lap. */
+    /** Rate a downloaded setup 1–5: `{ id, stars, trackName, carClass, fingerprint }` —
+     *  main attaches your verified lap, preferring one driven on that very setup. */
     cloudRate: (payload) => ipcRenderer.invoke('setupcloud:rate', payload),
   },
 

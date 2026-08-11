@@ -92,8 +92,12 @@ export interface LapRecord {
    * `3` added {@link id} and the sector splits. Same story: a v1/v2 lap has no
    * trace file to point at and no sectors to show, and nothing downstream
    * requires either.
+   *
+   * `4` added {@link setupFp}. A pre-v4 lap simply cannot be attributed to a
+   * setup — the honest outcome, since nobody recorded what the car was
+   * running that day.
    */
-  v: 1 | 2 | 3;
+  v: 1 | 2 | 3 | 4;
   /**
    * Unique id for this lap (UUID), minted when the record is built. This is the
    * join key between the lap database and everything recorded ABOUT the lap —
@@ -158,6 +162,13 @@ export interface LapRecord {
   s1Ms?: number;
   s2Ms?: number;
   s3Ms?: number;
+  /**
+   * Fingerprint of the garage setup the lap was driven on (see
+   * `setupFingerprint.ts`) — the join key between a lap and a setup in the
+   * library or the community catalogue. Absent when the garage endpoint had
+   * not answered yet this stint (or on pre-v4 laps).
+   */
+  setupFp?: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -311,6 +322,14 @@ export interface LapInput {
    */
   sector1Sec?: number;
   sector2Sec?: number;
+  /**
+   * Current setup fingerprint from the provider's cached garage read
+   * (`fingerprintGarageData`). The garage endpoint reports the SETUP, frozen —
+   * cockpit clicks never appear (probed live 2026-08-11) — so the value at the
+   * line is the value the whole lap was driven on. Omit when no garage read
+   * has succeeded; the lap then records no attribution rather than a guess.
+   */
+  setupFp?: string;
 }
 
 /**
@@ -480,7 +499,7 @@ export class LapRecorder {
 
     const reasons = [...dirty];
     return {
-      v: 3,
+      v: 4,
       id: crypto.randomUUID(),
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
@@ -500,6 +519,7 @@ export class LapRecorder {
       ...(typeof input.ambientTempC === 'number' ? { ambientTempC: input.ambientTempC } : {}),
       ...(input.wet !== undefined ? { wet: !!input.wet } : {}),
       ...sectorSplits(input.sector1Sec, input.sector2Sec, lapMs),
+      ...(input.setupFp ? { setupFp: input.setupFp } : {}),
     };
   }
 
@@ -803,6 +823,36 @@ export interface UploadPlan {
  * into reading an unbounded directory on a timer.
  */
 const MAX_SCAN_DAYS = 365;
+
+/**
+ * Best clean lap for a track+class DRIVEN ON one specific setup — the
+ * attribution query behind "verified pace" on a community setup card. Matches
+ * the fingerprint stamped on each v4 lap against the setup's own; laps from
+ * before stamping existed can never match, which is the honest outcome.
+ * Track matches the way main's library join does: sim display name,
+ * case-insensitively.
+ */
+export function bestOnSetup(
+  trackName: string,
+  carClass: string,
+  setupFp: string,
+  dir = lapDir(),
+): { lapMs: number; setAt: string } | null {
+  if (!setupFp) return null;
+  const track = String(trackName || '').trim().toLowerCase();
+  const cls = String(carClass || '').trim().toUpperCase();
+  if (!track || !cls) return null;
+  let best: { lapMs: number; setAt: string } | null = null;
+  for (const day of listDays(dir)) {
+    for (const rec of readDay(day, dir)) {
+      if (!rec.clean || rec.setupFp !== setupFp) continue;
+      if ((rec.track || '').toLowerCase() !== track) continue;
+      if ((rec.carClass || '').toUpperCase() !== cls) continue;
+      if (!best || rec.lapMs < best.lapMs) best = { lapMs: rec.lapMs, setAt: rec.at };
+    }
+  }
+  return best;
+}
 
 /** Day stamps we actually hold files for, oldest first. */
 export function listDays(dir = lapDir()): string[] {

@@ -735,3 +735,10 @@
 .su-star[data-lit='true'] {
   color: var(--warn);
 }
+
+/* Attribution: a lap proven on this setup keeps the cyan and gains its ✓;
+   a track/class-best fallback reads dimmer — shown, but not sworn to. */
+.su-com__lap > span[data-onsetup='false']:not([data-none='true']) {
+  color: var(--text-2);
+  font-weight: 400;
+}

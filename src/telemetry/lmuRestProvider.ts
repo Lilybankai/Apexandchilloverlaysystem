@@ -87,6 +87,7 @@ import {
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, type LapRecord } from './lapLog';
+import { fingerprintGarageData } from './setupFingerprint';
 import {
   LapTraceRecorder,
   pruneTraces,
@@ -576,6 +577,10 @@ export class LmuRestProvider implements TelemetryProvider {
   private pitMenuRaw: RawPitRow[] | null = null;
   private garageDataRaw: Record<string, RawGarageVal> | null = null;
   private lastMfdOkAt = 0;
+  /** Fingerprint of {@link garageDataRaw}, memoized on the payload's identity —
+   *  the 3 s garage poll replaces the object wholesale on every success. */
+  private setupFpCache = '';
+  private setupFpFor: Record<string, RawGarageVal> | null = null;
   private garageTimer: NodeJS.Timeout | null = null;
   /** The pit menu's own faster timer — see PIT_MENU_REFRESH_INTERVAL_MS. */
   private pitMenuTimer: NodeJS.Timeout | null = null;
@@ -2683,6 +2688,10 @@ export class LmuRestProvider implements TelemetryProvider {
         ...(typeof playerCar.lastSectorTime2 === 'number'
           ? { sector2Sec: playerCar.lastSectorTime2 }
           : {}),
+        // Which setup the lap was driven on. The garage endpoint reports the
+        // SETUP, frozen — cockpit clicks never appear (probed live 2026-08-11)
+        // — so the cached 3 s read is exact, not approximate.
+        ...(this.currentSetupFp() ? { setupFp: this.currentSetupFp() } : {}),
       },
       nowMs,
     );
@@ -2690,6 +2699,15 @@ export class LmuRestProvider implements TelemetryProvider {
       appendLap(lap);
       this.attachTrace(lap);
     }
+  }
+
+  /** Fingerprint of the current garage setup, memoized per garage read. */
+  private currentSetupFp(): string {
+    if (this.garageDataRaw !== this.setupFpFor) {
+      this.setupFpFor = this.garageDataRaw;
+      this.setupFpCache = fingerprintGarageData(this.garageDataRaw);
+    }
+    return this.setupFpCache;
   }
 
   /**

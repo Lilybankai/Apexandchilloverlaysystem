@@ -1339,23 +1339,33 @@
     lap.className = 'su-lib__lap su-com__lap';
     const best = fmtLap(row.bestLapMs);
     const maker = document.createElement('span');
-    maker.textContent = best || 'no lap';
+    // The ✓ is attribution: the uploader's lap log proves this time was driven
+    // on THIS setup (fingerprint match), not merely at this track in this class.
+    maker.textContent = best ? (row.bestLapOnSetup ? `${best} ✓` : best) : 'no lap';
     maker.setAttribute('data-none', String(!best));
+    maker.setAttribute('data-onsetup', String(Boolean(best && row.bestLapOnSetup)));
     maker.title = best
-      ? `${row.mine ? 'Your' : `${row.ownerName}'s`} verified best clean lap with this setup's track & class`
+      ? row.bestLapOnSetup
+        ? `${row.mine ? 'Your' : `${row.ownerName}'s`} best clean lap driven on this exact setup — verified`
+        : `${row.mine ? 'Your' : `${row.ownerName}'s`} best clean lap for this track & class — not proven on this setup`
       : 'The uploader had no clean lap on record';
     lap.appendChild(maker);
     const stars = document.createElement('span');
     stars.className = 'su-com__stars';
     stars.setAttribute('data-none', String(!row.ratingCount));
     stars.textContent = `${fmtStars(row)} · ${row.downloads}↓`;
+    const ratersOnSetup = fmtLap(row.ratersBestOnSetupMs);
     const ratersBest = fmtLap(row.ratersBestMs);
     stars.title =
       (row.ratingCount
         ? `${row.ratingCount} rating${row.ratingCount === 1 ? '' : 's'} from drivers who downloaded it`
         : 'No ratings yet') +
       ` · ${row.downloads} download${row.downloads === 1 ? '' : 's'}` +
-      (ratersBest ? ` · fastest rater: ${ratersBest}` : '');
+      (ratersOnSetup
+        ? ` · fastest rater on this setup: ${ratersOnSetup} ✓`
+        : ratersBest
+          ? ` · fastest rater (any setup): ${ratersBest}`
+          : '');
     lap.appendChild(stars);
     li.appendChild(lap);
 
@@ -1563,7 +1573,7 @@
 
     const best = entry.bestLap && fmtLap(entry.bestLap.lapMs);
     elPubLap.textContent = best
-      ? `Verified lap attached: ${best} — your best clean lap for this track & class.`
+      ? `Verified lap attached: ${best} — marked “driven on this setup” automatically when your lap log proves it.`
       : 'No clean lap on record for this track & class — it publishes without a time.';
     elPubLap.setAttribute('data-none', String(!best));
 
@@ -1653,6 +1663,7 @@
         stars,
         trackName: row.trackName || '',
         carClass: row.carClass || '',
+        fingerprint: row.fingerprint || '',
       });
     } catch {
       res = null;
