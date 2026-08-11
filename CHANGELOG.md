@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.67.0-beta.8 — 2026-08-11
+
+### Fixed
+
+- **Switching the speedo back to the Apex design works without a restart.**
+  Picking the default design (or any widget's default mode) removed the
+  stored choice, but the overlays only ever heard about modes that were SET —
+  a removed one was never delivered, so the cluster stayed on the LMP2 dash
+  until the app was relaunched. The overlays now treat a vanished entry as
+  "back to the default" and rebuild on the spot, live in OBS and in game.
+- **The pit limiter no longer sticks on the cluster after you leave the
+  car.** The ESC and garage screens freeze the sim's telemetry block at its
+  last values, so a limiter that was on when you stepped out kept reading as
+  on — the cluster sat glowing purple with the LIMITER chip lit until you
+  drove again. The limiter reading is now dropped while the sim says you're
+  in its menus (the same signal the LMP2 dash's banners and the race-control
+  callouts already respect), so the cluster returns to a live state the
+  moment the data stops being live.
+- **A telemetry frame without a player block can no longer freeze the Apex
+  cluster mid-paint.** The LMP2 design already guarded against it; the Apex
+  design now skips such a frame cleanly instead of stopping at whatever it
+  last drew.
+
 ## 0.67.0-beta.7 — 2026-08-11
 
 ### Added

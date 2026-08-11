@@ -1309,6 +1309,7 @@ export class LmuRestProvider implements TelemetryProvider {
       paceDeltas,
       trackLimits,
       paceScore,
+      session.onTrack !== false,
     );
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there).
@@ -2220,6 +2221,7 @@ export class LmuRestProvider implements TelemetryProvider {
     paceDeltas: PaceDeltas | undefined,
     trackLimits: TrackLimitsState | undefined,
     paceScore: PaceScoreState | undefined,
+    atWheel: boolean,
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -2239,7 +2241,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const surfaceTemps = local ? local.tyreTempsC : null;
     const hudTemps = local ? local.tyreHudTempsC : null;
     const speedKph = local ? local.speedKph : restSpeed;
-    const pit = this.buildPit(focus, speedKph, local, this.gameState);
+    const pit = this.buildPit(focus, speedKph, local, this.gameState, atWheel);
     // Compound + optimal temperature, while the reading is fresh. Held to the
     // same staleness rule as wear: in the menus or after leaving the session
     // these describe a car that is no longer there.
@@ -2755,6 +2757,7 @@ export class LmuRestProvider implements TelemetryProvider {
     speedKph: number,
     local: LocalCarPhysics | null,
     gs: RestGameState | null,
+    atWheel: boolean,
   ): PitState | undefined {
     if (!focus) {
       this.pitWork = null;
@@ -2765,11 +2768,18 @@ export class LmuRestProvider implements TelemetryProvider {
     // and the limiter prompt around the race start likewise. Both are omitted
     // rather than guessed when their channel is absent — the limiter is the
     // DRIVEN car's shared memory, so it disappears while spectating.
+    //
+    // The limiter is ALSO omitted while the driver is in the sim's menus
+    // (`atWheel` = the session's onTrack signal): the ESC and garage screens
+    // freeze the telemetry MMF at its last values, so the byte still READS —
+    // it just describes the moment the driver left the car. A limiter that was
+    // on when they stepped out would otherwise sit lit on the cluster until
+    // they drove again, which testers read as the widget being stuck.
     const extras = {
       ...(gs && typeof gs.PitEntryDist === 'number' && Math.abs(gs.PitEntryDist) < 100000
         ? { entryDistM: Math.round(gs.PitEntryDist) }
         : {}),
-      ...(local && local.limiterOn !== null ? { limiterOn: local.limiterOn } : {}),
+      ...(local && local.limiterOn !== null && atWheel ? { limiterOn: local.limiterOn } : {}),
     };
     const phase = pitPhase(focus, speedKph);
     if (phase !== 'stopped') {
