@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.67.0-beta.6 — 2026-08-11
+
+### Added
+
+- **The speedo cluster comes in designs — first up, a real LMP2 dash.** A new
+  Design dropdown on the Speedo Cluster card picks the cluster's whole look:
+  the familiar twin-rev-bar cluster stays the default, and "LMP2 — Cosworth
+  CDU" redraws it as the boxy, mono-spaced display an actual LMP2 runs. Big
+  gear glyph, running lap time that holds your finished lap (gold on a
+  personal best), signed live delta, fuel and energy row, TC / brake bias /
+  TC cut boxes that flash green the moment you step a setting, tyre pressures
+  and temps in the centre grid, brake and throttle strips along the floor —
+  and the full-width shouts: PIT SPEED LIMITER (going red the moment you're
+  over the limit) and ENGINE STALL with your clutch beside it. The choice
+  applies live in OBS and in game, no reload; `?design=lmp2` pins it on a
+  single Browser Source. More GT3 and prototype designs to come.
+
+### Fixed
+
+- **Per-widget mode changes from the control panel now actually save.** The
+  settings handler silently dropped them — only a bound hotkey could ever
+  switch a widget's mode. Groundwork the new Design dropdown sits on.
+
 ## 0.67.0-beta.5 — 2026-08-11
 
 ### Added
