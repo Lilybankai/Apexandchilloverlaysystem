@@ -2305,11 +2305,33 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('setuplib:load', async (_evt, payload) => {
+  // Share half 2: put the .svm ON THE CLIPBOARD AS A FILE, so Ctrl+V drops it
+  // straight into Discord or WhatsApp. Electron's clipboard API cannot write
+  // the Windows CF_HDROP file format, but PowerShell's Set-Clipboard can, and
+  // this is a user-initiated click on a file the app owns.
+  ipcMain.handle('setuplib:clip', async (_evt, payload) => {
     try {
-      return await getSetupLibrary().load(String(payload && payload.id));
+      const lib = getSetupLibrary();
+      const entry = lib.list().find((e) => e.id === String(payload && payload.id));
+      if (!entry) return { ok: false, error: 'setup not in library' };
+      // Copy under the readable name — what lands in the chat says what it is.
+      const stagingDir = path.join(app.getPath('userData'), 'setups', 'share');
+      fs.mkdirSync(stagingDir, { recursive: true });
+      const shareFile = path.join(stagingDir, `${entry.name}.svm`);
+      const res = lib.exportTo(entry.id, shareFile);
+      if (!res.ok) return res;
+      const { execFile } = require('node:child_process');
+      await new Promise((resolve, reject) => {
+        execFile(
+          'powershell.exe',
+          ['-NoProfile', '-Command', `Set-Clipboard -LiteralPath '${shareFile.replace(/'/g, "''")}'`],
+          { windowsHide: true },
+          (err) => (err ? reject(err) : resolve()),
+        );
+      });
+      return { ok: true, entry };
     } catch (err) {
-      console.error('[app] setup library load failed:', err.message);
+      console.error('[app] setup clipboard share failed:', err.message);
       return { ok: false, error: err.message };
     }
   });

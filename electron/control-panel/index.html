@@ -777,14 +777,19 @@
           </div>
         </div>
 
-        <!-- Load confirmation — loading replaces the whole garage setup. -->
-        <div id="setup-load-pop" class="su-pop" hidden>
+        <!-- Share dialog: clipboard-as-file for chat apps, or a save dialog. -->
+        <div id="setup-share-pop" class="su-pop" hidden>
           <div class="su-pop__box">
-            <h3 class="su-pop__title">Load setup</h3>
-            <div class="su-pop__body"><p id="setup-load-text"></p></div>
-            <div class="su-pop__buttons">
-              <button id="setup-load-confirm" class="btn btn--accent btn--sm" type="button">Load</button>
-              <button id="setup-load-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            <h3 class="su-pop__title">Share setup</h3>
+            <div class="su-pop__body">
+              <p id="setup-share-text"></p>
+            </div>
+            <div class="su-pop__buttons su-pop__buttons--stack">
+              <button id="setup-share-copy" class="btn btn--accent btn--sm" type="button">
+                Copy file — paste into Discord / WhatsApp
+              </button>
+              <button id="setup-share-file" class="btn btn--ghost btn--sm" type="button">Save as file…</button>
+              <button id="setup-share-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
             </div>
           </div>
         </div>

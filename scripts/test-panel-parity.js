@@ -300,10 +300,14 @@ const PANEL_CONTRACT = {
   'setup-save-colors': 'div',
   'setup-save-confirm': 'button',
   'setup-save-cancel': 'button',
-  'setup-load-pop': 'div',
-  'setup-load-text': 'p',
-  'setup-load-confirm': 'button',
-  'setup-load-cancel': 'button',
+  // Share dialog (v0.67.0-beta.4) — clipboard-as-file for chat apps, or a
+  // save dialog. Load lost its dialog the same beta: loading stages in the
+  // editor now, so there is nothing destructive left to confirm.
+  'setup-share-pop': 'div',
+  'setup-share-text': 'p',
+  'setup-share-copy': 'button',
+  'setup-share-file': 'button',
+  'setup-share-cancel': 'button',
 
   // Floating
   toast: 'div',

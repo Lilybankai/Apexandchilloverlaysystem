@@ -25,6 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { GARAGE_WRITE_KEY, projectSetupState } = require('../dist/telemetry/setupState.js');
+const { parseSvmValues } = require('../dist/telemetry/svmMap.js');
 const groups = require('../electron/control-panel/setup-groups.js');
 const infoApi = require('../electron/control-panel/setup-info.js');
 const macroApi = require('../electron/control-panel/setup-macros.js');
@@ -174,6 +175,55 @@ for (const { name, data } of fixtures) {
   }
   const uniqUncovered = [...new Set(uncovered)];
   check('every adjustable key has info text', uniqUncovered.length === 0, uniqUncovered.join(', ') || 'covered');
+}
+
+/* ---- .svm parsing (the library's Load path) ------------------------------ */
+
+console.log('\nsample-tune.svm — the .svm → REST-key translation');
+{
+  const svm = fs.readFileSync(path.join(fixtureDir, 'sample-tune.svm'), 'utf8');
+  const parsed = parseSvmValues(svm);
+
+  check('header vehicle class read', parsed.vehicleClass === 'GT3 Test_Car_LMGT3 WEC2025');
+  check('symmetric read', parsed.symmetric === true);
+  check(
+    'every setting name in the fixture is mapped',
+    parsed.unmapped.length === 0,
+    parsed.unmapped.join(', ') || 'all mapped',
+  );
+  check(
+    'every parsed key is a legal write target',
+    Object.keys(parsed.values).every((k) => GARAGE_WRITE_KEY.test(k)),
+  );
+
+  // Spot-checks across every section — a mis-mapped name shows as a wrong
+  // value because the fixture gives each line a distinct one.
+  const expect = {
+    VM_FUEL_LEVEL: 90,
+    VM_REAR_WING: 4,
+    VM_BRAKE_DUCTS_REAR: 4,
+    VM_FRONT_ANTISWAY: 6,
+    VM_REAR_3RD_TENDERSPRINGTRAVEL: 4,
+    VM_BRAKE_BALANCE: 23,
+    VM_ANTILOCKBRAKESYSTEMMAP: 9,
+    VM_REGEN_LEVEL: 3,
+    VM_GEAR_7: 9,
+    VM_TORQUE_SPLIT: 1,
+    VM_DIFF_PRELOAD: 87,
+    VM_CHASSIS_ADJ_11: 3,
+    'WM_CAMBER-W_FL': 21,
+    'WM_CAMBER-W_RR': 30,
+    'WM_PACKERS-W_FR': 7,
+    'WM_SRUBBER-W_RL': 5,
+    'WM_COMPOUND-W_RR': 4,
+  };
+  const wrong = Object.entries(expect).filter(([k, v]) => parsed.values[k] !== v);
+  check(
+    'section+name → key spot checks across all sections',
+    wrong.length === 0,
+    wrong.map(([k]) => k).join(', ') || `${Object.keys(expect).length} checked`,
+  );
+  check('the [BASIC] pseudo-sliders are not settings', !('Downforce' in parsed.values));
 }
 
 console.log(failures === 0 ? '\nAll setup checks passed.' : `\n${failures} FAILED`);

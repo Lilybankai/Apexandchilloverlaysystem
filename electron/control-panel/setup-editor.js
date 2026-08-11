@@ -71,10 +71,11 @@
   const elSaveColors = $('#setup-save-colors');
   const elSaveConfirm = $('#setup-save-confirm');
   const elSaveCancel = $('#setup-save-cancel');
-  const elLoadPop = $('#setup-load-pop');
-  const elLoadText = $('#setup-load-text');
-  const elLoadConfirm = $('#setup-load-confirm');
-  const elLoadCancel = $('#setup-load-cancel');
+  const elSharePop = $('#setup-share-pop');
+  const elShareText = $('#setup-share-text');
+  const elShareCopy = $('#setup-share-copy');
+  const elShareFile = $('#setup-share-file');
+  const elShareCancel = $('#setup-share-cancel');
 
   /* ---- state -------------------------------------------------------------- */
 
@@ -94,7 +95,8 @@
   const writeTimers = new Map(); // key -> debounce timeout id
   const macroClicks = new Map(); // macro id -> clicks (-RANGE..RANGE)
   const macroSliders = new Map(); // macro id -> { input, clicks } elements
-  let staged = new Map(); // key -> target value (macro preview overlay)
+  let staged = new Map(); // key -> target value (the preview overlay)
+  let loadedStage = null; // {name, values: Map, skipped, warnings[]} — a staged library tune
   let writesFrozen = false;
   let failedWrites = 0;
 
@@ -576,22 +578,36 @@
   }
 
   /**
-   * Recomputes the whole staged overlay from the BASE values plus every macro
-   * at its current clicks, in panel order. Recomputing from scratch (rather
-   * than nudging) keeps staging deterministic: dragging a macro to +3 and back
-   * to 0 stages exactly nothing.
+   * Recomputes the whole staged overlay from the BASE values, plus a loaded
+   * library tune (if any) underneath, plus every macro at its current clicks
+   * on top, in panel order. Recomputing from scratch (rather than nudging)
+   * keeps staging deterministic: dragging a macro to +3 and back to 0 stages
+   * exactly nothing, and a loaded tune plus a macro tweak compose cleanly.
    */
   function restage() {
     staged = new Map();
-    if (!lastState || !lastState.connected) return;
+    if (!lastState || !lastState.connected) {
+      paintStagedUi(0);
+      return;
+    }
     const carClass = lastState.carClass || '';
 
-    // Effective view: base values with earlier macros' staging applied.
+    // Effective view: base values, overlaid as staging accumulates.
     const effective = new Map();
     for (const [key, s] of settingsMap) {
       effective.set(key, { value: s.value, min: s.min, max: s.max, isFree: s.isFree, available: s.available });
     }
 
+    // 1 ─ the loaded library tune, if one is staged.
+    if (loadedStage) {
+      for (const [key, to] of loadedStage.values) {
+        staged.set(key, to);
+        const e = effective.get(key);
+        if (e) e.value = to;
+      }
+    }
+
+    // 2 ─ macros compound on top.
     let skippedCount = 0;
     for (const macro of MACROAPI.MACROS) {
       const clicks = macroClicks.get(macro.id) || 0;
@@ -613,16 +629,38 @@
       if (dirtyLocal.has(key)) continue;
       row.paint(settingsMap.get(key), staged.has(key) ? staged.get(key) : null);
     }
+    paintStagedUi(skippedCount);
+  }
+
+  /** The Apply bar + the orange tab glow, from the current staged overlay. */
+  function paintStagedUi(macroSkipped) {
     // The Apply bar never hides — it arms. A control that only appears after
     // an invisible precondition is a control nobody finds.
     elStaged.setAttribute('data-ready', String(staged.size > 0));
     elApply.disabled = staged.size === 0;
     elRevert.disabled = staged.size === 0;
-    elStagedCount.textContent =
-      staged.size > 0
-        ? `${staged.size} setting${staged.size === 1 ? '' : 's'} staged` +
-          (skippedCount ? ` · ${skippedCount} skipped (locked or not on this car)` : '')
+
+    if (staged.size === 0) {
+      elStagedCount.textContent = loadedStage
+        ? `“${loadedStage.name}” already matches the car.`
         : 'Drag a slider to stage changes.';
+    } else {
+      const parts = [];
+      if (loadedStage) parts.push(`“${loadedStage.name}” loaded`);
+      parts.push(`${staged.size} setting${staged.size === 1 ? '' : 's'} staged`);
+      const skipped = (loadedStage ? loadedStage.skipped : 0) + (macroSkipped || 0);
+      if (skipped) parts.push(`${skipped} skipped (locked or not on this car)`);
+      if (loadedStage && loadedStage.warnings.length) parts.push(loadedStage.warnings.join('; '));
+      elStagedCount.textContent = `${parts.join(' · ')} — Apply sends it to the car.`;
+    }
+
+    // Which sub-tabs hold staged settings? Their buttons glow so an edit on a
+    // page you are not looking at cannot slip past.
+    const touched = new Set();
+    for (const key of staged.keys()) touched.add(GROUPS.classifyKey(key).tab);
+    for (const btn of elTabs.children) {
+      btn.setAttribute('data-touched', String(touched.has(btn.textContent)));
+    }
   }
 
   function resetMacros() {
@@ -646,12 +684,13 @@
       res = null;
     }
     resetMacros();
+    loadedStage = null;
     staged = new Map();
     if (res && res.state && res.state.connected) {
       const okCount = (res.results || []).filter((r) => r.ok).length;
       const skipped = (res.results || []).filter((r) => r.skipped);
       applyState(res.state);
-      restage(); // repaints rows and disarms the bar
+      restage(); // repaints rows, disarms the bar, clears the tab glow
       elStagedCount.textContent =
         `Applied ${okCount} change${okCount === 1 ? '' : 's'}` +
         (skipped.length ? ` · ${skipped.length} skipped` : '');
@@ -666,6 +705,7 @@
 
   elRevert.addEventListener('click', () => {
     resetMacros();
+    loadedStage = null;
     restage();
   });
 
@@ -697,7 +737,7 @@
     if (e.key !== 'Escape') return;
     if (!elPop.hidden) elPop.hidden = true;
     if (!elSavePop.hidden) elSavePop.hidden = true;
-    if (!elLoadPop.hidden) elLoadPop.hidden = true;
+    if (!elSharePop.hidden) elSharePop.hidden = true;
   });
 
   /* ====================================================================== */
@@ -711,7 +751,7 @@
   let libEntries = [];
   const libFilter = { track: '', carClass: '', session: '', color: null };
   const saveDraft = { session: '', color: '' };
-  let loadTarget = null;
+  let shareTarget = null;
 
   function fmtLap(ms) {
     if (!Number.isFinite(ms) || ms <= 0) return '';
@@ -883,17 +923,22 @@
     loadBtn.type = 'button';
     loadBtn.className = 'btn btn--accent btn--sm';
     loadBtn.textContent = 'Load';
-    loadBtn.disabled = !(lastState && lastState.connected);
-    loadBtn.title = loadBtn.disabled ? 'Start LMU and enter the garage to load' : 'Load into the garage';
-    loadBtn.addEventListener('click', () => openLoadPop(entry));
+    const noValues = !entry.values || Object.keys(entry.values).length === 0;
+    loadBtn.disabled = !(lastState && lastState.connected) || noValues;
+    loadBtn.title = noValues
+      ? 'This file could not be read as a setup'
+      : loadBtn.disabled
+        ? 'Start LMU and enter the garage to load'
+        : 'Stage this tune in the editor — Apply sends it to the car';
+    loadBtn.addEventListener('click', () => stageLibraryEntry(entry));
     buttons.appendChild(loadBtn);
 
     const shareBtn = document.createElement('button');
     shareBtn.type = 'button';
     shareBtn.className = 'btn btn--ghost btn--sm';
     shareBtn.textContent = 'Share';
-    shareBtn.title = 'Save the .svm somewhere to send to a teammate';
-    shareBtn.addEventListener('click', () => void window.apex.setup.libExport(entry.id));
+    shareBtn.title = 'Send the .svm to a teammate';
+    shareBtn.addEventListener('click', () => openSharePop(entry));
     buttons.appendChild(shareBtn);
 
     // Two-step delete: arm, then confirm within 3 s.
@@ -1035,49 +1080,80 @@
     }
   });
 
-  /* ---- load dialog ---------------------------------------------------------- */
+  /* ---- loading = staging ----------------------------------------------------
+   *
+   * Load does NOT write to the sim. It stages the tune's values in the editor
+   * (rows preview old → new, the touched tabs glow, Apply arms and pulses),
+   * and Apply sends them key-by-key — the one write path that provably
+   * repaints LMU's own setup screen. The API's whole-file load was tried and
+   * dropped: it changes the garage state but the game's setup menu never
+   * repaints for an external load, which reads as "nothing happened".
+   */
 
-  function openLoadPop(entry) {
-    loadTarget = entry;
+  function stageLibraryEntry(entry) {
+    if (!lastState || !lastState.connected || !entry.values) return;
+    resetMacros();
+    const values = new Map();
+    let skipped = 0;
+    for (const [key, raw] of Object.entries(entry.values)) {
+      const s = settingsMap.get(key);
+      if (!s || !s.available || !s.isFree || s.min >= s.max) {
+        skipped += 1;
+        continue;
+      }
+      values.set(key, Math.min(s.max, Math.max(s.min, raw)));
+    }
     const warnings = [];
-    if (entry.carClass && lastState?.carClass && entry.carClass !== lastState.carClass) {
-      warnings.push(
-        `saved for ${entry.carClass}, the garage holds a ${lastState.carClass} — the sim may refuse or partially apply it`,
-      );
+    if (entry.carClass && lastState.carClass && entry.carClass !== lastState.carClass) {
+      warnings.push(`saved for ${entry.carClass}, this car is ${lastState.carClass}`);
     }
-    if (entry.trackName && lastState?.trackName && entry.trackName !== lastState.trackName) {
-      warnings.push(`saved at ${entry.trackName}, you are at ${lastState.trackName}`);
+    if (entry.trackName && lastState.trackName && entry.trackName !== lastState.trackName) {
+      warnings.push(`saved at ${entry.trackName}`);
     }
-    elLoadText.textContent =
-      `Load “${entry.name}” into the garage? This replaces the current setup.` +
-      (warnings.length ? ` Note: ${warnings.join('; ')}.` : '');
-    elLoadConfirm.textContent = 'Load';
-    elLoadPop.hidden = false;
+    loadedStage = { name: entry.name, values, skipped, warnings };
+    restage();
   }
 
-  elLoadCancel.addEventListener('click', () => (elLoadPop.hidden = true));
-  elLoadPop.addEventListener('click', (e) => {
-    if (e.target === elLoadPop) elLoadPop.hidden = true;
+  /* ---- share dialog ---------------------------------------------------------- */
+
+  function openSharePop(entry) {
+    shareTarget = entry;
+    elShareText.textContent =
+      `“${entry.name}” as a .svm file — any LMU driver can use it, with or without this app.`;
+    elShareCopy.textContent = 'Copy file — paste into Discord / WhatsApp';
+    elShareCopy.disabled = false;
+    elSharePop.hidden = false;
+  }
+
+  elShareCancel.addEventListener('click', () => (elSharePop.hidden = true));
+  elSharePop.addEventListener('click', (e) => {
+    if (e.target === elSharePop) elSharePop.hidden = true;
   });
 
-  elLoadConfirm.addEventListener('click', async () => {
-    if (!loadTarget) return;
-    elLoadConfirm.disabled = true;
-    elLoadConfirm.textContent = 'Loading…';
+  elShareCopy.addEventListener('click', async () => {
+    if (!shareTarget) return;
+    elShareCopy.disabled = true;
     let res = null;
     try {
-      res = await window.apex.setup.libLoad(loadTarget.id);
+      res = await window.apex.setup.libClip(shareTarget.id);
     } catch {
       res = null;
     }
-    elLoadConfirm.disabled = false;
+    elShareCopy.disabled = false;
     if (res && res.ok) {
-      elLoadPop.hidden = true;
-      loadTarget = null;
-      schedulePoll(0); // pull the freshly loaded values into the rows now
+      elShareCopy.textContent = 'Copied — paste into the chat with Ctrl+V';
     } else {
-      elLoadConfirm.textContent = 'Load';
-      elLoadText.textContent = `Load failed: ${(res && res.error) || 'no response from the sim'}.`;
+      elShareCopy.textContent = 'Copy failed — use “Save as file…” instead';
+    }
+  });
+
+  elShareFile.addEventListener('click', async () => {
+    if (!shareTarget) return;
+    try {
+      const res = await window.apex.setup.libExport(shareTarget.id);
+      if (res && res.ok) elSharePop.hidden = true;
+    } catch {
+      /* dialog cancelled */
     }
   });
 

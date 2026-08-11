@@ -114,6 +114,24 @@
   flex-wrap: wrap;
 }
 
+/* A tab holding staged (not yet applied) changes glows amber — an edit on a
+   page you are not looking at announces itself. */
+.su-tabs button[data-touched='true'] {
+  color: var(--warn);
+  animation: su-tab-pulse 1.6s ease-in-out infinite;
+}
+@keyframes su-tab-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 35%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--warn) 65%, transparent),
+      0 0 10px 1px color-mix(in srgb, var(--warn) 40%, transparent);
+  }
+}
+
 /* ---- sections & rows ------------------------------------------------------ */
 
 .su-section {
@@ -537,6 +555,10 @@
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.su-pop__buttons--stack {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 /* ---- info popover ------------------------------------------------------------- */

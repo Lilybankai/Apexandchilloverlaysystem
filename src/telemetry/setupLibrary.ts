@@ -7,21 +7,23 @@
  * rename, prune or overwrite them. The sim is only touched at the two
  * endpoints of a transaction:
  *
- *   SAVE  — the sim itself writes the .svm (POST /rest/garage/setup into the
- *           current track's folder, under a temporary APEX name), we copy the
- *           file into the library with its metadata, then delete the temp from
- *           the sim. The sim is the ONLY thing that can author a correct .svm
- *           — its header carries the vehicle-class line and upgrade tuple we
- *           could not invent — so "save" is really "ask the sim, then archive".
- *   LOAD  — the library file is copied INTO the current track's folder (under
- *           its library name, "APEX <name>"), the sim re-scans
- *           (refreshsetups), then loads it (PUT /rest/garage/setup). The file
- *           is left in place afterwards: it is now also loadable from the
- *           game's own setup screen, which is a feature, not a leak.
+ *   SAVE — the sim itself writes the .svm (POST /rest/garage/setup into the
+ *   current track's folder, under a temporary APEX name), we copy the file
+ *   into the library with its metadata, then delete the temp from the sim.
+ *   The sim is the ONLY thing that can author a correct .svm — its header
+ *   carries the vehicle-class line and upgrade tuple we could not invent — so
+ *   "save" is really "ask the sim, then archive".
+ *
+ * LOADING is not here any more, on purpose. The whole-file API load (PUT
+ * /rest/garage/setup) changes the garage state but LMU's own setup SCREEN
+ * does not repaint for it — only the game UI's own load button refreshes its
+ * queries — so an app-driven load looked like nothing happened (reported
+ * live, 2026-08-11). Instead every entry carries its VALUES in REST key space
+ * (parsed via svmMap), the panel stages them like a macro, and Apply writes
+ * them key-by-key — the path that provably repaints the game's screen.
  *
  * Sharing is file-based by design: export hands out the raw .svm (playable by
- * ANY LMU install, app or no app) plus its metadata in a sidecar comment;
- * import takes a .svm from anywhere and files it under the library.
+ * ANY LMU install, app or no app); import takes a .svm from anywhere.
  *
  * Everything here is synchronous fs + the injected SetupController — no
  * timers, no watchers. The library costs nothing until a call arrives.
@@ -31,6 +33,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { SetupController } from './setupControl';
+import { parseSvmValues } from './svmMap';
 
 /** One saved setup. */
 export interface SetupLibraryEntry {
@@ -54,6 +57,12 @@ export interface SetupLibraryEntry {
   savedAt: string;
   /** File name inside the library's files/ dir. */
   fileName: string;
+  /**
+   * The tune in REST key space (VM_/WM_ key → step index) — what the panel
+   * stages when the driver hits Load. Parsed from the .svm; entries from
+   * before this field existed are backfilled on the next list().
+   */
+  values?: Record<string, number>;
 }
 
 export interface SetupLibraryResult {
@@ -74,12 +83,6 @@ function sanitizeName(name: string): string {
       .trim()
       .slice(0, 60) || 'Unnamed setup'
   );
-}
-
-/** The .svm header's vehicle line, e.g. `GT3 Porsche_911_GT3_R_LMGT3 WEC2024`. */
-function readVehicleClassLine(svmText: string): string {
-  const m = /^VehicleClassSetting="([^"]*)"/m.exec(svmText);
-  return m ? m[1]! : '';
 }
 
 export class SetupLibrary {
@@ -105,12 +108,29 @@ export class SetupLibrary {
   /* ------------------------------ index I/O ------------------------------ */
 
   public list(): SetupLibraryEntry[] {
+    let entries: SetupLibraryEntry[];
     try {
       const raw = JSON.parse(fs.readFileSync(this.indexFile, 'utf8'));
-      return Array.isArray(raw) ? (raw as SetupLibraryEntry[]) : [];
+      entries = Array.isArray(raw) ? (raw as SetupLibraryEntry[]) : [];
     } catch {
       return [];
     }
+    // Backfill: entries saved before `values` existed (or imported before the
+    // parser) get their tune parsed out of the archived .svm, once, persisted.
+    let changed = false;
+    for (const e of entries) {
+      if (e.values) continue;
+      try {
+        const parsed = parseSvmValues(fs.readFileSync(this.fileOf(e), 'utf8'));
+        e.values = parsed.values;
+        if (!e.vehicleClass) e.vehicleClass = parsed.vehicleClass;
+        changed = true;
+      } catch {
+        /* file missing or unreadable — the row renders, Load stays inert */
+      }
+    }
+    if (changed) this.write(entries);
+    return entries;
   }
 
   private write(entries: SetupLibraryEntry[]): void {
@@ -153,6 +173,7 @@ export class SetupLibrary {
     }
 
     const svmText = fs.readFileSync(simFile, 'utf8');
+    const parsed = parseSvmValues(svmText);
     const [identity, session, summary] = await Promise.all([
       this.controller.getIdentity(),
       this.controller.sessionInfo(),
@@ -168,12 +189,13 @@ export class SetupLibrary {
       // row's team name — a library is about cars, not entries.
       car: summary.carModel || identity.car,
       carClass: identity.carClass,
-      vehicleClass: readVehicleClassLine(svmText),
+      vehicleClass: parsed.vehicleClass,
       sessionType: SESSIONS.has(meta.sessionType ?? '') ? (meta.sessionType as SetupLibraryEntry['sessionType']) : '',
       color: COLORS.has(meta.color ?? '') ? (meta.color as string) : '',
       notes: String(meta.notes ?? '').slice(0, 500),
       savedAt: new Date().toISOString(),
       fileName: `${id}.svm`,
+      values: parsed.values,
     };
     fs.copyFileSync(simFile, this.fileOf(entry));
 
@@ -184,34 +206,6 @@ export class SetupLibrary {
 
     this.write([entry, ...this.list()]);
     return { ok: true, entry };
-  }
-
-  /* -------------------------------- load --------------------------------- */
-
-  /**
-   * Loads a library entry into the live garage. Copies the file into the
-   * CURRENT track's folder — the sim only lists setups for the loaded track —
-   * under its readable library name, re-scans, then loads.
-   */
-  public async load(id: string): Promise<SetupLibraryResult & { folderAndName?: string }> {
-    if (!this.settingsDir) return { ok: false, error: 'LMU install not found' };
-    const entry = this.list().find((e) => e.id === id);
-    if (!entry) return { ok: false, error: 'setup not in library' };
-    if (!fs.existsSync(this.fileOf(entry))) return { ok: false, error: 'library file missing' };
-
-    const folder = await this.controller.currentTrackFolder();
-    if (!folder) return { ok: false, error: 'not in a garage (no active track folder)' };
-
-    const base = sanitizeName(`APEX ${entry.name}`);
-    const dest = path.join(this.settingsDir, folder, `${base}.svm`);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(this.fileOf(entry), dest);
-
-    const refreshed = await this.controller.refreshSetupFiles();
-    if (!refreshed.ok) return { ok: false, error: 'sim did not re-scan its setups' };
-    const loaded = await this.controller.loadSetupFile(`${folder}\\${base}`);
-    if (!loaded.ok) return { ok: false, error: loaded.error ?? 'sim refused the load' };
-    return { ok: true, entry, folderAndName: `${folder}\\${base}` };
   }
 
   /* ------------------------- edit / delete / share ------------------------ */
@@ -272,20 +266,25 @@ export class SetupLibrary {
     if (!/^\[GENERAL\]$/m.test(svmText) && !/Setting=/.test(svmText)) {
       return { ok: false, error: 'not a setup (.svm) file' };
     }
+    const parsed = parseSvmValues(svmText);
     const id = randomBytes(6).toString('hex');
+    // The class is readable from the header's vehicle line ("GT3 Porsche_911…"
+    // starts with the class token), so a shared file arrives pre-categorised.
+    const classToken = (parsed.vehicleClass.split(/\s+/)[0] ?? '').toUpperCase();
     const entry: SetupLibraryEntry = {
       id,
       name: sanitizeName(meta.name || path.basename(srcPath, path.extname(srcPath))),
       trackFolder: String(meta.trackFolder ?? ''),
       trackName: String(meta.trackName ?? ''),
       car: '',
-      carClass: '',
-      vehicleClass: readVehicleClassLine(svmText),
+      carClass: classToken,
+      vehicleClass: parsed.vehicleClass,
       sessionType: SESSIONS.has(meta.sessionType ?? '') ? (meta.sessionType as SetupLibraryEntry['sessionType']) : '',
       color: COLORS.has(meta.color ?? '') ? (meta.color as string) : '',
       notes: '',
       savedAt: new Date().toISOString(),
       fileName: `${id}.svm`,
+      values: parsed.values,
     };
     fs.writeFileSync(this.fileOf(entry), svmText);
     this.write([entry, ...this.list()]);
