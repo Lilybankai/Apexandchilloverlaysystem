@@ -239,19 +239,76 @@ function mount(search) {
       return out;
     },
     /**
-     * Car numbers whose row is currently wearing the "YOU" tag. Read the same
-     * way a driver reads it — is the tag VISIBLE on that row — because the rows
-     * are pooled by slotId and reused across frames, so a tag left behind on a
-     * car that is no longer you is a tag that renders.
+     * Car numbers whose row is marked as the player's. Read off the row class,
+     * which is the only thing that marks it now the "YOU" chip is gone — and the
+     * rows are pooled by slotId and reused across frames, so a mark left behind
+     * on a car that is no longer you is a mark that renders.
      */
-    you: () => {
+    player: () => {
       const out = [];
       const walk = (e) => {
-        if (e.className && /standings__driver/.test(e.className)) {
-          const tag = e.children.find((c) => c.className === 'standings__you');
-          const m = /#(\d+)/.exec(e.children.map((c) => c.textContent || '').join(' '));
-          if (tag && !tag.hidden && m) out.push(m[1]);
+        if (e.className && /standings__row--player/.test(e.className)) {
+          const text = [];
+          const gather = (n) => {
+            text.push(n.textContent || '');
+            n.children.forEach(gather);
+          };
+          gather(e);
+          const m = /#(\d+)/.exec(text.join(' '));
+          if (m) out.push(m[1]);
         }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
+    /**
+     * Every driver cell's text, in the order drawn. The column HEADING carries
+     * the same `standings__driver` class as the cells under it, so it has to be
+     * excluded or every reading gains a phantom empty row at the top.
+     */
+    names: () => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className && /standings__driver/.test(e.className) && !/standings__head/.test(e.className)) {
+          out.push(e.children.map((c) => c.textContent || '').join('').trim());
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
+    /** Every driver cell's tooltip, in the order drawn. */
+    nameTitles: () => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className && /standings__driver/.test(e.className) && !/standings__head/.test(e.className)) {
+          out.push(e.title);
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
+    /** Every GAP cell's text, in the order drawn. */
+    gaps: () => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className && /standings__gap/.test(e.className) && !/standings__head/.test(e.className)) {
+          out.push(e.textContent);
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
+    /** The panel root, for the odd assertion that reads an attribute directly. */
+    rootEl: () => root,
+    /** Every element carrying a given class name, anywhere in the panel. */
+    withClass: (name) => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className === name) out.push(e);
         for (const c of e.children) walk(c);
       };
       walk(root);
@@ -302,28 +359,130 @@ console.log('\nDefault — the whole field, as it always was');
 }
 
 /* -------------------------------------------------------------------------- */
-console.log('\nFinding yourself — the "YOU" tag');
+console.log('\nFinding yourself — the player row');
 /* -------------------------------------------------------------------------- */
 
-/* Testers were losing their own car in a full tower, so the row carries a word
-   and not only a colour (see .standings__row--player). What matters is that
-   exactly ONE row wears it and it is the right one: a tag on two rows is worse
-   than no tag at all, because the driver stops trusting it. */
+/* Testers were losing their own car in a full tower, so the row is marked. It
+   used to carry a "YOU" chip as well as the highlight; the chip is gone, because
+   it was the one thing in the DRIVER column that pushed a row's contents out of
+   line with every other row. What still has to hold is what always did: exactly
+   ONE row is marked and it is the right one. A mark on two rows is worse than no
+   mark at all, because the driver stops trusting it. */
 {
   const w = mount();
   w.update(field());
-  check('the player wears it', w.you().join(',') === '19', w.you().join(',') || 'nobody');
+  check('the player row is marked', w.player().join(',') === '19', w.player().join(',') || 'nobody');
+  check('and no row wears a YOU chip', w.withClass('standings__you').length === 0,
+    w.withClass('standings__you').length + ' chips');
 
-  // Rows are pooled by slotId and reused, so the tag has to be taken OFF a car
-  // that stops being the player — a replay, a driver swap, or simply a session
-  // where the tower saw a different car first.
+  // Rows are pooled by slotId and reused, so the mark has to come OFF a car that
+  // stops being the player — a replay, a driver swap, or simply a session where
+  // the tower saw a different car first.
   const swapped = field().map((r) => ({ ...r, isPlayer: r.carNumber === '43' }));
   w.update(swapped);
-  check('and it moves with them', w.you().join(',') === '43', w.you().join(',') || 'nobody');
+  check('and it moves with them', w.player().join(',') === '43', w.player().join(',') || 'nobody');
 
   // Spectating: nobody is the player, so nothing claims to be.
   w.update(field().map((r) => ({ ...r, isPlayer: false })));
-  check('a spectator feed tags nobody', w.you().length === 0, w.you().join(',') || 'nobody');
+  check('a spectator feed marks nobody', w.player().length === 0, w.player().join(',') || 'nobody');
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nGAP precision — 1, 2 or 3 decimal places');
+/* -------------------------------------------------------------------------- */
+
+/* The column is read mid-corner, and the third decimal changes every frame
+   whatever the cars are doing. What matters is that the setting reaches the
+   cells, that it survives nonsense, and that the SHAPE of the cell is otherwise
+   untouched — a leader still shows a dash, not "+0.000". */
+{
+  const gapField = () => [
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'A B', carClass: 'GT3', gapToLeaderSec: 0 },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'C D', carClass: 'GT3', gapToLeaderSec: 1.2 },
+  ];
+
+  const w = mount();
+  w.update(gapField());
+  check('three places by default', w.gaps().join(' ') === '— +1.200', w.gaps().join(' '));
+
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', decimals: 1 });
+  w.update(gapField());
+  check('one place when asked', w.gaps().join(' ') === '— +1.2', w.gaps().join(' '));
+
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', decimals: 2 });
+  w.update(gapField());
+  check('two places when asked', w.gaps().join(' ') === '— +1.20', w.gaps().join(' '));
+
+  // A value this build does not have is not a number to bring into range.
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', decimals: 7 });
+  w.update(gapField());
+  check('nonsense falls back to three', w.gaps().join(' ') === '— +1.200', w.gaps().join(' '));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nDriver names — full, surname or forename');
+/* -------------------------------------------------------------------------- */
+
+/* Which half of a name identifies a driver is a fact about the grid, so it is a
+   setting. The cases that matter are the ones a naive split gets wrong: a
+   single-word alias has nothing to abbreviate, and a two-part surname must not
+   lose half of itself. */
+{
+  const names = () => [
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3' },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'Jan Van der Merwe', carClass: 'GT3' },
+    { slotId: 3, position: 3, carNumber: '4', driverName: 'Slipstream', carClass: 'GT3' },
+  ];
+  const view = (n) => ({
+    limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0,
+    gap: 'leader', fastest: 'class', names: n,
+  });
+
+  const w = mount();
+  w.update(names());
+  check('full names by default',
+    w.names().join(' | ') === '#7 Matt Haskins | #9 Jan Van der Merwe | #4 Slipstream',
+    w.names().join(' | '));
+
+  w.push(view('surname'));
+  w.update(names());
+  check('surname form keeps the whole surname',
+    w.names().join(' | ') === '#7 M.Haskins | #9 J.Van der Merwe | #4 Slipstream',
+    w.names().join(' | '));
+
+  w.push(view('forename'));
+  w.update(names());
+  check('forename form keeps the whole first name',
+    w.names().join(' | ') === '#7 Matt.H | #9 Jan.V | #4 Slipstream',
+    w.names().join(' | '));
+
+  // The full name is what the abbreviation is hiding, so it stays on the row.
+  check('and the row still carries it in full',
+    w.nameTitles().join(' | ') === '#7 Matt Haskins | #9 Jan Van der Merwe | #4 Slipstream',
+    w.nameTitles().join(' | '));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nPinning the new keys from a URL (an OBS source)');
+/* -------------------------------------------------------------------------- */
+
+{
+  const w = mount('?standings=all,decimals=1,names=surname');
+  w.update([
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3', gapToLeaderSec: 0 },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'Mark Slater', carClass: 'GT3', gapToLeaderSec: 1.2 },
+  ]);
+  check('the URL sets both', w.names().join(' | ') === '#7 M.Haskins | #9 M.Slater', w.names().join(' | '));
+  check('and the gap with it', w.gaps().join(' ') === '— +1.2', w.gaps().join(' '));
+
+  // A pinned source ignores the app: an OBS scene set up one way must not
+  // change because a driver moved a dropdown.
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', decimals: 3, names: 'full' });
+  w.update([
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3', gapToLeaderSec: 0 },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'Mark Slater', carClass: 'GT3', gapToLeaderSec: 1.2 },
+  ]);
+  check('and stays pinned', w.names().join(' | ') === '#7 M.Haskins | #9 M.Slater', w.names().join(' | '));
 }
 
 /* -------------------------------------------------------------------------- */

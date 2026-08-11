@@ -51,21 +51,38 @@
   var classLabel = window.ApexOverlay.classLabel;
 
   /**
-   * The name as the driver entered it, tidied of stray whitespace and nothing
-   * else. Names that outrun the column are cut with an ellipsis by the CSS.
+   * The driver's name, in whichever of three forms the operator picked.
    *
-   * This used to render the broadcast form, "theo Pereira" -> "T. Pereira", and
-   * that is the wrong trade for a field of people you race with by name: an
-   * initial is unrecognisable in a sim field where several drivers share a
-   * surname and everyone knows each other by their first name. It is also a
-   * false economy — the abbreviation saved a handful of pixels on the names that
-   * already fitted, and the long ones it was supposed to rescue still clipped.
-   * Where a name does not fit, the cut now falls at the END of it, so the first
-   * name always survives (relative.js has always drawn names this way).
+   *   full      "Matt Haskins" — as the driver entered it, tidied of stray
+   *             whitespace and nothing else. The default, and what the tower has
+   *             drawn since the old automatic abbreviation was removed.
+   *   surname   "M.Haskins"
+   *   forename  "Matt.H"
+   *
+   * The abbreviation used to be forced on everyone, and that was the wrong
+   * trade to make FOR a league: an initial is unrecognisable in a field where
+   * several drivers share a surname and everyone knows each other by their first
+   * name. Which of those two facts identifies a given grid is not something this
+   * file can know, so it is now a setting — leagues that race by first name pick
+   * `forename`, broadcasts pick `surname`, and the default stays the whole name.
+   *
+   * A name with no space in it (an alias, a single-word handle) is returned
+   * whole under every mode: there is nothing to abbreviate, and "T." is not a
+   * driver. Everything after the first space counts as the surname, so
+   * "Van der Merwe" survives as "J.Van der Merwe" rather than losing two thirds
+   * of itself. Names that still outrun the column are cut with an ellipsis by
+   * the CSS, and the cut falls at the END, so the leading part always survives.
    */
-  function displayName(name) {
+  function displayName(name, mode) {
     if (!name) return "—";
-    return name.trim().replace(/\s+/g, " ");
+    var clean = name.trim().replace(/\s+/g, " ");
+    if (mode !== "surname" && mode !== "forename") return clean;
+    var sp = clean.indexOf(" ");
+    if (sp <= 0) return clean;
+    var first = clean.slice(0, sp);
+    var last = clean.slice(sp + 1);
+    if (mode === "surname") return first.charAt(0).toUpperCase() + "." + last;
+    return first + "." + last.charAt(0).toUpperCase();
   }
 
   /** How long a new personal-best lap flashes green (ms). */
@@ -74,6 +91,26 @@
   var mount, setSession, sessFastest, tbody;
   /** The GAP column heading — its wording follows the operator's gap mode. */
   var headGap = null;
+  /** The GAP `<col>` — its width follows the operator's decimal count. */
+  var gapCol = null;
+
+  /**
+   * Column widths are given in em, NOT px, because they are only correct
+   * relative to the text they hold and that text scales with --fs-scale (the
+   * operator's "Text size" slider). At a fixed 70px, "1:58.492" clips the moment
+   * the slider passes ~110%. em on a <col> resolves against the font-size it
+   * inherits from the table, which is --fs-body — so the divisor is the 12px
+   * --fs-body is defined as, and the ratios hold at every scale.
+   */
+  var BASE_PX = 12;
+
+  /**
+   * How wide the GAP column has to be, by decimal count: enough for the widest
+   * thing it draws, which is a three-figure gap ("+123.456"). The 8px a decimal
+   * costs goes to the driver name, which is the column that has none to spare —
+   * it is the only one with no width of its own and absorbs whatever is left.
+   */
+  var GAP_PX = { 1: 46, 2: 54, 3: 62 };
   /** @type {Map<number, object>} slotId -> cached row element + last values. */
   var rows = new Map();
   /** @type {Map<number, object>} slotId -> { laps, best, flashUntil }. */
@@ -99,22 +136,14 @@
 
     var driverTd = document.createElement("td");
     driverTd.className = "standings__cell standings__driver";
-    // "YOU", first thing in the cell, on the driver's own row and nowhere else.
-    // The row highlight is a colour, and in this tower a colour is ambiguous by
-    // construction: every class already owns one, the palette LMP3 hashes to is
-    // the same cyan the player accent uses, and the purple and green on the lap
-    // times are colours too. A word is not ambiguous. It is also the only mark
-    // that still reads when the Widget background slider is at 0 and there is
-    // tarmac behind the row.
-    //
-    // Leading rather than trailing: it costs the player's row a few pixels of
-    // name, which is the one row whose name the driver already knows, and it
-    // lands at the same x as every other row's class dot — so the eye running
-    // DOWN the tower meets it without having to read across.
-    var you = document.createElement("span");
-    you.className = "standings__you";
-    you.textContent = "YOU";
-    you.hidden = true;
+    // No "YOU" chip. The player's row used to lead with one, on the argument
+    // that a colour is ambiguous in a tower where every class owns one. It has
+    // since stopped being the only mark: the row now carries the cyan position
+    // number, bold name and full-strength text of .standings__row--player, which
+    // together are unmistakable — and the chip was the one thing in the DRIVER
+    // column that pushed a row's contents out of line with every row above and
+    // below it. A tower is read by running the eye straight down it, so a single
+    // row that steps sideways costs more than the word was buying.
     var classDot = document.createElement("span");
     classDot.className = "standings__class";
     // Manufacturer badge, between the class dot and the name — the game's own
@@ -158,7 +187,6 @@
       drRank.hidden = true;
     };
     var nameSpan = document.createElement("span");
-    driverTd.appendChild(you);
     driverTd.appendChild(classDot);
     driverTd.appendChild(badge);
     driverTd.appendChild(drRank);
@@ -230,7 +258,6 @@
       posTd: posTd,
       deltaTd: deltaTd,
       driverTd: driverTd,
-      you: you,
       classDot: classDot,
       badge: badge,
       srBadge: srBadge,
@@ -301,8 +328,15 @@
     behind: 3,
     gap: "leader",
     fastest: "class",
+    decimals: 3,
+    names: "full",
   };
   var viewPinned = false;
+
+  /** Legal decimal counts for the GAP column, in the order they read. */
+  function clampDecimals(n) {
+    return n === 1 || n === 2 ? n : 3;
+  }
 
   /**
    * `?standings=all` or `?standings=top=10,scope=class,ahead=3,behind=3` pins
@@ -314,7 +348,8 @@
    * collapses the banner's per-class lines to the one fastest lap of the race.
    * Both are independent of the composition, so
    * `?standings=all,gap=ahead,fastest=overall` is the whole field with intervals
-   * and a single fastest lap.
+   * and a single fastest lap. `decimals=1|2|3` sets how precisely that column is
+   * read, and `names=full|surname|forename` how the driver names are written.
    *
    * One more key rides this same param and is NOT read here: `pos=class` puts
    * the driver's class position in the panel HEADER rather than their place in
@@ -334,6 +369,8 @@
         behind: 0,
         gap: "leader",
         fastest: "class",
+        decimals: 3,
+        names: "full",
       };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
@@ -350,7 +387,10 @@
         if (key === "scope") next.scope = val === "field" ? "field" : "class";
         else if (key === "gap") next.gap = val === "ahead" ? "ahead" : "leader";
         else if (key === "fastest") next.fastest = val === "overall" ? "overall" : "class";
-        else if (key === "top" || key === "ahead" || key === "behind") {
+        else if (key === "decimals") next.decimals = clampDecimals(parseInt(val, 10));
+        else if (key === "names") {
+          next.names = val === "surname" || val === "forename" ? val : "full";
+        } else if (key === "top" || key === "ahead" || key === "behind") {
           var n = parseInt(val, 10);
           if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
         }
@@ -460,14 +500,33 @@
   }
 
   /**
+   * Seconds of gap, to the operator's chosen precision.
+   *
+   * Local rather than `fmt.gap`, which is fixed at three places and is also what
+   * the relative panel draws — this setting is about the standings column, and
+   * silently re-cutting every other widget's numbers with it would be a much
+   * bigger change than the one being asked for. The shape is otherwise identical
+   * to `fmt.gap`, deliberately: a leading `+`, and an em dash where there is no
+   * number to show.
+   *
+   * Three places is the truth the sim gives and stays the default. One is what a
+   * driver can actually act on — a gap that reads 1.4 and then 1.3 has moved, and
+   * the third decimal flickering every frame is noise being read as information.
+   */
+  function gapSec(sec, dp, fmt) {
+    if (!fmt.has(sec)) return "—";
+    return "+" + sec.toFixed(dp);
+  }
+
+  /**
    * One GAP cell: a dash when there is nobody in front, whole laps when the
    * deficit is a lap or more, otherwise seconds. Both readings of the column
    * (to the leader, to the car ahead) go through here so they stay one shape.
    */
-  function gapCell(isFirst, laps, sec, fmt) {
+  function gapCell(isFirst, laps, sec, fmt, dp) {
     if (isFirst) return "—";
     if (laps > 0) return "+" + laps + "L";
-    return fmt.gap(sec);
+    return gapSec(sec, dp, fmt);
   }
 
   /**
@@ -565,19 +624,18 @@
     // right gutter that stands it off the panel edge, matching the inset the
     // class subheader and the fastest-lap banner use (see .standings__pit).
     //
-    // Given in em, NOT px, because these widths are only correct relative to the
-    // text they hold and that text now scales with --fs-scale (the operator's
-    // "Text size" slider). At a fixed 70px, "1:58.492" clips the moment the
-    // slider passes ~110%. em on a <col> resolves against the font-size it
-    // inherits from the table, which is --fs-body — so the divisor here is the
-    // 12px --fs-body is defined as, and the ratios hold at every scale.
-    var BASE_PX = 12;
-    var widths = [26, 28, 0, 62, 70, 70, 42, 23];
+    // Given in em, not px — see BASE_PX at the top of the file for why.
+    var widths = [26, 28, 0, GAP_PX[3], 70, 70, 42, 23];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
       colgroup.appendChild(col);
     }
+    // The GAP column is the one width that is not a constant: it holds a number
+    // whose length the operator chooses, and at one decimal "+1.4" is 16px of
+    // text in a 62px column. Kept for update() to size, which is where the
+    // decimal setting is already read.
+    gapCol = colgroup.children[3];
     table.appendChild(colgroup);
     table.appendChild(createHead());
     tbody = document.createElement("tbody");
@@ -725,6 +783,13 @@
         : "Gap to the class leader";
     }
 
+    // …and how WIDE it is, which follows the same setting the cells read. Here
+    // rather than in init because the setting can change while the tower is
+    // running (the Hub's card writes it live), and a column that only resized on
+    // reload would read as the setting not having worked.
+    var gapWidth = (GAP_PX[clampDecimals(view && view.decimals)] / BASE_PX).toFixed(3) + "em";
+    if (gapCol && gapCol.style.width !== gapWidth) gapCol.style.width = gapWidth;
+
     setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
     // Fastest lap of the race and fastest lap per class. Both are always
@@ -839,9 +904,14 @@
     });
   }
 
-  /** "#7 M. Slater", or just the name when the car carries no number. */
+  /**
+   * "#7 Mark Slater", or just the name when the car carries no number. Follows
+   * the same name setting as the rows below it — the banner naming a driver one
+   * way while their own row names them another would read as two different
+   * people.
+   */
   function holderName(entry) {
-    var who = displayName(entry.driverName);
+    var who = displayName(entry.driverName, view && view.names);
     return entry.carNumber ? "#" + entry.carNumber + " " + who : who;
   }
 
@@ -961,13 +1031,6 @@
     if (isPlayer) cls += " standings__row--player";
     if (isFastest) cls += " standings__row--fastest";
     set(row, "cls", row.tr, "className", cls);
-    // `hidden`, not the pit flag's `is-off`: that flag holds a column open on
-    // every row and must keep its box, whereas this tag exists on one row in the
-    // tower and every other row wants the space back for its driver's name.
-    if (row.cache.you !== isPlayer) {
-      row.cache.you = isPlayer;
-      row.you.hidden = !isPlayer;
-    }
 
     // Rows are grouped under a class subheader, so the number that belongs in
     // the position column is the position IN CLASS — that is what the driver is
@@ -1043,14 +1106,17 @@
       }
     }
 
-    var name = displayName(e.driverName);
+    var name = displayName(e.driverName, view && view.names);
     if (e.carNumber) name = "#" + e.carNumber + " " + name;
     set(row, "name", row.nameSpan, "textContent", name);
-    // Full names are drawn in full and cut by the CSS where they do not fit, so
-    // the cell carries the whole thing for the pages that have a cursor (the
-    // browser source and OBS). The in-game layer never sees a hover and pays
-    // nothing for it but the attribute.
-    set(row, "nameTitle", row.driverTd, "title", name);
+    // The title always carries the name IN FULL, whatever the cell draws — it is
+    // what the abbreviation is hiding, and on the pages that have a cursor (the
+    // browser source, OBS) hovering is how you get it back. Cut names get the
+    // same service: they are drawn whole and clipped by the CSS. The in-game
+    // layer never sees a hover and pays nothing for it but the attribute.
+    var full = displayName(e.driverName);
+    if (e.carNumber) full = "#" + e.carNumber + " " + full;
+    set(row, "nameTitle", row.driverTd, "title", full);
 
     // Pit state, flagged in the right-hand column (see createRow).
     var inPit = !!e.inPit;
@@ -1083,21 +1149,24 @@
     //           whether the car ahead is coming back to you.
     //
     // Whichever is shown, the other goes on the title so nothing is lost.
+    var dp = clampDecimals(view && view.decimals);
     var useClass = hasClassPos && fmt.has(e.gapToClassLeaderSec);
     var toLeader = gapCell(
       useClass ? e.classPosition === 1 : e.position === 1,
       lapsOf(useClass ? e.classLapsBehind : e.lapsBehind),
       useClass ? e.gapToClassLeaderSec : e.gapToLeaderSec,
-      fmt
+      fmt,
+      dp
     );
     var gapText = toLeader;
     var gapTitle =
       useClass && e.position !== 1
-        ? "to race leader " + (e.lapsBehind > 0 ? "+" + e.lapsBehind + "L" : fmt.gap(e.gapToLeaderSec))
+        ? "to race leader " +
+          (e.lapsBehind > 0 ? "+" + e.lapsBehind + "L" : gapSec(e.gapToLeaderSec, dp, fmt))
         : "";
     if (intervals) {
       var iv = intervals[e.slotId];
-      gapText = iv ? gapCell(iv.lead, iv.laps, iv.sec, fmt) : "—";
+      gapText = iv ? gapCell(iv.lead, iv.laps, iv.sec, fmt, dp) : "—";
       gapTitle = toLeader === "—" ? "" : "to " + (useClass ? "class leader " : "leader ") + toLeader;
     }
     set(row, "gap", row.gapTd, "textContent", gapText);

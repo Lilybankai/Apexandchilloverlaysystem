@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.66.2 — 2026-08-11
+
+### Added
+
+- **Choose how precise the standings GAP column is.** Settings → Overlays →
+  Standings now has a DECIMALS control: thousandths (`+1.234`, what the tower
+  has always shown and still the default), hundredths (`+1.23`) or tenths
+  (`+1.2`). The third decimal changes every single frame whatever the cars are
+  actually doing, so at a glance mid-corner it is movement that means nothing —
+  at one place the number only moves when something has happened. The column
+  also gives back the width it no longer needs, and that width goes straight to
+  the driver names, which is the one column in the tower with none to spare.
+
+- **Choose how driver names are written.** A NAMES control in the same card,
+  with the three forms spelled out as they will appear: `Matt Haskins` in full
+  (the default, unchanged), `M.Haskins`, or `Matt.H`. Which half of a name
+  identifies a driver is a fact about the grid, not something the app can
+  guess — a league that races by first name wants one, a broadcast wants the
+  other — so it is now yours to set instead of ours to assume. A name with no
+  space in it is left alone, a two-part surname keeps both parts
+  (`J.Van der Merwe`), and the name in full is always on the row's tooltip, so
+  abbreviating hides nothing. The fastest-lap banner follows the same setting,
+  so a driver is never named two ways on one panel.
+
+  Both controls also ride the `?standings=` parameter for OBS sources —
+  `?standings=all,decimals=1,names=surname`.
+
+### Changed
+
+- **The "YOU" tag is gone from your standings row.** Your row is already
+  unmistakable — the cyan position number, the bold name, the full-strength
+  text and the accent down the edge — and the tag was the one thing in the
+  DRIVER column that pushed a row's contents sideways out of line with every
+  row above and below it. A tower is read by running your eye straight down it,
+  and a single row that steps out of the column costs more than the word was
+  buying.
+
 ## 0.66.1 — 2026-08-10
 
 ### Changed

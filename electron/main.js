@@ -307,6 +307,20 @@ function defaultSettings() {
      * because a single-class field is the common case and the two readings are
      * identical there; in a multiclass race the class number is usually the one
      * being raced for, which is why it is offered at all.
+     *
+     * `decimals` is how precisely the GAP/INT column is read — 3 (the sim's own
+     * truth, and the default), 2, or 1. A driver glancing at the column mid-corner
+     * is reading whether a gap is growing or shrinking, and the third decimal
+     * changes every frame whatever the car is doing: at 1 it is a number that
+     * only moves when something happened. The column also gives its spare width
+     * back to the driver names, which is the column with none to spare.
+     *
+     * `names` is how those names are written — 'full' ("Matt Haskins", the
+     * default and what the tower has always drawn), 'surname' ("M.Haskins") or
+     * 'forename' ("Matt.H"). Which of the two halves identifies a driver is a
+     * fact about the grid, not about the software: a league that races by first
+     * name wants 'forename' and a broadcast wants 'surname'. The name in full is
+     * always on the row's tooltip, so nothing is lost by abbreviating.
      */
     standings: {
       limit: 'all', // 'all' | 'custom'
@@ -317,6 +331,8 @@ function defaultSettings() {
       gap: 'leader', // 'leader' | 'ahead'
       fastest: 'class', // 'class' | 'overall'
       pos: 'overall', // 'overall' | 'class'
+      decimals: 3, // 1 | 2 | 3
+      names: 'full', // 'full' | 'surname' | 'forename'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -575,6 +591,11 @@ function normalizeStandings(stored) {
     gap: from.gap === 'ahead' ? 'ahead' : d.gap,
     fastest: from.fastest === 'overall' ? 'overall' : d.fastest,
     pos: from.pos === 'class' ? 'class' : d.pos,
+    // An allow-list rather than a clamp: 1, 2 and 3 are the whole of what the
+    // column can mean, so a stored 0 or 7 is not a number to bring into range,
+    // it is a value this build does not have and the default is the answer.
+    decimals: from.decimals === 1 || from.decimals === 2 ? from.decimals : d.decimals,
+    names: from.names === 'surname' || from.names === 'forename' ? from.names : d.names,
   };
 }
 
