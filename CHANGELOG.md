@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.67.0-beta.4 — 2026-08-11
+
+### Fixed
+
+- **Loading a saved setup now visibly loads.** Load used to push the whole
+  file through the sim's API — which changed the car but never repainted the
+  game's setup screen, so it read as nothing happening. Load now stages the
+  tune in the editor instead: every row previews its old → new value, and
+  Apply sends the changes setting-by-setting down the one path the game's
+  screen provably repaints for. Nothing touches the car until you press
+  Apply, so loading is also free to inspect and back out of.
+
+### Added
+
+- **Share straight into a chat.** Share now offers "Copy file — paste into
+  Discord / WhatsApp": the .svm lands on the clipboard as a file, and Ctrl+V
+  drops it into any chat that accepts attachments. "Save as file…" stays for
+  everything else.
+- **The tabs tell you where the changes went.** When a race engineer slider —
+  or a loaded setup — stages changes on pages you are not looking at, those
+  tab buttons glow amber until you apply or revert. A staged edit can no
+  longer hide behind the tab you happen to have open.
+
 ## 0.67.0-beta.3 — 2026-08-11
 
 ### Added
