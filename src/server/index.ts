@@ -192,6 +192,18 @@ export interface StandingsView {
    * is the only line on the panel that disagrees with the tower under it.
    */
   pos: 'overall' | 'class';
+  /**
+   * How many decimal places the GAP/INT column reads: 3 (the sim's own truth,
+   * and the default), 2 or 1. The column hands the width it saves back to the
+   * driver names, which is the column with none to spare.
+   */
+  decimals: 1 | 2 | 3;
+  /**
+   * How the driver names are written: `'full'` ("Matt Haskins", the default),
+   * `'surname'` ("M.Haskins") or `'forename'` ("Matt.H"). Which half of a name
+   * identifies a driver is a fact about the grid, not about the software.
+   */
+  names: 'full' | 'surname' | 'forename';
 }
 
 /** URL the overlays read their appearance from. */
@@ -222,6 +234,8 @@ const appearance: Appearance = {
     gap: 'leader',
     fastest: 'class',
     pos: 'overall',
+    decimals: 3,
+    names: 'full',
   },
   speedUnit: 'kph',
 };
@@ -304,6 +318,21 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
           ? v.fastest
           : appearance.standings.fastest,
       pos: v.pos === 'class' || v.pos === 'overall' ? v.pos : appearance.standings.pos,
+      // These two were missing from this list while the app has been sending
+      // both since they were added, and because the object is rebuilt field by
+      // field rather than merged, "missing from the list" meant "deleted on the
+      // way through". The in-game layer is pushed the payload directly and so
+      // honoured them; every OBS Browser Source reads THIS, so a source drew
+      // full names at three decimals whatever the operator picked — and the two
+      // surfaces disagreeing is worse than either being wrong.
+      decimals:
+        v.decimals === 1 || v.decimals === 2 || v.decimals === 3
+          ? v.decimals
+          : appearance.standings.decimals,
+      names:
+        v.names === 'full' || v.names === 'surname' || v.names === 'forename'
+          ? v.names
+          : appearance.standings.names,
     };
   }
   return getAppearance();

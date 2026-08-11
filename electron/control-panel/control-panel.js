@@ -551,9 +551,10 @@
     }
     names.value = v.names === 'surname' || v.names === 'forename' ? v.names : 'full';
     names.title =
-      'How driver names are written in the tower. Abbreviating buys room for ' +
-      'the long names that were clipping — and the name in full is always on ' +
-      "the row's tooltip";
+      'How driver names are written in the tower. Abbreviating also stands the ' +
+      'rating marks down so the name actually gets the room — the car badge ' +
+      'stays, the ratings are in the relative panel, and the name in full is ' +
+      "always on the row's tooltip";
     names.addEventListener('change', () => void send({ names: names.value }));
 
     const nmHead = document.createElement('div');

@@ -4,6 +4,23 @@
 
 ### Fixed
 
+- **Abbreviated driver names now actually fit — the rating marks stand
+  aside for them.** Picking "M.Haskins" or "Matt.H" barely changed what you
+  could read: the DRIVER column is 138px of content and the marks in it —
+  class dot, car badge, DR plaque, driver badge — hold 82px of that, so
+  shortening a name moved the ellipsis by about two characters and every row
+  still read "#7 K.Ko…". Abbreviating is you saying the NAME is what
+  identifies this grid, so it now costs the two rating marks and keeps the car
+  badge: 48px back, and the names read in full. Nothing changes for anyone on
+  the default "in full" setting, and the ratings are still drawn in the
+  relative panel, which is the panel that answers who the car beside you is.
+- **The NAMES and DECIMALS settings reach OBS Browser Sources.** Both were
+  dropped in transit: the appearance the server hands to browser sources is
+  rebuilt field by field, and these two were never added to that list, so a
+  source drew full names at three decimals whatever the panel said. The in-game
+  layer is pushed the settings directly and honoured them all along — which is
+  why the tower could show one thing in game and another in OBS at the same
+  time.
 - **Switching the speedo back to the Apex design works without a restart.**
   Picking the default design (or any widget's default mode) removed the
   stored choice, but the overlays only ever heard about modes that were SET —
