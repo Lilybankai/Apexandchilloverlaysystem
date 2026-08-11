@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.67.0-beta.3 — 2026-08-11
+
+### Added
+
+- **A setup library.** Below the editor: save the car exactly as the garage
+  holds it, name it, tag it Race or Quali, give it a colour, and it files
+  itself under the track and car it came from. Filter by any of those; sort by
+  newest, name — or by **your best clean lap** on that track in that class,
+  pulled live from your lap database so the number never goes stale. The sim
+  itself writes every file (it alone knows a setup file's full truth), and the
+  app keeps its own copies where the game can never rename or prune them.
+- **Load a tune from the app.** In the garage, pick a saved setup and hit Load
+  — it lands in the game's own setup list for that track and applies on the
+  spot, with a confirmation first (loading replaces the whole garage setup)
+  and a warning when the tune was saved for a different car or circuit.
+- **Share a tune.** Share hands you the raw .svm to send to a teammate — it
+  works in any LMU install, whether they run this app or not. Import files a
+  received .svm straight into your library.
+- **Apply is always on the table.** The race engineer's Apply and Revert no
+  longer appear only after you stage something — they sit visible, disabled,
+  and the moment a slider stages changes the bar arms and Apply pulses.
+
+### Fixed
+
+- **Setups save into the right track folder.** The sim will happily write a
+  setup into any folder it is told, including the wrong track's — where the
+  game's setup screen for your actual circuit would never show it. The app now
+  asks the sim itself which folder the current track saves under, the same
+  answer the game's own save dialog uses.
+
 ## 0.67.0-beta.2 — 2026-08-10
 
 ### Changed
