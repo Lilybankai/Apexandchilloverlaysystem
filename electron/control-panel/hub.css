@@ -463,8 +463,7 @@ html, body { height: 100%; overflow: hidden; }
  *
  * It wears the brand gradient, the strongest mark the panel has. Dark text, not
  * light: the gradient's cyan end is bright enough that white would fail against
- * it, and this is the same inverted treatment the "YOU" tag and the accent
- * icons already use.
+ * it, and this is the same inverted treatment the accent icons already use.
  *
  * It rounds its own top corners rather than relying on the card to clip it —
  * .card has a radius but no `overflow: hidden`, and adding one to make a banner

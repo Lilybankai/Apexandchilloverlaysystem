@@ -487,9 +487,85 @@
     posHead.appendChild(posLabel);
     posHead.appendChild(pos);
 
+    // How precisely the GAP/INT column is read. Directly under GAP, because it
+    // is a fact about that same column and the two are set together.
+    const dpLabel = document.createElement('span');
+    dpLabel.className = 'ovcard__bg-label';
+    // "DECIMALS", not "PRECISION": the label column has a 58px floor sized to
+    // clear the longest of these (see .ovcard__view-head), and a ninth character
+    // would push this one dropdown out of line with the other four.
+    dpLabel.textContent = 'DECIMALS';
+
+    const decimals = document.createElement('select');
+    decimals.className = 'field__input field__input--inline';
+    decimals.id = 'standings-decimals';
+    for (const [value, text] of [
+      ['3', '+1.234  (thousandths)'],
+      ['2', '+1.23  (hundredths)'],
+      ['1', '+1.2  (tenths)'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      decimals.appendChild(opt);
+    }
+    // Defensive default, same idiom as POSITION below: a config written by an
+    // older build has no `decimals` at all, and a select handed undefined shows
+    // an empty box rather than a setting.
+    decimals.value = String(v.decimals === 1 || v.decimals === 2 ? v.decimals : 3);
+    decimals.title =
+      'How many decimal places the GAP column shows. The third one changes ' +
+      'every frame whatever the cars are doing, so fewer places is often the ' +
+      'more readable number — and the column hands the width it saves to the ' +
+      'driver names';
+    decimals.addEventListener('change', () =>
+      void send({ decimals: parseInt(decimals.value, 10) })
+    );
+
+    const dpHead = document.createElement('div');
+    dpHead.className = 'ovcard__view-head';
+    dpHead.appendChild(dpLabel);
+    dpHead.appendChild(decimals);
+
+    // How the driver names are written. Its own row for the same reason as the
+    // rest: it applies to every row the tower draws, however many that is.
+    const nmLabel = document.createElement('span');
+    nmLabel.className = 'ovcard__bg-label';
+    nmLabel.textContent = 'NAMES';
+
+    const names = document.createElement('select');
+    names.className = 'field__input field__input--inline';
+    names.id = 'standings-names';
+    // The options are the abbreviation itself rather than a description of it —
+    // "Initial and surname" is a sentence you have to decode, "M.Haskins" is the
+    // thing that will be on the screen.
+    for (const [value, text] of [
+      ['full', 'Matt Haskins  (in full)'],
+      ['surname', 'M.Haskins'],
+      ['forename', 'Matt.H'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      names.appendChild(opt);
+    }
+    names.value = v.names === 'surname' || v.names === 'forename' ? v.names : 'full';
+    names.title =
+      'How driver names are written in the tower. Abbreviating buys room for ' +
+      'the long names that were clipping — and the name in full is always on ' +
+      "the row's tooltip";
+    names.addEventListener('change', () => void send({ names: names.value }));
+
+    const nmHead = document.createElement('div');
+    nmHead.className = 'ovcard__view-head';
+    nmHead.appendChild(nmLabel);
+    nmHead.appendChild(names);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
+    wrap.appendChild(dpHead);
+    wrap.appendChild(nmHead);
     wrap.appendChild(flHead);
     wrap.appendChild(posHead);
     return wrap;

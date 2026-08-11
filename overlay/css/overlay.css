@@ -353,27 +353,10 @@
 .standings__row--player .standings__cell { color: var(--text-primary); }
 .standings__row--player .standings__pos { color: var(--ac-cyan); }
 .standings__row--player .standings__driver { font-weight: 700; }
-/* "YOU" — the only inverted mark in the tower. Solid fill with dark text, where
-   every other mark here is coloured text or a hairline, so it separates by SHAPE
-   and not only by hue; and it carries its own opaque backing, so it still reads
-   against tarmac at 0% panel background (same reasoning as .pit-flag). Sized off
-   the type tokens to ride the Text size slider. */
-.standings__you {
-  display: inline-block;
-  margin-right: 6px;
-  padding: 0 4px;
-  border-radius: 3px;
-  vertical-align: middle;
-  background: var(--ac-cyan);
-  color: var(--text-invert);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--fs-micro);
-  letter-spacing: 0.08em;
-  /* The translucent panel's text shadow turns dark glyphs on a bright chip to
-     mud; the chip is its own backing. */
-  text-shadow: none;
-}
+/* There is deliberately no "YOU" chip here any more. The three rules above are
+   what marks the driver's own row, and they all colour or weight text that is
+   already there — so the row stays in line with every other row in the tower,
+   which is how a tower is read. See createRow in js/widgets/standings.js. */
 /* Race-fastest-lap holder: a subtle purple left accent on the row. */
 .standings__row--fastest {
   box-shadow: inset 3px 0 0 var(--purple-fastest);
