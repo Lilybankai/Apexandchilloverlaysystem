@@ -201,6 +201,60 @@
   no frames, no requests from a closed tab. The 3D view loads on first open
   only, and can be hidden entirely on low-end machines.
 
+## 0.66.3 — 2026-08-11
+
+### Added
+
+- **The speedo cluster comes in designs — first up, a real LMP2 dash.** A new
+  Design dropdown on the Speedo Cluster card picks the cluster's whole look:
+  the familiar twin-rev-bar cluster stays the default, and "LMP2 — Cosworth
+  CDU" redraws it as the boxy, mono-spaced display an actual LMP2 runs. Big
+  gear glyph, running lap time that holds your finished lap (gold on a
+  personal best), signed live delta, fuel and energy row, TC / brake bias /
+  TC cut boxes that flash green the moment you step a setting, tyre pressures
+  and temps in the centre grid, brake and throttle strips along the floor —
+  and the full-width shouts: PIT SPEED LIMITER (going red the moment you're
+  over the limit) and ENGINE STALL with your clutch beside it. The choice
+  applies live in OBS and in game, no reload; `?design=lmp2` pins it on a
+  single Browser Source. More GT3 and prototype designs to come.
+
+### Fixed
+
+- **Abbreviated driver names now actually fit — the rating marks stand aside
+  for them.** Picking "M.Haskins" or "Matt.H" barely changed what you could
+  read: the DRIVER column is 138px of content and the marks in it — class dot,
+  car badge, DR plaque, driver badge — hold 82px of that, so shortening a name
+  moved the ellipsis by about two characters and every row still read
+  "#7 K.Ko…". Abbreviating is you saying the NAME is what identifies this grid,
+  so it now costs the two rating marks and keeps the car badge: 48px back, and
+  the names read in full. Nothing changes for anyone on the default "in full"
+  setting, and the ratings are still drawn in the relative panel, which is the
+  panel that answers who the car beside you is.
+- **The NAMES and DECIMALS settings reach OBS Browser Sources.** Both were
+  dropped in transit: the appearance the server hands to browser sources is
+  rebuilt field by field, and these two were never added to that list, so a
+  source drew full names at three decimals whatever the panel said. The in-game
+  layer is pushed the settings directly and honoured them all along — which is
+  why the tower could show one thing in game and another in OBS at the same
+  time.
+- **Switching the speedo back to the Apex design works without a restart.**
+  Picking the default design (or any widget's default mode) removed the stored
+  choice, but the overlays only ever heard about modes that were SET — a
+  removed one was never delivered, so the cluster stayed on the LMP2 dash until
+  the app was relaunched. The overlays now treat a vanished entry as "back to
+  the default" and rebuild on the spot, live in OBS and in game.
+- **The pit limiter no longer sticks on the cluster after you leave the car.**
+  The ESC and garage screens freeze the sim's telemetry block at its last
+  values, so a limiter that was on when you stepped out kept reading as on —
+  the cluster sat glowing purple with the LIMITER chip lit until you drove
+  again. The limiter reading is now dropped while the sim says you're in its
+  menus (the same signal the LMP2 dash's banners and the race-control callouts
+  already respect), so the cluster returns to a live state the moment the data
+  stops being live.
+- **A telemetry frame without a player block can no longer freeze the Apex
+  cluster mid-paint.** The LMP2 design already guarded against it; the Apex
+  design now skips such a frame cleanly instead of stopping at whatever it last
+  drew.
 ## 0.66.2 — 2026-08-11
 
 ### Added
