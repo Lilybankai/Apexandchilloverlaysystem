@@ -16,6 +16,15 @@
   over the limit) and ENGINE STALL with your clutch beside it. The choice
   applies live in OBS and in game, no reload; `?design=lmp2` pins it on a
   single Browser Source. More GT3 and prototype designs to come.
+- **The standings tower's numbers and names are yours to set.** Two new
+  options on the Standings card: DECIMALS chooses how precisely GAP/INT reads
+  (thousandths, hundredths or tenths — a narrower column gives its width to
+  the driver names), and NAMES chooses how drivers are written (in full,
+  "M.Haskins", or "Matt.H"), with the fastest-lap banner following along so
+  nobody is named two ways at once. Both ride `?standings=` too. The "YOU"
+  tag is gone — your row's colour, weight and edge accent already mark it,
+  and the tag was the one thing breaking the column alignment a tower is
+  read by.
 
 ### Fixed
 
