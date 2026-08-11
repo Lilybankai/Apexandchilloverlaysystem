@@ -14,6 +14,7 @@
  */
 
 import { MfdController, type MfdWriteResult } from './mfdControl';
+import { RaceosLiveryClient } from './raceosLiveries';
 import { normalizeClass } from './carClass';
 import {
   GARAGE_WRITE_KEY,
@@ -59,10 +60,12 @@ export interface SetupControllerConfig {
 export class SetupController {
   private readonly mfd: MfdController;
   private readonly port: number;
+  private readonly customLiveries: RaceosLiveryClient;
 
   public constructor(config: SetupControllerConfig = {}) {
     this.mfd = new MfdController({ lmuApiPort: config.lmuApiPort, verbose: config.verbose });
     this.port = config.lmuApiPort ?? 6397;
+    this.customLiveries = new RaceosLiveryClient(this.port);
   }
 
   /**
@@ -253,22 +256,31 @@ export class SetupController {
   }
 
   /**
-   * The current car's 3/4 render, in ITS OWN LIVERY, from the game's static
-   * image set — `/start/images/cars/FrontLarge/<vehId>_frontAngle.webp`, the
-   * exact artwork the livery-selector shows (recipe read from the game UI's
-   * own `getCarImageLarge`). Falls back to the smaller variant, then null.
+   * The current car's 3/4 render, in ITS OWN LIVERY. A CUSTOM paint wins when
+   * the player has one for this .VEH id — the game keeps no rendered image of
+   * those anywhere local, so it comes from raceos.gg (see raceosLiveries.ts).
+   * Everything else — every stock livery — is the game's static image set,
+   * `/start/images/cars/FrontLarge/<vehId>_frontAngle.webp`, the exact artwork
+   * the livery-selector shows (recipe read from the game UI's own
+   * `getCarImageLarge`); falls back to the smaller variant, then null.
    * The `/rest/race/car/<id>/image` REST route is NOT used: it 400s/404s for
    * the current car even with the UI's `?type=` parameter.
+   *
+   * `key` is what the render is cached by: the S3 URI for a custom paint (it
+   * embeds the upload timestamp, so a re-painted livery is a new key), the
+   * vehId for stock art (static per livery, so the id alone is enough).
    */
-  public async carImage(): Promise<{ vehId: string; webp: Buffer } | null> {
+  public async carImage(): Promise<{ vehId: string; key: string; webp: Buffer } | null> {
     const { vehId } = await this.garageSummary();
     if (!vehId) return null;
+    const custom = await this.customLiveries.frontAngle(vehId);
+    if (custom) return { vehId, key: custom.uri, webp: custom.webp };
     for (const p of [
       `/start/images/cars/FrontLarge/${encodeURIComponent(vehId)}_frontAngle.webp`,
       `/start/images/cars/${encodeURIComponent(vehId)}_frontAngle.webp`,
     ]) {
       const webp = await this.getBytes(p);
-      if (webp && webp.length > 0) return { vehId, webp };
+      if (webp && webp.length > 0) return { vehId, key: vehId, webp };
     }
     return null;
   }

@@ -198,8 +198,9 @@
     elLibSave.disabled = false;
     if (firstPaint) renderLibraryList(); // arm the Load buttons
 
-    // The Car card shows THIS car, in its own livery — the game's artwork,
-    // fetched once per .VEH and swapped only when the car actually changes.
+    // The Car card shows THIS car, in its own livery — a custom paint comes
+    // from raceos.gg, stock art from the game — fetched once per .VEH and
+    // swapped only when the car actually changes.
     // The neon sketch in the markup stays as the fallback for fetch failures.
     if (state.vehId && state.vehId !== shownVehId) {
       shownVehId = state.vehId;

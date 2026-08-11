@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld('apex', {
     write: (key, value) => ipcRenderer.invoke('setup:write', { key, value }),
     /** Apply a staged macro: `{ ok, results[], state }` — skips locked keys, reports each. */
     writeBatch: (writes) => ipcRenderer.invoke('setup:writeBatch', { writes }),
-    /** The current car's own-livery render: `{ ok, vehId?, dataUrl? }`. */
+    /** The current car's own-livery render, custom paints included: `{ ok, vehId?, dataUrl? }`. */
     carImage: () => ipcRenderer.invoke('setup:carImage'),
 
     /* ---- the setup library (save/load/share .svm files) ---- */
