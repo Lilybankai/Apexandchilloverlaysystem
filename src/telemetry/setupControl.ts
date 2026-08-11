@@ -70,14 +70,25 @@ export class SetupController {
    * and session context (track + session type, for the library's labelling).
    * `connected: false` (never a throw) when LMU is closed or between sessions.
    */
-  public async getState(): Promise<SetupState & { trackName?: string; session?: string }> {
-    const [garage, identity, session] = await Promise.all([
+  public async getState(): Promise<
+    SetupState & { trackName?: string; session?: string; carModel?: string; vehId?: string }
+  > {
+    const [garage, identity, session, summary] = await Promise.all([
       this.mfd.getGarageData(),
       this.identity(),
       this.sessionInfo(),
+      this.garageSummary(),
     ]);
-    const state = projectSetupState(garage, identity.car, identity.carClass);
-    return { ...state, trackName: session.trackName, session: session.session };
+    // The garage summary's car MODEL beats the standings row's team name for
+    // the header; the team name is the fallback for sessions with no summary.
+    const state = projectSetupState(garage, summary.carModel || identity.car, identity.carClass);
+    return {
+      ...state,
+      trackName: session.trackName,
+      session: session.session,
+      carModel: summary.carModel,
+      vehId: summary.vehId,
+    };
   }
 
   /**
@@ -217,22 +228,49 @@ export class SetupController {
   public async garageSummary(): Promise<{
     trackFolder: string | null;
     carModel: string;
+    /** The .VEH file's base name — the game keys its car artwork by this. */
+    vehId: string;
     unsavedChanges: boolean;
   }> {
     const s = await this.getJson<{
       currentTrackFolder?: string;
       unsavedChanges?: boolean;
-      car?: { fullPathTree?: string };
+      car?: { fullPathTree?: string; vehFile?: string };
     }>('/rest/garage/summary');
     const folder = s?.currentTrackFolder;
     const tree = s?.car?.fullPathTree ?? '';
     // "WEC 2025, GT3, Lexus RCF LMGT3" — the last segment is the car model.
     const carModel = tree.includes(',') ? tree.split(',').pop()!.trim() : tree.trim();
+    const vehFile = s?.car?.vehFile ?? '';
+    const vehBase = vehFile.split('\\').pop() ?? '';
+    const vehId = vehBase.includes('.') ? vehBase.slice(0, vehBase.lastIndexOf('.')) : vehBase;
     return {
       trackFolder: typeof folder === 'string' && folder.length > 0 ? folder : null,
       carModel,
+      vehId,
       unsavedChanges: s?.unsavedChanges === true,
     };
+  }
+
+  /**
+   * The current car's 3/4 render, in ITS OWN LIVERY, from the game's static
+   * image set — `/start/images/cars/FrontLarge/<vehId>_frontAngle.webp`, the
+   * exact artwork the livery-selector shows (recipe read from the game UI's
+   * own `getCarImageLarge`). Falls back to the smaller variant, then null.
+   * The `/rest/race/car/<id>/image` REST route is NOT used: it 400s/404s for
+   * the current car even with the UI's `?type=` parameter.
+   */
+  public async carImage(): Promise<{ vehId: string; webp: Buffer } | null> {
+    const { vehId } = await this.garageSummary();
+    if (!vehId) return null;
+    for (const p of [
+      `/start/images/cars/FrontLarge/${encodeURIComponent(vehId)}_frontAngle.webp`,
+      `/start/images/cars/${encodeURIComponent(vehId)}_frontAngle.webp`,
+    ]) {
+      const webp = await this.getBytes(p);
+      if (webp && webp.length > 0) return { vehId, webp };
+    }
+    return null;
   }
 
   /** The Settings subfolder the CURRENT track's setups live under. */
@@ -309,6 +347,24 @@ export class SetupController {
       req.on('timeout', () => req.destroy(new Error('timeout')));
       if (payload) req.write(payload);
       req.end();
+    });
+  }
+
+  /** A binary GET (the car artwork). Null on any non-200 or error. */
+  private getBytes(path: string): Promise<Buffer | null> {
+    return new Promise<Buffer | null>((resolve) => {
+      const req = http.get({ host: '127.0.0.1', port: this.port, path, timeout: 4000 }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => req.destroy());
     });
   }
 

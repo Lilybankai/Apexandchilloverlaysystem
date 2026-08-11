@@ -318,7 +318,11 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* The game's car renders are wide with a transparent background — contain
+     floats them on the card's own dark gradient instead of cropping. */
+  object-fit: contain;
+  padding: 6px;
+  box-sizing: border-box;
 }
 .su-canvas[data-collapsed='true'] {
   display: none;

@@ -2234,6 +2234,30 @@ function registerIpc() {
     }
   });
 
+  /**
+   * The current car's 3/4 render in its own livery, as a data URL the panel's
+   * CSP accepts (img-src allows data:). Cached per .VEH id — the artwork is
+   * static per livery, so a car change is the only reason to refetch.
+   */
+  const carImageCache = new Map();
+  ipcMain.handle('setup:carImage', async () => {
+    try {
+      const img = await getSetupController().carImage();
+      if (!img) return { ok: false };
+      if (!carImageCache.has(img.vehId)) {
+        // A handful of liveries per session at most; 12 is generous.
+        if (carImageCache.size >= 12) {
+          carImageCache.delete(carImageCache.keys().next().value);
+        }
+        carImageCache.set(img.vehId, `data:image/webp;base64,${img.webp.toString('base64')}`);
+      }
+      return { ok: true, vehId: img.vehId, dataUrl: carImageCache.get(img.vehId) };
+    } catch (err) {
+      console.error('[app] car image unavailable:', err.message);
+      return { ok: false };
+    }
+  });
+
   /* ---- Setup library ----
    *
    * Named, colour-tagged copies of real .svm files under the app's own

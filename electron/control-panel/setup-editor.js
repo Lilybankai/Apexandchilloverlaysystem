@@ -97,6 +97,7 @@
   const macroSliders = new Map(); // macro id -> { input, clicks } elements
   let staged = new Map(); // key -> target value (the preview overlay)
   let loadedStage = null; // {name, values: Map, skipped, warnings[]} — a staged library tune
+  let shownVehId = ''; // whose artwork the Car card currently shows
   let writesFrozen = false;
   let failedWrites = 0;
 
@@ -196,6 +197,17 @@
     lastState = state;
     elLibSave.disabled = false;
     if (firstPaint) renderLibraryList(); // arm the Load buttons
+
+    // The Car card shows THIS car, in its own livery — the game's artwork,
+    // fetched once per .VEH and swapped only when the car actually changes.
+    // The neon sketch in the markup stays as the fallback for fetch failures.
+    if (state.vehId && state.vehId !== shownVehId) {
+      shownVehId = state.vehId;
+      void window.apex.setup.carImage().then((res) => {
+        const img = elCanvasWrap.querySelector('img');
+        if (img && res && res.ok && res.dataUrl) img.src = res.dataUrl;
+      });
+    }
     settingsMap = new Map();
     for (const s of state.settings) settingsMap.set(s.key, s);
 
