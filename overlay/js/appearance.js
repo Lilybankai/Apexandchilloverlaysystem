@@ -356,7 +356,21 @@
   function applyModes(next) {
     if (!next || typeof next !== "object") return;
     var changed = false;
-    for (var id in next) {
+    var id;
+    // The app REMOVES an entry to mean "back to the default" (the card
+    // dropdown sends null for the first option), so a key that has vanished
+    // from the map is a change too. Without this sweep a widget switched to an
+    // alternate design could never be switched back short of restarting.
+    for (id in modes) {
+      if (
+        Object.prototype.hasOwnProperty.call(modes, id) &&
+        !Object.prototype.hasOwnProperty.call(next, id)
+      ) {
+        delete modes[id];
+        changed = true;
+      }
+    }
+    for (id in next) {
       if (!Object.prototype.hasOwnProperty.call(next, id)) continue;
       var mode = String(next[id]);
       if (modes[id] !== mode) {

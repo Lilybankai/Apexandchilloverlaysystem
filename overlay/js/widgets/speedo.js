@@ -1362,7 +1362,10 @@
   }
 
   function update(frame, ctx) {
-    var p = frame.player;
+    // `|| {}` for the same reason the LMP2 design carries it: a frame without a
+    // player block must skip cleanly, not throw out of the top of update() and
+    // leave the whole cluster frozen at whatever it last painted.
+    var p = frame.player || {};
     var fmt = ctx.fmt;
 
     // Re-check the bitmap periodically: ResizeObserver does not deliver while a
