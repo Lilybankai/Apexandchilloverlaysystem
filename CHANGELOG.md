@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.67.0-beta.7 — 2026-08-11
+
+### Added
+
+- **The Setups tab shows your custom livery — the exact paint.\*** If the car
+  in the garage is wearing one of your custom skins, the car card now shows
+  the same studio render the game's own event and livery screens show — your
+  actual paint, not the bare carbon template. The render comes from LMU's
+  online service using the sim's own sign-in, so it needs the game running
+  and logged in; stock liveries keep coming from the game's local artwork
+  exactly as before, and if the service is out of reach the card quietly
+  falls back to that stock art. If more than one of your teams has a paint
+  for the same car, the newest upload is shown.
+
+  \* **Experimental.** First release of the online-livery path — if the card
+  ever shows the wrong paint (or none) for a custom skin, that's a bug worth
+  reporting.
+
 ## 0.67.0-beta.6 — 2026-08-11
 
 ### Added
