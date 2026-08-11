@@ -1489,9 +1489,75 @@
     aidChip(chipAbs, ctx, "ABS", findAid(mfd, "abs"), (ped.abs || 0) > 0.02);
   }
 
+  /* ---------------------------------------------------------------------- */
+  /*  Design dispatch                                                         */
+  /* ---------------------------------------------------------------------- */
+  /*
+   * The cluster has selectable DESIGNS — this file's twin-rev-bar Apex cluster
+   * is the default, and alternates (the Cosworth-style LMP2 dash, with more to
+   * come) register themselves into `window.ApexSpeedoDesigns` from their own
+   * files. This widget owns the "speedo" slot and forwards init/update to
+   * whichever design is selected, so client.js still sees exactly one widget.
+   *
+   * The choice arrives like every other appearance knob: `?design=` on the URL
+   * pins it for that source; otherwise it follows the control panel's Design
+   * dropdown live over the modes channel (the trackmap palette's pattern).
+   * A switch re-runs init on the same shell — both designs already rebuild
+   * their mount from scratch on init, which is what makes that safe. The
+   * stage carries `data-design` so the stylesheet can swap the aspect ratio
+   * and park the canvas while a DOM-only design is up.
+   */
+  var DESIGN_DEFAULT = "apex";
+  var designName = DESIGN_DEFAULT;
+  var activeDesign = null; // null = the Apex cluster in this file
+  var designRoot = null, designCtx = null, designBuilt = false;
+
+  function designFor(name) {
+    var reg = window.ApexSpeedoDesigns;
+    return (name !== DESIGN_DEFAULT && reg && reg[name]) || null;
+  }
+
+  function buildDesign() {
+    if (!designRoot) return;
+    activeDesign = designFor(designName);
+    var stage = designRoot.querySelector('[data-role="stage"]');
+    if (stage) stage.setAttribute("data-design", activeDesign ? designName : DESIGN_DEFAULT);
+    if (activeDesign) activeDesign.init(designRoot, designCtx);
+    else init(designRoot, designCtx);
+    designBuilt = true;
+  }
+
+  function initDispatch(root, ctx) {
+    designRoot = root;
+    designCtx = ctx;
+    var params = new URLSearchParams(window.location.search);
+    var pinned = (params.get("design") || "").toLowerCase();
+    if (pinned) {
+      // A pin only sticks when the design exists — a typo falls back to the
+      // cluster rather than to a blank stage.
+      if (pinned === DESIGN_DEFAULT || designFor(pinned)) designName = pinned;
+    } else if (window.ApexAppearance && window.ApexAppearance.onModes) {
+      window.ApexAppearance.onModes(function (modes) {
+        var m = (modes && modes.speedo) || DESIGN_DEFAULT;
+        if (m !== DESIGN_DEFAULT && !designFor(m)) m = DESIGN_DEFAULT;
+        if (m === designName) return;
+        designName = m;
+        // The immediate call during subscription lands before the first
+        // build — it only has to pick the name; init below does the building.
+        if (designBuilt) buildDesign();
+      });
+    }
+    buildDesign();
+  }
+
+  function updateDispatch(frame, ctx) {
+    if (activeDesign) activeDesign.update(frame, ctx);
+    else update(frame, ctx);
+  }
+
   window.ApexOverlay.registerWidget("speedo", {
     throttleMs: 0,
-    init: init,
-    update: update,
+    init: initDispatch,
+    update: updateDispatch,
   });
 })();
