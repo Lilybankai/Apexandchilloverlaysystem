@@ -302,6 +302,35 @@ function mount(search) {
       walk(root);
       return out;
     },
+    /**
+     * Which marks each driver cell is actually SHOWING, per row, in the order
+     * drawn — "brand+dr+sr", "brand", "" and so on. Read off `hidden` rather
+     * than off the element existing: every badge stays in the DOM for the life
+     * of the row and is shown or hidden in place, so a reader that only counted
+     * elements would report a plaque that nobody can see.
+     */
+    marks: () => {
+      const out = [];
+      const walk = (e) => {
+        if (
+          e.className &&
+          /standings__driver/.test(e.className) &&
+          !/standings__head/.test(e.className)
+        ) {
+          const on = [];
+          for (const c of e.children) {
+            if (c.hidden) continue;
+            if (c.className === 'standings__badge') on.push('brand');
+            if (c.className === 'standings__rank') on.push('dr');
+            if (c.className === 'standings__srbadge') on.push('sr');
+          }
+          out.push(on.join('+'));
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
     /** The panel root, for the odd assertion that reads an attribute directly. */
     rootEl: () => root,
     /** Every element carrying a given class name, anywhere in the panel. */
@@ -460,6 +489,63 @@ console.log('\nDriver names — full, surname or forename');
   check('and the row still carries it in full',
     w.nameTitles().join(' | ') === '#7 Matt Haskins | #9 Jan Van der Merwe | #4 Slipstream',
     w.nameTitles().join(' | '));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nAbbreviating stands the rating marks down');
+/* -------------------------------------------------------------------------- */
+
+/* The bug this closes: the DRIVER cell is 138px of content and the marks in it
+   hold 82px of that, so shortening "Matt Haskins" (99px) to "M.Haskins" (84px)
+   moved the ellipsis two characters and every row still read "#7 K.Ko…". The
+   setting bought no room at all, which is not a setting behaving oddly — it is
+   one that does not work. Abbreviating now costs the two RATING marks and keeps
+   the brand, which is the 48px that makes the abbreviation fit. */
+{
+  const marked = () => [
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3',
+      manufacturer: 'Ferrari', driverBadge: 'sr-clean', driverRank: { rank: 'Gold', tier: 2 } },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'Mark Slater', carClass: 'GT3',
+      manufacturer: 'Porsche', driverBadge: 'sr-noob', driverRank: { rank: 'Bronze', tier: 1 } },
+  ];
+  const view = (n) => ({
+    limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0,
+    gap: 'leader', fastest: 'class', decimals: 3, names: n,
+  });
+
+  const w = mount();
+  w.push(view('full'));
+  w.update(marked());
+  check('in full, the row draws every mark it always did',
+    w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
+
+  w.push(view('surname'));
+  w.update(marked());
+  check('abbreviating drops the ratings and keeps the car',
+    w.marks().join(' | ') === 'brand | brand', w.marks().join(' | '));
+  check('and the name is still the abbreviated one',
+    w.names().join(' | ') === '#7 M.Haskins | #9 M.Slater', w.names().join(' | '));
+
+  w.push(view('forename'));
+  w.update(marked());
+  check('the forename form makes the same trade',
+    w.marks().join(' | ') === 'brand | brand', w.marks().join(' | '));
+
+  // And it has to come BACK. The badges are pooled per row and shown/hidden in
+  // place, so a one-way hide would leave the ratings gone for the session.
+  w.push(view('full'));
+  w.update(marked());
+  check('going back to full names brings the marks back',
+    w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
+
+  // A row the sim gives no ratings for is unchanged by any of this.
+  w.push(view('surname'));
+  w.update([
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3',
+      manufacturer: 'Ferrari' },
+  ]);
+  check('a row with no ratings to drop draws its brand as before',
+    w.marks().join(' | ') === 'brand', w.marks().join(' | '));
 }
 
 /* -------------------------------------------------------------------------- */
