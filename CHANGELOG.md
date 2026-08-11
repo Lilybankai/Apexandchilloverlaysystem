@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.67.0-beta.5 — 2026-08-11
+
+### Added
+
+- **The Setups tab shows YOUR car — in your livery.** The car card now pulls
+  the game's own 3/4 studio render of the exact car sitting in the garage,
+  liveried as it really is, and swaps it the moment you change cars. It is
+  the same artwork LMU's livery selector uses, served by the game itself, so
+  every car and every skin is covered without shipping a single image. The
+  neon sketch stays as the fallback when the sim is closed.
+
 ## 0.67.0-beta.4 — 2026-08-11
 
 ### Fixed
