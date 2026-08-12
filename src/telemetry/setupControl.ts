@@ -74,7 +74,13 @@ export class SetupController {
    * `connected: false` (never a throw) when LMU is closed or between sessions.
    */
   public async getState(): Promise<
-    SetupState & { trackName?: string; session?: string; carModel?: string; vehId?: string }
+    SetupState & {
+      trackName?: string;
+      trackFolder?: string;
+      session?: string;
+      carModel?: string;
+      vehId?: string;
+    }
   > {
     const [garage, identity, session, summary] = await Promise.all([
       this.mfd.getGarageData(),
@@ -88,6 +94,10 @@ export class SetupController {
     return {
       ...state,
       trackName: session.trackName,
+      // The sim's own Settings subfolder — the identity a published setup is
+      // filed under, so "setups for where I am" can match on it rather than on
+      // a display name that varies between layouts.
+      trackFolder: summary.trackFolder ?? '',
       session: session.session,
       carModel: summary.carModel,
       vehId: summary.vehId,

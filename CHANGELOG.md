@@ -1,5 +1,24 @@
 # Changelog
 
+<!-- Unreleased — move under the next version heading when it is cut. The
+     parser only reads "## x.y.z" headings, so nothing below is shown in the
+     app until it is renamed. -->
+
+## Unreleased
+
+### Changed
+
+- **Community setups follow the exact car you are in, not just its class.**
+  With the sim running, the Community list now shows only what was published
+  for your car at your track — a class-mate's tune does not load onto a
+  different car, so a GT3 list full of other manufacturers was noise. It also
+  keeps up: swap cars in the garage, or move to another track, and the list
+  re-filters itself instead of staying pinned to wherever you were when the
+  panel first saw the sim. Tracks are matched on the sim's own setup folder,
+  so two layouts of one circuit no longer bleed into each other. With follow
+  turned off there is now a **Car** filter beside Track and Class, and every
+  row carries the car it was made for.
+
 ## 0.67.1 — 2026-08-12
 
 ### Added

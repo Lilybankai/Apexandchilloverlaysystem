@@ -83,6 +83,7 @@
   const elComFollow = $('#setup-com-follow');
   const elComRefresh = $('#setup-com-refresh');
   const elComTrack = $('#setup-com-track');
+  const elComCar = $('#setup-com-car');
   const elComClass = $('#setup-com-class');
   const elComSort = $('#setup-com-sort');
   const elComList = $('#setup-com-list');
@@ -244,6 +245,11 @@
     if (firstPaint) {
       renderLibraryList(); // arm the Load buttons
       renderCommunityList(); // follow-mode locks onto this car & track
+    } else if (comFollowKey() !== comShownFollowKey) {
+      // Swapped car, or the session moved to another track: the followed list
+      // is about somewhere the driver no longer is. Repaint it, no refetch —
+      // every published row is already in hand.
+      renderCommunityList();
     }
 
     // The Car card shows THIS car, in its own livery — a custom paint comes
@@ -1226,10 +1232,20 @@
   /* The cloud half of the library. One read per tab show (plus Refresh and
    * after any mutation) — the zero-cost-when-closed rule holds. Rows are
    * filtered and sorted locally; in follow mode, with the sim connected, the
-   * filters lock onto the garage's own track and class. */
+   * list shows ONLY what was published for the exact car and track the driver
+   * is sitting in — a class-mate's tune does not load onto a different car,
+   * so matching the car (not the class) is what makes the list usable. */
 
   const comFollowing = () =>
-    elComFollow.checked && Boolean(lastState && lastState.connected && lastState.trackName);
+    elComFollow.checked &&
+    Boolean(lastState && lastState.connected && (lastState.trackName || lastState.trackFolder));
+
+  /** What follow mode is currently locked onto; '' when it is not following. */
+  const comFollowKey = () =>
+    comFollowing()
+      ? [lastState.trackFolder || '', lastState.trackName || '', lastState.car || ''].join('|')
+      : '';
+  let comShownFollowKey = null; // last key painted, so a car/track change repaints
 
   try {
     elComFollow.checked = localStorage.getItem(COM_FOLLOW_KEY) !== 'off';
@@ -1281,6 +1297,12 @@
       elComTrack.value,
     );
     fill(
+      elComCar,
+      [...new Set(comRows.map((r) => r.car).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      'All cars',
+      elComCar.value,
+    );
+    fill(
       elComClass,
       [...new Set(comRows.map((r) => r.carClass).filter(Boolean))],
       'All classes',
@@ -1311,7 +1333,9 @@
 
     const meta = document.createElement('span');
     meta.className = 'su-lib__meta';
-    const chips = [row.trackName || row.trackFolder, row.carClass].filter(Boolean);
+    // The car earns its chip: a tune is for one car, and the class alone does
+    // not say which — it is the first thing to check before downloading.
+    const chips = [row.trackName || row.trackFolder, row.car, row.carClass].filter(Boolean);
     for (const text of chips) {
       const c = document.createElement('span');
       c.className = 'su-chip';
@@ -1458,26 +1482,28 @@
 
   function renderCommunityList() {
     const following = comFollowing();
+    comShownFollowKey = comFollowKey();
     elComTrack.disabled = following;
+    elComCar.disabled = following;
     elComClass.disabled = following;
     if (following) {
-      // The selects display what follow mode locked onto.
-      const track = lastState.trackName || '';
-      const cls = lastState.carClass || '';
-      if (![...elComTrack.options].some((o) => o.value === track)) {
-        const o = document.createElement('option');
-        o.value = track;
-        o.textContent = track;
-        elComTrack.appendChild(o);
-      }
-      if (cls && ![...elComClass.options].some((o) => o.value === cls)) {
-        const o = document.createElement('option');
-        o.value = cls;
-        o.textContent = cls;
-        elComClass.appendChild(o);
-      }
-      elComTrack.value = track;
-      elComClass.value = cls;
+      // The selects display exactly what follow mode locked onto — the track
+      // and the car. Class is left on "All": with the car pinned it can only
+      // hide matching rows whose class string was written differently.
+      const track = lastState.trackName || lastState.trackFolder || '';
+      const car = lastState.car || '';
+      const pin = (select, value) => {
+        if (value && ![...select.options].some((o) => o.value === value)) {
+          const o = document.createElement('option');
+          o.value = value;
+          o.textContent = value;
+          select.appendChild(o);
+        }
+        select.value = value;
+      };
+      pin(elComTrack, track);
+      pin(elComCar, car);
+      elComClass.value = '';
     }
 
     if (comState !== 'ok') {
@@ -1492,13 +1518,38 @@
       return;
     }
 
-    const track = elComTrack.value;
-    const cls = elComClass.value;
     const eq = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
-    let rows = comRows.filter(
-      (r) =>
-        (!track || eq(r.trackName || r.trackFolder, track)) && (!cls || eq(r.carClass, cls)),
-    );
+    let rows;
+    if (following) {
+      // The sim's own Settings folder is the authoritative track identity —
+      // two layouts of one circuit share a name but never a folder. Rows
+      // published before the folder was recorded fall back to the name.
+      const folder = lastState.trackFolder || '';
+      const trackName = lastState.trackName || '';
+      const car = lastState.car || '';
+      const cls = lastState.carClass || '';
+      rows = comRows.filter((r) => {
+        const sameTrack =
+          folder && r.trackFolder
+            ? eq(r.trackFolder, folder)
+            : eq(r.trackName || r.trackFolder, trackName || folder);
+        if (!sameTrack) return false;
+        if (!car) return true;
+        // A row that never recorded its car (an imported file) is judged on
+        // class instead of being dropped from a list it may well belong in.
+        return r.car ? eq(r.car, car) : !cls || eq(r.carClass, cls);
+      });
+    } else {
+      const track = elComTrack.value;
+      const car = elComCar.value;
+      const cls = elComClass.value;
+      rows = comRows.filter(
+        (r) =>
+          (!track || eq(r.trackName || r.trackFolder, track)) &&
+          (!car || eq(r.car, car)) &&
+          (!cls || eq(r.carClass, cls)),
+      );
+    }
     const sort = elComSort.value;
     if (sort === 'stars') {
       rows.sort((a, b) => (b.avgStars ?? -1) - (a.avgStars ?? -1) || b.ratingCount - a.ratingCount);
@@ -1518,12 +1569,13 @@
         comRows.length === 0
           ? 'Nothing shared yet — be the first: Share a saved setup, then “Publish to the community”.'
           : following
-            ? 'Nothing shared for this car and track yet — you could be first.'
+            ? `Nothing shared for ${lastState.car || 'this car'} at ${lastState.trackName || lastState.trackFolder} yet — you could be first, or untick “Follow my car & track” to browse everything.`
             : 'Nothing matches these filters.';
     }
   }
 
   elComTrack.addEventListener('change', renderCommunityList);
+  elComCar.addEventListener('change', renderCommunityList);
   elComClass.addEventListener('change', renderCommunityList);
   elComSort.addEventListener('change', renderCommunityList);
   elComRefresh.addEventListener('click', () => void refreshCommunity());

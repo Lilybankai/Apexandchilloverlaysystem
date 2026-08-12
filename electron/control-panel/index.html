@@ -766,7 +766,7 @@
         <!-- ================== COMMUNITY SETUPS ====================== -->
         <!-- Published tunes from every driver in the league. Rows come from
              browse_setups() and are filtered locally; with the sim running
-             the list follows the garage's own track and class. -->
+             the list follows the garage's own track and car. -->
         <section class="card su-lib su-com" id="setup-community">
           <div class="card__head su-lib__head">
             <div>
@@ -776,7 +776,7 @@
               </p>
             </div>
             <div class="su-lib__actions">
-              <label class="su-com__follow" title="With LMU running, show only setups for the car and track you are in">
+              <label class="su-com__follow" title="With LMU running, show only setups for the exact car and track you are in">
                 <input type="checkbox" id="setup-com-follow" checked />
                 Follow my car &amp; track
               </label>
@@ -785,6 +785,7 @@
           </div>
           <div class="su-lib__filters">
             <select id="setup-com-track" class="field__input" title="Filter by track"></select>
+            <select id="setup-com-car" class="field__input" title="Filter by car"></select>
             <select id="setup-com-class" class="field__input" title="Filter by car class"></select>
             <select id="setup-com-sort" class="field__input" title="Sort">
               <option value="newest">Newest first</option>
