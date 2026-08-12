@@ -748,6 +748,11 @@ export class RF2Provider implements TelemetryProvider {
   /**
    * Builds the relative widget from the player's on-track position: the cars
    * immediately ahead/behind by lap distance, with a signed time gap.
+   *
+   * The gap itself comes from differencing the two cars' `gapToLeaderSec`
+   * (`mTimeBehindLeader`) — see `lmuRestProvider.buildRelative` for why the
+   * distance × lap-average-pace model this used to run was wrong, and why this
+   * panel and the standings tower have to be reading the same field.
    */
   private buildRelative(
     standings: StandingEntry[],
@@ -770,6 +775,20 @@ export class RF2Provider implements TelemetryProvider {
     const player = standings.find((s) => s.slotId === playerId);
     const playerLaps = player?.lapsCompleted ?? 0;
 
+    /**
+     * A car's gap to the overall leader, or `null` when the sim has not timed it.
+     * P1's own `0` is a real reading; anyone else's is an unset field, and taking
+     * that at face value would stack a phantom car on the leader.
+     */
+    const leaderTime = (s: StandingEntry): number | null =>
+      typeof s.gapToLeaderSec === 'number' &&
+      s.gapToLeaderSec !== UNKNOWN_VALUE &&
+      (s.gapToLeaderSec > 0 || s.position === 1)
+        ? s.gapToLeaderSec
+        : null;
+    const playerTime = player ? leaderTime(player) : null;
+    const halfLap = lapTime / 2;
+
     const rows = [] as Array<{ entry: StandingEntry; gap: number }>;
     for (let i = 0; i < numVehicles; i++) {
       const off = base + i * VS.stride;
@@ -785,9 +804,28 @@ export class RF2Provider implements TelemetryProvider {
         if (distDelta > half) distDelta -= trackLength;
         else if (distDelta < -half) distDelta += trackLength;
       }
-      // Distance gap → time gap: (fraction of a lap) × lap time.
+      // Distance gap → time gap: (fraction of a lap) × lap time. Kept only to
+      // order the rows, to sanity check the sign, and as the fallback for a car
+      // the sim has published no timing for.
       const denom = trackLength > 0 ? trackLength : Math.max(1, Math.abs(dist) || 1);
-      rows.push({ entry: std, gap: (distDelta / denom) * lapTime });
+      const roadGap = (distDelta / denom) * lapTime;
+
+      const carTime = leaderTime(std);
+      let gap = roadGap;
+      if (playerTime !== null && carTime !== null) {
+        // Ahead = closer to the leader = a smaller gap to it, hence this order.
+        let sim = playerTime - carTime;
+        // Half-lap wrap, matching the distance above: two cars either side of
+        // the line hold leader-gaps at opposite ends of a lap.
+        if (sim > halfLap) sim -= lapTime;
+        else if (sim < -halfLap) sim += lapTime;
+        // Disagreement about which side of us a car is on past the noise floor:
+        // the road distance is the reading that cannot be stale, so it wins.
+        const disagrees =
+          Math.abs(sim) > 0.5 && Math.abs(roadGap) > 0.5 && sim > 0 !== roadGap > 0;
+        if (!disagrees) gap = sim;
+      }
+      rows.push({ entry: std, gap });
     }
     rows.sort((a, b) => a.gap - b.gap);
 

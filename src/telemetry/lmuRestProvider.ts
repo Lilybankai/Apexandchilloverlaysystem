@@ -1539,15 +1539,35 @@ export class LmuRestProvider implements TelemetryProvider {
    * Cars physically nearest the focused car on track, with a signed time gap
    * (positive = ahead of the focus car on the road, negative = behind).
    *
-   * The gap is the wrapped on-track distance between the two cars, converted to
-   * time at the focus car's own lap pace — the standard relative-display model.
+   * The gap is the difference between the two cars' `timeBehindLeader`. Both are
+   * measured by the sim against the same reference — the overall leader — at the
+   * same instant, so the leader term cancels and what is left is the time gap
+   * between those two cars. It is exactly the quantity the standings tower shows
+   * as an interval (`assignClassPositions` differences the same field), which is
+   * the point: two panels claiming to show the gap to the car behind you must
+   * not be able to disagree, and deriving them from one number is the only way
+   * to guarantee they can't.
    *
-   * Two models were compared against a live multiclass session:
+   * Three models have been tried:
    * - `timeIntoLap` clock difference: rejected. A car's clock only resets at the
    *   line, so a different-pace car's "gap" freezes mid-lap and jumps by a whole
    *   lap time whenever it crosses the line (its clock wraps on a different
    *   period than the focus car's) — structurally wrong across classes.
-   * - Distance × pace (this one): tracks the physical road gap continuously.
+   * - Distance × pace: the previous model, and the cause of the mismatch above.
+   *   Converting a road gap at the car's LAP-AVERAGE pace silently assumes the
+   *   stretch of track between the two cars is covered at the average speed. It
+   *   never is: the same 500 m is ~6 s of hairpin or ~2.5 s of straight. Against
+   *   a captured field it over-read by 60% on cars sitting on a straight and
+   *   under-read by 30% on cars in a slow section — a tester reading the gap to
+   *   the car behind saw it disagree with the standings, and the standings were
+   *   the ones telling the truth.
+   * - The sim's own timing (this one): correct by construction, at any point on
+   *   the lap, across classes, because the sim is timing the cars rather than
+   *   inferring them.
+   *
+   * The distance model stays as the fallback for cars the sim publishes no gap
+   * for (in the garage, or not yet timed) and to order the rows, and to sanity
+   * check the sign — see the loop below.
    *
    * NOTE `estimatedLapTime` is a session-wide pace figure (observed identical
    * across classes), NOT this car's own pace — using it scaled every gap by the
@@ -1581,16 +1601,31 @@ export class LmuRestProvider implements TelemetryProvider {
     // snapshot's age, so the 30 Hz frames move smoothly between REST refreshes.
     // Pure per-car arithmetic — no extra polling or I/O.
     const ageSec = Math.min(0.5, Math.max(0, (Date.now() - this.lastOkAt) / 1000));
-    const roadDist = (c: RestStanding): number => {
-      const v =
-        c.carVelocity &&
-        typeof c.carVelocity.velocity === 'number' &&
-        Number.isFinite(c.carVelocity.velocity)
-          ? Math.min(150, Math.max(0, c.carVelocity.velocity)) // m/s, forward only
-          : 0;
-      return (c.lapDistance as number) + v * ageSec;
-    };
+    const speedOf = (c: RestStanding): number =>
+      c.carVelocity &&
+      typeof c.carVelocity.velocity === 'number' &&
+      Number.isFinite(c.carVelocity.velocity)
+        ? Math.min(150, Math.max(0, c.carVelocity.velocity)) // m/s, forward only
+        : 0;
+    const roadDist = (c: RestStanding): number => (c.lapDistance as number) + speedOf(c) * ageSec;
     const focusDist = roadDist(focus);
+    const focusVel = speedOf(focus);
+
+    /**
+     * This car's gap to the overall leader, or `null` when the sim has not timed
+     * it. The leader's own `0` is a real reading; anyone else's is the field
+     * being unset (a car in the garage, or one the sim has not placed yet), and
+     * treating that as "level with the leader" would put a phantom car on top of
+     * whoever is out front.
+     */
+    const leaderTime = (c: RestStanding): number | null =>
+      typeof c.timeBehindLeader === 'number' &&
+      Number.isFinite(c.timeBehindLeader) &&
+      (c.timeBehindLeader > 0 || c.position === 1)
+        ? c.timeBehindLeader
+        : null;
+    const focusTime = leaderTime(focus);
+    const halfLap = lapTime / 2;
 
     const rows: Array<{ c: RestStanding; gap: number }> = [];
     for (const c of cars) {
@@ -1605,7 +1640,35 @@ export class LmuRestProvider implements TelemetryProvider {
         else if (d < -half) d += trackLength;
       }
       const denom = trackLength > 0 ? trackLength : Math.max(1, Math.abs(c.lapDistance) || 1);
-      rows.push({ c, gap: (d / denom) * lapTime });
+      const roadGap = (d / denom) * lapTime;
+
+      const carTime = leaderTime(c);
+      let gap = roadGap;
+      if (focusTime !== null && carTime !== null) {
+        // Ahead = closer to the leader = a SMALLER gap to it, so the subtraction
+        // is this way round to land on "positive = ahead".
+        let sim = focusTime - carTime;
+        // The same half-lap wrap the distance gets, for the same reason: two
+        // cars either side of the line hold leader-gaps at opposite ends of a
+        // lap, and the short way round is the one on the road between them.
+        if (sim > halfLap) sim -= lapTime;
+        else if (sim < -halfLap) sim += lapTime;
+        // The snapshot is up to one refresh old (~150 ms) and the widget renders
+        // at 30 Hz, so without this the number visibly steps. Extrapolate the
+        // closing distance over the snapshot's age and convert it at the speed
+        // the cars are ACTUALLY doing — the mistake this whole function just
+        // stopped making was converting at the lap average.
+        const vRef = Math.max(5, (speedOf(c) + focusVel) / 2);
+        sim += ((speedOf(c) - focusVel) * ageSec) / vRef;
+        // Both sources agree on which side of us a car is, or one of them is
+        // wrong. Past the noise floor a disagreement means the sim's figure is
+        // stale (or belongs to a car mid-wrap), and road distance is the reading
+        // that cannot be stale — so it takes the row back.
+        const disagrees =
+          Math.abs(sim) > 0.5 && Math.abs(roadGap) > 0.5 && sim > 0 !== roadGap > 0;
+        if (!disagrees) gap = sim;
+      }
+      rows.push({ c, gap });
     }
     // Descending: physically furthest ahead first, furthest behind last — the
     // top-to-bottom order a relative display reads in.
