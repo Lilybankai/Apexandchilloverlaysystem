@@ -6,8 +6,21 @@
 
 ## Unreleased
 
+## 0.68.0 — 2026-08-12
+
 ### Changed
 
+- **The league's setups sit beside the race engineer now, not under
+  everything.** Maximise the panel and the Setups tab uses the whole window:
+  the car's settings on the left, the engineer in the middle, and Community
+  setups as a column of its own on the right — visible the moment you open the
+  tab instead of two screens down past your own library. Narrow the window and
+  it folds sensibly: the community list moves under the settings, then to a
+  single column, and it stays above your library at every size. In a column
+  each shared setup reads as three lines — who made it and their pace, what
+  it's for, then Get and Rate — and the list scrolls inside its own card so the
+  page never runs away from you. With the sim closed, the community list takes
+  the space the engineer would have used rather than leaving a hole.
 - **Community setups follow the exact car you are in, not just its class.**
   With the sim running, the Community list now shows only what was published
   for your car at your track — a class-mate's tune does not load onto a
@@ -18,6 +31,17 @@
   so two layouts of one circuit no longer bleed into each other. With follow
   turned off there is now a **Car** filter beside Track and Class, and every
   row carries the car it was made for.
+
+### Fixed
+
+- **The relative panel and the standings agree about the car behind you.**
+  The relative was estimating that gap — road distance divided by your lap
+  average — which is wrong by however much the stretch between you differs
+  from an average lap: measured against a captured field, anywhere from 30%
+  short for a car in a slow corner to 50% long for one on a straight. It now
+  reads the sim's own timing, the same number the standings tower uses, so
+  the two can no longer contradict each other. The same fix applies to
+  rFactor 2.
 
 ## 0.67.1 — 2026-08-12
 

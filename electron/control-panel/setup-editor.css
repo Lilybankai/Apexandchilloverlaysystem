@@ -81,26 +81,114 @@
   max-width: 42ch;
 }
 
-/* ---- two-column body ------------------------------------------------------ */
+/* ---- the page's rails ----------------------------------------------------- */
 
-.su-body {
+/* Four blocks — the editor, the engineer, the community's setups, your own
+   library — placed by name so width decides the shape:
+     wide    editor | engineer | community, library under the editor
+     medium  editor / community / library, engineer alongside all three
+     narrow  one column, community still above the library
+   The community list ends up on screen at every width; as a footer under the
+   library it never was. The tab is also the only one that outgrows the panel's
+   1120px column — three rails need the room a maximised window has. */
+.su-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'main'
+    'side'
+    'com'
+    'lib';
   gap: 16px;
   align-items: start;
 }
-@media (max-width: 1100px) {
-  .su-body {
-    grid-template-columns: 1fr;
-  }
-}
 
-.su-side {
+/* The editor and its offline stand-in share a slot — exactly one is ever
+   shown, so they are one block as far as the layout is concerned. */
+.su-page__main {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  position: sticky;
-  top: 0;
+  min-width: 0;
+}
+
+.su-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#setup-community {
+  grid-area: com;
+}
+
+#setup-library {
+  grid-area: lib;
+}
+
+/* Gaps own the spacing between the rails; the standalone margin would double
+   it up and, in a column, push the card off its rail's top. */
+.su-page .su-lib {
+  margin-top: 0;
+}
+
+/* The empty last row is the slack: a rail taller than the column beside it
+   grows THAT row instead of spreading the difference between the cards, which
+   is what leaves the library stranded halfway down the page. */
+@media (min-width: 1100px) {
+  .su-page {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-areas:
+      'main side'
+      'com side'
+      'lib side'
+      '. side';
+    grid-template-rows: auto auto auto 1fr;
+  }
+  /* Nothing in the garage ⇒ no engineer, so the column would be a hole. The
+     community list takes it instead — it is the one list worth reading with
+     the sim shut. */
+  .su-page:has(#setup-side[hidden]) {
+    grid-template-areas:
+      'main com'
+      'lib com'
+      '. com';
+    grid-template-rows: auto auto 1fr;
+  }
+  .su-side {
+    position: sticky;
+    top: 0;
+  }
+}
+
+@media (min-width: 1660px) {
+  /* Wider than the panel's usual column — see .su-page. */
+  .view[data-view='setups'] .wrap {
+    max-width: min(1720px, calc(100vw - 56px));
+  }
+  .su-page {
+    grid-template-columns: minmax(0, 1fr) 340px 400px;
+    grid-template-areas:
+      'main side com'
+      'lib side com'
+      '. side com';
+    grid-template-rows: auto auto 1fr;
+  }
+  .su-page:has(#setup-side[hidden]) {
+    grid-template-columns: minmax(0, 1fr) 400px;
+    grid-template-areas:
+      'main com'
+      'lib com'
+      '. com';
+  }
+  /* Its own rail outlasts the fold, so it follows the scroll like the engineer
+     does — the setup rows are what you scroll, not this. */
+  #setup-community {
+    position: sticky;
+    top: 0;
+  }
 }
 
 .su-card .card__desc {
@@ -603,6 +691,13 @@
 
 /* ==================== community setups ==================== */
 
+/* The card asks its own width, not the window's: the same rules dress it
+   whether it is the full-width footer, the column under the engineer, or the
+   third rail. */
+#setup-community {
+  container-type: inline-size;
+}
+
 .su-com__follow {
   display: inline-flex;
   align-items: center;
@@ -664,6 +759,63 @@
 .su-com__stars[data-none='true'] {
   color: var(--text-3);
   font-weight: 400;
+}
+
+/* ---- the card in a rail --------------------------------------------------
+   A four-column row needs ~560px. In a rail it gets a third of that, so the
+   row folds into three lines — who + pace, then the chips, then the buttons —
+   and the list scrolls inside the card rather than running off the screen. */
+
+@container (max-width: 560px) {
+  .su-com .su-lib__head {
+    flex-wrap: wrap;
+  }
+  .su-com .su-lib__actions {
+    flex-wrap: wrap;
+  }
+  /* Four selects on one line would each be an unreadable stub. */
+  .su-com .su-lib__filters .field__input {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .su-com__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'who lap'
+      'meta meta'
+      'btns btns';
+    row-gap: 6px;
+    align-items: start;
+    padding: 10px;
+  }
+  /* Folded rows run together without a line between them. */
+  .su-com__row + .su-com__row {
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+  }
+  .su-com__row .su-com__who {
+    grid-area: who;
+  }
+  .su-com__row .su-lib__meta {
+    grid-area: meta;
+  }
+  .su-com__row .su-com__lap {
+    grid-area: lap;
+  }
+  .su-com__row .su-lib__buttons {
+    grid-area: btns;
+    justify-content: flex-end;
+  }
+
+  /* Tall enough to be worth reading, short enough that the card still fits
+     the window it is stuck to — the rest of the list scrolls inside it. */
+  .su-com .su-lib__list {
+    max-height: clamp(240px, calc(100vh - 360px), 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 6px;
+  }
 }
 
 /* ---- publish dialog ---- */

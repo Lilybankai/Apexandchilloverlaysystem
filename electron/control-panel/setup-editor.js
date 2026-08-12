@@ -42,6 +42,9 @@
   const elSym = $('#setup-sym');
   const elOffline = $('#setup-offline');
   const elBody = $('#setup-body');
+  // The car + engineer rail is a sibling of the editor now (the community list
+  // took the third column), so it has to be shown and hidden alongside it.
+  const elSide = $('#setup-side');
   const elTabs = $('#setup-tabs');
   const elRows = $('#setup-rows');
   const elCanvasWrap = $('#setup-canvas-wrap');
@@ -229,6 +232,7 @@
       if (p) p.textContent = message;
     }
     elBody.hidden = true;
+    elSide.hidden = true;
     writesFrozen = false;
     failedWrites = 0;
     elLibSave.disabled = true;
@@ -274,6 +278,7 @@
     elSym.hidden = !state.symmetric;
     elOffline.hidden = true;
     elBody.hidden = false;
+    elSide.hidden = false;
 
     if (firstPaint) {
       buildTabs();

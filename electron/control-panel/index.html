@@ -689,17 +689,27 @@
           </div>
         </div>
 
-        <div id="setup-offline" class="su-offline">
-          <svg class="icon"><use href="#i-sliders-horizontal" /></svg>
-          <p>Start Le Mans Ultimate and enter the garage to edit the car&rsquo;s setup.</p>
-        </div>
+        <!-- Three rails on a wide window: the car's own settings, the engineer,
+             and the league's setups side by side. The community list is a
+             column of its own rather than a footer nobody scrolls to; it
+             folds under the engineer, then to the bottom, as width runs out. -->
+        <div class="su-page">
+          <div class="su-page__main">
+            <div id="setup-offline" class="su-offline">
+              <svg class="icon"><use href="#i-sliders-horizontal" /></svg>
+              <p>Start Le Mans Ultimate and enter the garage to edit the car&rsquo;s setup.</p>
+            </div>
 
-        <div id="setup-body" class="su-body" hidden>
-          <div class="su-main">
-            <nav id="setup-tabs" class="seg su-tabs" aria-label="Setup pages"></nav>
-            <div id="setup-rows" class="su-rows"></div>
+            <div id="setup-body" class="su-body" hidden>
+              <nav id="setup-tabs" class="seg su-tabs" aria-label="Setup pages"></nav>
+              <div id="setup-rows" class="su-rows"></div>
+            </div>
           </div>
-          <aside class="su-side">
+
+          <!-- The car and the engineer: hidden with the editor when the sim is
+               not in the garage, which is why they carry their own id — they no
+               longer live inside #setup-body. -->
+          <aside id="setup-side" class="su-side" hidden>
             <div class="card su-card">
               <div class="card__head">
                 <h2 class="card__title">Car</h2>
@@ -728,75 +738,77 @@
               </div>
             </div>
           </aside>
+
+          <!-- ================== COMMUNITY SETUPS ====================== -->
+          <!-- Published tunes from every driver in the league. Rows come from
+               browse_setups() and are filtered locally; with the sim running
+               the list follows the garage's own track and car. -->
+          <section class="card su-lib su-com" id="setup-community">
+            <div class="card__head su-lib__head">
+              <div>
+                <h2 class="card__title">Community setups</h2>
+                <p class="card__desc">
+                  Shared by the league — a download lands in the game&rsquo;s own setup screen and in your library.
+                </p>
+              </div>
+              <div class="su-lib__actions">
+                <label class="su-com__follow" title="With LMU running, show only setups for the exact car and track you are in">
+                  <input type="checkbox" id="setup-com-follow" checked />
+                  Follow my car &amp; track
+                </label>
+                <button id="setup-com-refresh" class="btn btn--ghost btn--sm" type="button">Refresh</button>
+              </div>
+            </div>
+            <div class="su-lib__filters">
+              <select id="setup-com-track" class="field__input" title="Filter by track"></select>
+              <select id="setup-com-car" class="field__input" title="Filter by car"></select>
+              <select id="setup-com-class" class="field__input" title="Filter by car class"></select>
+              <select id="setup-com-sort" class="field__input" title="Sort">
+                <option value="newest">Newest first</option>
+                <option value="stars">Best rated</option>
+                <option value="downloads">Most downloaded</option>
+                <option value="bestlap">Fastest verified lap</option>
+              </select>
+            </div>
+            <ul id="setup-com-list" class="su-lib__list"></ul>
+            <p id="setup-com-empty" class="su-lib__empty">Loading community setups…</p>
+          </section>
+
+          <!-- ================== SETUP LIBRARY ========================= -->
+          <!-- Saved .svm tunes, app-owned. Rows and filter options are built
+               from the library index at runtime; only the frame is static.
+               Last of the four: your own saves are the one list you can find
+               again by scrolling, because you put them there. -->
+          <section class="card su-lib" id="setup-library">
+            <div class="card__head su-lib__head">
+              <div>
+                <h2 class="card__title">Setup library</h2>
+                <p class="card__desc">
+                  Saved tunes per track and car — load one into the garage, or share the .svm with a teammate.
+                </p>
+              </div>
+              <div class="su-lib__actions">
+                <button id="setup-lib-import" class="btn btn--ghost btn--sm" type="button">Import…</button>
+                <button id="setup-lib-save" class="btn btn--accent btn--sm" type="button" disabled>Save current setup…</button>
+              </div>
+            </div>
+            <div class="su-lib__filters">
+              <select id="setup-lib-track" class="field__input" title="Filter by track"></select>
+              <select id="setup-lib-car" class="field__input" title="Filter by car class"></select>
+              <nav id="setup-lib-session" class="seg" aria-label="Session filter"></nav>
+              <div id="setup-lib-colors" class="su-colors" title="Filter by colour"></div>
+              <select id="setup-lib-sort" class="field__input" title="Sort">
+                <option value="newest">Newest first</option>
+                <option value="bestlap">Best lap</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <ul id="setup-lib-list" class="su-lib__list"></ul>
+            <p id="setup-lib-empty" class="su-lib__empty">
+              Nothing saved yet — get the car how you like it and hit “Save current setup”.
+            </p>
+          </section>
         </div>
-
-        <!-- ================== SETUP LIBRARY ========================= -->
-        <!-- Saved .svm tunes, app-owned. Rows and filter options are built
-             from the library index at runtime; only the frame is static. -->
-        <section class="card su-lib" id="setup-library">
-          <div class="card__head su-lib__head">
-            <div>
-              <h2 class="card__title">Setup library</h2>
-              <p class="card__desc">
-                Saved tunes per track and car — load one into the garage, or share the .svm with a teammate.
-              </p>
-            </div>
-            <div class="su-lib__actions">
-              <button id="setup-lib-import" class="btn btn--ghost btn--sm" type="button">Import…</button>
-              <button id="setup-lib-save" class="btn btn--accent btn--sm" type="button" disabled>Save current setup…</button>
-            </div>
-          </div>
-          <div class="su-lib__filters">
-            <select id="setup-lib-track" class="field__input" title="Filter by track"></select>
-            <select id="setup-lib-car" class="field__input" title="Filter by car class"></select>
-            <nav id="setup-lib-session" class="seg" aria-label="Session filter"></nav>
-            <div id="setup-lib-colors" class="su-colors" title="Filter by colour"></div>
-            <select id="setup-lib-sort" class="field__input" title="Sort">
-              <option value="newest">Newest first</option>
-              <option value="bestlap">Best lap</option>
-              <option value="name">Name</option>
-            </select>
-          </div>
-          <ul id="setup-lib-list" class="su-lib__list"></ul>
-          <p id="setup-lib-empty" class="su-lib__empty">
-            Nothing saved yet — get the car how you like it and hit “Save current setup”.
-          </p>
-        </section>
-
-        <!-- ================== COMMUNITY SETUPS ====================== -->
-        <!-- Published tunes from every driver in the league. Rows come from
-             browse_setups() and are filtered locally; with the sim running
-             the list follows the garage's own track and car. -->
-        <section class="card su-lib su-com" id="setup-community">
-          <div class="card__head su-lib__head">
-            <div>
-              <h2 class="card__title">Community setups</h2>
-              <p class="card__desc">
-                Shared by the league — a download lands in the game&rsquo;s own setup screen and in your library.
-              </p>
-            </div>
-            <div class="su-lib__actions">
-              <label class="su-com__follow" title="With LMU running, show only setups for the exact car and track you are in">
-                <input type="checkbox" id="setup-com-follow" checked />
-                Follow my car &amp; track
-              </label>
-              <button id="setup-com-refresh" class="btn btn--ghost btn--sm" type="button">Refresh</button>
-            </div>
-          </div>
-          <div class="su-lib__filters">
-            <select id="setup-com-track" class="field__input" title="Filter by track"></select>
-            <select id="setup-com-car" class="field__input" title="Filter by car"></select>
-            <select id="setup-com-class" class="field__input" title="Filter by car class"></select>
-            <select id="setup-com-sort" class="field__input" title="Sort">
-              <option value="newest">Newest first</option>
-              <option value="stars">Best rated</option>
-              <option value="downloads">Most downloaded</option>
-              <option value="bestlap">Fastest verified lap</option>
-            </select>
-          </div>
-          <ul id="setup-com-list" class="su-lib__list"></ul>
-          <p id="setup-com-empty" class="su-lib__empty">Loading community setups…</p>
-        </section>
 
         <!-- Publish-to-community dialog: notes, character tags (auto-suggested
              from the tune when the right car is in the garage), verified lap. -->
