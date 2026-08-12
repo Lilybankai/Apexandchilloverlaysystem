@@ -1,194 +1,12 @@
 # Changelog
 
-## 0.67.0-beta.8 — 2026-08-11
+## 0.67.0 — 2026-08-12
 
-### Added
-
-- **Community setups — share your tunes, and grab everyone else's.** A new
-  card on the Setups tab lists every setup the league has published, and with
-  the sim running it automatically follows the car and track you're in (a
-  "Follow my car & track" toggle brings back manual filters). Share any
-  library entry with the new "Publish to the community…" option: write a note
-  ("my race setup for Spa — give it a try"), and the app suggests character
-  chips read from the setup's own numbers — Sharp turn-in, Stable & safe,
-  Low drag, High downforce and friends — which you can adjust before it goes
-  up. Unpublish any time; your local files are never touched.
-- **Downloads land where you actually need them.** Get a setup and the .svm
-  is written straight into LMU's own setup folder for that track — it appears
-  in the game's setup screen, no restart — and filed into your library so you
-  can stage and Apply it from the panel like any of your own.
-- **Ratings you can trust: stars, gated on proof.** Only drivers who have
-  downloaded a setup can rate it (1–5 stars), never its author, and every
-  pace shown next to an opinion is read from the lap database, never typed.
-  Better still, every lap you record from this build on quietly remembers
-  which setup it was driven on — so when your best clean lap was set on the
-  very setup you're rating (or publishing), the card marks it with a ✓ as
-  driven on that exact setup. Laps from before this build can't prove what
-  the car was running, so they show as your plain track best, dimmed and
-  labelled — shown, but not sworn to.
-
-- **Abbreviated driver names now actually fit — the rating marks stand
-  aside for them.** Picking "M.Haskins" or "Matt.H" barely changed what you
-  could read: the DRIVER column is 138px of content and the marks in it —
-  class dot, car badge, DR plaque, driver badge — hold 82px of that, so
-  shortening a name moved the ellipsis by about two characters and every row
-  still read "#7 K.Ko…". Abbreviating is you saying the NAME is what
-  identifies this grid, so it now costs the two rating marks and keeps the car
-  badge: 48px back, and the names read in full. Nothing changes for anyone on
-  the default "in full" setting, and the ratings are still drawn in the
-  relative panel, which is the panel that answers who the car beside you is.
-- **The NAMES and DECIMALS settings reach OBS Browser Sources.** Both were
-  dropped in transit: the appearance the server hands to browser sources is
-  rebuilt field by field, and these two were never added to that list, so a
-  source drew full names at three decimals whatever the panel said. The in-game
-  layer is pushed the settings directly and honoured them all along — which is
-  why the tower could show one thing in game and another in OBS at the same
-  time.
-- **Switching the speedo back to the Apex design works without a restart.**
-  Picking the default design (or any widget's default mode) removed the
-  stored choice, but the overlays only ever heard about modes that were SET —
-  a removed one was never delivered, so the cluster stayed on the LMP2 dash
-  until the app was relaunched. The overlays now treat a vanished entry as
-  "back to the default" and rebuild on the spot, live in OBS and in game.
-- **The pit limiter no longer sticks on the cluster after you leave the
-  car.** The ESC and garage screens freeze the sim's telemetry block at its
-  last values, so a limiter that was on when you stepped out kept reading as
-  on — the cluster sat glowing purple with the LIMITER chip lit until you
-  drove again. The limiter reading is now dropped while the sim says you're
-  in its menus (the same signal the LMP2 dash's banners and the race-control
-  callouts already respect), so the cluster returns to a live state the
-  moment the data stops being live.
-- **A telemetry frame without a player block can no longer freeze the Apex
-  cluster mid-paint.** The LMP2 design already guarded against it; the Apex
-  design now skips such a frame cleanly instead of stopping at whatever it
-  last drew.
-
-## 0.67.0-beta.7 — 2026-08-11
-
-### Added
-
-- **The Setups tab shows your custom livery — the exact paint.\*** If the car
-  in the garage is wearing one of your custom skins, the car card now shows
-  the same studio render the game's own event and livery screens show — your
-  actual paint, not the bare carbon template. The render comes from LMU's
-  online service using the sim's own sign-in, so it needs the game running
-  and logged in; stock liveries keep coming from the game's local artwork
-  exactly as before, and if the service is out of reach the card quietly
-  falls back to that stock art. If more than one of your teams has a paint
-  for the same car, the newest upload is shown.
-
-  \* **Experimental.** First release of the online-livery path — if the card
-  ever shows the wrong paint (or none) for a custom skin, that's a bug worth
-  reporting.
-
-## 0.67.0-beta.6 — 2026-08-11
-
-### Added
-
-- **The speedo cluster comes in designs — first up, a real LMP2 dash.** A new
-  Design dropdown on the Speedo Cluster card picks the cluster's whole look:
-  the familiar twin-rev-bar cluster stays the default, and "LMP2 — Cosworth
-  CDU" redraws it as the boxy, mono-spaced display an actual LMP2 runs. Big
-  gear glyph, running lap time that holds your finished lap (gold on a
-  personal best), signed live delta, fuel and energy row, TC / brake bias /
-  TC cut boxes that flash green the moment you step a setting, tyre pressures
-  and temps in the centre grid, brake and throttle strips along the floor —
-  and the full-width shouts: PIT SPEED LIMITER (going red the moment you're
-  over the limit) and ENGINE STALL with your clutch beside it. The choice
-  applies live in OBS and in game, no reload; `?design=lmp2` pins it on a
-  single Browser Source. More GT3 and prototype designs to come.
-- **The standings tower's numbers and names are yours to set.** Two new
-  options on the Standings card: DECIMALS chooses how precisely GAP/INT reads
-  (thousandths, hundredths or tenths — a narrower column gives its width to
-  the driver names), and NAMES chooses how drivers are written (in full,
-  "M.Haskins", or "Matt.H"), with the fastest-lap banner following along so
-  nobody is named two ways at once. Both ride `?standings=` too. The "YOU"
-  tag is gone — your row's colour, weight and edge accent already mark it,
-  and the tag was the one thing breaking the column alignment a tower is
-  read by.
-
-### Fixed
-
-- **Per-widget mode changes from the control panel now actually save.** The
-  settings handler silently dropped them — only a bound hotkey could ever
-  switch a widget's mode. Groundwork the new Design dropdown sits on.
-
-## 0.67.0-beta.5 — 2026-08-11
-
-### Added
-
-- **The Setups tab shows YOUR car — in your livery.** The car card now pulls
-  the game's own 3/4 studio render of the exact car sitting in the garage,
-  liveried as it really is, and swaps it the moment you change cars. It is
-  the same artwork LMU's livery selector uses, served by the game itself, so
-  every car and every skin is covered without shipping a single image. The
-  neon sketch stays as the fallback when the sim is closed.
-
-## 0.67.0-beta.4 — 2026-08-11
-
-### Fixed
-
-- **Loading a saved setup now visibly loads.** Load used to push the whole
-  file through the sim's API — which changed the car but never repainted the
-  game's setup screen, so it read as nothing happening. Load now stages the
-  tune in the editor instead: every row previews its old → new value, and
-  Apply sends the changes setting-by-setting down the one path the game's
-  screen provably repaints for. Nothing touches the car until you press
-  Apply, so loading is also free to inspect and back out of.
-
-### Added
-
-- **Share straight into a chat.** Share now offers "Copy file — paste into
-  Discord / WhatsApp": the .svm lands on the clipboard as a file, and Ctrl+V
-  drops it into any chat that accepts attachments. "Save as file…" stays for
-  everything else.
-- **The tabs tell you where the changes went.** When a race engineer slider —
-  or a loaded setup — stages changes on pages you are not looking at, those
-  tab buttons glow amber until you apply or revert. A staged edit can no
-  longer hide behind the tab you happen to have open.
-
-## 0.67.0-beta.3 — 2026-08-11
-
-### Added
-
-- **A setup library.** Below the editor: save the car exactly as the garage
-  holds it, name it, tag it Race or Quali, give it a colour, and it files
-  itself under the track and car it came from. Filter by any of those; sort by
-  newest, name — or by **your best clean lap** on that track in that class,
-  pulled live from your lap database so the number never goes stale. The sim
-  itself writes every file (it alone knows a setup file's full truth), and the
-  app keeps its own copies where the game can never rename or prune them.
-- **Load a tune from the app.** In the garage, pick a saved setup and hit Load
-  — it lands in the game's own setup list for that track and applies on the
-  spot, with a confirmation first (loading replaces the whole garage setup)
-  and a warning when the tune was saved for a different car or circuit.
-- **Share a tune.** Share hands you the raw .svm to send to a teammate — it
-  works in any LMU install, whether they run this app or not. Import files a
-  received .svm straight into your library.
-- **Apply is always on the table.** The race engineer's Apply and Revert no
-  longer appear only after you stage something — they sit visible, disabled,
-  and the moment a slider stages changes the bar arms and Apply pulses.
-
-### Fixed
-
-- **Setups save into the right track folder.** The sim will happily write a
-  setup into any folder it is told, including the wrong track's — where the
-  game's setup screen for your actual circuit would never show it. The app now
-  asks the sim itself which folder the current track saves under, the same
-  answer the game's own save dialog uses.
-
-## 0.67.0-beta.2 — 2026-08-10
-
-### Changed
-
-- **The Setups tab's car is a still image for now.** The live 3D wireframe is
-  parked while the editor itself gets tested — in its place, a neon cutaway
-  render that sets the tone without costing a single frame. The Hide/Show
-  button still works, and remembers your choice. The 3D car (and the 700 KB
-  three.js bundle that came with it) is out of the installer entirely; it
-  lives on in git history for the day it earns its way back.
-
-## 0.67.0-beta.1 — 2026-08-10
+The setup release. The Setups tab stops being a placeholder and becomes the
+whole car: a live editor for every setting the garage has, a race engineer who
+speaks in intent rather than clicks, a library of your own tunes filed by track
+and car — and, new in this release, the league's setups shared between all of
+you, with the pace beside them read from real laps instead of typed in.
 
 ### Added
 
@@ -212,17 +30,86 @@
   while you drag: affected rows preview old → new, the count says what's
   staged, and one Apply sends the lot (Revert forgets it). Settings the
   ruleset locks are skipped and say so. On a Hypercar the same sliders know
-  about torque split; on a GT3 they simply don't reach for it.
-- **A wireframe car that mirrors the setup.** A neon line-art GT on the tab —
-  drag to orbit, double-click to let it spin. Raise the rear ride height and
-  the body takes on rake; stiffen a spring and its coil shifts cyan → purple;
-  camber tilts the wheels, the rear wing angles and brightens with its
-  setting, brake bias moves the disc glow front to rear. Staged engineer
-  changes preview on the car before you apply them.
+  about torque split; on a GT3 they simply don't reach for it. Apply and Revert
+  sit visible from the start — disabled until there is something to send — and
+  when changes land on pages you are not looking at, those tab buttons glow
+  amber until you apply or revert, so a staged edit can never hide behind the
+  tab you happen to have open.
+- **A setup library.** Below the editor: save the car exactly as the garage
+  holds it, name it, tag it Race or Quali, give it a colour, and it files
+  itself under the track and car it came from. Filter by any of those; sort by
+  newest, name — or by **your best clean lap** on that track in that class,
+  pulled live from your lap database so the number never goes stale. The sim
+  itself writes every file (it alone knows a setup file's full truth), and the
+  app keeps its own copies where the game can never rename or prune them.
+- **Load a tune, and see it before it lands.** Pick a saved setup and hit Load
+  and it stages in the editor rather than silently changing the car: every row
+  previews its old → new value, and Apply sends the changes setting-by-setting
+  down the one path the game's own setup screen provably repaints for. Nothing
+  touches the car until you press Apply, so loading is free to inspect and back
+  out of — with a warning first when the tune was saved for a different car or
+  circuit.
+- **Share a tune — as a file, or straight into a chat.** Share hands you the
+  raw .svm to send to a teammate: "Save as file…" for everything else, and
+  "Copy file — paste into Discord / WhatsApp" to put the .svm on your clipboard
+  so Ctrl+V drops it into any chat that takes attachments. It works in any LMU
+  install, whether they run this app or not, and Import files a received .svm
+  straight into your library.
+- **Community setups — share your tunes, and grab everyone else's.** A new
+  card on the Setups tab lists every setup the league has published, and with
+  the sim running it automatically follows the car and track you're in (a
+  "Follow my car & track" toggle brings back manual filters). Share any
+  library entry with the new "Publish to the community…" option: write a note
+  ("my race setup for Spa — give it a try"), and the app suggests character
+  chips read from the setup's own numbers — Sharp turn-in, Stable & safe,
+  Low drag, High downforce and friends — which you can adjust before it goes
+  up. Unpublish any time; your local files are never touched.
+- **Downloads land where you actually need them.** Get a setup and the .svm
+  is written straight into LMU's own setup folder for that track — it appears
+  in the game's setup screen, no restart — and filed into your library so you
+  can stage and Apply it from the panel like any of your own.
+- **Ratings you can trust: stars, gated on proof.** Only drivers who have
+  downloaded a setup can rate it (1–5 stars), never its author, and every
+  pace shown next to an opinion is read from the lap database, never typed.
+  Better still, every lap you record from this build on quietly remembers
+  which setup it was driven on — so when your best clean lap was set on the
+  very setup you're rating (or publishing), the card marks it with a ✓ as
+  driven on that exact setup. Laps from before this build can't prove what
+  the car was running, so they show as your plain track best, dimmed and
+  labelled — shown, but not sworn to.
+- **The Setups tab shows YOUR car — in your livery.** The car card pulls the
+  game's own 3/4 studio render of the exact car sitting in the garage, liveried
+  as it really is, and swaps it the moment you change cars. It is the same
+  artwork LMU's livery selector uses, served by the game itself, so every car
+  and every skin is covered without shipping a single image. A neon cutaway
+  render stands in whenever the sim is closed.
+- **Custom skins show their real paint, too.\*** If the car in the garage is
+  wearing one of your own liveries, the card shows the same studio render the
+  game's event and livery screens show — your actual paint, not the bare
+  carbon template. The render comes from LMU's online service using the sim's
+  own sign-in, so it needs the game running and logged in; stock liveries keep
+  coming from the game's local artwork exactly as before, and if the service is
+  out of reach the card quietly falls back to that stock art. If more than one
+  of your teams has a paint for the same car, the newest upload is shown.
+
+  \* **Experimental.** First release of the online-livery path — if the card
+  ever shows the wrong paint (or none) for a custom skin, that's a bug worth
+  reporting.
 - **It costs nothing until you open it.** The tab polls the sim only while it
   is on screen and stops the moment you switch away or minimise — no timers,
-  no frames, no requests from a closed tab. The 3D view loads on first open
-  only, and can be hidden entirely on low-end machines.
+  no frames, no requests from a closed tab.
+
+### Fixed
+
+- **Setups save into the right track folder.** The sim will happily write a
+  setup into any folder it is told, including the wrong track's — where the
+  game's setup screen for your actual circuit would never show it. The app now
+  asks the sim itself which folder the current track saves under, the same
+  answer the game's own save dialog uses.
+- **Per-widget mode changes from the control panel now actually save.** The
+  settings handler silently dropped them — only a bound hotkey could ever
+  switch a widget's mode.
+
 
 ## 0.66.3 — 2026-08-11
 
