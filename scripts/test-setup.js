@@ -226,5 +226,65 @@ console.log('\nsample-tune.svm — the .svm → REST-key translation');
   check('the [BASIC] pseudo-sliders are not settings', !('Downforce' in parsed.values));
 }
 
+/* ---- 5. the first-run walkthrough ---------------------------------------- */
+/*
+ * The guide opens itself exactly once per driver, which is also the only time
+ * anyone will notice it is wrong. Its wiring is the parity test's job; what is
+ * checked here is the content — that every step actually says something, and
+ * that the seen flag is versioned, since an unversioned flag can never be used
+ * to re-offer the tour when the tab grows.
+ */
+{
+  console.log('\nSetups walkthrough');
+  const guide = require('../electron/control-panel/setup-guide.js');
+  const steps = guide.STEPS;
+
+  check('there are steps at all', Array.isArray(steps) && steps.length >= 3, `${steps.length} steps`);
+
+  const badId = steps.filter((s) => !/^[a-z][a-z0-9-]*$/.test(String(s.id || '')));
+  check('every step has a slug id', badId.length === 0, badId.map((s) => s.id).join(', '));
+
+  const ids = new Set(steps.map((s) => s.id));
+  check('no two steps share an id', ids.size === steps.length);
+
+  const thin = steps.filter(
+    (s) => !s.title || !s.lead || s.lead.length < 30 || !Array.isArray(s.points) || !s.points.length,
+  );
+  check(
+    'every step has a title, a lead and at least one point',
+    thin.length === 0,
+    thin.map((s) => s.id).join(', ') || `${steps.length} checked`,
+  );
+
+  const emptyPoint = steps.filter((s) => (s.points || []).some((p) => !p || p.trim().length < 20));
+  check(
+    'no point is a stub',
+    emptyPoint.length === 0,
+    emptyPoint.map((s) => s.id).join(', '),
+  );
+
+  const noIcon = steps.filter((s) => !/^[a-z][a-z0-9-]*$/.test(String(s.icon || '')));
+  check('every step names a sprite icon', noIcon.length === 0, noIcon.map((s) => s.id).join(', '));
+
+  // The last step has to say how to get back — it is the only pointer to the
+  // "How it works" button anyone is ever shown.
+  const last = steps[steps.length - 1];
+  check(
+    'the last step says how to reopen the walkthrough',
+    /how it works/i.test([last.lead, ...(last.points || [])].join(' ')),
+  );
+
+  check(
+    'the seen flag is versioned',
+    typeof guide.GUIDE_VERSION === 'string' && guide.GUIDE_VERSION.length > 0,
+    `v${guide.GUIDE_VERSION} under ${guide.SEEN_KEY}`,
+  );
+  check(
+    'the seen key is namespaced with the tab’s other preferences',
+    String(guide.SEEN_KEY).startsWith('apex.setup.'),
+    guide.SEEN_KEY,
+  );
+}
+
 console.log(failures === 0 ? '\nAll setup checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

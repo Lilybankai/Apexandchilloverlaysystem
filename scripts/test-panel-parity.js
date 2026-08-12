@@ -309,6 +309,21 @@ const PANEL_CONTRACT = {
   'setup-share-file': 'button',
   'setup-share-cancel': 'button',
 
+  // First-run walkthrough. Contracted because it is the one screen NOBODY
+  // clicks their way back into after it breaks: it opens itself once, and a
+  // broken Next would strand a driver on step one of six.
+  'setup-guide-open': 'button',
+  'setup-guide': 'div',
+  'setup-guide-scrim': 'div',
+  'setup-guide-icon': 'span',
+  'setup-guide-title': 'h2',
+  'setup-guide-sub': 'p',
+  'setup-guide-body': 'div',
+  'setup-guide-dots': 'div',
+  'setup-guide-back': 'button',
+  'setup-guide-next': 'button',
+  'setup-guide-close': 'button',
+
   // Floating
   toast: 'div',
 };
@@ -519,7 +534,14 @@ verifyPage({
   // no DOM wiring but are scanned anyway — free, and future-proof. The
   // setup-3d/ modules and vendor/ are deliberately NOT scanned: they touch no
   // ids (the canvas is created inside #setup-canvas-wrap by the editor).
-  jsFiles: ['control-panel.js', 'setup-editor.js', 'setup-groups.js', 'setup-info.js', 'setup-macros.js'],
+  jsFiles: [
+    'control-panel.js',
+    'setup-editor.js',
+    'setup-groups.js',
+    'setup-info.js',
+    'setup-macros.js',
+    'setup-guide.js',
+  ],
   contract: PANEL_CONTRACT,
 });
 
@@ -551,6 +573,13 @@ console.log('\nIcon sprite — icons.js');
     fs.readFileSync(path.join(PANEL, f), 'utf8'),
   );
   const wanted = iconRefs(sources);
+  // The walkthrough names its icons as data (`icon: 'zap'`) and builds the
+  // <use> at runtime, so no regex over the source can see them. Taking them
+  // from the module itself is exact, and means a step added with a typo'd
+  // icon fails here rather than rendering a blank square in front of a driver.
+  for (const s of require('../electron/control-panel/setup-guide.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
   const missing = [...wanted].filter((id) => !available.has(id)).sort();
   check(
     'every icon referenced by markup or JS exists in the sprite',

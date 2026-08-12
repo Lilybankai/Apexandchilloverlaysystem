@@ -680,6 +680,12 @@
             <span id="setup-sym" class="su-sym" hidden title="Symmetric setup — left and right corners move together">
               <svg class="icon"><use href="#i-link" /></svg>Symmetric
             </span>
+            <!-- The walkthrough opens by itself the first time this tab is
+                 used; this is how it comes back afterwards. -->
+            <button id="setup-guide-open" class="btn btn--ghost btn--sm su-ident__help" type="button"
+                    title="A short walkthrough of what this tab can do">
+              <svg class="icon"><use href="#i-graduation-cap" /></svg>How it works
+            </button>
           </div>
         </div>
 
@@ -884,6 +890,37 @@
             <div id="setup-info-body" class="su-pop__body"></div>
             <button id="setup-info-close" class="btn btn--ghost btn--sm" type="button">Close</button>
           </div>
+        </div>
+
+        <!-- ================== HOW IT WORKS ========================== -->
+        <!-- The first-run walkthrough. Steps are built by setup-guide.js —
+             only the frame is static, so the content lives in one place and
+             can be asserted headlessly. Deliberately NOT class="su-pop" or
+             "sheet": the guide yields to those, and matching their class
+             would make it yield to itself. -->
+        <div id="setup-guide" class="su-guide" hidden role="dialog" aria-modal="true"
+             aria-labelledby="setup-guide-title">
+          <div id="setup-guide-scrim" class="su-guide__scrim"></div>
+          <section class="su-guide__panel">
+            <header class="su-guide__head">
+              <span id="setup-guide-icon" class="su-guide__icon"></span>
+              <span class="su-guide__titles">
+                <h2 id="setup-guide-title" class="su-guide__title"></h2>
+                <p id="setup-guide-sub" class="su-guide__sub"></p>
+              </span>
+              <button id="setup-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+            </header>
+            <div id="setup-guide-body" class="su-guide__body"></div>
+            <footer class="su-guide__foot">
+              <div id="setup-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
+              <div class="su-guide__nav">
+                <button id="setup-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
+                <button id="setup-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
+              </div>
+            </footer>
+          </section>
         </div>
       </div>
     </section>
@@ -1425,6 +1462,7 @@
 <script src="setup-info.js"></script>
 <script src="setup-macros.js"></script>
 <script src="setup-tags.js"></script>
+<script src="setup-guide.js"></script>
 <script src="setup-editor.js"></script>
 </body>
 </html>

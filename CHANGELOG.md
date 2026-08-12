@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.68.0-beta.1 — 2026-08-12
+
+### Added
+
+- **The Setups tab explains itself now.** Open it for the first time and a
+  short walkthrough introduces the tab in six steps: that the car on screen is
+  the one the sim is holding rather than a file, what the padlocks and amber
+  dots are telling you, how the race engineer stages changes instead of
+  applying them, what the library files away for you, and how a community
+  setup’s stars and verified pace are earned. It appears once, on the Setups
+  tab only — never on the way to your overlays — and closing it any way you
+  like counts as read. It also waits its turn behind the release notes after
+  an update rather than landing on top of them, and it reads perfectly well
+  with the sim closed. **How it works**, beside the Setups title, brings it
+  back any time.
+
 ## 0.67.0 — 2026-08-12
 
 The setup release. The Setups tab stops being a placeholder and becomes the

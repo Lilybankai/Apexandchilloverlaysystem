@@ -31,6 +31,7 @@
   const GROUPS = window.APEX_SETUP_GROUPS;
   const INFOAPI = window.APEX_SETUP_INFO;
   const MACROAPI = window.APEX_SETUP_MACROS;
+  const GUIDEAPI = window.APEX_SETUP_GUIDE; // the first-run walkthrough
 
   /* ---- static frame ------------------------------------------------------ */
 
@@ -149,6 +150,10 @@
     schedulePoll(0);
     void refreshLibrary(); // one read per show, never on a timer
     void refreshCommunity(); // ditto — one cloud read per show
+    // First visit only, and it decides that for itself — this tab is a wall of
+    // sliders to someone who has never seen it. Offline is fine: the
+    // walkthrough explains the tab, it does not read the car.
+    GUIDEAPI?.maybeAutoOpen();
   }
 
   function hidden() {
@@ -157,6 +162,7 @@
       clearTimeout(pollTimer);
       pollTimer = null;
     }
+    GUIDEAPI?.cancelAutoOpen();
   }
 
   document.addEventListener('visibilitychange', () => {
