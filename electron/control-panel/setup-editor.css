@@ -648,6 +648,11 @@
   gap: 8px;
   justify-content: flex-end;
 }
+.su-pop__error {
+  font: 400 11px/1.4 var(--font-ui);
+  color: var(--bad);
+  margin: 8px 0 0;
+}
 .su-pop__buttons--stack {
   flex-direction: column;
   align-items: stretch;

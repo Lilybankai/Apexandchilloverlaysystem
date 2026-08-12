@@ -75,6 +75,7 @@
   const elSaveColors = $('#setup-save-colors');
   const elSaveConfirm = $('#setup-save-confirm');
   const elSaveCancel = $('#setup-save-cancel');
+  const elSaveError = $('#setup-save-error');
   const elSharePop = $('#setup-share-pop');
   const elShareText = $('#setup-share-text');
   const elShareCopy = $('#setup-share-copy');
@@ -1117,6 +1118,8 @@
       }
     }
     paintChipSelection(elSaveColors, saveDraft.color);
+    elSaveError.hidden = true;
+    elSaveError.textContent = '';
     elSavePop.hidden = false;
     elSaveName.focus();
     elSaveName.select();
@@ -1145,11 +1148,14 @@
       elSavePop.hidden = true;
       void refreshLibrary();
     } else {
-      elSaveConfirm.textContent = res && res.error ? 'Failed' : 'Failed — in garage?';
-      elSaveConfirm.title = (res && res.error) || '';
+      // The message stays until the dialog closes — a 2.5s tooltip cost us a
+      // whole diagnosis round-trip with a tester once.
+      elSaveError.textContent =
+        'Save failed — ' + ((res && res.error) || 'is the sim still in the garage?');
+      elSaveError.hidden = false;
+      elSaveConfirm.textContent = 'Failed';
       setTimeout(() => {
         elSaveConfirm.textContent = 'Save';
-        elSaveConfirm.title = '';
       }, 2500);
     }
   });

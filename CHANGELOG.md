@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## 0.68.1 — 2026-08-12
+
+### Fixed
+
+- **Setup saves work when Steam lives on another drive.** The app finds your
+  LMU install by asking Steam itself (the registry) where it is, instead of
+  only looking under `C:\Program Files`. A Steam installed on D:\ (or anywhere
+  else) meant every "Save current setup" failed with a red FAILED button while
+  the rest of the app worked fine — applying setups, telemetry, overlays all
+  use the sim's own connection and never noticed. Found by a beta tester at
+  Barcelona, first save he ever tried.
+- **When a setup save does fail, the dialog now says why.** The reason used to
+  hide in a tooltip on the FAILED button for 2.5 seconds; now it appears in the
+  dialog and stays put, and the app logs it too.
+
 ## 0.68.0 — 2026-08-12
 
 ### Changed

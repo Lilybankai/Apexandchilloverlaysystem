@@ -2376,7 +2376,9 @@ function registerIpc() {
 
   ipcMain.handle('setuplib:save', async (_evt, meta) => {
     try {
-      return await getSetupLibrary().saveCurrent(meta || {});
+      const res = await getSetupLibrary().saveCurrent(meta || {});
+      if (!res.ok) console.error('[app] setup library save failed:', res.error);
+      return res;
     } catch (err) {
       console.error('[app] setup library save failed:', err.message);
       return { ok: false, error: err.message };

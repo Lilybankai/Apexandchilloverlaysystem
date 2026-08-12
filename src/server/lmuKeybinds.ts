@@ -32,6 +32,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 /** A resolved key press: a set-1 scancode plus whether it is an extended key. */
 export interface ScanKey {
@@ -249,14 +250,46 @@ export function dikToScanKey(dik: number): ScanKey | null {
   return { scancode: dik & 0x7f, extended: dik >= 0x80, dik };
 }
 
+/**
+ * Steam's real install root(s), from the registry. A Steam installed anywhere
+ * but Program Files (D:\Steam and the like) is invisible to path guessing, but
+ * its libraryfolders.vdf still knows every library — proven live by a tester
+ * whose setup saves all failed with "LMU install not found" while the REST
+ * side worked fine (2026-08-12).
+ */
+function steamRootsFromRegistry(): string[] {
+  const out: string[] = [];
+  const keys: Array<[string, string]> = [
+    ['HKCU\\Software\\Valve\\Steam', 'SteamPath'],
+    ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'],
+  ];
+  for (const [key, value] of keys) {
+    try {
+      const text = execFileSync('reg', ['query', key, '/v', value], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 3000,
+      });
+      const m = /REG_SZ\s+(.+)/.exec(text);
+      const p = m?.[1]?.trim().replace(/\//g, '\\');
+      if (p) out.push(p);
+    } catch {
+      /* value absent (no Steam, or 32-bit hive missing) — fine */
+    }
+  }
+  return out;
+}
+
 /** Candidate install locations for LMU's player config. */
 function candidatePaths(): string[] {
   const out: string[] = [];
   const explicit = process.env.APEX_LMU_USERDATA;
   if (explicit) out.push(join(explicit, 'keyboard.json'));
 
-  // Steam libraries: the default root plus anything in libraryfolders.vdf.
+  // Steam libraries: the registry's install root(s) and the default roots,
+  // plus anything their libraryfolders.vdf lists.
   const roots = new Set<string>([
+    ...steamRootsFromRegistry(),
     'C:\\Program Files (x86)\\Steam',
     'C:\\Program Files\\Steam',
   ]);
