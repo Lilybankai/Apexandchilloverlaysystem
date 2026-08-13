@@ -71,6 +71,28 @@ const PANEL_CONTRACT = {
   'update-status': 'span',
   'update-check': 'button',
 
+  // Subscription (v0.69.0) — the Settings card showing the account's standing
+  // and the way into Stripe's Customer Portal. Contracted because it is hidden
+  // while signed out: a broken control here looks exactly like the card
+  // correctly staying away, and the failure mode is a paying driver with no
+  // way to reach their own billing.
+  'sub-card': 'section',
+  'sub-plan-status': 'span',
+  'sub-hint': 'span',
+  'sub-manage-btn': 'button',
+
+  // Admin — free access (v0.69.0): league voucher codes and comped accounts.
+  // The whole card only exists for admins, so a lost id fails silently for
+  // everyone else by design — exactly what this contract exists to catch.
+  'adm-code-note': 'input:text',
+  'adm-code-count': 'input:number',
+  'adm-code-issue': 'button',
+  'adm-code-out': 'p',
+  'adm-comps-list': 'ul',
+  'adm-comps-empty': 'p',
+  'adm-codes-list': 'ul',
+  'adm-codes-empty': 'p',
+
   // Speed units (v0.57.2) — one app-wide preference behind three widgets'
   // speed readouts. Contracted because a control that silently stops writing
   // leaves the overlays showing kph to someone who set mph, which reads as the
@@ -336,7 +358,19 @@ const AUTH_CONTRACT = {
   'si-email': 'input:email',
   'si-pw': 'input:password',
   'si-remember': 'input:checkbox',
-  'offline-btn': 'button',
+  // 'offline-btn' left with the free app (v0.69.0): the panel now needs an
+  // entitled account, so there is no offline door on the sign-in screen.
+
+  // Subscribe screen (v0.69.0) — the paywall between an account and the app.
+  // Contracted hard: a driver who has just PAID lands here waiting for the
+  // gate to open, and a dead control at that moment reads as theft.
+  'sub-lede': 'p',
+  'sub-start-btn': 'button',
+  'sub-code-form': 'form',
+  'sub-code-input': 'input:text',
+  'sub-code-btn': 'button',
+  'sub-refresh-btn': 'button',
+  'sub-signout-btn': 'button',
 
   'register-form': 'form',
   'rg-name': 'input:text',

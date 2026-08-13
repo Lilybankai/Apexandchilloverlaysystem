@@ -319,9 +319,16 @@ Supabase and never holds a token.**
   leave the page; and keeping refresh tokens out of a renderer means an XSS in
   the panel cannot exfiltrate a long-lived credential.
 - The **window is the router**: one `BrowserWindow` loads either `auth.html` or
-  `index.html`, and main swaps it (`loadPage`) on sign-in, sign-out, or
-  "Continue offline". Nothing about the telemetry server or the in-game layer
-  depends on account state — the app is fully usable signed out, by design.
+  `index.html`, and main swaps it (`loadPage`) on sign-in, sign-out, or an
+  entitlement change. Since v0.69.0 the app is **paid** (£4.99/month, 7-day
+  trial, league members comped): the panel — and the overlay server behind it —
+  needs a signed-in account that `entitlement_status()` approves. The old
+  "fully usable signed out" rule and its "Continue offline" door are gone;
+  what remains of offline use is the grace window in `electron/billing.js`,
+  which lets an account the server has already said yes to keep working for a
+  few days without a connection. Payment itself never happens in-app: Stripe
+  Checkout and the Customer Portal open in the system browser, via Supabase
+  edge functions (`supabase/functions/`).
 - **Password reset uses a code, not a redirect**, because there is no companion
   web page for a recovery link to land on. `parseRecoveryToken()` accepts either
   a one-time code or a pasted reset link, and `verifyRecovery()` tries both

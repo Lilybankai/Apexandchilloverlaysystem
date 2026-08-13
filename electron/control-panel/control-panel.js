@@ -3056,10 +3056,11 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users] = await Promise.all([
+      const [overview, feedback, users, free] = await Promise.all([
         window.apex.admin.overview(),
         window.apex.admin.feedback({ status: filter ? filter.value : '' }),
         window.apex.admin.users(adminUsersQuery()),
+        window.apex.admin.freeAccess(),
       ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
@@ -3072,9 +3073,125 @@
       }
       renderAdminFeedback(feedback && feedback.ok ? feedback.rows : []);
       renderAdminUsers(users && users.ok ? users.rows : []);
+      renderFreeAccess(free && free.ok ? free.data : null);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
+  }
+
+  /** Reload just the Free access card, after issuing or revoking. */
+  async function refreshFreeAccess() {
+    const res = await window.apex.admin.freeAccess();
+    renderFreeAccess(res && res.ok ? res.data : null);
+  }
+
+  /** The Free access card: who is comped, and every code's fate. */
+  function renderFreeAccess(data) {
+    const comps = Array.isArray(data && data.comps) ? data.comps : [];
+    const codes = Array.isArray(data && data.codes) ? data.codes : [];
+    const compList = $('#adm-comps-list');
+    const compEmpty = $('#adm-comps-empty');
+    if (compList) {
+      compList.textContent = '';
+      for (const c of comps) compList.append(buildCompRow(c));
+    }
+    if (compEmpty) compEmpty.hidden = comps.length > 0;
+    const codeList = $('#adm-codes-list');
+    const codeEmpty = $('#adm-codes-empty');
+    if (codeList) {
+      codeList.textContent = '';
+      for (const c of codes) codeList.append(buildCodeRow(c));
+    }
+    if (codeEmpty) codeEmpty.hidden = codes.length > 0;
+  }
+
+  /** One comped account: name, why, since when — and the way to end it. */
+  function buildCompRow(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+
+    const who = document.createElement('div');
+    who.className = 'admin-row__who';
+    const name = document.createElement('span');
+    name.className = 'admin-row__name';
+    name.textContent = row.display_name || 'Driver';
+    who.append(name);
+    const tag = document.createElement('span');
+    tag.className = 'admin-row__tag';
+    tag.textContent = row.free_access_reason || 'league';
+    who.append(tag);
+    if (row.free_access_note) {
+      const note = document.createElement('span');
+      note.className = 'admin-row__email';
+      note.textContent = row.free_access_note;
+      who.append(note);
+    }
+
+    const since = document.createElement('span');
+    since.className = 'admin-row__last';
+    const at = row.free_access_at ? new Date(row.free_access_at) : null;
+    since.textContent = at && !Number.isNaN(at.getTime()) ? at.toLocaleDateString() : '—';
+
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'btn btn--ghost btn--sm';
+    revoke.textContent = 'Revoke';
+    revoke.title = 'End this account’s free access (also burns any code it redeemed)';
+    revoke.addEventListener('click', async () => {
+      revoke.disabled = true;
+      try {
+        const res = await window.apex.admin.revokeFree({ userId: row.id });
+        if (!res || !res.ok) showToast((res && res.error) || 'Could not revoke.');
+        else await refreshFreeAccess();
+      } finally {
+        revoke.disabled = false;
+      }
+    });
+
+    li.append(who, since, revoke);
+    return li;
+  }
+
+  /** One issued code: the code, who it was cut for, and what became of it. */
+  function buildCodeRow(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+
+    const who = document.createElement('div');
+    who.className = 'admin-row__who';
+    const code = document.createElement('span');
+    code.className = 'admin-row__name';
+    code.textContent = row.code || '—';
+    who.append(code);
+    if (row.note) {
+      const note = document.createElement('span');
+      note.className = 'admin-row__email';
+      note.textContent = row.note;
+      who.append(note);
+    }
+
+    const state = document.createElement('span');
+    state.className = 'admin-row__last';
+    if (row.revoked_at) {
+      state.textContent = 'Revoked';
+      state.setAttribute('data-never', 'true');
+    } else if (row.redeemed_at) {
+      state.textContent = `Used — ${row.redeemed_by_name || 'Driver'}`;
+    } else {
+      state.textContent = 'Unused';
+    }
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'btn btn--ghost btn--sm';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', async () => {
+      await window.apex.copy(row.code || '');
+      showToast('Code copied.');
+    });
+
+    li.append(who, state, copyBtn);
+    return li;
   }
 
   async function refreshAdminFeedback() {
@@ -3093,6 +3210,40 @@
     if (refreshBtn) refreshBtn.addEventListener('click', () => void loadAdmin());
     const filter = $('#adm-fb-filter');
     if (filter) filter.addEventListener('change', () => void refreshAdminFeedback());
+
+    // Free access: cut N codes with one shared note. The fresh codes go
+    // straight onto the clipboard AND into the card — a code that has to be
+    // retyped out of a screenshot is a code with a typo in it.
+    const issueBtn = $('#adm-code-issue');
+    if (issueBtn) {
+      issueBtn.addEventListener('click', async () => {
+        const countInput = $('#adm-code-count');
+        const noteInput = $('#adm-code-note');
+        const count = Math.max(1, Math.min(50, Math.round(Number(countInput?.value) || 1)));
+        const note = noteInput ? noteInput.value.trim() : '';
+        issueBtn.disabled = true;
+        try {
+          const res = await window.apex.admin.issueCodes({ count, note });
+          if (!res || !res.ok || !Array.isArray(res.codes) || !res.codes.length) {
+            showToast((res && res.error) || 'Could not issue codes.');
+            return;
+          }
+          const out = $('#adm-code-out');
+          if (out) {
+            out.textContent = `New code${res.codes.length === 1 ? '' : 's'}: ${res.codes.join('   ')}`;
+            out.hidden = false;
+          }
+          await window.apex.copy(res.codes.join('\n'));
+          showToast(
+            res.codes.length === 1 ? 'Code copied to clipboard.' : `${res.codes.length} codes copied.`,
+          );
+          if (noteInput) noteInput.value = '';
+          await refreshFreeAccess();
+        } finally {
+          issueBtn.disabled = false;
+        }
+      });
+    }
 
     const sort = $('#adm-users-sort');
     if (sort) sort.addEventListener('change', () => void refreshAdminUsers());
@@ -3158,6 +3309,9 @@
     if (target === 'admin') {
       void loadAdmin();
     }
+    // Plan state changes out-of-app (in the browser, on Stripe's pages), so
+    // the card re-asks whenever Settings comes back into view.
+    if (target === 'settings') void refreshBilling();
     // The setup editor is the one tab with a poll loop (and an animation
     // frame), and this is where its zero-cost-when-hidden rule is enforced:
     // shown() starts everything, hidden() stops everything, and the router is
@@ -3198,6 +3352,85 @@
   if (restored !== 'settings') lastContentTab = restored;
   showView(restored);
 
+  // --- Subscription (the Settings card) ------------------------------------
+  /*
+   * Read-only standing plus one button: everything that actually changes the
+   * subscription (cancel, card, invoices) is Stripe's Customer Portal in the
+   * system browser. The card hides while signed out — there is no plan to show.
+   */
+
+  const subCard = $('#sub-card');
+  const subPlanStatus = $('#sub-plan-status');
+  const subHint = $('#sub-hint');
+  const subManageBtn = $('#sub-manage-btn');
+
+  /** Whether anyone is signed in, per the last auth push — decides the card. */
+  let authSignedIn = false;
+
+  function shortDate(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime())
+      ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+      : '';
+  }
+
+  function renderBilling(b) {
+    if (!subCard) return;
+    subCard.hidden = !authSignedIn || !b;
+    if (subCard.hidden) return;
+    let status = 'Not subscribed';
+    let hint = 'Subscribe from the account screen to use the app.';
+    if (b.source === 'free') {
+      status = 'Free access';
+      hint =
+        b.freeReason === 'beta'
+          ? 'Beta tester — thank you for driving the rough builds.'
+          : 'League member — free while you race with Apex & Chill.';
+    } else if (b.status === 'trialing') {
+      status = `Free trial — ends ${shortDate(b.trialEnd) || 'soon'}`;
+      hint = 'Then £4.99/month. Cancel any time under Manage subscription.';
+    } else if (b.status === 'active') {
+      status = b.cancelAtPeriodEnd
+        ? `Active — ends ${shortDate(b.currentPeriodEnd) || 'at period end'}`
+        : `Active — renews ${shortDate(b.currentPeriodEnd) || 'monthly'}`;
+      hint = b.cancelAtPeriodEnd
+        ? 'Cancellation booked; access runs to the end of the paid period.'
+        : '£4.99/month. Manage the card, see invoices or cancel any time.';
+    } else if (b.status === 'past_due') {
+      status = 'Payment problem';
+      hint = 'The last charge failed — update your card under Manage subscription to keep access.';
+    }
+    if (subPlanStatus) subPlanStatus.textContent = status;
+    if (subHint) subHint.textContent = hint;
+    // No Stripe customer means nothing for the portal to show (league comps
+    // that never started a trial) — the button would only 404 at them.
+    if (subManageBtn) subManageBtn.hidden = !b.hasCustomer;
+  }
+
+  async function refreshBilling() {
+    if (!window.apex.billing) return;
+    try {
+      renderBilling(await window.apex.billing.status());
+    } catch {
+      /* offline — the card keeps its last words */
+    }
+  }
+
+  if (subManageBtn) {
+    subManageBtn.addEventListener('click', async () => {
+      subManageBtn.disabled = true;
+      try {
+        const res = await window.apex.billing.portal();
+        if (!res || !res.ok) showToast((res && res.error) || 'Could not open the billing page.');
+        else showToast('Billing opened in your browser.');
+      } finally {
+        subManageBtn.disabled = false;
+      }
+    });
+  }
+
+  if (window.apex.billing) window.apex.billing.onChange(renderBilling);
+
   // --- Account -------------------------------------------------------------
   /*
    * The account screens live on their own page (auth.html); the panel only shows
@@ -3214,8 +3447,12 @@
   function renderAuth(state) {
     const user = state && state.user;
     const signedIn = !!(state && state.signedIn && user);
+    authSignedIn = signedIn;
     account.hidden = !signedIn;
     signInBtn.hidden = signedIn;
+    // The Subscription card follows the account: appears on sign-in, goes with
+    // it on sign-out, and re-reads the plan when the account changes.
+    void refreshBilling();
     if (!signedIn) return;
     accountInitials.textContent = user.initials;
     accountName.textContent = user.displayName;

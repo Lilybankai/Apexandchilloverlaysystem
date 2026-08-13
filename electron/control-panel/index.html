@@ -1094,6 +1094,44 @@
           <p class="admin-foot" id="adm-users-note" hidden></p>
         </section>
 
+        <!-- Free access — league comps + voucher codes (v0.69.0). League
+             racers and beta testers ride free; a code is cut here, redeemed on
+             the subscribe screen, and revoked here when someone leaves the
+             league. Every RPC behind this card checks is_admin server-side. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-key" /></svg>Free access</h2>
+            <div class="admin-tools">
+              <input
+                class="field__input admin-tools__search"
+                id="adm-code-note"
+                type="text"
+                placeholder="Who is this code for?"
+                maxlength="120"
+                autocomplete="off"
+              />
+              <input class="field__input" id="adm-code-count" type="number"
+                     min="1" max="50" step="1" value="1" title="How many codes" />
+              <button class="btn btn--accent btn--sm" id="adm-code-issue" type="button">Generate</button>
+            </div>
+          </div>
+          <p class="admin-foot" id="adm-code-out" hidden></p>
+          <div class="admin-table__head">
+            <span>On free access</span>
+            <span>Since</span>
+            <span></span>
+          </div>
+          <ul class="admin-table" id="adm-comps-list"></ul>
+          <p class="weekempty" id="adm-comps-empty" hidden>Nobody is on free access yet.</p>
+          <div class="admin-table__head">
+            <span>Codes issued</span>
+            <span>Status</span>
+            <span></span>
+          </div>
+          <ul class="admin-table" id="adm-codes-list"></ul>
+          <p class="weekempty" id="adm-codes-empty" hidden>No codes issued yet.</p>
+        </section>
+
         <!-- Feedback inbox -->
         <section class="card">
           <div class="card__head">
@@ -1159,6 +1197,34 @@
                 <span class="lmu-bind__actions">
                   <button class="btn btn--ghost btn--sm" id="update-check" type="button">
                     Check for updates
+                  </button>
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <!-- ------------------- SUBSCRIPTION ------------------- -->
+          <!-- Hidden while signed out (there is no plan to show); everyone
+               signed in sees their standing here. Cancel, card changes and
+               invoices all live in Stripe's Customer Portal, opened in the
+               system browser — the app never renders payment UI. -->
+          <section class="card" id="sub-card" hidden>
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-credit-card" /></svg>Subscription</h2>
+              <p class="card__desc">
+                Apex Overlay System is <strong>£4.99/month</strong> after a
+                7-day free trial. Billing is handled by Stripe in your browser —
+                the app never sees your card.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <span class="field__label">Plan</span>
+                <span class="rate-value" id="sub-plan-status">—</span>
+                <span class="field__hint" id="sub-hint"></span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm" id="sub-manage-btn" type="button" hidden>
+                    Manage subscription
                   </button>
                 </span>
               </div>

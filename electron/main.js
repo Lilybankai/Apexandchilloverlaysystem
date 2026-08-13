@@ -34,6 +34,7 @@ const fs = require('node:fs');
 const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
+const billingService = require('./billing');
 const startup = require('./startup');
 const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
@@ -1002,6 +1003,13 @@ function pushSettings(settings) {
 function pushAuth() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('auth:changed', authStateForUi());
+  }
+}
+
+/** Push the entitlement snapshot so the Settings card tracks billing changes. */
+function pushBilling(snap) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('billing:changed', snap);
   }
 }
 
@@ -2857,6 +2865,55 @@ function registerIpc() {
     return { ok: true };
   });
 
+  /* ---- Admin: free access (league comps + voucher codes, v0.69.0) ---- */
+
+  /** Codes issued + accounts currently comped, for the Free access card. */
+  ipcMain.handle('admin:freeAccess', async () => {
+    const res = await authService.rpc('admin_free_access_list', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || { codes: [], comps: [] } };
+  });
+
+  /** Cut N single-use league codes, all carrying the same note. */
+  ipcMain.handle('admin:issueCodes', async (_evt, payload) => {
+    const p = payload || {};
+    const count = Math.max(1, Math.min(50, Math.round(Number(p.count) || 1)));
+    const note = typeof p.note === 'string' ? p.note.trim().slice(0, 120) : '';
+    const res = await authService.rpc('admin_issue_league_codes', {
+      p_count: count,
+      p_note: note,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not issue codes.',
+      };
+    }
+    return { ok: true, codes: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /** Pull an account's free access (and burn any code it redeemed). */
+  ipcMain.handle('admin:revokeFree', async (_evt, payload) => {
+    const id = payload && typeof payload.userId === 'string' ? payload.userId : '';
+    if (!id) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_revoke_free_access', { p_user_id: id });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not revoke.',
+      };
+    }
+    return { ok: true };
+  });
+
   /* ---- Bindable actions ---- */
 
   /**
@@ -3045,30 +3102,70 @@ function registerIpc() {
 
   ipcMain.handle('auth:signOut', async () => {
     const res = await authService.signOut();
-    // Signing out means "ask me next launch" again, so drop the offline choice.
-    saveSettings({ ...loadSettings(), offlineMode: false });
+    // The entitlement cache belongs to the account that just left — the next
+    // sign-in may be someone else, and a comp must not carry across.
+    billingService.clear();
     loadPage('auth');
     return res;
   });
 
-  /** Signed in (or registered without confirmation) — show the control panel. */
-  ipcMain.handle('auth:enterApp', () => {
-    loadPage('panel');
-    return authStateForUi();
+  /**
+   * Signed in (or registered without confirmation) — into the app IF this
+   * account may use it. The subscription gates the whole panel: a fresh
+   * account gets `entitled: false` back and the auth page shows the subscribe
+   * screen instead. (The RPC re-authorises server-side regardless — this gate
+   * decides what is shown, the database decides what is true.)
+   */
+  ipcMain.handle('auth:enterApp', async () => {
+    const snap = await billingService.refresh({ maxAgeMs: 5000 });
+    if (snap.entitled) {
+      loadPage('panel');
+      // The server only auto-starts for entitled accounts; catch up now.
+      void startServer();
+    }
+    return { ...authStateForUi(), entitled: !!snap.entitled, billing: snap };
   });
 
-  /** "Continue offline" — remembered, so the screen doesn't nag every launch. */
-  ipcMain.handle('auth:continueOffline', () => {
-    saveSettings({ ...loadSettings(), offlineMode: true });
-    loadPage('panel');
-    return authStateForUi();
-  });
+  // 'auth:continueOffline' existed while the app was free-with-an-optional-
+  // account. The subscription (v0.69.0) retired it: offline use now rides the
+  // billing grace window for accounts that have already been seen entitled.
 
   /** Back to the account screens from the panel's "Sign in" button. */
   ipcMain.handle('auth:showAuth', () => {
     loadPage('auth');
     return authStateForUi();
   });
+
+  /* ---- Billing (see electron/billing.js) ----
+   *
+   * Checkout and the Customer Portal are Stripe-hosted pages opened in the
+   * SYSTEM browser — the panel's CSP cannot (and should not) render a payment
+   * page, and this way the card never comes anywhere near the app. The URLs
+   * come from our own edge functions, so they are trusted by construction and
+   * deliberately do not go through the renderer's EXTERNAL_HOSTS allowlist. */
+
+  ipcMain.handle('billing:status', () => billingService.refresh({ maxAgeMs: 15000 }));
+
+  ipcMain.handle('billing:checkout', async () => {
+    const res = await billingService.checkoutUrl();
+    if (!res.ok) return res;
+    if (res.alreadySubscribed) {
+      // Paid in another window/install — nothing to buy, just re-read.
+      void billingService.refresh({ maxAgeMs: 0 });
+      return { ok: true, alreadySubscribed: true };
+    }
+    void shell.openExternal(res.url);
+    return { ok: true };
+  });
+
+  ipcMain.handle('billing:portal', async () => {
+    const res = await billingService.portalUrl();
+    if (!res.ok) return res;
+    void shell.openExternal(res.url);
+    return { ok: true };
+  });
+
+  ipcMain.handle('billing:redeemCode', (_evt, code) => billingService.redeemCode(code));
 
   /* ---- Streaming chat linking (see electron/chatLink.js) ----
    *
@@ -3411,12 +3508,32 @@ function rememberEmail(email) {
 }
 
 /**
- * Which page the single window shows: the account screens until the operator is
- * either signed in or has explicitly chosen to work offline.
+ * Which page the single window shows. Since the subscription (v0.69.0) the
+ * panel needs BOTH a signed-in account and entitlement — here that means the
+ * cached answer, because this runs before any network call: a subscriber whose
+ * hotel wifi is down still gets their overlays (the grace window in
+ * billing.js), while a fresh install lands on the account screens. The
+ * background refresh right after startup corrects an out-of-date cache both
+ * ways. The old "continue offline" free path is gone with the free app.
  */
 function initialPage() {
-  if (authService.stateForUi().signedIn) return 'panel';
-  return loadSettings().offlineMode ? 'panel' : 'auth';
+  return authService.stateForUi().signedIn && billingService.entitledNow() ? 'panel' : 'auth';
+}
+
+/**
+ * React to a fresh entitlement answer: an account that is no longer allowed in
+ * (subscription lapsed, comp revoked, signed out remotely) is walked back to
+ * the account screens — where auth.js shows the subscribe screen — and the
+ * overlay server is stopped so the OBS sources gate with the app.
+ */
+function enforceEntitlement(snap) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (snap && snap.entitled) return;
+  const onPanel = /index\.html(?:[?#].*)?$/.test(mainWindow.webContents.getURL() || '');
+  if (onPanel) {
+    void stopServer();
+    loadPage('auth');
+  }
 }
 
 /** Swap the window between the account screens and the control panel. */
@@ -3465,6 +3582,15 @@ function createWindow() {
 
   mainWindow.removeMenu?.();
   loadPage(initialPage());
+
+  // Coming back to the window is the moment entitlement most likely changed:
+  // checkout and the Customer Portal both happen in the browser, and the way
+  // back into the app is alt-tabbing to it. Cheap — billing.js collapses this
+  // to at most one network call per half-minute.
+  mainWindow.on('focus', () => {
+    if (!authService.stateForUi().signedIn) return;
+    void billingService.refresh({ maxAgeMs: 30000 }).then(enforceEntitlement).catch(() => {});
+  });
 
   // There is deliberately NO 'minimize' handler here. Minimise-to-tray shipped
   // in 0.65.0 and was removed on driver feedback: a window that vanishes into
@@ -3565,7 +3691,14 @@ async function captureWindowsAndQuit(dir) {
   // If the window opened on the account screens, walk them: they are one page
   // with six states, and only the first would otherwise ever be captured.
   if (mainWindow && !mainWindow.isDestroyed() && /auth\.html$/.test(mainWindow.webContents.getURL())) {
-    for (const screen of ['register', 'reset-request', 'reset-verify', 'reset-done', 'confirm']) {
+    for (const screen of [
+      'register',
+      'subscribe',
+      'reset-request',
+      'reset-verify',
+      'reset-done',
+      'confirm',
+    ]) {
       try {
         await mainWindow.webContents.executeJavaScript(
           `window.__shot ? window.__shot('${screen}') : null`,
@@ -3607,6 +3740,12 @@ app.whenReady().then(async () => {
   // Before createWindow(): whether a session is remembered decides which page
   // the window opens on.
   authService.init(app.getPath('userData'));
+  // Before createWindow() too: initialPage() reads the cached entitlement.
+  billingService.init({
+    userDataDir: app.getPath('userData'),
+    auth: authService,
+    onChange: pushBilling,
+  });
   registerIpc();
   // Needs the app ready — screen is unusable before it.
   watchDisplays();
@@ -3639,6 +3778,14 @@ app.whenReady().then(async () => {
       // reason: its first beat wants a live token, so firing it before the
       // refresh lands would waste one signed-out attempt every launch.
       usageReporter.init({ auth: authService, appVersion: app.getVersion() });
+      // Now the session is live, ask the server whether this account may still
+      // be in the app. A cache that let the panel open gets corrected here if
+      // the subscription lapsed while the app was closed — and vice versa, a
+      // stale "no" is upgraded so the next launch opens straight into the panel.
+      void billingService
+        .refresh({ maxAgeMs: 0 })
+        .then(enforceEntitlement)
+        .catch((err) => console.error('[billing] refresh failed:', err.message));
     })
     .catch((err) => console.error('[auth] restore failed:', err.message));
 
@@ -3647,8 +3794,12 @@ app.whenReady().then(async () => {
   pruneRemovedBindings();
   applyBindings(loadSettings());
   syncGamepad();
-  // Auto-start the server so overlays are live as soon as the app opens.
-  await startServer();
+  // Auto-start the server so overlays are live as soon as the app opens — but
+  // only for an account the cache says may use the app: the overlays are
+  // served over HTTP to OBS, so an unentitled install must not get them by
+  // simply never signing in. enterApp starts it for everyone else the moment
+  // they are through the gate.
+  if (initialPage() === 'panel') await startServer();
 
   // Streaming chat: link state persists across launches, so bring it back up now
   // and forward the operator's sources to the just-started server. The YouTube

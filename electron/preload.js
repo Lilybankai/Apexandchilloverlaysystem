@@ -210,10 +210,12 @@ contextBridge.exposeInMainWorld('apex', {
     resetPassword: (payload) => ipcRenderer.invoke('auth:resetPassword', payload),
     /** Sign out and return to the account screens. */
     signOut: () => ipcRenderer.invoke('auth:signOut'),
-    /** Leave the account screens for the control panel (after signing in). */
+    /**
+     * Leave the account screens for the control panel — if the account is
+     * entitled. Returns `{ ..., entitled, billing }`; when `entitled` is false
+     * the caller shows the subscribe screen instead.
+     */
     enterApp: () => ipcRenderer.invoke('auth:enterApp'),
-    /** Skip signing in; remembered so it doesn't ask again next launch. */
-    continueOffline: () => ipcRenderer.invoke('auth:continueOffline'),
     /** Go back to the account screens from the control panel. */
     showAuth: () => ipcRenderer.invoke('auth:showAuth'),
     /** Subscribe to account-state pushes. Returns an unsubscribe function. */
@@ -221,6 +223,28 @@ contextBridge.exposeInMainWorld('apex', {
       const listener = (_evt, payload) => callback(payload);
       ipcRenderer.on('auth:changed', listener);
       return () => ipcRenderer.removeListener('auth:changed', listener);
+    },
+  },
+
+  /* ---- Billing (Stripe subscription / league free access) ----
+   *
+   * Handled in the main process (electron/billing.js). Checkout and the
+   * Customer Portal open in the system browser; this bridge only ever carries
+   * the sanitised entitlement snapshot — no card data, no Stripe ids. */
+  billing: {
+    /** Fresh-ish entitlement snapshot: { entitled, source, status, trialEnd, ... }. */
+    status: () => ipcRenderer.invoke('billing:status'),
+    /** Open Stripe Checkout in the browser: → { ok, alreadySubscribed?, error? }. */
+    checkout: () => ipcRenderer.invoke('billing:checkout'),
+    /** Open the Stripe Customer Portal (manage / cancel / card) in the browser. */
+    portal: () => ipcRenderer.invoke('billing:portal'),
+    /** Redeem a league voucher code: → { ok, error? }. */
+    redeemCode: (code) => ipcRenderer.invoke('billing:redeemCode', code),
+    /** Subscribe to entitlement pushes. Returns an unsubscribe function. */
+    onChange: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('billing:changed', listener);
+      return () => ipcRenderer.removeListener('billing:changed', listener);
     },
   },
 
@@ -254,6 +278,12 @@ contextBridge.exposeInMainWorld('apex', {
     users: (query) => ipcRenderer.invoke('admin:users', query),
     /** Triage one item: `{ id, status }` → `{ ok, error? }`. */
     setFeedbackStatus: (payload) => ipcRenderer.invoke('admin:setFeedbackStatus', payload),
+    /** Free access: codes issued + comped accounts → `{ ok, data, error? }`. */
+    freeAccess: () => ipcRenderer.invoke('admin:freeAccess'),
+    /** Cut league codes: `{ count, note }` → `{ ok, codes[], error? }`. */
+    issueCodes: (payload) => ipcRenderer.invoke('admin:issueCodes', payload),
+    /** Revoke an account's free access: `{ userId }` → `{ ok, error? }`. */
+    revokeFree: (payload) => ipcRenderer.invoke('admin:revokeFree', payload),
   },
 
   /* ---- Streaming chat linking (YouTube + Twitch) ----

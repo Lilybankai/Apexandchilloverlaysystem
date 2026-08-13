@@ -507,6 +507,21 @@ async function rpc(fn, body) {
 }
 
 /**
+ * Call a Supabase Edge Function as the signed-in driver. Same contract and
+ * same reasoning as rpc() above — this module owns the URL, the key and the
+ * token refresh, so the billing module doesn't grow its own copy of any of it.
+ *
+ * @returns `{ ok: true, body }`, or `{ ok: false, error, signedOut?, status }`.
+ */
+async function functionsInvoke(fn, body) {
+  const token = await accessToken();
+  if (!token) return { ok: false, signedOut: true, error: 'Not signed in.' };
+  const res = await api(`/functions/v1/${fn}`, { body: body || {}, token });
+  if (!res.ok && res.status === 401) return { ...res, signedOut: true };
+  return res;
+}
+
+/**
  * Called at startup: turn a remembered refresh token into a live session and
  * refresh the cached user. Safe (and cheap) to call when signed out.
  */
@@ -534,6 +549,7 @@ module.exports = {
   signOut,
   accessToken,
   rpc,
+  functionsInvoke,
   // Exported for the offline test script.
   parseRecoveryToken,
   publicUser,

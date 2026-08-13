@@ -18,7 +18,9 @@ const LEDE = {
   signin:
     'Sign in to manage your overlays, sync your lap database, and climb the league leaderboard.',
   register:
-    'Create your free account to save best laps per car and track, get app-update emails, and unlock Training mode.',
+    'Every overlay, the lap database and the league boards — 7 days free, then £4.99/month. Racing in an Apex & Chill league? You ride free.',
+  subscribe:
+    'One subscription, everything: broadcast overlays, the in-game layer, setups, leaderboards and the race engineer. Cancel any time.',
   confirm:
     'One click in your inbox and your account is live — your laps then follow you to any PC you install the app on.',
   'reset-request':
@@ -211,15 +213,110 @@ $('#signin-form').addEventListener('submit', (evt) => {
       markField('signin', res.field);
       return;
     }
-    await auth.enterApp(); // main swaps this window over to the control panel
+    await enterOrSubscribe(); // panel if entitled, subscribe screen if not
   });
 });
 
-$('#offline-btn').addEventListener('click', () => {
-  const button = $('#offline-btn');
-  void submit('signin', button, async () => {
-    await auth.continueOffline();
+/* -------------------------------------------------------------------------- */
+/*  Subscribe — the paywall between an account and the app                     */
+/* -------------------------------------------------------------------------- */
+
+const billing = window.apex && window.apex.billing;
+
+/**
+ * Route through the gate: main answers `entitled` from the server, and loads
+ * the panel itself when the answer is yes. A "no" lands here, on the subscribe
+ * screen, with the snapshot to phrase the button from.
+ */
+async function enterOrSubscribe() {
+  const res = await auth.enterApp();
+  if (res && res.entitled === false) {
+    renderSubscribe(res.billing);
+    show('subscribe');
+  }
+  // entitled (or an old main without the flag): main swapped the page already.
+}
+
+/** Phrase the plan pitch: the trial is first-subscription-only. */
+function renderSubscribe(b) {
+  const trial = !b || !b.status || b.status === 'none';
+  const btn = $('#sub-start-btn');
+  btn.dataset.label = trial ? 'Start 7-day free trial' : 'Subscribe — £4.99/month';
+  btn.textContent = btn.dataset.label;
+  $('#sub-lede').innerHTML = trial
+    ? 'Apex Overlay System is <strong>£4.99/month</strong> with a 7-day free trial. Cancel any time.'
+    : 'Welcome back — pick up where you left off for <strong>£4.99/month</strong>. Cancel any time.';
+}
+
+/** Ask the server again; walk through the moment the answer turns yes. */
+async function recheckSubscription(silent) {
+  const b = await billing.status();
+  if (b && b.entitled) {
+    await auth.enterApp();
+    return;
+  }
+  renderSubscribe(b);
+  if (!silent) {
+    setMessage(
+      'subscribe',
+      'info',
+      'No active subscription on this account yet — a payment made just now can take a few seconds to land. Try again shortly.',
+    );
+  }
+}
+
+$('#sub-start-btn').addEventListener('click', () => {
+  const button = $('#sub-start-btn');
+  void submit('subscribe', button, async () => {
+    const res = await billing.checkout();
+    if (!res.ok) {
+      setMessage('subscribe', 'error', res.error || 'Could not start checkout.');
+      return;
+    }
+    if (res.alreadySubscribed) {
+      await recheckSubscription(true);
+      return;
+    }
+    setMessage(
+      'subscribe',
+      'info',
+      'Checkout is open in your browser. Finish there, then come back — this screen picks it up on its own.',
+    );
   });
+});
+
+$('#sub-code-form').addEventListener('submit', (evt) => {
+  evt.preventDefault();
+  const button = $('#sub-code-btn');
+  const code = $('#sub-code-input').value.trim();
+  if (!code) {
+    setMessage('subscribe', 'error', 'Type your league code first.');
+    return;
+  }
+  void submit('subscribe', button, async () => {
+    const res = await billing.redeemCode(code);
+    if (!res.ok) {
+      setMessage('subscribe', 'error', res.error || 'That code was not accepted.');
+      markField('subscribe', 'code');
+      return;
+    }
+    await auth.enterApp();
+  });
+});
+
+$('#sub-refresh-btn').addEventListener('click', () => {
+  void recheckSubscription(false);
+});
+
+$('#sub-signout-btn').addEventListener('click', async () => {
+  // Main reloads this page signed-out; nothing to re-render here on success.
+  await auth.signOut();
+});
+
+// Checkout ends with an alt-tab back to this window — that focus IS the
+// "I've paid" signal, so ask again without making anyone find the button.
+window.addEventListener('focus', () => {
+  if (current === 'subscribe' && billing) void recheckSubscription(true);
 });
 
 /* -------------------------------------------------------------------------- */
@@ -262,7 +359,9 @@ $('#register-form').addEventListener('submit', (evt) => {
       show('confirm');
       return;
     }
-    await auth.enterApp(); // confirmation disabled on the project — straight in
+    // Confirmation disabled on the project — straight to the gate, which for a
+    // brand-new account means the subscribe screen and its trial button.
+    await enterOrSubscribe();
   });
 });
 
@@ -362,6 +461,15 @@ async function boot() {
   if (state.lastEmail) $('#si-email').value = state.lastEmail;
 
   refreshRegisterGate();
+
+  // Signed in but parked on this page: the account exists, the subscription
+  // doesn't (or main is still deciding). Land on subscribe, not sign-in — the
+  // recheck walks them straight through if the gate opens.
+  if (state.signedIn && billing) {
+    show('subscribe');
+    void recheckSubscription(true);
+    return;
+  }
   show('signin');
 }
 

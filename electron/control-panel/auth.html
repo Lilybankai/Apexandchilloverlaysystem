@@ -81,19 +81,62 @@
         <button class="btn btn--accent btn--block" type="submit" data-label="Sign in">Sign in</button>
       </form>
 
-      <div class="divider"><span>or</span></div>
-      <button class="btn btn--ghost btn--block" type="button" id="offline-btn"
-              data-label="Continue offline">Continue offline</button>
       <p class="form__foot">
         New to Apex &amp; Chill?
         <button class="linkbtn" type="button" data-go="register">Create an account</button>
       </p>
     </section>
 
+    <!-- ------------------------ SUBSCRIBE ------------------------------ -->
+    <!-- Shown after sign-in/registration when the account has no live
+         subscription and no free-access grant. Payment happens on Stripe's
+         hosted page in the system browser — this screen only starts it. -->
+    <section class="form" data-screen="subscribe" hidden>
+      <h1 class="form__t">Activate your account</h1>
+      <p class="form__sub" id="sub-lede">
+        Apex Overlay System is <strong>£4.99/month</strong> with a 7-day free
+        trial. Cancel any time.
+      </p>
+
+      <div class="msg" data-msg="subscribe" role="alert" hidden></div>
+
+      <button class="btn btn--accent btn--block" type="button" id="sub-start-btn"
+              data-label="Start 7-day free trial">Start 7-day free trial</button>
+      <p class="form__foot" style="margin-top: 10px">
+        Checkout opens in your browser — your card is handled by Stripe, never
+        by the app.
+      </p>
+
+      <div class="divider"><span>racing with us?</span></div>
+
+      <form id="sub-code-form" novalidate>
+        <div class="field">
+          <label class="lbl" for="sub-code-input">League access code</label>
+          <div class="field__wrap field__wrap--icon">
+            <span class="field__icon"><svg class="icon"><use href="#i-key" /></svg></span>
+            <input class="inp inp--code" id="sub-code-input" name="code" type="text"
+                   placeholder="APEX-XXXX-XXXX" spellcheck="false" autocomplete="off" />
+          </div>
+          <span class="field__hint">
+            Apex &amp; Chill league racers ride free — ask a league admin for
+            your code.
+          </span>
+        </div>
+        <button class="btn btn--ghost btn--block" type="submit" id="sub-code-btn"
+                data-label="Redeem code">Redeem code</button>
+      </form>
+
+      <p class="form__foot">
+        <button class="linkbtn" type="button" id="sub-refresh-btn">I've subscribed — check again</button>
+        &nbsp;·&nbsp;
+        <button class="linkbtn" type="button" id="sub-signout-btn">Sign out</button>
+      </p>
+    </section>
+
     <!-- ------------------------- REGISTER ------------------------------ -->
     <section class="form" data-screen="register" hidden>
       <h1 class="form__t">Create account</h1>
-      <p class="form__sub">Free forever for the core overlays.</p>
+      <p class="form__sub">7-day free trial, then £4.99/month. League racers ride free.</p>
 
       <div class="msg" data-msg="register" role="alert" hidden></div>
 
