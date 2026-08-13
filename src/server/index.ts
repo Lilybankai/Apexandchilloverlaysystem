@@ -396,6 +396,20 @@ export function setChatYouTubeAuthErrorHandler(cb: (() => void) | null): void {
   if (chatHub) chatHub.onYouTubeAuthError = () => chatAuthErrorHandler?.();
 }
 
+/** Handler run when the YouTube live chat ends — set by the desktop app. */
+let chatEndedHandler: (() => void) | null = null;
+
+/**
+ * Register a callback for "the YouTube live chat has ended". The desktop app
+ * uses it to go looking for the next broadcast — which is what replaced the
+ * once-a-minute rediscovery poll that ran all day whether or not anything was
+ * on air. Wired straight through to the hub when it exists.
+ */
+export function setChatYouTubeChatEndedHandler(cb: (() => void) | null): void {
+  chatEndedHandler = cb;
+  if (chatHub) chatHub.onYouTubeChatEnded = () => chatEndedHandler?.();
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -707,6 +721,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // app; the app retunes it live through setChatConfig().
   chatHub = new ChatHub({ verbose: config.verbose });
   if (chatAuthErrorHandler) chatHub.onYouTubeAuthError = () => chatAuthErrorHandler?.();
+  if (chatEndedHandler) chatHub.onYouTubeChatEnded = () => chatEndedHandler?.();
   pendingChatConfig = {
     twitchChannel: config.twitchChannel || pendingChatConfig.twitchChannel,
     youTubeLiveChatId: config.youTubeLiveChatId || pendingChatConfig.youTubeLiveChatId,

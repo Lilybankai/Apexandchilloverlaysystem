@@ -87,8 +87,30 @@ const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 
 /** Refresh the access token this long before it actually expires (seconds). */
 const REFRESH_SKEW_SEC = 120;
-/** How often to (re)discover the active broadcast's live chat id (ms). */
-const REDISCOVER_MS = 60_000;
+
+/**
+ * How often the maintenance tick runs (ms). The tick itself is free — it only
+ * refreshes the Google access token when it is close to expiring, and the OAuth
+ * token endpoint costs no YouTube quota at all.
+ */
+const MAINTAIN_MS = 60_000;
+
+/**
+ * How often to go looking for a broadcast **when none is live** (ms).
+ *
+ * This used to be the same 60s as the maintenance tick, and it called
+ * `liveBroadcasts.list` every single time — including while a chat was already
+ * live and the answer could not change, and including all night with the app
+ * merely open. At 1 quota unit a call that is 1,440 units a day PER INSTALL,
+ * ~14% of the whole project's 10,000/day burnt by an app doing nothing.
+ *
+ * Now discovery happens only when there is something to discover: every five
+ * minutes while nothing is on air (288 units/day), never while a chat is
+ * already streaming, and immediately when the server reports that chat ended.
+ * Five minutes is the worst case for chat appearing after you go live, which is
+ * a fair trade for an 80% cut in the idle burn.
+ */
+const DISCOVER_IDLE_MS = 300_000;
 
 /* -------------------------------------------------------------------------- */
 /*  State                                                                     */
@@ -111,9 +133,11 @@ let store = { twitchChannel: '', youtube: null };
 /** Runtime YouTube session (not persisted). */
 let yt = { accessToken: '', expiresAt: 0, liveChatId: '', displayName: '' };
 
-/** The re-discovery timer, and a guard so two OAuth flows can't overlap. */
-let rediscoverTimer = null;
+/** The maintenance timer, and a guard so two OAuth flows can't overlap. */
+let maintainTimer = null;
 let linking = false;
+/** When discovery last actually called liveBroadcasts.list (ms epoch). */
+let lastDiscoverAt = 0;
 
 /* -------------------------------------------------------------------------- */
 /*  Persistence                                                               */
@@ -175,7 +199,7 @@ function init(deps) {
     // Best-effort: refresh the token and find the live chat in the background.
     void maintainYouTube();
   }
-  startRediscoverTimer();
+  startMaintainTimer();
   emitChange();
 }
 
@@ -445,8 +469,20 @@ async function fetchChannelTitle(token) {
   }
 }
 
-async function maintainYouTube() {
+/**
+ * Keep the YouTube link healthy.
+ *
+ * `discover` decides whether this tick may spend quota looking for a broadcast.
+ * Refreshing the token is always free (Google's OAuth endpoint is not part of
+ * the YouTube Data API quota), so that half runs every tick; the
+ * `liveBroadcasts.list` half is rationed by {@link DISCOVER_IDLE_MS} and skipped
+ * outright while a chat is already live.
+ *
+ * @param {{discover?: boolean, force?: boolean}} [opts]
+ */
+async function maintainYouTube(opts) {
   if (!store.youtube) return;
+  const { discover = true, force = false } = opts || {};
   const token = await accessToken();
   if (!token) {
     yt.liveChatId = '';
@@ -454,6 +490,20 @@ async function maintainYouTube() {
     emitChange();
     return;
   }
+
+  // Already streaming a chat? Then there is nothing to discover — the id cannot
+  // change under us, and the server tells us the moment it ends. Just make sure
+  // the (possibly rotated) token reaches the server and stop.
+  if (yt.liveChatId && !force) {
+    pushServerConfig();
+    emitChange();
+    return;
+  }
+  if (!discover) {
+    pushServerConfig();
+    return;
+  }
+  lastDiscoverAt = Date.now();
   try {
     // `broadcastStatus` already scopes the list to the authorized channel, and the
     // API rejects it alongside `mine` with 400 incompatibleParameters — the two are
@@ -502,15 +552,33 @@ async function maintainYouTube() {
 function handleYouTubeAuthError() {
   yt.accessToken = '';
   yt.expiresAt = 0;
-  void maintainYouTube();
+  // `force` because the chat id we hold is still good — this is a token problem,
+  // not a broadcast problem — but the refreshed token has to reach the server.
+  void maintainYouTube({ discover: false, force: true });
 }
 
-function startRediscoverTimer() {
-  if (rediscoverTimer) clearInterval(rediscoverTimer);
-  rediscoverTimer = setInterval(() => {
-    if (store.youtube) void maintainYouTube();
-  }, REDISCOVER_MS);
-  rediscoverTimer.unref?.();
+/**
+ * Called by main.js when the server reports the live chat has ended (or its
+ * broadcast went offline). This is what replaced polling for a broadcast all
+ * day: the one moment the answer can actually have changed, we go and look.
+ */
+function handleYouTubeChatEnded() {
+  yt.liveChatId = '';
+  pushServerConfig();
+  emitChange();
+  void maintainYouTube({ discover: true, force: true });
+}
+
+function startMaintainTimer() {
+  if (maintainTimer) clearInterval(maintainTimer);
+  maintainTimer = setInterval(() => {
+    if (!store.youtube) return;
+    // Ration the one call that costs quota: never while a chat is live, and at
+    // most once per DISCOVER_IDLE_MS otherwise.
+    const due = Date.now() - lastDiscoverAt >= DISCOVER_IDLE_MS;
+    void maintainYouTube({ discover: due });
+  }, MAINTAIN_MS);
+  maintainTimer.unref?.();
 }
 
 module.exports = {
@@ -520,6 +588,7 @@ module.exports = {
   linkYouTube,
   unlinkYouTube,
   handleYouTubeAuthError,
+  handleYouTubeChatEnded,
   // Exported for tests.
   youTubeConfigured,
 };

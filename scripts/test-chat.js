@@ -191,6 +191,79 @@ console.log('\nnormalizeYouTubeItem');
 }
 
 /* -------------------------------------------------------------------------- */
+console.log('\nJsonArrayStreamParser — the streamList wire framing');
+/* -------------------------------------------------------------------------- */
+
+{
+  // The shape the endpoint actually sends: ONE top-level array, delivered
+  // chunked, whose elements arrive minutes apart over a live broadcast. The
+  // framing was confirmed against the live endpoint, whose error body comes
+  // back as `[{ … }\n]` under Transfer-Encoding: chunked.
+  const p = new chat.JsonArrayStreamParser();
+  const got = p.push('[{"a":1}');
+  check('element completes without waiting for the array to close',
+    got.length === 1 && got[0].a === 1, JSON.stringify(got));
+  check('a separator alone yields nothing', p.push('\n,').length === 0);
+  const second = p.push('{"a":2}\n]');
+  check('second element after the separator', second.length === 1 && second[0].a === 2,
+    JSON.stringify(second));
+}
+{
+  // A chunk boundary can fall ANYWHERE — including mid-key. This is the failure
+  // that would look like "chat works for a while, then stops".
+  const p = new chat.JsonArrayStreamParser();
+  check('split mid-key yields nothing yet', p.push('[{"nextPag').length === 0);
+  check('still nothing mid-object', p.push('eToken":"abc","items":[').length === 0);
+  const out = p.push('{"id":"m1"}]}');
+  check('reassembled across three chunks',
+    out.length === 1 && out[0].nextPageToken === 'abc' && out[0].items[0].id === 'm1',
+    JSON.stringify(out));
+}
+{
+  // The case that desynchronises a naive brace counter: a chat message full of
+  // braces and quotes. Someone will absolutely type this.
+  const p = new chat.JsonArrayStreamParser();
+  const msg = 'gg {} }}{ "quoted" end';
+  const payload = JSON.stringify({ items: [{ snippet: { displayMessage: msg } }] });
+  const out = p.push('[' + payload);
+  check('braces inside a string do not break framing', out.length === 1, out.length);
+  check('the message survives intact',
+    out.length === 1 && out[0].items[0].snippet.displayMessage === msg,
+    out.length === 1 && JSON.stringify(out[0].items[0].snippet.displayMessage));
+}
+{
+  // A backslash immediately before the closing quote — the classic escape-state
+  // bug, where `\\` is misread as escaping the quote and the parser runs on.
+  const p = new chat.JsonArrayStreamParser();
+  const out = p.push('[{"t":"back\\\\"}');
+  check('an escaped backslash does not swallow the closing quote',
+    out.length === 1 && out[0].t === 'back\\', JSON.stringify(out));
+}
+{
+  // Several elements can land in one read; all must come out, in order.
+  const p = new chat.JsonArrayStreamParser();
+  const out = p.push('[{"n":1},{"n":2},{"n":3}');
+  check('three elements from one chunk', out.length === 3, out.length);
+  check('order preserved', out.map((o) => o.n).join(',') === '1,2,3',
+    out.map((o) => o.n).join(','));
+}
+{
+  // A broadcast runs for hours. The separators walked past must not accumulate.
+  const p = new chat.JsonArrayStreamParser();
+  for (let i = 0; i < 500; i++) p.push(`{"n":${i}}\n,`);
+  check('buffer does not grow across many elements', p.pendingBytes() === 0, p.pendingBytes());
+}
+{
+  // Garbage must not wedge the parser forever — the next good element still
+  // parses, because a stream that gives up on one bad frame is a dead chat.
+  const p = new chat.JsonArrayStreamParser();
+  p.push('[{"broken":}');
+  const out = p.push(',{"ok":true}');
+  check('recovers after a malformed element', out.length === 1 && out[0].ok === true,
+    JSON.stringify(out));
+}
+
+/* -------------------------------------------------------------------------- */
 console.log('\nSafety contract — emote hosts + a fresh hub');
 /* -------------------------------------------------------------------------- */
 

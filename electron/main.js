@@ -3621,8 +3621,8 @@ app.whenReady().then(async () => {
 
   // Streaming chat: link state persists across launches, so bring it back up now
   // and forward the operator's sources to the just-started server. The YouTube
-  // token-refresh hook lets the server ask for a fresh token when its poll 401s,
-  // rather than spinning on a dead credential.
+  // token-refresh hook lets the server ask for a fresh token when its stream
+  // 401s, rather than spinning on a dead credential.
   chatLink.init({
     userDataDir: app.getPath('userData'),
     onChange: pushChatState,
@@ -3630,6 +3630,11 @@ app.whenReady().then(async () => {
   });
   try {
     requireServer().setChatYouTubeAuthErrorHandler(() => chatLink.handleYouTubeAuthError());
+    // "The chat ended" is the only event that can change which broadcast we
+    // should be reading, so it is the only thing that sends us looking for a new
+    // one. Before this hook, chatLink asked YouTube once a minute, all day, and
+    // that idle poll alone cost ~14% of the daily quota per install.
+    requireServer().setChatYouTubeChatEndedHandler(() => chatLink.handleYouTubeChatEnded());
   } catch (err) {
     /* server not built — the standalone path doesn't use chatLink anyway */
   }

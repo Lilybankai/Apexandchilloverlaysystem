@@ -481,14 +481,413 @@ export function normalizeYouTubeItem(item: YouTubeChatItem, nowMs: number): Chat
   };
 }
 
+/* --------------------- the streamed-array wire format --------------------- */
+
 /**
- * Polls one YouTube live chat and forwards each new message.
+ * Incrementally parses Google's server-streaming REST framing: the response is
+ * **one top-level JSON array** delivered `Transfer-Encoding: chunked`, whose
+ * elements arrive one at a time as the server produces them —
  *
- * The API is explicit about cadence — every response carries a
- * `pollingIntervalMillis` — so the poller waits exactly that long before the
- * next call rather than inventing an interval. That is what keeps a long stream
- * inside the daily quota, and it is why this is a self-scheduling loop rather
- * than a `setInterval`.
+ * ```
+ * [{ …first response… }
+ * ,{ …next response, minutes later… }
+ * ]
+ * ```
+ *
+ * `JSON.parse` cannot be used: the array is not closed until the broadcast ends,
+ * so waiting for a complete document means waiting hours. Instead this tracks
+ * brace depth (respecting strings and escapes, so a `{` inside a chat message
+ * cannot desynchronise it) and yields each element the moment it closes.
+ *
+ * Exported and pure so the framing — the part that is easy to get subtly wrong
+ * and impossible to notice until a live chat truncates mid-word — is testable
+ * without a network or a broadcast.
+ */
+export class JsonArrayStreamParser {
+  private buf = '';
+  /** How far into `buf` the scanner has already looked. */
+  private scan = 0;
+  private depth = 0;
+  private start = -1;
+  private inString = false;
+  private escaped = false;
+
+  /**
+   * Feed one decoded chunk; returns every array element completed by it — often
+   * none (a chunk can split an object anywhere, including mid-escape), and
+   * occasionally several.
+   */
+  public push(chunk: string): unknown[] {
+    if (chunk) this.buf += chunk;
+    const out: unknown[] = [];
+    while (this.scan < this.buf.length) {
+      const c = this.buf[this.scan];
+      if (this.inString) {
+        // Order matters: a backslash inside an escape is a literal, not a new
+        // escape, so `"\\"` must not swallow the closing quote.
+        if (this.escaped) this.escaped = false;
+        else if (c === '\\') this.escaped = true;
+        else if (c === '"') this.inString = false;
+      } else if (c === '"') {
+        this.inString = true;
+      } else if (c === '{') {
+        if (this.depth === 0) this.start = this.scan;
+        this.depth++;
+      } else if (c === '}') {
+        this.depth--;
+        if (this.depth < 0) this.depth = 0; // malformed; resynchronise
+        if (this.depth === 0 && this.start >= 0) {
+          const slice = this.buf.slice(this.start, this.scan + 1);
+          this.start = -1;
+          try {
+            out.push(JSON.parse(slice));
+          } catch {
+            /* a malformed element is dropped rather than killing the stream */
+          }
+          // Consume through this object so a multi-hour stream never grows an
+          // unbounded buffer, and rescan from the top of what is left.
+          this.buf = this.buf.slice(this.scan + 1);
+          this.scan = 0;
+          continue;
+        }
+      }
+      this.scan++;
+    }
+    // Between elements everything left is separator noise (`,`, newlines, the
+    // closing `]`) — drop it rather than carry it for the life of the stream.
+    if (this.depth === 0 && this.start === -1) {
+      this.buf = '';
+      this.scan = 0;
+    }
+    return out;
+  }
+
+  /**
+   * How much unparsed text is still held. Only meaningful mid-object — between
+   * elements it must return to 0, which is what proves a stream running for
+   * hours is not quietly accumulating every separator it has walked past.
+   */
+  public pendingBytes(): number {
+    return this.buf.length;
+  }
+}
+
+/**
+ * Why a live chat message is or is not still reachable — the reason a source
+ * stopped, so the desktop app can tell "refresh the token" from "the broadcast
+ * ended, go and look for the next one".
+ */
+export type ChatEndReason = 'ended' | 'auth';
+
+/**
+ * Streams one YouTube live chat over `liveChatMessages.streamList` and forwards
+ * each new message.
+ *
+ * ## Why this replaced polling
+ * `liveChatMessages.list` costs **5 quota units per call**, and the cadence it
+ * asks for (`pollingIntervalMillis`, typically ~5s) works out at 3,600 units an
+ * hour — the entire 10,000/day project quota gone in under three hours of one
+ * person streaming, whether chat said anything or not. The quota is per Cloud
+ * project, shared by every install, so that ceiling was the whole product's
+ * ceiling.
+ *
+ * `streamList` is Google's own answer to this (the `list` reference now points
+ * at it explicitly): one request opens a server-streaming connection and YouTube
+ * *pushes* messages down it as they are posted. A connection that lives for the
+ * length of a broadcast replaces ~720 billable calls an hour, and messages
+ * arrive with lower latency than a 5-second poll could ever give.
+ *
+ * ## The bits that are not obvious
+ * - The endpoint is `GET …/liveChat/messages/stream`. It is absent from the v3
+ *   discovery document and its reference page omits the usual "HTTP request"
+ *   block, so the path was established by probing: it answers 403
+ *   "unregistered callers" (exactly as `list` does) where a nonexistent sibling
+ *   path 404s.
+ * - The body is one long JSON array — see {@link JsonArrayStreamParser}.
+ * - Reconnecting too eagerly earns `RESOURCE_EXHAUSTED`, so a reconnect waits
+ *   out the `pollingIntervalMillis` the last response asked for.
+ * - `nextPageToken` is the resume point. Keeping it across reconnects is what
+ *   stops a dropped connection replaying (or skipping) the backlog.
+ *
+ * A 401 stops the stream and reports through `onAuthError`, so the app can mint
+ * a fresh token and hand it back via {@link ChatHub.setConfig}. A `liveChatEnded`
+ * / `liveChatDisabled` 403, or an `offlineAt` in the payload, reports through
+ * `onChatEnded` — that is the ONLY thing that should send the app looking for a
+ * new broadcast, which is what lets rediscovery stop running on a timer.
+ *
+ * If the endpoint itself is unavailable to a project (a 404 on the stream path),
+ * this falls back to {@link YouTubeChatPoller} for the rest of the session
+ * rather than leaving the operator with a dead chat column.
+ */
+export class YouTubeChatStream {
+  private liveChatId = '';
+  private accessToken = '';
+  private pageToken = '';
+  private controller: AbortController | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private idleTimer: NodeJS.Timeout | null = null;
+  private stopped = true;
+  private connecting = false;
+  private backoffMs = 1000;
+  /** Set once the stream path proves unavailable; the legacy poller takes over. */
+  private legacy: YouTubeChatPoller | null = null;
+  private readonly onMessage: (msg: ChatMessage) => void;
+  private readonly onAuthError: () => void;
+  private readonly onChatEnded: () => void;
+  private readonly verbose: boolean;
+  private readonly base: string;
+
+  /**
+   * How long a connection may deliver nothing at all before it is treated as
+   * dead and reopened. YouTube sends a response on its own cadence even when
+   * chat is quiet, so a truly silent connection is a hung socket, not a quiet
+   * chat — and a hung socket looks exactly like a working one from here.
+   */
+  private static readonly IDLE_TIMEOUT_MS = 300_000;
+
+  public constructor(opts: {
+    onMessage: (msg: ChatMessage) => void;
+    onAuthError?: () => void;
+    onChatEnded?: () => void;
+    verbose?: boolean;
+    base?: string;
+  }) {
+    this.onMessage = opts.onMessage;
+    this.onAuthError = opts.onAuthError || (() => {});
+    this.onChatEnded = opts.onChatEnded || (() => {});
+    this.verbose = !!opts.verbose;
+    this.base = opts.base || 'https://www.googleapis.com/youtube/v3';
+  }
+
+  /** Point the stream at a chat (or clear it with an empty id/token). */
+  public setTarget(liveChatId: string, accessToken: string): void {
+    const id = String(liveChatId || '').trim();
+    const token = String(accessToken || '').trim();
+    const chatChanged = id !== this.liveChatId;
+    const changed = chatChanged || token !== this.accessToken;
+    this.liveChatId = id;
+    this.accessToken = token;
+    if (this.legacy) {
+      this.legacy.setTarget(id, token);
+      return;
+    }
+    if (!id || !token) {
+      this.stop();
+      return;
+    }
+    if (!changed) return;
+    // A new chat starts from scratch; a rotated token resumes where it left off,
+    // so an hourly token refresh does not replay the backlog.
+    if (chatChanged) this.pageToken = '';
+    this.stop();
+    this.stopped = false;
+    this.backoffMs = 1000;
+    void this.connect();
+  }
+
+  public stop(): void {
+    this.stopped = true;
+    this.clearTimers();
+    if (this.controller) {
+      try {
+        this.controller.abort();
+      } catch {
+        /* already aborted */
+      }
+      this.controller = null;
+    }
+    if (this.legacy) this.legacy.stop();
+  }
+
+  private clearTimers(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  /** Reopen after `ms`, unless we have been stopped in the meantime. */
+  private scheduleReconnect(ms: number): void {
+    if (this.stopped || this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connect();
+    }, Math.max(1000, ms));
+    this.reconnectTimer.unref?.();
+  }
+
+  /** Restart the watchdog that reopens a connection which has gone silent. */
+  private armIdleWatchdog(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.verbose) console.warn('[chat] youtube stream idle — reopening');
+      // Aborting makes the in-flight read throw, which lands in the reconnect
+      // path below rather than needing a second code path here.
+      if (this.controller) {
+        try {
+          this.controller.abort();
+        } catch {
+          /* already gone */
+        }
+      }
+    }, YouTubeChatStream.IDLE_TIMEOUT_MS);
+    this.idleTimer.unref?.();
+  }
+
+  private async connect(): Promise<void> {
+    if (this.stopped || this.connecting || !this.liveChatId || !this.accessToken) return;
+    this.connecting = true;
+    const controller = new AbortController();
+    this.controller = controller;
+    let pollingIntervalMillis = 5000;
+    try {
+      const params = new URLSearchParams({
+        liveChatId: this.liveChatId,
+        part: 'snippet,authorDetails',
+        maxResults: '2000',
+      });
+      if (this.pageToken) params.set('pageToken', this.pageToken);
+      const res = await fetch(`${this.base}/liveChat/messages/stream?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/json' },
+        signal: controller.signal,
+      });
+
+      if (res.status === 401) {
+        if (this.verbose) console.warn('[chat] youtube token expired');
+        this.stop();
+        this.onAuthError();
+        return;
+      }
+      if (res.status === 404 && !this.legacy) {
+        // The stream path is not available to this project — keep chat alive on
+        // the old (expensive) poller rather than going silent, and say so.
+        console.warn(
+          '[chat] youtube streamList unavailable (404) — falling back to polling. ' +
+            'This consumes far more quota; see docs/youtube-chat-quota.md.',
+        );
+        this.startLegacy();
+        return;
+      }
+      if (!res.ok || !res.body) {
+        const ended = await this.isChatOver(res);
+        if (ended) {
+          if (this.verbose) console.warn('[chat] youtube live chat has ended');
+          this.stop();
+          this.onChatEnded();
+          return;
+        }
+        if (this.verbose) console.warn(`[chat] youtube stream HTTP ${res.status}`);
+        this.scheduleReconnect(this.backoffMs);
+        this.backoffMs = Math.min(60_000, this.backoffMs * 2);
+        return;
+      }
+
+      // Connected: a successful open resets the backoff so a long healthy stream
+      // that eventually drops reconnects promptly.
+      this.backoffMs = 1000;
+      const parser = new JsonArrayStreamParser();
+      const decoder = new TextDecoder();
+      const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+      this.armIdleWatchdog();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        this.armIdleWatchdog();
+        for (const part of parser.push(decoder.decode(value, { stream: true }))) {
+          const over = this.handleResponse(part);
+          if (over) {
+            this.stop();
+            this.onChatEnded();
+            return;
+          }
+          const interval = (part as { pollingIntervalMillis?: number }).pollingIntervalMillis;
+          if (typeof interval === 'number' && interval > 0) pollingIntervalMillis = interval;
+        }
+      }
+      // The server closed the connection normally — that is expected on a long
+      // broadcast. Resume from nextPageToken after the cadence it asked for;
+      // reconnecting sooner earns RESOURCE_EXHAUSTED.
+      this.scheduleReconnect(pollingIntervalMillis);
+    } catch (err) {
+      if (!this.stopped) {
+        const e = err as Error;
+        if (this.verbose && e.name !== 'AbortError') {
+          console.warn('[chat] youtube stream failed:', e.message);
+        }
+        this.scheduleReconnect(this.backoffMs);
+        this.backoffMs = Math.min(60_000, this.backoffMs * 2);
+      }
+    } finally {
+      this.connecting = false;
+      if (this.controller === controller) this.controller = null;
+      if (this.idleTimer) {
+        clearTimeout(this.idleTimer);
+        this.idleTimer = null;
+      }
+    }
+  }
+
+  /**
+   * One streamed element: emit its messages and keep the resume token. Returns
+   * true when the payload says the broadcast is over.
+   */
+  private handleResponse(part: unknown): boolean {
+    const body = part as {
+      items?: YouTubeChatItem[];
+      nextPageToken?: string;
+      offlineAt?: string;
+      error?: unknown;
+    };
+    if (body.error) return false;
+    if (body.nextPageToken) this.pageToken = body.nextPageToken;
+    const now = Date.now();
+    for (const item of body.items || []) {
+      const msg = normalizeYouTubeItem(item, now);
+      if (msg) this.onMessage(msg);
+    }
+    // `offlineAt` is only present once the underlying livestream has gone down.
+    return !!body.offlineAt;
+  }
+
+  /** Whether a non-OK response means this chat is finished, not merely unhappy. */
+  private async isChatOver(res: Response): Promise<boolean> {
+    if (res.status !== 403 && res.status !== 404) return false;
+    try {
+      const json = (await res.json()) as {
+        error?: { errors?: Array<{ reason?: string }> };
+      };
+      const reason = json.error?.errors?.[0]?.reason || '';
+      return reason === 'liveChatEnded' || reason === 'liveChatDisabled' || reason === 'liveChatNotFound';
+    } catch {
+      return false;
+    }
+  }
+
+  /** Hand this chat to the legacy poller for the rest of the session. */
+  private startLegacy(): void {
+    this.legacy = new YouTubeChatPoller({
+      verbose: this.verbose,
+      base: this.base,
+      onMessage: (m) => this.onMessage(m),
+      onAuthError: () => this.onAuthError(),
+    });
+    this.legacy.setTarget(this.liveChatId, this.accessToken);
+  }
+}
+
+/**
+ * The legacy poller, kept ONLY as the fallback {@link YouTubeChatStream} drops
+ * to when the streaming endpoint is unavailable to a project.
+ *
+ * It obeys the `pollingIntervalMillis` every response carries rather than
+ * inventing an interval, which is the least it can do — but at 5 quota units a
+ * call it still costs roughly 3,600 units an hour, so a project on this path
+ * exhausts its day inside three hours. Prefer the stream.
  *
  * A 401 means the access token has expired; the poller stops and reports it
  * through `onAuthError` so the desktop app can refresh the token and hand back a
@@ -635,7 +1034,7 @@ const DEDUPE_WINDOW = 400;
  */
 export class ChatHub {
   private readonly twitch: TwitchChatClient;
-  private readonly youtube: YouTubeChatPoller;
+  private readonly youtube: YouTubeChatStream;
   private readonly buffer: ChatMessage[] = [];
   private readonly seen = new Set<string>();
   private readonly seenOrder: string[] = [];
@@ -643,14 +1042,26 @@ export class ChatHub {
   private config: ChatConfig = {};
   /** Called when YouTube reports its token expired, so the app can refresh it. */
   public onYouTubeAuthError: () => void = () => {};
+  /**
+   * Called when the YouTube live chat ends (or its broadcast goes offline). This
+   * is the app's cue to go looking for the next broadcast — and because it
+   * exists, rediscovery no longer has to run on a timer burning quota all day.
+   */
+  public onYouTubeChatEnded: () => void = () => {};
 
   public constructor(opts: { verbose?: boolean } = {}) {
     const verbose = !!opts.verbose;
     this.twitch = new TwitchChatClient({ verbose, onMessage: (m) => this.ingest(m) });
-    this.youtube = new YouTubeChatPoller({
+    this.youtube = new YouTubeChatStream({
       verbose,
       onMessage: (m) => this.ingest(m),
       onAuthError: () => this.onYouTubeAuthError(),
+      onChatEnded: () => {
+        // The id we hold is dead; drop it so a later setConfig with a NEW
+        // broadcast counts as a change and reopens the stream.
+        this.config = { ...this.config, youTubeLiveChatId: '' };
+        this.onYouTubeChatEnded();
+      },
     });
   }
 
