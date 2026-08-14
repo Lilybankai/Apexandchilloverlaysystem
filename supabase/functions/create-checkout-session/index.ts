@@ -5,7 +5,7 @@
 // Checkout URL the app opens in the system browser. The 7-day card-upfront
 // trial is granted ONLY on a first-ever subscription: an account that has held
 // one before re-subscribes at full price, so cancel/resubscribe can't farm
-// trials.
+// trials. The card is taken at Checkout, so day 8 bills itself.
 //
 // Secrets (supabase secrets set):
 //   STRIPE_SECRET_KEY  — a RESTRICTED key (rk_...) with Checkout, Customers,

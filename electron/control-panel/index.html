@@ -984,21 +984,46 @@
 
     <!-- ========================== ADMIN =============================== -->
     <!-- League staff only. Every number here comes from a server-side RPC that
-         checks is_admin; the tab is hidden for everyone else. -->
+         checks is_admin; the tab is hidden for everyone else.
+
+         Four sections behind a segmented control rather than one long scroll:
+         the tab answers four different questions asked at different times —
+         "is the system healthy?", "who are these people?", "is this paying for
+         itself?", "what are they asking for?" — and stacking all four made
+         every one of them harder to find. Same .seg pattern the Setups view
+         uses for its pages, so the panel only teaches this idiom once. -->
     <section class="view" data-view="admin">
       <div class="wrap">
         <div class="view__head">
           <div>
             <h1 class="view__title">Admin</h1>
             <p class="view__sub">
-              Who is using the overlay system, how often, and what they are asking
-              for. League staff only.
+              Who is using the overlay system, how often, what it earns, and what
+              they are asking for. League staff only.
             </p>
           </div>
           <button class="btn btn--ghost btn--sm" id="admin-refresh" type="button">Refresh</button>
         </div>
 
+        <nav class="seg admin-seg" id="admin-seg" aria-label="Admin sections">
+          <button type="button" data-adminpane="overview" data-active="true">
+            <svg class="icon"><use href="#i-activity" /></svg><span>Overview</span>
+          </button>
+          <button type="button" data-adminpane="members">
+            <svg class="icon"><use href="#i-users" /></svg><span>Members</span>
+          </button>
+          <button type="button" data-adminpane="billing">
+            <svg class="icon"><use href="#i-credit-card" /></svg><span>Billing</span>
+          </button>
+          <button type="button" data-adminpane="feedback">
+            <svg class="icon"><use href="#i-inbox" /></svg><span>Feedback</span>
+          </button>
+        </nav>
+
         <p class="admin-msg" id="admin-msg" hidden></p>
+
+        <!-- ------------------------- OVERVIEW ------------------------- -->
+        <div class="admin-pane" data-adminpane="overview" data-active="true">
 
         <!-- Usage headline tiles -->
         <div class="stats">
@@ -1031,14 +1056,18 @@
               </span>
             </span>
           </div>
+          <!-- Revenue earns its place on the overview because it is the one
+               number that decides whether any of the rest matters. The detail
+               behind it lives in Billing. -->
           <div class="stat">
             <span class="stat__row">
-              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-inbox" /></svg></span>
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-credit-card" /></svg></span>
               <span class="stat__body">
-                <span class="stat__label">New feedback</span>
-                <span class="stat__value" id="adm-new-feedback">—</span>
+                <span class="stat__label">Monthly revenue</span>
+                <span class="stat__value" id="adm-mrr-tile">—</span>
               </span>
             </span>
+            <span class="stat__sub" id="adm-mrr-tile-sub"></span>
           </div>
         </div>
 
@@ -1052,19 +1081,32 @@
             <p class="weekempty" id="adm-daily-empty" hidden>No sessions recorded yet.</p>
           </section>
 
-          <!-- Version adoption -->
+          <!-- Version adoption. Sixty-odd builds have shipped, so this list is
+               capped and expandable — see renderAdminVersions. -->
           <section class="card">
             <div class="card__head">
               <h2 class="card__title"><svg class="icon"><use href="#i-database" /></svg>Version · last 30 days</h2>
+              <button class="btn btn--ghost btn--sm" id="adm-versions-more" type="button" hidden></button>
             </div>
             <ul class="admin-bars" id="adm-versions"></ul>
             <p class="weekempty" id="adm-versions-empty" hidden>No version data yet.</p>
+            <p class="admin-foot" id="adm-versions-foot" hidden></p>
           </section>
         </div>
 
+        </div><!-- /overview -->
+
+        <!-- ------------------------- MEMBERS -------------------------- -->
+        <div class="admin-pane" data-adminpane="members">
+
         <!-- Drivers — one row per account (v0.50.0). The only per-person view in
              the panel: name, email, how many times they have opened the app and
-             when they were last in it. Search and sort run server-side. -->
+             when they were last in it. Search and sort run server-side.
+
+             Access is managed FROM THIS ROW (v0.70.0): the question "should this
+             person still be riding free?" is asked while looking at who they are
+             and when they last raced, so the answer belongs in the same place
+             rather than in a second list somewhere below. -->
         <section class="card">
           <div class="card__head">
             <h2 class="card__title"><svg class="icon"><use href="#i-users" /></svg>Drivers</h2>
@@ -1081,26 +1123,28 @@
                 <option value="logins">Most logins</option>
                 <option value="name">Name</option>
                 <option value="joined">Newest account</option>
+                <option value="access">How they pay</option>
               </select>
             </div>
           </div>
-          <div class="admin-table__head">
+          <div class="admin-table__head admin-table__head--roster">
             <span>Driver</span>
             <span>Logins</span>
             <span>Last active</span>
+            <span>Access</span>
           </div>
-          <ul class="admin-table" id="adm-users-list"></ul>
+          <ul class="admin-table admin-table--roster" id="adm-users-list"></ul>
           <p class="weekempty" id="adm-users-empty" hidden>No accounts match this search.</p>
           <p class="admin-foot" id="adm-users-note" hidden></p>
         </section>
 
-        <!-- Free access — league comps + voucher codes (v0.69.0). League
-             racers and beta testers ride free; a code is cut here, redeemed on
-             the subscribe screen, and revoked here when someone leaves the
-             league. Every RPC behind this card checks is_admin server-side. -->
+        <!-- League codes (v0.69.0). A code is cut here, handed to a racer, and
+             redeemed on the subscribe screen — the way to give free access to
+             someone who does not have an account yet. Access for people who DO
+             have one is set on their row above, not here. -->
         <section class="card">
           <div class="card__head">
-            <h2 class="card__title"><svg class="icon"><use href="#i-key" /></svg>Free access</h2>
+            <h2 class="card__title"><svg class="icon"><use href="#i-key" /></svg>League codes</h2>
             <div class="admin-tools">
               <input
                 class="field__input admin-tools__search"
@@ -1117,14 +1161,7 @@
           </div>
           <p class="admin-foot" id="adm-code-out" hidden></p>
           <div class="admin-table__head">
-            <span>On free access</span>
-            <span>Since</span>
-            <span></span>
-          </div>
-          <ul class="admin-table" id="adm-comps-list"></ul>
-          <p class="weekempty" id="adm-comps-empty" hidden>Nobody is on free access yet.</p>
-          <div class="admin-table__head">
-            <span>Codes issued</span>
+            <span>Code</span>
             <span>Status</span>
             <span></span>
           </div>
@@ -1132,7 +1169,89 @@
           <p class="weekempty" id="adm-codes-empty" hidden>No codes issued yet.</p>
         </section>
 
-        <!-- Feedback inbox -->
+        </div><!-- /members -->
+
+        <!-- ------------------------- BILLING -------------------------- -->
+        <div class="admin-pane" data-adminpane="billing">
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-key" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">On free access</span>
+                <span class="stat__value" id="adm-bill-free">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-bill-free-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-timer" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">On trial</span>
+                <span class="stat__value" id="adm-bill-trial">—</span>
+              </span>
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-credit-card" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Paying</span>
+                <span class="stat__value" id="adm-bill-paying">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-bill-paying-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-trending-up" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Monthly revenue</span>
+                <span class="stat__value" id="adm-bill-mrr">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-bill-mrr-sub"></span>
+          </div>
+        </div>
+
+        <!-- How every account is covered. Buckets are mutually exclusive and
+             add up to the roster, so this reads as a whole rather than as four
+             numbers that might overlap. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-users" /></svg>How everyone is covered</h2>
+          </div>
+          <ul class="admin-bars admin-bars--wide" id="adm-bill-mix"></ul>
+          <p class="weekempty" id="adm-bill-mix-empty" hidden>No accounts yet.</p>
+        </section>
+
+        <div class="two-col">
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-trending-up" /></svg>Revenue · 12 months</h2>
+            </div>
+            <div class="weekchart" id="adm-mrr-chart"></div>
+            <p class="weekempty" id="adm-mrr-empty" hidden>No revenue recorded yet.</p>
+            <p class="admin-foot" id="adm-mrr-foot" hidden></p>
+          </section>
+
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-activity" /></svg>Churn · 12 months</h2>
+            </div>
+            <div class="weekchart" id="adm-churn-chart"></div>
+            <p class="weekempty" id="adm-churn-empty" hidden>Nobody has subscribed yet.</p>
+            <p class="admin-foot" id="adm-churn-foot" hidden></p>
+          </section>
+        </div>
+
+        </div><!-- /billing -->
+
+        <!-- ------------------------- FEEDBACK ------------------------- -->
+        <div class="admin-pane" data-adminpane="feedback">
+
         <section class="card">
           <div class="card__head">
             <h2 class="card__title"><svg class="icon"><use href="#i-inbox" /></svg>Feedback inbox</h2>
@@ -1148,6 +1267,8 @@
           <ul class="admin-inbox" id="adm-feedback-list"></ul>
           <p class="weekempty" id="adm-feedback-empty" hidden>No feedback matches this filter.</p>
         </section>
+
+        </div><!-- /feedback -->
       </div>
     </section>
 
@@ -1212,9 +1333,9 @@
             <div class="card__head">
               <h2 class="card__title"><svg class="icon"><use href="#i-credit-card" /></svg>Subscription</h2>
               <p class="card__desc">
-                Apex Overlay System is <strong>£4.99/month</strong> after a
-                7-day free trial. Billing is handled by Stripe in your browser —
-                the app never sees your card.
+                Free for 7 days, then <strong>£4.99/month</strong>, billed
+                automatically until you cancel. Billing is handled by Stripe in
+                your browser — the app never sees your card.
               </p>
             </div>
             <div class="settings-grid">

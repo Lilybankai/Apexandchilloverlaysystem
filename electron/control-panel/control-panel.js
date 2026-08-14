@@ -2814,6 +2814,52 @@
     applyUpdatesCardVisibility();
   }
 
+  /**
+   * Which of the four Admin sections is showing. Remembered like the main tab
+   * is, and for the same reason: the section someone lives in says what they
+   * open the tab FOR, and being dropped back on Overview every launch is a
+   * small daily annoyance.
+   */
+  const ADMIN_PANE_KEY = 'apex.panel.adminPane';
+
+  function showAdminPane(name) {
+    const panes = Array.from(document.querySelectorAll('.admin-pane[data-adminpane]'));
+    const known = panes.some((p) => p.dataset.adminpane === name);
+    const target = known ? name : 'overview';
+    for (const pane of panes) {
+      pane.setAttribute('data-active', String(pane.dataset.adminpane === target));
+    }
+    for (const btn of document.querySelectorAll('#admin-seg button[data-adminpane]')) {
+      btn.setAttribute('data-active', String(btn.dataset.adminpane === target));
+    }
+    // Each section starts from its own top, same rule the main router follows.
+    const content = $('#content');
+    if (content) content.scrollTop = 0;
+    try {
+      localStorage.setItem(ADMIN_PANE_KEY, target);
+    } catch {
+      /* storage disabled — the section just won't persist */
+    }
+  }
+
+  /** The unread count, on the Feedback button. Hidden entirely at zero. */
+  function setFeedbackBadge(n) {
+    const btn = document.querySelector('#admin-seg button[data-adminpane="feedback"]');
+    if (!btn) return;
+    let badge = btn.querySelector('.admin-seg__badge');
+    const count = Number(n) || 0;
+    if (!count) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'admin-seg__badge';
+      btn.append(badge);
+    }
+    badge.textContent = String(count);
+  }
+
   function renderAdminOverview(data) {
     const d = data || {};
     setText('#adm-active-today', numberOr(d.activeToday));
@@ -2821,7 +2867,7 @@
     setText('#adm-active-month', numberOr(d.activeMonth));
     setText('#adm-sessions-week', d.sessionsWeek != null ? `${d.sessionsWeek} sessions · 7d` : '');
     setText('#adm-total-users', numberOr(d.totalUsers));
-    setText('#adm-new-feedback', numberOr(d.newFeedback));
+    setFeedbackBadge(d.newFeedback);
     renderAdminDaily(Array.isArray(d.daily) ? d.daily : []);
     renderAdminVersions(Array.isArray(d.versions) ? d.versions : []);
   }
@@ -2867,19 +2913,48 @@
     }
   }
 
-  /** Version adoption as proportional bars, widest = most users. */
+  /*
+   * Version adoption as proportional bars, widest = most users.
+   *
+   * Sixty-odd builds have shipped, and every beta among them earns its own row,
+   * so the honest full list is several screens of one-user tails that bury the
+   * only thing anyone reads this card for: are people on the current build? So
+   * it shows the top few and folds the rest away — with a foot note that says
+   * how many are folded and how many drivers are in them, because a chart that
+   * quietly drops most of its data is worse than a long one.
+   */
+  const VERSION_ROWS = 6;
+  let versionsExpanded = false;
+  let versionsCache = [];
+
   function renderAdminVersions(versions) {
+    versionsCache = Array.isArray(versions) ? versions : [];
+    paintVersions();
+  }
+
+  function paintVersions() {
     const list = $('#adm-versions');
     const empty = $('#adm-versions-empty');
+    const more = $('#adm-versions-more');
+    const foot = $('#adm-versions-foot');
     if (!list) return;
     list.textContent = '';
-    if (!versions.length) {
+    const all = versionsCache;
+    if (!all.length) {
       if (empty) empty.hidden = false;
+      if (more) more.hidden = true;
+      if (foot) foot.hidden = true;
       return;
     }
     if (empty) empty.hidden = true;
-    const peak = versions.reduce((m, v) => Math.max(m, v.users || 0), 0) || 1;
-    for (const v of versions) {
+
+    const shown = versionsExpanded ? all : all.slice(0, VERSION_ROWS);
+    const hidden = all.length - shown.length;
+    // Scale against the widest bar ON SCREEN, not the widest overall, so the
+    // collapsed view still uses its full width instead of squashing everything
+    // against a leader that has been folded away.
+    const peak = shown.reduce((m, v) => Math.max(m, v.users || 0), 0) || 1;
+    for (const v of shown) {
       const li = document.createElement('li');
       li.className = 'admin-bars__row';
       const label = document.createElement('span');
@@ -2896,6 +2971,22 @@
       count.textContent = String(v.users || 0);
       li.append(label, track, count);
       list.append(li);
+    }
+
+    if (more) {
+      more.hidden = all.length <= VERSION_ROWS;
+      more.textContent = versionsExpanded ? 'Show fewer' : `Show all ${all.length}`;
+    }
+    if (foot) {
+      if (hidden > 0) {
+        const tail = all.slice(shown.length).reduce((n, v) => n + (v.users || 0), 0);
+        foot.textContent = `${hidden} older build${hidden === 1 ? '' : 's'} hidden · ${tail} driver${
+          tail === 1 ? '' : 's'
+        }`;
+        foot.hidden = false;
+      } else {
+        foot.hidden = true;
+      }
     }
   }
 
@@ -2977,8 +3068,105 @@
       .filter(Boolean)
       .join(' · ');
 
-    li.append(who, logins, last);
+    li.append(who, logins, last, buildAccessControl(row));
     return li;
+  }
+
+  /**
+   * How free access reads in the roster, and what each grant is FOR. Kept to
+   * two short words because these are <option> labels in a narrow column, and a
+   * browser select truncates rather than wraps — "Free · beta test" helps
+   * nobody.
+   */
+  const FREE_REASONS = {
+    league: 'Free · league',
+    beta: 'Free · beta',
+    friend: 'Free · guest',
+    staff: 'Free · team',
+  };
+
+  /** Live Stripe states, which the panel reports but must not try to change. */
+  const PAID_STATES = {
+    trialing: 'On trial',
+    active: 'Paying',
+    past_due: 'Payment failed',
+  };
+
+  /**
+   * The access cell. Two shapes, deliberately:
+   *
+   *   - No live subscription → a <select> that grants or revokes free access.
+   *     This is the control the league actually needs: someone joins, they ride
+   *     free; someone leaves, you set them to Paying and the next launch asks
+   *     them for £4.99.
+   *   - A live Stripe subscription → static text. Comping a paying customer
+   *     would leave them being charged AND free, and cancelling their card is
+   *     Stripe's job; neither belongs behind a dropdown in a roster.
+   */
+  function buildAccessControl(row) {
+    const reason = row.free_access_reason || null;
+    const paid = PAID_STATES[row.billing_status];
+
+    if (!reason && paid) {
+      const span = document.createElement('span');
+      span.className = 'admin-row__paid';
+      span.setAttribute('data-state', row.billing_status);
+      span.textContent = paid;
+      span.title = 'Managed by Stripe — cancel or refund from the Stripe dashboard.';
+      return span;
+    }
+
+    const select = document.createElement('select');
+    select.className = 'field__input admin-row__access';
+    select.setAttribute('data-free', String(!!reason));
+    select.title = reason
+      ? row.free_access_note || 'On free access'
+      : 'Not on free access — this account pays like anyone else.';
+
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = paid ? `Paying (${paid.toLowerCase()})` : 'Paying';
+    select.append(none);
+    for (const [value, label] of Object.entries(FREE_REASONS)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      select.append(opt);
+    }
+    select.value = reason && FREE_REASONS[reason] ? reason : '';
+
+    select.addEventListener('change', async () => {
+      const next = select.value;
+      const previous = reason || '';
+      select.disabled = true;
+      try {
+        const res = next
+          ? await window.apex.admin.grantFree({
+              userId: row.user_id,
+              reason: next,
+              // Who did this and when, so a year from now the Free access list
+              // is not a set of names with no explanation attached.
+              note: `set from the admin roster ${new Date().toLocaleDateString()}`,
+            })
+          : await window.apex.admin.revokeFree({ userId: row.user_id });
+        if (!res || !res.ok) {
+          showToast((res && res.error) || 'Could not change access.');
+          select.value = previous; // put the control back where the server is
+          return;
+        }
+        showToast(
+          next
+            ? `${row.name || 'Driver'} is on free access.`
+            : `${row.name || 'Driver'} now pays like anyone else.`,
+        );
+        // Both lists move: the roster row and the codes card (revoking burns
+        // any code that account redeemed).
+        await Promise.all([refreshAdminUsers(), refreshFreeAccess(), refreshAdminBilling()]);
+      } finally {
+        select.disabled = false;
+      }
+    });
+    return select;
   }
 
   function renderAdminFeedback(rows) {
@@ -3056,11 +3244,12 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free] = await Promise.all([
+      const [overview, feedback, users, free, billing] = await Promise.all([
         window.apex.admin.overview(),
         window.apex.admin.feedback({ status: filter ? filter.value : '' }),
         window.apex.admin.users(adminUsersQuery()),
         window.apex.admin.freeAccess(),
+        window.apex.admin.billing(),
       ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
@@ -3074,6 +3263,7 @@
       renderAdminFeedback(feedback && feedback.ok ? feedback.rows : []);
       renderAdminUsers(users && users.ok ? users.rows : []);
       renderFreeAccess(free && free.ok ? free.data : null);
+      renderAdminBilling(billing && billing.ok ? billing.data : null);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
@@ -3085,17 +3275,17 @@
     renderFreeAccess(res && res.ok ? res.data : null);
   }
 
-  /** The Free access card: who is comped, and every code's fate. */
+  /*
+   * The League codes card: every code and what became of it.
+   *
+   * This used to also list the comped accounts. It no longer does — that list
+   * said less than the roster does (no email, no last-active) and disagreed
+   * with it the moment either changed. Access is set on the driver's own row;
+   * this card is only about codes, which exist for people who have no account
+   * to find in the roster yet.
+   */
   function renderFreeAccess(data) {
-    const comps = Array.isArray(data && data.comps) ? data.comps : [];
     const codes = Array.isArray(data && data.codes) ? data.codes : [];
-    const compList = $('#adm-comps-list');
-    const compEmpty = $('#adm-comps-empty');
-    if (compList) {
-      compList.textContent = '';
-      for (const c of comps) compList.append(buildCompRow(c));
-    }
-    if (compEmpty) compEmpty.hidden = comps.length > 0;
     const codeList = $('#adm-codes-list');
     const codeEmpty = $('#adm-codes-empty');
     if (codeList) {
@@ -3103,53 +3293,6 @@
       for (const c of codes) codeList.append(buildCodeRow(c));
     }
     if (codeEmpty) codeEmpty.hidden = codes.length > 0;
-  }
-
-  /** One comped account: name, why, since when — and the way to end it. */
-  function buildCompRow(row) {
-    const li = document.createElement('li');
-    li.className = 'admin-row';
-
-    const who = document.createElement('div');
-    who.className = 'admin-row__who';
-    const name = document.createElement('span');
-    name.className = 'admin-row__name';
-    name.textContent = row.display_name || 'Driver';
-    who.append(name);
-    const tag = document.createElement('span');
-    tag.className = 'admin-row__tag';
-    tag.textContent = row.free_access_reason || 'league';
-    who.append(tag);
-    if (row.free_access_note) {
-      const note = document.createElement('span');
-      note.className = 'admin-row__email';
-      note.textContent = row.free_access_note;
-      who.append(note);
-    }
-
-    const since = document.createElement('span');
-    since.className = 'admin-row__last';
-    const at = row.free_access_at ? new Date(row.free_access_at) : null;
-    since.textContent = at && !Number.isNaN(at.getTime()) ? at.toLocaleDateString() : '—';
-
-    const revoke = document.createElement('button');
-    revoke.type = 'button';
-    revoke.className = 'btn btn--ghost btn--sm';
-    revoke.textContent = 'Revoke';
-    revoke.title = 'End this account’s free access (also burns any code it redeemed)';
-    revoke.addEventListener('click', async () => {
-      revoke.disabled = true;
-      try {
-        const res = await window.apex.admin.revokeFree({ userId: row.id });
-        if (!res || !res.ok) showToast((res && res.error) || 'Could not revoke.');
-        else await refreshFreeAccess();
-      } finally {
-        revoke.disabled = false;
-      }
-    });
-
-    li.append(who, since, revoke);
-    return li;
   }
 
   /** One issued code: the code, who it was cut for, and what became of it. */
@@ -3194,6 +3337,236 @@
     return li;
   }
 
+  /* ------------------------------ Billing -------------------------------- *
+   *
+   * Five questions, one RPC: how many ride free, how many are trying it, how
+   * many pay, what that is worth a month, and how many leave. Everything is
+   * computed server-side from each subscription's LIFETIME (see migration
+   * 0008), so the charts can look backwards without the app having kept a
+   * single snapshot.
+   */
+
+  /** Pence → "£4.99". Whole amounts lose the ".00" — £5 reads faster than £5.00. */
+  function money(pence, currency) {
+    const n = Number(pence) || 0;
+    const code = (currency || 'gbp').toUpperCase();
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: code,
+        minimumFractionDigits: n % 100 === 0 ? 0 : 2,
+      }).format(n / 100);
+    } catch {
+      return `${(n / 100).toFixed(2)}`;
+    }
+  }
+
+  /** How each bucket of the mix is labelled, in the order it is drawn. */
+  const MIX_ROWS = [
+    ['free', 'Free access'],
+    ['trial', 'On trial'],
+    ['paying', 'Paying'],
+    ['past_due', 'Payment failed'],
+    ['lapsed', 'Lapsed'],
+    ['none', 'Never subscribed'],
+  ];
+
+  // Named for the section, not for "billing": renderBilling already belongs to
+  // the Settings subscription card further down this file, and two function
+  // declarations with one name in one scope do not collide loudly — the later
+  // one simply wins and the earlier caller quietly gets the wrong renderer.
+  function renderAdminBilling(data) {
+    const d = data || {};
+    const mix = d.mix || {};
+    const cur = d.currency || 'gbp';
+    const series = Array.isArray(d.series) ? d.series : [];
+
+    const free = Number(mix.free) || 0;
+    const trial = Number(mix.trial) || 0;
+    const paying = Number(mix.paying) || 0;
+    const total = Number(d.totalAccounts) || 0;
+
+    setText('#adm-bill-free', numberOr(free));
+    setText('#adm-bill-trial', numberOr(trial));
+    setText('#adm-bill-paying', numberOr(paying));
+    setText('#adm-bill-mrr', money(d.mrrPence, cur));
+    setText('#adm-mrr-tile', money(d.mrrPence, cur));
+
+    // The breakdown of WHY people are free is the number that decides whether
+    // the comp list has quietly become the business model.
+    const byReason = Array.isArray(d.freeByReason) ? d.freeByReason : [];
+    setText(
+      '#adm-bill-free-sub',
+      byReason.map((r) => `${r.users} ${r.reason}`).join(' · '),
+    );
+    setText(
+      '#adm-bill-paying-sub',
+      total ? `${Math.round((paying / total) * 100)}% of ${total} accounts` : '',
+    );
+    const perHead = paying > 0 ? money(Math.round((Number(d.mrrPence) || 0) / paying), cur) : '';
+    setText('#adm-bill-mrr-sub', perHead ? `${perHead} per paying driver` : 'No paying drivers yet');
+    setText('#adm-mrr-tile-sub', paying ? `${paying} paying` : 'Nobody paying yet');
+
+    renderMix(mix, total);
+    renderMrrChart(series, cur);
+    renderChurnChart(series);
+  }
+
+  /** The mix as proportional bars — the same idiom as version adoption. */
+  function renderMix(mix, total) {
+    const list = $('#adm-bill-mix');
+    const empty = $('#adm-bill-mix-empty');
+    if (!list) return;
+    list.textContent = '';
+    const rows = MIX_ROWS.map(([key, label]) => [label, Number(mix[key]) || 0]).filter(
+      ([, n]) => n > 0,
+    );
+    if (!rows.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    // Scaled against the roster, not against the biggest bucket: these are
+    // parts of a whole, and a "Paying: 2" bar running the full width of the
+    // card would read as success rather than as two people.
+    const peak = Math.max(total || 0, ...rows.map(([, n]) => n)) || 1;
+    for (const [label, n] of rows) {
+      const li = document.createElement('li');
+      li.className = 'admin-bars__row';
+      const name = document.createElement('span');
+      name.className = 'admin-bars__label';
+      name.textContent = label;
+      const track = document.createElement('span');
+      track.className = 'admin-bars__track';
+      const fill = document.createElement('span');
+      fill.className = 'admin-bars__fill';
+      fill.style.width = `${Math.max(3, (n / peak) * 100)}%`;
+      track.append(fill);
+      const count = document.createElement('span');
+      count.className = 'admin-bars__count';
+      count.textContent = String(n);
+      li.append(name, track, count);
+      li.title = total ? `${label}: ${n} of ${total} accounts` : `${label}: ${n}`;
+      list.append(li);
+    }
+  }
+
+  /** "2026-08" → "Aug". Falls back to the raw key if it is ever malformed. */
+  function monthLabel(key) {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(key || ''));
+    if (!m) return String(key || '');
+    const date = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+    return date.toLocaleDateString(undefined, { month: 'short' });
+  }
+
+  /**
+   * One month-series bar chart. Shared by revenue and churn because they are
+   * the same shape: twelve columns, the tallest labelled, every one carrying
+   * its own tooltip. `points` is [{ label, value, empty, title, display }].
+   */
+  function renderMonthChart(chartSel, emptySel, points) {
+    const chart = $(chartSel);
+    const empty = $(emptySel);
+    if (!chart) return;
+    chart.textContent = '';
+    const real = points.filter((p) => !p.empty);
+    if (!real.length) {
+      chart.hidden = true;
+      if (empty) empty.hidden = false;
+      return;
+    }
+    chart.hidden = false;
+    if (empty) empty.hidden = true;
+    const peak = real.reduce((m, p) => Math.max(m, p.value), 0);
+    for (const p of points) {
+      const isPeak = peak > 0 && !p.empty && p.value === peak;
+      const col = document.createElement('div');
+      col.className = 'weekbar';
+      col.setAttribute('data-peak', String(isPeak));
+      if (p.empty) col.setAttribute('data-empty', 'true');
+      col.title = p.title;
+      const track = document.createElement('div');
+      track.className = 'weekbar__track';
+      const fill = document.createElement('div');
+      fill.className = 'weekbar__fill';
+      fill.style.height = p.empty || peak <= 0 ? '4%' : `${Math.max(4, (p.value / peak) * 100)}%`;
+      if (isPeak) {
+        const cap = document.createElement('span');
+        cap.className = 'weekbar__count';
+        cap.textContent = p.display;
+        fill.append(cap);
+      }
+      track.append(fill);
+      const label = document.createElement('span');
+      label.className = 'weekbar__day';
+      label.textContent = p.label;
+      col.append(track, label);
+      chart.append(col);
+    }
+  }
+
+  function renderMrrChart(series, cur) {
+    renderMonthChart(
+      '#adm-mrr-chart',
+      '#adm-mrr-empty',
+      series.map((s) => {
+        const pence = Number(s.mrrPence) || 0;
+        return {
+          label: monthLabel(s.month),
+          value: pence,
+          // A month before anyone subscribed is not £0 of revenue, it is no
+          // data — drawn flat and grey so the chart does not imply a business
+          // that was earning nothing rather than one that did not exist.
+          empty: pence === 0 && !Number(s.active),
+          display: money(pence, cur),
+          title: `${s.month} — ${money(pence, cur)} from ${s.active} subscriber${
+            Number(s.active) === 1 ? '' : 's'
+          }`,
+        };
+      }),
+    );
+    const foot = $('#adm-mrr-foot');
+    if (foot) {
+      // The one caveat worth printing: history starts when the paywall did.
+      foot.textContent =
+        'Live subscriptions only — trials count as £0 until they convert. History begins when billing went live.';
+      foot.hidden = false;
+    }
+  }
+
+  function renderChurnChart(series) {
+    renderMonthChart(
+      '#adm-churn-chart',
+      '#adm-churn-empty',
+      series.map((s) => {
+        const rate = s.churnRate == null ? null : Number(s.churnRate);
+        return {
+          label: monthLabel(s.month),
+          value: rate == null ? 0 : rate,
+          empty: rate == null,
+          display: `${rate == null ? '—' : rate}%`,
+          title:
+            rate == null
+              ? `${s.month} — no subscribers to lose`
+              : `${s.month} — ${s.churned} of ${s.activeStart} left (${rate}%)`,
+        };
+      }),
+    );
+    const foot = $('#adm-churn-foot');
+    if (foot) {
+      const lost = series.reduce((n, s) => n + (Number(s.churned) || 0), 0);
+      const gained = series.reduce((n, s) => n + (Number(s.started) || 0), 0);
+      foot.textContent = `${gained} started · ${lost} cancelled over 12 months. A month with no subscribers is left blank rather than shown as 0%.`;
+      foot.hidden = false;
+    }
+  }
+
+  /** Reload just the Billing section. */
+  async function refreshAdminBilling() {
+    const res = await window.apex.admin.billing();
+    if (res && res.ok) renderAdminBilling(res.data);
+  }
+
   async function refreshAdminFeedback() {
     const filter = $('#adm-fb-filter');
     const res = await window.apex.admin.feedback({ status: filter ? filter.value : '' });
@@ -3206,6 +3579,27 @@
   }
 
   {
+    // Section nav. Everything is already loaded by loadAdmin(), so switching is
+    // a pure show/hide — no spinner, no second round trip.
+    for (const btn of document.querySelectorAll('#admin-seg button[data-adminpane]')) {
+      btn.addEventListener('click', () => showAdminPane(btn.dataset.adminpane));
+    }
+    let startPane = 'overview';
+    try {
+      startPane = localStorage.getItem(ADMIN_PANE_KEY) || 'overview';
+    } catch {
+      /* storage disabled — start on Overview */
+    }
+    showAdminPane(startPane);
+
+    const versionsMore = $('#adm-versions-more');
+    if (versionsMore) {
+      versionsMore.addEventListener('click', () => {
+        versionsExpanded = !versionsExpanded;
+        paintVersions();
+      });
+    }
+
     const refreshBtn = $('#admin-refresh');
     if (refreshBtn) refreshBtn.addEventListener('click', () => void loadAdmin());
     const filter = $('#adm-fb-filter');
@@ -3383,9 +3777,12 @@
     if (b.source === 'free') {
       status = 'Free access';
       hint =
-        b.freeReason === 'beta'
-          ? 'Beta tester — thank you for driving the rough builds.'
-          : 'League member — free while you race with Apex & Chill.';
+        {
+          beta: 'Beta tester — thank you for driving the rough builds.',
+          staff: 'Team account — free access, no billing.',
+          friend: 'Guest of the team — free access, no billing.',
+        }[b.freeReason] ||
+        'League member — free while you race with Apex & Chill.';
     } else if (b.status === 'trialing') {
       status = `Free trial — ends ${shortDate(b.trialEnd) || 'soon'}`;
       hint = 'Then £4.99/month. Cancel any time under Manage subscription.';

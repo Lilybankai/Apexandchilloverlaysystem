@@ -81,17 +81,44 @@ const PANEL_CONTRACT = {
   'sub-hint': 'span',
   'sub-manage-btn': 'button',
 
-  // Admin — free access (v0.69.0): league voucher codes and comped accounts.
-  // The whole card only exists for admins, so a lost id fails silently for
-  // everyone else by design — exactly what this contract exists to catch.
+  // Admin — league codes (v0.69.0). The whole card only exists for admins, so a
+  // lost id fails silently for everyone else by design — exactly what this
+  // contract exists to catch.
   'adm-code-note': 'input:text',
   'adm-code-count': 'input:number',
   'adm-code-issue': 'button',
   'adm-code-out': 'p',
-  'adm-comps-list': 'ul',
-  'adm-comps-empty': 'p',
   'adm-codes-list': 'ul',
   'adm-codes-empty': 'p',
+
+  // Admin — billing (v0.70.0): the free/trial/paying mix, the run rate, and the
+  // twelve-month revenue and churn charts. Contracted for the same reason as
+  // the rest of the tab — nobody but staff ever sees these, so a control that
+  // stops being wired looks identical to the tab correctly hiding itself.
+  'adm-bill-free': 'span',
+  'adm-bill-free-sub': 'span',
+  'adm-bill-trial': 'span',
+  'adm-bill-paying': 'span',
+  'adm-bill-paying-sub': 'span',
+  'adm-bill-mrr': 'span',
+  'adm-bill-mrr-sub': 'span',
+  'adm-bill-mix': 'ul',
+  'adm-bill-mix-empty': 'p',
+  'adm-mrr-chart': 'div',
+  'adm-mrr-empty': 'p',
+  'adm-mrr-foot': 'p',
+  'adm-churn-chart': 'div',
+  'adm-churn-empty': 'p',
+  'adm-churn-foot': 'p',
+  'adm-mrr-tile': 'span',
+  'adm-mrr-tile-sub': 'span',
+
+  // Admin — section nav and the version list's expander (v0.70.0). The nav is
+  // the only way to reach three of the four sections, so an unwired button here
+  // hides most of the tab rather than merely looking wrong.
+  'admin-seg': 'nav',
+  'adm-versions-more': 'button',
+  'adm-versions-foot': 'p',
 
   // Speed units (v0.57.2) — one app-wide preference behind three widgets'
   // speed readouts. Contracted because a control that silently stops writing
@@ -262,7 +289,8 @@ const PANEL_CONTRACT = {
   'adm-active-month': 'span',
   'adm-sessions-week': 'span',
   'adm-total-users': 'span',
-  'adm-new-feedback': 'span',
+  // The unread-feedback COUNT is no longer a tile — it is a badge built on the
+  // Feedback section's nav button, so it has no id of its own to contract.
   'adm-daily-chart': 'div',
   'adm-daily-empty': 'p',
   'adm-versions': 'ul',

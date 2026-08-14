@@ -110,6 +110,11 @@ async function upsertFromSubscription(sub: Stripe.Subscription, knownUserId?: st
     item?.current_period_end ??
     (sub as unknown as { current_period_end?: number }).current_period_end;
 
+  // The Admin tab's MRR and churn charts are computed from the LIFETIME of each
+  // subscription, not from its current status, so every event records when this
+  // one began, when it finally stopped, and what it is worth per month. Those
+  // four facts are all admin_billing_overview() needs to reconstruct any past
+  // month — no event log, no nightly snapshot job.
   const { error } = await db.from('billing_subscriptions').upsert({
     user_id: userId,
     stripe_customer_id: customerId,
@@ -119,7 +124,34 @@ async function upsertFromSubscription(sub: Stripe.Subscription, knownUserId?: st
     cancel_at_period_end: !!sub.cancel_at_period_end,
     trial_end: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
     current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+    started_at: sub.start_date ? new Date(sub.start_date * 1000).toISOString() : null,
+    // `ended_at` is set only once Stripe considers the subscription finished.
+    // A cancel_at_period_end that has not come round yet is still live revenue
+    // and must NOT read as churn until the day it actually stops.
+    ended_at: sub.ended_at ? new Date(sub.ended_at * 1000).toISOString() : null,
+    monthly_pence: monthlyAmount(item?.price),
+    currency: item?.price?.currency ?? null,
     updated_at: new Date().toISOString(),
   });
   if (error) throw new Error(`db upsert: ${error.message}`);
+}
+
+/**
+ * What one subscription item is worth per MONTH, in the currency's minor unit.
+ *
+ * Today there is exactly one price and it is monthly, so this is a long way of
+ * saying 499. It normalises anyway because the day someone adds an annual plan
+ * is not the day you want to discover that the revenue chart has been quietly
+ * adding £49.99 to a MONTHLY total. Returns null when there is no recurring
+ * amount to speak of, which keeps such a row out of the sums entirely rather
+ * than counting it as zero.
+ */
+function monthlyAmount(price?: Stripe.Price | null): number | null {
+  const amount = price?.unit_amount;
+  if (typeof amount !== 'number') return null;
+  const interval = price?.recurring?.interval;
+  const count = price?.recurring?.interval_count || 1;
+  const perMonth: Record<string, number> = { day: 1 / 30, week: 1 / 4.345, month: 1, year: 12 };
+  const months = (perMonth[interval ?? 'month'] ?? 1) * count;
+  return months > 0 ? Math.round(amount / months) : null;
 }

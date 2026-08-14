@@ -284,6 +284,13 @@ contextBridge.exposeInMainWorld('apex', {
     issueCodes: (payload) => ipcRenderer.invoke('admin:issueCodes', payload),
     /** Revoke an account's free access: `{ userId }` → `{ ok, error? }`. */
     revokeFree: (payload) => ipcRenderer.invoke('admin:revokeFree', payload),
+    /** Grant free access: `{ userId, reason, note? }` → `{ ok, error? }`. */
+    grantFree: (payload) => ipcRenderer.invoke('admin:grantFree', payload),
+    /**
+     * Subscription mix, run rate, and twelve months of MRR + churn:
+     * → `{ ok, data, error? }`. Drives the Billing section's charts.
+     */
+    billing: () => ipcRenderer.invoke('admin:billing'),
   },
 
   /* ---- Streaming chat linking (YouTube + Twitch) ----

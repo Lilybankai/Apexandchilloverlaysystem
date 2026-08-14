@@ -244,7 +244,7 @@ function renderSubscribe(b) {
   btn.dataset.label = trial ? 'Start 7-day free trial' : 'Subscribe — £4.99/month';
   btn.textContent = btn.dataset.label;
   $('#sub-lede').innerHTML = trial
-    ? 'Apex Overlay System is <strong>£4.99/month</strong> with a 7-day free trial. Cancel any time.'
+    ? 'Free for 7 days, then <strong>£4.99/month</strong> — billed automatically unless you cancel first.'
     : 'Welcome back — pick up where you left off for <strong>£4.99/month</strong>. Cancel any time.';
 }
 

@@ -798,6 +798,32 @@ html, body {
 /* A select that sits inline in a card header (the inbox status filter). */
 .field__input--inline { width: auto; margin-left: auto; }
 
+/* Admin sections. The tab used to be one long scroll of unrelated cards; it is
+   now four panes behind the shell's own .seg control, only one of them mounted
+   at a time. Panes are display:none rather than unbuilt so their ids stay
+   queryable for the parity contract and nothing has to be re-created on every
+   switch. */
+.admin-seg { margin: 0 0 18px; }
+.admin-pane { display: none; }
+.admin-pane[data-active="true"] { display: block; }
+
+/* The unread-feedback count, on the Feedback section's button. It sits here
+   rather than in a headline tile because it is a to-do list, not a statistic:
+   what matters is that it is non-zero, and that it is visible from whichever
+   section you happen to be standing in. */
+.admin-seg__badge {
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--cyan);
+  color: #04141a;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+.seg button[data-active="true"] .admin-seg__badge { background: #fff; color: var(--ink, #06202a); }
+
 /* Version-adoption bars: a label, a proportional track, and a count. */
 .admin-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .admin-bars__row { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 10px; }
@@ -805,6 +831,10 @@ html, body {
 .admin-bars__track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
 .admin-bars__fill { display: block; height: 100%; border-radius: 999px; background: var(--grad); }
 .admin-bars__count { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+/* Version numbers fit in 90px; words like "Never subscribed" do not, and a
+   wrapped label pushes its own bar out of line with the rest. */
+.admin-bars--wide .admin-bars__row { grid-template-columns: 132px 1fr auto; }
+.admin-bars--wide .admin-bars__label { font-family: var(--font-ui); }
 
 /* Driver roster: search + sort in the card header, then a three-column list.
    The columns are shared by the header and every row so they stay aligned
@@ -875,6 +905,39 @@ html, body {
 .admin-row__last { font-size: 12px; color: var(--text-2); }
 .admin-row__last[data-never="true"] { color: var(--text-3); font-style: italic; }
 .admin-foot { margin: 10px 0 0; font-size: 11px; color: var(--text-3); }
+
+/* The roster carries a fourth column — the access control — so it overrides the
+   shared three-column track. Everything else using .admin-table (the codes
+   list) keeps the original grid. */
+.admin-table__head--roster,
+.admin-table--roster .admin-row {
+  grid-template-columns: 1fr 60px 96px 160px;
+}
+
+/* Access control: one <select> per driver that both SHOWS how that account is
+   covered and changes it. A select rather than a pair of buttons because the
+   states are mutually exclusive and there are six of them — the same reasoning
+   as the feedback inbox's status control, and the same look. Rows whose access
+   is not ours to set (a live Stripe subscription) render as static text
+   instead; cancelling somebody's card is Stripe's job, not this panel's. */
+.admin-row__access { font-size: 12px; padding: 5px 8px; width: 100%; }
+.admin-row__access[data-free="true"] { color: var(--cyan); border-color: var(--cyan); }
+.admin-row__paid {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.admin-row__paid[data-state="none"] { color: var(--text-3); }
+
+/* Month-series charts (revenue, churn) reuse the week chart's bars as-is: the
+   tallest is labelled, the rest are a shape plus a tooltip. Twelve values will
+   not fit side by side in a half-width card at a legible size, and the numbers
+   that matter most — this month's — are in the tiles directly above.
+
+   A month with nothing to measure (no subscribers to lose) is drawn flat and
+   grey rather than as a zero, because 0% churn out of nobody is not a fact. */
+.weekbar[data-empty="true"] .weekbar__fill { background: var(--line-2); }
 
 /* Feedback inbox: one row per item, with a kind badge, the message, and a
    status control. */

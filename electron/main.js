@@ -2829,7 +2829,9 @@ function registerIpc() {
   ipcMain.handle('admin:users', async (_evt, query) => {
     const q = query || {};
     const search = typeof q.search === 'string' ? q.search.trim().slice(0, 80) : '';
-    const sort = ['last_seen', 'logins', 'name', 'joined'].includes(q.sort) ? q.sort : 'last_seen';
+    const sort = ['last_seen', 'logins', 'name', 'joined', 'access'].includes(q.sort)
+      ? q.sort
+      : 'last_seen';
     const res = await authService.rpc('admin_users_list', {
       p_search: search || null,
       p_sort: sort,
@@ -2897,6 +2899,50 @@ function registerIpc() {
       };
     }
     return { ok: true, codes: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /**
+   * The Billing section's numbers: the free/trial/paying mix, today's run rate,
+   * and twelve months of MRR and churn. One RPC because they are one picture —
+   * a chart that disagrees with the tile above it is worse than no chart.
+   */
+  ipcMain.handle('admin:billing', async () => {
+    const res = await authService.rpc('admin_billing_overview', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || null };
+  });
+
+  /**
+   * Put an account on free access. The reason is whitelisted here as well as in
+   * the RPC — the database coerces anything unexpected to 'league', and a
+   * silently changed reason is the sort of thing nobody notices until they are
+   * trying to work out why a paying customer was never charged.
+   */
+  ipcMain.handle('admin:grantFree', async (_evt, payload) => {
+    const p = payload || {};
+    const id = typeof p.userId === 'string' ? p.userId : '';
+    const reason = ['league', 'beta', 'friend', 'staff'].includes(p.reason) ? p.reason : null;
+    if (!id || !reason) return { ok: false, error: 'bad arguments' };
+    const note = typeof p.note === 'string' ? p.note.trim().slice(0, 120) : '';
+    const res = await authService.rpc('admin_grant_free_access', {
+      p_user_id: id,
+      p_reason: reason,
+      p_note: note,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not grant access.',
+      };
+    }
+    return { ok: true };
   });
 
   /** Pull an account's free access (and burn any code it redeemed). */

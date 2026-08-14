@@ -352,13 +352,21 @@ export class TwitchChatClient {
       this.reconnectTimer = null;
     }
     if (this.ws) {
+      const ws = this.ws;
+      this.ws = null;
       try {
-        this.ws.removeAllListeners();
-        this.ws.close();
+        ws.removeAllListeners();
+        // Closing a socket that is still shaking hands makes ws emit 'error'
+        // asynchronously — and an 'error' with no listener is an uncaught
+        // exception that takes the whole main process down. removeAllListeners
+        // above has just stripped the one we had, so put a deaf one back, and
+        // cut a half-open socket dead rather than asking it politely.
+        ws.on('error', () => {});
+        if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
+        else ws.close();
       } catch {
         /* already gone */
       }
-      this.ws = null;
     }
   }
 
