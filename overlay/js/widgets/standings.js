@@ -13,8 +13,12 @@
  *   └─────────────────────────────────────────────────────────────────────┘
  *
  * Extra columns vs. the plain tower:
- *   - ±  positions gained (green ▲) / lost (red ▼) vs. the grid, from
- *     `gridPosition`.
+ *   - ±  positions gained (green ▲) / lost (red ▼) vs. the grid — scored
+ *     within the car's own class. Getting past a car from another class is
+ *     not a place gained in the race being run (it was never yours to take),
+ *     so the overall `gridPosition` is re-ranked against classmates only and
+ *     diffed against the position in class. In a single-class field the two
+ *     readings are identical.
  *   - VE virtual-energy % remaining (`virtualEnergy`, LMU's per-car budget) with
  *     a thin fill bar behind it.
  *   - P  a flag on cars in the pit lane (`inPit`), at the right edge of the row
@@ -761,6 +765,29 @@
     sponsorShowingA = !sponsorShowingA;
   }
 
+  /**
+   * slotId → rank of `key` among same-class cars only, 1-based. Cars without
+   * a usable value are left out rather than ranked last, so a car that joined
+   * after the start has no grid slot instead of a made-up one.
+   */
+  function rankInClass(field, key, fmt) {
+    var byClass = {};
+    for (var i = 0; i < field.length; i++) {
+      var v = field[i][key];
+      if (!fmt.has(v) || v <= 0) continue;
+      var k = field[i].carClass || "—";
+      (byClass[k] = byClass[k] || []).push({ slot: field[i].slotId, v: v });
+    }
+    var out = {};
+    for (var c in byClass) {
+      byClass[c].sort(function (a, b) {
+        return a.v - b.v;
+      });
+      for (var r = 0; r < byClass[c].length; r++) out[byClass[c][r].slot] = r + 1;
+    }
+    return out;
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var now = Date.now();
@@ -776,6 +803,15 @@
     // pass over the field every frame is cheap, but not free, and the default
     // view never reads it.
     var intervals = view && view.gap === "ahead" ? computeIntervals(full, fmt) : null;
+
+    // The ± column is scored within the class, and from the FULL field — a
+    // capped tower must not change anyone's score. The grid ranking is derived
+    // (LMU publishes no per-class grid); the current ranking prefers the sim's
+    // own classPosition in renderRow and this derived one is its fallback.
+    var classRanks = {
+      grid: rankInClass(full, "gridPosition", fmt),
+      now: rankInClass(full, "position", fmt),
+    };
 
     // The GAP heading says which of the two readings the column holds. Written
     // here rather than in init because the mode is a view setting read from the
@@ -887,7 +923,7 @@
       var purpleSlot = perClass ? clsFastestSlot : fastestSlot;
       var greenSlot = perClass ? -1 : clsFastestSlot;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, purpleSlot, greenSlot, ctx, intervals);
+        renderRow(members[m], fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks);
         seen.add(members[m].slotId);
       }
     }
@@ -1001,7 +1037,7 @@
    * race's fastest lap, or the class's, per the `fastest` setting. `greenSlot`
    * is the class benchmark, and is -1 when the purple already marks it.
    */
-  function renderRow(e, fmt, now, purpleSlot, greenSlot, ctx, intervals) {
+  function renderRow(e, fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -1047,11 +1083,19 @@
     set(row, "posTitle", row.posTd, "title",
       hasClassPos ? "P" + e.position + " overall" : "");
 
-    // Positions gained/lost vs. the grid.
+    // Positions gained/lost vs. the grid, scored IN CLASS: this used to be
+    // `gridPosition - position`, both whole-field numbers, so a Hypercar
+    // lapping through GT3 traffic showed ▲ for cars it was never racing. The
+    // grid slot is the derived class ranking; the current slot is the sim's
+    // own classPosition when it sends one, the derived ranking otherwise.
     var dTxt = "";
     var dState = "flat";
-    if (fmt.has(e.gridPosition) && e.gridPosition > 0 && fmt.has(e.position)) {
-      var d = e.gridPosition - e.position;
+    var gridRank = classRanks ? classRanks.grid[e.slotId] : undefined;
+    var nowRank = hasClassPos
+      ? e.classPosition
+      : classRanks && classRanks.now[e.slotId];
+    if (gridRank !== undefined && nowRank !== undefined && nowRank > 0) {
+      var d = gridRank - nowRank;
       if (d > 0) {
         dTxt = "▲" + d;
         dState = "gain";

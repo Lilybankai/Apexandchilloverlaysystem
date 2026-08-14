@@ -290,6 +290,18 @@ function mount(search) {
       walk(root);
       return out;
     },
+    /** Every ± cell's text, in the order drawn. */
+    deltas: () => {
+      const out = [];
+      const walk = (e) => {
+        if (e.className && /standings__delta/.test(e.className) && !/standings__head/.test(e.className)) {
+          out.push(e.textContent);
+        }
+        for (const c of e.children) walk(c);
+      };
+      walk(root);
+      return out;
+    },
     /** Every GAP cell's text, in the order drawn. */
     gaps: () => {
       const out = [];
@@ -804,6 +816,57 @@ console.log('\nOBS pinning via ?standings=');
   w.push({ limit: 'custom', scope: 'class', top: 1, ahead: 0, behind: 0 });
   w.update(field());
   check('?standings=all pins the full field', w.shown().length === 12, w.shown().length + ' rows');
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nThe ± column scores the class, not the field');
+/* -------------------------------------------------------------------------- */
+
+/* The column used to read `gridPosition - position`, both whole-field numbers,
+   so a GT3 getting past a Hypercar (or a Hypercar lapping through GT3 traffic)
+   showed places gained against cars it was never racing. */
+
+{
+  // The GT3 leader (grid 7) gets ahead of the last Hypercar (grid 6): overall
+  // they are ▲1/▼1, but neither has moved within their own class.
+  const swapAcrossClass = (r) => {
+    if (r.slotId === 6) return { ...r, position: 7 };
+    if (r.slotId === 7) return { ...r, position: 6 };
+    return r;
+  };
+  // The real feed arrives position-sorted, so the swapped fields are re-sorted
+  // the same way rather than handed over in slot order.
+  const byPos = (a, b) => a.position - b.position;
+  const w = mount();
+  w.update(field().map(swapAcrossClass).sort(byPos));
+  check('a cross-class pass moves nobody', w.deltas().every((d) => d === '•'),
+    w.deltas().join(' '));
+
+  // Two GT3 cars actually swap (grids 8 and 9): that IS a place, and it is the
+  // only kind that shows.
+  const swapInClass = (r) => {
+    if (r.slotId === 8) return { ...r, position: 9 };
+    if (r.slotId === 9) return { ...r, position: 8 };
+    return r;
+  };
+  w.update(field().map(swapInClass).sort(byPos));
+  const d = w.deltas();
+  check('an in-class pass is ▲1', d[7] === '▲1', d.join(' '));
+  check('and the car passed is ▼1', d[8] === '▼1', d.join(' '));
+  check('and nobody else moved', d.filter((x) => x === '•').length === 10, d.join(' '));
+}
+
+{
+  // Same field, but the sim provides classPosition — the widget must prefer it
+  // and land on the same reading.
+  const withClassPos = field().map((r) => ({
+    ...r,
+    classPosition: r.carClass === 'GT3' ? r.position - 6 : r.position,
+  }));
+  const w = mount();
+  w.update(withClassPos);
+  check('classPosition-fed rows all read •', w.deltas().every((d) => d === '•'),
+    w.deltas().join(' '));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

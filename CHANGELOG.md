@@ -6,6 +6,18 @@
 
 ## Unreleased
 
+## 0.69.1 — 2026-08-14
+
+### Fixed
+
+- **Positions gained now mean positions in your class.** The ± column on the
+  standings tower counted every car you got past, whatever it was — so a GT3
+  driver working through a Hypercar, or a Hypercar lapping through GT3
+  traffic, showed places gained in a race they weren't in. It now scores you
+  against your own class only: where you started among your classmates
+  against where you are among them now. In a single-class race nothing
+  changes.
+
 ## 0.69.0 — 2026-08-14
 
 ### Fixed
