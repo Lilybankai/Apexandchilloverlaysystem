@@ -154,6 +154,27 @@ function createActions(deps = {}) {
     });
   }
 
+  if (deps.rescanWheels) {
+    define({
+      id: 'wheel.rescan',
+      // What the Scan button on the bindings page does, bindable. On the wheel
+      // that actually lost its connection this can never fire — its presses no
+      // longer arrive — so it earns its keep on a keyboard key, a Stream Deck,
+      // or a second device (button box), and as an instant "kick it" that beats
+      // waiting out the automatic watchdog.
+      label: 'Reconnect wheel (rescan devices)',
+      group: 'Wheel',
+      kind: 'pulse',
+      run: async () => {
+        const names = await deps.rescanWheels();
+        if (!names.length) {
+          return { ok: false, error: 'no controllers found — check USB and base power' };
+        }
+        return { ok: true, notice: `Wheel reconnected — ${names.join(', ')}` };
+      },
+    });
+  }
+
   if (deps.cycleWidgetMode) {
     define({
       id: 'widget.tyres.mode',

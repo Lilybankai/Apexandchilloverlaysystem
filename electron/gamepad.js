@@ -48,6 +48,17 @@
  * persistently unreadable ({@link RESCAN_MIN_POLLS}). The Scan button on the
  * bindings page is the same call made by hand, not the only way back.
  *
+ * The miss counter alone is not enough, though. Several vendors' software
+ * stacks (the ones that publish a *virtual* game controller and feed it from
+ * their own service) tear the device down and recreate it on a USB power event
+ * or a base hiccup — and the stale handle we still hold keeps answering
+ * GetDeviceState with **S_OK and a frozen state**. No read ever fails, so no
+ * miss accumulates, and every binding is silently dead mid-race. The only
+ * signal that survives is that the *instance GUID set* DirectInput enumerates
+ * no longer matches the devices we hold, so the poll loop re-checks that set
+ * every {@link PRESENCE_POLLS} and rescans on any difference. That check is an
+ * EnumDevices pass with no device opens — cheap enough to run forever.
+ *
  * ## Cost
  * Polling only runs while something is actually bound to a wheel button
  * ({@link GamepadReader.setActive}); with no wheel bindings this module opens no
@@ -128,6 +139,13 @@ const POLL_MS = 8;
 const RESCAN_MIN_POLLS = 250;
 const RESCAN_MAX_POLLS = 3750;
 /**
+ * How often the attached-GUID set is compared against the devices held, in
+ * polls (~5 s). This is the watchdog for the failure the miss counter cannot
+ * see: a driver that recreated its device while the old handle still reads
+ * "successfully". See the header note on the self-repairing device list.
+ */
+const PRESENCE_POLLS = 625;
+/**
  * Consecutive failed reads before a device counts as lost, ~1 s. Well past the
  * brief unacquired spell a focus change or a screen lock causes, so those still
  * recover through the cheap re-Acquire in {@link GamepadReader._poll} alone.
@@ -157,6 +175,13 @@ function describeButton(button) {
 class GamepadReader {
   constructor(options = {}) {
     this.onButton = options.onButton || (() => {});
+    /**
+     * Called (with no arguments) whenever an enumeration ends with a different
+     * device list than the last one — a wheel appeared, vanished, or was
+     * recreated by its driver. Lets the UI track unplug/replug live instead of
+     * only learning about it when the Scan button is pressed.
+     */
+    this.onDevicesChanged = options.onDevicesChanged || null;
     this.verbose = options.verbose || false;
     this.koffi = null;
     this.di = null;
@@ -173,6 +198,10 @@ class GamepadReader {
     /** Polls since the last enumeration, and the gap before the next retry. */
     this.pollsSinceScan = 0;
     this.rescanAfter = RESCAN_MIN_POLLS;
+    /** Polls since the attached-GUID set was last verified. */
+    this.pollsSincePresence = 0;
+    /** Fingerprint of the last enumeration result, for onDevicesChanged. */
+    this.lastListKey = '';
   }
 
   /** Whether the reader could be used at all on this host. */
@@ -365,6 +394,7 @@ class GamepadReader {
     const found = [];
     this.problems = [];
     this.pollsSinceScan = 0;
+    this.pollsSincePresence = 0;
     this.enumFn = koffi.register((lpddi) => {
       try {
         const buf = Buffer.from(koffi.decode(lpddi, 0, koffi.array('uint8', DEVINST_SIZE)));
@@ -394,6 +424,52 @@ class GamepadReader {
       const dev = this._openDevice(f);
       if (dev) this.devices.push(dev);
     }
+
+    // Tell the UI when the outcome actually differs from last time, so the
+    // bindings page tracks unplug/replug without anyone pressing Scan. Keyed
+    // on GUIDs as well as ids: a driver that recreated the "same" wheel is a
+    // change worth reporting even though the product string is identical.
+    const key = this.devices.map((d) => `${d.guidHex}|${d.id}`).sort().join(',');
+    if (key !== this.lastListKey) {
+      this.lastListKey = key;
+      if (this.onDevicesChanged) {
+        try {
+          this.onDevicesChanged();
+        } catch (err) {
+          console.error('[gamepad] devices-changed handler failed:', err.message);
+        }
+      }
+    }
+  }
+
+  /**
+   * The instance GUIDs DirectInput enumerates right now, opening nothing.
+   * Cheap by design: this runs unattended every {@link PRESENCE_POLLS}.
+   */
+  _attachedGuids() {
+    const koffi = this.koffi;
+    const guids = [];
+    const cb = koffi.register((lpddi) => {
+      try {
+        // Only dwSize + guidInstance are needed — the first 20 bytes.
+        const buf = Buffer.from(koffi.decode(lpddi, 0, koffi.array('uint8', 20)));
+        guids.push(buf.subarray(4, 20).toString('hex'));
+      } catch {
+        /* skip a device we cannot read */
+      }
+      return 1; // DIENUM_CONTINUE
+    }, koffi.pointer(this.P.EnumCallback));
+    try {
+      this._vcall(this.di, 4, this.P.EnumDevices, DI8DEVCLASS_GAMECTRL, cb, null,
+        DIEDFL_ATTACHEDONLY);
+    } finally {
+      try {
+        koffi.unregister(cb);
+      } catch {
+        /* ignore */
+      }
+    }
+    return guids;
   }
 
   /**
@@ -478,6 +554,9 @@ class GamepadReader {
     return {
       id: found.id || found.product,
       product: found.product,
+      // The instance GUID this handle was opened from; the presence watchdog
+      // compares these against what EnumDevices reports now.
+      guidHex: found.guid.toString('hex'),
       caps,
       dev,
       state,
@@ -486,6 +565,14 @@ class GamepadReader {
       pov: new Array(NUM_POVS).fill(-1),
       /** Consecutive unreadable polls — see LOST_POLLS. */
       misses: 0,
+      /**
+       * The first successful read only primes `prev`/`pov`, emitting nothing.
+       * A freshly (re)opened device starts against an all-zero previous state,
+       * so a button physically held through a rescan would otherwise read as a
+       * brand-new press — and if that button is bound to the rescan action
+       * itself, it would re-trigger on every poll until released.
+       */
+      fresh: true,
     };
   }
 
@@ -519,6 +606,16 @@ class GamepadReader {
       }
       d.misses = 0;
 
+      // Prime and move on — see `fresh` in _openDevice.
+      if (d.fresh) {
+        d.fresh = false;
+        d.state.copy(d.prev);
+        for (let h = 0; h < d.caps.povs; h++) {
+          d.pov[h] = this._povDirection(d.state.readUInt32LE(POVS_OFS + h * 4));
+        }
+        continue;
+      }
+
       for (let i = 0; i < d.caps.buttons; i++) {
         const o = BUTTONS_OFS + i;
         const down = (d.state[o] & 0x80) !== 0;
@@ -538,6 +635,26 @@ class GamepadReader {
       }
 
       d.state.copy(d.prev);
+    }
+
+    // The watchdog for handles that lie: compare what DirectInput would
+    // enumerate now against what we hold. A driver that recreated its device
+    // keeps our stale handle reading "successfully", so this set drifting is
+    // the only failure signal there is. Any difference — device gone, device
+    // added, or the same wheel back under a new instance GUID — forces a
+    // rescan immediately, skipping the empty-list backoff.
+    if (++this.pollsSincePresence >= PRESENCE_POLLS) {
+      this.pollsSincePresence = 0;
+      try {
+        const attached = this._attachedGuids().sort().join(',');
+        const held = this.devices.map((d) => d.guidHex).sort().join(',');
+        if (attached !== held) {
+          stale = true;
+          this.pollsSinceScan = this.rescanAfter; // rescan on this very poll
+        }
+      } catch {
+        /* an enumeration hiccup is not worth killing the poll loop over */
+      }
     }
 
     // After the loop, so the re-enumeration is never replacing `devices` while

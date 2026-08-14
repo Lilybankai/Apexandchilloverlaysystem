@@ -6,6 +6,36 @@
 
 ## Unreleased
 
+## 0.69.0 — 2026-08-14
+
+### Fixed
+
+- **Your wheel can no longer quietly disappear mid-race.** Some wheels'
+  software rebuilds the controller it shows to Windows after a USB power
+  blip, and the app was left listening to the old one — which kept
+  pretending everything was fine while reporting nothing. No error, no
+  sign, just MFD buttons that stopped doing anything until you found the
+  Scan button. The app now checks every few seconds that the wheels it is
+  listening to are still the wheels that exist, and reconnects by itself
+  the moment they differ. You should never need the Scan button mid-race
+  again.
+- **A button held down while the wheel reconnects no longer fires by
+  itself.** Reconnecting used to treat anything already pressed as a
+  brand-new press.
+
+### Added
+
+- **The bindings page finds your wheel on its own.** It scans the moment
+  the page opens instead of waiting for you to press "Scan for wheels",
+  and the readout updates by itself when a wheel appears, vanishes, or
+  comes back.
+- **"Reconnect wheel" is now a bindable action.** Put it on a keyboard
+  key, a Stream Deck button, or a button on a second device (a button
+  box), and it does exactly what the Scan button does — with the result
+  shown as an in-game notice. One honest caveat: a button on the wheel
+  that lost its connection cannot deliver the press, so bind it somewhere
+  that stays alive; the automatic reconnect above is the real safety net.
+
 ## 0.68.2 — 2026-08-14
 
 ### Fixed

@@ -64,6 +64,16 @@ contextBridge.exposeInMainWorld('apex', {
   wheelCapture: () => ipcRenderer.invoke('wheel:capture'),
   /** Bind one direction of an action to a wheel button; null binding clears. */
   wheelBind: (actionId, dir, binding) => ipcRenderer.invoke('wheel:bind', actionId, dir, binding),
+  /**
+   * Subscribe to wheel-list pushes — fired when the reader's own re-scan finds
+   * a device appeared, vanished, or was recreated by its driver. Same payload
+   * as wheelDevices(). Returns an unsubscribe function.
+   */
+  onWheelDevices: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('wheel:devices-changed', listener);
+    return () => ipcRenderer.removeListener('wheel:devices-changed', listener);
+  },
 
   /* ---- In-game overlay layer ---- */
 

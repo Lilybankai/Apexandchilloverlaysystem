@@ -1012,6 +1012,22 @@ function pushLapSync(syncState) {
   }
 }
 
+/**
+ * Push the current wheel list so the bindings page tracks unplug/replug live.
+ * Fired by the reader whenever an enumeration ends differently from the last
+ * one — the same payload the 'wheel:devices' handler answers with.
+ */
+function pushWheelDevices() {
+  if (mainWindow && !mainWindow.isDestroyed() && gamepad) {
+    mainWindow.webContents.send('wheel:devices-changed', {
+      available: gamepad.available,
+      error: gamepad.failed,
+      devices: gamepad.list(),
+      problems: gamepad.problems,
+    });
+  }
+}
+
 /** Account state plus the remembered email the sign-in screen prefills with. */
 function authStateForUi() {
   return { ...authService.stateForUi(), lastEmail: loadSettings().lastAuthEmail || '' };
@@ -1178,6 +1194,20 @@ function getActions() {
           overlayWin.webContents.send('ingame:layout-reset');
         }
       },
+      /**
+       * Force a wheel re-enumeration and answer with the product names found.
+       * Deferred one macrotask on purpose: a wheel-bound press arrives from
+       * inside the reader's own poll loop, and rescanning there would release
+       * the very device array being iterated.
+       */
+      rescanWheels: async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        const g = getGamepad();
+        g.rescan();
+        syncGamepad();
+        pushWheelDevices();
+        return g.list().map((d) => d.product);
+      },
       /** Advance a widget to its next display mode and push it to the overlays. */
       cycleWidgetMode: (widgetId) => {
         const modes = WIDGET_MODES[widgetId];
@@ -1211,6 +1241,7 @@ function getGamepad() {
     gamepad = new GamepadReader({
       verbose: false,
       onButton: (device, button, down) => onWheelButton(device, button, down),
+      onDevicesChanged: () => pushWheelDevices(),
     });
   }
   return gamepad;

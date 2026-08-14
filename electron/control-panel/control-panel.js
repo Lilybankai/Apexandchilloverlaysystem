@@ -2591,9 +2591,7 @@
   const wheelDevicesScan = document.getElementById('wheel-devices-scan');
   const wheelDevicesOut = document.getElementById('wheel-devices-out');
 
-  async function renderWheelDevices() {
-    wheelDevicesOut.textContent = ' scanning…';
-    const res = await window.apex.wheelDevices();
+  function showWheelDevices(res) {
     if (!res || res.available === false) {
       wheelDevicesOut.textContent = ` controller input unavailable: ${
         (res && res.error) || 'unknown reason'}`;
@@ -2610,7 +2608,18 @@
       : ' no controllers attached';
   }
 
+  async function renderWheelDevices() {
+    wheelDevicesOut.textContent = ' scanning…';
+    showWheelDevices(await window.apex.wheelDevices());
+  }
+
   wheelDevicesScan.addEventListener('click', () => void renderWheelDevices());
+  // Scan on load, so the wheel is listed the moment the page is open rather
+  // than only after the button is pressed…
+  void renderWheelDevices();
+  // …and track the reader's own re-scans, so a wheel whose driver dropped and
+  // recreated it mid-session updates this line without anyone clicking Scan.
+  window.apex.onWheelDevices((res) => showWheelDevices(res));
 
   // --- LMU's own controls file ----------------------------------------------
   /*
