@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## 0.70.1 — 2026-08-14
+
+### Fixed
+
+- **The game no longer freezes for a moment every minute.** On some PCs the
+  sim takes just over a second and a half to hand over its installed-car list
+  — the payload the standings widget reads once to put a manufacturer badge on
+  each row. The overlay's patience ran out at exactly a second and a half, so
+  on those machines the answer never arrived, and the overlay asked again
+  every 60 seconds — and every time it asked, the sim visibly hung while it
+  built the reply. The overlay now waits as long as that one request needs,
+  keeps the answer, and never asks twice. Cars the sim's own list cannot name
+  (some custom liveries) are remembered as unknowable instead of being asked
+  about again.
+- **A stutter in the sim can no longer snowball.** When the game briefly stops
+  answering (loading into a session does this for a few seconds), the overlay
+  used to keep sending its regular requests anyway, piling dozens of them onto
+  the game right when it was busiest and stretching the stall out. Each poll
+  now waits for its previous request to come back before sending the next, so
+  a busy moment in the sim stays exactly as long as the sim needed.
+
 ## 0.70.0 — 2026-08-14
 
 ### Changed
