@@ -6,6 +6,81 @@
 
 ## Unreleased
 
+## 0.70.0 — 2026-08-14
+
+### Changed
+
+- **The Apex Overlay System is now a subscription — £4.99 a month, with the
+  first 7 days free.** Building this has become a real piece of work and
+  keeping it running costs real money, so from this release a new account
+  starts a free trial, and the app asks for a card up front so nothing breaks
+  on day 8. Cancel any time before then and you pay nothing. Everything is
+  handled by Stripe on Stripe's own pages — the app never sees your card.
+- **If you are already using the app, nothing changes for you.** Every account
+  that existed before this release has been given free access permanently.
+  You will not be asked for a card, you will not be charged, and no overlay
+  you use today stops working. If you are in a league with us, that is what
+  free access is for.
+- **Settings now has a Subscription card.** It shows how your account is
+  covered — free access, trial, or paying — and takes you to Stripe's billing
+  page to change a card, see invoices, or cancel. It only appears once you are
+  signed in.
+- **The app needs to be signed in to run.** The subscription is what unlocks
+  it, and the app cannot tell whether you are entitled without knowing who you
+  are. If your internet drops, a confirmed subscription keeps working offline
+  for three days, so a race weekend away from home is not a problem.
+
+### Added
+
+- **League codes.** If you race with Apex & Chill, we can hand you a code that
+  turns free access on for your account. Redeem it on the subscribe screen —
+  there is a box for it under the payment button.
+
+### Fixed
+
+- **The app could close itself when it shut a chat connection down.** If a
+  Twitch chat socket was still connecting at the moment the app tried to close
+  it, the error had nowhere to go and took the whole app with it. It has
+  probably always been able to happen; it started happening often enough to
+  notice now that losing access stops the server. Both halves are fixed: the
+  error is caught, and a half-open connection is cut rather than asked
+  politely.
+
+### For league staff
+
+- **The Admin tab is now four sections instead of one very long page.**
+  Overview, Members, Billing and Feedback, behind the same segmented control
+  the Setups page uses, and it remembers where you were. The tab was answering
+  four unrelated questions stacked on top of each other; now each has a home.
+- **A Billing section, with the numbers that decide whether any of this
+  works.** How many people ride free, how many are on trial, how many pay,
+  what that is worth a month, and twelve months of revenue and churn.
+  Revenue counts live subscriptions only — a trial is worth nothing until it
+  converts, and a failed payment is money that has not arrived — because a
+  flattering number is a useless one. A month with no subscribers to lose is
+  left blank on the churn chart rather than drawn as 0%.
+- **Free access is now managed from the driver's own row.** Every account in
+  the Drivers list carries a control showing how it is covered, and setting
+  someone back to Paying is how you end free access when they leave the
+  community. Accounts with a live Stripe subscription show their status as
+  text instead — comping someone who is already paying would leave them
+  charged and free, and cancelling a card is Stripe's job, not this panel's.
+  The separate list of comped accounts has gone: it said less than the roster
+  does and disagreed with it the moment either changed.
+- **The version list no longer runs off the bottom of the card.** Sixty-odd
+  builds have shipped and every beta earned a row. It now shows the top six
+  with a "Show all" toggle, and says how many builds and drivers are folded
+  away rather than quietly dropping them.
+- **An admin can no longer lock themselves out of the Admin tab.** The tab is
+  where free access is granted, and it sat behind the subscription gate — so
+  an admin whose own access lapsed could not reach the one tool that would
+  restore it. Being an admin is now enough on its own.
+- Ships as `supabase/migrations/0007_billing.sql` and
+  `0008_billing_admin.sql`, plus four Supabase edge functions. The revenue and
+  churn charts are computed from each subscription's lifetime rather than from
+  a nightly snapshot, so there is no job to keep running and no history to
+  lose.
+
 ## 0.69.1 — 2026-08-14
 
 ### Fixed
