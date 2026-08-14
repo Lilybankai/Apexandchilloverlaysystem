@@ -280,6 +280,20 @@ interface RestRaceCar {
  * a new session with cars we have not seen — and never more often than this.
  */
 const CAR_LIST_RETRY_MS = 60_000;
+/** Ceiling for the failure backoff on that fetch (ms). */
+const CAR_LIST_RETRY_MAX_MS = 600_000;
+/**
+ * Per-request timeout for `/rest/race/car` alone (ms).
+ *
+ * The game serializes this ~450 KB response INSIDE its render loop — the sim
+ * visibly hangs for however long it takes. Measured live at 1.66 s on a machine
+ * where the shared {@link HTTP_TIMEOUT_MS} of 1.5 s therefore aborted it every
+ * time: the list never arrived, the unresolved carId stayed unresolved, and the
+ * retry re-triggered the same in-game stall every {@link CAR_LIST_RETRY_MS} for
+ * the whole session. A patient timeout lets the one big fetch actually land and
+ * be cached, which is what ends the loop.
+ */
+const CAR_LIST_TIMEOUT_MS = 15_000;
 
 /**
  * One connected player from `/rest/multiplayer/teams` — the `drivers` map is
@@ -615,6 +629,15 @@ export class LmuRestProvider implements TelemetryProvider {
   private lastCarListAt = 0;
   /** Guards against overlapping car-list fetches while one is in flight. */
   private carListInFlight = false;
+  /** Current retry gap for the car list — doubles on failure, resets on success. */
+  private carListRetryMs = CAR_LIST_RETRY_MS;
+  /**
+   * carIds a SUCCESSFUL car-list load still could not name — custom cars absent
+   * from the game's own list. Without remembering them, one such car in the
+   * field re-triggers the ~450 KB fetch (and the in-game stall it causes) every
+   * retry window for the entire session.
+   */
+  private readonly unresolvableCarIds = new Set<string>();
   /**
    * Normalized player name → profile badge, from `/rest/multiplayer/teams`.
    * Only drivers with a real badge are kept (`"none"` is the common case and
@@ -779,7 +802,19 @@ export class LmuRestProvider implements TelemetryProvider {
 
   /* ----------------------------- HTTP polling ---------------------------- */
 
+  /**
+   * Single-flight guard for {@link refresh}. The 150 ms interval fires whether
+   * or not the last tick finished; when the game stalls its session endpoints
+   * (session loads do this for seconds at a time), unguarded ticks pile tens of
+   * concurrent requests onto the game's webserver — a convoy that extends the
+   * very stall it is stuck behind. One outstanding tick is the whole point of
+   * a poll; a skipped tick costs 150 ms of freshness, nothing more.
+   */
+  private refreshInFlight = false;
+
   private async refresh(): Promise<void> {
+    if (this.refreshInFlight) return;
+    this.refreshInFlight = true;
     try {
       const [standings, session, gameState] = await Promise.all([
         this.getJson<RestStanding[]>('/rest/watch/standings'),
@@ -801,6 +836,8 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch (err) {
       // Leave the cache in place; the staleness check flips us to the simulator.
       if (this.verbose) console.error('[lmu] refresh failed:', (err as Error).message);
+    } finally {
+      this.refreshInFlight = false;
     }
   }
 
@@ -817,13 +854,15 @@ export class LmuRestProvider implements TelemetryProvider {
    * which would otherwise re-fetch 450 KB every 150 ms for the whole session.
    */
   private maybeRefreshCarList(standings: RestStanding[]): void {
-    const unresolved = standings.some((c) => c.carId && !this.manufacturerById.has(c.carId));
-    if (!unresolved || this.carListInFlight) return;
+    const unresolved = standings.filter(
+      (c) => c.carId && !this.manufacturerById.has(c.carId) && !this.unresolvableCarIds.has(c.carId),
+    );
+    if (unresolved.length === 0 || this.carListInFlight) return;
     const now = Date.now();
-    if (now - this.lastCarListAt < CAR_LIST_RETRY_MS) return;
+    if (now - this.lastCarListAt < this.carListRetryMs) return;
     this.lastCarListAt = now;
     this.carListInFlight = true;
-    this.getJson<RestRaceCar[]>('/rest/race/car')
+    this.getJson<RestRaceCar[]>('/rest/race/car', CAR_LIST_TIMEOUT_MS)
       .then((cars) => {
         if (!Array.isArray(cars)) return;
         for (const car of cars) {
@@ -831,11 +870,19 @@ export class LmuRestProvider implements TelemetryProvider {
             this.manufacturerById.set(car.id, car.manufacturer);
           }
         }
+        // Ids the fresh list still cannot name are custom cars the game does
+        // not list at all. Remember them so they stop counting as "unresolved"
+        // — they are what would otherwise re-arm this fetch forever.
+        for (const c of unresolved) {
+          if (c.carId && !this.manufacturerById.has(c.carId)) this.unresolvableCarIds.add(c.carId);
+        }
+        this.carListRetryMs = CAR_LIST_RETRY_MS;
         if (this.verbose) {
           console.log(`[lmu] car list loaded — ${this.manufacturerById.size} manufacturers mapped`);
         }
       })
       .catch((err) => {
+        this.carListRetryMs = Math.min(this.carListRetryMs * 2, CAR_LIST_RETRY_MAX_MS);
         if (this.verbose) console.error('[lmu] car list fetch failed:', (err as Error).message);
       })
       .finally(() => {
@@ -931,13 +978,22 @@ export class LmuRestProvider implements TelemetryProvider {
    * menu exists on track when the repair screen may not), so sharing a `try`
    * would let one screen's absence silently drop the others.
    */
+  /** Single-flight guard — same convoy reasoning as {@link refreshInFlight}. */
+  private pitMenuInFlight = false;
+
   private async refreshPitMenu(): Promise<void> {
-    const pit = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu').catch(
-      () => null,
-    );
-    if (Array.isArray(pit)) {
-      this.pitMenuRaw = pit;
-      this.lastMfdOkAt = Date.now();
+    if (this.pitMenuInFlight) return;
+    this.pitMenuInFlight = true;
+    try {
+      const pit = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu').catch(
+        () => null,
+      );
+      if (Array.isArray(pit)) {
+        this.pitMenuRaw = pit;
+        this.lastMfdOkAt = Date.now();
+      }
+    } finally {
+      this.pitMenuInFlight = false;
     }
   }
 
@@ -1053,10 +1109,10 @@ export class LmuRestProvider implements TelemetryProvider {
     }
   }
 
-  private getJson<T>(path: string): Promise<T> {
+  private getJson<T>(path: string, timeoutMs = HTTP_TIMEOUT_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const req = http.get(
-        { host: '127.0.0.1', port: this.port, path, timeout: HTTP_TIMEOUT_MS },
+        { host: '127.0.0.1', port: this.port, path, timeout: timeoutMs },
         (res) => {
           if (res.statusCode !== 200) {
             res.resume();
