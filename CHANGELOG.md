@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+## 0.71.0 — 2026-08-15
+
+### Added
+
+- **Spectators now get the focused car's cockpit telemetry.** Watching a race —
+  a team event, a mate's stint, directing a broadcast — the speedo cluster and
+  the input traces used to sit empty, because gear, revs and pedals only came
+  from the car driven on this PC. LMU actually publishes that telemetry for
+  every car in the field, so when nobody is driving here the overlays now
+  follow whichever car has the broadcast focus: gear, revs, the rev limit and
+  speed on the cluster, and live throttle, brake and steering — including
+  TC/ABS intervention — on the traces. Switch the camera to another car and
+  the overlays switch with it. Proven live mid-race on a spectated LMP2 before
+  it shipped.
+- **Only what is real is shown while spectating.** The sim does not publish
+  tyres, fuel level, temperatures or damage for a car you are not driving, so
+  those widgets show "—" rather than a number nobody measured. Driving is
+  untouched: your own car's telemetry path is exactly what it was.
+
 ## 0.70.1 — 2026-08-14
 
 ### Fixed

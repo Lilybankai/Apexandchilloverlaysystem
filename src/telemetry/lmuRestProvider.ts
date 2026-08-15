@@ -544,6 +544,14 @@ export class LmuRestProvider implements TelemetryProvider {
   private lastLocal: LocalCarPhysics | null = null;
   private lastLocalAt = 0;
   /**
+   * Same single-read bridge for the SPECTATED car ({@link readSpectatedCar}),
+   * keyed to the slot it was read from so a broadcast-focus switch is never
+   * papered over with the previous car's pedals.
+   */
+  private lastSpectated: LocalCarPhysics | null = null;
+  private lastSpectatedAt = 0;
+  private lastSpectatedSlot = -1;
+  /**
    * Whether the car currently being driven has a hybrid system at all — latched
    * `true` the first time it publishes a non-zero state of charge, and re-armed
    * by {@link hybridLatchCar} whenever the car changes.
@@ -1210,6 +1218,15 @@ export class LmuRestProvider implements TelemetryProvider {
       local = this.lastLocal;
     }
 
+    // Spectator fallback: no car is being driven on this PC, but the broadcast-
+    // focused car's telemetry record is still in shared memory with live gear,
+    // revs and pedals (proven against a remote car in a live team race — see
+    // {@link readSpectatedCar}). It feeds ONLY the player-block build below;
+    // fuel, radar, delta, MFD and track limits keep their driven-car sources,
+    // so the driving path is untouched by construction.
+    const displayLocal =
+      local ?? (playerCar === undefined && focus ? this.readSpectatedCar(focus.slotID) : null);
+
     // One scoring read per poll, shared by everything that needs it. It used to
     // live inside buildTrackLimits, but the PB reference key (below) needs the
     // car model from the same record and is computed earlier in the frame, and
@@ -1365,7 +1382,7 @@ export class LmuRestProvider implements TelemetryProvider {
     const player = this.buildPlayer(
       focus,
       standings,
-      local,
+      displayLocal,
       deltaSec,
       paceDeltas,
       trackLimits,
@@ -2337,6 +2354,65 @@ export class LmuRestProvider implements TelemetryProvider {
    * not publish physics channels for a car that is only being spectated (they
    * exist in shared memory only for a car driven on this PC).
    */
+  /**
+   * Physics for the broadcast-focused car when NOBODY is driving on this PC —
+   * the spectator path. LMU publishes a telemetry record for every car in the
+   * field, and a live probe against a remote car (`scripts/
+   * probe-lmu-spectator.js`, Spa team race 2026-08-15) settled which channels
+   * the sim actually fills for cars it does not simulate locally:
+   *
+   *   LIVE  gear, rpm, maxRpm, speed, unfiltered throttle/brake/steering,
+   *         filtered throttle/brake (so the TC/ABS intervention pair works).
+   *   DEAD  water/oil temps, clutch, the whole wheel/tyre block (2 of 65
+   *         floats per wheel moving), fuel (frozen litres), limiter, hybrid,
+   *         aid settings, impact events.
+   *
+   * So the record is returned with every dead channel forced to its explicit
+   * "unknown" shape rather than left as frozen garbage: a spectator seeing no
+   * fuel gauge is being told the truth; one seeing 37.5 L forever is not. The
+   * driven-car path never comes through here and keeps its richer channels.
+   */
+  private readSpectatedCar(slotId: number): LocalCarPhysics | null {
+    const raw = this.localCar.read(slotId);
+    if (!raw) {
+      // Bridge a single torn read, but never across a focus switch.
+      return this.lastSpectated !== null &&
+        this.lastSpectatedSlot === slotId &&
+        Date.now() - this.lastSpectatedAt < LOCAL_HOLD_MS
+        ? this.lastSpectated
+        : null;
+    }
+    const unknown4 = (): [number, number, number, number] => [
+      UNKNOWN_VALUE,
+      UNKNOWN_VALUE,
+      UNKNOWN_VALUE,
+      UNKNOWN_VALUE,
+    ];
+    const car: LocalCarPhysics = {
+      ...raw,
+      clutch: 0,
+      rearBrakeBias: UNKNOWN_VALUE,
+      fuelLiters: UNKNOWN_VALUE,
+      capacityLiters: UNKNOWN_VALUE,
+      limiterOn: null,
+      batteryCharge: UNKNOWN_VALUE,
+      motorTorqueNm: UNKNOWN_VALUE,
+      tyreTempsC: unknown4(),
+      tyreHudTempsC: unknown4(),
+      tyreCoreC: unknown4(),
+      tyreSurfaceBandsC: [null, null, null, null],
+      tyreLinerBandsC: [null, null, null, null],
+      motion: null,
+      rawCorners: null,
+      chassis: null,
+      aidSettings: null,
+    };
+    this.lastSpectated = car;
+    this.lastSpectatedAt = Date.now();
+    this.lastSpectatedSlot = slotId;
+    return car;
+  }
+
   private buildPlayer(
     focus: RestStanding | undefined,
     standings: StandingEntry[],
