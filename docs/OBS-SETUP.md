@@ -49,8 +49,8 @@ shows data.
    | Field | Value |
    |---|---|
    | **URL** | `http://127.0.0.1:17080/` (match the port from the launcher) |
-   | **Width** | `1920` |
-   | **Height** | `1080` |
+   | **Width** | `1920` (**`3840` if you stream or record at 4K** — see below) |
+   | **Height** | `1080` (**`2160` if you stream or record at 4K**) |
    | **Use custom frame rate** | ✅ enabled |
    | **FPS** | `30` (matches the telemetry broadcast rate) |
    | **Shutdown source when not visible** | ✅ recommended (saves resources) |
@@ -68,6 +68,25 @@ shows data.
 The overlay canvas is a fixed **1920×1080** design that scales to the source
 size, so the six widgets keep their positions at any output resolution. If you
 stream at 1080p, size the source to fill the canvas exactly.
+
+### Match the source size to your output resolution
+
+The design canvas is 1920×1080, but the **Browser Source size is what the page
+is actually rendered at** — set it to your output resolution, not to the design
+size. A 1920×1080 source on a 4K canvas hands OBS a 1080p image to stretch to
+2160p, and no amount of bitrate recovers detail that was never rendered. It is
+the one setting that decides whether the overlay is sharp on a big screen.
+
+| Streaming/recording at | Width | Height |
+|---|---|---|
+| 1080p | `1920` | `1080` |
+| 1440p | `2560` | `1440` |
+| 4K | `3840` | `2160` |
+
+Nothing else changes: the page scales the 1920×1080 design to whatever size the
+source is, so every widget keeps its position and proportions, and the text and
+the drawn widgets (track map, radar, pedal traces) are both rendered at the full
+source resolution.
 
 ---
 

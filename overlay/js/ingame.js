@@ -287,8 +287,37 @@
     el.style.transform = l.scale === 1 ? "" : "scale(" + l.scale + ")";
   }
 
+  /**
+   * Tell the canvas widgets their on-screen size may have changed.
+   *
+   * `transform: scale()` is not a layout change, so neither ResizeObserver nor
+   * the window's own resize event fires when a widget is scaled — but the scale
+   * is exactly what decides how many pixels a canvas needs (see
+   * overlay/js/raster.js). Without this a widget scaled up in edit mode would
+   * keep its old bitmap until something else happened to disturb it: about half
+   * a second for the widgets with a frame-count backstop, and indefinitely for
+   * the track map, which has no such backstop and would simply stay soft for the
+   * rest of the session.
+   *
+   * A plain resize event because every canvas widget already listens for one —
+   * this needs no new contract, and the widgets that do not draw to a canvas
+   * ignore it. Deliberately NOT called from applyItem(): that runs on every
+   * pointermove of a drag, and the track map reallocates its bitmap on each
+   * call. Fired where a scale SETTLES instead — the drag release, the
+   * double-click reset, and a bulk re-apply.
+   */
+  function nudgeCanvasSizes() {
+    // Guarded for the same reason everything else in this file is: it runs on
+    // the layer drawn over a live race, and a missing constructor here would
+    // throw out of applyAll() and leave the whole layout unapplied. A widget
+    // that stays soft is a blemish; a widget that never gets placed is not.
+    if (typeof Event !== "function") return;
+    window.dispatchEvent(new Event("resize"));
+  }
+
   function applyAll() {
     for (var i = 0; i < items.length; i++) applyItem(items[i]);
+    nudgeCanvasSizes();
   }
 
   /**
@@ -595,6 +624,9 @@
     // shortens it, and the release brings the new bottom back into view.
     if (wasResize) ensureOnScreen();
     else if (movedLayout) rescueOffScreen(movedEl, movedLayout);
+    // The scale has settled: let the canvases re-cut their bitmaps to the size
+    // the widget actually ended up at.
+    if (wasResize) nudgeCanvasSizes();
     saveLayout();
   }
 
@@ -616,6 +648,7 @@
     else if (mode === "height") delete l.h;
     else l.scale = 1;
     applyItem(item);
+    nudgeCanvasSizes();
     saveLayout();
     ev.preventDefault();
   }

@@ -1137,7 +1137,7 @@
     var w = canvas.clientWidth || 320;
     var provisional = Math.round(w * 0.5);
     var h = provisional;
-    var d = window.devicePixelRatio || 1;
+    var d = window.ApexRaster.backingScale(canvas);
 
     if (w !== cssW || force) {
       cssW = w; cssH = provisional; dpr = d;

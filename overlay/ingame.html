@@ -29,6 +29,11 @@
   <!-- Global widget-background opacity. Here it is push-driven by the app over
        the apexIngame bridge (no polling in the layer that draws over the sim). -->
   <script src="js/appearance.js"></script>
+  <!-- Canvas backing-store scale (see js/raster.js). Synchronous so it is there
+       for the deferred widget scripts, which size their bitmaps at first paint.
+       This is the layer where it matters most: every widget here can be scaled
+       up to 3x by the driver, and a canvas does not gain pixels from that. -->
+  <script src="js/raster.js"></script>
 </head>
 <body class="ingame">
   <!-- Screen outlines, drawn by js/ingame.js in edit mode only, and only when
