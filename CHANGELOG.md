@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.71.1 — 2026-08-16
+
 ### Fixed
 
 - **The drawn widgets are now sharp on big screens and 4K streams.** The track
