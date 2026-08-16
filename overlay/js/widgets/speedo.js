@@ -595,7 +595,7 @@
     var w = canvas.clientWidth || 0;
     var h = canvas.clientHeight || 0;
     if (!w || !h) return;
-    var d = window.devicePixelRatio || 1;
+    var d = window.ApexRaster.backingScale(canvas);
     var bw = Math.round(w * d);
     var bh = Math.round(h * d);
     if (bw === canvas.width && bh === canvas.height) return;

@@ -6,6 +6,30 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The drawn widgets are now sharp on big screens and 4K streams.** The track
+  map, radar, pedal traces, motion box and speedo cluster are drawn rather than
+  laid out in text, and they were being drawn at one size and then magnified to
+  another — so on a 4K TV, or a stream watched back on one, they looked soft and
+  slightly pixelated while the text beside them stayed crisp. It never showed up
+  on the PC the overlay was set up on, because at normal size there is nothing
+  to magnify. They are now drawn at the size they are actually displayed at,
+  wherever that is: scaled up in game, on a high-DPI screen, or in a 4K OBS
+  source. Nothing to turn on, and no change to how anything is laid out.
+- **Scaling a widget in game re-sharpens it straight away.** Dragging a corner
+  to make a widget bigger left the drawn ones on their old, now-magnified
+  artwork — about half a second behind for most, and permanently for the track
+  map. They now re-cut their artwork as soon as the handle is released.
+
+### Changed
+
+- **The OBS guide now sets the Browser Source to your output resolution.** It
+  had always said 1920×1080, which on a 4K stream hands OBS a 1080p image to
+  stretch to 2160p — detail no bitrate can put back. The guide now gives the
+  size to use for 1080p, 1440p and 4K, and explains why it is the setting that
+  decides whether the overlay is sharp on a big screen.
+
 ## 0.71.0 — 2026-08-15
 
 ### Added

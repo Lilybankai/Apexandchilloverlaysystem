@@ -260,6 +260,20 @@ browser. There is no database, no message broker, no cloud round-trip.
   by the in-game layer for a whole stint, where a cue costs two Web Audio nodes
   that are created, played and thrown away. On/off and volume ride the
   appearance channel with the other operator settings.
+- **`js/raster.js`** — how many real pixels a `<canvas>` widget is drawn with.
+  Both rendering paths put the widgets inside a CSS transform: the OBS pages
+  scale a fixed 1920×1080 `.stage` to the Browser Source size, and the in-game
+  layer scales each widget on its own (up to 3×). Chromium re-rasterises text
+  and borders under a transform, so the CSS widgets are sharp at any scale — a
+  canvas is not, because its bitmap is whatever was allocated and the transform
+  magnifies it like a photo. Sizing that bitmap from `devicePixelRatio` alone
+  therefore drew the track map, radar and pedal traces at one size and displayed
+  them at another, which is invisible at scale 1 and obvious on a 4K screen.
+  `getBoundingClientRect()` reports the post-transform box, so dividing it by
+  the layout box recovers the accumulated scale — one helper covering both paths
+  without either having to know about the other. Loaded synchronously in
+  `<head>`, ahead of the deferred widget scripts that size bitmaps at first
+  paint. Pinned by `scripts/test-raster.js`.
 - **`js/appearance.js`** — applies the operator's global widget-background
   setting as the `--panel-alpha` token every surface colour in `theme.css`
   resolves through. Loaded synchronously in `<head>` so the value is in place

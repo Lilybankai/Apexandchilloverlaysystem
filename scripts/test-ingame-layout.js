@@ -261,7 +261,7 @@ function loadLayer({ screens, saved, ids }) {
   };
 
   const listeners = {};
-  const state = { savedLayout: null, edit: null, screensCb: null };
+  const state = { savedLayout: null, edit: null, screensCb: null, resizes: 0 };
 
   const doc = {
     body: makeElement('body'),
@@ -297,7 +297,22 @@ function loadLayer({ screens, saved, ids }) {
     // Deliberately NOT the desktop size: anything still reading innerWidth
     // instead of the geometry would be laying out against one screen, which is
     // the bug. 1920 makes such a slip show up as a wrong number, not a lucky one.
-    window: { innerWidth: 1920, innerHeight: 1080, apexIngame: bridge },
+    // dispatchEvent/Event are how the layer tells the canvas widgets to
+    // re-measure after a scale change (nudgeCanvasSizes → overlay/js/raster.js).
+    // A transform is not a layout change, so nothing else would tell them.
+    window: {
+      innerWidth: 1920,
+      innerHeight: 1080,
+      apexIngame: bridge,
+      dispatchEvent: (ev) => {
+        if (ev && ev.type === 'resize') state.resizes++;
+      },
+    },
+    Event: class {
+      constructor(type) {
+        this.type = type;
+      }
+    },
     setTimeout,
     clearTimeout,
     Promise,
@@ -531,6 +546,15 @@ async function run() {
     const l = layer.state.savedLayout.standings;
     eq('left screen: widening from the left edge works', l.w, 500);
     eq('left screen: the right edge held still', l.x + l.w, -1000 + 300);
+    // Resizing changes how big the widget is DRAWN, and a canvas gets no more
+    // pixels from a transform on its own — so the release has to tell the
+    // widgets to re-cut their bitmaps, or the drawn ones stay magnified. The
+    // track map has no frame-count backstop and would stay soft for the session.
+    check(
+      'resizing nudges the canvas widgets to re-measure',
+      layer.state.resizes > 0,
+      layer.state.resizes + ' resize events',
+    );
   }
 
   console.log('\ningame.js — screen outlines');

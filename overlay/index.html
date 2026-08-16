@@ -21,6 +21,9 @@
   <!-- Global widget-background opacity (control panel / ?bg=). Synchronous and
        in <head> so the operator's setting is applied before the first paint. -->
   <script src="js/appearance.js"></script>
+  <!-- Canvas backing-store scale (see js/raster.js). Synchronous so it is there
+       for the deferred widget scripts, which size their bitmaps at first paint. -->
+  <script src="js/raster.js"></script>
 </head>
 <body>
   <!-- Fixed 1080p design canvas; JS scales it to fit any source/window size. -->
