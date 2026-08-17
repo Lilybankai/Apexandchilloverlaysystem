@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## 0.75.2 — 2026-08-17
+
+### Fixed
+
+- **StreamBot rows no longer vanish while you edit them.** Adding a command and
+  clicking Add again could eat the first one, deleting a row could clear the
+  whole list, and edits made moments after a save could silently not stick —
+  across Commands, Timers, Alerts and Goals alike. The cause was the panel
+  swapping its working copy for the app's saved echo mid-edit: half-typed rows
+  (which the validator rightly holds back until complete) disappeared with the
+  swap, and the inputs on screen kept writing into the discarded copy. The
+  panel now merges instead of swapping — a section only adopts the saved state
+  once it has nothing unsaved — each section saves on its own timer (a settings
+  change no longer cancels a pending command save), and rows keep a stable
+  identity from the moment they are created.
+
 ## 0.75.1 — 2026-08-17
 
 ### Changed

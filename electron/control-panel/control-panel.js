@@ -4098,18 +4098,63 @@
   /** The last link state, for the bot's status line only. */
   let botLinks = null;
 
-  const commitBotSection = debounce((section) => {
-    if (!bot || !window.apex.streamBot) return;
-    void window.apex.streamBot.update(section, section === 'settings'
-      ? { enabled: bot.enabled, platforms: bot.platforms, youtubeBudget: bot.youtubeBudget }
-      : bot[section]);
-  }, 500);
+  /**
+   * One debounce timer PER section, plus an in-flight flag. A shared timer
+   * (the plain debounce() above) silently cancels a pending commands commit
+   * when a settings commit follows inside the window — which is "my command
+   * never saved" from the operator's chair.
+   */
+  const botCommitTimers = new Map();
+  const botCommitPending = new Set();
+
+  function commitBotSection(section) {
+    if (botCommitTimers.has(section)) clearTimeout(botCommitTimers.get(section));
+    botCommitPending.add(section);
+    botCommitTimers.set(
+      section,
+      setTimeout(async () => {
+        botCommitTimers.delete(section);
+        if (!bot || !window.apex.streamBot) {
+          botCommitPending.delete(section);
+          return;
+        }
+        try {
+          await window.apex.streamBot.update(section, section === 'settings'
+            ? { enabled: bot.enabled, platforms: bot.platforms, youtubeBudget: bot.youtubeBudget }
+            : bot[section]);
+        } finally {
+          // Only mark clean if no NEW edit re-armed the timer while in flight.
+          if (!botCommitTimers.has(section)) botCommitPending.delete(section);
+        }
+      }, 500),
+    );
+  }
 
   /** Whether the operator is typing somewhere a re-render would destroy. */
   function botEditing() {
     const active = document.activeElement;
     if (!active) return false;
     return [sbCmdList, sbTimerList, sbAlertList, sbGoalList].some((el) => el && el.contains(active));
+  }
+
+  /** A fresh row id, minted client-side so it stays stable across saves. */
+  function sbNewId() {
+    return `p${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  }
+
+  /**
+   * Whether a section's local rows would survive the main process's validator
+   * unchanged. A half-typed row (no name yet, no response yet) is dropped by
+   * the validator, so while one exists the echoed state is MISSING it — a
+   * "clean save" echo and a "your row was thrown away" echo look identical,
+   * and only this predicate tells them apart.
+   */
+  function botSectionComplete(section) {
+    if (!bot) return true;
+    if (section === 'commands') return bot.commands.every((c) => c.name && c.response);
+    if (section === 'timers') return bot.timers.every((t) => t.text);
+    if (section === 'goals') return bot.goals.every((g) => g.label);
+    return true;
   }
 
   /* ---- tiny DOM builders (textContent-safe, no markup from data) ---------- */
@@ -4372,25 +4417,46 @@
     }
   }
 
+  /** The list sections and their renderers, for the per-section merge below. */
+  const BOT_SECTIONS = [
+    ['commands', renderCommands],
+    ['timers', renderTimers],
+    ['alerts', renderAlerts],
+    ['goals', renderGoals],
+  ];
+
   function renderBotState(state) {
     if (!state) return;
-    bot = state;
-    if (sbEnabled) sbEnabled.checked = !!state.enabled;
-    if (sbPlatformTwitch) sbPlatformTwitch.checked = !!state.platforms.twitch;
-    if (sbPlatformYoutube) sbPlatformYoutube.checked = !!state.platforms.youtube;
-    if (sbBudgetSession && document.activeElement !== sbBudgetSession) sbBudgetSession.value = state.youtubeBudget.sessionCap;
-    if (sbBudgetDaily && document.activeElement !== sbBudgetDaily) sbBudgetDaily.value = state.youtubeBudget.dailyCap;
-    if (sbBudgetMin && document.activeElement !== sbBudgetMin) sbBudgetMin.value = state.youtubeBudget.minTimerIntervalMin;
+    if (!bot) {
+      // First load: nothing local to protect.
+      bot = state;
+      for (const [, render] of BOT_SECTIONS) render();
+    } else {
+      // MERGE, never replace: the row objects on screen are closed over by
+      // their inputs, so swapping the model out from under them detaches every
+      // keystroke that follows (and a half-typed row, which the validator
+      // rightly drops from the echo, would silently vanish). A section only
+      // adopts the pushed copy when the local one has nothing unsaved: no
+      // pending commit, no incomplete row, and the cursor not inside it.
+      bot.usage = state.usage;
+      bot.enabled = state.enabled;
+      bot.platforms = state.platforms;
+      bot.youtubeBudget = state.youtubeBudget;
+      const editing = botEditing();
+      for (const [section, render] of BOT_SECTIONS) {
+        if (botCommitPending.has(section) || !botSectionComplete(section) || editing) continue;
+        bot[section] = state[section];
+        render();
+      }
+    }
+    if (sbEnabled) sbEnabled.checked = !!bot.enabled;
+    if (sbPlatformTwitch) sbPlatformTwitch.checked = !!bot.platforms.twitch;
+    if (sbPlatformYoutube) sbPlatformYoutube.checked = !!bot.platforms.youtube;
+    if (sbBudgetSession && document.activeElement !== sbBudgetSession) sbBudgetSession.value = bot.youtubeBudget.sessionCap;
+    if (sbBudgetDaily && document.activeElement !== sbBudgetDaily) sbBudgetDaily.value = bot.youtubeBudget.dailyCap;
+    if (sbBudgetMin && document.activeElement !== sbBudgetMin) sbBudgetMin.value = bot.youtubeBudget.minTimerIntervalMin;
     renderBotStatus();
     renderBotBudget();
-    // Never rebuild the lists under the operator's cursor — the local copy they
-    // are editing IS the newest truth in that moment anyway.
-    if (!botEditing()) {
-      renderCommands();
-      renderTimers();
-      renderAlerts();
-      renderGoals();
-    }
   }
 
   async function refreshStreamBot() {
@@ -4437,7 +4503,7 @@
   if (sbCmdAdd) {
     sbCmdAdd.addEventListener('click', () => {
       if (!bot) return;
-      bot.commands.push({ id: '', name: '', response: '', cooldownSec: 10, enabled: true });
+      bot.commands.push({ id: sbNewId(), name: '', response: '', cooldownSec: 10, enabled: true });
       renderCommands();
       const first = sbCmdList && sbCmdList.querySelector('li:last-child input');
       if (first) first.focus();
@@ -4447,7 +4513,7 @@
     sbTimerAdd.addEventListener('click', () => {
       if (!bot) return;
       bot.timers.push({
-        id: '',
+        id: sbNewId(),
         text: '',
         intervalMin: 15,
         onlyWhileLive: true,
@@ -4463,7 +4529,7 @@
     sbGoalAdd.addEventListener('click', () => {
       if (!bot) return;
       bot.goals.push({
-        id: '',
+        id: sbNewId(),
         type: 'twitch_subs',
         label: '',
         target: 10,
