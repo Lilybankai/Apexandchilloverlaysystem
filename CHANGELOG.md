@@ -6,6 +6,37 @@
 
 ## Unreleased
 
+## 0.74.0 — 2026-08-17
+
+### Changed
+
+- **The community setups list now says which setup is worth taking.** It listed
+  what had been shared and left the judgement entirely to you. Three things
+  changed that. Every verified lap carries its gap to the quickest verified
+  setup on the board for the same car class and track, so a time reads as
+  `FASTEST` or `+1.458` rather than as a number with nothing to measure it
+  against — and only laps proven on the setup itself take part on either side,
+  so a gap is never invented out of a time that was merely driven at the same
+  circuit. Ratings show as five stars with the average and the count instead of
+  a grey "unrated", and downloads move up beside the uploader's name. The list
+  opens on a new **Recommended** order: a lap driven on the setup counts for
+  most, then ratings — discounted while only one or two drivers have scored it —
+  then how many drivers have taken it. Newest first, best rated, most downloaded
+  and fastest verified lap are all still in the sort menu.
+- **Setup names are no longer sliced off mid-word.** In the Setups rail the name
+  had one line and no ellipsis, so "Circuit de Spa-Francorchamps — LMP2_ELMS —
+  …" simply stopped, hiding the part that told two setups apart. Names wrap to
+  two lines now, and the track is dropped from the headline — saved tunes are
+  auto-named after their track, and the chip below the name (or the filter above
+  the list) already says which circuit it is.
+- **The row reads in the order a driver decides in.** The handling tags — the
+  only thing on a row that answers "will this suit the way I drive" — get their
+  own line, the track, car and class recede to a filing label, and the
+  uploader's own notes step up from a dim italic footnote to readable text. A
+  track or car you have already picked stops repeating itself on every row.
+  "Get again" is now a quiet button: the accent is kept for setups you have not
+  tried.
+
 ## 0.73.0 — 2026-08-17
 
 ### Added

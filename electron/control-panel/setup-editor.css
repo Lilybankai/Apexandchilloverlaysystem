@@ -714,54 +714,123 @@
   user-select: none;
 }
 
-/* No colour-dot column — the community row starts at the name. */
+/* No colour-dot column — the community row starts at the name. The pace column
+   carries a lap, a delta and five stars now, so it asks for its own width. */
 .su-com__row {
-  grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.2fr) minmax(96px, auto) auto;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2.2fr) minmax(120px, auto) auto;
+  align-items: start;
+  row-gap: 6px;
 }
 
 .su-com__who {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
+
+/* Two lines, then an ellipsis. Clipping a name mid-word (which is what a
+   nowrap row did in a rail) hides the one word that told two setups apart. */
+.su-com__title {
+  font: 600 13px/1.35 var(--font-ui);
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
 .su-com__owner {
-  font: 400 10.5px/1 var(--font-ui);
+  font: 400 10.5px/1.3 var(--font-ui);
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The uploader's own words are the best answer to "will this suit me", so they
+   read at body weight rather than as a dimmed footnote. */
 .su-com__notes {
-  font: 400 11px/1.3 var(--font-ui);
-  font-style: italic;
-  color: var(--text-3);
+  font: 400 11.5px/1.45 var(--font-ui);
+  color: var(--text-2);
   min-width: 0;
   max-width: 100%;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
   flex-basis: 100%;
 }
 
+/* Chip hierarchy. Identity (track, car, class) is the row's filing label and
+   recedes; the session and the handling tags are what the eye should land on,
+   because they are the two things that decide whether a tune suits a driver. */
+.su-chip--id {
+  color: var(--text-3);
+  border-color: var(--line);
+}
+.su-com__traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-basis: 100%;
+}
 .su-chip--tag {
   color: var(--cyan);
   border-color: color-mix(in srgb, var(--cyan) 35%, transparent);
+  background: color-mix(in srgb, var(--cyan) 9%, transparent);
 }
 
 .su-com__lap {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
+  gap: 4px;
 }
-.su-com__stars {
-  font: 500 10.5px/1 var(--font-mono);
-  color: var(--warn);
+.su-com__time {
+  font: 600 13px/1 var(--font-mono);
+}
+
+/* The gap to the quickest verified setup on the board — the number that turns
+   a lap time into a verdict. Green when this row IS the reference. */
+.su-com__delta {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
   white-space: nowrap;
 }
-.su-com__stars[data-none='true'] {
+.su-com__delta[data-best='true'] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.su-com__stars {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.su-com__glyphs {
+  display: inline-flex;
+  gap: 1px;
+  font: 400 11px/1 var(--font-ui);
+}
+.su-com__star {
+  color: var(--line-2);
+}
+.su-com__star[data-lit='true'] {
+  color: var(--warn);
+}
+.su-com__starnum {
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--warn);
+}
+.su-com__stars[data-none='true'] .su-com__starnum {
   color: var(--text-3);
   font-weight: 400;
 }
@@ -898,6 +967,11 @@
 .su-com__lap > span[data-onsetup='false']:not([data-none='true']) {
   color: var(--text-2);
   font-weight: 400;
+}
+/* No lap at all is the dimmest of the three — nothing is being claimed. */
+.su-com__lap > .su-com__time[data-none='true'] {
+  color: var(--text-3);
+  font: 400 11.5px/1 var(--font-ui);
 }
 
 /* ==================== how it works (first-run walkthrough) ====================

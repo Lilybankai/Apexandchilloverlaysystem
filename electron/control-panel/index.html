@@ -748,7 +748,9 @@
               <div>
                 <h2 class="card__title">Community setups</h2>
                 <p class="card__desc">
-                  Shared by the league — a download lands in the game&rsquo;s own setup screen and in your library.
+                  Shared by the league, best first: a lap driven on the setup itself counts for most,
+                  then ratings, then how many drivers use it. A download lands in the game&rsquo;s own
+                  setup screen and in your library.
                 </p>
               </div>
               <div class="su-lib__actions">
@@ -767,11 +769,13 @@
               <select id="setup-com-track" class="field__input" title="Filter by track"></select>
               <select id="setup-com-car" class="field__input" title="Filter by car"></select>
               <select id="setup-com-class" class="field__input" title="Filter by car class"></select>
-              <select id="setup-com-sort" class="field__input" title="Sort">
-                <option value="newest">Newest first</option>
+              <select id="setup-com-sort" class="field__input"
+                      title="Recommended ranks by proven pace first, then ratings, then how many drivers have taken it">
+                <option value="best">Recommended</option>
+                <option value="bestlap">Fastest verified lap</option>
                 <option value="stars">Best rated</option>
                 <option value="downloads">Most downloaded</option>
-                <option value="bestlap">Fastest verified lap</option>
+                <option value="newest">Newest first</option>
               </select>
             </div>
             <ul id="setup-com-list" class="su-lib__list"></ul>

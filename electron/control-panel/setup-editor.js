@@ -1365,35 +1365,130 @@
     );
   }
 
-  function fmtStars(row) {
-    if (!row.ratingCount) return 'unrated';
-    return `★ ${Number(row.avgStars).toFixed(1)} (${row.ratingCount})`;
+  /** Five glyphs beat "★ 4.2": the shape of a rating reads before the number,
+   *  and an unrated row reads as five empty stars rather than a word. */
+  function starsEl(row) {
+    const stars = document.createElement('span');
+    stars.className = 'su-com__stars';
+    stars.setAttribute('data-none', String(!row.ratingCount));
+    const avg = row.ratingCount ? Number(row.avgStars) : 0;
+    const glyphs = document.createElement('span');
+    glyphs.className = 'su-com__glyphs';
+    for (let i = 1; i <= 5; i += 1) {
+      const s = document.createElement('span');
+      s.className = 'su-com__star';
+      // Round half up, so 4.2 lights four and 4.6 lights five.
+      s.setAttribute('data-lit', String(row.ratingCount > 0 && avg >= i - 0.5));
+      s.textContent = '★';
+      glyphs.appendChild(s);
+    }
+    stars.appendChild(glyphs);
+    const num = document.createElement('span');
+    num.className = 'su-com__starnum';
+    num.textContent = row.ratingCount ? `${avg.toFixed(1)} (${row.ratingCount})` : 'unrated';
+    stars.appendChild(num);
+    const ratersOnSetup = fmtLap(row.ratersBestOnSetupMs);
+    const ratersBest = fmtLap(row.ratersBestMs);
+    stars.title =
+      (row.ratingCount
+        ? `${row.ratingCount} rating${row.ratingCount === 1 ? '' : 's'} from drivers who downloaded it`
+        : 'No ratings yet — nobody who downloaded it has scored it') +
+      (ratersOnSetup
+        ? ` · fastest rater on this setup: ${ratersOnSetup} ✓`
+        : ratersBest
+          ? ` · fastest rater (any setup): ${ratersBest}`
+          : '');
+    return stars;
   }
 
-  function communityRow(row) {
+  /* Laps only compare inside one track and one class — a delta across either is
+   * a lie. This is the key both the delta chip and the Recommended sort group
+   * by, and the folder is preferred because two layouts share a track name. */
+  const comPaceKey = (r) =>
+    `${String(r.trackFolder || r.trackName || '').toLowerCase()}|${String(r.carClass || '').toLowerCase()}`;
+
+  /** Saved tunes are auto-named "<track> — <class> — <date>", and the track
+   *  half is both the longest and the one part every row on a filtered board
+   *  repeats. Drop that one segment — the chip or the pinned filter already
+   *  says it — and leave everything else, which is what tells two rows apart.
+   *  A hand-typed name has no track segment and comes back untouched. */
+  function comShortName(row) {
+    const full = String(row.name || '').trim();
+    const track = [row.trackName, row.trackFolder]
+      .filter(Boolean)
+      .map((v) => String(v).trim().toLowerCase());
+    if (track.length) {
+      const parts = full.split(/\s+[—–]\s+/).filter((p) => p.trim());
+      if (parts.length > 1) {
+        const kept = parts.filter((p) => !track.includes(p.trim().toLowerCase()));
+        if (kept.length) return kept.join(' — ');
+      }
+    }
+    return full || 'Untitled setup';
+  }
+
+  /** How well a row answers "would this one be good for me?" — the Recommended
+   *  sort. Weighed the way a driver would: a lap actually proven on this setup
+   *  first, then how close that lap is to the quickest one on the board, then
+   *  what raters thought (discounted while there are only one or two of them),
+   *  and last how many people took it. */
+  function comScore(row, paceRef) {
+    let s = 0;
+    if (Number.isFinite(row.bestLapMs) && row.bestLapMs > 0 && row.bestLapOnSetup) {
+      s += 2;
+      const ref = paceRef.get(comPaceKey(row));
+      if (ref) s += 3 * Math.max(0, 1 - (row.bestLapMs - ref) / 5000); // 5 s adrift = no pace credit
+    }
+    if (row.ratingCount) {
+      s += 2.5 * (Number(row.avgStars) / 5) * (row.ratingCount / (row.ratingCount + 2));
+    }
+    s += Math.min(1, Math.log10(1 + (row.downloads || 0)) / 2);
+    return s;
+  }
+
+  function communityRow(row, ctx) {
     const li = document.createElement('li');
     li.className = 'su-lib__row su-com__row';
 
     const who = document.createElement('span');
-    who.className = 'su-lib__name su-com__who';
+    who.className = 'su-com__who';
     const name = document.createElement('span');
-    name.textContent = row.name;
-    name.title = row.notes || '';
+    name.className = 'su-com__title';
+    name.textContent = comShortName(row);
+    name.title = row.name || '';
     who.appendChild(name);
     const by = document.createElement('span');
     by.className = 'su-com__owner';
-    by.textContent = row.mine ? 'by you' : `by ${row.ownerName}`;
+    // Downloads belong with the author, not with the rating: both are "how much
+    // has this been trusted by other people", and the pace column stays pace.
+    by.textContent =
+      (row.mine ? 'by you' : `by ${row.ownerName}`) +
+      (row.downloads ? ` · ${row.downloads} download${row.downloads === 1 ? '' : 's'}` : '');
+    by.title = by.textContent;
     who.appendChild(by);
     li.appendChild(who);
 
     const meta = document.createElement('span');
     meta.className = 'su-lib__meta';
     // The car earns its chip: a tune is for one car, and the class alone does
-    // not say which — it is the first thing to check before downloading.
-    const chips = [row.trackName || row.trackFolder, row.car, row.carClass].filter(Boolean);
+    // not say which — it is the first thing to check before downloading. But a
+    // filter (or follow mode) that has already pinned one makes its chip pure
+    // repetition on every row, so it is dropped rather than shown fifteen times.
+    // The class survives in most auto-names once the track is stripped, so its
+    // chip would print the same word twice on one row; the headline wins.
+    const titleSaysClass =
+      row.carClass &&
+      name.textContent
+        .split(/\s+[—–]\s+/)
+        .some((p) => p.trim().toLowerCase() === String(row.carClass).toLowerCase());
+    const chips = [
+      ctx.hideTrack ? '' : row.trackName || row.trackFolder,
+      ctx.hideCar ? '' : row.car,
+      titleSaysClass ? '' : row.carClass,
+    ].filter(Boolean);
     for (const text of chips) {
       const c = document.createElement('span');
-      c.className = 'su-chip';
+      c.className = 'su-chip su-chip--id';
       c.textContent = text;
       meta.appendChild(c);
     }
@@ -1403,11 +1498,21 @@
       c.textContent = row.sessionType === 'race' ? 'RACE' : 'QUALI';
       meta.appendChild(c);
     }
-    for (const tag of row.tags || []) {
-      const c = document.createElement('span');
-      c.className = 'su-chip su-chip--tag';
-      c.textContent = tag;
-      meta.appendChild(c);
+    // The handling tags are the only thing on the row that answers "will this
+    // suit the way I drive", so they lead their own line rather than queueing
+    // behind the identity chips.
+    const tags = row.tags || [];
+    if (tags.length) {
+      const traits = document.createElement('span');
+      traits.className = 'su-com__traits';
+      traits.title = 'How the uploader describes the way it drives';
+      for (const tag of tags) {
+        const c = document.createElement('span');
+        c.className = 'su-chip su-chip--tag';
+        c.textContent = tag;
+        traits.appendChild(c);
+      }
+      meta.appendChild(traits);
     }
     if (row.notes) {
       const noteLine = document.createElement('span');
@@ -1418,14 +1523,15 @@
     }
     li.appendChild(meta);
 
-    // Pace column: the uploader's verified lap, and under it the community's
-    // proof — the fastest verified lap any rater has done with it.
+    // Pace column: the uploader's verified lap, how far off the board's best it
+    // is, and the community's verdict — the three numbers a download rests on.
     const lap = document.createElement('span');
     lap.className = 'su-lib__lap su-com__lap';
     const best = fmtLap(row.bestLapMs);
     const maker = document.createElement('span');
     // The ✓ is attribution: the uploader's lap log proves this time was driven
     // on THIS setup (fingerprint match), not merely at this track in this class.
+    maker.className = 'su-com__time';
     maker.textContent = best ? (row.bestLapOnSetup ? `${best} ✓` : best) : 'no lap';
     maker.setAttribute('data-none', String(!best));
     maker.setAttribute('data-onsetup', String(Boolean(best && row.bestLapOnSetup)));
@@ -1435,23 +1541,26 @@
         : `${row.mine ? 'Your' : `${row.ownerName}'s`} best clean lap for this track & class — not proven on this setup`
       : 'The uploader had no clean lap on record';
     lap.appendChild(maker);
-    const stars = document.createElement('span');
-    stars.className = 'su-com__stars';
-    stars.setAttribute('data-none', String(!row.ratingCount));
-    stars.textContent = `${fmtStars(row)} · ${row.downloads}↓`;
-    const ratersOnSetup = fmtLap(row.ratersBestOnSetupMs);
-    const ratersBest = fmtLap(row.ratersBestMs);
-    stars.title =
-      (row.ratingCount
-        ? `${row.ratingCount} rating${row.ratingCount === 1 ? '' : 's'} from drivers who downloaded it`
-        : 'No ratings yet') +
-      ` · ${row.downloads} download${row.downloads === 1 ? '' : 's'}` +
-      (ratersOnSetup
-        ? ` · fastest rater on this setup: ${ratersOnSetup} ✓`
-        : ratersBest
-          ? ` · fastest rater (any setup): ${ratersBest}`
-          : '');
-    lap.appendChild(stars);
+
+    // A bare 2:05.032 says nothing on its own; against the quickest verified
+    // setup for the same car class and track it says everything. Only verified
+    // laps take part, on both sides — comparing a proven lap with an unproven
+    // one would invent a gap that nobody drove.
+    const ref = ctx.paceRef.get(comPaceKey(row));
+    if (best && row.bestLapOnSetup && ref && (ctx.paceCount.get(comPaceKey(row)) || 0) > 1) {
+      const gap = row.bestLapMs - ref;
+      const delta = document.createElement('span');
+      delta.className = 'su-com__delta';
+      delta.setAttribute('data-best', String(gap <= 0));
+      delta.textContent = gap <= 0 ? 'FASTEST' : `+${(gap / 1000).toFixed(3)}`;
+      delta.title =
+        gap <= 0
+          ? 'Quickest verified lap of any setup shared here for this car class and track'
+          : `${(gap / 1000).toFixed(3)}s off the quickest verified setup shared here`;
+      lap.appendChild(delta);
+    }
+
+    lap.appendChild(starsEl(row));
     li.appendChild(lap);
 
     const buttons = document.createElement('span');
@@ -1459,7 +1568,9 @@
 
     const getBtn = document.createElement('button');
     getBtn.type = 'button';
-    getBtn.className = 'btn btn--accent btn--sm';
+    // Accent is reserved for setups the driver has not tried. A row already in
+    // the library is not the one to click, so it stops shouting for the click.
+    getBtn.className = `btn btn--sm ${row.downloaded ? 'btn--ghost' : 'btn--accent'}`;
     getBtn.textContent = row.downloaded ? 'Get again' : 'Get';
     getBtn.title = 'Download into the game’s setup screen and your library';
     getBtn.addEventListener('click', async () => {
@@ -1605,16 +1716,44 @@
           (!cls || eq(r.carClass, cls)),
       );
     }
+    // The pace yardstick, per track+class, taken only from laps proven on the
+    // setup that claims them. Built from what is on screen, so filtering the
+    // list re-bases the deltas onto the setups the driver is choosing between.
+    const paceRef = new Map();
+    const paceCount = new Map();
+    for (const r of rows) {
+      if (!r.bestLapOnSetup || !Number.isFinite(r.bestLapMs) || r.bestLapMs <= 0) continue;
+      const k = comPaceKey(r);
+      const cur = paceRef.get(k);
+      if (cur === undefined || r.bestLapMs < cur) paceRef.set(k, r.bestLapMs);
+      paceCount.set(k, (paceCount.get(k) || 0) + 1);
+    }
+
     const sort = elComSort.value;
     if (sort === 'stars') {
       rows.sort((a, b) => (b.avgStars ?? -1) - (a.avgStars ?? -1) || b.ratingCount - a.ratingCount);
     } else if (sort === 'downloads') rows.sort((a, b) => b.downloads - a.downloads);
     else if (sort === 'bestlap') {
       rows.sort((a, b) => (a.bestLapMs ?? Infinity) - (b.bestLapMs ?? Infinity));
-    } else rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    } else if (sort === 'newest') {
+      rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    } else {
+      // Recommended, the default: proven pace, then ratings, then reach, with
+      // the newest breaking a tie so a fresh upload is not buried for ever.
+      rows.sort(
+        (a, b) =>
+          comScore(b, paceRef) - comScore(a, paceRef) || (a.createdAt < b.createdAt ? 1 : -1),
+      );
+    }
 
+    const ctx = {
+      paceRef,
+      paceCount,
+      hideTrack: Boolean(elComTrack.value),
+      hideCar: Boolean(elComCar.value),
+    };
     elComList.textContent = '';
-    for (const r of rows) elComList.appendChild(communityRow(r));
+    for (const r of rows) elComList.appendChild(communityRow(r, ctx));
 
     if (rows.length > 0) {
       elComEmpty.hidden = true;
