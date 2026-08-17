@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.72.1 — 2026-08-17
+
 ### Fixed
 
 - **Driver names that arrive already shortened are no longer shortened twice.**
