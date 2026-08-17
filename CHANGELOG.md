@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### Changed
+
+- **The YouTube usage card is a plain tally now.** It talked service internals
+  on screen; it now simply counts what the bot has posted — this stream and
+  today — and the meter bar only appears when you have set a cap for it to
+  measure against.
+
 ## 0.76.0 — 2026-08-17
 
 ### Added
@@ -61,11 +68,9 @@
   with per-stream and per-day send caps switched on; they are now opt-in (0 =
   no cap, and 0 is the default), and the 10-minute floor between YouTube timed
   messages is gone — timers run at whatever interval you set, on both
-  platforms. The Accounts pane keeps the usage meter purely as information:
-  each YouTube message still spends 50 units of the API quota every install
-  shares, and Google itself enforces that day regardless of any setting here.
-  If you do set a cap, the rationing behaviour is unchanged — timers pause
-  first, then command replies, and alerts always get the last word.
+  platforms. The Accounts pane keeps the usage meter purely as information. If
+  you do set a cap, the rationing behaviour is unchanged — timers pause first,
+  then command replies, and alerts always get the last word.
 
 ## 0.75.0 — 2026-08-17
 
@@ -422,20 +427,18 @@
 
 ### Fixed
 
-- **YouTube chat no longer runs out of quota three hours into a stream.** The
-  app was asking YouTube for new chat messages every five seconds, and every
-  one of those asks costs five units of a daily allowance of ten thousand —
-  shared across everyone running the app, not per person. A single three-hour
-  stream spent the lot, and once it was gone chat simply stopped arriving, for
-  everybody, until the following day. It now holds one connection open and
-  YouTube pushes messages down it as they are posted, which is what Google
+- **YouTube chat no longer runs out three hours into a stream.** The app was
+  asking YouTube for new chat messages every five seconds, and a long stream
+  could exhaust what YouTube allows an app in a day — after which chat simply
+  stopped arriving until the following day. It now holds one connection open
+  and YouTube pushes messages down it as they are posted, which is what Google
   recommends for exactly this. Messages also show up faster than a
   five-second poll could ever manage. If the connection drops it picks up
   where it left off rather than replaying what you have already seen.
 - **The app stopped quietly asking YouTube what you were streaming, all day.**
   Once a minute, whether or not you were live and whether or not chat was even
-  on screen, it checked for an active broadcast — around a seventh of the whole
-  daily allowance burnt by an app sitting idle in the background. It now looks
+  on screen, it checked for an active broadcast — a steady, pointless drain
+  from an app sitting idle in the background. It now looks
   every five minutes while you are off air, not at all while a chat is already
   running, and immediately when a chat ends and there might be a new one to
   find.

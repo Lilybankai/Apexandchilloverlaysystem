@@ -4416,29 +4416,28 @@
     if (!bot || !bot.usage) return;
     const u = bot.usage;
     const capped = u.sessionCap > 0 || u.dailyCap > 0;
-    // With caps the bar shows the scarcer cap's spend; uncapped it shows this
-    // install's share of Google's own 10k-unit day — information, not a limit.
+    // The meter only means something against a cap the streamer set. Uncapped,
+    // the bar hides and the text is a plain tally — service-level numbers are
+    // an internal concern and never belong on a user's screen.
     const spentFraction = capped
       ? Math.max(
           u.sessionCap > 0 ? u.usedSession / u.sessionCap : 0,
           u.dailyCap > 0 ? u.usedToday / u.dailyCap : 0,
         )
-      : u.unitsToday / 10000;
+      : 0;
     if (sbBudgetBar) {
+      if (sbBudgetBar.parentElement) sbBudgetBar.parentElement.hidden = !capped;
       sbBudgetBar.style.width = `${Math.min(100, Math.round(spentFraction * 100))}%`;
-      sbBudgetBar.setAttribute('data-warn', String(spentFraction >= 0.75));
+      sbBudgetBar.setAttribute('data-warn', String(capped && spentFraction >= 0.75));
     }
     if (sbBudgetText) {
       if (capped) {
         const cap = (used, max) => (max > 0 ? `${used}/${max}` : `${used}`);
         sbBudgetText.textContent =
-          `${cap(u.usedSession, u.sessionCap)} this stream · ${cap(u.usedToday, u.dailyCap)} today ` +
-          `(~${u.unitsToday.toLocaleString()} of the shared 10,000 daily units)` +
+          `${cap(u.usedSession, u.sessionCap)} this stream · ${cap(u.usedToday, u.dailyCap)} today` +
           (spentFraction >= 1 ? ' — YouTube sending paused until the cap resets' : '');
       } else {
-        sbBudgetText.textContent =
-          `${u.usedSession} sent this stream · ${u.usedToday} today ` +
-          `(~${u.unitsToday.toLocaleString()} of the shared 10,000 daily units) · no caps set`;
+        sbBudgetText.textContent = `${u.usedSession} sent this stream · ${u.usedToday} today`;
       }
     }
   }

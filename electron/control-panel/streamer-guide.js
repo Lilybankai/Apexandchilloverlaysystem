@@ -55,7 +55,7 @@
         'The bot runs while this app is open — close the app and it goes quiet with you.',
         'Twitch works any time, live or not. YouTube only has a chat while you are actually live, so the bot speaks there during a broadcast.',
         'The status line under the switch tells you exactly what is missing — "link your account to speak", "waiting for a live stream" — so a silent bot is never a mystery.',
-        'YouTube usage shows what today has cost of the API quota all Apex streamers share. It is information, not a limit — the optional caps below it stay at 0 (off) unless you set them.',
+        'YouTube usage is a simple tally of what the bot has posted there. It is information, not a limit — the optional caps below it stay at 0 (off) unless you want the bot to pace itself.',
       ],
     },
     {

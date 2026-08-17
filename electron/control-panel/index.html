@@ -555,12 +555,10 @@
             <div class="card__head">
               <h2 class="card__title">YouTube usage</h2>
               <p class="card__desc">
-                For information — the bot is <strong>uncapped by default</strong>.
-                Each YouTube message spends 50 units of the API quota all Apex
-                users share (10,000/day, reset midnight Pacific); set optional
-                caps below if you want the bot to ration itself. When a cap runs
-                low, timers pause first, then command replies — alerts always
-                get the last word.
+                A simple tally of what the bot has posted to YouTube — it posts
+                freely by default. Set optional caps below if you want it to
+                pace itself; when a cap runs low, timers pause first, then
+                command replies — alerts always get the last word.
               </p>
             </div>
             <div class="sb-budget">
@@ -576,7 +574,7 @@
               <label class="field">
                 <span class="field__label">Cap per day (optional)</span>
                 <input class="field__input" id="sb-budget-daily" type="number" min="0" max="100000" step="1" />
-                <span class="field__hint">0 = no cap (default) — resets midnight Pacific</span>
+                <span class="field__hint">0 = no cap (default) — the count resets daily</span>
               </label>
               <label class="field">
                 <span class="field__label">Min minutes between YouTube timers</span>
