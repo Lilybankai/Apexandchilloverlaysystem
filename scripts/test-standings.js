@@ -504,15 +504,15 @@ console.log('\nDriver names — full, surname or forename');
 }
 
 /* -------------------------------------------------------------------------- */
-console.log('\nAbbreviating stands the rating marks down');
+console.log('\nThe rating marks ride every name style');
 /* -------------------------------------------------------------------------- */
 
-/* The bug this closes: the DRIVER cell is 138px of content and the marks in it
-   hold 82px of that, so shortening "Matt Haskins" (99px) to "M.Haskins" (84px)
-   moved the ellipsis two characters and every row still read "#7 K.Ko…". The
-   setting bought no room at all, which is not a setting behaving oddly — it is
-   one that does not work. Abbreviating now costs the two RATING marks and keeps
-   the brand, which is the 48px that makes the abbreviation fit. */
+/* The driver-rating plaque and the safety/profile badge identify WHO a driver
+   is — their rating and reputation — which is exactly what an operator who has
+   abbreviated the names is still asking the tower to show. So the marks ride
+   `full`, `surname` and `forename` alike; the name is shortened to make room and
+   the CSS clips whatever does not fit, rather than the marks blinking out the
+   moment a name is trimmed. */
 {
   const marked = () => [
     { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3',
@@ -528,35 +528,37 @@ console.log('\nAbbreviating stands the rating marks down');
   const w = mount();
   w.push(view('full'));
   w.update(marked());
-  check('in full, the row draws every mark it always did',
+  check('in full, the row draws every mark',
     w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
 
   w.push(view('surname'));
   w.update(marked());
-  check('abbreviating drops the ratings and keeps the car',
-    w.marks().join(' | ') === 'brand | brand', w.marks().join(' | '));
+  check('surname keeps the ratings AND the car',
+    w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
   check('and the name is still the abbreviated one',
     w.names().join(' | ') === '#7 M.Haskins | #9 M.Slater', w.names().join(' | '));
 
   w.push(view('forename'));
   w.update(marked());
-  check('the forename form makes the same trade',
-    w.marks().join(' | ') === 'brand | brand', w.marks().join(' | '));
+  check('forename keeps the marks too',
+    w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
+  check('with the forename-abbreviated name',
+    w.names().join(' | ') === '#7 Matt.H | #9 Mark.S', w.names().join(' | '));
 
-  // And it has to come BACK. The badges are pooled per row and shown/hidden in
-  // place, so a one-way hide would leave the ratings gone for the session.
+  // Toggling back to full is a no-op for the marks now, but still must not drop
+  // them: the badges are pooled per row and shown/hidden in place.
   w.push(view('full'));
   w.update(marked());
-  check('going back to full names brings the marks back',
+  check('full still draws every mark',
     w.marks().join(' | ') === 'brand+dr+sr | brand+dr+sr', w.marks().join(' | '));
 
-  // A row the sim gives no ratings for is unchanged by any of this.
+  // A row the sim gives no ratings for still draws only what it has.
   w.push(view('surname'));
   w.update([
     { slotId: 1, position: 1, carNumber: '7', driverName: 'Matt Haskins', carClass: 'GT3',
       manufacturer: 'Ferrari' },
   ]);
-  check('a row with no ratings to drop draws its brand as before',
+  check('a row with no ratings draws just its brand',
     w.marks().join(' | ') === 'brand', w.marks().join(' | '));
 }
 

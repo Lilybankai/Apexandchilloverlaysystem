@@ -1134,43 +1134,30 @@
       }
     }
 
-    // Abbreviating the names is the operator saying the NAME is what identifies
-    // this grid — so the two rating marks stand down and give it their width.
-    //
-    // Measured, at the tower's shipping width: the DRIVER cell is 138px of
-    // content and the marks in it take 82px of that (class dot 14, brand 20, DR
-    // plaque 30, profile badge 18), leaving 56px for the name. "Matt Haskins"
-    // measures 99px and "M.Haskins" 84px, so abbreviating moved the ellipsis by
-    // two characters and every row still read "#7 K.Ko…". The setting existed to
-    // buy room for the names that were clipping and bought almost none of it,
-    // which is not a setting behaving oddly — it is one that does not work.
-    //
-    // The two rating marks are what gives, and not the brand: 48px back takes
-    // the name to 104px, where the abbreviations actually fit. The brand badge
-    // stays because it says what the CAR is, which is the other half of what
-    // this cell is for and is not written anywhere else on the row. Nothing is
-    // lost outright either — the relative panel draws the full DR+SR pair, and
-    // it is the panel that answers "who is this car beside me".
-    //
-    // Costs nothing to anyone on the default: `full` draws exactly the row it
-    // always did, marks and all.
-    var abbreviated = !!view && (view.names === "surname" || view.names === "forename");
+    // The driver-rating plaque and the safety/profile badge ride EVERY name
+    // style, not just `full`. They identify who the driver is — their rating and
+    // reputation — which is exactly what an operator abbreviating the names is
+    // still asking the tower to show; hiding them on `surname`/`forename` meant
+    // the marks vanished the moment a name was shortened. The name itself is
+    // abbreviated below (see displayName) to give the cell room; the CSS clips
+    // whatever does not fit, so the marks and a shortened name coexist rather
+    // than trade off. `full` draws exactly the row it always did.
 
     // The DR rank plaque, via the shared writer (see client.js). DR only in
-    // the tower — see createRow for why the SR half of the pair lives in the
-    // relative panel instead.
+    // the tower — see createRow for why the SR half of the rank pair lives in
+    // the relative panel instead.
     ctx.applyRankBadge(
       row.drRank,
       row.cache,
       "drRank",
       "dr",
-      abbreviated ? null : e.driverRank
+      e.driverRank
     );
 
-    // Driver profile badge, same contract as the brand badge above. The badge
-    // artwork ships with the overlay (overlay/driverbadges/), so the src is a
-    // static file, not a proxy route.
-    var srb = abbreviated ? "" : e.driverBadge || "";
+    // Driver profile badge (the safety/reputation mark), same contract as the
+    // brand badge above. The badge artwork ships with the overlay
+    // (overlay/driverbadges/), so the src is a static file, not a proxy route.
+    var srb = e.driverBadge || "";
     if (row.cache.srb !== srb) {
       row.cache.srb = srb;
       if (srb) {

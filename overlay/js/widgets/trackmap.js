@@ -179,7 +179,14 @@
   var MIN_ROAD_PX = 11;
   /** Dot radius in px for an opponent, and for the player. */
   var DOT_R = 4.2;
-  var EGO_R = 5.6;
+  // The player sits a touch larger than the field so its branded marker reads as
+  // "you" the instant the eye lands on the map, not after picking it out.
+  var EGO_R = 6.6;
+  // The Apex & Chill signature gradient stops (see css/theme.css). The player's
+  // dot is painted in these — cyan -> purple -> magenta — so it is the one car on
+  // the map wearing the league's colours and can never be mistaken for a class
+  // dot, whatever class the player is in.
+  var EGO_GRAD = ["#22d3ee", "#8b5cf6", "#ec4899"];
 
   /* -------------------------------- lighting ------------------------------- */
 
@@ -1098,7 +1105,20 @@
 
     gctx.beginPath();
     gctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-    gctx.fillStyle = isEgo ? "#ffffff" : classColor(info && info.carClass);
+    if (isEgo) {
+      // The player's dot wears the Apex & Chill colours rather than a flat
+      // white: a diagonal cyan -> purple -> magenta wash across the marker, so
+      // it stands apart from every class dot on the map at a glance. A radius
+      // change would move it in the pack; the brand gradient makes it the only
+      // multi-colour dot, which is what "which one is me" actually needs.
+      var grad = gctx.createLinearGradient(pos.x - r, pos.y - r, pos.x + r, pos.y + r);
+      grad.addColorStop(0, EGO_GRAD[0]);
+      grad.addColorStop(0.5, EGO_GRAD[1]);
+      grad.addColorStop(1, EGO_GRAD[2]);
+      gctx.fillStyle = grad;
+    } else {
+      gctx.fillStyle = classColor(info && info.carClass);
+    }
     gctx.fill();
     // A full-strength dark outline, not a softened one. The road is now a lit
     // colour rather than near-white, and one class (Hypercar, #ff5470) sits
@@ -1108,13 +1128,21 @@
     gctx.strokeStyle = "#0a0b12";
     gctx.stroke();
 
-    // The player also gets a ring, so their own car is findable in a pack of
-    // same-class dots without hunting for the white one.
+    // The player also gets rings, so their own branded dot is findable in a pack
+    // of same-class dots without hunting for it. A thin white ring hugs the dot
+    // for separation from the road, then a brighter, thicker cyan halo announces
+    // it — the two together make the marker unmistakable even in a tight train.
     if (isEgo) {
       gctx.beginPath();
-      gctx.arc(pos.x, pos.y, r + 3.2, 0, Math.PI * 2);
-      gctx.strokeStyle = "rgba(34,211,238,0.9)";
-      gctx.lineWidth = 1.6;
+      gctx.arc(pos.x, pos.y, r + 1.6, 0, Math.PI * 2);
+      gctx.strokeStyle = "rgba(255,255,255,0.85)";
+      gctx.lineWidth = 1.4;
+      gctx.stroke();
+
+      gctx.beginPath();
+      gctx.arc(pos.x, pos.y, r + 4, 0, Math.PI * 2);
+      gctx.strokeStyle = "rgba(34,211,238,0.95)";
+      gctx.lineWidth = 2.2;
       gctx.stroke();
     }
     gctx.globalAlpha = 1;

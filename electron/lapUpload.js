@@ -338,6 +338,9 @@ async function sendTrace(row, cache) {
     p_s3_ms: file.s3Ms ?? null,
     p_data: file.trace,
     p_app_version: appVersion,
+    // The lap's setup fingerprint, so the server can link this trace to the
+    // shared setup it was driven on (migration 0009). Absent on pre-v4 laps.
+    p_fingerprint: row.setupFp || '',
   });
   const out = classify(res, `trace:${lapLog.bestKey(row)}`, cache);
   // Accepted and refused both settle: a refusal here (`not_board_lap`,
