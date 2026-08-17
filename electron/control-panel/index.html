@@ -756,6 +756,10 @@
                   <input type="checkbox" id="setup-com-follow" checked />
                   Follow my car &amp; track
                 </label>
+                <button id="setup-com-feedback" class="btn btn--ghost btn--sm" type="button"
+                        title="Send the league feedback about the setups feature">
+                  <svg class="icon"><use href="#i-message-square-plus" /></svg>Feedback
+                </button>
                 <button id="setup-com-refresh" class="btn btn--ghost btn--sm" type="button">Refresh</button>
               </div>
             </div>
@@ -791,6 +795,19 @@
                 <button id="setup-lib-import" class="btn btn--ghost btn--sm" type="button">Import…</button>
                 <button id="setup-lib-save" class="btn btn--accent btn--sm" type="button" disabled>Save current setup…</button>
               </div>
+            </div>
+            <!-- Nudge to publish. Shown by setup-editor.js only when there are
+                 saved setups that have not been shared with the league yet. -->
+            <div id="setup-share-nudge" class="su-nudge" hidden>
+              <span class="su-nudge__icon"><svg class="icon"><use href="#i-sparkles" /></svg></span>
+              <div class="su-nudge__body">
+                <p class="su-nudge__title" id="setup-nudge-title">Share your setups with the league</p>
+                <p class="su-nudge__text" id="setup-nudge-text">
+                  Publishing a setup puts your name on the community board, earns ratings and downloads,
+                  and helps every driver go faster. It takes one click.
+                </p>
+              </div>
+              <button id="setup-nudge-share" class="btn btn--accent btn--sm" type="button">Share a setup</button>
             </div>
             <div class="su-lib__filters">
               <select id="setup-lib-track" class="field__input" title="Filter by track"></select>
@@ -893,6 +910,28 @@
               </button>
               <button id="setup-share-file" class="btn btn--ghost btn--sm" type="button">Save as file…</button>
               <button id="setup-share-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Setups feedback dialog: routes to the same feedback inbox the
+             Suggestions tab uses (submit_feedback), tagged so the league can see
+             it is about setups. -->
+        <div id="setup-feedback-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Feedback on setups</h3>
+            <div class="su-pop__body">
+              <p class="su-pub__hint">Missing a feature, hit a bug, or have an idea for the setups library? Tell the league.</p>
+              <nav id="setup-feedback-kind" class="seg" aria-label="Feedback kind"></nav>
+              <label class="field"><span class="field__label">Your message</span>
+                <textarea id="setup-feedback-message" class="field__input field__input--wide su-pub__notes" rows="4"
+                  maxlength="2000" placeholder="e.g. It would help to filter community setups by wet/dry."></textarea>
+              </label>
+              <p id="setup-feedback-status" class="su-pop__error" hidden></p>
+            </div>
+            <div class="su-pop__buttons">
+              <button id="setup-feedback-send" class="btn btn--accent btn--sm" type="button">Send</button>
+              <button id="setup-feedback-cancel" class="btn btn--ghost btn--sm" type="button">Cancel</button>
             </div>
           </div>
         </div>

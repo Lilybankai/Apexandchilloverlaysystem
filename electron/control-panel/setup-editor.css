@@ -1086,3 +1086,60 @@
   display: flex;
   gap: 8px;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Share nudge — the encouragement to publish saved setups to the community. */
+/* -------------------------------------------------------------------------- */
+
+.su-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent);
+  /* A whisper of the brand gradient so it reads as an invitation, not a warning. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--cyan) 14%, transparent),
+    color-mix(in srgb, var(--purple) 12%, transparent)
+  );
+}
+
+.su-nudge__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 18%, transparent);
+}
+
+.su-nudge__icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.su-nudge__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.su-nudge__title {
+  margin: 0 0 2px;
+  font: 600 13px/1.2 var(--font-display);
+  color: var(--text);
+}
+
+.su-nudge__text {
+  margin: 0;
+  font: 400 12px/1.45 var(--font-ui);
+  color: var(--text-2);
+}
+
+.su-nudge .btn {
+  flex: 0 0 auto;
+}
