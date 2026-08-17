@@ -34,13 +34,16 @@ const MAX_COMMANDS = 50;
 const MAX_TIMERS = 20;
 const MAX_GOALS = 10;
 const MAX_TEXT = 400;
-/** 200 msgs × 50 units = the whole 10k project day — the absolute ceiling. */
-const MAX_DAILY_CAP = 200;
-const MAX_SESSION_CAP = 200;
-/** YouTube timers may never run hotter than this (minutes). */
-const MIN_YT_TIMER_MIN = 10;
-/** Twitch timers: fixed floor, not configurable (minutes). */
-const MIN_TWITCH_TIMER_MIN = 2;
+/**
+ * Caps are OPT-IN: 0 = no cap, and 0 is the default — the app never limits a
+ * streamer's chat unless they set a cap themselves. (Google's shared 10k/day
+ * project quota still exists regardless; the ledger below keeps it visible.)
+ */
+const MAX_CAP = 100000;
+/** Floor for the optional "minutes between YouTube timers" setting. */
+const MIN_YT_TIMER_MIN = 1;
+/** Twitch timers: same 1-minute floor (the IRC rate limiter guards the wire). */
+const MIN_TWITCH_TIMER_MIN = 1;
 
 const ALERT_KEYS = ['sub', 'resub', 'gift', 'membership', 'superchat'];
 
@@ -74,7 +77,9 @@ function defaults() {
       superchat: { enabled: true, template: '{user} sent {amount} — thank you so much!' },
     },
     goals: [],
-    youtubeBudget: { sessionCap: 60, dailyCap: 150, minTimerIntervalMin: 10 },
+    // 0 = no cap. Uncapped by default — Carl's call: never limit a chat the
+    // streamer didn't choose to limit.
+    youtubeBudget: { sessionCap: 0, dailyCap: 0, minTimerIntervalMin: 1 },
     quotaLedger: { date: '', messagesSentToday: 0 },
   };
 }
@@ -232,9 +237,9 @@ function sanitizeGoals(list) {
 function sanitizeBudget(raw) {
   const b = raw && typeof raw === 'object' ? raw : {};
   return {
-    sessionCap: clampInt(b.sessionCap, 0, MAX_SESSION_CAP, 60),
-    dailyCap: clampInt(b.dailyCap, 0, MAX_DAILY_CAP, 150),
-    minTimerIntervalMin: clampInt(b.minTimerIntervalMin, MIN_YT_TIMER_MIN, 1440, 10),
+    sessionCap: clampInt(b.sessionCap, 0, MAX_CAP, 0),
+    dailyCap: clampInt(b.dailyCap, 0, MAX_CAP, 0),
+    minTimerIntervalMin: clampInt(b.minTimerIntervalMin, MIN_YT_TIMER_MIN, 1440, 1),
   };
 }
 

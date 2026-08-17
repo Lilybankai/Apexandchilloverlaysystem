@@ -487,7 +487,7 @@
                   <input type="checkbox" id="sb-platform-youtube" />
                   <span class="switch__track"><span class="switch__thumb"></span></span>
                 </span>
-                <span class="field__hint">Budgeted — YouTube charges quota per message</span>
+                <span class="field__hint">Commands, timers and alerts in YouTube live chat</span>
               </label>
             </div>
           </section>
@@ -547,11 +547,14 @@
 
           <section class="card">
             <div class="card__head">
-              <h2 class="card__title">YouTube message budget</h2>
+              <h2 class="card__title">YouTube usage</h2>
               <p class="card__desc">
-                Every YouTube bot message spends API quota shared by all Apex
-                users (50 units each), so the bot rations itself: timers pause
-                first, then command replies — alerts always get the last word.
+                For information — the bot is <strong>uncapped by default</strong>.
+                Each YouTube message spends 50 units of the API quota all Apex
+                users share (10,000/day, reset midnight Pacific); set optional
+                caps below if you want the bot to ration itself. When a cap runs
+                low, timers pause first, then command replies — alerts always
+                get the last word.
               </p>
             </div>
             <div class="sb-budget">
@@ -560,19 +563,19 @@
             </div>
             <div class="settings-grid">
               <label class="field">
-                <span class="field__label">Messages per stream</span>
-                <input class="field__input" id="sb-budget-session" type="number" min="0" max="200" step="1" />
-                <span class="field__hint">Default 60</span>
+                <span class="field__label">Cap per stream (optional)</span>
+                <input class="field__input" id="sb-budget-session" type="number" min="0" max="100000" step="1" />
+                <span class="field__hint">0 = no cap (default)</span>
               </label>
               <label class="field">
-                <span class="field__label">Messages per day</span>
-                <input class="field__input" id="sb-budget-daily" type="number" min="0" max="200" step="1" />
-                <span class="field__hint">Default 150 — resets midnight Pacific (Google's quota day)</span>
+                <span class="field__label">Cap per day (optional)</span>
+                <input class="field__input" id="sb-budget-daily" type="number" min="0" max="100000" step="1" />
+                <span class="field__hint">0 = no cap (default) — resets midnight Pacific</span>
               </label>
               <label class="field">
                 <span class="field__label">Min minutes between YouTube timers</span>
-                <input class="field__input" id="sb-budget-mininterval" type="number" min="10" max="1440" step="1" />
-                <span class="field__hint">Never below 10 (Twitch timers can run every 2)</span>
+                <input class="field__input" id="sb-budget-mininterval" type="number" min="1" max="1440" step="1" />
+                <span class="field__hint">Default 1 — raise it to space out timed messages</span>
               </label>
             </div>
           </section>

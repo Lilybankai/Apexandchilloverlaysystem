@@ -131,9 +131,12 @@ export function alertKeyForEvent(kind: ChatEventKind): AlertKey {
 }
 
 /**
- * The YouTube send budget. `sessionCap` guards one stream from burning the
- * day; `dailyCap` guards the day itself. Priorities shed the cheap traffic
- * first — see the module doc. All counts are messages (1 message = 50 units).
+ * The YouTube send budget. **A cap of 0 means uncapped — and that is the
+ * default**: the bot never limits a chat unless the streamer sets a cap
+ * themselves. When caps ARE set, `sessionCap` guards one stream from burning
+ * the day, `dailyCap` guards the day itself, and priorities shed the cheap
+ * traffic first — see the module doc. All counts are messages (1 msg = 50
+ * quota units; Google's own shared 10k/day still applies either way).
  */
 export class YouTubeBudget {
   private sessionCap = 0;
@@ -148,16 +151,27 @@ export class YouTubeBudget {
     this.usedToday = Math.max(0, Math.floor(cfg.usedToday || 0));
   }
 
-  /** The scarcer of the two windows, as a fraction of budget remaining. */
+  /**
+   * The scarcer configured window, as a fraction of budget remaining. A cap of
+   * 0 is "no cap" and simply doesn't take part; no caps at all is 1 (plenty).
+   */
   public remainingFraction(): number {
-    if (this.sessionCap <= 0 || this.dailyCap <= 0) return 0;
-    const session = Math.max(0, this.sessionCap - this.usedSession) / this.sessionCap;
-    const daily = Math.max(0, this.dailyCap - this.usedToday) / this.dailyCap;
-    return Math.min(session, daily);
+    let fraction = 1;
+    if (this.sessionCap > 0) {
+      fraction = Math.min(fraction, Math.max(0, this.sessionCap - this.usedSession) / this.sessionCap);
+    }
+    if (this.dailyCap > 0) {
+      fraction = Math.min(fraction, Math.max(0, this.dailyCap - this.usedToday) / this.dailyCap);
+    }
+    return fraction;
   }
 
+  /** Messages left in the scarcer configured window; Infinity when uncapped. */
   public remainingMessages(): number {
-    return Math.max(0, Math.min(this.sessionCap - this.usedSession, this.dailyCap - this.usedToday));
+    let remaining = Number.POSITIVE_INFINITY;
+    if (this.sessionCap > 0) remaining = Math.min(remaining, this.sessionCap - this.usedSession);
+    if (this.dailyCap > 0) remaining = Math.min(remaining, this.dailyCap - this.usedToday);
+    return Math.max(0, remaining);
   }
 
   public canSend(priority: 'alert' | 'command' | 'timer'): boolean {

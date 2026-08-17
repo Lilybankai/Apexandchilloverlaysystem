@@ -236,6 +236,20 @@ console.log('\nYouTubeBudget — caps + priority shedding');
   check('noteSend spends both windows', b.remainingMessages() === 9);
 }
 {
+  // Caps are opt-in: 0 = no cap, and that is the default — the bot never
+  // rations a chat the streamer didn't ask it to.
+  const b = new YouTubeBudget();
+  b.configure({ sessionCap: 0, dailyCap: 0, usedSession: 9999, usedToday: 9999 });
+  check('uncapped allows every priority regardless of spend',
+    b.canSend('timer') && b.canSend('command') && b.canSend('alert'));
+  check('uncapped remaining is unbounded', b.remainingMessages() === Infinity);
+  // One cap set, the other 0: only the set one takes part.
+  b.configure({ sessionCap: 0, dailyCap: 100, usedSession: 9999, usedToday: 40 });
+  check('a lone daily cap governs alone', b.remainingMessages() === 60 && b.canSend('timer'));
+  b.configure({ sessionCap: 0, dailyCap: 100, usedSession: 0, usedToday: 100 });
+  check('a lone daily cap still hard-stops at zero', b.canSend('alert') === false);
+}
+{
   // End-to-end: an exhausted budget silences YouTube but not Twitch.
   const { bot, state } = harness({
     commands: [{ id: 'c1', name: 'discord', response: 'x', cooldownSec: 0, enabled: true }],
