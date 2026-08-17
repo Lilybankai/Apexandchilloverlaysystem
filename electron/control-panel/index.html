@@ -1071,6 +1071,41 @@
           </div>
         </div>
 
+        <!-- Setup-sharing health: are drivers making setups, using them, and
+             getting faster on them? Fed by admin_usage_overview (migration 0010). -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-sliders-horizontal" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Setup creators</span>
+                <span class="stat__value" id="adm-setup-creators">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-setup-creators-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-trending-up" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Faster on a shared setup</span>
+                <span class="stat__value" id="adm-setup-improved">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-setup-improved-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-zap" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Setup downloads</span>
+                <span class="stat__value" id="adm-setup-downloads">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-setup-downloads-sub"></span>
+          </div>
+        </div>
+
         <div class="two-col">
           <!-- Active users, last 14 days -->
           <section class="card">
