@@ -32,6 +32,9 @@
       <button class="tab" type="button" data-tab="overlays">
         <svg class="icon"><use href="#i-monitor" /></svg><span class="tab__label">Overlays</span>
       </button>
+      <button class="tab" type="button" data-tab="streamers">
+        <svg class="icon"><use href="#i-video" /></svg><span class="tab__label">Streamers</span>
+      </button>
       <!-- No padlock: the tab has real content as of the reference-pace work.
            The league's own boards are still to come and the view says so, but a
            lock on a tab that scores every lap you have driven would be lying
@@ -411,42 +414,241 @@
           </div>
         </section>
 
-        <!-- ===================== STREAMING CHAT ===================== -->
-        <section class="card">
-          <div class="card__head">
-            <h2 class="card__title">Streaming chat</h2>
-            <p class="card__desc">
-              Show your YouTube and Twitch chat on screen with the
-              <strong>Chat</strong> overlay — add it as an OBS source, or enable
-              it in the in-game layer. Great parked on a side monitor on a
-              triple-screen rig.
+        <!-- Streaming chat + its account linking moved to the Streamers tab. -->
+      </div>
+    </section>
+
+    <!-- ========================= STREAMERS ============================= -->
+    <section class="view" data-view="streamers">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Streamers</h1>
+            <p class="view__sub">
+              Chat on screen and a <strong>StreamBot</strong> in your Twitch and
+              YouTube chats — !commands, timed messages, sub alerts and goals,
+              speaking as your own account.
             </p>
           </div>
-          <div class="settings-grid">
-            <label class="field">
-              <span class="field__label">Twitch channel</span>
-              <input class="field__input" id="chat-twitch-input" type="text"
-                     placeholder="your_channel" autocomplete="off" spellcheck="false" />
-              <span class="field__hint">
-                Read anonymously — no sign-in needed, just your channel name.
-                <span id="chat-twitch-status"></span>
-              </span>
-            </label>
+        </div>
 
-            <label class="field">
-              <span class="field__label">YouTube account</span>
-              <div class="chat-yt-row">
-                <button class="btn btn--ghost" id="chat-yt-link" type="button">Link YouTube…</button>
-                <button class="btn btn--ghost btn--sm" id="chat-yt-unlink" type="button" hidden>Unlink</button>
-                <span class="field__hint" id="chat-yt-status"></span>
-              </div>
-              <span class="field__hint">
-                YouTube needs a one-time Google sign-in so it can read your live
-                chat. Opens in your browser; your login stays on this PC.
-              </span>
-            </label>
-          </div>
-        </section>
+        <nav class="seg streamers-seg" id="streamers-seg" aria-label="Streamer sections">
+          <button type="button" data-streamerspane="accounts" data-active="true">
+            <svg class="icon"><use href="#i-user" /></svg><span>Accounts</span>
+          </button>
+          <button type="button" data-streamerspane="overlay">
+            <svg class="icon"><use href="#i-message-circle" /></svg><span>Chat overlay</span>
+          </button>
+          <button type="button" data-streamerspane="commands">
+            <svg class="icon"><use href="#i-keyboard" /></svg><span>Commands</span>
+          </button>
+          <button type="button" data-streamerspane="timers">
+            <svg class="icon"><use href="#i-clock" /></svg><span>Timers</span>
+          </button>
+          <button type="button" data-streamerspane="alerts">
+            <svg class="icon"><use href="#i-sparkles" /></svg><span>Alerts</span>
+          </button>
+          <button type="button" data-streamerspane="goals">
+            <svg class="icon"><use href="#i-target" /></svg><span>Goals</span>
+          </button>
+        </nav>
+
+        <!-- ------------------------- ACCOUNTS ------------------------- -->
+        <div class="streamers-pane" data-streamerspane="accounts" data-active="true">
+
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">StreamBot</h2>
+              <p class="card__desc">
+                The bot types as <strong>your own account</strong> — link Twitch
+                below (and relink YouTube if asked) to let it speak.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <label class="field field--toggle">
+                <span class="field__label">Bot enabled</span>
+                <span class="switch">
+                  <input type="checkbox" id="sb-enabled" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint" id="sb-status">Off</span>
+              </label>
+              <label class="field field--toggle">
+                <span class="field__label">Speak on Twitch</span>
+                <span class="switch">
+                  <input type="checkbox" id="sb-platform-twitch" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">Commands, timers and alerts in Twitch chat</span>
+              </label>
+              <label class="field field--toggle">
+                <span class="field__label">Speak on YouTube</span>
+                <span class="switch">
+                  <input type="checkbox" id="sb-platform-youtube" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">Budgeted — YouTube charges quota per message</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">Streaming chat</h2>
+              <p class="card__desc">
+                Show your YouTube and Twitch chat on screen with the
+                <strong>Chat</strong> overlay (Chat overlay pane) — and link the
+                accounts the bot speaks through.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field__label">Twitch channel</span>
+                <input class="field__input" id="chat-twitch-input" type="text"
+                       placeholder="your_channel" autocomplete="off" spellcheck="false" />
+                <span class="field__hint">
+                  Read anonymously — no sign-in needed, just your channel name.
+                  <span id="chat-twitch-status"></span>
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Twitch account (for the bot)</span>
+                <div class="chat-yt-row">
+                  <button class="btn btn--ghost" id="chat-tw-link" type="button">Link Twitch…</button>
+                  <button class="btn btn--ghost btn--sm" id="chat-tw-unlink" type="button" hidden>Unlink</button>
+                  <span class="field__hint" id="chat-tw-status"></span>
+                </div>
+                <span class="field__hint" id="chat-tw-code" hidden></span>
+                <span class="field__hint">
+                  Sign in once so the bot can type as you. Opens twitch.tv/activate
+                  with a short code; your login stays on this PC.
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">YouTube account</span>
+                <div class="chat-yt-row">
+                  <button class="btn btn--ghost" id="chat-yt-link" type="button">Link YouTube…</button>
+                  <button class="btn btn--ghost btn--sm" id="chat-yt-unlink" type="button" hidden>Unlink</button>
+                  <span class="field__hint" id="chat-yt-status"></span>
+                </div>
+                <span class="field__hint" id="chat-yt-relink" hidden>
+                  Relink YouTube to let the bot reply there — the earlier sign-in
+                  was read-only.
+                </span>
+                <span class="field__hint">
+                  One-time Google sign-in to read (and, for the bot, post to) your
+                  live chat. Opens in your browser; your login stays on this PC.
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">YouTube message budget</h2>
+              <p class="card__desc">
+                Every YouTube bot message spends API quota shared by all Apex
+                users (50 units each), so the bot rations itself: timers pause
+                first, then command replies — alerts always get the last word.
+              </p>
+            </div>
+            <div class="sb-budget">
+              <div class="sb-budget__bar"><span class="sb-budget__fill" id="sb-budget-bar"></span></div>
+              <span class="field__hint" id="sb-budget-text">—</span>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field__label">Messages per stream</span>
+                <input class="field__input" id="sb-budget-session" type="number" min="0" max="200" step="1" />
+                <span class="field__hint">Default 60</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Messages per day</span>
+                <input class="field__input" id="sb-budget-daily" type="number" min="0" max="200" step="1" />
+                <span class="field__hint">Default 150 — resets midnight Pacific (Google's quota day)</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Min minutes between YouTube timers</span>
+                <input class="field__input" id="sb-budget-mininterval" type="number" min="10" max="1440" step="1" />
+                <span class="field__hint">Never below 10 (Twitch timers can run every 2)</span>
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <!-- ----------------------- CHAT OVERLAY ------------------------ -->
+        <div class="streamers-pane" data-streamerspane="overlay">
+          <ul class="overlay-list" id="streamers-widget-list"><!-- cards injected by JS --></ul>
+        </div>
+
+        <!-- ------------------------- COMMANDS -------------------------- -->
+        <div class="streamers-pane" data-streamerspane="commands">
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">!commands</h2>
+              <p class="card__desc">
+                A viewer types <strong>!discord</strong>, the bot answers with your
+                link. Cooldown stops a busy chat from turning it into spam.
+              </p>
+            </div>
+            <ul class="sb-rows" id="sb-cmd-list"></ul>
+            <div class="sponsor-actions">
+              <button class="btn btn--ghost" id="sb-cmd-add" type="button">Add command</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- -------------------------- TIMERS --------------------------- -->
+        <div class="streamers-pane" data-streamerspane="timers">
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">Timed messages</h2>
+              <p class="card__desc">
+                Recurring lines — socials, the Discord invite, a sponsor shout —
+                posted while you are live.
+              </p>
+            </div>
+            <ul class="sb-rows" id="sb-timer-list"></ul>
+            <div class="sponsor-actions">
+              <button class="btn btn--ghost" id="sb-timer-add" type="button">Add timed message</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- -------------------------- ALERTS --------------------------- -->
+        <div class="streamers-pane" data-streamerspane="alerts">
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">Chat alerts</h2>
+              <p class="card__desc">
+                The bot's thank-you lines for subs, gifts, members and Super
+                Chats. Placeholders: <code>{user}</code> <code>{tier}</code>
+                <code>{months}</code> <code>{count}</code> <code>{amount}</code>.
+              </p>
+            </div>
+            <ul class="sb-rows" id="sb-alert-list"></ul>
+          </section>
+        </div>
+
+        <!-- -------------------------- GOALS ---------------------------- -->
+        <div class="streamers-pane" data-streamerspane="goals">
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title">Goals</h2>
+              <p class="card__desc">
+                Set a sub or member goal; the bot counts events as they happen and
+                announces progress in chat. Placeholders: <code>{label}</code>
+                <code>{current}</code> <code>{target}</code>.
+              </p>
+            </div>
+            <ul class="sb-rows" id="sb-goal-list"></ul>
+            <div class="sponsor-actions">
+              <button class="btn btn--ghost" id="sb-goal-add" type="button">Add goal</button>
+            </div>
+          </section>
+        </div>
       </div>
     </section>
 

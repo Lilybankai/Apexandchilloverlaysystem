@@ -48,6 +48,9 @@
   const sponsorList = $('#sponsor-list');
   const sponsorAdd = $('#sponsor-add');
   const overlayList = $('#overlay-list');
+  // Widgets whose catalog entry says group:'streaming' render inside the
+  // Streamers tab instead of the main grid — same cards, different mount.
+  const streamersWidgetList = $('#streamers-widget-list');
   const combinedUrl = $('#combined-url');
   const toast = $('#toast');
   const errorBanner = $('#error-banner');
@@ -691,6 +694,7 @@
    */
   function renderOverlays(overlays, combined) {
     overlayList.innerHTML = '';
+    if (streamersWidgetList) streamersWidgetList.innerHTML = '';
     for (const o of overlays) {
       const li = document.createElement('li');
       li.className = 'card ovcard';
@@ -822,7 +826,8 @@
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
       li.appendChild(foot);
-      overlayList.appendChild(li);
+      const mount = o.group === 'streaming' && streamersWidgetList ? streamersWidgetList : overlayList;
+      mount.appendChild(li);
     }
     combinedUrl.value = combined;
   }
@@ -3721,6 +3726,9 @@
     if (target === 'admin') {
       void loadAdmin();
     }
+    // The bot's lists live in main; re-ask on entry so another window's edits
+    // (or a fresh install's defaults) are never stale here.
+    if (target === 'streamers') void refreshStreamBot();
     // Plan state changes out-of-app (in the browser, on Stripe's pages), so
     // the card re-asks whenever Settings comes back into view.
     if (target === 'settings') void refreshBilling();
@@ -3896,6 +3904,11 @@
   const chatYtLink = $('#chat-yt-link');
   const chatYtUnlink = $('#chat-yt-unlink');
   const chatYtStatus = $('#chat-yt-status');
+  const chatYtRelink = $('#chat-yt-relink');
+  const chatTwLink = $('#chat-tw-link');
+  const chatTwUnlink = $('#chat-tw-unlink');
+  const chatTwStatus = $('#chat-tw-status');
+  const chatTwCode = $('#chat-tw-code');
 
   /** Whether the operator is mid-edit, so a push doesn't clobber their typing. */
   let chatTwitchEditing = false;
@@ -3926,6 +3939,33 @@
         chatYtUnlink.hidden = true;
         chatYtStatus.textContent = '';
       }
+    }
+    // Old (read-only) YouTube grants keep the widget alive but gate the bot —
+    // the banner is the one place that explains why it isn't typing.
+    if (chatYtRelink) chatYtRelink.hidden = !state.youTubeNeedsRelink;
+    // Twitch account (the bot's login) — mirrors the YouTube three-state row,
+    // plus the device code while a link is pending.
+    if (chatTwLink && chatTwUnlink && chatTwStatus) {
+      if (!state.twitchConfigured) {
+        chatTwLink.hidden = true;
+        chatTwUnlink.hidden = true;
+        chatTwStatus.textContent = 'Not available on this build.';
+      } else if (state.twitchAuthed) {
+        chatTwLink.hidden = true;
+        chatTwUnlink.hidden = false;
+        chatTwStatus.textContent = `Linked (${state.twitchAccount || 'your account'})`;
+      } else {
+        chatTwLink.hidden = false;
+        chatTwUnlink.hidden = true;
+        chatTwStatus.textContent = '';
+      }
+    }
+    if (chatTwCode) {
+      const pending = state.twitchLinkPending;
+      chatTwCode.hidden = !pending;
+      chatTwCode.textContent = pending
+        ? `Enter code ${pending.userCode} at ${pending.verificationUri.replace(/^https?:\/\//, '')}`
+        : '';
     }
   }
 
@@ -3969,7 +4009,475 @@
     });
   }
 
+  if (chatTwLink) {
+    chatTwLink.addEventListener('click', async () => {
+      chatTwLink.disabled = true;
+      chatTwStatus.textContent = 'Opening browser… enter the code shown below.';
+      try {
+        const res = await window.apex.chatLink.linkTwitch();
+        if (res && res.ok) renderChatState(res.state);
+        else chatTwStatus.textContent = (res && res.error) || 'Linking failed.';
+      } finally {
+        chatTwLink.disabled = false;
+      }
+    });
+  }
+
+  if (chatTwUnlink) {
+    chatTwUnlink.addEventListener('click', async () => {
+      chatTwUnlink.disabled = true;
+      try {
+        const res = await window.apex.chatLink.unlinkTwitch();
+        if (res && res.state) renderChatState(res.state);
+      } finally {
+        chatTwUnlink.disabled = false;
+      }
+    });
+  }
+
   window.apex.chatLink.onChange(renderChatState);
+
+  // --- Streamers: sub-panes + the StreamBot editor --------------------------
+  /*
+   * Same shape as the Admin tab: one .seg control, panes display:none'd rather
+   * than unbuilt. The bot editor edits plain local arrays and commits WHOLE
+   * sections over IPC (streamBot:update validates and echoes back) — no
+   * per-row patch grammar, and the echo is skipped while the operator is
+   * typing so a push can't clobber a half-written command.
+   */
+
+  const STREAMERS_PANE_KEY = 'apex.panel.streamersPane';
+
+  function showStreamersPane(name) {
+    const panes = Array.from(document.querySelectorAll('.streamers-pane[data-streamerspane]'));
+    const known = panes.some((p) => p.dataset.streamerspane === name);
+    const target = known ? name : 'accounts';
+    for (const pane of panes) {
+      pane.setAttribute('data-active', String(pane.dataset.streamerspane === target));
+    }
+    for (const btn of document.querySelectorAll('#streamers-seg button[data-streamerspane]')) {
+      btn.setAttribute('data-active', String(btn.dataset.streamerspane === target));
+    }
+    const content = $('#content');
+    if (content) content.scrollTop = 0;
+    try {
+      localStorage.setItem(STREAMERS_PANE_KEY, target);
+    } catch {
+      /* storage disabled — the pane just won't persist */
+    }
+  }
+
+  for (const btn of document.querySelectorAll('#streamers-seg button[data-streamerspane]')) {
+    btn.addEventListener('click', () => showStreamersPane(btn.dataset.streamerspane));
+  }
+  try {
+    showStreamersPane(localStorage.getItem(STREAMERS_PANE_KEY) || 'accounts');
+  } catch {
+    /* defaults to accounts */
+  }
+
+  const sbEnabled = $('#sb-enabled');
+  const sbPlatformTwitch = $('#sb-platform-twitch');
+  const sbPlatformYoutube = $('#sb-platform-youtube');
+  const sbStatus = $('#sb-status');
+  const sbBudgetBar = $('#sb-budget-bar');
+  const sbBudgetText = $('#sb-budget-text');
+  const sbBudgetSession = $('#sb-budget-session');
+  const sbBudgetDaily = $('#sb-budget-daily');
+  const sbBudgetMin = $('#sb-budget-mininterval');
+  const sbCmdList = $('#sb-cmd-list');
+  const sbCmdAdd = $('#sb-cmd-add');
+  const sbTimerList = $('#sb-timer-list');
+  const sbTimerAdd = $('#sb-timer-add');
+  const sbAlertList = $('#sb-alert-list');
+  const sbGoalList = $('#sb-goal-list');
+  const sbGoalAdd = $('#sb-goal-add');
+
+  /** The panel's working copy — mutated by inputs, committed per section. */
+  let bot = null;
+  /** The last link state, for the bot's status line only. */
+  let botLinks = null;
+
+  const commitBotSection = debounce((section) => {
+    if (!bot || !window.apex.streamBot) return;
+    void window.apex.streamBot.update(section, section === 'settings'
+      ? { enabled: bot.enabled, platforms: bot.platforms, youtubeBudget: bot.youtubeBudget }
+      : bot[section]);
+  }, 500);
+
+  /** Whether the operator is typing somewhere a re-render would destroy. */
+  function botEditing() {
+    const active = document.activeElement;
+    if (!active) return false;
+    return [sbCmdList, sbTimerList, sbAlertList, sbGoalList].some((el) => el && el.contains(active));
+  }
+
+  /* ---- tiny DOM builders (textContent-safe, no markup from data) ---------- */
+
+  function sbInput(value, placeholder, onInput, type) {
+    const input = document.createElement('input');
+    input.className = 'field__input';
+    input.type = type || 'text';
+    if (type === 'number') input.min = '0';
+    input.value = value == null ? '' : String(value);
+    if (placeholder) input.placeholder = placeholder;
+    input.addEventListener('input', () => onInput(input));
+    return input;
+  }
+
+  function sbCheck(label, checked, onChange, title) {
+    const wrap = document.createElement('label');
+    wrap.className = 'sb-check';
+    if (title) wrap.title = title;
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!checked;
+    input.addEventListener('change', () => onChange(input.checked));
+    wrap.appendChild(input);
+    wrap.appendChild(document.createTextNode(label));
+    return wrap;
+  }
+
+  function sbDelete(onClick, what) {
+    const btn = document.createElement('button');
+    btn.className = 'iconbtn sm sb-row__del';
+    btn.type = 'button';
+    btn.title = `Delete ${what}`;
+    btn.setAttribute('aria-label', `Delete ${what}`);
+    btn.innerHTML = window.apexIcon ? window.apexIcon('trash-2') : '✕';
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function sbEmpty(list, text) {
+    const li = document.createElement('li');
+    li.className = 'sb-empty';
+    li.textContent = text;
+    list.appendChild(li);
+  }
+
+  /* ---- the four editors --------------------------------------------------- */
+
+  function renderCommands() {
+    if (!sbCmdList || !bot) return;
+    sbCmdList.innerHTML = '';
+    if (!bot.commands.length) sbEmpty(sbCmdList, 'No commands yet — add !discord, !socials, !specs…');
+    bot.commands.forEach((c, i) => {
+      const li = document.createElement('li');
+      li.className = 'sb-row sb-row--cmd';
+      li.appendChild(sbInput(c.name ? `!${c.name}` : '', '!discord', (el) => {
+        c.name = el.value.replace(/^!+/, '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+        commitBotSection('commands');
+      }));
+      li.appendChild(sbInput(c.response, 'The reply the bot posts', (el) => {
+        c.response = el.value;
+        commitBotSection('commands');
+      }));
+      const cooldown = sbInput(c.cooldownSec, 'sec', (el) => {
+        c.cooldownSec = Math.max(0, Math.floor(Number(el.value) || 0));
+        commitBotSection('commands');
+      }, 'number');
+      cooldown.title = 'Cooldown (seconds)';
+      li.appendChild(cooldown);
+      li.appendChild(sbCheck('On', c.enabled, (on) => {
+        c.enabled = on;
+        commitBotSection('commands');
+      }));
+      li.appendChild(sbDelete(() => {
+        bot.commands.splice(i, 1);
+        renderCommands();
+        commitBotSection('commands');
+      }, `!${c.name || 'command'}`));
+      sbCmdList.appendChild(li);
+    });
+  }
+
+  function renderTimers() {
+    if (!sbTimerList || !bot) return;
+    sbTimerList.innerHTML = '';
+    if (!bot.timers.length) sbEmpty(sbTimerList, 'No timed messages yet.');
+    bot.timers.forEach((t, i) => {
+      const li = document.createElement('li');
+      li.className = 'sb-row sb-row--timer';
+      li.appendChild(sbInput(t.text, 'Follow us at …', (el) => {
+        t.text = el.value;
+        commitBotSection('timers');
+      }));
+      const interval = sbInput(t.intervalMin, 'min', (el) => {
+        t.intervalMin = Math.max(1, Math.floor(Number(el.value) || 1));
+        commitBotSection('timers');
+      }, 'number');
+      interval.title = 'Interval (minutes) — YouTube enforces its own minimum';
+      li.appendChild(interval);
+      li.appendChild(sbCheck('Twitch', t.platforms.twitch, (on) => {
+        t.platforms.twitch = on;
+        commitBotSection('timers');
+      }));
+      li.appendChild(sbCheck('YouTube', t.platforms.youtube, (on) => {
+        t.platforms.youtube = on;
+        commitBotSection('timers');
+      }, 'Spends the YouTube budget'));
+      li.appendChild(sbCheck('On', t.enabled, (on) => {
+        t.enabled = on;
+        commitBotSection('timers');
+      }));
+      li.appendChild(sbDelete(() => {
+        bot.timers.splice(i, 1);
+        renderTimers();
+        commitBotSection('timers');
+      }, 'timed message'));
+      sbTimerList.appendChild(li);
+    });
+  }
+
+  const SB_ALERT_LABELS = {
+    sub: 'New sub',
+    resub: 'Resub',
+    gift: 'Gifted subs',
+    membership: 'New member',
+    superchat: 'Super Chat',
+  };
+
+  function renderAlerts() {
+    if (!sbAlertList || !bot) return;
+    sbAlertList.innerHTML = '';
+    for (const key of Object.keys(SB_ALERT_LABELS)) {
+      const alert = bot.alerts[key];
+      if (!alert) continue;
+      const li = document.createElement('li');
+      li.className = 'sb-row sb-row--alert';
+      const label = document.createElement('span');
+      label.className = 'sb-row__label';
+      label.textContent = SB_ALERT_LABELS[key];
+      li.appendChild(label);
+      li.appendChild(sbInput(alert.template, 'Thanks {user}!', (el) => {
+        alert.template = el.value;
+        commitBotSection('alerts');
+      }));
+      li.appendChild(sbCheck('On', alert.enabled, (on) => {
+        alert.enabled = on;
+        commitBotSection('alerts');
+      }));
+      sbAlertList.appendChild(li);
+    }
+  }
+
+  function renderGoals() {
+    if (!sbGoalList || !bot) return;
+    sbGoalList.innerHTML = '';
+    if (!bot.goals.length) sbEmpty(sbGoalList, 'No goals yet — try a sub goal for the next stream.');
+    bot.goals.forEach((g, i) => {
+      const li = document.createElement('li');
+      li.className = 'sb-row sb-row--goal';
+      li.appendChild(sbInput(g.label, 'Sub goal', (el) => {
+        g.label = el.value;
+        commitBotSection('goals');
+      }));
+      const type = document.createElement('select');
+      type.className = 'field__input';
+      type.title = 'What the goal counts';
+      for (const [value, text] of [['twitch_subs', 'Twitch subs'], ['yt_members', 'YT members']]) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        type.appendChild(opt);
+      }
+      type.value = g.type;
+      type.addEventListener('change', () => {
+        g.type = type.value;
+        commitBotSection('goals');
+      });
+      li.appendChild(type);
+      const current = sbInput(g.current, 'now', (el) => {
+        g.current = Math.max(0, Math.floor(Number(el.value) || 0));
+        commitBotSection('goals');
+      }, 'number');
+      current.title = 'Current count (auto-counts new events; correct it here)';
+      li.appendChild(current);
+      const target = sbInput(g.target, 'target', (el) => {
+        g.target = Math.max(1, Math.floor(Number(el.value) || 1));
+        commitBotSection('goals');
+      }, 'number');
+      target.title = 'Target';
+      li.appendChild(target);
+      const every = sbInput(g.announceEveryN, 'every', (el) => {
+        g.announceEveryN = Math.max(1, Math.floor(Number(el.value) || 1));
+        commitBotSection('goals');
+      }, 'number');
+      every.title = 'Announce progress every N';
+      li.appendChild(every);
+      li.appendChild(sbCheck('On', g.enabled, (on) => {
+        g.enabled = on;
+        commitBotSection('goals');
+      }));
+      li.appendChild(sbDelete(() => {
+        bot.goals.splice(i, 1);
+        renderGoals();
+        commitBotSection('goals');
+      }, g.label || 'goal'));
+      sbGoalList.appendChild(li);
+    });
+  }
+
+  /* ---- status + budget ----------------------------------------------------- */
+
+  function renderBotStatus() {
+    if (!sbStatus || !bot) return;
+    if (!bot.enabled) {
+      sbStatus.textContent = 'Off';
+      return;
+    }
+    const parts = [];
+    if (bot.platforms.twitch) {
+      parts.push(botLinks && botLinks.twitchAuthed
+        ? `Twitch as ${botLinks.twitchAccount || 'you'}`
+        : 'Twitch (link your account to speak)');
+    }
+    if (bot.platforms.youtube) {
+      if (!botLinks || !botLinks.youTubeLinked) parts.push('YouTube (link your account)');
+      else if (botLinks.youTubeNeedsRelink) parts.push('YouTube (relink to speak)');
+      else parts.push(botLinks.youTubeLive ? 'YouTube live' : 'YouTube (waiting for a live stream)');
+    }
+    sbStatus.textContent = parts.length ? `On — ${parts.join(' · ')}` : 'On — no platforms selected';
+  }
+
+  function renderBotBudget() {
+    if (!bot || !bot.usage) return;
+    const u = bot.usage;
+    const spentFraction = Math.max(
+      u.sessionCap > 0 ? u.usedSession / u.sessionCap : 0,
+      u.dailyCap > 0 ? u.usedToday / u.dailyCap : 0,
+    );
+    if (sbBudgetBar) {
+      sbBudgetBar.style.width = `${Math.min(100, Math.round(spentFraction * 100))}%`;
+      sbBudgetBar.setAttribute('data-warn', String(spentFraction >= 0.75));
+    }
+    if (sbBudgetText) {
+      sbBudgetText.textContent =
+        `${u.usedSession}/${u.sessionCap} this stream · ${u.usedToday}/${u.dailyCap} today ` +
+        `(~${u.unitsToday.toLocaleString()} of the shared 10,000 daily units)` +
+        (spentFraction >= 1 ? ' — YouTube sending paused until the budget resets' : '');
+    }
+  }
+
+  function renderBotState(state) {
+    if (!state) return;
+    bot = state;
+    if (sbEnabled) sbEnabled.checked = !!state.enabled;
+    if (sbPlatformTwitch) sbPlatformTwitch.checked = !!state.platforms.twitch;
+    if (sbPlatformYoutube) sbPlatformYoutube.checked = !!state.platforms.youtube;
+    if (sbBudgetSession && document.activeElement !== sbBudgetSession) sbBudgetSession.value = state.youtubeBudget.sessionCap;
+    if (sbBudgetDaily && document.activeElement !== sbBudgetDaily) sbBudgetDaily.value = state.youtubeBudget.dailyCap;
+    if (sbBudgetMin && document.activeElement !== sbBudgetMin) sbBudgetMin.value = state.youtubeBudget.minTimerIntervalMin;
+    renderBotStatus();
+    renderBotBudget();
+    // Never rebuild the lists under the operator's cursor — the local copy they
+    // are editing IS the newest truth in that moment anyway.
+    if (!botEditing()) {
+      renderCommands();
+      renderTimers();
+      renderAlerts();
+      renderGoals();
+    }
+  }
+
+  async function refreshStreamBot() {
+    if (!window.apex.streamBot) return;
+    try {
+      renderBotState(await window.apex.streamBot.get());
+    } catch {
+      /* main not ready — the push channel will catch us up */
+    }
+  }
+
+  /* ---- wiring -------------------------------------------------------------- */
+
+  if (sbEnabled) {
+    sbEnabled.addEventListener('change', () => {
+      if (!bot) return;
+      bot.enabled = sbEnabled.checked;
+      renderBotStatus();
+      void window.apex.streamBot.setEnabled(sbEnabled.checked);
+    });
+  }
+  for (const [el, key] of [[sbPlatformTwitch, 'twitch'], [sbPlatformYoutube, 'youtube']]) {
+    if (!el) continue;
+    el.addEventListener('change', () => {
+      if (!bot) return;
+      bot.platforms[key] = el.checked;
+      renderBotStatus();
+      commitBotSection('settings');
+    });
+  }
+  for (const [el, key] of [
+    [sbBudgetSession, 'sessionCap'],
+    [sbBudgetDaily, 'dailyCap'],
+    [sbBudgetMin, 'minTimerIntervalMin'],
+  ]) {
+    if (!el) continue;
+    el.addEventListener('input', () => {
+      if (!bot) return;
+      bot.youtubeBudget[key] = Math.max(0, Math.floor(Number(el.value) || 0));
+      commitBotSection('settings');
+    });
+  }
+
+  if (sbCmdAdd) {
+    sbCmdAdd.addEventListener('click', () => {
+      if (!bot) return;
+      bot.commands.push({ id: '', name: '', response: '', cooldownSec: 10, enabled: true });
+      renderCommands();
+      const first = sbCmdList && sbCmdList.querySelector('li:last-child input');
+      if (first) first.focus();
+    });
+  }
+  if (sbTimerAdd) {
+    sbTimerAdd.addEventListener('click', () => {
+      if (!bot) return;
+      bot.timers.push({
+        id: '',
+        text: '',
+        intervalMin: 15,
+        onlyWhileLive: true,
+        platforms: { twitch: true, youtube: false },
+        enabled: true,
+      });
+      renderTimers();
+      const first = sbTimerList && sbTimerList.querySelector('li:last-child input');
+      if (first) first.focus();
+    });
+  }
+  if (sbGoalAdd) {
+    sbGoalAdd.addEventListener('click', () => {
+      if (!bot) return;
+      bot.goals.push({
+        id: '',
+        type: 'twitch_subs',
+        label: '',
+        target: 10,
+        current: 0,
+        announceEveryN: 5,
+        enabled: true,
+        templates: { progress: '{label}: {current}/{target}!', complete: 'GOAL COMPLETE — {label} hit {target}! 🏁' },
+      });
+      renderGoals();
+      const first = sbGoalList && sbGoalList.querySelector('li:last-child input');
+      if (first) first.focus();
+    });
+  }
+
+  if (window.apex.streamBot) {
+    window.apex.streamBot.onChange(renderBotState);
+    void refreshStreamBot();
+  }
+  window.apex.chatLink.onChange((state) => {
+    botLinks = state;
+    renderBotStatus();
+  });
+  window.apex.chatLink.status().then((state) => {
+    botLinks = state;
+    renderBotStatus();
+  });
 
   // --- What's new ----------------------------------------------------------
   /*

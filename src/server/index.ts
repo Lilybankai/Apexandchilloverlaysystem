@@ -23,6 +23,7 @@ import { frameIntervalMs, loadConfig, type ServerConfig } from './config';
 import { TelemetryWsServer } from './wsServer';
 import { ChatHub, type ChatConfig } from './chatHub';
 import { ChatWsServer } from './chatWsServer';
+import { StreamBot, insertYouTubeChatMessage, type StreamBotConfig } from './streamBot';
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
@@ -410,6 +411,54 @@ export function setChatYouTubeChatEndedHandler(cb: (() => void) | null): void {
   if (chatHub) chatHub.onYouTubeChatEnded = () => chatEndedHandler?.();
 }
 
+/** Handler run when Twitch rejects the login token — set by the desktop app. */
+let chatTwitchAuthErrorHandler: (() => void) | null = null;
+
+/**
+ * Register a callback for "Twitch rejected the login token". Mirrors the
+ * YouTube handler: the desktop app refreshes the token and hands a fresh one
+ * back via {@link setChatConfig}, rather than the IRC client reconnecting
+ * forever with a dead credential.
+ */
+export function setChatTwitchAuthErrorHandler(cb: (() => void) | null): void {
+  chatTwitchAuthErrorHandler = cb;
+  if (chatHub) chatHub.onTwitchAuthError = () => chatTwitchAuthErrorHandler?.();
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Stream bot — commands / timers / alerts / goals on the merged chat feed    */
+/* -------------------------------------------------------------------------- */
+
+/** The bot, module-level for the same retune-in-process reason as the hub. */
+let streamBot: StreamBot | null = null;
+
+/** Config staged before the bot exists (the desktop app pushes early). */
+let pendingStreamBotConfig: StreamBotConfig | null = null;
+
+/** Callbacks into the desktop app (quota ledger + goal persistence). */
+let streamBotHandlers: {
+  onQuotaUsed?: (messages: number) => void;
+  onGoalChanged?: (goalId: string, current: number) => void;
+} = {};
+
+/**
+ * Push the bot's whole working config (commands, timers, alerts, goals, budget
+ * numbers). The desktop app owns persistence and recomputes this on any change;
+ * safe to call before {@link start}.
+ */
+export function setStreamBotConfig(cfg: StreamBotConfig): void {
+  pendingStreamBotConfig = cfg;
+  if (streamBot) streamBot.setConfig(cfg);
+}
+
+/** Register the app-side persistence callbacks the bot reports through. */
+export function setStreamBotHandlers(handlers: {
+  onQuotaUsed?: (messages: number) => void;
+  onGoalChanged?: (goalId: string, current: number) => void;
+}): void {
+  streamBotHandlers = handlers || {};
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -722,13 +771,41 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   chatHub = new ChatHub({ verbose: config.verbose });
   if (chatAuthErrorHandler) chatHub.onYouTubeAuthError = () => chatAuthErrorHandler?.();
   if (chatEndedHandler) chatHub.onYouTubeChatEnded = () => chatEndedHandler?.();
+  chatHub.onTwitchAuthError = () => chatTwitchAuthErrorHandler?.();
   pendingChatConfig = {
     twitchChannel: config.twitchChannel || pendingChatConfig.twitchChannel,
+    twitchToken: pendingChatConfig.twitchToken,
+    twitchLogin: pendingChatConfig.twitchLogin,
     youTubeLiveChatId: config.youTubeLiveChatId || pendingChatConfig.youTubeLiveChatId,
     youTubeAccessToken: config.youTubeAccessToken || pendingChatConfig.youTubeAccessToken,
   };
   chatHub.setConfig(pendingChatConfig);
   const chatWsServer = new ChatWsServer(chatHub, { verbose: config.verbose });
+
+  // The stream bot rides the same hub: it reads the merged feed, types back
+  // through the authenticated Twitch socket / the YouTube insert, and reports
+  // quota spend + goal progress up to the desktop app for persistence.
+  const bot = new StreamBot({
+    sendTwitch: (text) => chatHub?.sendTwitch(text) ?? false,
+    sendYouTube: (text) => {
+      const cfg = getChatConfig();
+      return insertYouTubeChatMessage({
+        liveChatId: cfg.youTubeLiveChatId || '',
+        accessToken: cfg.youTubeAccessToken || '',
+        text,
+        onAuthError: () => chatAuthErrorHandler?.(),
+      });
+    },
+    onQuotaUsed: (n) => streamBotHandlers.onQuotaUsed?.(n),
+    onGoalChanged: (id, current) => streamBotHandlers.onGoalChanged?.(id, current),
+    isLive: (platform) =>
+      platform === 'twitch' ? !!chatHub?.twitchConnected : !!getChatConfig().youTubeLiveChatId,
+  });
+  streamBot = bot;
+  if (pendingStreamBotConfig) bot.setConfig(pendingStreamBotConfig);
+  const unsubscribeBot = chatHub.onMessage((m) => bot.handleMessage(m));
+  const botTick = setInterval(() => bot.tick(), 5000);
+  botTick.unref?.();
 
   // One upgrade router for both WebSocket endpoints. A path-scoped ws server
   // aborts any upgrade whose path it does not own (HTTP 400), so two of them
@@ -778,6 +855,10 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     // Roll back the pieces already started so a failed bind leaks nothing.
     await provider.stop();
     await wsServer.close();
+    clearInterval(botTick);
+    unsubscribeBot();
+    bot.stop();
+    streamBot = null;
     await chatWsServer.close();
     chatHub.stop();
     chatHub = null;
@@ -834,6 +915,10 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     clearInterval(loop);
     await provider.stop();
     await wsServer.close();
+    clearInterval(botTick);
+    unsubscribeBot();
+    bot.stop();
+    streamBot = null;
     await chatWsServer.close();
     chatHub?.stop();
     chatHub = null;

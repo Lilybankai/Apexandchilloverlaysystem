@@ -120,3 +120,12 @@ console.log(
   `[verify] packaged Google client ${client.clientId.slice(0, 12)}… present ` +
     `(secret ${client.clientSecret.length} chars) — YouTube linking will work in this build`,
 );
+
+// The Twitch client id is optional (a build without it just can't link the
+// stream bot's Twitch login) — but its absence should be one visible line, not
+// a discovery a streamer makes.
+if ((client.twitchClientId || '').trim()) {
+  console.log(`[verify] packaged Twitch client ${client.twitchClientId.slice(0, 8)}… present`);
+} else {
+  console.warn('[verify] no Twitch client id in the package — StreamBot Twitch linking disabled in this build');
+}

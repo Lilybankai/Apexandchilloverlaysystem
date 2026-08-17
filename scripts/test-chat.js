@@ -175,13 +175,23 @@ console.log('\nnormalizeYouTubeItem');
   check('id + ts', msg && msg.id === 'yt-1' && msg.ts === 2000);
 }
 {
-  // A membership/super-chat event is NOT a text line — skipped, not rendered.
+  // A membership event now comes through as a line CARRYING a structured
+  // event (the stream bot reacts to it), with a readable fallback text.
   const gift = {
     id: 'yt-2',
     snippet: { type: 'newSponsorEvent', displayMessage: '' },
     authorDetails: { displayName: 'Gifter' },
   };
-  check('non-text event → null', chat.normalizeYouTubeItem(gift, 1) === null);
+  const member = chat.normalizeYouTubeItem(gift, 1);
+  check('membership event carried', !!member && member.event && member.event.kind === 'membership');
+  check('membership fallback text', !!member && member.segments[0].text === 'Gifter became a member');
+  // An unknown event kind is still skipped.
+  const poll = {
+    id: 'yt-4',
+    snippet: { type: 'pollEvent', displayMessage: 'x' },
+    authorDetails: { displayName: 'Someone' },
+  };
+  check('unknown event → null', chat.normalizeYouTubeItem(poll, 1) === null);
   const blank = {
     id: 'yt-3',
     snippet: { type: 'textMessageEvent', displayMessage: '' },
@@ -283,6 +293,94 @@ console.log('\nSafety contract — emote hosts + a fresh hub');
   check('fresh hub is inactive', hub.active === false);
   check('fresh hub snapshot empty', Array.isArray(hub.snapshot()) && hub.snapshot().length === 0);
   hub.stop();
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\ntwitchEventFromIrc — USERNOTICE subs, resubs, gifts');
+/* -------------------------------------------------------------------------- */
+
+{
+  const sub = chat.parseIrcLine(
+    '@badges=subscriber/0;display-name=NewFan;id=ev1;msg-id=sub;msg-param-sub-plan=1000;' +
+      'system-msg=NewFan\\ssubscribed\\sat\\sTier\\s1. :tmi.twitch.tv USERNOTICE #apex',
+  );
+  const m = chat.twitchEventFromIrc(sub, 5);
+  check('sub event kind', !!m && m.event && m.event.kind === 'sub');
+  check('sub tier mapped 1000→1', !!m && m.event.tier === '1');
+  check('sub author from display-name', !!m && m.author === 'NewFan');
+  check('sub text from system-msg', !!m && m.segments[0].text === 'NewFan subscribed at Tier 1.');
+
+  const resub = chat.parseIrcLine(
+    '@display-name=OldFan;id=ev2;msg-id=resub;msg-param-sub-plan=Prime;' +
+      'msg-param-cumulative-months=12;system-msg=x :tmi.twitch.tv USERNOTICE #apex :great stream',
+  );
+  const r = chat.twitchEventFromIrc(resub, 5);
+  check('resub months', !!r && r.event.kind === 'resub' && r.event.months === 12);
+  check('resub keeps Prime tier', !!r && r.event.tier === 'Prime');
+  check("resub text prefers the user's own message", !!r && r.segments[0].text === 'great stream');
+
+  const bomb = chat.parseIrcLine(
+    '@display-name=Whale;id=ev3;msg-id=submysterygift;msg-param-mass-gift-count=20;' +
+      'system-msg=x :tmi.twitch.tv USERNOTICE #apex',
+  );
+  const b = chat.twitchEventFromIrc(bomb, 5);
+  check('gift bomb count', !!b && b.event.kind === 'giftbomb' && b.event.count === 20);
+
+  const singleGift = chat.parseIrcLine(
+    '@login=gifter;id=ev4;msg-id=subgift;msg-param-sub-plan=2000;system-msg=x :tmi.twitch.tv USERNOTICE #apex',
+  );
+  const g = chat.twitchEventFromIrc(singleGift, 5);
+  check('subgift is count 1, author falls back to login',
+    !!g && g.event.kind === 'subgift' && g.event.count === 1 && g.author === 'gifter');
+
+  const raid = chat.parseIrcLine('@msg-id=raid;display-name=R :tmi.twitch.tv USERNOTICE #apex');
+  check('unhandled USERNOTICE kind → null', chat.twitchEventFromIrc(raid, 5) === null);
+  const priv = chat.parseIrcLine(':a!a@a PRIVMSG #apex :!discord');
+  check('PRIVMSG is not an event', chat.twitchEventFromIrc(priv, 5) === null);
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nnormalizeYouTubeItem — Super Chats carry amount + comment');
+/* -------------------------------------------------------------------------- */
+
+{
+  const sc = {
+    id: 'yt-sc',
+    snippet: {
+      type: 'superChatEvent',
+      displayMessage: '',
+      superChatDetails: { amountDisplayString: '£5.00', userComment: 'love the overlays' },
+    },
+    authorDetails: { displayName: 'Backer' },
+  };
+  const m = chat.normalizeYouTubeItem(sc, 9);
+  check('superchat event kind', !!m && m.event && m.event.kind === 'superchat');
+  check('superchat amount', !!m && m.event.amount === '£5.00');
+  check('superchat text falls back to the comment', !!m && m.segments[0].text === 'love the overlays');
+  // Plain text lines carry no event at all — the widget contract is unchanged.
+  const plain = chat.normalizeYouTubeItem(
+    { id: 'p', snippet: { type: 'textMessageEvent', displayMessage: 'hi' }, authorDetails: { displayName: 'A' } },
+    9,
+  );
+  check('plain line has no event field', !!plain && plain.event === undefined);
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nRateLimiter — the 18/30s send window');
+/* -------------------------------------------------------------------------- */
+
+{
+  let t = 0;
+  const rl = new chat.RateLimiter(3, 1000, () => t);
+  check('takes up to the limit', rl.tryAcquire() && rl.tryAcquire() && rl.tryAcquire());
+  check('refuses over the limit', rl.tryAcquire() === false);
+  t = 999;
+  check('window has not rolled at 999ms', rl.tryAcquire() === false);
+  t = 1000;
+  check('slot frees exactly at the window edge', rl.tryAcquire() === true);
+  t = 1001;
+  check('only the expired stamps freed',
+    rl.tryAcquire() && rl.tryAcquire() && rl.tryAcquire() === false);
 }
 
 /* -------------------------------------------------------------------------- */

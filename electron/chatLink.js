@@ -82,8 +82,29 @@ const GOOGLE_CLIENT_SECRET =
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const YOUTUBE_API = 'https://www.googleapis.com/youtube/v3';
-/** Read-only is all the chat widget needs — it never posts or manages anything. */
-const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
+/**
+ * The chat widget only reads, but the stream bot types replies into the live
+ * chat, and `liveChatMessages.insert` needs the full scope. Links made before
+ * this scope change keep working for reading; `youTubeNeedsRelink` in
+ * {@link stateForUi} is what tells the panel to ask for a re-consent before
+ * the bot may speak.
+ */
+const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
+
+/* ----- Twitch (Device Code Grant — a public client, so no secret at all) ---- */
+
+const TWITCH_CLIENT_ID = process.env.APEX_TWITCH_CLIENT_ID || baked.twitchClientId || '';
+const TWITCH_DEVICE_URL = 'https://id.twitch.tv/oauth2/device';
+const TWITCH_TOKEN_URL = 'https://id.twitch.tv/oauth2/token';
+const TWITCH_VALIDATE_URL = 'https://id.twitch.tv/oauth2/validate';
+/**
+ * chat:read + chat:edit are what let the bot sit on the IRC socket as the
+ * streamer and type. channel:read:subscriptions is requested now (unused until
+ * the EventSub follower/sub work lands) so nobody has to relink for it later.
+ */
+const TWITCH_SCOPES = 'chat:read chat:edit channel:read:subscriptions';
+/** Twitch requires apps to validate their token at least hourly. */
+const TWITCH_VALIDATE_MS = 3600_000;
 
 /** Refresh the access token this long before it actually expires (seconds). */
 const REFRESH_SKEW_SEC = 120;
@@ -125,17 +146,32 @@ let applyChatConfig = () => {};
 
 /**
  * Persisted, on disk at <userData>/chatlink.json (0600, like session.json):
- *   { twitchChannel, youtube: { refresh_token, display_name } }
- * The access token and live chat id are runtime-only and never written.
+ *   { twitchChannel,
+ *     twitch:  { refresh_token, login, display_name, scopes[] },
+ *     youtube: { refresh_token, display_name, scopes[] } }
+ * Access tokens and the live chat id are runtime-only and never written. The
+ * `scopes` arrays are what tell an old link from a current one: a youtube slot
+ * without force-ssl (or with no scopes at all — pre-bot builds wrote none) can
+ * read chat but not send, and the panel shows a relink prompt.
  */
-let store = { twitchChannel: '', youtube: null };
+let store = { twitchChannel: '', twitch: null, youtube: null };
 
 /** Runtime YouTube session (not persisted). */
 let yt = { accessToken: '', expiresAt: 0, liveChatId: '', displayName: '' };
 
-/** The maintenance timer, and a guard so two OAuth flows can't overlap. */
+/** Runtime Twitch session (not persisted). */
+let tw = { accessToken: '', expiresAt: 0, lastValidateAt: 0 };
+
+/**
+ * A device-code link in progress — the panel shows `userCode` and where to type
+ * it while we poll Twitch for the operator's approval.
+ */
+let twLink = { pending: false, userCode: '', verificationUri: '' };
+
+/** The maintenance timer, and guards so two OAuth flows can't overlap. */
 let maintainTimer = null;
 let linking = false;
+let twitchLinking = false;
 /** When discovery last actually called liveBroadcasts.list (ms epoch). */
 let lastDiscoverAt = 0;
 
@@ -152,13 +188,28 @@ function readStore() {
     const raw = JSON.parse(fs.readFileSync(storePath(), 'utf8'));
     return {
       twitchChannel: typeof raw.twitchChannel === 'string' ? raw.twitchChannel : '',
+      twitch:
+        raw.twitch && typeof raw.twitch.refresh_token === 'string' && raw.twitch.refresh_token
+          ? {
+              refresh_token: raw.twitch.refresh_token,
+              login: raw.twitch.login || '',
+              display_name: raw.twitch.display_name || '',
+              scopes: Array.isArray(raw.twitch.scopes) ? raw.twitch.scopes : [],
+            }
+          : null,
       youtube:
         raw.youtube && typeof raw.youtube.refresh_token === 'string' && raw.youtube.refresh_token
-          ? { refresh_token: raw.youtube.refresh_token, display_name: raw.youtube.display_name || '' }
+          ? {
+              refresh_token: raw.youtube.refresh_token,
+              display_name: raw.youtube.display_name || '',
+              // Pre-bot builds wrote no scopes field — that IS the signal the
+              // link predates force-ssl and cannot send.
+              scopes: Array.isArray(raw.youtube.scopes) ? raw.youtube.scopes : [],
+            }
           : null,
     };
   } catch {
-    return { twitchChannel: '', youtube: null };
+    return { twitchChannel: '', twitch: null, youtube: null };
   }
 }
 
@@ -193,11 +244,14 @@ function init(deps) {
   applyChatConfig = typeof deps.applyChatConfig === 'function' ? deps.applyChatConfig : () => {};
   store = readStore();
   // Push whatever we already have (a remembered Twitch channel works with no
-  // network at all; YouTube is brought back to life below if it was linked).
+  // network at all; the OAuth links are brought back to life below).
   pushServerConfig();
   if (store.youtube) {
     // Best-effort: refresh the token and find the live chat in the background.
     void maintainYouTube();
+  }
+  if (store.twitch) {
+    void maintainTwitch();
   }
   startMaintainTimer();
   emitChange();
@@ -208,6 +262,16 @@ function youTubeConfigured() {
   return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
 }
 
+/** Whether the Twitch OAuth client is configured at all. */
+function twitchConfigured() {
+  return !!TWITCH_CLIENT_ID;
+}
+
+/** Whether the stored YouTube grant carries the scope the bot needs to send. */
+function youTubeCanSend() {
+  return !!(store.youtube && Array.isArray(store.youtube.scopes) && store.youtube.scopes.includes(YOUTUBE_SCOPE));
+}
+
 /**
  * The ONLY shape the renderer receives — never a token. Mirrors auth.js's
  * publicUser discipline.
@@ -216,11 +280,22 @@ function stateForUi() {
   return {
     twitchChannel: store.twitchChannel || '',
     twitchLinked: !!store.twitchChannel,
+    // The bot's Twitch login (distinct from the channel being read).
+    twitchConfigured: twitchConfigured(),
+    twitchAuthed: !!(store.twitch && store.twitch.refresh_token),
+    twitchAccount: (store.twitch && (store.twitch.display_name || store.twitch.login)) || '',
+    // A device-code link in progress: the panel shows this code.
+    twitchLinkPending: twLink.pending
+      ? { userCode: twLink.userCode, verificationUri: twLink.verificationUri }
+      : null,
     youTubeConfigured: youTubeConfigured(),
     youTubeLinked: !!(store.youtube && store.youtube.refresh_token),
     youTubeAccount: (store.youtube && store.youtube.display_name) || yt.displayName || '',
     // True once we've actually found an active broadcast to read.
     youTubeLive: !!yt.liveChatId,
+    // Send capability — what gates the bot's YouTube half in the panel.
+    youTubeCanSend: youTubeCanSend(),
+    youTubeNeedsRelink: !!(store.youtube && store.youtube.refresh_token) && !youTubeCanSend(),
   };
 }
 
@@ -232,11 +307,13 @@ function emitChange() {
   }
 }
 
-/** Forward the current sources to the running server. */
+/** Forward the current sources (and the bot's Twitch identity) to the server. */
 function pushServerConfig() {
   try {
     applyChatConfig({
       twitchChannel: store.twitchChannel || '',
+      twitchToken: tw.accessToken || '',
+      twitchLogin: (store.twitch && store.twitch.login) || '',
       youTubeLiveChatId: yt.liveChatId || '',
       youTubeAccessToken: yt.accessToken || '',
     });
@@ -260,6 +337,242 @@ function setTwitchChannel(name) {
   pushServerConfig();
   emitChange();
   return { ok: true, state: stateForUi() };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Twitch — Device Code Grant (the bot's login; reading stays anonymous)      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Link the streamer's Twitch account so the bot can type. Device Code Grant is
+ * the desktop-app flow Twitch built for exactly this: no client secret, no
+ * loopback server — Twitch shows the operator a short code, we open
+ * twitch.tv/activate, and poll the token endpoint until they approve.
+ *
+ * The user code is surfaced through {@link stateForUi} the moment Twitch
+ * issues it (the panel renders it while this promise is still pending), and
+ * cleared again on any outcome.
+ */
+async function linkTwitch() {
+  if (!twitchConfigured()) {
+    return {
+      ok: false,
+      error: 'Twitch linking isn’t configured on this build (no Twitch client id).',
+    };
+  }
+  if (twitchLinking) return { ok: false, error: 'A Twitch link is already in progress.' };
+  twitchLinking = true;
+  try {
+    const device = await twitchPost(TWITCH_DEVICE_URL, {
+      client_id: TWITCH_CLIENT_ID,
+      scopes: TWITCH_SCOPES,
+    });
+    if (!device.device_code || !device.user_code) {
+      return { ok: false, error: device.message || 'Twitch did not issue a device code.' };
+    }
+    twLink = {
+      pending: true,
+      userCode: device.user_code,
+      verificationUri: device.verification_uri || 'https://www.twitch.tv/activate',
+    };
+    emitChange();
+    void shell.openExternal(twLink.verificationUri);
+
+    // Poll at the cadence Twitch asks for, up to the code's lifetime (capped at
+    // the same 300 s the Google flow allows an abandoned consent).
+    const intervalMs = Math.max(1, Number(device.interval) || 5) * 1000;
+    const deadline = Date.now() + Math.min((Number(device.expires_in) || 300) * 1000, 300_000);
+    let tokens = null;
+    while (Date.now() < deadline) {
+      await new Promise((r) => {
+        const t = setTimeout(r, intervalMs);
+        t.unref?.();
+      });
+      const res = await twitchPost(TWITCH_TOKEN_URL, {
+        client_id: TWITCH_CLIENT_ID,
+        scopes: TWITCH_SCOPES,
+        device_code: device.device_code,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      });
+      if (res.access_token) {
+        tokens = res;
+        break;
+      }
+      const message = String(res.message || '').toLowerCase();
+      if (message.includes('pending')) continue;
+      if (message.includes('slow down')) continue; // next loop is already a full interval away
+      return { ok: false, error: res.message || 'Twitch sign-in was refused.' };
+    }
+    if (!tokens) return { ok: false, error: 'Timed out waiting for Twitch sign-in.' };
+
+    tw.accessToken = tokens.access_token;
+    tw.expiresAt = Math.floor(Date.now() / 1000) + (Number(tokens.expires_in) || 3600);
+    tw.lastValidateAt = Date.now();
+
+    // The login is the IRC NICK — validate is the canonical place to get it.
+    const who = await twitchValidate(tw.accessToken);
+    if (!who || !who.login) {
+      tw = { accessToken: '', expiresAt: 0, lastValidateAt: 0 };
+      return { ok: false, error: 'Twitch accepted the code but the token failed validation.' };
+    }
+    store.twitch = {
+      refresh_token: tokens.refresh_token || '',
+      login: who.login,
+      display_name: who.login,
+      scopes: Array.isArray(tokens.scope) ? tokens.scope : TWITCH_SCOPES.split(' '),
+    };
+    // Sensible default: a streamer linking their account almost always wants
+    // their own chat read; never overwrite a channel they typed themselves.
+    if (!store.twitchChannel) store.twitchChannel = who.login;
+    writeStore();
+    void fetchTwitchDisplayName();
+    pushServerConfig();
+    return { ok: true, state: stateForUi() };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Twitch linking failed.' };
+  } finally {
+    twitchLinking = false;
+    twLink = { pending: false, userCode: '', verificationUri: '' };
+    emitChange();
+  }
+}
+
+/** POST a form body to a Twitch OAuth endpoint; always resolves to JSON. */
+async function twitchPost(url, params) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(20000),
+  });
+  return res.json().catch(() => ({}));
+}
+
+/** GET /validate — `{login, user_id, …}` on a live token, null on a dead one. */
+async function twitchValidate(token) {
+  try {
+    const res = await fetch(TWITCH_VALIDATE_URL, {
+      headers: { Authorization: `OAuth ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch {
+    return null; // network blip — treated as "couldn't check", not "invalid"
+  }
+}
+
+/** Best-effort: the capitalised display name for the panel (cosmetic only). */
+async function fetchTwitchDisplayName() {
+  try {
+    if (!tw.accessToken || !store.twitch) return;
+    const res = await fetch('https://api.twitch.tv/helix/users', {
+      headers: { Authorization: `Bearer ${tw.accessToken}`, 'Client-Id': TWITCH_CLIENT_ID },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return;
+    const json = await res.json().catch(() => ({}));
+    const name = json.data && json.data[0] && json.data[0].display_name;
+    if (name && store.twitch) {
+      store.twitch.display_name = name;
+      writeStore();
+      emitChange();
+    }
+  } catch {
+    /* cosmetic */
+  }
+}
+
+/** Forget the Twitch login. The channel (read anonymously) is left alone. */
+function unlinkTwitch() {
+  store.twitch = null;
+  tw = { accessToken: '', expiresAt: 0, lastValidateAt: 0 };
+  writeStore();
+  pushServerConfig();
+  emitChange();
+  return { ok: true, state: stateForUi() };
+}
+
+/**
+ * A valid Twitch access token, refreshing when near expiry. Twitch ROTATES the
+ * refresh token on every use — persisting the new one immediately is what
+ * keeps the link alive across restarts; miss it once and the stored token is
+ * already burnt. 4xx clears the link (grant revoked), same as the Google path.
+ */
+async function twitchAccessToken() {
+  if (!store.twitch || !store.twitch.refresh_token) return '';
+  const now = Math.floor(Date.now() / 1000);
+  if (tw.accessToken && tw.expiresAt - REFRESH_SKEW_SEC > now) return tw.accessToken;
+
+  let res;
+  try {
+    res = await fetch(TWITCH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: TWITCH_CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: store.twitch.refresh_token,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    return ''; // a network blip must not unlink mid-stream
+  }
+  if (!res.ok) {
+    if (res.status >= 400 && res.status < 500) {
+      store.twitch = null;
+      tw = { accessToken: '', expiresAt: 0, lastValidateAt: 0 };
+      writeStore();
+      emitChange();
+    }
+    return '';
+  }
+  const json = await res.json().catch(() => ({}));
+  tw.accessToken = json.access_token || '';
+  tw.expiresAt = Math.floor(Date.now() / 1000) + (Number(json.expires_in) || 3600);
+  if (json.refresh_token && store.twitch) {
+    store.twitch.refresh_token = json.refresh_token;
+    writeStore();
+  }
+  return tw.accessToken;
+}
+
+/**
+ * Keep the Twitch link healthy: make sure a fresh token exists, validate it on
+ * the hourly cadence Twitch requires, and push it to the server's IRC client.
+ */
+async function maintainTwitch() {
+  if (!store.twitch) return;
+  const token = await twitchAccessToken();
+  if (!token) {
+    pushServerConfig();
+    emitChange();
+    return;
+  }
+  if (Date.now() - tw.lastValidateAt >= TWITCH_VALIDATE_MS) {
+    const who = await twitchValidate(token);
+    tw.lastValidateAt = Date.now();
+    if (who === null) {
+      // Couldn't check (network) — keep going; next tick tries again.
+    } else if (!who.login) {
+      // Token is dead ahead of its expiry (revoked). Force one refresh.
+      tw.accessToken = '';
+      tw.expiresAt = 0;
+      await twitchAccessToken();
+    }
+  }
+  // Always re-push: the token may have been minted or rotated above, and the
+  // server's setAuth is a no-op when nothing actually changed.
+  pushServerConfig();
+  emitChange();
+}
+
+/** Called by main.js when the server reports Twitch rejected the login. */
+function handleTwitchAuthError() {
+  tw.accessToken = '';
+  tw.expiresAt = 0;
+  void maintainTwitch();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -344,7 +657,7 @@ async function linkYouTube() {
     if (!tokens.refresh_token) {
       return { ok: false, error: 'Google did not return a refresh token — try again and grant access.' };
     }
-    store.youtube = { refresh_token: tokens.refresh_token, display_name: '' };
+    store.youtube = { refresh_token: tokens.refresh_token, display_name: '', scopes: [YOUTUBE_SCOPE] };
     yt.accessToken = tokens.access_token || '';
     yt.expiresAt = Math.floor(Date.now() / 1000) + (Number(tokens.expires_in) || 3600);
     writeStore();
@@ -572,11 +885,15 @@ function handleYouTubeChatEnded() {
 function startMaintainTimer() {
   if (maintainTimer) clearInterval(maintainTimer);
   maintainTimer = setInterval(() => {
-    if (!store.youtube) return;
-    // Ration the one call that costs quota: never while a chat is live, and at
-    // most once per DISCOVER_IDLE_MS otherwise.
-    const due = Date.now() - lastDiscoverAt >= DISCOVER_IDLE_MS;
-    void maintainYouTube({ discover: due });
+    if (store.youtube) {
+      // Ration the one call that costs quota: never while a chat is live, and
+      // at most once per DISCOVER_IDLE_MS otherwise.
+      const due = Date.now() - lastDiscoverAt >= DISCOVER_IDLE_MS;
+      void maintainYouTube({ discover: due });
+    }
+    // Twitch's half is quota-free: token refresh near expiry plus the hourly
+    // validate Twitch requires, both inside maintainTwitch's own gates.
+    if (store.twitch) void maintainTwitch();
   }, MAINTAIN_MS);
   maintainTimer.unref?.();
 }
@@ -585,10 +902,14 @@ module.exports = {
   init,
   stateForUi,
   setTwitchChannel,
+  linkTwitch,
+  unlinkTwitch,
+  handleTwitchAuthError,
   linkYouTube,
   unlinkYouTube,
   handleYouTubeAuthError,
   handleYouTubeChatEnded,
   // Exported for tests.
   youTubeConfigured,
+  twitchConfigured,
 };

@@ -73,6 +73,26 @@ export interface ChatSegment {
  */
 export type ChatBadge = 'broadcaster' | 'mod' | 'vip' | 'member' | 'verified';
 
+/**
+ * What kind of paid/support event a message announces. `sub`/`resub`/`subgift`/
+ * `giftbomb` come from Twitch USERNOTICE; `membership`/`superchat` from the
+ * YouTube item types of the same name. A plain chat line has no event.
+ */
+export type ChatEventKind = 'sub' | 'resub' | 'subgift' | 'giftbomb' | 'membership' | 'superchat';
+
+/** The structured half of a support event, for consumers that react to it. */
+export interface ChatEvent {
+  kind: ChatEventKind;
+  /** Twitch sub tier ('1' | '2' | '3' | 'Prime') or a YouTube member level name. */
+  tier?: string;
+  /** Cumulative months on a resub. */
+  months?: number;
+  /** How many subs a gift bomb contained (a single subgift is 1). */
+  count?: number;
+  /** Super Chat display amount, e.g. '$5.00', as YouTube formats it. */
+  amount?: string;
+}
+
 /** One normalized chat message, as broadcast on the `/chat` WebSocket. */
 export interface ChatMessage {
   /** Platform message id — the dedupe key, so a replayed backlog never doubles. */
@@ -86,6 +106,8 @@ export interface ChatMessage {
   segments: ChatSegment[];
   /** Server clock (ms epoch) when the hub received it — the widget's sort key. */
   ts: number;
+  /** Present only when this line announces a sub/membership/Super Chat. */
+  event?: ChatEvent;
 }
 
 /**
@@ -290,6 +312,60 @@ export function twitchMessageFromIrc(line: IrcLine, nowMs: number): ChatMessage 
   };
 }
 
+/** Twitch's `msg-param-sub-plan` values → the tier names people actually say. */
+function twitchTier(plan: string): string {
+  if (plan === 'Prime') return 'Prime';
+  if (plan === '1000') return '1';
+  if (plan === '2000') return '2';
+  if (plan === '3000') return '3';
+  return plan;
+}
+
+/**
+ * Turn a parsed USERNOTICE line (sub / resub / gift / gift bomb) into a
+ * normalized {@link ChatMessage} carrying a {@link ChatEvent}, or null for the
+ * USERNOTICE kinds we don't announce (raids, rituals, …).
+ *
+ * The rendered text prefers the user's own attached message (the trailing
+ * argument — a resub often carries one), falling back to Twitch's readable
+ * `system-msg` ("Name subscribed at Tier 1."), so the chat widget can show the
+ * line as-is while the bot reacts to the structured `event`.
+ */
+export function twitchEventFromIrc(line: IrcLine, nowMs: number): ChatMessage | null {
+  if (line.command !== 'USERNOTICE') return null;
+  const msgId = line.tags['msg-id'] || '';
+  let event: ChatEvent | null = null;
+  if (msgId === 'sub') {
+    event = { kind: 'sub', tier: twitchTier(line.tags['msg-param-sub-plan'] || '') };
+  } else if (msgId === 'resub') {
+    const months = Number.parseInt(line.tags['msg-param-cumulative-months'] || '', 10);
+    event = { kind: 'resub', tier: twitchTier(line.tags['msg-param-sub-plan'] || '') };
+    if (Number.isFinite(months) && months > 0) event.months = months;
+  } else if (msgId === 'subgift') {
+    event = { kind: 'subgift', tier: twitchTier(line.tags['msg-param-sub-plan'] || ''), count: 1 };
+  } else if (msgId === 'submysterygift') {
+    const count = Number.parseInt(line.tags['msg-param-mass-gift-count'] || '', 10);
+    event = { kind: 'giftbomb', count: Number.isFinite(count) && count > 0 ? count : 1 };
+  }
+  if (!event) return null;
+
+  const author = line.tags['display-name']?.trim() || line.tags['login'] || '';
+  if (!author) return null;
+  const text = line.trailing || line.tags['system-msg'] || '';
+  const id = line.tags['id'] || `tw-ev-${nowMs}`;
+  const color = /^#[0-9a-fA-F]{6}$/.test(line.tags['color'] || '') ? (line.tags['color'] as string) : '';
+  return {
+    id,
+    platform: 'twitch',
+    author,
+    color,
+    badges: twitchBadges(line.tags['badges'] || ''),
+    segments: text ? buildTwitchSegments(text, parseTwitchEmotesTag(line.tags['emotes'] || '')) : [],
+    ts: nowMs,
+    event,
+  };
+}
+
 /** The nick out of an IRC prefix (`nick!user@host`). */
 function nickFromPrefix(prefix: string): string {
   const bang = prefix.indexOf('!');
@@ -307,31 +383,75 @@ export function normalizeTwitchChannel(input: string): string {
 }
 
 /**
- * A read-only Twitch chat connection: an anonymous IRC-over-WebSocket client
- * that joins one channel and hands each parsed message to a callback.
+ * A sliding-window rate limiter: at most `limit` acquisitions per `windowMs`.
+ * Twitch drops (and can temporarily ban) accounts that exceed 20 messages per
+ * 30 s in a channel; the client below runs a couple under that. Pure and
+ * exported so the arithmetic is testable with a fake clock.
+ */
+export class RateLimiter {
+  private readonly stamps: number[] = [];
+
+  public constructor(
+    private readonly limit: number,
+    private readonly windowMs: number,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** Take one slot if the window has room; records the acquisition. */
+  public tryAcquire(): boolean {
+    const t = this.now();
+    while (this.stamps.length > 0 && t - (this.stamps[0] ?? t) >= this.windowMs) this.stamps.shift();
+    if (this.stamps.length >= this.limit) return false;
+    this.stamps.push(t);
+    return true;
+  }
+}
+
+/**
+ * A Twitch chat connection: IRC-over-WebSocket, joining one channel and handing
+ * each parsed message to a callback.
  *
  * It reconnects with capped backoff (a stream is long; a dropped socket must
  * heal itself) and answers Twitch's `PING` with `PONG` (miss it and the server
- * closes the connection after a few minutes). Nothing here authenticates — the
- * `justinfan` nick is Twitch's documented anonymous guest, which can read a
- * public channel and do nothing else.
+ * closes the connection after a few minutes).
+ *
+ * By default it does not authenticate — the `justinfan` nick is Twitch's
+ * documented anonymous guest, which can read a public channel and do nothing
+ * else, and is why chat reading works with no OAuth at all. Given a user token
+ * via {@link setAuth} it logs in as that account instead (`PASS oauth:…`),
+ * which is what lets {@link send} type into the channel for the stream bot.
+ * Sends queue until the server has accepted the login (the `001` welcome) and
+ * drain through a {@link RateLimiter} sitting safely under Twitch's 20/30s.
  */
 export class TwitchChatClient {
   private ws: WebSocket | null = null;
   private channel = '';
+  private authToken = '';
+  private authLogin = '';
+  /** True once the server accepted our registration (001) — sends wait for it. */
+  private ready = false;
+  private readonly sendQueue: string[] = [];
+  private drainTimer: NodeJS.Timeout | null = null;
+  private readonly limiter = new RateLimiter(18, 30_000);
   private closedByUs = false;
   private reconnectDelay = 1000;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private readonly onMessage: (msg: ChatMessage) => void;
+  private readonly onAuthError: () => void;
   private readonly verbose: boolean;
   private readonly url: string;
 
+  /** Queued outbound lines beyond this are shed oldest-first. */
+  private static readonly MAX_QUEUE = 10;
+
   public constructor(opts: {
     onMessage: (msg: ChatMessage) => void;
+    onAuthError?: () => void;
     verbose?: boolean;
     url?: string;
   }) {
     this.onMessage = opts.onMessage;
+    this.onAuthError = opts.onAuthError || (() => {});
     this.verbose = !!opts.verbose;
     this.url = opts.url || 'wss://irc-ws.chat.twitch.tv:443';
   }
@@ -345,11 +465,74 @@ export class TwitchChatClient {
     if (next) this.connect();
   }
 
+  /**
+   * Log in as a real account (or back to anonymous with empty strings). A
+   * change tears the socket down; the next connect uses the new identity.
+   */
+  public setAuth(token: string, login: string): void {
+    const nextToken = String(token || '').trim();
+    const nextLogin = normalizeTwitchChannel(login);
+    if (nextToken === this.authToken && nextLogin === this.authLogin) return;
+    this.authToken = nextToken;
+    this.authLogin = nextLogin;
+    this.stop();
+    if (this.channel) this.connect();
+  }
+
+  /** Whether {@link send} can currently work at all (authed, channel set). */
+  public get canSend(): boolean {
+    return !!(this.channel && this.authToken && this.authLogin);
+  }
+
+  /** Whether a socket to the channel is currently up. */
+  public get connected(): boolean {
+    return !!(this.ws && this.channel);
+  }
+
+  /**
+   * Queue one chat line for the joined channel. Returns false when sending is
+   * impossible (anonymous, no channel) — a full queue sheds its OLDEST line
+   * instead of refusing the new one, because the newest message is the one
+   * reacting to what chat just said.
+   */
+  public send(text: string): boolean {
+    const line = String(text || '').replace(/[\r\n]+/g, ' ').trim();
+    if (!line || !this.canSend) return false;
+    this.sendQueue.push(line);
+    while (this.sendQueue.length > TwitchChatClient.MAX_QUEUE) this.sendQueue.shift();
+    this.drain();
+    return true;
+  }
+
+  /** Push queued lines out as fast as the rate limiter allows. */
+  private drain(): void {
+    while (this.sendQueue.length > 0 && this.ready && this.ws && this.limiter.tryAcquire()) {
+      const line = this.sendQueue.shift();
+      try {
+        this.ws.send(`PRIVMSG #${this.channel} :${line}`);
+      } catch {
+        break; // socket died mid-drain; reconnect logic owns recovery
+      }
+    }
+    if (this.sendQueue.length > 0 && !this.drainTimer) {
+      this.drainTimer = setTimeout(() => {
+        this.drainTimer = null;
+        this.drain();
+      }, 1000);
+      this.drainTimer.unref?.();
+    }
+  }
+
   public stop(): void {
     this.closedByUs = true;
+    this.ready = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
     }
     if (this.ws) {
       const ws = this.ws;
@@ -385,11 +568,17 @@ export class TwitchChatClient {
 
     ws.on('open', () => {
       this.reconnectDelay = 1000;
-      // Request tags (colour, emotes, badges, id) + commands, then join as an
-      // anonymous guest. A random justinfan nick avoids two sources colliding.
-      const nick = `justinfan${10000 + Math.floor((Date.now() % 89999))}`;
+      // Request tags (colour, emotes, badges, id) + commands, then log in —
+      // as the linked account when we hold a token (which is what allows
+      // PRIVMSG), otherwise as an anonymous justinfan guest (read-only). A
+      // random justinfan nick avoids two sources colliding.
       ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-      ws.send(`NICK ${nick}`);
+      if (this.authToken && this.authLogin) {
+        ws.send(`PASS oauth:${this.authToken}`);
+        ws.send(`NICK ${this.authLogin}`);
+      } else {
+        ws.send(`NICK justinfan${10000 + Math.floor((Date.now() % 89999))}`);
+      }
       ws.send(`JOIN #${this.channel}`);
       if (this.verbose) console.log(`[chat] twitch joined #${this.channel}`);
     });
@@ -400,6 +589,7 @@ export class TwitchChatClient {
     });
     ws.on('close', () => {
       this.ws = null;
+      this.ready = false;
       if (!this.closedByUs) this.scheduleReconnect();
     });
   }
@@ -414,7 +604,22 @@ export class TwitchChatClient {
         this.ws?.send(`PONG :${line.trailing ?? 'tmi.twitch.tv'}`);
         continue;
       }
-      const msg = twitchMessageFromIrc(line, Date.now());
+      if (line.command === '001') {
+        // Registration accepted — queued sends may now flow.
+        this.ready = true;
+        this.drain();
+        continue;
+      }
+      if (line.command === 'NOTICE' && /authentication failed|improperly formatted auth/i.test(line.trailing || '')) {
+        // The token Twitch was handed is bad (expired mid-session, revoked).
+        // Don't hammer reconnects with the same dead credential — report up so
+        // the app can refresh the token and hand a fresh one back via setAuth.
+        if (this.verbose) console.warn('[chat] twitch login rejected');
+        this.stop();
+        this.onAuthError();
+        return;
+      }
+      const msg = twitchMessageFromIrc(line, Date.now()) ?? twitchEventFromIrc(line, Date.now());
       if (msg) this.onMessage(msg);
     }
   }
@@ -440,6 +645,11 @@ export interface YouTubeChatItem {
   snippet?: {
     type?: string;
     displayMessage?: string;
+    superChatDetails?: {
+      amountDisplayString?: string;
+      userComment?: string;
+      tier?: number;
+    };
   };
   authorDetails?: {
     displayName?: string;
@@ -461,9 +671,11 @@ function youTubeBadges(a: NonNullable<YouTubeChatItem['authorDetails']>): ChatBa
 }
 
 /**
- * Normalize one YouTube live-chat item, or null when it is not a plain text
- * message (memberships, super-chats and the like are skipped for now — they are
- * events, not lines, and rendering them as text would misrepresent them).
+ * Normalize one YouTube live-chat item, or null when it is a kind we don't
+ * carry. Plain text messages pass through as before; `newSponsorEvent` (a new
+ * or upgraded member) and `superChatEvent` now come through too, carrying a
+ * structured {@link ChatEvent} so the stream bot can react while the widget
+ * renders YouTube's own readable text for the line.
  *
  * YouTube gives no per-author colour, so `color` is '' and the widget assigns a
  * stable colour by hashing the name — the same fallback it uses for a Twitch
@@ -474,11 +686,26 @@ export function normalizeYouTubeItem(item: YouTubeChatItem, nowMs: number): Chat
   const snippet = item.snippet;
   const author = item.authorDetails;
   if (!snippet || !author) return null;
-  if (snippet.type !== 'textMessageEvent') return null;
-  const text = snippet.displayMessage || '';
   const name = (author.displayName || '').trim();
-  if (!name || !text) return null;
-  return {
+  if (!name) return null;
+
+  let event: ChatEvent | undefined;
+  let text = snippet.displayMessage || '';
+  if (snippet.type === 'textMessageEvent') {
+    if (!text) return null;
+  } else if (snippet.type === 'newSponsorEvent') {
+    event = { kind: 'membership' };
+    if (!text) text = `${name} became a member`;
+  } else if (snippet.type === 'superChatEvent') {
+    const details = snippet.superChatDetails || {};
+    event = { kind: 'superchat' };
+    if (details.amountDisplayString) event.amount = details.amountDisplayString;
+    if (!text) text = details.userComment || `${name} sent a Super Chat`;
+  } else {
+    return null;
+  }
+
+  const msg: ChatMessage = {
     id: item.id || `yt-${nowMs}`,
     platform: 'youtube',
     author: name,
@@ -487,6 +714,8 @@ export function normalizeYouTubeItem(item: YouTubeChatItem, nowMs: number): Chat
     segments: [{ kind: 'text', text }],
     ts: nowMs,
   };
+  if (event) msg.event = event;
+  return msg;
 }
 
 /* --------------------- the streamed-array wire format --------------------- */
@@ -1017,6 +1246,10 @@ export class YouTubeChatPoller {
 export interface ChatConfig {
   /** Twitch channel login (or URL / `#name` — normalized on the way in). */
   twitchChannel?: string;
+  /** Twitch user access token (bare, no `oauth:` prefix). '' reads anonymously. */
+  twitchToken?: string;
+  /** The login of the account `twitchToken` belongs to — the IRC NICK. */
+  twitchLogin?: string;
   /** YouTube live chat id, discovered by the desktop app's Google sign-in. */
   youTubeLiveChatId?: string;
   /** YouTube OAuth access token for the polling calls. */
@@ -1050,6 +1283,8 @@ export class ChatHub {
   private config: ChatConfig = {};
   /** Called when YouTube reports its token expired, so the app can refresh it. */
   public onYouTubeAuthError: () => void = () => {};
+  /** Called when Twitch rejects the login token, so the app can refresh it. */
+  public onTwitchAuthError: () => void = () => {};
   /**
    * Called when the YouTube live chat ends (or its broadcast goes offline). This
    * is the app's cue to go looking for the next broadcast — and because it
@@ -1059,7 +1294,11 @@ export class ChatHub {
 
   public constructor(opts: { verbose?: boolean } = {}) {
     const verbose = !!opts.verbose;
-    this.twitch = new TwitchChatClient({ verbose, onMessage: (m) => this.ingest(m) });
+    this.twitch = new TwitchChatClient({
+      verbose,
+      onMessage: (m) => this.ingest(m),
+      onAuthError: () => this.onTwitchAuthError(),
+    });
     this.youtube = new YouTubeChatStream({
       verbose,
       onMessage: (m) => this.ingest(m),
@@ -1087,8 +1326,26 @@ export class ChatHub {
   /** Apply new configuration; only the parts that changed restart their client. */
   public setConfig(next: ChatConfig): void {
     this.config = { ...this.config, ...next };
+    // Auth before channel: an identity change tears the socket down, and the
+    // setChannel that follows brings it back up already wearing the new login.
+    this.twitch.setAuth(this.config.twitchToken || '', this.config.twitchLogin || '');
     this.twitch.setChannel(this.config.twitchChannel || '');
     this.youtube.setTarget(this.config.youTubeLiveChatId || '', this.config.youTubeAccessToken || '');
+  }
+
+  /** Queue one line into the Twitch channel; false when sending is impossible. */
+  public sendTwitch(text: string): boolean {
+    return this.twitch.send(text);
+  }
+
+  /** Whether the Twitch side is authenticated and could type at all. */
+  public get twitchCanSend(): boolean {
+    return this.twitch.canSend;
+  }
+
+  /** Whether the Twitch socket is up — the bot's "live enough to speak" proxy. */
+  public get twitchConnected(): boolean {
+    return this.twitch.connected;
   }
 
   public getConfig(): ChatConfig {

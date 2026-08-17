@@ -307,11 +307,40 @@ contextBridge.exposeInMainWorld('apex', {
     linkYouTube: () => ipcRenderer.invoke('chatLink:linkYouTube'),
     /** Forget the YouTube link: → { ok, state }. */
     unlinkYouTube: () => ipcRenderer.invoke('chatLink:unlinkYouTube'),
+    /**
+     * Link the streamer's Twitch account for the bot (Device Code Grant). The
+     * user code to type appears via onChange (`twitchLinkPending`) while this
+     * promise is pending. → { ok, error?, state }.
+     */
+    linkTwitch: () => ipcRenderer.invoke('chatLink:linkTwitch'),
+    /** Forget the Twitch login (the read channel is kept): → { ok, state }. */
+    unlinkTwitch: () => ipcRenderer.invoke('chatLink:unlinkTwitch'),
     /** Subscribe to link-state pushes. Returns an unsubscribe function. */
     onChange: (callback) => {
       const listener = (_evt, payload) => callback(payload);
       ipcRenderer.on('chatState:changed', listener);
       return () => ipcRenderer.removeListener('chatState:changed', listener);
+    },
+  },
+
+  /* ---- Stream bot (commands, timers, alerts, goals) ----
+   *
+   * Config only — validation and persistence live in electron/streamBot.js,
+   * the engine in the server. Nothing on this bridge carries a credential. */
+  streamBot: {
+    /** Full bot state for the panel (lists + budget usage). */
+    get: () => ipcRenderer.invoke('streamBot:get'),
+    /** Replace one section: ('commands'|'timers'|'alerts'|'goals'|'settings', value) → { ok, state }. */
+    update: (section, value) => ipcRenderer.invoke('streamBot:update', { section, value }),
+    /** Master switch: → { ok, state }. */
+    setEnabled: (on) => ipcRenderer.invoke('streamBot:setEnabled', on),
+    /** Manual ± on a goal's current value: (goalId, delta) → { ok, state }. */
+    goalAdjust: (goalId, delta) => ipcRenderer.invoke('streamBot:goalAdjust', { goalId, delta }),
+    /** Subscribe to bot-state pushes. Returns an unsubscribe function. */
+    onChange: (callback) => {
+      const listener = (_evt, payload) => callback(payload);
+      ipcRenderer.on('streamBot:changed', listener);
+      return () => ipcRenderer.removeListener('streamBot:changed', listener);
     },
   },
 

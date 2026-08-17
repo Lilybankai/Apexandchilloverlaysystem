@@ -807,6 +807,46 @@ html, body {
 .admin-pane { display: none; }
 .admin-pane[data-active="true"] { display: block; }
 
+/* Streamers sections — same pane pattern as Admin (display:none, not unbuilt,
+   so every id stays queryable for the parity contract). */
+.streamers-seg { margin: 0 0 18px; }
+.streamers-pane { display: none; }
+.streamers-pane[data-active="true"] { display: block; }
+
+/* StreamBot editor rows (commands / timers / alerts / goals): one grid row per
+   entry, inputs inline, the delete tucked at the end — the sponsor list's
+   idiom, with more columns. Column plans come per list via a modifier. */
+.sb-rows { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.sb-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.03));
+}
+.sb-row--cmd { grid-template-columns: 130px 1fr 84px auto auto; }
+.sb-row--timer { grid-template-columns: 1fr 84px auto auto auto auto; }
+.sb-row--alert { grid-template-columns: 110px 1fr auto; }
+.sb-row--goal { grid-template-columns: 1fr 110px 84px 84px 64px auto auto; }
+.sb-row .field__input { width: 100%; min-width: 0; }
+.sb-row__label { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+/* A labelled checkbox that has to fit inside a row, not a settings grid. */
+.sb-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.sb-row__del { flex: none; }
+.sb-empty { color: var(--text-3); font-size: 13px; padding: 4px 2px; }
+/* Narrow panels: rows wrap rather than crush their inputs. */
+@media (max-width: 900px) {
+  .sb-row--cmd, .sb-row--timer, .sb-row--goal { grid-template-columns: 1fr 1fr; }
+}
+
+/* The YouTube budget meter: spent fraction of the scarcer window. */
+.sb-budget { display: grid; gap: 6px; margin: 0 0 14px; }
+.sb-budget__bar { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.sb-budget__fill { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--grad); transition: width 0.3s ease; }
+.sb-budget__fill[data-warn="true"] { background: #e5484d; }
+
 /* The unread-feedback count, on the Feedback section's button. It sits here
    rather than in a headline tile because it is a to-do list, not a statistic:
    what matters is that it is non-zero, and that it is visible from whichever

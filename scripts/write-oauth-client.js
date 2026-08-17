@@ -27,11 +27,22 @@ const OUT = path.join(__dirname, '..', 'electron', 'oauth-client.generated.json'
 
 const clientId = (process.env.APEX_GOOGLE_CLIENT_ID || '').trim();
 const clientSecret = (process.env.APEX_GOOGLE_CLIENT_SECRET || '').trim();
+// The Twitch app is a PUBLIC client (Device Code Grant): an id only, no secret.
+// Optional the same way YouTube linking is — a build without it ships with the
+// stream bot's Twitch login unavailable, and everything else intact.
+const twitchClientId = (process.env.APEX_TWITCH_CLIENT_ID || '').trim();
+
+if (!twitchClientId) {
+  console.warn('[oauth] APEX_TWITCH_CLIENT_ID not set — Twitch (bot) linking will be unavailable in this build.');
+}
 
 if (!clientId || !clientSecret) {
   // Always clear the file first, so a failed build can never leave a stale client
   // behind for the next one to pick up and ship by accident.
-  fs.writeFileSync(OUT, JSON.stringify({ clientId: '', clientSecret: '' }, null, 2) + '\n');
+  fs.writeFileSync(
+    OUT,
+    JSON.stringify({ clientId: '', clientSecret: '', twitchClientId: '' }, null, 2) + '\n',
+  );
 
   if (process.env.APEX_ALLOW_NO_OAUTH === '1') {
     console.warn(
@@ -74,8 +85,11 @@ if (!clientId || !clientSecret) {
   process.exit(1);
 }
 
-fs.writeFileSync(OUT, JSON.stringify({ clientId, clientSecret }, null, 2) + '\n');
+fs.writeFileSync(OUT, JSON.stringify({ clientId, clientSecret, twitchClientId }, null, 2) + '\n');
 
 // Never print the secret; the id's tail is enough to tell two projects apart.
 const tail = clientId.slice(0, 12);
 console.log(`[oauth] baked Google client ${tail}… into ${path.relative(process.cwd(), OUT)}`);
+if (twitchClientId) {
+  console.log(`[oauth] baked Twitch client ${twitchClientId.slice(0, 8)}…`);
+}

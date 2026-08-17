@@ -41,6 +41,7 @@ const updateChannel = require('./updateChannel');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
+const streamBot = require('./streamBot');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 
 /* -------------------------------------------------------------------------- */
@@ -133,12 +134,15 @@ const OVERLAY_CATALOG = [
   // Stream chat pulls its own feed from the /chat socket, not the telemetry
   // frame. Off in the in-game set by default — it is a deliberate add (a side
   // monitor on a triple-screen rig), not something to drop over everyone's sim.
-  // Link accounts under Overlays → Streaming chat.
+  // `group` is generic (like `banner`/`designs`): the renderer partitions by it
+  // without ever naming a widget id, and 'streaming' cards render inside the
+  // Streamers tab rather than the main Overlays grid.
   {
     id: 'chat',
     label: 'Stream Chat',
-    description: 'YouTube + Twitch chat on screen — link your accounts in Streaming chat below',
+    description: 'YouTube + Twitch chat on screen — link your accounts in the Accounts pane',
     ingameDefault: false,
+    group: 'streaming',
   },
 ];
 
@@ -1045,6 +1049,32 @@ function authStateForUi() {
 function pushChatState() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('chatState:changed', chatLink.stateForUi());
+  }
+  // The bot's capabilities (may it type? as whom?) are derived from the link
+  // state, so any link change recomputes the engine's working config too.
+  try {
+    streamBot.pushServerConfig();
+  } catch {
+    /* not initialised yet — its own init pushes */
+  }
+}
+
+/** Push the stream-bot state (commands, timers, goals, budget) to the panel. */
+function pushStreamBotState(state) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('streamBot:changed', state || streamBot.stateForUi());
+  }
+}
+
+/**
+ * Forward the bot's working config to the running server. Same staging story
+ * as applyChatConfig: safe before the server exists.
+ */
+function applyBotConfig(cfg) {
+  try {
+    requireServer().setStreamBotConfig(cfg || {});
+  } catch (err) {
+    // Not built / not started yet — server start() seeds from the staged value.
   }
 }
 
@@ -3229,6 +3259,33 @@ function registerIpc() {
 
   ipcMain.handle('chatLink:unlinkYouTube', () => chatLink.unlinkYouTube());
 
+  // The bot's Twitch login (Device Code Grant — the code itself is surfaced
+  // through chatState:changed while the link is pending).
+  ipcMain.handle('chatLink:linkTwitch', () => chatLink.linkTwitch());
+
+  ipcMain.handle('chatLink:unlinkTwitch', () => chatLink.unlinkTwitch());
+
+  /* ---- Stream bot (see electron/streamBot.js) ----
+   *
+   * The panel edits whole sections (commands, timers, alerts, goals, settings)
+   * and this side validates them; nothing here carries a credential. */
+
+  ipcMain.handle('streamBot:get', () => streamBot.stateForUi());
+
+  ipcMain.handle('streamBot:update', (_evt, payload) => {
+    const section = payload && typeof payload.section === 'string' ? payload.section : '';
+    return streamBot.update(section, payload ? payload.value : undefined);
+  });
+
+  ipcMain.handle('streamBot:setEnabled', (_evt, on) => streamBot.setEnabled(on === true));
+
+  ipcMain.handle('streamBot:goalAdjust', (_evt, payload) =>
+    streamBot.goalAdjust(
+      payload && typeof payload.goalId === 'string' ? payload.goalId : '',
+      payload ? Number(payload.delta) : 0,
+    ),
+  );
+
   ipcMain.handle('clipboard:write', (_evt, text) => {
     if (typeof text === 'string') clipboard.writeText(text);
     return true;
@@ -3856,6 +3913,15 @@ app.whenReady().then(async () => {
     onChange: pushChatState,
     applyChatConfig,
   });
+  // The stream bot's desktop half: persistence + policy here, engine in the
+  // server. Initialised after chatLink so its first config push already sees
+  // which accounts are linked.
+  streamBot.init({
+    userDataDir: app.getPath('userData'),
+    onChange: pushStreamBotState,
+    applyBotConfig,
+    getLinkState: () => chatLink.stateForUi(),
+  });
   try {
     requireServer().setChatYouTubeAuthErrorHandler(() => chatLink.handleYouTubeAuthError());
     // "The chat ended" is the only event that can change which broadcast we
@@ -3863,6 +3929,14 @@ app.whenReady().then(async () => {
     // one. Before this hook, chatLink asked YouTube once a minute, all day, and
     // that idle poll alone cost ~14% of the daily quota per install.
     requireServer().setChatYouTubeChatEndedHandler(() => chatLink.handleYouTubeChatEnded());
+    // Twitch's mirror of the same contract: a rejected login stops the IRC
+    // client, and this hook mints a fresh token and hands it back.
+    requireServer().setChatTwitchAuthErrorHandler(() => chatLink.handleTwitchAuthError());
+    // The engine reports YouTube quota spend + goal movement up for persistence.
+    requireServer().setStreamBotHandlers({
+      onQuotaUsed: (n) => streamBot.noteQuotaUsed(n),
+      onGoalChanged: (goalId, current) => streamBot.noteGoalChanged(goalId, current),
+    });
   } catch (err) {
     /* server not built — the standalone path doesn't use chatLink anyway */
   }
