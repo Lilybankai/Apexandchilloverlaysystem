@@ -430,6 +430,12 @@
               speaking as your own account.
             </p>
           </div>
+          <!-- The walkthrough opens by itself the first time this tab is
+               used; this is how it comes back afterwards. -->
+          <button id="streamer-guide-open" class="btn btn--ghost btn--sm" type="button"
+                  title="A short walkthrough of what this tab can do">
+            <svg class="icon"><use href="#i-graduation-cap" /></svg>How it works
+          </button>
         </div>
 
         <nav class="seg streamers-seg" id="streamers-seg" aria-label="Streamer sections">
@@ -650,6 +656,36 @@
             <div class="sponsor-actions">
               <button class="btn btn--ghost" id="sb-goal-add" type="button">Add goal</button>
             </div>
+          </section>
+        </div>
+
+        <!-- ================== HOW IT WORKS ========================== -->
+        <!-- First-run walkthrough. Steps are built by streamer-guide.js —
+             only the frame is static, same contract as the Setups guide.
+             Reuses the su-guide dialog styling; deliberately NOT "sheet" or
+             "su-pop" so it yields to those without yielding to itself. -->
+        <div id="streamer-guide" class="su-guide" hidden role="dialog" aria-modal="true"
+             aria-labelledby="streamer-guide-title">
+          <div id="streamer-guide-scrim" class="su-guide__scrim"></div>
+          <section class="su-guide__panel">
+            <header class="su-guide__head">
+              <span id="streamer-guide-icon" class="su-guide__icon"></span>
+              <span class="su-guide__titles">
+                <h2 id="streamer-guide-title" class="su-guide__title"></h2>
+                <p id="streamer-guide-sub" class="su-guide__sub"></p>
+              </span>
+              <button id="streamer-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+            </header>
+            <div id="streamer-guide-body" class="su-guide__body"></div>
+            <footer class="su-guide__foot">
+              <div id="streamer-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
+              <div class="su-guide__nav">
+                <button id="streamer-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
+                <button id="streamer-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
+              </div>
+            </footer>
           </section>
         </div>
       </div>
@@ -1947,6 +1983,7 @@
 <script src="setup-macros.js"></script>
 <script src="setup-tags.js"></script>
 <script src="setup-guide.js"></script>
+<script src="streamer-guide.js"></script>
 <script src="setup-editor.js"></script>
 </body>
 </html>

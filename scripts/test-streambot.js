@@ -406,5 +406,24 @@ console.log('\nthe global floor — no back-to-back bursts');
 }
 
 /* -------------------------------------------------------------------------- */
+console.log('\nstreamer-guide — the walkthrough content is complete');
+/* -------------------------------------------------------------------------- */
+
+{
+  // Same contract test-setup.js runs on the Setups guide: every step whole,
+  // and the flag machinery sane — the DOM half is exercised in the app.
+  const guide = require('../electron/control-panel/streamer-guide.js');
+  check('guide has a full tour', Array.isArray(guide.STEPS) && guide.STEPS.length >= 5, guide.STEPS.length);
+  check('every step is whole (id, icon, title, lead, points)',
+    guide.STEPS.every((s) => s.id && s.icon && s.title && s.lead && Array.isArray(s.points) && s.points.length > 0));
+  check('no duplicate step ids', new Set(guide.STEPS.map((s) => s.id)).size === guide.STEPS.length);
+  check('the tour covers the panes that need explaining',
+    ['link', 'bot', 'overlay', 'commands', 'timers', 'alerts'].every((id) => guide.STEPS.some((s) => s.id === id)));
+  check('placeholders are shown to the user somewhere',
+    guide.STEPS.some((s) => s.points.some((p) => p.includes('{user}'))));
+  check('seen flag is versioned', typeof guide.GUIDE_VERSION === 'string' && guide.GUIDE_VERSION.length > 0);
+}
+
+/* -------------------------------------------------------------------------- */
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

@@ -3727,8 +3727,14 @@
       void loadAdmin();
     }
     // The bot's lists live in main; re-ask on entry so another window's edits
-    // (or a fresh install's defaults) are never stale here.
-    if (target === 'streamers') void refreshStreamBot();
+    // (or a fresh install's defaults) are never stale here. First visit also
+    // offers the walkthrough (same manners as the Setups guide).
+    if (target === 'streamers') {
+      void refreshStreamBot();
+      window.APEX_STREAMER_GUIDE?.maybeAutoOpen();
+    } else {
+      window.APEX_STREAMER_GUIDE?.cancelAutoOpen();
+    }
     // Plan state changes out-of-app (in the browser, on Stripe's pages), so
     // the card re-asks whenever Settings comes back into view.
     if (target === 'settings') void refreshBilling();

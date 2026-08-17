@@ -263,6 +263,17 @@ const PANEL_CONTRACT = {
   'sb-alert-list': 'ul',
   'sb-goal-list': 'ul',
   'sb-goal-add': 'button',
+  'streamer-guide-open': 'button',
+  'streamer-guide': 'div',
+  'streamer-guide-scrim': 'div',
+  'streamer-guide-icon': 'span',
+  'streamer-guide-title': 'h2',
+  'streamer-guide-sub': 'p',
+  'streamer-guide-body': 'div',
+  'streamer-guide-dots': 'div',
+  'streamer-guide-back': 'button',
+  'streamer-guide-next': 'button',
+  'streamer-guide-close': 'button',
 
   // Sponsor logos
   'sponsors-toggle': 'input:checkbox',
@@ -633,6 +644,7 @@ verifyPage({
     'setup-info.js',
     'setup-macros.js',
     'setup-guide.js',
+    'streamer-guide.js',
   ],
   contract: PANEL_CONTRACT,
 });
@@ -670,6 +682,9 @@ console.log('\nIcon sprite — icons.js');
   // from the module itself is exact, and means a step added with a typo'd
   // icon fails here rather than rendering a blank square in front of a driver.
   for (const s of require('../electron/control-panel/setup-guide.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
+  for (const s of require('../electron/control-panel/streamer-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
   const missing = [...wanted].filter((id) => !available.has(id)).sort();

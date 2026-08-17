@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+## 0.76.0 — 2026-08-17
+
+### Added
+
+- **The Streamers tab explains itself.** A six-step walkthrough — the same kind
+  the Setups tab has — opens the first time you visit, and "How it works"
+  beside the title brings it back any time. It covers what actually needs
+  knowing: linking Twitch by short code and YouTube by Google sign-in (and why
+  a relink prompt can appear), the three bot switches and when the bot can
+  speak at all, putting the chat overlay in OBS or in the sim, and what every
+  field on Commands, Timers, Alerts and Goals does — cooldowns are seconds,
+  timer intervals are minutes, and `{user}`-style placeholders are listed where
+  you use them.
+
 ## 0.75.3 — 2026-08-17
 
 ### Fixed
