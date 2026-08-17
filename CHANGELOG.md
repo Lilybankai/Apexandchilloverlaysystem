@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+## 0.75.1 — 2026-08-17
+
+### Changed
+
+- **The StreamBot no longer caps YouTube messages by default.** 0.75.0 shipped
+  with per-stream and per-day send caps switched on; they are now opt-in (0 =
+  no cap, and 0 is the default), and the 10-minute floor between YouTube timed
+  messages is gone — timers run at whatever interval you set, on both
+  platforms. The Accounts pane keeps the usage meter purely as information:
+  each YouTube message still spends 50 units of the API quota every install
+  shares, and Google itself enforces that day regardless of any setting here.
+  If you do set a cap, the rationing behaviour is unchanged — timers pause
+  first, then command replies, and alerts always get the last word.
+
 ## 0.75.0 — 2026-08-17
 
 ### Added
