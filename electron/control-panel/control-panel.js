@@ -2867,6 +2867,24 @@
     setText('#adm-active-month', numberOr(d.activeMonth));
     setText('#adm-sessions-week', d.sessionsWeek != null ? `${d.sessionsWeek} sessions · 7d` : '');
     setText('#adm-total-users', numberOr(d.totalUsers));
+    // Setup-sharing health (migration 0010). Absent on an older backend, in
+    // which case the tiles simply read "—".
+    setText('#adm-setup-creators', numberOr(d.setupCreators));
+    setText(
+      '#adm-setup-creators-sub',
+      d.publicSetups != null ? `${d.publicSetups} setup${d.publicSetups === 1 ? '' : 's'} shared` : '',
+    );
+    setText('#adm-setup-improved', numberOr(d.driversImprovedWithSetups));
+    setText('#adm-setup-improved-sub', 'verified pace on a shared setup');
+    setText('#adm-setup-downloads', numberOr(d.setupDownloads));
+    setText(
+      '#adm-setup-downloads-sub',
+      d.setupDownloads != null
+        ? `${numberOr(d.setupDownloads30d)} in 30d · ${numberOr(d.setupDownloaders)} driver${
+            d.setupDownloaders === 1 ? '' : 's'
+          }`
+        : '',
+    );
     setFeedbackBadge(d.newFeedback);
     renderAdminDaily(Array.isArray(d.daily) ? d.daily : []);
     renderAdminVersions(Array.isArray(d.versions) ? d.versions : []);

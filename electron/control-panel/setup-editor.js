@@ -104,6 +104,17 @@
   const elRateText = $('#setup-rate-text');
   const elRateStars = $('#setup-rate-stars');
   const elRateCancel = $('#setup-rate-cancel');
+  // Setups feedback dialog + the "share your setups" nudge.
+  const elComFeedback = $('#setup-com-feedback');
+  const elFbPop = $('#setup-feedback-pop');
+  const elFbKind = $('#setup-feedback-kind');
+  const elFbMessage = $('#setup-feedback-message');
+  const elFbStatus = $('#setup-feedback-status');
+  const elFbSend = $('#setup-feedback-send');
+  const elFbCancel = $('#setup-feedback-cancel');
+  const elNudge = $('#setup-share-nudge');
+  const elNudgeText = $('#setup-nudge-text');
+  const elNudgeShare = $('#setup-nudge-share');
 
   /* ---- state -------------------------------------------------------------- */
 
@@ -1008,11 +1019,26 @@
     loadBtn.addEventListener('click', () => stageLibraryEntry(entry));
     buttons.appendChild(loadBtn);
 
+    // A dedicated "make it public" action, straight to the community publish
+    // dialog — distinct from Share, which keeps its several options (copy the
+    // file to a teammate, save as a file, or publish). `noValues` is reused from
+    // the Load button above: a file we could not parse cannot be published.
+    const publicBtn = document.createElement('button');
+    publicBtn.type = 'button';
+    publicBtn.className = 'btn btn--sm su-lib__public';
+    publicBtn.textContent = 'Public';
+    publicBtn.disabled = noValues;
+    publicBtn.title = noValues
+      ? 'This file could not be read as a setup, so it cannot be published'
+      : 'Publish this setup to the community board';
+    publicBtn.addEventListener('click', () => openPublishPop(entry));
+    buttons.appendChild(publicBtn);
+
     const shareBtn = document.createElement('button');
     shareBtn.type = 'button';
     shareBtn.className = 'btn btn--ghost btn--sm';
     shareBtn.textContent = 'Share';
-    shareBtn.title = 'Send the .svm to a teammate';
+    shareBtn.title = 'Copy the .svm to a teammate, save it as a file, or publish it';
     shareBtn.addEventListener('click', () => openSharePop(entry));
     buttons.appendChild(shareBtn);
 
@@ -1075,6 +1101,24 @@
       elLibEmpty.textContent =
         'Nothing saved yet — get the car how you like it and hit “Save current setup”.';
     }
+    updateShareNudge();
+  }
+
+  /**
+   * The "share your setups" nudge. Shown whenever the driver has saved tunes —
+   * the encouragement to put one on the community board. We deliberately do not
+   * try to prove a given save is not already public (that needs a per-setup
+   * cloud match); the nudge is a gentle prompt, not an accusation, and the
+   * Share button on each row is where the actual publish happens.
+   */
+  function updateShareNudge() {
+    if (!elNudge) return;
+    const n = libEntries.length;
+    elNudge.hidden = n === 0;
+    if (n === 0) return;
+    elNudgeText.textContent =
+      `You have ${n} saved setup${n === 1 ? '' : 's'}. Publishing one puts your name on the ` +
+      `community board, earns ratings and downloads, and helps every driver in the league go faster.`;
   }
 
   elLibTrack.addEventListener('change', renderLibraryList);
@@ -1598,6 +1642,86 @@
     }
     renderCommunityList();
   });
+
+  /* ---- share nudge --------------------------------------------------------- */
+
+  // The nudge's CTA opens the share dialog for the newest saved setup, which is
+  // the shortest path to "Publish to the community…".
+  if (elNudgeShare) {
+    elNudgeShare.addEventListener('click', () => {
+      if (!libEntries.length) return;
+      const byNewest = [...libEntries].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+      // The nudge is about going PUBLIC, so jump straight to the community
+      // publish dialog for the newest tune we can actually publish; fall back to
+      // the multi-option share menu only when none have parsed values.
+      const publishable = byNewest.find((e) => e.values && Object.keys(e.values).length > 0);
+      if (publishable) openPublishPop(publishable);
+      else openSharePop(byNewest[0]);
+    });
+  }
+
+  /* ---- setups feedback dialog ---------------------------------------------- */
+
+  // Feedback about the setups feature, routed to the same league inbox the
+  // Suggestions tab uses. Tagged "[Setups]" so it is triageable in context.
+  let feedbackKind = 'idea';
+
+  function openFeedbackPop() {
+    feedbackKind = 'idea';
+    if (elFbKind && !elFbKind.childElementCount) {
+      segGroup(
+        elFbKind,
+        [['idea', 'Idea'], ['bug', 'Problem']],
+        feedbackKind,
+        (v) => (feedbackKind = v),
+      );
+    }
+    elFbMessage.value = '';
+    elFbStatus.hidden = true;
+    elFbStatus.textContent = '';
+    elFbSend.disabled = false;
+    elFbSend.textContent = 'Send';
+    elFbPop.hidden = false;
+    elFbMessage.focus();
+  }
+
+  if (elComFeedback) elComFeedback.addEventListener('click', openFeedbackPop);
+  if (elFbCancel) elFbCancel.addEventListener('click', () => (elFbPop.hidden = true));
+  if (elFbPop) {
+    elFbPop.addEventListener('click', (e) => {
+      if (e.target === elFbPop) elFbPop.hidden = true;
+    });
+  }
+  if (elFbSend) {
+    elFbSend.addEventListener('click', async () => {
+      const msg = (elFbMessage.value || '').trim();
+      if (!msg) {
+        elFbStatus.textContent = 'Type a message first.';
+        elFbStatus.hidden = false;
+        elFbMessage.focus();
+        return;
+      }
+      elFbSend.disabled = true;
+      elFbSend.textContent = 'Sending…';
+      elFbStatus.hidden = true;
+      let res = null;
+      try {
+        res = await window.apex.feedback.submit({ kind: feedbackKind, message: `[Setups] ${msg}` });
+      } catch {
+        res = null;
+      }
+      if (res && res.ok) {
+        elFbPop.hidden = true;
+        return;
+      }
+      elFbSend.disabled = false;
+      elFbSend.textContent = 'Failed — retry';
+      elFbStatus.textContent =
+        (res && res.error) ||
+        (res && res.signedOut ? 'Sign in to send feedback.' : 'Could not send — try again.');
+      elFbStatus.hidden = false;
+    });
+  }
 
   /* ---- publish dialog ------------------------------------------------------ */
 
