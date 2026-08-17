@@ -503,6 +503,43 @@ console.log('\nDriver names — full, surname or forename');
     w.nameTitles().join(' | '));
 }
 
+/* A forename that ARRIVES as an initial has nothing left to keep. LMU names its
+   AI roster "D. Fisher", and `forename` mode used to abbreviate the abbreviation
+   into "D..F" — two dots and two letters, naming nobody, on every AI car in the
+   field. It falls back to the surname form instead, which is the most such a
+   name can carry. */
+{
+  const names = () => [
+    { slotId: 1, position: 1, carNumber: '39', driverName: 'D. Fisher', carClass: 'GT3' },
+    { slotId: 2, position: 2, carNumber: '7', driverName: 'G Bailey', carClass: 'GT3' },
+    { slotId: 3, position: 3, carNumber: '4', driverName: 'Ó. Ryan', carClass: 'GT3' },
+  ];
+  const view = (n) => ({
+    limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0,
+    gap: 'leader', fastest: 'class', names: n,
+  });
+
+  const w = mount();
+  w.push(view('forename'));
+  w.update(names());
+  check('an already-initialled forename is not abbreviated twice',
+    w.names().join(' | ') === '#39 D.Fisher | #7 G.Bailey | #4 Ó.Ryan',
+    w.names().join(' | '));
+
+  // The surname form was always right for these — it must not have moved.
+  w.push(view('surname'));
+  w.update(names());
+  check('and the surname form is unchanged',
+    w.names().join(' | ') === '#39 D.Fisher | #7 G.Bailey | #4 Ó.Ryan',
+    w.names().join(' | '));
+
+  // A real first name still keeps its whole self: the fallback must be narrow.
+  w.push(view('forename'));
+  w.update([{ slotId: 1, position: 1, carNumber: '7', driverName: 'Do Fisher', carClass: 'GT3' }]);
+  check('a two-letter first name is still a first name',
+    w.names().join(' | ') === '#7 Do.F', w.names().join(' | '));
+}
+
 /* -------------------------------------------------------------------------- */
 console.log('\nThe rating marks ride every name style');
 /* -------------------------------------------------------------------------- */

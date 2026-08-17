@@ -6,6 +6,32 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Driver names that arrive already shortened are no longer shortened twice.**
+  LMU writes its AI roster as "D. Fisher", and plenty of league entry lists do
+  the same. Setting the standings names to the "Matt.H" style then cut the
+  surname off a first name that was already an initial, leaving "D..F" — two
+  dots and two letters, naming nobody, on every AI car in the field. There was
+  no width that could fix it: the name had been thrown away before the column
+  was drawn. A name like that now falls back to the "M.Haskins" style, which is
+  the most it can carry, and real first names are untouched — "Matt Haskins" is
+  still "Matt.H".
+
+### Changed
+
+- **The standings tower starts wider.** The driver cell carries the class tag,
+  the manufacturer badge and the DR/SR rating pair as well as the name, and
+  those hold about 82px whatever the name is. At the old default width that
+  left barely enough for "#23 " and six letters, so the tower clipped the
+  column it exists to show — most visibly since the rating marks started riding
+  the abbreviated name styles in 0.72.0. It now opens at 560px instead of
+  474px, and all 86px of that goes to the name: full names like "Sebastien
+  Loeb-Martin" and "Jan Van der Merwe" fit without cutting. If you prefer the
+  narrower tower, drag its side edge in — a width you have set is remembered
+  and is not overridden by this, so a tower you have already sized stays
+  exactly where you put it.
+
 ## 0.72.0 — 2026-08-17
 
 ### Changed

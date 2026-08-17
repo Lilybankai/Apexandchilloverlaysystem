@@ -55,6 +55,13 @@
   var classLabel = window.ApexOverlay.classLabel;
 
   /**
+   * A forename that is already an initial — "D" or "D." — and so has nothing
+   * left for `forename` mode to keep. `\p{L}` rather than `[A-Za-z]` so an
+   * accented initial ("Ó.") is caught too; entry lists are full of them.
+   */
+  var ALREADY_INITIAL = /^\p{L}\.?$/u;
+
+  /**
    * The driver's name, in whichever of three forms the operator picked.
    *
    *   full      "Matt Haskins" — as the driver entered it, tidied of stray
@@ -70,10 +77,9 @@
    * file can know, so it is now a setting — leagues that race by first name pick
    * `forename`, broadcasts pick `surname`, and the default stays the whole name.
    *
-   * Either abbreviation also stands the two rating marks down, because on its
-   * own the shorter text bought almost nothing — the marks hold 60% of the
-   * column and the ellipsis barely moved. See the note beside `abbreviated` in
-   * renderRow for the measurements.
+   * Both abbreviations keep the two rating marks: they identify the driver just
+   * as the name does, and an operator shortening the names is not asking for
+   * them to go. See the note in renderRow.
    *
    * A name with no space in it (an alias, a single-word handle) is returned
    * whole under every mode: there is nothing to abbreviate, and "T." is not a
@@ -91,6 +97,15 @@
     var first = clean.slice(0, sp);
     var last = clean.slice(sp + 1);
     if (mode === "surname") return first.charAt(0).toUpperCase() + "." + last;
+    // `forename` keeps the first name whole and cuts the surname to an initial —
+    // but there is no first name to keep when the source has already cut it.
+    // LMU writes its AI roster that way ("D. Fisher"), as do plenty of league
+    // entry lists, and abbreviating an abbreviation gave "D..F": two dots and
+    // two letters, naming nobody, and no wider column could bring it back. Such
+    // a name falls back to the surname form, which is the most it can carry.
+    if (ALREADY_INITIAL.test(first)) {
+      return first.charAt(0).toUpperCase() + "." + last;
+    }
     return first + "." + last.charAt(0).toUpperCase();
   }
 
@@ -621,10 +636,13 @@
     var colgroup = document.createElement("colgroup");
     // pos, ±, driver(rest), gap, last, best, VE, pit — the order the cells are
     // appended in createRow, and it has to stay in step with it (as does the
-    // heading row in createHead). The seven fixed columns total 321px of the
-    // panel's 474px, leaving ~153px for the driver name. The three time columns
-    // are sized for a full "1:58.492" — undersize them and the tenths silently
-    // clip off the right.
+    // heading row in createHead). The seven fixed columns total 321px, so the
+    // driver name gets whatever the panel is wider than that: ~153px at the old
+    // 474 default, ~239px at the 560 the in-game layer now starts at (see
+    // defaultsFor in ingame.js), of which the class tag, brand badge and DR/SR
+    // pair hold ~82px before a letter is drawn. The three time columns are sized
+    // for a full "1:58.492" — undersize them and the tenths silently clip off
+    // the right.
     //
     // The pit column is 23px of mostly-empty table, and it is reserved on every
     // row on purpose: sizing it to the field's current pit lane would shift

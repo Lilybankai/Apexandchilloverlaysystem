@@ -190,7 +190,18 @@
   /** Default placement per widget id (px, for a generic 16:9 screen). */
   function defaultsFor(id, vw, vh) {
     var D = {
-      standings: { x: 24, y: 24, w: 474 },
+      // 560, not the 474 it shipped at: the driver cell carries the class tag,
+      // the brand badge and the DR/SR rating pair as well as the name, and those
+      // marks hold ~82px whatever the name is. At 474 that left ~71px for
+      // "#23 " plus the name — enough for "Matt.H" and not for "M.Haskins" or
+      // any full name, so the tower's own default clipped the column it exists
+      // to show. The extra 86px all lands on the name: the driver <col> is the
+      // one with no width of its own and absorbs whatever is left (see the
+      // colgroup in widgets/standings.js). Anyone who wants the narrower tower
+      // back can drag it there — a width the operator has set is stored and
+      // wins over this (see applyItem), so this moves nobody who has already
+      // sized it.
+      standings: { x: 24, y: 24, w: 560 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
       delta: { x: Math.round(vw / 2 - 150), y: 196, w: 300 },
       // Below the delta pill, on the same centre line. Without an entry here it
