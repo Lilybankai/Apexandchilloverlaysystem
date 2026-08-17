@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+## 0.77.0-beta.1 — 2026-08-17
+
+### Added
+
+- **A Fuel tab, next to Setups.** The fuel & strategy calculator that lived as
+  a separate app is now built into the panel. Pick a circuit, class and car
+  and it plans the whole race for you: total fuel or Virtual Energy, how many
+  stops, every stint's fill and lap count, and what each pit stop costs with
+  LMU's sequential refuel-then-tyres rule. Hypercar and LMGT3 plan in Virtual
+  Energy (%/lap, tank is always 100), the other classes in litres — including
+  LMP2's 75-litre cap at Le Mans. Lap time and consumption start on sensible
+  defaults for the car and track you picked and take one click to override
+  with your own numbers from the in-game HUD. Timed races account for time
+  lost in the pits when working out how many laps you will actually run, and
+  an Alternative Strategies list shows what per-lap consumption you would
+  have to hit to save a stop — and tells you when that target is a fantasy.
+  Your last setup is remembered between sessions.
+
 ## 0.76.1 — 2026-08-17
 
 ### Changed

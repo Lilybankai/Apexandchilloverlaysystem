@@ -415,7 +415,7 @@ const PANEL_CONTRACT = {
   'setup-guide-next': 'button',
   'setup-guide-close': 'button',
 
-  // Fuel tab (v0.71.0-beta.1) — the strategy calculator ported from the
+  // Fuel tab (v0.77.0-beta.1) — the strategy calculator ported from the
   // standalone LMU fuel app. Contracted because fuel-panel.js grabs every one
   // of these at load and wires listeners; a renamed id would leave a dead
   // control that still renders.

@@ -2,7 +2,7 @@
  * test-fuelcalc.js — the Fuel tab's strategy engine and data integrity.
  * -----------------------------------------------------------------------------
  * Ported from the standalone LMU fuel app's vitest suite (strategy.test.js +
- * raceData.test.js) when the calculator moved into the panel (v0.71.0-beta.1).
+ * raceData.test.js) when the calculator moved into the panel (v0.77.0-beta.1).
  * Two halves:
  *   1. Strategy engine — lap solving, stint fills, sequential pit stop maths,
  *      splash detection, warnings, stop-count alternatives.
