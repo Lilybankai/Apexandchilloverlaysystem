@@ -1019,11 +1019,26 @@
     loadBtn.addEventListener('click', () => stageLibraryEntry(entry));
     buttons.appendChild(loadBtn);
 
+    // A dedicated "make it public" action, straight to the community publish
+    // dialog — distinct from Share, which keeps its several options (copy the
+    // file to a teammate, save as a file, or publish). `noValues` is reused from
+    // the Load button above: a file we could not parse cannot be published.
+    const publicBtn = document.createElement('button');
+    publicBtn.type = 'button';
+    publicBtn.className = 'btn btn--sm su-lib__public';
+    publicBtn.textContent = 'Public';
+    publicBtn.disabled = noValues;
+    publicBtn.title = noValues
+      ? 'This file could not be read as a setup, so it cannot be published'
+      : 'Publish this setup to the community board';
+    publicBtn.addEventListener('click', () => openPublishPop(entry));
+    buttons.appendChild(publicBtn);
+
     const shareBtn = document.createElement('button');
     shareBtn.type = 'button';
     shareBtn.className = 'btn btn--ghost btn--sm';
     shareBtn.textContent = 'Share';
-    shareBtn.title = 'Send the .svm to a teammate';
+    shareBtn.title = 'Copy the .svm to a teammate, save it as a file, or publish it';
     shareBtn.addEventListener('click', () => openSharePop(entry));
     buttons.appendChild(shareBtn);
 
@@ -1635,8 +1650,13 @@
   if (elNudgeShare) {
     elNudgeShare.addEventListener('click', () => {
       if (!libEntries.length) return;
-      const newest = [...libEntries].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))[0];
-      openSharePop(newest);
+      const byNewest = [...libEntries].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+      // The nudge is about going PUBLIC, so jump straight to the community
+      // publish dialog for the newest tune we can actually publish; fall back to
+      // the multi-option share menu only when none have parsed values.
+      const publishable = byNewest.find((e) => e.values && Object.keys(e.values).length > 0);
+      if (publishable) openPublishPop(publishable);
+      else openSharePop(byNewest[0]);
     });
   }
 
