@@ -6,6 +6,54 @@
 
 ## Unreleased
 
+## 0.75.0 — 2026-08-17
+
+### Added
+
+- **A Streamers tab, and a StreamBot that types in your chat.** The new tab
+  gathers everything broadcast-facing in one place, split into panes: Accounts,
+  the Chat overlay, and the bot's Commands, Timers, Alerts and Goals. The bot
+  speaks as **your own account** on Twitch and YouTube — no third-party bot to
+  invite, no cloud relay; your logins stay on this PC.
+  - **!commands** — a viewer types `!discord`, the bot answers with your link.
+    Case-insensitive, with a per-command cooldown so a busy chat can't turn one
+    command into spam.
+  - **Timed messages** — recurring lines (socials, the Discord invite, a sponsor
+    shout) posted only while you are live, per platform.
+  - **Chat alerts** — thank-you lines for new subs, resubs, gifted subs, new
+    YouTube members and Super Chats, with `{user}`/`{tier}`/`{count}`-style
+    templates. A 20-sub gift bomb is one alert and counts as twenty, not twenty
+    alerts.
+  - **Goals** — set a sub or member goal and the bot counts events as they
+    happen, announcing progress every N and on completion. Progress survives a
+    restart, and you can correct the count by hand.
+- **Twitch sign-in for the bot.** Linking is a short code at twitch.tv/activate
+  — no password typed into the app. Reading chat is unchanged (still anonymous,
+  still just a channel name); the sign-in is only what lets the bot type, and
+  the app keeps the login alive with Twitch's required hourly checks.
+- **A YouTube message budget.** Every YouTube bot message spends API quota that
+  all installs share, so the bot rations itself: per-stream and per-day caps
+  (defaults 60 and 150), a 10-minute floor between YouTube timed messages, and
+  priority shedding — timers pause first, then command replies, and alerts run
+  to the last message. The Accounts pane shows a meter of what today has spent;
+  Twitch has no such cost and keeps running when YouTube pauses.
+
+### Changed
+
+- **The Stream Chat widget card and account linking moved to the Streamers
+  tab.** The Overlays grid is for on-track widgets again; the chat card renders
+  in Streamers → Chat overlay (same URLs, same OBS/In-game switches, nothing to
+  reconfigure) and the Twitch/YouTube linking card sits beside the bot settings
+  in Streamers → Accounts. The chat card also finally has its own icon instead
+  of the generic monitor.
+- **New YouTube links ask for send permission.** The Google sign-in now requests
+  the scope that lets the bot post to your live chat. An existing link keeps
+  reading chat exactly as before, and the Accounts pane shows a relink prompt if
+  the bot should speak on YouTube.
+- **Sub, membership and Super Chat events now reach the chat overlay.** They
+  were parsed and dropped; they now render as lines (Twitch's own wording, or
+  the Super Chat's comment with its amount) as well as feeding the bot.
+
 ## 0.74.0 — 2026-08-17
 
 ### Changed
