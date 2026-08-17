@@ -6,12 +6,13 @@
 
 ## Unreleased
 
+## 0.76.1 — 2026-08-17
+
 ### Changed
 
-- **The YouTube usage card is a plain tally now.** It talked service internals
-  on screen; it now simply counts what the bot has posted — this stream and
-  today — and the meter bar only appears when you have set a cap for it to
-  measure against.
+- **The YouTube usage card is a plain tally now.** It simply counts what the
+  bot has posted — this stream and today — and the meter bar only appears when
+  you have set a cap for it to measure against.
 
 ## 0.76.0 — 2026-08-17
 
