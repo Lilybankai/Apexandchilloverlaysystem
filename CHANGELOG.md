@@ -6,6 +6,38 @@
 
 ## Unreleased
 
+## 0.72.0 — 2026-08-17
+
+### Changed
+
+- **Your car on the track map now wears the Apex colours.** It used to be a
+  white dot with a thin cyan ring, which is easy enough to find on an empty lap
+  and genuinely hard in a train of same-class cars — white is just another
+  colour once there are twelve dots on a circuit. Your marker is now painted in
+  the cyan-purple-magenta brand gradient, sits a touch larger than the field,
+  and carries a white edge with a brighter cyan halo outside it. It is the only
+  multi-coloured dot on the map, so "which one is me" is answered the moment
+  your eye lands on it, whatever class you are in.
+- **The driver and safety rating badges stay on when names are abbreviated.**
+  Setting the standings tower to surnames or forenames used to strip the DR
+  plaque and the safety badge off every row, on the reasoning that the marks
+  were stealing width the shortened names needed. In practice they bought the
+  names almost nothing — rows still ran out of room at the same place — while
+  the ratings, which are half of what identifies a driver, disappeared for
+  anyone not using full names. Both marks now ride every name style, and the
+  cell clips whatever will not fit rather than trading one for the other. Full
+  names draw exactly the row they always did.
+
+### Added
+
+- **A shared setup is now linked to the lap it was driven on.** When you upload
+  a board lap, the trace carries the fingerprint of the setup you drove it with,
+  and the server ties it to your own published setup if you have shared that
+  tune. Nothing changes on screen yet — this is the groundwork for the Training
+  section, where studying someone's fastest lap will also let you take the car
+  that set it, not just watch the inputs. Only your own setups are ever linked,
+  and laps recorded before setup stamping simply never link.
+
 ## 0.71.1 — 2026-08-16
 
 ### Fixed
