@@ -204,6 +204,15 @@ const GLOBAL_FLOOR_MS = 2000;
  */
 const GIFTBOMB_SUPPRESS_MS = 30_000;
 
+/**
+ * How long a line the bot just sent is treated as its own echo (ms). Because
+ * the bot speaks AS the streamer, its replies come back down the chat feed
+ * authored by the streamer — and only those exact lines must be ignored, so a
+ * reply that happens to start with `!` can't re-trigger a command forever.
+ * The streamer TYPING a command themselves is normal use and must work.
+ */
+const ECHO_WINDOW_MS = 15_000;
+
 export interface StreamBotDeps {
   now?: () => number;
   /** Queue a Twitch line; false when the IRC side can't send at all. */
@@ -231,6 +240,8 @@ export class StreamBot {
     twitch: Number.NEGATIVE_INFINITY,
     youtube: Number.NEGATIVE_INFINITY,
   };
+  /** Lines the bot recently dispatched, to recognise them coming back. */
+  private readonly recentSends: Array<{ platform: 'twitch' | 'youtube'; text: string; at: number }> = [];
   private giftBombAt = 0;
 
   public constructor(deps: StreamBotDeps) {
@@ -253,12 +264,16 @@ export class StreamBot {
     const cfg = this.cfg;
     if (!cfg || !cfg.enabled) return;
     if (!cfg.platforms[msg.platform]) return;
-    if (this.isSelf(msg)) return;
 
     if (msg.event) {
       this.handleEvent(msg);
       return;
     }
+
+    // The bot speaks as the streamer, so its own replies come back authored by
+    // the streamer. Drop ONLY those exact echoed lines — the streamer typing a
+    // command themselves is the normal way commands get shown to chat.
+    if (this.isSelf(msg) && this.isRecentEcho(msg.platform, messageText(msg).trim())) return;
 
     const name = commandNameFromText(messageText(msg));
     if (!name) return;
@@ -382,6 +397,7 @@ export class StreamBot {
       if (!cfg.twitch.sendAllowed) return false;
       if (!this.deps.sendTwitch(line)) return false;
       this.lastSendAt.twitch = t;
+      this.noteSent('twitch', line, t);
       return true;
     }
 
@@ -394,6 +410,7 @@ export class StreamBot {
     this.budget.noteSend();
     this.deps.onQuotaUsed(1);
     this.lastSendAt.youtube = t;
+    this.noteSent('youtube', line, t);
     void this.deps.sendYouTube(line).catch(() => {});
     return true;
   }
@@ -401,6 +418,19 @@ export class StreamBot {
   /** Public snapshot for status surfaces. */
   public budgetRemaining(): number {
     return this.budget.remainingMessages();
+  }
+
+  /** Remember a dispatched line so its echo can be recognised. */
+  private noteSent(platform: 'twitch' | 'youtube', text: string, at: number): void {
+    this.recentSends.push({ platform, text, at });
+    while (this.recentSends.length > 30) this.recentSends.shift();
+  }
+
+  /** Whether this exact line was dispatched by us inside the echo window. */
+  private isRecentEcho(platform: 'twitch' | 'youtube', text: string): boolean {
+    const cutoff = this.now() - ECHO_WINDOW_MS;
+    while (this.recentSends.length > 0 && (this.recentSends[0]?.at ?? 0) < cutoff) this.recentSends.shift();
+    return this.recentSends.some((s) => s.platform === platform && s.text === text);
   }
 
   private isSelf(msg: ChatMessage): boolean {

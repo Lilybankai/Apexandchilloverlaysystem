@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+## 0.75.3 — 2026-08-17
+
+### Fixed
+
+- **You can trigger your own bot commands now.** The bot ignored every message
+  from the linked account to stop its replies re-triggering commands forever —
+  but since the bot speaks AS you, that also swallowed you typing `!discord`
+  to your own chat, which is the most normal thing a streamer does. It now
+  ignores only the exact lines it just sent (a fifteen-second echo window);
+  everything you actually type works, from either side of the keyboard.
+
+### Changed
+
+- **The bot editors say their units.** Column headers over Commands, Timers
+  and Goals — most importantly "Every (min)" and "Cooldown (sec)", so nobody
+  types thirty seconds into a minutes box.
+
 ## 0.75.2 — 2026-08-17
 
 ### Fixed

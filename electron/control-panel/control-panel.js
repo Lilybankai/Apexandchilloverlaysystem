@@ -4201,12 +4201,30 @@
     list.appendChild(li);
   }
 
+  /**
+   * A header row naming each column — above all, which UNIT a number is in
+   * ("every … minutes", "cooldown seconds"); a bare number box invites typing
+   * 30 seconds into a minutes field. Same grid template as the data rows so
+   * the labels sit exactly over their columns.
+   */
+  function sbHead(list, rowClass, labels) {
+    const li = document.createElement('li');
+    li.className = `sb-row ${rowClass} sb-head`;
+    for (const label of labels) {
+      const span = document.createElement('span');
+      span.textContent = label;
+      li.appendChild(span);
+    }
+    list.appendChild(li);
+  }
+
   /* ---- the four editors --------------------------------------------------- */
 
   function renderCommands() {
     if (!sbCmdList || !bot) return;
     sbCmdList.innerHTML = '';
     if (!bot.commands.length) sbEmpty(sbCmdList, 'No commands yet — add !discord, !socials, !specs…');
+    else sbHead(sbCmdList, 'sb-row--cmd', ['Command', 'Reply', 'Cooldown (sec)', '', '']);
     bot.commands.forEach((c, i) => {
       const li = document.createElement('li');
       li.className = 'sb-row sb-row--cmd';
@@ -4241,6 +4259,7 @@
     if (!sbTimerList || !bot) return;
     sbTimerList.innerHTML = '';
     if (!bot.timers.length) sbEmpty(sbTimerList, 'No timed messages yet.');
+    else sbHead(sbTimerList, 'sb-row--timer', ['Message', 'Every (min)', '', '', '', '']);
     bot.timers.forEach((t, i) => {
       const li = document.createElement('li');
       li.className = 'sb-row sb-row--timer';
@@ -4311,6 +4330,7 @@
     if (!sbGoalList || !bot) return;
     sbGoalList.innerHTML = '';
     if (!bot.goals.length) sbEmpty(sbGoalList, 'No goals yet — try a sub goal for the next stream.');
+    else sbHead(sbGoalList, 'sb-row--goal', ['Goal', 'Counts', 'Now', 'Target', 'Every Nth', '', '']);
     bot.goals.forEach((g, i) => {
       const li = document.createElement('li');
       li.className = 'sb-row sb-row--goal';

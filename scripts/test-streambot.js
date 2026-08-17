@@ -139,12 +139,34 @@ console.log('\ncommands — matching + cooldowns + self-guard');
 
   state.t = 30000;
   bot.handleMessage(line('twitch', 'Streamer', '!discord'));
-  check('own account never triggers a command (echo-loop guard)', state.twitch.length === 2);
+  check('the streamer can trigger their own commands', state.twitch.length === 3);
 
   state.t = 60000;
   bot.handleMessage(line('youtube', 'ytviewer', '!discord'));
   check('same command works from YouTube, answered on YouTube', state.youtube.length === 1);
   check('YouTube reply reported to the quota ledger', state.quota === 1);
+}
+{
+  // The bot speaks AS the streamer, so its replies come back down the feed
+  // authored by the streamer. Only those exact echoed lines are dropped —
+  // otherwise a reply starting with "!" re-triggers a command forever.
+  const { bot, state } = harness({
+    commands: [
+      { id: 'a', name: 'a', response: '!b hi', cooldownSec: 0, enabled: true },
+      { id: 'b', name: 'b', response: 'boom', cooldownSec: 0, enabled: true },
+    ],
+  });
+  bot.handleMessage(line('twitch', 'viewer', '!a'));
+  check('reply that looks like a command is sent', state.twitch.length === 1 && state.twitch[0] === '!b hi');
+  state.t = 3000;
+  bot.handleMessage(line('twitch', 'Streamer', '!b hi')); // the echo of our own reply
+  check('echoed own reply does not re-trigger (loop broken)', state.twitch.length === 1);
+  state.t = 20000; // past the 15s echo window
+  bot.handleMessage(line('twitch', 'Streamer', '!b hi')); // genuinely typed this time
+  check('the same text typed later by the streamer works', state.twitch.length === 2 && state.twitch[1] === 'boom');
+  state.t = 25000;
+  bot.handleMessage(line('twitch', 'viewer2', '!b hi')); // a viewer is never echo-suppressed
+  check('a viewer typing bot-reply text is never suppressed', state.twitch.length === 3);
 }
 {
   const { bot, state } = harness({

@@ -835,6 +835,22 @@ html, body {
 /* A labelled checkbox that has to fit inside a row, not a settings grid. */
 .sb-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
 .sb-row__del { flex: none; }
+/* Column headers: same grid as the data rows so each label sits over its
+   column — their whole job is naming the units (minutes, seconds). */
+.sb-head {
+  border: 0;
+  background: transparent;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.sb-head span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
 .sb-empty { color: var(--text-3); font-size: 13px; padding: 4px 2px; }
 /* Narrow panels: rows wrap rather than crush their inputs. */
 @media (max-width: 900px) {
