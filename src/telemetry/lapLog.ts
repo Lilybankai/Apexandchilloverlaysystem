@@ -809,6 +809,13 @@ export interface PendingBest {
    * trace to send and the board entry simply has nothing to teach yet.
    */
   lapId?: string;
+  /**
+   * Setup fingerprint stamped on the lap ({@link LapRecord.setupFp}) — sent up
+   * with the trace so the server can link it to the shared setup this lap was
+   * driven on (see submit_lap_trace / migration 0009). Absent on pre-v4 laps,
+   * which simply never link.
+   */
+  setupFp?: string;
 }
 
 /** Everything the local files say the league database should contain. */
@@ -935,6 +942,7 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
           lapMs: rec.lapMs,
           setAt: rec.at,
           ...(rec.id ? { lapId: rec.id } : {}),
+          ...(rec.setupFp ? { setupFp: rec.setupFp } : {}),
           conditions: {
             sessionType: rec.sessionType || '',
             ...(typeof rec.trackTempC === 'number' ? { trackTempC: rec.trackTempC } : {}),
