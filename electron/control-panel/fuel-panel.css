@@ -1,0 +1,216 @@
+/* fuel-panel.css — the Fuel tab (strategy calculator).
+   ---------------------------------------------------------------------------
+   Loaded after hub.css / setup-editor.css so the shell's frame rules stay in
+   charge; everything here is scoped under .fuel- and leans on the tokens in
+   control-panel.css (--panel*, --line*, --text*, fonts, radii). */
+
+/* Two rails: inputs on the left, the plan on the right. The plan is the thing
+   drivers read mid-stint, so it gets the wide column. */
+.fuel-grid {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .fuel-grid { grid-template-columns: 1fr; }
+}
+
+.fuel-col { display: flex; flex-direction: column; gap: 16px; }
+
+/* Wide selects — track and car names do not fit the 130px mono default. */
+.fuel-grid select.field__input {
+  width: 100%;
+  max-width: none;
+  font-family: var(--font-ui);
+}
+
+/* Two fields side by side (class + car, minutes + laps). */
+.fuel-row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Lap-time override: minutes : seconds. */
+.fuel-laptime { display: flex; align-items: center; gap: 6px; }
+.fuel-laptime .field__input { width: 74px; }
+.fuel-laptime__sep { color: var(--text-3); font-family: var(--font-mono); }
+
+/* Quick race-length chips. */
+.fuel-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fuel-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-2);
+  font: 600 11px var(--font-display);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.fuel-chip:hover { color: var(--text); border-color: var(--cyan); }
+.fuel-chip[data-active="true"] {
+  background: var(--grad);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* ── Results ─────────────────────────────────────────────────────────── */
+
+.fuel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  color: var(--text-3);
+  text-align: center;
+}
+.fuel-empty .icon { width: 28px; height: 28px; }
+
+/* Hero: the one number the whole tab exists for. */
+.fuel-hero { text-align: center; padding: 6px 0 14px; }
+.fuel-hero__label {
+  font: 600 12px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+.fuel-hero__value {
+  font: 700 44px/1.15 var(--font-display);
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.fuel-hero__value small { font-size: 22px; }
+.fuel-hero__sub { color: var(--text-3); font-size: 12px; }
+
+.fuel-warn {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--warn);
+  font-size: 12.5px;
+}
+.fuel-warn .icon { flex: none; width: 15px; height: 15px; margin-top: 1px; }
+
+/* Stat tiles — 4-up like the dashboard's .stats, folding to 2. */
+.fuel-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+@media (max-width: 1200px) { .fuel-tiles { grid-template-columns: repeat(2, 1fr); } }
+.fuel-tile {
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.fuel-tile__label {
+  font: 600 10.5px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-3);
+}
+.fuel-tile__value {
+  font: 600 17px var(--font-mono);
+  color: var(--text);
+}
+.fuel-tile--accent .fuel-tile__value { color: var(--cyan); }
+
+/* Stint plan. */
+.fuel-stints { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.fuel-stint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.fuel-stint__badge {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--grad);
+  color: #fff;
+  font: 700 12px var(--font-display);
+}
+.fuel-stint__name { font: 600 13px var(--font-display); }
+.fuel-stint__tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 50%, transparent);
+  color: var(--cyan);
+  font: 600 10px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.fuel-stint__spacer { flex: 1; }
+.fuel-stint__fill { font: 600 13px var(--font-mono); }
+.fuel-stint__laps { color: var(--text-3); font-size: 12px; }
+
+.fuel-stop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 12px 2px 22px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.fuel-stop .icon { width: 13px; height: 13px; color: var(--text-3); }
+.fuel-stop b { color: var(--text); font-family: var(--font-mono); font-weight: 600; }
+
+/* Alternative strategies. */
+.fuel-alts { display: flex; flex-direction: column; gap: 6px; }
+.fuel-alt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.fuel-alt[data-feasible="false"] { opacity: 0.6; }
+.fuel-alt .icon { flex: none; width: 15px; height: 15px; color: var(--text-3); }
+.fuel-alt--save .icon { color: var(--ok); }
+.fuel-alt__title { font: 600 13px var(--font-display); }
+.fuel-alt__target { font-family: var(--font-mono); color: var(--cyan); font-size: 12.5px; }
+.fuel-alt__sub { color: var(--text-3); font-size: 12px; }
+
+.fuel-foot {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fuel-section {
+  margin: 14px 0 8px;
+  font: 600 12px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fuel-section .icon { width: 14px; height: 14px; color: var(--cyan); }

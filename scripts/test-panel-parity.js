@@ -415,6 +415,43 @@ const PANEL_CONTRACT = {
   'setup-guide-next': 'button',
   'setup-guide-close': 'button',
 
+  // Fuel tab (v0.71.0-beta.1) — the strategy calculator ported from the
+  // standalone LMU fuel app. Contracted because fuel-panel.js grabs every one
+  // of these at load and wires listeners; a renamed id would leave a dead
+  // control that still renders.
+  'fuel-reset': 'button',
+  'fuel-circuit': 'select',
+  'fuel-layout': 'select',
+  'fuel-class': 'select',
+  'fuel-maker': 'select',
+  'fuel-car': 'select',
+  'fuel-mode-seg': 'nav',
+  'fuel-minutes-field': 'label',
+  'fuel-minutes': 'input:number',
+  'fuel-chips': 'div',
+  'fuel-laps-field': 'label',
+  'fuel-laps': 'input:number',
+  'fuel-laptime-min': 'input:number',
+  'fuel-laptime-sec': 'input:number',
+  'fuel-laptime-hint': 'span',
+  'fuel-consumption': 'input:number',
+  'fuel-consumption-label': 'span',
+  'fuel-consumption-hint': 'span',
+  'fuel-safety': 'input:number',
+  'fuel-formation': 'input:checkbox',
+  'fuel-tank-field': 'label',
+  'fuel-tank': 'input:number',
+  'fuel-tank-hint': 'span',
+  'fuel-stint-seg': 'nav',
+  'fuel-pit-loss': 'input:number',
+  'fuel-pit-rate': 'input:number',
+  'fuel-pit-rate-label': 'span',
+  'fuel-pit-tyres': 'input:number',
+  'fuel-pit-every': 'input:number',
+  'fuel-pit-reset': 'button',
+  'fuel-empty': 'div',
+  'fuel-result': 'div',
+
   // Floating
   toast: 'div',
 };
@@ -645,6 +682,10 @@ verifyPage({
     'setup-macros.js',
     'setup-guide.js',
     'streamer-guide.js',
+    // The Fuel tab. Only the panel is scanned: fuel-data.js is deliberately
+    // NOT — its class colors ('#FF3333' …) read as id lookups to this
+    // scanner, and neither engine file touches the DOM anyway.
+    'fuel-panel.js',
   ],
   contract: PANEL_CONTRACT,
 });

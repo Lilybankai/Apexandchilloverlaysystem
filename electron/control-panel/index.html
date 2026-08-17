@@ -11,6 +11,8 @@
   <link rel="stylesheet" href="hub.css" />
   <!-- Setup editor styles — after hub.css for the same precedence reason. -->
   <link rel="stylesheet" href="setup-editor.css" />
+  <!-- Fuel tab styles — same precedence reason again. -->
+  <link rel="stylesheet" href="fuel-panel.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -44,6 +46,9 @@
       </button>
       <button class="tab" type="button" data-tab="setups">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
+      </button>
+      <button class="tab" type="button" data-tab="fuel">
+        <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
       </button>
       <button class="tab" type="button" data-tab="suggestions">
         <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
@@ -1221,6 +1226,170 @@
       </div>
     </section>
 
+    <!-- =========================== FUEL =============================== -->
+    <!-- Race fuel & pit-strategy calculator, ported from the standalone LMU
+         fuel app. Everything is computed locally in fuel-panel.js from the
+         data in fuel-data.js / fuel-strategy.js — no sim connection, no IPC,
+         no polling — so this view has no shown()/hidden() lifecycle. -->
+    <section class="view" data-view="fuel">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Fuel</h1>
+            <p class="view__sub">
+              Plan a race before you start it — fuel or Virtual Energy, stints, pit stops, and what a lift-and-coast target would buy you.
+            </p>
+          </div>
+          <button id="fuel-reset" class="btn btn--ghost btn--sm" type="button"
+                  title="Clear the car, track and overrides. Race length stays.">
+            <svg class="icon"><use href="#i-rotate-ccw" /></svg>Start over
+          </button>
+        </div>
+
+        <div class="fuel-grid">
+          <div class="fuel-col">
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-circuit" /></svg>Track &amp; car</h2>
+                <p class="card__desc">Defaults for lap time and consumption follow this choice.</p>
+              </div>
+              <div class="settings-grid">
+                <label class="field">
+                  <span class="field__label">Circuit</span>
+                  <select class="field__input field__input--wide" id="fuel-circuit"></select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Layout</span>
+                  <select class="field__input field__input--wide" id="fuel-layout"></select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Class</span>
+                  <select class="field__input field__input--wide" id="fuel-class"></select>
+                  <span class="field__hint">Hypercar and LMGT3 plan in Virtual Energy (%); the rest in litres.</span>
+                </label>
+                <div class="fuel-row2">
+                  <label class="field">
+                    <span class="field__label">Manufacturer</span>
+                    <select class="field__input field__input--wide" id="fuel-maker"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Car</span>
+                    <select class="field__input field__input--wide" id="fuel-car"></select>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-flag" /></svg>Race</h2>
+              </div>
+              <div class="settings-grid">
+                <label class="field">
+                  <span class="field__label">Race length</span>
+                  <nav class="seg" id="fuel-mode-seg" aria-label="Race length mode">
+                    <button type="button" data-fuelmode="time" data-active="true">
+                      <svg class="icon"><use href="#i-clock" /></svg><span>Time</span>
+                    </button>
+                    <button type="button" data-fuelmode="laps">
+                      <svg class="icon"><use href="#i-list-ordered" /></svg><span>Laps</span>
+                    </button>
+                  </nav>
+                </label>
+                <label class="field" id="fuel-minutes-field">
+                  <span class="field__label">Minutes</span>
+                  <input class="field__input" type="number" id="fuel-minutes" min="1" max="1440" step="5" />
+                </label>
+                <div class="fuel-chips" id="fuel-chips"></div>
+                <label class="field" id="fuel-laps-field" hidden>
+                  <span class="field__label">Race distance (laps)</span>
+                  <input class="field__input" type="number" id="fuel-laps" min="1" max="500" step="1" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Lap time</span>
+                  <span class="fuel-laptime">
+                    <input class="field__input" type="number" id="fuel-laptime-min" min="0" max="59" step="1" aria-label="Minutes" />
+                    <span class="fuel-laptime__sep">:</span>
+                    <input class="field__input" type="number" id="fuel-laptime-sec" min="0" max="59.9" step="0.1" aria-label="Seconds" />
+                  </span>
+                  <span class="field__hint" id="fuel-laptime-hint"></span>
+                </label>
+                <label class="field">
+                  <span class="field__label" id="fuel-consumption-label">Fuel per lap (L)</span>
+                  <input class="field__input" type="number" id="fuel-consumption" min="0" max="20" step="0.01" />
+                  <span class="field__hint" id="fuel-consumption-hint"></span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Safety margin (laps)</span>
+                  <input class="field__input" type="number" id="fuel-safety" min="0" max="10" step="1" />
+                  <span class="field__hint">Extra laps of fuel carried in the final stint.</span>
+                </label>
+                <label class="field field--toggle">
+                  <span class="field__label">Formation lap</span>
+                  <span class="switch">
+                    <input type="checkbox" id="fuel-formation" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                  <span class="field__hint">Adds one lap of fuel before the start.</span>
+                </label>
+                <label class="field" id="fuel-tank-field">
+                  <span class="field__label">Tank capacity (L)</span>
+                  <input class="field__input" type="number" id="fuel-tank" min="20" max="150" step="1" />
+                  <span class="field__hint" id="fuel-tank-hint"></span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Stint plan</span>
+                  <nav class="seg" id="fuel-stint-seg" aria-label="Stint plan mode">
+                    <button type="button" data-fuelstint="maxFirst" data-active="true"><span>Fill to max</span></button>
+                    <button type="button" data-fuelstint="even"><span>Even stints</span></button>
+                  </nav>
+                  <span class="field__hint">Fill to max runs long stints early; even stints balance lap counts.</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-timer" /></svg>Pit stops</h2>
+                <p class="card__desc">LMU rule: refuelling and tyre changes are sequential — a stop costs lane loss + refuel + tyres.</p>
+              </div>
+              <div class="settings-grid">
+                <label class="field">
+                  <span class="field__label">Pit lane loss (s)</span>
+                  <input class="field__input" type="number" id="fuel-pit-loss" min="5" max="120" step="1" />
+                </label>
+                <label class="field">
+                  <span class="field__label" id="fuel-pit-rate-label">Refuel rate (L/s)</span>
+                  <input class="field__input" type="number" id="fuel-pit-rate" min="0.1" max="10" step="0.1" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Tyre change (s)</span>
+                  <input class="field__input" type="number" id="fuel-pit-tyres" min="0" max="120" step="1" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Tyres every N stops</span>
+                  <input class="field__input" type="number" id="fuel-pit-every" min="0" max="10" step="1" />
+                  <span class="field__hint">0 = never change tyres.</span>
+                </label>
+                <button id="fuel-pit-reset" class="btn btn--ghost btn--sm" type="button" hidden>Reset pit defaults</button>
+              </div>
+            </section>
+          </div>
+
+          <section class="card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Strategy</h2>
+            </div>
+            <div class="fuel-empty" id="fuel-empty">
+              <svg class="icon"><use href="#i-fuel" /></svg>
+              <p>Select a track, class and car to build your strategy.</p>
+            </div>
+            <div id="fuel-result" hidden></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
     <!-- ======================== SUGGESTIONS =========================== -->
     <section class="view" data-view="suggestions">
       <div class="wrap">
@@ -1983,5 +2152,10 @@
 <script src="setup-guide.js"></script>
 <script src="streamer-guide.js"></script>
 <script src="setup-editor.js"></script>
+<!-- Fuel tab: engine data + strategy maths (pure lookup/compute, also
+     require()d by scripts/test-fuelcalc.js), then the panel itself. -->
+<script src="fuel-data.js"></script>
+<script src="fuel-strategy.js"></script>
+<script src="fuel-panel.js"></script>
 </body>
 </html>
