@@ -6,6 +6,35 @@
 
 ## Unreleased
 
+## 0.73.0 — 2026-08-17
+
+### Added
+
+- **A "Public" button on every saved setup.** Publishing a tune to the community
+  board was reachable only by opening Share and picking the right option out of
+  several — the menu is there to send a file to a teammate, and publishing was
+  hiding inside it. Each saved setup now carries its own Public button that goes
+  straight to the publish dialog. Share keeps everything it had, and its
+  description now says what it actually offers.
+- **The Setups screen asks for your feedback.** A dedicated dialog on the
+  community list, for an idea or a problem with setups specifically. It goes to
+  the same inbox as the Suggestions tab, tagged so it can be read in context
+  rather than guessed at.
+- **A nudge to share what you have.** If you have saved tunes, the Setups screen
+  now says so and explains what publishing one does — your name on the community
+  board, ratings and downloads, and a quicker field. It is a prompt, not a
+  nag: it does not claim your setups are unshared, because proving that would
+  take a per-setup cloud check the screen does not do.
+
+### Changed
+
+- **The admin overview reports on the setup library.** Three tiles: how many
+  drivers have created setups (and how many are shared right now), how many
+  drivers have verified pace on a shared setup, and how often setups are
+  downloaded — all-time, the last 30 days, and by how many distinct drivers.
+  Until now the Admin tab could say how many people were using the app but
+  nothing about whether the setup library was doing its job.
+
 ## 0.72.1 — 2026-08-17
 
 ### Fixed
