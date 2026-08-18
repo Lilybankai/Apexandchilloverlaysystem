@@ -56,6 +56,25 @@ contextBridge.exposeInMainWorld('apex', {
   /** Put the newest backup of LMU's controls file back. */
   lmuBindRestore: () => ipcRenderer.invoke('lmuBind:restore'),
 
+  /* ---- Race engineer ---- */
+
+  /** Everything the Engineer tab renders: voices, install state, running state. */
+  engineerStatus: () => ipcRenderer.invoke('engineer:status'),
+  /** Download the Piper engine (first time) + one voice. Resolves when done. */
+  engineerDownload: (voiceId) => ipcRenderer.invoke('engineer:download', voiceId),
+  /** Speak the sample line with an INSTALLED voice, through the radio channel. */
+  engineerPreview: (voiceId) => ipcRenderer.invoke('engineer:preview', voiceId),
+  /** "Radio check" — proves the running pipeline end to end. */
+  engineerTest: () => ipcRenderer.invoke('engineer:test'),
+  /** Push-to-talk from the panel (same path as the bound wheel button). */
+  engineerAsk: () => ipcRenderer.invoke('engineer:ask'),
+  /** Status pushes: download progress, running state. Returns unsubscribe. */
+  onEngineerStatus: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('engineer:status', listener);
+    return () => ipcRenderer.removeListener('engineer:status', listener);
+  },
+
   /* ---- Wheel / controller bindings ---- */
 
   /** Attached controllers + whether background reading works on this host. */

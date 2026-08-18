@@ -202,6 +202,11 @@ function defaultSettings() {
     // who wants the layer over their menus can switch it off.
     ingameAutoHide: true,
     ingameOverlays,
+    // The voice race engineer (push-to-talk questions answered from telemetry).
+    // Off until the operator downloads a voice and flips the switch — the
+    // feature spawns three helper processes, so it must be a choice.
+    engineerEnabled: false,
+    engineerVoice: 'en_GB-alan-medium',
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
     // width/height in px; absent means "the widget's own size".
@@ -529,6 +534,12 @@ function loadSettings() {
       typeof stored.ingameAutoHide === 'boolean' ? stored.ingameAutoHide : defaults.ingameAutoHide,
     ingameOverlays,
     ingameLayout,
+    engineerEnabled:
+      typeof stored.engineerEnabled === 'boolean' ? stored.engineerEnabled : defaults.engineerEnabled,
+    engineerVoice:
+      typeof stored.engineerVoice === 'string' && stored.engineerVoice.trim()
+        ? stored.engineerVoice.trim()
+        : defaults.engineerVoice,
     ingameToggleShortcut: normalizeShortcut(
       stored.ingameToggleShortcut,
       defaults.ingameToggleShortcut,
@@ -831,6 +842,7 @@ async function startServer() {
 
     connectStatusFeed(config.httpPort, config.wsPath);
     syncOverlayWindow();
+    void syncEngineer();
     console.log(`[app] server started on port ${config.httpPort}`);
   } catch (err) {
     status.running = false;
@@ -1223,6 +1235,7 @@ function getActions() {
     actions = createActions({
       loadSettings,
       applySettings,
+      engineerAsk: () => getEngineer().ask(),
       cycleIngame,
       toggleIngameInteract,
       resetLayout: () => {
@@ -1258,6 +1271,53 @@ function getActions() {
     });
   }
   return actions;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The race engineer (voice commands over the radio)                          */
+/* -------------------------------------------------------------------------- */
+
+let engineerService = null;
+
+/** The service, created on first use — an operator who never enables it pays nothing. */
+function getEngineer() {
+  if (!engineerService) {
+    const { EngineerService } = require('./engineer');
+    engineerService = new EngineerService({
+      dir: path.join(app.getPath('userData'), 'piper'),
+      loadSettings,
+      onStatus: (payload) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('engineer:status', payload);
+        }
+      },
+    });
+  }
+  return engineerService;
+}
+
+/**
+ * Bring the engineer in line with reality: running exactly when the feature is
+ * on, the server is up, and the selected voice is actually on disk. Always a
+ * stop-then-start so a voice or port change never needs its own code path.
+ */
+async function syncEngineer(settings) {
+  const s = settings || loadSettings();
+  const eng = getEngineer();
+  const wanted =
+    !!s.engineerEnabled &&
+    status.running &&
+    eng.engineInstalled() &&
+    eng.voiceInstalled(s.engineerVoice);
+  if (eng.running) eng.stop();
+  if (wanted) {
+    try {
+      await eng.start(status.port);
+    } catch (err) {
+      eng.lastError = err && err.message ? err.message : String(err);
+    }
+  }
+  eng.pushStatus();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1991,6 +2051,12 @@ function registerIpc() {
       if (partial.audioVolume !== undefined) {
         next.audioVolume = clamp(partial.audioVolume, 0, 100, current.audioVolume);
       }
+      if (typeof partial.engineerEnabled === 'boolean') {
+        next.engineerEnabled = partial.engineerEnabled;
+      }
+      if (typeof partial.engineerVoice === 'string' && partial.engineerVoice.trim()) {
+        next.engineerVoice = partial.engineerVoice.trim();
+      }
       if (partial.actionBindings && typeof partial.actionBindings === 'object') {
         next.actionBindings = { ...current.actionBindings };
         for (const [id, accel] of Object.entries(partial.actionBindings)) {
@@ -2056,6 +2122,16 @@ function registerIpc() {
     if (needsRestart) await startServer();
     // Reflect in-game display choices immediately (create/reload/close layer).
     syncOverlayWindow();
+
+    // The engineer restarts on its own switches (and a server restart moved the
+    // port under it, which syncEngineer also repairs).
+    if (
+      next.engineerEnabled !== current.engineerEnabled ||
+      next.engineerVoice !== current.engineerVoice ||
+      needsRestart
+    ) {
+      void syncEngineer(next);
+    }
 
     return {
       settings: next,
@@ -3007,6 +3083,22 @@ function registerIpc() {
         wheel: settings.wheelBindings[a.id] || null,
       }));
   });
+
+  // --- Race engineer -------------------------------------------------------
+  ipcMain.handle('engineer:status', () => getEngineer().status());
+  ipcMain.handle('engineer:download', async (_evt, voiceId) => {
+    try {
+      await getEngineer().download(String(voiceId));
+      // A finished download may be the missing piece — bring the service up.
+      await syncEngineer();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('engineer:preview', (_evt, voiceId) => getEngineer().preview(String(voiceId)));
+  ipcMain.handle('engineer:test', () => getEngineer().test());
+  ipcMain.handle('engineer:ask', () => getEngineer().ask());
 
   /** Bind (or clear, with an empty accelerator) one action. */
   ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {
@@ -3962,6 +4054,9 @@ app.on('will-quit', () => {
   // Release the DirectInput devices; leaving them acquired holds COM objects
   // alive past process teardown.
   if (gamepad) gamepad.close();
+  // Kill the engineer's sidecars (Piper, player, recognizer) — they are plain
+  // child processes and would outlive the app as orphans otherwise.
+  if (engineerService) engineerService.stop();
 });
 
 app.on('before-quit', () => {

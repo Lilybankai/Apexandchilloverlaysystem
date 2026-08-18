@@ -67,7 +67,8 @@ const intervalMs = hz > 0 ? Math.round(1000 / hz) : 0;
 /* ---- trimming ------------------------------------------------------------ */
 
 /**
- * Everything `telemetry/triggers.ts` reads, and nothing else.
+ * Everything `telemetry/triggers.ts` AND `telemetry/engineerCommands.ts` read,
+ * and nothing else.
  *
  * Deliberately explicit rather than a deny-list of the big blocks: when the
  * detector learns to read a new channel, this list is the one place that has to
@@ -75,8 +76,13 @@ const intervalMs = hz > 0 ? Math.round(1000 / hz) : 0;
  * is honest. A deny-list would silently keep working and quietly drop the new
  * field the day someone renamed a widget's block.
  *
- * The standings are reduced to the player's own row, which is the only one the
- * cue context uses (for class position). That alone is most of the saving.
+ * The standings keep every row but only the columns the two engineer layers
+ * read (gap chains, lap times, class identity) — the driver-rating badges,
+ * energy fractions and pit state that make the block heavy stay behind. Same
+ * treatment for `relative`, which the commands layer uses as its on-track gap
+ * fallback. Recordings made before 2026-08-18 carry only the player's own
+ * standings row, so `test-commands.js --replay` on one of those answers the
+ * gap questions with "no data" — honest, per the rule above.
  */
 function trim(frame) {
   const player = frame.player || {};
@@ -96,8 +102,35 @@ function trim(frame) {
   if (player.trackLimits) out.player.trackLimits = player.trackLimits;
   if (player.lap) out.player.lap = player.lap;
 
-  const me = (frame.standings || []).find((s) => s.isPlayer);
-  out.standings = me ? [me] : [];
+  out.standings = (frame.standings || []).map((s) => ({
+    slotId: s.slotId,
+    position: s.position,
+    driverName: s.driverName,
+    carNumber: s.carNumber,
+    carClass: s.carClass,
+    classPosition: s.classPosition,
+    gapToClassLeaderSec: s.gapToClassLeaderSec,
+    classLapsBehind: s.classLapsBehind,
+    gapToLeaderSec: s.gapToLeaderSec,
+    bestLapSec: s.bestLapSec,
+    lastLapSec: s.lastLapSec,
+    lapsCompleted: s.lapsCompleted,
+    isPlayer: s.isPlayer,
+  }));
+  out.relative = (frame.relative || []).map((r) => ({
+    slotId: r.slotId,
+    position: r.position,
+    driverName: r.driverName,
+    carClass: r.carClass,
+    relativeGapSec: r.relativeGapSec,
+    lapsDifference: r.lapsDifference,
+    isFasterClass: r.isFasterClass,
+    yieldTo: r.yieldTo,
+    trafficAhead: r.trafficAhead,
+    closingRateSec: r.closingRateSec,
+    inPit: r.inPit,
+    isPlayer: r.isPlayer,
+  }));
   return out;
 }
 

@@ -93,6 +93,22 @@ function createActions(deps = {}) {
   }
 
   /* ---------------------------------------------------------------- */
+  /*  Race engineer                                                     */
+  /* ---------------------------------------------------------------- */
+
+  if (deps.engineerAsk) {
+    define({
+      id: 'engineer.ask',
+      // "push-to-talk" in the label because that is what the driver is looking
+      // for in the bindings list — the action name alone reads as a chat thing.
+      label: 'Ask the race engineer (push-to-talk)',
+      group: 'Engineer',
+      kind: 'pulse',
+      run: async () => deps.engineerAsk(),
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /*  Overlay actions — no game involvement, always available          */
   /* ---------------------------------------------------------------- */
 

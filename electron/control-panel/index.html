@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src https://huggingface.co https://*.hf.co;" />
   <title>Apex Overlay System</title>
   <link rel="stylesheet" href="control-panel.css" />
   <!-- Second, so the Hub shell's frame rules win over the original
@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="setup-editor.css" />
   <!-- Fuel tab styles — same precedence reason again. -->
   <link rel="stylesheet" href="fuel-panel.css" />
+  <link rel="stylesheet" href="engineer-panel.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -46,6 +47,9 @@
       </button>
       <button class="tab" type="button" data-tab="setups">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
+      </button>
+      <button class="tab" type="button" data-tab="engineer">
+        <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
       </button>
       <button class="tab" type="button" data-tab="fuel">
         <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
@@ -1227,6 +1231,103 @@
     </section>
 
     <!-- =========================== FUEL =============================== -->
+    <!-- The voice race engineer: press a wheel button, ask a question, hear
+         the answer over the radio. Everything runs on this PC — recognition,
+         the answer, the voice — so the tab is mostly a voice picker plus the
+         push-to-talk binding. Rendered by engineer-panel.js from main's
+         engineer:status; no polling, pushes only. -->
+    <section class="view" data-view="engineer">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Engineer</h1>
+            <p class="view__sub">
+              Press a wheel button and ask — gaps, pace, who's ahead, traffic, fuel, laps left.
+              Answered from live telemetry and spoken over the radio, all on this PC: no cloud,
+              nothing leaves the machine, nothing runs until you press the button.
+            </p>
+          </div>
+          <button id="eng-radio-check" class="btn btn--ghost btn--sm" type="button"
+                  title="Speak a test line through the whole pipeline — voice, radio effect, speakers.">
+            <svg class="icon"><use href="#i-volume-2" /></svg>Radio check
+          </button>
+        </div>
+
+        <div class="eng-grid">
+          <div class="eng-col">
+            <!-- ------------------ ON THE RADIO -------------------- -->
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-mic" /></svg>On the radio</h2>
+              </div>
+              <div class="settings-grid">
+                <label class="field field--toggle">
+                  <span class="field__label">Race engineer</span>
+                  <span class="switch">
+                    <input type="checkbox" id="eng-toggle" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                  <span class="field__hint">
+                    The kill switch. When off, nothing listens and nothing speaks.
+                    The microphone is only ever live for the few seconds after you
+                    press the button — never in the background.
+                  </span>
+                </label>
+
+                <div class="field">
+                  <span class="field__label">Status</span>
+                  <p class="eng-status" id="eng-status">Loading…</p>
+                </div>
+
+                <div class="field">
+                  <span class="field__label">Push-to-talk</span>
+                  <div class="eng-ptt-row">
+                    <span class="eng-ptt-chip" id="eng-ptt-chip">Not bound</span>
+                    <button class="btn btn--ghost btn--sm" id="eng-ptt-bind" type="button">Bind wheel button</button>
+                    <button class="btn btn--ghost btn--sm" id="eng-ptt-clear" type="button" hidden>Clear</button>
+                  </div>
+                  <span class="field__hint">
+                    Press it, wait for the chirp, ask. A keyboard key works too — bind
+                    <strong>Ask the race engineer</strong> in the Dashboard's bindings list.
+                    <button class="btn btn--ghost btn--sm" id="eng-ask" type="button"
+                            title="Same as pressing the bound button — the engineer listens for one question.">Ask now</button>
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <!-- ------------------ WHAT YOU CAN ASK ----------------- -->
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-message-square-plus" /></svg>What you can ask</h2>
+                <p class="card__desc">
+                  Say the key phrase on its own or inside a sentence — “mate, what's the
+                  gap ahead right now” works. The engineer only answers what the
+                  telemetry can prove, and says so when it can't.
+                </p>
+              </div>
+              <div id="eng-grammar" class="eng-grammar"></div>
+            </section>
+          </div>
+
+          <div class="eng-col">
+            <!-- ---------------------- VOICES ----------------------- -->
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-volume-2" /></svg>Voices</h2>
+                <p class="card__desc">
+                  Neural voices, spoken through the radio channel. <strong>Sample</strong>
+                  streams a short clip of the raw voice; a download is one-time
+                  (63–121&nbsp;MB), stored on this PC, and works offline from then on.
+                </p>
+              </div>
+              <div id="eng-voices" class="eng-voices"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Race fuel & pit-strategy calculator, ported from the standalone LMU
          fuel app. Everything is computed locally in fuel-panel.js from the
          data in fuel-data.js / fuel-strategy.js — no sim connection, no IPC,
@@ -2157,5 +2258,6 @@
 <script src="fuel-data.js"></script>
 <script src="fuel-strategy.js"></script>
 <script src="fuel-panel.js"></script>
+<script src="engineer-panel.js"></script>
 </body>
 </html>

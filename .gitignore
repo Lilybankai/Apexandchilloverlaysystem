@@ -59,3 +59,6 @@ electron/oauth-client.generated.json
 # megabytes each, kept locally to tune the race-engineer triggers against — the
 # detector is what ships, not the evidence it was tuned on.
 /recordings/
+
+# Piper TTS engine + voice models (downloaded by scripts/setup-piper.js)
+tools/piper/
