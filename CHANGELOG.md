@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+## 0.76.2 — 2026-08-18
+
+### Changed
+
+- **The reference pace bar now reads like the app’s RankBar.** The ladder runs
+  slow on the left to Alien on the right — the same direction as the rank bar
+  in the Apex app — and the discrete segment colours are replaced with the
+  app’s blue→green→orange→purple gradient, so your marker means the same
+  thing in both places. Segment widths are drawn correctly for the new
+  slow-to-fast ordering.
+
 ## 0.76.1 — 2026-08-17
 
 ### Changed

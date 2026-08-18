@@ -890,11 +890,9 @@ html, body { height: 100%; overflow: hidden; }
  * AppChrome.jsx's RankBar — its own comment calls it "Ohnespeed-style rank
  * progress", which is precisely what this data is.
  *
- * Note the direction: the kit runs OK → GOOD → 102% → ALIEN left to right, so
- * FASTER is further RIGHT. That is the opposite of the overlay widget's ladder,
- * which runs fast-to-slow because it is read as a scale of lap times. Both are
- * right for where they sit, and `paceRankPct()` in control-panel.js is the one
- * place that flips between them.
+ * Note the direction: OK → GOOD → 102% → ALIEN left to right, so FASTER is
+ * further RIGHT. The overlay refpace ladder uses the same convention; both read
+ * as rank progress rather than a raw lap-time scale.
  */
 /*
  * The kit puts this card in a ~340px sidebar column. Here it sits in the
