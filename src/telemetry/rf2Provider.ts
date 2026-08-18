@@ -20,10 +20,12 @@
  * and maps the fields into a normalized {@link TelemetryFrame}.
  *
  * ## Plugin requirement
- * The sim will not expose any data unless the plugin is installed. Drop
- * `rFactor2SharedMemoryMapPlugin64.dll` into the sim's `Bin64/Plugins/` folder
- * and enable it (`Plugins` section of the player config / LMU's plugin list).
- * See `docs/ARCHITECTURE.md`. Without the plugin (or with the game closed), the
+ * The sim will not expose any data unless the plugin is installed — in LMU's
+ * root `Plugins/` folder, enabled in `CustomPluginVariables.JSON`. The app
+ * ships the DLL and installs it automatically on startup (see
+ * `server/pluginInstaller.ts` and `docs/ARCHITECTURE.md`), so a missing plugin
+ * now only means LMU has not been restarted since the install ran, or no LMU
+ * install was found. Without the plugin (or with the game closed), the
  * mappings are absent and this provider transparently falls back to the
  * {@link SimulatorProvider} — the server never crashes and the overlays keep
  * running on demo data.
