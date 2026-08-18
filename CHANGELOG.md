@@ -6,7 +6,7 @@
 
 ## Unreleased
 
-## 0.77.0 — 2026-08-18
+## 0.77.0-beta.2 — 2026-08-18
 
 ### Added
 
@@ -38,6 +38,10 @@
   an Alternative Strategies list shows what per-lap consumption you would
   have to hit to save a stop — and tells you when that target is a fantasy.
   Your last setup is remembered between sessions.
+
+## 0.76.3 — 2026-08-18
+
+### Added
 
 - **The telemetry plugin installs itself.** The app now ships the rF2 Shared
   Memory Map Plugin (the same one CrewChief bundles) and puts it into Le Mans
