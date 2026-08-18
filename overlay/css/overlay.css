@@ -935,18 +935,21 @@
   display: flex;
   gap: 2px;
   height: 8px;
+  border-radius: 4px;
+  opacity: 0.9;
+  /* Matches the Apex app's RankBar gradient: OK (blue) left → Alien (purple) right. */
+  background: linear-gradient(
+    90deg,
+    var(--rank-blue),
+    var(--pos-gain) 45%,
+    var(--warn) 75%,
+    var(--rank-purple)
+  );
 }
 .refpace__seg {
   border-radius: 2px;
-  background: var(--bg-panel-2);
-  opacity: 0.85;
+  background: transparent;
 }
-.refpace__seg[data-band="alien"],
-.refpace__seg[data-band="competitive"] { background: var(--pos-gain); }
-.refpace__seg[data-band="good"]        { background: var(--text-secondary); }
-.refpace__seg[data-band="midpack"]     { background: var(--warn); }
-.refpace__seg[data-band="tail"],
-.refpace__seg[data-band="offline"]     { background: var(--pos-loss); }
 
 /* Your position on the ladder. Centred on its own left offset so the marker
    sits ON the percentage rather than starting at it. */

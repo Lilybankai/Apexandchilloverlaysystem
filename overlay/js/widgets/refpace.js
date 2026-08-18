@@ -46,6 +46,9 @@
    * Band ceilings, mirrored from the spreadsheet so the ladder can be drawn
    * before any score exists. `referencePace.ts` is the authority for which band a
    * number falls in — these are only the segment widths.
+   *
+   * The ladder runs OK → Alien left to right (slow → fast), matching the Apex
+   * app's RankBar. Segments are built from the slow end outward.
    */
   var BANDS = [
     { id: "alien", label: "Alien", max: 100 },
@@ -93,17 +96,17 @@
 
     if (showLadder) {
       els.ladder = div("refpace__ladder");
-      var prev = SCALE_MIN;
-      for (var i = 0; i < BANDS.length; i++) {
+      for (var i = BANDS.length - 1; i >= 0; i--) {
         var b = BANDS[i];
+        var floor = i > 0 ? BANDS[i - 1].max : SCALE_MIN;
         var seg = div("refpace__seg");
         seg.setAttribute("data-band", b.id);
         // Segments are sized by the percentage range they cover, so the ladder
         // is a scale rather than six equal blocks — the visual distance between
-        // two scores then means what it says.
-        seg.style.flexGrow = String(Math.max(0.1, b.max - prev));
+        // two scores then means what it says. Floor comes from the slower band
+        // on this rung, not the previous loop iteration (which walks fast→slow).
+        seg.style.flexGrow = String(Math.max(0.1, b.max - floor));
         seg.title = b.label + " — up to " + b.max + "%";
-        prev = b.max;
         els.ladder.appendChild(seg);
       }
       els.marker = div("refpace__marker");
@@ -145,10 +148,14 @@
     if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
 
-  /** Where a percentage sits on the ladder, 0–100, clamped to the visible span. */
+  /**
+   * Where a percentage sits on the ladder, 0–100, clamped to the visible span.
+   * Inverted so slow is left and fast is right — same convention as the Apex
+   * app's `paceRankPct()` in control-panel.js.
+   */
   function ladderPos(percent) {
     var p = Math.min(SCALE_MAX, Math.max(SCALE_MIN, percent));
-    return ((p - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100;
+    return ((SCALE_MAX - p) / (SCALE_MAX - SCALE_MIN)) * 100;
   }
 
   function update(frame, ctx) {

@@ -71,6 +71,9 @@
   --pos-loss: #ff5470;   /* losing / red / hotter          */
   --warn: #ffb020;       /* caution / marginal fuel         */
   --purple-fastest: #b06bff; /* overall fastest (purple)    */
+  /* RankBar ladder (matches Apex control panel hub.css) */
+  --rank-blue: #309be1;
+  --rank-purple: #6a2fd6;
   --flag-blue: #3d8bff;  /* blue flag / yield to faster car */
   --traffic-amber: #ffb347; /* backmarker ahead you're catching */
 
