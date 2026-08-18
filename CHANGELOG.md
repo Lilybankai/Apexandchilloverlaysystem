@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+## 0.76.3 — 2026-08-18
+
+### Added
+
+- **The telemetry plugin installs itself.** The app now ships the rF2 Shared
+  Memory Map Plugin (the same one CrewChief bundles) and puts it into Le Mans
+  Ultimate for you: on startup it finds your install — any Steam library, any
+  drive — copies the plugin in if it's missing and switches it on in the
+  game's config. No more downloading a DLL from a forum post, no more hidden
+  "why is my delta/radar/map frozen on demo data" first-run failure. If LMU is
+  open the app simply waits and installs the moment you close the game (the
+  sim only loads plugins at launch, so restart LMU after the first install).
+  A plugin you already have is left exactly as it is, whatever the version.
+
 ## 0.76.2 — 2026-08-18
 
 ### Changed
