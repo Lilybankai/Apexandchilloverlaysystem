@@ -6,7 +6,24 @@
 
 ## Unreleased
 
-## 0.77.0-beta.1 — 2026-08-17
+## 0.77.0-beta.2 — 2026-08-18
+
+### Added
+
+- **A race engineer on the radio.** New Engineer tab: bind a wheel button,
+  press it, wait for the chirp, and ask — "gap ahead", "who's behind", "any
+  backmarkers", "fuel", "laps left", "five lap average front" and more. The
+  answer comes straight off the live telemetry and is spoken back through a
+  proper comms channel — band-limited, a squelch when the channel keys, hiss
+  under the voice — so it sounds like a pit wall, not a screen reader. It all
+  runs on your PC: no cloud, no account, nothing leaves the machine, and the
+  microphone is only live for the few seconds after you press the button —
+  never in the background. Phrases work inside a sentence too: "mate, what's
+  the gap ahead right now" lands the same as "gap ahead". Pick the voice on
+  the new tab — stream a sample of each of the six neural voices first, then
+  download the one you like (63–121 MB, one-time, works offline after that)
+  and swap whenever. The engineer only answers what the telemetry can prove,
+  and says "no data yet" instead of guessing when it can't.
 
 ### Added
 
