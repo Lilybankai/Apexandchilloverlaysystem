@@ -1210,10 +1210,8 @@
    * Percent-off-reference → a 0–100 position on the kit's RankBar.
    *
    * The RankBar runs OK → GOOD → 102% → ALIEN left to right, so faster is
-   * further RIGHT — the opposite direction to the overlay widget's ladder, which
-   * reads as a scale of lap times. This function is the only place the two
-   * conventions meet, deliberately: two flips in two files would eventually
-   * disagree and nobody would be able to tell which end was which.
+   * further RIGHT. The overlay refpace ladder uses the same convention via an
+   * inverted `ladderPos()` in refpace.js — keep the two in sync.
    *
    * 100% pins to Alien and 107% to the floor, which puts 102% at 71 — within a
    * few pixels of where the kit prints its own "102%" zone label.
