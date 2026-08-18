@@ -381,13 +381,20 @@ Resource use was the stated top concern, so the architecture optimises for it:
 ### Telemetry mechanism
 rFactor 2 and Le Mans Ultimate (both on the S397/rF2 engine) expose telemetry
 via the **rF2 Shared Memory Map Plugin** (`rFactor2SharedMemoryMapPlugin64.dll`,
-by TheIronWolf) — the "rfactor telemetry.dll" from the brief. It is dropped into
-the sim's `Plugins/` folder and enabled in config; it publishes named,
-paging-file-backed memory buffers (`$rFactor2SMMP_Telemetry$`, `_Scoring$`,
-`_Weather$`, `_Extended$`, …). Our app is a pure **consumer**: it opens those
-buffers read-only and maps the structs into `TelemetryFrame`. No game modding
-beyond installing the plugin. (Reader implementation and the torn-read guard live
-in `rf2Provider.ts`, Task E.)
+by TheIronWolf) — the "rfactor telemetry.dll" from the brief. It lives in the
+game's root `Plugins/` folder and is enabled by a `" Enabled": 1` entry (the
+leading space is LMU's own spelling) in `CustomPluginVariables.JSON`; it
+publishes named, paging-file-backed memory buffers (`$rFactor2SMMP_Telemetry$`,
+`_Scoring$`, `_Weather$`, `_Extended$`, …). Our app is a pure **consumer**: it
+opens those buffers read-only and maps the structs into `TelemetryFrame`.
+
+The app **ships and installs the plugin itself** (`build/plugin/`, bundled as
+an electron-builder extra resource; GPLv3, unmodified, attribution beside it):
+on every server start `server/pluginInstaller.ts` finds the LMU install via the
+Steam library registry walk, copies the DLL in if missing, and switches the
+config entry on — retrying quietly while the game is running, since LMU only
+reads its plugin list at launch. A DLL already present is never overwritten.
+(Reader implementation and the torn-read guard live in `rf2Provider.ts`, Task E.)
 
 ---
 

@@ -280,11 +280,16 @@ function steamRootsFromRegistry(): string[] {
   return out;
 }
 
-/** Candidate install locations for LMU's player config. */
-function candidatePaths(): string[] {
+/**
+ * Every place an LMU install could be, existence-unchecked. Shared with the
+ * plugin installer, which needs the game ROOT (for `Plugins/`) rather than the
+ * player config this module reads — same Steam-library walk either way.
+ */
+export function candidateLmuRoots(): string[] {
   const out: string[] = [];
+  // APEX_LMU_USERDATA points at UserData/player, two levels under the root.
   const explicit = process.env.APEX_LMU_USERDATA;
-  if (explicit) out.push(join(explicit, 'keyboard.json'));
+  if (explicit) out.push(join(explicit, '..', '..'));
 
   // Steam libraries: the registry's install root(s) and the default roots,
   // plus anything their libraryfolders.vdf lists.
@@ -308,10 +313,17 @@ function candidatePaths(): string[] {
       /* no library file here — fine */
     }
   }
-  for (const root of roots) {
-    out.push(
-      join(root, 'steamapps', 'common', 'Le Mans Ultimate', 'UserData', 'player', 'keyboard.json'),
-    );
+  for (const root of roots) out.push(join(root, 'steamapps', 'common', 'Le Mans Ultimate'));
+  return out;
+}
+
+/** Candidate install locations for LMU's player config. */
+function candidatePaths(): string[] {
+  const out: string[] = [];
+  const explicit = process.env.APEX_LMU_USERDATA;
+  if (explicit) out.push(join(explicit, 'keyboard.json'));
+  for (const root of candidateLmuRoots()) {
+    out.push(join(root, 'UserData', 'player', 'keyboard.json'));
   }
   return out;
 }

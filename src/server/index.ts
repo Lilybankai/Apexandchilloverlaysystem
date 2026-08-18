@@ -37,6 +37,7 @@ import { setAidRows, setRaceControlRows } from './pitCursor';
 import { buildAidRows, noteLiveAids } from './aidRows';
 import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
 import { KeySender } from './keySender';
+import { ensureSharedMemoryPluginOnStartup } from './pluginInstaller';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -865,6 +866,13 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     throw err;
   }
 
+  // Ship the shared-memory plugin into LMU. Without it the game publishes no
+  // telemetry at all and every overlay quietly runs on demo data — the exact
+  // "no delta / no radar" tester reports. Runs after the bind so a failed port
+  // never leaks the retry timer; keeps retrying while the game is up, because
+  // LMU only reads its plugin list at launch and rewrites config on exit.
+  const cancelPluginInstall = ensureSharedMemoryPluginOnStartup();
+
   const intervalMs = frameIntervalMs(config);
   // Windows coalesces JS timers to ~15.6 ms multiples, so a plain setInterval
   // at the target rate silently halves anything above ~32 Hz (a 17 ms request
@@ -913,6 +921,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     if (stopped) return;
     stopped = true;
     clearInterval(loop);
+    cancelPluginInstall();
     await provider.stop();
     await wsServer.close();
     clearInterval(botTick);
