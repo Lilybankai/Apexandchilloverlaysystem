@@ -102,52 +102,5 @@
     "png-to-ico": "^3.0.2",
     "sharp": "^0.35.3",
     "typescript": "^5.7.2"
-  },
-  "build": {
-    "appId": "com.apexandchill.overlaysystem",
-    "productName": "Apex Overlay System",
-    "publish": {
-      "provider": "github",
-      "owner": "Lilybankai",
-      "repo": "Apexandchilloverlaysystem",
-      "releaseType": "release"
-    },
-    "directories": {
-      "output": "release"
-    },
-    "releaseInfo": {
-      "releaseNotesFile": "build/release-notes.md"
-    },
-    "extraResources": [
-      {
-        "from": "build/plugin",
-        "to": "plugin"
-      }
-    ],
-    "files": [
-      "electron/**/*",
-      "dist/**/*",
-      "overlay/**/*",
-      "data/**/*",
-      "package.json",
-      "CHANGELOG.md"
-    ],
-    "asarUnpack": [
-      "**/node_modules/koffi/**"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "build/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Apex Overlay System"
-    }
   }
 }

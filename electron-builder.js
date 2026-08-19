@@ -1,0 +1,168 @@
+'use strict';
+
+const { execFileSync } = require('node:child_process');
+
+/**
+ * electron-builder configuration.
+ *
+ * This lives in a file rather than in package.json's `build` field because
+ * signing has to be conditional, and a JSON field cannot ask whether the
+ * credentials are present. Note that electron-builder reads `build` from
+ * package.json in PREFERENCE to this file and never falls through to it: if
+ * that field ever comes back, everything here is silently ignored and the
+ * installer goes out unsigned.
+ *
+ * Windows installers are signed with Azure Trusted Signing. The credentials
+ * only exist on the build box, so requiring them unconditionally would break
+ * `npm run pack` and `npm run release:dry` everywhere else. Without them the
+ * build still succeeds and produces an unsigned installer.
+ */
+
+/** Azure Trusted Signing account `apex26`, North Europe. */
+const ENDPOINT = 'https://neu.codesigning.azure.net/';
+const ACCOUNT_NAME = 'apex26';
+const CERTIFICATE_PROFILE = 'ApexAIOSystem26';
+
+/**
+ * Trusted Signing's own timestamp authority. This is not optional: the
+ * certificates it issues last about three days, and an untimestamped signature
+ * becomes invalid the moment the certificate behind it expires. Countersigned,
+ * the signature stays valid for the life of the timestamp certificate — years —
+ * because verifiers check the signing time against the certificate's validity
+ * window rather than against today's date.
+ *
+ * The PowerShell module declares its timestamp parameters with no defaults, so
+ * leaving them out silently produces an untimestamped signature that verifies
+ * perfectly today and fails on Saturday. Check with:
+ *   signtool verify /pa /v <file>   ->  "File is not timestamped."
+ */
+const TIMESTAMP_URL = 'http://timestamp.acs.microsoft.com';
+
+/**
+ * The certificate's common name, exactly as it appears in the profile's
+ * subject: `CN=The Lilybank Agency Ltd, O=The Lilybank Agency Ltd, STREET=...`.
+ *
+ * electron-builder writes this into latest.yml and electron-updater then
+ * refuses any update whose signature does not match it, so a typo here breaks
+ * updating for every install rather than failing at build time. It has to be
+ * stated: electron-builder can only derive a publisher name by reading a local
+ * .pfx, and Trusted Signing never puts a certificate on disk. Left unset, the
+ * field is simply absent from latest.yml and clients skip verification
+ * entirely.
+ */
+const PUBLISHER_NAME = 'The Lilybank Agency Ltd';
+
+/*
+ * The three variables electron-builder itself checks before it will attempt a
+ * signature. It accepts three credential shapes (secret, client certificate,
+ * username+password); this is the secret one, which is what the build box uses.
+ * They are read from `electron-builder.env`, which the CLI loads on every run.
+ */
+const canSign = Boolean(
+  process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET,
+);
+
+if (!canSign) {
+  console.warn(
+    '\n  WARNING  No Azure Trusted Signing credentials in the environment.\n' +
+      '           This installer will be UNSIGNED, and Windows will show the\n' +
+      '           SmartScreen "unknown publisher" warning on install.\n' +
+      '           Fine for a local `pack`. Not fine for anything published.\n' +
+      '           Needs AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET.\n',
+  );
+}
+
+/** A PowerShell single-quoted literal: the only escape inside one is '' for '. */
+function psQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Sign one file with Azure Trusted Signing.
+ *
+ * This deliberately does NOT use electron-builder's own `win.azureSignOptions`.
+ * That path builds its PowerShell command by joining every argument with a
+ * space and quoting none of them, so a product name containing a space is torn
+ * into separate arguments: `-Files ...\Apex Overlay System.exe` was read as the
+ * file `...\Apex`, the folder `Overlay` and the filter `System.exe`, and signed
+ * nothing. Since `Files` is applied after the caller's options, there is no way
+ * to pre-quote it through the config either.
+ *
+ * Invoking the same PowerShell module directly is the whole fix — every value
+ * goes in quoted.
+ */
+function signWithTrustedSigning(configuration) {
+  const command =
+    'Invoke-TrustedSigning' +
+    ` -Endpoint ${psQuote(ENDPOINT)}` +
+    ` -CodeSigningAccountName ${psQuote(ACCOUNT_NAME)}` +
+    ` -CertificateProfileName ${psQuote(CERTIFICATE_PROFILE)}` +
+    ' -FileDigest SHA256' +
+    ` -TimestampRfc3161 ${psQuote(TIMESTAMP_URL)}` +
+    ' -TimestampDigest SHA256' +
+    ` -Files ${psQuote(configuration.path)}`;
+
+  // powershell.exe rather than pwsh: the TrustedSigning module installs into
+  // the Windows PowerShell module path, and that is where it will be found.
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    stdio: 'inherit',
+  });
+}
+
+module.exports = {
+  appId: 'com.apexandchill.overlaysystem',
+  productName: 'Apex Overlay System',
+  publish: {
+    provider: 'github',
+    owner: 'Lilybankai',
+    repo: 'Apexandchilloverlaysystem',
+    releaseType: 'release',
+  },
+  directories: {
+    output: 'release',
+  },
+  releaseInfo: {
+    releaseNotesFile: 'build/release-notes.md',
+  },
+  extraResources: [
+    {
+      from: 'build/plugin',
+      to: 'plugin',
+    },
+  ],
+  files: [
+    'electron/**/*',
+    'dist/**/*',
+    'overlay/**/*',
+    'data/**/*',
+    'package.json',
+    'CHANGELOG.md',
+  ],
+  asarUnpack: ['**/node_modules/koffi/**'],
+  win: {
+    target: ['nsis'],
+    icon: 'build/icon.ico',
+    // Spread rather than set-to-undefined: electron-builder branches on the
+    // presence of these keys, so they must be absent, not empty.
+    ...(canSign
+      ? {
+          signtoolOptions: {
+            sign: signWithTrustedSigning,
+            // Trusted Signing is SHA256-only. Without this electron-builder
+            // defaults to ['sha1', 'sha256'] for .exe files and calls the sign
+            // hook once per algorithm, signing everything twice.
+            signingHashAlgorithms: ['sha256'],
+            publisherName: PUBLISHER_NAME,
+          },
+        }
+      : {}),
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: 'Apex Overlay System',
+  },
+};

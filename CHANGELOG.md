@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+## 0.77.0-beta.3 — 2026-08-19
+
+### Changed
+
+- **The installer is signed.** Windows no longer shows the blue "Windows
+  protected your PC" screen when you run it, and the publisher reads as The
+  Lilybank Agency Ltd rather than "Unknown publisher". Nothing else about the
+  app changed in this build: it exists to prove the signing works before it
+  goes anywhere near a stable release.
+
 ## 0.77.0-beta.2 — 2026-08-18
 
 ### Added

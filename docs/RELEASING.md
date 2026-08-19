@@ -125,3 +125,86 @@ Then check what `/releases/latest` actually resolves to:
 ```bash
 gh release view --json tagName,isPrerelease
 ```
+
+## Code signing
+
+Windows builds are signed with **Azure Trusted Signing** (account `apex26`,
+North Europe, certificate profile `ApexAIOSystem26`, subject
+`CN=The Lilybank Agency Ltd`). It is configured in `electron-builder.js`, and
+turns itself on only when the credentials are present:
+
+```bash
+AZURE_TENANT_ID=…      # Directory (tenant) ID
+AZURE_CLIENT_ID=…      # the signing app registration
+AZURE_CLIENT_SECRET=…  # its client secret — expires, see below
+```
+
+These live in `electron-builder.env`, which the electron-builder CLI loads by
+itself on every run. That file is gitignored and holds a live secret. Without
+it the build still succeeds and prints a warning, producing an unsigned
+installer.
+
+The service principal needs the **Artifact Signing Certificate Profile Signer**
+role on the account (the portal has renamed Trusted Signing to Artifact
+Signing; the role names moved with it). Assign it to the *app registration*,
+not to your own user account — the build authenticates as the service
+principal, and a role on a human grants it nothing. Getting this wrong gives a
+`403 (Forbidden)` at sign time, after authentication has already succeeded.
+Allow 15–30 minutes for a new assignment to take effect.
+
+### Why this does not use `win.azureSignOptions`
+
+electron-builder has built-in Trusted Signing support and it does not work
+here. It builds its PowerShell command by joining arguments with spaces and
+quoting none of them, so `-Files …\Apex Overlay System.exe` is read as three
+arguments: the file `…\Apex`, the folder `Overlay`, the filter `System.exe`.
+It signs nothing and reports success at the electron-builder level. The
+product name would have to lose its spaces to use that path, and it appends
+the file argument after the caller's options, so it cannot be pre-quoted from
+config either.
+
+`electron-builder.js` therefore registers a custom sign hook that invokes the
+same `Invoke-TrustedSigning` PowerShell module directly, with every value
+quoted. `signingHashAlgorithms` is pinned to `['sha256']` because
+electron-builder otherwise defaults `.exe` to `['sha1','sha256']` and calls the
+hook once per algorithm.
+
+### Timestamping is not optional
+
+Trusted Signing certificates are valid for about **three days**. An
+untimestamped signature dies with its certificate, so an installer signed on a
+Wednesday would start failing signature checks that Saturday — on machines that
+had already installed it, too, because electron-updater verifies signatures.
+The countersignature is what makes short-lived certificates workable: verifiers
+check the signing time against the certificate's validity window rather than
+against today's date.
+
+The PowerShell module declares `-TimestampRfc3161` and `-TimestampDigest` with
+no defaults, so omitting them applies no timestamp at all and reports success.
+
+### Verifying a signed build
+
+`Get-AuthenticodeSignature` returns `Valid` for an untimestamped file, so it
+cannot answer this on its own. Use signtool:
+
+```powershell
+& "$env:LOCALAPPDATA\TrustedSigning\Microsoft.Windows.SDK.BuildTools\*\bin\*\x64\signtool.exe" `
+  verify /pa /v "release\win-unpacked\Apex Overlay System.exe"
+```
+
+Three things have to be true:
+
+- `Successfully verified`
+- `The signature is timestamped: …` — **not** `File is not timestamped.`
+- the subject's CN matches `publisherName` in `electron-builder.js` character
+  for character. It is written into `latest.yml`, and electron-updater rejects
+  any update whose signature disagrees with it. A mismatch does not fail the
+  build; it breaks updating for every install.
+
+### Other ways this goes quiet
+
+- **`build` reappearing in `package.json`.** electron-builder reads that field
+  in preference to `electron-builder.js` and never falls through, so the whole
+  config — signing included — is ignored without comment.
+- **The client secret expiring** (24 months from creation). Builds stop signing
+  and carry on succeeding; the warning in the build output is the only tell.
