@@ -6,149 +6,62 @@
 
 ## Unreleased
 
-## 0.77.0-beta.7 — 2026-08-19
-
-### Fixed
-
-- **The engineer answers instantly again.** beta.6 recorded a fixed
-  six-second clip on every button press before it would even try to
-  understand you, spawned a new recorder each time, fought the speech
-  engine for the microphone, and froze the whole app while transcribing —
-  which is why the radio felt dead or random. The phrase list is now
-  recognised live again (answers the instant you finish the phrase, like
-  beta.5), and free-form questions are caught in the SAME listen by
-  Windows dictation — its own audio goes to whisper in the background, no
-  second recorder, no fixed wait, no freeze.
-- **Free-form questions actually reach the pit wall.** The cloud engineer
-  was rejecting every question because its keys had stray spaces and line
-  breaks pasted into them; it now cleans what it is given, and when it
-  fails it says so in its reply instead of hiding the cause. If a
-  free-form question cannot be answered you now hear a short “No answer
-  from the pit wall” instead of silence.
-
-## 0.77.0-beta.6 — 2026-08-19
+## 0.77.0 — 2026-08-19
 
 ### Added
 
-- **Free-form questions on the radio, for beta.** If the phrase list does not
-  match, the engineer transcribes you on this PC (whisper.cpp, one-time 148 MB
-  download on the Engineer tab) and sends only the text plus a bucketed race
-  summary to our server — never the microphone. The reply is one radio line.
-  Grammar still wins when it matches, so fuel and gaps cannot be hallucinated.
-  300 free-form questions a month, then it stays on the phrase list. After a
-  call, Useful / Wrong on the Engineer tab (hit it in the pits) is how we tune
-  the voice. Failures stay silent.
+- **A race engineer on the radio.** Bind a wheel button, press it, wait for
+  the chirp, and ask. Twenty-eight questions are answered instantly from your
+  live telemetry, on your PC, free and offline — gaps, who's ahead and their
+  pace, backmarkers, fuel and energy to the flag, tyres, damage and repair
+  time, brake bias, track-limit points, yellows, the weather and more. The
+  full phrase list lives on the new Engineer tab, grouped and searchable, and
+  phrases work inside a sentence — "mate, what's the gap ahead right now"
+  lands the same as "gap ahead". The answer comes back through a proper comms
+  channel — band-limited, squelch, hiss under the voice — in one of six
+  neural voices you pick on the tab (each is a one-time download and works
+  offline after that). The engineer only answers what the telemetry can
+  prove, and says "no data" instead of guessing. The microphone is only live
+  for the few seconds after you press the button — never in the background.
 
-## 0.77.0-beta.5 — 2026-08-19
+- **The engineer calls the race, quietly.** A Radio calls dial on the
+  Engineer tab, shipping on Essential: green flag, chequered, final lap,
+  safety car, red flag, penalties given and served, damage, and the fuel
+  window — the calls that change the rules or end races. Turn it to Standard
+  for the race story on top: your fastest laps, the field's, places gained
+  and lost, the rivals' pit stops, blue flags. Or Quiet to keep it
+  answer-only. It never reads out what's already on your screen, stays
+  silent while you're side by side or deep in the brakes, drops a call
+  rather than delivering it late, and your question always cuts in front.
+  It also varies how it says things, so the tenth fastest lap doesn't sound
+  like the first.
 
-### Fixed
+- **Advanced questions.** Ask anything the phrase list can't answer —
+  "should I pit under this safety car?" — and the engineer works it out from
+  your live race. Your voice is understood on your own PC (a one-time
+  download on the Engineer tab) and never leaves the machine; only the
+  written question and a small race snapshot are sent to fetch the one-line
+  answer. You get 300 advanced questions a month; the phrase list is always
+  unlimited. **Early days:** not every question will get a good answer yet.
+  To improve the engineer, advanced questions and their replies are saved to
+  our database while we train it — and once we're happy with it, all of that
+  saved engineer data will be deleted in its entirety.
 
-- **"Fuel" now answers on whichever budget actually runs out first.** Asking
-  for fuel with the tank good for 28 laps but Virtual Energy good for only 24
-  used to get "good to the finish" — true of the tank, race-losing as advice.
-  The engineer now speaks both ("Fuel for 28.5 laps, energy for 24.1") and
-  gives the verdict on the tighter one: "That's 2.9 laps short on energy —
-  you'll need a stop." The energy question gets the same to-the-flag verdict.
-  Caught replaying a real race, which is exactly what the recorder is for.
-- **A standings flicker is no longer announced as a lost position.** The sim
-  briefly showed P1 as P25 for a few frames mid-race and the engineer called
-  it. A position change now has to hold for 2.5 seconds before it's news — a
-  real overtake still gets called, a data glitch never does.
+- **A Fuel tab, next to Setups.** The fuel & strategy calculator is now
+  built into the panel. Pick a circuit, class and car and it plans the whole
+  race: total fuel or Virtual Energy, how many stops, every stint's fill and
+  lap count, and what each stop costs with LMU's sequential
+  refuel-then-tyres rule. Hypercar and LMGT3 plan in Virtual Energy, the
+  other classes in litres — including LMP2's 75-litre cap at Le Mans. Timed
+  races account for time lost in the pits, and an Alternative Strategies
+  list shows what consumption would save a stop — and tells you when that
+  target is a fantasy.
 
 ### Changed
 
-- **The engineer varies how it says things.** Every proactive call now has a
-  small bank of phrasings — a fastest lap might come back as "Personal best,
-  1 38.4 — keep that rhythm" or "Quickest lap yet — car's underneath you" —
-  picked deterministically, so replaying a recording reads the same radio
-  every time. Adding another way of saying something is one line in the
-  phrasebook.
-- **Recordings now capture everything the engineer can talk about.** Tyres,
-  weather, pit state, hybrid, pace and the MFD were trimmed out of recordings
-  to save space, which meant a replay couldn't test half the new questions.
-  They're kept (slim) now — re-record your next race and every answer can be
-  tuned offline.
-
-- **The engineer's phrase list is readable now.** "What you can ask" was one
-  long list; it's now a full-width card grouped the way you'd think of it —
-  gaps & rivals, pace & laps, fuel & energy, pit, the car, race control,
-  conditions — with each phrase as its own pill and the short form
-  highlighted. There's a filter box too: type "tyre" and see just the tyre
-  questions.
-
-## 0.77.0-beta.4 — 2026-08-19
-
-### Added
-
-- **The engineer answers a lot more.** Eighteen new questions on the radio,
-  all from live telemetry, all free and offline like the first ten: tyres
-  ("how are my tyres" — temperatures against the window and the corner that's
-  wearing, not four raw numbers), tyre pressures, damage ("how bad is it" —
-  with the repair time if you box), brake wear, the planned pit stop, the pit
-  window, Virtual Energy ("who pits before me", "have I got a lap in hand"),
-  hybrid battery, your pace score or predicted lap, your best lap, the field's
-  fastest lap, the leader and your gap, places gained since the start, track-
-  limit points and penalties, yellow flags right now, the weather and rain
-  risk, brake bias and traction control. The full phrase list is on the
-  Engineer tab, and the engineer still refuses honestly when the sim hasn't
-  published a number.
-
-- **The engineer speaks up at the moments that matter — and only those.** A
-  new **Radio calls** dial on the Engineer tab, shipping on **Essential**:
-  green flag, chequered, final lap, safety car, red flag, penalties given and
-  served, damage, and the fuel window — the calls that change the rules or end
-  races. Turn it to **Standard** for the race story on top: your fastest laps,
-  the field's, places gained and lost, the rivals' pit stops, blue flags. Or
-  **Quiet** to keep the engineer answer-only. Three rules keep it the opposite
-  of a chatterbox: it never reads out what's already on your screen, it stays
-  silent while you're side by side or deep in the brakes (a held call that
-  goes stale is dropped, never spoken late), and your question always cuts in
-  front of a call. Detection costs well under a microsecond a frame on the
-  same feed the widgets already use — nothing new touches the sim or the
-  30 Hz loop.
-
-## 0.77.0-beta.3 — 2026-08-19
-
-### Changed
-
-- **The installer is signed.** Windows no longer shows the blue "Windows
-  protected your PC" screen when you run it, and the publisher reads as The
-  Lilybank Agency Ltd rather than "Unknown publisher". Nothing else about the
-  app changed in this build: it exists to prove the signing works before it
-  goes anywhere near a stable release.
-
-## 0.77.0-beta.2 — 2026-08-18
-
-### Added
-
-- **A race engineer on the radio.** New Engineer tab: bind a wheel button,
-  press it, wait for the chirp, and ask — "gap ahead", "who's behind", "any
-  backmarkers", "fuel", "laps left", "five lap average front" and more. The
-  answer comes straight off the live telemetry and is spoken back through a
-  proper comms channel — band-limited, a squelch when the channel keys, hiss
-  under the voice — so it sounds like a pit wall, not a screen reader. It all
-  runs on your PC: no cloud, no account, nothing leaves the machine, and the
-  microphone is only live for the few seconds after you press the button —
-  never in the background. Phrases work inside a sentence too: "mate, what's
-  the gap ahead right now" lands the same as "gap ahead". Pick the voice on
-  the new tab — stream a sample of each of the six neural voices first, then
-  download the one you like (63–121 MB, one-time, works offline after that)
-  and swap whenever. The engineer only answers what the telemetry can prove,
-  and says "no data yet" instead of guessing when it can't.
-
-- **A Fuel tab, next to Setups.** The fuel & strategy calculator that lived as
-  a separate app is now built into the panel. Pick a circuit, class and car
-  and it plans the whole race for you: total fuel or Virtual Energy, how many
-  stops, every stint's fill and lap count, and what each pit stop costs with
-  LMU's sequential refuel-then-tyres rule. Hypercar and LMGT3 plan in Virtual
-  Energy (%/lap, tank is always 100), the other classes in litres — including
-  LMP2's 75-litre cap at Le Mans. Lap time and consumption start on sensible
-  defaults for the car and track you picked and take one click to override
-  with your own numbers from the in-game HUD. Timed races account for time
-  lost in the pits when working out how many laps you will actually run, and
-  an Alternative Strategies list shows what per-lap consumption you would
-  have to hit to save a stop — and tells you when that target is a fantasy.
-  Your last setup is remembered between sessions.
+- **The installer is signed.** Windows no longer shows the "Windows
+  protected your PC" screen, and the publisher reads as The Lilybank Agency
+  Ltd instead of "Unknown publisher".
 
 ## 0.76.4 — 2026-08-19
 
