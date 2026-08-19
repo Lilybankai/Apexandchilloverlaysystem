@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The engineer answers instantly again.** beta.6 recorded a fixed
+  six-second clip on every button press before it would even try to
+  understand you, spawned a new recorder each time, fought the speech
+  engine for the microphone, and froze the whole app while transcribing —
+  which is why the radio felt dead or random. The phrase list is now
+  recognised live again (answers the instant you finish the phrase, like
+  beta.5), and free-form questions are caught in the SAME listen by
+  Windows dictation — its own audio goes to whisper in the background, no
+  second recorder, no fixed wait, no freeze.
+- **Free-form questions actually reach the pit wall.** The cloud engineer
+  was rejecting every question because its keys had stray spaces and line
+  breaks pasted into them; it now cleans what it is given, and when it
+  fails it says so in its reply instead of hiding the cause. If a
+  free-form question cannot be answered you now hear a short “No answer
+  from the pit wall” instead of silence.
+
 ## 0.77.0-beta.6 — 2026-08-19
 
 ### Added

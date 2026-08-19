@@ -87,9 +87,14 @@ Deno.serve(async (req) => {
     return json({ ok: false, code: 'budget', remaining: 0, cap: CAP });
   }
 
-  const apiKey = Deno.env.get('ENGINEER_API_KEY') ?? '';
-  const apiBase = (Deno.env.get('ENGINEER_API_BASE') ?? 'https://openrouter.ai/api/v1').replace(/\/$/, '');
-  const model = Deno.env.get('ENGINEER_MODEL') ?? 'openai/gpt-4o-mini';
+  // Whitespace-proof all three: secrets pasted into the dashboard arrive
+  // padded or line-wrapped more often than not — on 2026-08-19 a padded base
+  // URL turned every call into a 404 HTML page, and a key pasted with a line
+  // break in the middle made the Authorization header itself invalid. Keys
+  // never legitimately contain whitespace, so collapse it everywhere.
+  const apiKey = (Deno.env.get('ENGINEER_API_KEY') ?? '').replace(/\s+/g, '');
+  const apiBase = (Deno.env.get('ENGINEER_API_BASE') ?? 'https://openrouter.ai/api/v1').trim().replace(/\/$/, '');
+  const model = (Deno.env.get('ENGINEER_MODEL') ?? 'openai/gpt-4o-mini').trim();
   if (!apiKey) return json({ error: 'Engineer is not configured.', code: 'config' }, 503);
 
   const headers: Record<string, string> = {
@@ -103,6 +108,10 @@ Deno.serve(async (req) => {
 
   const started = Date.now();
   let raw = '';
+  // Failures here carry the upstream status and a snippet of its body (plus
+  // which base/model were configured — never the key): a bare "unreachable"
+  // cost a debugging session on 2026-08-19, and the app treats any 5xx as
+  // silence, so this detail is only ever read by whoever is diagnosing.
   try {
     const r = await fetch(`${apiBase}/chat/completions`, {
       method: 'POST',
@@ -120,13 +129,31 @@ Deno.serve(async (req) => {
         ],
       }),
     });
-    const payload = await r.json();
+    const text = await r.text();
     if (!r.ok) {
-      return json({ error: 'Model refused.', code: 'model' }, 502);
+      console.error('engineer: upstream', r.status, apiBase, model, text.slice(0, 300));
+      return json(
+        { error: 'Model refused.', code: 'model', upstream: r.status, base: apiBase, model, detail: text.slice(0, 200) },
+        502,
+      );
+    }
+    let payload: { choices?: { message?: { content?: unknown } }[] };
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      console.error('engineer: non-JSON upstream', r.status, apiBase, text.slice(0, 300));
+      return json(
+        { error: 'Model returned non-JSON.', code: 'model', upstream: r.status, base: apiBase, model, detail: text.slice(0, 200) },
+        502,
+      );
     }
     raw = String(payload?.choices?.[0]?.message?.content ?? '');
-  } catch {
-    return json({ error: 'Model unreachable.', code: 'model' }, 502);
+  } catch (err) {
+    // A thrown header error can echo the Authorization value — scrub any
+    // bearer credential before the message goes anywhere.
+    const detail = String(err).replace(/Bearer\s+[^"'\s][^"']*/g, 'Bearer [redacted]').slice(0, 200);
+    console.error('engineer: unreachable', apiBase, model, detail);
+    return json({ error: 'Model unreachable.', code: 'model', base: apiBase, model, detail }, 502);
   }
   const modelMs = Date.now() - started;
   const answer = radioLine(raw);

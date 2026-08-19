@@ -44,11 +44,6 @@ const stt = require('./engineerStt');
 /* -------------------------------------------------------------------------- */
 
 /**
- * Phrase → intent. Short, distinct phrases recognize far better than
- * sentences; the recognizer also loads each list wildcard-wrapped, so the
- * phrase works buried in a sentence ("mate, what's the gap ahead right now").
- */
-/**
  * The one phrase table: the recognizer loads it, the panel renders it, the
  * spike imports it. `group` exists purely for the panel's reference card —
  * the recognizer reads intent + phrases and nothing else. Entries are ordered
@@ -235,52 +230,19 @@ while ($true) {
 }`;
 
 /**
- * Bounded default-mic capture to a 16 kHz 16-bit mono WAV. Path and duration
- * arrive via env (EncodedCommand takes no arguments). Used for Tier 2: we
- * record first, then run the closed grammar on the file, then whisper if it
- * missed — one clip, grammar still wins.
- */
-const RECORDER_PS = `
-$ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class Mci {
-  [DllImport("winmm.dll", CharSet = CharSet.Auto)]
-  public static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr hwndCallback);
-}
-'@
-function Mci-Send([string]$cmd) {
-  $buf = New-Object System.Text.StringBuilder 256
-  $code = [Mci]::mciSendString($cmd, $buf, $buf.Capacity, [IntPtr]::Zero)
-  if ($code -ne 0) { throw "MCI failed ($code): $cmd" }
-}
-$OutPath = $env:APEX_REC_OUT
-$Seconds = 6
-if ($env:APEX_REC_SECS) { $Seconds = [int]$env:APEX_REC_SECS }
-$dir = Split-Path -Parent $OutPath
-if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-if (Test-Path -LiteralPath $OutPath) { Remove-Item -LiteralPath $OutPath -Force }
-Mci-Send 'open new type waveaudio alias rec'
-try {
-  Mci-Send 'set rec bitspersample 16 channels 1 samplespersec 16000 alignment 2 bytespersec 32000'
-  Mci-Send 'record rec'
-  Start-Sleep -Seconds $Seconds
-  Mci-Send 'stop rec'
-  Mci-Send ("save rec \`"$OutPath\`"")
-} finally {
-  try { Mci-Send 'close rec' } catch { }
-}
-if (-not (Test-Path -LiteralPath $OutPath)) { throw "recorder wrote nothing" }
-`;
-
-/**
- * One-shot grammar recognition on command. Blocks on stdin; each LISTEN runs a
- * single bounded Recognize() — the microphone is captured only inside that
- * call. Grammar JSON path arrives via APEX_ENGINEER_GRAMMAR (EncodedCommand
- * takes no arguments). Runs synchronously throughout: event-handler output
- * does not reliably reach redirected stdout from another runspace.
+ * One-shot recognition on command. Blocks on stdin; each LISTEN runs a single
+ * bounded Recognize() — the microphone is captured only inside that call.
+ * Grammar JSON path arrives via APEX_ENGINEER_GRAMMAR, the scratch dir for
+ * free-form clips via APEX_ENGINEER_WAVDIR (EncodedCommand takes no
+ * arguments). Runs synchronously throughout: event-handler output does not
+ * reliably reach redirected stdout from another runspace.
+ *
+ * Tier 2 rides the SAME listen, not a second recorder: a DictationGrammar
+ * (named `free`) is loaded beside the closed grammar, and when it wins the
+ * result's own retained audio is written out for whisper. One utterance, one
+ * device owner, and the closed grammar keeps returning THE INSTANT it matches
+ * — the beta.6 record-to-file design cost every press a fixed six seconds and
+ * fought SAPI for the microphone (v0.77.0-beta.6 field report).
  */
 const RECOGNIZER_PS = `
 $ErrorActionPreference = 'Stop'
@@ -303,47 +265,76 @@ try {
     $g2.Name = [string]$d.intent
     $rec.LoadGrammar($g2)
   }
+  $dict = $null
+  try {
+    $dict = New-Object System.Speech.Recognition.DictationGrammar
+    $dict.Name = 'free'
+    $rec.LoadGrammar($dict)
+  } catch { $dict = $null }
   $rec.SetInputToDefaultAudioDevice()
 } catch {
   [Console]::Out.WriteLine("ERROR\t" + $_.Exception.Message); [Console]::Out.Flush()
   exit 1
 }
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
+if ($null -ne $dict) { [Console]::Out.WriteLine('DICTOK'); [Console]::Out.Flush() }
 while ($true) {
   $cmd = [Console]::In.ReadLine()
   if ($null -eq $cmd) { break }
-  if ($cmd -match '^LISTENFILE\\s+(.+)$') {
-    $wav = $Matches[1].Trim().Trim('"')
-    try {
-      $rec.SetInputToWaveFile($wav)
-      $r = $rec.Recognize()
-    } catch {
-      [Console]::Out.WriteLine("ERROR\t" + $_.Exception.Message); [Console]::Out.Flush()
-      try { $rec.SetInputToDefaultAudioDevice() } catch { }
-      continue
-    }
-    try { $rec.SetInputToDefaultAudioDevice() } catch { }
-    if ($null -ne $r) {
-      $conf = [math]::Round($r.Confidence, 2)
-      [Console]::Out.WriteLine("HEARD\t$($r.Grammar.Name)\t$conf\t$($r.Text)")
-    } else {
-      [Console]::Out.WriteLine('NONE')
-    }
-    [Console]::Out.Flush()
-    continue
-  }
   if ($cmd -notmatch '^LISTEN') { continue }
   $secs = 6
   if ($cmd -match 'LISTEN (\\d+)') { $secs = [int]$Matches[1] }
   $r = $rec.Recognize([TimeSpan]::FromSeconds($secs))
-  if ($null -ne $r) {
-    $conf = [math]::Round($r.Confidence, 2)
+  if ($null -eq $r) {
+    [Console]::Out.WriteLine('NONE'); [Console]::Out.Flush()
+    continue
+  }
+  $conf = [math]::Round($r.Confidence, 2)
+  if ($r.Grammar.Name -ne 'free') {
     [Console]::Out.WriteLine("HEARD\t$($r.Grammar.Name)\t$conf\t$($r.Text)")
   } else {
-    [Console]::Out.WriteLine('NONE')
+    $saved = ''
+    try {
+      if ($null -ne $r.Audio) {
+        $wav = Join-Path $env:APEX_ENGINEER_WAVDIR ("free-" + [DateTime]::UtcNow.Ticks + ".wav")
+        $fsOut = [System.IO.File]::Create($wav)
+        try { $r.Audio.WriteToWaveStream($fsOut) } finally { $fsOut.Close() }
+        $saved = $wav
+      }
+    } catch { $saved = '' }
+    [Console]::Out.WriteLine("FREE\t$saved\t$conf\t$($r.Text)")
   }
   [Console]::Out.Flush()
 }`;
+
+/**
+ * The grammar, run over TEXT: when the dictation grammar out-competes the
+ * closed one for an utterance like "mate what's the gap ahead right now",
+ * the phrase is still in the words — and a phrase match must never reach the
+ * cloud. Longest matching phrase wins (specificity: "pit window" must beat a
+ * future "pit"). Whole-word sequences only, apostrophes and punctuation
+ * ignored, so SAPI's "whos ahead" still hits "who's ahead".
+ */
+function matchGrammarText(text) {
+  const norm = (s) =>
+    ` ${String(s || '')
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()} `;
+  const haystack = norm(text);
+  if (haystack.trim().length === 0) return null;
+  let best = null;
+  for (const g of GRAMMAR) {
+    for (const p of g.phrases) {
+      const needle = norm(p);
+      if (needle.trim() && haystack.includes(needle)) {
+        if (!best || needle.length > best.length) best = { intent: g.intent, length: needle.length };
+      }
+    }
+  }
+  return best ? best.intent : null;
+}
 
 function spawnPs(script, env) {
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
@@ -422,6 +413,7 @@ class EngineerService {
     this.saidBudgetLine = false; // degrade-to-Tier-1, once per session
     this.lastCall = null; // last Tier-2 reply, for the useful/wrong buttons
     this.budget = null; // { used, cap, remaining } from engineer_budget
+    this.freeFormLive = false; // dictation grammar loaded in the recognizer
   }
 
   /* ---- assets ------------------------------------------------------------ */
@@ -464,6 +456,7 @@ class EngineerService {
       lastError: this.lastError,
       micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
       sttInstalled: stt.installed(this.whisperDir),
+      freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
       lastCall: this.lastCall,
       budget: this.budget,
@@ -641,7 +634,10 @@ class EngineerService {
     });
 
     // Ears: resident but deaf until a LISTEN command (push-to-talk).
-    this.recognizer = spawnPs(RECOGNIZER_PS, { APEX_ENGINEER_GRAMMAR: this.grammarPath });
+    this.recognizer = spawnPs(RECOGNIZER_PS, {
+      APEX_ENGINEER_GRAMMAR: this.grammarPath,
+      APEX_ENGINEER_WAVDIR: this.wavDir,
+    });
     require('node:readline')
       .createInterface({ input: this.recognizer.stdout })
       .on('line', (line) => this.onRecognizerLine(line));
@@ -729,6 +725,14 @@ class EngineerService {
       this.pushStatus();
       return;
     }
+    if (kind === 'DICTOK') {
+      // Windows' dictation engine loaded — free-form questions can be caught
+      // in the same listen as the phrase list. Absent on stripped-down
+      // Windows installs; Tier 1 is unaffected either way.
+      this.freeFormLive = true;
+      this.pushStatus();
+      return;
+    }
     if (kind === 'ERROR') {
       this.recognizerReady = false;
       this.lastError = `Microphone: ${a}`;
@@ -738,7 +742,9 @@ class EngineerService {
     if (this.pendingListen) {
       const resolve = this.pendingListen;
       this.pendingListen = null;
-      resolve(kind === 'HEARD' ? { kind, intent: a, confidence: Number(b), text: c } : { kind: 'NONE' });
+      if (kind === 'HEARD') resolve({ kind, intent: a, confidence: Number(b), text: c });
+      else if (kind === 'FREE') resolve({ kind, wav: a || null, confidence: Number(b), text: c || '' });
+      else resolve({ kind: 'NONE' });
     }
   }
 
@@ -843,9 +849,11 @@ class EngineerService {
 
   /**
    * Push-to-talk: chirp, record one bounded window, answer. Grammar still
-   * wins — the clip is recognised from the WAV so a miss can fall through to
-   * local whisper and the cloud proxy. A second press while listening is
-   * ignored rather than queued.
+   * wins — it returns the instant a phrase matches, exactly as it did before
+   * Tier 2 existed. Free-form speech is caught by the dictation grammar in the
+   * SAME listen (its retained audio goes to whisper), so there is no second
+   * recorder, no fixed-length wait and no fight over the microphone. A second
+   * press while listening is ignored rather than queued.
    */
   async ask() {
     if (!this.running) return { ok: false, error: 'Engineer is not running' };
@@ -855,89 +863,76 @@ class EngineerService {
     this.heldReadout = null; // the driver's question always wins
     try {
       this.playChirp();
-      await new Promise((r) => setTimeout(r, 280));
-      const wav = await this.recordListen();
-      if (!wav) {
-        this.speak('Say again?');
-        return { ok: true };
-      }
-      const heard = await this.listenFile(wav);
+      const heard = await new Promise((resolve) => {
+        this.pendingListen = resolve;
+        this.recognizer.stdin.write(`LISTEN ${LISTEN_WINDOW_SEC}\n`);
+        // Belt and braces: never leave the button dead if the sidecar wedges.
+        setTimeout(() => {
+          if (this.pendingListen === resolve) {
+            this.pendingListen = null;
+            resolve({ kind: 'NONE' });
+          }
+        }, (LISTEN_WINDOW_SEC + 3) * 1000);
+      });
+
+      // Tier 1, exactly as before Tier 2 existed: the closed grammar returns
+      // THE INSTANT it matches, and the answer is on the radio inside a second.
       if (heard.kind === 'HEARD' && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
         return { ok: true };
       }
-      await this.askTier2(wav);
+
+      // Dictation caught it instead: a free-form question — unless a phrase is
+      // buried in the dictation text, in which case the grammar still wins.
+      if (heard.kind === 'FREE') {
+        const intent = matchGrammarText(heard.text);
+        if (intent && this.commands) {
+          this.speak(this.commands.answer(intent).text);
+          return { ok: true };
+        }
+        await this.askTier2(heard.wav, heard.text);
+        return { ok: true };
+      }
+
+      this.speak('Say again?');
       return { ok: true };
     } finally {
       this.asking = false;
     }
   }
 
-  recordListen() {
-    const wav = path.join(this.wavDir, `ask-${Date.now()}.wav`);
-    return new Promise((resolve) => {
-      const child = spawnPs(RECORDER_PS, {
-        APEX_REC_OUT: wav,
-        APEX_REC_SECS: String(LISTEN_WINDOW_SEC),
-      });
-      const t = setTimeout(() => {
-        try { child.kill(); } catch {}
-        resolve(fs.existsSync(wav) ? wav : null);
-      }, (LISTEN_WINDOW_SEC + 8) * 1000);
-      child.on('exit', () => {
-        clearTimeout(t);
-        resolve(fs.existsSync(wav) ? wav : null);
-      });
-      child.on('error', () => {
-        clearTimeout(t);
-        resolve(null);
-      });
-    });
-  }
-
-  listenFile(wav) {
-    return new Promise((resolve) => {
-      this.pendingListen = resolve;
-      this.recognizer.stdin.write(`LISTENFILE ${wav}\n`);
-      setTimeout(() => {
-        if (this.pendingListen === resolve) {
-          this.pendingListen = null;
-          resolve({ kind: 'NONE' });
+  /**
+   * Tier 2: transcribe the retained clip locally (async — the beta.6 spawnSync
+   * froze the whole main process for the length of the transcription), fall
+   * back to SAPI's own dictation text when whisper is missing or stumbles,
+   * then put question + bucketed summary to the proxy. An asked question that
+   * fails gets a short spoken failure — the readouts fail to silence, but
+   * silence after a button press reads as a dead engineer (beta.6 field
+   * report).
+   */
+  async askTier2(wav, dictationText) {
+    let question = '';
+    let sttMs = null;
+    if (wav && stt.installed(this.whisperDir)) {
+      try {
+        const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
+        const clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
+        if (clip) {
+          const result = await stt.transcribeAsync(this.whisperDir, clip.path);
+          question = (result.text || '').trim();
+          sttMs = result.ms;
         }
-      }, 8000);
-    });
-  }
-
-  async askTier2(wav) {
-    if (!stt.installed(this.whisperDir)) {
-      this.speak('I only catch the phrase list until you download free-form on the Engineer tab.');
-      return;
+      } catch {
+        question = '';
+      }
     }
-    const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
-    let clip = null;
-    try {
-      clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
-    } catch {
-      clip = null;
-    }
-    if (!clip) {
-      this.speak('Say again?');
-      return;
-    }
-    let result;
-    try {
-      result = stt.transcribe(this.whisperDir, clip.path);
-    } catch {
-      this.speak('Say again?');
-      return;
-    }
-    const question = (result.text || '').trim();
+    if (!question) question = String(dictationText || '').trim();
     if (question.length < 3) {
       this.speak('Say again?');
       return;
     }
-    if (!this.cloudAsk) return; // fail to silence — no cloud hook
+    if (!this.cloudAsk) return; // no cloud hook wired (dev harness) — silence
     if (!this.summaryMod || !this.lastFrame) {
       this.speak('No telemetry.');
       return;
@@ -949,11 +944,15 @@ class EngineerService {
     }
     let res;
     try {
-      res = await this.cloudAsk({ question, summary, sttMs: result.ms });
+      res = await this.cloudAsk({ question, summary, sttMs });
     } catch {
+      this.speak('No answer from the pit wall.');
       return;
     }
-    if (!res) return;
+    if (!res) {
+      this.speak('No answer from the pit wall.');
+      return;
+    }
     if (res.signedOut) {
       this.speak('Sign in to ask free-form.');
       return;
@@ -968,7 +967,10 @@ class EngineerService {
       this.pushStatus();
       return;
     }
-    if (!res.ok || body.ok === false || !body.answer) return;
+    if (!res.ok || body.ok === false || !body.answer) {
+      this.speak('No answer from the pit wall.');
+      return;
+    }
     this.speak(body.answer);
     this.lastCall = { id: body.callId, question, answer: body.answer, rating: null };
     if (typeof body.remaining === 'number') {
@@ -1049,4 +1051,4 @@ class EngineerService {
   }
 }
 
-module.exports = { EngineerService, VOICES, GRAMMAR, sampleUrl };
+module.exports = { EngineerService, VOICES, GRAMMAR, sampleUrl, matchGrammarText };

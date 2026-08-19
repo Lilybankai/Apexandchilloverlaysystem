@@ -170,5 +170,26 @@ console.log('\n7) Unknown trigger kinds never speak by accident');
   check('an unmapped kind is silent', r.spoken.length === 0, r.spoken.join('|'));
 }
 
+console.log('\n8) The grammar still wins over dictation text');
+{
+  // When the dictation grammar out-competes the closed one, a phrase buried
+  // in the words routes back to Tier 1 — a phrase match must never reach the
+  // cloud, and free-form questions must never false-match.
+  const { matchGrammarText } = require('../electron/engineer');
+  check('a bare phrase matches', matchGrammarText('gap ahead') === 'gapAhead');
+  check('a phrase inside a sentence matches',
+    matchGrammarText("mate what's the gap ahead right now") === 'gapAhead');
+  check('apostrophes and punctuation are ignored',
+    matchGrammarText('Whos ahead?') === 'carAhead');
+  check('the longest phrase wins over a shorter one',
+    matchGrammarText('what about the gap to the car behind') === 'gapBehind');
+  check('word boundaries hold — no substring lottery',
+    matchGrammarText('the gapahead situation') === null, String(matchGrammarText('the gapahead situation')));
+  check('a genuinely free-form question does not match',
+    matchGrammarText('safety car is out and I have half a tank what do we do') === null,
+    String(matchGrammarText('safety car is out and I have half a tank what do we do')));
+  check('empty text does not match', matchGrammarText('') === null);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

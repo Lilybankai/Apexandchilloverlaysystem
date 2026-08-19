@@ -98,6 +98,79 @@ function trimForWhisper(radioFx, inPath, outPath) {
   return { path: outPath, durationMs };
 }
 
+/**
+ * Async transcription for the app: the beta.6 `spawnSync` froze the Electron
+ * main process — IPC, status pushes, the lot — for the length of the
+ * transcription (up to its 20 s timeout on a hang). Same CLI, same flags,
+ * `execFile` instead. The sync `transcribe` below stays for the spike script,
+ * which is a plain CLI and can block all it likes.
+ */
+function transcribeAsync(dir, wav) {
+  const cli = findCli(dir);
+  const model = modelPath(dir);
+  if (!cli || !fs.existsSync(model)) return Promise.reject(new Error('whisper not installed'));
+  const prefix = wav.replace(/\.wav$/i, '');
+  const jsonPath = `${prefix}.json`;
+  try {
+    fs.rmSync(jsonPath, { force: true });
+  } catch {
+    /* ignore */
+  }
+  const cliDir = path.dirname(cli);
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    execFile(
+      cli,
+      [
+        '-m', model,
+        '-f', wav,
+        '-t', '4',
+        '-l', 'en',
+        '-nt',
+        '-oj',
+        '-of', prefix,
+        '-ng',
+        '-sns',
+        '--prompt', RACING_PROMPT,
+      ],
+      {
+        cwd: cliDir,
+        windowsHide: true,
+        timeout: 10000,
+        maxBuffer: 12 * 1024 * 1024,
+        env: { ...process.env, PATH: `${cliDir}${path.delimiter}${process.env.PATH || ''}` },
+      },
+      (err) => {
+        const ms = Date.now() - started;
+        if (err) {
+          reject(new Error(`whisper-cli: ${err.message}`));
+          return;
+        }
+        let heard = '';
+        if (fs.existsSync(jsonPath)) {
+          try {
+            const j = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            heard = (j.transcription || [])
+              .map((s) => (s.text || '').trim())
+              .filter(Boolean)
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          } catch {
+            heard = '';
+          }
+        }
+        try {
+          fs.rmSync(jsonPath, { force: true });
+        } catch {
+          /* ignore */
+        }
+        resolve({ text: heard, ms });
+      },
+    );
+  });
+}
+
 function transcribe(dir, wav) {
   const cli = findCli(dir);
   const model = modelPath(dir);
@@ -203,4 +276,5 @@ module.exports = {
   download,
   trimForWhisper,
   transcribe,
+  transcribeAsync,
 };
