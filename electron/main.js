@@ -1331,11 +1331,8 @@ function getEngineer() {
 async function syncEngineer(settings) {
   const s = settings || loadSettings();
   const eng = getEngineer();
-  const wanted =
-    !!s.engineerEnabled &&
-    status.running &&
-    eng.engineInstalled() &&
-    eng.voiceInstalled(s.engineerVoice);
+  const installed = eng.engineInstalled() && eng.voiceInstalled(s.engineerVoice);
+  const wanted = !!s.engineerEnabled && status.running && installed;
   if (eng.running) eng.stop();
   if (wanted) {
     try {
@@ -1343,6 +1340,14 @@ async function syncEngineer(settings) {
     } catch (err) {
       eng.lastError = err && err.message ? err.message : String(err);
     }
+  } else if (!!s.engineerEnabled && !installed && eng.vanished(s.engineerVoice)) {
+    // Downloaded before, gone now — almost always antivirus quarantine.
+    // Silence here reads as a dead toggle in the field; say what happened.
+    eng.lastError =
+      'The voice files have gone missing since they were downloaded — antivirus ' +
+      'software may have quarantined them. Restore them, or re-download the voice.';
+  } else {
+    eng.lastError = null;
   }
   eng.pushStatus();
 }

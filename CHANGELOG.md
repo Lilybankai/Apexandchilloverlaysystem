@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+## 0.77.2 — 2026-08-19
+
+### Fixed
+
+- **Antivirus software can no longer crash the app.** If your antivirus
+  blocks or quarantines the engineer's voice files (Norton is known to), the
+  app used to go down with them. Now the engineer switches itself off
+  cleanly, the rest of the app carries on, and the Engineer tab tells you
+  what happened.
+
+- **The Engineer tab now says when your voice files have been removed.**
+  Previously, if the files disappeared after downloading — an antivirus
+  quarantine, usually — the voice toggle simply did nothing. The tab now
+  spots it and tells you to restore the files or re-download the voice. If
+  this happens to you, add your antivirus's exclusion for the app's data
+  folder before re-downloading.
+
 ## 0.77.1 — 2026-08-19
 
 ### Changed

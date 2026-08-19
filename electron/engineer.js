@@ -338,11 +338,18 @@ function matchGrammarText(text) {
 
 function spawnPs(script, env) {
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
-  return spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
     stdio: ['pipe', 'pipe', 'ignore'],
     env: { ...process.env, ...(env || {}) },
     windowsHide: true,
   });
+  // A sidecar that can't start (or dies mid-write) must never take the app
+  // down with it — antivirus blocking is a live possibility for everything
+  // this module spawns, and an unhandled 'error' event kills the main
+  // process. Callers layer their own messaging on top of these.
+  child.on('error', () => {});
+  child.stdin.on('error', () => {});
+  return child;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -434,6 +441,41 @@ class EngineerService {
     return fs.existsSync(this.modelPath(id)) && fs.existsSync(`${this.modelPath(id)}.json`);
   }
 
+  /**
+   * Every finished download is recorded here, so a later disappearance can be
+   * told apart from "never downloaded" — antivirus quarantine removes files
+   * without telling anyone, and the panel should say so rather than fall back
+   * to "download a voice" as if nothing happened.
+   */
+  manifestPath() {
+    return path.join(this.dir, 'installed.json');
+  }
+
+  readManifest() {
+    try {
+      return JSON.parse(fs.readFileSync(this.manifestPath(), 'utf8'));
+    } catch {
+      return { engine: false, voices: {} };
+    }
+  }
+
+  recordInstalled(voiceId) {
+    const m = this.readManifest();
+    m.engine = m.engine || this.engineInstalled();
+    m.voices = m.voices || {};
+    if (voiceId && this.voiceInstalled(voiceId)) m.voices[voiceId] = true;
+    try {
+      fs.writeFileSync(this.manifestPath(), JSON.stringify(m));
+    } catch {}
+  }
+
+  /** True when something that finished downloading is no longer on disk. */
+  vanished(voiceId) {
+    const m = this.readManifest();
+    if (m.engine && !this.engineInstalled()) return true;
+    return !!(voiceId && m.voices && m.voices[voiceId] && !this.voiceInstalled(voiceId));
+  }
+
   /** The readouts preset, safe against settings written by older versions. */
   readoutsPreset() {
     const settings = this.loadSettings();
@@ -513,6 +555,7 @@ class EngineerService {
         await this.fetch(`${base}.onnx`, this.modelPath(voiceId), voice.sizeMb, voiceId);
         await this.fetch(`${base}.onnx.json`, `${this.modelPath(voiceId)}.json`, 1, voiceId);
       }
+      this.recordInstalled(voiceId);
     } catch (err) {
       this.lastError = `Download failed: ${err.message}`;
       throw err;
@@ -596,6 +639,7 @@ class EngineerService {
     // player's PLAYED lines are the speech queue's clock: each one frees the
     // channel, which is when a held readout gets its (only) second chance.
     this.player = spawnPs(PLAYER_PS);
+    this.player.on('error', (err) => this.onChildError('audio player', err));
     require('node:readline')
       .createInterface({ input: this.player.stdout })
       .on('line', (line) => {
@@ -607,6 +651,8 @@ class EngineerService {
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
     });
+    this.piper.on('error', (err) => this.onChildError('voice engine', err));
+    this.piper.stdin.on('error', () => {});
     require('node:readline')
       .createInterface({ input: this.piper.stdout })
       .on('line', (line) => {
@@ -638,6 +684,7 @@ class EngineerService {
       APEX_ENGINEER_GRAMMAR: this.grammarPath,
       APEX_ENGINEER_WAVDIR: this.wavDir,
     });
+    this.recognizer.on('error', (err) => this.onChildError('listener', err));
     require('node:readline')
       .createInterface({ input: this.recognizer.stdout })
       .on('line', (line) => this.onRecognizerLine(line));
@@ -687,6 +734,22 @@ class EngineerService {
     this.saidBudgetLine = false;
     if (this.wavDir) fs.rmSync(this.wavDir, { recursive: true, force: true });
     this.wavDir = null;
+  }
+
+  /**
+   * A resident child that never came up (ENOENT/EACCES — the binary blocked
+   * or quarantined, most likely by antivirus) emits 'error' with no 'exit' to
+   * follow. Fold it into the same degrade-to-silence path as everything else:
+   * stop the pipeline, tell the panel what happened, keep the app alive.
+   */
+  onChildError(what, err) {
+    if (!this.running) return;
+    const detail = err && (err.code || err.message) ? ` (${err.code || err.message})` : '';
+    this.lastError =
+      `The ${what} couldn't start${detail}. Antivirus software may have ` +
+      'blocked or removed it — restore it from quarantine, or re-download the voice.';
+    this.stop();
+    this.pushStatus();
   }
 
   connectWs(port) {

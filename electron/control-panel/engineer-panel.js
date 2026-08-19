@@ -93,11 +93,13 @@
   /* ---- status line ---------------------------------------------------------- */
 
   function statusText(s) {
+    // The error outranks the download hint: when files were downloaded and
+    // then vanished (antivirus quarantine), "download a voice" is a lie.
+    if (s.lastError) return [s.lastError, 'warn'];
     if (!s.engineInstalled || !s.selectedInstalled) {
       return ['Download a voice to go live — one click on the right.', 'warn'];
     }
     if (!s.enabled) return ['Off. Flip the switch to put the engineer on the radio.', ''];
-    if (s.lastError) return [s.lastError, 'warn'];
     if (!s.running) return ['Starting…', ''];
     if (s.micAvailable === false) return ['Running, but no microphone was found.', 'warn'];
     return ['Live. Press the button and ask.', 'live'];
