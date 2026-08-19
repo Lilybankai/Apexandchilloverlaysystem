@@ -399,19 +399,41 @@ function unit() {
   check('lapsLeft: nothing known -> refuses', a.ok === false, a.text);
 
   // -- fuel ------------------------------------------------------------------
+  // The answer speaks the TIGHTER budget: LMU cars run a tank AND a virtual-
+  // energy allowance, and the driver pits for whichever runs out first.
   const eng5 = new EngineerCommands();
   eng5.update(frame({ fuel: { lapsRemaining: 14.2, lapsToFinish: 12, fuelDeltaLiters: 4.1 } }));
   a = eng5.answer('fuel');
   check('fuel: good to finish', a.ok && /14\.2 laps/.test(a.text) && /Good to the finish/.test(a.text), a.text);
   eng5.update(frame({ fuel: { lapsRemaining: 6.5, lapsToFinish: 9, fuelDeltaLiters: -5.3 } }));
   a = eng5.answer('fuel');
-  check('fuel: short of finish', a.ok && /5\.3 litres short/.test(a.text), a.text);
+  check('fuel: short of finish, in laps',
+    a.ok && /2\.5 laps short on fuel/.test(a.text) && /need a stop/.test(a.text), a.text);
   eng5.update(frame({ fuel: { lapsRemaining: 1.2, pitThisLap: true } }));
   a = eng5.answer('fuel');
   check('fuel: box this lap', a.ok && /Box this lap/.test(a.text), a.text);
   eng5.update(frame({}));
   a = eng5.answer('fuel');
   check('fuel: unknown -> refuses', a.ok === false, a.text);
+
+  // The 2026-08-19 race bug, verbatim: tank fine, energy 2.9 laps short —
+  // "good to the finish" off the tank alone is a race-losing answer.
+  eng5.update(frame({
+    fuel: {
+      lapsRemaining: 28.5, virtualEnergyLapsRemaining: 24.1, lapsToFinish: 27,
+      fuelDeltaLiters: 4.1,
+    },
+  }));
+  a = eng5.answer('fuel');
+  check('fuel: energy is the binding budget',
+    a.ok && /Fuel for 28\.5 laps, energy for 24\.1/.test(a.text) &&
+      /2\.9 laps short on energy/.test(a.text) && /need a stop/.test(a.text),
+    a.text);
+  eng5.update(frame({
+    fuel: { lapsRemaining: 28.5, virtualEnergyLapsRemaining: 29.0, lapsToFinish: 27 },
+  }));
+  a = eng5.answer('fuel');
+  check('fuel: both budgets cover it', a.ok && /Good to the finish/.test(a.text), a.text);
 
   // -- last lap & position ---------------------------------------------------
   const eng6 = new EngineerCommands();
@@ -498,6 +520,12 @@ function unit() {
     a.text);
   a = engW.answer('hybrid');
   check('hybrid: battery percent', a.ok && /Battery at 84 percent/.test(a.text), a.text);
+  engW.update(frame({
+    fuel: { virtualEnergyPct: 55, virtualEnergyLapsRemaining: 24.1, lapsToFinish: 27 },
+  }));
+  a = engW.answer('energy');
+  check('energy: names the shortfall to the flag',
+    a.ok && /2\.9 laps short of the finish/.test(a.text), a.text);
 
   // pace — score path, then predicted-lap fallback
   const engP = new EngineerCommands();
@@ -585,6 +613,20 @@ function unit() {
   }));
   a = engM.answer('tractionControl');
   check('tractionControl: car without TC refuses', a.ok === false && /No traction control/.test(a.text), a.text);
+
+  // A trimmed recording can lack whole blocks — a missing weather block must
+  // refuse, not throw (found replaying the 2026-08-19 race).
+  const engTrim = new EngineerCommands();
+  const noWeather = frame({});
+  delete noWeather.weather;
+  delete noWeather.fuel;
+  engTrim.update(noWeather);
+  a = engTrim.answer('weather');
+  check('weather: absent block refuses instead of throwing', a.ok === false, a.text);
+  a = engTrim.answer('fuel');
+  check('fuel: absent block refuses instead of throwing', a.ok === false, a.text);
+  a = engTrim.answer('pitWindow');
+  check('pitWindow: absent block refuses instead of throwing', a.ok === false, a.text);
 
   // every new intent refuses honestly on an empty frame
   const engEmpty = new EngineerCommands();

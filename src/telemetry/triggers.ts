@@ -204,6 +204,15 @@ export const DEFAULT_MAX_HOLD_MS = 4_000;
 export const DEFAULT_FUEL_WINDOW_LAPS = 3;
 
 /**
+ * How long a new position must HOLD before it is announced, ms. The 2026-08-19
+ * race replay showed the standings flickering a driver from P1 to P25 for a
+ * few frames — a feed artefact, not an overtake. A real change of position
+ * survives 2.5 s; a glitch (or the churn mid-incident) does not, and the
+ * settled outcome is announced once instead of every intermediate shuffle.
+ */
+export const POSITION_SETTLE_MS = 2500;
+
+/**
  * Per-kind cooldown overrides. The shapes differ: damage keeps reading damaged
  * for as long as the car is bent, so its cooldown is about not re-announcing the
  * same shunt; fuel moves over minutes, so a second fuel call inside a minute is
@@ -531,8 +540,10 @@ export class EngineerTriggers {
   private prevBestSelf: number = UNKNOWN_VALUE;
   /** Who held the field's (class) fastest lap last tick, and at what time. */
   private prevFieldFastest: { slotId: number; sec: number } | null = null;
-  /** The player's overall position last tick. */
-  private prevPosition: number = UNKNOWN_VALUE;
+  /** The last position the engineer announced (or silently absorbed). */
+  private posAnnounced: number = UNKNOWN_VALUE;
+  /** A position change waiting out {@link POSITION_SETTLE_MS}. */
+  private posCandidate: { pos: number; sinceMs: number } | null = null;
   /** The player's pit phase last tick — position swaps during a stop are noise. */
   private prevPitPhase = 'none';
   /** `inPit` for the two class neighbours last tick, keyed by slot. */
@@ -593,7 +604,8 @@ export class EngineerTriggers {
     this.seenGreen = false;
     this.prevBestSelf = UNKNOWN_VALUE;
     this.prevFieldFastest = null;
-    this.prevPosition = UNKNOWN_VALUE;
+    this.posAnnounced = UNKNOWN_VALUE;
+    this.posCandidate = null;
     this.prevPitPhase = 'none';
     this.prevNeighbourPit.clear();
     this.prevYieldAny = false;
@@ -868,25 +880,40 @@ export class EngineerTriggers {
     }
 
     // Position change — suppressed through lap 1 (the start is its own story)
-    // and any own-pit cycle (a swap while stationary in the box is not a race).
+    // and any own-pit cycle (a swap while stationary in the box is not a
+    // race), and a new position must HOLD for {@link POSITION_SETTLE_MS}
+    // before it is news: the standings can flicker wildly for a few frames.
     const pitPhase = frame.player?.pit?.phase ?? 'none';
-    if (
-      me &&
-      known(me.position) &&
-      known(this.prevPosition) &&
-      me.position !== this.prevPosition &&
-      known(frame.session.currentLap) &&
-      frame.session.currentLap > 1 &&
-      pitPhase === 'none' &&
-      this.prevPitPhase === 'none'
-    ) {
-      const gained = me.position < this.prevPosition;
-      this.offer('positionChange', now, gained ? 'position gained' : 'position lost', {
-        from: this.prevPosition,
-        to: me.position,
-        gained,
-        classPosition: known(me.classPosition) ? me.classPosition! : UNKNOWN_VALUE,
-      });
+    if (me && known(me.position)) {
+      const lap = frame.session.currentLap;
+      const absorb =
+        pitPhase !== 'none' ||
+        this.prevPitPhase !== 'none' ||
+        !known(lap) ||
+        lap <= 1 ||
+        !known(this.posAnnounced);
+      if (absorb) {
+        // Not announceable right now — track silently so nothing is "owed"
+        // from before the pit stop or the opening lap.
+        this.posAnnounced = me.position;
+        this.posCandidate = null;
+      } else if (me.position === this.posAnnounced) {
+        this.posCandidate = null; // back where we left it — a flicker, not news
+      } else if (!this.posCandidate || this.posCandidate.pos !== me.position) {
+        this.posCandidate = { pos: me.position, sinceMs: now };
+      } else if (now - this.posCandidate.sinceMs >= POSITION_SETTLE_MS) {
+        const gained = me.position < this.posAnnounced;
+        this.offer('positionChange', now, gained ? 'position gained' : 'position lost', {
+          from: this.posAnnounced,
+          to: me.position,
+          gained,
+          classPosition: known(me.classPosition) ? me.classPosition! : UNKNOWN_VALUE,
+        });
+        // Absorbed either way: if the offer lost to a cooldown, announcing the
+        // same move after the cooldown would be old news.
+        this.posAnnounced = me.position;
+        this.posCandidate = null;
+      }
     }
 
     // The class neighbours' stops. Identity is re-derived every tick, so a
@@ -926,7 +953,10 @@ export class EngineerTriggers {
 
   /** Seed the race-story baselines from the priming frame — levels, no offers. */
   private observeRaceStory(frame: TelemetryFrame): void {
-    this.storeRaceStory(raceStoryLevels(frame, playerRow(frame)));
+    const me = playerRow(frame);
+    this.storeRaceStory(raceStoryLevels(frame, me));
+    this.posAnnounced = me && known(me.position) ? me.position : UNKNOWN_VALUE;
+    this.posCandidate = null;
   }
 
   /** Remember this frame's race-story levels for the next tick's comparisons. */
@@ -1051,11 +1081,10 @@ export class EngineerTriggers {
     this.prevPitThisLap = frame.fuel?.pitThisLap === true;
 
     // Race-story levels. (The field-fastest holder, neighbour-pit map, yield
-    // flag and window boolean update inside detectRaceStory itself, where the
-    // values are already in hand.)
+    // flag, window boolean and position-settle state update inside
+    // detectRaceStory itself, where the values are already in hand.)
     const me = playerRow(frame);
     if (me && known(me.bestLapSec) && me.bestLapSec > 0) this.prevBestSelf = me.bestLapSec;
-    if (me && known(me.position)) this.prevPosition = me.position;
     this.prevPitPhase = frame.player?.pit?.phase ?? 'none';
   }
 }

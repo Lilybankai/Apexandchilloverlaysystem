@@ -395,17 +395,43 @@ export class EngineerCommands {
       }
 
       case 'fuel': {
+        // LMU cars run a tank AND a virtual-energy allowance, and the driver
+        // pits for whichever runs out first — so "am I good to the end" is a
+        // question about the TIGHTER budget, exactly as the trigger layer's
+        // fuelWindow reads it. Answering off the tank alone told a driver with
+        // 24 laps of energy and 27 to run that he was good to the finish
+        // (caught in the 2026-08-19 race replay).
         const f = frame.fuel;
-        if (!known(f.lapsRemaining)) return no('No fuel read yet.');
-        const laps = `Fuel for ${f.lapsRemaining.toFixed(1)} laps.`;
-        if (f.pitThisLap) return yes(`${laps} Box this lap — you will not make another.`);
-        if (known(f.fuelDeltaLiters) && known(f.lapsToFinish)) {
-          if (f.fuelDeltaLiters >= 0) return yes(`${laps} Good to the finish.`);
+        if (!f || !known(f.lapsRemaining)) return no('No fuel read yet.');
+        const tankLaps = f.lapsRemaining;
+        const energyLaps = known(f.virtualEnergyLapsRemaining)
+          ? f.virtualEnergyLapsRemaining!
+          : undefined;
+        const state =
+          energyLaps !== undefined
+            ? `Fuel for ${tankLaps.toFixed(1)} laps, energy for ${energyLaps.toFixed(1)}.`
+            : `Fuel for ${tankLaps.toFixed(1)} laps.`;
+        if (f.pitThisLap) return yes(`${state} Box this lap — you will not make another.`);
+
+        const bindingLaps = energyLaps !== undefined ? Math.min(tankLaps, energyLaps) : tankLaps;
+        if (known(f.lapsToFinish) && f.lapsToFinish > 0) {
+          const short = f.lapsToFinish - bindingLaps;
+          if (short <= 0) return yes(`${state} Good to the finish.`);
+          const which =
+            energyLaps !== undefined && energyLaps < tankLaps ? 'on energy' : 'on fuel';
           return yes(
-            `${laps} You're ${Math.abs(f.fuelDeltaLiters).toFixed(1)} litres short of the finish.`,
+            `${state} That's ${short.toFixed(1)} laps short ${which} — you'll need a stop.`,
           );
         }
-        return yes(laps);
+        // No laps-to-finish projection: the litre delta is the tank-only
+        // fallback, so it only speaks when the tank is the binding budget.
+        if (known(f.fuelDeltaLiters) && (energyLaps === undefined || tankLaps <= energyLaps)) {
+          if (f.fuelDeltaLiters >= 0) return yes(`${state} Good to the finish.`);
+          return yes(
+            `${state} You're ${Math.abs(f.fuelDeltaLiters).toFixed(1)} litres short of the finish.`,
+          );
+        }
+        return yes(state);
       }
 
       case 'lastLap': {
@@ -567,6 +593,7 @@ export class EngineerCommands {
 
       case 'pitWindow': {
         const f = frame.fuel;
+        if (!f) return no('No pit window projection yet.');
         const open = f.pitWindowOpenLap;
         const lap = frame.session.currentLap;
         if (!known(open) || !known(lap) || lap <= 0) return no('No pit window projection yet.');
@@ -580,12 +607,21 @@ export class EngineerCommands {
 
       case 'energy': {
         const f = frame.fuel;
-        if (!known(f.virtualEnergyPct)) return no('No virtual energy on this car.');
+        if (!f || !known(f.virtualEnergyPct)) return no('No virtual energy on this car.');
         const parts = [`Energy at ${Math.round(f.virtualEnergyPct!)} percent`];
         if (known(f.virtualEnergyLapsRemaining)) {
           parts[0] += `, ${f.virtualEnergyLapsRemaining!.toFixed(1)} laps`;
         }
         parts[0] += '.';
+        // The verdict that matters: does the allowance reach the flag?
+        if (known(f.virtualEnergyLapsRemaining) && known(f.lapsToFinish) && f.lapsToFinish > 0) {
+          const short = f.lapsToFinish - f.virtualEnergyLapsRemaining!;
+          parts.push(
+            short <= 0
+              ? 'Enough to the finish.'
+              : `${short.toFixed(1)} laps short of the finish.`,
+          );
+        }
         if (known(f.veLapsInHandVsNext) && f.veLapsInHandVsNext! > 0) {
           parts.push(
             `${f.veLapsInHandVsNext!.toFixed(1)} ${f.veLapsInHandVsNext! >= 2 ? 'laps' : 'lap'} in hand on the car ahead.`,
@@ -729,8 +765,10 @@ export class EngineerCommands {
       }
 
       case 'weather': {
+        // Guarded on the whole block: recordings trim frames, and a replayed
+        // frame without weather must refuse, not throw (2026-08-19 replay).
         const w = frame.weather;
-        if (!known(w.trackTempC)) return no('No weather data.');
+        if (!w || !known(w.trackTempC)) return no('No weather data.');
         const parts: string[] = [];
         if (known(w.rainIntensity) && w.rainIntensity > 0) {
           parts.push(`It's raining now.`);

@@ -626,20 +626,38 @@ function playerRowOver(over) {
 }
 
 {
-  // Position changes: real ones speak; lap 1 and the pit lane stay quiet.
+  // Position changes: real ones speak — once they have HELD for the settle
+  // window — while lap 1, the pit lane and standings flickers stay quiet.
   const r = rig({}, {});
-  const cue = r.fire({ standings: [playerRowOver({ position: 6 })] });
-  check('a place gained on track speaks', cue && cue.kind === 'positionChange', cue && cue.line);
+  const cue = r.fire({ standings: [playerRowOver({ position: 6 })] }, 5000);
+  check('a place gained on track speaks once it settles', cue && cue.kind === 'positionChange', cue && cue.line);
   check('…with direction in the facts', cue && cue.triggers[0].facts.gained === true,
     cue && JSON.stringify(cue.triggers[0].facts));
 
   const r2 = rig({}, { session: { currentLap: 1 } });
-  r2.fire({ standings: [playerRowOver({ position: 3 })] });
+  r2.fire({ standings: [playerRowOver({ position: 3 })] }, 5000);
   check('lap-1 shuffles are the start, not news', !r2.kinds().includes('positionChange'), r2.kinds().join());
 
   const r3 = rig({}, { player: { pit: { phase: 'stopped', working: true, elapsedSec: 4, plannedSec: 30, slackSec: 0 } } });
-  r3.fire({ standings: [playerRowOver({ position: 9 })] });
+  r3.fire({ standings: [playerRowOver({ position: 9 })] }, 5000);
   check('places lost while stationary in the box are not', !r3.kinds().includes('positionChange'), r3.kinds().join());
+
+  // The 2026-08-19 replay glitch: the feed flicked P1 → P25 for a moment and
+  // the engineer announced it. A change that does not survive the settle
+  // window is a feed artefact, not an overtake.
+  const r4 = rig({}, {});
+  r4.step({ standings: [playerRowOver({ position: 25 })] });
+  r4.hold(1000); // flicker holds for only a second…
+  r4.step({ standings: [playerRowOver({ position: 7 })] }); // …then snaps back
+  r4.hold(6000);
+  check('a standings flicker never speaks', !r4.kinds().includes('positionChange'), r4.kinds().join());
+
+  // …but a genuine crash that STAYS lost is announced once, settled.
+  const r5 = rig({}, {});
+  const settled = r5.fire({ standings: [playerRowOver({ position: 25 })] }, 6000);
+  check('a real fall through the field speaks once settled',
+    settled && settled.kind === 'positionChange' && settled.triggers[0].facts.to === 25,
+    settled && settled.line);
 }
 
 {
@@ -761,21 +779,49 @@ console.log('\n11) The phrasebook turns cues into radio lines');
       check(`${kind}: cue collected for the phrase check`, false, 'never fired in the harness');
       continue;
     }
-    const line = phraseForCue(cue, null);
+    // Variant 0 pins the canonical line; every other variant must also be a
+    // real sentence — an empty alternate would be a silent radio call.
+    const line = phraseForCue(cue, null, 0);
     check(`${kind}: has words`, typeof line === 'string' && line.length > 4, line);
+    for (let v = 1; v <= 4; v++) {
+      const alt = phraseForCue(cue, null, v);
+      if (typeof alt !== 'string' || alt.length <= 4) {
+        check(`${kind}: variant ${v} is a real sentence`, false, String(alt));
+      }
+    }
   }
+  check('every variant of every kind is a real sentence', true);
 
-  // Spot-check that the words carry the cue's own facts, not placeholders.
+  // Spot-check that the words carry the cue's own facts, not placeholders —
+  // pinned to variant 0, the canonical wording.
   const pb = collected.get('fastestLapSelf');
-  check('fastestLapSelf speaks the time', pb && /1 38\.2/.test(phraseForCue(pb, null)), pb && phraseForCue(pb, null));
+  check('fastestLapSelf speaks the time', pb && /1 38\.2/.test(phraseForCue(pb, null, 0)), pb && phraseForCue(pb, null, 0));
   const blue = collected.get('yieldTo');
   check('yieldTo names the car and the gap',
-    blue && /Blue flags — Car closing, 2\.1 seconds back/.test(phraseForCue(blue, null)),
-    blue && phraseForCue(blue, null));
+    blue && /Blue flags — Car closing, 2\.1 seconds back/.test(phraseForCue(blue, null, 0)),
+    blue && phraseForCue(blue, null, 0));
   const pos = collected.get('positionChange');
-  check('positionChange speaks the new place', pos && /P6/.test(phraseForCue(pos, null)), pos && phraseForCue(pos, null));
+  check('positionChange speaks the new place', pos && /P6/.test(phraseForCue(pos, null, 0)), pos && phraseForCue(pos, null, 0));
   const pen = collected.get('penalty');
-  check('penalty names the type', pen && /STOP\/GO/.test(phraseForCue(pen, null)), pen && phraseForCue(pen, null));
+  check('penalty names the type', pen && /STOP\/GO/.test(phraseForCue(pen, null, 0)), pen && phraseForCue(pen, null, 0));
+
+  // The variation machinery itself: alternates differ, every variant of a
+  // bank carries the same facts, and the derived pick is deterministic — a
+  // replay must produce the same radio twice.
+  if (pb) {
+    const v0 = phraseForCue(pb, null, 0);
+    const v1 = phraseForCue(pb, null, 1);
+    check('variants are different sentences', v0 !== v1, `${v0} | ${v1}`);
+    for (let v = 0; v <= 3; v++) {
+      const line = phraseForCue(pb, null, v);
+      if (!/1 38\.2/.test(line)) {
+        check(`fastestLapSelf variant ${v} still carries the time`, false, line);
+      }
+    }
+    check('every variant carries the facts', true);
+    check('the derived pick is deterministic',
+      phraseForCue(pb, null) === phraseForCue(pb, null), phraseForCue(pb, null));
+  }
 }
 
 /* -------------------------------------------------------------------------- */

@@ -6,7 +6,33 @@
 
 ## Unreleased
 
+### Fixed
+
+- **"Fuel" now answers on whichever budget actually runs out first.** Asking
+  for fuel with the tank good for 28 laps but Virtual Energy good for only 24
+  used to get "good to the finish" — true of the tank, race-losing as advice.
+  The engineer now speaks both ("Fuel for 28.5 laps, energy for 24.1") and
+  gives the verdict on the tighter one: "That's 2.9 laps short on energy —
+  you'll need a stop." The energy question gets the same to-the-flag verdict.
+  Caught replaying a real race, which is exactly what the recorder is for.
+- **A standings flicker is no longer announced as a lost position.** The sim
+  briefly showed P1 as P25 for a few frames mid-race and the engineer called
+  it. A position change now has to hold for 2.5 seconds before it's news — a
+  real overtake still gets called, a data glitch never does.
+
 ### Changed
+
+- **The engineer varies how it says things.** Every proactive call now has a
+  small bank of phrasings — a fastest lap might come back as "Personal best,
+  1 38.4 — keep that rhythm" or "Quickest lap yet — car's underneath you" —
+  picked deterministically, so replaying a recording reads the same radio
+  every time. Adding another way of saying something is one line in the
+  phrasebook.
+- **Recordings now capture everything the engineer can talk about.** Tyres,
+  weather, pit state, hybrid, pace and the MFD were trimmed out of recordings
+  to save space, which meant a replay couldn't test half the new questions.
+  They're kept (slim) now — re-record your next race and every answer can be
+  tuned offline.
 
 - **The engineer's phrase list is readable now.** "What you can ask" was one
   long list; it's now a full-width card grouped the way you'd think of it —

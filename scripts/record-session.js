@@ -101,6 +101,58 @@ function trim(frame) {
   if (player.damage) out.player.damage = player.damage;
   if (player.trackLimits) out.player.trackLimits = player.trackLimits;
   if (player.lap) out.player.lap = player.lap;
+  // The Track-A ask-set reads these (tyres, pit, hybrid, pace) and the
+  // readouts' busy-hold reads the brake — kept slim so an hour of race stays
+  // tens of MB, but kept: a recording that can't replay every intent can't
+  // tune the engineer (the 2026-08-19 recording refused half the new asks).
+  if (player.pit) {
+    out.player.pit = { phase: player.pit.phase, plannedSec: player.pit.plannedSec };
+  }
+  if (player.tyres) {
+    const corner = (c) =>
+      c && {
+        tempC: c.tempC,
+        coreC: c.coreC,
+        optimalTempC: c.optimalTempC,
+        wear: c.wear,
+        pressureKpa: c.pressureKpa,
+        compound: c.compound,
+      };
+    out.player.tyres = {
+      frontLeft: corner(player.tyres.frontLeft),
+      frontRight: corner(player.tyres.frontRight),
+      rearLeft: corner(player.tyres.rearLeft),
+      rearRight: corner(player.tyres.rearRight),
+    };
+  }
+  if (player.hybrid) out.player.hybrid = player.hybrid;
+  if (player.paceScore) out.player.paceScore = player.paceScore;
+  if (player.paceDeltas) {
+    out.player.paceDeltas = { predictedLapSec: player.paceDeltas.predictedLapSec };
+  }
+  if (player.pedals) out.player.pedals = { brake: player.pedals.brake };
+
+  if (frame.weather) {
+    out.weather = {
+      trackTempC: frame.weather.trackTempC,
+      ambientTempC: frame.weather.ambientTempC,
+      rainIntensity: frame.weather.rainIntensity,
+      trackWetness: frame.weather.trackWetness,
+      trackTrend: frame.weather.trackTrend,
+      forecast: (frame.weather.forecast || []).map((slot) => ({
+        minutesAhead: slot.minutesAhead,
+        rainChance: slot.rainChance,
+        trackTempC: slot.trackTempC,
+        sky: slot.sky,
+      })),
+    };
+  }
+  if (frame.mfd && Array.isArray(frame.mfd.aids)) {
+    out.mfd = {
+      pit: [],
+      aids: frame.mfd.aids.map((a) => ({ key: a.key, label: a.label, value: a.value, text: a.text })),
+    };
+  }
 
   out.standings = (frame.standings || []).map((s) => ({
     slotId: s.slotId,
@@ -115,6 +167,9 @@ function trim(frame) {
     bestLapSec: s.bestLapSec,
     lastLapSec: s.lastLapSec,
     lapsCompleted: s.lapsCompleted,
+    gridPosition: s.gridPosition,
+    inPit: s.inPit,
+    pitStops: s.pitStops,
     isPlayer: s.isPlayer,
   }));
   out.relative = (frame.relative || []).map((r) => ({
