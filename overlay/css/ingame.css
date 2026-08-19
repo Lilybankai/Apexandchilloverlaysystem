@@ -200,6 +200,14 @@ body.ig-editing .ig-screens {
    it reads at a glance from the driver's eyeline without sitting over the
    car; pointer-events off because the layer window is click-through. */
 
+/* CENTRED ON THE PRIMARY DISPLAY, NOT THE WINDOW. The window is the whole
+   desktop, so `left: 50%` is the middle of every monitor put together — fine on
+   a triple rig, where that is the centre screen, and wrong the moment a screen
+   is stacked above or below one: the toolbar ends up a monitor away from the
+   widgets being dragged. js/ingame.js (placeChrome) overwrites left/top/bottom
+   inline with the primary display's own centre and edges. The values here are
+   what it writes on a single monitor, and are what a plain-browser preview with
+   no app to ask for geometry gets. */
 .ig-notices {
   position: fixed;
   top: 12%;
@@ -239,6 +247,7 @@ body.ig-editing .ig-screens {
 
 /* ------------------------------- toolbar -------------------------------- */
 
+/* Re-centred on the primary display by placeChrome — see .ig-notices. */
 .ig-toolbar {
   position: fixed;
   top: 14px;
@@ -295,6 +304,7 @@ body.ig-editing .ig-screens {
 
 /* --------------------------- interact-mode chrome ---------------------- */
 /* Banner sits bottom-centre so it never clashes with the edit toolbar (top). */
+/* Re-centred on the primary display by placeChrome — see .ig-notices. */
 .ig-interact-hint {
   position: fixed;
   bottom: 14px;
