@@ -615,6 +615,13 @@ function unit() {
     [...gIntents].every((i) => COMMAND_INTENTS.includes(i)),
     [...gIntents].filter((i) => !COMMAND_INTENTS.includes(i)).join(',') || 'none',
   );
+  // The panel's reference card is grouped straight off this table; an entry
+  // without a group would render under a stray "More" heading.
+  check(
+    'every grammar entry carries a group',
+    GRAMMAR.every((g) => typeof g.group === 'string' && g.group.length > 0),
+    GRAMMAR.filter((g) => !g.group).map((g) => g.intent).join(',') || 'all grouped',
+  );
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

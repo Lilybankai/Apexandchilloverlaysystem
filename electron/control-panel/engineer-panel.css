@@ -42,29 +42,95 @@
 }
 .eng-ptt-chip--bound { color: var(--text); border-color: var(--line-2); }
 
-/* ---- What you can ask ---------------------------------------------------- */
+/* ---- What you can ask ------------------------------------------------------
+   Full-width reference card under the two rails. Groups flow into CSS columns
+   (masonry without script); each group is the design system's uppercase
+   display label over rows of phrase chips — the first chip in a row is the
+   canonical short form, so it carries the accent. */
 
-.eng-grammar {
+.eng-say-card { margin-top: 16px; }
+
+.eng-say-head {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
-.eng-grammar__row {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 10px;
+.eng-say-head > div { min-width: 260px; flex: 1 1 340px; }
+.eng-say-filter {
+  flex: 0 1 240px;
+  min-width: 180px;
+  margin-top: 2px;
+}
+
+.eng-say {
+  columns: 320px 3;
+  column-gap: 28px;
+  margin-top: 4px;
+}
+
+.eng-say__group {
+  break-inside: avoid;
+  margin: 0 0 20px;
+}
+.eng-say__label {
+  display: flex;
   align-items: baseline;
-  font-size: 13px;
-  padding: 4px 0;
+  justify-content: space-between;
+  margin: 0 0 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.eng-say__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+
+.eng-say__row {
+  padding: 8px 0 9px;
   border-bottom: 1px solid var(--line);
 }
-.eng-grammar__row:last-child { border-bottom: 0; }
-.eng-grammar__what { color: var(--text); }
-.eng-grammar__phrases {
+.eng-say__group .eng-say__row:last-child { border-bottom: 0; }
+.eng-say__what {
+  font-size: 12.5px;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+.eng-say__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 5px;
+}
+.eng-say__chip {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
   color: var(--text-2);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+.eng-say__chip--primary {
+  color: var(--cyan);
+  border-color: var(--line-2);
+  background: transparent;
+}
+
+.eng-say-empty {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
 }
 
 /* ---- Voice list ----------------------------------------------------------- */

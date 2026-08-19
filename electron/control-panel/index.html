@@ -1306,18 +1306,6 @@
               </div>
             </section>
 
-            <!-- ------------------ WHAT YOU CAN ASK ----------------- -->
-            <section class="card">
-              <div class="card__head">
-                <h2 class="card__title"><svg class="icon"><use href="#i-message-square-plus" /></svg>What you can ask</h2>
-                <p class="card__desc">
-                  Say the key phrase on its own or inside a sentence — “mate, what's the
-                  gap ahead right now” works. The engineer only answers what the
-                  telemetry can prove, and says so when it can't.
-                </p>
-              </div>
-              <div id="eng-grammar" class="eng-grammar"></div>
-            </section>
           </div>
 
           <div class="eng-col">
@@ -1335,6 +1323,26 @@
             </section>
           </div>
         </div>
+
+        <!-- ------------------ WHAT YOU CAN ASK ----------------- -->
+        <!-- Full width, below the rails: 28 phrases in a 380px column was a
+             wall; grouped and columnar it reads like the radio card it is. -->
+        <section class="card eng-say-card">
+          <div class="card__head eng-say-head">
+            <div>
+              <h2 class="card__title"><svg class="icon"><use href="#i-message-square-plus" /></svg>What you can ask</h2>
+              <p class="card__desc">
+                Say any phrase on its own or inside a sentence — “mate, what's the
+                gap ahead right now” works. The engineer only answers what the
+                telemetry can prove, and says so when it can't.
+              </p>
+            </div>
+            <input type="search" class="field__input eng-say-filter" id="eng-say-filter"
+                   placeholder="Filter phrases…" spellcheck="false" />
+          </div>
+          <div id="eng-grammar" class="eng-say"></div>
+          <p class="eng-say-empty" id="eng-say-empty" hidden>Nothing matches — the engineer can't answer that one yet.</p>
+        </section>
       </div>
     </section>
 

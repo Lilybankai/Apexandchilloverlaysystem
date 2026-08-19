@@ -260,25 +260,94 @@
 
     voicesEl.replaceChildren(...s.voices.map((v) => voiceRow(v, s)));
 
-    if (!grammarEl.childElementCount && s.grammar) {
-      grammarEl.replaceChildren(
-        ...s.grammar.map((g) => {
-          const row = document.createElement('div');
-          row.className = 'eng-grammar__row';
-          const what = document.createElement('span');
-          what.className = 'eng-grammar__what';
-          what.textContent = INTENT_LABELS[g.intent] || g.intent;
-          const phrases = document.createElement('span');
-          phrases.className = 'eng-grammar__phrases';
-          phrases.textContent = `“${g.phrases.join('” · “')}”`;
-          row.append(what, phrases);
-          return row;
-        }),
-      );
+    if (!grammarEl.childElementCount && s.grammar) renderGrammar(s.grammar);
+  }
+
+  /* ---- the phrase reference ------------------------------------------------- */
+
+  const sayFilter = $('#eng-say-filter');
+  const sayEmpty = $('#eng-say-empty');
+
+  /**
+   * Grouped, columnar phrasebook. Groups come off the GRAMMAR table itself
+   * (single source, same order the service ships), each phrase is a chip, and
+   * the first phrase is the canonical one — visually louder so a new driver
+   * learns the short form first. Rendered once; the filter only toggles
+   * visibility.
+   */
+  function renderGrammar(grammar) {
+    const groups = new Map(); // name → entries, insertion-ordered like GRAMMAR
+    for (const g of grammar) {
+      const name = g.group || 'More';
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(g);
     }
+
+    grammarEl.replaceChildren(
+      ...[...groups.entries()].map(([name, entries]) => {
+        const section = document.createElement('section');
+        section.className = 'eng-say__group';
+
+        const head = document.createElement('h3');
+        head.className = 'eng-say__label';
+        const title = document.createElement('span');
+        title.textContent = name;
+        const count = document.createElement('span');
+        count.className = 'eng-say__count';
+        count.textContent = String(entries.length);
+        head.append(title, count);
+        section.appendChild(head);
+
+        for (const g of entries) {
+          const row = document.createElement('div');
+          row.className = 'eng-say__row';
+          row.dataset.search = (
+            name + ' ' + (INTENT_LABELS[g.intent] || g.intent) + ' ' + g.phrases.join(' ')
+          ).toLowerCase();
+
+          const what = document.createElement('div');
+          what.className = 'eng-say__what';
+          what.textContent = INTENT_LABELS[g.intent] || g.intent;
+          row.appendChild(what);
+
+          const chips = document.createElement('div');
+          chips.className = 'eng-say__chips';
+          g.phrases.forEach((p, i) => {
+            const chip = document.createElement('span');
+            chip.className = 'eng-say__chip' + (i === 0 ? ' eng-say__chip--primary' : '');
+            chip.textContent = p;
+            chips.appendChild(chip);
+          });
+          row.appendChild(chips);
+          section.appendChild(row);
+        }
+        return section;
+      }),
+    );
+  }
+
+  /** Hide rows that don't match, groups that emptied, and say so when all did. */
+  function applySayFilter() {
+    const q = sayFilter.value.trim().toLowerCase();
+    let any = false;
+    for (const group of grammarEl.querySelectorAll('.eng-say__group')) {
+      let visible = 0;
+      for (const row of group.querySelectorAll('.eng-say__row')) {
+        const hit = !q || row.dataset.search.includes(q);
+        row.hidden = !hit;
+        if (hit) visible++;
+      }
+      group.hidden = visible === 0;
+      const count = group.querySelector('.eng-say__count');
+      if (count) count.textContent = String(visible);
+      if (visible) any = true;
+    }
+    sayEmpty.hidden = any;
   }
 
   /* ---- wiring ------------------------------------------------------------------ */
+
+  sayFilter.addEventListener('input', applySayFilter);
 
   toggle.addEventListener('change', () => {
     void api.updateSettings({ engineerEnabled: toggle.checked });

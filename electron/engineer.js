@@ -47,48 +47,64 @@ const path = require('node:path');
  * sentences; the recognizer also loads each list wildcard-wrapped, so the
  * phrase works buried in a sentence ("mate, what's the gap ahead right now").
  */
+/**
+ * The one phrase table: the recognizer loads it, the panel renders it, the
+ * spike imports it. `group` exists purely for the panel's reference card —
+ * the recognizer reads intent + phrases and nothing else. Entries are ordered
+ * group-contiguous, most-reached-for family first, because that order IS the
+ * panel's layout. Phrase lists are audited against each other for shared
+ * word-sequences — where two intents share a stem, one gets a different
+ * phrase, not a longer one ("my pace" vs avgAhead's "pace ahead"; gridStart
+ * avoids the word "position" entirely because `position` owns it).
+ */
 const GRAMMAR = [
-  { intent: 'gapAhead', phrases: ['gap ahead', 'gap in front', 'gap front'] },
-  { intent: 'gapBehind', phrases: ['gap behind', 'gap to the car behind'] },
-  {
-    intent: 'avgAhead',
-    phrases: ['five lap average', 'five laps average front', 'average front', 'pace ahead', 'compare pace'],
-  },
+  // -- Gaps & rivals ---------------------------------------------------------
+  { intent: 'gapAhead', group: 'Gaps & rivals', phrases: ['gap ahead', 'gap in front', 'gap front'] },
+  { intent: 'gapBehind', group: 'Gaps & rivals', phrases: ['gap behind', 'gap to the car behind'] },
   {
     intent: 'carAhead',
+    group: 'Gaps & rivals',
     phrases: ["who's ahead", "who's in front", 'car ahead', 'car in front', "who am i chasing"],
   },
-  { intent: 'carBehind', phrases: ["who's behind", 'car behind', "who's chasing me"] },
+  { intent: 'carBehind', group: 'Gaps & rivals', phrases: ["who's behind", 'car behind', "who's chasing me"] },
+  {
+    intent: 'avgAhead',
+    group: 'Gaps & rivals',
+    phrases: ['five lap average', 'five laps average front', 'average front', 'pace ahead', 'compare pace'],
+  },
+  { intent: 'leader', group: 'Gaps & rivals', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
   {
     intent: 'traffic',
+    group: 'Gaps & rivals',
     phrases: ['backmarker', 'backmarkers', 'any traffic', 'traffic ahead', 'any backmarkers'],
   },
-  { intent: 'lapsLeft', phrases: ['laps left', 'laps remaining', 'how many laps', 'how long left'] },
-  { intent: 'fuel', phrases: ['fuel', 'fuel state', 'fuel level'] },
-  { intent: 'lastLap', phrases: ['last lap', 'last lap time', 'lap time'] },
-  { intent: 'position', phrases: ['position', 'what position am i in', 'where am i'] },
-  // Track A (v3): the wider ask-set. Phrase lists are audited against each
-  // other for shared word-sequences — where two intents share a stem, one gets
-  // a different phrase, not a longer one ("my pace" vs avgAhead's "pace ahead";
-  // gridStart avoids the word "position" entirely because `position` owns it).
-  { intent: 'tyres', phrases: ['tyres', 'how are my tyres', 'tyre temps'] },
-  { intent: 'pressures', phrases: ['tyre pressures', 'pressures'] },
-  { intent: 'damage', phrases: ['damage', 'any damage', 'damage report', 'how bad is it'] },
-  { intent: 'brakes', phrases: ['brakes', 'brake wear', 'how are the brakes'] },
-  { intent: 'pitStop', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
-  { intent: 'pitWindow', phrases: ['pit window', "when's the window", 'when do we pit'] },
-  { intent: 'energy', phrases: ['energy', 'virtual energy', "how's my energy"] },
-  { intent: 'hybrid', phrases: ['battery', 'hybrid', 'state of charge'] },
-  { intent: 'pace', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
-  { intent: 'bestLap', phrases: ['best lap', 'my best lap', 'personal best'] },
-  { intent: 'fieldFastest', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
-  { intent: 'leader', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
-  { intent: 'gridStart', phrases: ['where did i start', 'places gained', 'how many places'] },
-  { intent: 'trackLimits', phrases: ['track limits', 'limits', 'penalty points'] },
-  { intent: 'flags', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
-  { intent: 'weather', phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming'] },
-  { intent: 'brakeBias', phrases: ['brake bias', 'bias'] },
-  { intent: 'tractionControl', phrases: ['traction control', 'traction'] },
+  // -- Pace & laps -------------------------------------------------------------
+  { intent: 'lastLap', group: 'Pace & laps', phrases: ['last lap', 'last lap time', 'lap time'] },
+  { intent: 'bestLap', group: 'Pace & laps', phrases: ['best lap', 'my best lap', 'personal best'] },
+  { intent: 'fieldFastest', group: 'Pace & laps', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
+  { intent: 'pace', group: 'Pace & laps', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
+  { intent: 'position', group: 'Pace & laps', phrases: ['position', 'what position am i in', 'where am i'] },
+  { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places'] },
+  // -- Fuel & energy -----------------------------------------------------------
+  { intent: 'fuel', group: 'Fuel & energy', phrases: ['fuel', 'fuel state', 'fuel level'] },
+  { intent: 'energy', group: 'Fuel & energy', phrases: ['energy', 'virtual energy', "how's my energy"] },
+  { intent: 'hybrid', group: 'Fuel & energy', phrases: ['battery', 'hybrid', 'state of charge'] },
+  // -- Pit ---------------------------------------------------------------------
+  { intent: 'pitStop', group: 'Pit', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
+  { intent: 'pitWindow', group: 'Pit', phrases: ['pit window', "when's the window", 'when do we pit'] },
+  // -- The car -----------------------------------------------------------------
+  { intent: 'tyres', group: 'The car', phrases: ['tyres', 'how are my tyres', 'tyre temps'] },
+  { intent: 'pressures', group: 'The car', phrases: ['tyre pressures', 'pressures'] },
+  { intent: 'brakes', group: 'The car', phrases: ['brakes', 'brake wear', 'how are the brakes'] },
+  { intent: 'damage', group: 'The car', phrases: ['damage', 'any damage', 'damage report', 'how bad is it'] },
+  { intent: 'brakeBias', group: 'The car', phrases: ['brake bias', 'bias'] },
+  { intent: 'tractionControl', group: 'The car', phrases: ['traction control', 'traction'] },
+  // -- Race control ------------------------------------------------------------
+  { intent: 'lapsLeft', group: 'Race control', phrases: ['laps left', 'laps remaining', 'how many laps', 'how long left'] },
+  { intent: 'trackLimits', group: 'Race control', phrases: ['track limits', 'limits', 'penalty points'] },
+  { intent: 'flags', group: 'Race control', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
+  // -- Conditions ----------------------------------------------------------------
+  { intent: 'weather', group: 'Conditions', phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming'] },
 ];
 
 /* -------------------------------------------------------------------------- */
