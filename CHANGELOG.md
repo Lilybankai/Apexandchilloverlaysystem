@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+### Changed
+
+- **The engineer's phrase list is readable now.** "What you can ask" was one
+  long list; it's now a full-width card grouped the way you'd think of it —
+  gaps & rivals, pace & laps, fuel & energy, pit, the car, race control,
+  conditions — with each phrase as its own pill and the short form
+  highlighted. There's a filter box too: type "tyre" and see just the tyre
+  questions.
+
 ## 0.77.0-beta.4 — 2026-08-19
 
 ### Added
