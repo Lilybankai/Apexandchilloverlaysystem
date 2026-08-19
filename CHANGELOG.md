@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.78.0 — 2026-08-19
+
 ### Improved
 
 - **The engineer now answers the questions drivers actually asked on day
