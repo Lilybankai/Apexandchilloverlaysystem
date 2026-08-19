@@ -14,9 +14,16 @@
  *   1. electron/overlay-geometry.js — the window's bounds and the geometry
  *      handed to the page, over monitor arrangements nobody on this project
  *      owns: a primary display that is not the leftmost, a portrait side screen,
- *      three panels of different heights.
+ *      three panels of different heights, screens stacked one above another,
+ *      and screens set to different Windows scaling percentages.
  *   2. overlay/js/ingame.js — the placement, clamping and rescue maths that
- *      consumes it.
+ *      consumes it, and where the edit chrome lands.
+ *
+ * MIXED SCALING is the second thing this file exists for, and the subtler one:
+ * `screen.getAllDisplays()` measures each display in its own DIP while the
+ * window is measured in one scale factor for all of them, so the two only agree
+ * when every screen is scaled the same. See STACKED_MIXED below for the rig that
+ * found it and what it looked like from the driver's seat.
  *
  * THE INVARIANT THAT MATTERS MOST is the first group: on a single monitor every
  * number this change introduced must collapse to what it was, and on a triple
@@ -94,6 +101,55 @@ const STAGGERED = {
   primary: { x: 0, y: 0, width: 2560, height: 1440 },
 };
 
+/**
+ * MIXED SCALING — the arrangement that broke, reported 2026-08-19.
+ *
+ * A 1080p screen at 100% stacked ABOVE a 4K one at 150%. Two pixel spaces are in
+ * play and they are not the same size:
+ *
+ *   - `physical` is what the monitors actually are.
+ *   - `dip` is what `screen.getAllDisplays()` reports, each display divided by
+ *     ITS OWN scale factor. The 4K panel arrives as 2560×1440.
+ *   - `windowScale` is the single scale factor Windows gives the overlay window,
+ *     which is the one `setBounds` and the page's CSS pixels are measured in.
+ *
+ * Unioning the `dip` rects and handing the result to a window measured in
+ * `windowScale` is the bug: the layer came out covering the top-left two thirds
+ * of the 4K screen — 2560×1440 of DIP laid down as 2560×1440 physical pixels on
+ * a 3840×2160 panel — and widgets could not be dragged into the third that was
+ * left over, because as far as the page was concerned the desktop stopped there.
+ */
+const STACKED_MIXED = {
+  physical: [
+    { x: 0, y: -1080, width: 1920, height: 1080 },
+    { x: 0, y: 0, width: 3840, height: 2160 },
+  ],
+  physicalPrimary: { x: 0, y: 0, width: 3840, height: 2160 },
+  dip: [
+    { x: 0, y: -1080, width: 1920, height: 1080 },
+    { x: 0, y: 0, width: 2560, height: 1440 },
+  ],
+  dipPrimary: { x: 0, y: 0, width: 2560, height: 1440 },
+  windowScale: 1,
+};
+
+/**
+ * A physical→window-space mapping, standing in for `screen.screenToDipRect`.
+ * Edges are rounded rather than origin-and-size, so two screens that touch in
+ * physical pixels still touch afterwards instead of leaving a one-pixel seam a
+ * widget could be lost down.
+ */
+const scaleBy = (scale) => (r) => {
+  const x = Math.round(r.x / scale);
+  const y = Math.round(r.y / scale);
+  return {
+    x,
+    y,
+    width: Math.round((r.x + r.width) / scale) - x,
+    height: Math.round((r.y + r.height) / scale) - y,
+  };
+};
+
 /* -------------------------------------------------------------------------- */
 /*  1. Window bounds + geometry                                                */
 /* -------------------------------------------------------------------------- */
@@ -159,6 +215,95 @@ console.log('\noverlayGeometryFrom — window bounds');
   eq('stacked: window top', g.bounds.y, -1200);
   eq('stacked: padY is the screen above', g.screens.padY, 1200);
   eq('stacked: padX still 0', g.screens.padX, 0);
+}
+
+{
+  // No mapping supplied — every uniform-DPI desktop, which is all of them bar
+  // the mixed ones. Nothing may be rebased, and the identity has to be free:
+  // the rect objects come back untouched.
+  const g = overlayGeometryFrom(TRIPLE.displays, TRIPLE.primary);
+  const h = overlayGeometryFrom(TRIPLE.displays, TRIPLE.primary, scaleBy(1));
+  eq('no mapping: same window width as scale-1 mapping', g.bounds.width, h.bounds.width);
+  eq('no mapping: same padX', g.screens.padX, h.screens.padX);
+}
+
+console.log('\noverlayGeometryFrom — mixed display scaling');
+
+{
+  // What the old code did, kept as the statement of the bug: the union of the
+  // per-display DIP rects is 2560 wide and 2520 tall, and the window it sizes is
+  // measured in physical pixels because that is what this desktop's window scale
+  // factor is. The 4K screen is 3840×2160 and gets covered two-thirds of the way
+  // across and two-thirds of the way down.
+  const g = overlayGeometryFrom(STACKED_MIXED.dip, STACKED_MIXED.dipPrimary);
+  eq('mixed (old): union is short across', g.bounds.width, 2560);
+  eq('mixed (old): union is short down', g.bounds.height, 2520);
+  const reach = -g.screens.padY + g.screens.height; // maxY(), in layout coords
+  eq('mixed (old): the floor a widget could not be dragged past', reach, 1440);
+  check(
+    'mixed (old): that floor is short of the 4K screen bottom',
+    reach < STACKED_MIXED.physicalPrimary.height,
+    reach + ' of ' + STACKED_MIXED.physicalPrimary.height,
+  );
+}
+
+{
+  // The fix: union in physical pixels, then map once into the window's own.
+  const g = overlayGeometryFrom(
+    STACKED_MIXED.physical,
+    STACKED_MIXED.physicalPrimary,
+    scaleBy(STACKED_MIXED.windowScale),
+  );
+  eq('mixed: window spans the 4K screen', g.bounds.width, 3840);
+  eq('mixed: window top is the screen above', g.bounds.y, -1080);
+  eq('mixed: window height is both screens', g.bounds.height, 1080 + 2160);
+  eq('mixed: padY is the screen above', g.screens.padY, 1080);
+  eq('mixed: primary is its full 4K self', g.screens.primary.height, 2160);
+  // The number the tester was actually stuck on: the bottom of his bottom
+  // screen, in the layout coordinates the drag clamp works in.
+  const reach = -g.screens.padY + g.screens.height;
+  eq('mixed: a widget can now reach the bottom of the 4K screen', reach, 2160);
+}
+
+{
+  // MIGRATION-FREE PROOF for the mixed case, and the reason this can ship
+  // without touching anyone's saved layout. The same rig, but with Windows
+  // handing the overlay window the 4K screen's 150% instead of the other one's
+  // 100% — the assignment depends on which monitor the window overlaps most, so
+  // both are real. A widget saved at y = 100 has to land on the same PHYSICAL
+  // pixel either way, and on the same one the old code put it.
+  const scale = 1.5;
+  const before = overlayGeometryFrom(STACKED_MIXED.dip, STACKED_MIXED.dipPrimary);
+  const after = overlayGeometryFrom(
+    STACKED_MIXED.physical,
+    STACKED_MIXED.physicalPrimary,
+    scaleBy(scale),
+  );
+  // Physical pixel = (window origin + the CSS top the page sets) × the window's
+  // scale factor, which is exactly what Electron does with the bounds it is
+  // given.
+  const physical = (g) => (g.bounds.y + (100 + g.screens.padY)) * scale;
+  eq('mixed @150%: window height in its own pixels', after.bounds.height, 2160);
+  eq('mixed @150%: primary keeps its DIP size', after.screens.primary.height, 1440);
+  eq('mixed @150%: saved y=100 lands where it always did', physical(after), physical(before));
+}
+
+{
+  // The mapping is only ever a rescue, so a broken one must cost nothing: a
+  // converter that throws, or answers with junk, leaves the rect alone and the
+  // geometry is the DIP behaviour that shipped before it existed.
+  const boom = overlayGeometryFrom(TRIPLE.displays, TRIPLE.primary, () => {
+    throw new Error('no screen API here');
+  });
+  eq('mapping throws: window width unchanged', boom.bounds.width, 5760);
+  eq('mapping throws: padX unchanged', boom.screens.padX, 1920);
+  const junk = overlayGeometryFrom(TRIPLE.displays, TRIPLE.primary, () => ({
+    x: NaN,
+    y: 0,
+    width: 0,
+    height: 0,
+  }));
+  eq('mapping returns junk: window width unchanged', junk.bounds.width, 5760);
 }
 
 {
@@ -581,6 +726,81 @@ async function run() {
       'triple: right outline',
       layer.byId['ig-screens'].children[2].style.left,
       3840 + 'px',
+    );
+  }
+
+  console.log('\ningame.js — edit chrome sits on the primary display');
+
+  {
+    // The stylesheet centres the toolbar on the WINDOW, and the window is the
+    // whole desktop. One monitor: the two are the same thing, and the numbers
+    // the page writes have to be the ones the stylesheet already said, or this
+    // has moved something for everybody.
+    const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
+    const layer = loadLayer({ screens: g.screens, saved: {} });
+    await settle();
+    eq('single: toolbar centred on the one screen', layer.byId['ig-toolbar'].style.left, '960px');
+    eq('single: toolbar at the top of it', layer.byId['ig-toolbar'].style.top, '14px');
+    eq(
+      'single: interact banner at the bottom of it',
+      layer.byId['ig-interact-hint'].style.bottom,
+      '14px',
+    );
+  }
+
+  {
+    // A triple rig: the primary is the centre screen, so the toolbar lands
+    // where it always did — over the middle monitor, which is where the driver
+    // is looking.
+    const g = overlayGeometryFrom(TRIPLE.displays, TRIPLE.primary);
+    const layer = loadLayer({ screens: g.screens, saved: {} });
+    await settle();
+    eq('triple: toolbar over the centre screen', layer.byId['ig-toolbar'].style.left, '2880px');
+    eq('triple: toolbar still at the top', layer.byId['ig-toolbar'].style.top, '14px');
+  }
+
+  {
+    // THE STACKED CASE. A screen above the primary put the toolbar a monitor
+    // away from the widgets being dragged: the tester read "Editing overlays"
+    // on his top screen while working on the bottom one, with the Done button
+    // up there with it.
+    const g = overlayGeometryFrom(
+      [
+        { x: 0, y: -1080, width: 1920, height: 1080 },
+        { x: 0, y: 0, width: 2560, height: 1440 },
+      ],
+      { x: 0, y: 0, width: 2560, height: 1440 },
+    );
+    const layer = loadLayer({ screens: g.screens, saved: {} });
+    await settle();
+    eq('stacked: toolbar centred on the primary', layer.byId['ig-toolbar'].style.left, '1280px');
+    // 1080 of screen above it, then the 14px the design asks for.
+    eq('stacked: toolbar pushed below the screen above', layer.byId['ig-toolbar'].style.top, '1094px');
+    check(
+      'stacked: toolbar is on the primary, not the screen above',
+      parseFloat(layer.byId['ig-toolbar'].style.top) > g.screens.padY,
+      'top ' + layer.byId['ig-toolbar'].style.top + ', padY ' + g.screens.padY,
+    );
+  }
+
+  {
+    // The mirror: a screen BELOW the primary. The interact banner is anchored to
+    // the window's bottom by the stylesheet, so it is the one that has to move.
+    const g = overlayGeometryFrom(
+      [
+        { x: 0, y: 0, width: 2560, height: 1440 },
+        { x: 0, y: 1440, width: 1920, height: 1080 },
+      ],
+      { x: 0, y: 0, width: 2560, height: 1440 },
+    );
+    const layer = loadLayer({ screens: g.screens, saved: {} });
+    await settle();
+    eq('screen below: toolbar unmoved at the top', layer.byId['ig-toolbar'].style.top, '14px');
+    // 1080 of screen below it, plus the design's 14px.
+    eq(
+      'screen below: interact banner lifted onto the primary',
+      layer.byId['ig-interact-hint'].style.bottom,
+      '1094px',
     );
   }
 

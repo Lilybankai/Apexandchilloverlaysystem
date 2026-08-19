@@ -24,7 +24,11 @@
  * can be dragged onto a side monitor of a triple-screen rig that is not running
  * NVIDIA Surround. Placement is stored relative to the PRIMARY display, so a
  * one-screen rig is unaffected in every particular and a widget on a left-hand
- * screen simply carries a negative x — see the geometry section below.
+ * screen simply carries a negative x — see the geometry section below. Screens
+ * above and below work the same way, through padY instead of padX; the edit
+ * chrome is put back on the primary display by hand (see placeChrome), because
+ * centring it on the window would leave it on a different monitor from the
+ * widgets being dragged.
  *
  * While locked, no listeners do any work (pointer events never reach the
  * click-through window), so the layer adds nothing to steady-state cost.
@@ -361,6 +365,46 @@
     }
   }
 
+  /**
+   * Put the edit/interact chrome on the PRIMARY display rather than in the
+   * middle of the desktop.
+   *
+   * The toolbar, the interact banner and the notice stack are all centred with
+   * CSS on the window, and the window is the whole desktop — so on a triple rig
+   * they land on the middle screen, which is where the driver is looking and
+   * exactly right. Stack a screen ABOVE that one and the same rule puts the
+   * toolbar a monitor away from the widgets being dragged: the operator reads
+   * "Editing overlays" on the top screen while working on the bottom one, and
+   * the Done button is somewhere they have to go looking for.
+   *
+   * The primary display is the right anchor for the same reason widget defaults
+   * are sized to it (see applyItem): it is the screen being raced on. padX/padY
+   * put its top-left in CSS coordinates, so this is the same bridge the widgets
+   * use, and on one monitor both are 0 and every value below is what the
+   * stylesheet already says.
+   */
+  var noticesEl = null;
+
+  function placeChrome() {
+    var midX = span.padX + span.primary.width / 2;
+    if (toolbar) {
+      toolbar.style.left = midX + "px";
+      toolbar.style.top = span.padY + 14 + "px";
+    }
+    if (noticesEl) {
+      noticesEl.style.left = midX + "px";
+      noticesEl.style.top = span.padY + span.primary.height * 0.12 + "px";
+    }
+    if (interactBanner) {
+      interactBanner.style.left = midX + "px";
+      // The banner is anchored to the window's BOTTOM by the stylesheet, so the
+      // offset it needs is the gap below the primary display — the height of
+      // whatever is stacked underneath — plus the 14px the design asks for.
+      interactBanner.style.bottom =
+        span.height - span.padY - span.primary.height + 14 + "px";
+    }
+  }
+
   /* ------------------------------ persistence ---------------------------- */
 
   function loadLayout() {
@@ -686,6 +730,10 @@
       noticeBox.className = "ig-notices";
       noticeBox.setAttribute("aria-live", "polite");
       document.body.appendChild(noticeBox);
+      // Built on the first notice rather than at boot, so it misses the
+      // placement pass the rest of the chrome gets. Anchor it now.
+      noticesEl = noticeBox;
+      placeChrome();
     }
     var el = document.createElement("div");
     el.className = "ig-notice" + (n.kind === "error" ? " ig-notice--error" : "");
@@ -727,6 +775,7 @@
       bridge.onScreens(function (s) {
         span = normalizeSpan(s);
         renderScreenGuides();
+        placeChrome();
         applyAll();
       });
     }
@@ -764,6 +813,7 @@
       }
     }
     renderScreenGuides();
+    placeChrome();
     applyAll();
   });
 })();

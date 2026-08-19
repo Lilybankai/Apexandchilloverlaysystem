@@ -1527,17 +1527,60 @@ let ingameEditing = false;
 let ingameInteractive = false;
 
 /**
+ * Every display's bounds in PHYSICAL screen pixels, and the primary's.
+ *
+ * `display.bounds` is in that display's OWN DIP, so on a desktop whose screens
+ * do not share a Windows scaling percentage the rects cannot be compared with
+ * each other, let alone unioned — see the pixel-space note in
+ * electron/overlay-geometry.js for what that cost a tester. Physical pixels are
+ * the one space every screen agrees on, so the union is taken there and mapped
+ * into the window's space afterwards.
+ *
+ * Returns null when the conversion is not available — dipToScreenRect is
+ * Windows-only — which puts this back on the raw DIP numbers it used before.
+ * That is the correct fallback rather than a bug: the two spaces differ only
+ * where scale factors do.
+ */
+function physicalDisplayBounds() {
+  if (typeof screen.dipToScreenRect !== 'function') return null;
+  try {
+    const primary = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+    if (!primary || !(primary.width > 0) || !(primary.height > 0)) return null;
+    return {
+      all: screen.getAllDisplays().map((d) => screen.dipToScreenRect(null, d.bounds)),
+      primary,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Where the in-game layer lives, and the geometry it lays widgets out against.
  * The maths — and the reasoning behind the coordinate space, which is what makes
  * this change invisible to everyone on one monitor — is in
  * electron/overlay-geometry.js, so it can be tested against monitor
  * arrangements nobody here owns.
+ *
+ * The mapping handed to it converts physical pixels into the OVERLAY WINDOW'S
+ * pixels, which is what `setBounds` takes and what the page's CSS pixels are.
+ * `screenToDipRect` is passed the window itself so it uses that window's scale
+ * factor rather than the nearest display's — the two differ precisely on the
+ * mixed-scaling desktops this exists for. Before the window is built there is
+ * nothing to pass and the nearest display is the best guess going; the call
+ * straight after construction gets it right, and that one is the one that sizes
+ * the layer.
  */
 function overlayGeometry() {
-  return overlayGeometryFrom(
-    screen.getAllDisplays().map((d) => d.bounds),
-    screen.getPrimaryDisplay().bounds,
-  );
+  const phys = physicalDisplayBounds();
+  if (!phys || typeof screen.screenToDipRect !== 'function') {
+    return overlayGeometryFrom(
+      screen.getAllDisplays().map((d) => d.bounds),
+      screen.getPrimaryDisplay().bounds,
+    );
+  }
+  const win = overlayWin && !overlayWin.isDestroyed() ? overlayWin : null;
+  return overlayGeometryFrom(phys.all, phys.primary, (r) => screen.screenToDipRect(win, r));
 }
 
 /**
@@ -1564,17 +1607,27 @@ function overlayGeometry() {
  * for things that leave the desktop rectangle alone — a work-area change when
  * the taskbar auto-hides, most obviously — and this window is drawn over a
  * running race, so it must not be touched for those.
+ *
+ * Loops because the answer can depend on where the window already is. The
+ * bounds are in the window's own scale factor, and Windows takes that from
+ * whichever monitor the window overlaps most — so on a desktop with mixed
+ * scaling, growing the layer across a second screen can change the units the
+ * rectangle was measured in, and the second pass is what asks again in the new
+ * ones. Converges immediately on every rig whose screens share a scale factor,
+ * which is all of them bar the mixed ones; the cap is there so a pathological
+ * arrangement oscillates twice rather than forever.
  */
 function applyOverlayGeometry({ notify = true } = {}) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
-  const geom = overlayGeometry();
-  const cur = overlayWin.getBounds();
-  const changed =
-    cur.x !== geom.bounds.x ||
-    cur.y !== geom.bounds.y ||
-    cur.width !== geom.bounds.width ||
-    cur.height !== geom.bounds.height;
-  if (changed) {
+  let geom = overlayGeometry();
+  for (let pass = 0; pass < 3; pass++) {
+    const cur = overlayWin.getBounds();
+    const changed =
+      cur.x !== geom.bounds.x ||
+      cur.y !== geom.bounds.y ||
+      cur.width !== geom.bounds.width ||
+      cur.height !== geom.bounds.height;
+    if (!changed) break;
     // The window is created non-resizable and non-movable so the operator can
     // never drag or stretch the layer itself. Windows enforces that against
     // setBounds too, so both are lifted for the width of the call.
@@ -1586,6 +1639,7 @@ function applyOverlayGeometry({ notify = true } = {}) {
       overlayWin.setResizable(false);
       overlayWin.setMovable(false);
     }
+    geom = overlayGeometry();
   }
   if (notify) overlayWin.webContents.send('ingame:screens', geom.screens);
 }
