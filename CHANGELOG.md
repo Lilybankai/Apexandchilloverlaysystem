@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.77.0-beta.5 — 2026-08-19
+
 ### Fixed
 
 - **"Fuel" now answers on whichever budget actually runs out first.** Asking
