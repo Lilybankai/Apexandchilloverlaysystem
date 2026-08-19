@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.77.0-beta.7 — 2026-08-19
+
 ### Fixed
 
 - **The engineer answers instantly again.** beta.6 recorded a fixed
