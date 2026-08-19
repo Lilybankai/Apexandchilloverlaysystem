@@ -51,7 +51,10 @@
       <button class="tab" type="button" data-tab="engineer">
         <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
       </button>
-      <button class="tab" type="button" data-tab="fuel">
+      <!-- Beta-channel feature for now: hidden until the update state says the
+           user follows beta (control-panel.js applyFuelTabVisibility). Hidden
+           by default so a stable install never flashes a tab it can't keep. -->
+      <button class="tab" type="button" data-tab="fuel" hidden>
         <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
       </button>
       <button class="tab" type="button" data-tab="suggestions">

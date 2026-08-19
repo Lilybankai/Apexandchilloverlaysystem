@@ -3696,6 +3696,22 @@
   const tabButtons = Array.from(document.querySelectorAll('.tab[data-tab]'));
   const settingsBtn = $('#settings-btn');
 
+  /**
+   * The Fuel tab is a beta-channel feature for now — it reached stable ahead
+   * of schedule in v0.77.0 and was pulled back in v0.77.1. Visible to anyone
+   * following beta (channel set to beta, or running a beta build), exactly the
+   * `followingBeta` signal the Updates card uses. If it disappears from under
+   * someone mid-visit, they land on Dashboard rather than a blank view.
+   */
+  function applyFuelTabVisibility() {
+    const tab = tabButtons.find((t) => t.dataset.tab === 'fuel');
+    if (tab) tab.hidden = !followingBeta;
+    if (!followingBeta) {
+      const fuelView = views.find((v) => v.dataset.view === 'fuel');
+      if (fuelView && fuelView.getAttribute('data-active') === 'true') showView('dashboard');
+    }
+  }
+
   function showView(name) {
     const known = views.some((v) => v.dataset.view === name);
     const target = known ? name : 'dashboard';
@@ -4797,6 +4813,7 @@
     // been put back to stable and the stable feed has not caught up yet.
     followingBeta = beta || !!u.runningIsBeta;
     applyUpdatesCardVisibility();
+    applyFuelTabVisibility();
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';

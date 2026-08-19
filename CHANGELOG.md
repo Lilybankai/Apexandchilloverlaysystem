@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+## 0.77.1 — 2026-08-19
+
+### Changed
+
+- **The Fuel tab returns to the beta channel.** It went out in 0.77.0 ahead
+  of schedule; it is back to beta-only while we finish it. If you are on the
+  beta channel (or running a beta build) nothing changes — the tab stays
+  exactly where it was. Everything else in 0.77.0, the race engineer
+  included, is unaffected.
+
 ## 0.77.0 — 2026-08-19
 
 ### Added
