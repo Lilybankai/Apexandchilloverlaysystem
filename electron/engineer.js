@@ -37,6 +37,7 @@
 const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const stt = require('./engineerStt');
 
 /* -------------------------------------------------------------------------- */
 /*  The grammar — one table for recognizer, panel help, and the spike          */
@@ -234,6 +235,47 @@ while ($true) {
 }`;
 
 /**
+ * Bounded default-mic capture to a 16 kHz 16-bit mono WAV. Path and duration
+ * arrive via env (EncodedCommand takes no arguments). Used for Tier 2: we
+ * record first, then run the closed grammar on the file, then whisper if it
+ * missed — one clip, grammar still wins.
+ */
+const RECORDER_PS = `
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class Mci {
+  [DllImport("winmm.dll", CharSet = CharSet.Auto)]
+  public static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr hwndCallback);
+}
+'@
+function Mci-Send([string]$cmd) {
+  $buf = New-Object System.Text.StringBuilder 256
+  $code = [Mci]::mciSendString($cmd, $buf, $buf.Capacity, [IntPtr]::Zero)
+  if ($code -ne 0) { throw "MCI failed ($code): $cmd" }
+}
+$OutPath = $env:APEX_REC_OUT
+$Seconds = 6
+if ($env:APEX_REC_SECS) { $Seconds = [int]$env:APEX_REC_SECS }
+$dir = Split-Path -Parent $OutPath
+if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+if (Test-Path -LiteralPath $OutPath) { Remove-Item -LiteralPath $OutPath -Force }
+Mci-Send 'open new type waveaudio alias rec'
+try {
+  Mci-Send 'set rec bitspersample 16 channels 1 samplespersec 16000 alignment 2 bytespersec 32000'
+  Mci-Send 'record rec'
+  Start-Sleep -Seconds $Seconds
+  Mci-Send 'stop rec'
+  Mci-Send ("save rec \`"$OutPath\`"")
+} finally {
+  try { Mci-Send 'close rec' } catch { }
+}
+if (-not (Test-Path -LiteralPath $OutPath)) { throw "recorder wrote nothing" }
+`;
+
+/**
  * One-shot grammar recognition on command. Blocks on stdin; each LISTEN runs a
  * single bounded Recognize() — the microphone is captured only inside that
  * call. Grammar JSON path arrives via APEX_ENGINEER_GRAMMAR (EncodedCommand
@@ -270,6 +312,26 @@ try {
 while ($true) {
   $cmd = [Console]::In.ReadLine()
   if ($null -eq $cmd) { break }
+  if ($cmd -match '^LISTENFILE\\s+(.+)$') {
+    $wav = $Matches[1].Trim().Trim('"')
+    try {
+      $rec.SetInputToWaveFile($wav)
+      $r = $rec.Recognize()
+    } catch {
+      [Console]::Out.WriteLine("ERROR\t" + $_.Exception.Message); [Console]::Out.Flush()
+      try { $rec.SetInputToDefaultAudioDevice() } catch { }
+      continue
+    }
+    try { $rec.SetInputToDefaultAudioDevice() } catch { }
+    if ($null -ne $r) {
+      $conf = [math]::Round($r.Confidence, 2)
+      [Console]::Out.WriteLine("HEARD\t$($r.Grammar.Name)\t$conf\t$($r.Text)")
+    } else {
+      [Console]::Out.WriteLine('NONE')
+    }
+    [Console]::Out.Flush()
+    continue
+  }
   if ($cmd -notmatch '^LISTEN') { continue }
   $secs = 6
   if ($cmd -match 'LISTEN (\\d+)') { $secs = [int]$Matches[1] }
@@ -312,17 +374,26 @@ class EngineerService {
   /**
    * @param {object} opts
    * @param {string} opts.dir       asset dir, e.g. <userData>/piper
+   * @param {string} [opts.whisperDir]  STT assets, e.g. <userData>/whisper
    * @param {() => object} opts.loadSettings
-   * @param {(payload: object) => void} [opts.onStatus]  status push to the panel
+   * @param {(payload: object) => void} [opts.onStatus]
+   * @param {(body: object) => Promise<object>} [opts.cloudAsk]
+   * @param {() => Promise<object>} [opts.cloudBudget]
+   * @param {(id: string, rating: string) => Promise<object>} [opts.cloudRate]
    */
   constructor(opts) {
     this.dir = opts.dir;
+    this.whisperDir = opts.whisperDir || path.join(this.dir, '..', 'whisper');
     this.loadSettings = opts.loadSettings;
     this.onStatus = opts.onStatus || (() => {});
+    this.cloudAsk = opts.cloudAsk || null;
+    this.cloudBudget = opts.cloudBudget || null;
+    this.cloudRate = opts.cloudRate || null;
     this.radioFx = require('./radio-fx');
     this.commandsMod = tryRequire('telemetry/engineerCommands.js');
     this.triggersMod = tryRequire('telemetry/triggers.js');
     this.phrasesMod = tryRequire('telemetry/engineerPhrases.js');
+    this.summaryMod = tryRequire('telemetry/engineerSummary.js');
 
     this.running = false;
     this.busy = null; // 'download:<id>' while a download runs
@@ -348,6 +419,9 @@ class EngineerService {
     this.audioInFlight = 0; // WAVs handed to the player, not yet PLAYED
     this.heldReadout = null; // { text, expiresAt } — at most one, newest wins
     this.lastFrame = null; // latest frame, for the busy-driver check
+    this.saidBudgetLine = false; // degrade-to-Tier-1, once per session
+    this.lastCall = null; // last Tier-2 reply, for the useful/wrong buttons
+    this.budget = null; // { used, cap, remaining } from engineer_budget
   }
 
   /* ---- assets ------------------------------------------------------------ */
@@ -389,6 +463,10 @@ class EngineerService {
       busy: this.busy,
       lastError: this.lastError,
       micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
+      sttInstalled: stt.installed(this.whisperDir),
+      sttSizeMb: stt.MODEL_MB,
+      lastCall: this.lastCall,
+      budget: this.budget,
       voices: VOICES.map((v) => ({
         ...v,
         sampleUrl: sampleUrl(v.id),
@@ -442,6 +520,23 @@ class EngineerService {
         await this.fetch(`${base}.onnx`, this.modelPath(voiceId), voice.sizeMb, voiceId);
         await this.fetch(`${base}.onnx.json`, `${this.modelPath(voiceId)}.json`, 1, voiceId);
       }
+    } catch (err) {
+      this.lastError = `Download failed: ${err.message}`;
+      throw err;
+    } finally {
+      this.busy = null;
+      this.pushStatus();
+    }
+  }
+
+  /** One-time whisper.cpp + base.en download (~148 MB). Same progress bar as a voice. */
+  async downloadStt() {
+    if (this.busy) throw new Error('another download is already running');
+    this.busy = 'download:stt';
+    this.lastError = null;
+    this.pushStatus();
+    try {
+      await stt.download(this.whisperDir, this.fetch.bind(this), 'stt');
     } catch (err) {
       this.lastError = `Download failed: ${err.message}`;
       throw err;
@@ -559,9 +654,11 @@ class EngineerService {
     this.chirpPath = path.join(this.wavDir, 'chirp.wav');
     this.makeChirp(this.chirpPath);
 
+    this.saidBudgetLine = false;
     this.connectWs(port);
     this.running = true;
     this.pushStatus();
+    void this.refreshBudget();
   }
 
   stop() {
@@ -591,6 +688,7 @@ class EngineerService {
     this.audioInFlight = 0;
     this.heldReadout = null;
     this.lastFrame = null;
+    this.saidBudgetLine = false;
     if (this.wavDir) fs.rmSync(this.wavDir, { recursive: true, force: true });
     this.wavDir = null;
   }
@@ -744,9 +842,10 @@ class EngineerService {
   /* ---- the button ----------------------------------------------------------- */
 
   /**
-   * Push-to-talk: chirp, listen for one bounded window, answer. A second press
-   * while listening is ignored rather than queued — the driver mashing the
-   * button mid-corner should not bank three listens.
+   * Push-to-talk: chirp, record one bounded window, answer. Grammar still
+   * wins — the clip is recognised from the WAV so a miss can fall through to
+   * local whisper and the cloud proxy. A second press while listening is
+   * ignored rather than queued.
    */
   async ask() {
     if (!this.running) return { ok: false, error: 'Engineer is not running' };
@@ -756,27 +855,153 @@ class EngineerService {
     this.heldReadout = null; // the driver's question always wins
     try {
       this.playChirp();
-      const heard = await new Promise((resolve) => {
-        this.pendingListen = resolve;
-        this.recognizer.stdin.write(`LISTEN ${LISTEN_WINDOW_SEC}\n`);
-        // Belt and braces: never leave the button dead if the sidecar wedges.
-        setTimeout(() => {
-          if (this.pendingListen === resolve) {
-            this.pendingListen = null;
-            resolve({ kind: 'NONE' });
-          }
-        }, (LISTEN_WINDOW_SEC + 3) * 1000);
-      });
-      if (heard.kind !== 'HEARD' || heard.confidence < MIN_CONFIDENCE) {
+      await new Promise((r) => setTimeout(r, 280));
+      const wav = await this.recordListen();
+      if (!wav) {
         this.speak('Say again?');
         return { ok: true };
       }
-      const answer = this.commands.answer(heard.intent);
-      this.speak(answer.text);
+      const heard = await this.listenFile(wav);
+      if (heard.kind === 'HEARD' && heard.confidence >= MIN_CONFIDENCE && this.commands) {
+        const answer = this.commands.answer(heard.intent);
+        this.speak(answer.text);
+        return { ok: true };
+      }
+      await this.askTier2(wav);
       return { ok: true };
     } finally {
       this.asking = false;
     }
+  }
+
+  recordListen() {
+    const wav = path.join(this.wavDir, `ask-${Date.now()}.wav`);
+    return new Promise((resolve) => {
+      const child = spawnPs(RECORDER_PS, {
+        APEX_REC_OUT: wav,
+        APEX_REC_SECS: String(LISTEN_WINDOW_SEC),
+      });
+      const t = setTimeout(() => {
+        try { child.kill(); } catch {}
+        resolve(fs.existsSync(wav) ? wav : null);
+      }, (LISTEN_WINDOW_SEC + 8) * 1000);
+      child.on('exit', () => {
+        clearTimeout(t);
+        resolve(fs.existsSync(wav) ? wav : null);
+      });
+      child.on('error', () => {
+        clearTimeout(t);
+        resolve(null);
+      });
+    });
+  }
+
+  listenFile(wav) {
+    return new Promise((resolve) => {
+      this.pendingListen = resolve;
+      this.recognizer.stdin.write(`LISTENFILE ${wav}\n`);
+      setTimeout(() => {
+        if (this.pendingListen === resolve) {
+          this.pendingListen = null;
+          resolve({ kind: 'NONE' });
+        }
+      }, 8000);
+    });
+  }
+
+  async askTier2(wav) {
+    if (!stt.installed(this.whisperDir)) {
+      this.speak('I only catch the phrase list until you download free-form on the Engineer tab.');
+      return;
+    }
+    const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
+    let clip = null;
+    try {
+      clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
+    } catch {
+      clip = null;
+    }
+    if (!clip) {
+      this.speak('Say again?');
+      return;
+    }
+    let result;
+    try {
+      result = stt.transcribe(this.whisperDir, clip.path);
+    } catch {
+      this.speak('Say again?');
+      return;
+    }
+    const question = (result.text || '').trim();
+    if (question.length < 3) {
+      this.speak('Say again?');
+      return;
+    }
+    if (!this.cloudAsk) return; // fail to silence — no cloud hook
+    if (!this.summaryMod || !this.lastFrame) {
+      this.speak('No telemetry.');
+      return;
+    }
+    const summary = this.summaryMod.engineerSummary(this.lastFrame);
+    if (!summary || !summary.connected) {
+      this.speak('No telemetry.');
+      return;
+    }
+    let res;
+    try {
+      res = await this.cloudAsk({ question, summary, sttMs: result.ms });
+    } catch {
+      return;
+    }
+    if (!res) return;
+    if (res.signedOut) {
+      this.speak('Sign in to ask free-form.');
+      return;
+    }
+    const body = res.body || {};
+    if (body.code === 'budget') {
+      this.budget = { remaining: 0, cap: body.cap || 300, used: body.cap || 300 };
+      if (!this.saidBudgetLine) {
+        this.saidBudgetLine = true;
+        this.speak("That's the free-form allotment for this month. Stick to the phrase list.");
+      }
+      this.pushStatus();
+      return;
+    }
+    if (!res.ok || body.ok === false || !body.answer) return;
+    this.speak(body.answer);
+    this.lastCall = { id: body.callId, question, answer: body.answer, rating: null };
+    if (typeof body.remaining === 'number') {
+      this.budget = { remaining: body.remaining, cap: body.cap || 300 };
+    }
+    this.pushStatus();
+  }
+
+  async refreshBudget() {
+    if (!this.cloudBudget) return;
+    try {
+      const res = await this.cloudBudget();
+      const body = res && res.body;
+      if (!res || !res.ok || !body || body.ok === false) return;
+      this.budget = { used: body.used, cap: body.cap, remaining: body.remaining };
+      if (body.lastCall) this.lastCall = body.lastCall;
+      this.pushStatus();
+    } catch {
+      /* offline — tab still works for Tier 1 */
+    }
+  }
+
+  async rate(id, rating) {
+    if (!this.cloudRate) return { ok: false, error: 'Not signed in' };
+    const res = await this.cloudRate(id, rating);
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || 'Could not save rating' };
+    const body = res.body;
+    if (body && body.ok === false) return { ok: false, error: body.error || 'Could not save rating' };
+    if (this.lastCall && this.lastCall.id === id) {
+      this.lastCall = { ...this.lastCall, rating };
+    }
+    this.pushStatus();
+    return { ok: true };
   }
 
   /** The panel's "Radio check" — proves voice + radio channel end to end. */

@@ -160,7 +160,7 @@ function errorMessage(body, res) {
  * offline message, because "no internet" is the single most likely failure for
  * an app that lives next to a game.
  */
-async function api(pathname, { method = 'POST', body, token, headers } = {}) {
+async function api(pathname, { method = 'POST', body, token, headers, timeoutMs } = {}) {
   const url = `${SUPABASE_URL}${pathname}`;
   let res;
   try {
@@ -173,8 +173,7 @@ async function api(pathname, { method = 'POST', body, token, headers } = {}) {
         ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      // Don't let a hung request wedge the sign-in button forever.
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(timeoutMs || 20000),
     });
   } catch (err) {
     const offline = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
@@ -513,10 +512,14 @@ async function rpc(fn, body) {
  *
  * @returns `{ ok: true, body }`, or `{ ok: false, error, signedOut?, status }`.
  */
-async function functionsInvoke(fn, body) {
+async function functionsInvoke(fn, body, opts) {
   const token = await accessToken();
   if (!token) return { ok: false, signedOut: true, error: 'Not signed in.' };
-  const res = await api(`/functions/v1/${fn}`, { body: body || {}, token });
+  const res = await api(`/functions/v1/${fn}`, {
+    body: body || {},
+    token,
+    timeoutMs: opts && opts.timeoutMs,
+  });
   if (!res.ok && res.status === 401) return { ...res, signedOut: true };
   return res;
 }

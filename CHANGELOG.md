@@ -6,6 +6,19 @@
 
 ## Unreleased
 
+## 0.77.0-beta.6 — 2026-08-19
+
+### Added
+
+- **Free-form questions on the radio, for beta.** If the phrase list does not
+  match, the engineer transcribes you on this PC (whisper.cpp, one-time 148 MB
+  download on the Engineer tab) and sends only the text plus a bucketed race
+  summary to our server — never the microphone. The reply is one radio line.
+  Grammar still wins when it matches, so fuel and gaps cannot be hallucinated.
+  300 free-form questions a month, then it stays on the phrase list. After a
+  call, Useful / Wrong on the Engineer tab (hit it in the pits) is how we tune
+  the voice. Failures stay silent.
+
 ## 0.77.0-beta.5 — 2026-08-19
 
 ### Fixed

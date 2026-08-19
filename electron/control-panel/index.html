@@ -1242,9 +1242,9 @@
           <div>
             <h1 class="view__title">Engineer</h1>
             <p class="view__sub">
-              Press a wheel button and ask — gaps, pace, who's ahead, traffic, fuel, laps left.
-              Answered from live telemetry and spoken over the radio, all on this PC: no cloud,
-              nothing leaves the machine, nothing runs until you press the button.
+              Press a wheel button and ask. Fixed phrases are answered on this PC.
+              A free-form question is transcribed here — audio never leaves the machine —
+              then the text and a bucketed race summary go to our server for one radio line back.
             </p>
           </div>
           <button id="eng-radio-check" class="btn btn--ghost btn--sm" type="button"
@@ -1303,6 +1303,37 @@
                   </select>
                   <span class="field__hint" id="eng-readouts-hint"></span>
                 </label>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title">Free-form questions</h2>
+              </div>
+              <div class="settings-grid">
+                <div class="field">
+                  <span class="field__label">Local transcription</span>
+                  <p class="eng-status" id="eng-stt-status">Checking…</p>
+                  <span class="field__hint">
+                    The grammar still answers first. Anything it does not match is
+                    transcribed on this PC (whisper.cpp, one-time download) and only
+                    the text plus a bucketed summary — never the microphone — go to
+                    the proxy. Cap is 300 questions a month; after that the engineer
+                    stays on the phrase list.
+                  </span>
+                  <button class="btn btn--sm" id="eng-stt-download" type="button" hidden>Download</button>
+                </div>
+                <div class="field" id="eng-last-call-wrap" hidden>
+                  <span class="field__label">Last free-form reply</span>
+                  <p class="eng-last-q" id="eng-last-q"></p>
+                  <p class="eng-last-a" id="eng-last-a"></p>
+                  <div class="eng-rate-row" id="eng-rate-row">
+                    <button class="btn btn--ghost btn--sm" id="eng-rate-useful" type="button">Useful</button>
+                    <button class="btn btn--ghost btn--sm" id="eng-rate-wrong" type="button">Wrong</button>
+                    <span class="eng-rate-done" id="eng-rate-done" hidden>Saved — thank you.</span>
+                  </div>
+                  <span class="field__hint">Hit this in the pits, not mid-corner. It is how we tune the radio.</span>
+                </div>
               </div>
             </section>
 

@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld('apex', {
   engineerTest: () => ipcRenderer.invoke('engineer:test'),
   /** Push-to-talk from the panel (same path as the bound wheel button). */
   engineerAsk: () => ipcRenderer.invoke('engineer:ask'),
+  /** One-time whisper.cpp + base.en download for free-form questions. */
+  engineerDownloadStt: () => ipcRenderer.invoke('engineer:downloadStt'),
+  /** Mark the last free-form reply useful or wrong. */
+  engineerRate: (id, rating) => ipcRenderer.invoke('engineer:rate', id, rating),
   /** Status pushes: download progress, running state. Returns unsubscribe. */
   onEngineerStatus: (callback) => {
     const listener = (_evt, payload) => callback(payload);

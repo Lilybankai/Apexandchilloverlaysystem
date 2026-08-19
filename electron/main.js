@@ -1308,12 +1308,16 @@ function getEngineer() {
     const { EngineerService } = require('./engineer');
     engineerService = new EngineerService({
       dir: path.join(app.getPath('userData'), 'piper'),
+      whisperDir: path.join(app.getPath('userData'), 'whisper'),
       loadSettings,
       onStatus: (payload) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('engineer:status', payload);
         }
       },
+      cloudAsk: (body) => authService.functionsInvoke('engineer', body, { timeoutMs: 8000 }),
+      cloudBudget: () => authService.rpc('engineer_budget', {}),
+      cloudRate: (id, rating) => authService.rpc('rate_engineer_call', { p_id: id, p_rating: rating }),
     });
   }
   return engineerService;
@@ -3192,6 +3196,15 @@ function registerIpc() {
   ipcMain.handle('engineer:preview', (_evt, voiceId) => getEngineer().preview(String(voiceId)));
   ipcMain.handle('engineer:test', () => getEngineer().test());
   ipcMain.handle('engineer:ask', () => getEngineer().ask());
+  ipcMain.handle('engineer:downloadStt', async () => {
+    try {
+      await getEngineer().downloadStt();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('engineer:rate', (_evt, id, rating) => getEngineer().rate(String(id), String(rating)));
 
   /** Bind (or clear, with an empty accelerator) one action. */
   ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {

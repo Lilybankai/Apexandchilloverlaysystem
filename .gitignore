@@ -66,3 +66,6 @@ electron/oauth-client.generated.json
 
 # Piper TTS engine + voice models (downloaded by scripts/setup-piper.js)
 tools/piper/
+
+# whisper.cpp STT engine + ggml models (downloaded by scripts/setup-whisper.js)
+tools/whisper/

@@ -195,3 +195,18 @@
   background: var(--cyan);
   transition: width 0.4s linear;
 }
+
+.eng-last-q, .eng-last-a {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.eng-last-q { color: var(--text-2); }
+.eng-last-a { color: var(--text); }
+.eng-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+.eng-rate-done { font-size: 12px; color: var(--ok); }

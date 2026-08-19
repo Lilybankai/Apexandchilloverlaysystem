@@ -29,6 +29,13 @@
   const pttClear = $('#eng-ptt-clear');
   const readouts = $('#eng-readouts');
   const readoutsHint = $('#eng-readouts-hint');
+  const sttStatus = $('#eng-stt-status');
+  const sttDownload = $('#eng-stt-download');
+  const lastWrap = $('#eng-last-call-wrap');
+  const lastQ = $('#eng-last-q');
+  const lastA = $('#eng-last-a');
+  const rateRow = $('#eng-rate-row');
+  const rateDone = $('#eng-rate-done');
 
   /** What each preset means, spelled out under the picker. */
   const READOUT_HINTS = {
@@ -260,7 +267,52 @@
 
     voicesEl.replaceChildren(...s.voices.map((v) => voiceRow(v, s)));
 
+    renderStt(s);
+    renderLastCall(s);
+
     if (!grammarEl.childElementCount && s.grammar) renderGrammar(s.grammar);
+  }
+
+  function renderStt(s) {
+    if (!sttStatus) return;
+    const busy = s.busy === 'download:stt';
+    if (s.progress && s.progress.voiceId === 'stt') {
+      const pct = Math.min(100, Math.round((s.progress.mb / s.progress.totalMb) * 100));
+      sttStatus.textContent = `Downloading… ${pct}%`;
+      sttStatus.className = 'eng-status';
+      sttDownload.hidden = true;
+      return;
+    }
+    if (s.sttInstalled) {
+      const left = s.budget && typeof s.budget.remaining === 'number'
+        ? ` ${s.budget.remaining} free-form questions left this month.`
+        : '';
+      sttStatus.textContent = 'Ready. Unmatched asks go to the proxy.' + left;
+      sttStatus.className = 'eng-status eng-status--live';
+      sttDownload.hidden = true;
+      return;
+    }
+    sttStatus.textContent = `Not downloaded — ${s.sttSizeMb || 148} MB, once. Phrase-list asks still work.`;
+    sttStatus.className = 'eng-status eng-status--warn';
+    sttDownload.hidden = false;
+    sttDownload.disabled = busy || !!s.busy;
+    sttDownload.textContent = busy ? 'Downloading…' : `Download · ${s.sttSizeMb || 148} MB`;
+  }
+
+  function renderLastCall(s) {
+    if (!lastWrap) return;
+    const call = s.lastCall;
+    if (!call || !call.answer) {
+      lastWrap.hidden = true;
+      return;
+    }
+    lastWrap.hidden = false;
+    lastQ.textContent = 'You: ' + (call.question || '');
+    lastA.textContent = 'Engineer: ' + call.answer;
+    const rated = call.rating === 'useful' || call.rating === 'wrong';
+    rateRow.hidden = rated;
+    rateDone.hidden = !rated;
+    if (rated) rateDone.textContent = call.rating === 'useful' ? 'Marked useful.' : 'Marked wrong.';
   }
 
   /* ---- the phrase reference ------------------------------------------------- */
@@ -370,6 +422,33 @@
       statusEl.className = 'eng-status eng-status--warn';
     }
   });
+
+  if (sttDownload) {
+    sttDownload.addEventListener('click', async () => {
+      sttDownload.disabled = true;
+      sttDownload.textContent = 'Downloading…';
+      const res = await api.engineerDownloadStt();
+      if (res && res.ok === false) {
+        sttDownload.disabled = false;
+        sttDownload.textContent = 'Retry download';
+        sttStatus.textContent = res.error || 'Download failed';
+        sttStatus.className = 'eng-status eng-status--warn';
+      }
+    });
+  }
+
+  async function rate(which) {
+    if (!last || !last.lastCall || !last.lastCall.id || !api.engineerRate) return;
+    const res = await api.engineerRate(last.lastCall.id, which);
+    if (res && res.ok === false && sttStatus) {
+      sttStatus.textContent = res.error || 'Could not save rating';
+      sttStatus.className = 'eng-status eng-status--warn';
+    }
+  }
+  const usefulBtn = $('#eng-rate-useful');
+  const wrongBtn = $('#eng-rate-wrong');
+  if (usefulBtn) usefulBtn.addEventListener('click', () => void rate('useful'));
+  if (wrongBtn) wrongBtn.addEventListener('click', () => void rate('wrong'));
 
   api.onEngineerStatus(render);
   void api.engineerStatus().then(render);
