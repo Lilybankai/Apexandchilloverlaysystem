@@ -6,24 +6,6 @@
 
 ## Unreleased
 
-### Fixed
-
-- **In-game overlays now cover the whole of every screen, whatever each one is
-  scaled to.** If your monitors were set to different scaling percentages in
-  Windows — a 4K screen at 150% next to a 1080p one at 100%, say — the overlay
-  layer only reached part way across the scaled screen, and widgets refused to
-  be dragged into the rest of it. Most obvious on stacked setups, where one
-  driver could not move anything down to the bottom of his lower screen. Rigs
-  whose screens all share a scaling percentage were never affected and are
-  untouched by this; nobody's saved layout moves.
-
-- **The editing toolbar now appears on your main screen.** It was centred on the
-  whole desktop, which put it on the wrong monitor for anyone with a screen
-  stacked above their main one — the "Editing overlays" bar and its Done button
-  sat a screen away from the widgets being moved. The interact banner and the
-  button-feedback messages move with it. Unchanged on single and triple-screen
-  rigs.
-
 ## 0.77.0-beta.2 — 2026-08-18
 
 ### Added
@@ -56,6 +38,26 @@
   an Alternative Strategies list shows what per-lap consumption you would
   have to hit to save a stop — and tells you when that target is a fantasy.
   Your last setup is remembered between sessions.
+
+## 0.76.4 — 2026-08-19
+
+### Fixed
+
+- **In-game overlays now cover the whole of every screen, whatever each one is
+  scaled to.** If your monitors are set to different scaling percentages in
+  Windows — a 4K screen at 150% next to a 1080p one at 100%, say — the overlay
+  layer only reached part of the way across the scaled screen, and widgets
+  refused to be dragged into the rest of it. Most obvious on stacked setups,
+  where one driver could not move anything down to the bottom of his lower
+  screen. Rigs whose monitors all share a scaling percentage were never
+  affected and are untouched by this, and nobody’s saved layout moves.
+
+- **The editing toolbar now appears on your main screen.** It was centred on the
+  whole desktop, which put it on the wrong monitor for anyone with a screen
+  stacked above their main one — the “Editing overlays” bar and its Done button
+  sat a screen away from the widgets being moved. The interact banner and the
+  button-feedback messages move with it. Unchanged on single and triple-screen
+  rigs.
 
 ## 0.76.3 — 2026-08-18
 
