@@ -284,15 +284,23 @@
       return;
     }
     if (s.sttInstalled) {
-      const left = s.budget && typeof s.budget.remaining === 'number'
-        ? ` ${s.budget.remaining} free-form questions left this month.`
-        : '';
-      sttStatus.textContent = 'Ready. Unmatched asks go to the proxy.' + left;
-      sttStatus.className = 'eng-status eng-status--live';
+      // The one number a driver cares about: how many advanced questions are
+      // left this month. No plumbing talk.
+      if (s.budget && typeof s.budget.remaining === 'number') {
+        sttStatus.textContent =
+          s.budget.remaining > 0
+            ? `Ready — ${s.budget.remaining} advanced questions left this month.`
+            : 'None left this month — back on the phrase list until it resets.';
+        sttStatus.className =
+          'eng-status ' + (s.budget.remaining > 0 ? 'eng-status--live' : 'eng-status--warn');
+      } else {
+        sttStatus.textContent = 'Ready.';
+        sttStatus.className = 'eng-status eng-status--live';
+      }
       sttDownload.hidden = true;
       return;
     }
-    sttStatus.textContent = `Not downloaded — ${s.sttSizeMb || 148} MB, once. Phrase-list asks still work.`;
+    sttStatus.textContent = `Needs a one-time ${s.sttSizeMb || 148} MB download. The phrase list works without it.`;
     sttStatus.className = 'eng-status eng-status--warn';
     sttDownload.hidden = false;
     sttDownload.disabled = busy || !!s.busy;

@@ -1242,9 +1242,10 @@
           <div>
             <h1 class="view__title">Engineer</h1>
             <p class="view__sub">
-              Press a wheel button and ask. Fixed phrases are answered on this PC.
-              A free-form question is transcribed here — audio never leaves the machine —
-              then the text and a bucketed race summary go to our server for one radio line back.
+              Press a wheel button and ask. Phrase-list questions are answered
+              instantly on this PC. Anything else becomes an advanced question —
+              your voice is understood on this machine and never leaves it; only
+              the written question goes out to fetch the answer.
             </p>
           </div>
           <button id="eng-radio-check" class="btn btn--ghost btn--sm" type="button"
@@ -1308,23 +1309,22 @@
 
             <section class="card">
               <div class="card__head">
-                <h2 class="card__title">Free-form questions</h2>
+                <h2 class="card__title">Advanced questions</h2>
               </div>
               <div class="settings-grid">
                 <div class="field">
-                  <span class="field__label">Local transcription</span>
+                  <span class="field__label">Status</span>
                   <p class="eng-status" id="eng-stt-status">Checking…</p>
                   <span class="field__hint">
-                    The grammar still answers first. Anything it does not match is
-                    transcribed on this PC (whisper.cpp, one-time download) and only
-                    the text plus a bucketed summary — never the microphone — go to
-                    the proxy. Cap is 300 questions a month; after that the engineer
-                    stays on the phrase list.
+                    Ask anything the phrase list can't answer — "should I pit under
+                    this safety car?" — and the engineer works it out from your live
+                    race. You get 300 advanced questions a month; the phrase list is
+                    always unlimited and always free.
                   </span>
                   <button class="btn btn--sm" id="eng-stt-download" type="button" hidden>Download</button>
                 </div>
                 <div class="field" id="eng-last-call-wrap" hidden>
-                  <span class="field__label">Last free-form reply</span>
+                  <span class="field__label">Last advanced question</span>
                   <p class="eng-last-q" id="eng-last-q"></p>
                   <p class="eng-last-a" id="eng-last-a"></p>
                   <div class="eng-rate-row" id="eng-rate-row">
@@ -1332,7 +1332,20 @@
                     <button class="btn btn--ghost btn--sm" id="eng-rate-wrong" type="button">Wrong</button>
                     <span class="eng-rate-done" id="eng-rate-done" hidden>Saved — thank you.</span>
                   </div>
-                  <span class="field__hint">Hit this in the pits, not mid-corner. It is how we tune the radio.</span>
+                  <span class="field__hint">
+                    Rate the reply when you're safely in the pits — it tells us
+                    which answers to make better.
+                  </span>
+                </div>
+                <div class="field">
+                  <span class="field__hint">
+                    <strong>Early days:</strong> advanced questions are still in
+                    development and not every question will get a good answer yet.
+                    To improve the engineer, your questions and its replies are
+                    saved to our database while we train it — and once we're happy
+                    with it, all of that saved engineer data will be deleted in its
+                    entirety.
+                  </span>
                 </div>
               </div>
             </section>
