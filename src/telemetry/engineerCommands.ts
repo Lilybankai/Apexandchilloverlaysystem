@@ -291,8 +291,8 @@ export class EngineerCommands {
         if (!me) return no('No standings yet.');
         const ahead = this.neighbour(frame, me, -1);
         if (!ahead) return no("You're leading the class — nobody ahead to compare.");
-        const mine = this.average(me.slotId);
-        const theirs = this.average(ahead.slotId);
+        const mine = this.averageOf(me.slotId);
+        const theirs = this.averageOf(ahead.slotId);
         if (!mine || !theirs) return no('Not enough laps recorded yet for an average.');
         const n = Math.min(mine.count, theirs.count);
         const diff = mine.avg - theirs.avg;
@@ -330,7 +330,7 @@ export class EngineerCommands {
         if (known(other.lastLapSec) && other.lastLapSec > 0) {
           pace.push(`Last lap ${speakableLapTime(other.lastLapSec)}`);
         }
-        const avg = this.average(other.slotId);
+        const avg = this.averageOf(other.slotId);
         if (avg && avg.count >= 2) {
           pace.push(`averaging ${speakableLapTime(avg.avg)} over ${avg.count}`);
         }
@@ -891,8 +891,14 @@ export class EngineerCommands {
     return best;
   }
 
-  /** Mean of a car's rolling lap window; null until it has at least one lap. */
-  private average(slotId: number): { avg: number; count: number } | null {
+  /**
+   * Mean of a car's rolling lap window; null until it has at least one lap.
+   * Public because the Tier-2 summary builder borrows this history: the cloud
+   * kept being asked "last five average" in wordings the closed grammar missed
+   * (2026-08-19 engineer_calls log), and it can only answer with numbers we
+   * send — so the same windows that feed `avgAhead` now feed the summary too.
+   */
+  averageOf(slotId: number): { avg: number; count: number } | null {
     const win = this.windows.get(slotId);
     if (!win || win.laps.length === 0) return null;
     const sum = win.laps.reduce((a, b) => a + b, 0);

@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+### Improved
+
+- **The engineer now answers the questions drivers actually asked on day
+  one.** From the first day's radio logs: "last 5 average", "top 5 average
+  lap" and the like now reach the built-in five-lap pace comparison instead
+  of being refused (said digits included — "5" and "five" both work), and
+  free-form questions get real data on rival pace, who's pitted and who
+  hasn't, cars ahead that must stop before you, and fuel and energy burn per
+  lap — so "how many cars are pitting before me" gets an answer now.
+
+- **The engineer asks you to repeat instead of guessing.** When the radio
+  mishears you into gibberish, it now comes back with "Say again?" rather
+  than confidently reading out something you didn't ask for.
+
 ## 0.77.2 — 2026-08-19
 
 ### Fixed

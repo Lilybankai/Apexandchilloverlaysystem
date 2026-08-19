@@ -21,7 +21,28 @@ export interface EngineerCar {
   name: string;
   gapSec: number;
   class?: string;
+  /** Their most recent completed lap, seconds. */
+  lastLapSec?: number;
+  /** Their best lap this session, seconds. */
+  bestLapSec?: number;
+  /** Their rolling average over the last few laps (see avgLaps), seconds. */
+  avgLapSec?: number;
+  /** How many laps that average covers (≤5). */
+  avgLaps?: number;
+  /** True while they are in the pit lane right now. */
+  inPit?: boolean;
+  /** Completed pit stops, when the sim tracks it. */
+  pitStops?: number;
 }
+
+/**
+ * A caller-supplied read of a car's rolling lap-time window, keyed by slot id.
+ * The summary builder is a pure function of one frame, but "last five average"
+ * needs history — the engineer service passes `EngineerCommands.averageOf`
+ * here, so the cloud speaks from the same windows Tier 1 does. The 2026-08-19
+ * engineer_calls log shows drivers asking for exactly this and being refused.
+ */
+export type LapAverageOf = (slotId: number) => { avg: number; count: number } | null;
 
 export interface EngineerSummary {
   track: string;
@@ -39,8 +60,29 @@ export interface EngineerSummary {
   bestLapSec?: number;
   ahead?: EngineerCar;
   behind?: EngineerCar;
+  /** Player's rolling average over the last few laps (see myAvgLaps), seconds. */
+  myAvgLapSec?: number;
+  /** How many laps that average covers (≤5). */
+  myAvgLaps?: number;
+  /** Player's completed pit stops, when tracked. */
+  myPitStops?: number;
+  /** Class cars ahead of the player that are in the pit lane right now. */
+  classAheadInPitNow?: number;
+  /** Class cars ahead of the player that have not made a pit stop yet. */
+  classAheadNoStopYet?: number;
+  /**
+   * Cars ahead (same class, on an energy budget) projected to be forced into
+   * the pits before the player — positions that come back on strategy alone.
+   */
+  carsAheadPittingFirst?: number;
+  /** How many cars ahead were comparable for that projection. */
+  carsAheadCompared?: number;
   fuelLaps?: number;
   energyLaps?: number;
+  /** Average fuel burn, litres per lap. */
+  fuelPerLapL?: number;
+  /** Average virtual-energy burn, percentage points per lap. */
+  energyPerLapPct?: number;
   fuelToFlag?: 'good' | 'short' | 'critical' | 'unknown';
   pitThisLap?: boolean;
   tyres?: string;
@@ -68,7 +110,25 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function classNeighbour(frame: TelemetryFrame, dir: -1 | 1): EngineerCar | undefined {
+/** Pace and pit facts for one rival, appended to their gap entry. */
+function enrichCar(car: EngineerCar, entry: StandingEntry, avgOf?: LapAverageOf): EngineerCar {
+  if (known(entry.lastLapSec) && entry.lastLapSec > 0) car.lastLapSec = round1(entry.lastLapSec);
+  if (known(entry.bestLapSec) && entry.bestLapSec > 0) car.bestLapSec = round1(entry.bestLapSec);
+  const avg = avgOf ? avgOf(entry.slotId) : null;
+  if (avg && avg.count > 0) {
+    car.avgLapSec = round1(avg.avg);
+    car.avgLaps = avg.count;
+  }
+  if (entry.inPit) car.inPit = true;
+  if (known(entry.pitStops)) car.pitStops = entry.pitStops;
+  return car;
+}
+
+function classNeighbour(
+  frame: TelemetryFrame,
+  dir: -1 | 1,
+  avgOf?: LapAverageOf,
+): EngineerCar | undefined {
   const me = frame.standings.find((e) => e.isPlayer);
   if (!me || !known(me.position)) return undefined;
   const mine = me.carClass;
@@ -95,8 +155,45 @@ function classNeighbour(frame: TelemetryFrame, dir: -1 | 1): EngineerCar | undef
     : known(gap)
       ? Math.abs(gap)
       : undefined;
-  if (gapSec === undefined) return { name: radioName(other), gapSec: 0, class: other.carClass };
-  return { name: radioName(other), gapSec: round1(gapSec), class: other.carClass };
+  const car: EngineerCar = {
+    name: radioName(other),
+    gapSec: gapSec === undefined ? 0 : round1(gapSec),
+    class: other.carClass,
+  };
+  return enrichCar(car, other, avgOf);
+}
+
+/**
+ * The pit picture of the class cars ahead: how many are in the lane right now,
+ * and how many have yet to make a stop. "How many cars are pitting before me"
+ * was asked twice on day one (2026-08-19 engineer_calls log) and the cloud had
+ * nothing — these two counts are what the scoring feed can actually prove.
+ */
+function classAheadPits(
+  frame: TelemetryFrame,
+): { inPitNow: number; noStopYet: number; anyTracked: boolean } | undefined {
+  const me = frame.standings.find((e) => e.isPlayer);
+  if (!me || !known(me.position)) return undefined;
+  const mine = me.carClass;
+  const myPos = known(me.classPosition) && mine ? me.classPosition : me.position;
+  const aheadCars = frame.standings.filter((e) => {
+    if (e.isPlayer) return false;
+    if (mine && e.carClass !== mine) return false;
+    const pos = known(e.classPosition) && mine ? e.classPosition : e.position;
+    return known(pos) && pos < myPos;
+  });
+  if (!aheadCars.length) return undefined;
+  let inPitNow = 0;
+  let noStopYet = 0;
+  let anyTracked = false;
+  for (const e of aheadCars) {
+    if (e.inPit) inPitNow++;
+    if (known(e.pitStops)) {
+      anyTracked = true;
+      if (e.pitStops === 0) noStopYet++;
+    }
+  }
+  return { inPitNow, noStopYet, anyTracked };
 }
 
 function tyreBand(frame: TelemetryFrame): string | undefined {
@@ -164,8 +261,12 @@ function rainWord(frame: TelemetryFrame): string | undefined {
 /**
  * Build the payload the proxy is allowed to see. Returns null when there is
  * no frame yet — the app should not call the cloud with an empty race.
+ * `avgOf` (optional) is the Tier-1 lap-history read — see {@link LapAverageOf}.
  */
-export function engineerSummary(frame: TelemetryFrame | null | undefined): EngineerSummary | null {
+export function engineerSummary(
+  frame: TelemetryFrame | null | undefined,
+  avgOf?: LapAverageOf,
+): EngineerSummary | null {
   if (!frame || !frame.session) return null;
   const s = frame.session;
   const me = (frame.standings || []).find((e) => e.isPlayer);
@@ -196,12 +297,33 @@ export function engineerSummary(frame: TelemetryFrame | null | undefined): Engin
   }
   if (me && known(me.lastLapSec) && me.lastLapSec > 0) out.lastLapSec = round1(me.lastLapSec);
   if (me && known(me.bestLapSec) && me.bestLapSec > 0) out.bestLapSec = round1(me.bestLapSec);
-  const ahead = classNeighbour(frame, -1);
-  const behind = classNeighbour(frame, 1);
+  const ahead = classNeighbour(frame, -1, avgOf);
+  const behind = classNeighbour(frame, 1, avgOf);
   if (ahead) out.ahead = ahead;
   if (behind) out.behind = behind;
+  const myAvg = me && avgOf ? avgOf(me.slotId) : null;
+  if (myAvg && myAvg.count > 0) {
+    out.myAvgLapSec = round1(myAvg.avg);
+    out.myAvgLaps = myAvg.count;
+  }
+  if (me && known(me.pitStops)) out.myPitStops = me.pitStops;
+  const pits = classAheadPits(frame);
+  if (pits) {
+    out.classAheadInPitNow = pits.inPitNow;
+    if (pits.anyTracked) out.classAheadNoStopYet = pits.noStopYet;
+  }
+  if (fuel && known(fuel.veCarsAheadPittingFirst)) {
+    out.carsAheadPittingFirst = fuel.veCarsAheadPittingFirst;
+    if (known(fuel.veCarsAheadCompared)) out.carsAheadCompared = fuel.veCarsAheadCompared;
+  }
   if (fuel && known(fuel.lapsRemaining)) out.fuelLaps = round1(fuel.lapsRemaining);
   if (fuel && known(fuel.virtualEnergyLapsRemaining)) out.energyLaps = round1(fuel.virtualEnergyLapsRemaining);
+  if (fuel && known(fuel.perLapAvgLiters) && fuel.perLapAvgLiters > 0) {
+    out.fuelPerLapL = round1(fuel.perLapAvgLiters);
+  }
+  if (fuel && known(fuel.virtualEnergyPerLapPct) && fuel.virtualEnergyPerLapPct > 0) {
+    out.energyPerLapPct = round1(fuel.virtualEnergyPerLapPct);
+  }
   out.fuelToFlag = fuelToFlag(frame);
   if (fuel?.pitThisLap) out.pitThisLap = true;
   const tyres = tyreBand(frame);

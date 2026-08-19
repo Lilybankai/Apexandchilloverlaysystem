@@ -66,7 +66,19 @@ const GRAMMAR = [
   {
     intent: 'avgAhead',
     group: 'Gaps & rivals',
-    phrases: ['five lap average', 'five laps average front', 'average front', 'pace ahead', 'compare pace'],
+    // "last five average" and "top five average" are day-one field wordings
+    // (2026-08-19 engineer_calls log) that fell through to the cloud and were
+    // refused — the answer was sitting here the whole time.
+    phrases: [
+      'five lap average',
+      'five laps average front',
+      'last five average',
+      'top five average',
+      'five average',
+      'average front',
+      'pace ahead',
+      'compare pace',
+    ],
   },
   { intent: 'leader', group: 'Gaps & rivals', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
   {
@@ -316,11 +328,19 @@ while ($true) {
  * ignored, so SAPI's "whos ahead" still hits "who's ahead".
  */
 function matchGrammarText(text) {
+  // Whisper writes small numbers as digits ("last 5 average") while the phrase
+  // list spells them out — normalize digits to words so the two meet. Only the
+  // words that appear in phrases need mapping.
+  const DIGIT_WORDS = {
+    0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four',
+    5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten',
+  };
   const norm = (s) =>
     ` ${String(s || '')
       .toLowerCase()
       .replace(/['’]/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(10|\d)\b/g, (d) => DIGIT_WORDS[d] || d)
       .trim()} `;
   const haystack = norm(text);
   if (haystack.trim().length === 0) return null;
@@ -1000,7 +1020,10 @@ class EngineerService {
       this.speak('No telemetry.');
       return;
     }
-    const summary = this.summaryMod.engineerSummary(this.lastFrame);
+    // Hand the summary Tier 1's lap-history read, so a pace question the
+    // grammar missed still gets real averages instead of "no read".
+    const avgOf = this.commands ? (slotId) => this.commands.averageOf(slotId) : undefined;
+    const summary = this.summaryMod.engineerSummary(this.lastFrame, avgOf);
     if (!summary || !summary.connected) {
       this.speak('No telemetry.');
       return;

@@ -189,6 +189,15 @@ console.log('\n8) The grammar still wins over dictation text');
     matchGrammarText('safety car is out and I have half a tank what do we do') === null,
     String(matchGrammarText('safety car is out and I have half a tank what do we do')));
   check('empty text does not match', matchGrammarText('') === null);
+  // Day-one field wordings (2026-08-19 engineer_calls log): whisper writes
+  // digits, drivers say "last five" — both must land on avgAhead, not the cloud.
+  check('digits normalize to words',
+    matchGrammarText('last 5 average for the cars ahead') === 'avgAhead',
+    String(matchGrammarText('last 5 average for the cars ahead')));
+  check('"top 5 average lap" reaches avgAhead',
+    matchGrammarText('Top 5 average lap') === 'avgAhead');
+  check('"last five average" reaches avgAhead',
+    matchGrammarText('last five average') === 'avgAhead');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

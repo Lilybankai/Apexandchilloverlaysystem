@@ -141,7 +141,65 @@ console.log('\n4) A missing frame is not a fake race');
   check('empty in', engineerSummary(undefined) === null);
 }
 
-console.log('\n5) pit-this-lap is critical, yellows name the sector');
+console.log('\n5) rival pace, the pit picture, and burn rates ride the summary');
+{
+  // The lap-history read Tier 1 owns, stubbed: slot 2 (ahead) has a 5-lap
+  // window, the player 3 laps, slot 4 (behind) none yet.
+  const windows = { 1: { avg: 140.84, count: 3 }, 2: { avg: 140.12, count: 5 } };
+  const avgOf = (slotId) => windows[slotId] || null;
+  const s = engineerSummary(frame({
+    standings: [
+      {
+        slotId: 2, position: 2, driverName: 'John Smith', carClass: 'GT3',
+        classPosition: 2, gapToAheadSec: 1.2, gapToLeaderSec: 4, lapsBehind: 0,
+        bestLapSec: 140, lastLapSec: 141, lapsCompleted: 7, inPit: false, pitStops: 0, isPlayer: false,
+      },
+      {
+        slotId: 5, position: 1, driverName: 'Ada Front', carClass: 'GT3',
+        classPosition: 1, gapToAheadSec: 0, gapToLeaderSec: 0, lapsBehind: 0,
+        bestLapSec: 139, lastLapSec: 140, lapsCompleted: 7, inPit: true, pitStops: 1, isPlayer: false,
+      },
+      {
+        slotId: 1, position: 3, driverName: 'Carla Driver', carClass: 'GT3',
+        classPosition: 3, gapToAheadSec: 2.41, gapToLeaderSec: 6.4, lapsBehind: 0,
+        bestLapSec: 139.2, lastLapSec: 140.5, lapsCompleted: 7, inPit: false, pitStops: 1, isPlayer: true,
+      },
+      {
+        slotId: 4, position: 4, driverName: 'Alex Jones', carClass: 'GT3',
+        classPosition: 4, gapToAheadSec: 3.1, gapToLeaderSec: 9.5, lapsBehind: 0,
+        bestLapSec: 141, lastLapSec: 142, lapsCompleted: 7, inPit: false, pitStops: 0, isPlayer: false,
+      },
+    ],
+    fuel: {
+      levelLiters: 40, capacityLiters: 80, perLapAvgLiters: 2.83,
+      lapsRemaining: 12.4, lapsToFinish: 12, fuelToFinishLiters: 36,
+      fuelDeltaLiters: 2, refuelToFinishLiters: 0,
+      virtualEnergyPct: 60, virtualEnergyPerLapPct: 4.62,
+      veCarsAheadPittingFirst: 1, veCarsAheadCompared: 2,
+    },
+  }), avgOf);
+  check('ahead carries last lap', s.ahead && s.ahead.lastLapSec === 141);
+  check('ahead carries the rolling average', s.ahead && s.ahead.avgLapSec === 140.1 && s.ahead.avgLaps === 5);
+  check('ahead pit stops carried', s.ahead && s.ahead.pitStops === 0);
+  check('behind has no average yet', s.behind && s.behind.avgLapSec === undefined);
+  check('my average', s.myAvgLapSec === 140.8 && s.myAvgLaps === 3);
+  check('my stops', s.myPitStops === 1);
+  check('one class car ahead in the pits now', s.classAheadInPitNow === 1);
+  check('one class car ahead yet to stop', s.classAheadNoStopYet === 1);
+  check('energy projection carried', s.carsAheadPittingFirst === 1 && s.carsAheadCompared === 2);
+  check('fuel burn per lap', s.fuelPerLapL === 2.8);
+  check('energy burn per lap', s.energyPerLapPct === 4.6);
+}
+
+console.log('\n6) no history callback means no average fields, not zeros');
+{
+  const s = engineerSummary(frame({}));
+  check('no myAvgLapSec', s.myAvgLapSec === undefined);
+  check('ahead still present without averages', s.ahead && s.ahead.avgLapSec === undefined);
+  check('no pit-projection fields without fuel data', s.carsAheadPittingFirst === undefined);
+}
+
+console.log('\n7) pit-this-lap is critical, yellows name the sector');
 {
   const s = engineerSummary(frame({
     fuel: {
