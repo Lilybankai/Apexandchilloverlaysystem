@@ -192,8 +192,11 @@ console.log('\n6) The shipped bundle really carries the plugin');
     fs.existsSync(path.join(__dirname, '..', 'build', 'plugin', 'LICENSE.gpl-3.0.txt')));
   check('…and the attribution README',
     fs.existsSync(path.join(__dirname, '..', 'build', 'plugin', 'README.txt')));
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-  const extra = (pkg.build && pkg.build.extraResources) || [];
+  // The packaging config moved from package.json's "build" block into
+  // electron-builder.js when the Trusted Signing pipeline landed (v0.77.0-beta.3)
+  // — read it from where electron-builder actually reads it.
+  const builderConfig = require(path.join(__dirname, '..', 'electron-builder.js'));
+  const extra = builderConfig.extraResources || [];
   check('electron-builder ships build/plugin as resources/plugin',
     extra.some((e) => e && e.from === 'build/plugin' && e.to === 'plugin'),
     JSON.stringify(extra));

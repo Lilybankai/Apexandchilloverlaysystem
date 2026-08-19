@@ -51,35 +51,12 @@ const WebSocket = require('ws');
 
 const { EngineerCommands } = require('../dist/telemetry/engineerCommands');
 
-/* ---- the grammar: one table, shared with the recognizer ------------------- */
+/* ---- the grammar: one table, shared with the app service ------------------ */
 
-/**
- * Phrase → intent. Colon-separated alternates in the CrewChief mould; short,
- * distinct phrases recognize far better than sentences. This table is the
- * single source: the PowerShell sidecar loads it as JSON, and the keyboard
- * fallback matches against it, so the two paths can never drift.
- */
-const GRAMMAR = [
-  { intent: 'gapAhead', phrases: ['gap ahead', 'gap in front', 'gap front'] },
-  { intent: 'gapBehind', phrases: ['gap behind', 'gap to the car behind'] },
-  {
-    intent: 'avgAhead',
-    phrases: ['five lap average', 'five laps average front', 'average front', 'pace ahead', 'compare pace'],
-  },
-  {
-    intent: 'carAhead',
-    phrases: ["who's ahead", "who's in front", 'car ahead', 'car in front', "who am i chasing"],
-  },
-  { intent: 'carBehind', phrases: ["who's behind", 'car behind', "who's chasing me"] },
-  {
-    intent: 'traffic',
-    phrases: ['backmarker', 'backmarkers', 'any traffic', 'traffic ahead', 'any backmarkers'],
-  },
-  { intent: 'lapsLeft', phrases: ['laps left', 'laps remaining', 'how many laps', 'how long left'] },
-  { intent: 'fuel', phrases: ['fuel', 'fuel state', 'fuel level'] },
-  { intent: 'lastLap', phrases: ['last lap', 'last lap time', 'lap time'] },
-  { intent: 'position', phrases: ['position', 'what position am i in', 'where am i'] },
-];
+// The phrase table lives in electron/engineer.js — the app service is the
+// single source, and the spike (this dev harness) borrows it, so the harness
+// can never test a grammar the shipped recognizer does not load.
+const { GRAMMAR } = require("../electron/engineer");
 
 /* ---- arguments ------------------------------------------------------------ */
 

@@ -425,6 +425,197 @@ function unit() {
   a = eng6.answer('position');
   check('position: class and overall', a.ok && /P2 in class, P4 overall/.test(a.text), a.text);
 
+  // -- Track A: the wider ask-set (v3, 2026-08-19) ----------------------------
+
+  const engA = new EngineerCommands();
+  const tyreSet = {
+    frontLeft: { tempC: 91, coreC: 91, optimalTempC: 90, wear: 0.9, pressureKpa: 158 },
+    frontRight: { tempC: 92, coreC: 92, optimalTempC: 90, wear: 0.88, pressureKpa: 159 },
+    rearLeft: { tempC: 88, coreC: 88, optimalTempC: 90, wear: 0.91, pressureKpa: 151 },
+    rearRight: { tempC: 89, coreC: 89, optimalTempC: 90, wear: 0.92, pressureKpa: 152 },
+  };
+  engA.update(frame({ player: { tyres: tyreSet } }));
+  a = engA.answer('tyres');
+  check('tyres: in the window', a.ok && /in the window/.test(a.text) && /Tread's good/.test(a.text), a.text);
+  a = engA.answer('pressures');
+  check('pressures: axle averages', a.ok && /fronts 159, rears 152 kPa/.test(a.text), a.text);
+
+  const hotFronts = JSON.parse(JSON.stringify(tyreSet));
+  hotFronts.frontLeft.coreC = 102;
+  hotFronts.frontRight.coreC = 102;
+  engA.update(frame({ player: { tyres: hotFronts } }));
+  a = engA.answer('tyres');
+  check('tyres: hot fronts lead the sentence', a.ok && /Fronts about 12 over/.test(a.text), a.text);
+
+  const wornCorner = JSON.parse(JSON.stringify(tyreSet));
+  wornCorner.frontLeft.wear = 0.1;
+  engA.update(frame({ player: { tyres: wornCorner } }));
+  a = engA.answer('tyres');
+  check('tyres: dying corner named', a.ok && /front left is nearly done — 10 percent left/.test(a.text), a.text);
+
+  // damage / brakes / pit stop
+  const dmgBase = {
+    aero: 0, suspension: [0, 0, 0, 0], brakeThicknessMm: [24.2, 25, 26, 27],
+    partsDetached: 0, worst: 0, hasDamage: false, repairSeconds: 0, repairBodySeconds: 0,
+    repairSelection: 'none', repairOptions: [], tyreChangeSeconds: 28,
+    tyreCornersSelected: 4, stopLengthSeconds: 34, randomDelayMaxSeconds: 0,
+  };
+  engA.update(frame({ player: { damage: dmgBase } }));
+  a = engA.answer('damage');
+  check('damage: clean car', a.ok && /clean/.test(a.text), a.text);
+  a = engA.answer('brakes');
+  check('brakes: thinnest corner named', a.ok && /front left, 24\.2 millimetres/.test(a.text), a.text);
+  a = engA.answer('pitStop');
+  check('pitStop: length + tyres', a.ok && /about 34 seconds/.test(a.text) && /Four tyres/.test(a.text), a.text);
+
+  engA.update(frame({
+    player: { damage: { ...dmgBase, hasDamage: true, worst: 0.3, aero: 0.3, repairSeconds: 12 } },
+  }));
+  a = engA.answer('damage');
+  check('damage: moderate aero + repair time',
+    a.ok && /Moderate damage — aero/.test(a.text) && /12 seconds to fix/.test(a.text), a.text);
+
+  // pit window
+  const engW = new EngineerCommands();
+  engW.update(frame({ session: { currentLap: 5 }, fuel: { pitWindowOpenLap: 12 } }));
+  a = engW.answer('pitWindow');
+  check('pitWindow: opens later', a.ok && /opens lap 12 — 7 laps away/.test(a.text), a.text);
+  engW.update(frame({ session: { currentLap: 13 }, fuel: { pitWindowOpenLap: 12, lapsRemaining: 4.2 } }));
+  a = engW.answer('pitWindow');
+  check('pitWindow: open now', a.ok && /window is open/i.test(a.text) && /4\.2 more laps/.test(a.text), a.text);
+
+  // energy & hybrid
+  engW.update(frame({
+    player: { hybrid: { chargeFraction: 0.84, motorTorqueNm: 0 } },
+    fuel: {
+      virtualEnergyPct: 62.4, virtualEnergyLapsRemaining: 11.3,
+      veCarsAheadPittingFirst: 2, veLapsInHandVsNext: 0.8,
+    },
+  }));
+  a = engW.answer('energy');
+  check('energy: percent, laps, strategy read',
+    a.ok && /62 percent, 11\.3 laps/.test(a.text) && /2 of the cars ahead have to stop before you/.test(a.text),
+    a.text);
+  a = engW.answer('hybrid');
+  check('hybrid: battery percent', a.ok && /Battery at 84 percent/.test(a.text), a.text);
+
+  // pace — score path, then predicted-lap fallback
+  const engP = new EngineerCommands();
+  engP.update(frame({ player: { paceScore: { ok: true, percent: 94.2, bandLabel: 'Silver', deltaSec: 0.4, lapSec: 0 } } }));
+  a = engP.answer('pace');
+  check('pace: score + band + delta', a.ok && /94 percent — Silver/.test(a.text) && /0\.4 off the reference/.test(a.text), a.text);
+  engP.update(frame({ player: { paceDeltas: { predictedLapSec: 103.8 } } }));
+  a = engP.answer('pace');
+  check('pace: predicted-lap fallback', a.ok && /On for 1 43\.8 this lap/.test(a.text), a.text);
+
+  // the field: best lap, fastest lap, leader, grid
+  const engF = new EngineerCommands();
+  engF.update(frame({
+    standings: gt3Field([
+      { bestLapSec: 101.5, lastLapSec: 103.0 },
+      { bestLapSec: 102.0, gridPosition: 12 },
+      { bestLapSec: 101.2 },
+    ]),
+  }));
+  a = engF.answer('bestLap');
+  check('bestLap: spoken, no false flattery', a.ok && /Your best, 1 42\.0/.test(a.text) && !/Fastest in class/.test(a.text), a.text);
+  a = engF.answer('fieldFastest');
+  check('fieldFastest: holder + time', a.ok && /Fastest lap, Brown, 1 41\.2/.test(a.text), a.text);
+  a = engF.answer('leader');
+  check('leader: name, pace, my gap',
+    a.ok && /Smith leads/.test(a.text) && /Last lap 1 43\.0/.test(a.text) && /2\.4 seconds back/.test(a.text), a.text);
+  a = engF.answer('gridStart');
+  check('gridStart: places made up', a.ok && /Started P12, running P4 — up 8/.test(a.text), a.text);
+
+  engF.update(frame({
+    standings: gt3Field([{ bestLapSec: 101.5 }, { bestLapSec: 101.0 }, {}]),
+  }));
+  a = engF.answer('bestLap');
+  check('bestLap: fastest in class tagged', a.ok && /Fastest in class/.test(a.text), a.text);
+  a = engF.answer('fieldFastest');
+  check('fieldFastest: when it is yours', a.ok && /Fastest lap is yours/.test(a.text), a.text);
+
+  // race control: limits, flags
+  const engR = new EngineerCommands();
+  engR.update(frame({ player: { trackLimits: { points: 2, pointsLimit: 4, penalties: 0 } } }));
+  a = engR.answer('trackLimits');
+  check('trackLimits: points + clean', a.ok && /2 of 4 points/.test(a.text) && /clean/.test(a.text), a.text);
+  engR.update(frame({ player: { trackLimits: { points: 3, pointsLimit: 4, penalties: 1, penaltyType: 'STOP/GO', lapValid: false } } }));
+  a = engR.answer('trackLimits');
+  check('trackLimits: invalid lap leads, penalty named',
+    a.ok && /^This lap's been invalidated/.test(a.text) && /STOP\/GO/.test(a.text), a.text);
+  engR.update(frame({ session: { sectorFlags: ['none', 'yellow', 'none'] } }));
+  a = engR.answer('flags');
+  check('flags: sector yellow', a.ok && /Yellow in sector 2/.test(a.text), a.text);
+  engR.update(frame({ session: { sectorFlags: ['none', 'none', 'none'] } }));
+  a = engR.answer('flags');
+  check('flags: all clear', a.ok && /green all round/.test(a.text), a.text);
+  engR.update(frame({ session: { phase: 'fullCourseYellow' } }));
+  a = engR.answer('flags');
+  check('flags: FCY overrides sectors', a.ok && /Full course yellow/.test(a.text), a.text);
+
+  // weather
+  const engWx = new EngineerCommands();
+  engWx.update(frame({
+    weather: { trackTempC: 31, ambientTempC: 24, rainIntensity: 0, trackWetness: 0,
+      forecast: [{ minutesAhead: 20, rainChance: 0.6, rainIntensity: 0, trackTempC: 29, sky: 'overcast' }] },
+  }));
+  a = engWx.answer('weather');
+  check('weather: rain risk called', a.ok && /Rain risk 60 percent in about 20 minutes/.test(a.text) && /Track 31 degrees/.test(a.text), a.text);
+  engWx.update(frame({
+    weather: { trackTempC: 31, ambientTempC: 24, rainIntensity: 0, trackWetness: 0, trackTrend: 'drying', forecast: [] },
+  }));
+  a = engWx.answer('weather');
+  check('weather: dry + trend', a.ok && /No rain coming/.test(a.text) && /drying/.test(a.text), a.text);
+
+  // live car settings off the MFD
+  const engM = new EngineerCommands();
+  engM.update(frame({
+    mfd: { pit: [], aids: [
+      { key: 'BRAKE_BIAS', label: 'Brake Bias', value: 44, minValue: 0, maxValue: 100, text: '56.0:44.0' },
+      { key: 'VM_TRACTION_CONTROL', label: 'TC', value: 5, minValue: 0, maxValue: 11, text: '5' },
+    ] },
+  }));
+  a = engM.answer('brakeBias');
+  check('brakeBias: front share spoken', a.ok && /Brake bias 56\.0 front/.test(a.text), a.text);
+  a = engM.answer('tractionControl');
+  check('tractionControl: label + setting', a.ok && /TC 5/.test(a.text), a.text);
+  engM.update(frame({
+    mfd: { pit: [], aids: [{ key: 'VM_ABS', label: 'ABS', value: 3, minValue: 0, maxValue: 11, text: '3' }] },
+  }));
+  a = engM.answer('tractionControl');
+  check('tractionControl: car without TC refuses', a.ok === false && /No traction control/.test(a.text), a.text);
+
+  // every new intent refuses honestly on an empty frame
+  const engEmpty = new EngineerCommands();
+  engEmpty.update(frame({}));
+  for (const intent of [
+    'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'hybrid',
+    'pace', 'bestLap', 'fieldFastest', 'leader', 'gridStart', 'trackLimits', 'flags',
+    'weather', 'brakeBias', 'tractionControl',
+  ]) {
+    a = engEmpty.answer(intent);
+    check(intent + ': empty frame refuses honestly', a.ok === false, a.text);
+  }
+
+  // -- the grammar and the answers can never drift ----------------------------
+  // The recognizer's phrase table lives in electron/engineer.js; if an intent
+  // exists on one side only, the button either can't reach an answer or hears
+  // a phrase nothing will answer. Checked here so it fails in `npm test`, not
+  // in a race.
+  const { GRAMMAR } = require('../electron/engineer');
+  const gIntents = new Set(GRAMMAR.map((g) => g.intent));
+  check(
+    'grammar covers every intent',
+    COMMAND_INTENTS.every((i) => gIntents.has(i)),
+    COMMAND_INTENTS.filter((i) => !gIntents.has(i)).join(',') || 'all covered',
+  );
+  check(
+    'grammar has no orphan intents',
+    [...gIntents].every((i) => COMMAND_INTENTS.includes(i)),
+    [...gIntents].filter((i) => !COMMAND_INTENTS.includes(i)).join(',') || 'none',
+  );
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }

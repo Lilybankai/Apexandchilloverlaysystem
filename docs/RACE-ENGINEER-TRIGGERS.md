@@ -44,6 +44,22 @@ means asserting a strategy we cannot verify.
 | `finalLap` | → white | `session.flag` |
 | `checkered` | → chequered | `session.flag`, `session.phase` |
 
+The Standard-preset kinds (v3, 2026-08-19) — the race-story layer, same law, race-only
+except `yieldTo`:
+
+| Kind | Edge | Read from |
+| --- | --- | --- |
+| `fastestLapSelf` | the player's best lap **improves** (never the first best) | `standings[player].bestLapSec` |
+| `fastestLapField` | the class fastest changes **owner** — not merely improves, and a vanishing holder is not a purple | `standings[].bestLapSec` |
+| `positionChange` | `position` steps, outside lap 1 and own pit cycles | `standings[player].position`, `pit.phase` |
+| `rivalPitted` | the class neighbour ahead/behind: `inPit` false → true | `standings[].inPit`, `classPosition` |
+| `pitWindowOpen` | current lap reaches `fuel.pitWindowOpenLap` (self-re-arming) | `fuel.pitWindowOpenLap`, `session.currentLap` |
+| `yieldTo` | any relative row's `yieldTo` false → true — `yieldAlert.ts` owns the rule | `relative[].yieldTo` |
+
+These baselines are **seeded on the priming frame** like everything else: attach
+mid-race and the current fastest-lap holder, the neighbours' pit state and an
+already-open window are all levels, not edges.
+
 Notes on the ones that are not simply "read the field":
 
 - **The plan named `damage.anyDamage`.** The field is `damage.hasDamage`; the block is
@@ -138,22 +154,30 @@ over demo data is talking about a car nobody is driving.
 `/recordings/` is gitignored. The detector is what ships, not the evidence it was tuned
 on.
 
-## What P0 deliberately does not do
+## Where the boundary sits now (v3, 2026-08-19)
 
-- **It is not wired into the server loop.** Nothing calls `EngineerTriggers` in
-  production yet. That is P1's job, along with the Supabase Edge Function that holds the
-  model key; until then the recorder gives real-race tuning at zero risk to the loop.
-- **It writes no words.** `EngineerTrigger.detail` and `EngineerCue.line` are the tuning
-  log's rendering of *what was detected* — deliberately not the engineer's phrasing, so
-  this layer can be judged on whether it fired at the right moment separately from
-  whether the words were good. The summary builder and the system prompt are P2.
-- **It holds no opinions about strategy.** The facts on a cue are bucketed where a raw
-  number would be noise (damage severity is `light`/`moderate`/`heavy`, not `0.37`),
-  which is both what keeps a prompt stable and what keeps the remit honest: the engineer
-  comments on what it can see.
+The layer IS wired in as of Track B: `electron/engineer.js` feeds it the frames it
+already receives over the app's own WebSocket (a client, like a widget — the 30 Hz loop
+is untouched), and speaks a cue through the same Piper + radio pipeline as the voice
+answers. The division of labour is deliberate and unchanged:
+
+- **This module decides *when*.** Detection always runs, whatever the dial says, so its
+  stats keep feeding tuning.
+- **`engineerPhrases.ts` decides *the words*.** `EngineerTrigger.detail` and
+  `EngineerCue.line` are still the tuning log's rendering, not speech — the phrasebook
+  can be rewritten without touching a detector, and vice versa.
+- **`electron/engineer.js` decides *whether now*.** The preset dial (off / essential /
+  standard), the busy-driver hold (a car alongside, deep braking) and the
+  answers-pre-empt-readouts queue all live in the service, tested headless in
+  `scripts/test-engineer-queue.js`.
+- **It still holds no opinions about strategy.** The facts on a cue are bucketed where a
+  raw number would be noise (damage severity is `light`/`moderate`/`heavy`, not `0.37`);
+  the engineer comments on what it can see.
 
 ## Next
 
-P1 stands up the cloud proxy and calls it from the Electron main process; P2 puts the
-line on the HUD. Both consume `EngineerCue` and neither should need to change this file
-— if either does, the boundary is in the wrong place.
+Tier 2 (the cloud proxy for free-form questions) consumes `EngineerCue` and the same
+bucketed facts, and should need to change nothing in this file — if it does, the
+boundary is in the wrong place. The Talkative-preset kinds (`paceTrend`, `tyreNote`,
+`weatherChange`) are the first ones that would *infer* rather than report; they get
+built only after replaying recorded races proves their thresholds, per the v3 plan.

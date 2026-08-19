@@ -27,6 +27,25 @@
   const pttChip = $('#eng-ptt-chip');
   const pttBind = $('#eng-ptt-bind');
   const pttClear = $('#eng-ptt-clear');
+  const readouts = $('#eng-readouts');
+  const readoutsHint = $('#eng-readouts-hint');
+
+  /** What each preset means, spelled out under the picker. */
+  const READOUT_HINTS = {
+    off: 'Nothing unprompted — the engineer only speaks when you press the button.',
+    essential:
+      'Calls the things that change the rules or end races: flags, fuel, ' +
+      'penalties, damage. Never reads out what your screen already shows, and ' +
+      'stays quiet while you are side by side or deep in the brakes.',
+    standard:
+      'Essential plus the race story: your fastest laps, the field’s, places ' +
+      'gained and lost, the rivals’ stops, blue flags. Your question always ' +
+      'cuts in front of a call.',
+  };
+
+  function renderReadoutsHint() {
+    readoutsHint.textContent = READOUT_HINTS[readouts.value] || READOUT_HINTS.essential;
+  }
 
   /** What a driver would call each intent — keys mirror engineerCommands.ts. */
   const INTENT_LABELS = {
@@ -40,6 +59,24 @@
     fuel: 'Fuel state',
     lastLap: 'Last lap time',
     position: 'Position',
+    tyres: 'Tyre temps & wear',
+    pressures: 'Tyre pressures',
+    damage: 'Damage report',
+    brakes: 'Brake wear',
+    pitStop: 'Planned pit stop',
+    pitWindow: 'Pit window',
+    energy: 'Virtual energy & who stops first',
+    hybrid: 'Hybrid battery',
+    pace: 'Pace score / predicted lap',
+    bestLap: 'Your best lap',
+    fieldFastest: "The field's fastest lap",
+    leader: 'The leader, and your gap',
+    gridStart: 'Places gained since the start',
+    trackLimits: 'Track-limit points & penalties',
+    flags: 'Yellow flags right now',
+    weather: 'Weather & rain risk',
+    brakeBias: 'Brake bias',
+    tractionControl: 'Traction control setting',
   };
 
   let last = null; // latest status payload
@@ -215,6 +252,8 @@
   function render(s) {
     last = s;
     toggle.checked = !!s.enabled;
+    if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
+    renderReadoutsHint();
     const [text, tone] = statusText(s);
     statusEl.textContent = text;
     statusEl.className = 'eng-status' + (tone ? ` eng-status--${tone}` : '');
@@ -243,6 +282,10 @@
 
   toggle.addEventListener('change', () => {
     void api.updateSettings({ engineerEnabled: toggle.checked });
+  });
+  readouts.addEventListener('change', () => {
+    renderReadoutsHint();
+    void api.updateSettings({ engineer: { readouts: readouts.value } });
   });
   $('#eng-radio-check').addEventListener('click', async () => {
     const res = await api.engineerTest();

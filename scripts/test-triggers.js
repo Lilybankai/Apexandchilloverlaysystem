@@ -560,6 +560,225 @@ console.log('\n9) The layer has to be free at 30 Hz');
 }
 
 /* -------------------------------------------------------------------------- */
+/*  10) The race-story kinds (Standard preset, v3)                             */
+/* -------------------------------------------------------------------------- */
+
+console.log('\n10) The race-story kinds fire on edges the standings can prove');
+
+/** A rival row in the player's class, for the story detectors. */
+function rival(slotId, over) {
+  return {
+    slotId, position: slotId, driverName: `Rival ${slotId}`, carClass: 'GT3',
+    classPosition: slotId, gapToLeaderSec: 5, gapToAheadSec: 1, lapsBehind: 0,
+    bestLapSec: UNKNOWN, lastLapSec: UNKNOWN, lapsCompleted: 3, inPit: false,
+    isPlayer: false, ...over,
+  };
+}
+/** The base player row (classPosition 3) with overrides. */
+function playerRowOver(over) {
+  return {
+    slotId: 1, position: 7, driverName: 'Player', carClass: 'GT3', classPosition: 3,
+    gapToLeaderSec: 21, gapToAheadSec: 1.4, lapsBehind: 0, bestLapSec: 99,
+    lastLapSec: 100, lapsCompleted: 3, inPit: false, isPlayer: true, ...over,
+  };
+}
+
+{
+  // A personal best is an IMPROVEMENT — the first recorded best stays silent.
+  const r = rig({}, { standings: [playerRowOver({ bestLapSec: UNKNOWN })] });
+  r.fire({ standings: [playerRowOver({ bestLapSec: 99 })] });
+  check('the first best lap of the session is not news', r.cues.length === 0, r.kinds().join());
+  const cue = r.fire({ standings: [playerRowOver({ bestLapSec: 98.4 })] });
+  check('improving on it is', cue && cue.kind === 'fastestLapSelf', cue && cue.line);
+  check('…and the time rides in the facts', cue && cue.triggers[0].facts.lapSec === 98.4,
+    cue && JSON.stringify(cue.triggers[0].facts));
+}
+
+{
+  // Field fastest: fires when it changes OWNER, not when the holder improves.
+  const field = (aBest, bBest) => ({
+    standings: [playerRowOver({}), rival(2, { bestLapSec: aBest }), rival(4, { bestLapSec: bBest })],
+  });
+  const r = rig({}, field(97, 98));
+  r.fire(field(96.5, 98)); // the holder goes quicker — same owner, no call
+  check('the holder improving is not a change of hands', !r.kinds().includes('fastestLapField'), r.kinds().join());
+  const cue = r.fire(field(96.5, 96.2));
+  check('a rival taking it is', cue && cue.kind === 'fastestLapField', cue && cue.line);
+  check('…named, with the time', cue && cue.triggers[0].facts.name === 'Rival 4', cue && JSON.stringify(cue.triggers[0].facts));
+}
+
+{
+  // The holder vanishing (disconnect) recomputes the minimum to a SLOWER lap —
+  // which must not read as a purple.
+  const r = rig({}, {
+    standings: [playerRowOver({}), rival(2, { bestLapSec: 97 }), rival(4, { bestLapSec: 98 })],
+  });
+  r.fire({ standings: [playerRowOver({}), rival(4, { bestLapSec: 98 })] });
+  check('a disconnecting holder is not a fastest lap', !r.kinds().includes('fastestLapField'), r.kinds().join());
+}
+
+{
+  // The player taking the overall fastest is fastestLapSelf's story, not field's.
+  const r = rig({}, { standings: [playerRowOver({ bestLapSec: 99 }), rival(2, { bestLapSec: 97 })] });
+  const cue = r.fire({ standings: [playerRowOver({ bestLapSec: 96.5 }), rival(2, { bestLapSec: 97 })] });
+  check('your own purple speaks as your lap', cue && cue.kind === 'fastestLapSelf', cue && cue.line);
+  check('…never as the field call', !r.kinds().includes('fastestLapField'), r.kinds().join());
+}
+
+{
+  // Position changes: real ones speak; lap 1 and the pit lane stay quiet.
+  const r = rig({}, {});
+  const cue = r.fire({ standings: [playerRowOver({ position: 6 })] });
+  check('a place gained on track speaks', cue && cue.kind === 'positionChange', cue && cue.line);
+  check('…with direction in the facts', cue && cue.triggers[0].facts.gained === true,
+    cue && JSON.stringify(cue.triggers[0].facts));
+
+  const r2 = rig({}, { session: { currentLap: 1 } });
+  r2.fire({ standings: [playerRowOver({ position: 3 })] });
+  check('lap-1 shuffles are the start, not news', !r2.kinds().includes('positionChange'), r2.kinds().join());
+
+  const r3 = rig({}, { player: { pit: { phase: 'stopped', working: true, elapsedSec: 4, plannedSec: 30, slackSec: 0 } } });
+  r3.fire({ standings: [playerRowOver({ position: 9 })] });
+  check('places lost while stationary in the box are not', !r3.kinds().includes('positionChange'), r3.kinds().join());
+}
+
+{
+  // The class neighbour boxing.
+  const grid = (aheadInPit) => ({
+    standings: [playerRowOver({}), rival(2, { classPosition: 2, inPit: aheadInPit }), rival(4, { classPosition: 4 })],
+  });
+  const r = rig({}, grid(false));
+  const cue = r.fire(grid(true));
+  check('the car ahead pitting speaks', cue && cue.kind === 'rivalPitted', cue && cue.line);
+  check('…and says which side', cue && cue.triggers[0].facts.where === 'ahead',
+    cue && JSON.stringify(cue.triggers[0].facts));
+}
+
+{
+  // The strategy window opening, off the fuel calculator's own lap.
+  const r = rig({}, { fuel: { pitWindowOpenLap: 6 } });
+  r.fire({ session: { currentLap: 5 } });
+  check('one lap short of the window stays quiet', !r.kinds().includes('pitWindowOpen'), r.kinds().join());
+  const cue = r.fire({ session: { currentLap: 6 } });
+  check('reaching it speaks', cue && cue.kind === 'pitWindowOpen', cue && cue.line);
+}
+
+{
+  // Blue flags ride the relative feed's own yieldTo — and work in ANY session.
+  const r = rig({}, { session: { type: 'practice' } });
+  const cue = r.fire({
+    relative: [{ slotId: 9, position: 2, driverName: 'Hyper Car', relativeGapSec: -2.1,
+      lapsDifference: 0, inPit: false, isPlayer: false, yieldTo: true }],
+  });
+  check('a faster class closing speaks even in practice', cue && cue.kind === 'yieldTo', cue && cue.line);
+  check('…with the name and gap', cue && cue.triggers[0].facts.name === 'Hyper Car' && cue.triggers[0].facts.gapSec === 2.1,
+    cue && JSON.stringify(cue.triggers[0].facts));
+}
+
+{
+  // …but the race-story kinds are race-only: qualifying purples are chatter.
+  const r = rig({}, { session: { type: 'qualifying' }, standings: [playerRowOver({ bestLapSec: 99 })] });
+  r.fire({ standings: [playerRowOver({ bestLapSec: 95 })] });
+  check('a qualifying personal best stays off the radio', r.cues.length === 0, r.kinds().join());
+  check('…counted as a session-type suppression', r.stats.suppressed.sessionType > 0, r.stats.suppressed.sessionType);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  11) The phrasebook — every cue has words, and the words carry the facts    */
+/* -------------------------------------------------------------------------- */
+
+console.log('\n11) The phrasebook turns cues into radio lines');
+
+{
+  const { phraseForCue } = require('../dist/telemetry/engineerPhrases');
+
+  // Collect one real cue per kind by driving the detector, then insist every
+  // one of them speaks. A kind with no words is a silent trigger — legal for
+  // future kinds, but every kind that EXISTS today must have a line.
+  const collected = new Map();
+  const collect = (r) => { for (const c of r.cues) collected.set(c.kind, c); };
+
+  const r1 = rig({}, { session: { phase: 'formation', flag: 'none', notStarted: true }, standings: [playerRowOver({})] });
+  r1.fire({ session: { phase: 'green', flag: 'green', notStarted: false } });
+  r1.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r1.fire({ session: { phase: 'fullCourseYellow', flag: 'doubleYellow' } });
+  r1.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r1.fire({ session: { phase: 'green', flag: 'green' } });
+  r1.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r1.fire({ session: { flag: 'white' } });
+  r1.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r1.fire({ session: { flag: 'checkered', phase: 'checkered' } });
+  collect(r1);
+
+  const r2 = rig({}, {});
+  r2.fire({ player: { damage: { hasDamage: true, worst: 0.3, repairSeconds: 14 } } });
+  r2.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r2.fire({ player: { trackLimits: { penalties: 1, penaltyType: 'STOP/GO' } } });
+  r2.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r2.fire({ player: { trackLimits: { penalties: 0 } } });
+  r2.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r2.fire({ fuel: { lapsRemaining: 2.5 } });
+  r2.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r2.fire({ fuel: { pitThisLap: true, pitThisLapReason: 'fuel' } });
+  collect(r2);
+
+  const r3 = rig({}, { standings: [playerRowOver({})] });
+  r3.fire({ session: { phase: 'redFlag', flag: 'red' } });
+  collect(r3);
+
+  // One rolling race for the story kinds. The standings array is replaced
+  // wholesale by the rig's merge, so each step re-states the whole grid.
+  const grid = (s) => ({
+    standings: [
+      playerRowOver({ bestLapSec: s.pBest, position: s.pPos ?? 7 }),
+      rival(2, { classPosition: 2, bestLapSec: s.r2Best, inPit: s.r2Pit === true }),
+      rival(5, { classPosition: 5, bestLapSec: s.r5Best }),
+    ],
+  });
+  const r4 = rig({}, grid({ pBest: 99, r2Best: 97, r5Best: 98 }));
+  r4.fire(grid({ pBest: 98.2, r2Best: 97, r5Best: 98 })); // personal best
+  r4.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r4.fire(grid({ pBest: 98.2, r2Best: 97, r5Best: 96.1 })); // purple changes hands
+  r4.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r4.fire(grid({ pBest: 98.2, r2Best: 97, r5Best: 96.1, pPos: 6 })); // place gained
+  r4.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r4.fire(grid({ pBest: 98.2, r2Best: 97, r5Best: 96.1, pPos: 6, r2Pit: true })); // rival boxes
+  r4.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r4.fire({ fuel: { pitWindowOpenLap: 4 } });
+  r4.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r4.fire({ relative: [{ slotId: 9, position: 2, driverName: 'Hyper Car', relativeGapSec: -2.1,
+    lapsDifference: 0, inPit: false, isPlayer: false, yieldTo: true }] });
+  collect(r4);
+
+  const expected = [
+    'raceStart', 'fullCourseYellow', 'restart', 'finalLap', 'checkered',
+    'incident', 'penalty', 'penaltyServed', 'fuelWindow', 'fuelCritical', 'redFlag',
+    'fastestLapSelf', 'fastestLapField', 'positionChange', 'rivalPitted', 'pitWindowOpen', 'yieldTo',
+  ];
+  for (const kind of expected) {
+    const cue = collected.get(kind);
+    if (!cue) {
+      check(`${kind}: cue collected for the phrase check`, false, 'never fired in the harness');
+      continue;
+    }
+    const line = phraseForCue(cue, null);
+    check(`${kind}: has words`, typeof line === 'string' && line.length > 4, line);
+  }
+
+  // Spot-check that the words carry the cue's own facts, not placeholders.
+  const pb = collected.get('fastestLapSelf');
+  check('fastestLapSelf speaks the time', pb && /1 38\.2/.test(phraseForCue(pb, null)), pb && phraseForCue(pb, null));
+  const blue = collected.get('yieldTo');
+  check('yieldTo names the car and the gap',
+    blue && /Blue flags — Car closing, 2\.1 seconds back/.test(phraseForCue(blue, null)),
+    blue && phraseForCue(blue, null));
+  const pos = collected.get('positionChange');
+  check('positionChange speaks the new place', pos && /P6/.test(phraseForCue(pos, null)), pos && phraseForCue(pos, null));
+  const pen = collected.get('penalty');
+  check('penalty names the type', pen && /STOP\/GO/.test(phraseForCue(pen, null)), pen && phraseForCue(pen, null));
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Replay mode                                                                */
 /* -------------------------------------------------------------------------- */
 

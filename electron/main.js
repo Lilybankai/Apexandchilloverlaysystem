@@ -207,6 +207,13 @@ function defaultSettings() {
     // feature spawns three helper processes, so it must be a choice.
     engineerEnabled: false,
     engineerVoice: 'en_GB-alan-medium',
+    // Everything else the engineer learns to do lives in this ONE nested
+    // object, so a new field is one line here plus sanitizeEngineer — never
+    // another entry in the three flat whitelists (the v3 plan's settings seam).
+    // `readouts` is the proactive-calls dial: 'off' | 'essential' | 'standard'.
+    // Essential = flags, fuel, penalties, damage; Standard adds the race-story
+    // calls (fastest laps, position moves, rivals' stops, blue flags).
+    engineer: { readouts: 'essential' },
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
     // width/height in px; absent means "the widget's own size".
@@ -457,6 +464,21 @@ function clamp(value, min, max, fallback) {
  * string (validity is enforced at register time, wrapped in try/catch); an
  * empty string is the explicit "unbound" state. Non-strings fall back.
  */
+/** The engineer's readouts dial — the only values the preset can hold. */
+const READOUT_PRESETS = ['off', 'essential', 'standard'];
+
+/**
+ * The nested engineer settings block, sanitized as a unit. New engineer fields
+ * are added HERE (and in defaultSettings) — never as new flat keys, so the
+ * loadSettings / settings:update whitelists stay one line each forever.
+ */
+function sanitizeEngineer(stored, defaults) {
+  const s = stored && typeof stored === 'object' ? stored : {};
+  return {
+    readouts: READOUT_PRESETS.includes(s.readouts) ? s.readouts : defaults.readouts,
+  };
+}
+
 function normalizeShortcut(value, fallback) {
   if (value === '') return '';
   if (typeof value === 'string' && value.trim()) return value.trim();
@@ -540,6 +562,7 @@ function loadSettings() {
       typeof stored.engineerVoice === 'string' && stored.engineerVoice.trim()
         ? stored.engineerVoice.trim()
         : defaults.engineerVoice,
+    engineer: sanitizeEngineer(stored.engineer, defaults.engineer),
     ingameToggleShortcut: normalizeShortcut(
       stored.ingameToggleShortcut,
       defaults.ingameToggleShortcut,
@@ -2111,6 +2134,15 @@ function registerIpc() {
       if (typeof partial.engineerVoice === 'string' && partial.engineerVoice.trim()) {
         next.engineerVoice = partial.engineerVoice.trim();
       }
+      if (partial.engineer && typeof partial.engineer === 'object') {
+        // Merge-then-sanitize, so a partial like { engineer: { readouts } }
+        // can't wipe fields it didn't mention. No restart: the engineer reads
+        // this block per cue, so the dial takes effect on the next call.
+        next.engineer = sanitizeEngineer(
+          { ...current.engineer, ...partial.engineer },
+          current.engineer,
+        );
+      }
       if (partial.actionBindings && typeof partial.actionBindings === 'object') {
         next.actionBindings = { ...current.actionBindings };
         for (const [id, accel] of Object.entries(partial.actionBindings)) {
@@ -2185,6 +2217,13 @@ function registerIpc() {
       needsRestart
     ) {
       void syncEngineer(next);
+    } else if (
+      engineerService &&
+      JSON.stringify(next.engineer) !== JSON.stringify(current.engineer)
+    ) {
+      // The readouts dial changes nothing about the pipeline — the service
+      // reads the block per cue — but the panel should see the new state.
+      engineerService.pushStatus();
     }
 
     return {

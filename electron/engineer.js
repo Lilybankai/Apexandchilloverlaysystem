@@ -67,7 +67,70 @@ const GRAMMAR = [
   { intent: 'fuel', phrases: ['fuel', 'fuel state', 'fuel level'] },
   { intent: 'lastLap', phrases: ['last lap', 'last lap time', 'lap time'] },
   { intent: 'position', phrases: ['position', 'what position am i in', 'where am i'] },
+  // Track A (v3): the wider ask-set. Phrase lists are audited against each
+  // other for shared word-sequences — where two intents share a stem, one gets
+  // a different phrase, not a longer one ("my pace" vs avgAhead's "pace ahead";
+  // gridStart avoids the word "position" entirely because `position` owns it).
+  { intent: 'tyres', phrases: ['tyres', 'how are my tyres', 'tyre temps'] },
+  { intent: 'pressures', phrases: ['tyre pressures', 'pressures'] },
+  { intent: 'damage', phrases: ['damage', 'any damage', 'damage report', 'how bad is it'] },
+  { intent: 'brakes', phrases: ['brakes', 'brake wear', 'how are the brakes'] },
+  { intent: 'pitStop', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
+  { intent: 'pitWindow', phrases: ['pit window', "when's the window", 'when do we pit'] },
+  { intent: 'energy', phrases: ['energy', 'virtual energy', "how's my energy"] },
+  { intent: 'hybrid', phrases: ['battery', 'hybrid', 'state of charge'] },
+  { intent: 'pace', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
+  { intent: 'bestLap', phrases: ['best lap', 'my best lap', 'personal best'] },
+  { intent: 'fieldFastest', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
+  { intent: 'leader', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
+  { intent: 'gridStart', phrases: ['where did i start', 'places gained', 'how many places'] },
+  { intent: 'trackLimits', phrases: ['track limits', 'limits', 'penalty points'] },
+  { intent: 'flags', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
+  { intent: 'weather', phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming'] },
+  { intent: 'brakeBias', phrases: ['brake bias', 'bias'] },
+  { intent: 'tractionControl', phrases: ['traction control', 'traction'] },
 ];
+
+/* -------------------------------------------------------------------------- */
+/*  Proactive readouts (Track B) — which preset speaks which trigger kind      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The dial. `essential` is the default and calls only rule changes and things
+ * that end races; `standard` adds the race-story layer. Detection always runs
+ * (it is sub-microsecond and its stats feed tuning) — the preset only decides
+ * what reaches the voice. A kind missing from this table never speaks: safer
+ * for any future trigger than speaking by accident.
+ */
+const TRIGGER_TIERS = {
+  raceStart: 'essential',
+  restart: 'essential',
+  fullCourseYellow: 'essential',
+  redFlag: 'essential',
+  finalLap: 'essential',
+  checkered: 'essential',
+  incident: 'essential',
+  penalty: 'essential',
+  penaltyServed: 'essential',
+  fuelWindow: 'essential',
+  fuelCritical: 'essential',
+  fastestLapSelf: 'standard',
+  fastestLapField: 'standard',
+  positionChange: 'standard',
+  rivalPitted: 'standard',
+  pitWindowOpen: 'standard',
+  yieldTo: 'standard',
+};
+
+/**
+ * How long a readout may wait for the channel (an answer playing, the driver
+ * mid-move) before it is dropped rather than spoken late — the same "expire,
+ * never queue" stance as the trigger layer's own hold.
+ */
+const READOUT_HOLD_MS = 4000;
+
+/** Brake input above this reads as "driver is busy" — no readout right now. */
+const BUSY_BRAKE = 0.6;
 
 /* -------------------------------------------------------------------------- */
 /*  Voice catalog                                                              */
@@ -242,6 +305,8 @@ class EngineerService {
     this.onStatus = opts.onStatus || (() => {});
     this.radioFx = require('./radio-fx');
     this.commandsMod = tryRequire('telemetry/engineerCommands.js');
+    this.triggersMod = tryRequire('telemetry/triggers.js');
+    this.phrasesMod = tryRequire('telemetry/engineerPhrases.js');
 
     this.running = false;
     this.busy = null; // 'download:<id>' while a download runs
@@ -253,11 +318,20 @@ class EngineerService {
     this.ws = null;
     this.wsTimer = null;
     this.commands = this.commandsMod ? new this.commandsMod.EngineerCommands() : null;
+    this.triggers = this.triggersMod ? new this.triggersMod.EngineerTriggers() : null;
     this.asking = false;
     this.wavDir = null;
     this.grammarPath = null;
     this.chirpPath = null;
     this.pendingListen = null; // resolver for the in-flight LISTEN
+
+    // The speech queue (seam 2 of the v3 plan). The player sidecar plays WAVs
+    // synchronously, so it is already the serializer — what this state adds is
+    // priority and staleness: an answer always speaks immediately, a readout
+    // waits for a quiet channel and EXPIRES if it can't get one in time.
+    this.audioInFlight = 0; // WAVs handed to the player, not yet PLAYED
+    this.heldReadout = null; // { text, expiresAt } — at most one, newest wins
+    this.lastFrame = null; // latest frame, for the busy-driver check
   }
 
   /* ---- assets ------------------------------------------------------------ */
@@ -278,12 +352,20 @@ class EngineerService {
     return fs.existsSync(this.modelPath(id)) && fs.existsSync(`${this.modelPath(id)}.json`);
   }
 
+  /** The readouts preset, safe against settings written by older versions. */
+  readoutsPreset() {
+    const settings = this.loadSettings();
+    const preset = settings.engineer && settings.engineer.readouts;
+    return preset === 'off' || preset === 'standard' ? preset : 'essential';
+  }
+
   /** Everything the panel needs to render the tab, as plain data. */
   status() {
     const settings = this.loadSettings();
     const selected = settings.engineerVoice;
     return {
       enabled: !!settings.engineerEnabled,
+      readouts: this.readoutsPreset(),
       running: this.running,
       engineInstalled: this.engineInstalled(),
       selectedVoice: selected,
@@ -406,9 +488,17 @@ class EngineerService {
     this.grammarPath = path.join(this.wavDir, 'grammar.json');
     fs.writeFileSync(this.grammarPath, JSON.stringify(GRAMMAR));
 
-    // Player first, then Piper feeding it through the radio channel.
+    // Player first, then Piper feeding it through the radio channel. The
+    // player's PLAYED lines are the speech queue's clock: each one frees the
+    // channel, which is when a held readout gets its (only) second chance.
     this.player = spawnPs(PLAYER_PS);
-    this.player.stdout.on('data', () => {});
+    require('node:readline')
+      .createInterface({ input: this.player.stdout })
+      .on('line', (line) => {
+        if (!line.includes('PLAYED')) return;
+        this.audioInFlight = Math.max(0, this.audioInFlight - 1);
+        this.pumpHeldReadout();
+      });
     this.piper = spawn(this.enginePath(), ['-m', this.modelPath(voice), '--output_dir', this.wavDir], {
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
@@ -426,7 +516,10 @@ class EngineerService {
         } catch {
           out = wav; // dry beats silent
         }
-        if (this.player && this.player.stdin.writable) this.player.stdin.write(out + '\n');
+        if (this.player && this.player.stdin.writable) {
+          this.audioInFlight++;
+          this.player.stdin.write(out + '\n');
+        }
       });
     this.piper.on('exit', () => {
       if (this.running) {
@@ -478,6 +571,10 @@ class EngineerService {
     }
     this.asking = false;
     if (this.commands) this.commands.reset();
+    if (this.triggers) this.triggers.reset();
+    this.audioInFlight = 0;
+    this.heldReadout = null;
+    this.lastFrame = null;
     if (this.wavDir) fs.rmSync(this.wavDir, { recursive: true, force: true });
     this.wavDir = null;
   }
@@ -490,7 +587,18 @@ class EngineerService {
     ws.on('message', (data) => {
       try {
         const frame = JSON.parse(data);
-        if (frame && frame.session && this.commands) this.commands.update(frame);
+        if (!frame || !frame.session) return;
+        if (this.commands) this.commands.update(frame);
+        this.lastFrame = frame;
+        // Track B: the proactive readouts. `triggers.update` is the 0.24 µs
+        // edge detector — it returns null on essentially every frame, so this
+        // adds nothing measurable to a message handler that already parsed the
+        // JSON. Everything expensive (Piper) happens only on a cue.
+        if (this.triggers) {
+          const cue = this.triggers.update(frame);
+          if (cue) this.onCue(cue, frame);
+        }
+        this.pumpHeldReadout();
       } catch {}
     });
     ws.on('error', () => {});
@@ -526,6 +634,68 @@ class EngineerService {
     if (this.piper && this.piper.stdin.writable) this.piper.stdin.write(text + '\n');
   }
 
+  /* ---- proactive readouts (Track B) ---------------------------------------- */
+
+  /**
+   * `true` while a proactive line would land at a bad moment: a car alongside,
+   * or the driver deep in the brakes. Both reads come from the same frame the
+   * widgets render, and both err quiet — no radar block means no alongside
+   * evidence, not a green light to talk over a battle we can't see.
+   */
+  busyDriving() {
+    const frame = this.lastFrame;
+    if (!frame) return false;
+    const pedals = frame.player && frame.player.pedals;
+    if (pedals && typeof pedals.brake === 'number' && pedals.brake > BUSY_BRAKE) return true;
+    const radar = frame.radar;
+    if (Array.isArray(radar) && radar.some((b) => b && b.alongside)) return true;
+    return false;
+  }
+
+  /**
+   * One cue from the trigger layer → maybe one sentence on the radio. The
+   * preset gate lives here (not in the detector) so detection stats keep
+   * feeding tuning whatever the driver has the dial set to.
+   */
+  onCue(cue, frame) {
+    if (!this.running || !this.phrasesMod) return;
+    const preset = this.readoutsPreset();
+    if (preset === 'off') return;
+    const tier = TRIGGER_TIERS[cue.kind];
+    if (!tier) return; // unknown kind never speaks by accident
+    if (tier === 'standard' && preset !== 'standard') return;
+    const text = this.phrasesMod.phraseForCue(cue, frame);
+    if (text) this.sayReadout(text);
+  }
+
+  /**
+   * Speak a readout if the channel is free and the driver isn't mid-move;
+   * otherwise hold it — briefly. The driver's question always wins (ask()
+   * clears the hold), and a line that waits past {@link READOUT_HOLD_MS} is
+   * dropped: an engineer telling you about a rival's stop half a minute late
+   * is worse than one who said nothing.
+   */
+  sayReadout(text) {
+    if (!this.asking && this.audioInFlight === 0 && !this.busyDriving()) {
+      this.speak(text);
+      return;
+    }
+    this.heldReadout = { text, expiresAt: Date.now() + READOUT_HOLD_MS };
+  }
+
+  /** Re-check the one held readout — rides the frame stream and PLAYED lines. */
+  pumpHeldReadout() {
+    const held = this.heldReadout;
+    if (!held) return;
+    if (Date.now() > held.expiresAt) {
+      this.heldReadout = null; // stale — dropped, never spoken late
+      return;
+    }
+    if (this.asking || this.audioInFlight > 0 || this.busyDriving()) return;
+    this.heldReadout = null;
+    this.speak(held.text);
+  }
+
   /** Two rising beeps through the radio band — "channel open, go ahead". */
   makeChirp(dest) {
     const rate = 22050;
@@ -546,7 +716,12 @@ class EngineerService {
     const copy = path.join(this.wavDir, `chirp-${Date.now()}.wav`);
     try {
       fs.copyFileSync(this.chirpPath, copy);
+    } catch {
+      return;
+    }
+    try {
       this.player.stdin.write(copy + '\n');
+      this.audioInFlight++;
     } catch {}
   }
 
@@ -562,6 +737,7 @@ class EngineerService {
     if (!this.recognizerReady) return { ok: false, error: 'Microphone not ready' };
     if (this.asking) return { ok: true };
     this.asking = true;
+    this.heldReadout = null; // the driver's question always wins
     try {
       this.playChirp();
       const heard = await new Promise((resolve) => {

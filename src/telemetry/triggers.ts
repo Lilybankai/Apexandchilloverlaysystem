@@ -102,7 +102,21 @@ export type EngineerTriggerKind =
   /** The white flag — last lap. */
   | 'finalLap'
   /** The chequered flag. */
-  | 'checkered';
+  | 'checkered'
+  // Standard-preset kinds (v3, 2026-08-19) — the race-story layer. Same law as
+  // the rest: a state change the telemetry can prove, never an inference.
+  /** The player's best lap improved on a previous best (never the first best). */
+  | 'fastestLapSelf'
+  /** The field's fastest lap changed OWNER — not merely improved. */
+  | 'fastestLapField'
+  /** The player's overall position stepped, outside lap 1 and pit cycles. */
+  | 'positionChange'
+  /** The class neighbour directly ahead or behind entered the pit lane. */
+  | 'rivalPitted'
+  /** The current lap reached the fuel calculator's pit-window-open lap. */
+  | 'pitWindowOpen'
+  /** A faster-class car with the right of way is closing — blue flags coming. */
+  | 'yieldTo';
 
 /**
  * Relative importance, higher wins. Used to order a coalesced cue and to choose
@@ -122,8 +136,14 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   finalLap: 60,
   penaltyServed: 55,
   restart: 50,
+  yieldTo: 47, // timely: the faster car is arriving NOW
   raceStart: 45,
   fuelWindow: 40,
+  pitWindowOpen: 38,
+  fastestLapSelf: 30,
+  fastestLapField: 28,
+  positionChange: 25,
+  rivalPitted: 22,
 };
 
 /**
@@ -150,6 +170,15 @@ const RACE_ONLY: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>
   'finalLap',
   'checkered',
   'restart',
+  // The race-story kinds: fastest laps change owner constantly in qualifying,
+  // positions shuffle all session in practice, and a rival's stop only means
+  // something when there is a race to undercut. Blue-flag traffic (yieldTo) is
+  // pointedly NOT here — a faster class arriving matters in any session.
+  'fastestLapSelf',
+  'fastestLapField',
+  'positionChange',
+  'rivalPitted',
+  'pitWindowOpen',
 ]);
 
 /* -------------------------------------------------------------------------- */
@@ -188,6 +217,14 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   fuelCritical: 60_000,
   fullCourseYellow: 30_000,
   restart: 30_000,
+  // The race-story kinds are lower-stakes, so they get LONGER cooldowns — a
+  // position swap fight should be one call, not a commentary stream.
+  fastestLapSelf: 20_000, // can't re-fire before the next lap anyway
+  fastestLapField: 30_000,
+  positionChange: 45_000,
+  rivalPitted: 30_000,
+  pitWindowOpen: 60_000,
+  yieldTo: 60_000,
 };
 
 /**
@@ -375,6 +412,71 @@ function playerRow(frame: TelemetryFrame): StandingEntry | undefined {
   return frame.standings?.find((s) => s.isPlayer);
 }
 
+/** This frame's race-story levels — computed once, compared and then stored. */
+interface RaceStoryLevels {
+  /** Holder of the class fastest lap, when anyone has set one. */
+  holder: StandingEntry | null;
+  /** The class neighbours' pit state, keyed by slot. */
+  neighbourPit: Map<number, { inPit: boolean; name: string; where: 'ahead' | 'behind' }>;
+  /** Whether any relative row carries the right of way. */
+  yieldAny: boolean;
+  /** The closest such car, for the call. */
+  nearestYield: { name: string; gapSec: number } | null;
+  /** Whether the strategy pit window reads as open. */
+  windowOpen: boolean;
+}
+
+/**
+ * One pass over standings + relative for everything the race-story detectors
+ * compare. Shared by detection and by priming, so attaching mid-race seeds the
+ * same baselines a running detector would hold — an edge needs a *before*, and
+ * a missing baseline must read as "unknown", never as "everything just changed".
+ */
+function raceStoryLevels(frame: TelemetryFrame, me: StandingEntry | undefined): RaceStoryLevels {
+  let holder: StandingEntry | null = null;
+  for (const e of frame.standings) {
+    if (!known(e.bestLapSec) || e.bestLapSec <= 0) continue;
+    if (me?.carClass && e.carClass !== me.carClass) continue;
+    if (!holder || e.bestLapSec < holder.bestLapSec) holder = e;
+  }
+
+  const neighbourPit = new Map<number, { inPit: boolean; name: string; where: 'ahead' | 'behind' }>();
+  if (me && known(me.classPosition) && me.carClass) {
+    for (const dir of [-1, 1] as const) {
+      const want = me.classPosition + dir;
+      const rival = frame.standings.find(
+        (e) => e.carClass === me.carClass && e.classPosition === want,
+      );
+      if (rival) {
+        neighbourPit.set(rival.slotId, {
+          inPit: rival.inPit === true,
+          name: rival.driverName,
+          where: dir === -1 ? 'ahead' : 'behind',
+        });
+      }
+    }
+  }
+
+  let yieldAny = false;
+  let nearestYield: { name: string; gapSec: number } | null = null;
+  for (const r of frame.relative) {
+    if (r.yieldTo !== true) continue;
+    yieldAny = true;
+    if (known(r.relativeGapSec)) {
+      const abs = Math.abs(r.relativeGapSec);
+      if (!nearestYield || abs < nearestYield.gapSec) {
+        nearestYield = { name: r.driverName, gapSec: abs };
+      }
+    }
+  }
+
+  const openLap = frame.fuel?.pitWindowOpenLap;
+  const lap = frame.session.currentLap;
+  const windowOpen = known(openLap) && known(lap) && lap > 0 && lap >= openLap!;
+
+  return { holder, neighbourPit, yieldAny, nearestYield, windowOpen };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  The detector                                                               */
 /* -------------------------------------------------------------------------- */
@@ -423,6 +525,22 @@ export class EngineerTriggers {
   private fuelWindowArmed = true;
   /** `true` once the session has gone green at least once (so green = restart). */
   private seenGreen = false;
+
+  /* ---- race-story levels (Standard preset, v3) ---------------------------- */
+  /** The player's best lap last tick — a decrease is a new personal best. */
+  private prevBestSelf: number = UNKNOWN_VALUE;
+  /** Who held the field's (class) fastest lap last tick, and at what time. */
+  private prevFieldFastest: { slotId: number; sec: number } | null = null;
+  /** The player's overall position last tick. */
+  private prevPosition: number = UNKNOWN_VALUE;
+  /** The player's pit phase last tick — position swaps during a stop are noise. */
+  private prevPitPhase = 'none';
+  /** `inPit` for the two class neighbours last tick, keyed by slot. */
+  private prevNeighbourPit = new Map<number, boolean>();
+  /** Whether any relative row carried `yieldTo` last tick. */
+  private prevYieldAny = false;
+  /** Whether the strategy window read as open last tick. */
+  private prevWindowOpen = false;
 
   /* ---- debounce clocks --------------------------------------------------- */
   private lastFiredAt = new Map<EngineerTriggerKind, number>();
@@ -473,6 +591,13 @@ export class EngineerTriggers {
     this.prevPitThisLap = false;
     this.fuelWindowArmed = true;
     this.seenGreen = false;
+    this.prevBestSelf = UNKNOWN_VALUE;
+    this.prevFieldFastest = null;
+    this.prevPosition = UNKNOWN_VALUE;
+    this.prevPitPhase = 'none';
+    this.prevNeighbourPit.clear();
+    this.prevYieldAny = false;
+    this.prevWindowOpen = false;
     this.lastFiredAt.clear();
     this.firedOnce.clear();
     this.lastCueAt = 0;
@@ -520,6 +645,10 @@ export class EngineerTriggers {
       // attaching to a driver who is already three laps from empty must not
       // open with a pit-window call about a window they have been in for a lap.
       this.fuelWindowArmed = tighterFuelLaps(frame) > this.fuelWindowLaps;
+      // The race-story baselines seed the same way: the fastest-lap holder,
+      // the neighbours' pit state, the blue flag and the window are all levels
+      // on the frame we arrive on — an edge needs a before, and this is it.
+      this.observeRaceStory(frame);
       this.primed = true;
       return null;
     }
@@ -537,6 +666,7 @@ export class EngineerTriggers {
     this.detectDamage(frame, now);
     this.detectPenalties(frame, now);
     this.detectFuel(frame, now);
+    this.detectRaceStory(frame, now);
   }
 
   /** Green, yellow, red, white, chequered — the session's own lifecycle. */
@@ -694,6 +824,123 @@ export class EngineerTriggers {
     }
   }
 
+  /**
+   * The race-story kinds (Standard preset): fastest laps, position moves, the
+   * rivals' stops, blue flags, the strategy window. All edges on fields the
+   * frame already carries; the whole method is a handful of scalar compares
+   * plus one pass over the standings, well inside the layer's measured
+   * sub-microsecond budget. The RACE_ONLY set gates most of these to races —
+   * that check lives in `offer()`, so the detectors stay uniform.
+   */
+  private detectRaceStory(frame: TelemetryFrame, now: number): void {
+    const me = playerRow(frame);
+    const cur = raceStoryLevels(frame, me);
+
+    // Personal best: a DECREASE from a previous known best, never the first
+    // best (the first flying lap always "improves" on nothing — not news).
+    if (me && known(me.bestLapSec) && me.bestLapSec > 0) {
+      if (
+        known(this.prevBestSelf) &&
+        this.prevBestSelf > 0 &&
+        me.bestLapSec < this.prevBestSelf - 0.001
+      ) {
+        this.offer('fastestLapSelf', now, 'personal best lap', {
+          lapSec: Math.round(me.bestLapSec * 1000) / 1000,
+        });
+      }
+    }
+
+    // Field fastest changing OWNER inside the player's class. Guarded on the
+    // new time actually beating the old one, so a holder disconnecting (and the
+    // min recomputing to someone slower) never reads as a purple lap.
+    if (cur.holder && this.prevFieldFastest) {
+      const prev = this.prevFieldFastest;
+      if (
+        cur.holder.slotId !== prev.slotId &&
+        cur.holder.bestLapSec <= prev.sec &&
+        !cur.holder.isPlayer // the player's own purple is fastestLapSelf's story
+      ) {
+        this.offer('fastestLapField', now, 'fastest lap changes hands', {
+          name: cur.holder.driverName,
+          lapSec: Math.round(cur.holder.bestLapSec * 1000) / 1000,
+        });
+      }
+    }
+
+    // Position change — suppressed through lap 1 (the start is its own story)
+    // and any own-pit cycle (a swap while stationary in the box is not a race).
+    const pitPhase = frame.player?.pit?.phase ?? 'none';
+    if (
+      me &&
+      known(me.position) &&
+      known(this.prevPosition) &&
+      me.position !== this.prevPosition &&
+      known(frame.session.currentLap) &&
+      frame.session.currentLap > 1 &&
+      pitPhase === 'none' &&
+      this.prevPitPhase === 'none'
+    ) {
+      const gained = me.position < this.prevPosition;
+      this.offer('positionChange', now, gained ? 'position gained' : 'position lost', {
+        from: this.prevPosition,
+        to: me.position,
+        gained,
+        classPosition: known(me.classPosition) ? me.classPosition! : UNKNOWN_VALUE,
+      });
+    }
+
+    // The class neighbours' stops. Identity is re-derived every tick, so a
+    // neighbour changing (someone passed them) simply rotates the map — an id
+    // with no previous reading cannot fire.
+    for (const [slotId, entry] of cur.neighbourPit) {
+      if (this.prevNeighbourPit.get(slotId) === false && entry.inPit) {
+        this.offer('rivalPitted', now, 'rival pitted', {
+          name: entry.name,
+          where: entry.where,
+        });
+      }
+    }
+
+    // The strategy window opening — the fuel calculator's own projection, not
+    // re-derived here. The boolean re-arms by itself when a stop moves the
+    // window to a future lap.
+    if (cur.windowOpen && !this.prevWindowOpen && known(frame.fuel?.pitWindowOpenLap)) {
+      this.offer('pitWindowOpen', now, 'strategy pit window open', {
+        openLap: frame.fuel.pitWindowOpenLap!,
+      });
+    }
+
+    // Blue flags: the relative feed's own yieldTo flag — one place owns the
+    // faster-class rules (`yieldAlert.ts` / carClass.ts), and it is not here.
+    if (cur.yieldAny && !this.prevYieldAny) {
+      const facts: Record<string, string | number | boolean> = {};
+      if (cur.nearestYield) {
+        facts.name = cur.nearestYield.name;
+        facts.gapSec = Math.round(cur.nearestYield.gapSec * 10) / 10;
+      }
+      this.offer('yieldTo', now, 'blue flags — faster class closing', facts);
+    }
+
+    this.storeRaceStory(cur);
+  }
+
+  /** Seed the race-story baselines from the priming frame — levels, no offers. */
+  private observeRaceStory(frame: TelemetryFrame): void {
+    this.storeRaceStory(raceStoryLevels(frame, playerRow(frame)));
+  }
+
+  /** Remember this frame's race-story levels for the next tick's comparisons. */
+  private storeRaceStory(cur: RaceStoryLevels): void {
+    if (cur.holder) {
+      this.prevFieldFastest = { slotId: cur.holder.slotId, sec: cur.holder.bestLapSec };
+    }
+    const pit = new Map<number, boolean>();
+    for (const [slotId, entry] of cur.neighbourPit) pit.set(slotId, entry.inPit);
+    this.prevNeighbourPit = pit;
+    this.prevYieldAny = cur.yieldAny;
+    this.prevWindowOpen = cur.windowOpen;
+  }
+
   /* ---- the gates --------------------------------------------------------- */
 
   /**
@@ -802,6 +1049,14 @@ export class EngineerTriggers {
     if (known(penalties)) this.prevPenalties = penalties;
 
     this.prevPitThisLap = frame.fuel?.pitThisLap === true;
+
+    // Race-story levels. (The field-fastest holder, neighbour-pit map, yield
+    // flag and window boolean update inside detectRaceStory itself, where the
+    // values are already in hand.)
+    const me = playerRow(frame);
+    if (me && known(me.bestLapSec) && me.bestLapSec > 0) this.prevBestSelf = me.bestLapSec;
+    if (me && known(me.position)) this.prevPosition = me.position;
+    this.prevPitPhase = frame.player?.pit?.phase ?? 'none';
   }
 }
 

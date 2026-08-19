@@ -63,7 +63,29 @@ export type CommandIntent =
   | 'lapsLeft'
   | 'fuel'
   | 'lastLap'
-  | 'position';
+  | 'position'
+  // Track A of the v3 plan (2026-08-19): the wider ask-set. Same rules as the
+  // first ten — a read or arithmetic over fields the frame already carries,
+  // bucketed and compared the way an engineer talks, refusing when the sim
+  // hasn't published the number.
+  | 'tyres'
+  | 'pressures'
+  | 'damage'
+  | 'brakes'
+  | 'pitStop'
+  | 'pitWindow'
+  | 'energy'
+  | 'hybrid'
+  | 'pace'
+  | 'bestLap'
+  | 'fieldFastest'
+  | 'leader'
+  | 'gridStart'
+  | 'trackLimits'
+  | 'flags'
+  | 'weather'
+  | 'brakeBias'
+  | 'tractionControl';
 
 /** Every intent, for iteration in tests and the recognizer grammar. */
 export const COMMAND_INTENTS: readonly CommandIntent[] = [
@@ -77,6 +99,24 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'fuel',
   'lastLap',
   'position',
+  'tyres',
+  'pressures',
+  'damage',
+  'brakes',
+  'pitStop',
+  'pitWindow',
+  'energy',
+  'hybrid',
+  'pace',
+  'bestLap',
+  'fieldFastest',
+  'leader',
+  'gridStart',
+  'trackLimits',
+  'flags',
+  'weather',
+  'brakeBias',
+  'tractionControl',
 ];
 
 /**
@@ -115,12 +155,37 @@ export function speakableLapTime(sec: number): string {
   return `${m} ${ss}`;
 }
 
-/** A gap in seconds for speech: one decimal, always with the unit. */
-function speakableGap(sec: number): string {
+/**
+ * A gap in seconds for speech: one decimal, always with the unit. Exported for
+ * the phrasebook (`engineerPhrases.ts`) — every number the engineer speaks is
+ * formatted here, whichever side of the radio initiated the line.
+ */
+export function speakableGap(sec: number): string {
   const abs = Math.abs(sec);
   const val = abs >= 60 ? speakableLapTime(abs) : `${abs.toFixed(1)} seconds`;
   return val;
 }
+
+/** Corner names in the frame's fixed [FL, FR, RL, RR] order, for speech. */
+const CORNER_NAMES = ['front left', 'front right', 'rear left', 'rear right'] as const;
+
+/**
+ * Damage severity in the three words a driver would use — the same buckets the
+ * trigger layer speaks in (`triggers.ts`), so the answer to "how bad is it" can
+ * never disagree with the call that announced the contact.
+ */
+function damageWord(worst: number): string {
+  if (worst >= 0.5) return 'heavy';
+  if (worst >= 0.2) return 'moderate';
+  return 'light';
+}
+
+/**
+ * How far from the sim's single optimal temperature still counts as "in the
+ * window", °C. The same ±8 the tyre widget uses (`widgets/tyres.js`) — the
+ * radio and the screen must agree on whether a tyre is working.
+ */
+const TYRE_WINDOW_C = 8;
 
 /** Surname-ish display name: last whitespace-separated token, for radio brevity. */
 function radioName(entry: StandingEntry): string {
@@ -361,6 +426,348 @@ export class EngineerCommands {
           return yes(`P${me.classPosition} in class, P${me.position} overall.`);
         }
         return yes(`P${me.position}.`);
+      }
+
+      /* ---- Track A: the wider ask-set (v3, 2026-08-19) --------------------- */
+
+      case 'tyres': {
+        // Bucket, compare, lead with the exception — never four raw numbers.
+        const t = frame.player?.tyres;
+        if (!t) return no('No tyre data.');
+        const corners = [t.frontLeft, t.frontRight, t.rearLeft, t.rearRight];
+        const core = corners.map((c) => (known(c?.coreC) ? c.coreC! : known(c?.tempC) ? c.tempC : undefined));
+        if (core.every((c) => c === undefined)) return no('No tyre data yet.');
+
+        const parts: string[] = [];
+        const optimal = corners.map((c) => (known(c?.optimalTempC) ? c!.optimalTempC! : undefined));
+        const axleDelta = (i: number, j: number): number | undefined => {
+          const ds = [i, j]
+            .filter((k) => core[k] !== undefined && optimal[k] !== undefined)
+            .map((k) => core[k]! - optimal[k]!);
+          return ds.length ? ds.reduce((a, b) => a + b, 0) / ds.length : undefined;
+        };
+        const word = (d: number): string =>
+          Math.abs(d) <= TYRE_WINDOW_C
+            ? 'in the window'
+            : d > 0
+              ? `about ${Math.round(d)} over`
+              : `about ${Math.round(-d)} under`;
+        const front = axleDelta(0, 1);
+        const rear = axleDelta(2, 3);
+        if (front !== undefined && rear !== undefined) {
+          if (Math.abs(front) <= TYRE_WINDOW_C && Math.abs(rear) <= TYRE_WINDOW_C) {
+            parts.push('Tyres are in the window.');
+          } else {
+            parts.push(`Fronts ${word(front)}, rears ${word(rear)}.`);
+          }
+        } else {
+          // No optimal published — report the hottest corner rather than judge.
+          let hot = -1;
+          for (let i = 0; i < 4; i++) {
+            if (core[i] !== undefined && (hot === -1 || core[i]! > core[hot]!)) hot = i;
+          }
+          parts.push(`Hottest tyre ${CORNER_NAMES[hot]}, ${Math.round(core[hot]!)} degrees.`);
+        }
+
+        const wears = corners.map((c) => (known(c?.wear) && c!.wear >= 0 ? c!.wear : undefined));
+        let worst = -1;
+        for (let i = 0; i < 4; i++) {
+          if (wears[i] !== undefined && (worst === -1 || wears[i]! < wears[worst]!)) worst = i;
+        }
+        if (worst !== -1) {
+          const pct = Math.round(wears[worst]! * 100);
+          if (wears[worst]! <= 0.15) {
+            parts.push(`${CORNER_NAMES[worst]} is nearly done — ${pct} percent left.`);
+          } else if (wears[worst]! <= 0.4) {
+            parts.push(`Worst tread ${pct} percent, ${CORNER_NAMES[worst]}.`);
+          } else {
+            parts.push(`Tread's good.`);
+          }
+        }
+        return yes(parts.join(' '));
+      }
+
+      case 'pressures': {
+        const t = frame.player?.tyres;
+        if (!t) return no('No tyre data.');
+        const p = [t.frontLeft, t.frontRight, t.rearLeft, t.rearRight].map((c) =>
+          known(c?.pressureKpa) && c!.pressureKpa! > 0 ? c!.pressureKpa! : undefined,
+        );
+        const axle = (i: number, j: number): number | undefined => {
+          const vals = [p[i], p[j]].filter((v): v is number => v !== undefined);
+          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined;
+        };
+        const front = axle(0, 1);
+        const rear = axle(2, 3);
+        if (front === undefined && rear === undefined) return no('No pressure readings.');
+        if (front !== undefined && rear !== undefined) {
+          return yes(`Pressures — fronts ${Math.round(front)}, rears ${Math.round(rear)} kPa.`);
+        }
+        const one = front ?? rear!;
+        return yes(`Pressures around ${Math.round(one)} kPa — only one axle reading.`);
+      }
+
+      case 'damage': {
+        const d = frame.player?.damage;
+        if (!d) return no('No damage data — not in the car.');
+        if (!d.hasDamage) return yes(`Car's clean — no damage.`);
+        const worst = known(d.worst) ? d.worst : 0;
+        const parts: string[] = [];
+        const suspWorst = Math.max(...d.suspension.filter((s) => known(s)));
+        if (suspWorst >= 0.2) {
+          let i = d.suspension.findIndex((s) => s === suspWorst);
+          if (i < 0) i = 0;
+          parts.push(`${damageWord(worst)} damage — suspension, ${CORNER_NAMES[i]}.`);
+        } else if (known(d.aero) && d.aero >= 0.2) {
+          parts.push(`${damageWord(worst)} damage — aero.`);
+        } else {
+          parts.push(`${damageWord(worst)} damage, bodywork.`);
+        }
+        // Capitalise the first word of the composed line.
+        parts[0] = parts[0]!.charAt(0).toUpperCase() + parts[0]!.slice(1);
+        if (known(d.partsDetached) && d.partsDetached > 0) {
+          parts.push(d.partsDetached === 1 ? `Something's hanging off.` : `${d.partsDetached} parts hanging off.`);
+        }
+        if (known(d.repairSeconds) && d.repairSeconds > 0) {
+          parts.push(`About ${Math.round(d.repairSeconds)} seconds to fix if you box.`);
+        }
+        return yes(parts.join(' '));
+      }
+
+      case 'brakes': {
+        const mm = frame.player?.damage?.brakeThicknessMm;
+        if (!mm || !mm.some((v) => known(v) && v > 0)) return no('No brake readings.');
+        let thin = -1;
+        for (let i = 0; i < 4; i++) {
+          if (known(mm[i]) && mm[i]! > 0 && (thin === -1 || mm[i]! < mm[thin]!)) thin = i;
+        }
+        return yes(`Thinnest brake ${CORNER_NAMES[thin]}, ${mm[thin]!.toFixed(1)} millimetres.`);
+      }
+
+      case 'pitStop': {
+        const d = frame.player?.damage;
+        const p = frame.player?.pit;
+        const len =
+          known(d?.stopLengthSeconds) && d!.stopLengthSeconds > 0
+            ? d!.stopLengthSeconds
+            : known(p?.plannedSec) && p!.plannedSec > 0
+              ? p!.plannedSec
+              : undefined;
+        if (len === undefined) return no('No stop planned yet.');
+        const parts = [`Planned stop about ${Math.round(len)} seconds.`];
+        if (known(d?.tyreCornersSelected)) {
+          const n = d!.tyreCornersSelected;
+          parts.push(n === 0 ? 'No tyres.' : n === 4 ? 'Four tyres.' : `${n} tyres.`);
+        }
+        if (d && d.repairSelection !== 'none' && d.repairSelection !== 'unavailable') {
+          parts.push(d.repairSelection === 'all' ? 'Full repairs.' : 'Body repairs.');
+        }
+        return yes(parts.join(' '));
+      }
+
+      case 'pitWindow': {
+        const f = frame.fuel;
+        const open = f.pitWindowOpenLap;
+        const lap = frame.session.currentLap;
+        if (!known(open) || !known(lap) || lap <= 0) return no('No pit window projection yet.');
+        if (lap >= open!) {
+          const left = known(f.lapsRemaining) ? ` Fuel for ${f.lapsRemaining.toFixed(1)} more laps.` : '';
+          return yes(`Pit window is open.${left}`);
+        }
+        const away = open! - lap;
+        return yes(`Window opens lap ${open} — ${away} ${away === 1 ? 'lap' : 'laps'} away.`);
+      }
+
+      case 'energy': {
+        const f = frame.fuel;
+        if (!known(f.virtualEnergyPct)) return no('No virtual energy on this car.');
+        const parts = [`Energy at ${Math.round(f.virtualEnergyPct!)} percent`];
+        if (known(f.virtualEnergyLapsRemaining)) {
+          parts[0] += `, ${f.virtualEnergyLapsRemaining!.toFixed(1)} laps`;
+        }
+        parts[0] += '.';
+        if (known(f.veLapsInHandVsNext) && f.veLapsInHandVsNext! > 0) {
+          parts.push(
+            `${f.veLapsInHandVsNext!.toFixed(1)} ${f.veLapsInHandVsNext! >= 2 ? 'laps' : 'lap'} in hand on the car ahead.`,
+          );
+        }
+        if (known(f.veCarsAheadPittingFirst) && f.veCarsAheadPittingFirst! > 0) {
+          parts.push(
+            f.veCarsAheadPittingFirst === 1
+              ? 'One of the cars ahead has to stop before you.'
+              : `${f.veCarsAheadPittingFirst} of the cars ahead have to stop before you.`,
+          );
+        }
+        return yes(parts.join(' '));
+      }
+
+      case 'hybrid': {
+        const h = frame.player?.hybrid;
+        if (!h || !known(h.chargeFraction)) return no('No hybrid on this car.');
+        return yes(`Battery at ${Math.round(h.chargeFraction * 100)} percent.`);
+      }
+
+      case 'pace': {
+        const ps = frame.player?.paceScore;
+        if (ps && ps.ok && known(ps.percent)) {
+          const band = ps.bandLabel ? ` — ${ps.bandLabel}` : '';
+          const off =
+            known(ps.deltaSec) && ps.deltaSec! > 0.05
+              ? ` ${ps.deltaSec!.toFixed(1)} off the reference.`
+              : '';
+          return yes(`Pace score ${Math.round(ps.percent!)} percent${band}.${off}`);
+        }
+        const predicted = frame.player?.paceDeltas?.predictedLapSec;
+        if (known(predicted) && predicted! > 0) {
+          return yes(`On for ${speakableLapTime(predicted!)} this lap.`);
+        }
+        return no('No pace read yet.');
+      }
+
+      case 'bestLap': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me || !known(me.bestLapSec) || me.bestLapSec <= 0) return no('No lap on the board yet.');
+        const rivals = frame.standings.filter(
+          (e) =>
+            !e.isPlayer &&
+            (!me.carClass || e.carClass === me.carClass) &&
+            known(e.bestLapSec) &&
+            e.bestLapSec > 0,
+        );
+        const fastest = rivals.length ? Math.min(...rivals.map((e) => e.bestLapSec)) : Infinity;
+        const tag = me.bestLapSec <= fastest ? ' Fastest in class.' : '';
+        return yes(`Your best, ${speakableLapTime(me.bestLapSec)}.${tag}`);
+      }
+
+      case 'fieldFastest': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        const pool = frame.standings.filter(
+          (e) =>
+            known(e.bestLapSec) && e.bestLapSec > 0 && (!me?.carClass || e.carClass === me.carClass),
+        );
+        if (!pool.length) return no('No lap times on the board yet.');
+        const holder = pool.reduce((a, b) => (b.bestLapSec < a.bestLapSec ? b : a));
+        if (holder.isPlayer) return yes(`Fastest lap is yours — ${speakableLapTime(holder.bestLapSec)}.`);
+        return yes(`Fastest lap, ${radioName(holder)}, ${speakableLapTime(holder.bestLapSec)}.`);
+      }
+
+      case 'leader': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me) return no('No standings yet.');
+        const lead =
+          known(me.classPosition) && me.carClass
+            ? frame.standings.find((e) => e.carClass === me.carClass && e.classPosition === 1)
+            : frame.standings.find((e) => e.position === 1);
+        if (!lead) return no('No leader in the standings yet.');
+        if (lead.isPlayer) {
+          const g = this.classGap(frame, +1);
+          const cushion =
+            g && g !== 'leader' ? ` ${speakableGap(g.gapSec)} over ${g.name}.` : '';
+          return yes(`You're the leader.${cushion}`);
+        }
+        const parts = [`${radioName(lead)} leads.`];
+        if (known(lead.lastLapSec) && lead.lastLapSec > 0) {
+          parts.push(`Last lap ${speakableLapTime(lead.lastLapSec)}.`);
+        }
+        const myGap = known(me.gapToClassLeaderSec) ? me.gapToClassLeaderSec : me.gapToLeaderSec;
+        if (known(myGap) && myGap! > 0) parts.push(`You're ${speakableGap(myGap!)} back.`);
+        return yes(parts.join(' '));
+      }
+
+      case 'gridStart': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me || !known(me.gridPosition) || !known(me.position)) {
+          return no('No grid data for this session.');
+        }
+        const diff = me.gridPosition! - me.position;
+        const move =
+          diff > 0
+            ? `up ${diff}`
+            : diff < 0
+              ? `down ${-diff}`
+              : 'holding station';
+        return yes(`Started P${me.gridPosition}, running P${me.position} — ${move}.`);
+      }
+
+      case 'trackLimits': {
+        const tl = frame.player?.trackLimits;
+        if (!tl || !known(tl.points)) return no('No track-limits data.');
+        const parts: string[] = [];
+        if (tl.lapValid === false) parts.push(`This lap's been invalidated.`);
+        parts.push(
+          known(tl.pointsLimit) && tl.pointsLimit > 0
+            ? `Track limits — ${tl.points} of ${tl.pointsLimit} points.`
+            : `Track limits — ${tl.points} points.`,
+        );
+        if (known(tl.penalties) && tl.penalties > 0) {
+          parts.push(
+            tl.penaltyType
+              ? `${tl.penalties === 1 ? 'A penalty' : `${tl.penalties} penalties`} outstanding — ${tl.penaltyType}.`
+              : `${tl.penalties === 1 ? 'A penalty' : `${tl.penalties} penalties`} outstanding.`,
+          );
+        } else if (tl.lapValid !== false) {
+          parts.push(`You're clean.`);
+        }
+        return yes(parts.join(' '));
+      }
+
+      case 'flags': {
+        const s = frame.session;
+        if (s.phase === 'fullCourseYellow') return yes('Full course yellow — field is neutralised.');
+        if (s.phase === 'redFlag' || s.flag === 'red') return yes('Red flag — session stopped.');
+        const sectors = s.sectorFlags;
+        if (!sectors) return no('No flag data.');
+        const yellow = sectors
+          .map((f, i) => (f === 'yellow' || f === 'doubleYellow' ? i + 1 : 0))
+          .filter((n) => n > 0);
+        if (!yellow.length) return yes('All clear — green all round.');
+        return yes(
+          yellow.length === 1
+            ? `Yellow in sector ${yellow[0]}.`
+            : `Yellows in sectors ${yellow.join(' and ')}.`,
+        );
+      }
+
+      case 'weather': {
+        const w = frame.weather;
+        if (!known(w.trackTempC)) return no('No weather data.');
+        const parts: string[] = [];
+        if (known(w.rainIntensity) && w.rainIntensity > 0) {
+          parts.push(`It's raining now.`);
+        } else {
+          // First forecast slot inside ~40 minutes with a real rain risk.
+          const risk = (w.forecast || []).find(
+            (slot) => known(slot.rainChance) && slot.rainChance >= 0.3 && slot.minutesAhead <= 40,
+          );
+          if (risk) {
+            parts.push(
+              `Rain risk ${Math.round(risk.rainChance * 100)} percent in about ${risk.minutesAhead} minutes.`,
+            );
+          } else {
+            parts.push('No rain coming.');
+          }
+        }
+        let track = `Track ${Math.round(w.trackTempC)} degrees`;
+        if (w.trackTrend === 'drying') track += ', and drying';
+        else if (w.trackTrend === 'wetting') track += ', and getting wetter';
+        parts.push(track + '.');
+        return yes(parts.join(' '));
+      }
+
+      case 'brakeBias': {
+        const aid = frame.mfd?.aids?.find((a) => /bias|balance/i.test(a.key) || /bias|balance/i.test(a.label));
+        if (!aid) return no('No bias reading — MFD not available.');
+        // The MFD renders bias as "56.0:44.0" (front:rear); speak the front.
+        const m = /^([\d.]+):[\d.]+$/.exec(aid.text.trim());
+        return yes(m ? `Brake bias ${m[1]} front.` : `Brake bias ${aid.text.trim()}.`);
+      }
+
+      case 'tractionControl': {
+        const aids = frame.mfd?.aids;
+        if (!aids || !aids.length) return no('No aid readings — MFD not available.');
+        const tc = aids.find((a) => /traction|(^|_)TC($|_)/i.test(a.key) || /traction|^TC\b/i.test(a.label));
+        if (!tc) return no('No traction control on this car.');
+        return yes(`${tc.label} ${tc.text.trim() || tc.value}.`);
       }
     }
   }

@@ -6,6 +6,37 @@
 
 ## Unreleased
 
+## 0.77.0-beta.4 — 2026-08-19
+
+### Added
+
+- **The engineer answers a lot more.** Eighteen new questions on the radio,
+  all from live telemetry, all free and offline like the first ten: tyres
+  ("how are my tyres" — temperatures against the window and the corner that's
+  wearing, not four raw numbers), tyre pressures, damage ("how bad is it" —
+  with the repair time if you box), brake wear, the planned pit stop, the pit
+  window, Virtual Energy ("who pits before me", "have I got a lap in hand"),
+  hybrid battery, your pace score or predicted lap, your best lap, the field's
+  fastest lap, the leader and your gap, places gained since the start, track-
+  limit points and penalties, yellow flags right now, the weather and rain
+  risk, brake bias and traction control. The full phrase list is on the
+  Engineer tab, and the engineer still refuses honestly when the sim hasn't
+  published a number.
+
+- **The engineer speaks up at the moments that matter — and only those.** A
+  new **Radio calls** dial on the Engineer tab, shipping on **Essential**:
+  green flag, chequered, final lap, safety car, red flag, penalties given and
+  served, damage, and the fuel window — the calls that change the rules or end
+  races. Turn it to **Standard** for the race story on top: your fastest laps,
+  the field's, places gained and lost, the rivals' pit stops, blue flags. Or
+  **Quiet** to keep the engineer answer-only. Three rules keep it the opposite
+  of a chatterbox: it never reads out what's already on your screen, it stays
+  silent while you're side by side or deep in the brakes (a held call that
+  goes stale is dropped, never spoken late), and your question always cuts in
+  front of a call. Detection costs well under a microsecond a frame on the
+  same feed the widgets already use — nothing new touches the sim or the
+  30 Hz loop.
+
 ## 0.77.0-beta.3 — 2026-08-19
 
 ### Changed
