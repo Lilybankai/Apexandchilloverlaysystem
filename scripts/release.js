@@ -103,6 +103,10 @@ if (isBeta) {
 // the gate exists to prevent.
 run('checking the changelog', path.join(__dirname, 'check-changelog.js'), [version]);
 run('compiling the server', TSC, ['-p', 'tsconfig.json']);
+// The bundled engineer binaries (piper + whisper). Downloads only what the
+// tools/ caches are missing; electron-builder's afterPack hook refuses to
+// package without them, so this runs before the first packaging step.
+run('staging the bundled engineer assets', path.join(__dirname, 'stage-bundled.js'), []);
 run('baking the YouTube OAuth client', path.join(__dirname, 'write-oauth-client.js'), []);
 run('writing the release notes', path.join(__dirname, 'release-notes.js'), [version]);
 // `--publish never` matters more than it looks. With a GH_TOKEN in the

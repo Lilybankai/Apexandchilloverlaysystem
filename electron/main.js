@@ -1306,9 +1306,18 @@ let engineerService = null;
 function getEngineer() {
   if (!engineerService) {
     const { EngineerService } = require('./engineer');
+    // Packaged: the installer ships piper + whisper in resources/ (signed —
+    // see electron-builder.js). Dev: scripts/stage-bundled.js fills
+    // build/bundled with the same layout; without it the service falls back
+    // to the userData downloads exactly as before.
+    const bundledRoot = app.isPackaged
+      ? process.resourcesPath
+      : path.join(__dirname, '..', 'build', 'bundled');
     engineerService = new EngineerService({
       dir: path.join(app.getPath('userData'), 'piper'),
       whisperDir: path.join(app.getPath('userData'), 'whisper'),
+      bundledDir: path.join(bundledRoot, 'piper'),
+      bundledWhisperDir: path.join(bundledRoot, 'whisper'),
       loadSettings,
       onStatus: (payload) => {
         if (mainWindow && !mainWindow.isDestroyed()) {

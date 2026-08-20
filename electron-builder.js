@@ -109,6 +109,75 @@ function signWithTrustedSigning(configuration) {
   });
 }
 
+/**
+ * Sign every exe and DLL under a folder — the bundled Piper and whisper
+ * binaries. One module call per folder rather than per file: the module's
+ * folder mode batches the digests, and a release signs ~a dozen files here.
+ */
+function signFolderWithTrustedSigning(folder) {
+  const command =
+    'Invoke-TrustedSigning' +
+    ` -Endpoint ${psQuote(ENDPOINT)}` +
+    ` -CodeSigningAccountName ${psQuote(ACCOUNT_NAME)}` +
+    ` -CertificateProfileName ${psQuote(CERTIFICATE_PROFILE)}` +
+    ' -FileDigest SHA256' +
+    ` -TimestampRfc3161 ${psQuote(TIMESTAMP_URL)}` +
+    ' -TimestampDigest SHA256' +
+    ` -FilesFolder ${psQuote(folder)}` +
+    " -FilesFolderFilter 'exe,dll'" +
+    ' -FilesFolderRecurse';
+
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    stdio: 'inherit',
+  });
+}
+
+/**
+ * After the app directory is assembled (and before the NSIS installer is
+ * built from it): verify the bundled engineer assets actually made it in,
+ * then sign their binaries.
+ *
+ * The verification is not optional politeness. A build made without
+ * `build/bundled/` staged would succeed, ship, and silently fall back to
+ * downloading unsigned binaries at runtime — the exact antivirus-quarantine
+ * behaviour v0.79.0 exists to remove. Fail the build instead.
+ *
+ * Signing here rather than at stage time means the staged cache never holds
+ * signed copies (staging also runs on machines without credentials), and
+ * every published installer carries our signature on every binary it spawns —
+ * which is what moves an AV verdict from "unknown unsigned exe" to "signed by
+ * a known publisher".
+ */
+async function afterPack(context) {
+  if (context.electronPlatformName !== 'win32') return;
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const resources = path.join(context.appOutDir, 'resources');
+
+  execFileSync(process.execPath, [path.join(__dirname, 'scripts', 'stage-bundled.js'), '--check'], {
+    stdio: 'inherit',
+  });
+  for (const probe of ['piper/piper.exe', 'whisper/ggml-base.en.bin']) {
+    if (!fs.existsSync(path.join(resources, probe))) {
+      throw new Error(
+        `bundled engineer assets missing from the package (${probe}) — ` +
+          'run `node scripts/stage-bundled.js` and rebuild',
+      );
+    }
+  }
+
+  if (canSign) {
+    console.log('  • signing bundled engineer binaries (piper, whisper)');
+    signFolderWithTrustedSigning(path.join(resources, 'piper'));
+    signFolderWithTrustedSigning(path.join(resources, 'whisper'));
+  } else {
+    console.warn(
+      '  WARNING  bundled piper/whisper binaries are UNSIGNED (no credentials) —\n' +
+        '           fine for a local pack, not for anything published.',
+    );
+  }
+}
+
 module.exports = {
   appId: 'com.apexandchill.overlaysystem',
   productName: 'Apex Overlay System',
@@ -129,7 +198,20 @@ module.exports = {
       from: 'build/plugin',
       to: 'plugin',
     },
+    // The engineer's binaries, staged by scripts/stage-bundled.js and signed
+    // in afterPack. Bundled (not downloaded at runtime) so antivirus sees
+    // signed files with installer provenance instead of an app curling an
+    // unknown exe into AppData — the Norton-quarantine class of failure.
+    {
+      from: 'build/bundled/piper',
+      to: 'piper',
+    },
+    {
+      from: 'build/bundled/whisper',
+      to: 'whisper',
+    },
   ],
+  afterPack,
   files: [
     'electron/**/*',
     'dist/**/*',

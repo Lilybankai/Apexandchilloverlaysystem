@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+## 0.79.0 — 2026-08-20
+
+### Changed
+
+- **The race engineer now comes built in — nothing to download.** The voice
+  engine, the default engineer voice (Alan) and everything advanced questions
+  need are installed with the app, ready the moment you flip the switch. No
+  more in-app downloads for the basics, and no more antivirus software
+  grabbing the files mid-download — everything the engineer runs is now
+  signed by us and ships inside the installer, which is what antivirus
+  expects trustworthy software to look like. The other five voices are still
+  a one-click download on the Engineer tab if you fancy a change from Alan.
+  The installer is bigger (about 330 MB, roughly one onboard lap of video) —
+  that's where the built-in engineer lives. Nothing about the app while
+  you're driving has changed: same CPU use, same footprint, and updates stay
+  small because unchanged parts aren't re-downloaded.
+
 ## 0.78.0 — 2026-08-19
 
 ### Improved

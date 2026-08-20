@@ -69,3 +69,8 @@ tools/piper/
 
 # whisper.cpp STT engine + ggml models (downloaded by scripts/setup-whisper.js)
 tools/whisper/
+
+# The engineer's bundled binaries, staged by scripts/stage-bundled.js from the
+# tools/ caches and shipped as extraResources. ~250 MB of third-party binaries
+# and models — rebuilt on demand, never committed.
+build/bundled/

@@ -16,11 +16,15 @@
  * never be an always-hot microphone.
  *
  * ## Where the assets live
- * The Piper engine (~22 MB) and each voice (~63–121 MB) are downloaded on
- * demand into `<userData>/piper/` — never bundled: most operators will only
- * ever install one voice, and the installer stays small. `VOICES` is the
- * curated catalog; every entry was verified against the HuggingFace repo
- * (sample MP3 present, model present, size read from headers) on 2026-08-18.
+ * From v0.79.0 the installer BUNDLES the Piper engine, the default voice
+ * (Alan) and whisper.cpp + base.en into the app's resources dir, signed at
+ * build time — antivirus quarantined the runtime-downloaded unsigned engine
+ * (Norton, field report 2026-08-19) and took the app down with it. The other
+ * five voices (~63–121 MB each) are still downloaded on demand into
+ * `<userData>/piper/`: they are pure model data, which AV heuristics leave
+ * alone — the executable was the bait. Bundled always wins over a downloaded
+ * copy of the same file. `VOICES` is the curated catalog; every entry was
+ * verified against the HuggingFace repo on 2026-08-18.
  *
  * ## Why the PowerShell sidecars are -EncodedCommand, not .ps1 files
  * In a packaged app `electron/` lives inside app.asar, and PowerShell cannot
@@ -391,8 +395,10 @@ function tryRequire(rel) {
 class EngineerService {
   /**
    * @param {object} opts
-   * @param {string} opts.dir       asset dir, e.g. <userData>/piper
-   * @param {string} [opts.whisperDir]  STT assets, e.g. <userData>/whisper
+   * @param {string} opts.dir       download dir, e.g. <userData>/piper
+   * @param {string} [opts.whisperDir]  STT download dir, e.g. <userData>/whisper
+   * @param {string} [opts.bundledDir]  installer-shipped piper, e.g. <resources>/piper
+   * @param {string} [opts.bundledWhisperDir]  installer-shipped whisper
    * @param {() => object} opts.loadSettings
    * @param {(payload: object) => void} [opts.onStatus]
    * @param {(body: object) => Promise<object>} [opts.cloudAsk]
@@ -402,6 +408,8 @@ class EngineerService {
   constructor(opts) {
     this.dir = opts.dir;
     this.whisperDir = opts.whisperDir || path.join(this.dir, '..', 'whisper');
+    this.bundledDir = opts.bundledDir || null;
+    this.bundledWhisperDir = opts.bundledWhisperDir || null;
     this.loadSettings = opts.loadSettings;
     this.onStatus = opts.onStatus || (() => {});
     this.cloudAsk = opts.cloudAsk || null;
@@ -445,12 +453,42 @@ class EngineerService {
 
   /* ---- assets ------------------------------------------------------------ */
 
+  /**
+   * Bundled first, downloads second. The installer ships the engine, the
+   * default voice and whisper inside the package (signed — see
+   * electron-builder.js) precisely so antivirus never watches this app pull
+   * an unknown exe into AppData; the userData dir remains for the other
+   * voices, which a driver still downloads in-app (pure model data — the
+   * quarantine-bait was always the executable).
+   */
   enginePath() {
+    if (this.bundledDir) {
+      const bundled = path.join(this.bundledDir, 'piper.exe');
+      if (fs.existsSync(bundled)) return bundled;
+    }
     return path.join(this.dir, 'piper.exe');
   }
 
+  /**
+   * Doubles as the download destination: when a voice is not bundled, the
+   * path returned is where fetch() writes it. Only the bundled voice ever
+   * resolves into the resources dir, and it can never be a download target
+   * because voiceInstalled() is true for it.
+   */
   modelPath(id) {
+    if (this.bundledDir) {
+      const bundled = path.join(this.bundledDir, `${id}.onnx`);
+      if (fs.existsSync(bundled)) return bundled;
+    }
     return path.join(this.dir, `${id}.onnx`);
+  }
+
+  /** Where whisper actually lives on this install: bundled beats downloaded. */
+  sttDir() {
+    if (this.bundledWhisperDir && stt.installed(this.bundledWhisperDir)) {
+      return this.bundledWhisperDir;
+    }
+    return this.whisperDir;
   }
 
   engineInstalled() {
@@ -517,7 +555,7 @@ class EngineerService {
       busy: this.busy,
       lastError: this.lastError,
       micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
-      sttInstalled: stt.installed(this.whisperDir),
+      sttInstalled: stt.installed(this.sttDir()),
       freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
       lastCall: this.lastCall,
@@ -997,12 +1035,13 @@ class EngineerService {
   async askTier2(wav, dictationText) {
     let question = '';
     let sttMs = null;
-    if (wav && stt.installed(this.whisperDir)) {
+    const whisperAt = this.sttDir();
+    if (wav && stt.installed(whisperAt)) {
       try {
         const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
         const clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
         if (clip) {
-          const result = await stt.transcribeAsync(this.whisperDir, clip.path);
+          const result = await stt.transcribeAsync(whisperAt, clip.path);
           question = (result.text || '').trim();
           sttMs = result.ms;
         }
