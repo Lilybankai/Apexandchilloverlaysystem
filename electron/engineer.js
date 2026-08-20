@@ -112,7 +112,35 @@ const GRAMMAR = [
   { intent: 'brakeBias', group: 'The car', phrases: ['brake bias', 'bias'] },
   { intent: 'tractionControl', group: 'The car', phrases: ['traction control', 'traction'] },
   // -- Race control ------------------------------------------------------------
-  { intent: 'lapsLeft', group: 'Race control', phrases: ['laps left', 'laps remaining', 'how many laps', 'how long left'] },
+  {
+    intent: 'lapsLeft',
+    group: 'Race control',
+    // The card advertises this one as "Laps / time left", and the 2026-08-20
+    // report was that the natural wordings missed: matching is whole-word
+    // substring (see matchGrammarText), so "how long IS left", "time left"
+    // and "laps to go" all fell through to the cloud path. The list now
+    // carries the timed-race wordings ("time…") as first-class phrases —
+    // most LMU races are timed, so "time left" is the way the question is
+    // actually asked. "how long" alone stays out: it would swallow the pit
+    // stop's "how long is the stop".
+    phrases: [
+      'laps left',
+      'laps remaining',
+      'remaining laps',
+      'laps to go',
+      'how many laps',
+      'how long left',
+      'how long is left',
+      'how long remaining',
+      'how long to go',
+      'time left',
+      'time remaining',
+      'time to go',
+      'how much time',
+      'how much longer',
+      'minutes left',
+    ],
+  },
   { intent: 'trackLimits', group: 'Race control', phrases: ['track limits', 'limits', 'penalty points'] },
   { intent: 'flags', group: 'Race control', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
   // -- Conditions ----------------------------------------------------------------
