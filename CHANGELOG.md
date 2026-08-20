@@ -6,7 +6,41 @@
 
 ## Unreleased
 
-## 0.81.0 — 2026-08-20
+## 0.82.0 — 2026-08-20
+
+### Fixed
+
+- **The penalty readout now tells you WHICH penalty you have.** A penalty used
+  to show as just "1 PENALTY" on the Track Limits widget and the MFD, leaving
+  you to guess between a drive-through and a stop-and-go — and serving the
+  wrong one costs you a lap. The game names the penalty in its own log the
+  moment it issues one, and the overlay now reads it from there: the chip and
+  the MFD say **DRIVE THROUGH** or **STOP/GO 10S**, the banner adds what it
+  was for ("DRIVE THROUGH — TRACK LIMITS"), and when the pit menu carries a
+  serve deadline it reads as "SERVE IN 3 LAPS" instead of the game's cryptic
+  "Yes(3Laps)". If the stewards disqualify you, the widget says
+  **DISQUALIFIED** rather than leaving a stale penalty count on screen.
+- **The track-limits points no longer reset mid-race in online sessions.** In
+  a multiplayer race, another driver being given a track-limits penalty could
+  wipe YOUR accumulated points back to zero — the game writes everyone's
+  penalties into the same log, and the overlay assumed every line was yours.
+  Penalties are now matched to your car before they touch your total.
+- **The engineer now understands the natural ways of asking how long is
+  left.** "Time left", "time remaining", "how much time", "laps to go" and
+  "how long is left" all fell through to the slow path or got refused — only
+  the exact wordings "laps left" and "how long left" were recognised. The
+  whole family now gets the instant answer, which in a timed race is the
+  clock plus the estimated laps.
+
+### Added
+
+- **An average-pace column for the standings tower.** Overlays → Standings →
+  AVG adds a column showing each driver's average over their last five laps —
+  the pace they are actually running, next to the one-off BEST. Laps through
+  the pit lane don't count against anyone's average. The in-game panel grows
+  by exactly the column's width while it's on and gives it back when it's
+  off; for an OBS source, add `avg=on` to the `?standings=` address (and
+  widen the source to match).
 
 ### Added
 
