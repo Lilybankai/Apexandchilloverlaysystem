@@ -68,6 +68,7 @@
     "test:engineer-summary": "node scripts/test-engineer-summary.js",
     "test:bundledassets": "node scripts/test-bundledassets.js",
     "stage:bundled": "node scripts/stage-bundled.js",
+    "build:repair": "node scripts/build-repair-tool.js",
     "record": "node scripts/record-session.js",
     "test:tracelimits": "node scripts/test-tracelimits.js",
     "test:lmubinder": "node scripts/test-lmubinder.js",

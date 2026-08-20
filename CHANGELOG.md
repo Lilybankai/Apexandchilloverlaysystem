@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## 0.80.0 — 2026-08-20
+
+### Changed
+
+- **Friendlier to antivirus software.** The race engineer's helpers now run
+  as ordinary signed script files instead of command-line tricks that some
+  antivirus products mistake for something dodgy, and voice downloads happen
+  inside the app itself rather than through system tools. Nothing about how
+  the engineer works or how much of your PC it uses has changed — it just
+  looks as harmless to your antivirus as it actually is. Every part of the
+  app is signed by The Lilybank Agency Ltd.
+
+### Added
+
+- **A repair tool for broken installs.** If an antivirus quarantine or a
+  half-finished uninstall ever leaves your PC refusing to install the app,
+  download **Apex-Repair-Tool.exe** from the release page and double-click
+  it. It closes stuck copies of the app, clears the leftovers that block the
+  installer, and tells you what it did. Your settings and lap history aren't
+  touched.
+
 ## 0.79.0 — 2026-08-20
 
 ### Changed

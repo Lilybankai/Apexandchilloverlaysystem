@@ -33,6 +33,26 @@ const VOICE = 'en_GB-alan-medium';
 const OTHER = 'en_GB-jenny_dioco-medium';
 
 /* -------------------------------------------------------------------------- */
+console.log('\n0) the AV-heuristic surface stays clean (v0.80.0)');
+
+// The 2026-08 Norton saga: what gets an app quarantined is LOOKING like
+// malware — encoded PowerShell, shelling out to curl, running downloaded
+// unsigned exes. These checks pin the source so none of it quietly returns.
+// Match the quoted string a spawn/execFile call would need, not the words —
+// the comments explaining WHY these are banned may name them.
+const engineerSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'engineer.js'), 'utf8');
+check('engineer.js never uses -EncodedCommand', !engineerSrc.includes("'-EncodedCommand'"));
+check('engineer.js never shells out to curl', !engineerSrc.includes("'curl.exe'"));
+const sidecarsDir = path.join(__dirname, '..', 'electron', 'sidecars');
+for (const f of ['voice-player.ps1', 'voice-recognizer.ps1']) {
+  check(`sidecar ${f} exists in the repo`, fs.existsSync(path.join(sidecarsDir, f)));
+}
+check(
+  'the sidecars ship as resources',
+  (builderConfig.extraResources || []).some((e) => e && e.from === 'electron/sidecars' && e.to === 'sidecars'),
+);
+
+/* -------------------------------------------------------------------------- */
 console.log('\n1) electron-builder ships and signs the staged assets');
 
 const extra = builderConfig.extraResources || [];

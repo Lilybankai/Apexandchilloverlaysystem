@@ -26,11 +26,11 @@
  * copy of the same file. `VOICES` is the curated catalog; every entry was
  * verified against the HuggingFace repo on 2026-08-18.
  *
- * ## Why the PowerShell sidecars are -EncodedCommand, not .ps1 files
- * In a packaged app `electron/` lives inside app.asar, and PowerShell cannot
- * read a script from a virtual path — `-File` would need the scripts unpacked
- * or copied out at runtime. Encoding the (small) scripts from JS strings
- * removes the whole class of path problems, dev and packaged alike.
+ * ## The PowerShell sidecars are plain signed .ps1 files run with -File
+ * They live in `electron/sidecars/` and ship via extraResources, signed at
+ * build time. They were once JS strings run through `-EncodedCommand` (scripts
+ * can't run from inside the asar), but encoded PowerShell is a textbook
+ * antivirus-heuristic tell, and extraResources removed the asar problem.
  *
  * Everything degrades to silence + a reported status: no engine, no voice, no
  * mic, no server — the app runs on, the Engineer tab says what is missing.
@@ -227,101 +227,21 @@ function sampleUrl(id) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  PowerShell sidecars (spawned via -EncodedCommand)                          */
+/*  PowerShell sidecars (plain signed .ps1 files, run with -File)              */
 /* -------------------------------------------------------------------------- */
 
-/** Plays WAV paths from stdin synchronously, deleting each after playback. */
-const PLAYER_PS = `
-$ErrorActionPreference = 'Stop'
-[Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
-while ($true) {
-  $line = [Console]::In.ReadLine()
-  if ($null -eq $line) { break }
-  $line = $line.Trim()
-  if ($line -and (Test-Path -LiteralPath $line)) {
-    try { (New-Object System.Media.SoundPlayer $line).PlaySync() } catch { }
-    try { Remove-Item -LiteralPath $line -Force } catch { }
-    [Console]::Out.WriteLine('PLAYED'); [Console]::Out.Flush()
-  }
-}`;
-
 /**
- * One-shot recognition on command. Blocks on stdin; each LISTEN runs a single
- * bounded Recognize() — the microphone is captured only inside that call.
- * Grammar JSON path arrives via APEX_ENGINEER_GRAMMAR, the scratch dir for
- * free-form clips via APEX_ENGINEER_WAVDIR (EncodedCommand takes no
- * arguments). Runs synchronously throughout: event-handler output does not
- * reliably reach redirected stdout from another runspace.
- *
- * Tier 2 rides the SAME listen, not a second recorder: a DictationGrammar
- * (named `free`) is loaded beside the closed grammar, and when it wins the
- * result's own retained audio is written out for whisper. One utterance, one
- * device owner, and the closed grammar keeps returning THE INSTANT it matches
- * — the beta.6 record-to-file design cost every press a fixed six seconds and
- * fought SAPI for the microphone (v0.77.0-beta.6 field report).
+ * The player and recognizer live in `electron/sidecars/*.ps1` — real files,
+ * shipped via extraResources and SIGNED at build time, spawned with `-File`.
+ * They used to be JS strings run through `-EncodedCommand` (because scripts
+ * can't run from inside the asar), but encoded PowerShell is a textbook
+ * antivirus-heuristic tell, and since v0.79.0 the app ships an extraResources
+ * dir anyway — the reason for encoding is gone (v0.79.x Norton field reports).
+ * The recognizer's protocol and design rationale are documented in the
+ * scripts themselves.
  */
-const RECOGNIZER_PS = `
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Speech
-try {
-  $defs = Get-Content -Raw -LiteralPath $env:APEX_ENGINEER_GRAMMAR | ConvertFrom-Json
-  $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-  foreach ($d in $defs) {
-    $choices = New-Object System.Speech.Recognition.Choices
-    foreach ($p in $d.phrases) { $choices.Add([string]$p) }
-    $exact = New-Object System.Speech.Recognition.GrammarBuilder($choices)
-    $g1 = New-Object System.Speech.Recognition.Grammar($exact)
-    $g1.Name = [string]$d.intent
-    $rec.LoadGrammar($g1)
-    $wrapped = New-Object System.Speech.Recognition.GrammarBuilder
-    $wrapped.AppendWildcard()
-    $wrapped.Append($choices)
-    $wrapped.AppendWildcard()
-    $g2 = New-Object System.Speech.Recognition.Grammar($wrapped)
-    $g2.Name = [string]$d.intent
-    $rec.LoadGrammar($g2)
-  }
-  $dict = $null
-  try {
-    $dict = New-Object System.Speech.Recognition.DictationGrammar
-    $dict.Name = 'free'
-    $rec.LoadGrammar($dict)
-  } catch { $dict = $null }
-  $rec.SetInputToDefaultAudioDevice()
-} catch {
-  [Console]::Out.WriteLine("ERROR\t" + $_.Exception.Message); [Console]::Out.Flush()
-  exit 1
-}
-[Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
-if ($null -ne $dict) { [Console]::Out.WriteLine('DICTOK'); [Console]::Out.Flush() }
-while ($true) {
-  $cmd = [Console]::In.ReadLine()
-  if ($null -eq $cmd) { break }
-  if ($cmd -notmatch '^LISTEN') { continue }
-  $secs = 6
-  if ($cmd -match 'LISTEN (\\d+)') { $secs = [int]$Matches[1] }
-  $r = $rec.Recognize([TimeSpan]::FromSeconds($secs))
-  if ($null -eq $r) {
-    [Console]::Out.WriteLine('NONE'); [Console]::Out.Flush()
-    continue
-  }
-  $conf = [math]::Round($r.Confidence, 2)
-  if ($r.Grammar.Name -ne 'free') {
-    [Console]::Out.WriteLine("HEARD\t$($r.Grammar.Name)\t$conf\t$($r.Text)")
-  } else {
-    $saved = ''
-    try {
-      if ($null -ne $r.Audio) {
-        $wav = Join-Path $env:APEX_ENGINEER_WAVDIR ("free-" + [DateTime]::UtcNow.Ticks + ".wav")
-        $fsOut = [System.IO.File]::Create($wav)
-        try { $r.Audio.WriteToWaveStream($fsOut) } finally { $fsOut.Close() }
-        $saved = $wav
-      }
-    } catch { $saved = '' }
-    [Console]::Out.WriteLine("FREE\t$saved\t$conf\t$($r.Text)")
-  }
-  [Console]::Out.Flush()
-}`;
+const PLAYER_SIDECAR = 'voice-player.ps1';
+const RECOGNIZER_SIDECAR = 'voice-recognizer.ps1';
 
 /**
  * The grammar, run over TEXT: when the dictation grammar out-competes the
@@ -360,9 +280,8 @@ function matchGrammarText(text) {
   return best ? best.intent : null;
 }
 
-function spawnPs(script, env) {
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
-  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+function spawnPs(scriptPath, env) {
+  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
     stdio: ['pipe', 'pipe', 'ignore'],
     env: { ...process.env, ...(env || {}) },
     windowsHide: true,
@@ -399,6 +318,7 @@ class EngineerService {
    * @param {string} [opts.whisperDir]  STT download dir, e.g. <userData>/whisper
    * @param {string} [opts.bundledDir]  installer-shipped piper, e.g. <resources>/piper
    * @param {string} [opts.bundledWhisperDir]  installer-shipped whisper
+   * @param {string} [opts.sidecarsDir]  the signed .ps1 sidecars — <resources>/sidecars packaged, electron/sidecars in dev
    * @param {() => object} opts.loadSettings
    * @param {(payload: object) => void} [opts.onStatus]
    * @param {(body: object) => Promise<object>} [opts.cloudAsk]
@@ -410,6 +330,7 @@ class EngineerService {
     this.whisperDir = opts.whisperDir || path.join(this.dir, '..', 'whisper');
     this.bundledDir = opts.bundledDir || null;
     this.bundledWhisperDir = opts.bundledWhisperDir || null;
+    this.sidecarsDir = opts.sidecarsDir || path.join(__dirname, 'sidecars');
     this.loadSettings = opts.loadSettings;
     this.onStatus = opts.onStatus || (() => {});
     this.cloudAsk = opts.cloudAsk || null;
@@ -640,38 +561,36 @@ class EngineerService {
     }
   }
 
-  /** curl -sSL to a .part file, promoted on success; progress via file size. */
-  fetch(url, dest, sizeMb, voiceId) {
-    return new Promise((resolve, reject) => {
-      const part = `${dest}.part`;
+  /**
+   * Stream a URL to a .part file, promoted on success; progress via file size.
+   * Node's own fetch (redirects followed) rather than shelling out to
+   * curl.exe — an app spawning curl to pull files is another behaviour
+   * antivirus heuristics score against, and this needs nothing curl has.
+   */
+  async fetch(url, dest, sizeMb, voiceId) {
+    const part = `${dest}.part`;
+    fs.rmSync(part, { force: true });
+    const poll = setInterval(() => {
+      try {
+        const mb = fs.statSync(part).size / 1e6;
+        this.onStatus({ ...this.status(), progress: { voiceId, mb: Math.round(mb), totalMb: sizeMb } });
+      } catch {
+        /* not created yet */
+      }
+    }, 1000);
+    try {
+      const res = await globalThis.fetch(url, { redirect: 'follow' });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const { Readable } = require('node:stream');
+      const { pipeline } = require('node:stream/promises');
+      await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(part));
+      fs.renameSync(part, dest);
+    } catch (err) {
       fs.rmSync(part, { force: true });
-      const child = execFile('curl.exe', ['-sSL', '-o', part, url], (err) => {
-        clearInterval(poll);
-        if (err) {
-          fs.rmSync(part, { force: true });
-          reject(new Error(`curl: ${err.message}`));
-          return;
-        }
-        try {
-          fs.renameSync(part, dest);
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-      const poll = setInterval(() => {
-        try {
-          const mb = fs.statSync(part).size / 1e6;
-          this.onStatus({ ...this.status(), progress: { voiceId, mb: Math.round(mb), totalMb: sizeMb } });
-        } catch {
-          /* not created yet */
-        }
-      }, 1000);
-      child.on('error', (err) => {
-        clearInterval(poll);
-        reject(err);
-      });
-    });
+      throw new Error(`download: ${err && err.message ? err.message : err}`);
+    } finally {
+      clearInterval(poll);
+    }
   }
 
   /* ---- lifecycle ----------------------------------------------------------- */
@@ -696,7 +615,7 @@ class EngineerService {
     // Player first, then Piper feeding it through the radio channel. The
     // player's PLAYED lines are the speech queue's clock: each one frees the
     // channel, which is when a held readout gets its (only) second chance.
-    this.player = spawnPs(PLAYER_PS);
+    this.player = spawnPs(path.join(this.sidecarsDir, PLAYER_SIDECAR));
     this.player.on('error', (err) => this.onChildError('audio player', err));
     require('node:readline')
       .createInterface({ input: this.player.stdout })
@@ -738,7 +657,7 @@ class EngineerService {
     });
 
     // Ears: resident but deaf until a LISTEN command (push-to-talk).
-    this.recognizer = spawnPs(RECOGNIZER_PS, {
+    this.recognizer = spawnPs(path.join(this.sidecarsDir, RECOGNIZER_SIDECAR), {
       APEX_ENGINEER_GRAMMAR: this.grammarPath,
       APEX_ENGINEER_WAVDIR: this.wavDir,
     });
@@ -1163,7 +1082,7 @@ class EngineerService {
     const out = path.join(dir, 'preview.radio.wav');
     this.radioFx.radioify(wav, out);
     // One-shot player: the resident one may not exist while the feature is off.
-    const player = spawnPs(PLAYER_PS);
+    const player = spawnPs(path.join(this.sidecarsDir, PLAYER_SIDECAR));
     player.stdout.on('data', (d) => {
       if (String(d).includes('PLAYED')) {
         player.stdin.end();

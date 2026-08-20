@@ -114,7 +114,7 @@ function signWithTrustedSigning(configuration) {
  * binaries. One module call per folder rather than per file: the module's
  * folder mode batches the digests, and a release signs ~a dozen files here.
  */
-function signFolderWithTrustedSigning(folder) {
+function signFolderWithTrustedSigning(folder, filter = 'exe,dll') {
   const command =
     'Invoke-TrustedSigning' +
     ` -Endpoint ${psQuote(ENDPOINT)}` +
@@ -124,7 +124,7 @@ function signFolderWithTrustedSigning(folder) {
     ` -TimestampRfc3161 ${psQuote(TIMESTAMP_URL)}` +
     ' -TimestampDigest SHA256' +
     ` -FilesFolder ${psQuote(folder)}` +
-    " -FilesFolderFilter 'exe,dll'" +
+    ` -FilesFolderFilter ${psQuote(filter)}` +
     ' -FilesFolderRecurse';
 
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
@@ -157,7 +157,7 @@ async function afterPack(context) {
   execFileSync(process.execPath, [path.join(__dirname, 'scripts', 'stage-bundled.js'), '--check'], {
     stdio: 'inherit',
   });
-  for (const probe of ['piper/piper.exe', 'whisper/ggml-base.en.bin']) {
+  for (const probe of ['piper/piper.exe', 'whisper/ggml-base.en.bin', 'sidecars/voice-player.ps1']) {
     if (!fs.existsSync(path.join(resources, probe))) {
       throw new Error(
         `bundled engineer assets missing from the package (${probe}) — ` +
@@ -167,9 +167,12 @@ async function afterPack(context) {
   }
 
   if (canSign) {
-    console.log('  • signing bundled engineer binaries (piper, whisper)');
+    console.log('  • signing bundled engineer binaries (piper, whisper, sidecars)');
     signFolderWithTrustedSigning(path.join(resources, 'piper'));
     signFolderWithTrustedSigning(path.join(resources, 'whisper'));
+    // .ps1 takes Authenticode like an exe does — verified against the live
+    // signing account before this was wired in.
+    signFolderWithTrustedSigning(path.join(resources, 'sidecars'), 'ps1');
   } else {
     console.warn(
       '  WARNING  bundled piper/whisper binaries are UNSIGNED (no credentials) —\n' +
@@ -209,6 +212,12 @@ module.exports = {
     {
       from: 'build/bundled/whisper',
       to: 'whisper',
+    },
+    // The engineer's PowerShell sidecars: plain first-party scripts, signed in
+    // afterPack, run with -File (never -EncodedCommand — an AV-heuristic tell).
+    {
+      from: 'electron/sidecars',
+      to: 'sidecars',
     },
   ],
   afterPack,

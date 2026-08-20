@@ -1318,6 +1318,9 @@ function getEngineer() {
       whisperDir: path.join(app.getPath('userData'), 'whisper'),
       bundledDir: path.join(bundledRoot, 'piper'),
       bundledWhisperDir: path.join(bundledRoot, 'whisper'),
+      // Packaged, the signed sidecar scripts live in resources/; in dev they
+      // are run straight from the repo (engineer.js defaults to that).
+      ...(app.isPackaged ? { sidecarsDir: path.join(process.resourcesPath, 'sidecars') } : {}),
       loadSettings,
       onStatus: (payload) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
