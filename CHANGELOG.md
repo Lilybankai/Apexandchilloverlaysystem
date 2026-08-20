@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.81.0 — 2026-08-20
+
 ### Added
 
 - **A volume slider for the race engineer.** On the Engineer tab, under Radio
