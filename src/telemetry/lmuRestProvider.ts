@@ -47,6 +47,7 @@ import {
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { LmuTraceLimitsReader } from './lmuTraceLimits';
+import { PaceAverageTracker } from './paceAverage';
 import { buildRadar, type RadarCar } from './radar';
 import { TrackMapBuilder } from './trackMap';
 import {
@@ -486,6 +487,14 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   private readonly scoring = new LmuScoringReader();
   /**
+   * The locally-driven car's driver name, latched from the standings each
+   * frame. Feeds the trace reader's penalty attribution (see start()), which
+   * runs from a poll timer and cannot ask the frame builder.
+   */
+  private playerDriverName = '';
+  /** Rolling last-5-lap pace per car, for the standings AVG column. */
+  private readonly paceAvg = new PaceAverageTracker();
+  /**
    * The driven car's model, latched from the Scoring buffer.
    *
    * Sticky on purpose. The name cannot change without a trip through the garage,
@@ -694,6 +703,26 @@ export class LmuRestProvider implements TelemetryProvider {
     this.fallback.start();
     this.localCar.start(); // best-effort shared-memory reader for the driven car
     this.scoring.start(); // …and the scoring buffer, for track limits + penalties
+    // Whose penalty is a trace line about? The lines are anonymous, and in
+    // multiplayer they fire for OTHER cars too (a rival's pit-exit stop/go
+    // wrote a `Local penalty` line to this PC's trace, live, 2026-08-20) — so
+    // before one is allowed to name a penalty or zero the accumulated points:
+    //
+    //   - a line the steward's message NAMED is the named driver's, full stop;
+    //   - an unnamed line is ours only if OUR OWN penalty count (per-car, from
+    //     scoring, instant) rose within the trace's flush latency — the count
+    //     moves the moment the sim decides, the trace up to ~25 s later;
+    //   - during a backfill replay there is no live counter to ask, so unnamed
+    //     lines are trusted the way the recovery pass always trusted them.
+    this.traceLimits.setPenaltyAttribution((pen, replay) => {
+      if (pen.driver) {
+        const own = this.playerDriverName.trim().toLowerCase();
+        return own !== '' && pen.driver.trim().toLowerCase() === own;
+      }
+      if (replay) return true;
+      const rose = this.trackLimits.lastPenaltyRoseAtMs();
+      return rose > 0 && Date.now() - rose < OWN_PENALTY_ATTRIBUTION_MS;
+    });
     this.traceLimits.start(); // …and the trace log, for the sim's own points
     // Age out old driving traces once per app run — they are the one thing the
     // lap store keeps that is big enough to be worth pruning. See lapTrace.ts.
@@ -1207,6 +1236,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // player's slot id makes the reader return this car's own inputs (and never
     // another car's — car numbers can repeat across classes, ids can't).
     const playerCar = cars.find((c) => c.player);
+    if (playerCar?.driverName) this.playerDriverName = playerCar.driverName;
     const rawLocal = playerCar ? this.localCar.read(playerCar.slotID) : null;
     // Bridge an occasional single missed read so pedals/temps don't flicker to
     // "unknown" for one frame; a genuine drop (spectating) outlasts the hold.
@@ -1243,7 +1273,13 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     if (rawLocal && rawLocal.batteryCharge > 0) this.hasHybrid = true;
 
-    const standings = this.buildStandings(cars, focusId);
+    // Same track+type identity every other per-session tracker keys on, from
+    // the raw feed because `session` is built a few lines further down.
+    const standings = this.buildStandings(
+      cars,
+      focusId,
+      `${si.trackName ?? ''}|${si.session ?? ''}`,
+    );
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus, this.gameState);
     const weather = this.buildWeather(si, session.type);
@@ -1260,12 +1296,21 @@ export class LmuRestProvider implements TelemetryProvider {
     // lap being driven can stand as a reference (see `LapValidity`), and a
     // frame-old count would attach a cut taken on the line to the wrong lap.
     const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
+    // A disqualification outranks everything else the block could say: there is
+    // nothing left to serve, and the count often stays up after the verdict —
+    // "1 PENALTY" over a car the stewards have excluded is the widget losing
+    // the plot at the worst moment. From the standings row's own finishStatus
+    // (`FSTAT_DSQ`), which is per-car and therefore already attributed.
+    const dsq = playerCar ? /DSQ|DISQ/i.test(String(playerCar.finishStatus ?? '')) : false;
     // The penalty's KIND rides on the track-limits block because that is where
     // its count already lives, and the two are read together or not at all.
-    const withType =
-      limitsBase && limitsBase.penalties > 0
-        ? { ...limitsBase, ...this.buildPenaltyType() }
-        : limitsBase;
+    const withType = !limitsBase
+      ? limitsBase
+      : dsq
+        ? { ...limitsBase, penaltyType: 'DISQUALIFIED', disqualified: true as const }
+        : limitsBase.penalties > 0
+          ? { ...limitsBase, ...this.buildPenaltyType() }
+          : limitsBase;
     // The sim's LIVE lap-validity verdict (countLapFlag). Only a definite
     // yes/no is forwarded: COUNT_NEITHER (out-lap, garage) and an absent
     // channel both leave the field off, so the widget shows nothing rather
@@ -1568,7 +1613,22 @@ export class LmuRestProvider implements TelemetryProvider {
     };
   }
 
-  private buildStandings(cars: RestStanding[], focusId: number): StandingEntry[] {
+  private buildStandings(
+    cars: RestStanding[],
+    focusId: number,
+    sessionKey: string,
+  ): StandingEntry[] {
+    // Rolling last-5 pace for the whole field, fed from this same poll — see
+    // telemetry/paceAverage for what counts as a keepable lap.
+    const avgBySlot = this.paceAvg.update(
+      cars.map((c) => ({
+        slotId: c.slotID,
+        lapsCompleted: Math.max(0, c.lapsCompleted | 0),
+        lastLapSec: posOrUnknown(c.lastLapTime),
+        inPit: isInPit(c),
+      })),
+      sessionKey,
+    );
     const rows = cars.map((c) => {
       const ranks = this.driverRanksFor(c.driverName);
       return {
@@ -1588,6 +1648,7 @@ export class LmuRestProvider implements TelemetryProvider {
       lapsBehind: Math.max(0, c.lapsBehindLeader | 0),
       bestLapSec: posOrUnknown(c.bestLapTime),
       lastLapSec: posOrUnknown(c.lastLapTime),
+      avg5Sec: avgBySlot.get(c.slotID),
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),
       pitStops: typeof c.pitstops === 'number' ? c.pitstops : undefined,
@@ -2594,10 +2655,10 @@ export class LmuRestProvider implements TelemetryProvider {
       this.lastChargeSeq = 0;
       this.lastChargeAt = 0;
     }
-    this.traceLimits.poll();
-    const trace = this.traceLimits.state();
-
     const nowMs = Date.now();
+    // The count tracker runs BEFORE the trace poll on purpose: the count edge
+    // it records is what the trace reader's attribution predicate consults, and
+    // a penalty line must never be judged against a counter one frame stale.
     const state =
       this.trackLimits.update({
         penalties: car.penalties,
@@ -2609,6 +2670,9 @@ export class LmuRestProvider implements TelemetryProvider {
         ...(this.cutsAllowed !== null ? { pointsLimit: this.cutsAllowed } : {}),
         nowMs,
       }) ?? undefined;
+
+    this.traceLimits.poll();
+    const trace = this.traceLimits.state();
 
     if (!state) return undefined;
 
@@ -2666,28 +2730,52 @@ export class LmuRestProvider implements TelemetryProvider {
    * ## Why an unrecognised row yields nothing at all
    * A penalty type is not a display detail: told "STOP/GO" a driver stops in
    * their box, and doing that to discharge a drive-through does not serve it —
-   * it turns twenty seconds into a lap. Only the drive-through's exact wording
-   * is still unobserved (this car has not had one), so {@link PENALTY_ROW}
-   * carries the plausible spellings and anything outside them falls back to the
-   * bare count the widgets show today. Being unhelpful is recoverable; being
-   * confidently wrong here is not. `scripts/probe-lmu-penalty.js` captures the
-   * menu for whichever penalty is outstanding, so the drive-through wording can
-   * be pinned the same way rather than left to a guess.
+   * it turns twenty seconds into a lap. {@link PENALTY_ROW} carries the
+   * observed and plausible spellings; anything outside them falls through to
+   * the second source below rather than to a guess. Being unhelpful is
+   * recoverable; being confidently wrong here is not.
+   *
+   * ## The second source: the sim's own trace log
+   * The trace names the penalty the moment it is issued — reason AND kind
+   * (`Track Limits Drive Through Penalty`; `Local penalty et=… 0 10 0 0` = a
+   * 10-second stop/go), read by `lmuTraceLimits` and attributed to this car
+   * before it is trusted (see the predicate in start()). Live, 2026-08-20, it
+   * named a drive-through the pit menu never did. The pit-menu row still wins
+   * when it matches, because it carries the serve DEADLINE — the trace only
+   * says what was issued; the menu says how long you have left to do it.
    */
   private buildPenaltyType(): { penaltyType?: string; penaltyDetail?: string } {
     const rows = this.pitMenuRaw;
-    if (!Array.isArray(rows)) return {};
-    for (const row of rows) {
-      const raw = String(row?.name ?? '');
-      const name = raw.replace(/:\s*$/, '').trim();
-      if (!PENALTY_ROW.test(name)) continue;
-      const opts = Array.isArray(row.settings) ? row.settings : [];
-      const idx = typeof row.currentSetting === 'number' ? row.currentSetting : -1;
-      const text = String(opts[idx]?.text ?? '').trim();
-      return {
-        penaltyType: name.toUpperCase(),
-        ...(text ? { penaltyDetail: text } : {}),
-      };
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        const raw = String(row?.name ?? '');
+        const name = raw.replace(/:\s*$/, '').trim();
+        if (!PENALTY_ROW.test(name)) continue;
+        const opts = Array.isArray(row.settings) ? row.settings : [];
+        const idx = typeof row.currentSetting === 'number' ? row.currentSetting : -1;
+        const text = String(opts[idx]?.text ?? '').trim();
+        return {
+          penaltyType: name.toUpperCase(),
+          ...(text ? { penaltyDetail: deadlineDetail(text) } : {}),
+        };
+      }
+    }
+
+    // No recognisable pit-menu row — name it from the trace instead. Only a
+    // penalty whose KIND the trace stated is worth reporting: the reason alone
+    // ("TRACK LIMITS") does not tell a driver what to do in the pit lane.
+    const pen = this.traceLimits.state()?.lastPenalty;
+    if (pen?.kind) {
+      const type =
+        pen.kind === 'drive-through'
+          ? 'DRIVE THROUGH'
+          : pen.seconds && pen.seconds > 0
+            ? `STOP/GO ${pen.seconds}S`
+            : 'STOP/GO';
+      // The reason rides as detail — "DRIVE THROUGH — TRACK LIMITS" answers
+      // both of the questions the driver is asking, in the order they ask them.
+      const reason = pen.name.trim().toUpperCase();
+      return { penaltyType: type, ...(reason ? { penaltyDetail: reason } : {}) };
     }
     return {};
   }
@@ -3253,6 +3341,32 @@ function round2(v: number): number {
  * See {@link LmuRestProvider.buildPenaltyType}.
  */
 const PENALTY_ROW = /^(STOP\s*[/-]?\s*GO|DRIVE\s*[-]?\s*(THRU|THROUGH)|PENALTY)$/i;
+
+/**
+ * How long an anonymous trace penalty line stays attributable to a rise in our
+ * own count. Generous against the trace's worst observed flush latency (~25 s),
+ * tight enough that a rival's penalty minutes later cannot ride the same edge.
+ */
+const OWN_PENALTY_ATTRIBUTION_MS = 45_000;
+
+/**
+ * The penalty row's value, turned into the instruction it encodes.
+ *
+ * The row reads `Yes(3Laps)` / `No(3Laps)` — Yes/No is the driver's choice
+ * about THIS stop, and the parenthesis is the serve deadline (probed live: it
+ * counts down as laps pass). The deadline is the half a driver acts on, so it
+ * is the half that gets said; a value that doesn't parse is passed through
+ * verbatim rather than dropped, because the sim's own words are never worse
+ * than nothing.
+ */
+function deadlineDetail(rowValue: string): string {
+  const m = /\((\d+)\s*Laps?\)/i.exec(rowValue);
+  if (!m?.[1]) return rowValue;
+  const laps = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(laps)) return rowValue;
+  if (laps <= 0) return 'SERVE NOW';
+  return `SERVE IN ${laps} ${laps === 1 ? 'LAP' : 'LAPS'}`;
+}
 
 /**
  * How far back the wetness trend looks. Long, because a circuit takes minutes to

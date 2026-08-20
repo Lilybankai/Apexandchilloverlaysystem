@@ -109,6 +109,17 @@ export class TrackLimitsTracker {
   }
 
   /**
+   * When the driven car's own penalty count last INCREASED (`nowMs` clock),
+   * `0` when it hasn't this session. This is the attribution anchor for the
+   * trace reader: the count is per-car and instant, while the trace's penalty
+   * lines are anonymous and up to ~25 s late — so "our count rose moments ago"
+   * is the one live test of whether an unnamed penalty line is ours.
+   */
+  public lastPenaltyRoseAtMs(): number {
+    return this.lastPenaltyAt;
+  }
+
+  /**
    * Advance by one poll and return the current state.
    *
    * Returns `null` when the penalty channel is unavailable, so the provider omits

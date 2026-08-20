@@ -271,10 +271,11 @@
       // The penalty is still worth showing on its own: it is the sim's verdict,
       // it arrived through a different channel, and it is the only thing on the
       // widget that is actionable without the total behind it.
-      blank(penalties > 0 ? "PENALTY" : "NO POINTS");
+      var standing = penalties > 0 || tl.disqualified;
+      blank(standing ? "PENALTY" : "NO POINTS");
       showPenalty(ctx, tl, penalties);
       penaltyBanner(ctx, tl, penalties);
-      setState(penalties > 0 ? (ctx.consequenceFresh(tl) ? "penalty" : "penalised") : "none");
+      setState(standing ? (ctx.consequenceFresh(tl) ? "penalty" : "penalised") : "none");
       return;
     }
 
@@ -344,7 +345,10 @@
       banner = "PENALTY SERVED";
       kind = "served";
     } else if (freshPenalty) {
+      // The kind, then what it is for / when to serve it — both halves are the
+      // sim's own words, and both are questions the driver is asking right now.
       banner = ctx.penaltyLabel(tl, penalties);
+      if (tl.penaltyDetail) banner += " — " + tl.penaltyDetail;
       kind = "penalty";
     } else if (fresh && charges.length) {
       banner = "+" + pts(charges[0]);
@@ -360,7 +364,7 @@
     var state;
     if (freshPenalty) state = "penalty";
     else if (fresh) state = "alarm";
-    else if (penalties > 0) state = "penalised";
+    else if (penalties > 0 || tl.disqualified) state = "penalised";
     else if (points > 0) state = "warned";
     else state = "clean";
     setState(state);
@@ -420,7 +424,10 @@
    * than guessing (see buildPenaltyType in the provider).
    */
   function showPenalty(ctx, tl, penalties) {
-    if (penalties > 0) {
+    // A disqualification keeps the chip up at a count of zero: the sim leaves
+    // the count wherever it was when the stewards excluded the car, and the
+    // verdict is the one thing left on this widget worth reading.
+    if (penalties > 0 || tl.disqualified) {
       if (penaltyEl.hidden) penaltyEl.hidden = false;
       ctx.crit(
         penaltyEl,
@@ -428,6 +435,9 @@
           ? ctx.penaltyLabel(tl, penalties)
           : penalties + (penalties === 1 ? " PEN" : " PENS"),
       );
+      if (penaltyEl.title !== (tl.penaltyDetail || "")) {
+        penaltyEl.title = tl.penaltyDetail || "";
+      }
     } else if (!penaltyEl.hidden) {
       penaltyEl.hidden = true;
     }
@@ -436,8 +446,11 @@
   /** The penalty half of the banner, for the no-points path. */
   function penaltyBanner(ctx, tl, penalties) {
     if (ctx.servedFresh(tl)) setBanner("PENALTY SERVED", "served");
-    else if (ctx.consequenceFresh(tl)) setBanner(ctx.penaltyLabel(tl, penalties), "penalty");
-    else setBanner(null, "scored");
+    else if (ctx.consequenceFresh(tl)) {
+      var label = ctx.penaltyLabel(tl, penalties);
+      if (tl.penaltyDetail) label += " — " + tl.penaltyDetail;
+      setBanner(label, "penalty");
+    } else setBanner(null, "scored");
   }
 
   function setBanner(text, kind) {

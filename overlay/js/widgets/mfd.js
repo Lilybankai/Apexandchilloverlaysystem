@@ -863,15 +863,24 @@
     // one is how a drive-through becomes a stop in the box that serves nothing.
     // A bare count when it did not; never a guess.
     var served = ctx.servedFresh(tl);
-    var text = !tl ? '—' : served && n === 0 ? 'SERVED' : n > 0 ? ctx.penaltyLabel(tl, n) : String(n);
+    // A disqualification shows at any count — the sim leaves the count where it
+    // was when the stewards excluded the car, and there is nothing left to serve.
+    var dsq = !!(tl && tl.disqualified);
+    var text = !tl
+      ? '—'
+      : served && n === 0 && !dsq
+        ? 'SERVED'
+        : n > 0 || dsq
+          ? ctx.penaltyLabel(tl, n)
+          : String(n);
     critText(rcRows.penalty.value, text);
     var state = !tl
       ? 'nodata'
-      : served
+      : served && !dsq
         ? 'served'
         : ctx.consequenceFresh(tl)
           ? 'fresh'
-          : n > 0
+          : n > 0 || dsq
             ? 'standing'
             : 'clean';
     if (rcRows.box.getAttribute('data-state') !== state) {

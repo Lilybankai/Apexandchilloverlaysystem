@@ -25,6 +25,8 @@ const {
   parseTraceLine,
   parseTracePenalty,
   parseTraceSession,
+  parseTraceKindLine,
+  parseTraceSteward,
   TraceLimitsAccumulator,
   LmuTraceLimitsReader,
 } = require('../dist/telemetry/lmuTraceLimits');
@@ -489,6 +491,88 @@ st = readerState();
 check('a discharge during the session is replayed too', st && st.points === 0.5, st && st.points);
 
 fs.rmSync(tmp, { recursive: true, force: true });
+
+/* ------------------- naming the penalty, and whose it is ------------------- */
+
+// Every line here is VERBATIM from a live public multiplayer race
+// (2026-08-20, trace_2026_08_20_19_27_08-87.txt): the driver's own track-limits
+// drive-through arrived as a kind line + a Network/Local pair, and — the
+// finding that matters — another driver's stop/go ALSO wrote a Local penalty
+// line to this PC's trace, with only the steward's message naming him.
+console.log('\nnaming the penalty, and whose it is');
+
+const RACE_KIND_LINE = '6696.17s score.cpp    3973: Track Limits Drive Through Penalty';
+const RACE_NET_PEN = '6696.17s score.cpp    1224: Network penalty et=3438.9 "Track Limits" 1 0 0 0';
+const RACE_LOC_PEN = '6696.17s score.cpp    1365: Local penalty et=3438.9 1 0 0 0 "Track Limits"';
+const OTHER_LOC_PEN =
+  '2534.21s score.cpp    1365: Local penalty et=355.4 0 10 0 0 "Exiting Pits Under Red"';
+const OTHER_STEWARD =
+  '2534.21s steward.cpp  7095: Not logging result stream message, because the file is not open. ' +
+  'Msg: Michael wood1987 received Stop/Go penalty, 10s, 0laps for Exiting Pits Under Red. ' +
+  'Result: penalties=1, 1st=Stop/Go,10s';
+
+let pen = parseTracePenalty(RACE_LOC_PEN);
+check('the numeric fields decode a drive-through', pen && pen.kind === 'drive-through', pen && pen.kind);
+check('…named for its reason', pen && pen.name === 'Track Limits', pen && pen.name);
+pen = parseTracePenalty(RACE_NET_PEN);
+check('a Network penalty line parses too', pen && pen.kind === 'drive-through', pen && pen.kind);
+pen = parseTracePenalty(OTHER_LOC_PEN);
+check('the numeric fields decode a stop/go', pen && pen.kind === 'stop-go', pen && pen.kind);
+check('…with its hold time', pen && pen.seconds === 10, pen && pen.seconds);
+pen = parseTracePenalty(PEN_DRIVE_THROUGH);
+check('a name stating the kind outranks the fields', pen && pen.kind === 'drive-through', pen && pen.kind);
+pen = parseTracePenalty(PEN_STOP_GO);
+check('…and a stop/go name keeps its agreed seconds', pen && pen.kind === 'stop-go' && pen.seconds === 10,
+  pen && `${pen.kind} ${pen.seconds}`);
+
+const kindLine = parseTraceKindLine(RACE_KIND_LINE);
+check('the explicit kind line parses', kindLine && kindLine.kind === 'drive-through',
+  kindLine && kindLine.kind);
+check('a Track Limits scoring line is not a kind line', parseTraceKindLine(WARNING) === null);
+
+const stw = parseTraceSteward(OTHER_STEWARD);
+check('the steward message names the driver', stw && stw.driver === 'Michael wood1987', stw && stw.driver);
+check('…and the kind', stw && stw.kind === 'stop-go' && stw.seconds === 10,
+  stw && `${stw.kind} ${stw.seconds}`);
+check('…and the reason', stw && stw.reason === 'Exiting Pits Under Red', stw && stw.reason);
+
+// The kind line + Network/Local pair, as the race actually wrote them: one
+// penalty, named drive-through, discharging the points once.
+acc = new TraceLimitsAccumulator();
+acc.push(SESSION_START);
+acc.push(WARNING);
+acc.push(SCORED_100);
+acc.push(RACE_KIND_LINE);
+acc.push(RACE_NET_PEN);
+acc.push(RACE_LOC_PEN);
+check('the race’s own drive-through discharges', acc.state().points === 0, acc.state().points);
+check('…and is named by the kind line', acc.state().lastPenalty.kind === 'drive-through',
+  acc.state().lastPenalty.kind);
+check('…once, despite the Network/Local pair', acc.state().lastPenalty.name === 'Track Limits');
+
+// THE RESET BUG: a rival's track-limits penalty must not zero our points. The
+// accumulator itself cannot know whose a line is — the provider's predicate
+// says — so a predicate answering "not ours" has to leave everything alone.
+acc = new TraceLimitsAccumulator();
+acc.penaltyAttribution = () => false; // nothing of what follows is ours
+acc.push(SESSION_START);
+acc.push(WARNING);
+acc.push(SCORED_100);
+acc.push(PEN_TRACK_LIMITS);
+check('a rival’s track-limits penalty leaves our points', acc.state().points === 1,
+  acc.state().points);
+check('…and is not reported as ours', acc.state().lastPenalty === null);
+
+// The steward's message lands AFTER the penalty line it describes, so the
+// attribution is retroactive: a penalty recorded as (probably) ours is struck
+// from the record the moment the message names someone else.
+acc = new TraceLimitsAccumulator();
+acc.penaltyAttribution = (p) => !p.driver || p.driver === 'Carl Jones';
+acc.push(SESSION_START);
+acc.push(OTHER_LOC_PEN);
+check('an unnamed penalty is provisionally ours', acc.state().lastPenalty !== null);
+acc.push(OTHER_STEWARD);
+check('…until the steward names someone else', acc.state().lastPenalty === null);
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 1 && 0 : 1);

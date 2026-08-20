@@ -90,8 +90,37 @@ export interface TraceLine {
 /** A penalty the sim issued, named. */
 export interface TracePenalty {
   atGameSec: number;
-  /** The sim's own wording, e.g. `"Drive Through Penalty"`, `"Speeding In Pitlane"`. */
+  /** The sim's own wording — the REASON, e.g. `"Track Limits"`, `"Pitlane Misbehaviour"`. */
   name: string;
+  /**
+   * What has to be DONE about it, when the trace said. Established live
+   * (2026-08-20, a public multiplayer race) from three corroborating sources:
+   *
+   * - the penalty line's own numeric fields — `et=X A B …` where `A=1` was the
+   *   drive-through and `A=0, B=10` the 10-second stop/go;
+   * - `score.cpp 3973: Track Limits Drive Through Penalty`, an explicit kind
+   *   line written in the same flush;
+   * - the steward's result-stream message ("… received Stop/Go penalty, 10s,
+   *   0laps for Exiting Pits Under Red"), which reaches the trace only while
+   *   the results file is closed (early session) but names everything when it
+   *   does.
+   *
+   * When a wordy source (steward message, kind line) lands within a beat of
+   * the penalty line it wins over the numeric decode — words are harder to
+   * misread than a positional field. Omitted when nothing said: an unnamed
+   * kind stays unnamed, for the same reason `buildPenaltyType` refuses to
+   * guess (serving the wrong kind costs a lap).
+   */
+  kind?: 'drive-through' | 'stop-go';
+  /** The stop/go's hold time in seconds, when one was given (`10` = "10s"). */
+  seconds?: number;
+  /**
+   * WHOSE penalty, when the steward's message named the driver. Load-bearing
+   * for attribution: penalty lines fire for OTHER cars too in multiplayer
+   * (proven live — another driver's pit-exit stop/go wrote a `Local penalty`
+   * line to this PC's trace), so an unnamed line is only *probably* ours.
+   */
+  driver?: string;
 }
 
 /**
@@ -134,8 +163,78 @@ const TRACK_LIMIT_PENALTY = /track\s*limits|drive\s*-?\s*thr(u|ough)|stop\s*\/?\
  */
 const TL_LINE = /^\s*([\d.]+)s\s+score\.cpp\s+(\d+):\s+Track Limits:\s+(.*)$/;
 
-/** `18137.68s score.cpp 1365: Local penalty et=4807.4 0 10 0 0 "Speeding In Pitlane"` */
-const PENALTY_LINE = /^\s*([\d.]+)s\s+score\.cpp\s+\d+:\s+Local penalty\s+et=[\d.]+.*?"([^"]+)"/;
+/**
+ * The penalty lines, both spellings:
+ *
+ * ```
+ * 18137.68s score.cpp 1365: Local penalty et=4807.4 0 10 0 0 "Speeding In Pitlane"
+ *  6696.17s score.cpp 1224: Network penalty et=3438.9 "Track Limits" 1 0 0 0
+ * ```
+ *
+ * `Local` puts the numbers before the name, `Network` after; in a multiplayer
+ * race the server's penalty for this car arrives as BOTH lines in the same
+ * flush (same `et`, same name), so the accumulator dedupes the pair. The four
+ * numeric fields are the kind: first field `1` = drive-through, `0` with a
+ * positive second field = stop/go of that many seconds — decoded from a live
+ * drive-through (`1 0 0 0`, corroborated by the explicit kind line) and a live
+ * "Stop/Go penalty, 10s" (`0 10 0 0`, corroborated by the steward's message).
+ */
+const PENALTY_LINE =
+  /^\s*([\d.]+)s\s+score\.cpp\s+\d+:\s+Local penalty\s+et=[\d.]+\s+([-\d\s.]*?)"([^"]+)"/;
+const NETWORK_PENALTY_LINE =
+  /^\s*([\d.]+)s\s+score\.cpp\s+\d+:\s+Network penalty\s+et=[\d.]+\s+"([^"]+)"\s+([-\d\s.]*)$/;
+
+/**
+ * `6696.17s score.cpp 3973: Track Limits Drive Through Penalty` — the sim
+ * naming, in words, the kind of track-limits penalty it is issuing in this
+ * same flush. Only the drive-through wording has been observed; the stop/go
+ * alternative is carried on the same pattern so it is recognised the day it
+ * appears rather than ignored.
+ */
+const KIND_LINE =
+  /^\s*([\d.]+)s\s+score\.cpp\s+\d+:\s+Track Limits\s+(Drive\s*-?\s*Thr(?:u|ough)|Stop\s*\/?\s*Go)\s+Penalty\s*$/i;
+
+/**
+ * The steward's result-stream message, which lands in the trace only while the
+ * results file is closed (early in a session) and names EVERYTHING when it does:
+ *
+ * ```
+ * steward.cpp 7095: Not logging result stream message, because the file is not
+ *   open. Msg: Michael wood1987 received Stop/Go penalty, 10s, 0laps for
+ *   Exiting Pits Under Red. Result: penalties=1, 1st=Stop/Go,10s
+ * ```
+ *
+ * The driver's name is the part nothing else carries — it is what lets a
+ * penalty be pinned to a car instead of assumed to be ours.
+ */
+const STEWARD_MSG =
+  /steward\.cpp\s+\d+:.*\bMsg:\s+(.+?)\s+received\s+(Stop\s*\/?\s*Go|Drive\s*-?\s*Thr(?:u|ough))\s+penalty,\s*(\d+)s,\s*(\d+)\s*laps?\s+for\s+(.+?)\.\s*Result:/i;
+
+/** How close (game seconds) a wordy line must be to a penalty line to describe it. */
+const KIND_PAIR_WINDOW_SEC = 2;
+
+/** Normalise a matched kind wording to the enum. */
+function kindOf(word: string): 'drive-through' | 'stop-go' {
+  return /drive/i.test(word) ? 'drive-through' : 'stop-go';
+}
+
+/**
+ * Decode the penalty line's numeric fields into a kind, or nothing when the
+ * shape is not one of the two observed ones. Conservative on purpose — an
+ * unrecognised pattern yields no claim, same rule as the pit-menu rows.
+ */
+function kindFromFields(raw: string): { kind: 'drive-through' | 'stop-go'; seconds?: number } | null {
+  const nums = raw
+    .trim()
+    .split(/\s+/)
+    .map((s) => Number.parseFloat(s))
+    .filter((n) => Number.isFinite(n));
+  if (nums.length < 2) return null;
+  const [a, b] = nums as [number, number];
+  if (a === 1 && b === 0) return { kind: 'drive-through' };
+  if (a === 0 && b > 0) return { kind: 'stop-go', seconds: b };
+  return null;
+}
 
 /**
  * `132.59s steward.cpp 9371: SessionName="Practice"` — a session beginning.
@@ -230,15 +329,85 @@ export function parseTraceSession(line: string): { atGameSec: number; session: s
   return { atGameSec, session };
 }
 
-/** Parse a `Local penalty` line, or `null` when the line is not one. */
+/** Parse a `Local penalty` / `Network penalty` line, or `null` when neither. */
 export function parseTracePenalty(line: string): TracePenalty | null {
-  const m = PENALTY_LINE.exec(line.trimEnd());
-  if (!m) return null;
-  const [, secRaw, name] = m;
+  const text = line.trimEnd();
+  let secRaw: string | undefined;
+  let name: string | undefined;
+  let fields: string | undefined;
+  const local = PENALTY_LINE.exec(text);
+  if (local) {
+    [, secRaw, fields, name] = local;
+  } else {
+    const net = NETWORK_PENALTY_LINE.exec(text);
+    if (!net) return null;
+    [, secRaw, name, fields] = net;
+  }
   if (secRaw === undefined || name === undefined) return null;
   const atGameSec = Number.parseFloat(secRaw);
   if (!Number.isFinite(atGameSec)) return null;
-  return { atGameSec, name };
+  const decoded = fields ? kindFromFields(fields) : null;
+  // A name that states the kind outright ("Drive Through Penalty", "Stop/Go
+  // Penalty") outranks the numeric decode — words over positional fields,
+  // same rule as everywhere else in this file. The seconds only survive when
+  // the two sources agree on what kind of penalty they describe.
+  const nameKind = /drive\s*-?\s*thr(?:u|ough)/i.test(name)
+    ? ('drive-through' as const)
+    : /stop\s*[/-]?\s*go/i.test(name)
+      ? ('stop-go' as const)
+      : null;
+  const kind = nameKind ?? decoded?.kind;
+  const seconds =
+    kind === 'stop-go' && decoded?.kind === 'stop-go' ? decoded.seconds : undefined;
+  return {
+    atGameSec,
+    name,
+    ...(kind ? { kind } : {}),
+    ...(seconds !== undefined ? { seconds } : {}),
+  };
+}
+
+/**
+ * Parse the explicit track-limits kind line, or `null`. Exported for the test
+ * harness, like every parser here.
+ */
+export function parseTraceKindLine(
+  line: string,
+): { atGameSec: number; kind: 'drive-through' | 'stop-go' } | null {
+  const m = KIND_LINE.exec(line.trimEnd());
+  if (!m) return null;
+  const [, secRaw, word] = m;
+  if (secRaw === undefined || word === undefined) return null;
+  const atGameSec = Number.parseFloat(secRaw);
+  if (!Number.isFinite(atGameSec)) return null;
+  return { atGameSec, kind: kindOf(word) };
+}
+
+/** Parse the steward's result-stream penalty message, or `null`. */
+export function parseTraceSteward(line: string): {
+  atGameSec: number;
+  driver: string;
+  kind: 'drive-through' | 'stop-go';
+  seconds: number;
+  laps: number;
+  reason: string;
+} | null {
+  const text = line.trimEnd();
+  const m = STEWARD_MSG.exec(text);
+  if (!m) return null;
+  const at = /^\s*([\d.]+)s\s/.exec(text);
+  const [, driver, word, secondsRaw, lapsRaw, reason] = m;
+  if (!at?.[1] || !driver || !word || !reason) return null;
+  const atGameSec = Number.parseFloat(at[1]);
+  if (!Number.isFinite(atGameSec)) return null;
+  return {
+    atGameSec,
+    driver: driver.trim(),
+    kind: kindOf(word),
+    seconds: Number.parseInt(secondsRaw ?? '0', 10) || 0,
+    laps: Number.parseInt(lapsRaw ?? '0', 10) || 0,
+    reason: reason.trim(),
+  };
 }
 
 /** A scored incident: a charge, with the context it was charged in. */
@@ -350,6 +519,21 @@ export class TraceLimitsAccumulator {
   private session: string | null = null;
   /** The verdict line awaiting its breakdown — they arrive as a pair. */
   private pending: TraceLine | null = null;
+  /** An explicit kind line awaiting the penalty line it describes. */
+  private pendingKind: { atGameSec: number; kind: 'drive-through' | 'stop-go' } | null = null;
+
+  /**
+   * Whose penalty is this? `null` (the default) trusts every line, which is the
+   * original single-player behaviour and what a fixture replay wants. A live
+   * provider installs a predicate, because **penalty lines fire for other cars
+   * too in multiplayer** — proven live 2026-08-20, when another driver's
+   * pit-exit stop/go wrote a `Local penalty` line to this PC's trace. Without
+   * the check, any rival's track-limits penalty zeroed OUR accumulated points,
+   * which is exactly the "widget resets itself mid-race" bug drivers reported.
+   *
+   * Returning `false` drops the line entirely: no `lastPenalty`, no discharge.
+   */
+  public penaltyAttribution: ((pen: TracePenalty) => boolean) | null = null;
 
   /** Feed one raw line. Unrecognised lines are ignored. */
   public push(line: string): void {
@@ -361,8 +545,52 @@ export class TraceLimitsAccumulator {
       return;
     }
 
+    // The wordy sources arrive in the same flush as the penalty line they
+    // describe: the kind line BEFORE it (held until it lands), the steward
+    // message AFTER it (applied retroactively).
+    const kindLine = parseTraceKindLine(line);
+    if (kindLine) {
+      this.pendingKind = kindLine;
+      return;
+    }
+    const steward = parseTraceSteward(line);
+    if (steward) {
+      const lp = this.lastPenalty;
+      if (lp && Math.abs(lp.atGameSec - steward.atGameSec) <= KIND_PAIR_WINDOW_SEC) {
+        lp.kind = steward.kind;
+        if (steward.seconds > 0) lp.seconds = steward.seconds;
+        lp.driver = steward.driver;
+        // Now that the message has named the driver, re-ask whose it was. A
+        // "no" drops the record — it was a rival's penalty, and naming it on
+        // our widget would tell the driver to serve something they don't owe.
+        if (this.penaltyAttribution && !this.penaltyAttribution(lp)) {
+          this.lastPenalty = null;
+        }
+      }
+      return;
+    }
+
     const pen = parseTracePenalty(line);
     if (pen) {
+      const pk = this.pendingKind;
+      if (pk && Math.abs(pk.atGameSec - pen.atGameSec) <= KIND_PAIR_WINDOW_SEC) {
+        // The explicit wording outranks the numeric decode — words are harder
+        // to misread than a positional field.
+        pen.kind = pk.kind;
+        this.pendingKind = null;
+      }
+      if (this.penaltyAttribution && !this.penaltyAttribution(pen)) return;
+      // A multiplayer penalty for this car arrives as a Network + Local pair
+      // with the same timestamp and name. The second of the pair only tops up
+      // detail the first was missing; it is not a second penalty.
+      const lp = this.lastPenalty;
+      if (lp && lp.atGameSec === pen.atGameSec && lp.name === pen.name) {
+        if (pen.kind && !lp.kind) {
+          lp.kind = pen.kind;
+          if (pen.seconds !== undefined) lp.seconds = pen.seconds;
+        }
+        return;
+      }
       this.lastPenalty = pen;
       // Mirrors the XML, where `CurrentPoints` returns to 0 on the drive-through
       // that the accumulated points earned.
@@ -470,6 +698,7 @@ export class TraceLimitsAccumulator {
     this.lastIncident = null;
     this.lastPenalty = null;
     this.pending = null;
+    this.pendingKind = null;
   }
 }
 
@@ -595,8 +824,22 @@ export class LmuTraceLimitsReader {
   private carry = '';
   private lastScanAt = 0;
   private started = false;
+  /** Whether the lines being pushed are a backfill replay, for the predicate. */
+  private replaying = false;
 
   public constructor(private readonly verbose = false) {}
+
+  /**
+   * Install the "whose penalty is this?" check — see
+   * {@link TraceLimitsAccumulator.penaltyAttribution}. The predicate's second
+   * argument is `true` while the reader is REPLAYING history (the startup /
+   * rotation backfill), where a caller's "did our own count just move" test has
+   * no live counter behind it and unnamed penalties should be trusted the way
+   * they always were.
+   */
+  public setPenaltyAttribution(fn: (pen: TracePenalty, replay: boolean) => boolean): void {
+    this.accumulator.penaltyAttribution = (pen) => fn(pen, this.replaying);
+  }
 
   public start(): void {
     this.dir = findLmuLogDir();
@@ -758,8 +1001,13 @@ export class LmuTraceLimitsReader {
     // Back up to the start of that line so the marker itself is parsed, and with it
     // the session's name.
     const lineStart = text.lastIndexOf('\n', marker) + 1;
-    for (const line of text.slice(lineStart).split('\n')) {
-      if (line) this.accumulator.push(line.trimEnd());
+    this.replaying = true;
+    try {
+      for (const line of text.slice(lineStart).split('\n')) {
+        if (line) this.accumulator.push(line.trimEnd());
+      }
+    } finally {
+      this.replaying = false;
     }
     if (this.verbose) {
       const s = this.accumulator.state();

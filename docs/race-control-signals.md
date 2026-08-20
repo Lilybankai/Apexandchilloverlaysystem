@@ -63,7 +63,27 @@ file for the first two minutes), `race-probe-telemetry-2026-08-04T19-54-48.bin`
 - **Type + deadline appear in the pit menu the moment the count rises**:
   `GET /rest/garage/PitMenu/receivePitMenu` grew a row
   `{"name":"STOP/GO:","settings":["No(3Laps)","Yes(3Laps)"],"currentSetting":1}`.
-  The "(3Laps)" is the serve deadline. Drive-through wording still UNSEEN.
+  The "(3Laps)" is the serve deadline. Drive-through row wording still UNSEEN.
+- **The trace log names the type the instant it is issued** (probed live
+  2026-08-20, public MP race at Silverstone-class server; parsed by
+  `lmuTraceLimits` since v0.82.0):
+  - `score.cpp 3973: Track Limits Drive Through Penalty` — an explicit kind
+    line, written in the same flush as…
+  - `score.cpp 1224: Network penalty et=3438.9 "Track Limits" 1 0 0 0` and
+    `score.cpp 1365: Local penalty et=3438.9 1 0 0 0 "Track Limits"` — the
+    numeric fields ARE the kind: first `1` = drive-through; `0` with a
+    positive second field = stop/go of that many seconds (`0 10 0 0` = the
+    "Stop/Go penalty, 10s" the steward message named).
+  - `steward.cpp 7095: … Msg: <driver> received Stop/Go penalty, 10s, 0laps
+    for Exiting Pits Under Red. Result: penalties=1, 1st=Stop/Go,10s` — the
+    full story WITH the driver's name, but it only reaches the trace while
+    the results file is closed (early session).
+  - **CAUTION: `Local penalty` lines fire for OTHER drivers too in MP** — the
+    stop/go above was another driver's, on this PC's trace. Anything built on
+    these lines must attribute them first (the provider gates on our own
+    count edge / the steward-named driver; see `setPenaltyAttribution`).
+- DSQ: `standings[player].finishStatus` = `FSTAT_DSQ` (and the trace writes
+  `LocalDisqualify() for driver "<name>"`).
 - Served: count decremented (2→1) while `PitState == STOPPED`.
 
 ### Yellow flags
@@ -133,7 +153,8 @@ dev-harnesses memory).
 
 ## Open items
 - Standing-start light cadence (frames 1..5) — one standing-start session.
-- Drive-through pit-menu wording — next drive-through penalty.
+- Drive-through PIT-MENU row wording — next drive-through penalty (the type
+  itself is no longer blocked on it: the trace names it, see Penalties above).
 - `yellowFlagState` FCY values — next safety-car/FCY session.
 - Multiplayer parity — re-check on an RC server with XiLE (fields may differ).
 - gamePhase 4 (countdown) unverified; treat unknown phases as no-banner.

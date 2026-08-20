@@ -877,24 +877,36 @@ export interface TrackLimitsState {
    */
   msSinceServed: number;
   /**
-   * What kind of penalty is outstanding, in LMU's own words — `"STOP/GO"`,
-   * `"DRIVE THRU"` — taken from the row the sim puts in the pit menu for it.
+   * What kind of penalty is outstanding, in the sim's own words —
+   * `"STOP/GO"`, `"DRIVE THROUGH"`, `"STOP/GO 10S"`, or `"DISQUALIFIED"`.
+   *
+   * Two sources, both LMU's own: the row the sim inserts in the pit menu for
+   * the penalty it wants served, and (when that row is absent or unrecognised)
+   * the penalty's naming in the game's trace log, attributed to this car
+   * before it is trusted. A disqualification (standings `finishStatus`)
+   * overrides both — there is nothing left to serve.
    *
    * **Omitted whenever we cannot name it**, which is deliberate and load-bearing.
-   * The count is a fact; the type is read from a menu row whose naming we have
-   * only observed for one kind of penalty, so it is reported only when the sim's
-   * own menu is affirmatively showing one. Guessing "STOP/GO" at a driver
-   * serving a drive-through would send them into their box and turn a 20-second
-   * penalty into a lap — strictly worse than the "1 PENALTY" they get today.
+   * The count is a fact; the type is only ever reported in the sim's own words,
+   * never inferred. Guessing "STOP/GO" at a driver serving a drive-through
+   * would send them into their box and turn a 20-second penalty into a lap —
+   * strictly worse than a bare "1 PENALTY".
    */
   penaltyType?: string;
   /**
-   * The penalty row's value exactly as the pit menu renders it, e.g.
-   * `"Yes(0Laps)"`. Passed through verbatim rather than parsed: it is the sim's
-   * wording, and the meaning of the parenthesised part is not something we have
-   * established. Omitted alongside {@link penaltyType}.
+   * The actionable second half of {@link penaltyType}: the serve deadline when
+   * the pit menu carried one (`"SERVE IN 3 LAPS"`, `"SERVE NOW"`), or the
+   * penalty's REASON in the sim's words (`"TRACK LIMITS"`) when the type came
+   * from the trace. Omitted alongside {@link penaltyType}.
    */
   penaltyDetail?: string;
+  /**
+   * The stewards have excluded this car (`finishStatus` = DSQ). Carried
+   * separately from the count because LMU leaves {@link penalties} standing
+   * after the verdict, and the widget must show the verdict even at a count
+   * of zero.
+   */
+  disqualified?: boolean;
   /**
    * Whether {@link pointsLimit} is a threshold the sim will actually act on in THIS
    * session.
@@ -1025,6 +1037,14 @@ export interface StandingEntry {
   bestLapSec: number;
   /** Last lap in seconds; {@link UNKNOWN_VALUE} if none. */
   lastLapSec: number;
+  /**
+   * Average of this car's last few laps (up to 5), seconds — the pace it is
+   * actually running, as opposed to the one-off {@link bestLapSec}. Collected
+   * live from lap edges by `telemetry/paceAverage`; laps through the pit lane
+   * are left out. Omitted until the car has completed a clean lap under our
+   * watch, so a widget can tell "no pace yet" from a slow one.
+   */
+  avg5Sec?: number;
   /** Laps completed. */
   lapsCompleted: number;
   /** Whether the car is currently in the pit lane / stall. */
