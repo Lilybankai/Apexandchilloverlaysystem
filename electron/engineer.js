@@ -462,6 +462,24 @@ class EngineerService {
     return preset === 'off' || preset === 'standard' ? preset : 'essential';
   }
 
+  /** Radio volume 0–100, safe against settings written by older versions. */
+  volumePct() {
+    const settings = this.loadSettings();
+    const v = Number(settings.engineer && settings.engineer.volume);
+    return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 100;
+  }
+
+  /**
+   * The slider position as an amplitude gain. Squared, because ears are
+   * logarithmic: linear amplitude leaves the top half of a slider doing almost
+   * nothing and the bottom eighth doing everything. Read per clip — a volume
+   * change applies to the next line spoken, no pipeline restart.
+   */
+  volumeGain() {
+    const v = this.volumePct() / 100;
+    return v * v;
+  }
+
   /** Everything the panel needs to render the tab, as plain data. */
   status() {
     const settings = this.loadSettings();
@@ -469,6 +487,7 @@ class EngineerService {
     return {
       enabled: !!settings.engineerEnabled,
       readouts: this.readoutsPreset(),
+      volume: this.volumePct(),
       running: this.running,
       engineInstalled: this.engineInstalled(),
       selectedVoice: selected,
@@ -638,7 +657,7 @@ class EngineerService {
         let out = wav;
         try {
           out = wav.replace(/\.wav$/i, '.radio.wav');
-          this.radioFx.radioify(wav, out);
+          this.radioFx.radioify(wav, out, this.volumeGain());
           fs.rmSync(wav, { force: true });
         } catch {
           out = wav; // dry beats silent
@@ -872,10 +891,18 @@ class EngineerService {
 
   playChirp() {
     if (!this.chirpPath || !this.player || !this.player.stdin.writable) return;
-    // The player deletes what it plays; hand it a throwaway copy.
+    // The player deletes what it plays; hand it a throwaway copy — scaled to
+    // the radio volume on the way, since the master chirp is kept full-level.
     const copy = path.join(this.wavDir, `chirp-${Date.now()}.wav`);
     try {
-      fs.copyFileSync(this.chirpPath, copy);
+      const gain = this.volumeGain();
+      if (gain >= 1) {
+        fs.copyFileSync(this.chirpPath, copy);
+      } else {
+        const { sampleRate, samples } = this.radioFx.readWav(this.chirpPath);
+        for (let i = 0; i < samples.length; i++) samples[i] *= gain;
+        this.radioFx.writeWav(copy, sampleRate, samples);
+      }
     } catch {
       return;
     }
@@ -1080,7 +1107,7 @@ class EngineerService {
       child.on('error', reject);
     });
     const out = path.join(dir, 'preview.radio.wav');
-    this.radioFx.radioify(wav, out);
+    this.radioFx.radioify(wav, out, this.volumeGain());
     // One-shot player: the resident one may not exist while the feature is off.
     const player = spawnPs(path.join(this.sidecarsDir, PLAYER_SIDECAR));
     player.stdout.on('data', (d) => {

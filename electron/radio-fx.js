@@ -136,8 +136,11 @@ function noiseBurst(len, startAmp) {
 /**
  * The whole channel. Takes mono float samples, returns new mono float samples.
  * Exposed for tests; `radioify` below is the file-in/file-out wrapper.
+ * `gain` (0..1, default 1) scales the finished clip AFTER normalization — the
+ * engineer's volume slider. It lives here, in the samples, because the player
+ * sidecar (System.Media.SoundPlayer) has no volume control of its own.
  */
-function processSamples(samples, sampleRate) {
+function processSamples(samples, sampleRate, gain = 1) {
   const ms = (v) => Math.round((sampleRate * v) / 1000);
   const pad = ms(PAD_MS);
   const keyUp = noiseBurst(ms(KEY_UP_MS), 0.32);
@@ -161,20 +164,20 @@ function processSamples(samples, sampleRate) {
   // Drive it: tanh soft-clip squashes the peaks like a hot channel.
   for (let i = 0; i < total; i++) out[i] = Math.tanh(out[i] * DRIVE);
 
-  // Normalize to a consistent level.
+  // Normalize to a consistent level, then apply the volume gain on top.
   let peak = 0;
   for (let i = 0; i < total; i++) peak = Math.max(peak, Math.abs(out[i]));
   if (peak > 0) {
-    const g = PEAK / peak;
+    const g = (PEAK / peak) * Math.max(0, Math.min(1, gain));
     for (let i = 0; i < total; i++) out[i] *= g;
   }
   return out;
 }
 
 /** File in, file out. Returns outPath for pipeline convenience. */
-function radioify(inPath, outPath) {
+function radioify(inPath, outPath, gain = 1) {
   const { sampleRate, samples } = readWav(inPath);
-  writeWav(outPath, sampleRate, processSamples(samples, sampleRate));
+  writeWav(outPath, sampleRate, processSamples(samples, sampleRate, gain));
   return outPath;
 }
 

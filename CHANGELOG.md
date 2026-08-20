@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### Added
+
+- **A volume slider for the race engineer.** On the Engineer tab, under Radio
+  calls — turn her up over loud sim audio or down under your spotter, 0 to
+  100%. It applies from the next line she speaks (the chirp and voice
+  previews follow it too), so hit Radio check to hear the new level.
+
 ## 0.80.0 — 2026-08-20
 
 ### Changed

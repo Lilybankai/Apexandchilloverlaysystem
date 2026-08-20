@@ -29,6 +29,8 @@
   const pttClear = $('#eng-ptt-clear');
   const readouts = $('#eng-readouts');
   const readoutsHint = $('#eng-readouts-hint');
+  const volume = $('#eng-volume');
+  const volumeEcho = $('#eng-volume-echo');
   const sttStatus = $('#eng-stt-status');
   const sttDownload = $('#eng-stt-download');
   const lastWrap = $('#eng-last-call-wrap');
@@ -263,6 +265,12 @@
     toggle.checked = !!s.enabled;
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
+    // Don't yank the thumb out from under a drag — status pushes arrive while
+    // the debounced save is still in flight.
+    if (typeof s.volume === 'number' && document.activeElement !== volume) {
+      volume.value = String(s.volume);
+      volumeEcho.textContent = String(s.volume);
+    }
     const [text, tone] = statusText(s);
     statusEl.textContent = text;
     statusEl.className = 'eng-status' + (tone ? ` eng-status--${tone}` : '');
@@ -417,6 +425,18 @@
   readouts.addEventListener('change', () => {
     renderReadoutsHint();
     void api.updateSettings({ engineer: { readouts: readouts.value } });
+  });
+  // Echo instantly, save debounced — a drag through forty values is one write.
+  // The new level applies to the next clip spoken (no restart), so the Radio
+  // check button beside the title is the natural "hear it" step.
+  let volumeTimer = null;
+  volume.addEventListener('input', () => {
+    volumeEcho.textContent = volume.value;
+    if (volumeTimer) clearTimeout(volumeTimer);
+    volumeTimer = setTimeout(() => {
+      volumeTimer = null;
+      void api.updateSettings({ engineer: { volume: parseInt(volume.value, 10) } });
+    }, 150);
   });
   $('#eng-radio-check').addEventListener('click', async () => {
     const res = await api.engineerTest();

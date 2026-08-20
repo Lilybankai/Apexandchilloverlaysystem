@@ -213,7 +213,9 @@ function defaultSettings() {
     // `readouts` is the proactive-calls dial: 'off' | 'essential' | 'standard'.
     // Essential = flags, fuel, penalties, damage; Standard adds the race-story
     // calls (fastest laps, position moves, rivals' stops, blue flags).
-    engineer: { readouts: 'essential' },
+    // `volume` is the radio volume, 0–100 (100 = full). Applied to the audio
+    // samples themselves — the player sidecar has no volume control.
+    engineer: { readouts: 'essential', volume: 100 },
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
     // width/height in px; absent means "the widget's own size".
@@ -474,8 +476,14 @@ const READOUT_PRESETS = ['off', 'essential', 'standard'];
  */
 function sanitizeEngineer(stored, defaults) {
   const s = stored && typeof stored === 'object' ? stored : {};
+  const vol = Number(s.volume);
   return {
     readouts: READOUT_PRESETS.includes(s.readouts) ? s.readouts : defaults.readouts,
+    volume: Number.isFinite(vol)
+      ? Math.max(0, Math.min(100, Math.round(vol)))
+      : typeof defaults.volume === 'number'
+        ? defaults.volume
+        : 100,
   };
 }
 

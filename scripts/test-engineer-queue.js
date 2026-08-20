@@ -200,5 +200,33 @@ console.log('\n8) The grammar still wins over dictation text');
     matchGrammarText('last five average') === 'avgAhead');
 }
 
+console.log('\n9) The volume slider scales the audio, and old settings read as full');
+{
+  // The service side: slider percent → squared amplitude gain, read per clip.
+  let settings = { engineer: { readouts: 'essential', volume: 50 } };
+  const svc = new EngineerService({
+    dir: path.join(require('node:os').tmpdir(), 'apex-queue-test'),
+    loadSettings: () => settings,
+    onStatus: () => {},
+  });
+  check('50% slider is a quarter of full amplitude', svc.volumeGain() === 0.25);
+  check('status carries the percent', svc.status().volume === 50);
+  settings = { engineer: { readouts: 'essential' } }; // written by an older build
+  check('missing volume reads as full', svc.volumeGain() === 1 && svc.status().volume === 100);
+  settings = { engineer: { readouts: 'essential', volume: 0 } };
+  check('0% is silent, not full', svc.volumeGain() === 0);
+
+  // The DSP side: the gain lands in the samples radio-fx writes.
+  const radioFx = require('../electron/radio-fx');
+  const tone = new Float64Array(2205);
+  for (let i = 0; i < tone.length; i++) tone[i] = Math.sin((2 * Math.PI * 440 * i) / 22050);
+  const peakOf = (arr) => arr.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  const full = peakOf(radioFx.processSamples(tone, 22050));
+  const half = peakOf(radioFx.processSamples(tone, 22050, 0.5));
+  check('gain 0.5 halves the processed peak',
+    Math.abs(half - full / 2) < 0.01, `full ${full.toFixed(3)}, half ${half.toFixed(3)}`);
+  check('no gain argument means unchanged output', Math.abs(full - 0.89) < 0.01, full.toFixed(3));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
