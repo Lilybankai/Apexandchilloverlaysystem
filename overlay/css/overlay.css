@@ -463,6 +463,7 @@
    "1:58.492" fits the 60px of content the colgroup leaves them. */
 .standings__gap,
 .standings__best,
+.standings__avg,
 .standings__last {
   text-align: right;
   font-family: var(--font-mono);
@@ -472,6 +473,11 @@
 .standings__gap { width: 62px; color: var(--text-secondary); }
 .standings__best { width: 70px; color: var(--text-secondary); }
 .standings__last { width: 70px; }
+/* Last-5 average — an optional column (the AVG setting / `avg=on`). The cells
+   follow `data-avg` on the section root, and the <col> width goes with them
+   (widgets/standings.js), so an off column costs the tower no width at all. */
+.standings__avg { width: 70px; color: var(--text-secondary); }
+[data-avg="off"] .standings__avg { display: none; }
 /* Pit flag column, at the right edge of the row. No left padding — the chip is
    its own hard-edged box and needs no gutter between it and a right-aligned
    number — and 8px on the right, which is the inset the class subheader's

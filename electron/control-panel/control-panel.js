@@ -565,11 +565,45 @@
     nmHead.appendChild(nmLabel);
     nmHead.appendChild(names);
 
+    // The optional last-5-average column. Its own row like GAP and NAMES —
+    // it applies to every row the tower draws, however many are showing.
+    const avgLabel = document.createElement('span');
+    avgLabel.className = 'ovcard__bg-label';
+    avgLabel.textContent = 'AVG';
+
+    const avg = document.createElement('select');
+    avg.className = 'field__input field__input--inline';
+    avg.id = 'standings-avg';
+    for (const [value, text] of [
+      ['off', 'Hidden'],
+      ['on', 'Last 5 laps'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      avg.appendChild(opt);
+    }
+    // Defensive default, same idiom as DECIMALS: a config written by an older
+    // build has no `avg` at all.
+    avg.value = v.avg === 'on' ? 'on' : 'off';
+    avg.title =
+      'Adds an AVG column: the average of each car’s last five laps — the ' +
+      'pace they are actually running, next to the one-off BEST. Laps through ' +
+      'the pit lane are left out. The in-game panel grows by the column’s ' +
+      'width while it is on; an OBS source may need widening';
+    avg.addEventListener('change', () => void send({ avg: avg.value }));
+
+    const avgHead = document.createElement('div');
+    avgHead.className = 'ovcard__view-head';
+    avgHead.appendChild(avgLabel);
+    avgHead.appendChild(avg);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
     wrap.appendChild(dpHead);
     wrap.appendChild(nmHead);
+    wrap.appendChild(avgHead);
     wrap.appendChild(flHead);
     wrap.appendChild(posHead);
     return wrap;

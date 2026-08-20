@@ -271,6 +271,30 @@
   var layout = {}; // { id: {x, y, scale} }
   var editing = false;
 
+  /**
+   * Extra panel width an OPTIONAL column is currently claiming, per widget.
+   *
+   * The standings tower's AVG column (last-5 average) is 70px of table that
+   * would otherwise come out of the driver names — the one column with no
+   * width of its own. So while the setting is on, the panel itself is drawn
+   * that much wider, on top of whatever width is stored or default; stored
+   * widths stay in "no column" units (the width drags below subtract the bump
+   * before saving), so toggling the setting moves the panel edge and nothing
+   * else, and turning it off gives exactly that width back.
+   */
+  var standingsAvgOn = false;
+  function widthBumpFor(id) {
+    return id === "standings" && standingsAvgOn ? 70 : 0;
+  }
+  if (window.ApexAppearance && window.ApexAppearance.onStandings) {
+    window.ApexAppearance.onStandings(function (next) {
+      var on = !!(next && next.avg === "on");
+      if (on === standingsAvgOn) return;
+      standingsAvgOn = on;
+      applyAll();
+    });
+  }
+
   function applyItem(el) {
     var id = el.getAttribute("data-id");
     // Sized to the PRIMARY display, never to the whole desktop: a default layout
@@ -282,8 +306,9 @@
     var l = layout[id] || { x: d.x, y: d.y, scale: 1 };
     layout[id] = l;
     // Width: the operator's stretched width when they have set one, otherwise
-    // the widget's design width (the same one the OBS pages use).
-    el.style.width = (l.w || d.w) + "px";
+    // the widget's design width (the same one the OBS pages use) — plus
+    // whatever an optional column is currently claiming (see widthBumpFor).
+    el.style.width = (l.w || d.w) + widthBumpFor(id) + "px";
     // Height stays automatic unless it has been set: a panel is normally as tall
     // as its content (the standings tower grows with the field). Once a height
     // exists the widget is boxed to it and its body clips — see ingame.css.
@@ -594,7 +619,10 @@
       // every pixel of box: divide, or the edge runs away from the pointer on a
       // widget that has also been scaled up.
       if (drag.mode === "width") {
-        var w = drag.baseW + dxScreen / drag.origScale;
+        // baseW was measured with any optional-column bump in it; the stored
+        // width stays in no-bump units, so applyItem's re-add tracks the
+        // pointer exactly instead of compounding 70px per drag.
+        var w = drag.baseW + dxScreen / drag.origScale - widthBumpFor(drag.id);
         l.w = Math.round(clampNum(w, MIN_W, Math.min(span.width, MAX_ITEM)));
       } else {
         var h = drag.baseH + dyScreen / drag.origScale;
@@ -611,11 +639,14 @@
       // straight through would collapse the cap to the minimum and refuse to
       // widen the widget at all.
       if (drag.mode === "width-w") {
-        var wn = drag.baseW - dxScreen / drag.origScale;
+        // Same no-bump storage as the right-edge drag above; the anchor math
+        // below has to hold the VISUAL right edge, so the bump goes back in.
+        var bump = widthBumpFor(drag.id);
+        var wn = drag.baseW - dxScreen / drag.origScale - bump;
         var runW = (drag.right - minX()) / drag.origScale;
         var capW = Math.max(MIN_W, Math.min(MAX_ITEM, runW));
         l.w = Math.round(clampNum(wn, MIN_W, capW));
-        l.x = Math.round(Math.max(minX(), drag.right - l.w * drag.origScale));
+        l.x = Math.round(Math.max(minX(), drag.right - (l.w + bump) * drag.origScale));
       } else {
         var hn = drag.baseH - dyScreen / drag.origScale;
         var runH = (drag.bottom - minY()) / drag.origScale;

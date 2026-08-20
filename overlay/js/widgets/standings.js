@@ -113,10 +113,14 @@
   var PB_FLASH_MS = 5000;
 
   var mount, setSession, sessFastest, tbody;
+  /** The section root, which carries `data-avg` for the AVG column's CSS. */
+  var rootEl = null;
   /** The GAP column heading — its wording follows the operator's gap mode. */
   var headGap = null;
   /** The GAP `<col>` — its width follows the operator's decimal count. */
   var gapCol = null;
+  /** The AVG `<col>` — its width follows the AVG setting (0 while off). */
+  var avgCol = null;
 
   /**
    * Column widths are given in em, NOT px, because they are only correct
@@ -239,6 +243,14 @@
     // changes every lap, and 32 rows blooming in sequence is wallpaper.
     lastTd.className = "standings__cell standings__last is-crit";
 
+    // Rolling last-5 average — the pace a car is actually running, next to the
+    // LAST it is derived from. Off by default; the AVG setting shows it, and
+    // the whole column (cells, heading, colgroup width) follows `data-avg` on
+    // the section root so an off column costs the tower nothing.
+    var avgTd = document.createElement("td");
+    avgTd.className = "standings__cell standings__avg";
+    avgTd.title = "Average of the last 5 laps (pit laps left out)";
+
     // Pit flag: a marker at the far RIGHT of the row rather than a " ·PIT"
     // glued to the driver's name. The name column is the one the eye reads
     // DOWN the tower, and a suffix there put a transient state inside an
@@ -273,6 +285,7 @@
     tr.appendChild(driverTd);
     tr.appendChild(gapTd);
     tr.appendChild(lastTd);
+    tr.appendChild(avgTd);
     tr.appendChild(bestTd);
     tr.appendChild(veTd);
     tr.appendChild(pitTd);
@@ -293,6 +306,7 @@
       gapTd: gapTd,
       bestTd: bestTd,
       lastTd: lastTd,
+      avgTd: avgTd,
       pitFlag: pitFlag,
       cache: {},
     };
@@ -304,7 +318,9 @@
     tr.className = "standings__grouprow";
     var td = document.createElement("td");
     td.className = "standings__group";
-    td.colSpan = 8;
+    // Every column including the AVG one; a span past the drawn columns is
+    // harmless when AVG is off, a one-short span would leave a notch when on.
+    td.colSpan = 9;
     var dot = document.createElement("span");
     dot.className = "standings__group-dot";
     var label = document.createElement("span");
@@ -354,6 +370,7 @@
     fastest: "class",
     decimals: 3,
     names: "full",
+    avg: "off",
   };
   var viewPinned = false;
 
@@ -395,6 +412,7 @@
         fastest: "class",
         decimals: 3,
         names: "full",
+        avg: "off",
       };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
@@ -414,6 +432,10 @@
         else if (key === "decimals") next.decimals = clampDecimals(parseInt(val, 10));
         else if (key === "names") {
           next.names = val === "surname" || val === "forename" ? val : "full";
+        } else if (key === "avg") {
+          // `avg=on` (also accepted: `5`, `last5`) adds the last-5-average
+          // column for an OBS source, e.g. `?standings=all,avg=on`.
+          next.avg = val === "on" || val === "5" || val === "last5" ? "on" : "off";
         } else if (key === "top" || key === "ahead" || key === "behind") {
           var n = parseInt(val, 10);
           if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
@@ -605,7 +627,11 @@
   }
 
   function init(root) {
+    rootEl = root;
     initView(new URLSearchParams(window.location.search));
+    // Before the first frame, so the AVG heading cannot flash into a tower
+    // whose setting has it off.
+    rootEl.setAttribute("data-avg", view && view.avg === "on" ? "on" : "off");
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -652,7 +678,8 @@
     // class subheader and the fastest-lap banner use (see .standings__pit).
     //
     // Given in em, not px — see BASE_PX at the top of the file for why.
-    var widths = [26, 28, 0, GAP_PX[3], 70, 70, 42, 23];
+    // Index 5 is the AVG column, 0 until the setting turns it on (update()).
+    var widths = [26, 28, 0, GAP_PX[3], 70, 0, 70, 42, 23];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
@@ -661,8 +688,10 @@
     // The GAP column is the one width that is not a constant: it holds a number
     // whose length the operator chooses, and at one decimal "+1.4" is 16px of
     // text in a 62px column. Kept for update() to size, which is where the
-    // decimal setting is already read.
+    // decimal setting is already read. AVG likewise — its width follows its
+    // on/off setting.
     gapCol = colgroup.children[3];
+    avgCol = colgroup.children[5];
     table.appendChild(colgroup);
     table.appendChild(createHead());
     tbody = document.createElement("tbody");
@@ -693,13 +722,14 @@
     var thead = document.createElement("thead");
     var tr = document.createElement("tr");
     tr.className = "standings__headrow";
-    var labels = ["POS", "±", "DRIVER", "GAP", "LAST", "BEST", "VE", ""];
-    var classes = ["pos", "delta", "driver", "gap", "last", "best", "ve", "pit"];
+    var labels = ["POS", "±", "DRIVER", "GAP", "LAST", "AVG", "BEST", "VE", ""];
+    var classes = ["pos", "delta", "driver", "gap", "last", "avg", "best", "ve", "pit"];
     for (var i = 0; i < labels.length; i++) {
       var th = document.createElement("th");
       th.className = "standings__head standings__" + classes[i];
       th.scope = "col";
       th.textContent = labels[i];
+      if (classes[i] === "avg") th.title = "Average of the last 5 laps";
       tr.appendChild(th);
     }
     headGap = tr.children[3];
@@ -848,6 +878,19 @@
     // reload would read as the setting not having worked.
     var gapWidth = (GAP_PX[clampDecimals(view && view.decimals)] / BASE_PX).toFixed(3) + "em";
     if (gapCol && gapCol.style.width !== gapWidth) gapCol.style.width = gapWidth;
+
+    // The AVG column exists only while its setting says so: the CSS hides the
+    // cells off `data-avg`, and the <col>'s width goes with them so the space
+    // returns to the driver names the moment it is off.
+    var avgOn = !!(view && view.avg === "on");
+    var avgAttr = avgOn ? "on" : "off";
+    if (rootEl && rootEl.getAttribute("data-avg") !== avgAttr) {
+      rootEl.setAttribute("data-avg", avgAttr);
+    }
+    if (avgCol) {
+      var avgWidth = avgOn ? (70 / BASE_PX).toFixed(3) + "em" : "0px";
+      if (avgCol.style.width !== avgWidth) avgCol.style.width = avgWidth;
+    }
 
     setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
@@ -1270,6 +1313,12 @@
       row.cache.bestState = bestState;
       row.bestTd.classList.toggle("lap-purple", bestState === "fastest");
       row.bestTd.classList.toggle("lap-green", bestState === "classbest");
+    }
+
+    // AVG: written only while the column is showing — an off column's cells are
+    // display:none and writing them every lap would be pure waste.
+    if (view && view.avg === "on") {
+      set(row, "avg", row.avgTd, "textContent", fmt.lapTime(e.avg5Sec));
     }
 
     set(row, "last", row.lastTd, "textContent", fmt.lapTime(e.lastLapSec));

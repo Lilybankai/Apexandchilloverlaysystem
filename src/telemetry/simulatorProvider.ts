@@ -1524,6 +1524,9 @@ export class SimulatorProvider implements TelemetryProvider {
         lapsBehind,
         bestLapSec: car.bestLapSec,
         lastLapSec: car.lastLapSec,
+        // Close to the last lap with a small steady offset — enough for the
+        // optional AVG column to render distinctly from LAST in demo mode.
+        avg5Sec: round2(car.lastLapSec + 0.12),
         lapsCompleted: car.lapsCompleted,
         inPit: car.inPit,
         pitStops: car.pitStops,

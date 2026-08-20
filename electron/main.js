@@ -362,6 +362,12 @@ function defaultSettings() {
       pos: 'overall', // 'overall' | 'class'
       decimals: 3, // 1 | 2 | 3
       names: 'full', // 'full' | 'surname' | 'forename'
+      // 'on' adds a last-5-laps average column (pit laps left out) — the pace
+      // each car is actually running, next to the one-off BEST. Off by
+      // default: it is 70px of tower that comes straight out of the driver
+      // names anywhere the panel cannot grow (the in-game layer grows it —
+      // see widthBumpFor in overlay/js/ingame.js).
+      avg: 'off', // 'off' | 'on'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -657,6 +663,7 @@ function normalizeStandings(stored) {
     // it is a value this build does not have and the default is the answer.
     decimals: from.decimals === 1 || from.decimals === 2 ? from.decimals : d.decimals,
     names: from.names === 'surname' || from.names === 'forename' ? from.names : d.names,
+    avg: from.avg === 'on' ? 'on' : d.avg,
   };
 }
 
