@@ -8,6 +8,7 @@
 
 ### Added
 
+- **A Schedule tab for the league calendar.** Thursday and Saturday Apex & Chill championships, pulled live from SimGrid: the next race, remaining rounds, grid spots, and a **Sign up on SimGrid** button that opens the championship page in your browser so you can enter from the app.
 - **Engineer callouts on a button.** Last lap, sector times, best lap, gaps,
   who's ahead, position, laps left, fuel, track-limit points, damage, tyres
   and yellow flags can each be bound to a wheel button, a key or a Stream

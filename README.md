@@ -61,6 +61,10 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   class and car, with your own row marked; plus your pace against the class
   reference. See [Reference pace](#reference-pace) and
   [League boards](#league-boards).
+- **Schedule** — the Apex & Chill Thursday (LMP2 & GT3) and Saturday (GT3)
+  championships, pulled live from SimGrid. Next race, remaining rounds, and a
+  **Sign up on SimGrid** button that opens the championship page in your
+  browser. Sign-up itself happens on SimGrid; the app just takes you there.
 - **Suggestions** — send an idea or a bug report straight from the app; it goes
   to the league with your app version attached. **Setups** is not built yet and
   says so. **Training** mode is shown in the top-right toggle but disabled for the
@@ -1015,6 +1019,7 @@ electron/                # desktop control-panel app (Electron)
   main.js                #   runs the dist/server in-process; persists settings
   preload.js             #   safe IPC bridge to the renderer
   auth.js                #   Supabase accounts (main-process only; owns the session)
+  simgrid.js             #   Schedule tab: Thursday + Saturday championships from SimGrid
   lapUpload.js           #   background lap/activity uploader (idempotent aggregates)
   usageReporter.js       #   usage heartbeat → app_sessions (admin panel)
   control-panel/         #   the window UI (choose overlays, copy URLs, status)

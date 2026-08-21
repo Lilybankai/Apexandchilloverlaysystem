@@ -296,6 +296,16 @@ contextBridge.exposeInMainWorld('apex', {
     submit: (payload) => ipcRenderer.invoke('feedback:submit', payload),
   },
 
+  /* ---- League schedule (SimGrid) ----
+   *
+   * Thursday and Saturday championships. Fetched in the main process so the
+   * GridOS token never reaches the renderer — only names, times and https
+   * signup URLs come back. `force` bypasses the five-minute cache. */
+  schedule: {
+    /** `{ force? }` → `{ ok, leagues[], fetchedAt, error? }`. */
+    get: (query) => ipcRenderer.invoke('schedule:get', query || {}),
+  },
+
   /* ---- Admin panel ----
    *
    * League-staff only. Every call is authorised server-side (the RPCs check
