@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.84.0 — 2026-08-21
+
 ### Changed
 
 - **Settings is no longer one long scroll.** It now opens as four short

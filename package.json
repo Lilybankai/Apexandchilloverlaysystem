@@ -1,6 +1,6 @@
 {
   "name": "apex-overlay-system",
-  "version": "0.83.0",
+  "version": "0.84.0",
   "private": true,
   "description": "Apex AIO System — Apex & Chill Racing League's all-in-one rFactor2 / Le Mans Ultimate telemetry suite for live streams (telemetry shared-memory -> WebSocket -> OBS browser-source overlays), with an Electron desktop control panel + installer. The npm package name predates the rename and stays put: Electron derives the userData path from it.",
   "type": "commonjs",
