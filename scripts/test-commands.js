@@ -27,6 +27,7 @@ const {
   EngineerCommands,
   COMMAND_INTENTS,
   speakableLapTime,
+  speakableSplit,
 } = require('../dist/telemetry/engineerCommands');
 
 const UNKNOWN = -1;
@@ -447,6 +448,46 @@ function unit() {
   a = eng6.answer('position');
   check('position: class and overall', a.ok && /P2 in class, P4 overall/.test(a.text), a.text);
 
+  // -- sectors (cumulative LMU boundaries → three splits) --------------------
+  const engSec = new EngineerCommands();
+  engSec.update(
+    frame({
+      standings: gt3Field([
+        {},
+        { lastLapSec: 108.937, lastSector1Sec: 27.89, lastSector2Sec: 76.2 },
+        {},
+      ]),
+    }),
+  );
+  a = engSec.answer('sectors');
+  check(
+    'sectors: three splits from cumulative boundaries',
+    a.ok && /27\.9/.test(a.text) && /48\.3/.test(a.text) && /32\.7/.test(a.text),
+    a.text,
+  );
+  const engSecNone = new EngineerCommands();
+  engSecNone.update(
+    frame({
+      standings: gt3Field([{}, { lastLapSec: 103.42 }, {}]),
+    }),
+  );
+  a = engSecNone.answer('sectors');
+  check('sectors: last lap but no splits refuses', a.ok === false && /No sector/.test(a.text), a.text);
+  const engSecTorn = new EngineerCommands();
+  engSecTorn.update(
+    frame({
+      standings: gt3Field([
+        {},
+        { lastLapSec: 103.42, lastSector1Sec: 29.09, lastSector2Sec: -1 },
+        {},
+      ]),
+    }),
+  );
+  a = engSecTorn.answer('sectors');
+  check('sectors: torn pair (-1) refuses whole, not half', a.ok === false, a.text);
+  check('speakableSplit: sub-minute drops the unit', speakableSplit(28.1) === '28.1');
+  check('speakableSplit: minute-plus uses lap-time form', speakableSplit(74.3) === '1 14.3', speakableSplit(74.3));
+
   // -- Track A: the wider ask-set (v3, 2026-08-19) ----------------------------
 
   const engA = new EngineerCommands();
@@ -634,7 +675,7 @@ function unit() {
   for (const intent of [
     'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'hybrid',
     'pace', 'bestLap', 'fieldFastest', 'leader', 'gridStart', 'trackLimits', 'flags',
-    'weather', 'brakeBias', 'tractionControl',
+    'weather', 'brakeBias', 'tractionControl', 'sectors',
   ]) {
     a = engEmpty.answer(intent);
     check(intent + ': empty frame refuses honestly', a.ok === false, a.text);
@@ -645,7 +686,7 @@ function unit() {
   // exists on one side only, the button either can't reach an answer or hears
   // a phrase nothing will answer. Checked here so it fails in `npm test`, not
   // in a race.
-  const { GRAMMAR } = require('../electron/engineer');
+  const { GRAMMAR, ENGINEER_CALLOUTS } = require('../electron/engineer');
   const gIntents = new Set(GRAMMAR.map((g) => g.intent));
   check(
     'grammar covers every intent',
@@ -663,6 +704,20 @@ function unit() {
     'every grammar entry carries a group',
     GRAMMAR.every((g) => typeof g.group === 'string' && g.group.length > 0),
     GRAMMAR.filter((g) => !g.group).map((g) => g.intent).join(',') || 'all grouped',
+  );
+  // Callout buttons must name a real intent or a Stream Deck press speaks nothing.
+  check(
+    'every callout is a real intent',
+    ENGINEER_CALLOUTS.every((c) => COMMAND_INTENTS.includes(c.intent)),
+    ENGINEER_CALLOUTS.filter((c) => !COMMAND_INTENTS.includes(c.intent)).map((c) => c.intent).join(',') || 'all real',
+  );
+  check(
+    'callouts have unique intents',
+    new Set(ENGINEER_CALLOUTS.map((c) => c.intent)).size === ENGINEER_CALLOUTS.length,
+  );
+  check(
+    'callouts cover last lap, sectors and track limits',
+    ['lastLap', 'sectors', 'trackLimits'].every((i) => ENGINEER_CALLOUTS.some((c) => c.intent === i)),
   );
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

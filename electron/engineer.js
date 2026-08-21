@@ -92,6 +92,11 @@ const GRAMMAR = [
   },
   // -- Pace & laps -------------------------------------------------------------
   { intent: 'lastLap', group: 'Pace & laps', phrases: ['last lap', 'last lap time', 'lap time'] },
+  {
+    intent: 'sectors',
+    group: 'Pace & laps',
+    phrases: ['sectors', 'sector times', 'sector splits', 'last sectors', 'last lap sectors'],
+  },
   { intent: 'bestLap', group: 'Pace & laps', phrases: ['best lap', 'my best lap', 'personal best'] },
   { intent: 'fieldFastest', group: 'Pace & laps', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
   { intent: 'pace', group: 'Pace & laps', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
@@ -145,6 +150,31 @@ const GRAMMAR = [
   { intent: 'flags', group: 'Race control', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
   // -- Conditions ----------------------------------------------------------------
   { intent: 'weather', group: 'Conditions', phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming'] },
+];
+
+/**
+ * The on-demand radio buttons. A wheel / Stream Deck / key press speaks the
+ * answer with no microphone. Curated to the asks a driver actually reaches
+ * for mid-stint (lap, sectors, gaps, fuel, points); the rest of the grammar
+ * stays behind push-to-talk so the bindings page does not grow a row per phrase.
+ *
+ * `intent` matches engineerCommands' CommandIntent; `label` is what the
+ * bindings list shows.
+ */
+const ENGINEER_CALLOUTS = [
+  { intent: 'lastLap', label: 'Call last lap time' },
+  { intent: 'sectors', label: 'Call sector times' },
+  { intent: 'bestLap', label: 'Call best lap' },
+  { intent: 'gapAhead', label: 'Call gap ahead' },
+  { intent: 'gapBehind', label: 'Call gap behind' },
+  { intent: 'carAhead', label: "Call who's ahead" },
+  { intent: 'position', label: 'Call position' },
+  { intent: 'lapsLeft', label: 'Call laps / time left' },
+  { intent: 'fuel', label: 'Call fuel' },
+  { intent: 'trackLimits', label: 'Call track-limit points' },
+  { intent: 'damage', label: 'Call damage' },
+  { intent: 'tyres', label: 'Call tyres' },
+  { intent: 'flags', label: 'Call yellow flags' },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -943,6 +973,29 @@ class EngineerService {
   /* ---- the button ----------------------------------------------------------- */
 
   /**
+   * Bound callout: speak one phrase-list answer now, no microphone. This is
+   * the Stream Deck / wheel-button path — driver-initiated, so it cuts in
+   * front of a held readout the same way {@link ask} does. The listen window
+   * is untouched: a callout never opens the mic.
+   */
+  speakIntent(intent) {
+    if (!this.running) return { ok: false, error: 'Engineer is not running — enable it first' };
+    if (!this.commands || !this.commandsMod) {
+      return { ok: false, error: 'Engineer commands unavailable' };
+    }
+    const known = this.commandsMod.COMMAND_INTENTS;
+    if (!Array.isArray(known) || !known.includes(intent)) {
+      return { ok: false, error: `unknown engineer callout: ${intent}` };
+    }
+    this.heldReadout = null; // the driver's call always wins
+    const answer = this.commands.answer(intent);
+    const text = answer && answer.text;
+    if (!text) return { ok: false, error: 'No answer' };
+    this.speak(text);
+    return { ok: true, text };
+  }
+
+  /**
    * Push-to-talk: chirp, record one bounded window, answer. Grammar still
    * wins — it returns the instant a phrase matches, exactly as it did before
    * Tier 2 existed. Free-form speech is caught by the dictation grammar in the
@@ -1150,4 +1203,4 @@ class EngineerService {
   }
 }
 
-module.exports = { EngineerService, VOICES, GRAMMAR, sampleUrl, matchGrammarText };
+module.exports = { EngineerService, VOICES, GRAMMAR, ENGINEER_CALLOUTS, sampleUrl, matchGrammarText };

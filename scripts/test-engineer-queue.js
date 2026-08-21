@@ -189,6 +189,10 @@ console.log('\n8) The grammar still wins over dictation text');
     matchGrammarText('safety car is out and I have half a tank what do we do') === null,
     String(matchGrammarText('safety car is out and I have half a tank what do we do')));
   check('empty text does not match', matchGrammarText('') === null);
+  check('"sector times" reaches sectors', matchGrammarText('sector times') === 'sectors');
+  check('"last lap sectors" prefers sectors over last lap',
+    matchGrammarText('last lap sectors') === 'sectors');
+  check('"penalty points" reaches trackLimits', matchGrammarText('penalty points') === 'trackLimits');
   // Day-one field wordings (2026-08-19 engineer_calls log): whisper writes
   // digits, drivers say "last five" — both must land on avgAhead, not the cloud.
   check('digits normalize to words',
@@ -226,6 +230,84 @@ console.log('\n9) The volume slider scales the audio, and old settings read as f
   check('gain 0.5 halves the processed peak',
     Math.abs(half - full / 2) < 0.01, `full ${full.toFixed(3)}, half ${half.toFixed(3)}`);
   check('no gain argument means unchanged output', Math.abs(full - 0.89) < 0.01, full.toFixed(3));
+}
+
+console.log('\n10) Bound callouts speak immediately, no microphone');
+{
+  // A Stream Deck / wheel press is driver-initiated: it speaks even when the
+  // unprompted dial is Quiet and the driver is busy, and it never opens the mic.
+  const r = rig('off');
+  r.svc.lastFrame = drivingFrame(true);
+  const frame = {
+    schemaVersion: 1,
+    source: 'test',
+    timestamp: 0,
+    connected: true,
+    session: { track: 'T', type: 'race', numCars: 1, phase: 'green', currentLap: 4 },
+    player: { trackLimits: { points: 1.5, pointsLimit: 5, penalties: 0 } },
+    standings: [{
+      slotId: 1, position: 3, driverName: 'Carl Jones', isPlayer: true, carClass: 'GT3',
+      classPosition: 2,
+      lastLapSec: 103.42, bestLapSec: 102.1,
+      lastSector1Sec: 28.1, lastSector2Sec: 71.4,
+      gapToLeaderSec: -1, gapToAheadSec: -1, lapsBehind: 0, lapsCompleted: 4, inPit: false,
+    }],
+    relative: [],
+    fuel: {},
+  };
+  check('commands module loaded', !!r.svc.commands);
+  if (r.svc.commands) r.svc.commands.update(frame);
+
+  const last = r.svc.speakIntent('lastLap');
+  check('lastLap callout ok while busy and quiet-preset',
+    last.ok && /1 43\.4/.test(r.spoken[0] || ''), r.spoken[0]);
+
+  r.spoken.length = 0;
+  const sec = r.svc.speakIntent('sectors');
+  check('sectors callout speaks splits',
+    sec.ok && /28\.1/.test(r.spoken[0] || '') && /43\.3/.test(r.spoken[0] || ''), r.spoken[0]);
+
+  r.spoken.length = 0;
+  const pts = r.svc.speakIntent('trackLimits');
+  check('track-limit callout speaks points',
+    pts.ok && /1\.5 of 5/.test(r.spoken[0] || ''), r.spoken[0]);
+
+  r.spoken.length = 0;
+  r.svc.heldReadout = { text: 'stale', expiresAt: Date.now() + 99999 };
+  r.svc.speakIntent('position');
+  check('a callout drops a held readout', r.svc.heldReadout === null);
+  check('position callout spoke', /P2/.test(r.spoken[0] || ''), r.spoken[0]);
+
+  r.svc.running = false;
+  const off = r.svc.speakIntent('lastLap');
+  check('callout while engineer off is an error', off.ok === false && /not running/.test(off.error || ''));
+  r.svc.running = true;
+  const unknown = r.svc.speakIntent('notAThing');
+  check('unknown intent is an error', unknown.ok === false);
+}
+
+console.log('\n11) Callout actions register and fire speakIntent');
+{
+  const { createActions } = require('../electron/actions');
+  const { ENGINEER_CALLOUTS } = require('../electron/engineer');
+  const fired = [];
+  const acts = createActions({
+    engineerAsk: async () => ({ ok: true }),
+    engineerSpeak: (intent) => { fired.push(intent); return { ok: true }; },
+  });
+  const ids = acts.list().filter((a) => a.group === 'Engineer').map((a) => a.id);
+  check('PTT is in the engineer group', ids.includes('engineer.ask'));
+  check(
+    'every callout has a bindable action',
+    ENGINEER_CALLOUTS.every((c) => ids.includes(`engineer.call.${c.intent}`)),
+    ENGINEER_CALLOUTS.filter((c) => !ids.includes(`engineer.call.${c.intent}`)).map((c) => c.intent).join(',') || 'all present',
+  );
+  void acts.run('engineer.call.lastLap');
+  check('running the last-lap action speaks that intent', fired[0] === 'lastLap');
+  void acts.run('engineer.call.sectors');
+  check('running the sectors action speaks that intent', fired[1] === 'sectors');
+  void acts.run('engineer.call.trackLimits');
+  check('running the points action speaks that intent', fired[2] === 'trackLimits');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

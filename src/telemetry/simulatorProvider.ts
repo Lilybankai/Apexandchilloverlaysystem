@@ -1524,6 +1524,10 @@ export class SimulatorProvider implements TelemetryProvider {
         lapsBehind,
         bestLapSec: car.bestLapSec,
         lastLapSec: car.lastLapSec,
+        // Cumulative S1/S2 boundaries so demo mode exercises the engineer's
+        // sector callout — 28 / 63 % of the lap, a believable GT3 split.
+        lastSector1Sec: round2(car.lastLapSec * 0.28),
+        lastSector2Sec: round2(car.lastLapSec * 0.63),
         // Close to the last lap with a small steady offset — enough for the
         // optional AVG column to render distinctly from LAST in demo mode.
         avg5Sec: round2(car.lastLapSec + 0.12),

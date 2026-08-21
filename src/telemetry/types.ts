@@ -1038,6 +1038,15 @@ export interface StandingEntry {
   /** Last lap in seconds; {@link UNKNOWN_VALUE} if none. */
   lastLapSec: number;
   /**
+   * Last completed lap's sector **boundary** times, seconds, cumulative from
+   * the lap start — LMU's `lastSectorTime1/2` convention. Omitted when the sim
+   * has no sector channel or withheld them (typically an invalidated lap).
+   * `lastSector1Sec` is the clock at the S1 line, `lastSector2Sec` at S2;
+   * sector 3 is the lap time minus `lastSector2Sec`.
+   */
+  lastSector1Sec?: number;
+  lastSector2Sec?: number;
+  /**
    * Average of this car's last few laps (up to 5), seconds — the pace it is
    * actually running, as opposed to the one-off {@link bestLapSec}. Collected
    * live from lap edges by `telemetry/paceAverage`; laps through the pit lane

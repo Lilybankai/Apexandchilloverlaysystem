@@ -63,6 +63,7 @@ export type CommandIntent =
   | 'lapsLeft'
   | 'fuel'
   | 'lastLap'
+  | 'sectors'
   | 'position'
   // Track A of the v3 plan (2026-08-19): the wider ask-set. Same rules as the
   // first ten — a read or arithmetic over fields the frame already carries,
@@ -98,6 +99,7 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'lapsLeft',
   'fuel',
   'lastLap',
+  'sectors',
   'position',
   'tyres',
   'pressures',
@@ -164,6 +166,36 @@ export function speakableGap(sec: number): string {
   const abs = Math.abs(sec);
   const val = abs >= 60 ? speakableLapTime(abs) : `${abs.toFixed(1)} seconds`;
   return val;
+}
+
+/**
+ * One sector split for a list. Sub-minute values drop the unit — "28.1, 48.3,
+ * 32.7" is how an engineer reads three splits, and repeating "seconds" three
+ * times is noise. A minute-plus split (Le Mans) uses {@link speakableLapTime}.
+ */
+export function speakableSplit(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return 'no time';
+  if (sec >= 60) return speakableLapTime(sec);
+  return sec.toFixed(1);
+}
+
+/**
+ * Cumulative S1/S2 boundaries plus the lap time → three split durations, or
+ * null. Same all-or-nothing rule as `lapLog.sectorSplits`: a withheld or torn
+ * pair (`-1`, a boundary past the lap time) is no data, not two real splits
+ * and one invented one.
+ */
+function lastLapSplits(
+  s1Sec: number | undefined,
+  s2Sec: number | undefined,
+  lapSec: number,
+): [number, number, number] | null {
+  if (!known(s1Sec) || !known(s2Sec) || !known(lapSec) || lapSec <= 0) return null;
+  const s1 = s1Sec;
+  const s2 = s2Sec - s1Sec;
+  const s3 = lapSec - s2Sec;
+  if (s1 <= 0 || s2 <= 0 || s3 <= 0) return null;
+  return [s1, s2, s3];
 }
 
 /** Corner names in the frame's fixed [FL, FR, RL, RR] order, for speech. */
@@ -443,6 +475,17 @@ export class EngineerCommands {
             ? ' Personal best.'
             : '';
         return yes(`Last lap, ${speakableLapTime(me.lastLapSec)}.${best}`);
+      }
+
+      case 'sectors': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me || !known(me.lastLapSec) || me.lastLapSec <= 0)
+          return no('No completed lap yet.');
+        const splits = lastLapSplits(me.lastSector1Sec, me.lastSector2Sec, me.lastLapSec);
+        if (!splits) return no('No sector times for that lap.');
+        return yes(
+          `Last lap sectors — ${speakableSplit(splits[0])}, ${speakableSplit(splits[1])}, ${speakableSplit(splits[2])}.`,
+        );
       }
 
       case 'position': {

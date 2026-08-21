@@ -1245,10 +1245,12 @@
           <div>
             <h1 class="view__title">Engineer</h1>
             <p class="view__sub">
-              Press a wheel button and ask. Phrase-list questions are answered
-              instantly on this PC. Anything else becomes an advanced question —
-              your voice is understood on this machine and never leaves it; only
-              the written question goes out to fetch the answer.
+              Press a wheel button and ask, or bind a callout — last lap, sectors,
+              gaps, fuel, track-limit points — to a key, a wheel button or a
+              Stream Deck and hear it without talking. Phrase-list questions are
+              answered instantly on this PC. Anything else becomes an advanced
+              question — your voice is understood on this machine and never leaves
+              it; only the written question goes out to fetch the answer.
             </p>
           </div>
           <button id="eng-radio-check" class="btn btn--ghost btn--sm" type="button"
@@ -1292,7 +1294,10 @@
                   </div>
                   <span class="field__hint">
                     Press it, wait for the chirp, ask. A keyboard key works too — bind
-                    <strong>Ask the race engineer</strong> in the Dashboard's bindings list.
+                    <strong>Ask the race engineer</strong> under Settings → Controls.
+                    Last lap, sectors, gaps, fuel and track-limit points also have
+                    their own rows there: bind one to a Stream Deck button and the
+                    engineer speaks it with no microphone.
                     <button class="btn btn--ghost btn--sm" id="eng-ask" type="button"
                             title="Same as pressing the bound button — the engineer listens for one question.">Ask now</button>
                   </span>
@@ -2255,6 +2260,10 @@
                 fire while the sim has focus — and a <strong>Stream Deck</strong> button
                 set to that key works too, since it just sends a keystroke.
                 <br />
+                Engineer <strong>Call …</strong> rows speak that fact over the radio
+                with no microphone — last lap, sectors, gaps, fuel, track-limit
+                points. Push-to-talk is still there for everything else.
+                <br />
                 There are no per-aid actions here: bind the four
                 <strong>Pit menu ▲ ▼ + −</strong> controls and they reach every row the
                 MFD shows, driving aids included.
@@ -2266,6 +2275,10 @@
               Pick keys LMU doesn't use.
             </p>
             <p class="field__hint binding-note">
+              <button type="button" class="btn btn--ghost btn--sm" id="bindings-guide-open"
+                      title="How to bind a Stream Deck, button box or any other device that sends a key">
+                <svg class="icon"><use href="#i-graduation-cap" /></svg>Stream Deck &amp; other devices
+              </button>
               <button type="button" class="btn btn--ghost btn--sm" id="wheel-devices-scan">
                 Scan for wheels
               </button>
@@ -2348,6 +2361,34 @@
         </div>
       </div>
     </section>
+
+        <!-- Stream Deck / button-box walkthrough. Frame only — steps live in
+             bindings-guide.js so they can be asserted headlessly. Same chrome
+             as the Setups and Streamers guides; opened from the Bindings card. -->
+        <div id="bindings-guide" class="su-guide" hidden role="dialog" aria-modal="true"
+             aria-labelledby="bindings-guide-title">
+          <div id="bindings-guide-scrim" class="su-guide__scrim"></div>
+          <section class="su-guide__panel">
+            <header class="su-guide__head">
+              <span id="bindings-guide-icon" class="su-guide__icon"></span>
+              <span class="su-guide__titles">
+                <h2 id="bindings-guide-title" class="su-guide__title"></h2>
+                <p id="bindings-guide-sub" class="su-guide__sub"></p>
+              </span>
+              <button id="bindings-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+            </header>
+            <div id="bindings-guide-body" class="su-guide__body"></div>
+            <footer class="su-guide__foot">
+              <div id="bindings-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
+              <div class="su-guide__nav">
+                <button id="bindings-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
+                <button id="bindings-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
+              </div>
+            </footer>
+          </section>
+        </div>
 
   </div>
 
@@ -2463,6 +2504,7 @@
 <script src="setup-tags.js"></script>
 <script src="setup-guide.js"></script>
 <script src="streamer-guide.js"></script>
+<script src="bindings-guide.js"></script>
 <script src="setup-editor.js"></script>
 <!-- Fuel tab: engine data + strategy maths (pure lookup/compute, also
      require()d by scripts/test-fuelcalc.js), then the panel itself. -->
