@@ -43,6 +43,10 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     const pane = q.get('pane') || 'general';
     localStorage.setItem('apex.panel.tab', tab);
     localStorage.setItem('apex.panel.settingsPane', pane);
+    const skfilter = q.get('skfilter');
+    if (skfilter === 'all' || skfilter === 'upcoming') {
+      localStorage.setItem('apex.panel.scheduleFilter', skfilter);
+    }
   } catch (e) { /* storage disabled: the harness still loads, on the default tab */ }
 
   const noopUnsub = () => () => {};
