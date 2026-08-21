@@ -486,7 +486,7 @@ function unit() {
   a = engSecTorn.answer('sectors');
   check('sectors: torn pair (-1) refuses whole, not half', a.ok === false, a.text);
   check('speakableSplit: sub-minute drops the unit', speakableSplit(28.1) === '28.1');
-  check('speakableSplit: minute-plus uses lap-time form', /1 04/.test(speakableSplit(64.3)), speakableSplit(64.3));
+  check('speakableSplit: minute-plus uses lap-time form', speakableSplit(74.3) === '1 14.3', speakableSplit(74.3));
 
   // -- Track A: the wider ask-set (v3, 2026-08-19) ----------------------------
 
