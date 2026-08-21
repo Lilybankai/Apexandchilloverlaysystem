@@ -624,7 +624,7 @@ async function linkYouTube() {
               'display:grid;place-items:center;height:100vh;margin:0">' +
               '<div style="text-align:center"><h2>YouTube ' +
               (err || !gotCode ? 'link cancelled' : 'linked') +
-              '</h2><p>You can close this tab and return to Apex Overlay System.</p></div>',
+              '</h2><p>You can close this tab and return to Apex AIO System.</p></div>',
           );
           if (err) return reject(new Error(err));
           if (returnedState !== state) return reject(new Error('State mismatch — link aborted.'));

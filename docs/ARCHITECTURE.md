@@ -1,4 +1,4 @@
-# Architecture — Apex & Chill Overlay System
+# Architecture — Apex AIO System
 
 A lightweight overlay stack for live sim-racing streams. It reads telemetry from
 **rFactor 2 / Le Mans Ultimate**, normalizes it, and renders branded broadcast

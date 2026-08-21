@@ -6,6 +6,33 @@
 
 ## Unreleased
 
+## 0.83.0 — 2026-08-21
+
+### Changed
+
+- **The app is now called Apex AIO System.** Same app, clearer name — it
+  stopped being "just overlays" a long time ago. The installer, the window,
+  the desktop shortcut and the Start-menu entry all carry the new name. The
+  update arrives like any other: your settings, laps, account and sign-in all
+  carry straight over, and the old "Apex Overlay System" install is replaced
+  in place, not left behind.
+
+### Added
+
+- **Delete your account — properly.** Settings → Account & privacy →
+  **Delete account & data** permanently erases everything your account owns
+  on our servers: profile, leaderboard laps and traces, published setups and
+  ratings, engineer questions, usage history, feedback and billing record,
+  and cancels any live subscription. Type DELETE to confirm; there is no
+  undo. Your local lap history and settings stay on your PC — they are yours.
+- **Terms of Use and a Privacy Policy, in the app.** Both documents ship
+  inside the app — no internet needed — and are one click away from the
+  Settings → Account & privacy card and from the account screens, where
+  creating an account now links to the exact documents you are agreeing to.
+  The privacy policy says plainly what is collected, what never leaves your
+  PC (your voice, your streaming logins, your full lap history), who can see
+  what, and how to be forgotten.
+
 ## 0.82.0 — 2026-08-20
 
 ### Fixed

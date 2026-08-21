@@ -1,6 +1,6 @@
 @echo off
 rem ===========================================================================
-rem  launch.bat - Apex & Chill Overlay System launcher (Windows)
+rem  launch.bat - Apex AIO System launcher (Windows)
 rem ---------------------------------------------------------------------------
 rem  Starts the lightweight overlay server (static overlay files + telemetry
 rem  WebSocket broadcast). Add http://127.0.0.1:<port>/ to OBS as a Browser

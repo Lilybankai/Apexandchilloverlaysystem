@@ -20,7 +20,11 @@ using Microsoft.Win32;
 
 static class ApexRepair
 {
-    const string ProductName = "Apex Overlay System";
+    const string ProductName = "Apex AIO System";
+    // The pre-rename product name (up to v0.82.x). The population that needs a
+    // repair tool most is exactly the one still on an old install, so every
+    // check below matches BOTH names.
+    const string LegacyProductName = "Apex Overlay System";
     const string UninstallGuid = "50aae0a8-8efa-5004-9650-1999f158e8f8";
 
     static int _fixed;
@@ -46,6 +50,7 @@ static class ApexRepair
         KillProcesses();
         RemoveUninstallEntries();
         RemoveDir(Path.Combine(LocalAppData(), "Programs", ProductName), "old install folder");
+        RemoveDir(Path.Combine(LocalAppData(), "Programs", LegacyProductName), "pre-rename install folder");
         RemoveDir(Path.Combine(LocalAppData(), "apex-overlay-system-updater"), "updater download cache");
         ReportDiskSpace();
 
@@ -69,7 +74,8 @@ static class ApexRepair
     static void KillProcesses()
     {
         var any = false;
-        foreach (var p in Process.GetProcessesByName(ProductName))
+        foreach (var exeName in new[] { ProductName, LegacyProductName })
+        foreach (var p in Process.GetProcessesByName(exeName))
         {
             any = true;
             try
@@ -110,7 +116,8 @@ static class ApexRepair
                                 if (sub != null) display = sub.GetValue("DisplayName") as string;
                             }
                             var ours = name.StartsWith(UninstallGuid, StringComparison.OrdinalIgnoreCase)
-                                || (display != null && display.StartsWith(ProductName, StringComparison.OrdinalIgnoreCase));
+                                || (display != null && display.StartsWith(ProductName, StringComparison.OrdinalIgnoreCase))
+                                || (display != null && display.StartsWith(LegacyProductName, StringComparison.OrdinalIgnoreCase));
                             if (!ours) continue;
                             found = true;
                             try

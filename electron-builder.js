@@ -182,8 +182,11 @@ async function afterPack(context) {
 }
 
 module.exports = {
+  // appId is the app's *identity* to NSIS (the uninstall GUID is derived from
+  // it) and must survive the rename to "Apex AIO System" — changing it would
+  // give every existing user a second, parallel install.
   appId: 'com.apexandchill.overlaysystem',
-  productName: 'Apex Overlay System',
+  productName: 'Apex AIO System',
   publish: {
     provider: 'github',
     owner: 'Lilybankai',
@@ -254,6 +257,6 @@ module.exports = {
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
-    shortcutName: 'Apex Overlay System',
+    shortcutName: 'Apex AIO System',
   },
 };

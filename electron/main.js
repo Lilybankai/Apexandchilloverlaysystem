@@ -1,5 +1,5 @@
 /**
- * electron/main.js — Apex Overlay System desktop app (main process).
+ * electron/main.js — Apex AIO System desktop app (main process).
  * -----------------------------------------------------------------------------
  * Wraps the existing lightweight telemetry server in a small desktop window so
  * league members don't need a terminal. The Electron main process:
@@ -1836,7 +1836,7 @@ function syncOverlayWindow() {
     // Never steal focus from the game — mouse still works in edit mode.
     focusable: false,
     alwaysOnTop: true,
-    title: 'Apex Overlays (in-game)',
+    title: 'Apex AIO (in-game)',
     webPreferences: {
       preload: path.join(__dirname, 'ingame-preload.js'),
       contextIsolation: true,
@@ -3416,6 +3416,50 @@ function registerIpc() {
   });
 
   /**
+   * GDPR right to erasure. The delete-account edge function verifies the
+   * caller's own JWT, cancels/deletes the Stripe customer, and deletes the
+   * auth user — every cloud row the account owns goes with it (the schema
+   * cascades). This side then forgets everything local that belonged to the
+   * account. The renderer asks for typed confirmation before calling this;
+   * the edge function separately requires the literal confirm token so a
+   * stray IPC replay cannot erase an account.
+   */
+  ipcMain.handle('auth:deleteAccount', async () => {
+    const res = await authService.functionsInvoke(
+      'delete-account',
+      { confirm: 'DELETE' },
+      { timeoutMs: 30000 },
+    );
+    if (!res.ok) {
+      return {
+        ok: false,
+        error:
+          (res.body && res.body.error) ||
+          res.error ||
+          'Deletion failed — check your connection and try again.',
+      };
+    }
+    // The account no longer exists server-side; the local sign-out's revoke
+    // call may 401 into the void, which is fine — what matters is that the
+    // remembered session is cleared.
+    try {
+      await authService.signOut();
+    } catch {
+      /* session file cleared regardless */
+    }
+    billingService.clear();
+    // The upload ledger belonged to the deleted account. A future sign-in on
+    // this PC must not believe these laps were already submitted.
+    try {
+      fs.rmSync(path.join(app.getPath('userData'), 'lap-sync.json'), { force: true });
+    } catch {
+      /* nothing to forget */
+    }
+    loadPage('auth');
+    return { ok: true };
+  });
+
+  /**
    * Signed in (or registered without confirmation) — into the app IF this
    * account may use it. The subscription gates the whole panel: a fresh
    * account gets `entitled: false` back and the auth page shows the subscribe
@@ -3440,6 +3484,12 @@ function registerIpc() {
   ipcMain.handle('auth:showAuth', () => {
     loadPage('auth');
     return authStateForUi();
+  });
+
+  /** Terms of Use / Privacy Policy — bundled documents in their own window. */
+  ipcMain.handle('legal:open', (_evt, section) => {
+    openLegalWindow(section);
+    return { ok: true };
   });
 
   /* ---- Billing (see electron/billing.js) ----
@@ -3876,6 +3926,40 @@ function loadPage(page) {
   void mainWindow.loadFile(path.join(__dirname, 'control-panel', file));
 }
 
+/**
+ * The Terms of Use / Privacy Policy, in their own small window. The documents
+ * ship inside the app (control-panel/legal.html) so they are readable offline,
+ * before signing in, and cannot disagree with the build that shows them.
+ * One window, re-focused and re-anchored on repeat opens.
+ */
+let legalWindow = null;
+function openLegalWindow(section) {
+  const hash = section === 'privacy' ? 'privacy' : 'terms';
+  const file = path.join(__dirname, 'control-panel', 'legal.html');
+  if (legalWindow && !legalWindow.isDestroyed()) {
+    void legalWindow.loadFile(file, { hash });
+    legalWindow.focus();
+    return;
+  }
+  legalWindow = new BrowserWindow({
+    width: 860,
+    height: 720,
+    minWidth: 520,
+    minHeight: 420,
+    backgroundColor: '#060a12',
+    title: 'Apex AIO System — Terms & Privacy',
+    icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
+    autoHideMenuBar: true,
+    // A static local document: no preload, no Node, fully sandboxed.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  legalWindow.removeMenu?.();
+  legalWindow.on('closed', () => {
+    legalWindow = null;
+  });
+  void legalWindow.loadFile(file, { hash });
+}
+
 function createWindow() {
   const mode = startup.initialWindowMode({ argv: process.argv });
 
@@ -3896,7 +3980,7 @@ function createWindow() {
     // snapping to full screen is a visible jump on every single launch.
     show: false,
     backgroundColor: '#060a12',
-    title: 'Apex Overlay System',
+    title: 'Apex AIO System',
     icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

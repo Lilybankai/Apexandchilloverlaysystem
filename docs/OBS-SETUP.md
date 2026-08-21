@@ -43,7 +43,7 @@ shows data.
 ## 2. Add the Browser Source in OBS
 
 1. In your scene, click **+** under *Sources* → **Browser**.
-2. Name it `Apex Overlay` → **OK**.
+2. Name it `Apex AIO` → **OK**.
 3. Set the properties:
 
    | Field | Value |

@@ -176,6 +176,16 @@ for (const btn of $$('[data-reveal]')) {
 /*  Plain navigation buttons                                                  */
 /* -------------------------------------------------------------------------- */
 
+/* The Terms / Privacy links inside the agree label. preventDefault matters:
+ * without it the label forwards the click to the checkbox, so reading the
+ * terms would silently tick "I agree" — the exact opposite of the point. */
+for (const btn of $$('[data-legal]')) {
+  btn.addEventListener('click', (evt) => {
+    evt.preventDefault();
+    window.apex.legal.open(btn.dataset.legal);
+  });
+}
+
 for (const btn of $$('[data-go]')) {
   btn.addEventListener('click', () => {
     const target = btn.dataset.go;

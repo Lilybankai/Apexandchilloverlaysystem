@@ -60,7 +60,7 @@ const CREDIT = {
   youtubeUrl: 'https://www.youtube.com/@ohne_speed',
   note:
     'Reference lap times and the Alien→Offline band labels are Ohne Speed\'s work, ' +
-    'used with credit. Apex Overlay System only reads them.',
+    'used with credit. Apex AIO System only reads them.',
 };
 
 const OUT = path.join(__dirname, '..', 'overlay', 'js', 'data', 'reference-times.json');

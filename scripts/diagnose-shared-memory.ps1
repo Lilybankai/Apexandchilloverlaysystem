@@ -1,5 +1,5 @@
 # =============================================================================
-# Apex Overlay System - shared-memory diagnostic
+# Apex AIO System - shared-memory diagnostic
 # -----------------------------------------------------------------------------
 # For the machine where Track Limits says NO DATA, the radar and throttle trace
 # are blank, and the track map never draws - while Race Control and Standings
@@ -29,7 +29,7 @@ public static class ApexMmf {
 Add-Type -TypeDefinition $src
 
 Write-Host ""
-Write-Host "Apex Overlay shared-memory diagnostic" -ForegroundColor Cyan
+Write-Host "Apex AIO shared-memory diagnostic" -ForegroundColor Cyan
 Write-Host "-------------------------------------"
 
 # --- 1) Is the game running, and does it look elevated? ----------------------

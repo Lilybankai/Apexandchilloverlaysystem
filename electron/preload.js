@@ -234,6 +234,13 @@ contextBridge.exposeInMainWorld('apex', {
     /** Sign out and return to the account screens. */
     signOut: () => ipcRenderer.invoke('auth:signOut'),
     /**
+     * GDPR erasure: permanently delete the account and every cloud record it
+     * owns, cancel any subscription, and sign out. → { ok, error? }. The
+     * renderer collects typed confirmation BEFORE calling this — there is no
+     * undo on the other side.
+     */
+    deleteAccount: () => ipcRenderer.invoke('auth:deleteAccount'),
+    /**
      * Leave the account screens for the control panel — if the account is
      * entitled. Returns `{ ..., entitled, billing }`; when `entitled` is false
      * the caller shows the subscribe screen instead.
@@ -247,6 +254,14 @@ contextBridge.exposeInMainWorld('apex', {
       ipcRenderer.on('auth:changed', listener);
       return () => ipcRenderer.removeListener('auth:changed', listener);
     },
+  },
+
+  /* ---- Terms of Use / Privacy Policy ----
+   *
+   * Bundled documents (control-panel/legal.html) opened in their own window —
+   * readable offline and before signing in. `section` is 'terms' | 'privacy'. */
+  legal: {
+    open: (section) => ipcRenderer.invoke('legal:open', section),
   },
 
   /* ---- Billing (Stripe subscription / league free access) ----

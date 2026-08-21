@@ -269,6 +269,19 @@ html, body {
 
 .btn--sm { padding: 6px 12px; font-size: 11px; }
 
+/* The one button family that must never look like the accent: destructive
+   actions (delete account). Quiet until hovered, unmistakable when lit. */
+.btn--danger {
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+  background: transparent;
+}
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+  border-color: var(--bad);
+}
+.btn--danger:disabled { opacity: 0.5; }
+
 .btn--update {
   background: var(--grad);
   border: none;

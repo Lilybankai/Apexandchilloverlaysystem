@@ -18,17 +18,17 @@
 
 const PAGES: Record<string, string> = {
   success: [
-    "APEX & CHILL - OVERLAY SYSTEM",
+    "APEX AIO SYSTEM",
     "",
     "You're in.",
     "",
-    'Your subscription is live. Head back to the Apex Overlay app - it will',
+    'Your subscription is live. Head back to the Apex AIO app - it will',
     'pick this up within a few seconds.',
     '',
     'You can close this tab.',
   ].join('\n'),
   cancel: [
-    'APEX & CHILL - OVERLAY SYSTEM',
+    'APEX AIO SYSTEM',
     '',
     'Checkout cancelled.',
     '',
@@ -38,11 +38,11 @@ const PAGES: Record<string, string> = {
     'You can close this tab.',
   ].join('\n'),
   portal: [
-    'APEX & CHILL - OVERLAY SYSTEM',
+    'APEX AIO SYSTEM',
     '',
     'All done.',
     '',
-    'Any billing changes are saved. Head back to the Apex Overlay app - it',
+    'Any billing changes are saved. Head back to the Apex AIO app - it',
     'will pick this up within a few seconds.',
     '',
     'You can close this tab.',

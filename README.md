@@ -1,4 +1,4 @@
-# Apex Overlay System
+# Apex AIO System
 
 Lightweight **rFactor 2 / Le Mans Ultimate** telemetry overlay system for the
 **Apex & Chill Racing League** live streams.
@@ -34,7 +34,7 @@ Build the installer:
 
 ```bash
 npm install
-npm run app:dist     # -> release/Apex Overlay System Setup <version>.exe
+npm run app:dist     # -> release/Apex AIO System Setup <version>.exe
 ```
 
 Run the app in development (no packaging):
@@ -66,7 +66,7 @@ tabbed top nav, a card grid, and a status bar along the bottom:
   says so. **Training** mode is shown in the top-right toggle but disabled for the
   same reason.
 - **Admin** *(league staff only)* — hidden unless your account is flagged as an
-  admin. Shows how many people are using the overlay system and how often (active
+  admin. Shows how many people are using the app and how often (active
   today / week / month, a 14-day trend, version adoption), a **driver list** of every
   account with its app-open count and last-active time, and the feedback inbox, where
   each suggestion can be triaged. Every read is authorised server-side, and nothing
@@ -293,7 +293,7 @@ your laps keep recording either way — they upload next time you sign in.
 **The reference times, and the Alien → Offline band names, are
 [Ohne Speed](https://www.youtube.com/@ohne_speed)'s work**, published in the
 [LMU laptimes spreadsheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTN03UvJDm99byA6vQPZHKOCYVvfxLu1zkJAzdaKyROykzEKY2-Xl1rl1q5znZEf36m88dxMKsY2eaO/pubhtml),
-with lap times contributed by **beAlien**, **Go** and **Hymo**. Apex Overlay
+with lap times contributed by **beAlien**, **Go** and **Hymo**. Apex AIO
 System only reads them, and credits them in the app wherever a score is shown.
 Ohne Speed's Discord is [here](https://discord.com/invite/dFAqhnuSXH).
 

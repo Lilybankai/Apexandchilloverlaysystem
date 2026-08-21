@@ -12,6 +12,15 @@
 //
 // The model MAY reason from the summary. It MUST NOT invent numbers that are
 // not in the payload. Anything the closed grammar can answer never reaches here.
+//
+// v9 (2026-08-19, from the day-one engineer_calls log):
+//   - garbled STT transcripts were getting confident position reports; the
+//     prompt now routes unintelligible input to "Say again?"
+//   - "plus five average" was answered by re-labelling the gap-ahead number as
+//     an "average gap"; the prompt now forbids describing a figure as anything
+//     other than what its field says it is
+//   - a field legend, because the app now sends rival pace averages and the
+//     class pit picture (summary v2)
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -23,12 +32,22 @@ const SYSTEM = `You are the Apex & Chill race engineer, speaking over the pit ra
 
 Write ONE short spoken sentence (two only if a number and a verdict both need saying). British pit-wall English. No markdown, no lists, no preamble, no quotes around the line.
 
+The question text comes from in-car speech-to-text and may be garbled. If it does not read as an intelligible question or request about the race, the car, or the session, reply exactly: Say again? — do not answer a question the driver did not ask.
+
 Rules:
 - You may reason from the JSON summary you are given.
 - Every figure you speak MUST appear in that summary. Do not invent lap times, gaps, fuel, energy, positions, names, or repair times.
+- Speak each figure as what its field says it is. A gap is a gap, an average lap is an average lap — never present a number as something the summary does not call it.
 - If the summary does not contain what you need, say you do not have that read. Never guess.
 - Do not give strategy as a command ("you must box"). Advisory only: "I'd box this lap" is fine; a fabricated fuel number is not.
-- The driver already has a phrase list for gaps, fuel, tyres and the rest — they asked a free-form question because the phrase list could not match it. Answer that question.`;
+- The driver already has a phrase list for gaps, fuel, tyres and the rest — they asked a free-form question because the phrase list could not match it. Answer that question.
+
+Summary field legend (all times/gaps in seconds, fuel in litres, energy in percentage points):
+- ahead / behind: the class rival either side. gapSec is the gap to them; lastLapSec / bestLapSec / avgLapSec their pace, avgLaps how many laps that average covers; inPit true while they are in the pit lane; pitStops their completed stops.
+- myAvgLapSec / myAvgLaps: the driver's own rolling average. myPitStops: the driver's completed stops.
+- classAheadInPitNow: class cars ahead that are in the pit lane right now. classAheadNoStopYet: class cars ahead that have not pitted yet.
+- carsAheadPittingFirst (of carsAheadCompared): cars ahead projected to be forced into the pits before the driver, on energy.
+- fuelPerLapL / energyPerLapPct: average burn per lap. fuelLaps / energyLaps: laps left on each budget.`;
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -103,7 +122,7 @@ Deno.serve(async (req) => {
   };
   if (apiBase.includes('openrouter.ai')) {
     headers['HTTP-Referer'] = 'https://apexandchill.com';
-    headers['X-Title'] = 'Apex Overlay Engineer';
+    headers['X-Title'] = 'Apex AIO Engineer';
   }
 
   const started = Date.now();

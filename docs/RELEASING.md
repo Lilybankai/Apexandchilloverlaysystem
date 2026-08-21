@@ -156,7 +156,7 @@ Allow 15–30 minutes for a new assignment to take effect.
 
 electron-builder has built-in Trusted Signing support and it does not work
 here. It builds its PowerShell command by joining arguments with spaces and
-quoting none of them, so `-Files …\Apex Overlay System.exe` is read as three
+quoting none of them, so `-Files …\Apex AIO System.exe` is read as three
 arguments: the file `…\Apex`, the folder `Overlay`, the filter `System.exe`.
 It signs nothing and reports success at the electron-builder level. The
 product name would have to lose its spaces to use that path, and it appends
@@ -189,7 +189,7 @@ cannot answer this on its own. Use signtool:
 
 ```powershell
 & "$env:LOCALAPPDATA\TrustedSigning\Microsoft.Windows.SDK.BuildTools\*\bin\*\x64\signtool.exe" `
-  verify /pa /v "release\win-unpacked\Apex Overlay System.exe"
+  verify /pa /v "release\win-unpacked\Apex AIO System.exe"
 ```
 
 Three things have to be true:

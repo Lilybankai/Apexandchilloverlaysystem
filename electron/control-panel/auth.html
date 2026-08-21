@@ -6,7 +6,7 @@
        talked to from the MAIN process (electron/auth.js), never from here. -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'none';" />
-  <title>Apex Overlay System — Account</title>
+  <title>Apex AIO System — Account</title>
   <link rel="stylesheet" href="auth.css" />
 </head>
 <body>
@@ -36,7 +36,7 @@
       </ul>
     </div>
 
-    <div class="brand-foot">Racing League · Overlay System</div>
+    <div class="brand-foot">Racing League · AIO System</div>
   </aside>
 
   <!-- ========================= FORM SIDE (right) ======================== -->
@@ -177,7 +177,10 @@
         </label>
         <label class="check" for="rg-agree" style="margin-bottom: 16px">
           <input class="chk" id="rg-agree" type="checkbox" />
-          I agree to the Apex &amp; Chill league rules and terms
+          <span>I agree to the
+            <button class="linkbtn" type="button" data-legal="terms">Terms of Use</button>
+            and
+            <button class="linkbtn" type="button" data-legal="privacy">Privacy Policy</button></span>
         </label>
 
         <button class="btn btn--accent btn--block" type="submit" data-label="Create account" disabled>

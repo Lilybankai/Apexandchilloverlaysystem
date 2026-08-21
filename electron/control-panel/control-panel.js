@@ -3840,6 +3840,8 @@
 
   /** Whether anyone is signed in, per the last auth push — decides the card. */
   let authSignedIn = false;
+  /** The signed-in email, for the delete-account sheet's subtitle. */
+  let lastUserEmail = '';
 
   function shortDate(iso) {
     const d = iso ? new Date(iso) : null;
@@ -3925,8 +3927,13 @@
     const user = state && state.user;
     const signedIn = !!(state && state.signedIn && user);
     authSignedIn = signedIn;
+    lastUserEmail = signedIn ? user.email : '';
     account.hidden = !signedIn;
     signInBtn.hidden = signedIn;
+    // The delete-account row follows the account — you can only delete an
+    // account you are signed into. The legal links above it always show.
+    const deleteField = $('#delete-account-field');
+    if (deleteField) deleteField.hidden = !signedIn;
     // The Subscription card follows the account: appears on sign-in, goes with
     // it on sign-out, and re-reads the plan when the account changes.
     void refreshBilling();
@@ -3950,6 +3957,78 @@
   signInBtn.addEventListener('click', () => window.apex.auth.showAuth());
 
   window.apex.auth.onChange(renderAuth);
+
+  // --- Account & privacy (legal documents + GDPR deletion) -----------------
+  /*
+   * The Terms/Privacy buttons open the bundled documents in their own window
+   * (main.js `legal:open`). Deletion is a two-step: the settings button opens
+   * the #delacct sheet, and only typing DELETE arms the confirm button — the
+   * server side is irreversible, so the friction is the feature.
+   */
+
+  const legalTermsBtn = $('#legal-terms-btn');
+  const legalPrivacyBtn = $('#legal-privacy-btn');
+  if (legalTermsBtn) legalTermsBtn.addEventListener('click', () => window.apex.legal.open('terms'));
+  if (legalPrivacyBtn)
+    legalPrivacyBtn.addEventListener('click', () => window.apex.legal.open('privacy'));
+
+  const delSheet = $('#delacct');
+  const delSub = $('#delacct-sub');
+  const delInput = $('#delacct-input');
+  const delConfirmBtn = $('#delacct-confirm');
+  const delMsg = $('#delacct-msg');
+  const deleteBtn = $('#delete-account-btn');
+  /** Once the request is in flight there is no backing out of the sheet. */
+  let deleting = false;
+
+  function openDeleteSheet() {
+    if (!delSheet) return;
+    delInput.value = '';
+    delConfirmBtn.disabled = true;
+    delMsg.textContent = '';
+    delSub.textContent = lastUserEmail ? `Signed in as ${lastUserEmail}` : '';
+    delSheet.hidden = false;
+    delInput.focus();
+  }
+
+  function closeDeleteSheet() {
+    if (deleting || !delSheet) return;
+    delSheet.hidden = true;
+  }
+
+  if (deleteBtn) deleteBtn.addEventListener('click', openDeleteSheet);
+  for (const sel of ['#delacct-close', '#delacct-cancel', '#delacct-scrim']) {
+    const el = $(sel);
+    if (el) el.addEventListener('click', closeDeleteSheet);
+  }
+  if (delInput) {
+    delInput.addEventListener('input', () => {
+      delConfirmBtn.disabled = delInput.value.trim() !== 'DELETE';
+    });
+  }
+  if (delConfirmBtn) {
+    delConfirmBtn.addEventListener('click', async () => {
+      if (delConfirmBtn.disabled || deleting) return;
+      deleting = true;
+      delConfirmBtn.disabled = true;
+      delConfirmBtn.textContent = 'Deleting…';
+      delMsg.textContent = '';
+      try {
+        const res = await window.apex.auth.deleteAccount();
+        if (res && res.ok) {
+          // Main swaps this window to the account screens; nothing to render.
+          return;
+        }
+        delMsg.textContent = (res && res.error) || 'Deletion failed — try again shortly.';
+      } catch {
+        delMsg.textContent = 'Deletion failed — check your connection and try again.';
+      } finally {
+        deleting = false;
+        delConfirmBtn.textContent = 'Delete everything';
+        delConfirmBtn.disabled = delInput.value.trim() !== 'DELETE';
+      }
+    });
+  }
 
   // --- Streaming chat linking ---------------------------------------------
 

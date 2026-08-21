@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src https://huggingface.co https://*.hf.co;" />
-  <title>Apex Overlay System</title>
+  <title>Apex AIO System</title>
   <link rel="stylesheet" href="control-panel.css" />
   <!-- Second, so the Hub shell's frame rules win over the original
        single-scrolling-page layout in control-panel.css. -->
@@ -867,7 +867,7 @@
               Reference lap times and the Alien → Offline bands come from
               <strong id="pace-credit-title">Ohne Speed's LMU laptimes spreadsheet</strong>,
               with times contributed by <span id="pace-credit-people">the community</span>.
-              Apex Overlay System only reads them.
+              Apex AIO System only reads them.
               <span class="credit__meta" id="pace-credit-updated"></span>
             </p>
             <div class="credit__links">
@@ -1627,7 +1627,7 @@
           <div>
             <h1 class="view__title">Admin</h1>
             <p class="view__sub">
-              Who is using the overlay system, how often, what it earns, and what
+              Who is using the app, how often, what it earns, and what
               they are asking for. League staff only.
             </p>
           </div>
@@ -2016,6 +2016,45 @@
             </div>
           </section>
 
+          <!-- ------------------ ACCOUNT & PRIVACY ------------------ -->
+          <!-- Always visible: the Terms/Privacy documents must be reachable
+               without an account. Only the delete row follows the sign-in
+               state. Deletion itself is confirmed in the #delacct sheet and
+               performed server-side — see electron/main.js auth:deleteAccount. -->
+          <section class="card" id="privacy-card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-shield" /></svg>Account &amp; privacy</h2>
+              <p class="card__desc">
+                The documents that govern the app, and — if you ever want it —
+                the way out with all your data.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <span class="field__label">Legal</span>
+                <span class="field__hint">The Terms of Use and Privacy Policy ship inside the app.</span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm" id="legal-terms-btn" type="button">Terms of Use</button>
+                  <button class="btn btn--ghost btn--sm" id="legal-privacy-btn" type="button">Privacy Policy</button>
+                </span>
+              </div>
+              <div class="field" id="delete-account-field" hidden>
+                <span class="field__label">Delete account</span>
+                <span class="field__hint">
+                  Permanently erases your account and everything it owns on our
+                  servers — profile, laps, traces, setups, ratings, engineer
+                  questions, usage and billing records — and cancels any
+                  subscription. It cannot be undone.
+                </span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm btn--danger" id="delete-account-btn" type="button">
+                    <svg class="icon"><use href="#i-trash-2" /></svg>Delete account &amp; data…
+                  </button>
+                </span>
+              </div>
+            </div>
+          </section>
+
           <!-- ---------------------- SERVER ---------------------- -->
           <section class="card">
             <div class="card__head">
@@ -2312,6 +2351,53 @@
         <svg class="icon"><use href="#i-external-link" /></svg>All releases on GitHub
       </a>
       <button class="btn btn--accent" id="whatsnew-done" type="button">Got it</button>
+    </footer>
+  </section>
+</div>
+
+<!-- ====================== DELETE ACCOUNT =============================
+     GDPR erasure confirmation. Typing DELETE is deliberate friction: this
+     is the one button in the app that cannot be taken back. The actual
+     deletion happens server-side (delete-account edge function) via
+     window.apex.auth.deleteAccount().
+     ================================================================= -->
+<div class="sheet" id="delacct" hidden role="dialog" aria-modal="true" aria-labelledby="delacct-title">
+  <div class="sheet__scrim" id="delacct-scrim"></div>
+  <section class="sheet__panel">
+    <header class="sheet__head">
+      <span class="sheet__icon"><svg class="icon"><use href="#i-alert" /></svg></span>
+      <span class="sheet__titles">
+        <h2 class="sheet__title" id="delacct-title">Delete this account?</h2>
+        <p class="sheet__sub" id="delacct-sub"></p>
+      </span>
+      <button class="iconbtn" id="delacct-close" type="button" title="Close" aria-label="Close">
+        <svg class="icon"><use href="#i-x" /></svg>
+      </button>
+    </header>
+    <div class="sheet__body">
+      <p>
+        This permanently erases the account and everything it owns on our
+        servers: your profile, leaderboard laps and driving traces, published
+        setups and their ratings, engineer questions, usage history, feedback
+        and billing record. Any live subscription is cancelled. There is no
+        undo and no grace period.
+      </p>
+      <p>
+        Laps and settings stored on this PC are untouched — they are yours,
+        and you can remove them by uninstalling the app.
+      </p>
+      <div class="field">
+        <label class="field__label" for="delacct-input">Type <strong>DELETE</strong> to confirm</label>
+        <input class="field__input" id="delacct-input" type="text" autocomplete="off"
+               spellcheck="false" placeholder="DELETE" />
+        <span class="field__hint" id="delacct-msg" role="alert"></span>
+      </div>
+    </div>
+    <footer class="sheet__foot">
+      <button class="btn btn--ghost" id="delacct-cancel" type="button">Keep my account</button>
+      <button class="btn btn--danger" id="delacct-confirm" type="button" disabled>
+        Delete everything
+      </button>
     </footer>
   </section>
 </div>

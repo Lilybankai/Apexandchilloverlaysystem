@@ -34,7 +34,7 @@ function check(name, cond, detail) {
   }
 }
 
-const EXE = 'C:\\Program Files\\Apex Overlay System\\Apex Overlay System.exe';
+const EXE = 'C:\\Program Files\\Apex AIO System\\Apex AIO System.exe';
 
 /* -------------------------------------------------------------------------- */
 console.log('\nwantsHiddenStart — did Windows start us, or did a person?');
