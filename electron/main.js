@@ -42,6 +42,7 @@ const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
+const simgrid = require('./simgrid');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 
 /* -------------------------------------------------------------------------- */
@@ -3014,6 +3015,15 @@ function registerIpc() {
   });
 
   /**
+   * League calendar for the Schedule tab: Thursday + Saturday championships
+   * from SimGrid. The Bearer token stays in electron/simgrid.js; this handler
+   * only ever returns names, times and https signup URLs.
+   */
+  ipcMain.handle('schedule:get', (_evt, query) =>
+    simgrid.getSchedule({ force: !!(query && query.force) }),
+  );
+
+  /**
    * Whether the signed-in driver is a league admin — decides whether the panel
    * shows the Admin tab at all. A non-admin (or signed-out) driver just gets
    * `isAdmin: false`; the RPC never raises for them.
@@ -3598,6 +3608,9 @@ const EXTERNAL_HOSTS = new Set([
   'youtube.com',
   'docs.google.com',
   'discord.gg',
+  // Schedule tab — championship signup / results pages on SimGrid.
+  'www.thesimgrid.com',
+  'thesimgrid.com',
 ]);
 
 function isAllowedExternal(url) {

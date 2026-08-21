@@ -1,0 +1,204 @@
+/* schedule-panel.css — the Schedule tab (SimGrid league calendar).
+   ---------------------------------------------------------------------------
+   Loaded after hub.css so the shell's frame rules stay in charge; everything
+   here is scoped under .sk- and leans on the tokens in control-panel.css. */
+
+.sk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sk-toolbar .btn,
+.sk-league__actions .btn,
+.sk-next__cta .btn,
+.sk-round__side .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sk-msg {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.sk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .sk-grid { grid-template-columns: 1fr; }
+}
+
+.sk-league {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.sk-league__head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sk-league__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sk-league__name {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.sk-league__spots {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.sk-league__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Next-race hero. Track photo sits behind a dark veil so the type stays
+   readable whether SimGrid sent a day or a night shot. */
+.sk-next {
+  position: relative;
+  margin: 14px 0 4px;
+  padding: 16px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  isolation: isolate;
+}
+.sk-next::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(6, 10, 18, 0.35) 0%, rgba(6, 10, 18, 0.88) 100%),
+    var(--sk-photo, none);
+  background-size: cover;
+  background-position: center;
+  z-index: -1;
+}
+.sk-next__kicker {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.sk-next__title {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.sk-next__track {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.sk-next__when {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.sk-next__abs { color: var(--text); font-size: 13px; }
+.sk-next__rel { color: var(--cyan); font-size: 12px; }
+.sk-next__cta { margin-top: 12px; }
+
+.sk-rounds {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sk-round {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.sk-round:last-child { border-bottom: none; }
+
+.sk-round__name {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+.sk-round__track {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sk-round__when {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.sk-round__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.sk-round[data-status="next"] {
+  background: var(--panel-2);
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 7px;
+  border-bottom-color: transparent;
+}
+.sk-round[data-status="done"] .sk-round__name,
+.sk-round[data-status="done"] .sk-round__track,
+.sk-round[data-status="done"] .sk-round__when {
+  color: var(--text-3);
+}
+
+.sk-empty-league {
+  margin: 14px 0 0;
+  color: var(--text-3);
+  font-size: 13px;
+}

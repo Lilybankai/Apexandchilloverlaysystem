@@ -190,9 +190,9 @@ html, body { height: 100%; overflow: hidden; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Below this the five tabs plus mode toggle, status pill, icon buttons and the
+/* Below this the tab bar plus mode toggle, status pill, icon buttons and the
  * profile chip stop fitting one row, so the tabs shed labels and keep icons. */
-@media (max-width: 1080px) {
+@media (max-width: 1220px) {
   .tab__label { display: none; }
   .tab { padding: 0 10px; }
   .account__text { display: none; }

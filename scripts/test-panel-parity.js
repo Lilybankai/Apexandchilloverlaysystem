@@ -319,6 +319,16 @@ const PANEL_CONTRACT = {
   'fb-submit': 'button',
   'fb-status': 'span',
 
+  // Schedule tab (SimGrid championships). The cards themselves are built at
+  // runtime; the frame (filter, refresh, empty/error) is static and contracted
+  // because a dropped id here leaves a calendar that looks like it is loading
+  // forever.
+  'sk-filter': 'nav',
+  'sk-refresh': 'button',
+  'sk-msg': 'p',
+  'sk-grid': 'div',
+  'sk-empty': 'p',
+
   // Admin panel (v0.49.0) — league-staff usage + feedback inbox. The tab starts
   // hidden and is revealed by admin:whoami, so it is wired like any other
   // control: a restyle that dropped one of these would silently break triage.

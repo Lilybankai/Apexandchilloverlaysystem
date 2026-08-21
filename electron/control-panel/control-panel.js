@@ -3741,6 +3741,308 @@
   void revealAdminTab();
   window.apex.auth.onChange(() => void revealAdminTab());
 
+  // --- Schedule (SimGrid championships) ------------------------------------
+  /*
+   * Thursday and Saturday Apex & Chill championships, read through
+   * schedule:get in the main process. The renderer never sees the GridOS
+   * token — only names, times, tracks and https signup URLs come back, and
+   * those URLs go out through openInBrowser (the allowlist in main.js) rather
+   * than as <a href>, because an anchor inside this window would navigate the
+   * panel itself.
+   *
+   * Nothing here fetches until the tab is shown. The main process already
+   * caches for five minutes, so switching away and back is free.
+   */
+  const SK_FILTER_KEY = 'apex.panel.scheduleFilter';
+  let skFilter = 'upcoming';
+  let skLoaded = false;
+  let skPayload = null;
+  let skRequest = 0;
+
+  try {
+    const saved = localStorage.getItem(SK_FILTER_KEY);
+    if (saved === 'all' || saved === 'upcoming') skFilter = saved;
+  } catch {
+    /* storage disabled */
+  }
+
+  function skWhen(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return { abs: 'Date TBC', rel: '' };
+    const abs = d.toLocaleString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const ms = d.getTime() - Date.now();
+    const past = ms < 0;
+    const min = Math.round(Math.abs(ms) / 60000);
+    let rel = past ? 'just now' : 'now';
+    if (min >= 1 && min < 60) rel = past ? `${min}m ago` : `in ${min}m`;
+    else if (min >= 60) {
+      const hr = Math.round(min / 60);
+      if (hr < 36) rel = past ? `${hr}h ago` : `in ${hr}h`;
+      else {
+        const day = Math.round(hr / 24);
+        if (day === 1) rel = past ? 'yesterday' : 'tomorrow';
+        else rel = past ? `${day}d ago` : `in ${day}d`;
+      }
+    }
+    return { abs, rel };
+  }
+
+  function skChip(text, tone) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    if (tone) chip.setAttribute('data-tone', tone);
+    chip.textContent = text;
+    return chip;
+  }
+
+  function skButton(label, url, accent) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = accent ? 'btn btn--accent btn--sm' : 'btn btn--ghost btn--sm';
+    btn.textContent = label;
+    if (url) btn.dataset.skUrl = url;
+    else btn.disabled = true;
+    return btn;
+  }
+
+  function skStatusLabel(status) {
+    if (status === 'next') return 'Next';
+    if (status === 'done') return 'Done';
+    return 'Upcoming';
+  }
+
+  function skStatusTone(status) {
+    if (status === 'next') return 'cyan';
+    if (status === 'done') return 'muted';
+    return 'purple';
+  }
+
+  function renderScheduleLeague(league) {
+    const card = document.createElement('section');
+    card.className = 'card sk-league';
+
+    const head = document.createElement('div');
+    head.className = 'sk-league__head';
+
+    const meta = document.createElement('div');
+    meta.className = 'sk-league__meta';
+    meta.append(skChip(league.label || league.day || 'League', 'cyan'));
+    if (league.hint) meta.append(skChip(league.hint, 'muted'));
+    meta.append(
+      skChip(
+        league.accepting ? 'Registration open' : 'Registration closed',
+        league.accepting ? 'purple' : 'muted',
+      ),
+    );
+
+    const title = document.createElement('h2');
+    title.className = 'sk-league__name';
+    title.textContent = league.name || league.label || 'Championship';
+
+    const spots = document.createElement('p');
+    spots.className = 'sk-league__spots';
+    if (league.capacity) {
+      const taken = Number(league.spotsTaken) || 0;
+      const left = Math.max(0, league.capacity - taken);
+      spots.textContent = `${taken} / ${league.capacity} on the grid · ${left} spot${left === 1 ? '' : 's'} left`;
+    } else {
+      spots.textContent = league.game || '';
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'sk-league__actions';
+    actions.append(
+      skButton(league.accepting ? 'Sign up on SimGrid' : 'Open on SimGrid', league.url, true),
+    );
+    if (league.resultsUrl) actions.append(skButton('Results', league.resultsUrl));
+    if (league.discordUrl) actions.append(skButton('Discord', league.discordUrl));
+
+    head.append(meta, title, spots, actions);
+    card.append(head);
+
+    const rounds = Array.isArray(league.races) ? league.races : [];
+    const visible =
+      skFilter === 'all' ? rounds : rounds.filter((r) => r.status !== 'done');
+    const next = league.next && visible.some((r) => r.id === league.next.id) ? league.next : null;
+
+    if (next) {
+      const hero = document.createElement('div');
+      hero.className = 'sk-next';
+      const photo = next.track && next.track.photo;
+      if (photo && /^https:\/\/cdn\.thesimgrid\.com\/[A-Za-z0-9._/-]+$/.test(photo)) {
+        hero.style.setProperty('--sk-photo', `url("${photo}")`);
+      }
+      const kicker = document.createElement('div');
+      kicker.className = 'sk-next__kicker';
+      kicker.textContent = 'Next race';
+      const ntitle = document.createElement('h3');
+      ntitle.className = 'sk-next__title';
+      ntitle.textContent = next.name;
+      const track = document.createElement('p');
+      track.className = 'sk-next__track';
+      track.textContent = (next.track && next.track.name) || 'Track TBC';
+      const when = skWhen(next.startsAt);
+      const whenRow = document.createElement('div');
+      whenRow.className = 'sk-next__when';
+      const abs = document.createElement('span');
+      abs.className = 'sk-next__abs';
+      abs.textContent = when.abs;
+      whenRow.append(abs);
+      if (when.rel) {
+        const rel = document.createElement('span');
+        rel.className = 'sk-next__rel';
+        rel.textContent = when.rel;
+        whenRow.append(rel);
+      }
+      const cta = document.createElement('div');
+      cta.className = 'sk-next__cta';
+      cta.append(skButton('Sign up on SimGrid', next.signupUrl || league.url, true));
+      hero.append(kicker, ntitle, track, whenRow, cta);
+      card.append(hero);
+    }
+
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'sk-empty-league';
+      empty.textContent =
+        skFilter === 'all'
+          ? 'No rounds published on SimGrid yet.'
+          : 'No upcoming rounds — switch to All rounds to see the season.';
+      card.append(empty);
+      return card;
+    }
+
+    const list = document.createElement('ul');
+    list.className = 'sk-rounds';
+    for (const race of visible) {
+      // The hero already names the next race; repeating it as the first row
+      // is noise, so skip it in Upcoming. All-rounds keeps every line.
+      if (skFilter === 'upcoming' && next && race.id === next.id) continue;
+      const li = document.createElement('li');
+      li.className = 'sk-round';
+      li.setAttribute('data-status', race.status || 'upcoming');
+      const body = document.createElement('div');
+      const name = document.createElement('span');
+      name.className = 'sk-round__name';
+      name.textContent = race.name;
+      const track = document.createElement('span');
+      track.className = 'sk-round__track';
+      track.textContent = (race.track && race.track.name) || 'Track TBC';
+      const when = skWhen(race.startsAt);
+      const whenEl = document.createElement('span');
+      whenEl.className = 'sk-round__when';
+      whenEl.textContent = when.rel ? `${when.abs} · ${when.rel}` : when.abs;
+      body.append(name, track, whenEl);
+      const side = document.createElement('div');
+      side.className = 'sk-round__side';
+      side.append(skChip(skStatusLabel(race.status), skStatusTone(race.status)));
+      if (race.status === 'done') {
+        if (race.resultsAvailable && league.resultsUrl) {
+          side.append(skButton('Results', league.resultsUrl));
+        }
+      } else {
+        side.append(skButton('Sign up', race.signupUrl || league.url, race.status === 'next'));
+      }
+      li.append(body, side);
+      list.append(li);
+    }
+    if (list.childElementCount) card.append(list);
+    return card;
+  }
+
+  function renderSchedule(result) {
+    const grid = $('#sk-grid');
+    const empty = $('#sk-empty');
+    const msg = $('#sk-msg');
+    if (!grid || !empty) return;
+
+    const leagues = (result && result.ok && Array.isArray(result.leagues)) ? result.leagues : [];
+    grid.textContent = '';
+    for (const league of leagues) grid.append(renderScheduleLeague(league));
+
+    if (msg) {
+      if (result && result.error) {
+        msg.hidden = false;
+        msg.textContent = result.error;
+      } else {
+        msg.hidden = true;
+        msg.textContent = '';
+      }
+    }
+
+    if (!leagues.length) {
+      empty.hidden = false;
+      empty.textContent =
+        (result && result.error) || 'Could not load the league calendar from SimGrid.';
+    } else {
+      empty.hidden = true;
+    }
+  }
+
+  async function refreshSchedule(force) {
+    const n = ++skRequest;
+    if (!skLoaded) {
+      const empty = $('#sk-empty');
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = 'Loading the league calendar…';
+      }
+    }
+    try {
+      const res = await window.apex.schedule.get({ force: !!force });
+      if (n !== skRequest) return;
+      skPayload = res;
+      skLoaded = true;
+      renderSchedule(res);
+    } catch {
+      if (n !== skRequest) return;
+      skLoaded = true;
+      renderSchedule({ ok: false, leagues: [], error: 'Could not load the league calendar from SimGrid.' });
+    }
+  }
+
+  const skFilterNav = $('#sk-filter');
+  if (skFilterNav) {
+    for (const btn of skFilterNav.querySelectorAll('[data-skfilter]')) {
+      btn.setAttribute('data-active', String(btn.dataset.skfilter === skFilter));
+      btn.addEventListener('click', () => {
+        skFilter = btn.dataset.skfilter === 'all' ? 'all' : 'upcoming';
+        for (const b of skFilterNav.querySelectorAll('[data-skfilter]')) {
+          b.setAttribute('data-active', String(b.dataset.skfilter === skFilter));
+        }
+        try {
+          localStorage.setItem(SK_FILTER_KEY, skFilter);
+        } catch {
+          /* storage disabled */
+        }
+        if (skPayload) renderSchedule(skPayload);
+      });
+    }
+  }
+
+  const skRefresh = $('#sk-refresh');
+  if (skRefresh) {
+    skRefresh.addEventListener('click', () => {
+      void refreshSchedule(true);
+    });
+  }
+
+  const skGrid = $('#sk-grid');
+  if (skGrid) {
+    skGrid.addEventListener('click', (ev) => {
+      const btn = ev.target.closest && ev.target.closest('[data-sk-url]');
+      if (!btn) return;
+      const url = btn.getAttribute('data-sk-url');
+      if (url) window.apex.openInBrowser(url);
+    });
+  }
+
   // --- Tab router ----------------------------------------------------------
   /*
    * The Hub shell's five tabs plus the gear, over one document: each view is a
@@ -3801,6 +4103,9 @@
     }
     if (target === 'admin') {
       void loadAdmin();
+    }
+    if (target === 'schedule') {
+      void refreshSchedule(false);
     }
     // The bot's lists live in main; re-ask on entry so another window's edits
     // (or a fresh install's defaults) are never stale here. First visit also

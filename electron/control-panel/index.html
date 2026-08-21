@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; media-src https://huggingface.co https://*.hf.co;" />
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.thesimgrid.com; media-src https://huggingface.co https://*.hf.co;" />
   <title>Apex AIO System</title>
   <link rel="stylesheet" href="control-panel.css" />
   <!-- Second, so the Hub shell's frame rules win over the original
@@ -14,6 +14,7 @@
   <!-- Fuel tab styles — same precedence reason again. -->
   <link rel="stylesheet" href="fuel-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
+  <link rel="stylesheet" href="schedule-panel.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -44,6 +45,9 @@
            about what is behind it. -->
       <button class="tab" type="button" data-tab="leaderboard">
         <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
+      </button>
+      <button class="tab" type="button" data-tab="schedule">
+        <svg class="icon"><use href="#i-calendar" /></svg><span class="tab__label">Schedule</span>
       </button>
       <button class="tab" type="button" data-tab="setups">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
@@ -906,6 +910,38 @@
             <p class="ovcard__desc">A board that resets, so a fast week counts for something.</p>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ======================== SCHEDULE ============================== -->
+    <!-- Thursday + Saturday Apex & Chill championships, pulled from SimGrid.
+         Cards and rows are built at runtime from schedule:get — only the frame
+         is static, so a restyle that drops an id here is caught by the panel
+         parity contract the same way as every other tab. -->
+    <section class="view" data-view="schedule">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Schedule</h1>
+            <p class="view__sub">
+              Upcoming Apex &amp; Chill races, live from SimGrid. Sign up there —
+              the button opens the championship page in your browser.
+            </p>
+          </div>
+          <div class="sk-toolbar">
+            <nav class="seg" id="sk-filter" aria-label="Which rounds to show">
+              <button type="button" data-skfilter="upcoming" data-active="true">Upcoming</button>
+              <button type="button" data-skfilter="all">All rounds</button>
+            </nav>
+            <button class="btn btn--ghost btn--sm" id="sk-refresh" type="button">
+              <svg class="icon"><use href="#i-rotate-ccw" /></svg> Refresh
+            </button>
+          </div>
+        </div>
+
+        <p class="sk-msg" id="sk-msg" hidden></p>
+        <div class="sk-grid" id="sk-grid"></div>
+        <p class="weekempty" id="sk-empty">Loading the league calendar…</p>
       </div>
     </section>
 
