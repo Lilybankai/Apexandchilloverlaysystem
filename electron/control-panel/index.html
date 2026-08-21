@@ -1943,12 +1943,35 @@
           <div>
             <h1 class="view__title">Settings</h1>
             <p class="view__sub">
-              Server, appearance, audio and key bindings. Appearance changes apply
-              live — in game and to OBS sources already added.
+              Grouped so you only see one thing at a time: how the app runs, how
+              the overlays look and sound, what your keys and wheel do, and your
+              account. Changes apply live — in game and to OBS sources already
+              added.
             </p>
           </div>
         </div>
 
+        <!-- The four settings sections. Same pattern as the Streamers tab:
+             a .seg nav up top, one pane visible at a time, the choice
+             remembered in localStorage. One long two-column scroll of eight
+             unrelated cards was the pre-0.84 layout, and it read as a wall. -->
+        <nav class="seg settings-seg" id="settings-seg" aria-label="Settings sections">
+          <button type="button" data-settingspane="general" data-active="true">
+            <svg class="icon"><use href="#i-settings" /></svg><span>General</span>
+          </button>
+          <button type="button" data-settingspane="display">
+            <svg class="icon"><use href="#i-palette" /></svg><span>Display &amp; audio</span>
+          </button>
+          <button type="button" data-settingspane="controls">
+            <svg class="icon"><use href="#i-keyboard" /></svg><span>Controls</span>
+          </button>
+          <button type="button" data-settingspane="account">
+            <svg class="icon"><use href="#i-user" /></svg><span>Account</span>
+          </button>
+        </nav>
+
+        <!-- ==================== GENERAL ==================== -->
+        <div class="settings-pane" data-settingspane="general" data-active="true">
         <div class="two-col">
           <!-- ---------------------- UPDATES ---------------------- -->
           <!-- League staff only, like the Admin tab: hidden until admin:whoami
@@ -1982,73 +2005,6 @@
                 <span class="lmu-bind__actions">
                   <button class="btn btn--ghost btn--sm" id="update-check" type="button">
                     Check for updates
-                  </button>
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <!-- ------------------- SUBSCRIPTION ------------------- -->
-          <!-- Hidden while signed out (there is no plan to show); everyone
-               signed in sees their standing here. Cancel, card changes and
-               invoices all live in Stripe's Customer Portal, opened in the
-               system browser — the app never renders payment UI. -->
-          <section class="card" id="sub-card" hidden>
-            <div class="card__head">
-              <h2 class="card__title"><svg class="icon"><use href="#i-credit-card" /></svg>Subscription</h2>
-              <p class="card__desc">
-                Free for 7 days, then <strong>£4.99/month</strong>, billed
-                automatically until you cancel. Billing is handled by Stripe in
-                your browser — the app never sees your card.
-              </p>
-            </div>
-            <div class="settings-grid">
-              <div class="field">
-                <span class="field__label">Plan</span>
-                <span class="rate-value" id="sub-plan-status">—</span>
-                <span class="field__hint" id="sub-hint"></span>
-                <span class="lmu-bind__actions">
-                  <button class="btn btn--ghost btn--sm" id="sub-manage-btn" type="button" hidden>
-                    Manage subscription
-                  </button>
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <!-- ------------------ ACCOUNT & PRIVACY ------------------ -->
-          <!-- Always visible: the Terms/Privacy documents must be reachable
-               without an account. Only the delete row follows the sign-in
-               state. Deletion itself is confirmed in the #delacct sheet and
-               performed server-side — see electron/main.js auth:deleteAccount. -->
-          <section class="card" id="privacy-card">
-            <div class="card__head">
-              <h2 class="card__title"><svg class="icon"><use href="#i-shield" /></svg>Account &amp; privacy</h2>
-              <p class="card__desc">
-                The documents that govern the app, and — if you ever want it —
-                the way out with all your data.
-              </p>
-            </div>
-            <div class="settings-grid">
-              <div class="field">
-                <span class="field__label">Legal</span>
-                <span class="field__hint">The Terms of Use and Privacy Policy ship inside the app.</span>
-                <span class="lmu-bind__actions">
-                  <button class="btn btn--ghost btn--sm" id="legal-terms-btn" type="button">Terms of Use</button>
-                  <button class="btn btn--ghost btn--sm" id="legal-privacy-btn" type="button">Privacy Policy</button>
-                </span>
-              </div>
-              <div class="field" id="delete-account-field" hidden>
-                <span class="field__label">Delete account</span>
-                <span class="field__hint">
-                  Permanently erases your account and everything it owns on our
-                  servers — profile, laps, traces, setups, ratings, engineer
-                  questions, usage and billing records — and cancels any
-                  subscription. It cannot be undone.
-                </span>
-                <span class="lmu-bind__actions">
-                  <button class="btn btn--ghost btn--sm btn--danger" id="delete-account-btn" type="button">
-                    <svg class="icon"><use href="#i-trash-2" /></svg>Delete account &amp; data…
                   </button>
                 </span>
               </div>
@@ -2122,7 +2078,12 @@
 
             </div>
           </section>
+        </div>
+        </div>
 
+        <!-- ==================== DISPLAY & AUDIO ==================== -->
+        <div class="settings-pane" data-settingspane="display">
+        <div class="two-col">
           <!-- -------------------- APPEARANCE -------------------- -->
           <section class="card">
             <div class="card__head">
@@ -2242,7 +2203,12 @@
               </label>
             </div>
           </section>
+        </div>
+        </div>
 
+        <!-- ==================== CONTROLS ==================== -->
+        <div class="settings-pane" data-settingspane="controls">
+        <div class="two-col">
           <!-- -------------------- LMU CONTROLS ------------------ -->
           <section class="card">
             <div class="card__head">
@@ -2257,6 +2223,15 @@
                 Anything you have already bound is left exactly as it is.
               </p>
             </div>
+            <!-- When every control already has a key the row-by-row list is 20+
+                 lines of "nothing to do", so it collapses behind this toggle
+                 and only the status line speaks. It stays expanded whenever
+                 there is actually something to bind. -->
+            <p class="field__hint binding-note">
+              <button class="btn btn--ghost btn--sm" id="lmu-bind-toggle" type="button" hidden>
+                Show the list
+              </button>
+            </p>
             <ul class="binding-list" id="lmu-bind-list"><!-- rows injected by JS --></ul>
             <div class="lmu-bind__actions">
               <button class="btn btn--accent" id="lmu-bind-apply">Bind missing controls</button>
@@ -2297,6 +2272,79 @@
               <span id="wheel-devices-out"></span>
             </p>
           </section>
+        </div>
+        </div>
+
+        <!-- ==================== ACCOUNT ==================== -->
+        <div class="settings-pane" data-settingspane="account">
+        <div class="two-col">
+          <!-- ------------------- SUBSCRIPTION ------------------- -->
+          <!-- Hidden while signed out (there is no plan to show); everyone
+               signed in sees their standing here. Cancel, card changes and
+               invoices all live in Stripe's Customer Portal, opened in the
+               system browser — the app never renders payment UI. -->
+          <section class="card" id="sub-card" hidden>
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-credit-card" /></svg>Subscription</h2>
+              <p class="card__desc">
+                Free for 7 days, then <strong>£4.99/month</strong>, billed
+                automatically until you cancel. Billing is handled by Stripe in
+                your browser — the app never sees your card.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <span class="field__label">Plan</span>
+                <span class="rate-value" id="sub-plan-status">—</span>
+                <span class="field__hint" id="sub-hint"></span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm" id="sub-manage-btn" type="button" hidden>
+                    Manage subscription
+                  </button>
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <!-- ------------------ ACCOUNT & PRIVACY ------------------ -->
+          <!-- Always visible: the Terms/Privacy documents must be reachable
+               without an account. Only the delete row follows the sign-in
+               state. Deletion itself is confirmed in the #delacct sheet and
+               performed server-side — see electron/main.js auth:deleteAccount. -->
+          <section class="card" id="privacy-card">
+            <div class="card__head">
+              <h2 class="card__title"><svg class="icon"><use href="#i-shield" /></svg>Account &amp; privacy</h2>
+              <p class="card__desc">
+                The documents that govern the app, and — if you ever want it —
+                the way out with all your data.
+              </p>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <span class="field__label">Legal</span>
+                <span class="field__hint">The Terms of Use and Privacy Policy ship inside the app.</span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm" id="legal-terms-btn" type="button">Terms of Use</button>
+                  <button class="btn btn--ghost btn--sm" id="legal-privacy-btn" type="button">Privacy Policy</button>
+                </span>
+              </div>
+              <div class="field" id="delete-account-field" hidden>
+                <span class="field__label">Delete account</span>
+                <span class="field__hint">
+                  Permanently erases your account and everything it owns on our
+                  servers — profile, laps, traces, setups, ratings, engineer
+                  questions, usage and billing records — and cancels any
+                  subscription. It cannot be undone.
+                </span>
+                <span class="lmu-bind__actions">
+                  <button class="btn btn--ghost btn--sm btn--danger" id="delete-account-btn" type="button">
+                    <svg class="icon"><use href="#i-trash-2" /></svg>Delete account &amp; data…
+                  </button>
+                </span>
+              </div>
+            </div>
+          </section>
+        </div>
         </div>
       </div>
     </section>

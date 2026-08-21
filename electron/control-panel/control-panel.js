@@ -2670,6 +2670,22 @@
   const lmuBindApply = document.getElementById('lmu-bind-apply');
   const lmuBindRestore = document.getElementById('lmu-bind-restore');
   const lmuBindStatus = document.getElementById('lmu-bind-status');
+  const lmuBindToggle = document.getElementById('lmu-bind-toggle');
+  /** The row list collapses when every control is already covered — 20+ lines
+   *  of "already bound in LMU" say nothing the status line doesn't. Expanded
+   *  stays a user choice for the session. */
+  let lmuListExpanded = false;
+  let lmuRowCount = 0;
+
+  function lmuApplyCollapse(allBound) {
+    if (lmuBindList) lmuBindList.hidden = allBound && !lmuListExpanded;
+    if (lmuBindToggle) {
+      lmuBindToggle.hidden = !allBound;
+      lmuBindToggle.textContent = lmuListExpanded
+        ? 'Hide the list'
+        : `Show all ${lmuRowCount} bound controls`;
+    }
+  }
 
   function lmuBindRow(row) {
     const li = document.createElement('li');
@@ -2700,9 +2716,12 @@
         (plan && plan.error) || 'Le Mans Ultimate not found on this PC.';
       lmuBindApply.disabled = true;
       lmuBindRestore.disabled = true;
+      if (lmuBindToggle) lmuBindToggle.hidden = true;
       return;
     }
     for (const row of plan.rows) lmuBindList.appendChild(lmuBindRow(row));
+    lmuRowCount = plan.rows.length;
+    lmuApplyCollapse(plan.toBind === 0 && !(plan.unbindable > 0));
 
     // Running > nothing-to-do > ready, in that order: the reason it is disabled
     // matters more to the operator than the fact that it is.
@@ -2722,6 +2741,15 @@
     if (plan.unbindable > 0) {
       lmuBindStatus.textContent += ` ${plan.unbindable} could not be covered — bind those in LMU by hand.`;
     }
+  }
+
+  if (lmuBindToggle) {
+    lmuBindToggle.addEventListener('click', () => {
+      lmuListExpanded = !lmuListExpanded;
+      // Only reachable while everything is bound (the button hides otherwise),
+      // so collapse state is the only thing that changes here.
+      lmuApplyCollapse(true);
+    });
   }
 
   if (lmuBindApply) {
@@ -4006,6 +4034,40 @@
       delConfirmBtn.disabled = delInput.value.trim() !== 'DELETE';
     });
   }
+  // --- Settings sections ---------------------------------------------------
+  /*
+   * One pane at a time — General / Display & audio / Controls / Account —
+   * mirroring the Streamers tab's .seg pattern. The old layout was all eight
+   * cards in one two-column scroll, and it read as a wall.
+   */
+  const SETTINGS_PANE_KEY = 'apex.panel.settingsPane';
+
+  function showSettingsPane(name) {
+    const panes = Array.from(document.querySelectorAll('.settings-pane[data-settingspane]'));
+    const known = panes.some((p) => p.dataset.settingspane === name);
+    const target = known ? name : 'general';
+    for (const pane of panes) {
+      pane.setAttribute('data-active', String(pane.dataset.settingspane === target));
+    }
+    for (const btn of document.querySelectorAll('#settings-seg button[data-settingspane]')) {
+      btn.setAttribute('data-active', String(btn.dataset.settingspane === target));
+    }
+    try {
+      localStorage.setItem(SETTINGS_PANE_KEY, target);
+    } catch {
+      /* storage disabled — the pane just won't persist */
+    }
+  }
+
+  for (const btn of document.querySelectorAll('#settings-seg button[data-settingspane]')) {
+    btn.addEventListener('click', () => showSettingsPane(btn.dataset.settingspane));
+  }
+  try {
+    showSettingsPane(localStorage.getItem(SETTINGS_PANE_KEY) || 'general');
+  } catch {
+    /* defaults to general */
+  }
+
   if (delConfirmBtn) {
     delConfirmBtn.addEventListener('click', async () => {
       if (delConfirmBtn.disabled || deleting) return;

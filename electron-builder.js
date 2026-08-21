@@ -226,6 +226,9 @@ module.exports = {
   afterPack,
   files: [
     'electron/**/*',
+    // The screenshot harness (scripts/make-shot-harness.js) generates
+    // __shot-* files into control-panel/ — dev-only, never packaged.
+    '!electron/control-panel/__shot-*',
     'dist/**/*',
     'overlay/**/*',
     'data/**/*',

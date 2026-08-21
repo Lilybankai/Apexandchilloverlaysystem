@@ -826,6 +826,11 @@ html, body {
 .streamers-pane { display: none; }
 .streamers-pane[data-active="true"] { display: block; }
 
+/* Settings sections — same one-pane-at-a-time pattern as the Streamers tab. */
+.settings-seg { margin: 0 0 18px; }
+.settings-pane { display: none; }
+.settings-pane[data-active="true"] { display: block; }
+
 /* StreamBot editor rows (commands / timers / alerts / goals): one grid row per
    entry, inputs inline, the delete tucked at the end — the sponsor list's
    idiom, with more columns. Column plans come per list via a modifier. */

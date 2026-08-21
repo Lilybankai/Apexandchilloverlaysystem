@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+### Changed
+
+- **Settings is no longer one long scroll.** It now opens as four short
+  sections — **General** (how the app runs), **Display & audio**,
+  **Controls** (your keys, wheel and LMU's own bindings) and **Account**
+  (subscription, legal, deletion) — with a section bar up top, and it
+  remembers where you left off. And when every LMU control already has a
+  key, the 22-row "already bound" list folds away behind a single line —
+  it only unfolds itself when there is actually something to set up.
+
 ## 0.83.0 — 2026-08-21
 
 ### Changed
