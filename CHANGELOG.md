@@ -6,6 +6,35 @@
 
 ## Unreleased
 
+## 0.86.0 — 2026-08-21
+
+### Fixed
+
+- **No telemetry, even though the plugin installed fine.** On some PCs Le Mans
+  Ultimate published nothing at all — no delta, no radar, no track map, no tyre
+  temperatures — while everything looked correctly installed. The cause: the
+  shared-memory plugin needs the **Visual C++ 2013 Redistributable (x64)**, and
+  on a machine without it Windows cannot load the plugin, so LMU silently skips
+  it and starts up as if nothing happened. Nothing anywhere said so, and
+  reinstalling the app or restarting the game could never fix it. Apex now
+  detects the missing runtime and tells you, with a button to go and get it.
+
+### Added
+
+- **A Telemetry plugin card** at the top of Settings → General. It shows the
+  three things that must be true before LMU publishes anything — the plugin
+  file is in the game folder, it is switched on in LMU, and Windows can load it
+  — and marks the one that is wrong in red. If the plugin just needs
+  installing, there is a button for that too (close the game first: LMU
+  overwrites its plugin config on exit).
+
+### Changed
+
+- The shared-memory diagnostic script now checks for the runtime as well, and
+  no longer mistakes a Realtek Bluetooth service for Le Mans Ultimate and tells
+  you your game is running as administrator when it is not.
+
+
 ## 0.85.0 — 2026-08-21
 
 ### Added
