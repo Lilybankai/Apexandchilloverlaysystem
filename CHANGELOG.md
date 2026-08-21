@@ -15,6 +15,10 @@
   bindings list as everything else (Settings → Controls). Push-to-talk is
   still there for the rest of the phrase list, and you can still ask
   "sectors" or "track limits" out loud.
+- **A Stream Deck & other devices walkthrough on the Bindings card.** Next
+  to Scan for wheels: how to bind a Stream Deck, button box or macro pad
+  (they just type a key — no plugin, no detector), which keys to pick
+  (F13–F24), and why a wheel is a different path.
 
 ## 0.84.0 — 2026-08-21
 

@@ -461,6 +461,17 @@ html, body {
 
 .binding-note { margin-top: 12px; }
 
+.binding-note .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+.binding-note .btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
 .ingame-switch {
   display: inline-flex;
   align-items: center;

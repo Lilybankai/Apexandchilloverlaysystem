@@ -284,6 +284,17 @@ const PANEL_CONTRACT = {
 
   // Keyboard + wheel bindings
   'binding-list': 'ul',
+  'bindings-guide-open': 'button',
+  'bindings-guide': 'div',
+  'bindings-guide-scrim': 'div',
+  'bindings-guide-icon': 'span',
+  'bindings-guide-title': 'h2',
+  'bindings-guide-sub': 'p',
+  'bindings-guide-body': 'div',
+  'bindings-guide-dots': 'div',
+  'bindings-guide-back': 'button',
+  'bindings-guide-next': 'button',
+  'bindings-guide-close': 'button',
 
   // Settings — server
   'port-input': 'input:number',
@@ -682,6 +693,7 @@ verifyPage({
     'setup-macros.js',
     'setup-guide.js',
     'streamer-guide.js',
+    'bindings-guide.js',
     // The Fuel tab. Only the panel is scanned: fuel-data.js is deliberately
     // NOT — its class colors ('#FF3333' …) read as id lookups to this
     // scanner, and neither engine file touches the DOM anyway.
@@ -728,6 +740,9 @@ console.log('\nIcon sprite — icons.js');
   for (const s of require('../electron/control-panel/streamer-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
+  for (const s of require('../electron/control-panel/bindings-guide.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
   const missing = [...wanted].filter((id) => !available.has(id)).sort();
   check(
     'every icon referenced by markup or JS exists in the sprite',
@@ -739,6 +754,36 @@ console.log('\nIcon sprite — icons.js');
   if (unused.length) {
     warnings.push(`icons.js: symbols never referenced — ${unused.join(', ')}`);
   }
+}
+
+console.log('\nBindings walkthrough — bindings-guide.js');
+{
+  const guide = require('../electron/control-panel/bindings-guide.js');
+  const textOf = (s) => [s.lead, ...(s.points || [])].join(' ');
+  const all = (guide.STEPS || []).map(textOf).join('\n');
+  check(
+    'guide has a full tour',
+    Array.isArray(guide.STEPS) && guide.STEPS.length >= 4,
+    guide.STEPS && guide.STEPS.length,
+  );
+  check(
+    'every step is complete',
+    (guide.STEPS || []).every(
+      (s) => s.id && s.icon && s.title && s.lead && Array.isArray(s.points) && s.points.length > 0,
+    ),
+  );
+  check(
+    'no duplicate step ids',
+    new Set((guide.STEPS || []).map((s) => s.id)).size === (guide.STEPS || []).length,
+  );
+  check(
+    'covers Stream Deck, F13–F24, and no plugin',
+    /Stream Deck/.test(all) && /F13/.test(all) && /no plugin/i.test(all),
+  );
+  check(
+    'says wheels are a different path',
+    /Scan for wheels/.test(all) && /DirectInput/.test(all),
+  );
 }
 
 /* -------------------------------------------------------------------------- */
