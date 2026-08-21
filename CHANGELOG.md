@@ -9,6 +9,17 @@
 ### Added
 
 - **A Schedule tab for the league calendar.** Thursday and Saturday Apex & Chill championships, pulled live from SimGrid: the next race, remaining rounds, grid spots, and a **Sign up on SimGrid** button that opens the championship page in your browser so you can enter from the app.
+- **Engineer callouts on a button.** Last lap, sector times, best lap, gaps,
+  who's ahead, position, laps left, fuel, track-limit points, damage, tyres
+  and yellow flags can each be bound to a wheel button, a key or a Stream
+  Deck — press it and the engineer speaks the number, no microphone. Same
+  bindings list as everything else (Settings → Controls). Push-to-talk is
+  still there for the rest of the phrase list, and you can still ask
+  "sectors" or "track limits" out loud.
+- **A Stream Deck & other devices walkthrough on the Bindings card.** Next
+  to Scan for wheels: how to bind a Stream Deck, button box or macro pad
+  (they just type a key — no plugin, no detector), which keys to pick
+  (F13–F24), and why a wheel is a different path.
 
 ## 0.84.0 — 2026-08-21
 

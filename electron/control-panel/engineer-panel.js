@@ -41,7 +41,7 @@
 
   /** What each preset means, spelled out under the picker. */
   const READOUT_HINTS = {
-    off: 'Nothing unprompted — the engineer only speaks when you press the button.',
+    off: 'Nothing unprompted — the engineer only speaks when you press a button.',
     essential:
       'Calls the things that change the rules or end races: flags, fuel, ' +
       'penalties, damage. Never reads out what your screen already shows, and ' +
@@ -67,6 +67,7 @@
     lapsLeft: 'Laps / time left',
     fuel: 'Fuel state',
     lastLap: 'Last lap time',
+    sectors: 'Last lap sector times',
     position: 'Position',
     tyres: 'Tyre temps & wear',
     pressures: 'Tyre pressures',

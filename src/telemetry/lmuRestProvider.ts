@@ -1631,6 +1631,8 @@ export class LmuRestProvider implements TelemetryProvider {
     );
     const rows = cars.map((c) => {
       const ranks = this.driverRanksFor(c.driverName);
+      const lastS1 = posOrUnknown(c.lastSectorTime1);
+      const lastS2 = posOrUnknown(c.lastSectorTime2);
       return {
       slotId: c.slotID,
       position: c.position,
@@ -1648,6 +1650,8 @@ export class LmuRestProvider implements TelemetryProvider {
       lapsBehind: Math.max(0, c.lapsBehindLeader | 0),
       bestLapSec: posOrUnknown(c.bestLapTime),
       lastLapSec: posOrUnknown(c.lastLapTime),
+      ...(lastS1 !== UNKNOWN_VALUE ? { lastSector1Sec: lastS1 } : {}),
+      ...(lastS2 !== UNKNOWN_VALUE ? { lastSector2Sec: lastS2 } : {}),
       avg5Sec: avgBySlot.get(c.slotID),
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),

@@ -1275,6 +1275,7 @@ function getActions() {
       loadSettings,
       applySettings,
       engineerAsk: () => getEngineer().ask(),
+      engineerSpeak: (intent) => getEngineer().speakIntent(intent),
       cycleIngame,
       toggleIngameInteract,
       resetLayout: () => {
