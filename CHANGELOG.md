@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+### Added
+
+- **Engineer callouts on a button.** Last lap, sector times, best lap, gaps,
+  who's ahead, position, laps left, fuel, track-limit points, damage, tyres
+  and yellow flags can each be bound to a wheel button, a key or a Stream
+  Deck — press it and the engineer speaks the number, no microphone. Same
+  bindings list as everything else (Settings → Controls). Push-to-talk is
+  still there for the rest of the phrase list, and you can still ask
+  "sectors" or "track limits" out loud.
+
 ## 0.84.0 — 2026-08-21
 
 ### Changed

@@ -108,6 +108,29 @@ function createActions(deps = {}) {
     });
   }
 
+  // On-demand callouts: one press, one line, no microphone. The catalog lives
+  // next to the phrase list in engineer.js so a new bindable intent cannot
+  // drift from the recognizer. A missing speak hook leaves the rows out
+  // rather than registering buttons that throw.
+  if (deps.engineerSpeak) {
+    let callouts = [];
+    try {
+      callouts = require('./engineer').ENGINEER_CALLOUTS || [];
+    } catch {
+      callouts = [];
+    }
+    for (const c of callouts) {
+      if (!c || !c.intent || !c.label) continue;
+      define({
+        id: `engineer.call.${c.intent}`,
+        label: c.label,
+        group: 'Engineer',
+        kind: 'pulse',
+        run: async () => deps.engineerSpeak(c.intent),
+      });
+    }
+  }
+
   /* ---------------------------------------------------------------- */
   /*  Overlay actions — no game involvement, always available          */
   /* ---------------------------------------------------------------- */
