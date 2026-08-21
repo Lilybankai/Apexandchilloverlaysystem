@@ -2013,6 +2013,34 @@
 
         <!-- ==================== GENERAL ==================== -->
         <div class="settings-pane" data-settingspane="general" data-active="true">
+        <!-- ------------------ TELEMETRY PLUGIN ------------------ -->
+        <!-- First card on the first tab, because when this is wrong NOTHING
+             else in the app works and the symptom gives no clue: the delta,
+             radar, track map and tyre readouts simply stay empty. The one that
+             used to be undiagnosable is the runtime row — the plugin links
+             against MSVCR120 (VC++ 2013), and without it LMU skips the plugin
+             silently while every file on disk looks correct. -->
+        <section class="card" id="plugin-card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-activity" /></svg>Telemetry plugin
+            </h2>
+            <p class="card__desc">
+              Le Mans Ultimate publishes no live telemetry on its own. Apex installs
+              the shared-memory plugin into the game and switches it on for you — this
+              is where you can see that it actually worked.
+            </p>
+          </div>
+          <ul class="binding-list" id="plugin-checks"><!-- rows injected by JS --></ul>
+          <div class="lmu-bind__actions">
+            <button class="btn btn--accent" id="plugin-fix" type="button" hidden></button>
+            <button class="btn btn--ghost btn--sm" id="plugin-recheck" type="button">
+              Re-check
+            </button>
+            <span class="field__hint" id="plugin-status">Checking…</span>
+          </div>
+        </section>
+
         <div class="two-col">
           <!-- ---------------------- UPDATES ---------------------- -->
           <!-- League staff only, like the Admin tab: hidden until admin:whoami

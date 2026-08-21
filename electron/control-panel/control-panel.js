@@ -2658,6 +2658,128 @@
   // recreated it mid-session updates this line without anyone clicking Scan.
   window.apex.onWheelDevices((res) => showWheelDevices(res));
 
+  // --- Shared-memory plugin health ------------------------------------------
+  /*
+   * The three things that must all be true before LMU publishes any telemetry,
+   * shown as three rows so the broken one names itself.
+   *
+   * The row that earns this card is the runtime. A machine missing MSVCR120
+   * (VC++ 2013) has a plugin that is present, enabled, and completely inert:
+   * the game loads nothing, says nothing, and every overlay that needs shared
+   * memory stays blank. Before this card the only way to find that out was to
+   * hand-run a PowerShell probe against the mapping objects.
+   */
+  const pluginChecks = document.getElementById('plugin-checks');
+  const pluginStatusEl = document.getElementById('plugin-status');
+  const pluginFix = document.getElementById('plugin-fix');
+  const pluginRecheck = document.getElementById('plugin-recheck');
+  /** What the fix button does right now — set per render, read on click. */
+  let pluginFixAction = null;
+
+  function pluginRow(label, ok, detail) {
+    const li = document.createElement('li');
+    li.className = 'binding-row';
+    const name = document.createElement('span');
+    name.className = 'binding-row__label';
+    name.textContent = label;
+    const state = document.createElement('span');
+    state.className = ok ? 'field__hint' : 'field__hint plugin-check--bad';
+    state.textContent = `${ok ? '✓' : '✗'} ${detail}`;
+    li.appendChild(name);
+    li.appendChild(state);
+    return li;
+  }
+
+  async function renderPluginStatus() {
+    if (!pluginChecks) return;
+    const s = await window.apex.pluginStatus();
+    pluginChecks.innerHTML = '';
+    pluginFixAction = null;
+    if (!s || s.ok === false) {
+      pluginStatusEl.textContent = (s && s.error) || 'Could not check the plugin.';
+      pluginFix.hidden = true;
+      return;
+    }
+    if (s.verdict === 'no-lmu') {
+      pluginStatusEl.textContent =
+        'Le Mans Ultimate was not found on this PC, so there is nothing to install into.';
+      pluginFix.hidden = true;
+      return;
+    }
+
+    pluginChecks.appendChild(
+      pluginRow('Plugin file', s.dllPresent, s.dllPresent ? 'in the game folder' : 'not installed'),
+    );
+    pluginChecks.appendChild(
+      pluginRow('Switched on in LMU', s.enabled, s.enabled ? 'enabled' : 'not enabled'),
+    );
+    pluginChecks.appendChild(
+      pluginRow(
+        'Windows runtime',
+        s.runtimeOk,
+        s.runtimeOk ? `${s.runtimeName} present` : `${s.runtimeName} MISSING`,
+      ),
+    );
+
+    // Worst-first, and each message says what to DO, not just what is wrong.
+    if (s.verdict === 'missing-runtime') {
+      pluginStatusEl.textContent =
+        'The plugin is installed correctly but Windows cannot load it — the ' +
+        'runtime it needs is missing, so LMU publishes no telemetry at all. ' +
+        'Install it, then restart the game.';
+      pluginFix.hidden = false;
+      pluginFix.textContent = 'Get the runtime';
+      pluginFix.disabled = false;
+      pluginFixAction = () => window.apex.openInBrowser(s.runtimeUrl);
+      return;
+    }
+    if (s.verdict === 'ok') {
+      pluginStatusEl.textContent = s.lmuRunning
+        ? 'All good. Telemetry should be live.'
+        : 'All good. Launch LMU and telemetry will be live.';
+      pluginFix.hidden = true;
+      return;
+    }
+    // not-installed / not-enabled — fixable by us, but never while LMU is up.
+    if (s.lmuRunning) {
+      pluginStatusEl.textContent =
+        'Close Le Mans Ultimate and press this — the game overwrites its plugin ' +
+        'config on exit, so a change made now would be thrown away.';
+      pluginFix.hidden = false;
+      pluginFix.textContent = 'Install it now';
+      pluginFix.disabled = true;
+      return;
+    }
+    pluginStatusEl.textContent =
+      s.verdict === 'not-installed'
+        ? 'The plugin is not in the game folder yet.'
+        : 'The plugin is there but not switched on in LMU.';
+    pluginFix.hidden = false;
+    pluginFix.textContent = 'Install it now';
+    pluginFix.disabled = false;
+    pluginFixAction = async () => {
+      pluginFix.disabled = true;
+      pluginStatusEl.textContent = 'Installing…';
+      const res = await window.apex.pluginInstall();
+      if (!res || res.ok === false) {
+        pluginStatusEl.textContent = (res && res.error) || 'Could not install the plugin.';
+      }
+      await renderPluginStatus();
+    };
+  }
+
+  if (pluginFix) {
+    pluginFix.addEventListener('click', () => {
+      if (pluginFixAction) void pluginFixAction();
+    });
+  }
+  if (pluginRecheck) {
+    pluginRecheck.addEventListener('click', () => {
+      pluginStatusEl.textContent = 'Checking…';
+      void renderPluginStatus();
+    });
+  }
+
   // --- LMU's own controls file ----------------------------------------------
   /*
    * Shows what the overlay would bind inside LMU and writes it on request. The
@@ -5409,6 +5531,7 @@
   window.apex.chatLink.status().then(renderChatState);
   void renderBindings();
   void renderLmuBindings();
+  void renderPluginStatus();
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);
   // Same for the lap history — files on disk, not part of app state.

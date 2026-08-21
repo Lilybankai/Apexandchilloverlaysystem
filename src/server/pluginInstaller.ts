@@ -47,6 +47,48 @@ import { isLmuRunning } from './lmuBinder';
 export const PLUGIN_DLL = 'rFactor2SharedMemoryMapPlugin64.dll';
 
 /**
+ * The C runtime the plugin is linked against, and where Windows keeps it.
+ *
+ * The bundled DLL's import table is exactly `KERNEL32`, `ADVAPI32` and
+ * `MSVCR120.dll` — the **Visual C++ 2013** x64 runtime, because TheIronWolf
+ * builds against the toolchain rFactor 2 shipped with. It is NOT the 2015+
+ * runtime (`VCRUNTIME140`) that most machines already carry.
+ *
+ * When that runtime is absent the failure is silent and total: LMU reads its
+ * plugin list, `LoadLibrary` fails, the game carries on perfectly, and no
+ * `$rFactor2SMMP_*$` buffer is ever created. From the outside it looks exactly
+ * like a plugin that was never installed — DLL on disk, `" Enabled": 1` in the
+ * config, game running, and `OpenFileMapping` returning ERROR_FILE_NOT_FOUND.
+ * That is a real tester machine (diagnosed 2026-08-21), and no amount of
+ * reinstalling or restarting the game can fix it.
+ *
+ * Machines that came to LMU via rFactor 2 or CrewChief have it already, which
+ * is why this never showed up in our own testing.
+ */
+const PLUGIN_RUNTIME_DLL = 'MSVCR120.dll';
+
+/** Microsoft's evergreen download for the VC++ 2013 x64 redistributable. */
+export const PLUGIN_RUNTIME_URL = 'https://aka.ms/highdpimfc2013x64';
+
+/** Human name for the runtime, for log lines and the panel. */
+export const PLUGIN_RUNTIME_NAME = 'Visual C++ 2013 Redistributable (x64)';
+
+/**
+ * Whether the plugin's C runtime is installed. The plugin is 64-bit, so the
+ * 64-bit runtime in `System32` is the one that matters — a 32-bit-only install
+ * (SysWOW64) does not satisfy it.
+ *
+ * `process.env.SystemRoot` rather than a hard-coded `C:\Windows`: Windows can
+ * live on another drive, and a wrong path here would report "missing" on a
+ * healthy machine and send users chasing a redistributable they already have.
+ */
+export function pluginRuntimeInstalled(): boolean {
+  if (process.platform !== 'win32') return true; // not our problem off Windows
+  const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+  return existsSync(join(root, 'System32', PLUGIN_RUNTIME_DLL));
+}
+
+/**
  * Where the bundled DLL lives. Packaged builds carry it as an electron-builder
  * `extraResources` entry (`<resources>/plugin/`); a dev checkout has it in
  * `build/plugin/`. Null when neither exists (a build that forgot to bundle it).
@@ -126,6 +168,7 @@ export interface PluginInstallResult {
     | 'installed' // DLL copied in (and enabled) — telemetry from LMU's next launch
     | 'enabled' // DLL was there, only the config needed switching on
     | 'up-to-date' // nothing to do, nothing touched
+    | 'missing-runtime' // installed correctly, but the C runtime it needs is absent
     | 'blocked-running' // work needed, but LMU is up — call again after it closes
     | 'no-lmu' // no install found on this machine
     | 'no-source' // this build has no bundled DLL to copy
@@ -136,6 +179,11 @@ export interface PluginInstallResult {
   copied: boolean;
   /** Config files whose entry was switched on this pass. */
   enabledIn: string[];
+  /**
+   * Whether `MSVCR120.dll` is present. False means the plugin cannot load no
+   * matter how correctly it is installed, so callers must not report success.
+   */
+  runtimeOk: boolean;
   error?: string;
 }
 
@@ -144,10 +192,22 @@ export interface PluginInstallResult {
  * `opts` exist for the tests: a fake root/source and a forced running flag.
  */
 export function ensureSharedMemoryPlugin(
-  opts: { root?: string | null; source?: string | null; running?: boolean } = {},
+  opts: {
+    root?: string | null;
+    source?: string | null;
+    running?: boolean;
+    runtimeOk?: boolean;
+  } = {},
 ): PluginInstallResult {
   const lmuRoot = opts.root !== undefined ? opts.root : findLmuRoot();
-  const base = { lmuRoot, dllPath: null as string | null, copied: false, enabledIn: [] as string[] };
+  const runtimeOk = opts.runtimeOk !== undefined ? opts.runtimeOk : pluginRuntimeInstalled();
+  const base = {
+    lmuRoot,
+    dllPath: null as string | null,
+    copied: false,
+    enabledIn: [] as string[],
+    runtimeOk,
+  };
   if (!lmuRoot) return { status: 'no-lmu', ...base };
 
   const dest = join(lmuRoot, 'Plugins', PLUGIN_DLL);
@@ -161,7 +221,12 @@ export function ensureSharedMemoryPlugin(
   const secondaryState = readConfigState(secondary);
   if (secondaryState.exists && !secondaryState.enabled) needEnable.push(secondary);
 
-  if (!needCopy && needEnable.length === 0) return { status: 'up-to-date', ...base };
+  // A correctly-installed plugin that cannot load is still a dead overlay, and
+  // "up-to-date" would be a lie that costs a support round-trip. The runtime
+  // verdict outranks the file state whenever there is nothing left to write.
+  if (!needCopy && needEnable.length === 0) {
+    return { status: runtimeOk ? 'up-to-date' : 'missing-runtime', ...base };
+  }
 
   const source = opts.source !== undefined ? opts.source : bundledPluginPath();
   if (needCopy && (!source || !existsSync(source))) return { status: 'no-source', ...base };
@@ -182,6 +247,10 @@ export function ensureSharedMemoryPlugin(
   } catch (err) {
     return { status: 'error', ...base, error: (err as Error).message };
   }
+  // The write went through — but say so honestly. Without the runtime the
+  // buffers will still never appear, so report the thing that actually blocks
+  // telemetry rather than the copy that happened to succeed.
+  if (!runtimeOk) return { status: 'missing-runtime', ...base };
   return { status: base.copied ? 'installed' : 'enabled', ...base };
 }
 
@@ -218,6 +287,16 @@ export function ensureSharedMemoryPluginOnStartup(
       case 'up-to-date':
         log('[plugin] shared-memory plugin present and enabled');
         return true;
+      case 'missing-runtime':
+        // The one failure that looks exactly like success from the outside.
+        // Spell out the cause and the fix, because "no telemetry" plus a
+        // correctly-installed plugin is otherwise unanswerable.
+        log(
+          `[plugin] ${PLUGIN_DLL} is installed and enabled, but ${PLUGIN_RUNTIME_DLL} ` +
+            `is missing — LMU cannot load it and will publish NO telemetry. ` +
+            `Install the ${PLUGIN_RUNTIME_NAME}: ${PLUGIN_RUNTIME_URL}`,
+        );
+        return true;
       case 'no-lmu':
         log('[plugin] no Le Mans Ultimate install found — shared-memory plugin not installed');
         return true;
@@ -242,4 +321,57 @@ export function ensureSharedMemoryPluginOnStartup(
   }, retryMs);
   timer.unref?.();
   return () => clearInterval(timer);
+}
+
+/** What the panel shows about the shared-memory plugin. Writes nothing. */
+export interface PluginInspection {
+  /** The LMU root, or null when no install was found. */
+  lmuRoot: string | null;
+  /** Is the DLL sitting in `<LMU>\Plugins\`? */
+  dllPresent: boolean;
+  /** Is it switched on in `UserData\player\CustomPluginVariables.JSON`? */
+  enabled: boolean;
+  /** Is `MSVCR120.dll` present, i.e. can the game actually load the plugin? */
+  runtimeOk: boolean;
+  /** True while LMU is up — config writes are refused, and a fix needs a relaunch. */
+  lmuRunning: boolean;
+  /** Where to get the runtime, when it is the thing that is missing. */
+  runtimeUrl: string;
+  runtimeName: string;
+  /** Overall verdict, worst-first, for the status line. */
+  verdict: 'ok' | 'missing-runtime' | 'not-enabled' | 'not-installed' | 'no-lmu';
+}
+
+/**
+ * Reports the plugin's real state without touching anything, for the control
+ * panel's status card and its re-check button.
+ *
+ * Ordering matters: a missing runtime outranks "installed and enabled",
+ * because that combination is precisely the silent failure this exists to
+ * expose — every file correct, and still no telemetry.
+ */
+export function inspectSharedMemoryPlugin(): PluginInspection {
+  const lmuRoot = findLmuRoot();
+  const runtimeOk = pluginRuntimeInstalled();
+  const base = {
+    lmuRoot,
+    dllPresent: false,
+    enabled: false,
+    runtimeOk,
+    lmuRunning: isLmuRunning(),
+    runtimeUrl: PLUGIN_RUNTIME_URL,
+    runtimeName: PLUGIN_RUNTIME_NAME,
+  };
+  if (!lmuRoot) return { ...base, verdict: 'no-lmu' };
+
+  const dllPresent = existsSync(join(lmuRoot, 'Plugins', PLUGIN_DLL));
+  const enabled = readConfigState(
+    join(lmuRoot, 'UserData', 'player', 'CustomPluginVariables.JSON'),
+  ).enabled;
+  const state = { ...base, dllPresent, enabled };
+
+  if (!dllPresent) return { ...state, verdict: 'not-installed' };
+  if (!enabled) return { ...state, verdict: 'not-enabled' };
+  if (!runtimeOk) return { ...state, verdict: 'missing-runtime' };
+  return { ...state, verdict: 'ok' };
 }

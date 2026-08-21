@@ -30,7 +30,9 @@ const path = require('node:path');
 
 const {
   PLUGIN_DLL,
+  PLUGIN_RUNTIME_URL,
   ensureSharedMemoryPlugin,
+  pluginRuntimeInstalled,
 } = require('../dist/server/pluginInstaller');
 
 let passed = 0;
@@ -200,6 +202,87 @@ console.log('\n6) The shipped bundle really carries the plugin');
   check('electron-builder ships build/plugin as resources/plugin',
     extra.some((e) => e && e.from === 'build/plugin' && e.to === 'plugin'),
     JSON.stringify(extra));
+}
+
+console.log('\n7) A missing C runtime is reported, not papered over');
+{
+  // The plugin links against MSVCR120 (VC++ 2013). Without it LMU cannot load
+  // the plugin, so no buffer is ever published — while every file on disk is
+  // correct. Reporting 'installed' or 'up-to-date' here is a lie that costs a
+  // support round-trip, which is exactly what happened to a tester on
+  // 2026-08-21. The install must still HAPPEN; only the verdict changes.
+  const root = fakeLmu();
+  const src = fakeSource();
+  const r = ensureSharedMemoryPlugin({ root, source: src, running: false, runtimeOk: false });
+  check('a fresh install without the runtime reads missing-runtime',
+    r.status === 'missing-runtime', r.status);
+  check('…but the DLL was still copied', r.copied === true);
+  check('…and the config was still enabled', r.enabledIn.length === 1);
+  check('…and runtimeOk is reported to callers', r.runtimeOk === false);
+
+  // Second pass: nothing left to write, so this is the case that used to
+  // report a confident, wrong 'up-to-date'.
+  const again = ensureSharedMemoryPlugin({ root, source: src, running: false, runtimeOk: false });
+  check('an otherwise-perfect install still reads missing-runtime',
+    again.status === 'missing-runtime', again.status);
+  check('…and never claims up-to-date', again.status !== 'up-to-date');
+
+  // With the runtime present the same install is genuinely fine.
+  const fixed = ensureSharedMemoryPlugin({ root, source: src, running: false, runtimeOk: true });
+  check('installing the runtime flips it to up-to-date', fixed.status === 'up-to-date', fixed.status);
+  check('…with runtimeOk true', fixed.runtimeOk === true);
+
+  check('pluginRuntimeInstalled() answers without throwing',
+    typeof pluginRuntimeInstalled() === 'boolean', String(pluginRuntimeInstalled()));
+  check('the runtime download link is Microsoft evergreen',
+    PLUGIN_RUNTIME_URL === 'https://aka.ms/highdpimfc2013x64', PLUGIN_RUNTIME_URL);
+}
+
+console.log('\n8) The bundled DLL still needs the runtime we check for');
+{
+  // If a future plugin bump links against a different CRT, the runtime check
+  // silently stops matching reality and the diagnosis regresses to "no idea".
+  // Pin it to the DLL's real import table.
+  const dll = path.join(__dirname, '..', 'build', 'plugin', PLUGIN_DLL);
+  const b = fs.readFileSync(dll);
+  const pe = b.readUInt32LE(0x3c);
+  const nsec = b.readUInt16LE(pe + 6);
+  const optSize = b.readUInt16LE(pe + 20);
+  const opt = pe + 24;
+  const magic = b.readUInt16LE(opt);
+  // Data directory 1 is the import table; its offset differs between PE32/PE32+.
+  const ddOff = opt + (magic === 0x20b ? 112 : 96);
+  const impRva = b.readUInt32LE(ddOff + 8);
+  const secs = [];
+  let so = opt + optSize;
+  for (let i = 0; i < nsec; i++, so += 40) {
+    secs.push({
+      va: b.readUInt32LE(so + 12),
+      vs: b.readUInt32LE(so + 8),
+      raw: b.readUInt32LE(so + 20),
+    });
+  }
+  const r2o = (rva) => {
+    for (const x of secs) {
+      if (rva >= x.va && rva < x.va + Math.max(x.vs, 1)) return rva - x.va + x.raw;
+    }
+    return null;
+  };
+  const imports = [];
+  let o = r2o(impRva);
+  while (o) {
+    const nameRva = b.readUInt32LE(o + 12);
+    if (!nameRva) break;
+    const no = r2o(nameRva);
+    if (no === null) break;
+    let e = no;
+    while (b[e]) e++;
+    imports.push(b.toString('ascii', no, e));
+    o += 20;
+  }
+  check('the DLL is 64-bit', magic === 0x20b, magic.toString(16));
+  check('it imports MSVCR120.dll — the runtime the check looks for',
+    imports.some((n) => /^MSVCR120\.dll$/i.test(n)), imports.join(' '));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

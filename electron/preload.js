@@ -56,6 +56,13 @@ contextBridge.exposeInMainWorld('apex', {
   /** Put the newest backup of LMU's controls file back. */
   lmuBindRestore: () => ipcRenderer.invoke('lmuBind:restore'),
 
+  /* ---- Shared-memory plugin ---- */
+
+  /** Is the plugin installed, enabled, and able to load? Writes nothing. */
+  pluginStatus: () => ipcRenderer.invoke('plugin:status'),
+  /** Install/enable it now — used after the game has been closed. */
+  pluginInstall: () => ipcRenderer.invoke('plugin:install'),
+
   /* ---- Race engineer ---- */
 
   /** Everything the Engineer tab renders: voices, install state, running state. */

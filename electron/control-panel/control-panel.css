@@ -1054,3 +1054,15 @@ html, body {
 .admin-item__text { margin: 0; font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .admin-item__meta { margin: 4px 0 0; font-size: 11px; color: var(--text-3); }
 .admin-item__status { width: 130px; }
+
+/* Telemetry plugin card -------------------------------------------------------
+   The failing row has to look failing. This card exists for one silent fault
+   (a missing VC++ 2013 runtime, which leaves the plugin installed, enabled and
+   completely inert), so the whole point is that the eye lands on the broken
+   line without reading all three. */
+.plugin-check--bad {
+  color: var(--bad);
+}
+.plugin-check--bad strong {
+  color: var(--bad);
+}

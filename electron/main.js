@@ -3309,6 +3309,40 @@ function registerIpc() {
     return mod.restoreLmuBindings();
   });
 
+  /*
+   * Shared-memory plugin health, for the panel's status card.
+   *
+   * This exists because the plugin can be installed perfectly and still never
+   * load: it links against MSVCR120 (VC++ 2013), and on a machine without that
+   * runtime LMU skips it silently — no buffers, no delta, no radar, no map,
+   * and nothing anywhere saying why. Read-only; the install itself still
+   * happens on server startup.
+   */
+  const pluginInstaller = () => {
+    try {
+      return require(path.join(__dirname, '..', 'dist', 'server', 'pluginInstaller.js'));
+    } catch {
+      return null;
+    }
+  };
+
+  ipcMain.handle('plugin:status', () => {
+    const mod = pluginInstaller();
+    if (!mod) return { ok: false, error: 'installer unavailable (build not present)' };
+    return { ok: true, ...mod.inspectSharedMemoryPlugin() };
+  });
+
+  /** Retry the install now — the "I closed the game" button. */
+  ipcMain.handle('plugin:install', () => {
+    const mod = pluginInstaller();
+    if (!mod) return { ok: false, error: 'installer unavailable (build not present)' };
+    try {
+      return { ok: true, ...mod.ensureSharedMemoryPlugin() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('wheel:devices', () => {
     const g = getGamepad();
     // A full re-enumeration, so a wheel plugged in since boot is picked up —

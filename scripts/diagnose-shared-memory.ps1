@@ -35,7 +35,7 @@ Write-Host "-------------------------------------"
 # --- 1) Is the game running, and does it look elevated? ----------------------
 # Reading .Path of another process fails from a non-admin window when that
 # process runs elevated - which is exactly the mismatch that breaks the overlay.
-$game = Get-Process | Where-Object { $_.ProcessName -like '*Mans*' }
+$game = Get-Process -Name 'Le Mans Ultimate' -ErrorAction SilentlyContinue
 $gameDir = $null
 if (-not $game) {
   Write-Host "GAME    : not running. Start LMU, get in the car, run this again." -ForegroundColor Yellow
@@ -108,9 +108,24 @@ foreach ($dir in $guesses) {
 }
 if (-not $dllFound) {
   Write-Host "PLUGIN  : rFactor2SharedMemoryMapPlugin64.dll NOT FOUND in the game Plugins folder" -ForegroundColor Red
-  Write-Host "          This is the usual cause. Easiest fix: install Crew Chief (thecrewchief.org)," -ForegroundColor Yellow
-  Write-Host "          run it once and let it install its LMU plugin - or drop TheIronWolf DLL into" -ForegroundColor Yellow
-  Write-Host "          the game Plugins folder yourself and enable it in CustomPluginVariables.JSON." -ForegroundColor Yellow
+  Write-Host "          Fix: close LMU, open Apex AIO System, and use the Telemetry plugin card" -ForegroundColor Yellow
+  Write-Host "          on the General tab - it installs and enables the plugin for you." -ForegroundColor Yellow
+}
+
+# --- 5) Can the game actually LOAD the plugin? -------------------------------
+# The plugin is linked against MSVCR120.dll - the Visual C++ 2013 x64 runtime,
+# not the 2015+ one most machines already have. Without it LoadLibrary fails,
+# LMU carries on perfectly, and NO buffer is ever created. Every check above
+# passes and there is still no telemetry, which is why this section exists.
+$rt = Join-Path $env:SystemRoot 'System32\MSVCR120.dll'
+if (Test-Path $rt) {
+  Write-Host "RUNTIME : MSVCR120.dll present - the plugin can load" -ForegroundColor Green
+} else {
+  Write-Host "RUNTIME : MSVCR120.dll MISSING - THIS IS THE PROBLEM" -ForegroundColor Red
+  Write-Host "          The plugin needs the Visual C++ 2013 Redistributable (x64)." -ForegroundColor Yellow
+  Write-Host "          Without it LMU silently skips the plugin and publishes nothing," -ForegroundColor Yellow
+  Write-Host "          however correctly the plugin itself is installed." -ForegroundColor Yellow
+  Write-Host "          Fix: install https://aka.ms/highdpimfc2013x64 then restart LMU." -ForegroundColor Yellow
 }
 
 Write-Host ""
