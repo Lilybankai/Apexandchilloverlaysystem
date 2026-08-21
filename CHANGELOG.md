@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.85.0 — 2026-08-21
+
 ### Added
 
 - **A Schedule tab for the league calendar.** Thursday and Saturday Apex & Chill championships, pulled live from SimGrid: the next race, remaining rounds, grid spots, and a **Sign up on SimGrid** button that opens the championship page in your browser so you can enter from the app.
