@@ -52,6 +52,8 @@ function inventory() {
     const throttleMatch = /throttleMs\s*:\s*(\d+)/.exec(src);
     const throttleMs = throttleMatch ? Number(throttleMatch[1]) : 0;
     const canvas = /createElement\(\s*["']canvas["']\s*\)/.test(src) || /getContext\(\s*["']2d["']/.test(src);
+    // Full-rate widgets follow the connection, not a baked-in 30. Inventory
+    // prints the default; dispatchLoad() substitutes the rate under test.
     const updatesPerSec = throttleMs === 0 ? DEFAULT_HZ : 1000 / throttleMs;
     widgets.push({
       id,
@@ -85,7 +87,7 @@ function dispatchLoad(widgets, hz) {
   let canvasUps = 0;
   for (const w of widgets) {
     if (!w.ingameDefault) continue;
-    const rate = Math.min(hz, w.updatesPerSec);
+    const rate = w.fullRate ? hz : Math.min(hz, w.updatesPerSec);
     ups += rate;
     if (w.canvas) canvasUps += rate;
   }
@@ -239,8 +241,10 @@ function makeCtx(canvas) {
     setLineDash: noop,
     getLineDash: () => [],
     arc: noop,
+    arcTo: noop,
     ellipse: noop,
     rect: noop,
+    roundRect: noop,
     quadraticCurveTo: noop,
     bezierCurveTo: noop,
     clip: noop,
@@ -420,6 +424,10 @@ function mountWidget(id) {
     applyRankBadge() {},
     consequenceMs: 0,
     consequenceFresh: () => false,
+    servedFresh: () => false,
+    penaltyCount: (tl) => (tl && typeof tl.penalties === 'number' ? tl.penalties : 0),
+    penaltyText: () => '',
+    penaltyLabel: () => '',
   };
 
   def.init(root, ctx);

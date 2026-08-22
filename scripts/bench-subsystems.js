@@ -92,13 +92,17 @@ function run() {
       ...timeMany(() => assignClassPositions(rows), 800, 40).stats,
     });
 
-    const tracker = new PaceAverageTracker();
-    // Prime one lap edge so update() does the bookkeeping work, not a no-op.
-    tracker.update(rows, 'bench|race');
+    // A fresh tracker per size, and a lap edge every call, so this times the
+    // bookkeeping that actually runs when someone in the field takes a lap —
+    // not the steady-state "nothing changed" path.
     const next = fakeStandings(n).map((r) => ({ ...r, lapsCompleted: r.lapsCompleted + 1 }));
     pace.push({
       cars: n,
-      ...timeMany(() => tracker.update(next, 'bench|race'), 400, 20).stats,
+      ...timeMany(() => {
+        const tracker = new PaceAverageTracker();
+        tracker.update(rows, 'bench|race');
+        tracker.update(next, 'bench|race');
+      }, 400, 20).stats,
     });
   }
 
