@@ -25,6 +25,34 @@
   0.82.0 and present in every release since, whenever AVG was left off (the
   default). BEST is back where it belongs, and the columns line up again with
   AVG on or off.
+- **Track Limits went blank during a teammate's stint, then restarted from a
+  clean sheet.** In a driver-swap event Le Mans Ultimate flags no car as yours
+  while somebody else is driving it, so the whole panel dropped out — and when
+  you swapped back in it came back showing zero penalties on a car that was
+  carrying them. Apex now identifies your car by your team's race number rather
+  than by who is holding the wheel, so the penalty count is the **car's**: it
+  keeps running through your teammate's stint and survives every handover.
+  Nothing changes while you are the one driving.
+- **A penalty your teammate picked up was thrown away as a rival's.** The
+  stewards name a penalty after whoever was in the seat, and Apex only ever
+  recognised the current driver — so a drive-through earned during someone
+  else's stint never showed on the panel, and never cleared the track-limit
+  points it had just paid off. Penalties are now matched against your whole
+  crew.
+
+### Changed
+
+- **The relative panel counts in class in a multiclass race.** The cars nearest
+  you on track are mostly from other categories, so an overall position there
+  was the one number nobody in the picture is racing for. Each row now shows
+  that car's place in **its own** class, next to the class tag that names it.
+  A single-class field is unchanged — the two readings are identical there.
+- **Track Limits says when its points only cover your own stints.** Once a car
+  has been shared, the countdown is replaced by the points you have been
+  charged, headed `MY STINT`. LMU only writes track-limit rulings to your PC
+  while you are in the car, so a teammate's cuts cannot be seen from here — and
+  counting down an allowance using half the charges against it promises room
+  that may not be there.
 
 ## 0.86.0 — 2026-08-21
 

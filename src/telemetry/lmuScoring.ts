@@ -52,6 +52,23 @@ const SI = {
   mSession: 64, // long
   mLapDist: 88, // double — lap length, metres
   mNumVehicles: 104, // long
+  /**
+   * The name of the driver sitting at THIS PC — `char[32]`, verified live.
+   *
+   * The one identity in the whole feed that does not depend on anybody being in
+   * a car. In a team event during a teammate's stint no standings row carries
+   * `player: true` at all (probed live, 2026-08-22, mid-race), so every "which
+   * car is ours" answer built on the driven car evaporates exactly when a
+   * driver-swap entry needs one. This does not: the sim knows who is logged in
+   * whether they are driving, spectating or sat in the monitor.
+   *
+   * Found by dumping the printable strings in the header rather than trusted
+   * from a struct definition, and it is corroborated by its NEIGHBOUR: the
+   * track name decodes at +0, this at +116, and a second string at +148 —
+   * exactly rF2's `mPlayerName[32]` followed by `mPlrFileName[64]`. A lone
+   * plausible string proves nothing; a pair in the right places is the layout.
+   */
+  mPlayerName: 116, // char[32]
   /** `sizeof(rF2ScoringInfo)` — the vehicles array follows it. */
   sizeof: 548,
 } as const;
@@ -363,6 +380,45 @@ export class LmuScoringReader {
         const buf = w.readBytes(this.view, SI.base + SI.mTrackName, 64);
         if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
         return readCString(buf, 0, 64);
+      }
+      return '';
+    } catch {
+      this.stop();
+      return '';
+    }
+  }
+
+  /**
+   * The name of the driver logged in at this PC, or `""` when it cannot be read.
+   *
+   * Exists to answer one question the rest of the feed cannot: **which car is
+   * ours while somebody else is driving it.** In a team event a teammate's stint
+   * leaves no standings row flagged `player`, so the car has to be identified by
+   * something other than who is at the wheel — this name, joined against the
+   * team rosters `/rest/multiplayer/teams` publishes, does it without needing us
+   * to have driven first. That last part is the whole point: a latch taken while
+   * driving cannot help an app STARTED mid-stint, which is the case a driver
+   * doing the second stint of an endurance race is actually in.
+   *
+   * Read through the same torn-read guard as everything else here, and an empty
+   * string on any doubt — callers treat that as "the sim did not say" and fall
+   * back to the driven car.
+   */
+  public readPlayerName(): string {
+    const w = this.win32;
+    if (w === null) return '';
+    if (!this.view) {
+      this.open();
+      if (!this.view) return '';
+    }
+    try {
+      for (let attempt = 0; attempt < TORN_READ_RETRIES; attempt++) {
+        const v1 = w.readU32(this.view, 0);
+        if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
+        if (SI.base + SI.mPlayerName + 32 > this.size) return '';
+        const buf = w.readBytes(this.view, SI.base + SI.mPlayerName, 32);
+        if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
+        return readCString(buf, 0, 32);
       }
       return '';
     } catch {

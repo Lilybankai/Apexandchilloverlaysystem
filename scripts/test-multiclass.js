@@ -5,6 +5,7 @@
  * Covers:
  *  - car-class normalisation and speed ranking (`carClass.ts`);
  *  - position-in-class / gap-to-class-leader (`assignClassPositions`);
+ *  - the standings->relative class-position join (`copyClassPositions`);
  *  - the blue-flag / backmarker yield rule (`yieldAlert.ts`).
  *
  * These are the derivations behind the standings tower's class groups and the
@@ -13,7 +14,8 @@
  */
 const path = require('path');
 const dist = (m) => require(path.join(__dirname, '..', 'dist', 'telemetry', m));
-const { normalizeClass, classRank, isFasterClass, assignClassPositions } = dist('carClass.js');
+const { normalizeClass, classRank, isFasterClass, assignClassPositions, copyClassPositions } =
+  dist('carClass.js');
 const { shouldYield, shouldWarnTraffic } = dist('yieldAlert.js');
 
 const UNKNOWN = -1;
@@ -160,6 +162,61 @@ const badFraction = [
 assignClassPositions(badFraction);
 check('a nonsense lap fraction falls back rather than being clamped',
   badFraction[1].classLapsBehind === 1, String(badFraction[1].classLapsBehind));
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+console.log('\n3b) Class positions reach the relative panel by slot id, not by counting');
+
+// The relative list is a handful of cars picked by PROXIMITY, so a class
+// position counted within it would number a car by how many of its class happen
+// to be nearby. The join must quote the standings' figure verbatim.
+const std = [
+  { slotId: 10, position: 1, carClass: 'HYPERCAR', gapToLeaderSec: 0, lapsBehind: 0 },
+  { slotId: 11, position: 2, carClass: 'HYPERCAR', gapToLeaderSec: 4, lapsBehind: 0 },
+  { slotId: 20, position: 9, carClass: 'GT3', gapToLeaderSec: 80, lapsBehind: 0 },
+  { slotId: 21, position: 10, carClass: 'GT3', gapToLeaderSec: 84, lapsBehind: 0 },
+  { slotId: 22, position: 11, carClass: 'GT3', gapToLeaderSec: 90, lapsBehind: 0 },
+];
+assignClassPositions(std);
+
+// A GT3 in the middle of its own train: the two cars either side are the 2nd and
+// 3rd of their class, and counting locally would call them 1st and 2nd.
+const rel = [
+  { slotId: 21, position: 10 },
+  { slotId: 22, position: 11 },
+];
+copyClassPositions(std, rel);
+check('a GT3 pair mid-field keeps its FIELD-WIDE class positions',
+  rel[0].classPosition === 2 && rel[1].classPosition === 3,
+  rel.map((r) => r.classPosition).join(','));
+
+// Cars from different classes on the same screen each count in their own.
+const mixed = [{ slotId: 11, position: 2 }, { slotId: 20, position: 9 }];
+copyClassPositions(std, mixed);
+check('each class counts in its own', mixed[0].classPosition === 2 && mixed[1].classPosition === 1,
+  mixed.map((r) => r.classPosition).join(','));
+
+// A car the standings cannot place must be LEFT alone — the widget reads an
+// absent classPosition as "fall back to overall for the whole table", and a
+// zero or a copied overall position would defeat that.
+const unknownCar = [{ slotId: 99, position: 14 }];
+copyClassPositions(std, unknownCar);
+check('a car absent from the standings gets no class position',
+  unknownCar[0].classPosition === undefined, String(unknownCar[0].classPosition));
+
+// A single-class field still assigns positions; the widget, not the join,
+// decides not to show them.
+const solo = [{ slotId: 30, position: 1, carClass: 'GT3', gapToLeaderSec: 0, lapsBehind: 0 }];
+assignClassPositions(solo);
+const soloRel = [{ slotId: 30, position: 1 }];
+copyClassPositions(solo, soloRel);
+check('a single-class field still joins', soloRel[0].classPosition === 1,
+  String(soloRel[0].classPosition));
+
+// Empty inputs must not throw — both happen for a frame or two at session load.
+copyClassPositions([], [{ slotId: 1, position: 1 }]);
+copyClassPositions(std, []);
+check('empty standings / empty relative are no-ops', true);
 
 /* -------------------------------------------------------------------------- */
 console.log('\n4) Blue-flag / backmarker yield rule');

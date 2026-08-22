@@ -62,7 +62,13 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import type { ServerConfig } from '../server/config';
-import { assignClassPositions, isFasterClass, lapFractionOf, normalizeClass } from './carClass';
+import {
+  assignClassPositions,
+  copyClassPositions,
+  isFasterClass,
+  lapFractionOf,
+  normalizeClass,
+} from './carClass';
 import { decodeMotion } from './motion';
 import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
@@ -615,6 +621,9 @@ export class RF2Provider implements TelemetryProvider {
     });
 
     const relative = this.buildRelative(standings, playerId, playerScoringOff, scoring);
+    // The relative panel quotes the standings' own class positions rather than
+    // counting its own — see copyClassPositions.
+    copyClassPositions(standings, relative);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
     const trackMap = this.buildTrackMap(
       scoring,

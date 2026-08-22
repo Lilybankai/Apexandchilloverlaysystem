@@ -96,7 +96,13 @@ import {
   type CompletedTrace,
   type TraceChannels,
 } from './lapTrace';
-import { assignClassPositions, isFasterClass, lapFractionOf, normalizeClass } from './carClass';
+import {
+  assignClassPositions,
+  copyClassPositions,
+  isFasterClass,
+  lapFractionOf,
+  normalizeClass,
+} from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 import { RaceosRanksClient, type DriverRanks } from './raceosRanks';
 
@@ -260,6 +266,18 @@ interface RestGameState {
   /** Signed along-track metres to the pit-entry commit point; negative = past it. */
   PitEntryDist?: number;
   PitState?: string;
+  /**
+   * The sim's own word on a TEAM entry's current occupant — observed live as
+   * `"OTHER TEAMMATE DRIVING"` during a driver swap (2026-08-22).
+   *
+   * This is what tells a team event apart from an ordinary spectator session,
+   * which otherwise look identical from here: in both, no standings row carries
+   * `player: true`. The difference matters because in one of them there is a car
+   * that is still ours.
+   */
+  teamVehicleState?: string;
+  /** `false` while the driver at this PC is not in a car (monitor, swap, spectating). */
+  inControlOfVehicle?: boolean;
 }
 
 /**
@@ -313,9 +331,40 @@ interface RestTeamsDriver {
   badge?: string;
 }
 
+/**
+ * One TEAM from `/rest/multiplayer/teams`. Probed live 2026-08-22 in a 35-car
+ * ELMS team race; every one of the 35 teams joined onto a standings row by
+ * {@link carNumber}.
+ *
+ * This is the half of the payload that was never read, and it is the half a
+ * driver-swap event needs: a team's car number does not change when the driver
+ * does, so it names the CAR while {@link drivers} names everyone entitled to be
+ * in it.
+ */
+interface RestTeamsTeam {
+  /** The entry's race number, e.g. `"26"` — joins onto `RestStanding.carNumber`. */
+  carNumber?: string | number;
+  /** Team name as the entry list has it. */
+  name?: string;
+  /** Every driver on this entry, keyed by player name. */
+  drivers?: Record<string, RestTeamsDriver>;
+}
+
+/** What {@link LmuRestProvider.trackTeamStint} works out about our entry. */
+interface TeamStint {
+  /** Our car's standings row, however it was identified; `undefined` if unknown. */
+  car: RestStanding | undefined;
+  /** A teammate has the wheel right now. */
+  teammateDriving: boolean;
+  /** Someone other than us has driven this car at some point this session. */
+  handedOver: boolean;
+}
+
 /** `/rest/multiplayer/teams` payload (only the fields we consume). */
 interface RestMultiplayerTeams {
   drivers?: Record<string, RestTeamsDriver>;
+  /** Keyed by the payload's own `utid` ids; the ids themselves are not used. */
+  teams?: Record<string, RestTeamsTeam>;
 }
 
 /**
@@ -327,6 +376,16 @@ interface RestMultiplayerTeams {
  * just appeared itself.
  */
 const TEAMS_REFRESH_INTERVAL_MS = 10_000;
+
+/**
+ * How often to retry reading the local player's name from shared memory (ms),
+ * until it answers once.
+ *
+ * A second is far quicker than the thing that consumes it — the team rosters
+ * arrive on a ten-second timer — while keeping a permanently-failing read (plain
+ * rF2, no plugin) down to a once-a-second no-op instead of a per-poll one.
+ */
+const NAME_PROBE_INTERVAL_MS = 1000;
 
 /** Fields we consume from `/rest/watch/sessionInfo`. */
 interface RestSession {
@@ -492,6 +551,61 @@ export class LmuRestProvider implements TelemetryProvider {
    * runs from a poll timer and cannot ask the frame builder.
    */
   private playerDriverName = '';
+  /**
+   * The name of the driver logged in at this PC, from the scoring header.
+   *
+   * Distinct from {@link playerDriverName}, which is the name in OUR CAR right
+   * now and is therefore a teammate's during their stint — or nothing at all,
+   * since a swapped-out driver has no `player` row. This one never changes and
+   * never disappears, which is why the team lookup keys on it.
+   */
+  private localPlayerName = '';
+  /**
+   * Our team's race number, once the team rosters have named it, e.g. `"26"`.
+   *
+   * The car's identity, as opposed to the driver's. A driver swap changes who is
+   * in the seat, the slot's `driverName` and which rows carry `player`; it does
+   * not change this.
+   */
+  private teamCarNumber: string | null = null;
+  /**
+   * Everyone entitled to drive our car this session, normalised for comparison.
+   *
+   * The stewards name a penalty after whoever was at the wheel, so a penalty our
+   * CAR owes can arrive under a teammate's name. Matching against the whole
+   * roster is what stops it being discarded as a rival's — see the attribution
+   * predicate in {@link start}.
+   */
+  private readonly teamDriverNames = new Set<string>();
+  /**
+   * Last slot we were seen driving this session — the fallback identity for our
+   * car when the team rosters are unavailable (a non-team server, or the
+   * endpoint not answering). Cleared with the session.
+   */
+  private lastDrivenSlot: number | null = null;
+  /**
+   * Whether somebody OTHER than us has driven our car this session.
+   *
+   * Latched rather than sampled, because it is asked in order to qualify the
+   * track-limit points — and those points are wrong for the rest of the session
+   * from the first moment a teammate turns a wheel, not only while they are
+   * still in the car. See {@link buildTrackLimits}.
+   */
+  private teammateHasDriven = false;
+  /** Session {@link teammateHasDriven} and {@link lastDrivenSlot} belong to. */
+  private teamSessionKey = '';
+  /**
+   * The last team rosters seen, kept so the lookup can be re-run the moment the
+   * local player's name arrives.
+   *
+   * The two facts land in either order: the rosters come off a 10 s REST timer,
+   * the name off shared memory as soon as it maps. Without this, a name that
+   * arrives just after a roster poll would leave the car unidentified — and the
+   * panel blank — until the next one, which is ten seconds of a race.
+   */
+  private lastTeamsPayload: Record<string, RestTeamsTeam> | undefined;
+  /** Last attempt at reading the local player's name from shared memory. */
+  private lastNameProbeAt = 0;
   /** Rolling last-5-lap pace per car, for the standings AVG column. */
   private readonly paceAvg = new PaceAverageTracker();
   /**
@@ -708,17 +822,18 @@ export class LmuRestProvider implements TelemetryProvider {
     // wrote a `Local penalty` line to this PC's trace, live, 2026-08-20) — so
     // before one is allowed to name a penalty or zero the accumulated points:
     //
-    //   - a line the steward's message NAMED is the named driver's, full stop;
+    //   - a line the steward's message NAMED belongs to that driver — which for
+    //     a TEAM entry means anyone on our crew, not just whoever is in the seat
+    //     right now. Testing against the current driver alone threw away every
+    //     penalty a teammate earned, so a drive-through issued during their
+    //     stint never showed and never zeroed our points (see isOurDriver);
     //   - an unnamed line is ours only if OUR OWN penalty count (per-car, from
     //     scoring, instant) rose within the trace's flush latency — the count
     //     moves the moment the sim decides, the trace up to ~25 s later;
     //   - during a backfill replay there is no live counter to ask, so unnamed
     //     lines are trusted the way the recovery pass always trusted them.
     this.traceLimits.setPenaltyAttribution((pen, replay) => {
-      if (pen.driver) {
-        const own = this.playerDriverName.trim().toLowerCase();
-        return own !== '' && pen.driver.trim().toLowerCase() === own;
-      }
+      if (pen.driver) return this.isOurDriver(pen.driver);
       if (replay) return true;
       const rose = this.trackLimits.lastPenaltyRoseAtMs();
       return rose > 0 && Date.now() - rose < OWN_PENALTY_ATTRIBUTION_MS;
@@ -981,9 +1096,148 @@ export class LmuRestProvider implements TelemetryProvider {
       // badges exist to be fetched, and the only names safe to send (see the
       // field note on `ranks`).
       this.ranks?.noteNames(Object.keys(teams.drivers));
+      this.lastTeamsPayload = teams.teams;
+      this.learnOurTeam(teams.teams);
     } catch {
       this.badgeByName.clear();
     }
+  }
+
+  /**
+   * Find OUR entry in the team rosters, and remember the car and the crew.
+   *
+   * Keyed on the name in the scoring header rather than on the name in our car,
+   * because during a teammate's stint the latter is theirs and there is no
+   * `player` row to read it from anyway. That is the whole reason this lookup
+   * exists: it is the one that still works when we are not driving.
+   *
+   * Deliberately does NOT clear a previously-learned team when the answer comes
+   * back empty. The endpoint is a live server's, so it stops answering the
+   * moment the connection blinks — and forgetting which car is ours for two
+   * polls would blank the track-limits panel mid-race, which is precisely the
+   * failure this whole change is undoing. A real change of entry rewrites it.
+   */
+  private learnOurTeam(teams: Record<string, RestTeamsTeam> | undefined): void {
+    if (!teams || typeof teams !== 'object') return;
+    const me = normalizeDriverName(this.localPlayerName);
+    if (!me) return;
+    for (const team of Object.values(teams)) {
+      const roster = team?.drivers;
+      if (!roster || typeof roster !== 'object') continue;
+      const names = Object.keys(roster);
+      if (!names.some((n) => normalizeDriverName(n) === me)) continue;
+      const num = team.carNumber === undefined ? '' : String(team.carNumber).trim();
+      this.teamCarNumber = num === '' ? null : num;
+      this.teamDriverNames.clear();
+      for (const n of names) this.teamDriverNames.add(normalizeDriverName(n));
+      return;
+    }
+  }
+
+  /**
+   * Our car, and how the stint is being shared — recomputed every poll.
+   *
+   * Three things happen here, and they have to happen in this order: the
+   * session latch is cleared first (so nothing below carries across a restart),
+   * the local player's name is learned as soon as shared memory can say it (the
+   * roster lookup is keyed on it), and only then is the car resolved.
+   *
+   * `handedOver` LATCHES rather than tracking the current occupant, because of
+   * what it is used for: once a teammate has driven, our track-limit points are
+   * an under-count of the car's for the rest of the session, whether they are
+   * still in the seat or not. See {@link buildTrackLimits}.
+   */
+  private trackTeamStint(
+    cars: RestStanding[],
+    playerCar: RestStanding | undefined,
+    sessionKey: string,
+  ): TeamStint {
+    if (sessionKey !== this.teamSessionKey) {
+      this.teamSessionKey = sessionKey;
+      this.lastDrivenSlot = null;
+      this.teammateHasDriven = false;
+    }
+    // Free once it has an answer, because the name never changes. Until then it
+    // is throttled rather than tried every poll: on plain rF2, or before the
+    // buffer maps, the read never succeeds, and a failing read re-opens the
+    // mapping — which is not something to do thirty times a second for a name
+    // that is either there or is not.
+    if (this.localPlayerName === '' && Date.now() - this.lastNameProbeAt >= NAME_PROBE_INTERVAL_MS) {
+      this.lastNameProbeAt = Date.now();
+      const name = this.scoring.readPlayerName();
+      if (name !== '') {
+        this.localPlayerName = name;
+        this.learnOurTeam(this.lastTeamsPayload);
+      }
+    }
+    if (playerCar) this.lastDrivenSlot = playerCar.slotID;
+
+    const car = this.findOurCar(cars);
+    // The sim says so outright when it can. The roster size is the fallback for
+    // a build or a server that does not publish the state: an entry with more
+    // than one driver, a car of ours on the timing screen, and nobody driving it
+    // here can only be a teammate's stint.
+    const state = asUpper(this.gameState?.teamVehicleState);
+    const teammateDriving =
+      playerCar === undefined &&
+      car !== undefined &&
+      (state.includes('TEAMMATE') || (state === '' && this.teamDriverNames.size > 1));
+    if (teammateDriving) this.teammateHasDriven = true;
+
+    return { car, teammateDriving, handedOver: this.teammateHasDriven };
+  }
+
+  /**
+   * The car this PC's driver races, whether or not they are currently in it.
+   *
+   * Three answers, best first:
+   *
+   *   1. the row flagged `player` — we are driving, and nothing beats that;
+   *   2. the row whose number matches our team's, from the rosters. This is the
+   *      one that carries a driver swap: the number belongs to the entry, so it
+   *      still points at our car while a teammate has the wheel, and it works
+   *      from a cold start because it never needed us to have driven;
+   *   3. the last slot we were seen driving. A fallback for a server whose teams
+   *      endpoint does not answer, and the reason it is last: a slot id is only
+   *      known to be ours because we once occupied it, so it cannot help an app
+   *      started mid-stint.
+   *
+   * Returns `undefined` when none of them lands — an ordinary spectator on a
+   * broadcast machine has no car here, and must not be given somebody else's.
+   */
+  /**
+   * Is this driver one of OURS — us, or anyone sharing our car this session?
+   *
+   * The stewards name a penalty after whoever was at the wheel, and in a team
+   * event that is routinely not us. Matching only the current driver is what
+   * made a teammate's drive-through invisible: the line was discarded as a
+   * rival's, so it neither named the penalty nor reset the points the car had
+   * just spent.
+   *
+   * Falls back to the single current driver when no roster is known, which is
+   * the solo case and preserves the old behaviour exactly.
+   */
+  private isOurDriver(name: string): boolean {
+    const who = normalizeDriverName(name);
+    if (who === '') return false;
+    if (this.teamDriverNames.size > 0) return this.teamDriverNames.has(who);
+    const me = normalizeDriverName(this.localPlayerName);
+    if (me !== '' && who === me) return true;
+    const current = normalizeDriverName(this.playerDriverName);
+    return current !== '' && who === current;
+  }
+
+  private findOurCar(cars: RestStanding[]): RestStanding | undefined {
+    const driven = cars.find((c) => c.player);
+    if (driven) return driven;
+    const num = this.teamCarNumber;
+    if (num !== null) {
+      const byNumber = cars.find((c) => String(c.carNumber ?? '').trim() === num);
+      if (byNumber) return byNumber;
+    }
+    const slot = this.lastDrivenSlot;
+    if (slot !== null) return cars.find((c) => c.slotID === slot);
+    return undefined;
   }
 
   /** The DR/SR rank badges for a standings row's driver, if resolved. */
@@ -1237,6 +1491,11 @@ export class LmuRestProvider implements TelemetryProvider {
     // another car's — car numbers can repeat across classes, ids can't).
     const playerCar = cars.find((c) => c.player);
     if (playerCar?.driverName) this.playerDriverName = playerCar.driverName;
+    const teamStint = this.trackTeamStint(cars, playerCar, `${si.trackName ?? ''}|${si.session ?? ''}`);
+    // The car we RACE, which during a teammate's stint is not the car anybody
+    // here is driving. Only the stewarding blocks use this; every driving aid
+    // below stays on `playerCar` by construction — see the spectator note above.
+    const ourCar = playerCar ?? teamStint.car;
     const rawLocal = playerCar ? this.localCar.read(playerCar.slotID) : null;
     // Bridge an occasional single missed read so pedals/temps don't flicker to
     // "unknown" for one frame; a genuine drop (spectating) outlasts the hold.
@@ -1261,8 +1520,20 @@ export class LmuRestProvider implements TelemetryProvider {
     // live inside buildTrackLimits, but the PB reference key (below) needs the
     // car model from the same record and is computed earlier in the frame, and
     // reading the buffer twice per poll to serve two callers would be pure waste.
-    const scoringCar = playerCar ? this.scoring.read(playerCar.slotID) : null;
-    if (scoringCar && scoringCar.vehicleName) this.playerVehicleName = scoringCar.vehicleName;
+    const scoringCar = ourCar ? this.scoring.read(ourCar.slotID) : null;
+    if (playerCar && scoringCar && scoringCar.vehicleName) {
+      this.playerVehicleName = scoringCar.vehicleName;
+    }
+    // The same record, but only when it is the DRIVEN car's.
+    //
+    // `scoringCar` now follows our team's car, which during a teammate's stint
+    // is a car nobody here is driving. The track map and the lap log must not
+    // follow it there: one draws where WE are and the other writes lap records
+    // under our name, and neither has any business doing that for a stint
+    // somebody else drove. When we are in the car the two are the same object,
+    // so the driving path is untouched by construction — which is the whole
+    // contract of this change.
+    const playerScoringCar = playerCar ? scoringCar : null;
 
     // Hybrid latch — keyed on the CAR, because whether there is a battery is a
     // property of the machinery, not of the session. Swapping cars between
@@ -1286,6 +1557,9 @@ export class LmuRestProvider implements TelemetryProvider {
       trackLen,
     );
     const relative = this.buildRelative(cars, focus, si);
+    // The relative panel quotes the standings' own class positions rather than
+    // counting its own — see copyClassPositions.
+    copyClassPositions(standings, relative);
     const session = this.buildSession(cars, si, focus, this.gameState);
     const weather = this.buildWeather(si, session.type);
     const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
@@ -1297,13 +1571,13 @@ export class LmuRestProvider implements TelemetryProvider {
     // sit: the delta engine needs the stewards' cut count to know whether the
     // lap being driven can stand as a reference (see `LapValidity`), and a
     // frame-old count would attach a cut taken on the line to the wrong lap.
-    const limitsBase = this.buildTrackLimits(playerCar, scoringCar, session);
+    const limitsBase = this.buildTrackLimits(ourCar, scoringCar, session, teamStint);
     // A disqualification outranks everything else the block could say: there is
     // nothing left to serve, and the count often stays up after the verdict —
     // "1 PENALTY" over a car the stewards have excluded is the widget losing
     // the plot at the worst moment. From the standings row's own finishStatus
     // (`FSTAT_DSQ`), which is per-car and therefore already attributed.
-    const dsq = playerCar ? /DSQ|DISQ/i.test(String(playerCar.finishStatus ?? '')) : false;
+    const dsq = ourCar ? /DSQ|DISQ/i.test(String(ourCar.finishStatus ?? '')) : false;
     // The penalty's KIND rides on the track-limits block because that is where
     // its count already lives, and the two are read together or not at all.
     const withType = !limitsBase
@@ -1451,10 +1725,10 @@ export class LmuRestProvider implements TelemetryProvider {
     // on it. Fed the SCENE name as the layout — Monza's two layouts share a
     // venue name, and a map keyed on the venue alone would draw one over the
     // other (the same trap `refreshSimTrackName` exists to close for pace).
-    const trackMap = this.buildTrackMap(session, trackLen, playerCar, scoringCar, field, cars);
+    const trackMap = this.buildTrackMap(session, trackLen, playerCar, playerScoringCar, field, cars);
     // The lap database. Last, because it reads the results of everything above
     // (the excursion count, the pit flags) to decide whether the lap was clean.
-    this.recordLap(playerCar, scoringCar, session, trackLimits, si, trackLen, nowMs);
+    this.recordLap(playerCar, playerScoringCar, session, trackLimits, si, trackLen, nowMs);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -2634,23 +2908,44 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
-   * The stewards' track-limit points and penalties for the **driven** car.
+   * The stewards' track-limit points and penalties for **our** car.
    *
-   * Centred on the driven car rather than the broadcast focus, for the same
-   * reason the radar is: it is a driver aid, and the channels behind it exist
-   * only for the car whose scoring record this PC owns. Returns `undefined`
-   * when the scoring buffer is unreadable, which drops the block from the frame.
+   * Centred on the car we RACE rather than the broadcast focus, for the same
+   * reason the radar is centred on the driven car: it is about our own race, not
+   * about whoever the camera is on. Returns `undefined` when the scoring buffer
+   * is unreadable, which drops the block from the frame.
    *
    * Two sources meet here, and neither is ours: the scoring record publishes the
    * penalty count, and the trace log publishes the points and what each cut was
    * charged (`telemetry/lmuTraceLimits.ts`).
+   *
+   * ## Why "our car" and not "the driven car"
+   * It used to be the driven car, and in a TEAM event that is wrong twice over.
+   * During a teammate's stint no standings row carries `player` at all, so the
+   * block was dropped entirely and the tracker behind it reset — the panel went
+   * blank, then came back on the next handover showing a clean sheet for a car
+   * that was carrying penalties. The penalty count is a property of the CAR
+   * (`mNumPenalties`, and the REST row's `penalties` beside it), so it is read
+   * for our car whoever is holding the wheel, and it never resets on a swap.
+   *
+   * ## The one number that CANNOT be made team-wide, and why it says so
+   * The points are reconstructed from this PC's trace log, and the sim only
+   * writes track-limits lines while the driver here is in the car — established
+   * from a live team race, where every charge line fell inside the stint and
+   * none outside it. A teammate's cuts are therefore not merely missing, they
+   * are unobservable from this machine. So once the car has been handed over,
+   * {@link TrackLimitsState.pointsStintOnly} is set and the widget stops
+   * presenting the total as the car's allowance. Under-reporting silently is the
+   * one outcome worth engineering against: a driver reading "7.25 left" off a
+   * car that has spent nine goes looking for the limit.
    */
   private buildTrackLimits(
-    playerCar: RestStanding | undefined,
+    ourCar: RestStanding | undefined,
     car: ScoringCar | null,
     session: SessionState,
+    stint: TeamStint,
   ): TrackLimitsState | undefined {
-    if (!playerCar) {
+    if (!ourCar) {
       this.trackLimits.reset();
       return undefined;
     }
@@ -2691,10 +2986,19 @@ export class LmuRestProvider implements TelemetryProvider {
     // invalidate the lap and let the total run past it. See `pointsLimitEnforced`.
     const enforced = session.type === 'race';
 
+    // Whether the points below can speak for the CAR or only for our own stints.
+    // Set from the latch, not from who is driving right now: a teammate's cuts
+    // stay invisible to us for the rest of the session, not just while they are
+    // in the seat.
+    const teamFields = {
+      ...(stint.handedOver ? { pointsStintOnly: true as const } : {}),
+      ...(stint.teammateDriving ? { teammateDriving: true as const } : {}),
+    };
+
     // No trace — no LMU log directory, or a copy being replayed that has ended.
     // The points stay UNKNOWN_VALUE rather than becoming a comfortable zero: the
     // widget must be able to say "we cannot see the stewards".
-    if (!trace) return { ...state, pointsLimitEnforced: enforced };
+    if (!trace) return { ...state, ...teamFields, pointsLimitEnforced: enforced };
 
     // A charge lands the moment the reader's counter moves. It only ever goes
     // DOWN on a session reset, which is not an event to flash about.
@@ -2703,6 +3007,7 @@ export class LmuRestProvider implements TelemetryProvider {
 
     return {
       ...state,
+      ...teamFields,
       points: trace.points,
       charges: trace.charges,
       charged: trace.charged,

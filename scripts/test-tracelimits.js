@@ -574,5 +574,56 @@ check('an unnamed penalty is provisionally ours', acc.state().lastPenalty !== nu
 acc.push(OTHER_STEWARD);
 check('…until the steward names someone else', acc.state().lastPenalty === null);
 
+// TEAM ENTRIES: a penalty the stewards name after a TEAMMATE is our CAR's.
+//
+// This is the shape of the driver-swap bug. The provider's predicate used to
+// compare the named driver against whoever was in our seat at that moment, so a
+// drive-through earned during a teammate's stint was discarded as a rival's —
+// it never named the penalty, and worse, it never zeroed the points the car had
+// just spent. Matching against the whole crew is the fix; the accumulator's job
+// is only to honour whatever the predicate says.
+const CREW = ['carl jones', 'craig needham', 'scott cruz'];
+const crewPredicate = (p) => !p.driver || CREW.includes(p.driver.trim().toLowerCase());
+
+const TEAMMATE_STEWARD =
+  '2534.21s steward.cpp  7095: Not logging result stream message, because the file is not open. ' +
+  'Msg: Scott Cruz received Stop/Go penalty, 10s, 0laps for Exiting Pits Under Red. ' +
+  'Result: penalties=1, 1st=Stop/Go,10s';
+
+acc = new TraceLimitsAccumulator();
+acc.penaltyAttribution = crewPredicate;
+acc.push(SESSION_START);
+acc.push(OTHER_LOC_PEN);
+acc.push(TEAMMATE_STEWARD);
+check('a penalty named after a TEAMMATE is kept as ours',
+  acc.state().lastPenalty !== null && acc.state().lastPenalty.driver === 'Scott Cruz',
+  acc.state().lastPenalty && acc.state().lastPenalty.driver);
+check('...and carries the kind the steward gave it',
+  acc.state().lastPenalty && acc.state().lastPenalty.kind === 'stop-go',
+  acc.state().lastPenalty && acc.state().lastPenalty.kind);
+
+// The other half: a driver on nobody's crew is still rejected, so widening the
+// test to the team must not have widened it to the field.
+acc = new TraceLimitsAccumulator();
+acc.penaltyAttribution = crewPredicate;
+acc.push(SESSION_START);
+acc.push(OTHER_LOC_PEN);
+acc.push(OTHER_STEWARD); // "Michael wood1987" — a rival
+check('a rival is still rejected once named', acc.state().lastPenalty === null);
+
+// And the one that actually costs points: a track-limits drive-through issued
+// while a teammate was driving discharges the car's account. Ours has to follow,
+// because the sim has reset the car's total and a stale figure would count cuts
+// the stewards have already been paid for.
+acc = new TraceLimitsAccumulator();
+acc.penaltyAttribution = crewPredicate;
+acc.push(SESSION_START);
+acc.push(WARNING);
+acc.push(SCORED_100);
+check('points on the board before the handover', acc.state().points === 1, acc.state().points);
+acc.push(PEN_TRACK_LIMITS); // unnamed; the predicate lets unnamed lines through
+check('a track-limits drive-through on OUR car discharges the points',
+  acc.state().points === 0, acc.state().points);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 1 && 0 : 1);

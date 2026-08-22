@@ -17,7 +17,7 @@
  * the overlay.
  */
 
-import { UNKNOWN_VALUE, type StandingEntry } from './types';
+import { UNKNOWN_VALUE, type RelativeEntry, type StandingEntry } from './types';
 
 /**
  * Canonical class labels, fastest category first.
@@ -218,5 +218,45 @@ export function assignClassPositions(rows: StandingEntry[]): void {
         : row.classLapsBehind === 0 && own !== UNKNOWN_VALUE && lead !== UNKNOWN_VALUE
           ? Math.round((own - lead) * 100) / 100
           : UNKNOWN_VALUE;
+  }
+}
+
+/**
+ * Copy each car's `classPosition` from the standings onto its relative row.
+ *
+ * The relative panel shows the cars physically nearest on track, which in a
+ * multiclass field is mostly cars from other categories — so the overall
+ * position it used to print was the one number nobody in the picture is racing
+ * for. What the driver needs is each car's place in ITS OWN class: that is what
+ * says whether the GT3 arriving is the one they are fighting for the podium or
+ * a car two laps down.
+ *
+ * Copied rather than recomputed on purpose. {@link assignClassPositions} counts
+ * down the WHOLE field in order; the relative list is a handful of cars picked
+ * by proximity, so counting within it would number a car by how many of its
+ * class happen to be nearby — a plausible-looking number that is simply wrong.
+ * Joining by slot id means the two panels are quoting one figure.
+ *
+ * Rows whose car has no class position (an unknown mod class, a car that has
+ * not appeared in the standings yet) are left alone; the widget falls back to
+ * the overall number for the whole table rather than mixing two meanings in one
+ * column.
+ *
+ * @param standings - Rows {@link assignClassPositions} has already run over.
+ * @param relative  - Relative rows. Mutated in place.
+ */
+export function copyClassPositions(
+  standings: readonly StandingEntry[],
+  relative: RelativeEntry[],
+): void {
+  if (relative.length === 0 || standings.length === 0) return;
+  const bySlot = new Map<number, number>();
+  for (const row of standings) {
+    if (row.classPosition !== undefined) bySlot.set(row.slotId, row.classPosition);
+  }
+  if (bySlot.size === 0) return;
+  for (const row of relative) {
+    const n = bySlot.get(row.slotId);
+    if (n !== undefined) row.classPosition = n;
   }
 }

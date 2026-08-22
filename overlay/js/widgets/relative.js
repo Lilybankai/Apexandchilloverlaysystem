@@ -6,6 +6,21 @@
  *   2. A relative table driven by `frame.relative` (RelativeEntry[]) — the cars
  *      physically nearest the player on track with a signed time gap.
  * Uses the same keyed-row reconciler approach as standings for cheap updates.
+ *
+ * ## The position column counts IN CLASS when the field is multiclass
+ * The cars nearest you on track are, in an endurance field, mostly cars from
+ * other categories — so an overall position in this column is the one number
+ * nobody in the picture is racing for. "P31" beside a GT3 says nothing; "P4 in
+ * GT3" says whether the car arriving is a podium rival or a straggler, which is
+ * the whole decision the driver is making as they look. So when the field has
+ * more than one class the column switches to the class figure, and in a
+ * single-class field — where the two readings are identical anyway — it stays
+ * overall. See {@link classMode} for why the switch is all-or-nothing.
+ *
+ * This is deliberately automatic rather than a setting: the class tag already
+ * sits on every row naming which count the number belongs to, and a driver who
+ * has to go and find a checkbox before the column means something is a driver
+ * who reads the wrong number for the first stint.
  */
 (function () {
   "use strict";
@@ -254,6 +269,43 @@
     if (alertEl.hidden) alertEl.hidden = false;
   }
 
+  /**
+   * Whether the position column should report each car's place in its own class.
+   *
+   * Two conditions, and the second is the fussy one:
+   *
+   *   - the FIELD carries more than one class. Counted over `frame.standings`,
+   *     not over the relative list: a GT3 in the middle of a GT3 train is
+   *     surrounded by its own class and would otherwise flip the column back to
+   *     overall for the length of the train, which is exactly the moment the
+   *     class number matters most.
+   *   - every visible row actually has a class position. One car the provider
+   *     could not place (an unrecognised mod class, a car not yet in the
+   *     standings) would otherwise print its overall position in a column of
+   *     class positions, with nothing to say which is which — a column that
+   *     means two things at once is worse than one that means the less useful
+   *     thing. So the switch is all-or-nothing, and the table falls back whole.
+   *
+   * Classes are counted by the RAW `carClass` string — the same key the tower
+   * groups on and `positionMeta` counts — so the panels cannot disagree about
+   * how many classes are out there.
+   */
+  function classMode(frame, list) {
+    if (!list.length) return false;
+    var standings = (frame && frame.standings) || [];
+    var classes = new Set();
+    for (var i = 0; i < standings.length; i++) {
+      var c = standings[i] && standings[i].carClass;
+      if (c) classes.add(c);
+    }
+    if (classes.size < 2) return false;
+    for (var j = 0; j < list.length; j++) {
+      var p = list[j].classPosition;
+      if (typeof p !== "number" || p <= 0) return false;
+    }
+    return true;
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var lap = frame.player ? frame.player.lap : null;
@@ -287,6 +339,10 @@
     var seen = new Set();
     updateAlert(list, fmt, Date.now(), ctx);
 
+    // Which count the position column is reporting this frame. Decided once for
+    // the whole table — see classMode.
+    var inClass = classMode(frame, list);
+
     // The two cars either side of the player are Tier 1: they are the race you
     // are actually in. Everything further up or down the list is context, and
     // sizing all of it alike is what makes the panel something you have to read
@@ -315,7 +371,27 @@
           (isNear ? " relative__row--near" : "") +
           (e.yieldTo ? " relative__row--yield" : "") +
           (e.trafficAhead ? " relative__row--traffic" : ""));
-      set(row, "pos", row.posTd, "textContent", fmt.intVal(e.position));
+      // The class figure when the field is multiclass, the overall one otherwise.
+      // The tooltip is written alongside it because the digits alone cannot say
+      // which of the two they are, and a driver checking a surprising number
+      // deserves an answer without leaving the panel.
+      set(
+        row,
+        "pos",
+        row.posTd,
+        "textContent",
+        fmt.intVal(inClass ? e.classPosition : e.position),
+      );
+      set(
+        row,
+        "posTitle",
+        row.posTd,
+        "title",
+        inClass
+          ? "Position in " + ctx.classLabel(e.carClass || "") + " (P" +
+            fmt.intVal(e.position) + " overall)"
+          : "Race position",
+      );
 
       // Which class this car is in, as a tag at the head of the cell. A driver
       // reading this table is deciding whether the car arriving is a rival for
