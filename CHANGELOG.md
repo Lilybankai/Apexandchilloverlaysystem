@@ -8,6 +8,16 @@
 
 ### Fixed
 
+- **Cars showed "1 lap down" when they were fifteen seconds apart.** In a
+  multiclass race the tower would put a phantom lap between two cars in the same
+  class whenever the overall leader was on the road between them — which is most
+  of a stint, since that leader is forever working through the slower classes.
+  The seconds gap disappeared at the same time, so the column stopped answering
+  the question it exists for. Laps down are now counted from where the cars
+  actually are on track rather than from each car's own count of laps down to the
+  race leader, which the game steps car by car as the leader goes past. Both
+  readings of the column are fixed — the gap to the class leader and the interval
+  to the car in front — and a car that really is a lap down still says so.
 - **The standings tower lost its BEST column.** Every car's best lap quietly
   disappeared from the tower, the virtual-energy figure slid over into its
   place, and the pit flag drifted off the right-hand edge — a whole column of

@@ -546,6 +546,36 @@
   }
 
   /**
+   * A car's progress as one continuous number of laps, or `null` when the sim
+   * gave no track position. See `StandingEntry.lapFraction` on the server.
+   */
+  function progressOf(e) {
+    var f = e && e.lapFraction;
+    if (typeof f !== "number" || !isFinite(f) || f < 0 || f > 1) return null;
+    var laps = typeof e.lapsCompleted === "number" ? e.lapsCompleted : 0;
+    return laps + f;
+  }
+
+  /**
+   * How many whole laps `prev` is ahead of `e`.
+   *
+   * Counted off track position where the sim publishes it, because the laps-down
+   * figures either car carries are measured against the OVERALL leader and step
+   * as that leader passes each of them in turn — so differencing them puts a
+   * phantom lap between any two cars the leader is currently sitting between.
+   * That is a live-race state, not a corner case: the tower was showing `+1L`
+   * for a fifteen-second gap every time the leader worked through a class.
+   * Falls back to the difference when there is no position to count from.
+   */
+  function lapsBetween(e, prev, ownLaps, prevLaps) {
+    var a = progressOf(prev);
+    var b = progressOf(e);
+    if (a !== null && b !== null) return Math.max(0, Math.floor(a - b + 1e-6));
+    var d = lapsOf(ownLaps) - lapsOf(prevLaps);
+    return d > 0 ? d : 0;
+  }
+
+  /**
    * Seconds of gap, to the operator's chosen precision.
    *
    * Local rather than `fmt.gap`, which is fixed at three places and is also what
@@ -608,8 +638,8 @@
       }
 
       var laps = inClass
-        ? lapsOf(e.classLapsBehind) - lapsOf(prev.classLapsBehind)
-        : lapsOf(e.lapsBehind) - lapsOf(prev.lapsBehind);
+        ? lapsBetween(e, prev, e.classLapsBehind, prev.classLapsBehind)
+        : lapsBetween(e, prev, e.lapsBehind, prev.lapsBehind);
       var sec = -1;
       if (inClass && fmt.has(e.gapToClassLeaderSec) && fmt.has(prev.gapToClassLeaderSec)) {
         // Clamped at zero: two gaps sampled a frame apart can cross by a
@@ -621,7 +651,7 @@
         // car ahead overall — so the sim's own figure is the same interval.
         sec = e.gapToAheadSec;
       }
-      out[e.slotId] = { lead: false, laps: laps > 0 ? laps : 0, sec: sec };
+      out[e.slotId] = { lead: false, laps: laps, sec: sec };
     }
     return out;
   }

@@ -1532,6 +1532,9 @@ export class SimulatorProvider implements TelemetryProvider {
         // optional AVG column to render distinctly from LAST in demo mode.
         avg5Sec: round2(car.lastLapSec + 0.12),
         lapsCompleted: car.lapsCompleted,
+        // Demo mode already runs on a continuous progress scale, so the class
+        // maths gets the same exact laps-down count the sims give it.
+        lapFraction: Math.round(clamp(car.progress, 0, 1) * 10000) / 10000,
         inPit: car.inPit,
         pitStops: car.pitStops,
         tyreCompound: 'Medium',

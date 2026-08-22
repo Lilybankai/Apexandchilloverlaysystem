@@ -92,6 +92,75 @@ check('a whole class 2 laps down still leads its own class on lap 0',
 check('the genuinely lapped GT3 reads 1 lap down in class',
   downClass[3].classLapsBehind === 1, String(downClass[3].classLapsBehind));
 
+// The bug a beta tester photographed: two cars in the same class, on the same
+// lap, fifteen seconds apart, with the OVERALL leader on the road between them.
+// The sim steps `lapsBehind` per car as the leader goes past, so the two hold
+// different values — and differencing them used to invent a lap that is not
+// there. Counted off track position instead, the pair are level.
+//
+// Numbers are a real Barcelona-shaped race: ~1:44 laps, so 0.15 of a lap is the
+// fifteen seconds the tester was actually looking at.
+const leaderBetween = [
+  // Hypercar leader, mid-lap on lap 20.
+  { position: 1, carClass: 'HYPERCAR', gapToLeaderSec: 0, lapsBehind: 0, lapsCompleted: 20, lapFraction: 0.5 },
+  // GT3 leader: the overall leader has passed it once since it started this lap.
+  { position: 7, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 1, lapsCompleted: 18, lapFraction: 0.6 },
+  // GT3 second, 0.15 of a lap back — and already passed a SECOND time, because
+  // the leader is now between the two of them.
+  { position: 9, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 2, lapsCompleted: 18, lapFraction: 0.45 },
+];
+assignClassPositions(leaderBetween);
+check('the leader sitting between two GT3s does not put a lap between them',
+  leaderBetween[2].classLapsBehind === 0,
+  'classLapsBehind=' + leaderBetween[2].classLapsBehind);
+check('and the class leader still reads level with itself',
+  leaderBetween[1].classLapsBehind === 0, String(leaderBetween[1].classLapsBehind));
+
+// The same field, one lap later for the second GT3: now genuinely a lap down.
+const reallyLapped = [
+  { position: 1, carClass: 'HYPERCAR', gapToLeaderSec: 0, lapsBehind: 0, lapsCompleted: 20, lapFraction: 0.5 },
+  { position: 7, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 1, lapsCompleted: 18, lapFraction: 0.6 },
+  { position: 12, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 2, lapsCompleted: 17, lapFraction: 0.45 },
+];
+assignClassPositions(reallyLapped);
+check('a GT3 that really is a lap down still says so',
+  reallyLapped[2].classLapsBehind === 1, String(reallyLapped[2].classLapsBehind));
+
+// Either car crossing the line must not flicker the reading. The class leader
+// has just started a new lap; the car behind has not reached the line yet.
+const acrossTheLine = [
+  { position: 7, carClass: 'GT3', gapToLeaderSec: 0, lapsBehind: 1, lapsCompleted: 19, lapFraction: 0.002 },
+  { position: 8, carClass: 'GT3', gapToLeaderSec: 15.2, lapsBehind: 1, lapsCompleted: 18, lapFraction: 0.995 },
+];
+assignClassPositions(acrossTheLine);
+check('the start/finish line between two cars is not a lap either',
+  acrossTheLine[1].classLapsBehind === 0, String(acrossTheLine[1].classLapsBehind));
+// And because they are level, the seconds come back: a car reading "+1L" is a
+// car whose real gap the tower has stopped showing at all.
+check('so the tower gets its seconds back instead of a phantom lap',
+  acrossTheLine[1].gapToClassLeaderSec === 15.2,
+  String(acrossTheLine[1].gapToClassLeaderSec));
+
+// No track position published: the old difference is still the best available
+// answer, and a sim that gives none must render exactly what it always did.
+const noPosition = [
+  { position: 1, carClass: 'GT3', gapToLeaderSec: 0, lapsBehind: 1, lapsCompleted: 18 },
+  { position: 2, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 2, lapsCompleted: 17 },
+];
+assignClassPositions(noPosition);
+check('without a track position it falls back to the difference',
+  noPosition[1].classLapsBehind === 1, String(noPosition[1].classLapsBehind));
+
+// A fraction outside 0..1 is a field that is not what we think it is. Discard
+// it rather than clamp: a confident wrong answer is worse than the fallback.
+const badFraction = [
+  { position: 1, carClass: 'GT3', gapToLeaderSec: 0, lapsBehind: 1, lapsCompleted: 18, lapFraction: 0.5 },
+  { position: 2, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 2, lapsCompleted: 17, lapFraction: 12.4 },
+];
+assignClassPositions(badFraction);
+check('a nonsense lap fraction falls back rather than being clamped',
+  badFraction[1].classLapsBehind === 1, String(badFraction[1].classLapsBehind));
+
 /* -------------------------------------------------------------------------- */
 console.log('\n4) Blue-flag / backmarker yield rule');
 
