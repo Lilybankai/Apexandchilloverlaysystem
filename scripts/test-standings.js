@@ -908,5 +908,59 @@ console.log('\nThe ± column scores the class, not the field');
     w.deltas().join(' '));
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Column slots: an optional column may be collapsed, never removed           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The tower is a `table-layout: fixed` table with a nine-`<col>` colgroup, so a
+ * cell's width comes from its POSITION in the row and nothing else. Hiding an
+ * optional cell with `display: none` does not leave a hole — the cell is gone,
+ * and every cell to its right slides one `<col>` to the left.
+ *
+ * That is not a cosmetic wobble. With AVG off (the default), the shift put BEST
+ * in the AVG column, whose width is 0px when the setting is off, so the entire
+ * BEST column vanished from every tower; VE took BEST's 70px, the pit chip took
+ * VE's 42px, and the 23px pit column sat empty at the panel edge. It shipped
+ * looking almost right, which is why it ran four releases before a tester
+ * photographed it.
+ *
+ * A DOM stub cannot see this — the widget appends all nine cells either way, and
+ * the damage is done by the stylesheet. So the rule is asserted where it lives.
+ */
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'css', 'overlay.css'), 'utf8');
+  /** The cell classes that sit in a standings row, in colgroup order. */
+  const CELLS = ['pos', 'delta', 'driver', 'gap', 'last', 'avg', 'best', 've', 'pit'];
+  /** Every `selector { ... }` rule in the file. Good enough: the file is flat. */
+  const rules = css.match(/[^{}]+\{[^{}]*\}/g) || [];
+  const offenders = [];
+  for (const rule of rules) {
+    const brace = rule.indexOf('{');
+    const selector = rule.slice(0, brace);
+    const body = rule.slice(brace + 1, rule.lastIndexOf('}'));
+    if (!/display\s*:\s*none/.test(body)) continue;
+    for (const cell of CELLS) {
+      if (selector.includes('.standings__' + cell)) {
+        offenders.push(cell + ' <- ' + selector.trim().replace(/\s+/g, ' '));
+      }
+    }
+  }
+  check('no standings cell is hidden with display:none', offenders.length === 0,
+    offenders.join(' | ') || 'none');
+
+  // And the rule that caused it stays a COLLAPSE: the cell keeps its slot in the
+  // row while the <col> (standings.js) takes its width to zero.
+  const avgOff = rules.find((r) => /\[data-avg="off"\][^{]*\.standings__avg/.test(r.slice(0, r.indexOf('{'))));
+  check('the AVG-off rule is still there', !!avgOff);
+  if (avgOff) {
+    const body = avgOff.slice(avgOff.indexOf('{') + 1);
+    check('AVG off zeroes the cell box', /padding\s*:\s*0/.test(body) && /border\s*:\s*0/.test(body),
+      body.replace(/\s+/g, ' ').trim());
+    check('AVG off clips what is in it', /overflow\s*:\s*hidden/.test(body));
+  }
+}
+
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

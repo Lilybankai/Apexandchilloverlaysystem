@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- **The standings tower lost its BEST column.** Every car's best lap quietly
+  disappeared from the tower, the virtual-energy figure slid over into its
+  place, and the pit flag drifted off the right-hand edge — a whole column of
+  the table shifted one across. Introduced with the optional AVG column in
+  0.82.0 and present in every release since, whenever AVG was left off (the
+  default). BEST is back where it belongs, and the columns line up again with
+  AVG on or off.
+
 ## 0.86.0 — 2026-08-21
 
 ### Fixed
