@@ -909,6 +909,55 @@ console.log('\nThe ± column scores the class, not the field');
 }
 
 /* -------------------------------------------------------------------------- */
+console.log('\nINTERVALS — a leader on the road between two cars is not a lap');
+/* -------------------------------------------------------------------------- */
+
+/* The same defect the server-side class maths had (see test-multiclass.js), on
+   the widget's own side of the wire: the interval column counted laps by
+   differencing two cars' laps-down figures, and those are measured against the
+   OVERALL leader — so they step car by car as that leader goes past. Two cars
+   fifteen seconds apart with the leader between them held different values, and
+   the column said "+1L" instead of "+15.200".
+
+   These rows carry no `classPosition`, which is the path where the widget counts
+   for itself rather than quoting the server's class figures. */
+{
+  const ahead = { limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'ahead', fastest: 'class', decimals: 3 };
+
+  // ~1:44 laps, so 0.15 of a lap is the fifteen seconds being argued about.
+  const leaderBetween = () => [
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'A B', carClass: 'GT3',
+      gapToLeaderSec: 0, gapToAheadSec: 0, lapsBehind: 1, lapsCompleted: 18, lapFraction: 0.6 },
+    { slotId: 2, position: 2, carNumber: '9', driverName: 'C D', carClass: 'GT3',
+      gapToLeaderSec: 15.2, gapToAheadSec: 15.2, lapsBehind: 2, lapsCompleted: 18, lapFraction: 0.45 },
+  ];
+
+  const w = mount();
+  w.push(ahead);
+  w.update(leaderBetween());
+  check('the interval is seconds, not a phantom lap',
+    w.gaps().join(' ') === '— +15.200', w.gaps().join(' '));
+
+  // A car that really is a lap down still has to say so — the fix must not have
+  // simply stopped the column counting laps.
+  const reallyLapped = leaderBetween().map((r) =>
+    r.slotId === 2 ? { ...r, lapsCompleted: 17 } : r);
+  w.update(reallyLapped);
+  check('a car genuinely a lap down still reads +1L',
+    w.gaps().join(' ') === '— +1L', w.gaps().join(' '));
+
+  // No track position: the old difference is all there is, and a provider that
+  // publishes none must render exactly what it did before.
+  const noPosition = leaderBetween().map(({ lapFraction, ...r }) => r);
+  const w2 = mount();
+  w2.push(ahead);
+  w2.update(noPosition);
+  check('without a lap fraction it falls back to the difference',
+    w2.gaps().join(' ') === '— +1L', w2.gaps().join(' '));
+}
+
+
+/* -------------------------------------------------------------------------- */
 /*  Column slots: an optional column may be collapsed, never removed           */
 /* -------------------------------------------------------------------------- */
 

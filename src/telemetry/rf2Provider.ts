@@ -62,7 +62,7 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import type { ServerConfig } from '../server/config';
-import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
+import { assignClassPositions, isFasterClass, lapFractionOf, normalizeClass } from './carClass';
 import { decodeMotion } from './motion';
 import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
@@ -464,6 +464,12 @@ export class RF2Provider implements TelemetryProvider {
     const numVehicles = clampInt(scoring.readInt32LE(SI.base + SI.mNumVehicles), 0, 128);
     const scoringVehiclesBase = SI.base + SI.sizeof;
 
+    // Lap length, for the per-car track position the class-gap maths wants
+    // below. Zero when the sim has not published one, which turns the field off
+    // rather than dividing by it.
+    const lapLenM = scoring.readDoubleLE(SI.base + SI.mLapDist);
+    const trackLenM = Number.isFinite(lapLenM) && lapLenM > 1 ? lapLenM : 0;
+
     // --- standings + locate the player ----------------------------------
     const standings: StandingEntry[] = [];
     let playerId: number = UNKNOWN_VALUE;
@@ -483,6 +489,10 @@ export class RF2Provider implements TelemetryProvider {
         bestLapSec: posOrUnknown(scoring.readDoubleLE(off + VS.mBestLapTime)),
         lastLapSec: posOrUnknown(scoring.readDoubleLE(off + VS.mLastLapTime)),
         lapsCompleted: Math.max(0, scoring.readInt16LE(off + VS.mTotalLaps)),
+        // See assignClassPositions: laps down INSIDE a class has to be counted
+        // off track position, not differenced from each car's laps down to the
+        // overall leader.
+        ...lapFractionOf(scoring.readDoubleLE(off + VS.mLapDist), trackLenM),
         inPit: scoring.readUInt8(off + VS.mInPits) !== 0,
         isPlayer,
       };

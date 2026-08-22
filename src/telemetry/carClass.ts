@@ -118,6 +118,23 @@ export function isFasterClass(a: string | undefined, b: string | undefined): boo
 }
 
 /**
+ * The {@link StandingEntry.lapFraction} field for a standings row, ready to
+ * spread — `{}` when the sim has not placed the car, so the field is left off
+ * rather than guessed at. Shared by the providers so the "is this car actually
+ * on the track" guard is written once: a distance outside the lap, or a track
+ * with no published length, is a reading to discard, not to clamp.
+ *
+ * @param distM - Distance round the current lap, metres.
+ * @param trackLenM - Lap length, metres; `0` when the sim has not published one.
+ */
+export function lapFractionOf(distM: number, trackLenM: number): { lapFraction?: number } {
+  if (!(trackLenM > 0)) return {};
+  if (typeof distM !== 'number' || !Number.isFinite(distM)) return {};
+  if (distM < 0 || distM > trackLenM) return {};
+  return { lapFraction: Math.round((distM / trackLenM) * 10000) / 10000 };
+}
+
+/**
  * Fill in `classPosition`, `classLapsBehind` and `gapToClassLeaderSec` on rows
  * that are already sorted by overall position.
  *
@@ -132,9 +149,39 @@ export function isFasterClass(a: string | undefined, b: string | undefined): boo
  * either is lapped, a seconds-behind figure stops being comparable, so the gap
  * reports {@link UNKNOWN_VALUE} and `classLapsBehind` carries the information.
  *
+ * ## Laps down is COUNTED, not differenced
+ *
+ * `lapsBehind` is laps down to the **overall** leader, and the sim steps it the
+ * moment that leader passes a car — one car at a time, in the order they are
+ * caught. So two cars in the same class, on the same lap, fifteen seconds apart,
+ * hold different values for as long as the leader is between them on the road,
+ * and `lapsBehind(car) − lapsBehind(classLeader)` invents a lap that is not
+ * there. In a multiclass race that is not an edge case: it is what happens every
+ * time the Hypercar leader drives through the GT3 train, which is most of a
+ * stint. Reported from a beta tester's tower showing `+1L` for a 15-second gap.
+ *
+ * When the sim gives a track position ({@link StandingEntry.lapFraction}) the
+ * count is exact instead: `lapsCompleted + lapFraction` puts both cars on one
+ * continuous scale, and the whole part of the difference is how many times the
+ * class leader has actually been round more than this car. Without a track
+ * position there is nothing better than the old difference, so that stays as the
+ * fallback — a sim that publishes no positions renders exactly what it did.
+ *
  * @param rows - Standings rows, pre-sorted by overall position. Mutated in place.
  */
 export function assignClassPositions(rows: StandingEntry[]): void {
+  /**
+   * A car's progress in laps, as one continuous number, or `null` when the sim
+   * has not placed it. Rejects a fraction outside `0..1` rather than clamping:
+   * an out-of-range value means the field is not what we think it is, and the
+   * difference-based fallback is better than a confident wrong answer.
+   */
+  const progress = (row: StandingEntry): number | null => {
+    const f = row.lapFraction;
+    if (typeof f !== 'number' || !Number.isFinite(f) || f < 0 || f > 1) return null;
+    return row.lapsCompleted + f;
+  };
+
   /** carClass → the class leader's row (first seen, i.e. best overall position). */
   const leaders = new Map<string, StandingEntry>();
   /** carClass → cars counted so far, which is the next class position. */
@@ -154,7 +201,14 @@ export function assignClassPositions(rows: StandingEntry[]): void {
       leader = row;
     }
 
-    row.classLapsBehind = Math.max(0, row.lapsBehind - leader.lapsBehind);
+    const ownLaps = progress(row);
+    const leaderLaps = progress(leader);
+    row.classLapsBehind =
+      ownLaps !== null && leaderLaps !== null
+        ? // The epsilon is against float noise at the line, not a tolerance:
+          // two cars a millimetre apart must not read as a lap.
+          Math.max(0, Math.floor(leaderLaps - ownLaps + 1e-6))
+        : Math.max(0, row.lapsBehind - leader.lapsBehind);
 
     const own = row.gapToLeaderSec;
     const lead = leader.gapToLeaderSec;

@@ -96,7 +96,7 @@ import {
   type CompletedTrace,
   type TraceChannels,
 } from './lapTrace';
-import { assignClassPositions, isFasterClass, normalizeClass } from './carClass';
+import { assignClassPositions, isFasterClass, lapFractionOf, normalizeClass } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 import { RaceosRanksClient, type DriverRanks } from './raceosRanks';
 
@@ -1273,19 +1273,21 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     if (rawLocal && rawLocal.batteryCharge > 0) this.hasHybrid = true;
 
+    // Lap length is needed by the standings and the fuel call as well as the
+    // delta, so it is resolved once here rather than where each happens to use
+    // it. Ahead of buildStandings because that is now the first to want it.
+    const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
     // Same track+type identity every other per-session tracker keys on, from
     // the raw feed because `session` is built a few lines further down.
     const standings = this.buildStandings(
       cars,
       focusId,
       `${si.trackName ?? ''}|${si.session ?? ''}`,
+      trackLen,
     );
     const relative = this.buildRelative(cars, focus, si);
     const session = this.buildSession(cars, si, focus, this.gameState);
     const weather = this.buildWeather(si, session.type);
-    // Lap length is needed by the fuel call as well as the delta, so it is
-    // resolved once here rather than where the delta happens to use it.
-    const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
     const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
     // Track limits ride on the DRIVEN car (like the radar) rather than the
     // broadcast focus, which may be a rival being spectated while the player
@@ -1617,6 +1619,7 @@ export class LmuRestProvider implements TelemetryProvider {
     cars: RestStanding[],
     focusId: number,
     sessionKey: string,
+    trackLen: number,
   ): StandingEntry[] {
     // Rolling last-5 pace for the whole field, fed from this same poll — see
     // telemetry/paceAverage for what counts as a keepable lap.
@@ -1648,6 +1651,10 @@ export class LmuRestProvider implements TelemetryProvider {
       gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
       gapToAheadSec: posOrUnknown(c.timeBehindNext),
       lapsBehind: Math.max(0, c.lapsBehindLeader | 0),
+      // Track position, so `assignClassPositions` can COUNT laps down within the
+      // class instead of differencing two cars' laps down to the overall leader
+      // — see the note there.
+      ...lapFractionOf(c.lapDistance as number, trackLen),
       bestLapSec: posOrUnknown(c.bestLapTime),
       lastLapSec: posOrUnknown(c.lastLapTime),
       ...(lastS1 !== UNKNOWN_VALUE ? { lastSector1Sec: lastS1 } : {}),

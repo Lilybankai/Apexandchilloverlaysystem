@@ -1056,6 +1056,17 @@ export interface StandingEntry {
   avg5Sec?: number;
   /** Laps completed. */
   lapsCompleted: number;
+  /**
+   * How far round the current lap the car is, `0`..`1`, when the sim publishes a
+   * track position for it. With {@link lapsCompleted} this gives the car's
+   * progress on a single continuous scale, which is the only way to say how many
+   * laps one car is REALLY down on another: `lapsBehind` counts laps down to the
+   * *overall* leader and therefore steps car by car as that leader goes past
+   * them, so differencing two cars' copies of it invents a lap between any pair
+   * the leader happens to be sitting between. Omitted when the sim gives no
+   * track position, and every consumer keeps a fallback for that.
+   */
+  lapFraction?: number;
   /** Whether the car is currently in the pit lane / stall. */
   inPit: boolean;
   /** Completed pit stops, when tracked. */
