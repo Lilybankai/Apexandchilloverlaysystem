@@ -59,6 +59,10 @@ electron/oauth-client.generated.json
 # Local MCP server config — editor tooling, not part of the app.
 .mcp.json
 
+# Local bench output (scripts/bench.js). Machine-specific timings, not source.
+/bench-report.json
+/bench-report.txt
+
 # Recorded telemetry sessions (scripts/record-session.js). Real races, tens of
 # megabytes each, kept locally to tune the race-engineer triggers against — the
 # detector is what ships, not the evidence it was tuned on.
