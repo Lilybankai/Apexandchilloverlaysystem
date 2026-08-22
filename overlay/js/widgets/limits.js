@@ -61,6 +61,22 @@
  *   penalised  a penalty stands but is no longer news.
  *   none       no source for the points at all (plain rF2, spectating).
  *
+ * ## Team entries: the count is the CAR's, the points are only ever ours
+ * In a driver-swap event the two numbers on this panel stop meaning the same
+ * kind of thing, and the panel has to stop presenting them as if they did.
+ *
+ * The penalty count belongs to the car, so it now survives a handover and keeps
+ * running through a teammate's stint — the drive-through you will inherit at the
+ * next stop is the single most useful thing this widget can tell a driver who is
+ * about to get in. The POINTS cannot follow: LMU only writes track-limits lines
+ * to this PC's log while the driver here is in the car, so a teammate's cuts are
+ * unobservable rather than merely missing (see `TrackLimitsState.pointsStintOnly`).
+ *
+ * So when the car has been shared, the countdown is retired for the session and
+ * the panel shows points SPENT BY US instead, headed MY STINT. A countdown is a
+ * promise about how much room is left; making that promise out of half the
+ * evidence is how a driver ends up in the pit lane wondering what happened.
+ *
  * Audio: the `limit` cue fires once per charge, with the flash; `penalty` when
  * the sim issues one. Through js/audio.js.
  */
@@ -267,6 +283,25 @@
     var known = fmt.has(tl.points);
     var penalties = ctx.penaltyCount(tl);
 
+    // A teammate has the wheel. The panel used to vanish entirely here, because
+    // the whole block was built on the car being driven at this PC — so the one
+    // moment a driver most wants to know what they are about to inherit was the
+    // one moment the widget had nothing to say.
+    //
+    // The count is still the car's and still worth showing. The points are not:
+    // they describe our own last stint, and putting a countdown over somebody
+    // else's driving invites exactly the wrong plan.
+    if (tl.teammateDriving) {
+      var out = penalties > 0 || tl.disqualified;
+      blank(out ? "PENALTY" : "TEAM CAR");
+      showPenalty(ctx, tl, penalties);
+      penaltyBanner(ctx, tl, penalties);
+      setState(out ? (ctx.consequenceFresh(tl) ? "penalty" : "penalised") : "none");
+      // After blank(), which writes a dash here.
+      setMeta("TEAMMATE");
+      return;
+    }
+
     if (!known) {
       // The penalty is still worth showing on its own: it is the sim's verdict,
       // it arrived through a different channel, and it is the only thing on the
@@ -286,16 +321,27 @@
     // past the allowance — the game's own HUD shows the limit as infinity there —
     // so those sessions get the total spent rather than a countdown to a
     // drive-through that cannot come.
-    var enforced = tl.pointsLimitEnforced !== false;
+    // Two independent reasons the countdown cannot be shown, and they collapse
+    // to the same presentation: points spent, no drain bar.
+    //
+    //   - practice and qualifying don't spend the allowance (the sim's own HUD
+    //     shows the limit as infinity there);
+    //   - the car has been shared, so our total is a floor on the car's rather
+    //     than the car's. Counting DOWN from an allowance using only half the
+    //     charges against it states a number of points remaining that nobody
+    //     has: the sim will act on the car's total, not on ours.
+    var stintOnly = tl.pointsStintOnly === true;
+    var enforced = tl.pointsLimitEnforced !== false && !stintOnly;
     var remaining = Math.max(0, Math.round((limit - points) * 100) / 100);
     var fresh = fmt.has(tl.msSinceCharge) && tl.msSinceCharge < ALARM_MS;
     var freshPenalty = ctx.consequenceFresh(tl);
     var freshServed = ctx.servedFresh(tl);
 
     ctx.crit(countEl, enforced ? pts(remaining) : pts(points));
-    if (labelEl.textContent !== (enforced ? "LEFT" : "PTS")) {
-      labelEl.textContent = enforced ? "LEFT" : "PTS";
-    }
+    // "MY PTS" rather than "PTS" when the car has been shared — the possessive
+    // is the entire message, and it sits where the driver is already looking.
+    var countLabel = enforced ? "LEFT" : stintOnly ? "MY PTS" : "PTS";
+    if (labelEl.textContent !== countLabel) labelEl.textContent = countLabel;
     showPenalty(ctx, tl, penalties);
 
     /* ------------------------------ the bar ------------------------------ */
@@ -389,7 +435,15 @@
     // as long as "PENALTIES" — which pushed the panel title onto two lines with
     // it. "1.75 / 5" where the limit bites; "9.5 PTS" where it does not, rather
     // than a ratio against a threshold the session will never enforce.
-    setMeta(enforced ? pts(remaining) + " / " + pts(limit) : pts(points) + " PTS");
+    // "MY STINT" is the same width as the ratio it replaces, which is what keeps
+    // the header on one line — see the note above about long words in this strip.
+    setMeta(
+      enforced
+        ? pts(remaining) + " / " + pts(limit)
+        : stintOnly
+          ? "MY STINT"
+          : pts(points) + " PTS",
+    );
   }
 
   /**

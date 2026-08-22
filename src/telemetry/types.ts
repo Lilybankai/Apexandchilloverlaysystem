@@ -908,6 +908,31 @@ export interface TrackLimitsState {
    */
   disqualified?: boolean;
   /**
+   * `true` when {@link points} covers only the stints driven at THIS PC, because
+   * the car has been handed over at least once this session.
+   *
+   * Not a nicety — it is the difference between a number and a misleading one.
+   * {@link penalties} is a property of the car and is right whoever is driving,
+   * but the points are reconstructed from this machine's trace log, and LMU only
+   * writes track-limits lines while the local driver is in the car (established
+   * from a live team race: every charge line fell inside the stint, none
+   * outside). A teammate's cuts are therefore unobservable here, not merely
+   * absent, and no amount of work at this end will recover them. So the widget
+   * is told, and stops calling the total the car's allowance.
+   *
+   * Omitted entirely for a solo entry, which is the overwhelming majority of
+   * sessions and where the total is the car's by definition.
+   */
+  pointsStintOnly?: boolean;
+  /**
+   * `true` while a teammate has the wheel — the car is ours, the driving is not.
+   *
+   * Lets the panel keep showing the car's penalties during a stint nobody here
+   * is driving, and label whose stint it is, instead of going blank the way it
+   * used to.
+   */
+  teammateDriving?: boolean;
+  /**
    * Whether {@link pointsLimit} is a threshold the sim will actually act on in THIS
    * session.
    *
@@ -1113,6 +1138,17 @@ export interface RelativeEntry {
   carNumber?: string;
   /** Car class label, when available. */
   carClass?: string;
+  /**
+   * Position **within {@link carClass}**, 1-based — the number a multiclass
+   * field is actually racing for. Copied from the car's standings row by
+   * `carClass.copyClassPositions`, so it means exactly what
+   * {@link StandingEntry.classPosition} means and the two panels can never
+   * disagree about a car's place in its class.
+   *
+   * Omitted when the class is unknown, which is also the widget's signal to
+   * keep showing the overall number rather than a blank.
+   */
+  classPosition?: number;
   /**
    * Car manufacturer, as on {@link StandingEntry.manufacturer} — drives the
    * brand badge, served at `/carbadges/<manufacturer>.svg`.

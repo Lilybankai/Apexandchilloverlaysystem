@@ -39,7 +39,7 @@ import {
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
-import { assignClassPositions, isFasterClass } from './carClass';
+import { assignClassPositions, copyClassPositions, isFasterClass } from './carClass';
 import { referenceCredit, scoreLap } from './referencePace';
 import { buildRadar, headingOri, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
@@ -476,6 +476,9 @@ export class SimulatorProvider implements TelemetryProvider {
 
     const standings = this.buildStandings();
     const relative = this.buildRelative();
+    // The relative panel quotes the standings' own class positions rather than
+    // counting its own — see copyClassPositions.
+    copyClassPositions(standings, relative);
     const radar = this.buildRadarBlips(player);
     const trackMap = this.buildTrackMap(player);
     const fuel = this.buildFuel(player);
