@@ -4,7 +4,7 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## Unreleased
+## 0.87.0 — 2026-08-22
 
 ### Added
 
