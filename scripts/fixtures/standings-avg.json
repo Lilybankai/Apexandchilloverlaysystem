@@ -1,0 +1,9 @@
+{
+  "session": { "type": "race", "phase": "green", "flag": "green", "track": "Fixture", "numCars": 4, "currentLap": 8, "totalLaps": 16 },
+  "standings": [
+    { "slotId": 1, "position": 1, "gridPosition": 2, "driverName": "Alex Turner", "carNumber": "7", "carClass": "HYPERCAR", "classPosition": 1, "gapToLeaderSec": 0, "gapToAheadSec": 0, "lapsBehind": 0, "bestLapSec": 117.912, "lastLapSec": 118.402, "avg5Sec": 118.9, "lapsCompleted": 8, "inPit": false, "virtualEnergy": 0.82, "isPlayer": false },
+    { "slotId": 2, "position": 2, "gridPosition": 1, "driverName": "Ben Ross", "carNumber": "12", "carClass": "HYPERCAR", "classPosition": 2, "gapToLeaderSec": 2.431, "gapToAheadSec": 2.431, "lapsBehind": 0, "bestLapSec": 118.204, "lastLapSec": 118.9, "avg5Sec": 119.2, "lapsCompleted": 8, "inPit": false, "virtualEnergy": 0.61, "isPlayer": true },
+    { "slotId": 3, "position": 3, "gridPosition": 3, "driverName": "Cara Mills", "carNumber": "33", "carClass": "GT3", "classPosition": 1, "gapToLeaderSec": 44.12, "gapToAheadSec": 41.7, "lapsBehind": 0, "bestLapSec": 126.51, "lastLapSec": 127.02, "avg5Sec": 127.4, "lapsCompleted": 8, "inPit": true, "virtualEnergy": 0.44, "isPlayer": false },
+    { "slotId": 4, "position": 4, "gridPosition": 4, "driverName": "Dan Vega", "carNumber": "51", "carClass": "GT3", "classPosition": 2, "gapToLeaderSec": 49.9, "gapToAheadSec": 5.78, "lapsBehind": 0, "bestLapSec": 126.98, "lastLapSec": -1, "lapsCompleted": 8, "inPit": false, "virtualEnergy": 0.12, "isPlayer": false }
+  ]
+}

@@ -477,7 +477,19 @@
    follow `data-avg` on the section root, and the <col> width goes with them
    (widgets/standings.js), so an off column costs the tower no width at all. */
 .standings__avg { width: 70px; color: var(--text-secondary); }
-[data-avg="off"] .standings__avg { display: none; }
+/* An off column is COLLAPSED, never `display: none`. Hiding a table cell that
+   way removes it from its row altogether, and every cell to its right then
+   falls into the previous <col> — which quietly cost the tower its entire BEST
+   column: VE landed in BEST's 70px slot, the pit chip in VE's 42px, and the
+   23px pit column went spare at the panel edge. The <col> is already 0px when
+   the setting is off (standings.js), so zeroing the box and clipping what is
+   in it leaves nothing to draw while the cell keeps its place in the row. */
+[data-avg="off"] .standings__avg {
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
 /* Pit flag column, at the right edge of the row. No left padding — the chip is
    its own hard-edged box and needs no gutter between it and a right-aligned
    number — and 8px on the right, which is the inset the class subheader's
