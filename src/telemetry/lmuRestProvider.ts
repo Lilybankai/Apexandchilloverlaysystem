@@ -595,6 +595,16 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Session {@link teammateHasDriven} and {@link lastDrivenSlot} belong to. */
   private teamSessionKey = '';
   /**
+   * The focused car's classified result, latched at the moment it took the flag.
+   * See {@link trackFinish} for why a live position will not do.
+   */
+  private finishLatch: {
+    key: string;
+    slotId: number;
+    position: number;
+    classPosition?: number;
+  } | null = null;
+  /**
    * The last team rosters seen, kept so the lookup can be re-run the moment the
    * local player's name arrives.
    *
@@ -1550,12 +1560,8 @@ export class LmuRestProvider implements TelemetryProvider {
     const trackLen = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
     // Same track+type identity every other per-session tracker keys on, from
     // the raw feed because `session` is built a few lines further down.
-    const standings = this.buildStandings(
-      cars,
-      focusId,
-      `${si.trackName ?? ''}|${si.session ?? ''}`,
-      trackLen,
-    );
+    const frameSessionKey = `${si.trackName ?? ''}|${si.session ?? ''}`;
+    const standings = this.buildStandings(cars, focusId, frameSessionKey, trackLen);
     const relative = this.buildRelative(cars, focus, si);
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
@@ -1700,6 +1706,10 @@ export class LmuRestProvider implements TelemetryProvider {
     // Monza, Le Mans, Fuji or Paul Ricard without it.
     this.refreshSimTrackName(session.track, nowMs);
     const paceScore = this.buildPaceScore(playerCar, session, trackLen);
+    // Has THIS car taken the flag, and where did it finish — latched, because a
+    // live position keeps moving while the rest of the field is still coming
+    // round. See trackFinish.
+    const finish = this.trackFinish(focus, standings, frameSessionKey);
     const player = this.buildPlayer(
       focus,
       standings,
@@ -1709,6 +1719,7 @@ export class LmuRestProvider implements TelemetryProvider {
       trackLimits,
       paceScore,
       session.onTrack !== false,
+      finish,
     );
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there).
@@ -2252,18 +2263,31 @@ export class LmuRestProvider implements TelemetryProvider {
       si.startLightFrame >= 0
         ? { frame: si.startLightFrame, total: si.numRedLights }
         : undefined;
-    // Per-sector marshalling. LMU writes "UNKNOWN" for a clear sector and
-    // "YELLOW" for one with a hazard; anything unrecognised reads as clear
-    // rather than inventing a flag the sim is not showing.
+    // Per-sector marshalling. LMU writes "UNKNOWN" for a clear sector and names
+    // the flag otherwise; anything unrecognised reads as clear rather than
+    // inventing a flag the sim is not showing.
+    //
+    // KNOWN LIMITATION, measured 2026-08-22: this endpoint publishes the SAME
+    // value in all three slots — shared memory held `2,3,11` (three different
+    // sectors) at an instant REST reported `["RED","RED","RED"]`. So the rail is
+    // really one flag drawn three times on this path. It is left as it is
+    // because the question this feature asks — "is the chequered flag out" — is
+    // a session-wide one that the collapse cannot get wrong; per-sector accuracy
+    // needs the shared-memory bytes (SI.base + 110..112) and is its own change.
     const rawSectors = Array.isArray(si.sectorFlag) ? si.sectorFlag : null;
     const sectorFlags =
       rawSectors && rawSectors.length >= 3
-        ? (rawSectors.slice(0, 3).map((s) => (asUpper(s) === 'YELLOW' ? 'yellow' : 'none')) as [
-            FlagState,
-            FlagState,
-            FlagState,
-          ])
+        ? (rawSectors.slice(0, 3).map(mapSectorFlag) as [FlagState, FlagState, FlagState])
         : undefined;
+    // The chequered flag is SHOWING — not the same as the session having reached
+    // its checkered phase, which LMU only does when the leader crosses the line.
+    // Probed live: the marshalling channel went CHEQUERED 23 s before the phase
+    // moved and 46 s before the car being watched actually finished, so this is
+    // the only one of the two that can carry a last-lap call. Both are accepted,
+    // because a provider that reaches the phase without the channel still means
+    // the same thing.
+    const finalLap =
+      (sectorFlags ? sectorFlags.includes('checkered') : false) || phase === 'checkered';
     // The FCY/safety-car channel outranks the per-car strings for the global
     // flag: it is the one place a full-course yellow is published (per-car
     // flags stayed GREEN through every probe).
@@ -2304,6 +2328,7 @@ export class LmuRestProvider implements TelemetryProvider {
       onTrack: !inEscMenu && !inGaragePages,
       ...(startLights ? { startLights } : {}),
       ...(sectorFlags ? { sectorFlags } : {}),
+      ...(finalLap ? { finalLap: true } : {}),
     };
   }
 
@@ -2759,6 +2784,64 @@ export class LmuRestProvider implements TelemetryProvider {
     return car;
   }
 
+  /**
+   * Whether the focused car has taken the chequered flag, and the position it
+   * held when it did.
+   *
+   * `finishStatus` is the sim's own per-car verdict and is the only channel that
+   * says *this* car is done: the session phase goes checkered when the LEADER
+   * crosses, and in the race this was probed against the car being watched kept
+   * racing for another 24 s after that. Values seen live are `FSTAT_NONE`,
+   * `FSTAT_FINISHED`, `FSTAT_DNF` and `FSTAT_DSQ` — only FINISHED counts here, so
+   * a retirement never gets congratulated.
+   *
+   * The position is LATCHED at the crossing. Left live it would keep moving for
+   * the minutes it takes the rest of the field to come round, so a "you finished
+   * P4" readout would quietly become P9 while the driver was still reading it.
+   *
+   * Keyed by session and slot, so a new session — or the focus moving to another
+   * car — starts clean rather than inheriting somebody else's result.
+   */
+  private trackFinish(
+    focus: RestStanding | undefined,
+    standings: StandingEntry[],
+    sessionKey: string,
+  ): { finished: boolean; position?: number; classPosition?: number } {
+    if (!focus) {
+      this.finishLatch = null;
+      return { finished: false };
+    }
+    const done = /FINISH/i.test(String(focus.finishStatus ?? ''));
+    if (!done) {
+      // Only clear a latch that belongs to this car and session: the standings
+      // feed can drop a car for a frame, and forgetting a result because of one
+      // bad poll is worse than holding it a moment too long.
+      if (this.finishLatch && this.finishLatch.slotId === focus.slotID) {
+        if (this.finishLatch.key !== sessionKey) this.finishLatch = null;
+        else return { ...this.finishLatch, finished: true };
+      }
+      return { finished: false };
+    }
+    if (
+      !this.finishLatch ||
+      this.finishLatch.key !== sessionKey ||
+      this.finishLatch.slotId !== focus.slotID
+    ) {
+      const row = standings.find((r) => r.slotId === focus.slotID);
+      this.finishLatch = {
+        key: sessionKey,
+        slotId: focus.slotID,
+        position: row ? row.position : focus.position,
+        classPosition: row?.classPosition,
+      };
+    }
+    return {
+      finished: true,
+      position: this.finishLatch.position,
+      classPosition: this.finishLatch.classPosition,
+    };
+  }
+
   private buildPlayer(
     focus: RestStanding | undefined,
     standings: StandingEntry[],
@@ -2768,6 +2851,7 @@ export class LmuRestProvider implements TelemetryProvider {
     trackLimits: TrackLimitsState | undefined,
     paceScore: PaceScoreState | undefined,
     atWheel: boolean,
+    finish: { finished: boolean; position?: number; classPosition?: number },
   ) {
     const row = focus ? standings.find((s) => s.slotId === focus.slotID) : undefined;
     // Inputs, gear, RPM and speed come from the locally-driven car's shared
@@ -2819,6 +2903,20 @@ export class LmuRestProvider implements TelemetryProvider {
     return {
       slotId: focus ? focus.slotID : UNKNOWN_VALUE,
       position: row ? row.position : UNKNOWN_VALUE,
+      // `finished` is published even while false — this channel is tri-state by
+      // ABSENCE, and consumers use "the field is here at all" to mean "this
+      // provider can see finishes". Omitting it while racing would read as a
+      // provider with no verdict, and the engineer would fall back to
+      // congratulating the driver when the LEADER crossed the line.
+      ...(focus
+        ? {
+            finished: finish.finished,
+            ...(finish.position !== undefined ? { finishPosition: finish.position } : {}),
+            ...(finish.classPosition !== undefined
+              ? { finishClassPosition: finish.classPosition }
+              : {}),
+          }
+        : {}),
       pedals: local
         ? {
             throttle: local.throttle,
@@ -3563,6 +3661,28 @@ function mapFlag(phase: unknown): FlagState {
       return 'red';
     case 'CHECKERED':
     case 'SESSIONOVER':
+      return 'checkered';
+    default:
+      return 'none';
+  }
+}
+
+/**
+ * One entry of `sessionInfo.sectorFlag`.
+ *
+ * The spellings are LMU's own, read off a live race finish: a clear sector says
+ * `"UNKNOWN"` (not `"GREEN"` and not `"NONE"`), and the flag states seen were
+ * `YELLOW`, `RED` and `CHECKERED`. Anything else is treated as clear — a flag
+ * the sim is not showing must never appear on the rail.
+ */
+function mapSectorFlag(raw: unknown): FlagState {
+  switch (asUpper(raw)) {
+    case 'YELLOW':
+      return 'yellow';
+    case 'RED':
+      return 'red';
+    case 'CHECKERED':
+    case 'CHEQUERED':
       return 'checkered';
     default:
       return 'none';

@@ -109,20 +109,33 @@ function leadSentence(
 
     case 'finalLap': {
       const pos = spokenPosition(cue);
+      // No "white flag": Le Mans Ultimate never shows one — the chequered flag
+      // comes out and the cars still running complete the lap they are on
+      // (probed through a full race finish, 2026-08-22). Saying a flag the
+      // driver cannot see is the engineer describing a different race.
       return pick(
         v,
         pos
           ? [
               `Last lap. ${pos} — bring it home.`,
-              `White flag — one to go. ${pos}. Keep it clean.`,
+              `Chequered's out — this is the last one. ${pos}. Keep it clean.`,
               `Final lap, ${pos}. Nothing silly now.`,
             ]
-          : ['Last lap — bring it home.', 'White flag — one lap to go.'],
+          : [
+              'Last lap — bring it home.',
+              "Chequered's out. This lap is the last one.",
+              'Final lap. Nothing silly now.',
+            ],
       );
     }
 
     case 'checkered': {
-      const pos = spokenPosition(cue);
+      // The LATCHED result the trigger carries, not the live position in the
+      // context: by the time this is spoken the rest of the field is still
+      // coming round, and the number on the screen has already moved.
+      const cls = num(f.classPosition) ?? num(cue.context.classPosition);
+      const overall = num(f.position) ?? num(cue.context.position);
+      const pos = cls !== undefined ? `P${cls}` : overall !== undefined ? `P${overall}` : null;
       const me = frame?.standings?.find((e) => e.isPlayer);
       const best =
         me && num(me.bestLapSec) !== undefined && me.bestLapSec > 0
@@ -132,7 +145,7 @@ function leadSentence(
       return pick(v, [
         `Chequered flag.${where}${best} Good drive.`,
         `That's the flag.${where}${best} Well done today.`,
-        `Chequered flag — we're done.${where}${best}`,
+        `Chequered flag — we're done.${where}${best} Nice job.`,
       ]);
     }
 

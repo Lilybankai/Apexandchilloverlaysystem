@@ -3509,6 +3509,19 @@ body.ig-editing #widget-radar .panel__header {
   border-color: var(--warn);
   color: var(--warn);
 }
+.racecontrol__sector[data-flag="red"] {
+  background: rgba(255, 92, 92, 0.18);
+  border-color: var(--pos-loss);
+  color: var(--pos-loss);
+}
+/* Chequered: the flag has no colour of its own, so the cell borrows the panel's
+   own foreground and inverts — the one mark here that reads as an ending rather
+   than as a hazard. */
+.racecontrol__sector[data-flag="checkered"] {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg-panel);
+}
 /* States. Green is good news and gets the gain colour; the limiter states are
    the red ones — they are the only messages here whose cost is measured in
    drive-throughs. FCY is the whole circuit under caution, so the panel itself
@@ -3522,6 +3535,16 @@ body.ig-editing #widget-radar .panel__header {
 #widget-racecontrol[data-race="pitcancel"] .racecontrol__msg { color: var(--warn); }
 #widget-racecontrol[data-race="limiter"] .racecontrol__msg,
 #widget-racecontrol[data-race="limiter"] .racecontrol__sub { color: var(--pos-loss); }
+/* The end of the race. FINAL LAP is a call to act and pulses like the other
+   act-now states; the flag itself is a result, and results do not flash — it is
+   the one message on this panel the driver reads at their leisure. */
+#widget-racecontrol[data-race="finallap"] .racecontrol__msg { color: var(--text-primary); }
+#widget-racecontrol[data-race="finallap"] .racecontrol__sub { color: var(--text-secondary); }
+#widget-racecontrol[data-race="checkered"] .racecontrol__msg { color: var(--text-primary); }
+#widget-racecontrol[data-race="checkered"] .racecontrol__sub { color: var(--pos-gain); }
+#widget-racecontrol[data-race="finallap"] .panel__body {
+  animation: limits-pulse 0.9s ease-in-out infinite;
+}
 #widget-racecontrol[data-race="fcy"] .panel__body,
 #widget-racecontrol[data-race="yellow"] .panel__body {
   animation: limits-pulse 0.9s ease-in-out infinite;
@@ -3532,6 +3555,7 @@ body.ig-editing #widget-radar .panel__header {
 @media (prefers-reduced-motion: reduce) {
   #widget-racecontrol[data-race="fcy"] .panel__body,
   #widget-racecontrol[data-race="yellow"] .panel__body,
+  #widget-racecontrol[data-race="finallap"] .panel__body,
   #widget-racecontrol[data-race="limiter"] .panel__body {
     animation: none;
   }

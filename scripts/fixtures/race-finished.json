@@ -1,0 +1,46 @@
+{
+  "session": {
+    "type": "race",
+    "phase": "checkered",
+    "flag": "checkered",
+    "track": "Silverstone",
+    "numCars": 35,
+    "currentLap": 169,
+    "totalLaps": 0,
+    "lapsRemaining": -1,
+    "finalLap": true,
+    "sectorFlags": [
+      "checkered",
+      "checkered",
+      "yellow"
+    ]
+  },
+  "player": {
+    "slotId": 25,
+    "position": 26,
+    "finished": true,
+    "finishPosition": 28,
+    "finishClassPosition": 12,
+    "pit": {
+      "phase": "none"
+    }
+  },
+  "standings": [
+    {
+      "slotId": 25,
+      "position": 28,
+      "driverName": "Scott Cruz",
+      "carNumber": "26",
+      "carClass": "GT3",
+      "classPosition": 12,
+      "gapToLeaderSec": -1,
+      "gapToAheadSec": -1,
+      "lapsBehind": 1,
+      "bestLapSec": 112.4,
+      "lastLapSec": 113.1,
+      "lapsCompleted": 168,
+      "inPit": false,
+      "isPlayer": true
+    }
+  ]
+}

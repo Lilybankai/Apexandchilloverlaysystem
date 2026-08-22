@@ -65,6 +65,42 @@
   /** Wall-clock until which the cancelled banner stays up, 0 when quiet. */
   var cancelUntil = 0;
 
+  /**
+   * "FINISHED P28 (GT3 P12)" — the result, written the same way the engineer's
+   * own lines write a position.
+   *
+   * Overall FIRST, with the class in brackets, rather than the class position
+   * alone: on its own "P12" is ambiguous in a multiclass field, and the number a
+   * driver is asked for afterwards is usually the overall one. Same shape as
+   * renderLine in telemetry/triggers.ts, so the panel and the radio never
+   * disagree about how a result is said.
+   *
+   * The class TAG comes from the standings row, which is the only place the
+   * frame names it; without a row the brackets are dropped rather than guessed.
+   */
+  function finishedLine(frame, player, ctx) {
+    var overall =
+      typeof player.finishPosition === "number"
+        ? player.finishPosition
+        : typeof player.position === "number" && player.position > 0
+          ? player.position
+          : null;
+    if (overall === null) return null;
+    var cls = player.finishClassPosition;
+    if (typeof cls !== "number" || cls === overall) return "FINISHED P" + overall;
+    var rows = frame.standings || [];
+    var mine = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].slotId === player.slotId) {
+        mine = rows[i];
+        break;
+      }
+    }
+    var tag =
+      mine && mine.carClass && ctx && ctx.classAbbrev ? ctx.classAbbrev(mine.carClass) + " " : "";
+    return "FINISHED P" + overall + " (" + tag + "P" + cls + ")";
+  }
+
   function init(rootEl) {
     root = rootEl;
     headerMeta = rootEl.querySelector('[data-role="meta"]');
@@ -168,9 +204,10 @@
     return Math.max(0, d) + " m";
   }
 
-  function update(frame) {
+  function update(frame, ctx) {
     var s = frame.session || {};
-    var pit = frame.player && frame.player.pit ? frame.player.pit : {};
+    var player = frame.player || {};
+    var pit = player.pit || {};
     var phase = s.phase;
     var lights = s.startLights;
     var now = Date.now();
@@ -223,7 +260,28 @@
     var sub = null;
     var showLights = false;
 
-    if (s.flag === "yellow" && phase !== "formation") {
+    if (player.finished === true) {
+      // We are done. This outranks every other banner: nothing about limiters,
+      // pit entries or flags matters to a car that has taken the flag, and the
+      // result is the one thing the driver is looking for.
+      //
+      // The position is the LATCHED one the provider carries — the live number
+      // keeps moving for as long as the rest of the field is still coming
+      // round, and a result that changes while you read it is not a result.
+      state = "checkered";
+      msg = "CHEQUERED FLAG";
+      sub = finishedLine(frame, player, ctx);
+    } else if (s.finalLap === true) {
+      // The chequered flag is OUT and we are still running — whatever lap we
+      // are on is the last one. Not `phase === "checkered"`, which LMU only
+      // reaches when the LEADER crosses: in the race this was probed against,
+      // that was 46 seconds after the flag came out and 24 seconds before the
+      // car being watched actually finished. A last-lap banner that appears
+      // three corners from the line is not a last-lap banner.
+      state = "finallap";
+      msg = "FINAL LAP";
+      sub = "CHEQUERED FLAG IS OUT";
+    } else if (s.flag === "yellow" && phase !== "formation") {
       // The FCY channel. Sector yellows have their own rail; this banner is
       // for the whole circuit being under caution.
       state = "fcy";

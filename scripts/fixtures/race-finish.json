@@ -1,0 +1,4 @@
+{
+  "session": { "type": "race", "phase": "green", "flag": "green", "track": "Silverstone", "numCars": 35, "currentLap": 168, "totalLaps": 0, "lapsRemaining": -1, "finalLap": true, "sectorFlags": ["checkered", "none", "none"] },
+  "player": { "slotId": 25, "position": 28, "finished": false, "pit": { "phase": "none" } }
+}

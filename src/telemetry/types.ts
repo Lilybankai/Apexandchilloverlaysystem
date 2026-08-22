@@ -175,6 +175,22 @@ export interface SessionState {
    */
   sectorFlags?: [FlagState, FlagState, FlagState];
   /**
+   * The chequered flag is **showing**: whoever is still running is on their last
+   * lap.
+   *
+   * Deliberately separate from `phase === 'checkered'`, which LMU only reaches
+   * when the LEADER crosses the line — 23 s later in the race this was probed
+   * against, and 46 s before the car we were watching actually finished. A
+   * "last lap" call that lands after the leader has taken the flag is not a last
+   * lap call. Probed live 2026-08-22 (`scripts/probe-race-finish.js`): the
+   * marshalling channel goes CHEQUERED the moment the clock expires, well before
+   * the phase moves.
+   *
+   * Omitted by providers with no marshalling channel, which is not the same as
+   * `false` — see {@link PlayerState.finished} for the matching per-car fact.
+   */
+  finalLap?: boolean;
+  /**
    * Where the LOCAL driver's eyes are, not where the session is: `false` while
    * they are looking at any of the sim's own screens — the ESC/monitor menu,
    * the garage and setup pages — and `true` while they are at the wheel.
@@ -727,6 +743,27 @@ export interface PlayerState {
   lap: LapTiming;
   /** Four-corner tyre state. */
   tyres: TyreSet;
+  /**
+   * This car has taken the chequered flag — the sim's own per-car verdict, not
+   * an inference from the session phase.
+   *
+   * The distinction is the whole point: the session goes `checkered` when the
+   * leader finishes, and every other car is still racing for up to a lap after
+   * that. Only this says *you* are done. Omitted when the sim publishes no
+   * finish verdict.
+   */
+  finished?: boolean;
+  /**
+   * The position this car held when it took the flag, latched — the classified
+   * result rather than a live position that keeps moving as slower cars are
+   * still coming round. Only set once {@link finished} is true.
+   */
+  finishPosition?: number;
+  /**
+   * Position in class at the flag, latched alongside {@link finishPosition}.
+   * Omitted when the class is unknown.
+   */
+  finishClassPosition?: number;
   /**
    * Four-corner vertical load and suspension state. Omitted when spectating
    * (no shared-memory physics for a car not driven on this PC) or when the

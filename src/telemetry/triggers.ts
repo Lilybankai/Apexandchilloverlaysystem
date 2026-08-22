@@ -534,6 +534,10 @@ export class EngineerTriggers {
   private fuelWindowArmed = true;
   /** `true` once the session has gone green at least once (so green = restart). */
   private seenGreen = false;
+  /** Previous frame's `session.finalLap`, for the chequered-flag-shown edge. */
+  private prevFinalLap = false;
+  /** Previous frame's `player.finished`, for the crossed-the-line edge. */
+  private prevFinished = false;
 
   /* ---- race-story levels (Standard preset, v3) ---------------------------- */
   /** The player's best lap last tick — a decrease is a new personal best. */
@@ -602,6 +606,8 @@ export class EngineerTriggers {
     this.prevPitThisLap = false;
     this.fuelWindowArmed = true;
     this.seenGreen = false;
+    this.prevFinalLap = false;
+    this.prevFinished = false;
     this.prevBestSelf = UNKNOWN_VALUE;
     this.prevFieldFastest = null;
     this.posAnnounced = UNKNOWN_VALUE;
@@ -714,18 +720,55 @@ export class EngineerTriggers {
       this.seenGreen = true;
     }
 
-    if (flag === 'white' && this.prevFlag !== 'white') {
-      this.offer('finalLap', now, 'white flag — last lap', {
+    // LAST LAP. Two ways in, because sims disagree about how they say it:
+    //
+    //   - a white flag, which is the convention this used to wait for alone —
+    //     and which Le Mans Ultimate never shows. Probed through a full race
+    //     finish 2026-08-22: the marshalling channel goes straight from clear to
+    //     CHEQUERED, so on LMU this branch had never once fired.
+    //   - `session.finalLap`: the chequered flag is OUT and the cars still
+    //     running are on their last lap. That is 23 s before the session reaches
+    //     its checkered phase and 46 s before the car being watched actually
+    //     crossed, which is the difference between a last-lap call and a
+    //     commiseration.
+    //
+    // Not fired once we are already finished: a driver who has taken the flag is
+    // not about to start a last lap. `finished` is absent on providers that
+    // cannot see it, and absent must not suppress the call.
+    const finished = frame.player?.finished === true;
+    const finalLap = frame.session.finalLap === true;
+    if (
+      !finished &&
+      ((flag === 'white' && this.prevFlag !== 'white') || (finalLap && !this.prevFinalLap))
+    ) {
+      this.offer('finalLap', now, 'last lap', {
         position: frame.player?.position ?? UNKNOWN_VALUE,
       });
     }
+    this.prevFinalLap = finalLap;
 
-    if ((flag === 'checkered' && this.prevFlag !== 'checkered') ||
-        (phase === 'checkered' && this.prevPhase !== 'checkered')) {
+    // THE FLAG. Our own car crossing the line, not the session's phase changing
+    // — the phase moves when the LEADER finishes, and congratulating a driver on
+    // a result while they still have most of a lap to run is worse than saying
+    // nothing. The phase is kept only as the fallback for a provider with no
+    // per-car verdict, where it is the best statement available.
+    const canSeeFinish = frame.player?.finished !== undefined;
+    const crossedLine = finished && !this.prevFinished;
+    const phaseCheckered =
+      (flag === 'checkered' && this.prevFlag !== 'checkered') ||
+      (phase === 'checkered' && this.prevPhase !== 'checkered');
+    if (crossedLine || (!canSeeFinish && phaseCheckered)) {
       this.offer('checkered', now, 'chequered flag', {
-        position: frame.player?.position ?? UNKNOWN_VALUE,
+        // The LATCHED result where the provider has one — a live position keeps
+        // moving while the rest of the field is still coming round.
+        position:
+          frame.player?.finishPosition ?? frame.player?.position ?? UNKNOWN_VALUE,
+        ...(frame.player?.finishClassPosition !== undefined
+          ? { classPosition: frame.player.finishClassPosition }
+          : {}),
       });
     }
+    this.prevFinished = finished;
   }
 
   /**

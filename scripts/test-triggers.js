@@ -298,6 +298,69 @@ console.log('\n2) Green, yellow, restart, white, chequered');
   check('…and so does the chequered', r.last?.kind === 'checkered', r.last?.kind);
 }
 
+/* The end of a race as Le Mans Ultimate actually publishes it, probed through a
+   live finish 2026-08-22 (scripts/probe-race-finish.js):
+
+     - there is NO white flag. Ever. The marshalling channel goes clear ->
+       CHEQUERED, so the branch this used to wait for had never fired on LMU.
+     - the session's own `checkered` phase arrives when the LEADER crosses, 23 s
+       after the flag came out and 24 s BEFORE the car being watched finished.
+       Congratulating a driver there is congratulating them mid-lap.
+
+   So the last-lap call rides `session.finalLap` and the result rides the car's
+   own `player.finished`. */
+{
+  const r = rig();
+  r.fire({ session: { finalLap: true } });
+  check('the chequered flag being OUT is the last-lap call',
+    r.last?.kind === 'finalLap', r.last?.kind);
+
+  // The leader crossing moves the session phase. A provider that CAN see
+  // per-car finishes says so by publishing `finished` at all — false included —
+  // and while it says false there is nothing to congratulate.
+  r.hold(20_000);
+  r.fire({
+    session: { finalLap: true, phase: 'checkered', flag: 'checkered' },
+    player: { finished: false },
+  });
+  check('the leader finishing is NOT our chequered call',
+    r.kinds().filter((k) => k === 'checkered').length === 0, r.kinds().join(','));
+
+  r.hold(20_000);
+  r.fire({
+    session: { finalLap: true, phase: 'checkered', flag: 'checkered' },
+    player: { finished: true, finishPosition: 4, finishClassPosition: 2 },
+  });
+  check('OUR car crossing the line is', r.last?.kind === 'checkered', r.last?.kind);
+  check('…and it carries the latched result',
+    r.last?.triggers?.[0]?.facts?.position === 4 &&
+      r.last?.triggers?.[0]?.facts?.classPosition === 2,
+    JSON.stringify(r.last?.triggers?.[0]?.facts));
+
+  // Still finished on the next frame is not a second finish.
+  r.hold(40_000);
+  r.fire({ player: { finished: true, finishPosition: 4 } });
+  check('and it only fires once',
+    r.kinds().filter((k) => k === 'checkered').length === 1, r.kinds().join(','));
+}
+
+{
+  // A driver who has already taken the flag is not about to start a last lap.
+  const r = rig();
+  r.fire({ session: { finalLap: true }, player: { finished: true, finishPosition: 9 } });
+  check('no last-lap call to a car that has already finished',
+    r.kinds().filter((k) => k === 'finalLap').length === 0, r.kinds().join(','));
+}
+
+{
+  // A provider with no per-car verdict (plain rF2, demo) must still get a call
+  // at the flag — the session phase is the best statement it has.
+  const r = rig();
+  r.fire({ session: { phase: 'checkered', flag: 'checkered' } });
+  check('without a per-car verdict the phase still fires',
+    r.last?.kind === 'checkered', r.last?.kind);
+}
+
 {
   // The race-lifecycle calls have no meaning in practice: there is no last lap
   // of a practice session, and nobody needs "green flag, P7 of 20" on an out-lap.

@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+### Added
+
+- **The end of the race, on the Race Control panel and on the radio.** A
+  **FINAL LAP** banner the moment the chequered flag comes out, and
+  **CHEQUERED FLAG — FINISHED P28 (GT3 P12)** when your own car crosses the line
+  for the last time. The engineer calls both: "last lap, P4 — bring it home",
+  then your result once you are actually done.
+- **The sector rail shows red and chequered flags**, not only yellows.
+
 ### Fixed
 
 - **Cars showed "1 lap down" when they were fifteen seconds apart.** In a
