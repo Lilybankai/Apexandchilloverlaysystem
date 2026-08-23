@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.90.0 — 2026-08-23
+
 ### Added
 
 - **"Am I catching him?" now has a real answer.** The engineer keeps a per-lap
