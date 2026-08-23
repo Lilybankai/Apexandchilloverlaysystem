@@ -91,6 +91,18 @@ const GRAMMAR = [
     ],
   },
   { intent: 'leader', group: 'Gaps & rivals', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
+  // The trend pair (2026-08-23): per-lap gap history, so "am I catching him"
+  // gets a rate and a when, not today's snapshot.
+  {
+    intent: 'catching',
+    group: 'Gaps & rivals',
+    phrases: ['am i catching', 'am i gaining', 'am i closing', 'closing the gap', 'gap trend'],
+  },
+  {
+    intent: 'defending',
+    group: 'Gaps & rivals',
+    phrases: ['is he catching me', 'is he gaining on me', 'is he closing', 'am i holding him', 'gap behind trend'],
+  },
   {
     intent: 'traffic',
     group: 'Gaps & rivals',
@@ -124,6 +136,12 @@ const GRAMMAR = [
   { intent: 'hybrid', group: 'Fuel & energy', phrases: ['battery', 'hybrid', 'state of charge'] },
   // -- Pit ---------------------------------------------------------------------
   { intent: 'pitStop', group: 'Pit', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
+  // "Where do I come out" — the projection off measured pit losses (pitExit.ts).
+  {
+    intent: 'pitExit',
+    group: 'Pit',
+    phrases: ['where do i come out', 'where would i come out', 'where will i come out', 'if i box now', 'if i pit now', 'pit exit'],
+  },
   {
     intent: 'pitWindow',
     group: 'Pit',
@@ -152,6 +170,12 @@ const GRAMMAR = [
     // 2026-08-20; whisper also writes the US spelling ("tire temp"), which the
     // matcher normalizes to these.
     phrases: ['tyres', 'how are my tyres', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures'],
+  },
+  // Wear RATE and laps left, not temps — a different question from 'tyres'.
+  {
+    intent: 'tyreLife',
+    group: 'The car',
+    phrases: ['tyre life', 'how long will the tyres last', 'will the tyres last', 'tyres last', 'tyre wear rate', 'how many laps in the tyres'],
   },
   { intent: 'pressures', group: 'The car', phrases: ['tyre pressures', 'pressures'] },
   { intent: 'brakes', group: 'The car', phrases: ['brakes', 'brake wear', 'how are the brakes'] },
@@ -529,6 +553,9 @@ class EngineerService {
     this.player = null;
     this.recognizer = null;
     this.recognizerReady = false;
+    // The last question-and-answer, whichever tier answered it — sent with the
+    // next Tier-2 ask (when recent) so "and on energy?" resolves as a follow-up.
+    this.lastExchange = null; // { question, answer, atMs }
     this.ws = null;
     this.wsTimer = null;
     this.commands = this.commandsMod ? new this.commandsMod.EngineerCommands() : null;
@@ -1150,6 +1177,12 @@ class EngineerService {
       if (heard.kind === 'HEARD' && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
+        const g = GRAMMAR.find((x) => x.intent === heard.intent);
+        this.lastExchange = {
+          question: (g && g.phrases[0]) || heard.intent,
+          answer: answer.text,
+          atMs: Date.now(),
+        };
         return { ok: true };
       }
 
@@ -1158,7 +1191,9 @@ class EngineerService {
       if (heard.kind === 'FREE') {
         const intent = matchGrammarText(heard.text);
         if (intent && this.commands) {
-          this.speak(this.commands.answer(intent).text);
+          const answer = this.commands.answer(intent);
+          this.speak(answer.text);
+          this.lastExchange = { question: heard.text, answer: answer.text, atMs: Date.now() };
           return { ok: true };
         }
         await this.askTier2(heard.wav, heard.text);
@@ -1212,16 +1247,31 @@ class EngineerService {
       return;
     }
     // Hand the summary Tier 1's lap-history read, so a pace question the
-    // grammar missed still gets real averages instead of "no read".
+    // grammar missed still gets real averages instead of "no read" — and the
+    // trend/pit-exit extras, so "is he catching me" asked in any wording has
+    // the same per-lap history the phrase list answers from.
     const avgOf = this.commands ? (slotId) => this.commands.averageOf(slotId) : undefined;
-    const summary = this.summaryMod.engineerSummary(this.lastFrame, avgOf);
+    const extras = this.commands ? this.commands.summaryExtras() : undefined;
+    const summary = this.summaryMod.engineerSummary(this.lastFrame, avgOf, extras);
     if (!summary || !summary.connected) {
       this.speak('No telemetry.');
       return;
     }
+    // A question hard on the heels of an answer is often a follow-up ("and on
+    // energy?", "how many laps is that") — give the model the exchange it is
+    // following up on. 90 s: within-a-corner-or-two recency, not the whole race.
+    const prevAge = this.lastExchange ? Date.now() - this.lastExchange.atMs : Infinity;
+    const previous =
+      this.lastExchange && prevAge < 90_000
+        ? {
+            question: this.lastExchange.question,
+            answer: this.lastExchange.answer,
+            secondsAgo: Math.round(prevAge / 1000),
+          }
+        : undefined;
     let res;
     try {
-      res = await this.cloudAsk({ question, summary, sttMs });
+      res = await this.cloudAsk(previous ? { question, summary, sttMs, previous } : { question, summary, sttMs });
     } catch {
       this.speak('No answer from the pit wall.');
       return;
@@ -1249,6 +1299,7 @@ class EngineerService {
       return;
     }
     this.speak(body.answer);
+    this.lastExchange = { question, answer: body.answer, atMs: Date.now() };
     this.lastCall = { id: body.callId, question, answer: body.answer, rating: null };
     if (typeof body.remaining === 'number') {
       this.budget = { remaining: body.remaining, cap: body.cap || 300 };

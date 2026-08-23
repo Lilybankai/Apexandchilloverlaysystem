@@ -36,6 +36,16 @@
 //     precomputed fields ahead of derived arithmetic.
 //   - the legend now covers EVERY field — the model treated undocumented
 //     fields (tyres bands among them) as unusable.
+//
+// v11 (2026-08-23, the trends-and-follow-ups release):
+//   - the app now sends per-lap TREND fields (gap closing rates, tyre wear
+//     rate, last-lap burns) and a measured pit-exit projection — the summary
+//     stops being a snapshot, so "is he catching me" has a real answer.
+//   - an optional `previous` exchange rides the request: drivers chain
+//     questions ("how much fuel to the end?" … "how many laps worth is
+//     that?") and each call used to be stateless. The model resolves the new
+//     question's references from it but takes every figure from the CURRENT
+//     summary.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -60,6 +70,7 @@ Rules:
 - Speak each figure as what its field says it is. A gap is a gap, an average lap is an average lap — never present a number as something the summary does not call it.
 - Do not give strategy as a command ("you must box"). Advisory only: "I'd box this lap" is fine; a fabricated fuel number is not.
 - The driver already has a phrase list for gaps, fuel, tyres and the rest — they asked a free-form question because the phrase list could not match it. Answer that question.
+- A PREVIOUS exchange may be included when the driver asked something moments ago. Treat the new question as a possible follow-up ("and on energy?", "how many laps is that?") and resolve its references from that exchange — but take every figure you speak from the CURRENT summary, never from the previous answer.
 
 Summary field legend (all times/gaps in seconds, fuel in litres, energy = the car's virtual-energy allowance in percentage points):
 - track/session/phase/flag: where and what. currentLap, lapsToFinish (laps still required to reach the finish), timeRemainingMin.
@@ -75,7 +86,11 @@ Summary field legend (all times/gaps in seconds, fuel in litres, energy = the ca
 - tyres: temperature verdict against the working window ("in the window", "fronts under, rears over"). No per-corner numbers are sent — the verdict IS the tyre-temperature answer.
 - damage: none | light | medium | heavy. repairSec: seconds to repair if the driver boxes.
 - weather (track condition), rain (dry | spitting | raining | rain later), trackTempC / airTempC.
-- yellows: sectors currently yellow ("S1 S3"), absent = all green. trackLimits: accumulated cut points. hybridPct: hybrid battery charge.`;
+- yellows: sectors currently yellow ("S1 S3"), absent = all green. trackLimits: accumulated cut points. hybridPct: hybrid battery charge.
+- aheadTrendSecPerLap: how the gap to the car ahead is changing, seconds per lap — positive = the driver is closing, negative = the rival is pulling away. lapsToCatchAhead: laps until caught at that rate. behindTrendSecPerLap: same for the car behind — positive = HE is closing on the driver.
+- tyreWorstPct: worst tyre's remaining tread, percent. tyreWearPctPerLap: its wear rate. tyreLapsLeft: laps until that tyre is worn at the current rate.
+- fuelLastLapL / energyLastLapPct: burn on the LAST lap alone — compare with the fuelPerLapL / energyPerLapPct averages to judge whether saving is working.
+- pitLossSec: measured total cost of a pit stop this session (lane + stop), the median of pitLossSamples observed stops. pitExitPosition: projected class position if the driver boxed right now; pitExitBehind / pitExitBehindGapSec: who they would come out behind and by how much; pitExitAheadOf / pitExitAheadOfGapSec: who they would come out ahead of. These are measured projections — prefer them to doing pit arithmetic yourself.`;
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
@@ -95,7 +110,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Not entitled.', code: 'entitled' }, 403);
   }
 
-  let body: { question?: unknown; summary?: unknown; sttMs?: unknown };
+  let body: { question?: unknown; summary?: unknown; sttMs?: unknown; previous?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -105,6 +120,18 @@ Deno.serve(async (req) => {
   const question = String(body.question ?? '').replace(/\s+/g, ' ').trim();
   if (question.length < 3 || question.length > MAX_QUESTION) {
     return json({ error: 'Question missing.', code: 'bad' }, 400);
+  }
+  // Optional follow-up context: the exchange immediately before this ask.
+  // Trimmed hard — it exists to resolve "and on energy?", not to grow a chat.
+  let previous: { question: string; answer: string; secondsAgo: number } | null = null;
+  if (body.previous && typeof body.previous === 'object' && !Array.isArray(body.previous)) {
+    const p = body.previous as Record<string, unknown>;
+    const pq = String(p.question ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_QUESTION);
+    const pa = String(p.answer ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const ago = Number(p.secondsAgo);
+    if (pq && pa && Number.isFinite(ago) && ago >= 0 && ago <= 600) {
+      previous = { question: pq, answer: pa, secondsAgo: Math.round(ago) };
+    }
   }
   const summary = body.summary && typeof body.summary === 'object' && !Array.isArray(body.summary)
     ? body.summary as Record<string, unknown>
@@ -171,7 +198,11 @@ Deno.serve(async (req) => {
           { role: 'system', content: SYSTEM },
           {
             role: 'user',
-            content: `QUESTION:\n${question}\n\nSUMMARY:\n${JSON.stringify(summary)}`,
+            content:
+              (previous
+                ? `PREVIOUS EXCHANGE (${previous.secondsAgo}s ago — the new question may follow up on it):\n` +
+                  `Driver asked: ${previous.question}\nYou answered: ${previous.answer}\n\n`
+                : '') + `QUESTION:\n${question}\n\nSUMMARY:\n${JSON.stringify(summary)}`,
           },
         ],
       }),

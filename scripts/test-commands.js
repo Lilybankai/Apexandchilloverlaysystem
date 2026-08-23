@@ -584,6 +584,94 @@ function unit() {
   a = engW.answer('fuelRatio');
   check('fuelRatio: refuses without a read', a.ok === false, a.text);
 
+  // -- trends: per-lap history behind "am I catching him" ---------------------
+  // Three player lap edges with the class-leader gap shrinking 5.0 → 4.4 → 3.8:
+  // 0.6 a lap, caught in about six.
+  const engC = new EngineerCommands();
+  const chaseLap = (lap, myLast, myGap) => frame({
+    standings: gt3Field([
+      { lapsCompleted: lap },
+      { lastLapSec: myLast, lapsCompleted: lap, gapToClassLeaderSec: myGap },
+      {},
+    ]),
+  });
+  engC.update(chaseLap(5, 100.1, 5.0));
+  a = engC.answer('catching');
+  check('catching: one sample is no trend', a.ok === false, a.text);
+  engC.update(chaseLap(6, 100.2, 4.4));
+  engC.update(chaseLap(7, 100.3, 3.8));
+  a = engC.answer('catching');
+  check('catching: rate and time-to-catch',
+    a.ok && /taking 0\.6 a lap out of Smith/.test(a.text) && /about 6 laps/.test(a.text), a.text);
+  const extras = engC.summaryExtras();
+  check('summaryExtras: the same trend rides the cloud payload',
+    extras.aheadTrendSecPerLap === 0.6 && extras.lapsToCatchAhead === 6,
+    JSON.stringify(extras));
+
+  const engD = new EngineerCommands();
+  const defendLap = (lap, myLast, brownGap) => frame({
+    standings: gt3Field([
+      { lapsCompleted: lap },
+      { lastLapSec: myLast, lapsCompleted: lap },
+      { gapToClassLeaderSec: brownGap, lapsCompleted: lap },
+    ]),
+  });
+  engD.update(defendLap(5, 100.1, 8.4)); // gap behind 6.0
+  engD.update(defendLap(6, 100.2, 7.6)); // 5.2
+  engD.update(defendLap(7, 100.3, 6.8)); // 4.4 — he's taking 0.8 a lap
+  a = engD.answer('defending');
+  check('defending: the car behind closing is named with a rate',
+    a.ok && /Brown's taking 0\.8 a lap out of you/.test(a.text) && /about 6 laps/.test(a.text), a.text);
+
+  // Tyre life: min corner wear 0.80 → 0.77 → 0.74 across three laps.
+  const engY = new EngineerCommands();
+  const wearLap = (lap, myLast, wear) => frame({
+    player: {
+      tyres: {
+        frontLeft: { wear },
+        frontRight: { wear: wear + 0.05 },
+        rearLeft: { wear: wear + 0.02 },
+        rearRight: { wear: wear + 0.04 },
+      },
+    },
+    standings: gt3Field([{}, { lastLapSec: myLast, lapsCompleted: lap }, {}]),
+  });
+  engY.update(wearLap(5, 100.1, 0.80));
+  a = engY.answer('tyreLife');
+  check('tyreLife: one sample has tread but no rate', a.ok === false && /80 percent/.test(a.text), a.text);
+  engY.update(wearLap(6, 100.2, 0.77));
+  engY.update(wearLap(7, 100.3, 0.74));
+  a = engY.answer('tyreLife');
+  check('tyreLife: wear rate and laps left',
+    a.ok && /74 percent/.test(a.text) && /3\.0 a lap/.test(a.text) && /roughly 19 more laps/.test(a.text),
+    a.text);
+
+  // -- pit exit: measured loss, honest refusal first --------------------------
+  const engX = new EngineerCommands();
+  const pitFrame = (brown) => frame({
+    standings: gt3Field([
+      { gapToLeaderSec: 0, lapsBehind: 0, lapsCompleted: 6, pitStops: 0 },
+      { gapToLeaderSec: 20, gapToClassLeaderSec: 20, lapsBehind: 0, lapsCompleted: 6 },
+      { gapToLeaderSec: 10, gapToClassLeaderSec: 10, lapsBehind: 0, lapsCompleted: 5, pitStops: 1, ...brown },
+    ]),
+  });
+  engX.update(pitFrame({}));
+  a = engX.answer('pitExit');
+  check('pitExit: refuses before any stop is measured',
+    a.ok === false && /nobody's made a stop/.test(a.text), a.text);
+  engX.update(pitFrame({ inPit: true }));
+  engX.update(pitFrame({ inPit: false, lapsCompleted: 6, gapToLeaderSec: 40, gapToClassLeaderSec: 40 }));
+  engX.update(pitFrame({ inPit: false, lapsCompleted: 7, gapToLeaderSec: 42, gapToClassLeaderSec: 42 }));
+  a = engX.answer('pitExit');
+  check('pitExit: measured 32s loss projects the exit position',
+    a.ok && /around P3/.test(a.text) && /10\.0 seconds behind Brown/.test(a.text) &&
+      /One of those cars still has to stop/.test(a.text) && /one stop we've timed/.test(a.text),
+    a.text);
+  const xExtras = engX.summaryExtras();
+  check('summaryExtras: pit projection rides the cloud payload',
+    xExtras.pitLossSec === 32 && xExtras.pitExitPosition === 3 && xExtras.pitExitBehind === 'Brown',
+    JSON.stringify(xExtras));
+
   // pace — score path, then predicted-lap fallback
   const engP = new EngineerCommands();
   engP.update(frame({ player: { paceScore: { ok: true, percent: 94.2, bandLabel: 'Silver', deltaSec: 0.4, lapSec: 0 } } }));
@@ -690,8 +778,8 @@ function unit() {
   engEmpty.update(frame({}));
   for (const intent of [
     'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'fuelRatio', 'hybrid',
-    'pace', 'bestLap', 'fieldFastest', 'leader', 'gridStart', 'trackLimits', 'flags',
-    'weather', 'brakeBias', 'tractionControl', 'sectors',
+    'pace', 'catching', 'defending', 'tyreLife', 'pitExit', 'bestLap', 'fieldFastest', 'leader',
+    'gridStart', 'trackLimits', 'flags', 'weather', 'brakeBias', 'tractionControl', 'sectors',
   ]) {
     a = engEmpty.answer(intent);
     check(intent + ': empty frame refuses honestly', a.ok === false, a.text);

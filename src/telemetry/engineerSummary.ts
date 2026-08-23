@@ -124,7 +124,60 @@ export interface EngineerSummary {
   carsInClass?: number;
   /** Cars in the whole field. */
   carsTotal?: number;
+  /* ---- trend + pit-exit extras (2026-08-23), from EngineerCommands ------- */
+  /** Gap-ahead change, sec/lap; positive = the player is closing. */
+  aheadTrendSecPerLap?: number;
+  /** Laps until the player catches the car ahead at the current rate. */
+  lapsToCatchAhead?: number;
+  /** Gap-behind change, sec/lap; positive = the car behind is closing. */
+  behindTrendSecPerLap?: number;
+  /** Worst tyre's remaining tread, percent. */
+  tyreWorstPct?: number;
+  /** Worst tyre's wear rate, percentage points per lap. */
+  tyreWearPctPerLap?: number;
+  /** Laps until the worst tyre reaches the worn floor at that rate. */
+  tyreLapsLeft?: number;
+  /** Fuel burned on the last completed lap, litres. */
+  fuelLastLapL?: number;
+  /** Virtual energy burned on the last completed lap, percentage points. */
+  energyLastLapPct?: number;
+  /** Median measured total pit loss this session (lane + stop), seconds. */
+  pitLossSec?: number;
+  /** How many observed stops that median covers. */
+  pitLossSamples?: number;
+  /** Projected class position if the player boxed now. */
+  pitExitPosition?: number;
+  /** Who the player would come out behind, and by how much. */
+  pitExitBehind?: string;
+  pitExitBehindGapSec?: number;
+  /** Who the player would come out ahead of, and by how much. */
+  pitExitAheadOf?: string;
+  pitExitAheadOfGapSec?: number;
 }
+
+/**
+ * The trend/pit-exit read handed in by the engineer service — the return shape
+ * of `EngineerCommands.summaryExtras()`. Optional and pre-rounded; every field
+ * copies straight onto the summary.
+ */
+export type EngineerExtras = Pick<
+  EngineerSummary,
+  | 'aheadTrendSecPerLap'
+  | 'lapsToCatchAhead'
+  | 'behindTrendSecPerLap'
+  | 'tyreWorstPct'
+  | 'tyreWearPctPerLap'
+  | 'tyreLapsLeft'
+  | 'fuelLastLapL'
+  | 'energyLastLapPct'
+  | 'pitLossSec'
+  | 'pitLossSamples'
+  | 'pitExitPosition'
+  | 'pitExitBehind'
+  | 'pitExitBehindGapSec'
+  | 'pitExitAheadOf'
+  | 'pitExitAheadOfGapSec'
+>;
 
 function known(n: number | undefined | null): n is number {
   return typeof n === 'number' && n !== UNKNOWN_VALUE && Number.isFinite(n);
@@ -297,6 +350,7 @@ function rainWord(frame: TelemetryFrame): string | undefined {
 export function engineerSummary(
   frame: TelemetryFrame | null | undefined,
   avgOf?: LapAverageOf,
+  extras?: EngineerExtras | null,
 ): EngineerSummary | null {
   if (!frame || !frame.session) return null;
   const s = frame.session;
@@ -406,5 +460,12 @@ export function engineerSummary(
   }
   const hy = frame.player?.hybrid;
   if (hy && known(hy.chargeFraction)) out.hybridPct = Math.round(hy.chargeFraction * 100);
+  if (extras) {
+    for (const [k, v] of Object.entries(extras)) {
+      if (v !== undefined && v !== null) {
+        (out as unknown as Record<string, unknown>)[k] = v;
+      }
+    }
+  }
   return out;
 }

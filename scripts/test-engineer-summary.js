@@ -203,6 +203,27 @@ console.log('\n5) rival pace, the pit picture, and burn rates ride the summary')
   check('fuel ratio derived from the burns (2.83/4.62)', s.fuelPerEnergyRatio === 0.61);
 }
 
+console.log('\n5b) trend/pit-exit extras copy onto the payload; absent extras add nothing');
+{
+  const s = engineerSummary(frame({}), undefined, {
+    aheadTrendSecPerLap: 0.6,
+    lapsToCatchAhead: 6,
+    tyreWorstPct: 74,
+    tyreWearPctPerLap: 3,
+    tyreLapsLeft: 19,
+    pitLossSec: 32,
+    pitLossSamples: 1,
+    pitExitPosition: 3,
+    pitExitBehind: 'Brown',
+    pitExitBehindGapSec: 10,
+  });
+  check('gap trend carried', s.aheadTrendSecPerLap === 0.6 && s.lapsToCatchAhead === 6);
+  check('tyre life carried', s.tyreWorstPct === 74 && s.tyreLapsLeft === 19);
+  check('pit projection carried', s.pitLossSec === 32 && s.pitExitPosition === 3 && s.pitExitBehind === 'Brown');
+  const bare = engineerSummary(frame({}));
+  check('no extras means no trend fields', bare.aheadTrendSecPerLap === undefined && bare.pitLossSec === undefined);
+}
+
 console.log('\n6) no history callback means no average fields, not zeros');
 {
   const s = engineerSummary(frame({}));

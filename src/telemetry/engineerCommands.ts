@@ -42,6 +42,8 @@
 import { UNKNOWN_VALUE } from './types';
 import type { StandingEntry, TelemetryFrame } from './types';
 import { sessionKeyOf } from './triggers';
+import { PitLossModel } from './pitExit';
+import type { PitExitProjection } from './pitExit';
 
 /* -------------------------------------------------------------------------- */
 /*  What the driver can ask                                                   */
@@ -79,6 +81,13 @@ export type CommandIntent =
   | 'fuelRatio'
   | 'hybrid'
   | 'pace'
+  // The trend set (2026-08-23): the questions drivers actually ask are about
+  // CHANGE — is he catching me, will the tyres last — and a snapshot cannot
+  // answer them. Fed by the per-lap history sampled in update().
+  | 'catching'
+  | 'defending'
+  | 'tyreLife'
+  | 'pitExit'
   | 'bestLap'
   | 'fieldFastest'
   | 'leader'
@@ -112,6 +121,10 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'fuelRatio',
   'hybrid',
   'pace',
+  'catching',
+  'defending',
+  'tyreLife',
+  'pitExit',
   'bestLap',
   'fieldFastest',
   'leader',
@@ -243,29 +256,96 @@ interface LapWindow {
   laps: number[];
 }
 
+/** One per-lap sample of the gap to a class neighbour, tagged with who it was. */
+interface GapSample {
+  lap: number;
+  slotId: number;
+  gapSec: number;
+}
+
+/** One per-lap sample of a player-side scalar (wear fraction, litres, pct). */
+interface LapValue {
+  lap: number;
+  value: number;
+}
+
+/** How many per-lap samples the trend windows keep. */
+const HISTORY_LAPS = 6;
+
+/** A per-lap rate under this reads as "holding steady", seconds. */
+const TREND_FLAT_SEC = 0.05;
+
+/** The wear fraction the tyre-life answer counts down to (matches "nearly done"). */
+const WEAR_FLOOR = 0.15;
+
+/** A gap/wear/burn trend read over the recent per-lap history. */
+interface TrendRead {
+  /** Per-lap rate; sign convention is the caller's (see each use). */
+  ratePerLap: number;
+  /** Newest sampled value. */
+  latest: number;
+  /** How many laps the read spans. */
+  laps: number;
+}
+
+/** Oldest-vs-newest rate over a window; null under two samples or zero span. */
+function trendOf(values: { lap: number; value: number }[]): TrendRead | null {
+  if (values.length < 2) return null;
+  const oldest = values[0]!;
+  const newest = values[values.length - 1]!;
+  const laps = newest.lap - oldest.lap;
+  if (laps <= 0) return null;
+  return {
+    ratePerLap: (oldest.value - newest.value) / laps,
+    latest: newest.value,
+    laps,
+  };
+}
+
 export class EngineerCommands {
   private frame: TelemetryFrame | null = null;
   private sessionKey = '';
   private windows = new Map<number, LapWindow>();
+  private playerLapSeen = 0;
+  private gapAheadHist: GapSample[] = [];
+  private gapBehindHist: GapSample[] = [];
+  private wearHist: LapValue[] = [];
+  private fuelHist: LapValue[] = [];
+  private energyHist: LapValue[] = [];
+  private pitModel = new PitLossModel();
 
   /** Drop all history — new session, or a caller that knows better. */
   reset(): void {
     this.frame = null;
     this.sessionKey = '';
     this.windows.clear();
+    this.clearHistory();
+    this.pitModel.reset();
+  }
+
+  private clearHistory(): void {
+    this.playerLapSeen = 0;
+    this.gapAheadHist = [];
+    this.gapBehindHist = [];
+    this.wearHist = [];
+    this.fuelHist = [];
+    this.energyHist = [];
   }
 
   /**
    * Feed the latest frame. Cheap on the nothing-happened path: one compare per
-   * standings row. Lap windows only mutate on a `lastLapSec` edge.
+   * standings row. Lap windows only mutate on a `lastLapSec` edge, and the
+   * player-side trend history only on the player's own lap edge.
    */
   update(frame: TelemetryFrame): void {
     const key = sessionKeyOf(frame);
     if (key !== this.sessionKey) {
       this.windows.clear();
+      this.clearHistory();
       this.sessionKey = key;
     }
     this.frame = frame;
+    this.pitModel.update(frame);
 
     for (const entry of frame.standings) {
       const last = entry.lastLapSec;
@@ -274,15 +354,79 @@ export class EngineerCommands {
       if (!win) {
         win = { lastSeen: last, laps: [last] };
         this.windows.set(entry.slotId, win);
+        if (entry.isPlayer) this.sampleLap(frame, entry);
         continue;
       }
       if (last !== win.lastSeen) {
         win.lastSeen = last;
         win.laps.push(last);
         if (win.laps.length > AVG_WINDOW_LAPS) win.laps.shift();
+        if (entry.isPlayer) this.sampleLap(frame, entry);
       }
     }
   }
+
+  /**
+   * The player just completed a lap: take one sample of everything the trend
+   * answers need. Per-lap sampling is what makes "0.3 a lap" honest — the same
+   * cadence a timing screen reads gaps at.
+   */
+  private sampleLap(frame: TelemetryFrame, me: StandingEntry): void {
+    const lap = known(me.lapsCompleted) ? me.lapsCompleted : this.playerLapSeen + 1;
+    if (lap <= this.playerLapSeen) return;
+    this.playerLapSeen = lap;
+    const push = <T>(arr: T[], v: T): void => {
+      arr.push(v);
+      if (arr.length > HISTORY_LAPS) arr.shift();
+    };
+
+    for (const dir of [-1, 1] as const) {
+      const other = this.neighbour(frame, me, dir);
+      const g = this.classGap(frame, dir);
+      if (other && g && g !== 'leader' && !g.lapsApart) {
+        push(dir === -1 ? this.gapAheadHist : this.gapBehindHist, {
+          lap,
+          slotId: other.slotId,
+          gapSec: g.gapSec,
+        });
+      }
+    }
+
+    const t = frame.player?.tyres;
+    if (t) {
+      const wears = [t.frontLeft, t.frontRight, t.rearLeft, t.rearRight]
+        .map((c) => (known(c?.wear) && c!.wear >= 0 ? c!.wear : undefined))
+        .filter((w): w is number => w !== undefined);
+      if (wears.length) push(this.wearHist, { lap, value: Math.min(...wears) });
+    }
+    const f = frame.fuel;
+    if (f && known(f.levelLiters) && f.levelLiters >= 0) {
+      push(this.fuelHist, { lap, value: f.levelLiters });
+    }
+    if (f && known(f.virtualEnergyPct)) {
+      push(this.energyHist, { lap, value: f.virtualEnergyPct! });
+    }
+  }
+
+  /**
+   * The gap trend to the class neighbour: only samples against the SAME car
+   * count (an undercut swaps the neighbour and the old numbers describe a
+   * different fight). Positive rate = the gap is closing.
+   */
+  private gapTrend(dir: -1 | 1): (TrendRead & { name: string }) | null {
+    const hist = dir === -1 ? this.gapAheadHist : this.gapBehindHist;
+    if (!hist.length || !this.frame) return null;
+    const current = hist[hist.length - 1]!;
+    // The neighbour right now must still be the sampled car.
+    const me = this.frame.standings.find((e) => e.isPlayer);
+    const other = me ? this.neighbour(this.frame, me, dir) : null;
+    if (!other || other.slotId !== current.slotId) return null;
+    const run = hist.filter((s) => s.slotId === current.slotId);
+    const t = trendOf(run.map((s) => ({ lap: s.lap, value: s.gapSec })));
+    if (!t) return null;
+    return { ...t, name: radioName(other) };
+  }
+
 
   /** Answer one question from the latest state. Never throws; never guesses. */
   answer(intent: CommandIntent): CommandAnswer {
@@ -726,6 +870,114 @@ export class EngineerCommands {
         return no('No pace read yet.');
       }
 
+      case 'catching': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me) return no('No standings yet.');
+        if (!this.neighbour(frame, me, -1)) {
+          return yes("You're leading the class — nobody to catch.");
+        }
+        const t = this.gapTrend(-1);
+        if (!t) return no('No trend on the car ahead yet — give me a couple of laps.');
+        if (Math.abs(t.ratePerLap) < TREND_FLAT_SEC) {
+          return yes(`Gap to ${t.name} is holding around ${speakableGap(t.latest)}.`);
+        }
+        if (t.ratePerLap > 0) {
+          const laps = t.latest / t.ratePerLap;
+          const when =
+            laps <= 30
+              ? ` — with him in about ${Math.max(1, Math.round(laps))} laps.`
+              : ` — but it'll be a long chase at this rate.`;
+          return yes(`You're taking ${t.ratePerLap.toFixed(1)} a lap out of ${t.name}${when}`);
+        }
+        return yes(
+          `${t.name}'s pulling away — ${(-t.ratePerLap).toFixed(1)} a lap over the last ${t.laps}.`,
+        );
+      }
+
+      case 'defending': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me) return no('No standings yet.');
+        if (!this.neighbour(frame, me, 1)) {
+          return yes('Nobody behind in class.');
+        }
+        const t = this.gapTrend(1);
+        if (!t) return no('No trend on the car behind yet — give me a couple of laps.');
+        if (Math.abs(t.ratePerLap) < TREND_FLAT_SEC) {
+          return yes(`Gap to ${t.name} behind is holding around ${speakableGap(t.latest)}.`);
+        }
+        if (t.ratePerLap > 0) {
+          const laps = t.latest / t.ratePerLap;
+          const when =
+            laps <= 30
+              ? ` — with you in about ${Math.max(1, Math.round(laps))} laps.`
+              : ` — but he's a long way off at that rate.`;
+          return yes(`${t.name}'s taking ${t.ratePerLap.toFixed(1)} a lap out of you${when}`);
+        }
+        return yes(
+          `You're pulling away from ${t.name} — ${(-t.ratePerLap).toFixed(1)} a lap over the last ${t.laps}.`,
+        );
+      }
+
+      case 'tyreLife': {
+        if (!this.wearHist.length) return no('No tyre wear read on this car.');
+        const worst = this.wearHist[this.wearHist.length - 1]!.value;
+        const pct = Math.round(worst * 100);
+        if (worst <= WEAR_FLOOR) {
+          return yes(`They're about done — ${pct} percent on the worst corner. Box soon.`);
+        }
+        const t = trendOf(this.wearHist);
+        if (!t) return no(`Worst tread ${pct} percent — no wear rate yet, give me another lap.`);
+        if (t.ratePerLap <= 0.001) {
+          return yes(`Tyres are hardly wearing — worst tread ${pct} percent. Plenty left.`);
+        }
+        const lapsLeft = (worst - WEAR_FLOOR) / t.ratePerLap;
+        const perLap = (t.ratePerLap * 100).toFixed(1);
+        if (lapsLeft < 1) {
+          return yes(`Worst tread ${pct} percent and dropping ${perLap} a lap — they're about done.`);
+        }
+        return yes(
+          `Worst tread ${pct} percent, dropping about ${perLap} a lap — good for roughly ${Math.floor(lapsLeft)} more laps.`,
+        );
+      }
+
+      case 'pitExit': {
+        const proj = this.pitModel.project(frame);
+        if (!proj) {
+          const d = frame.player?.damage;
+          const p = frame.player?.pit;
+          const len =
+            known(d?.stopLengthSeconds) && d!.stopLengthSeconds > 0
+              ? d!.stopLengthSeconds
+              : known(p?.plannedSec) && p!.plannedSec > 0
+                ? p!.plannedSec
+                : undefined;
+          return no(
+            len !== undefined
+              ? `No pit-loss read yet — nobody's made a stop to measure. Your stationary time would be about ${Math.round(len)} seconds.`
+              : `No pit-loss read yet — nobody's made a stop to measure.`,
+          );
+        }
+        const where = proj.aheadName
+          ? `, about ${speakableGap(proj.aheadGapSec ?? 0)} behind ${proj.aheadName}`
+          : proj.behindName
+            ? `, ${speakableGap(proj.behindGapSec ?? 0)} clear of ${proj.behindName}`
+            : '';
+        const parts = [`Box now and you'd come out around P${proj.position}${where}.`];
+        if (proj.aheadStillToStop) {
+          parts.push(
+            proj.aheadStillToStop === 1
+              ? 'One of those cars still has to stop.'
+              : `${proj.aheadStillToStop} of those cars still have to stop.`,
+          );
+        }
+        parts.push(
+          proj.samples === 1
+            ? `That's off the one stop we've timed.`
+            : `That's off the ${proj.samples} stops we've timed.`,
+        );
+        return yes(parts.join(' '));
+      }
+
       case 'bestLap': {
         const me = frame.standings.find((e) => e.isPlayer);
         if (!me || !known(me.bestLapSec) || me.bestLapSec <= 0) return no('No lap on the board yet.');
@@ -969,5 +1221,80 @@ export class EngineerCommands {
     if (!win || win.laps.length === 0) return null;
     const sum = win.laps.reduce((a, b) => a + b, 0);
     return { avg: sum / win.laps.length, count: win.laps.length };
+  }
+
+  /**
+   * The trend + pit-exit read for the Tier-2 summary — the same history the
+   * spoken answers use, so the cloud and the radio can never disagree about
+   * whether the gap is closing. All values pre-rounded for the payload.
+   */
+  summaryExtras(): {
+    aheadTrendSecPerLap?: number;
+    lapsToCatchAhead?: number;
+    behindTrendSecPerLap?: number;
+    tyreWorstPct?: number;
+    tyreWearPctPerLap?: number;
+    tyreLapsLeft?: number;
+    fuelLastLapL?: number;
+    energyLastLapPct?: number;
+    pitLossSec?: number;
+    pitLossSamples?: number;
+    pitExitPosition?: number;
+    pitExitBehind?: string;
+    pitExitBehindGapSec?: number;
+    pitExitAheadOf?: string;
+    pitExitAheadOfGapSec?: number;
+  } {
+    const r1 = (n: number): number => Math.round(n * 10) / 10;
+    const out: ReturnType<EngineerCommands['summaryExtras']> = {};
+    const ahead = this.gapTrend(-1);
+    if (ahead) {
+      out.aheadTrendSecPerLap = r1(ahead.ratePerLap);
+      if (ahead.ratePerLap >= TREND_FLAT_SEC) {
+        out.lapsToCatchAhead = Math.max(1, Math.round(ahead.latest / ahead.ratePerLap));
+      }
+    }
+    const behind = this.gapTrend(1);
+    if (behind) out.behindTrendSecPerLap = r1(behind.ratePerLap);
+
+    if (this.wearHist.length) {
+      out.tyreWorstPct = Math.round(this.wearHist[this.wearHist.length - 1]!.value * 100);
+      const wt = trendOf(this.wearHist);
+      if (wt && wt.ratePerLap > 0.001) {
+        out.tyreWearPctPerLap = r1(wt.ratePerLap * 100);
+        out.tyreLapsLeft = Math.max(0, Math.floor((wt.latest - WEAR_FLOOR) / wt.ratePerLap));
+      }
+    }
+    const lastBurn = (hist: LapValue[]): number | undefined => {
+      if (hist.length < 2) return undefined;
+      const a = hist[hist.length - 2]!;
+      const b = hist[hist.length - 1]!;
+      const laps = b.lap - a.lap;
+      if (laps <= 0) return undefined;
+      const burn = (a.value - b.value) / laps;
+      return burn > 0 ? burn : undefined; // negative = a refuel, not a burn
+    };
+    const fb = lastBurn(this.fuelHist);
+    if (fb !== undefined) out.fuelLastLapL = r1(fb);
+    const eb = lastBurn(this.energyHist);
+    if (eb !== undefined) out.energyLastLapPct = r1(eb);
+
+    if (this.frame) {
+      const proj: PitExitProjection | null = this.pitModel.project(this.frame);
+      if (proj) {
+        out.pitLossSec = proj.lossSec;
+        out.pitLossSamples = proj.samples;
+        out.pitExitPosition = proj.position;
+        if (proj.aheadName) {
+          out.pitExitBehind = proj.aheadName;
+          if (proj.aheadGapSec !== undefined) out.pitExitBehindGapSec = proj.aheadGapSec;
+        }
+        if (proj.behindName) {
+          out.pitExitAheadOf = proj.behindName;
+          if (proj.behindGapSec !== undefined) out.pitExitAheadOfGapSec = proj.behindGapSec;
+        }
+      }
+    }
+    return out;
   }
 }

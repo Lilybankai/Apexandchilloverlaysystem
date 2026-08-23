@@ -229,6 +229,20 @@ console.log('\n8) The grammar still wins over dictation text');
     String(matchGrammarText('lust five average')));
   check('fuzzy: a lone near-miss word does not match',
     matchGrammarText('full') === null, String(matchGrammarText('full')));
+  // The trend/pit-exit set (2026-08-23).
+  check('"am I catching him" reaches catching',
+    matchGrammarText('am I catching him?') === 'catching');
+  check('"is he catching me" reaches defending, not catching',
+    matchGrammarText('is he catching me') === 'defending');
+  check('"how long will the tyres last" reaches tyreLife, not tyres',
+    matchGrammarText('how long will the tyres last') === 'tyreLife',
+    String(matchGrammarText('how long will the tyres last')));
+  check('"tyre life" reaches tyreLife',
+    matchGrammarText('tyre life') === 'tyreLife');
+  check('"where do I come out if I box now" reaches pitExit',
+    matchGrammarText('where do I come out if I box now') === 'pitExit');
+  check('"if I pit now where do I end up" reaches pitExit',
+    matchGrammarText('if I pit now where do I end up') === 'pitExit');
 }
 
 console.log('\n9) The volume slider scales the audio, and old settings read as full');

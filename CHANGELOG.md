@@ -4,6 +4,36 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **"Am I catching him?" now has a real answer.** The engineer keeps a per-lap
+  history of the gap to the cars either side, so instead of today's number you
+  get the story: "You're taking 0.6 a lap out of Smith — with him in about 6
+  laps", or the honest bad news that he's pulling away. "Is he catching me?"
+  works the same for the car behind. Trends only speak once there are a couple
+  of laps against the same car — an undercut that swaps your rival never gets
+  to reuse the old numbers.
+- **"How long will the tyres last?"** Wear is now tracked lap over lap: worst
+  corner, rate per lap, and roughly how many laps remain before that tyre is
+  done. Until a rate exists you get the tread figure and "give me another lap",
+  not a guess.
+- **"If I box now, where do I come out?"** The engineer times real pit stops
+  as they happen in your class — lane plus stationary, measured off the field,
+  because the sim publishes no pit-lane delta anywhere — and projects your
+  exit: position, who you'd come out behind, by how much, and how many of
+  those cars still owe a stop. Until someone has actually pitted it says so
+  rather than inventing a number.
+- **Follow-up questions work.** Ask "how much fuel to the end?" then "and how
+  many laps is that?" — the advanced engineer now remembers the previous
+  exchange for a minute and a half, so the second question doesn't land on a
+  blank slate. Every figure still comes from live telemetry, never from the
+  earlier answer.
+- The advanced engineer's telemetry summary now carries all of the above —
+  gap trends, tyre life, last-lap fuel and energy burn (so "is the saving
+  working?" compares your last lap against your average), and the measured
+  pit-loss projection — so free-form wordings of these questions get the same
+  numbers the phrase list speaks.
+
 ## 0.89.0 — 2026-08-23
 
 ### Added
