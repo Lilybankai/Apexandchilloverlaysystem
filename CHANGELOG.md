@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.89.0 — 2026-08-23
+
 ### Added
 
 - **Ask the engineer for your fuel ratio.** "Fuel ratio" was asked twice in the
