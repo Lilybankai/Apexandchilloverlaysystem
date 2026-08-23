@@ -79,6 +79,29 @@ export interface EngineerSummary {
   carsAheadCompared?: number;
   fuelLaps?: number;
   energyLaps?: number;
+  /** Current fuel in the tank, litres. */
+  fuelL?: number;
+  /** Tank capacity, litres, when the sim publishes it. */
+  tankL?: number;
+  /** Litres needed to reach the finish from here. */
+  fuelToFinishL?: number;
+  /**
+   * Litres to ADD at the next stop to reach the finish (0 = none needed). The
+   * direct answer to "how much fuel do I need to put in" — asked on 2026-08-20
+   * and answered with the wrong number because the cloud only had laps.
+   */
+  refuelToFinishL?: number;
+  /** Fuel margin at the flag, litres: positive = surplus, negative = short. */
+  fuelDeltaL?: number;
+  /** Remaining virtual energy, percent 0–100. */
+  energyPct?: number;
+  /** Energy margin at the flag, percentage points: positive = surplus. */
+  energyDeltaPct?: number;
+  /**
+   * Litres of fuel burned per percentage point of virtual energy — the burn
+   * ratio drivers call the "fuel ratio" (asked twice on 2026-08-19, refused).
+   */
+  fuelPerEnergyRatio?: number;
   /** Average fuel burn, litres per lap. */
   fuelPerLapL?: number;
   /** Average virtual-energy burn, percentage points per lap. */
@@ -90,9 +113,17 @@ export interface EngineerSummary {
   repairSec?: number;
   weather?: string;
   rain?: string;
+  /** Track surface temperature, °C. */
+  trackTempC?: number;
+  /** Air temperature, °C. */
+  airTempC?: number;
   yellows?: string;
   trackLimits?: string;
   hybridPct?: number;
+  /** Cars in the player's class (the player included). */
+  carsInClass?: number;
+  /** Cars in the whole field. */
+  carsTotal?: number;
 }
 
 function known(n: number | undefined | null): n is number {
@@ -318,6 +349,31 @@ export function engineerSummary(
   }
   if (fuel && known(fuel.lapsRemaining)) out.fuelLaps = round1(fuel.lapsRemaining);
   if (fuel && known(fuel.virtualEnergyLapsRemaining)) out.energyLaps = round1(fuel.virtualEnergyLapsRemaining);
+  if (fuel && known(fuel.levelLiters) && fuel.levelLiters >= 0) out.fuelL = round1(fuel.levelLiters);
+  if (fuel && known(fuel.capacityLiters) && fuel.capacityLiters > 0) out.tankL = round1(fuel.capacityLiters);
+  if (fuel && known(fuel.fuelToFinishLiters) && fuel.fuelToFinishLiters >= 0) {
+    out.fuelToFinishL = round1(fuel.fuelToFinishLiters);
+  }
+  // Only when a real to-the-flag projection exists: the calculator's refuel
+  // field defaults to 0, and "add nothing" with no projection behind it is a
+  // wrong answer, not a safe one.
+  if (
+    fuel &&
+    known(fuel.refuelToFinishLiters) && fuel.refuelToFinishLiters >= 0 &&
+    known(fuel.fuelToFinishLiters) && fuel.fuelToFinishLiters >= 0
+  ) {
+    out.refuelToFinishL = round1(fuel.refuelToFinishLiters);
+  }
+  if (fuel && known(fuel.fuelDeltaLiters)) out.fuelDeltaL = round1(fuel.fuelDeltaLiters);
+  if (fuel && known(fuel.virtualEnergyPct)) out.energyPct = Math.round(fuel.virtualEnergyPct);
+  if (fuel && known(fuel.virtualEnergyDeltaPct)) out.energyDeltaPct = round1(fuel.virtualEnergyDeltaPct);
+  if (
+    fuel &&
+    known(fuel.perLapAvgLiters) && fuel.perLapAvgLiters > 0 &&
+    known(fuel.virtualEnergyPerLapPct) && fuel.virtualEnergyPerLapPct > 0
+  ) {
+    out.fuelPerEnergyRatio = Math.round((fuel.perLapAvgLiters / fuel.virtualEnergyPerLapPct) * 100) / 100;
+  }
   if (fuel && known(fuel.perLapAvgLiters) && fuel.perLapAvgLiters > 0) {
     out.fuelPerLapL = round1(fuel.perLapAvgLiters);
   }
@@ -335,6 +391,15 @@ export function engineerSummary(
   if (frame.weather?.trackCondition) out.weather = frame.weather.trackCondition;
   const rain = rainWord(frame);
   if (rain) out.rain = rain;
+  if (known(frame.weather?.trackTempC)) out.trackTempC = Math.round(frame.weather!.trackTempC);
+  if (known(frame.weather?.ambientTempC)) out.airTempC = Math.round(frame.weather!.ambientTempC);
+  const total = (frame.standings || []).length;
+  if (total > 0) {
+    out.carsTotal = total;
+    if (me?.carClass) {
+      out.carsInClass = frame.standings.filter((e) => e.carClass === me.carClass).length;
+    }
+  }
   if (yellows) out.yellows = yellows;
   if (tl && known(tl.points) && tl.points > 0) {
     out.trackLimits = `${tl.points} points`;

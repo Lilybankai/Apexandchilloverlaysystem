@@ -4,6 +4,40 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **Ask the engineer for your fuel ratio.** "Fuel ratio" was asked twice in the
+  first week and refused — it's now a phrase-list question answered on the spot:
+  the sim's own MFD value when the car exposes one, otherwise your observed burn
+  — litres per percentage point of virtual energy.
+- **The free-form engineer knows your fuel numbers now.** Litres on board, tank
+  size, litres to the flag, litres to add at the stop, the margin either side,
+  virtual-energy percent and margin, track and air temperature, and field size
+  all ride along with a question — so "how much fuel do I need to put in to get
+  to the end" is answered with the shortfall, not what happens to be in the
+  tank. (The old answer read the remaining laps back to you — the one number
+  the question wasn't about.)
+
+### Changed
+
+- **More ways of asking land on the instant answers.** "Gap to car ahead",
+  "what's the gap", "tyre temperatures" (and the American "tire temp" the
+  transcriber likes to write), "when should I pit", "how many laps till I need
+  to pit", "track temperature", "fuel to finish" — all were falling through to
+  the paid free-form path for answers the phrase list already had. A one-letter
+  mishear of a multi-word phrase ("lust five average") now routes home too;
+  single words are never guess-matched, because a near-miss deserves "say
+  again", not a confident wrong answer.
+- **The engineer hears racing words better.** The transcriber is now primed
+  with the pit-wall vocabulary drivers actually use, so "gap in front" stops
+  arriving as "strap-in-front" and "fuel" as a surname.
+- **A clear question is never answered with "Say again?".** That reply is
+  reserved for genuinely unintelligible audio; a real question the pit wall has
+  no data for gets "I don't have that read", and an off-topic one gets a
+  good-natured deflection instead of a broken-radio impression. Silence and
+  coughs no longer spend a free-form call from your monthly allotment to find
+  out they weren't questions.
+
 ## 0.88.0 — 2026-08-23
 
 ### Added

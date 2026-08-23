@@ -568,6 +568,22 @@ function unit() {
   check('energy: names the shortfall to the flag',
     a.ok && /2\.9 laps short of the finish/.test(a.text), a.text);
 
+  // fuel ratio — the MFD aid when the car exposes one, the burn ratio when it
+  // doesn't, an honest refusal when neither read exists (asked twice on
+  // 2026-08-19 and refused by the cloud).
+  engW.update(frame({
+    mfd: { pit: [], aids: [{ key: 'VM_FUEL_RATIO', label: 'Fuel Ratio', value: 5, minValue: 0, maxValue: 10, text: '1.05' }] },
+  }));
+  a = engW.answer('fuelRatio');
+  check('fuelRatio: MFD aid wins when present', a.ok && /Fuel ratio 1\.05/.test(a.text), a.text);
+  engW.update(frame({ fuel: { perLapAvgLiters: 2.9, virtualEnergyPerLapPct: 3.5 } }));
+  a = engW.answer('fuelRatio');
+  check('fuelRatio: burn ratio from both per-lap rates',
+    a.ok && /0\.83 litres per percent of energy/.test(a.text), a.text);
+  engW.update(frame({}));
+  a = engW.answer('fuelRatio');
+  check('fuelRatio: refuses without a read', a.ok === false, a.text);
+
   // pace — score path, then predicted-lap fallback
   const engP = new EngineerCommands();
   engP.update(frame({ player: { paceScore: { ok: true, percent: 94.2, bandLabel: 'Silver', deltaSec: 0.4, lapSec: 0 } } }));
@@ -673,7 +689,7 @@ function unit() {
   const engEmpty = new EngineerCommands();
   engEmpty.update(frame({}));
   for (const intent of [
-    'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'hybrid',
+    'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'fuelRatio', 'hybrid',
     'pace', 'bestLap', 'fieldFastest', 'leader', 'gridStart', 'trackLimits', 'flags',
     'weather', 'brakeBias', 'tractionControl', 'sectors',
   ]) {

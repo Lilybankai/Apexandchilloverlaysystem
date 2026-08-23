@@ -24,8 +24,20 @@ const MODEL_MB = 148;
 const ENGINE_MB = 8;
 const WHISPER_RATE = 16000;
 
+// Whisper conditions its decode on this prompt, so the vocabulary here is what
+// mishears fall TOWARD. The first-week engineer_calls log is the source: "gap
+// in front" arrived as "strap-in-front", "when should I pit" as "when should I
+// pick Jeff", "fuel" as "Newall" — every phrase below is a wording drivers
+// actually used (or the grammar advertises) that the old ten-word prompt did
+// not cover.
 const RACING_PROMPT =
-  'pit radio: lap, box, tyres, fuel, two, gap, energy, safety car, yellow flags, virtual energy';
+  'Pit radio in a sim race. Driver asks the engineer: gap ahead, gap behind, gap in front, ' +
+  'car ahead, car behind, last lap, sector times, best lap, fastest lap, position, ' +
+  'laps left, time left, how much time is left, when should I pit, pit window, pit stop, ' +
+  'how many laps till I need to pit, fuel, fuel level, fuel ratio, virtual energy, battery, ' +
+  'tyres, tyre temperatures, tyre pressures, brakes, brake bias, traction control, damage, ' +
+  'track limits, penalty points, yellow flags, safety car, weather, rain, track temperature, ' +
+  'last five average, box this lap, backmarkers, traffic';
 
 function findNamed(from, name) {
   const want = name.toLowerCase();

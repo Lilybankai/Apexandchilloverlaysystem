@@ -59,8 +59,14 @@ const stt = require('./engineerStt');
  */
 const GRAMMAR = [
   // -- Gaps & rivals ---------------------------------------------------------
-  { intent: 'gapAhead', group: 'Gaps & rivals', phrases: ['gap ahead', 'gap in front', 'gap front'] },
-  { intent: 'gapBehind', group: 'Gaps & rivals', phrases: ['gap behind', 'gap to the car behind'] },
+  {
+    intent: 'gapAhead',
+    group: 'Gaps & rivals',
+    // "gap to car ahead" and "whats the gap" are first-week field wordings
+    // (2026-08-21 engineer_calls log) that fell through to the cloud.
+    phrases: ['gap ahead', 'gap in front', 'gap front', 'gap to the car ahead', 'gap to car ahead', 'whats the gap'],
+  },
+  { intent: 'gapBehind', group: 'Gaps & rivals', phrases: ['gap behind', 'gap to the car behind', 'gap to car behind'] },
   {
     intent: 'carAhead',
     group: 'Gaps & rivals',
@@ -103,14 +109,50 @@ const GRAMMAR = [
   { intent: 'position', group: 'Pace & laps', phrases: ['position', 'what position am i in', 'where am i'] },
   { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places'] },
   // -- Fuel & energy -----------------------------------------------------------
-  { intent: 'fuel', group: 'Fuel & energy', phrases: ['fuel', 'fuel state', 'fuel level'] },
+  {
+    intent: 'fuel',
+    group: 'Fuel & energy',
+    // NOT "how much fuel": "how much fuel do I need to put in" is a refuel
+    // question the cloud answers better (refuelToFinishL) — matching it here
+    // would downgrade it to the tank read.
+    phrases: ['fuel', 'fuel state', 'fuel level', 'fuel to finish', 'fuel to the finish', 'fuel to the end', 'enough fuel'],
+  },
   { intent: 'energy', group: 'Fuel & energy', phrases: ['energy', 'virtual energy', "how's my energy"] },
+  // Asked twice on day one (2026-08-19 log) and refused by the cloud — the
+  // burn ratio is a local read now.
+  { intent: 'fuelRatio', group: 'Fuel & energy', phrases: ['fuel ratio', 'fuel to energy ratio'] },
   { intent: 'hybrid', group: 'Fuel & energy', phrases: ['battery', 'hybrid', 'state of charge'] },
   // -- Pit ---------------------------------------------------------------------
   { intent: 'pitStop', group: 'Pit', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
-  { intent: 'pitWindow', group: 'Pit', phrases: ['pit window', "when's the window", 'when do we pit'] },
+  {
+    intent: 'pitWindow',
+    group: 'Pit',
+    // The "…till i need to pit" family must out-length lapsLeft's "how many
+    // laps" (matching is longest-needle-wins): "how many laps till I need to
+    // pit" was answered by the cloud on 2026-08-19 because the only shared
+    // stem here was too short to win.
+    phrases: [
+      'pit window',
+      "when's the window",
+      'when do we pit',
+      'when should i pit',
+      'when do i need to pit',
+      'till i need to pit',
+      'until i need to pit',
+      'before i need to pit',
+      'need to pit',
+      'when to pit',
+    ],
+  },
   // -- The car -----------------------------------------------------------------
-  { intent: 'tyres', group: 'The car', phrases: ['tyres', 'how are my tyres', 'tyre temps'] },
+  {
+    intent: 'tyres',
+    group: 'The car',
+    // "tyre temperatures" spoken in full got "Say again?" from the cloud on
+    // 2026-08-20; whisper also writes the US spelling ("tire temp"), which the
+    // matcher normalizes to these.
+    phrases: ['tyres', 'how are my tyres', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures'],
+  },
   { intent: 'pressures', group: 'The car', phrases: ['tyre pressures', 'pressures'] },
   { intent: 'brakes', group: 'The car', phrases: ['brakes', 'brake wear', 'how are the brakes'] },
   { intent: 'damage', group: 'The car', phrases: ['damage', 'any damage', 'damage report', 'how bad is it'] },
@@ -149,7 +191,11 @@ const GRAMMAR = [
   { intent: 'trackLimits', group: 'Race control', phrases: ['track limits', 'limits', 'penalty points'] },
   { intent: 'flags', group: 'Race control', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
   // -- Conditions ----------------------------------------------------------------
-  { intent: 'weather', group: 'Conditions', phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming'] },
+  {
+    intent: 'weather',
+    group: 'Conditions',
+    phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming', 'track temp', 'track temperature', 'air temperature'],
+  },
 ];
 
 /**
@@ -312,7 +358,8 @@ const RECOGNIZER_SIDECAR = 'voice-recognizer.ps1';
 function matchGrammarText(text) {
   // Whisper writes small numbers as digits ("last 5 average") while the phrase
   // list spells them out — normalize digits to words so the two meet. Only the
-  // words that appear in phrases need mapping.
+  // words that appear in phrases need mapping. Whisper also prefers US
+  // spellings ("tire temp", 2026-08-21 log) — fold them to the list's British.
   const DIGIT_WORDS = {
     0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four',
     5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten',
@@ -323,6 +370,8 @@ function matchGrammarText(text) {
       .replace(/['’]/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
       .replace(/\b(10|\d)\b/g, (d) => DIGIT_WORDS[d] || d)
+      .replace(/\btire\b/g, 'tyre')
+      .replace(/\btires\b/g, 'tyres')
       .trim()} `;
   const haystack = norm(text);
   if (haystack.trim().length === 0) return null;
@@ -332,6 +381,79 @@ function matchGrammarText(text) {
       const needle = norm(p);
       if (needle.trim() && haystack.includes(needle)) {
         if (!best || needle.length > best.length) best = { intent: g.intent, length: needle.length };
+      }
+    }
+  }
+  if (best) return best.intent;
+  return fuzzyGrammarMatch(haystack);
+}
+
+/** Levenshtein distance capped at 2 — enough to test "within 1", cheaply. */
+function editDistanceLe1(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  // One substitution.
+  if (a.length === b.length) {
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
+    return diff <= 1;
+  }
+  // One insertion/deletion: align the shorter into the longer.
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  let i = 0;
+  let j = 0;
+  let skipped = false;
+  while (i < short.length && j < long.length) {
+    if (short[i] === long[j]) {
+      i++;
+      j++;
+    } else if (!skipped) {
+      skipped = true;
+      j++;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Second pass for STT near-misses: the first week's log is full of one-letter
+ * mishears that fell through to the cloud and were refused ("LUST five
+ * average", 2026-08-19). A multi-word phrase still matches when each word is
+ * exact or — for words of 4+ letters — within one edit. Single-word phrases
+ * are excluded on purpose: "full" is one edit from "fuel", and a wrong Tier-1
+ * answer to a phrase we only nearly heard is the confident-wrong-answer the
+ * whole engineer refuses to give. Two aligned words mishearing together is a
+ * far taller order.
+ */
+function fuzzyGrammarMatch(haystack) {
+  const words = haystack.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return null;
+  const wordOk = (heard, wanted) =>
+    heard === wanted || (wanted.length >= 4 && heard.length >= 4 && editDistanceLe1(heard, wanted));
+  let best = null;
+  for (const g of GRAMMAR) {
+    for (const p of g.phrases) {
+      const need = p
+        .toLowerCase()
+        .replace(/['’]/g, '')
+        .split(/\s+/)
+        .filter(Boolean);
+      if (need.length < 2 || need.length > words.length) continue;
+      for (let at = 0; at + need.length <= words.length; at++) {
+        let ok = true;
+        for (let k = 0; k < need.length; k++) {
+          if (!wordOk(words[at + k], need[k])) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          const len = need.join(' ').length;
+          if (!best || len > best.length) best = { intent: g.intent, length: len };
+          break;
+        }
       }
     }
   }
@@ -1077,7 +1199,10 @@ class EngineerService {
       }
     }
     if (!question) question = String(dictationText || '').trim();
-    if (question.length < 3) {
+    // Whisper renders silence and coughs as "..." or a stray syllable, and each
+    // one was burning a budgeted cloud call to be told "Say again?" (2026-08-22
+    // log). Fewer than four letters cannot be a question — say it locally.
+    if (question.length < 3 || (question.match(/[a-z]/gi) || []).length < 4) {
       this.speak('Say again?');
       return;
     }

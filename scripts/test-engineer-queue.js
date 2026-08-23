@@ -202,6 +202,33 @@ console.log('\n8) The grammar still wins over dictation text');
     matchGrammarText('Top 5 average lap') === 'avgAhead');
   check('"last five average" reaches avgAhead',
     matchGrammarText('last five average') === 'avgAhead');
+  // First-week field wordings (2026-08-20/21 engineer_calls log): each of
+  // these reached the cloud — and cost a budgeted call — for an answer Tier 1
+  // already had.
+  check('"gap to car ahead" reaches gapAhead',
+    matchGrammarText('gap to car ahead') === 'gapAhead');
+  check('"what are my tyre temperatures" reaches tyres',
+    matchGrammarText('What are my tyre temperatures?') === 'tyres');
+  check('US spelling normalizes — "tire temp" reaches tyres',
+    matchGrammarText('tire temp') === 'tyres');
+  check('"how many laps till I need to pit" prefers pitWindow over lapsLeft',
+    matchGrammarText('How many laps till I need to pit?') === 'pitWindow',
+    String(matchGrammarText('How many laps till I need to pit?')));
+  check('"when should I pit" reaches pitWindow',
+    matchGrammarText('when should I pit') === 'pitWindow');
+  check('"fuel ratio" reaches fuelRatio, not fuel',
+    matchGrammarText("What's my fuel ratio?") === 'fuelRatio');
+  check('"track temperature" reaches weather, not tyres',
+    matchGrammarText('track temperature') === 'weather');
+  // The fuzzy pass: one-letter STT mishears on multi-word phrases route home
+  // ("LUST five average", 2026-08-19 log) — but a single word is never fuzzed,
+  // because "full" is one edit from "fuel" and a near-miss deserves the cloud,
+  // not a confident wrong answer.
+  check('fuzzy: "lust five average" reaches avgAhead',
+    matchGrammarText('lust five average') === 'avgAhead',
+    String(matchGrammarText('lust five average')));
+  check('fuzzy: a lone near-miss word does not match',
+    matchGrammarText('full') === null, String(matchGrammarText('full')));
 }
 
 console.log('\n9) The volume slider scales the audio, and old settings read as full');

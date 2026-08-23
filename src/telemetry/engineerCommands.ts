@@ -76,6 +76,7 @@ export type CommandIntent =
   | 'pitStop'
   | 'pitWindow'
   | 'energy'
+  | 'fuelRatio'
   | 'hybrid'
   | 'pace'
   | 'bestLap'
@@ -108,6 +109,7 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'pitStop',
   'pitWindow',
   'energy',
+  'fuelRatio',
   'hybrid',
   'pace',
   'bestLap',
@@ -678,6 +680,27 @@ export class EngineerCommands {
           );
         }
         return yes(parts.join(' '));
+      }
+
+      case 'fuelRatio': {
+        // Asked twice on day one (2026-08-19 engineer_calls log) and refused.
+        // Prefer the sim's own MFD aid if this car exposes one; otherwise the
+        // observed burn ratio — litres per percentage point of virtual energy —
+        // which is the number the driver is steering their refuel around.
+        const aid = frame.mfd?.aids?.find(
+          (a) => /fuel.*ratio/i.test(a.key) || /fuel.*ratio/i.test(a.label),
+        );
+        if (aid && aid.text.trim()) return yes(`Fuel ratio ${aid.text.trim()}.`);
+        const f = frame.fuel;
+        if (
+          f &&
+          known(f.perLapAvgLiters) && f.perLapAvgLiters > 0 &&
+          known(f.virtualEnergyPerLapPct) && f.virtualEnergyPerLapPct! > 0
+        ) {
+          const ratio = f.perLapAvgLiters / f.virtualEnergyPerLapPct!;
+          return yes(`You're burning ${ratio.toFixed(2)} litres per percent of energy.`);
+        }
+        return no('No fuel-ratio read on this car.');
       }
 
       case 'hybrid': {

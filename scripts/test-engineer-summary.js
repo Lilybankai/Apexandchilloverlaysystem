@@ -92,6 +92,13 @@ console.log('\n1) A live race carries the numbers the radio is allowed to speak'
   check('ahead is Smith with a gap', s.ahead && s.ahead.name === 'Smith' && s.ahead.gapSec === 2.4);
   check('behind is Jones', s.behind && s.behind.name === 'Jones');
   check('fuel to flag good (12.4 vs 12 to go)', s.fuelToFlag === 'good');
+  // Summary v3: the litre-side numbers behind "how much fuel do I need to put
+  // in" (answered wrongly by the cloud on 2026-08-20 for want of them).
+  check('fuel litres carried', s.fuelL === 40 && s.tankL === 80);
+  check('fuel to finish + margin carried', s.fuelToFinishL === 36 && s.fuelDeltaL === 2);
+  check('refuel-to-finish carried', s.refuelToFinishL === 0);
+  check('track and air temps carried', s.trackTempC === 30 && s.airTempC === 22);
+  check('field size carried', s.carsTotal === 3 && s.carsInClass === 3);
 }
 
 console.log('\n2) Unknown sentinels are omitted, not sent as -1');
@@ -109,6 +116,9 @@ console.log('\n2) Unknown sentinels are omitted, not sent as -1');
     }],
   }));
   check('no fuelLaps', s.fuelLaps === undefined);
+  check('no fuel litres', s.fuelL === undefined && s.tankL === undefined);
+  check('no refuel read without a projection', s.refuelToFinishL === undefined);
+  check('no fuel ratio without both burns', s.fuelPerEnergyRatio === undefined);
   check('fuel to flag unknown', s.fuelToFlag === 'unknown');
   check('no last lap', s.lastLapSec === undefined);
   check('no position', s.position === undefined);
@@ -189,6 +199,8 @@ console.log('\n5) rival pace, the pit picture, and burn rates ride the summary')
   check('energy projection carried', s.carsAheadPittingFirst === 1 && s.carsAheadCompared === 2);
   check('fuel burn per lap', s.fuelPerLapL === 2.8);
   check('energy burn per lap', s.energyPerLapPct === 4.6);
+  check('energy percent carried', s.energyPct === 60);
+  check('fuel ratio derived from the burns (2.83/4.62)', s.fuelPerEnergyRatio === 0.61);
 }
 
 console.log('\n6) no history callback means no average fields, not zeros');
