@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.88.0 — 2026-08-23
+
 ### Added
 
 - **The league can answer your suggestions, and you get told.** Feedback used to
