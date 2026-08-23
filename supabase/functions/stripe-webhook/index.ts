@@ -10,6 +10,8 @@
 //   checkout.session.completed                       → first link of user ⇄ sub
 //   customer.subscription.created/updated/deleted    → every later change
 //     (trial→active, payment failed→past_due, cancel→canceled, ...)
+//   invoice.payment_failed / invoice.paid            → what is owed, and the
+//     hosted page to pay it on, so the overdue banner can name a figure
 
 import Stripe from 'npm:stripe@22.4.0';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -62,7 +64,12 @@ Deno.serve(async (req) => {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
-        await upsertFromSubscription(sub);
+        await upsertFromSubscription(sub, undefined, event.created);
+        break;
+      }
+      case 'invoice.payment_failed':
+      case 'invoice.paid': {
+        await recordInvoice(event.data.object as Stripe.Invoice, event.type === 'invoice.paid');
         break;
       }
       default:
@@ -84,22 +91,53 @@ Deno.serve(async (req) => {
  * comes from checkout.session.completed; later events find the row by
  * customer id (set when checkout created the customer) or sub metadata.
  */
-async function upsertFromSubscription(sub: Stripe.Subscription, knownUserId?: string) {
+async function upsertFromSubscription(
+  sub: Stripe.Subscription,
+  knownUserId?: string,
+  eventAtSec?: number,
+) {
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
 
   let userId = knownUserId ?? (sub.metadata?.supabase_user_id || null);
+  let existingPastDueSince: string | null = null;
   if (!userId) {
     const { data } = await db
       .from('billing_subscriptions')
-      .select('user_id')
+      .select('user_id, past_due_since')
       .eq('stripe_customer_id', customerId)
       .maybeSingle();
     userId = data?.user_id ?? null;
+    existingPastDueSince = data?.past_due_since ?? null;
+  } else {
+    const { data } = await db
+      .from('billing_subscriptions')
+      .select('past_due_since')
+      .eq('user_id', userId)
+      .maybeSingle();
+    existingPastDueSince = data?.past_due_since ?? null;
   }
   if (!userId) {
     console.error(`[stripe-webhook] no account for customer ${customerId} — ignoring`);
     return;
   }
+
+  /*
+   * When this run of failed payments began — the clock the 14-day grace window
+   * in entitlement_status() counts from.
+   *
+   * Sticky while past_due: an existing stamp is never overwritten, so the third
+   * retry failing does not hand the driver another fortnight. Cleared the
+   * moment the status is anything else, so a driver who pays, and months later
+   * fails again, starts a fresh window rather than being locked out instantly.
+   *
+   * Stamped from the EVENT's timestamp, not now(): Stripe replays events, and a
+   * replay must not move the deadline.
+   */
+  const pastDueSince =
+    sub.status === 'past_due'
+      ? (existingPastDueSince ??
+        new Date((eventAtSec ?? Math.floor(Date.now() / 1000)) * 1000).toISOString())
+      : null;
 
   // Current API versions keep the billing period on the subscription ITEM;
   // fall back to the legacy top-level fields for safety.
@@ -131,9 +169,44 @@ async function upsertFromSubscription(sub: Stripe.Subscription, knownUserId?: st
     ended_at: sub.ended_at ? new Date(sub.ended_at * 1000).toISOString() : null,
     monthly_pence: monthlyAmount(item?.price),
     currency: item?.price?.currency ?? null,
+    past_due_since: pastDueSince,
+    // Leaving past_due means whatever was owed is settled or gone. Clearing
+    // these here as well as in recordInvoice covers the paths that never send
+    // an invoice event — a cancellation, or an admin voiding the invoice.
+    ...(sub.status === 'past_due' ? {} : { amount_due_pence: null, invoice_url: null }),
     updated_at: new Date().toISOString(),
   });
   if (error) throw new Error(`db upsert: ${error.message}`);
+}
+
+/**
+ * What is currently owed, and where to pay it.
+ *
+ * Only ever UPDATES an existing row — an invoice for a customer we have never
+ * seen is not a reason to invent a subscription record. The subscription events
+ * own the row's lifecycle; this only decorates it.
+ *
+ * `paid` clears the figures rather than writing them, so the banner disappears
+ * the moment the money lands instead of waiting for the subscription event that
+ * follows it.
+ */
+async function recordInvoice(invoice: Stripe.Invoice, paid: boolean) {
+  const customerId =
+    typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+  if (!customerId) return;
+
+  const patch = paid
+    ? { amount_due_pence: null, invoice_url: null }
+    : {
+        amount_due_pence: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
+        invoice_url: invoice.hosted_invoice_url ?? null,
+      };
+
+  const { error } = await db
+    .from('billing_subscriptions')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('stripe_customer_id', customerId);
+  if (error) throw new Error(`db invoice update: ${error.message}`);
 }
 
 /**

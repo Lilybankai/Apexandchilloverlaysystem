@@ -110,6 +110,10 @@ const PANEL_CONTRACT = {
   'adm-churn-chart': 'div',
   'adm-churn-empty': 'p',
   'adm-churn-foot': 'p',
+  'adm-pastdue-card': 'section',
+  'adm-pastdue-count': 'span',
+  'adm-pastdue-list': 'ul',
+  'adm-pastdue-foot': 'p',
   'adm-mrr-tile': 'span',
   'adm-mrr-tile-sub': 'span',
 

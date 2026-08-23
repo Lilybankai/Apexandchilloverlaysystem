@@ -111,6 +111,21 @@
 
   <!-- Banners live OUTSIDE the views on purpose: a failed server start or a
        pending update has to be visible from whichever tab you are on. -->
+
+  <!-- Overdue payment. Above the update banner because losing access beats
+       gaining a feature, and deliberately NOT dismissable: the whole failure
+       this fixes is a driver who never noticed the charge bounced and found
+       out when the app stopped letting them in. -->
+  <div class="overdue-banner" id="overdue-banner" hidden role="alert">
+    <span class="overdue-banner__icon"><svg class="icon"><use href="#i-alert" /></svg></span>
+    <span class="overdue-banner__text">
+      <strong class="overdue-banner__head" id="overdue-head"></strong>
+      <span class="overdue-banner__sub" id="overdue-sub"></span>
+    </span>
+    <button class="btn btn--accent btn--sm" id="overdue-pay" type="button">Pay now</button>
+    <button class="btn btn--ghost btn--sm" id="overdue-manage" type="button">Manage card</button>
+  </div>
+
   <div class="update-banner" id="update-banner" hidden>
     <span class="update-banner__icon">⬆</span>
     <span class="update-banner__text" id="update-text"></span>
@@ -1618,6 +1633,7 @@
             <p class="view__sub">
               Send an idea or report a bug straight from the app. It goes to the
               league with your app version attached, so we can see it in context.
+              If we reply, it pops up here the next time you open the app.
             </p>
           </div>
         </div>
@@ -1930,6 +1946,20 @@
           </div>
           <ul class="admin-bars admin-bars--wide" id="adm-bill-mix"></ul>
           <p class="weekempty" id="adm-bill-mix-empty" hidden>No accounts yet.</p>
+        </section>
+
+        <!-- Failed payments, soonest deadline first. This is the one billing
+             card that is about to COST the league someone, so it sits above
+             the charts: the charts describe what happened, this one is still
+             fixable. Hidden entirely when nobody owes anything, rather than
+             showing a permanent empty box. -->
+        <section class="card" id="adm-pastdue-card" hidden>
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-alert" /></svg>Failed payments</h2>
+            <span class="admin-count" id="adm-pastdue-count"></span>
+          </div>
+          <ul class="admin-inbox" id="adm-pastdue-list"></ul>
+          <p class="admin-foot" id="adm-pastdue-foot"></p>
         </section>
 
         <div class="two-col">
@@ -2504,6 +2534,38 @@
         <svg class="icon"><use href="#i-external-link" /></svg>All releases on GitHub
       </a>
       <button class="btn btn--accent" id="whatsnew-done" type="button">Got it</button>
+    </footer>
+  </section>
+</div>
+
+<!-- ====================== FEEDBACK REPLY =============================
+     The league has answered something this driver sent from the Suggestions
+     tab. Opens by itself when feedback_unread_replies returns anything, and
+     steps through them one at a time — each "Got it" acknowledges that reply
+     server-side and shows the next, so closing half way through leaves the
+     rest waiting rather than burning them.
+
+     Like What's new, every string here is injected with textContent: the
+     reply is text an admin typed, and it must never be able to put markup
+     into the panel.
+     ================================================================= -->
+<div class="sheet" id="fbreply" hidden role="dialog" aria-modal="true" aria-labelledby="fbreply-title">
+  <div class="sheet__scrim" id="fbreply-scrim"></div>
+  <section class="sheet__panel">
+    <header class="sheet__head">
+      <span class="sheet__icon"><svg class="icon"><use href="#i-message-square-plus" /></svg></span>
+      <span class="sheet__titles">
+        <h2 class="sheet__title" id="fbreply-title">The league replied</h2>
+        <p class="sheet__sub" id="fbreply-sub"></p>
+      </span>
+      <button class="iconbtn" id="fbreply-close" type="button" title="Close" aria-label="Close">
+        <svg class="icon"><use href="#i-x" /></svg>
+      </button>
+    </header>
+    <div class="sheet__body" id="fbreply-body"><!-- injected by JS --></div>
+    <footer class="sheet__foot">
+      <span class="sheet__all" id="fbreply-count"></span>
+      <button class="btn btn--accent" id="fbreply-done" type="button">Got it</button>
     </footer>
   </section>
 </div>

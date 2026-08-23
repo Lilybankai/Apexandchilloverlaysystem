@@ -301,6 +301,14 @@ contextBridge.exposeInMainWorld('apex', {
   feedback: {
     /** File one suggestion/bug: `{ kind, message }` → `{ ok, id?, signedOut?, error? }`. */
     submit: (payload) => ipcRenderer.invoke('feedback:submit', payload),
+    /**
+     * League replies this driver has not read: `{ ok, rows[], signedOut? }`.
+     * Signed out comes back as an empty list, not an error — the panel asks
+     * this at boot, before a session necessarily exists.
+     */
+    unreadReplies: () => ipcRenderer.invoke('feedback:unreadReplies'),
+    /** Acknowledge one reply: `{ id }` → `{ ok, error? }`. */
+    markReplySeen: (payload) => ipcRenderer.invoke('feedback:markReplySeen', payload),
   },
 
   /* ---- League schedule (SimGrid) ----
@@ -333,6 +341,20 @@ contextBridge.exposeInMainWorld('apex', {
     users: (query) => ipcRenderer.invoke('admin:users', query),
     /** Triage one item: `{ id, status }` → `{ ok, error? }`. */
     setFeedbackStatus: (payload) => ipcRenderer.invoke('admin:setFeedbackStatus', payload),
+    /**
+     * Answer one item: `{ id, reply, status? }` → `{ ok, error? }`. Passing a
+     * status triages and replies in one go. The driver sees the reply as an
+     * alert the next time the panel opens.
+     */
+    replyFeedback: (payload) => ipcRenderer.invoke('admin:replyFeedback', payload),
+    /** Withdraw a reply: `{ id }` → `{ ok, error? }`. */
+    clearFeedbackReply: (payload) => ipcRenderer.invoke('admin:clearFeedbackReply', payload),
+    /**
+     * Accounts with a failed payment: `{ ok, rows[], signedOut?, error? }`.
+     * Each row carries the server's lockout date and days left, so the list
+     * agrees with the entitlement by construction.
+     */
+    pastDue: () => ipcRenderer.invoke('admin:pastDue'),
     /** Free access: codes issued + comped accounts → `{ ok, data, error? }`. */
     freeAccess: () => ipcRenderer.invoke('admin:freeAccess'),
     /** Cut league codes: `{ count, note }` → `{ ok, codes[], error? }`. */

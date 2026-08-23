@@ -2950,6 +2950,145 @@
     });
   }
 
+  // --- Feedback replies (the league answered you) ---------------------------
+  /*
+   * The return leg of the Suggestions tab. If the league has answered anything
+   * this driver sent and they have not acknowledged it, a sheet opens by itself
+   * on panel start showing their original message and the reply.
+   *
+   * Replies are stepped through one at a time and acknowledged individually, on
+   * "Got it" rather than on open — same reasoning as What's new: a force-quit
+   * part-way through should leave the rest waiting, not swallow them. Closing
+   * with Escape or the scrim acknowledges nothing at all, so the whole batch
+   * comes back next launch.
+   *
+   * The reply is text an admin typed. Everything below builds it with
+   * createElement + textContent for the same reason the release notes do.
+   */
+  const KIND_WORD = { idea: 'idea', bug: 'bug report', other: 'message' };
+
+  const fbSheet = $('#fbreply');
+  const fbSheetBody = $('#fbreply-body');
+  const fbSheetSub = $('#fbreply-sub');
+  const fbSheetCount = $('#fbreply-count');
+  const fbSheetDone = $('#fbreply-done');
+
+  /** The replies still to show this session; index 0 is the one on screen. */
+  let fbReplyQueue = [];
+
+  function renderFbReply(item) {
+    if (!fbSheetBody) return;
+    fbSheetBody.textContent = '';
+
+    const yoursLabel = document.createElement('p');
+    yoursLabel.className = 'fbreply__label';
+    yoursLabel.textContent = `Your ${KIND_WORD[item.kind] || 'message'}`;
+    const yours = document.createElement('p');
+    yours.className = 'fbreply__quote';
+    yours.textContent = item.message || '';
+
+    const answerLabel = document.createElement('p');
+    answerLabel.className = 'fbreply__label';
+    answerLabel.textContent = 'The league replied';
+    const answer = document.createElement('p');
+    answer.className = 'fbreply__answer';
+    answer.textContent = item.reply || '';
+
+    fbSheetBody.append(yoursLabel, yours, answerLabel, answer);
+
+    // The status is only worth showing when it says something a reply does not.
+    if (item.status && item.status !== 'new' && STATUS_LABELS[item.status]) {
+      const status = document.createElement('p');
+      status.className = 'fbreply__meta';
+      status.textContent = `Marked "${STATUS_LABELS[item.status]}".`;
+      fbSheetBody.append(status);
+    }
+
+    if (fbSheetSub) {
+      const when = item.replied_at ? new Date(item.replied_at) : null;
+      fbSheetSub.textContent =
+        when && !Number.isNaN(when.getTime()) ? formatAgo(when.getTime()) : '';
+    }
+    if (fbSheetCount) {
+      fbSheetCount.textContent =
+        fbReplyQueue.length > 1 ? `1 of ${fbReplyQueue.length}` : '';
+    }
+    if (fbSheetDone) {
+      fbSheetDone.textContent = fbReplyQueue.length > 1 ? 'Got it — next' : 'Got it';
+    }
+    fbSheetBody.scrollTop = 0;
+  }
+
+  function showNextFbReply() {
+    if (!fbSheet) return;
+    if (!fbReplyQueue.length) {
+      fbSheet.hidden = true;
+      return;
+    }
+    renderFbReply(fbReplyQueue[0]);
+    fbSheet.hidden = false;
+    if (fbSheetDone) fbSheetDone.focus();
+  }
+
+  /**
+   * Acknowledge the one on screen and move on.
+   *
+   * The row is dropped from the queue whether or not the call succeeded: a
+   * failed acknowledgement means the server still has it unread, so it comes
+   * back next launch, which is the right outcome. Blocking the sheet on a
+   * network error would trap the driver behind an alert they cannot dismiss.
+   */
+  async function ackFbReply() {
+    const item = fbReplyQueue.shift();
+    if (item) {
+      try {
+        await window.apex.feedback.markReplySeen({ id: item.id });
+      } catch {
+        /* still unread server-side — it will be offered again */
+      }
+    }
+    showNextFbReply();
+  }
+
+  if (fbSheetDone) fbSheetDone.addEventListener('click', ackFbReply);
+  for (const sel of ['#fbreply-close', '#fbreply-scrim']) {
+    const el = $(sel);
+    // Dismissing without "Got it" acknowledges nothing: the batch returns.
+    if (el) el.addEventListener('click', () => { if (fbSheet) fbSheet.hidden = true; });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && fbSheet && !fbSheet.hidden) fbSheet.hidden = true;
+  });
+
+  /**
+   * Ask for unread replies and open the sheet if there are any.
+   *
+   * Called at start and again after a sign-in, because at boot there is very
+   * often no session yet. Signed out comes back as an empty list, so nothing
+   * here has to special-case it. Never opens over another sheet — What's new
+   * after an update gets the screen first, and this waits for the next launch.
+   */
+  async function checkFeedbackReplies() {
+    if (!fbSheet || !fbSheet.hidden) return;
+    // Both sheets want the screen at boot. Wait for the release-notes decision
+    // rather than racing it, then stand down if they took it.
+    try {
+      await whatsnewDecided;
+    } catch {
+      /* the changelog block swallows its own errors; this is belt and braces */
+    }
+    if (sheet && !sheet.hidden) return;
+    try {
+      const res = await window.apex.feedback.unreadReplies();
+      const rows = res && res.ok && Array.isArray(res.rows) ? res.rows : [];
+      if (!rows.length) return;
+      fbReplyQueue = rows;
+      showNextFbReply();
+    } catch {
+      /* the Suggestions tab still works; nothing to say about a failed poll */
+    }
+  }
+
   // --- Admin panel ---------------------------------------------------------
   /*
    * League-staff view. The tab is revealed only when admin:whoami confirms this
@@ -3430,7 +3569,206 @@
       }
     });
 
-    li.append(badge, mid, select);
+    li.append(badge, mid, select, buildFeedbackReply(row, select));
+    return li;
+  }
+
+  /**
+   * The reply row under one inbox item: what was already said, and the box to
+   * say it.
+   *
+   * Sending a reply also carries whatever the status dropdown is currently
+   * showing, so answering "yes, this is planned" is one action instead of two.
+   * It re-renders in place rather than reloading the whole tab: a reload would
+   * throw away every other half-typed reply on screen.
+   */
+  function buildFeedbackReply(row, statusSelect) {
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-item__reply';
+
+    const existing = document.createElement('p');
+    existing.className = 'admin-item__replied';
+    const meta = document.createElement('p');
+    meta.className = 'admin-item__replymeta';
+
+    const box = document.createElement('textarea');
+    box.className = 'field__input admin-item__replybox';
+    box.rows = 2;
+
+    const send = document.createElement('button');
+    send.className = 'btn btn--accent';
+    send.type = 'button';
+
+    const remove = document.createElement('button');
+    remove.className = 'btn btn--ghost';
+    remove.type = 'button';
+    remove.textContent = 'Remove reply';
+
+    const row2 = document.createElement('div');
+    row2.className = 'admin-item__replyrow';
+    row2.append(send, remove);
+
+    /** Paint everything that depends on whether a reply exists yet. */
+    function paint() {
+      const has = !!row.reply;
+      existing.hidden = !has;
+      meta.hidden = !has;
+      remove.hidden = !has;
+      existing.textContent = row.reply || '';
+      box.placeholder = has ? 'Edit the reply…' : 'Reply to this driver…';
+      send.textContent = has ? 'Update reply' : 'Send reply';
+      if (has) {
+        const when = row.replied_at ? new Date(row.replied_at) : null;
+        const whenTxt = when && !Number.isNaN(when.getTime()) ? formatAgo(when.getTime()) : '';
+        const seen = !!row.reply_seen_at;
+        meta.setAttribute('data-seen', seen ? 'yes' : 'no');
+        meta.textContent = [
+          row.replied_by ? `Replied by ${row.replied_by}` : 'Replied',
+          whenTxt,
+          seen ? 'read by the driver' : 'not read yet',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+      }
+    }
+    paint();
+
+    send.addEventListener('click', async () => {
+      const text = box.value.trim();
+      if (!text) {
+        showToast('Write a reply first.');
+        box.focus();
+        return;
+      }
+      send.disabled = true;
+      remove.disabled = true;
+      try {
+        const res = await window.apex.admin.replyFeedback({
+          id: row.id,
+          reply: text,
+          status: statusSelect ? statusSelect.value : undefined,
+        });
+        if (!res || !res.ok) {
+          showToast((res && res.error) || 'Could not send the reply.');
+          return;
+        }
+        // Mirror what the server just did, so the item reads correctly without
+        // a refetch. `replied_by` is left alone: the list join fills it in on
+        // the next load, and guessing the admin's own display name here is how
+        // the panel starts disagreeing with the database.
+        row.reply = text;
+        row.replied_at = new Date().toISOString();
+        row.reply_seen_at = null;
+        if (statusSelect) row.status = statusSelect.value;
+        box.value = '';
+        paint();
+        showToast('Reply sent — the driver sees it next time they open the app.');
+      } finally {
+        send.disabled = false;
+        remove.disabled = false;
+      }
+    });
+
+    remove.addEventListener('click', async () => {
+      send.disabled = true;
+      remove.disabled = true;
+      try {
+        const res = await window.apex.admin.clearFeedbackReply({ id: row.id });
+        if (!res || !res.ok) {
+          showToast((res && res.error) || 'Could not remove the reply.');
+          return;
+        }
+        row.reply = null;
+        row.replied_at = null;
+        row.replied_by = null;
+        row.reply_seen_at = null;
+        paint();
+        showToast('Reply removed.');
+      } finally {
+        send.disabled = false;
+        remove.disabled = false;
+      }
+    });
+
+    wrap.append(existing, meta, box, row2);
+    return wrap;
+  }
+
+  /**
+   * Accounts whose card has failed, soonest deadline first.
+   *
+   * A to-do list rather than a statistic, so the card hides itself entirely
+   * when it is empty instead of sitting there saying zero. `days_left` and
+   * `lockout_at` both come from the server — the same expression that decides
+   * entitlement — so this list cannot drift from who is actually locked out.
+   */
+  function renderAdminPastDue(rows) {
+    const card = $('#adm-pastdue-card');
+    const list = $('#adm-pastdue-list');
+    const count = $('#adm-pastdue-count');
+    const foot = $('#adm-pastdue-foot');
+    if (!card || !list) return;
+
+    card.hidden = !rows.length;
+    list.textContent = '';
+    if (!rows.length) return;
+
+    const lost = rows.filter((r) => r.locked_out).length;
+    if (count) {
+      count.textContent = lost
+        ? `${rows.length} overdue · ${lost} locked out`
+        : `${rows.length} overdue`;
+    }
+
+    let owed = 0;
+    for (const row of rows) {
+      if (typeof row.amount_due_pence === 'number') owed += row.amount_due_pence;
+      list.append(buildPastDueItem(row));
+    }
+    if (foot) {
+      foot.textContent = owed
+        ? `${money(owed)} outstanding in total. Chasing is manual — the app locks them out on its own.`
+        : 'The app locks these accounts out on its own once the window closes.';
+    }
+  }
+
+  function buildPastDueItem(row) {
+    const li = document.createElement('li');
+    li.className = 'pastdue-item';
+
+    const left = document.createElement('div');
+    const who = document.createElement('p');
+    who.className = 'pastdue-item__who';
+    const amount = money(row.amount_due_pence);
+    who.textContent = amount ? `${row.driver || 'Driver'} — ${amount}` : row.driver || 'Driver';
+
+    const meta = document.createElement('p');
+    meta.className = 'pastdue-item__meta';
+    const since = row.past_due_since ? new Date(row.past_due_since) : null;
+    const sinceTxt = since && !Number.isNaN(since.getTime()) ? formatAgo(since.getTime()) : '';
+    meta.textContent = [
+      sinceTxt ? `Failed ${sinceTxt}` : '',
+      row.lockout_at ? `access ${row.locked_out ? 'ended' : 'ends'} ${longDate(row.lockout_at)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    left.append(who, meta);
+
+    const days = document.createElement('span');
+    days.className = 'pastdue-item__left';
+    const d = typeof row.days_left === 'number' ? row.days_left : null;
+    if (row.locked_out) {
+      days.setAttribute('data-state', 'gone');
+      days.textContent = 'LOCKED OUT';
+    } else if (d === null) {
+      days.setAttribute('data-state', 'soon');
+      days.textContent = '—';
+    } else {
+      days.setAttribute('data-state', d <= 2 ? 'urgent' : d <= 7 ? 'soon' : 'ok');
+      days.textContent = d <= 1 ? '1 day left' : `${d} days left`;
+    }
+
+    li.append(left, days);
     return li;
   }
 
@@ -3449,12 +3787,13 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free, billing] = await Promise.all([
+      const [overview, feedback, users, free, billing, pastDue] = await Promise.all([
         window.apex.admin.overview(),
         window.apex.admin.feedback({ status: filter ? filter.value : '' }),
         window.apex.admin.users(adminUsersQuery()),
         window.apex.admin.freeAccess(),
         window.apex.admin.billing(),
+        window.apex.admin.pastDue(),
       ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
@@ -3469,6 +3808,7 @@
       renderAdminUsers(users && users.ok ? users.rows : []);
       renderFreeAccess(free && free.ok ? free.data : null);
       renderAdminBilling(billing && billing.ok ? billing.data : null);
+      renderAdminPastDue(pastDue && pastDue.ok ? pastDue.rows : []);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
@@ -4306,6 +4646,9 @@
   }
 
   function renderBilling(b) {
+    // Before any early return: the banner lives outside the card, and a driver
+    // signing out must not leave a stale "pay by the 4th" bar on screen.
+    renderOverdueBanner(b);
     if (!subCard) return;
     subCard.hidden = !authSignedIn || !b;
     if (subCard.hidden) return;
@@ -4331,14 +4674,115 @@
         ? 'Cancellation booked; access runs to the end of the paid period.'
         : '£4.99/month. Manage the card, see invoices or cancel any time.';
     } else if (b.status === 'past_due') {
-      status = 'Payment problem';
-      hint = 'The last charge failed — update your card under Manage subscription to keep access.';
+      const owed = money(b.amountDuePence);
+      status = owed ? `Payment overdue — ${owed}` : 'Payment overdue';
+      hint = b.lockoutAt
+        ? `The charge failed. Pay by ${longDate(b.lockoutAt)} or the app locks.`
+        : 'The last charge failed — update your card under Manage subscription to keep access.';
     }
     if (subPlanStatus) subPlanStatus.textContent = status;
     if (subHint) subHint.textContent = hint;
     // No Stripe customer means nothing for the portal to show (league comps
     // that never started a trial) — the button would only 404 at them.
     if (subManageBtn) subManageBtn.hidden = !b.hasCustomer;
+  }
+
+  /* ---- Overdue payment banner ----
+   *
+   * Shown on every tab, not just Settings → Account, and not dismissable. The
+   * failure this exists for is a driver who never noticed the charge bounced
+   * and discovered it when the app stopped opening — so it has to be somewhere
+   * they cannot help but see, and it has to name the date.
+   *
+   * The deadline is the SERVER's `lockoutAt`. Nothing here recomputes it from
+   * a grace-period constant: the banner and the lock must never disagree.
+   */
+  const overdueBanner = $('#overdue-banner');
+  const overdueHead = $('#overdue-head');
+  const overdueSub = $('#overdue-sub');
+  const overduePay = $('#overdue-pay');
+  const overdueManage = $('#overdue-manage');
+
+  /** Pence → "£4.99". Null when there is no figure to quote. */
+  function money(pence) {
+    if (typeof pence !== 'number' || !Number.isFinite(pence)) return '';
+    return `£${(pence / 100).toFixed(2)}`;
+  }
+
+  /** "4 September" — a date you can act on, not a bare "in 12 days". */
+  function longDate(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime())
+      ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })
+      : '';
+  }
+
+  /** Whole days from now until `iso`, rounded up. Negative once it has passed. */
+  function daysUntil(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return Math.ceil((d.getTime() - Date.now()) / 86400000);
+  }
+
+  function renderOverdueBanner(b) {
+    if (!overdueBanner) return;
+    // A comp outranks a broken card: a league member on free access has no
+    // Stripe charge to fix, so nagging them about one would be nonsense.
+    const show = !!(b && authSignedIn && b.status === 'past_due' && b.source !== 'free');
+    overdueBanner.hidden = !show;
+    if (!show) return;
+
+    const owed = money(b.amountDuePence);
+    const left = daysUntil(b.lockoutAt);
+    const when = longDate(b.lockoutAt);
+
+    if (left !== null && left <= 0) {
+      // Past the deadline. The server has already stopped entitling this
+      // account, so the banner stops warning and starts explaining.
+      overdueBanner.setAttribute('data-urgent', 'true');
+      overdueHead.textContent = owed
+        ? `Your subscription has lapsed — ${owed} outstanding`
+        : 'Your subscription has lapsed';
+      overdueSub.textContent = 'Pay the outstanding invoice to get straight back in.';
+    } else {
+      overdueBanner.setAttribute('data-urgent', left !== null && left <= 2 ? 'true' : 'false');
+      overdueHead.textContent = owed
+        ? `Payment failed — ${owed} outstanding`
+        : 'Your last payment failed';
+      const deadline = when
+        ? left === null
+          ? `Access ends ${when}.`
+          : left <= 1
+            ? `Access ends tomorrow (${when}).`
+            : `Access ends in ${left} days, on ${when}.`
+        : 'Access will end shortly.';
+      overdueSub.textContent = `${deadline} Update your card to keep racing.`;
+    }
+
+    // "Pay now" goes straight to the hosted invoice — one page, one card, done.
+    // Without one the portal is the only route, so the button would dead-end.
+    if (overduePay) overduePay.hidden = !b.invoiceUrl;
+    if (overdueManage) overdueManage.hidden = !b.hasCustomer;
+  }
+
+  if (overduePay) {
+    overduePay.addEventListener('click', async () => {
+      const b = await window.apex.billing.status();
+      if (b && b.invoiceUrl) window.apex.openInBrowser(b.invoiceUrl);
+      else showToast('No invoice to open — use Manage card instead.');
+    });
+  }
+  if (overdueManage) {
+    overdueManage.addEventListener('click', async () => {
+      overdueManage.disabled = true;
+      try {
+        const res = await window.apex.billing.portal();
+        if (!res || !res.ok) showToast((res && res.error) || 'Could not open the billing page.');
+        else showToast('Billing opened in your browser.');
+      } finally {
+        overdueManage.disabled = false;
+      }
+    });
   }
 
   async function refreshBilling() {
@@ -4396,6 +4840,9 @@
     accountInitials.textContent = user.initials;
     accountName.textContent = user.displayName;
     accountEmail.textContent = user.email;
+    // A driver who signs in after the panel is already open has not been asked
+    // for unread replies yet — the boot check ran with no session.
+    void checkFeedbackReplies();
   }
 
   signOutBtn.addEventListener('click', async () => {
@@ -5361,6 +5808,8 @@
     if (sheet.hidden) return;
     sheet.hidden = true;
     void window.apex.changelog.markSeen();
+    // Anything the league replied to was held back while these were open.
+    void checkFeedbackReplies();
   }
 
   for (const sel of ['#whatsnew-close', '#whatsnew-done', '#whatsnew-scrim']) {
@@ -5387,7 +5836,12 @@
   }
 
   // The one automatic appearance: first launch on a new version.
-  window.apex.changelog
+  //
+  // Held as a promise because the feedback-reply sheet has to wait on it: both
+  // want the screen at boot, and whichever resolved first would otherwise open
+  // over the other. Release notes win, and the reply sheet follows once they
+  // are closed (see closeSheet).
+  const whatsnewDecided = window.apex.changelog
     .pending()
     .then((p) => {
       if (p && p.show) openSheet({ mode: 'updated', ...p });
@@ -5537,4 +5991,7 @@
   // Same for the lap history — files on disk, not part of app state.
   refreshWeek();
   refreshLapSync();
+  // Anything the league has answered since this driver last looked. Waits on
+  // the release-notes decision internally, so the two never open together.
+  void checkFeedbackReplies();
 })();

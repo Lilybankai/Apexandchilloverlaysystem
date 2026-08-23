@@ -181,6 +181,24 @@ async function afterPack(context) {
   }
 }
 
+// NSIS stores a shortcut's description in a MAX_PATH buffer, so anything past
+// 259 characters is written to the .lnk with a length prefix that no longer
+// matches the bytes actually stored. Every length-prefixed string AFTER it --
+// including the icon location -- then parses from a shifted offset, and the
+// shell falls back to the blank-document icon. The shortcut still launches,
+// because the target path is stored before the description, which is what makes
+// this fail so quietly. electron-builder takes this string from package.json's
+// `description`, so guard it here rather than trusting a comment nobody reads.
+const NSIS_DESCRIPTION_LIMIT = 259;
+const appDescription = require('./package.json').description || '';
+if (appDescription.length > NSIS_DESCRIPTION_LIMIT) {
+  throw new Error(
+    `package.json "description" is ${appDescription.length} characters; NSIS ` +
+      `truncates past ${NSIS_DESCRIPTION_LIMIT} and corrupts the shortcut icon. ` +
+      'Shorten it.',
+  );
+}
+
 module.exports = {
   // appId is the app's *identity* to NSIS (the uninstall GUID is derived from
   // it) and must survive the rename to "Apex AIO System" — changing it would

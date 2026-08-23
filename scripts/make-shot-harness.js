@@ -49,6 +49,10 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     }
   } catch (e) { /* storage disabled: the harness still loads, on the default tab */ }
 
+  // Read again out here: the block above runs inside a try, so its \`q\` is not
+  // in scope for the stub object below, which also wants query flags.
+  const q = new URLSearchParams(location.search);
+
   const noopUnsub = () => () => {};
   const P = (v) => () => Promise.resolve(v);
   const rows = ['Pit request', 'Traction control +', 'Traction control -', 'ABS +', 'ABS -',
@@ -92,9 +96,21 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       requestReset: P({ ok: true }), resetPassword: P({ ok: true }), signOut: P({ ok: true }),
       deleteAccount: P({ ok: true }), enterApp: P({ ok: true, entitled: true }), showAuth: P({}), onChange: noopUnsub },
     legal: { open: P({ ok: true }) },
-    billing: { status: P({ entitled: true, source: 'free', freeReason: 'league', hasCustomer: false }),
+    // ?overdue=<days-left> renders the past-due banner; 0 or less = locked out.
+    billing: { status: P(q.get('overdue') === null
+      ? { entitled: true, source: 'free', freeReason: 'league', hasCustomer: false }
+      : { entitled: Number(q.get('overdue')) > 0, source: 'stripe', freeReason: null,
+          status: 'past_due', hasCustomer: true, graceDays: 14, amountDuePence: 499,
+          invoiceUrl: 'https://invoice.stripe.com/example',
+          lockoutAt: new Date(Date.now() + Number(q.get('overdue')) * 86400000).toISOString() }),
       checkout: P({ ok: true }), portal: P({ ok: true }), redeemCode: P({ ok: true }), onChange: noopUnsub },
-    feedback: { submit: P({ ok: true }) },
+    // ?replies=1 seeds one unread league reply, so the alert sheet can be shot.
+    feedback: { submit: P({ ok: true }), markReplySeen: P({ ok: true }),
+      unreadReplies: P({ ok: true, rows: q.get('replies') ? [
+        { id: 1, kind: 'idea', status: 'planned', replied_at: '2026-08-22T09:00:00.000Z',
+          message: 'Could the fuel tab show laps remaining as well as litres?',
+          reply: 'Good shout — it is going in the next build. Thanks for sending it.' },
+      ] : [] }) },
     schedule: { get: P({ ok: true, fetchedAt: '2026-08-21T17:00:00.000Z', leagues: [
       { id: 25619, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3',
         name: 'LMU Apex And Chill Thursday League LMP2 & GT3', game: 'Le Mans Ultimate',
@@ -139,7 +155,28 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
             track: { name: 'Bahrain (WEC)', photo: null } }
         ] }
     ] }) },
-    admin: { whoami: P({ ok: true, isAdmin: true }), overview: P({ ok: false }), feedback: P({ ok: true, rows: [] }),
+    admin: { whoami: P({ ok: true, isAdmin: true }), overview: P({ ok: false }),
+      feedback: P({ ok: true, rows: [
+        { id: 1, kind: 'idea', status: 'planned', driver: 'Mark Slater', app_version: '0.87.0',
+          created_at: '2026-08-21T18:30:00.000Z', updated_at: '2026-08-22T09:00:00.000Z',
+          message: 'Could the fuel tab show laps remaining as well as litres?',
+          reply: 'Good shout — it is going in the next build. Thanks for sending it.',
+          replied_at: '2026-08-22T09:00:00.000Z', reply_seen_at: null, replied_by: 'Carl' },
+        { id: 2, kind: 'bug', status: 'new', driver: 'Driver', app_version: '0.86.0',
+          created_at: '2026-08-22T20:10:00.000Z', updated_at: '2026-08-22T20:10:00.000Z',
+          message: 'Radar disappears in the rain at Spa.',
+          reply: null, replied_at: null, reply_seen_at: null, replied_by: '' },
+      ] }),
+      replyFeedback: P({ ok: true }), clearFeedbackReply: P({ ok: true }),
+      // ?pastdue=1 fills the Failed payments card: one inside the window, one gone.
+      pastDue: P({ ok: true, rows: q.get('pastdue') ? [
+        { user_id: 'a', driver: 'Mark Slater', past_due_since: '2026-08-21T13:47:55.000Z',
+          lockout_at: '2026-09-04T13:47:55.000Z', days_left: 13, amount_due_pence: 499,
+          locked_out: false },
+        { user_id: 'b', driver: 'Sam Rivers', past_due_since: '2026-08-01T09:00:00.000Z',
+          lockout_at: '2026-08-15T09:00:00.000Z', days_left: -8, amount_due_pence: 499,
+          locked_out: true },
+      ] : [] }),
       users: P({ ok: true, rows: [] }), setFeedbackStatus: P({ ok: true }), freeAccess: P({ ok: false }),
       issueCodes: P({ ok: false }), revokeFree: P({ ok: false }), grantFree: P({ ok: false }), billing: P({ ok: false }) },
     chatLink: { status: P({ twitchChannel: '', twitchLinked: false, youTubeConfigured: true, youTubeLinked: false }),
@@ -147,6 +184,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       linkTwitch: P({ ok: true }), unlinkTwitch: P({ ok: true }), onChange: noopUnsub },
     streamBot: { get: P({ enabled: false, platforms: {}, commands: [], timers: [], alerts: { templates: {} }, goals: [], youtubeBudget: {} }),
       update: P({ ok: true }), setEnabled: P({ ok: true }), goalAdjust: P({ ok: true }), onChange: noopUnsub },
+    // The boot block calls these last. Missing, they throw and take the rest of
+    // boot down with them — including anything added to the end of it later.
+    lapsSyncState: P({ status: 'idle', pending: 0 }), onLapSync: noopUnsub,
     onStatus: noopUnsub, onSettings: noopUnsub,
     getUpdateState: P({ state: 'none', current: 'dev', channel: 'stable', statusText: 'Up to date on the stable channel.' }),
     checkForUpdate: P({}), setUpdateChannel: P({}), downloadUpdate: P({}), installUpdate: P({}), onUpdate: noopUnsub,

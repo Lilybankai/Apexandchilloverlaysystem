@@ -496,7 +496,8 @@ html, body {
 /* =============================== BANNERS ================================ */
 
 .update-banner,
-.error-banner {
+.error-banner,
+.overdue-banner {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -505,6 +506,24 @@ html, body {
   border: 1px solid var(--line-2);
   background: var(--panel-2);
 }
+
+/* Overdue payment ------------------------------------------------------------
+   Warmer than the update banner and colder than an error, because that is what
+   it is: nothing is broken yet, but something will be. On the last two days it
+   flips to --bad via [data-urgent], which is the only styling difference — the
+   words carry the rest. */
+.overdue-banner {
+  border-color: rgba(255, 157, 107, 0.55);
+  background: linear-gradient(0deg, rgba(255, 157, 107, 0.06), rgba(255, 157, 107, 0.06)),
+    var(--panel-2);
+}
+.overdue-banner[data-urgent="true"] { border-color: rgba(255, 84, 112, 0.6); }
+.overdue-banner__icon { display: inline-flex; color: #ff9d6b; }
+.overdue-banner[data-urgent="true"] .overdue-banner__icon { color: var(--bad); }
+.overdue-banner__icon .icon { width: 18px; height: 18px; }
+.overdue-banner__text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.overdue-banner__head { font-size: 13px; color: var(--text); }
+.overdue-banner__sub { font-size: 12px; color: var(--text-3); }
 
 .update-banner__icon { color: var(--cyan); font-weight: 700; }
 .update-banner__text { flex: 1; color: var(--text-2); }
@@ -991,6 +1010,39 @@ html, body {
 .admin-row__last[data-never="true"] { color: var(--text-3); font-style: italic; }
 .admin-foot { margin: 10px 0 0; font-size: 11px; color: var(--text-3); }
 
+/* Failed payments -------------------------------------------------------------
+   Same row shell as the feedback inbox, but the right-hand column is a
+   countdown rather than a control: this card is read, not operated. The whole
+   point is that "3 days left" and "locked out" look different at a glance from
+   across the room, so the countdown carries the colour, not the row. */
+.admin-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.pastdue-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.pastdue-item__who { margin: 0; font-size: 13px; color: var(--text); }
+.pastdue-item__meta { margin: 3px 0 0; font-size: 11px; color: var(--text-3); }
+.pastdue-item__left {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+/* Inside a week: amber. Final 48 hours or already gone: red. */
+.pastdue-item__left[data-state="soon"] { color: #ff9d6b; }
+.pastdue-item__left[data-state="urgent"],
+.pastdue-item__left[data-state="gone"] { color: var(--bad); }
+
 /* The roster carries a fourth column — the access control — so it overrides the
    shared three-column track. Everything else using .admin-table (the codes
    list) keeps the original grid. */
@@ -1054,6 +1106,68 @@ html, body {
 .admin-item__text { margin: 0; font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .admin-item__meta { margin: 4px 0 0; font-size: 11px; color: var(--text-3); }
 .admin-item__status { width: 130px; }
+
+/* Feedback replies ------------------------------------------------------------
+   The admin inbox item grows a third row: what the league already said, and the
+   box to say it. The item is a grid (badge | message | status), so the reply
+   spans the full width underneath rather than squeezing the message column.  */
+.admin-item__reply {
+  /* The item is a 3-column grid with a 12px gap; the gap is the spacing above
+     this row, so it only needs the rule and a little breathing room under it. */
+  grid-column: 1 / -1;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-2);
+  display: grid;
+  gap: 6px;
+}
+.admin-item__replied {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid var(--cyan);
+  padding-left: 8px;
+}
+/* Unread is the state worth seeing at a glance: it means the driver has not
+   opened the app since the answer went out, so "no response" is not a sign
+   nobody replied. */
+.admin-item__replymeta { margin: 0; font-size: 11px; color: var(--text-3); }
+.admin-item__replymeta[data-seen="no"] { color: var(--cyan); }
+.admin-item__replybox { width: 100%; min-height: 54px; resize: vertical; font-size: 12px; }
+.admin-item__replyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* The driver-side sheet: their message, then the answer to it. */
+.fbreply__label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.fbreply__quote {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.fbreply__answer {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--cyan);
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.fbreply__meta { margin: 8px 0 0; font-size: 11px; color: var(--text-3); }
 
 /* Telemetry plugin card -------------------------------------------------------
    The failing row has to look failing. This card exists for one silent fault

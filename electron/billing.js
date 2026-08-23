@@ -84,6 +84,14 @@ function snapshot() {
     trialEnd: c.trialEnd || null,
     currentPeriodEnd: c.currentPeriodEnd || null,
     hasCustomer: !!c.hasCustomer,
+    // The overdue-payment fields. Null unless status is past_due; `lockoutAt`
+    // is the server's deadline, not one this process works out, so the banner
+    // and the entitlement can never disagree about the date.
+    pastDueSince: c.pastDueSince || null,
+    lockoutAt: c.lockoutAt || null,
+    graceDays: typeof c.graceDays === 'number' ? c.graceDays : null,
+    amountDuePence: typeof c.amountDuePence === 'number' ? c.amountDuePence : null,
+    invoiceUrl: c.invoiceUrl || null,
     checkedAt: c.checkedAt || 0,
   };
 }
@@ -114,6 +122,11 @@ async function refresh({ maxAgeMs = 0 } = {}) {
           trialEnd: b.trialEnd || null,
           currentPeriodEnd: b.currentPeriodEnd || null,
           hasCustomer: !!b.hasCustomer,
+          pastDueSince: b.pastDueSince || null,
+          lockoutAt: b.lockoutAt || null,
+          graceDays: typeof b.graceDays === 'number' ? b.graceDays : null,
+          amountDuePence: typeof b.amountDuePence === 'number' ? b.amountDuePence : null,
+          invoiceUrl: b.invoiceUrl || null,
           checkedAt: Date.now(),
         };
         writeCache();

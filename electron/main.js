@@ -3016,6 +3016,29 @@ function registerIpc() {
   });
 
   /**
+   * Replies the league has written that this driver has not read yet.
+   *
+   * Called on panel start and again after a sign-in, which is why a signed-out
+   * result is reported as an empty list rather than an error: at boot there is
+   * very often no session yet, and an unread check is not something to put a
+   * red message on screen about.
+   */
+  ipcMain.handle('feedback:unreadReplies', async () => {
+    const res = await authService.rpc('feedback_unread_replies', {});
+    if (!res.ok) return { ok: false, signedOut: !!res.signedOut, rows: [] };
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /** Acknowledge one reply, so it stops being offered. */
+  ipcMain.handle('feedback:markReplySeen', async (_evt, payload) => {
+    const id = Number((payload || {}).id);
+    if (!Number.isFinite(id)) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('feedback_mark_reply_seen', { p_id: id });
+    if (!res.ok) return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Failed.' };
+    return { ok: true };
+  });
+
+  /**
    * League calendar for the Schedule tab: Thursday + Saturday championships
    * from SimGrid. The Bearer token stays in electron/simgrid.js; this handler
    * only ever returns names, times and https signup URLs.
@@ -3111,6 +3134,72 @@ function registerIpc() {
       };
     }
     return { ok: true };
+  });
+
+  /**
+   * Answer one feedback item, optionally moving its status in the same call.
+   *
+   * The reply is clamped to the same 4000 characters as the message it answers
+   * — the RPC clamps too, but a renderer that has already lost the tail is a
+   * clearer bug than a server that silently truncated.
+   */
+  ipcMain.handle('admin:replyFeedback', async (_evt, payload) => {
+    const p = payload || {};
+    const id = Number(p.id);
+    const reply = typeof p.reply === 'string' ? p.reply.trim() : '';
+    const status = ['new', 'planned', 'in_progress', 'done', 'declined'].includes(p.status)
+      ? p.status
+      : null;
+    if (!Number.isFinite(id)) return { ok: false, error: 'bad arguments' };
+    if (!reply) return { ok: false, error: 'Write a reply first.' };
+    const res = await authService.rpc('admin_feedback_reply', {
+      p_id: id,
+      p_reply: reply.slice(0, 4000),
+      p_status: status,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not send the reply.',
+      };
+    }
+    return { ok: true };
+  });
+
+  /** Withdraw a reply — for the one sent against the wrong item. */
+  ipcMain.handle('admin:clearFeedbackReply', async (_evt, payload) => {
+    const id = Number((payload || {}).id);
+    if (!Number.isFinite(id)) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_feedback_clear_reply', { p_id: id });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Could not remove the reply.',
+      };
+    }
+    return { ok: true };
+  });
+
+  /**
+   * Accounts whose card has failed, soonest deadline first.
+   *
+   * Rows carry the deadline the SERVER computed, not a day count worked out
+   * here — the same rule that decides entitlement, so the admin list and the
+   * lock can never tell different stories.
+   */
+  ipcMain.handle('admin:pastDue', async () => {
+    const res = await authService.rpc('admin_billing_past_due', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
   });
 
   /* ---- Admin: free access (league comps + voucher codes, v0.69.0) ---- */

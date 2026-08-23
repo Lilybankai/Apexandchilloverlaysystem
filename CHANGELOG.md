@@ -4,6 +4,57 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **The league can answer your suggestions, and you get told.** Feedback used to
+  be a drop box: you sent an idea, it got a status, and you never heard anything
+  back. Staff can now write a reply against any item in the Admin tab's Feedback
+  inbox — sending it also sets the status, so "yes, this is planned" is one
+  action — and the next time that driver opens the app a card shows them their
+  original message and the answer. Several replies are stepped through one at a
+  time. A reply is only marked read when the driver presses **Got it**, so
+  closing the app half way through leaves the rest waiting.
+- The inbox shows what was already said against each item, who said it, and
+  whether the driver has read it yet — so an unanswered-looking item is not
+  answered twice, and silence after a reply reads as "not opened the app since"
+  rather than "ignored me".
+
+- **A failed payment now has a visible deadline instead of a silent one.** If a
+  charge bounces, a banner sits across the top of every tab — what is owed, the
+  exact date access ends, and a **Pay now** button that opens the outstanding
+  invoice. It cannot be dismissed, because the whole failure it exists for is a
+  driver who never noticed the charge failed and found out when the app stopped
+  letting them in. The last two days turn it red.
+- **Overdue subscriptions now lapse after 14 days.** `past_due` used to keep
+  full access indefinitely — the grace window had a start but no end, so a card
+  that died in January still worked in June. It is now 14 days from the first
+  failed payment, counted by us rather than inherited from whatever Stripe's
+  retry settings happen to be. Paying at any point during the window clears it
+  completely, and a later failure starts a fresh 14 days rather than picking up
+  where the old one left off.
+- **A Failed payments card in the Admin tab's Billing section**, soonest
+  deadline first: who owes what, how long they have left, and who has already
+  lapsed. It hides itself when nobody owes anything, and the days-left figure
+  comes from the same expression that decides entitlement, so the list can
+  never disagree with who is actually locked out.
+- **The Billing numbers count lapsed accounts as lapsed.** An overdue account
+  past its deadline used to still read as a live subscription on the mix chart
+  and sort among the paying members on the roster, because only the entitlement
+  had been taught about the deadline. There is now one function that decides
+  what a live subscription is, and the entitlement, the mix and the roster all
+  ask it. Revenue is unchanged — it only ever counted accounts that had actually
+  paid.
+
+### Fixed
+
+- **The app's icon vanished from the Start menu and desktop shortcuts.** The
+  rename to Apex AIO System pushed the description NSIS writes into the shortcut
+  past its 259-character limit. The truncated string desynced every length-
+  prefixed field after it — including the icon path — so Windows fell back to
+  the blank-document icon. The shortcut still launched, which is what made it so
+  quiet. The description is short again and the build now refuses to run if it
+  ever grows back past the limit.
+
 ## 0.87.0 — 2026-08-22
 
 ### Added
