@@ -1507,53 +1507,120 @@
 
         <div id="team-live" hidden>
           <div class="team-session" id="team-session"></div>
-          <!-- Two independent column stacks (same trick as .fuel-grid): cards
-               of very different heights never hollow out a shared grid row. -->
-          <div class="team-grid">
-            <div class="team-col">
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Fuel &amp; energy</h2>
-                </div>
-                <div id="team-fuel-body"></div>
-              </section>
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyres &amp; brakes</h2>
-                </div>
-                <div id="team-tyres-body"></div>
-              </section>
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-gauge" /></svg>Car telemetry</h2>
-                </div>
-                <div id="team-telemetry-body"></div>
-              </section>
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-cloud-rain" /></svg>Weather</h2>
-                </div>
-                <div id="team-weather-body"></div>
-              </section>
+
+          <!-- The page's own sections — a pit wall is four screens, not one
+               scroll. Same seg control as Race/Training; the chosen section
+               persists (an engineer lives in one of these for a whole race). -->
+          <nav class="seg team-subtabs" id="team-subtabs" aria-label="Team page sections">
+            <button type="button" data-teamtab="timing" data-active="true">
+              <svg class="icon"><use href="#i-list-ordered" /></svg><span>Timing</span>
+            </button>
+            <button type="button" data-teamtab="positions">
+              <svg class="icon"><use href="#i-trending-up" /></svg><span>Positions</span>
+            </button>
+            <button type="button" data-teamtab="strategy">
+              <svg class="icon"><use href="#i-target" /></svg><span>Strategy</span>
+            </button>
+            <button type="button" data-teamtab="telemetry">
+              <svg class="icon"><use href="#i-activity" /></svg><span>Telemetry</span>
+            </button>
+          </nav>
+
+          <!-- ── Timing: the full sheet ─────────────────────────────────── -->
+          <div class="team-tab" id="team-tab-timing" data-active="true">
+            <section class="card">
+              <div id="team-timing-body"></div>
+            </section>
+          </div>
+
+          <!-- ── Positions: the race, drawn ─────────────────────────────── -->
+          <div class="team-tab" id="team-tab-positions">
+            <section class="card">
+              <div class="card__head team-chart-head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-trending-up" /></svg>Race position changes</h2>
+                <nav class="seg" id="team-pos-mode" aria-label="Position chart mode">
+                  <button type="button" data-posmode="overall" data-active="true"><span>Overall</span></button>
+                  <button type="button" data-posmode="class"><span>In class</span></button>
+                </nav>
+              </div>
+              <canvas id="team-positions-canvas" class="team-canvas"></canvas>
+              <div id="team-positions-legend" class="team-legend"></div>
+            </section>
+          </div>
+
+          <!-- ── Strategy: fuel + tyres to the flag ─────────────────────── -->
+          <div class="team-tab" id="team-tab-strategy">
+            <div class="team-grid">
+              <div class="team-col">
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Fuel &amp; energy</h2>
+                  </div>
+                  <div id="team-fuel-body"></div>
+                </section>
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyre plan</h2>
+                    <p class="card__desc">Wear rate measured lap over lap; the cliff is 25% tread.</p>
+                  </div>
+                  <div id="team-tyreplan-body"></div>
+                </section>
+              </div>
+              <div class="team-col">
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-target" /></svg>Strategy to the flag</h2>
+                    <p class="card__desc">Replanned every second from live consumption and the race remaining.</p>
+                  </div>
+                  <label class="field">
+                    <span class="field__label">Safety margin (laps)</span>
+                    <input class="field__input" type="number" id="team-safety" min="0" max="10" step="1" />
+                  </label>
+                  <div id="team-strategy-body"></div>
+                </section>
+              </div>
             </div>
-            <div class="team-col">
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-target" /></svg>Strategy to the flag</h2>
-                  <p class="card__desc">Replanned every second from live consumption and the race remaining.</p>
-                </div>
-                <label class="field">
-                  <span class="field__label">Safety margin (laps)</span>
-                  <input class="field__input" type="number" id="team-safety" min="0" max="10" step="1" />
-                </label>
-                <div id="team-strategy-body"></div>
-              </section>
-              <section class="card">
-                <div class="card__head">
-                  <h2 class="card__title"><svg class="icon"><use href="#i-flag" /></svg>Car &amp; race</h2>
-                </div>
-                <div id="team-car-body"></div>
-              </section>
+          </div>
+
+          <!-- ── Telemetry: the live car ────────────────────────────────── -->
+          <div class="team-tab" id="team-tab-telemetry">
+            <section class="card">
+              <div class="card__head">
+                <h2 class="card__title"><svg class="icon"><use href="#i-circuit" /></svg>Track map</h2>
+              </div>
+              <canvas id="team-map-canvas" class="team-canvas team-canvas--map"></canvas>
+            </section>
+            <div class="team-grid">
+              <div class="team-col">
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyres &amp; brakes</h2>
+                  </div>
+                  <div id="team-tyres-body"></div>
+                </section>
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-cloud-rain" /></svg>Weather</h2>
+                  </div>
+                  <div id="team-weather-body"></div>
+                </section>
+              </div>
+              <div class="team-col">
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-gauge" /></svg>Car telemetry</h2>
+                  </div>
+                  <div id="team-telemetry-body"></div>
+                </section>
+                <section class="card">
+                  <div class="card__head">
+                    <h2 class="card__title"><svg class="icon"><use href="#i-clock" /></svg>Lap times</h2>
+                    <p class="card__desc">Pick drivers below to compare their progression.</p>
+                  </div>
+                  <canvas id="team-laptime-canvas" class="team-canvas team-canvas--laptime"></canvas>
+                  <div id="team-laptime-legend" class="team-legend"></div>
+                </section>
+              </div>
             </div>
           </div>
         </div>
@@ -2747,8 +2814,10 @@
 <script src="fuel-strategy.js"></script>
 <script src="fuel-panel.js"></script>
 <!-- Team tab: pure remaining-race planner (also require()d by
-     scripts/test-teamfuel.js), then the pit-wall view itself. -->
+     scripts/test-teamfuel.js), the canvas chart painters, then the
+     pit-wall view itself. -->
 <script src="team-fuel.js"></script>
+<script src="team-charts.js"></script>
 <script src="team-panel.js"></script>
 <script src="engineer-panel.js"></script>
 </body>

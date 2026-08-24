@@ -31,6 +31,7 @@
     "test:fuelcalc": "node scripts/test-fuelcalc.js",
     "test:teamfuel": "node scripts/test-teamfuel.js",
     "test:teamsnapshot": "node scripts/test-teamsnapshot.js",
+    "test:teamhistory": "node scripts/test-teamhistory.js",
     "test:multiclass": "node scripts/test-multiclass.js",
     "test:motion": "node scripts/test-motion.js",
     "test:chassis": "node scripts/test-chassis.js",

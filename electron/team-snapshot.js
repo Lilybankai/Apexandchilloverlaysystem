@@ -126,6 +126,52 @@ function buildTeamSnapshot(frame, at) {
         : null,
       finished: p.finished,
     },
+    // The whole field, pruned to what the timing sheet reads. ~35 cars ×
+    // ~18 small fields ≈ a few KB at 1 Hz over local IPC — cheap, and it is
+    // the payload that makes the page a pit wall instead of a dashboard.
+    standings: Array.isArray(frame.standings)
+      ? frame.standings.slice(0, 80).map((row) => ({
+          slotId: row.slotId,
+          position: row.position,
+          classPosition: row.classPosition,
+          driverName: row.driverName,
+          carNumber: row.carNumber,
+          carClass: row.carClass,
+          lapsCompleted: row.lapsCompleted,
+          lapFraction: row.lapFraction,
+          lastLapSec: row.lastLapSec,
+          bestLapSec: row.bestLapSec,
+          avg5Sec: row.avg5Sec,
+          gapToLeaderSec: row.gapToLeaderSec,
+          gapToAheadSec: row.gapToAheadSec,
+          gapToClassLeaderSec: row.gapToClassLeaderSec,
+          classLapsBehind: row.classLapsBehind,
+          lapsBehind: row.lapsBehind,
+          inPit: row.inPit,
+          pitStops: row.pitStops,
+          tyreCompound: row.tyreCompound,
+          virtualEnergy: row.virtualEnergy,
+          isPlayer: row.isPlayer,
+        }))
+      : [],
+    trackMap: frame.trackMap
+      ? {
+          key: frame.trackMap.key,
+          revision: frame.trackMap.revision,
+          ready: frame.trackMap.ready,
+          progress: frame.trackMap.progress,
+          cars: Array.isArray(frame.trackMap.cars)
+            ? frame.trackMap.cars.map((c) => ({
+                slotId: c.slotId,
+                x: c.x,
+                z: c.z,
+                lapFraction: c.lapFraction,
+                inPit: c.inPit,
+                isPlayer: c.isPlayer,
+              }))
+            : [],
+        }
+      : null,
     fuel: frame.fuel ? { ...frame.fuel } : null,
     weather: frame.weather
       ? {

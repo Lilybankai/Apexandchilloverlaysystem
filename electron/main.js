@@ -989,16 +989,109 @@ let lastTeamPushAt = 0;
 let lastFeedFrame = null; // newest parsed frame, so subscribe can answer instantly
 const TEAM_PUSH_MS = 1000;
 const { buildTeamSnapshot } = require('./team-snapshot');
+const { TeamHistory, tyreProjection } = require('./team-history');
+
+/**
+ * The race memory behind the Positions/lap-time charts and the tyre
+ * projection. Fed at 1 Hz whether or not the Team tab is open — an engineer
+ * opening the page on lap 40 wants laps 1–40 — and reset by its own session
+ * keying. The 1 Hz gate lives here, not in the class, so the 30 Hz feed
+ * costs one timestamp compare per frame.
+ */
+const teamHistory = new TeamHistory();
+let lastHistoryFeedAt = 0;
+/** History revision last sent to the renderer, so unchanged laps cost nothing. */
+let lastSentHistoryRev = -1;
+
+/**
+ * The learned circuit shape, fetched from the server's own /trackmap.json
+ * (the panel's CSP cannot fetch, so main forwards it over IPC). Downsampled:
+ * a panel-sized map does not need 1500 points. Sent once per revision.
+ */
+let teamMapShape = null; // {key, revision, lengthM, points: [[x,z],...]}
+let teamMapShapeFetching = false;
+let lastSentShapeRev = -1;
+let feedHttpPort = 0;
+
+function fetchTeamMapShape(revision) {
+  if (teamMapShapeFetching || !feedHttpPort) return;
+  teamMapShapeFetching = true;
+  const http = require('http');
+  const req = http.get(
+    { host: '127.0.0.1', port: feedHttpPort, path: '/trackmap.json', timeout: 4000 },
+    (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        teamMapShapeFetching = false;
+        return;
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        teamMapShapeFetching = false;
+        try {
+          const map = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          const pts = Array.isArray(map.points) ? map.points : [];
+          const step = Math.max(1, Math.ceil(pts.length / 400));
+          teamMapShape = {
+            key: map.key,
+            revision: map.revision ?? revision,
+            lengthM: map.lengthM,
+            points: pts.filter((_, i) => i % step === 0).map((p) => [p[0], p[1]]),
+          };
+        } catch {
+          /* half-written or empty — the next revision bump retries */
+        }
+      });
+    },
+  );
+  req.on('error', () => {
+    teamMapShapeFetching = false;
+  });
+  req.on('timeout', () => req.destroy(new Error('timeout')));
+}
+
+/** Build the snapshot plus the heavy extras the renderer caches by revision. */
+function teamSnapshotWithExtras(frame, now, everything) {
+  const snap = buildTeamSnapshot(frame, now);
+  if (!snap) return snap;
+  const tm = frame.trackMap;
+  if (tm && tm.ready && (!teamMapShape || teamMapShape.revision !== tm.revision)) {
+    fetchTeamMapShape(tm.revision);
+  }
+  snap.historyRevision = teamHistory.revision;
+  if (everything || teamHistory.revision !== lastSentHistoryRev) {
+    snap.history = teamHistory.state();
+    lastSentHistoryRev = teamHistory.revision;
+  }
+  // Tiny (four subtractions over ≤5 laps) — computed every push so the tyre
+  // plan is always current without the renderer owning any maths.
+  snap.tyrePlan = tyreProjection(teamHistory.wear);
+  if (teamMapShape && (everything || teamMapShape.revision !== lastSentShapeRev)) {
+    snap.mapShape = teamMapShape;
+    lastSentShapeRev = teamMapShape.revision;
+  }
+  return snap;
+}
 
 /** Push a pruned snapshot of this frame to the Team tab, at most 1/s. */
 function maybePushTeamSnapshot(frame) {
-  if (!teamViewOpen) return;
   const now = Date.now();
+  // The race memory records regardless of the tab — that is its whole point.
+  if (now - lastHistoryFeedAt >= TEAM_PUSH_MS) {
+    lastHistoryFeedAt = now;
+    try {
+      teamHistory.update(frame);
+    } catch {
+      /* a malformed frame must never take the feed down */
+    }
+  }
+  if (!teamViewOpen) return;
   if (now - lastTeamPushAt < TEAM_PUSH_MS) return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
   lastTeamPushAt = now;
   try {
-    mainWindow.webContents.send('team:update', buildTeamSnapshot(frame, now));
+    mainWindow.webContents.send('team:update', teamSnapshotWithExtras(frame, now, false));
   } catch {
     /* window mid-teardown — the next frame retries */
   }
@@ -1024,6 +1117,7 @@ function setFeedOnTrack(onTrack) {
 function connectStatusFeed(port, wsPath) {
   disconnectStatusFeed();
   lastFrameAt = 0;
+  feedHttpPort = port; // the Team map shape is fetched from this same server
   const url = `ws://127.0.0.1:${port}${wsPath}`;
   try {
     statusWs = new WebSocket(url);
@@ -3443,7 +3537,8 @@ function registerIpc() {
   ipcMain.handle('team:subscribe', () => {
     teamViewOpen = true;
     lastTeamPushAt = 0; // next frame pushes immediately
-    return lastFeedFrame ? buildTeamSnapshot(lastFeedFrame, Date.now()) : null;
+    // `everything` — a fresh subscriber has no cached history or map shape.
+    return lastFeedFrame ? teamSnapshotWithExtras(lastFeedFrame, Date.now(), true) : null;
   });
   ipcMain.handle('team:unsubscribe', () => {
     teamViewOpen = false;

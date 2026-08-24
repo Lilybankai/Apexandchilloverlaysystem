@@ -102,6 +102,109 @@
 }
 .team-headline .icon { width: 16px; height: 16px; }
 .team-headline.team-band--ok { color: var(--ok); }
+.team-headline.team-band--warn { color: var(--warn); }
+
+/* ── Sub-tabs and sections ─────────────────────────────────────────────── */
+.team-subtabs { margin-bottom: 16px; }
+.team-tab { display: none; }
+.team-tab[data-active="true"] { display: block; }
+
+/* Chart head: title left, mode seg right. */
+.team-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* Canvases size themselves from these boxes each repaint. */
+.team-canvas {
+  display: block;
+  width: 100%;
+  height: 420px;
+}
+.team-canvas--map { height: 460px; }
+.team-canvas--laptime { height: 260px; }
+
+/* Legend chips under the charts — click to hide/show a driver. */
+.team-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.team-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--chip, var(--text-2));
+  font: 700 10.5px var(--font-mono);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.team-chip::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip, var(--text-3));
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.team-chip[data-off="true"] { opacity: 0.32; }
+
+/* ── Timing sheet ──────────────────────────────────────────────────────── */
+.team-t__wrap { overflow-x: auto; }
+.team-t {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 12px var(--font-mono);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.team-t th {
+  font: 600 10px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.team-t td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.team-t tbody tr:last-child td { border-bottom: none; }
+.team-t__driver { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.team-t__dim { color: var(--text-3); }
+.team-t__num { color: var(--text); font-weight: 700; }
+.team-t__class td {
+  padding-top: 12px;
+  font: 700 11px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  border-bottom-color: var(--line-2);
+}
+.team-t__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+}
+.team-t__me td {
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+  color: var(--text);
+}
+.team-t__pit {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+  font: 700 10px var(--font-display);
+  letter-spacing: 0.06em;
+}
 
 /* Tyres: four corners laid out as the car stands. */
 .team-tyres {

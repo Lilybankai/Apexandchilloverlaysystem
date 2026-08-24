@@ -4,6 +4,25 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.6 — 2026-08-24
+
+### Added
+
+- **The Team tab becomes four screens.** A pit wall is not one scroll, so the
+  page now has its own sections. **Timing**: the full sheet, grouped by class
+  — positions in class and overall, pit status and stop counts, last / best /
+  five-lap average, gap to the class leader, interval to the car ahead,
+  Virtual Energy and compound, with your car highlighted. **Positions**: the
+  whole race drawn lap by lap, every car a line, overall or in-class, with
+  click-to-hide driver chips. **Strategy**: the fuel plan joined by a tyre
+  plan — wear rate measured lap over lap per corner, laps until the 25%
+  cliff, and the verdict that matters: do the tyres outlast the fuel stint?
+  **Telemetry**: a big 2D map of the learned circuit with every car placed on
+  it live, the tyre and car widgets, weather, and a lap-time comparison
+  graph with pickable drivers. The position and lap-time charts remember the
+  whole race even if you open the page on lap 40 — the app records the field
+  from the moment the server starts.
+
 ## 0.91.0-beta.5 — 2026-08-24
 
 ### Added

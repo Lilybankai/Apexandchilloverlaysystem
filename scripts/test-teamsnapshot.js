@@ -103,6 +103,8 @@ function liveFrame() {
     && !('trackTempC' in s.weather.forecast[1]));
   check('30 Hz noise pruned', !('pedals' in s.car) && !('radar' in s) && !('relative' in s));
   check('sentinels survive untouched (renderer owns them)', s.car.pit.elapsedSec === -1);
+  check('standings carried for the timing sheet', s.standings.length === 2
+    && s.standings[1].avg5Sec === undefined && s.standings[0].driverName === 'Leader');
 }
 
 // ── Frames the feed actually produces must not throw ───────────────────────
@@ -123,12 +125,31 @@ function liveFrame() {
   check('garbage → null', buildTeamSnapshot('nope', 1) === null);
 }
 
-// ── The snapshot must be cheap: no giant arrays ride along ─────────────────
+// ── Track map block prunes to placement fields ─────────────────────────────
 {
   const f = liveFrame();
-  for (let i = 0; i < 60; i++) f.standings.push({ slotId: 100 + i, isPlayer: false, driverName: `x${i}` });
+  f.trackMap = {
+    key: 'sarthe', revision: 3, ready: true, progress: 1,
+    cars: [{ slotId: 7, x: 120.5, y: 2, z: -80.1, lapFraction: 0.42, inPit: false, isPlayer: true }],
+  };
+  const s = buildTeamSnapshot(f, 1);
+  check('track map cars carried', s.trackMap.cars.length === 1 && s.trackMap.cars[0].x === 120.5);
+  check('track map elevation pruned', !('y' in s.trackMap.cars[0]));
+  check('track map revision carried', s.trackMap.revision === 3 && s.trackMap.ready === true);
+}
+
+// ── The snapshot must stay cheap even with a full grid ─────────────────────
+{
+  const f = liveFrame();
+  for (let i = 0; i < 60; i++) {
+    f.standings.push({
+      slotId: 100 + i, isPlayer: false, driverName: `Driver ${i}`, carClass: 'LMP2',
+      position: i + 3, classPosition: i + 1, lastLapSec: 220, bestLapSec: 218, avg5Sec: 221,
+      gapToLeaderSec: i * 3, gapToAheadSec: 3, lapsCompleted: 40, pitStops: 2,
+    });
+  }
   const bytes = JSON.stringify(buildTeamSnapshot(f, 1)).length;
-  check('snapshot stays small with a full grid', bytes < 4096, `${bytes} bytes`);
+  check('snapshot stays modest with a full grid', bytes < 20480, `${bytes} bytes`);
 }
 
 console.log(`\ntest-teamsnapshot: ${passed} passed, ${failed} failed`);
