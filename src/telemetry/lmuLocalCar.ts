@@ -267,6 +267,14 @@ const VT = {
    * tenth of the liner mean, and it moves with them once running.
    */
   mWheelCoreRel: 76,
+  /**
+   * `mBrakeTemp` — the brake **disc** temperature, one double per wheel in
+   * Kelvin, at wheel-start +24. This is one of the four verified anchors that
+   * pin the wheel struct (see {@link VT.mWheelBase}); it was read for
+   * validation long before it was published. Relative to the wheel START, not
+   * the surface-temp base.
+   */
+  mWheelBrakeRel: 24,
 } as const;
 
 /** Kelvin → Celsius. LMU stores tyre temps in Kelvin. */
@@ -411,6 +419,11 @@ export interface LocalCarPhysics {
    * value per corner (not banded). `UNKNOWN_VALUE` when unavailable.
    */
   tyreCoreC: [number, number, number, number];
+  /**
+   * Per-corner brake **disc** temperature in °C `[FL, FR, RL, RR]`.
+   * `UNKNOWN_VALUE` when unavailable (garage reads 0 K, like the tyres).
+   */
+  tyreBrakeC: [number, number, number, number];
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
   /**
@@ -1028,6 +1041,21 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
   };
   const tyreCoreC: [number, number, number, number] = [coreC(0), coreC(1), coreC(2), coreC(3)];
 
+  // Brake discs — same Kelvin encoding, but their own plausibility window: a
+  // working disc runs hundreds of °C, which the TYRE guard rightly rejects.
+  // 0 K in the garage → unknown, exactly like the tyres.
+  const brakeC = (wheel: number): number => {
+    const c =
+      rec.readDoubleLE(VT.mWheelBase + wheel * VT.mWheelStride + VT.mWheelBrakeRel) - KELVIN;
+    return c >= -20 && c <= 1500 ? round1(c) : UNKNOWN_VALUE;
+  };
+  const tyreBrakeC: [number, number, number, number] = [
+    brakeC(0),
+    brakeC(1),
+    brakeC(2),
+    brakeC(3),
+  ];
+
   // Exact lap clock: elapsed − lapStart. Guard against pre-session junk (both
   // zero, negative spans, absurd values) — report unknown rather than wrong.
   const elapsed = rec.readDoubleLE(VT.mElapsedTime);
@@ -1095,6 +1123,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     tyreSurfaceBandsC,
     tyreLinerBandsC,
     tyreCoreC,
+    tyreBrakeC,
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
     lapTimeSec,
     lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,

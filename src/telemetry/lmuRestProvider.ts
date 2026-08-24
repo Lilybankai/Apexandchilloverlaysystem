@@ -2771,6 +2771,7 @@ export class LmuRestProvider implements TelemetryProvider {
       tyreTempsC: unknown4(),
       tyreHudTempsC: unknown4(),
       tyreCoreC: unknown4(),
+      tyreBrakeC: unknown4(),
       tyreSurfaceBandsC: [null, null, null, null],
       tyreLinerBandsC: [null, null, null, null],
       motion: null,
@@ -2885,6 +2886,7 @@ export class LmuRestProvider implements TelemetryProvider {
       const surf = local ? local.tyreSurfaceBandsC[i] : null;
       const liner = local ? local.tyreLinerBandsC[i] : null;
       const core = local ? local.tyreCoreC[i] : UNKNOWN_VALUE;
+      const brake = local ? local.tyreBrakeC[i] : UNKNOWN_VALUE;
       const s = spec ? spec[i] : undefined;
       return {
         // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
@@ -2892,6 +2894,7 @@ export class LmuRestProvider implements TelemetryProvider {
         surfaceTempC: surfaceTemps ? (surfaceTemps[i] as number) : UNKNOWN_VALUE,
         wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
         ...(core !== UNKNOWN_VALUE ? { coreC: core } : {}),
+        ...(brake !== UNKNOWN_VALUE ? { brakeTempC: brake } : {}),
         ...(liner ? { innerC: liner[0], middleC: liner[1], outerC: liner[2] } : {}),
         ...(surf
           ? { surfaceInnerC: surf[0], surfaceMiddleC: surf[1], surfaceOuterC: surf[2] }

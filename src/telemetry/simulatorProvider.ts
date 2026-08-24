@@ -1026,6 +1026,9 @@ export class SimulatorProvider implements TelemetryProvider {
       surfaceMiddleC: r1(tempC + 4),
       surfaceOuterC: r1(tempC + 1),
       pressureKpa: r1(165 + (tempC - 82) * 0.4),
+      // Discs track brake work an order of magnitude above the tyre: enough
+      // for the pit-wall corner widget to show a live brake number in demo.
+      brakeTempC: r1(240 + (tempC - 82) * 6 + this.pedals.brake * 220),
       wear: Math.round(wear * 1000) / 1000,
       compound: 'Medium',
       optimalTempC: SimulatorProvider.DEMO_OPTIMAL_C,

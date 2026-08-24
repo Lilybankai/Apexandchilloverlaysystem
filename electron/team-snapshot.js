@@ -29,6 +29,7 @@ function tyre(t) {
     middleC: t.middleC,
     outerC: t.outerC,
     pressureKpa: t.pressureKpa,
+    brakeTempC: t.brakeTempC,
     optimalTempC: t.optimalTempC,
     compound: t.compound,
   };
@@ -78,8 +79,20 @@ function buildTeamSnapshot(frame, at) {
       carClass: mine ? mine.carClass : undefined,
       position: p.position,
       classPosition: mine ? mine.classPosition : undefined,
+      // 1 Hz is deliberately coarse for these three — the pit wall reads them
+      // as "what's the car doing", not as a live dashboard.
+      speedKph: p.speedKph,
+      rpm: p.rpm,
+      maxRpm: p.maxRpm,
+      gear: p.gear,
       lap: p.lap
-        ? { current: p.lap.current, last: p.lap.last, best: p.lap.best, sector: p.lap.sector }
+        ? {
+            current: p.lap.current,
+            last: p.lap.last,
+            best: p.lap.best,
+            delta: p.lap.delta,
+            sector: p.lap.sector,
+          }
         : null,
       lapsCompleted: mine ? mine.lapsCompleted : undefined,
       inPit: mine ? mine.inPit : undefined,
@@ -122,6 +135,7 @@ function buildTeamSnapshot(frame, at) {
           trackWetness: frame.weather.trackWetness,
           trackCondition: frame.weather.trackCondition,
           trackTrend: frame.weather.trackTrend,
+          trackSpread: frame.weather.trackSpread,
           forecast: Array.isArray(frame.weather.forecast)
             ? frame.weather.forecast.map((f) => ({
                 minutesAhead: f.minutesAhead,

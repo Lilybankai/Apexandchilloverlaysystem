@@ -54,6 +54,7 @@
     session: $('#team-session'),
     fuel: $('#team-fuel-body'),
     tyres: $('#team-tyres-body'),
+    telemetry: $('#team-telemetry-body'),
     strategy: $('#team-strategy-body'),
     weather: $('#team-weather-body'),
     car: $('#team-car-body'),
@@ -189,6 +190,27 @@
     return 'bad';
   }
 
+  /**
+   * The three-band tread strip: inner/middle/outer liner temps as mini bars,
+   * each coloured against the compound's own window when the sim publishes
+   * one. Bar height spans 40–130 °C — the range a race tyre actually lives in.
+   */
+  function bandBars(t) {
+    const bands = [t.innerC, t.middleC, t.outerC];
+    if (!bands.every(known)) return '';
+    const h = (c) => Math.round(Math.min(100, Math.max(8, ((c - 40) / 90) * 100)));
+    const state = (c) => {
+      if (!known(t.optimalTempC)) return 'flat';
+      const d = c - t.optimalTempC;
+      if (d > 10) return 'hot';
+      if (d < -12) return 'cold';
+      return 'ok';
+    };
+    return `<span class="team-tyre__bars" title="Inner / middle / outer tread (inner layer)">
+      ${bands.map((c) => `<i data-heat="${state(c)}" style="height:${h(c)}%"></i>`).join('')}
+    </span>`;
+  }
+
   function renderTyres(tyres) {
     if (!tyres) {
       setCard(els.tyres, `<p class="team-note">No tyre data — the shared-memory plugin publishes this only while the car is on track.</p>`);
@@ -199,30 +221,69 @@
       const t = tyres[key];
       if (!t) return `<div class="team-tyre"><div class="team-tyre__corner">${label}</div><div class="team-tyre__wear">${dash}</div></div>`;
       const band = wearBand(t.wear);
-      const temp = known(t.tempC) ? `${Math.round(t.tempC)}°` : dash;
       const inWindow = known(t.tempC) && known(t.optimalTempC)
         ? Math.abs(t.tempC - t.optimalTempC) <= 8 : null;
       return `
         <div class="team-tyre${band ? ` team-band--${band}` : ''}">
-          <div class="team-tyre__corner">${label}</div>
-          <div class="team-tyre__wear">${known(t.wear) ? `${Math.round(t.wear * 100)}%` : dash}</div>
-          <div class="team-tyre__row"><span>${icon('thermometer')}${temp}</span>${inWindow != null ? `<span class="team-tyre__win" data-in="${inWindow}">${inWindow ? 'in window' : 'out of window'}</span>` : ''}</div>
-          <div class="team-tyre__row"><span>${known(t.pressureKpa) ? `${t.pressureKpa.toFixed(0)} kPa` : dash}</span></div>
+          <div class="team-tyre__top">
+            <span class="team-tyre__corner">${label}</span>
+            <span class="team-tyre__wearwrap">
+              <span class="team-tyre__wear">${known(t.wear) ? `${(t.wear * 100).toFixed(1)}%` : dash}</span>
+              <span class="team-tyre__cap">tyre left</span>
+            </span>
+          </div>
+          <div class="team-tyre__mid">
+            <span class="team-tyre__kpa">${known(t.pressureKpa) ? `<b>${t.pressureKpa.toFixed(0)}</b><i>kPa</i>` : dash}</span>
+            ${bandBars(t)}
+            <span class="team-tyre__temps">
+              <b>${known(t.tempC) ? `${Math.round(t.tempC)}°` : dash}</b>
+              <i>${known(t.brakeTempC) ? `Brake ${Math.round(t.brakeTempC)}°C` : ''}</i>
+            </span>
+          </div>
+          ${inWindow != null ? `<div class="team-tyre__row"><span class="team-tyre__win" data-in="${inWindow}">${inWindow ? 'in window' : 'out of window'}</span></div>` : ''}
         </div>`;
     }).join('');
     setCard(els.tyres, `
-      ${compounds.size ? `<p class="team-note">${esc(Array.from(compounds).join(' / '))} fitted</p>` : ''}
+      ${compounds.size ? `<p class="team-note">${esc(Array.from(compounds).join(' / '))} fitted · temps are the inner-layer average, bars inner/middle/outer</p>` : ''}
       <div class="team-tyres">${corners}</div>`);
   }
 
-  function renderCar(car, sessionType) {
+  function renderTelemetry(car, fuel) {
+    if (!car) { setCard(els.telemetry, ''); return; }
+    const gearText = !known(car.gear) && car.gear !== 0 && car.gear !== -1 ? dash
+      : car.gear === 0 ? 'N' : car.gear === -1 ? 'R' : String(car.gear);
+    const tyres = car.tyres;
+    const worstWear = tyres
+      ? Math.min(...CORNERS.map(([k]) => (tyres[k] && known(tyres[k].wear) ? tyres[k].wear : Infinity)))
+      : Infinity;
+    const compounds = tyres
+      ? Array.from(new Set(CORNERS.map(([k]) => tyres[k] && tyres[k].compound).filter(Boolean)))
+      : [];
+    const pitPhase = car.pit && car.pit.phase && car.pit.phase !== 'none' ? car.pit.phase : null;
+    const pitText = pitPhase
+      ? (car.pit.working ? `stopped ${fmt0(car.pit.elapsedSec)}s` : pitPhase)
+      : (car.inPit ? 'in pit lane' : 'on track');
+    setCard(els.telemetry, `
+      <div class="fuel-tiles team-tiles--4">
+        ${tile('Speed', known(car.speedKph) ? `${car.speedKph} km/h` : dash)}
+        ${tile('RPM', known(car.rpm) ? `${car.rpm}` : dash)}
+        ${tile('Gear', gearText)}
+        ${tile('Tyre life', Number.isFinite(worstWear) ? `${Math.round(worstWear * 100)}%` : dash,
+          Number.isFinite(worstWear) ? { band: wearBand(worstWear) } : {})}
+        ${tile('Pit status', esc(pitText), pitPhase || car.inPit ? { band: 'warn' } : { band: 'ok' })}
+        ${tile('Pit limiter', car.pit && car.pit.limiterOn != null ? (car.pit.limiterOn ? 'ON' : 'OFF') : dash,
+          car.pit && car.pit.limiterOn ? { band: 'warn' } : {})}
+        ${tile('Compound', compounds.length ? esc(compounds.join(' / ')) : dash)}
+        ${car.hybrid && known(car.hybrid.chargeFraction)
+          ? tile('Hybrid', `${Math.round(car.hybrid.chargeFraction * 100)}%`)
+          : tile('Hybrid', dash)}
+      </div>`);
+  }
+
+  function renderCar(car) {
     if (!car) { setCard(els.car, ''); return; }
     const pos = known(car.position) ? `P${car.position}` : dash;
     const cls = known(car.classPosition) ? `P${car.classPosition}` : dash;
-    const pitPhase = car.pit && car.pit.phase && car.pit.phase !== 'none' ? car.pit.phase : null;
-    const pitText = pitPhase
-      ? (car.pit.working ? `stopped — ${fmt0(car.pit.elapsedSec)}s` : pitPhase)
-      : (car.inPit ? 'in pit lane' : 'on track');
     const dmg = car.damage;
     const dmgText = dmg
       ? (dmg.hasDamage ? `${esc(dmg.worst || 'damage')}${known(dmg.repairSeconds) && dmg.repairSeconds > 0 ? ` · ${fmt0(dmg.repairSeconds)}s repair` : ''}` : 'clean')
@@ -234,9 +295,7 @@
         ${tile('Pit stops', fmt0(car.pitStops))}
         ${tile('Last lap', fmtLap(car.lap && car.lap.last))}
         ${tile('Best lap', fmtLap(car.lap && car.lap.best))}
-        ${tile('Car status', esc(pitText), pitPhase || car.inPit ? { band: 'warn' } : {})}
-        ${tile('Damage', dmgText, dmg && dmg.hasDamage ? { band: 'bad' } : {})}
-        ${car.hybrid && known(car.hybrid.chargeFraction) ? tile('Hybrid', `${Math.round(car.hybrid.chargeFraction * 100)}%`) : ''}
+        ${tile('Damage', dmgText, dmg && dmg.hasDamage ? { band: 'bad' } : { band: 'ok' })}
         ${car.carClass ? tile('Entry', `${car.carNumber != null ? `#${esc(String(car.carNumber))} · ` : ''}${esc(car.carClass)}`) : ''}
       </div>`);
   }
@@ -307,6 +366,8 @@
       known(w.trackTempC) ? `track ${Math.round(w.trackTempC)}°` : null,
       known(w.ambientTempC) ? `air ${Math.round(w.ambientTempC)}°` : null,
       known(w.rainIntensity) && w.rainIntensity > 0 ? `rain ${Math.round(w.rainIntensity * 100)}%` : null,
+      known(w.trackWetness) && w.trackWetness > 0.005 ? `wetness ${Math.round(w.trackWetness * 100)}%` : null,
+      known(w.trackSpread) && w.trackSpread > 0.15 ? 'uneven surface' : null,
     ].filter(Boolean).join(' · ');
 
     const slots = (w.forecast || []).map((f) => {
@@ -356,7 +417,8 @@
     renderFuel(snap.fuel);
     renderStrategy(snap.fuel);
     renderTyres(snap.car && snap.car.tyres);
-    renderCar(snap.car, snap.session && snap.session.type);
+    renderTelemetry(snap.car, snap.fuel);
+    renderCar(snap.car);
     renderWeather(snap.weather);
   }
 

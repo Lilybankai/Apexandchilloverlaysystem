@@ -4,6 +4,20 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.3 — 2026-08-24
+
+### Added
+
+- **The Team tab now reads like a real pit wall.** Each tyre corner is a
+  proper widget: tyre life, pressure, a three-bar tread strip showing
+  inner/middle/outer temperatures against the compound's own window, the
+  inner-layer average, and — new to the whole app — the **brake disc
+  temperature** at that corner, read from a channel the telemetry reader had
+  verified long ago but never published. A Car telemetry card joins it:
+  speed, revs, gear, worst tyre, pit status, pit limiter, compound and hybrid
+  charge. The weather line gains track wetness. Engine water/oil temperatures
+  are the one gap left, waiting on a live offset probe rather than a guess.
+
 ## 0.91.0-beta.2 — 2026-08-24
 
 ### Changed

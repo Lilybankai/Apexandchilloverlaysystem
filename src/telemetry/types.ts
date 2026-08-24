@@ -461,6 +461,15 @@ export interface TyreState {
   optimalTempC?: number;
   /** Cold/hot pressure in kPa, when available. */
   pressureKpa?: number;
+  /**
+   * Brake **disc** temperature at this corner in °C, when available. Not a tyre
+   * number at all, but it lives with the corner because that is how a pit wall
+   * reads it. The channel sits at a *verified* offset (wheel-start +24 — one of
+   * the anchors that pins the whole wheel struct), and gets its own plausibility
+   * window: discs legitimately run hundreds of °C, which the tyre guard would
+   * reject as garbage.
+   */
+  brakeTempC?: number;
   /** Remaining tread, `0` (worn out) .. `1` (fresh). */
   wear: number;
   /** Fitted compound label (e.g. `"Soft"`, `"Wet"`), when known. */

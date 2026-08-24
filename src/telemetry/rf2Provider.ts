@@ -756,12 +756,14 @@ export class RF2Provider implements TelemetryProvider {
     const last = buf.readDoubleLE(base + WH.mTemperature + 16) - KELVIN;
     const inner = rightSide ? first : last;
     const outer = rightSide ? last : first;
+    const brakeC = buf.readDoubleLE(base + WH.mBrakeTemp) - KELVIN;
     return {
       tempC: round1(centre),
       innerC: round1(inner),
       middleC: round1(centre),
       outerC: round1(outer),
       pressureKpa: round1(buf.readDoubleLE(base + WH.mPressure)),
+      ...(brakeC >= -20 && brakeC <= 1500 ? { brakeTempC: round1(brakeC) } : {}),
       wear: clamp01(buf.readDoubleLE(base + WH.mWear)),
     };
   }

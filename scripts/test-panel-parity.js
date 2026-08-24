@@ -489,6 +489,7 @@ const PANEL_CONTRACT = {
   'team-fuel-body': 'div',
   'team-strategy-body': 'div',
   'team-tyres-body': 'div',
+  'team-telemetry-body': 'div',
   'team-car-body': 'div',
   'team-weather-body': 'div',
   'team-safety': 'input:number',

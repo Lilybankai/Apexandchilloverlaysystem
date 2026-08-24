@@ -309,6 +309,19 @@ digest feeding `veCarsAhead*` on the watcher side.
    races. The standalone beta Fuel tab retires when this lands (name it
    explicitly in the release notes per the promotion rule).
 
+## Water / oil temperature — blocked on a live probe
+
+The SimEndurance car-telemetry panel shows engine water and oil °C. Ours
+doesn't yet, deliberately: `mEngineWaterTemp` / `mEngineOilTemp` have **no
+verified offsets** in this codebase — LMU shortens the ISI structs, so the
+rF2 reference offsets cannot be trusted, and the damage-widget rule applies:
+never guess struct offsets. Next time LMU is running, probe them the same way
+as the wheel anchors (they sit in the main telemetry record near the RPM
+fields; verify against the in-game display at idle vs running temperature),
+then add two tiles to the Team tab's Car telemetry card and two fields to
+`LocalCarPhysics` + `team-snapshot.js`. Everything else on their panel is
+already live.
+
 ## CPU cost (asked 2026-08-24)
 
 Short answer: **not measurable against what the app already does.** The design

@@ -25,7 +25,7 @@ function check(name, cond, detail) {
 
 const tyre = (wear, temp) => ({
   wear, tempC: temp, coreC: temp + 1, innerC: temp + 2, middleC: temp, outerC: temp - 2,
-  pressureKpa: 160, optimalTempC: 90, compound: 'Soft',
+  pressureKpa: 160, brakeTempC: temp * 4, optimalTempC: 90, compound: 'Soft',
   surfaceTempC: temp + 5, // pruned — must NOT survive into the snapshot
 });
 
@@ -44,6 +44,7 @@ function liveFrame() {
     },
     player: {
       slotId: 7, position: 12,
+      speedKph: 231, rpm: 7420, maxRpm: 8600, gear: 5,
       lap: { current: 215.2, last: 214.8, best: 213.1, delta: 0.4, sector: 2 },
       tyres: {
         frontLeft: tyre(0.8, 88), frontRight: tyre(0.75, 91),
@@ -92,7 +93,11 @@ function liveFrame() {
   check('class position from standings', s.car.classPosition === 4, `cp=${s.car.classPosition}`);
   check('pit stops from standings', s.car.pitStops === 2);
   check('tyres survive per corner', s.car.tyres.rearRight.wear === 0.55);
+  check('brake temps survive per corner', s.car.tyres.frontLeft.brakeTempC === 88 * 4);
   check('tyre prune drops surface temps', !('surfaceTempC' in s.car.tyres.frontLeft));
+  check('speed/rpm/gear carried for the telemetry card', s.car.speedKph === 231
+    && s.car.rpm === 7420 && s.car.maxRpm === 8600 && s.car.gear === 5);
+  check('lap delta carried', s.car.lap.delta === 0.4);
   check('fuel copied whole', s.fuel.virtualEnergyPct === 38.5 && s.fuel.levelLiters === 41.2);
   check('forecast pruned to timeline fields', s.weather.forecast[1].label === '50%'
     && !('trackTempC' in s.weather.forecast[1]));

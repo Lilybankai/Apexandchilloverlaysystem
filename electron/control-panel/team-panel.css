@@ -80,9 +80,11 @@
 
 .team-note { color: var(--text-3); font-size: 12.5px; margin: 2px 0 10px; }
 
-/* 3-up tiles variant (the shared .fuel-tiles defaults to 4-up). */
+/* 3-up / 4-up tile variants (the shared .fuel-tiles folds to 2 at 1200px). */
 .fuel-tiles.team-tiles--3 { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 1200px) { .fuel-tiles.team-tiles--3 { grid-template-columns: repeat(3, 1fr); } }
+.fuel-tiles.team-tiles--4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1200px) { .fuel-tiles.team-tiles--4 { grid-template-columns: repeat(2, 1fr); } }
 
 /* Wear/health banding, usable on tiles and tyre corners alike. */
 .team-band--ok .fuel-tile__value, .fuel-tile.team-band--ok .fuel-tile__value { color: var(--ok); }
@@ -119,19 +121,73 @@
   letter-spacing: 0.08em;
   color: var(--text-3);
 }
-.team-tyre__wear { font: 700 24px var(--font-display); color: var(--text); }
+.team-tyre__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.team-tyre__wearwrap { text-align: right; }
+.team-tyre__wear { font: 700 22px var(--font-display); color: var(--text); }
+.team-tyre__cap {
+  display: block;
+  font: 600 9px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
 .team-tyre.team-band--ok .team-tyre__wear { color: var(--ok); }
 .team-tyre.team-band--warn .team-tyre__wear { color: var(--warn); }
 .team-tyre.team-band--bad .team-tyre__wear { color: var(--bad); }
+
+/* Middle strip: pressure | tread-band bars | temp + brake. */
+.team-tyre__mid {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 34px;
+}
+.team-tyre__kpa b { font: 700 14px var(--font-mono); color: var(--text); }
+.team-tyre__kpa i {
+  display: block;
+  font: 600 9px var(--font-display);
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.team-tyre__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 30px;
+}
+.team-tyre__bars i {
+  display: block;
+  width: 6px;
+  border-radius: 2px 2px 0 0;
+  background: var(--cyan);
+}
+.team-tyre__bars i[data-heat="ok"] { background: var(--ok); }
+.team-tyre__bars i[data-heat="hot"] { background: var(--bad); }
+.team-tyre__bars i[data-heat="cold"] { background: var(--cyan); }
+.team-tyre__temps { text-align: right; }
+.team-tyre__temps b { font: 700 14px var(--font-mono); color: var(--text); }
+.team-tyre__temps i {
+  display: block;
+  font: 500 9.5px var(--font-display);
+  font-style: normal;
+  color: var(--text-3);
+}
 .team-tyre__row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   color: var(--text-2);
   font-size: 12px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
-.team-tyre__row .icon { width: 12px; height: 12px; margin-right: 3px; }
 .team-tyre__win { font-size: 10.5px; letter-spacing: 0.04em; }
 .team-tyre__win[data-in="true"] { color: var(--ok); }
 .team-tyre__win[data-in="false"] { color: var(--warn); }
