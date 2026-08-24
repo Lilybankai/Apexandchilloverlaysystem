@@ -101,6 +101,14 @@ export interface Appearance {
   /** Whether a critical value blooms cyan when it changes. */
   changeGlow: boolean;
   /**
+   * Whether the MFD Control widget fades itself out after a few seconds of the
+   * driver not touching it, coming back the moment the pit-menu cursor moves
+   * (the bound ▲ ▼ + − buttons) or the pointer arrives. On this channel because
+   * it is operator look-and-feel that every source showing the widget — OBS
+   * tab, browser, in-game layer — must agree on, exactly like `changeGlow`.
+   */
+  mfdAutoFade: boolean;
+  /**
    * Radar car-icon size, 30..150 (percent) — really the radar's ZOOM, since the
    * icons are drawn at the cars' real footprint and 100% is the classic 18 m
    * range (50% = 36 m, so half-size cars). On this channel rather than a URL
@@ -222,6 +230,7 @@ const appearance: Appearance = {
   panelOpacity: 100,
   textScale: 100,
   changeGlow: true,
+  mfdAutoFade: false,
   radarIconScale: 50,
   audioCues: true,
   audioVolume: 60,
@@ -266,6 +275,9 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   }
   if (typeof next?.changeGlow === 'boolean') {
     appearance.changeGlow = next.changeGlow;
+  }
+  if (typeof next?.mfdAutoFade === 'boolean') {
+    appearance.mfdAutoFade = next.mfdAutoFade;
   }
   if (typeof next?.radarIconScale === 'number' && Number.isFinite(next.radarIconScale)) {
     appearance.radarIconScale = Math.min(150, Math.max(30, Math.round(next.radarIconScale)));

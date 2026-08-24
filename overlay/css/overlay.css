@@ -2756,6 +2756,44 @@ body.ig-editing #widget-radar .panel__header {
   flex-direction: column;
   gap: 14px;
 }
+
+/* --- horizontal layout (DESIGN dropdown → widgetModes.mfd = 'row') --------
+   The sections side by side instead of stacked, for a rig with more width than
+   height to give the widget — a bottom edge, an ultrawide's flank. Equal
+   columns rather than sized-to-content: the pit list is triple the aids list
+   and giving it the difference reads as the aids being an afterthought.
+   min-width: 0 because a flex child's default min-width is max-content, which
+   would let one long pit label push the whole row wider than the panel. */
+#widget-mfd[data-layout="row"] .mfd__wrap {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 18px;
+}
+#widget-mfd[data-layout="row"] .mfd__group {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* --- auto-fade (Settings → Display → "MFD auto-fade") ---------------------
+   data-mfd-faded is written by the widget's fade clock (widgets/mfd.js) and
+   only ever means "idle right now". Opacity rather than visibility/display:
+   the widget must keep its box (nothing reflows around it) and keep receiving
+   pointer events, because the pointer arriving is one of the things that wakes
+   it. The fade OUT is slower than the fade back: leaving is an ambient event,
+   coming back is the driver asking for the menu. */
+#widget-mfd {
+  transition: opacity 0.6s ease;
+}
+#widget-mfd[data-mfd-faded] {
+  opacity: 0;
+  transition: opacity 1.1s ease;
+}
+/* Never faded while the in-game layer is being laid out — an invisible widget
+   cannot be dragged, and edit mode exists to find things. Same bargain as the
+   radar's hidden chrome coming back under body.ig-editing (see below). */
+body.ig-editing #widget-mfd[data-mfd-faded] {
+  opacity: 1;
+}
 /* Prominent section headers with a branded gradient underline. */
 .mfd__group-title {
   font-family: var(--font-display);

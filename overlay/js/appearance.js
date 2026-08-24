@@ -290,6 +290,26 @@
   var speedUnit = "kph";
   var speedUnitListeners = [];
 
+  /*
+   * Whether the MFD fades itself out when idle (widgets/mfd.js). A subscription
+   * rather than an attribute on <html> because the widget has timers to start
+   * and stop on the change, not just a style to swap.
+   */
+  var mfdFade = false;
+  var mfdFadeListeners = [];
+
+  function applyMfdFade(next) {
+    if (typeof next !== "boolean" || next === mfdFade) return;
+    mfdFade = next;
+    for (var i = 0; i < mfdFadeListeners.length; i++) {
+      try {
+        mfdFadeListeners[i](mfdFade);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
   function applySpeedUnit(next) {
     var unit = next === "mph" ? "mph" : next === "kph" ? "kph" : null;
     if (!unit || unit === speedUnit) return;
@@ -434,6 +454,11 @@
       speedUnitListeners.push(cb);
       cb(speedUnit);
     },
+    /** Whether the MFD auto-fades when idle, and a subscription to it changing. */
+    onMfdFade: function (cb) {
+      mfdFadeListeners.push(cb);
+      cb(mfdFade);
+    },
     /**
      * Subscribe to the radar's icon size (percent). Called immediately IF a value
      * has already arrived — and deliberately not otherwise, so the radar keeps
@@ -537,6 +562,7 @@
       applyModes(appearance.widgetModes);
       applyStandings(appearance.standings);
       if (!unitPinned) applySpeedUnit(appearance.speedUnit);
+      applyMfdFade(appearance.mfdAutoFade);
     });
     return; // the app pushes changes — nothing to poll
   }
@@ -561,6 +587,7 @@
         applyModes(cfg.widgetModes);
         applyStandings(cfg.standings);
         if (!unitPinned) applySpeedUnit(cfg.speedUnit);
+        applyMfdFade(cfg.mfdAutoFade);
       })
       .catch(function () {
         // Served from somewhere without the route (or the server is down):

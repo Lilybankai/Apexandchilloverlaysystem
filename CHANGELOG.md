@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.5 — 2026-08-24
+
+### Added
+
+- **The MFD Control widget can lie down.** A DESIGN dropdown on its card offers
+  the original stacked column or a **horizontal layout** with the sections side
+  by side — for a rig that has more width than height to give it: a bottom
+  edge, an ultrawide's flank. `?layout=row` pins one OBS source, same idiom as
+  the speedo's `?design=`.
+- **MFD auto-fade.** (Off by default — Settings → Display → MFD auto-fade.)
+  The widget fades itself out after three seconds untouched and comes straight
+  back the moment the pit-menu cursor moves — the bound ▲ ▼ + − buttons — or
+  the pointer arrives. The pointer resting on it holds it awake, because fading
+  a menu out from under a mouse that is aiming at it turns clicks into
+  misclicks; and it never fades while the in-game layout is being edited, since
+  an invisible widget cannot be dragged. The pit menu on screen only while it
+  is actually being worked.
+
 ## 0.91.0-beta.4 — 2026-08-24
 
 ### Fixed

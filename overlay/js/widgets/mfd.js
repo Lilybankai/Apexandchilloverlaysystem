@@ -55,6 +55,101 @@
   var pit = { container: null, rowsEl: null, rows: {}, sig: "" };
   var aids = { container: null, rowsEl: null, rows: {}, sig: "" };
 
+  /* ------------------------------ auto-fade ------------------------------- */
+
+  /** Idle time before the widget fades itself out, ms. */
+  var FADE_AFTER_MS = 3000;
+
+  /**
+   * The auto-fade state machine, on its own so the timing rules are testable
+   * without a DOM or a real clock (scripts/test-mfd-ui.js injects fake timers).
+   * Same bargain ApexSpeedo takes: the part that has to be right about a
+   * threshold is reachable headlessly.
+   *
+   * The rules:
+   *   - enabled + idle for FADE_AFTER_MS → fade out (setFaded(true));
+   *   - ANY activity — the pit-menu cursor moving (the bound ▲ ▼ + − buttons),
+   *     a click on a row, the pointer arriving — shows the widget and restarts
+   *     the clock;
+   *   - while the pointer is OVER the widget the clock is held: fading a menu
+   *     out from under a mouse that is aiming at it is a misclick factory;
+   *   - switching the feature off shows the widget and stops the clock, so a
+   *     faded widget can never be stranded invisible by the toggle.
+   */
+  function createFadeController(opts) {
+    var setFaded = opts.setFaded;
+    var setT = opts.setTimeout || window.setTimeout.bind(window);
+    var clearT = opts.clearTimeout || window.clearTimeout.bind(window);
+    var delay = opts.delayMs || FADE_AFTER_MS;
+
+    var enabled = false;
+    var hovered = false;
+    var faded = false;
+    var timer = null;
+
+    function stop() {
+      if (timer !== null) {
+        clearT(timer);
+        timer = null;
+      }
+    }
+
+    function show() {
+      if (!faded) return;
+      faded = false;
+      setFaded(false);
+    }
+
+    function arm() {
+      stop();
+      if (!enabled || hovered) return;
+      timer = setT(function () {
+        timer = null;
+        faded = true;
+        setFaded(true);
+      }, delay);
+    }
+
+    return {
+      /** Something happened the driver did: come back, restart the clock. */
+      activity: function () {
+        show();
+        arm();
+      },
+      /** The pointer entered (true) or left (false) the widget. */
+      hover: function (on) {
+        hovered = !!on;
+        if (hovered) {
+          stop();
+          show();
+        } else {
+          arm();
+        }
+      },
+      /** The operator's setting. Enabling arms the clock immediately. */
+      setEnabled: function (on) {
+        enabled = !!on;
+        if (enabled) arm();
+        else {
+          stop();
+          show();
+        }
+      },
+      /** Current state, for the tests. */
+      isFaded: function () {
+        return faded;
+      },
+    };
+  }
+
+  /** The live controller, or null while the feature is off/unwired. */
+  var fade = null;
+
+  /** Route driver activity into the fade clock; safe before init. */
+  function fadeActivity() {
+    if (fade) fade.activity();
+  }
+
   /* ----------------------------- categorisation --------------------------- */
 
   /** Category (→ colour) for a pit-menu row, from its label. Order matters:
@@ -392,6 +487,9 @@
         // the widget learns a wheel button just altered a value. Skip the very
         // first poll: that is only us catching up with existing state.
         if (first) return;
+        // A moved cursor IS driver activity — this is what brings a faded
+        // widget back when a bound row-next/row-previous button is pressed.
+        fadeActivity();
         showRowText(c.key, c.text);
         refreshNow();
       })
@@ -402,6 +500,7 @@
 
   /** Points the server's cursor at a row — used when a row's own ± is clicked. */
   function aimCursorAt(key) {
+    fadeActivity();
     return postJson("/api/mfd/cursor", { key: key }).then(function (c) {
       if (c && c.ok !== false) {
         pitCursor = { key: c.key, name: c.name, updatedAt: c.updatedAt };
@@ -966,6 +1065,19 @@
 
   /* --------------------------------- init --------------------------------- */
 
+  /** The layouts the widget knows, in WIDGET_MODES order; first is default. */
+  var LAYOUTS = ["stack", "row"];
+
+  /**
+   * Apply a layout mode to the widget root. Only the non-default mode leaves an
+   * attribute behind — the stylesheet's un-attributed rules ARE the default, so
+   * 'stack' must render identically to a build that predates layouts.
+   */
+  function applyLayout(root, mode) {
+    if (mode === "row") root.setAttribute("data-layout", "row");
+    else root.removeAttribute("data-layout");
+  }
+
   function init(root, ctx) {
     octx = ctx;
     headerMeta = root.querySelector('[data-role="meta"]');
@@ -978,6 +1090,51 @@
     };
     showPit = !isOff("pit");
     showAids = !isOff("aids");
+
+    // Layout: `?layout=row` pins one source (the speedo's `?design=` idiom);
+    // otherwise the control panel's DESIGN dropdown drives it live over the
+    // modes channel. A typo falls back to the stacked default, never to junk.
+    var pinnedLayout = (params.get("layout") || "").toLowerCase();
+    if (pinnedLayout) {
+      applyLayout(root, LAYOUTS.indexOf(pinnedLayout) > 0 ? pinnedLayout : LAYOUTS[0]);
+    } else if (window.ApexAppearance && window.ApexAppearance.onModes) {
+      window.ApexAppearance.onModes(function (modes) {
+        var m = (modes && modes.mfd) || LAYOUTS[0];
+        applyLayout(root, LAYOUTS.indexOf(m) > 0 ? m : LAYOUTS[0]);
+      });
+    }
+
+    // Auto-fade: the widget dims to nothing after FADE_AFTER_MS without the
+    // driver touching it, and comes back on any cursor move or the pointer
+    // arriving. `?fade=on/off` pins one source; otherwise the Settings toggle
+    // drives it live. The data attribute only ever means "faded right now" —
+    // the stylesheet owns what that looks like, including ignoring it entirely
+    // while the layer is in edit mode.
+    fade = createFadeController({
+      setFaded: function (on) {
+        if (on) root.setAttribute("data-mfd-faded", "true");
+        else root.removeAttribute("data-mfd-faded");
+      },
+    });
+    var pinnedFade = (params.get("fade") || "").toLowerCase();
+    if (pinnedFade) {
+      fade.setEnabled(pinnedFade === "on" || pinnedFade === "1" || pinnedFade === "true");
+    } else if (window.ApexAppearance && window.ApexAppearance.onMfdFade) {
+      window.ApexAppearance.onMfdFade(function (on) {
+        fade.setEnabled(on);
+      });
+    }
+    // The pointer holds the widget awake: fading a menu out from under a mouse
+    // that is aiming at it turns every third click into a misclick. pointermove
+    // rather than only enter/leave, so a mouse RESTING on the widget when the
+    // clock arms still reads as presence.
+    root.addEventListener("pointerenter", function () {
+      if (fade) fade.hover(true);
+    });
+    root.addEventListener("pointerleave", function () {
+      if (fade) fade.hover(false);
+    });
+    root.addEventListener("pointermove", fadeActivity);
 
     buildOpacityControl(root, params);
 
@@ -1022,6 +1179,17 @@
     // garage endpoints that feed the rest of this widget do not.
     renderPenalties(frame, ctx);
   }
+
+  /**
+   * The pure half, exposed so the fade timing and the layout rule can be
+   * exercised headlessly (scripts/test-mfd-ui.js) — the ApexSpeedo bargain.
+   */
+  window.ApexMfd = {
+    FADE_AFTER_MS: FADE_AFTER_MS,
+    LAYOUTS: LAYOUTS,
+    createFadeController: createFadeController,
+    applyLayout: applyLayout,
+  };
 
   window.ApexOverlay.registerWidget("mfd", {
     // The MFD changes on driver input rather than per frame, but when it does the

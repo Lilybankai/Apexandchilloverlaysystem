@@ -131,6 +131,14 @@ const OVERLAY_CATALOG = [
     label: 'MFD Control',
     description: 'Set pit strategy from the overlay — open in a browser to click (LMU only)',
     ingameDefault: false,
+    // Same generic machinery as the speedo's designs: the card grows a DESIGN
+    // dropdown from this list alone. 'stack' is the original two-sections-deep
+    // column; 'row' lays the sections out side by side for a rig that has more
+    // width than height to give it — a bottom edge, an ultrawide's flank.
+    designs: [
+      { id: 'stack', label: 'Vertical — sections stacked' },
+      { id: 'row', label: 'Horizontal — sections side by side' },
+    ],
   },
   // Stream chat pulls its own feed from the /chat socket, not the telemetry
   // frame. Off in the in-game set by default — it is a deliberate add (a side
@@ -264,6 +272,13 @@ function defaultSettings() {
     // marking a value critical — but it is a visual effect over live footage, so
     // it can be turned off for a broadcast that wants a completely static look.
     changeGlow: true,
+    // Whether the MFD Control widget fades itself out after three seconds
+    // without the driver touching it — a cursor move from the bound ▲ ▼ + −
+    // buttons (or the mouse) brings it straight back. For the driver who wants
+    // the pit menu on screen only while they are actually working it. Off by
+    // default: a widget that vanishes on its own is a behaviour someone must
+    // choose, not discover.
+    mfdAutoFade: false,
     // Radar car-icon size, 30..150 (percent). This is the radar's ZOOM: it sets
     // the display range (100% = the classic 18 m, 50% = 36 m and therefore
     // half-size cars), because the icons are drawn at the cars' real footprint
@@ -440,6 +455,9 @@ const WIDGET_MODES = {
   // 'lmp2' is the Cosworth-CDU-style LMP2 dash. Kept in step with the `designs`
   // list on the speedo catalog entry, which is what the card's dropdown renders.
   speedo: ['apex', 'lmp2'],
+  // The MFD's layout. 'stack' is the original column; 'row' puts the sections
+  // side by side. In step with the mfd catalog entry's `designs` list.
+  mfd: ['stack', 'row'],
 };
 
 /** Action ids whose binding is mirrored by a legacy single-purpose setting. */
@@ -611,6 +629,8 @@ function loadSettings() {
     textScale: clamp(stored.textScale, 80, 120, defaults.textScale),
     changeGlow:
       typeof stored.changeGlow === 'boolean' ? stored.changeGlow : defaults.changeGlow,
+    mfdAutoFade:
+      typeof stored.mfdAutoFade === 'boolean' ? stored.mfdAutoFade : defaults.mfdAutoFade,
     radarIconScale: clamp(stored.radarIconScale, 30, 150, defaults.radarIconScale),
     audioCues: typeof stored.audioCues === 'boolean' ? stored.audioCues : defaults.audioCues,
     audioVolume: clamp(stored.audioVolume, 0, 100, defaults.audioVolume),
@@ -1266,6 +1286,7 @@ function applyAppearance(settings) {
     panelOpacity: s.panelOpacity,
     textScale: s.textScale,
     changeGlow: s.changeGlow,
+    mfdAutoFade: !!s.mfdAutoFade,
     radarIconScale: s.radarIconScale,
     audioCues: s.audioCues,
     audioVolume: s.audioVolume,
@@ -2175,6 +2196,9 @@ function registerIpc() {
       if (typeof partial.changeGlow === 'boolean') {
         next.changeGlow = partial.changeGlow;
       }
+      if (typeof partial.mfdAutoFade === 'boolean') {
+        next.mfdAutoFade = partial.mfdAutoFade;
+      }
       // Per-widget background overrides, merged key by key so a card can send
       // just its own widget. `null` is the documented "hand this one back to the
       // global slider" value — an override has to be removable, and a merge
@@ -2265,6 +2289,7 @@ function registerIpc() {
       next.panelOpacity !== current.panelOpacity ||
       next.textScale !== current.textScale ||
       next.changeGlow !== current.changeGlow ||
+      next.mfdAutoFade !== current.mfdAutoFade ||
       next.radarIconScale !== current.radarIconScale ||
       next.audioCues !== current.audioCues ||
       next.audioVolume !== current.audioVolume ||

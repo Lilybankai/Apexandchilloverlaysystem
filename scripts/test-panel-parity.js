@@ -230,6 +230,7 @@ const PANEL_CONTRACT = {
   // In-game overlay layer
   'ingame-toggle': 'input:checkbox',
   'ingame-dock-toggle': 'input:checkbox',
+  'mfd-fade-toggle': 'input:checkbox',
   'ig-edit-btn': 'button',
   'ig-reset-btn': 'button',
   'ig-hotkey': 'button',

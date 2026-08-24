@@ -30,6 +30,7 @@
   const radarIconsRange = $('#radar-icons-range');
   const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
+  const mfdFadeToggle = $('#mfd-fade-toggle');
   const startupToggle = $('#startup-toggle');
   const speedUnit = $('#speed-unit');
   const audioToggle = $('#audio-toggle');
@@ -190,6 +191,8 @@
     radarIconsRange.value = settings.radarIconScale;
     radarIconsEcho.textContent = settings.radarIconScale;
     glowToggle.checked = settings.changeGlow !== false;
+    // Ships OFF, so plain truthiness rather than the !== false idiom.
+    mfdFadeToggle.checked = !!settings.mfdAutoFade;
     if (startupToggle) startupToggle.checked = !!settings.launchOnStartup;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     audioToggle.checked = settings.audioCues !== false;
@@ -2184,6 +2187,10 @@
 
   glowToggle.addEventListener('change', async () => {
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
+  });
+
+  mfdFadeToggle.addEventListener('change', async () => {
+    await window.apex.updateSettings({ mfdAutoFade: mfdFadeToggle.checked });
   });
 
   // Application behaviour. Confirmed with a toast rather than left silent: the
