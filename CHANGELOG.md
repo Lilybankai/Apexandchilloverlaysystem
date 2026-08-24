@@ -4,6 +4,22 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.2 — 2026-08-24
+
+### Changed
+
+- **The delta widget docks into the speedo cluster.** Its bottom edge is now
+  cut to the cluster's top-centre notch — flat flanks that rest on the bezel
+  rim, chamfers matching the silhouette's, and a tip that seats on the notch
+  plateau — so the two read as one instrument instead of a bar floating over a
+  recess shaped for it. It spawns there by default (above the cluster's own
+  default spot, on the same centre line) and stays a normal widget: drag it
+  anywhere, stretch it wider, or corner-scale it — corner-scaling by the same
+  factor as the cluster is what re-fits the shape to a resized cluster.
+- The delta widget's brand gradient strip is gone: on a symmetric,
+  centre-anchored widget docked into the bezel it read as a misaligned edge,
+  and its 3px sat the whole bar fractionally off the notch's centreline.
+
 ## 0.91.0-beta.1 — 2026-08-24
 
 ### Added

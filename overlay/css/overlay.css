@@ -699,6 +699,43 @@
 /* =========================================================================
  * DELTA WIDGET (top-centre) — live predictive lap delta bar.
  * ========================================================================= */
+
+/* No brand accent bar: the delta docks into the speedo cluster's top-centre
+   notch, and a gradient strip down one flank reads as a misaligned edge on a
+   symmetric, centre-anchored widget. Same treatment as the radar. */
+#widget-delta::before { display: none; }
+/* With the bar gone, give back the width it claimed from the left padding —
+   the track is centre-anchored, so a 3px asymmetry here puts the zero tick
+   (and the whole bar) visibly off the notch's centreline. */
+#widget-delta .panel__header,
+#widget-delta .panel__body {
+  padding-left: var(--panel-pad);
+}
+
+/* Bottom edge cut to the speedo cluster's top-centre notch, so the widget
+   seats into the recess like a part of the bezel: flat flanks that rest on the
+   rim, then chamfers down to a plateau-width tip. The numbers are the speedo
+   silhouette's notch (rim 306→694, plateau 352→648, depth 52, in its 1000-unit
+   design box) at the cluster's DEFAULT 490px width — px rather than %, so
+   width-stretching the delta widens the flanks without deforming the tip that
+   has to keep fitting the notch. Corner-scaling scales the clip with the
+   widget, which is exactly what re-fits it to a corner-scaled cluster. */
+#widget-delta {
+  --notch-rim-half: 95px; /* half-width where the chamfers leave the flanks */
+  --notch-tip-half: 72.5px; /* half-width of the plateau-level tip          */
+  --notch-depth: 25.5px; /* how far the tip drops below the flanks       */
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - var(--notch-depth)),
+    calc(50% + var(--notch-rim-half)) calc(100% - var(--notch-depth)),
+    calc(50% + var(--notch-tip-half)) 100%,
+    calc(50% - var(--notch-tip-half)) 100%,
+    calc(50% - var(--notch-rim-half)) calc(100% - var(--notch-depth)),
+    0 calc(100% - var(--notch-depth))
+  );
+}
+
 .delta { padding: 2px 0; }
 .delta__track {
   position: relative;

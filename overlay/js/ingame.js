@@ -207,7 +207,14 @@
       // sized it.
       standings: { x: 24, y: 24, w: 560 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
-      delta: { x: Math.round(vw / 2 - 150), y: 196, w: 300 },
+      // Docked into the speedo cluster's top-centre notch, on the same centre
+      // line (both widgets are centred on vw/2, so x needs no coupling). The y
+      // seats the widget's chamfered tip on the notch plateau at the cluster's
+      // OWN default (top vh - 210, notch 25.5px deep at its 490px width) minus
+      // the delta's ~112px natural height — a starting point, not a constraint:
+      // it is stored and dragged like any other widget, and a driver who moves
+      // or rescales the cluster re-seats the delta by hand.
+      delta: { x: Math.round(vw / 2 - 150), y: vh - 296, w: 300 },
       // Below the delta pill, on the same centre line. Without an entry here it
       // fell through to the {24, 24} fallback and spawned exactly on top of
       // standings, where it looked like the overlay had failed to load.
