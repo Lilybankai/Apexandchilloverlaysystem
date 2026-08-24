@@ -477,6 +477,22 @@ const PANEL_CONTRACT = {
   'fuel-empty': 'div',
   'fuel-result': 'div',
 
+  // Team tab (docs/TEAM-ENGINEER-PAGE.md Phase 1) — the pit-wall view.
+  // Contracted because team-panel.js grabs every one of these at load; the
+  // card bodies are re-rendered from live pushes, so a renamed id here is a
+  // card that silently freezes while the rest of the page stays live — the
+  // exact confident-looking-stale failure the age pill exists to prevent.
+  'team-age': 'span',
+  'team-empty': 'div',
+  'team-live': 'div',
+  'team-session': 'div',
+  'team-fuel-body': 'div',
+  'team-strategy-body': 'div',
+  'team-tyres-body': 'div',
+  'team-car-body': 'div',
+  'team-weather-body': 'div',
+  'team-safety': 'input:number',
+
   // Floating
   toast: 'div',
 };
@@ -712,6 +728,9 @@ verifyPage({
     // NOT — its class colors ('#FF3333' …) read as id lookups to this
     // scanner, and neither engine file touches the DOM anyway.
     'fuel-panel.js',
+    // The Team tab. Same split: team-fuel.js is a pure engine, only the
+    // panel touches the DOM.
+    'team-panel.js',
   ],
   contract: PANEL_CONTRACT,
 });

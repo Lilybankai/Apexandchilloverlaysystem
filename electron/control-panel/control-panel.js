@@ -4538,6 +4538,21 @@
     }
   }
 
+  /**
+   * The Team tab (pit-wall view, docs/TEAM-ENGINEER-PAGE.md) ships to the
+   * beta channel first for the same reason the sync doc demands it: its
+   * endgame is multi-machine, and none of those failure modes reproduce solo.
+   * Identical rule and manners to the Fuel tab above.
+   */
+  function applyTeamTabVisibility() {
+    const tab = tabButtons.find((t) => t.dataset.tab === 'team');
+    if (tab) tab.hidden = !followingBeta;
+    if (!followingBeta) {
+      const teamView = views.find((v) => v.dataset.view === 'team');
+      if (teamView && teamView.getAttribute('data-active') === 'true') showView('dashboard');
+    }
+  }
+
   function showView(name) {
     const known = views.some((v) => v.dataset.view === name);
     const target = known ? name : 'dashboard';
@@ -4588,6 +4603,11 @@
     // editor lives in setup-editor.js, loaded after this file.
     if (target === 'setups') window.apexSetup?.shown();
     else window.apexSetup?.hidden();
+    // Same zero-cost-when-hidden contract for the Team tab: shown() subscribes
+    // main's 1 Hz snapshot pusher, hidden() stops it. Optional-chained because
+    // team-panel.js loads after this file.
+    if (target === 'team') window.apexTeam?.shown();
+    else window.apexTeam?.hidden();
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
@@ -5870,6 +5890,7 @@
     followingBeta = beta || !!u.runningIsBeta;
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
+    applyTeamTabVisibility();
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';

@@ -4,6 +4,25 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added (unreleased)
+
+- **The Team tab: a pit wall for the car.** (Beta channel.) A new panel page
+  showing the race the way an engineer wants it: fuel or Virtual Energy with
+  laps in the tank and the margin at the flag, all four tyre corners with wear,
+  temperature against the compound's window and pressures, damage and repair
+  time, position and lap times, current conditions and the remaining-race rain
+  timeline. A data-age pill says LIVE, DEMO or STALE at all times — the page
+  never lets old numbers look current. This is Phase 1 of the team engineer
+  plan (docs/TEAM-ENGINEER-PAGE.md): today it shows your own car from local
+  telemetry; the team relay that shows whoever is driving comes next.
+- **Fuel strategy that replans itself.** The Team tab's strategy card answers
+  "from here to the flag" from what the car is actually using: stops still
+  needed, the pit window in laps, each remaining stint's length and fill, and
+  a live save target — the per-lap number that would drop a stop, flagged
+  honestly when no realistic lift-and-coast could reach it. Works in litres
+  and Virtual Energy, and updates every second. The grid-planning Fuel tab is
+  unchanged; this is the in-race half it never had.
+
 ## 0.90.0 — 2026-08-23
 
 ### Added

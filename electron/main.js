@@ -943,6 +943,31 @@ let statusWs = null;
 let lastFrameAt = 0;
 let feedWatchTimer = null;
 
+/* ---- Team tab feed (docs/TEAM-ENGINEER-PAGE.md Phase 1) -------------------
+ * The status socket above already parses every frame; while the Team view is
+ * open we also prune the latest one to a 1 Hz snapshot and push it. The tab
+ * subscribes on entry and unsubscribes on exit, so with any other view active
+ * this costs exactly nothing — the throttle gate below is the first line. */
+let teamViewOpen = false;
+let lastTeamPushAt = 0;
+let lastFeedFrame = null; // newest parsed frame, so subscribe can answer instantly
+const TEAM_PUSH_MS = 1000;
+const { buildTeamSnapshot } = require('./team-snapshot');
+
+/** Push a pruned snapshot of this frame to the Team tab, at most 1/s. */
+function maybePushTeamSnapshot(frame) {
+  if (!teamViewOpen) return;
+  const now = Date.now();
+  if (now - lastTeamPushAt < TEAM_PUSH_MS) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  lastTeamPushAt = now;
+  try {
+    mainWindow.webContents.send('team:update', buildTeamSnapshot(frame, now));
+  } catch {
+    /* window mid-teardown — the next frame retries */
+  }
+}
+
 /**
  * Whether the live feed currently says the driver is at the wheel — the input
  * to auto show/hide. `false` covers every way of not being on track: the sim's
@@ -992,6 +1017,8 @@ function connectStatusFeed(port, wsPath) {
         status.feed = feed;
         pushStatus();
       }
+      lastFeedFrame = frame;
+      maybePushTeamSnapshot(frame);
     } catch {
       /* ignore malformed frame */
     }
@@ -1021,6 +1048,16 @@ function connectStatusFeed(port, wsPath) {
 
 function disconnectStatusFeed() {
   setFeedOnTrack(false);
+  // Blank the pit wall promptly rather than letting it age out: a stopped
+  // server is "no data", not "data from 8 seconds ago".
+  lastFeedFrame = null;
+  if (teamViewOpen && mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.webContents.send('team:update', null);
+    } catch {
+      /* window mid-teardown */
+    }
+  }
   if (feedWatchTimer) {
     clearInterval(feedWatchTimer);
     feedWatchTimer = null;
@@ -3337,6 +3374,18 @@ function registerIpc() {
     }
   });
   ipcMain.handle('engineer:rate', (_evt, id, rating) => getEngineer().rate(String(id), String(rating)));
+
+  /* ---- Team tab (pit-wall view) ---- */
+  // Subscribe answers with the current snapshot so the tab paints on entry
+  // instead of waiting out the 1 s push cadence; pushes then keep it live.
+  ipcMain.handle('team:subscribe', () => {
+    teamViewOpen = true;
+    lastTeamPushAt = 0; // next frame pushes immediately
+    return lastFeedFrame ? buildTeamSnapshot(lastFeedFrame, Date.now()) : null;
+  });
+  ipcMain.handle('team:unsubscribe', () => {
+    teamViewOpen = false;
+  });
 
   /** Bind (or clear, with an empty accelerator) one action. */
   ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {

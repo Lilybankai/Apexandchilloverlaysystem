@@ -86,6 +86,19 @@ contextBridge.exposeInMainWorld('apex', {
     return () => ipcRenderer.removeListener('engineer:status', listener);
   },
 
+  /* ---- Team (pit-wall view) ---- */
+
+  /** Start the 1 Hz snapshot pushes; resolves with the current snapshot (or null). */
+  teamSubscribe: () => ipcRenderer.invoke('team:subscribe'),
+  /** Stop the pushes — the tab costs nothing while another view is active. */
+  teamUnsubscribe: () => ipcRenderer.invoke('team:unsubscribe'),
+  /** Snapshot pushes while subscribed (null = feed stopped). Returns unsubscribe. */
+  onTeamUpdate: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('team:update', listener);
+    return () => ipcRenderer.removeListener('team:update', listener);
+  },
+
   /* ---- Wheel / controller bindings ---- */
 
   /** Attached controllers + whether background reading works on this host. */

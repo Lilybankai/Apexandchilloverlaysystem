@@ -13,6 +13,9 @@
   <link rel="stylesheet" href="setup-editor.css" />
   <!-- Fuel tab styles — same precedence reason again. -->
   <link rel="stylesheet" href="fuel-panel.css" />
+  <!-- Team tab styles — after fuel-panel.css: the pit-wall view reuses the
+       fuel result classes (tiles, stints) and restyles on top of them. -->
+  <link rel="stylesheet" href="team-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
 </head>
@@ -54,6 +57,12 @@
       </button>
       <button class="tab" type="button" data-tab="engineer">
         <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
+      </button>
+      <!-- Beta-channel feature: the pit-wall view (docs/TEAM-ENGINEER-PAGE.md
+           Phase 1). Same visibility rule and reasoning as the Fuel tab below
+           (control-panel.js applyTeamTabVisibility). -->
+      <button class="tab" type="button" data-tab="team" hidden>
+        <svg class="icon"><use href="#i-users" /></svg><span class="tab__label">Team</span>
       </button>
       <!-- Beta-channel feature for now: hidden until the update state says the
            user follows beta (control-panel.js applyFuelTabVisibility). Hidden
@@ -1465,6 +1474,76 @@
          fuel app. Everything is computed locally in fuel-panel.js from the
          data in fuel-data.js / fuel-strategy.js — no sim connection, no IPC,
          no polling — so this view has no shown()/hidden() lifecycle. -->
+    <!-- =========================== TEAM =============================== -->
+    <!-- Phase 1 of docs/TEAM-ENGINEER-PAGE.md: an engineer view of OUR car
+         from local telemetry. The relay (a teammate's car through the same
+         cards) is Phase 2; the markup deliberately never says "my car". -->
+    <section class="view" data-view="team">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Team</h1>
+            <p class="view__sub">
+              Pit-wall view of the car — live fuel and energy, tyres, damage, weather, and a strategy that replans from what the car is actually using.
+            </p>
+          </div>
+          <span class="team-age" id="team-age" data-state="none">NO DATA</span>
+        </div>
+
+        <div class="team-empty" id="team-empty">
+          <svg class="icon"><use href="#i-users" /></svg>
+          <p>Waiting for telemetry. Start the overlay server on the Dashboard and join a session in Le Mans Ultimate — the pit wall lights up as soon as frames flow.</p>
+        </div>
+
+        <div id="team-live" hidden>
+          <div class="team-session" id="team-session"></div>
+          <!-- Two independent column stacks (same trick as .fuel-grid): cards
+               of very different heights never hollow out a shared grid row. -->
+          <div class="team-grid">
+            <div class="team-col">
+              <section class="card">
+                <div class="card__head">
+                  <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Fuel &amp; energy</h2>
+                </div>
+                <div id="team-fuel-body"></div>
+              </section>
+              <section class="card">
+                <div class="card__head">
+                  <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyres</h2>
+                </div>
+                <div id="team-tyres-body"></div>
+              </section>
+              <section class="card">
+                <div class="card__head">
+                  <h2 class="card__title"><svg class="icon"><use href="#i-cloud-rain" /></svg>Weather</h2>
+                </div>
+                <div id="team-weather-body"></div>
+              </section>
+            </div>
+            <div class="team-col">
+              <section class="card">
+                <div class="card__head">
+                  <h2 class="card__title"><svg class="icon"><use href="#i-target" /></svg>Strategy to the flag</h2>
+                  <p class="card__desc">Replanned every second from live consumption and the race remaining.</p>
+                </div>
+                <label class="field">
+                  <span class="field__label">Safety margin (laps)</span>
+                  <input class="field__input" type="number" id="team-safety" min="0" max="10" step="1" />
+                </label>
+                <div id="team-strategy-body"></div>
+              </section>
+              <section class="card">
+                <div class="card__head">
+                  <h2 class="card__title"><svg class="icon"><use href="#i-flag" /></svg>Car &amp; race</h2>
+                </div>
+                <div id="team-car-body"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="view" data-view="fuel">
       <div class="wrap">
         <div class="view__head">
@@ -2637,6 +2716,10 @@
 <script src="fuel-data.js"></script>
 <script src="fuel-strategy.js"></script>
 <script src="fuel-panel.js"></script>
+<!-- Team tab: pure remaining-race planner (also require()d by
+     scripts/test-teamfuel.js), then the pit-wall view itself. -->
+<script src="team-fuel.js"></script>
+<script src="team-panel.js"></script>
 <script src="engineer-panel.js"></script>
 </body>
 </html>
