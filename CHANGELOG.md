@@ -4,6 +4,38 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.4 — 2026-08-24
+
+### Fixed
+
+- **The delta widget now measures the notch instead of guessing at it.** The cut
+  in its bottom edge was three pixel values hand-converted from the cluster's
+  silhouette at one specific width (490px) and pasted into the stylesheet, with
+  nothing connecting the copy back to the original. It was therefore correct at
+  exactly one size: scaling or stretching either widget slid the notch out from
+  under a cut that stayed where it was. The shape is now read from the cluster
+  itself every time either widget moves or resizes, so the two stay seated at
+  any size, any scale and any text size. Three things the hand-converted numbers
+  could never account for come with it: the cluster's own 1px border, the
+  letterboxing that shifts and shrinks the artwork when the cluster is
+  height-boxed, and a delta that is not centred on the notch — which used to
+  shear the cut off the recess entirely.
+- The delta's default placement is now measured after layout rather than derived
+  from a hardcoded guess at its own height, which was wrong at every text scale
+  but 1.0 and seated the tip below the plateau.
+
+### Added
+
+- **Magnetic window docking.** (Off by default — Overlay → Magnetic docking.)
+  While laying out the in-game overlay, a widget dragged or resized near another
+  one snaps flush against it and takes the neighbour's measurement along the
+  edge they share: side by side matches height, stacked matches width. A magnet
+  mark shows on the seam that is about to take. Holding **Alt** suppresses it
+  for a drag that wants to land somewhere a snap would fight. Corner-scale drags
+  are deliberately left alone — scale moves in 1% steps, so the edge being aimed
+  at is frequently not reachable, and a magnet that visibly refuses to land is
+  worse than none.
+
 ## 0.91.0-beta.3 — 2026-08-24
 
 ### Added

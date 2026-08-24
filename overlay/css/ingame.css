@@ -327,3 +327,76 @@ body.ig-interact .ig-item {
   outline: 1px solid rgba(38, 187, 244, 0.35);
   outline-offset: 3px;
 }
+
+/* ---------------------------- magnetic docking --------------------------- */
+/* The seam a snap has taken, drawn while the gesture is still in flight
+   (js/ingame.js showMark). Unlike the screen outlines above, this one has to
+   read IN FRONT of the widget it describes and of its resize handles, so it
+   carries an explicit z-index rather than relying on DOM order. Never
+   hit-tested: it appears under a pointer that is already captured by a drag. */
+.ig-snap {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* Two gates, both required: the mark only exists during a snap (data-on, set
+   per frame by the drag handler) and only in edit mode, so a gesture that was
+   in flight when the layer re-locked cannot leave one painted over the sim. */
+body.ig-editing .ig-snap[data-on] {
+  display: block;
+}
+
+/* The seam itself: a bright rule down the shared edge. Amber rather than the
+   layer's cyan — cyan is the resting colour of every outline and handle here,
+   and a magnet that has actually taken needs to be distinguishable from the
+   chrome that is always on screen. */
+.ig-snap[data-axis="v"] {
+  width: 2px;
+  margin-left: -1px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 176, 32, 0),
+    rgba(255, 176, 32, 0.95) 12%,
+    rgba(255, 176, 32, 0.95) 88%,
+    rgba(255, 176, 32, 0)
+  );
+}
+
+.ig-snap[data-axis="h"] {
+  height: 2px;
+  margin-top: -1px;
+  background: linear-gradient(
+    to right,
+    rgba(255, 176, 32, 0),
+    rgba(255, 176, 32, 0.95) 12%,
+    rgba(255, 176, 32, 0.95) 88%,
+    rgba(255, 176, 32, 0)
+  );
+}
+
+/* The magnet, centred on the seam. Sized in px rather than em: this sits over
+   the sim, not inside a panel, so it must not ride the operator's text scale. */
+.ig-snap__mark {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  fill: #0c0e18;
+  background: rgba(255, 176, 32, 0.95);
+  border-radius: 50%;
+  padding: 3px;
+  box-shadow: 0 0 0 1px rgba(12, 14, 24, 0.85), 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.ig-snap[data-axis="v"] .ig-snap__mark {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ig-snap[data-axis="h"] .ig-snap__mark {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}

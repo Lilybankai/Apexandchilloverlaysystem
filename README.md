@@ -97,6 +97,15 @@ three ways:
 Double-click a handle to hand that dimension back to automatic. Placement is
 saved per widget in `config.json`; **Reset layout** clears the lot.
 
+**Magnetic docking** (off by default) makes laying out a screen a matter of
+dragging rather than nudging: with it on, a widget brought near another snaps
+flush against it and takes the neighbour's measurement along the edge they
+share — side by side match heights, stacked ones match widths — so a row of
+panels comes out aligned and equal instead of eyeballed a pixel at a time. A
+magnet mark shows on the seam that is about to take. Hold **Alt** while
+dragging to place a widget freely. Corner-scale drags are never snapped: scale
+moves in 1% steps, so the edge being aimed at often cannot be reached exactly.
+
 Settings are saved to `%APPDATA%/apex-overlay-system/config.json` and restored on
 next launch. The server starts automatically when the app opens.
 

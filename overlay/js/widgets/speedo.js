@@ -455,6 +455,27 @@
     revRgb: revRgb,
     /* the design box and its furniture, for the geometry tests */
     DESIGN: { w: DW, h: DH },
+    /*
+     * The top-centre notch, in design units, measured from the silhouette's own
+     * constants rather than restated. This is the SINGLE SOURCE OF TRUTH for the
+     * recess the delta widget seats into: overlay/js/notch-dock.js reads it and
+     * writes the delta's clip-path from a live measurement of this cluster.
+     *
+     * It exists because the first cut of the docking hand-converted these five
+     * numbers to px at one cluster width (490) and pasted the results into
+     * overlay.css. Every one of them was then wrong at any other width, and
+     * nothing connected the copy to the original — resizing the cluster moved
+     * the notch while the delta's cut stayed put. Derived, not duplicated:
+     *
+     *   rimHalf — centre to where the chamfers leave the flanks (500 - 306)
+     *   tipHalf — centre to the plateau's edge          (648 - 500)
+     *   depth   — how far the plateau sits below the rim
+     */
+    NOTCH: {
+      rimHalf: DW / 2 - (NOTCH_L - CH),
+      tipHalf: NOTCH_R - DW / 2,
+      depth: NOTCH_TOP,
+    },
     BOXES: BOXES,
     buildBar: buildBar,
     barPointAt: barPointAt,

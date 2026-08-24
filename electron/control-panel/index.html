@@ -269,6 +269,16 @@
               </span>
               <span class="ingame-switch__label">Auto show &amp; hide</span>
             </label>
+            <!-- Layout aid, so it sits with the layout controls rather than in
+                 Settings: it does nothing at all outside edit layout. -->
+            <label class="ingame-switch ingame-switch--auto" for="ingame-dock-toggle"
+                   title="While editing the layout, widgets snap flush to their neighbours and take the neighbour's size along the edge they share. Hold Alt while dragging to place a widget freely.">
+              <span class="switch">
+                <input type="checkbox" id="ingame-dock-toggle" />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="ingame-switch__label">Magnetic docking</span>
+            </label>
             <div class="hero__buttons">
               <button class="btn btn--accent" id="ig-edit-btn" type="button" disabled>Edit layout</button>
               <button class="btn btn--ghost" id="ig-reset-btn" type="button">Reset layout</button>

@@ -202,6 +202,18 @@ function defaultSettings() {
     // out. On by default: it is what every overlay tool does, and the driver
     // who wants the layer over their menus can switch it off.
     ingameAutoHide: true,
+    // Magnetic docking: while laying out the in-game layer, a widget dragged or
+    // resized near another one snaps flush against it and takes the neighbour's
+    // measurement along the shared edge, so a row of panels comes out aligned
+    // and equal instead of eyeballed a pixel at a time. A magnet mark shows on
+    // the seam that is about to take, and holding Alt suppresses it for a drag
+    // that wants to land somewhere a snap would fight.
+    //
+    // OFF by default, unlike most helpers here: it changes what an existing
+    // drag DOES, and an operator who has already laid out a screen should not
+    // find their widgets jumping on upgrade. It is opt-in until it has some
+    // mileage on it.
+    ingameMagneticDock: false,
     ingameOverlays,
     // The voice race engineer (push-to-talk questions answered from telemetry).
     // Off until the operator downloads a voice and flips the switch — the
@@ -569,6 +581,10 @@ function loadSettings() {
       typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
     ingameAutoHide:
       typeof stored.ingameAutoHide === 'boolean' ? stored.ingameAutoHide : defaults.ingameAutoHide,
+    ingameMagneticDock:
+      typeof stored.ingameMagneticDock === 'boolean'
+        ? stored.ingameMagneticDock
+        : defaults.ingameMagneticDock,
     ingameOverlays,
     ingameLayout,
     engineerEnabled:
@@ -2128,6 +2144,9 @@ function registerIpc() {
       if (typeof partial.ingameAutoHide === 'boolean') {
         next.ingameAutoHide = partial.ingameAutoHide;
       }
+      if (typeof partial.ingameMagneticDock === 'boolean') {
+        next.ingameMagneticDock = partial.ingameMagneticDock;
+      }
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
       }
@@ -2262,6 +2281,16 @@ function registerIpc() {
     // registry entry on quit would be indistinguishable from a broken one until
     // the operator rebooted.
     if (next.launchOnStartup !== current.launchOnStartup) applyLaunchOnStartup(next);
+
+    // Magnetic docking reaches a layer that may already be open in edit mode.
+    // Pushing it means the operator can flip the switch and carry on dragging;
+    // without this the change would only land the next time the layer was
+    // rebuilt, which reads as a dead switch.
+    if (next.ingameMagneticDock !== current.ingameMagneticDock) {
+      if (overlayWin && !overlayWin.isDestroyed()) {
+        overlayWin.webContents.send('ingame:dock', !!next.ingameMagneticDock);
+      }
+    }
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map
     // rather than per-key: a rebind, a clear and a brand-new binding all need
@@ -2405,6 +2434,14 @@ function registerIpc() {
   // it. Fetched once at boot; pushed again over 'ingame:screens' if the desktop
   // changes shape underneath a running layer.
   ipcMain.handle('ingame:screensGet', () => overlayGeometry().screens);
+
+  // Whether widgets snap to each other while being laid out. Read once at boot
+  // and pushed on 'ingame:dock' when the switch moves, so a layer already open
+  // in edit mode picks the change up without being reopened. Deliberately NOT
+  // on the appearance channel: that one is polled once a second over HTTP by
+  // every OBS Browser Source, and a layout-editor preference has no business
+  // being broadcast to them.
+  ipcMain.handle('ingame:dockGet', () => !!loadSettings().ingameMagneticDock);
 
   ipcMain.handle('ingame:layoutSave', (_evt, layout) => {
     if (!layout || typeof layout !== 'object') return false;

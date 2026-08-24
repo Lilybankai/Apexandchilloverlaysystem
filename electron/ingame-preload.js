@@ -32,6 +32,18 @@ contextBridge.exposeInMainWorld('apexIngame', {
     ipcRenderer.on('ingame:screens', (_evt, screens) => callback(screens));
   },
 
+  /**
+   * Whether widgets snap to one another while being laid out (Settings →
+   * Display → Magnetic window docking). A layout-editor preference, so it rides
+   * this bridge rather than the appearance channel the OBS sources poll.
+   */
+  getDocking: () => ipcRenderer.invoke('ingame:dockGet'),
+
+  /** The docking switch moved while this layer was open. */
+  onDocking: (callback) => {
+    ipcRenderer.on('ingame:dock', (_evt, on) => callback(!!on));
+  },
+
   /** Leave edit mode (the page's "Done" button); re-locks the window. */
   editDone: () => ipcRenderer.invoke('ingame:editDone'),
 

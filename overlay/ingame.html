@@ -136,6 +136,11 @@
   <!-- Fuel Planner: reference-data module must load before its widget. -->
   <script src="js/data/racedata.js" defer></script>
   <script src="js/widgets/fuelplan.js" defer></script>
+  <!-- Cuts the delta's bottom edge to the cluster's notch from a live
+       measurement. After speedo.js — it reads ApexSpeedo.NOTCH — and before
+       ingame.js, which calls into it from its layout write path. This is the
+       only page carrying both widgets, so it is the only page that loads it. -->
+  <script src="js/notch-dock.js" defer></script>
   <!-- Layout + edit-mode manager (after the runtime; operates on wrappers). -->
   <script src="js/ingame.js" defer></script>
 </body>

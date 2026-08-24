@@ -384,7 +384,7 @@ function makeElement(tag) {
  * tests drive: the item elements, the document listeners the layer installed
  * (so pointer gestures can be replayed), and whatever it last saved.
  */
-function loadLayer({ screens, saved, ids }) {
+function loadLayer({ screens, saved, ids, magneticDock }) {
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'overlay', 'js', 'ingame.js'),
     'utf8',
@@ -435,6 +435,13 @@ function loadLayer({ screens, saved, ids }) {
     onLayoutReset: () => {},
     editDone: () => {},
     interactStop: () => {},
+    // Magnetic docking. Off unless a fixture asks for it, which is also the
+    // shipped default — so every pre-existing test above keeps exercising the
+    // plain drag with no magnet in the way.
+    getDocking: () => Promise.resolve(!!magneticDock),
+    onDocking: (cb) => {
+      state.dockCb = cb;
+    },
   };
 
   const sandbox = {
@@ -492,14 +499,18 @@ function loadLayer({ screens, saved, ids }) {
     listeners,
     state,
     setEditing: (on) => state.edit(on),
-    /** Replay a press-drag-release on a widget, in window (CSS) pixels. */
-    drag(id, fromX, fromY, toX, toY) {
+    /**
+     * Replay a press-drag-release on a widget, in window (CSS) pixels.
+     * `opts.altKey` rides the move event, which is where magnetic docking reads
+     * it — Alt is the escape hatch for a placement a snap would fight.
+     */
+    drag(id, fromX, fromY, toX, toY, opts) {
       const el = item(id);
       const target = {
         closest: (sel) => (sel === '.ig-item' ? el : null),
       };
       listeners.pointerdown({ button: 0, target, clientX: fromX, clientY: fromY, preventDefault() {} });
-      listeners.pointermove({ clientX: toX, clientY: toY });
+      listeners.pointermove({ clientX: toX, clientY: toY, altKey: !!(opts && opts.altKey) });
       listeners.pointerup({});
     },
   };
@@ -836,6 +847,122 @@ async function run() {
       Number.isFinite(layer.left('standings')),
       'left ' + layer.item('standings').style.left,
     );
+  }
+
+  console.log('\ningame.js — magnetic docking');
+
+  /*
+   * Two widgets, deliberately different sizes so a size match is visible at all.
+   * The stub gives every widget a fixed 300×200 box, so the only way to make one
+   * bigger is to scale it: `standings` at 1.5 draws 450×300, with its right edge
+   * at 550 and its bottom at 400. `delta` stays at 1.0 and does the moving.
+   */
+  const DOCK_FIXTURE = {
+    standings: { x: 100, y: 100, scale: 1.5 },
+    delta: { x: 600, y: 100, scale: 1 },
+  };
+  const dockLayer = (magneticDock) => {
+    const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
+    return loadLayer({
+      screens: g.screens,
+      saved: JSON.parse(JSON.stringify(DOCK_FIXTURE)),
+      ids: ['standings', 'delta'],
+      magneticDock,
+    });
+  };
+
+  {
+    // Off is the shipped default, and off must mean the drag lands exactly where
+    // it was let go — this is the regression that would make the feature a bug
+    // for everyone who never asked for it.
+    const layer = dockLayer(false);
+    await settle();
+    layer.setEditing(true);
+    layer.drag('delta', 0, 0, -45, 0); // left edge to 555, 5px shy of the seam
+    eq('off: no snap, lands where dropped', layer.layoutX('delta'), 555);
+    check(
+      'off: size left alone',
+      !layer.item('delta').style.height,
+      'height ' + (layer.item('delta').style.height || 'unset'),
+    );
+  }
+
+  {
+    // On: the same 5px-shy drag closes onto the neighbour's edge, and the widget
+    // takes its height — a vertical seam is a shared height.
+    const layer = dockLayer(true);
+    await settle();
+    layer.setEditing(true);
+    layer.drag('delta', 0, 0, -45, 0);
+    eq('on: left edge snaps flush to the neighbour', layer.layoutX('delta'), 550);
+    eq('on: takes the neighbour drawn height', layer.item('delta').style.height, '300px');
+    eq('on: the other axis is left alone', layer.layoutY('delta'), 100);
+  }
+
+  {
+    // Alt is the escape hatch: same gesture, no magnet.
+    const layer = dockLayer(true);
+    await settle();
+    layer.setEditing(true);
+    layer.drag('delta', 0, 0, -45, 0, { altKey: true });
+    eq('alt: suppresses the snap', layer.layoutX('delta'), 555);
+    check(
+      'alt: suppresses the size match too',
+      !layer.item('delta').style.height,
+      'height ' + (layer.item('delta').style.height || 'unset'),
+    );
+  }
+
+  {
+    // A horizontal seam shares a WIDTH, not a height — the axis decides which.
+    const layer = dockLayer(true);
+    await settle();
+    layer.setEditing(true);
+    layer.drag('delta', 0, 0, 0, 295); // top edge to 395, 5px above the seam
+    eq('stacked: top edge snaps onto the bottom', layer.layoutY('delta'), 400);
+    eq('stacked: takes the neighbour drawn width', layer.item('delta').style.width, '450px');
+  }
+
+  {
+    // Out of range is out of range: a magnet that reached across the screen
+    // would make deliberate placement impossible.
+    const layer = dockLayer(true);
+    await settle();
+    layer.setEditing(true);
+    layer.drag('delta', 0, 0, -30, 0); // left edge to 570 — 20px out, past SNAP_PX
+    eq('beyond the threshold: no snap', layer.layoutX('delta'), 570);
+  }
+
+  {
+    // Dragging PAST a neighbour and back must not ratchet: every frame is
+    // decided from the size the widget had when it was picked up, so a drag that
+    // grazes three panels does not come out wearing the last one's height.
+    const layer = dockLayer(true);
+    await settle();
+    layer.setEditing(true);
+    const el = layer.item('delta');
+    const target = { closest: (sel) => (sel === '.ig-item' ? el : null) };
+    layer.listeners.pointerdown({ button: 0, target, clientX: 0, clientY: 0, preventDefault() {} });
+    layer.listeners.pointermove({ clientX: -45, clientY: 0 }); // into the seam
+    layer.listeners.pointermove({ clientX: -300, clientY: 0 }); // well clear again
+    layer.listeners.pointerup({});
+    eq('drag through a seam: position follows the pointer out', layer.layoutX('delta'), 300);
+    check(
+      'drag through a seam: the size match is released too',
+      !el.style.height,
+      'height ' + (el.style.height || 'unset'),
+    );
+  }
+
+  {
+    // The switch is live: an operator who turns it on mid-session should not
+    // have to reopen the layer.
+    const layer = dockLayer(false);
+    await settle();
+    layer.setEditing(true);
+    layer.state.dockCb(true);
+    layer.drag('delta', 0, 0, -45, 0);
+    eq('switched on mid-session: snaps', layer.layoutX('delta'), 550);
   }
 
   console.log('');

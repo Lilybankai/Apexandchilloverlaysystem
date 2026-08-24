@@ -209,11 +209,12 @@
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
       // Docked into the speedo cluster's top-centre notch, on the same centre
       // line (both widgets are centred on vw/2, so x needs no coupling). The y
-      // seats the widget's chamfered tip on the notch plateau at the cluster's
-      // OWN default (top vh - 210, notch 25.5px deep at its 490px width) minus
-      // the delta's ~112px natural height — a starting point, not a constraint:
-      // it is stored and dragged like any other widget, and a driver who moves
-      // or rescales the cluster re-seats the delta by hand.
+      // here is only a pre-measurement guess — the cluster's own default top
+      // (vh - 210) plus a 25.5px notch, less the delta's ~112px natural height.
+      // That height is not knowable before the widget is on screen and is wrong
+      // at any text scale but 1.0, so seatDeltaDefault() measures the real
+      // plateau after layout and corrects this. Keep the guess close anyway: it
+      // is what shows for the frame or two before the correction lands.
       delta: { x: Math.round(vw / 2 - 150), y: vh - 296, w: 300 },
       // Below the delta pill, on the same centre line. Without an entry here it
       // fell through to the {24, 24} fallback and spawned exactly on top of
@@ -332,6 +333,23 @@
     el.style.left = l.x + span.padX + "px";
     el.style.top = l.y + span.padY + "px";
     el.style.transform = l.scale === 1 ? "" : "scale(" + l.scale + ")";
+    // Re-cut the delta's notch. This is the single write path for position AND
+    // size, which is exactly what the cut depends on — and a ResizeObserver
+    // cannot see it, because MOVING a widget does not resize it. Cheap enough to
+    // run unconditionally: it early-outs on any page without both widgets, and
+    // the cluster is only measured when it is the design that has a notch.
+    refitNotch(id);
+  }
+
+  /**
+   * Ask notch-dock.js to re-measure after either of the two widgets involved has
+   * moved or been resized. Guarded on the ids so dragging the standings tower
+   * does not measure the cluster on every pointermove.
+   */
+  function refitNotch(id) {
+    if (id !== "delta" && id !== "speedo") return;
+    var dock = window.ApexNotchDock;
+    if (dock) dock.measure();
   }
 
   /**
@@ -531,6 +549,9 @@
       else window.ApexAppearance.resume();
     }
     if (editing) ensureOnScreen();
+    // A mark left behind by the gesture that was in flight when edit mode ended
+    // would sit on the locked layer with nothing to explain it.
+    else hideMark();
   }
 
   document.getElementById("ig-done").addEventListener("click", function () {
@@ -578,6 +599,275 @@
    * `right` and `bottom` below are that anchor, in screen pixels, frozen for
    * the session.
    */
+  /* ---------------------------- magnetic docking -------------------------- */
+
+  /*
+   * Snap a widget being laid out flush against its neighbours, and give it the
+   * neighbour's measurement along the edge they share.
+   *
+   * Laying out a screen is the one job here that is pure alignment, and it was
+   * being done by eye: drag, squint, nudge one pixel, squint again. Two panels
+   * that are meant to read as a row have to agree on an edge AND on a length,
+   * and hitting both by hand at an arbitrary scale is not realistic.
+   *
+   * The rules, deliberately few:
+   *   - A seam takes when the moving edge comes within SNAP_PX of a neighbour's
+   *     edge. Measured in SCREEN pixels, so the magnet feels the same distance
+   *     regardless of what either widget is scaled to.
+   *   - x and y are decided independently, which is what makes corner-to-corner
+   *     snapping fall out without a special case for it.
+   *   - Butting up against a neighbour (a seam) also matches the shared edge's
+   *     LENGTH: side-by-side matches height, stacked matches width. Merely
+   *     lining up with a far edge does not — that is an alignment, not a dock,
+   *     and resizing on it would be a surprise.
+   *   - Alt suppresses the whole thing for one gesture, for the placement that
+   *     genuinely wants to sit 3px off a neighbour.
+   *
+   * Corner-scale drags are left alone on purpose: `l.scale` is quantised to two
+   * decimals, so on a 490px widget one step is ~4.9px and the edge the operator
+   * is aiming at is usually not reachable at all. A magnet that visibly refuses
+   * to land is worse than no magnet.
+   */
+
+  /** How close an edge has to come before it takes, in screen pixels. */
+  var SNAP_PX = 12;
+
+  /** Whether the operator has the feature on at all (Settings → Display). */
+  var magnetic = false;
+
+  /**
+   * The visual box of a widget in LAYOUT coordinates. Layout and CSS space
+   * differ by a constant (span.padX/padY) that every widget shares, so distances
+   * between two widgets are identical in both and the padding never enters here.
+   * The size is the DRAWN size: `transform: scale()` with a top-left origin, so
+   * the box grows right and down from an unmoved x/y.
+   */
+  function boxOf(el, l) {
+    var s = l.scale || 1;
+    return { x: l.x, y: l.y, w: el.offsetWidth * s, h: el.offsetHeight * s };
+  }
+
+  /**
+   * Every other widget's box, as snap candidates. Hidden widgets are skipped —
+   * an id that is not on this layer has no edges to offer.
+   */
+  function neighbourBoxes(exceptId) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var el = items[i];
+      var id = el.getAttribute("data-id");
+      if (id === exceptId) continue;
+      var l = layout[id];
+      if (!l || !el.offsetWidth || !el.offsetHeight) continue;
+      out.push(boxOf(el, l));
+    }
+    return out;
+  }
+
+  /**
+   * The best correction along one axis, or null. `moving` is the pair of edges
+   * the dragged widget presents on this axis (near, far); each neighbour offers
+   * its own pair. A seam is a near-to-far or far-to-near meeting — the two
+   * widgets end up touching — while near-to-near or far-to-far is an alignment.
+   *
+   * Returns the delta to ADD to the widget's position, plus whether the winner
+   * was a seam (which is what earns a size match) and the neighbour behind it.
+   */
+  function bestSnap(nearEdge, farEdge, boxes, nearOf, farOf) {
+    var best = null;
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      var bNear = nearOf(b);
+      var bFar = farOf(b);
+      var cands = [
+        { d: bFar - nearEdge, seam: true }, // our near edge onto their far
+        { d: bNear - farEdge, seam: true }, // our far edge onto their near
+        { d: bNear - nearEdge, seam: false }, // near edges flush
+        { d: bFar - farEdge, seam: false }, // far edges flush
+      ];
+      for (var c = 0; c < cands.length; c++) {
+        var cand = cands[c];
+        if (Math.abs(cand.d) > SNAP_PX) continue;
+        // A seam wins ties against a mere alignment: when a widget is dropped
+        // into a corner both are available at the same distance, and touching
+        // the neighbour is what the operator was aiming at.
+        if (
+          !best ||
+          Math.abs(cand.d) < Math.abs(best.d) - 0.01 ||
+          (cand.seam && !best.seam && Math.abs(cand.d) <= Math.abs(best.d) + 0.01)
+        ) {
+          best = { d: cand.d, seam: cand.seam, box: b };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Apply magnetic docking to a MOVE in progress. `l` has already been set to
+   * the unsnapped position; size is restored to its pre-drag value by the caller
+   * so every frame is decided from the same base rather than from the last
+   * frame's answer.
+   */
+  function snapMove(el, l, id) {
+    var boxes = neighbourBoxes(id);
+    if (!boxes.length) return null;
+
+    var s = l.scale || 1;
+    var w = drag.baseW * s;
+    var h = drag.baseH * s;
+
+    var sx = bestSnap(
+      l.x, l.x + w, boxes,
+      function (b) { return b.x; },
+      function (b) { return b.x + b.w; },
+    );
+    var sy = bestSnap(
+      l.y, l.y + h, boxes,
+      function (b) { return b.y; },
+      function (b) { return b.y + b.h; },
+    );
+
+    if (sx) l.x = Math.round(l.x + sx.d);
+    if (sy) l.y = Math.round(l.y + sy.d);
+
+    // Match the shared edge. A vertical seam (widgets side by side) shares a
+    // height; a horizontal one shares a width. Only one can apply — a widget
+    // cannot be flush on both axes at once without overlapping its neighbour.
+    if (sx && sx.seam) matchHeight(l, sx.box, s);
+    else if (sy && sy.seam) matchWidth(l, id, sy.box, s);
+
+    if (!sx && !sy) return null;
+    return { x: sx, y: sy, w: w, h: h };
+  }
+
+  /** Give the widget the neighbour's drawn height, in its own pre-scale units. */
+  function matchHeight(l, box, s) {
+    l.h = Math.round(clampNum(box.h / s, MIN_H, MAX_ITEM));
+  }
+
+  /**
+   * Give the widget the neighbour's drawn width. The stored width is in no-bump
+   * units (see widthBumpFor) while the drawn one includes it, so the bump comes
+   * back out or the standings tower gains its optional column's width on every
+   * snap.
+   */
+  function matchWidth(l, id, box, s) {
+    l.w = Math.round(clampNum(box.w / s - widthBumpFor(id), MIN_W, MAX_ITEM));
+  }
+
+  /**
+   * Apply magnetic docking to an EDGE resize in progress: the edge under the
+   * pointer looks for a neighbour's parallel edge and takes it. Because the
+   * opposite edge is pinned by the gesture, landing the moving one on a
+   * neighbour's edge IS the size match — there is nothing extra to do.
+   */
+  function snapResize(el, l, id, mode) {
+    var boxes = neighbourBoxes(id);
+    if (!boxes.length) return null;
+    var s = l.scale || 1;
+    var horizontal = mode === "width" || mode === "width-w";
+    var bump = horizontal ? widthBumpFor(id) : 0;
+
+    // Where the moving edge is now, and which neighbour edges it may take.
+    var edge = horizontal
+      ? mode === "width" ? l.x + (l.w + bump) * s : l.x
+      : mode === "height" ? l.y + l.h * s : l.y;
+
+    var best = null;
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      var offers = horizontal ? [b.x, b.x + b.w] : [b.y, b.y + b.h];
+      for (var o = 0; o < offers.length; o++) {
+        var d = offers[o] - edge;
+        if (Math.abs(d) > SNAP_PX) continue;
+        if (!best || Math.abs(d) < Math.abs(best.d)) best = { d: d, box: b, at: offers[o] };
+      }
+    }
+    if (!best) return null;
+
+    // Grow or shrink by the correction, keeping the anchored edge where it is.
+    if (mode === "width") {
+      l.w = Math.round(clampNum(l.w + best.d / s, MIN_W, MAX_ITEM));
+    } else if (mode === "height") {
+      l.h = Math.round(clampNum(l.h + best.d / s, MIN_H, MAX_ITEM));
+    } else if (mode === "width-w") {
+      var wn = Math.round(clampNum(l.w - best.d / s, MIN_W, MAX_ITEM));
+      l.x = Math.round(l.x + (l.w - wn) * s);
+      l.w = wn;
+    } else {
+      var hn = Math.round(clampNum(l.h - best.d / s, MIN_H, MAX_ITEM));
+      l.y = Math.round(l.y + (l.h - hn) * s);
+      l.h = hn;
+    }
+    return { edge: best, horizontal: horizontal };
+  }
+
+  /* --------------------------- the magnet mark ---------------------------- */
+
+  /*
+   * Feedback for a snap that has taken. Follows renderScreenGuides' pattern —
+   * absolutely positioned, pointer-events:none, CSS-gated on .ig-editing — but
+   * with an explicit z-index, because unlike the screen outlines this has to
+   * read IN FRONT of the widget it is describing and of its resize handles.
+   */
+  var markEl = null;
+
+  function magnetMark() {
+    if (markEl) return markEl;
+    markEl = document.createElement("div");
+    markEl.className = "ig-snap";
+    // Inline, not a sprite: the overlay pages have no icon system (the '#i-*'
+    // sprite lives in the control panel), and a magnet is three paths.
+    markEl.innerHTML =
+      '<svg class="ig-snap__mark" viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M7 3v9a5 5 0 0 0 10 0V3h-4v9a1 1 0 0 1-2 0V3z"/>' +
+      '<rect x="7" y="3" width="4" height="3.4"/>' +
+      '<rect x="13" y="3" width="4" height="3.4"/>' +
+      "</svg>";
+    document.body.appendChild(markEl);
+    return markEl;
+  }
+
+  /** Draw the mark along a seam, in CSS coordinates. */
+  function showMark(x, y, len, horizontal) {
+    var el = magnetMark();
+    el.setAttribute("data-axis", horizontal ? "v" : "h");
+    el.style.left = x + span.padX + "px";
+    el.style.top = y + span.padY + "px";
+    if (horizontal) el.style.height = Math.max(24, len) + "px";
+    else el.style.width = Math.max(24, len) + "px";
+    el.setAttribute("data-on", "true");
+  }
+
+  function hideMark() {
+    if (markEl) markEl.removeAttribute("data-on");
+  }
+
+  /**
+   * Put the mark on whichever seam actually took. Alignments get no mark: the
+   * edges being flush is its own feedback, and a magnet on every near-miss
+   * would strobe across the screen through the whole drag.
+   */
+  function markFromMove(l, snap) {
+    if (!snap) return hideMark();
+    if (snap.x && snap.x.seam) {
+      var b = snap.x.box;
+      var top = Math.max(l.y, b.y);
+      var bot = Math.min(l.y + (l.h ? l.h * (l.scale || 1) : snap.h), b.y + b.h);
+      var edgeX = l.x <= b.x ? l.x + snap.w : l.x;
+      return showMark(edgeX, top, Math.max(0, bot - top), true);
+    }
+    if (snap.y && snap.y.seam) {
+      var b2 = snap.y.box;
+      var lft = Math.max(l.x, b2.x);
+      var rgt = Math.min(l.x + (l.w ? snap.w : snap.w), b2.x + b2.w);
+      var edgeY = l.y <= b2.y ? l.y + snap.h : l.y;
+      return showMark(lft, edgeY, Math.max(0, rgt - lft), false);
+    }
+    hideMark();
+  }
+
   var drag = null;
 
   function onPointerDown(ev) {
@@ -598,6 +888,12 @@
       origScale: l.scale,
       baseW: item.offsetWidth,
       baseH: item.offsetHeight,
+      // The size before the magnet touched it. A move that snaps also RESIZES
+      // the widget, so every frame has to start from this rather than from the
+      // last frame's answer — otherwise a drag along a row of panels would
+      // ratchet the widget through each neighbour's height in turn.
+      origW: l.w,
+      origH: l.h,
     };
     drag.right = drag.origX + drag.baseW * drag.origScale;
     drag.bottom = drag.origY + drag.baseH * drag.origScale;
@@ -674,6 +970,35 @@
       );
       l.y = Math.round(clampNum(y, minY(), maxY() - 40));
     }
+
+    // The magnet runs LAST, on top of whatever the gesture produced. Doing it
+    // here rather than inside each branch means it sees the clamped, on-screen
+    // position every branch has already agreed on, and one rule covers all six.
+    if (magnetic && !ev.altKey) {
+      if (drag.mode === "move") {
+        // Back out any size the previous frame's snap applied, so this frame is
+        // decided from the widget as the operator picked it up.
+        if (drag.origW === undefined) delete l.w;
+        else l.w = drag.origW;
+        if (drag.origH === undefined) delete l.h;
+        else l.h = drag.origH;
+        markFromMove(l, snapMove(drag.el, l, drag.id));
+      } else if (drag.mode !== "scale" && drag.mode !== "scale-nw") {
+        var hit = snapResize(drag.el, l, drag.id, drag.mode);
+        if (hit) {
+          var s2 = l.scale || 1;
+          if (hit.horizontal) {
+            showMark(hit.edge.at, Math.min(l.y, hit.edge.box.y),
+              Math.abs(l.y - hit.edge.box.y) + Math.max(l.h ? l.h * s2 : drag.baseH * s2, hit.edge.box.h), true);
+          } else {
+            showMark(Math.min(l.x, hit.edge.box.x), hit.edge.at,
+              Math.abs(l.x - hit.edge.box.x) + Math.max(l.w ? l.w * s2 : drag.baseW * s2, hit.edge.box.w), false);
+          }
+        } else {
+          hideMark();
+        }
+      }
+    }
     applyItem(drag.el);
   }
 
@@ -708,6 +1033,7 @@
     var movedEl = drag.el;
     var movedLayout = layout[drag.id];
     drag = null;
+    hideMark();
     // Settle a resize back into the window. Moving is left alone — the drag
     // clamp above deliberately lets a widget hang off the left edge, and
     // undoing that on every release would fight the operator. Resizing has no
@@ -802,6 +1128,25 @@
     bridge.onLayoutReset(function () {
       resetLayout();
     });
+    // Magnetic docking: read once, then follow the switch. Guarded because an
+    // older preload will not have it — the layer is served over HTTP and can be
+    // opened by a build whose main process predates this bridge method.
+    if (bridge.getDocking) {
+      Promise.resolve(bridge.getDocking()).then(
+        function (on) {
+          magnetic = !!on;
+        },
+        function () {
+          magnetic = false;
+        },
+      );
+    }
+    if (bridge.onDocking) {
+      bridge.onDocking(function (on) {
+        magnetic = !!on;
+        if (!magnetic) hideMark();
+      });
+    }
     if (bridge.onScreens) {
       // The desktop changed shape under a running layer (monitor plugged in,
       // resolution changed). Re-place every widget, because the window's own
@@ -850,8 +1195,51 @@
         }
       }
     }
+    // Whether the delta arrived from storage decides if its default may be
+    // corrected below: an operator's placement is theirs and is never moved.
+    var deltaStored = !!layout.delta;
     renderScreenGuides();
     placeChrome();
     applyAll();
+    if (!deltaStored) seatDeltaDefault();
   });
+
+  /**
+   * Drop the delta's DEFAULT placement exactly onto the notch plateau.
+   *
+   * `defaultsFor` has to return a number before anything is on screen, so its y
+   * carries a hardcoded guess at the delta's height (~112px) — and that guess is
+   * wrong the moment the operator's Text size slider grows the track the widget
+   * is built around, which seats the tip below the plateau and lifts the flanks
+   * off the rim. Once both widgets have been laid out the real answer can simply
+   * be measured, so it is.
+   *
+   * Deliberately not persisted: leaving it unsaved means the default re-seats
+   * itself on every boot, at whatever text scale is set then. The first time the
+   * operator drags the widget, onPointerUp stores their placement and this stops
+   * running for good.
+   */
+  function seatDeltaDefault() {
+    var el = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getAttribute("data-id") === "delta") el = items[i];
+    }
+    if (!el || typeof requestAnimationFrame !== "function") return;
+
+    // The cluster builds its stage asynchronously, so there may be nothing to
+    // measure for a few frames. Bounded: if the cluster is not on this layer at
+    // all the answer never arrives, and the authored default stands.
+    var tries = 0;
+    function attempt() {
+      var dock = window.ApexNotchDock;
+      var top = dock && dock.seatTop();
+      if (top == null || !layout.delta) {
+        if (++tries < 30) requestAnimationFrame(attempt);
+        return;
+      }
+      layout.delta.y = Math.round(top - span.padY);
+      applyItem(el);
+    }
+    requestAnimationFrame(attempt);
+  }
 })();

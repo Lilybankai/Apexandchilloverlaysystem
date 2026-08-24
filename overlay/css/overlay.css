@@ -712,26 +712,37 @@
   padding-left: var(--panel-pad);
 }
 
-/* Bottom edge cut to the speedo cluster's top-centre notch, so the widget
-   seats into the recess like a part of the bezel: flat flanks that rest on the
-   rim, then chamfers down to a plateau-width tip. The numbers are the speedo
-   silhouette's notch (rim 306→694, plateau 352→648, depth 52, in its 1000-unit
-   design box) at the cluster's DEFAULT 490px width — px rather than %, so
-   width-stretching the delta widens the flanks without deforming the tip that
-   has to keep fitting the notch. Corner-scaling scales the clip with the
-   widget, which is exactly what re-fits it to a corner-scaled cluster. */
+/* Bottom edge cut to the speedo cluster's top-centre notch, so the widget seats
+   into the recess like a part of the bezel: flat flanks that rest on the rim,
+   then chamfers down to a plateau-width tip.
+
+   THE FOUR VALUES BELOW ARE A FALLBACK, NOT THE TRUTH. overlay/js/notch-dock.js
+   measures the live cluster and overwrites all four as inline custom properties;
+   these stand only where there is no cluster to measure — the combined OBS page,
+   the standalone widget source, and the LMP2 design, which is a flat plate with
+   no notch at all. They are the Apex silhouette's notch (rim 306→694, plateau
+   352→648, depth 52, in its 1000-unit design box) at the cluster's default 490px
+   width, which is the one size they are right at. Everything else is measured;
+   see the header of notch-dock.js for why this used to be the other way round.
+
+   --notch-cx shifts the cut off the widget's own centre. The polygon assumed the
+   notch was always under 50%, which holds only while both widgets sit on the
+   same centre line — nudge either sideways and the cut sheared off the recess. */
 #widget-delta {
   --notch-rim-half: 95px; /* half-width where the chamfers leave the flanks */
   --notch-tip-half: 72.5px; /* half-width of the plateau-level tip          */
   --notch-depth: 25.5px; /* how far the tip drops below the flanks       */
+  --notch-cx: 0px; /* notch centre, relative to the widget's own   */
   clip-path: polygon(
     0 0,
     100% 0,
     100% calc(100% - var(--notch-depth)),
-    calc(50% + var(--notch-rim-half)) calc(100% - var(--notch-depth)),
-    calc(50% + var(--notch-tip-half)) 100%,
-    calc(50% - var(--notch-tip-half)) 100%,
-    calc(50% - var(--notch-rim-half)) calc(100% - var(--notch-depth)),
+    calc(50% + var(--notch-cx) + var(--notch-rim-half))
+      calc(100% - var(--notch-depth)),
+    calc(50% + var(--notch-cx) + var(--notch-tip-half)) 100%,
+    calc(50% + var(--notch-cx) - var(--notch-tip-half)) 100%,
+    calc(50% + var(--notch-cx) - var(--notch-rim-half))
+      calc(100% - var(--notch-depth)),
     0 calc(100% - var(--notch-depth))
   );
 }

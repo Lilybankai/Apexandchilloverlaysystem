@@ -324,6 +324,41 @@ const { w: DW, h: DH } = api.DESIGN;
 
 check('the design box is the reference cluster aspect', DW > DH * 2, `${DW}x${DH}`);
 
+/*
+ * The notch profile, exported for overlay/js/notch-dock.js to cut the delta
+ * widget's bottom edge from. These four assertions are the whole reason the
+ * export exists: the first version of the docking hand-converted these numbers
+ * to px at one cluster width and pasted them into overlay.css, where nothing
+ * connected them back to the silhouette. Resizing the cluster then slid the
+ * notch out from under a cut that stayed put.
+ *
+ * Pinned against the shell path's own coordinates (shellPath in speedo.js):
+ * rim opening 306→694, plateau 352→648, plateau 52 below the rim.
+ */
+const notch = api.NOTCH;
+check('the notch profile is exported', !!notch, notch ? 'present' : 'MISSING');
+check(
+  'notch rim half-width matches the shell path',
+  notch && notch.rimHalf === DW / 2 - 306,
+  notch && `${notch.rimHalf} want ${DW / 2 - 306}`,
+);
+check(
+  'notch tip half-width matches the plateau',
+  notch && notch.tipHalf === 648 - DW / 2,
+  notch && `${notch.tipHalf} want ${648 - DW / 2}`,
+);
+check('notch depth is the plateau drop', notch && notch.depth === 52, notch && `${notch.depth}`);
+check(
+  'the rim is wider than the tip it chamfers down to',
+  notch && notch.rimHalf > notch.tipHalf,
+  notch ? `${notch.rimHalf} > ${notch.tipHalf}` : '',
+);
+check(
+  'the notch fits inside the design box',
+  notch && notch.rimHalf < DW / 2 && notch.depth < DH,
+  notch ? `${notch.rimHalf} of ${DW / 2}` : '',
+);
+
 const boxes = Object.entries(api.BOXES);
 const escaped = boxes.filter(
   ([, b]) => b.x < 0 || b.y < 0 || b.x + b.w > DW || b.y + b.h > DH,

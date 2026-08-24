@@ -38,6 +38,7 @@
   const audioTest = $('#audio-test');
   const ingameToggle = $('#ingame-toggle');
   const ingameAutoToggle = $('#ingame-auto-toggle');
+  const ingameDockToggle = $('#ingame-dock-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
   const igHotkeyBtn = $('#ig-hotkey');
@@ -200,6 +201,8 @@
     ingameToggle.checked = !!settings.ingameEnabled;
     // Missing (pre-update config) reads as ON — the setting ships enabled.
     ingameAutoToggle.checked = settings.ingameAutoHide !== false;
+    // Ships OFF, so the plain truthiness test rather than `!== false`.
+    ingameDockToggle.checked = !!settings.ingameMagneticDock;
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
@@ -2358,6 +2361,18 @@
     const state = await window.apex.updateSettings({ ingameAutoHide: ingameAutoToggle.checked });
     renderSettings(state.settings);
     renderStatus(state.status);
+  });
+
+  // The switch has no visible effect from this window — it changes what a drag
+  // does over on the overlay layer — so say what happened, the same bargain the
+  // "Launch on startup" toggle takes.
+  ingameDockToggle.addEventListener('change', async () => {
+    await window.apex.updateSettings({ ingameMagneticDock: ingameDockToggle.checked });
+    showToast(
+      ingameDockToggle.checked
+        ? 'Magnetic docking on — widgets snap to each other in Edit layout (hold Alt to place freely).'
+        : 'Magnetic docking off — widgets move freely again.',
+    );
   });
 
   igEditBtn.addEventListener('click', async () => {
