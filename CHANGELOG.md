@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.8 — 2026-08-25
+
+### Fixed
+
+- **The new speedo designs blew up when you scaled the widget.** Drag the
+  cluster bigger in the in-game editor and, on release, the Apex Real design and
+  all ten LMGT3 dashboards jumped to roughly four times the size they should be
+  and were cut off by the widget's own frame — at 2x the plate drew itself 4x,
+  at 3x it drew itself 9x. The original Apex and LMP2 designs were never
+  affected. The canvas was sizing itself from its on-screen rectangle, which
+  already includes the widget's scale, so the scale was applied twice: once to
+  the canvas and once again by the widget around it. It now measures the
+  unscaled box, and separately gives the bitmap the extra pixels a scaled-up
+  widget needs — so the plates stay in their frame and stay sharp at any size.
+- **The BG slider now fades the new designs' plate**, not just the values drawn
+  on top of it. The background was painted once when the design loaded and kept
+  that setting for the session.
+
 ## 0.91.0-beta.7 — 2026-08-24
 
 ### Added

@@ -68,19 +68,46 @@ function ctx2d() {
   };
 }
 
+/**
+ * The in-game layer's `transform: scale()` on the widget, as the stub models it.
+ *
+ * A transform changes what getBoundingClientRect() reports and leaves the layout
+ * box (clientWidth/offsetWidth) alone. That gap is the entire subject of the
+ * sizing test below, so the stub has to reproduce it rather than report one
+ * number for both — which is what let the n-squared bug through the first time.
+ */
+let SCALE = 1;
+
 function makeCanvas() {
-  return {
+  const c = {
     width: 0, height: 0, style: {}, className: '',
     getContext: () => ctx2d(),
+    // The layout box follows the CSS width the widget writes; the on-screen box
+    // is that, scaled — the relationship raster.js exists to recover.
+    get offsetWidth() {
+      return parseFloat(c.style.width) || 0;
+    },
+    getBoundingClientRect: () => ({
+      width: c.offsetWidth * SCALE,
+      height: (parseFloat(c.style.height) || 0) * SCALE,
+    }),
   };
+  return c;
 }
 
+/* The stage's LAYOUT box is fixed at the design size; only its on-screen
+   rectangle grows with the widget's scale. */
 const stage = {
-  getBoundingClientRect: () => ({ width: 800, height: 450 }),
+  clientWidth: 800,
+  clientHeight: 450,
+  getBoundingClientRect: () => ({ width: 800 * SCALE, height: 450 * SCALE }),
 };
 const mount = {
   innerHTML: '',
-  appendChild() {},
+  last: null,
+  appendChild(c) {
+    mount.last = c;
+  },
 };
 const rootEl = {
   querySelector: (sel) =>
@@ -108,6 +135,7 @@ const sandbox = {
     },
   },
   document: { createElement: () => makeCanvas() },
+  Math,
   getComputedStyle: () => ({ getPropertyValue: () => '1' }),
   ResizeObserver: class {
     observe() {}
@@ -116,6 +144,10 @@ const sandbox = {
 };
 sandbox.window.window = sandbox.window;
 vm.createContext(sandbox);
+// raster.js first, exactly as the pages load it: the kit sizes its bitmap
+// through ApexRaster.backingScale(), and a stub without it would quietly
+// exercise the fallback instead of the code that ships.
+vm.runInContext(read('overlay', 'js', 'raster.js'), sandbox, { filename: 'raster.js' });
 vm.runInContext(read('overlay', 'js', 'widgets', 'speedo-gt3.js'), sandbox, { filename: 'speedo-gt3.js' });
 vm.runInContext(read('overlay', 'js', 'widgets', 'speedo-real.js'), sandbox, { filename: 'speedo-real.js' });
 
@@ -217,6 +249,54 @@ IDS.forEach(function (id) {
   }
   check(`'${id}' bakes and draws without throwing`, !err, err ? err.message : undefined);
 });
+
+/* --------------------------- sizing under scale --------------------------- */
+/*
+ * The regression this pins: the kit used to letterbox itself from the stage's
+ * getBoundingClientRect(), which is the POST-transform box. The in-game layer
+ * scales each widget with transform: scale(n), so that fed n back in a second
+ * time — the canvas was laid out n times too big and the transform then
+ * magnified it again, giving n squared (4x at scale 2), with the stage's
+ * overflow:hidden cutting off the rest. It surfaced on drag RELEASE, because a
+ * transform is not a layout change and nothing rebaked until ingame.js nudged a
+ * resize event through.
+ *
+ * So: the CSS box comes from the LAYOUT box and takes the scale exactly once.
+ * The BITMAP is the opposite case — it does not re-rasterise under a transform,
+ * so it must follow the scale, which is what raster.js is for.
+ */
+console.log('\nthe canvas letterbox takes the widget scale exactly once');
+{
+  const d = designs.p911;
+
+  SCALE = 1;
+  d.init(rootEl, wctx);
+  d.update(FULL, wctx);
+  const one = mount.last;
+  check(
+    'at 1x the CSS box is the design box',
+    one.style.width === '800px' && one.style.height === '450px',
+    one.style.width + ' x ' + one.style.height,
+  );
+  check('at 1x the bitmap is 1:1', one.width === 800 && one.height === 450, one.width + ' x ' + one.height);
+
+  SCALE = 2;
+  d.init(rootEl, wctx);
+  d.update(FULL, wctx);
+  const two = mount.last;
+  check(
+    'at 2x the CSS box is UNCHANGED — the transform does the growing',
+    two.style.width === '800px' && two.style.height === '450px',
+    two.style.width + ' x ' + two.style.height,
+  );
+  check(
+    'at 2x the bitmap doubles — a canvas does not re-rasterise under a transform',
+    two.width === 1600 && two.height === 900,
+    two.width + ' x ' + two.height,
+  );
+
+  SCALE = 1;
+}
 
 console.log('\nthe real design keeps the Apex geometry');
 {

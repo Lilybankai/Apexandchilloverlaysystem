@@ -156,6 +156,8 @@
       g = null,
       baked = null,
       scale = 0,
+      /** The BG-slider alpha the plate was baked at; see draw(). */
+      bakedAlpha = -1,
       lastFrame = null,
       lastCtx = null;
 
@@ -214,36 +216,78 @@
       return K;
     }
 
+    /**
+     * Letterbox the canvas into the stage, and cut a bitmap to match.
+     *
+     * The CSS size comes from the stage's LAYOUT box (`clientWidth`), never
+     * from `getBoundingClientRect()`. The in-game layer scales each widget with
+     * `transform: scale(n)` and the rect reports the POST-transform box, so
+     * sizing the canvas in CSS px from the rect fed that same `n` back in a
+     * second time: the element was laid out n times too big and the transform
+     * then magnified it again. At n = 2 the plate drew itself four times design
+     * size and the stage's `overflow: hidden` cut the rest off — and because a
+     * transform is not a layout change, it arrived as a JUMP on drag release
+     * (nudgeCanvasSizes() in ingame.js), not as a smooth grow. `clientWidth` is
+     * pre-transform, so the CSS box takes the widget's scale exactly once.
+     *
+     * The BITMAP does follow the transform — that is what raster.js is for. A
+     * canvas is magnified like a photo, so a widget at 2x needs twice the pixels
+     * to stay as sharp as the text beside it. Same contract as the Apex design
+     * in speedo.js, and it replaces the local dpr cap of 2 with the shared
+     * ceiling.
+     *
+     * Idempotent, so the ResizeObserver watching the stage cannot feed itself.
+     */
     function rebake() {
       if (!canvas || !stageEl) return;
-      var r = stageEl.getBoundingClientRect();
-      if (!(r.width > 0) || !(r.height > 0)) return;
-      var s = Math.min(r.width / dw, r.height / dh);
-      var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(dw * s * dpr);
-      canvas.height = Math.round(dh * s * dpr);
+      var w = stageEl.clientWidth || 0;
+      var h = stageEl.clientHeight || 0;
+      if (!(w > 0) || !(h > 0)) return;
+      var s = Math.min(w / dw, h / dh);
       canvas.style.width = Math.round(dw * s) + "px";
       canvas.style.height = Math.round(dh * s) + "px";
-      scale = s * dpr;
+      // Measured after the style write, so backingScale() sees the box the
+      // canvas actually ended up occupying on screen.
+      var d = window.ApexRaster
+        ? window.ApexRaster.backingScale(canvas)
+        : Math.min(window.devicePixelRatio || 1, 2);
+      var bw = Math.round(dw * s * d);
+      var bh = Math.round(dh * s * d);
+      var pa = panelAlpha();
+      if (baked && bw === canvas.width && bh === canvas.height && pa === bakedAlpha) return;
+      canvas.width = bw;
+      canvas.height = bh;
+      scale = s * d;
 
       baked = document.createElement("canvas");
       baked.width = canvas.width;
       baked.height = canvas.height;
+      bakedAlpha = pa;
       var bg = baked.getContext("2d");
       bg.scale(scale, scale);
       bg.textBaseline = "alphabetic";
-      spec.bake(bg, kit(bg, panelAlpha()));
+      spec.bake(bg, kit(bg, pa));
       draw();
     }
 
     function draw() {
       if (!g || !baked) return;
+      // The static plate carries the BG slider's alpha baked into it, so a move
+      // of the slider has to re-bake — nothing else disturbs it, and without
+      // this the plate would keep the alpha it was born with for the session
+      // while the live values faded around it. rebake() ends by calling back
+      // here with bakedAlpha updated, so this is one hop, not a loop.
+      var pa = panelAlpha();
+      if (pa !== bakedAlpha) {
+        rebake();
+        return;
+      }
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, canvas.width, canvas.height);
       g.drawImage(baked, 0, 0);
       g.setTransform(scale, 0, 0, scale, 0, 0);
       g.textBaseline = "alphabetic";
-      if (lastFrame && lastCtx) spec.live(g, pull(lastFrame, lastCtx), kit(g, panelAlpha()));
+      if (lastFrame && lastCtx) spec.live(g, pull(lastFrame, lastCtx), kit(g, pa));
     }
 
     return {
