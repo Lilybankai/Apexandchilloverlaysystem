@@ -101,6 +101,17 @@ const OVERLAY_CATALOG = [
     designs: [
       { id: 'apex', label: 'Apex — twin rev bars' },
       { id: 'lmp2', label: 'LMP2 — Cosworth CDU' },
+      { id: 'real', label: 'Apex Real — machined cluster' },
+      { id: 'p911', label: 'GT3 — Porsche 911 GT3 R' },
+      { id: 'aston', label: 'GT3 — Aston Martin Vantage' },
+      { id: 'm4', label: 'GT3 — BMW M4' },
+      { id: 'z06', label: 'GT3 — Corvette Z06' },
+      { id: 'f296', label: 'GT3 — Ferrari 296' },
+      { id: 'mstg', label: 'GT3 — Ford Mustang' },
+      { id: 'lambo', label: 'GT3 — Lamborghini Huracan' },
+      { id: 'rcf', label: 'GT3 — Lexus RC F' },
+      { id: 'm720', label: 'GT3 — McLaren 720S' },
+      { id: 'amg', label: 'GT3 — Mercedes-AMG' },
     ],
   },
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
@@ -454,7 +465,9 @@ const WIDGET_MODES = {
   // The cluster's selectable designs. 'apex' is the house twin-rev-bar cluster;
   // 'lmp2' is the Cosworth-CDU-style LMP2 dash. Kept in step with the `designs`
   // list on the speedo catalog entry, which is what the card's dropdown renders.
-  speedo: ['apex', 'lmp2'],
+  // 'real' is the machined repaint of the Apex cluster; the ten after it are
+  // the per-car LMGT3 plates (speedo-gt3.js). Order here is dropdown order.
+  speedo: ['apex', 'lmp2', 'real', 'p911', 'aston', 'm4', 'z06', 'f296', 'mstg', 'lambo', 'rcf', 'm720', 'amg'],
   // The MFD's layout. 'stack' is the original column; 'row' puts the sections
   // side by side. In step with the mfd catalog entry's `designs` list.
   mfd: ['stack', 'row'],

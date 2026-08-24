@@ -4160,6 +4160,43 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
   display: none;
 }
 
+/* The canvas designs (speedo-gt3.js + speedo-real.js) draw everything on their
+   own canvas, so the core Apex artwork is parked exactly as it is for lmp2.
+   The ten GT3 plates share one 800×450 authoring box; "real" is the Apex
+   silhouette repainted, so it keeps the cluster's own 1000/470 default. */
+.speedo[data-design="p911"],
+.speedo[data-design="aston"],
+.speedo[data-design="m4"],
+.speedo[data-design="z06"],
+.speedo[data-design="f296"],
+.speedo[data-design="mstg"],
+.speedo[data-design="lambo"],
+.speedo[data-design="rcf"],
+.speedo[data-design="m720"],
+.speedo[data-design="amg"] {
+  aspect-ratio: 800 / 450;
+}
+.speedo[data-design="real"] .speedo__bg,
+.speedo[data-design="p911"] .speedo__bg,
+.speedo[data-design="aston"] .speedo__bg,
+.speedo[data-design="m4"] .speedo__bg,
+.speedo[data-design="z06"] .speedo__bg,
+.speedo[data-design="f296"] .speedo__bg,
+.speedo[data-design="mstg"] .speedo__bg,
+.speedo[data-design="lambo"] .speedo__bg,
+.speedo[data-design="rcf"] .speedo__bg,
+.speedo[data-design="m720"] .speedo__bg,
+.speedo[data-design="amg"] .speedo__bg {
+  display: none;
+}
+
+/* The kit's canvas centres in whatever letterbox the stage leaves. */
+.spgt3 {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
 /* The frame: letterboxed to the design aspect by size() in speedo-lmp2.js,
    which also writes --s (the design-box scale) — every font below rides on it
    so the type is locked to the plate, exactly like the Apex design's

@@ -1,0 +1,950 @@
+/**
+ * widgets/speedo-gt3.js — ten GT3 per-car designs for the speedo cluster, plus
+ * the shared canvas kit they (and speedo-real.js) are built on.
+ * -----------------------------------------------------------------------------
+ * Each design registers into `window.ApexSpeedoDesigns` and is selected from
+ * the control panel's Design dropdown or pinned with `?design=<id>` — the same
+ * contract as the LMP2 CDU. They are DESIGNS of the one speedo widget, not new
+ * widgets: same shell, same feed, same slot.
+ *
+ * ## What these are
+ * Original recreations of the character of each LMGT3 car's real dashboard,
+ * drawn from photographs of the actual displays: the layout conventions, the
+ * data each shows and the palette each is known by. All drawing code, type and
+ * proportions here are our own; no manufacturer logos or wordmarks are drawn
+ * (each plate carries the car's name in plain type instead), and nothing was
+ * extracted from anyone else's dashboard files.
+ *
+ * ## The house rule about data
+ * A design never invents a reading (the LMP2 file states the contract). Every
+ * value is guarded: a channel the feed does not carry renders as "—", and a
+ * BOX whose channel can never exist on this feed is simply not drawn. That is
+ * why none of these show engine water/oil temperature — the frame does not
+ * carry it yet — even where the donor car's screen has such a gauge.
+ *
+ * ## Rendering model
+ * One canvas per design, letterboxed into the stage (the lmp2 bargain, in
+ * canvas form). The static plate — background, boxes, labels — is baked to an
+ * offscreen layer once per resize; each update draws the bake then the live
+ * values over it. Fonts ride the frame scale, so the type is locked to the
+ * plate. The plate and box fills are BACKGROUND and fade with the operator's
+ * BG slider (--panel-alpha); the digits are DATA and stay — the same split
+ * every design makes.
+ */
+(function () {
+  "use strict";
+
+  /** All ten plates are authored in this box (close to every donor photo). */
+  var DW = 800;
+  var DH = 450;
+
+  var FD = "Bahnschrift, 'Segoe UI Semibold', Arial, sans-serif";
+  var FM = "Consolas, monospace";
+
+  /* ---------------------------------------------------------------------- */
+  /*  Live values — pulled once per frame, shared by every design           */
+  /* ---------------------------------------------------------------------- */
+
+  /** Find a curated MFD aid by key (the lmp2 helper, verbatim contract). */
+  function findAid(mfd, key) {
+    if (!mfd || !mfd.aids) return null;
+    for (var i = 0; i < mfd.aids.length; i++) {
+      if (mfd.aids[i].key === key) return mfd.aids[i];
+    }
+    return null;
+  }
+
+  /**
+   * Brake bias as the front percentage ("49.0:51.0" → "49.0"), because that is
+   * the number every real dash prints. The raw text stands in when the wording
+   * is not a ratio — showing the sim's own rendering beats showing nothing.
+   */
+  function biasText(aid) {
+    if (!aid) return null;
+    var m = /^(\d+(?:\.\d+)?):/.exec(aid.text || "");
+    return m ? m[1] : aid.text || String(aid.value);
+  }
+
+  /**
+   * Everything the ten plates read, null where the feed has no answer. One
+   * object so each design's live() is a straight layout pass with no plumbing.
+   */
+  function pull(frame, ctx) {
+    var fmt = ctx.fmt;
+    var p = frame && frame.player ? frame.player : {};
+    var lap = p.lap || {};
+    var f = (frame && frame.fuel) || {};
+    var mfd = frame ? frame.mfd : null;
+    var w = (frame && frame.weather) || {};
+    var pd = p.paceDeltas || null;
+
+    function num(v) {
+      return fmt.has(v) ? v : null;
+    }
+    function lapStr(v) {
+      return fmt.has(v) && v > 0 ? fmt.lapTime(v) : null;
+    }
+
+    var speed = num(p.speedKph);
+    var deltaS = fmt.has(lap.delta) ? lap.delta : null;
+    var tyres = p.tyres || null;
+
+    function corner(t) {
+      if (!t) return { p: null, t: null };
+      return { p: num(t.pressureKpa), t: num(t.tempC) };
+    }
+
+    return {
+      demo: frame ? frame.connected === false : true,
+      session: (frame && frame.session && frame.session.name) || null,
+      gear: fmt.gearLabel(p.gear),
+      speed: speed === null ? null : Math.round(fmt.speedValue(speed)),
+      unit: fmt.speedUnitLabel().toUpperCase(),
+      rpm: num(p.rpm) === null ? null : Math.round(p.rpm),
+      revFrac:
+        window.ApexSpeedo && num(p.rpm) !== null && num(p.maxRpm) !== null
+          ? window.ApexSpeedo.revFraction(p.rpm, p.maxRpm)
+          : 0,
+      last: lapStr(lap.last),
+      best: lapStr(lap.best),
+      current: lapStr(lap.current),
+      /** Projected finishing time for THE LAP IN PROGRESS — the delta widget's
+       *  own "PROJ" reading, which is what a dash's "predicted" slot means. */
+      pred: pd && fmt.has(pd.lapTimeSec) ? fmt.lapTime(pd.lapTimeSec) : null,
+      delta: deltaS,
+      deltaStr: deltaS === null ? null : (deltaS >= 0 ? "+" : "") + deltaS.toFixed(2),
+      pos: num(p.position),
+      laps: window.ApexOverlay ? window.ApexOverlay.playerLapsCompleted(frame) : -1,
+      fuelL: num(f.levelLiters),
+      fuelPerLap: num(f.perLapAvgLiters),
+      fuelLaps: num(f.lapsRemaining),
+      vePct: num(f.virtualEnergyPct),
+      vePerLap: num(f.virtualEnergyPerLapPct),
+      fl: corner(tyres && tyres.frontLeft),
+      fr: corner(tyres && tyres.frontRight),
+      rl: corner(tyres && tyres.rearLeft),
+      rr: corner(tyres && tyres.rearRight),
+      tc: findAid(mfd, "tc"),
+      tcCut: findAid(mfd, "tcCut"),
+      abs: findAid(mfd, "abs"),
+      map: findAid(mfd, "motorMap"),
+      bias: biasText(findAid(mfd, "BRAKE_BIAS")),
+      trackC: num(w.trackTempC),
+      airC: num(w.airTempC),
+      limiter: !!(p.pit && p.pit.limiterOn),
+    };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  The canvas kit                                                         */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Wrap a plate spec into a design `{init, update}`.
+   *
+   * spec.bake(g, A)      draws the static plate (g is pre-scaled to DW×DH).
+   * spec.live(g, v, A)   draws the live values each frame.
+   * A is the paint kit bound to that context (box/txt/etc + panel alpha).
+   */
+  function canvasDesign(spec) {
+    /* Plates default to the shared 800×450 box; a design may bring its own
+       (speedo-real.js authors in the Apex cluster's 1000×470). */
+    var dw = spec.dw || DW;
+    var dh = spec.dh || DH;
+    var stageEl = null,
+      canvas = null,
+      g = null,
+      baked = null,
+      scale = 0,
+      lastFrame = null,
+      lastCtx = null;
+
+    /** The operator's BG slider, as the stylesheet publishes it. */
+    function panelAlpha() {
+      if (!stageEl) return 1;
+      var v = parseFloat(getComputedStyle(stageEl).getPropertyValue("--panel-alpha"));
+      return isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+    }
+
+    function kit(ctx2d, pa) {
+      var K = {
+        pa: pa,
+        /** A box: fill is background (fades), border is chrome (stays). */
+        box: function (x, y, w, h, o) {
+          o = o || {};
+          var r = o.r || 0;
+          ctx2d.beginPath();
+          if (r) {
+            ctx2d.moveTo(x + r, y);
+            ctx2d.arcTo(x + w, y, x + w, y + r, r);
+            ctx2d.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx2d.arcTo(x, y + h, x, y + h - r, r);
+            ctx2d.arcTo(x, y, x + r, y, r);
+          } else ctx2d.rect(x, y, w, h);
+          ctx2d.closePath();
+          if (o.fill) {
+            ctx2d.save();
+            ctx2d.globalAlpha = o.data ? 1 : pa;
+            ctx2d.fillStyle = o.fill;
+            ctx2d.fill();
+            ctx2d.restore();
+          }
+          if (o.border) {
+            ctx2d.strokeStyle = o.border;
+            ctx2d.lineWidth = o.lw || 2;
+            ctx2d.stroke();
+          }
+        },
+        txt: function (t, x, y, size, color, align, weight, font) {
+          ctx2d.fillStyle = color;
+          ctx2d.font = (weight || 600) + " " + size + "px " + (font || FD);
+          ctx2d.textAlign = align || "left";
+          ctx2d.fillText(t == null ? "—" : String(t), x, y);
+        },
+        /** Label-on-top value tile, the shape half these dashes are made of. */
+        tile: function (label, x, y, w, h, o) {
+          o = o || {};
+          K.box(x, y, w, h, { fill: o.fill || "#000", border: o.border || "#fff", lw: o.lw || 2, r: o.r || 3 });
+          K.txt(label, x + w / 2, y + (o.lh || 15), o.ls || 11, o.lc || "#aab", "center", 600);
+        },
+        val: function (t, x, y, size, color, align) {
+          K.txt(t == null ? "—" : t, x, y, size, color, align || "center", 700);
+        },
+      };
+      return K;
+    }
+
+    function rebake() {
+      if (!canvas || !stageEl) return;
+      var r = stageEl.getBoundingClientRect();
+      if (!(r.width > 0) || !(r.height > 0)) return;
+      var s = Math.min(r.width / dw, r.height / dh);
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(dw * s * dpr);
+      canvas.height = Math.round(dh * s * dpr);
+      canvas.style.width = Math.round(dw * s) + "px";
+      canvas.style.height = Math.round(dh * s) + "px";
+      scale = s * dpr;
+
+      baked = document.createElement("canvas");
+      baked.width = canvas.width;
+      baked.height = canvas.height;
+      var bg = baked.getContext("2d");
+      bg.scale(scale, scale);
+      bg.textBaseline = "alphabetic";
+      spec.bake(bg, kit(bg, panelAlpha()));
+      draw();
+    }
+
+    function draw() {
+      if (!g || !baked) return;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, canvas.width, canvas.height);
+      g.drawImage(baked, 0, 0);
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+      g.textBaseline = "alphabetic";
+      if (lastFrame && lastCtx) spec.live(g, pull(lastFrame, lastCtx), kit(g, panelAlpha()));
+    }
+
+    return {
+      init: function (root) {
+        stageEl = root.querySelector('[data-role="stage"]');
+        var mount = root.querySelector('[data-role="cluster"]');
+        if (!stageEl || !mount) return;
+        mount.innerHTML = "";
+        canvas = document.createElement("canvas");
+        canvas.className = "spgt3";
+        mount.appendChild(canvas);
+        g = canvas.getContext("2d");
+        baked = null;
+        scale = 0;
+        if (typeof ResizeObserver === "function") new ResizeObserver(rebake).observe(stageEl);
+        window.addEventListener("resize", rebake, { passive: true });
+        rebake();
+      },
+      update: function (frame, ctx) {
+        lastFrame = frame;
+        lastCtx = ctx;
+        if (!baked) rebake();
+        else draw();
+      },
+    };
+  }
+
+  /* Shared paint for the segmented rev strips several plates carry. */
+  function revStrip(g, K, x, y, w, h, segs, frac, colors) {
+    var sw = w / segs;
+    for (var i = 0; i < segs; i++) {
+      var lit = frac > i / segs;
+      var c = colors(i / segs, lit);
+      K.box(x + i * sw, y, sw - 2, h, { fill: c, data: lit });
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  1 · Porsche 911 GT3 R — black, thin colour-bordered boxes             */
+  /* ---------------------------------------------------------------------- */
+
+  var p911 = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      K.txt("9 1 1  G T 3  R", DW / 2, 26, 15, "#8a94a0", "center", 700);
+      K.box(300, 38, 200, 46, { fill: "#0c0e10", border: "#3a3f46", r: 4 }); /* speed */
+      K.box(514, 38, 120, 46, { fill: "#0c0e10", border: "#3a3f46", r: 4 }); /* lap */
+      K.txt("LAP", 540, 68, 15, "#cfd6dd");
+      K.box(700, 38, 88, 46, { fill: "#e9eaec", r: 4 }); /* condition */
+      /* left column MAP / TC-C / TC-R / ABS */
+      [["MAP", "#3d9c50"], ["TC-C", "#c9313c"], ["TC-R", "#3d9c50"], ["ABS", "#2b3fe2"]].forEach(
+        function (r, i) {
+          var y = 100 + i * 52;
+          K.box(14, y, 118, 44, { fill: "#0a0c0e", border: r[1], r: 5 });
+          K.txt(r[0], 26, y + 29, 16, "#dde3e9");
+        },
+      );
+      /* laptime + time-diff panels */
+      K.box(146, 100, 208, 130, { fill: "#43464a", r: 6 });
+      K.txt("Laptime", 250, 124, 16, "#e6e9ec", "center");
+      K.box(448, 100, 206, 130, { fill: "#43464a", r: 6 });
+      K.txt("Time Diff", 551, 124, 16, "#e6e9ec", "center");
+      K.txt("Position", 496, 208, 14, "#c9ced4", "center");
+      K.txt("Split", 606, 208, 14, "#c9ced4", "center");
+      /* tyre panel + bias */
+      K.box(340, 300, 160, 128, { fill: "#0a0c0e", border: "#e2a33b", lw: 3, r: 4 });
+      K.txt("TYRE", 420, 322, 15, "#e2a33b", "center", 700);
+      K.box(560, 344, 108, 36, { fill: "#43464a", r: 3 });
+      K.txt("Brake Bias", 566, 368, 13, "#dde3e9");
+      K.box(668, 344, 84, 36, { fill: "#1a3be2", r: 3 });
+      /* right fuel-level bar frame */
+      K.box(742, 100, 46, 328, { fill: "#0a0c0e", border: "#3a3f46", r: 4 });
+    },
+    live: function (g, v, K) {
+      K.val(v.speed, 400, 72, 30, "#fff");
+      K.val(v.laps >= 0 ? v.laps : null, 606, 70, 24, "#fff");
+      K.val(v.trackC !== null ? (v.trackC >= 30 ? "HOT" : "DRY") : "—", 744, 70, 22, "#000");
+      var aids = [v.map, v.tc, v.tcCut, v.abs];
+      aids.forEach(function (a, i) {
+        K.val(a ? a.value : null, 120, 129 + i * 52, 20, "#fff", "right");
+      });
+      K.val(v.last || v.current, 250, 196, 34, "#fff");
+      K.val(v.deltaStr, 551, 176, 30, v.delta !== null && v.delta < 0 ? "#4fc35f" : "#fff");
+      K.val(v.pos, 496, 224, 18, "#fff");
+      K.val(v.best, 606, 224, 16, "#fff");
+      K.val(v.gear, 250, 356, 92, "#e8edf2");
+      /* tyres: temps inside, pressures at the corners */
+      K.val(v.fl.t, 386, 356, 22, "#fff");
+      K.val(v.fr.t, 454, 356, 22, "#fff");
+      K.val(v.rl.t, 386, 394, 22, "#fff");
+      K.val(v.rr.t, 454, 394, 22, "#fff");
+      K.txt(v.fl.p != null ? Math.round(v.fl.p) : "—", 350, 336, 12, "#e05a6a");
+      K.txt(v.fr.p != null ? Math.round(v.fr.p) : "—", 490, 336, 12, "#e05a6a", "right");
+      K.txt(v.rl.p != null ? Math.round(v.rl.p) : "—", 350, 420, 12, "#e05a6a");
+      K.txt(v.rr.p != null ? Math.round(v.rr.p) : "—", 490, 420, 12, "#e05a6a", "right");
+      K.val(v.bias, 710, 369, 18, "#fff");
+      /* fuel level bar */
+      if (v.fuelL !== null && v.fuelLaps !== null) {
+        var frac = Math.max(0, Math.min(1, v.fuelLaps / 30));
+        var hgt = 320 * frac;
+        K.box(746, 104 + (320 - hgt), 38, hgt, { fill: "#2fd24a", data: true });
+      }
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  2 · Aston Martin Vantage GT3 — the white-faced gear ring + knob row   */
+  /* ---------------------------------------------------------------------- */
+
+  var aston = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#0a0b0c" });
+      K.txt("V A N T A G E  G T 3", DW / 2, 300, 13, "#5a6470", "center", 700);
+      /* left + right stat labels with lime underlines */
+      var L = [["ENERGY", 20], ["SPEED", 20], ["FUEL LAP", 150], ["LAP COUNT", 150]];
+      L.forEach(function (s, i) {
+        var y = i % 2 ? 160 : 66;
+        K.txt(s[0], s[1], y + 56, 13, "#cfd6dd", "left", 700);
+        K.box(s[1], y + 64, 110, 3, { fill: "#9dc22e" });
+      });
+      var R = [["LAST LAP", 780, 66], ["B BIAS", 636, 160], ["DELTA", 780, 160]];
+      R.forEach(function (s) {
+        K.txt(s[0], s[1], s[2] + 56, 13, "#cfd6dd", "right", 700);
+        K.box(s[1] - 110, s[2] + 64, 110, 3, { fill: "#9dc22e" });
+      });
+      /* the ring */
+      g.beginPath();
+      g.arc(400, 160, 104, 0, 7);
+      g.save();
+      g.globalAlpha = K.pa;
+      g.fillStyle = "#e9eaec";
+      g.fill();
+      g.restore();
+      g.strokeStyle = "#9dc22e";
+      g.lineWidth = 8;
+      g.stroke();
+      /* knob row */
+      var knobs = [["TC SLIP", "#8fae3c"], ["MODE", "#8f3c3c"], ["ARB F", "#2b6fd4"], ["TC", "#c9d6e2"], ["ARB R", "#2aa6a0"], ["ABS", "#2b3f8f"], ["TC PRO", "#a05a2c"]];
+      knobs.forEach(function (k, i) {
+        var x = 68 + i * 111;
+        g.beginPath();
+        g.arc(x, 372, 30, 0, 7);
+        g.save();
+        g.globalAlpha = K.pa;
+        g.fillStyle = "#16181c";
+        g.fill();
+        g.restore();
+        g.strokeStyle = k[1];
+        g.lineWidth = 6;
+        g.stroke();
+        K.txt(k[0], x, 428, 12, "#c9ced4", "center", 700);
+      });
+    },
+    live: function (g, v, K) {
+      K.val(v.vePct !== null ? Math.round(v.vePct) : null, 20, 108, 34, "#fff", "left");
+      K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null, 150, 108, 34, "#fff", "left");
+      K.val(v.speed, 20, 202, 34, "#fff", "left");
+      K.val(v.laps >= 0 ? v.laps : null, 150, 202, 34, "#fff", "left");
+      K.val(v.last, 780, 108, 30, "#fff", "right");
+      K.val(v.bias, 636, 202, 30, "#fff", "right");
+      K.val(v.deltaStr, 780, 202, 30, v.delta !== null && v.delta < 0 ? "#8fd44a" : "#fff", "right");
+      /* tyre grid under the right stack: pressures big, temps at corners */
+      K.val(v.fl.p != null ? Math.round(v.fl.p) : null, 668, 250, 22, "#fff");
+      K.val(v.fr.p != null ? Math.round(v.fr.p) : null, 728, 250, 22, "#fff");
+      K.val(v.rl.p != null ? Math.round(v.rl.p) : null, 668, 280, 22, "#fff");
+      K.val(v.rr.p != null ? Math.round(v.rr.p) : null, 728, 280, 22, "#fff");
+      K.txt(v.fl.t != null ? Math.round(v.fl.t) : "—", 616, 250, 13, "#9aa5b0");
+      K.txt(v.rr.t != null ? Math.round(v.rr.t) : "—", 770, 280, 13, "#9aa5b0");
+      K.val(v.gear, 400, 196, 108, "#111", "center");
+      /* knob values */
+      var kv = [null, v.map, null, v.tc, null, v.abs, v.tcCut];
+      kv.forEach(function (a, i) {
+        K.val(a ? a.value : null, 68 + i * 111, 384, 26, "#fff");
+      });
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  3 · BMW M4 GT3 — chunky white tiles, green gear, kg fuel              */
+  /* ---------------------------------------------------------------------- */
+
+  var m4 = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      K.tile("LAP FUEL [L]", 14, 70, 168, 66, { ls: 13, lh: 18 });
+      K.tile("FUEL REMAIN [L]", 14, 146, 168, 66, { ls: 13, lh: 18 });
+      /* top right aids */
+      K.box(506, 10, 70, 54, { fill: "#e9eaec", r: 2 });
+      K.txt("AIR", 541, 28, 13, "#000", "center", 700);
+      [["MAP", "#c9313c"], ["TC", "#2b3f8f"], ["ABS", "#c9313c"]].forEach(function (t, i) {
+        K.tile(t[0], 584 + i * 72, 10, 64, 54, { fill: t[1], border: "#fff", lc: "#fff", lh: 16, ls: 12 });
+      });
+      K.tile("GAIN/LOSS", 584, 92, 202, 58, { ls: 13, lh: 17 });
+      K.tile("LAST LAP", 584, 160, 202, 58, { ls: 13, lh: 17 });
+      K.tile("BEST LAP", 584, 228, 202, 58, { ls: 13, lh: 17 });
+      /* bottom row */
+      K.tile("TCCUT", 14, 372, 76, 62, { ls: 12 });
+      K.tile("SLIP", 98, 372, 76, 62, { ls: 12 });
+      K.tile("TRACK", 240, 372, 120, 62, { ls: 12 });
+      K.tile("BRAKE", 368, 372, 120, 62, { ls: 12 });
+      K.tile("STINT", 530, 372, 76, 62, { ls: 12 });
+      K.tile("LAP", 614, 372, 76, 62, { ls: 12 });
+      K.tile("VE [%]", 698, 372, 88, 62, { ls: 12 });
+    },
+    live: function (g, v, K) {
+      revStrip(g, K, 10, 8, 480, 18, 30, v.revFrac, function (f, lit) {
+        if (!lit) return "#26292e";
+        return f < 0.25 ? "#c9313c" : f < 0.5 ? "#e2c53b" : "#3dc94f";
+      });
+      K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null, 98, 126, 30, "#fff");
+      K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 98, 202, 30, "#fff");
+      K.val(v.airC !== null ? Math.round(v.airC) : null, 541, 56, 22, "#000");
+      [v.map, v.tc, v.abs].forEach(function (a, i) {
+        K.val(a ? a.value : null, 616 + i * 72, 56, 26, "#fff");
+      });
+      K.val(v.gear, 300, 210, 150, "#41d95d");
+      K.val(v.speed, 300, 300, 58, "#e8edf2");
+      K.txt(v.unit, 300, 328, 14, "#7b8895", "center");
+      K.val(v.deltaStr, 685, 140, 26, v.delta !== null && v.delta < 0 ? "#41d95d" : "#fff");
+      K.val(v.last, 685, 208, 26, "#fff");
+      K.val(v.best, 685, 276, 26, "#fff");
+      K.val(v.tcCut ? v.tcCut.value : null, 52, 424, 26, "#fff");
+      K.val(v.tc ? v.tc.value : null, 136, 424, 26, "#fff");
+      K.val(v.trackC !== null ? Math.round(v.trackC) + "°" : null, 300, 424, 24, "#fff");
+      K.val(v.bias, 428, 424, 24, "#fff");
+      K.val(v.pos, 568, 424, 26, "#fff");
+      K.val(v.laps >= 0 ? v.laps : null, 652, 424, 26, "#fff");
+      K.val(v.vePct !== null ? Math.round(v.vePct) : null, 742, 424, 26, "#fff");
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  4 · Corvette Z06 GT3.R — navy carbon, olive digits                    */
+  /* ---------------------------------------------------------------------- */
+
+  var OL = "#c9cc6a";
+  var z06 = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#0d1220" });
+      g.strokeStyle = "#1c2740";
+      g.lineWidth = 1;
+      for (var i = 1; i < 5; i++) {
+        g.beginPath();
+        g.moveTo(0, i * 90);
+        g.lineTo(DW, i * 90);
+        g.stroke();
+      }
+      K.txt("Z 0 6  G T 3 . R", DW / 2, 20, 12, "#5a6a9a", "center", 700);
+      ["Speed [" + "kph]", "Litre/Lap", "Energy/Lap"].forEach(function (s, i) {
+        K.txt(s, 780, 44 + i * 74, 12, "#5a6a9a", "right");
+      });
+      K.txt("GEAR", 190, 210, 12, "#5a6a9a", "center");
+      ["LAST", "BEST", "PRED"].forEach(function (s, i) {
+        K.txt(s, 330, 60 + i * 44, 12, "#5a6a9a");
+      });
+      K.txt("BIAS", 40, 300, 12, "#5a6a9a");
+      K.txt("POS", 180, 300, 12, "#5a6a9a");
+      K.txt("STINT", 300, 300, 12, "#5a6a9a");
+      /* bottom tile grid */
+      var labels = ["TC", "CUT", "ABS", "ENERGY", "VE/LAP", "MAP", "FUEL L", "L/LAP", "LAPS", "SPD"];
+      labels.forEach(function (t, i) {
+        var x = 12 + (i % 5) * 156,
+          y = i < 5 ? 328 : 390;
+        K.box(x, y, 148, 54, { fill: "#101a33", border: "#24335e", r: 3, lw: 1 });
+        K.txt(t, x + 10, y + 18, 11, "#5a6a9a");
+      });
+    },
+    live: function (g, v, K) {
+      K.val(v.speed, 780, 78, 30, OL, "right");
+      K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null, 780, 152, 30, OL, "right");
+      K.val(v.vePerLap !== null ? v.vePerLap.toFixed(1) : null, 780, 226, 30, OL, "right");
+      K.val(v.gear, 190, 180, 130, "#cfd4e2");
+      K.val(v.deltaStr, 190, 268, 34, "#fff");
+      K.val(v.rpm, 470, 34, 42, OL, "left");
+      K.val(v.last, 410, 64, 26, "#e6ebf5", "left");
+      K.val(v.best, 410, 108, 26, "#8a7ddb", "left");
+      K.val(v.pred, 410, 152, 26, "#d99a3b", "left");
+      K.val(v.bias, 40, 288, 32, "#e05a6a", "left");
+      K.val(v.pos, 180, 288, 32, "#cfd4e2", "left");
+      K.val(v.current, 300, 288, 32, "#e6ebf5", "left");
+      var cells = [
+        v.tc && v.tc.value, v.tcCut && v.tcCut.value, v.abs && v.abs.value,
+        v.vePct !== null ? Math.round(v.vePct) : null,
+        v.vePerLap !== null ? v.vePerLap.toFixed(1) : null,
+        v.map && v.map.value,
+        v.fuelL !== null ? v.fuelL.toFixed(0) : null,
+        v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null,
+        v.fuelLaps !== null ? v.fuelLaps.toFixed(0) : null,
+        v.speed,
+      ];
+      cells.forEach(function (c, i) {
+        var x = 12 + (i % 5) * 156,
+          y = i < 5 ? 328 : 390;
+        K.val(c, x + 138, y + 42, 22, OL, "right");
+      });
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  5 · Ferrari 296 GT3 — red flank panels, numbered rev strip            */
+  /* ---------------------------------------------------------------------- */
+
+  var RED = "#c9202c";
+  var f296 = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      K.txt("2 9 6  G T 3", 14, 26, 14, "#8a94a0", "left", 700);
+      K.txt("RPM", 236, 26, 12, "#9aa5b0", "right");
+      K.box(636, 8, 74, 48, { fill: "#14161a", border: "#3a3f46", r: 4 });
+      K.txt("BBAL", 673, 26, 12, "#9aa5b0", "center");
+      K.box(718, 8, 72, 48, { fill: "#cfd4da", r: 4 });
+      /* flank panels */
+      K.box(10, 78, 210, 150, { fill: RED, border: "#7d141c", lw: 4, r: 8 });
+      K.txt("GEAR", 115, 100, 14, "#ffd0d4", "center", 700);
+      K.box(580, 78, 210, 150, { fill: "#1d69b4", border: "#123c66", lw: 4, r: 8 });
+      K.txt("SPEED", 685, 100, 14, "#d8ecff", "center", 700);
+      /* centre mix/laps box */
+      K.box(250, 86, 300, 134, { fill: "#0e2a4a", border: "#2b6fd4", lw: 3, r: 8 });
+      K.txt("LAP", 400, 110, 14, "#cfe3ff", "center", 700);
+      /* bottom tiles */
+      K.tile("PED", 10, 250, 92, 76, { ls: 13, lh: 18 });
+      K.tile("ENG", 112, 250, 92, 76, { ls: 13, lh: 18 });
+      K.tile("ABS", 214, 250, 92, 76, { ls: 13, lh: 18 });
+      [["LAP", 330], ["PRED", 434]].forEach(function (t) {
+        K.box(t[1], 250, 96, 76, { fill: "#e2c53b", r: 4 });
+        K.txt(t[0], t[1] + 48, 270, 13, "#000", "center", 700);
+      });
+      [["TC3", 560], ["TC2", 640], ["TC1", 720]].forEach(function (t) {
+        K.tile(t[0], t[1], 250, 70, 76, { ls: 13, lh: 18 });
+      });
+      K.box(10, 344, 250, 90, { fill: "#101114", border: "#3a3f46", r: 4 });
+      K.txt("PREV LAP", 135, 366, 13, "#9aa5b0", "center", 700);
+      K.box(275, 344, 250, 90, { fill: "#0f3d1e", border: "#2b9c50", lw: 3, r: 4 });
+      K.txt("DIFF", 400, 366, 13, "#a8e2bb", "center", 700);
+      K.box(540, 344, 250, 90, { fill: "#101114", border: "#3a3f46", r: 4 });
+      K.txt("PREDICTED LAP", 665, 366, 13, "#9aa5b0", "center", 700);
+    },
+    live: function (g, v, K) {
+      revStrip(g, K, 250, 12, 330, 20, 22, v.revFrac, function (f, lit) {
+        return lit ? (f > 0.78 ? RED : "#e0e4e8") : "#26292e";
+      });
+      K.val(v.bias, 673, 50, 18, "#fff");
+      K.val(v.limiter ? "PIT" : "—", 754, 44, 24, "#000");
+      K.val(v.gear, 115, 200, 92, "#fff");
+      K.val(v.speed, 685, 200, 74, "#fff");
+      K.val(v.current, 400, 190, 44, "#fff");
+      K.val(1, 56, 316, 34, "#fff"); /* PED page — fixed on this feed */
+      K.val(v.map ? v.map.value : null, 158, 316, 34, "#fff");
+      K.val(v.abs ? v.abs.value : null, 260, 316, 34, "#fff");
+      K.val(v.laps >= 0 ? v.laps : null, 378, 314, 30, "#000");
+      K.val(v.pred, 482, 310, 17, "#000");
+      K.val(v.tcCut ? v.tcCut.value : null, 595, 316, 34, "#fff");
+      K.val(v.tc ? v.tc.value : null, 675, 316, 34, "#fff");
+      K.val(v.tc ? v.tc.value : null, 755, 316, 34, "#fff");
+      K.val(v.last, 135, 420, 34, "#fff");
+      K.val(v.deltaStr, 400, 420, 34, "#8fd44a");
+      K.val(v.pred, 665, 420, 34, "#fff");
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  6 · Ford Mustang GT3 — white plate, navy ellipse gear                 */
+  /* ---------------------------------------------------------------------- */
+
+  var mstg = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#e9eaec" });
+      K.txt("M U S T A N G  G T 3", DW / 2, 18, 11, "#8a8e96", "center", 700);
+      var Ls = ["Energy Last Lap", "Energy +/-", "Fuel This Lap", "Fuel Remain"];
+      Ls.forEach(function (s, i) {
+        K.txt(s, 16, 46 + i * 62, 16, "#26282c", "left", 700);
+        K.box(16, 78 + i * 62, 200, 2, { fill: "#2b6fd4" });
+      });
+      var Rs = ["Last Lap", "Delta", "Predicted", "Best"];
+      Rs.forEach(function (s, i) {
+        K.txt(s, 784, 46 + i * 62, 16, "#26282c", "right", 700);
+        K.box(584, 78 + i * 62, 200, 2, { fill: "#2b6fd4" });
+      });
+      /* the ellipse */
+      g.save();
+      g.translate(400, 120);
+      g.scale(1.45, 1);
+      g.beginPath();
+      g.arc(0, 0, 78, 0, 7);
+      g.restore();
+      g.save();
+      g.globalAlpha = K.pa;
+      g.fillStyle = "#1d2a4d";
+      g.fill();
+      g.restore();
+      K.txt("Bias", 336, 262, 17, "#26282c", "left", 700);
+      /* tyre grids */
+      [["p_Tyre", 260], ["t_Tyre", 545]].forEach(function (t) {
+        K.txt(t[0], t[1] + 90, 292, 15, "#26282c", "center", 700);
+        K.box(t[1] + 88, 300, 2, 62, { fill: "#26282c" });
+      });
+      K.txt("t_Tyre", 16, 292, 15, "#26282c", "left", 700);
+      /* bottom cells */
+      var cells = [["Map", "#5a5e66"], ["Throttle", "#d97a2b"], ["TC", "#7a7e86"], ["TC LON", "#2b3fe2"], ["TC LAT", "#123c8f"], ["ABS", "#e2d52b"], ["PAS", "#b0b4bc"], ["Lap", "#26282c"]];
+      cells.forEach(function (c, i) {
+        var x = 16 + i * 97;
+        K.box(x, 384, 88, 54, { fill: "#fff", border: c[1], lw: 3, r: 6 });
+        K.txt(c[0], x + 44, 402, 12, c[1], "center", 700);
+      });
+    },
+    live: function (g, v, K) {
+      K.val(v.speed, 400, 26, 26, "#26282c");
+      K.val(v.vePerLap !== null ? v.vePerLap.toFixed(2) : null, 16, 72, 24, "#26282c", "left");
+      K.val(v.vePct !== null ? Math.round(v.vePct) : null, 16, 134, 24, "#26282c", "left");
+      K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(1) : null, 16, 196, 24, "#26282c", "left");
+      K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 16, 258, 24, "#26282c", "left");
+      K.val(v.last, 784, 72, 24, "#26282c", "right");
+      K.val(v.deltaStr, 784, 134, 24, v.delta !== null && v.delta < 0 ? "#2b9c50" : "#26282c", "right");
+      K.val(v.pred, 784, 196, 24, "#26282c", "right");
+      K.val(v.best, 784, 258, 24, "#26282c", "right");
+      K.val(v.gear, 400, 152, 96, "#fff");
+      K.val(v.bias, 420, 262, 24, "#26282c", "left");
+      /* tyre temp | pressure | temp trios */
+      function pair(x, a, b) {
+        K.val(a, x, 328, 22, "#26282c");
+        K.val(b, x, 358, 22, "#26282c");
+      }
+      pair(60, v.fl.t != null ? Math.round(v.fl.t) : null, v.rl.t != null ? Math.round(v.rl.t) : null);
+      pair(140, v.fr.t != null ? Math.round(v.fr.t) : null, v.rr.t != null ? Math.round(v.rr.t) : null);
+      pair(305, v.fl.p != null ? Math.round(v.fl.p) : null, v.rl.p != null ? Math.round(v.rl.p) : null);
+      pair(395, v.fr.p != null ? Math.round(v.fr.p) : null, v.rr.p != null ? Math.round(v.rr.p) : null);
+      pair(590, v.fl.t != null ? Math.round(v.fl.t) : null, v.rl.t != null ? Math.round(v.rl.t) : null);
+      pair(680, v.fr.t != null ? Math.round(v.fr.t) : null, v.rr.t != null ? Math.round(v.rr.t) : null);
+      var cv = [v.map, null, v.tc, v.tcCut, null, v.abs, null, null];
+      cv.forEach(function (a, i) {
+        var x = 16 + i * 97;
+        var t = i === 7 ? (v.laps >= 0 ? v.laps : null) : a ? a.value : null;
+        if (i === 1 || i === 4 || i === 6) t = null;
+        K.val(t, x + 44, 430, 22, "#26282c");
+      });
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  7 · Lamborghini Huracán GT3 EVO2 — tile row, green tyre boxes         */
+  /* ---------------------------------------------------------------------- */
+
+  var GRN = "#2fbf3f";
+  var lambo = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      var tiles = [["LAT", "#fff"], ["MAP", "#2b3fe2"], ["ENG", "#8a5adb"], ["ABS", "#d97a2b"], ["EB", "#3dc94f"], ["THR", "#fff"], ["SLIP", "#c9313c"], ["GRIP", "#d97a2b"]];
+      tiles.forEach(function (t, i) {
+        K.tile(t[0], 10 + i * 99, 8, 90, 62, { border: t[1], ls: 13, lh: 18 });
+      });
+      K.box(10, 84, 230, 56, { fill: "#0c0e10", border: "#3a3f46", r: 3 });
+      K.txt("last laptime", 125, 102, 13, "#9aa5b0", "center");
+      K.box(300, 84, 200, 44, { fill: "#e9eaec", r: 3 });
+      K.box(560, 84, 230, 56, { fill: "#0c0e10", border: "#3a3f46", r: 3 });
+      K.txt("Gain/Loss", 675, 102, 13, "#9aa5b0", "center");
+      /* gear box + green tyre tiles */
+      K.box(300, 150, 200, 200, { fill: "#050607", border: "#e9eaec", lw: 2, r: 3 });
+      K.txt("Gear", 400, 170, 13, "#c9ced4", "center");
+      [[14, 156], [14, 226], [636, 156], [636, 226]].forEach(function (p2) {
+        K.box(p2[0], p2[1], 150, 62, { fill: GRN, r: 3 });
+      });
+      [[180, 176], [180, 236], [560, 176], [560, 236]].forEach(function (p2) {
+        K.box(p2[0], p2[1], 66, 44, { fill: GRN, r: 3 });
+      });
+      /* bottom row */
+      [["BBal", 10, 150], ["fuel total", 170, 150], ["rpm", 330, 180], ["track", 520, 120], ["v_nrg", 650, 140]].forEach(
+        function (b) {
+          K.box(b[1], 366, b[2], 70, { fill: "#0c0e10", border: "#3a3f46", r: 3 });
+          K.txt(b[0], b[1] + b[2] / 2, 384, 13, b[0] === "fuel total" ? GRN : "#9aa5b0", "center");
+        },
+      );
+      K.txt("H U R A C A N  G T 3  E V O 2", DW / 2, 448, 10, "#5a6470", "center", 700);
+    },
+    live: function (g, v, K) {
+      var tv = [null, v.map, null, v.abs, null, null, v.tc, null];
+      tv.forEach(function (a, i) {
+        K.val(a ? a.value : null, 55 + i * 99, 60, 28, "#fff");
+      });
+      K.val(v.last, 125, 130, 26, "#fff");
+      K.val(v.speed, 400, 118, 30, "#111");
+      K.val(v.deltaStr, 675, 130, 26, "#fff");
+      K.val(v.gear, 400, 310, 130, "#fff");
+      /* tyre temps big, pressures small */
+      K.val(v.fl.t != null ? Math.round(v.fl.t) : null, 89, 202, 34, "#0a2410");
+      K.val(v.rl.t != null ? Math.round(v.rl.t) : null, 89, 272, 34, "#0a2410");
+      K.val(v.fr.t != null ? Math.round(v.fr.t) : null, 711, 202, 34, "#0a2410");
+      K.val(v.rr.t != null ? Math.round(v.rr.t) : null, 711, 272, 34, "#0a2410");
+      K.val(v.fl.p != null ? Math.round(v.fl.p) : null, 213, 206, 22, "#0a2410");
+      K.val(v.rl.p != null ? Math.round(v.rl.p) : null, 213, 266, 22, "#0a2410");
+      K.val(v.fr.p != null ? Math.round(v.fr.p) : null, 593, 206, 22, "#0a2410");
+      K.val(v.rr.p != null ? Math.round(v.rr.p) : null, 593, 266, 22, "#0a2410");
+      K.val(v.bias, 85, 424, 28, "#fff");
+      K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 245, 424, 28, GRN);
+      K.val(v.rpm, 420, 424, 32, "#fff");
+      K.val(v.trackC !== null ? Math.round(v.trackC) : null, 580, 424, 28, "#fff");
+      K.val(v.vePct !== null ? Math.round(v.vePct) : null, 720, 424, 28, "#fff");
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  8 · Lexus RC F GT3 — the rainbow rev band                             */
+  /* ---------------------------------------------------------------------- */
+
+  var rcf = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      var NV = "#16224a",
+        BD = "#3a4a7e";
+      K.box(10, 96, 200, 88, { fill: "#1d2a6e", r: 4 }); /* speed */
+      K.txt("Speed", 20, 114, 13, "#c9d2ea");
+      K.box(226, 96, 300, 42, { fill: "#050810", border: "#c9d2ea", r: 4, lw: 1 });
+      K.txt("Current", 234, 114, 11, "#8a97b8");
+      K.box(226, 142, 300, 42, { fill: "#050810", border: "#c9d2ea", r: 4, lw: 1 });
+      K.txt("Predicted", 234, 160, 11, "#8a97b8");
+      K.box(542, 96, 248, 42, { fill: NV, r: 4 });
+      K.txt("Fuel Level", 552, 114, 12, "#c9d2ea");
+      K.box(542, 142, 248, 42, { fill: NV, r: 4 });
+      K.txt("Brk", 552, 160, 12, "#c9d2ea");
+      /* tyres both sides */
+      [[10, 196], [10, 244], [542, 196], [542, 244]].forEach(function (p2, i) {
+        K.box(p2[0], p2[1], 118, 42, { fill: NV, r: 4 });
+        K.box(p2[0] + 126, p2[1], 118, 42, { fill: NV, r: 4 });
+      });
+      /* gear box */
+      K.box(310, 196, 180, 172, { fill: "#050810", border: "#c9d2ea", r: 6, lw: 2 });
+      K.txt("gear", 400, 360, 11, "#8a97b8", "center");
+      /* aids */
+      ["ABS", "TC", "TCC", "TCS", "MAP"].forEach(function (a, i) {
+        var colors = ["#2b9c50", "#c9313c", "#57c8d8", "#e2d52b", "#fff"];
+        K.txt(a, 566 + i * 46, 306, 12, "#c9d2ea", "center", 700);
+        K.box(544 + i * 46, 314, 42, 38, { fill: "#000", border: colors[i], lw: 2, r: 3 });
+      });
+      K.box(10, 396, 300, 42, { fill: NV, r: 4 });
+      K.txt("Virtual Energy", 66, 422, 14, "#c9d2ea");
+      K.box(330, 396, 140, 42, { fill: "#050810", border: BD, r: 4, lw: 1 });
+      K.txt("R C  F  G T 3", 660, 424, 12, "#5a6a9a", "center", 700);
+    },
+    live: function (g, v, K) {
+      /* the rainbow band */
+      var grd = g.createLinearGradient(20, 0, 700, 0);
+      grd.addColorStop(0, "#3a3adb");
+      grd.addColorStop(0.25, "#2fbf3f");
+      grd.addColorStop(0.6, "#3dc94f");
+      grd.addColorStop(0.85, "#e2c53b");
+      grd.addColorStop(1, "#c9313c");
+      g.save();
+      g.beginPath();
+      g.moveTo(6, 78);
+      g.quadraticCurveTo(400, -30, 794, 78);
+      g.lineTo(794 - (1 - Math.max(0.02, v.revFrac)) * 788, 78);
+      g.closePath();
+      g.clip();
+      g.fillStyle = grd;
+      g.fillRect(6, 0, 788 * Math.max(0.02, v.revFrac), 78);
+      g.restore();
+      for (var i = 1; i <= 7; i++) {
+        K.txt(i + "000", 6 + i * 98, 90, 10, "#8a97b8", "center");
+      }
+      K.val(v.speed, 110, 168, 52, "#fff");
+      K.val(v.current, 460, 128, 24, "#fff", "right");
+      K.val(v.pred, 460, 174, 24, "#fff", "right");
+      K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 740, 128, 24, "#fff", "right");
+      K.val(v.bias, 740, 174, 24, "#fff", "right");
+      function tp(x, y, c) {
+        K.val(c.p != null ? Math.round(c.p) : null, x + 48, y + 30, 20, "#fff");
+        K.txt("kPa", x + 96, y + 28, 10, "#8a97b8");
+        K.val(c.t != null ? Math.round(c.t) : null, x + 174, y + 30, 20, "#fff");
+        K.txt("°C", x + 222, y + 28, 10, "#8a97b8");
+      }
+      tp(10, 196, v.fl);
+      tp(10, 244, v.rl);
+      tp(542, 196, v.fr);
+      tp(542, 244, v.rr);
+      K.val(v.gear, 400, 330, 110, "#fff");
+      [v.abs, v.tc, null, null, v.map].forEach(function (a, i) {
+        K.val(a ? a.value : null, 565 + i * 46, 342, 22, "#fff");
+      });
+      K.val(v.vePct !== null ? Math.round(v.vePct) + " %" : null, 240, 426, 24, "#fff");
+      K.val(v.rpm, 400, 426, 24, "#fff");
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  9 · McLaren 720S GT3 — minimal black + amber                          */
+  /* ---------------------------------------------------------------------- */
+
+  var PAP = "#e8a13c";
+  var m720 = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#000" });
+      K.txt("7 2 0 S  G T 3", 786, 32, 20, "#e9eaec", "right", 700);
+      K.txt("M c L A R E N", 14, 32, 20, "#e9eaec", "left", 700);
+      K.txt("FUEL", 700, 100, 18, "#fff", "center", 700);
+      K.txt("PITLANE TIMER", 700, 300, 16, "#fff", "center", 700);
+      K.txt("BRAKE BALANCE F", 110, 300, 16, "#fff", "center", 700);
+      K.txt("OVERALL BEST", 400, 356, 16, PAP, "center", 700);
+    },
+    live: function (g, v, K) {
+      K.val(v.deltaStr, 400, 66, 40, "#2b6fd4");
+      K.val(v.gear, 400, 300, 190, "#fff");
+      /* start-procedure list is a real-car page; this feed shows state lines */
+      var lines = [
+        [v.limiter ? "LIMITER ON" : "LIMITER OFF", v.limiter ? "#3dc94f" : "#8a8e96"],
+        ["TC  " + (v.tc ? v.tc.value : "—"), PAP],
+        ["ABS " + (v.abs ? v.abs.value : "—"), PAP],
+        ["MAP " + (v.map ? v.map.value : "—"), "#fff"],
+      ];
+      lines.forEach(function (l, i) {
+        K.txt(l[0], 110, 88 + i * 30, 17, l[1], "center", 700);
+      });
+      K.val(v.speed !== null ? v.speed + " " + v.unit : null, 110, 244, 22, PAP);
+      K.val(v.bias, 110, 330, 26, "#fff");
+      K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 700, 132, 26, "#fff");
+      K.val(v.fuelLaps !== null ? "≈" + v.fuelLaps.toFixed(1) + " LAPS" : null, 700, 244, 20, PAP);
+      K.val(v.current, 700, 330, 26, "#fff");
+      K.val(v.best, 400, 400, 34, "#fff");
+      K.val(v.last !== null ? "LAST  " + v.last : null, 400, 430, 16, "#8a94a0");
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  10 · Mercedes-AMG GT3 — gear scale + thin boxes                       */
+  /* ---------------------------------------------------------------------- */
+
+  var amg = canvasDesign({
+    bake: function (g, K) {
+      K.box(0, 0, DW, DH, { fill: "#050608" });
+      for (var i = 0; i <= 8; i++) {
+        K.txt(String(i), 120 + i * 70, 26, 16, "#e9eaec", "center", 700);
+        K.box(119 + i * 70, 32, 2, 12, { fill: "#8a8e96" });
+      }
+      function mt(label, x, y, w, h) {
+        K.box(x, y, w, h, { fill: "#0a0c12", border: "#8a94b0", lw: 2, r: 2 });
+        K.txt(label, x + w / 2, y + 18, 13, "#c9d2ea", "center");
+      }
+      mt("TRACK", 100, 72, 86, 74);
+      mt("AIR", 196, 72, 86, 74);
+      K.box(306, 72, 160, 74, { fill: "#0a0c12", border: "#c9313c", lw: 3, r: 2 });
+      K.txt("LaptimeDiff", 386, 90, 13, "#e05a6a", "center");
+      mt("Speed", 500, 72, 190, 74);
+      mt("Energy", 100, 166, 180, 74);
+      mt("Lap Time", 100, 260, 180, 74);
+      K.box(306, 166, 160, 190, { fill: "#0a0c12", border: "#8a94b0", lw: 2, r: 2 });
+      K.txt("Gear", 386, 184, 13, "#c9d2ea", "center");
+      ["ABS", "TC", "MAP"].forEach(function (a, i) {
+        var col = ["#e2d52b", "#57a8d8", "#c9313c"][i];
+        K.txt(a, 526 + i * 58, 184, 12, "#c9d2ea", "center", 700);
+        K.box(500 + i * 58, 192, 52, 60, { fill: "#0a0c12", border: col, lw: 2, r: 2 });
+      });
+      ["TCC", "TCS"].forEach(function (a, i) {
+        var col = ["#2b9c50", "#8a94b0"][i];
+        K.txt(a, 526 + i * 90, 274, 12, "#c9d2ea", "center", 700);
+        K.box(490 + i * 90, 282, 84, 60, { fill: "#0a0c12", border: col, lw: 2, r: 2 });
+      });
+      K.box(100, 380, 590, 30, { fill: "#0a0c12", border: "#8a94b0", lw: 1 });
+      K.txt("A M G  G T 3", 395, 436, 11, "#5a6470", "center", 700);
+    },
+    live: function (g, v, K) {
+      /* the gear bar: filled to the current gear */
+      var gearN = typeof v.gear === "string" && /^\d$/.test(v.gear) ? parseInt(v.gear, 10) : 0;
+      K.box(120, 34, Math.max(0.02, gearN / 8) * 560, 10, { fill: "#2b8fe2", data: true });
+      K.val(v.trackC !== null ? Math.round(v.trackC) : null, 143, 132, 28, "#fff");
+      K.val(v.airC !== null ? Math.round(v.airC) : null, 239, 132, 28, "#fff");
+      K.val(v.deltaStr, 386, 134, 30, "#e05a6a");
+      K.val(v.speed, 595, 134, 34, "#fff");
+      K.val(v.vePct !== null ? v.vePct.toFixed(1) : null, 190, 226, 30, "#fff");
+      K.val(v.current, 190, 320, 26, "#fff");
+      K.val(v.gear, 386, 330, 120, "#fff");
+      [v.abs, v.tc, v.map].forEach(function (a, i) {
+        K.val(a ? a.value : null, 526 + i * 58, 236, 28, "#fff");
+      });
+      K.val(null, 532, 326, 24, "#fff");
+      K.val(null, 622, 326, 24, "#fff");
+      K.txt(v.deltaStr == null ? "—" : v.deltaStr, 160, 401, 14, "#3dc94f", "center", 700);
+      K.txt(v.pos !== null ? "POS  " + v.pos : "—", 395, 401, 14, "#fff", "center", 700);
+      K.txt(v.last == null ? "—" : v.last, 620, 401, 14, "#c9d2ea", "center", 700);
+    },
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /*  Registration                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  /* The kit, for speedo-real.js and the headless test. */
+  window.ApexDashKit = {
+    DESIGN: { w: DW, h: DH },
+    canvasDesign: canvasDesign,
+    pull: pull,
+    findAid: findAid,
+    biasText: biasText,
+  };
+
+  window.ApexSpeedoDesigns = window.ApexSpeedoDesigns || {};
+  window.ApexSpeedoDesigns.p911 = p911;
+  window.ApexSpeedoDesigns.aston = aston;
+  window.ApexSpeedoDesigns.m4 = m4;
+  window.ApexSpeedoDesigns.z06 = z06;
+  window.ApexSpeedoDesigns.f296 = f296;
+  window.ApexSpeedoDesigns.mstg = mstg;
+  window.ApexSpeedoDesigns.lambo = lambo;
+  window.ApexSpeedoDesigns.rcf = rcf;
+  window.ApexSpeedoDesigns.m720 = m720;
+  window.ApexSpeedoDesigns.amg = amg;
+})();

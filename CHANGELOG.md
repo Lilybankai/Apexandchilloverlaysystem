@@ -4,6 +4,32 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.7 — 2026-08-24
+
+### Added
+
+- **The Apex Real cluster.** A new speedo design (Design dropdown → "Apex Real —
+  machined cluster") that repaints the house cluster as a physical instrument:
+  graphite body lit from above, machined rim with a gasket seam and metal
+  grain, blue rim-light on the shoulders, backlit LCD wells, red shift lamps,
+  and the rev bar as light filling a machined groove. The gear sits ABOVE the
+  speed, the way a driver reads a real DDU. The LCDs carry the GT3 staples the
+  feed knows: four-corner tyre pressures and temperatures, brake bias and
+  aids on the left; last/best/projected laps, fuel and position on the right.
+  Same silhouette and notch as the original Apex design — which is untouched
+  and stays the default — so the delta widget docks identically.
+- **Ten LMGT3 per-car dashboards.** One speedo design per car in the class —
+  Porsche 911 GT3 R, Aston Martin Vantage, BMW M4, Corvette Z06, Ferrari 296,
+  Ford Mustang, Lamborghini Huracán, Lexus RC F, McLaren 720S and
+  Mercedes-AMG — each an original recreation of that car's real display
+  character, drawn from photographs of the actual dashes: the Porsche's
+  colour-bordered telemetry boxes, the Aston's white gear ring and rotary
+  row, the BMW's chunky tiles, the Lexus's rainbow rev band, the McLaren's
+  papaya-on-black, and so on. All run on live telemetry, all follow the house
+  rule that nothing is invented — a channel the feed does not carry reads
+  "—", and no manufacturer logos are drawn. Selectable per source with
+  `?design=` like every other design.
+
 ## 0.91.0-beta.6 — 2026-08-24
 
 ### Added
