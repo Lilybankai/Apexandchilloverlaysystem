@@ -4,7 +4,9 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-### Added (unreleased)
+## 0.91.0-beta.1 — 2026-08-24
+
+### Added
 
 - **The Team tab: a pit wall for the car.** (Beta channel.) A new panel page
   showing the race the way an engineer wants it: fuel or Virtual Energy with
