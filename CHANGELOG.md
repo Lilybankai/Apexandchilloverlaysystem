@@ -6,30 +6,12 @@
 
 ### Added
 
-- **The Get started checklist now walks you through it.** Clicking a row no
-  longer just drops you on the right card: it starts a guided tour of that
-  section and steps through its controls one at a time, ringing each one and
-  explaining it beside itself. Twenty-six steps across five tours - Settings
-  (the plugin, giving the sim's own MFD and pit controls a key, binding your
-  own), Overlays (the two destinations per widget, the Copy button and what
-  OBS does with it, the all-in-one page), the on-screen layer (Show in game,
-  the hotkey that cycles into edit mode, magnetic docking), the race engineer
-  (voice, push-to-talk, how much it volunteers) and the setup screen. **Take
-  the full tour** on the card runs the lot end to end.
-- **The page stays live throughout.** The dim is drawn around the highlighted
-  control rather than over the page, so you can press the button a step is
-  describing while the step is on screen, and the checklist re-ticks itself
-  when the tour closes.
-- **A seventh checklist row: the setup screen.** It was missing entirely, and
-  it is the tab with the one behaviour that surprises everybody - nothing you
-  change reaches the car until you press Apply.
-
-### Fixed
-
-- **Two walkthroughs could open on top of each other.** A tour arriving at the
-  Setups or Streamers tab tripped that tab's own first-visit modal, because a
-  tour navigates exactly the way a person does. The modals now treat an open
-  tour as a busy screen, and a tour closes any that is already up.
+- **The Get started checklist walks you through the app.** Shipped to everyone
+  in v0.90.2 — see that section below for what it does. On the beta channel it
+  carries one extra step the stable build has no control for: **magnetic
+  docking**, in the on-screen-layer tour. Twenty-six steps here, twenty-five
+  there; a step whose feature is not in the build drops itself and the tour
+  renumbers.
 
 ## 0.91.0-beta.8 — 2026-08-25
 
@@ -215,6 +197,35 @@
   honestly when no realistic lift-and-coast could reach it. Works in litres
   and Virtual Energy, and updates every second. The grid-planning Fuel tab is
   unchanged; this is the in-race half it never had.
+
+## 0.90.2 — 2026-08-25
+
+### Added
+
+- **The Get started checklist now walks you through it.** Clicking a row no
+  longer just drops you on the right card: it starts a guided tour of that
+  section and steps through its controls one at a time, ringing each one and
+  explaining it beside itself. Twenty-five steps across five tours — Settings
+  (the plugin, giving the sim's own MFD and pit controls a key, binding your
+  own), Overlays (the two destinations per widget, the Copy button and what
+  OBS does with it, the all-in-one page), the on-screen layer (Show in game,
+  the hotkey that cycles into edit mode), the race engineer (voice,
+  push-to-talk, how much it volunteers) and the setup screen. **Take the full
+  tour** on the card runs the lot end to end.
+- **The page stays live throughout.** The dim is drawn around the highlighted
+  control rather than over the page, so you can press the button a step is
+  describing while the step is on screen, and the checklist re-ticks itself
+  when the tour closes.
+- **A seventh checklist row: the setup screen.** It was missing entirely, and
+  it is the tab with the one behaviour that surprises everybody — nothing you
+  change reaches the car until you press Apply.
+
+### Fixed
+
+- **Two walkthroughs could open on top of each other.** A tour arriving at the
+  Setups or Streamers tab tripped that tab's own first-visit modal, because a
+  tour navigates exactly the way a person does. The modals now treat an open
+  tour as a busy screen, and a tour closes any that is already up.
 
 ## 0.90.1 — 2026-08-25
 
