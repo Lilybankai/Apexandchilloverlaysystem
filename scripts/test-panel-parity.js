@@ -652,6 +652,31 @@ function iconRefs(sources) {
 }
 
 /**
+ * Ids a scanned file reaches for that are allowed NOT to exist in the page.
+ *
+ * There is exactly one source of these, and it is deliberate: the guided
+ * walkthrough marks a step `optional` when it describes a feature that is not
+ * in every build. A stable release is cut from an older tag than main, so such
+ * a control is genuinely absent there and the step drops itself at run time.
+ * Its anchor is still written with a `#` — that is what keeps the id protected
+ * on the branches where it DOES exist — so the exemption is read from the
+ * tours themselves rather than hand-listed here, and it disappears the moment
+ * a step stops being optional.
+ */
+function optionalAnchorIds() {
+  const ids = new Set();
+  try {
+    for (const step of require('../electron/control-panel/tour.js').allSteps()) {
+      if (!step.optional || !step.anchor || !step.anchor.startsWith('#')) continue;
+      ids.add(step.anchor.slice(1).split(/[\s.:>[]/)[0]);
+    }
+  } catch {
+    /* no tours in this build — nothing is exempt */
+  }
+  return ids;
+}
+
+/**
  * Verify one page against its contract.
  *
  * `ignoreUnused` names id prefixes that may legitimately go unreferenced by JS.
@@ -671,8 +696,10 @@ function verifyPage({ label, htmlFile, jsFiles, contract, ignoreUnused = [] }) {
   for (const id of sprite) declaredSet.add(id);
   const referenced = referencedIds(js);
 
-  // 1. Every id the JS reaches for must exist.
-  const missing = [...referenced].filter((id) => !declaredSet.has(id)).sort();
+  // 1. Every id the JS reaches for must exist — bar the walkthrough's
+  //    deliberately-optional anchors, see optionalAnchorIds().
+  const exempt = optionalAnchorIds();
+  const missing = [...referenced].filter((id) => !declaredSet.has(id) && !exempt.has(id)).sort();
   check(
     `every id ${jsFiles.join('/')} looks up exists in ${htmlFile}`,
     missing.length === 0,

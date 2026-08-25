@@ -91,6 +91,12 @@ console.log('\nEvery step points at something that exists');
   const unproven = [];
   for (const s of steps) {
     if (!s.anchor) continue;
+    // An `optional` step is allowed to point at nothing: that is the whole
+    // point of the mark. It describes a feature this build may not have, and
+    // usableSteps() drops it at run time rather than showing it. Requiring its
+    // anchor here would fail every stable cut made from a tag older than the
+    // feature — which is exactly the cut this mark exists for.
+    if (s.optional) continue;
     if (s.anchor.startsWith('#')) {
       // Take the id up to any descendant/pseudo part.
       const id = s.anchor.slice(1).split(/[\s.:>[]/)[0];
@@ -102,7 +108,11 @@ console.log('\nEvery step points at something that exists');
       if (!cls || !css.includes(`.${cls}`)) unproven.push(`${s.tour}/${s.id} -> ${s.anchor}`);
     }
   }
-  check('every id anchor resolves in index.html', bad.length === 0, bad.join(', ') || 'all of them');
+  check(
+    'every REQUIRED id anchor resolves in index.html',
+    bad.length === 0,
+    bad.join(', ') || `${steps.filter((s) => !s.optional).length} checked`,
+  );
   check(
     'every runtime anchor has a class the stylesheets know',
     unproven.length === 0,
