@@ -21,6 +21,8 @@
   <!-- Get started checklist. Last, because its arrival flash ([data-pulse])
        lands on cards styled by every one of the files above. -->
   <link rel="stylesheet" href="onboarding.css" />
+  <!-- The guided walkthrough's spotlight, which sits over all of it. -->
+  <link rel="stylesheet" href="tour.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -184,8 +186,9 @@
             <span class="obhead__count" id="onboard-count">—</span>
           </div>
           <p class="card__desc">
-            Six things to do once. Each one ticks itself when it is actually
-            done — click a row to go straight to the setting it needs.
+            Seven things to do once. Each one ticks itself when it is actually
+            done — click a row and it walks you through that part of the app,
+            control by control, with the page still live so you can follow along.
           </p>
 
           <div class="obbar"><span class="obbar__fill" id="onboard-bar"></span></div>
@@ -196,6 +199,9 @@
             <span class="obfoot__done" id="onboard-done" hidden>
               That is everything — you are set up. Close this whenever you like.
             </span>
+            <button class="btn btn--accent btn--sm" id="onboard-tour" type="button">
+              Take the full tour
+            </button>
             <button class="btn btn--ghost btn--sm" id="onboard-hide" type="button">
               Hide this
             </button>
@@ -2846,6 +2852,33 @@
   </section>
 </div>
 
+<!-- ==================== GUIDED WALKTHROUGH ====================
+     tour.js. Outside .app so it is never clipped by a scrolling view, and
+     after every view so it stacks above them without fighting z-index.
+
+     The container and the ring take NO pointer events: the dim is the ring's
+     own box-shadow, and the page beneath stays completely live, so a driver
+     can press the button a step is describing while the step is on screen.
+     Only the callout is clickable. -->
+<div class="tour" id="tour" hidden data-dim="false" role="dialog" aria-labelledby="tour-title">
+  <div class="tour__ring" id="tour-ring"></div>
+  <div class="tour__pop" id="tour-pop" data-placement="below">
+    <div class="tour__head">
+      <span class="tour__icon" id="tour-icon"></span>
+      <span class="tour__section" id="tour-section"></span>
+      <span class="tour__count" id="tour-count"></span>
+    </div>
+    <h2 class="tour__title" id="tour-title"></h2>
+    <p class="tour__body" id="tour-body"></p>
+    <p class="tour__note" id="tour-note" hidden></p>
+    <div class="tour__foot">
+      <button class="btn btn--ghost btn--sm tour__skip" id="tour-skip" type="button">Skip</button>
+      <button class="btn btn--ghost btn--sm" id="tour-back" type="button">Back</button>
+      <button class="btn btn--accent btn--sm" id="tour-next" type="button">Next</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast for copy confirmation -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -2878,6 +2911,9 @@
      be clicked the moment they paint — so everything it reaches for has to
      already exist. control-panel.js calls its init() once settings have
      arrived; nothing here runs on its own. -->
+<!-- The guided walkthrough. Before onboarding.js, which launches it: a
+     checklist row can be clicked the moment it paints. -->
+<script src="tour.js"></script>
 <script src="onboarding.js"></script>
 </body>
 </html>

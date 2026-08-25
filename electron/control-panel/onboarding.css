@@ -175,10 +175,11 @@
   color: var(--ok);
 }
 
-/* Pushed right by the button rather than by space-between: the completion line
-   beside it is hidden until every row is ticked, and space-between with one
-   child would park Hide this on the left for the entire time it matters. */
-.obfoot > .btn { margin-left: auto; }
+/* The button pair is pushed right by the FIRST of them rather than by
+   space-between: the completion line beside them is hidden until every row is
+   ticked, and space-between with one child would park them on the left for the
+   entire time it matters. */
+.obfoot > .btn:first-of-type { margin-left: auto; }
 
 /* --------------------------- the arrival flash -------------------------- */
 /*

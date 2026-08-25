@@ -240,7 +240,13 @@
   /* ---- first open -------------------------------------------------------- */
 
   function screenIsBusy() {
-    return !!document.querySelector('.sheet:not([hidden]), .su-pop:not([hidden])');
+    // `.tour` is the guided walkthrough (tour.js), which drives the tab router
+    // itself and so ARRIVES here the same way a person does. Without this, a
+    // tour reaching this tab trips the first-visit modal and the driver gets
+    // two walkthroughs stacked on each other — seen, once, on the Setups tab.
+    return !!document.querySelector(
+      '.sheet:not([hidden]), .su-pop:not([hidden]), .tour:not([hidden])',
+    );
   }
 
   /** Called by the tab router on every switch to the Streamers tab. */
