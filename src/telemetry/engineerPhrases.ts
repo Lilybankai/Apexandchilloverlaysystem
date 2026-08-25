@@ -51,6 +51,11 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) && v !== UNKNOWN_VALUE ? v : undefined;
 }
 
+/** Signed derived deltas may legitimately equal -1, the telemetry sentinel. */
+function signedNum(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
 /** One of the bank, by the resolved variant number. Index 0 is canonical. */
 function pick(variant: number, bank: readonly string[]): string {
   return bank[Math.abs(variant) % bank.length]!;
@@ -277,6 +282,43 @@ function leadSentence(
       return pick(v, [
         'Blue flags — faster car closing. Hold your line.',
         'Faster class behind. Stay on line, let them work it out.',
+      ]);
+    }
+
+    case 'practicePace': {
+      const lap = num(f.lapSec);
+      if (lap === undefined) return null;
+      const time = speakableLapTime(lap);
+      const band = typeof f.band === 'string' && f.band ? f.band : 'reference';
+      const alienDelta = signedNum(f.deltaAlienSec);
+      const competitiveDelta = signedNum(f.deltaCompetitiveSec);
+      const target =
+        alienDelta !== undefined && alienDelta <= 0.05
+          ? 'on alien race pace'
+          : competitiveDelta !== undefined && competitiveDelta > 0.05
+            ? `${speakableGap(competitiveDelta)} to competitive pace`
+            : alienDelta !== undefined
+              ? `${speakableGap(alienDelta)} off alien race pace`
+              : `${band} pace`;
+      const reason = String(f.reason ?? 'periodic');
+      if (reason === 'first') {
+        return pick(v, [
+          `First benchmark, ${time}. ${band} pace — ${target}.`,
+          `Reference pace is live. Best lap ${time}, ${band} band — ${target}.`,
+          `We've got a benchmark: ${time}. That is ${band} pace, ${target}.`,
+        ]);
+      }
+      if (reason === 'band-improved') {
+        return pick(v, [
+          `That moves us into ${band} pace — ${time}, ${target}.`,
+          `Good step. ${time} puts us in the ${band} band — ${target}.`,
+          `New pace band: ${band}. Best is ${time}, ${target}.`,
+        ]);
+      }
+      return pick(v, [
+        `Practice pace check: best is ${time}, ${band} band — ${target}.`,
+        `Reference check: ${time} remains the best, ${band} pace — ${target}.`,
+        `Current benchmark, ${time}. We're in the ${band} band, ${target}.`,
       ]);
     }
   }

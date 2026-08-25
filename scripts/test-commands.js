@@ -672,11 +672,38 @@ function unit() {
     xExtras.pitLossSec === 32 && xExtras.pitExitPosition === 3 && xExtras.pitExitBehind === 'Brown',
     JSON.stringify(xExtras));
 
-  // pace — score path, then predicted-lap fallback
+  // pace — current score plus named Ohne Speed race-pace targets
   const engP = new EngineerCommands();
-  engP.update(frame({ player: { paceScore: { ok: true, percent: 94.2, bandLabel: 'Silver', deltaSec: 0.4, lapSec: 0 } } }));
+  engP.update(frame({ player: { paceScore: {
+    ok: true, percent: 104, bandLabel: 'Midpack', bandId: 'midpack',
+    deltaSec: 4, refSec: 100, hotlapSec: 98, lapSec: 104,
+    layoutName: 'Grand Prix', sheetClass: 'LMGT3',
+  } } }));
   a = engP.answer('pace');
-  check('pace: score + band + delta', a.ok && /94 percent — Silver/.test(a.text) && /0\.4 off the reference/.test(a.text), a.text);
+  check('pace: best + band + alien delta',
+    a.ok && /Your best is 1 44\.0/.test(a.text) && /104 percent — Midpack/.test(a.text) &&
+      /4\.0 off alien race pace/.test(a.text), a.text);
+  a = engP.answer('paceAlien');
+  check('paceAlien: target + driver delta',
+    a.ok && /Alien race pace for LMGT3 at Grand Prix is 1 40\.0/.test(a.text) &&
+      /4\.0 seconds to find/.test(a.text), a.text);
+  a = engP.answer('paceCompetitive');
+  check('paceCompetitive: 101 percent target + delta',
+    a.ok && /Competitive race pace.*1 41\.0/.test(a.text) && /3\.0 seconds to find/.test(a.text), a.text);
+  a = engP.answer('paceMidpack');
+  check('paceMidpack: 105 percent target already met',
+    a.ok && /Midpack race pace.*1 45\.0/.test(a.text) && /1\.0 seconds faster/.test(a.text), a.text);
+
+  // The reference is useful before the first flying lap; only the comparison
+  // waits for a lap.
+  engP.update(frame({ player: { paceScore: {
+    ok: false, reason: 'no-lap', detail: 'Set a lap to see where you land.',
+    refSec: 100, lapSec: UNKNOWN, layoutName: 'Grand Prix', sheetClass: 'LMGT3',
+  } } }));
+  a = engP.answer('paceCompetitive');
+  check('paceCompetitive: target available before first lap',
+    a.ok && /Competitive race pace.*1 41\.0 or better/.test(a.text) && !/Your best/.test(a.text), a.text);
+
   engP.update(frame({ player: { paceDeltas: { predictedLapSec: 103.8 } } }));
   a = engP.answer('pace');
   check('pace: predicted-lap fallback', a.ok && /On for 1 43\.8 this lap/.test(a.text), a.text);
@@ -778,7 +805,8 @@ function unit() {
   engEmpty.update(frame({}));
   for (const intent of [
     'tyres', 'pressures', 'damage', 'brakes', 'pitStop', 'pitWindow', 'energy', 'fuelRatio', 'hybrid',
-    'pace', 'catching', 'defending', 'tyreLife', 'pitExit', 'bestLap', 'fieldFastest', 'leader',
+    'pace', 'paceAlien', 'paceCompetitive', 'paceMidpack', 'catching', 'defending', 'tyreLife',
+    'pitExit', 'bestLap', 'fieldFastest', 'leader',
     'gridStart', 'trackLimits', 'flags', 'weather', 'brakeBias', 'tractionControl', 'sectors',
   ]) {
     a = engEmpty.answer(intent);

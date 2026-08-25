@@ -154,6 +154,12 @@ console.log('\n6) The dial: off / essential / standard');
   r3.svc.lastFrame = drivingFrame(false);
   r3.svc.onCue(cueOf('positionChange', { to: 6, gained: true }), r3.svc.lastFrame);
   check('standard speaks it', r3.spoken.some((t) => /Up to P6/.test(t)), r3.spoken.join('|'));
+  r3.svc.onCue(cueOf('practicePace', {
+    reason: 'periodic', lapSec: 104, band: 'Midpack',
+    deltaAlienSec: 4, deltaCompetitiveSec: 3,
+  }), r3.svc.lastFrame);
+  check('standard includes practice pace coaching',
+    r3.spoken.some((t) => /Practice pace check/.test(t)), r3.spoken.join('|'));
 
   // The dial moves live — same service, no restart.
   r3.spoken.length = 0;
@@ -188,6 +194,12 @@ console.log('\n8) The grammar still wins over dictation text');
   check('a genuinely free-form question does not match',
     matchGrammarText('safety car is out and I have half a tank what do we do') === null,
     String(matchGrammarText('safety car is out and I have half a tank what do we do')));
+  check('alien gap wording stays local',
+    matchGrammarText('how far am i off alien pace') === 'paceAlien');
+  check('competitive target wording stays local',
+    matchGrammarText('what pace do i need to be competitive') === 'paceCompetitive');
+  check('midpack target wording stays local',
+    matchGrammarText('what is mid pack pace') === 'paceMidpack');
   check('empty text does not match', matchGrammarText('') === null);
   check('"sector times" reaches sectors', matchGrammarText('sector times') === 'sectors');
   check('"last lap sectors" prefers sectors over last lap',

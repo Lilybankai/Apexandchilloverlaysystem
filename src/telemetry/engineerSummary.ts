@@ -14,6 +14,10 @@
 
 import { UNKNOWN_VALUE } from './types';
 import type { StandingEntry, TelemetryFrame } from './types';
+import {
+  deltaToReferencePaceTarget,
+  referencePaceTargets,
+} from './paceTargets';
 
 const TYRE_WINDOW_C = 8;
 
@@ -58,6 +62,29 @@ export interface EngineerSummary {
   timeRemainingMin?: number;
   lastLapSec?: number;
   bestLapSec?: number;
+  /** Best lap used by the reference scorer, seconds. */
+  paceBestLapSec?: number;
+  /** Best lap as a percentage of Ohne Speed's alien race-pace reference. */
+  pacePercent?: number;
+  /** Named source-table band: Alien, Competitive, Good, Midpack, etc. */
+  paceBand?: string;
+  /** The 100% alien race-pace benchmark for this resolved class/layout. */
+  paceAlienRaceSec?: number;
+  /** Separate alien qualifying/hotlap benchmark, when published. */
+  paceAlienHotlapSec?: number;
+  /** Slowest lap that still qualifies as Competitive (101% today). */
+  paceCompetitiveSec?: number;
+  /** Slowest lap that still qualifies as Midpack (105% today). */
+  paceMidpackSec?: number;
+  /** Positive = seconds the best lap still needs to find for each target. */
+  paceDeltaToAlienSec?: number;
+  paceDeltaToCompetitiveSec?: number;
+  paceDeltaToMidpackSec?: number;
+  /** Source-table identity used for the comparison. */
+  paceLayout?: string;
+  paceClass?: string;
+  paceReferenceAssumed?: boolean;
+  paceReferenceSource?: string;
   ahead?: EngineerCar;
   behind?: EngineerCar;
   /** Player's rolling average over the last few laps (see myAvgLaps), seconds. */
@@ -382,6 +409,27 @@ export function engineerSummary(
   }
   if (me && known(me.lastLapSec) && me.lastLapSec > 0) out.lastLapSec = round1(me.lastLapSec);
   if (me && known(me.bestLapSec) && me.bestLapSec > 0) out.bestLapSec = round1(me.bestLapSec);
+  const pace = frame.player?.paceScore;
+  if (pace && known(pace.refSec) && pace.refSec > 0) {
+    const targets = referencePaceTargets(pace);
+    out.paceAlienRaceSec = round1(pace.refSec);
+    if (known(pace.hotlapSec) && pace.hotlapSec > 0) out.paceAlienHotlapSec = round1(pace.hotlapSec);
+    if (known(pace.lapSec) && pace.lapSec > 0) out.paceBestLapSec = round1(pace.lapSec);
+    if (known(pace.percent)) out.pacePercent = round1(pace.percent);
+    if (pace.bandLabel) out.paceBand = pace.bandLabel;
+    if (targets.competitive) out.paceCompetitiveSec = targets.competitive.lapSec;
+    if (targets.midpack) out.paceMidpackSec = targets.midpack.lapSec;
+    const alienDelta = deltaToReferencePaceTarget(pace, targets.alien);
+    const competitiveDelta = deltaToReferencePaceTarget(pace, targets.competitive);
+    const midpackDelta = deltaToReferencePaceTarget(pace, targets.midpack);
+    if (alienDelta !== null) out.paceDeltaToAlienSec = alienDelta;
+    if (competitiveDelta !== null) out.paceDeltaToCompetitiveSec = competitiveDelta;
+    if (midpackDelta !== null) out.paceDeltaToMidpackSec = midpackDelta;
+    if (pace.layoutName) out.paceLayout = pace.layoutName;
+    if (pace.sheetClass) out.paceClass = pace.sheetClass;
+    if (pace.assumed) out.paceReferenceAssumed = true;
+    if (pace.credit?.author) out.paceReferenceSource = pace.credit.author;
+  }
   const ahead = classNeighbour(frame, -1, avgOf);
   const behind = classNeighbour(frame, 1, avgOf);
   if (ahead) out.ahead = ahead;

@@ -44,6 +44,11 @@ import type { StandingEntry, TelemetryFrame } from './types';
 import { sessionKeyOf } from './triggers';
 import { PitLossModel } from './pitExit';
 import type { PitExitProjection } from './pitExit';
+import {
+  deltaToReferencePaceTarget,
+  referencePaceTarget,
+} from './paceTargets';
+import type { ReferencePaceTargetId } from './paceTargets';
 
 /* -------------------------------------------------------------------------- */
 /*  What the driver can ask                                                   */
@@ -81,6 +86,9 @@ export type CommandIntent =
   | 'fuelRatio'
   | 'hybrid'
   | 'pace'
+  | 'paceAlien'
+  | 'paceCompetitive'
+  | 'paceMidpack'
   // The trend set (2026-08-23): the questions drivers actually ask are about
   // CHANGE — is he catching me, will the tyres last — and a snapshot cannot
   // answer them. Fed by the per-lap history sampled in update().
@@ -121,6 +129,9 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'fuelRatio',
   'hybrid',
   'pace',
+  'paceAlien',
+  'paceCompetitive',
+  'paceMidpack',
   'catching',
   'defending',
   'tyreLife',
@@ -244,6 +255,38 @@ function radioName(entry: StandingEntry): string {
 
 function known(n: number | undefined): n is number {
   return typeof n === 'number' && n !== UNKNOWN_VALUE && Number.isFinite(n);
+}
+
+/** One target-time answer shared by the Alien, Competitive and Midpack intents. */
+function referencePaceAnswer(
+  frame: TelemetryFrame,
+  id: ReferencePaceTargetId,
+): string | null {
+  const score = frame.player?.paceScore;
+  const target = referencePaceTarget(score, id);
+  if (!score || !target) return null;
+
+  const identity =
+    score.sheetClass && score.layoutName
+      ? ` for ${score.sheetClass} at ${score.layoutName}`
+      : score.sheetClass
+        ? ` for ${score.sheetClass}`
+        : score.layoutName
+          ? ` at ${score.layoutName}`
+          : '';
+  const targetLine =
+    `${target.label} race pace${identity} is ${speakableLapTime(target.lapSec)} or better.`;
+  const delta = deltaToReferencePaceTarget(score, target);
+  if (delta === null || !known(score.lapSec)) return targetLine;
+
+  const best = `Your best is ${speakableLapTime(score.lapSec)}.`;
+  if (delta > 0.05) {
+    return `${targetLine} ${best} ${delta.toFixed(1)} seconds to find.`;
+  }
+  if (delta < -0.05) {
+    return `${targetLine} ${best} ${Math.abs(delta).toFixed(1)} seconds faster than that target.`;
+  }
+  return `${targetLine} ${best} Right on that target.`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -859,15 +902,32 @@ export class EngineerCommands {
           const band = ps.bandLabel ? ` — ${ps.bandLabel}` : '';
           const off =
             known(ps.deltaSec) && ps.deltaSec! > 0.05
-              ? ` ${ps.deltaSec!.toFixed(1)} off the reference.`
+              ? ` ${ps.deltaSec!.toFixed(1)} off alien race pace.`
               : '';
-          return yes(`Pace score ${Math.round(ps.percent!)} percent${band}.${off}`);
+          const best = known(ps.lapSec) && ps.lapSec > 0
+            ? `Your best is ${speakableLapTime(ps.lapSec)}. `
+            : '';
+          return yes(`${best}Pace score ${Math.round(ps.percent!)} percent${band}.${off}`);
         }
         const predicted = frame.player?.paceDeltas?.predictedLapSec;
         if (known(predicted) && predicted! > 0) {
           return yes(`On for ${speakableLapTime(predicted!)} this lap.`);
         }
         return no('No pace read yet.');
+      }
+
+      case 'paceAlien':
+      case 'paceCompetitive':
+      case 'paceMidpack': {
+        const targetId: ReferencePaceTargetId =
+          intent === 'paceAlien'
+            ? 'alien'
+            : intent === 'paceCompetitive'
+              ? 'competitive'
+              : 'midpack';
+        const answer = referencePaceAnswer(frame, targetId);
+        if (answer) return yes(answer);
+        return no(frame.player?.paceScore?.detail || 'No reference pace for this class and layout.');
       }
 
       case 'catching': {

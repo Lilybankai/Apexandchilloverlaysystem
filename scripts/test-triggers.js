@@ -764,6 +764,72 @@ function playerRowOver(over) {
   check('…counted as a session-type suppression', r.stats.suppressed.sessionType > 0, r.stats.suppressed.sessionType);
 }
 
+{
+  // Practice pace: first resolved benchmark, a faster band, then one unchanged
+  // reminder after four completed laps. It never runs in qualifying.
+  const pace = (over) => ({
+    ok: true,
+    percent: 104,
+    bandLabel: 'Midpack',
+    bandId: 'midpack',
+    deltaSec: 4,
+    refSec: 100,
+    lapSec: 104,
+    layoutName: 'Grand Prix',
+    sheetClass: 'LMGT3',
+    ...over,
+  });
+  const practice = rig({}, {
+    session: { type: 'practice' },
+    standings: [playerRowOver({ lapsCompleted: 0, bestLapSec: UNKNOWN })],
+    player: { paceScore: { ok: false, lapSec: UNKNOWN } },
+  });
+  let cue = practice.fire({
+    standings: [playerRowOver({ lapsCompleted: 1, bestLapSec: 104 })],
+    player: { paceScore: pace({}) },
+  });
+  check('first scored practice lap establishes the benchmark',
+    cue && cue.kind === 'practicePace' && cue.triggers[0].facts.reason === 'first',
+    cue && cue.line);
+  check('practice benchmark carries band and target gaps',
+    cue && cue.triggers[0].facts.band === 'Midpack' &&
+      cue.triggers[0].facts.deltaAlienSec === 4 &&
+      cue.triggers[0].facts.deltaCompetitiveSec === 3,
+    cue && JSON.stringify(cue.triggers[0].facts));
+
+  practice.hold(90_000);
+  cue = practice.fire({
+    standings: [playerRowOver({ lapsCompleted: 2, bestLapSec: 100.8 })],
+    player: { paceScore: pace({
+      percent: 100.8, bandLabel: 'Competitive', bandId: 'competitive',
+      deltaSec: 0.8, lapSec: 100.8,
+    }) },
+  });
+  check('moving into a faster band speaks immediately',
+    cue && cue.kind === 'practicePace' && cue.triggers[0].facts.reason === 'band-improved',
+    cue && cue.line);
+
+  practice.hold(90_000);
+  cue = practice.fire({
+    standings: [playerRowOver({ lapsCompleted: 6, bestLapSec: 100.8 })],
+  });
+  check('unchanged practice pace repeats only after four laps',
+    cue && cue.kind === 'practicePace' && cue.triggers[0].facts.reason === 'periodic',
+    cue && cue.line);
+
+  const quali = rig({}, {
+    session: { type: 'qualifying' },
+    standings: [playerRowOver({ lapsCompleted: 0, bestLapSec: UNKNOWN })],
+    player: { paceScore: { ok: false, lapSec: UNKNOWN } },
+  });
+  quali.fire({
+    standings: [playerRowOver({ lapsCompleted: 1, bestLapSec: 104 })],
+    player: { paceScore: pace({}) },
+  });
+  check('reference race-pace reminders stay out of qualifying',
+    !quali.kinds().includes('practicePace'), quali.kinds().join());
+}
+
 /* -------------------------------------------------------------------------- */
 /*  11) The phrasebook — every cue has words, and the words carry the facts    */
 /* -------------------------------------------------------------------------- */
@@ -831,10 +897,25 @@ console.log('\n11) The phrasebook turns cues into radio lines');
     lapsDifference: 0, inPit: false, isPlayer: false, yieldTo: true }] });
   collect(r4);
 
+  const r5 = rig({}, {
+    session: { type: 'practice' },
+    standings: [playerRowOver({ lapsCompleted: 0, bestLapSec: UNKNOWN })],
+    player: { paceScore: { ok: false, lapSec: UNKNOWN } },
+  });
+  r5.fire({
+    standings: [playerRowOver({ lapsCompleted: 1, bestLapSec: 104 })],
+    player: { paceScore: {
+      ok: true, percent: 104, bandLabel: 'Midpack', bandId: 'midpack',
+      deltaSec: 4, refSec: 100, lapSec: 104,
+    } },
+  });
+  collect(r5);
+
   const expected = [
     'raceStart', 'fullCourseYellow', 'restart', 'finalLap', 'checkered',
     'incident', 'penalty', 'penaltyServed', 'fuelWindow', 'fuelCritical', 'redFlag',
     'fastestLapSelf', 'fastestLapField', 'positionChange', 'rivalPitted', 'pitWindowOpen', 'yieldTo',
+    'practicePace',
   ];
   for (const kind of expected) {
     const cue = collected.get(kind);
@@ -867,6 +948,12 @@ console.log('\n11) The phrasebook turns cues into radio lines');
   check('positionChange speaks the new place', pos && /P6/.test(phraseForCue(pos, null, 0)), pos && phraseForCue(pos, null, 0));
   const pen = collected.get('penalty');
   check('penalty names the type', pen && /STOP\/GO/.test(phraseForCue(pen, null, 0)), pen && phraseForCue(pen, null, 0));
+  const practicePace = collected.get('practicePace');
+  check('practicePace speaks the best, band and target gap',
+    practicePace && /1 44\.0/.test(phraseForCue(practicePace, null, 0)) &&
+      /Midpack/.test(phraseForCue(practicePace, null, 0)) &&
+      /3\.0 seconds to competitive pace/.test(phraseForCue(practicePace, null, 0)),
+    practicePace && phraseForCue(practicePace, null, 0));
 
   // The variation machinery itself: alternates differ, every variant of a
   // bank carries the same facts, and the derived pick is deterministic — a

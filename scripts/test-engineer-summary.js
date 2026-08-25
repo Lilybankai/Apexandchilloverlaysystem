@@ -224,6 +224,40 @@ console.log('\n5b) trend/pit-exit extras copy onto the payload; absent extras ad
   check('no extras means no trend fields', bare.aheadTrendSecPerLap === undefined && bare.pitLossSec === undefined);
 }
 
+console.log('\n5c) resolved reference pace rides Tier 2 as precomputed targets and gaps');
+{
+  const s = engineerSummary(frame({
+    player: {
+      paceScore: {
+        ok: true,
+        percent: 104,
+        bandLabel: 'Midpack',
+        bandId: 'midpack',
+        deltaSec: 4,
+        refSec: 100,
+        hotlapSec: 98,
+        lapSec: 104,
+        layoutName: 'Grand Prix',
+        sheetClass: 'LMGT3',
+        assumed: true,
+        credit: { author: 'Ohne Speed', title: 'LMU laptimes', sheetUrl: 'https://example.test' },
+      },
+    },
+  }));
+  check('pace identity and source carried',
+    s.paceLayout === 'Grand Prix' && s.paceClass === 'LMGT3' &&
+      s.paceReferenceAssumed === true && s.paceReferenceSource === 'Ohne Speed');
+  check('race and hotlap references stay distinct',
+    s.paceAlienRaceSec === 100 && s.paceAlienHotlapSec === 98);
+  check('named target times precomputed',
+    s.paceCompetitiveSec === 101 && s.paceMidpackSec === 105);
+  check('best, percentage and band carried',
+    s.paceBestLapSec === 104 && s.pacePercent === 104 && s.paceBand === 'Midpack');
+  check('target deltas precomputed',
+    s.paceDeltaToAlienSec === 4 && s.paceDeltaToCompetitiveSec === 3 &&
+      s.paceDeltaToMidpackSec === -1);
+}
+
 console.log('\n6) no history callback means no average fields, not zeros');
 {
   const s = engineerSummary(frame({}));

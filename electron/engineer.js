@@ -118,6 +118,41 @@ const GRAMMAR = [
   { intent: 'bestLap', group: 'Pace & laps', phrases: ['best lap', 'my best lap', 'personal best'] },
   { intent: 'fieldFastest', group: 'Pace & laps', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
   { intent: 'pace', group: 'Pace & laps', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
+  {
+    intent: 'paceAlien',
+    group: 'Pace & laps',
+    phrases: [
+      'alien pace',
+      'alien race pace',
+      'alien time',
+      'what is alien pace',
+      'how far off alien pace',
+      'how far am i off alien pace',
+    ],
+  },
+  {
+    intent: 'paceCompetitive',
+    group: 'Pace & laps',
+    phrases: [
+      'competitive pace',
+      'competitive time',
+      'what pace to be competitive',
+      'what pace do i need to be competitive',
+      'how far off competitive pace',
+    ],
+  },
+  {
+    intent: 'paceMidpack',
+    group: 'Pace & laps',
+    phrases: [
+      'midpack pace',
+      'mid pack pace',
+      'midpack time',
+      'mid pack time',
+      'what is midpack pace',
+      'what is mid pack pace',
+    ],
+  },
   { intent: 'position', group: 'Pace & laps', phrases: ['position', 'what position am i in', 'where am i'] },
   { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places'] },
   // -- Fuel & energy -----------------------------------------------------------
@@ -276,6 +311,7 @@ const TRIGGER_TIERS = {
   rivalPitted: 'standard',
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
+  practicePace: 'standard',
 };
 
 /**
