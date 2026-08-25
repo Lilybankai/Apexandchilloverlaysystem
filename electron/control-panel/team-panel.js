@@ -7,15 +7,21 @@
  * widgets, car state, weather, lap-time comparison). All of it renders from
  * main's 1 Hz snapshot (electron/team-snapshot.js) plus two revision-cached
  * extras: the race history (electron/team-history.js) and the learned circuit
- * shape. When the team relay lands, the same payload arrives from a
- * teammate's machine and everything here works unchanged.
+ * shape.
+ *
+ * Phase 2 adds the crew: a card for creating/joining teams by invite code
+ * (electron/team-cloud.js), and a My car / Team source toggle. In Team view
+ * every renderer below consumes the RELAYED snapshot — the same payload,
+ * built by a teammate's machine and read from Supabase every ~3 s — through
+ * the viewSnap()/viewHistory()/viewShape() accessors, so the four screens
+ * work identically for both sources.
  *
  * Zero-cost-when-hidden, enforced the same way as the Setups tab: the router
- * calls shown()/hidden(), shown() subscribes main's pusher, hidden()
- * unsubscribes it. Within the page only the ACTIVE section renders — a canvas
- * repaint for a hidden section is pure waste at any rate. The one steady cost
- * while visible is a 1 s ticker for the data-age pill, which must move even
- * when frames stop (that is its job).
+ * calls shown()/hidden(), shown() subscribes main's pusher (and the relay
+ * poll, in Team view), hidden() unsubscribes both. Within the page only the
+ * ACTIVE section renders — a canvas repaint for a hidden section is pure
+ * waste at any rate. The one steady cost while visible is a 1 s ticker for
+ * the data-age pill, which must move even when frames stop (that is its job).
  *
  * The maths lives elsewhere on purpose: remaining-race fuel in team-fuel.js,
  * tyre projection in main (team-history.js), chart painting in
@@ -34,7 +40,10 @@
   // ── State ────────────────────────────────────────────────────────────────
   const STORAGE_KEY = 'apex.panel.team';
 
-  let prefs = { safetyLaps: 1, tab: 'timing', posMode: 'overall', hiddenPos: [], laptimeSel: [] };
+  let prefs = {
+    safetyLaps: 1, tab: 'timing', posMode: 'overall',
+    hiddenPos: [], laptimeSel: [], source: 'my',
+  };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     if (Number.isFinite(saved.safetyLaps)) prefs.safetyLaps = saved.safetyLaps;
@@ -42,15 +51,18 @@
     if (saved.posMode === 'class') prefs.posMode = 'class';
     if (Array.isArray(saved.hiddenPos)) prefs.hiddenPos = saved.hiddenPos;
     if (Array.isArray(saved.laptimeSel)) prefs.laptimeSel = saved.laptimeSel;
+    if (saved.source === 'team') prefs.source = 'team';
   } catch { /* corrupted save — defaults */ }
 
   const savePrefs = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs)); } catch { }
   };
 
-  let snap = null;          // latest snapshot from main (null = nothing yet)
-  let history = null;       // race history, cached across pushes by revision
-  let mapShape = null;      // learned circuit shape, cached by revision
+  let snap = null;          // latest LOCAL snapshot from main (null = nothing yet)
+  let history = null;       // local race history, cached across pushes by revision
+  let mapShape = null;      // local learned circuit shape, cached by revision
+  let cloud = null;         // teams/roster/publish state from team-cloud
+  let relay = null;         // latest relay update (Team view's data source)
   let visible = false;
   let ageTimer = null;
   // Per-card render memo: innerHTML is only assigned when the markup actually
@@ -62,9 +74,17 @@
   // resolved to slotIds against the current history on each render.
   const hiddenPos = new Set(prefs.hiddenPos);
 
+  // ── Source accessors — every renderer reads through these ───────────────
+  const teamView = () => prefs.source === 'team';
+  const viewSnap = () => (teamView() ? (relay && relay.active ? relay.active.snapshot : null) : snap);
+  const viewHistory = () => (teamView() ? (relay ? relay.history : null) : history);
+  const viewShape = () => (teamView() ? (relay ? relay.mapShape : null) : mapShape);
+
   // ── Element refs (ids contracted in scripts/test-panel-parity.js) ───────
   const els = {
     age: $('#team-age'),
+    source: $('#team-source'),
+    crew: $('#team-crew'),
     empty: $('#team-empty'),
     live: $('#team-live'),
     session: $('#team-session'),
@@ -151,8 +171,12 @@
     const lap = known(s.currentLap)
       ? `Lap ${s.currentLap}${known(s.totalLaps) && s.totalLaps > 0 ? ` / ${s.totalLaps}` : ''}`
       : null;
+    const driver = teamView() && relay && relay.active
+      ? `<span class="team-session__meta">${icon('user')}${esc(relay.active.name || 'teammate')}'s car</span>`
+      : null;
     const bits = [
       `<span class="team-session__track">${esc(track || 'Unknown circuit')}</span>`,
+      driver,
       `<span class="team-session__meta">${esc([s.type, s.phase].filter(Boolean).join(' · '))}</span>`,
       known(s.timeRemainingSec) && s.timeRemainingSec > 0
         ? `<span class="team-session__meta">${icon('clock')}${fmtClock(s.timeRemainingSec)} left</span>` : null,
@@ -235,8 +259,9 @@
   // ── Positions chart ──────────────────────────────────────────────────────
   function renderPositions() {
     if (!els.posCanvas) return;
-    const cars = history && history.cars ? history.cars : [];
-    CHARTS.drawPositions(els.posCanvas, history, {
+    const h = viewHistory();
+    const cars = h && h.cars ? h.cars : [];
+    CHARTS.drawPositions(els.posCanvas, h, {
       mode: prefs.posMode,
       hidden: hiddenPos,
       colorOf: (c, i) => CHARTS.driverColor(i),
@@ -516,16 +541,17 @@
 
   function renderMap() {
     if (!els.mapCanvas) return;
-    const tm = snap && snap.trackMap;
+    const s = viewSnap();
+    const tm = s && s.trackMap;
     const classBySlot = new Map(
-      (snap && snap.standings ? snap.standings : []).map((r) => [r.slotId, r.carClass]),
+      (s && s.standings ? s.standings : []).map((r) => [r.slotId, r.carClass]),
     );
     const progressText = tm && !tm.ready && known(tm.progress) && tm.progress > 0
       ? `Learning the track — ${Math.round(tm.progress * 100)}%`
       : undefined;
     CHARTS.drawTrackMap(
       els.mapCanvas,
-      mapShape,
+      viewShape(),
       tm ? tm.cars : [],
       (slotId) => classBySlot.get(slotId) || '',
       { progressText },
@@ -549,9 +575,10 @@
 
   function renderLaptimes() {
     if (!els.laptimeCanvas) return;
-    const cars = history && history.cars ? history.cars : [];
+    const h = viewHistory();
+    const cars = h && h.cars ? h.cars : [];
     const sel = laptimeSelection(cars);
-    CHARTS.drawLapTimes(els.laptimeCanvas, history, {
+    CHARTS.drawLapTimes(els.laptimeCanvas, h, {
       selected: sel,
       colorOf: (c, i) => CHARTS.driverColor(i),
     });
@@ -565,6 +592,25 @@
   // ── Age pill — the page must wear its data age visibly ──────────────────
   function renderAge() {
     if (!els.age) return;
+    if (teamView()) {
+      const a = relay && relay.active;
+      if (!a || !relay.at) {
+        els.age.dataset.state = 'none';
+        els.age.textContent = relay && relay.error ? 'RELAY ERROR' : 'NO TEAM DATA';
+        return;
+      }
+      // Age of the data itself: server-reported age at read time, plus the
+      // time since that read landed here.
+      const ageSec = Math.max(0, (Date.now() - relay.at) / 1000 + (a.ageSec || 0));
+      if (ageSec > 12) {
+        els.age.dataset.state = 'stale';
+        els.age.textContent = `STALE ${Math.round(ageSec)}s`;
+      } else {
+        els.age.dataset.state = 'live';
+        els.age.textContent = `RELAY · ${(a.name || 'TEAM').toUpperCase()}`;
+      }
+      return;
+    }
     if (!snap) {
       els.age.dataset.state = 'none';
       els.age.textContent = 'NO DATA';
@@ -583,20 +629,242 @@
     }
   }
 
+  // ── Crew card (Phase 2) ──────────────────────────────────────────────────
+  const DOWNLOAD_URL = 'https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/latest';
+  let crewMsg = null; // {kind: 'ok'|'err', text} — one-shot feedback line
+  let crewBusy = false;
+  let showJoinForm = false; // "Join another" toggles the code form back in
+
+  function activeTeam() {
+    if (!cloud || !Array.isArray(cloud.teams)) return null;
+    return cloud.teams.find((t) => t.id === cloud.activeTeamId) || null;
+  }
+
+  function publishStatusText() {
+    if (!cloud) return null;
+    switch (cloud.publishStatus) {
+      case 'publishing': return { state: 'publishing', text: 'relaying your car to the team' };
+      case 'waiting': return { state: 'waiting', text: 'relay armed — publishes while you drive' };
+      case 'error': return { state: 'error', text: `relay: ${cloud.publishError || 'error'}` };
+      default: return null;
+    }
+  }
+
+  function renderCrew() {
+    if (!els.crew) return;
+    if (!cloud) { setCard(els.crew, ''); els.crew.hidden = true; return; }
+    els.crew.hidden = false;
+
+    if (!cloud.signedIn) {
+      setCard(els.crew, `<p class="team-note">Sign in to create or join a team — the pit wall can then follow whoever is in the car.</p>`);
+      return;
+    }
+
+    const teams = cloud.teams || [];
+    const msg = crewMsg
+      ? `<div class="team-crew__msg" data-kind="${crewMsg.kind}">${esc(crewMsg.text)}</div>` : '';
+
+    if (!teams.length) {
+      setCard(els.crew, `
+        <div class="team-crew__forms">
+          <div class="team-crew__form field">
+            <div>
+              <span class="field__label">Create a team</span>
+              <input class="field__input" data-crewfield="name" maxlength="40" placeholder="Team name" aria-label="Team name" />
+            </div>
+            <button type="button" class="btn btn--accent btn--sm" data-crew="create">Create</button>
+          </div>
+          <div class="team-crew__form field">
+            <div>
+              <span class="field__label">Join with a code</span>
+              <input class="field__input" data-crewfield="code" maxlength="10" placeholder="APX-XXXXXX" spellcheck="false" aria-label="Invite code" />
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-crew="join">Join</button>
+          </div>
+        </div>
+        ${msg}`);
+      return;
+    }
+
+    const team = activeTeam() || teams[0];
+    const isOwner = team.role === 'owner';
+    const drivingId = teamView() && relay && relay.active ? relay.active.userId : null;
+    const onlineIds = new Set(
+      (relay && relay.sources ? relay.sources : [])
+        .filter((s) => (s.ageSec || 0) < 30).map((s) => s.userId),
+    );
+
+    const picker = teams.length > 1
+      ? `<select class="field__input team-crew__select" data-crew="pick" aria-label="Active team">
+          ${teams.map((t) => `<option value="${t.id}" ${t.id === team.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+        </select>`
+      : `<span class="team-crew__name">${esc(team.name)}</span>`;
+
+    const members = (team.members || []).map((m) => `
+      <span class="team-member" data-driving="${m.user_id === drivingId}" data-online="${onlineIds.has(m.user_id)}">
+        <span class="team-member__dot"></span>${esc(m.name)}
+        ${m.role === 'owner' ? '<span class="team-member__role">OWNER</span>' : ''}
+        ${isOwner && m.role !== 'owner'
+          ? `<button type="button" class="team-member__kick" data-crew="kick" data-user="${m.user_id}" data-name="${esc(m.name)}" title="Remove from team">✕</button>`
+          : ''}
+      </span>`).join('');
+
+    const status = publishStatusText();
+
+    setCard(els.crew, `
+      <div class="team-crew__row">
+        ${picker}
+        <span class="team-crew__code">
+          <span class="team-crew__codeval">${esc(team.invite_code || '')}</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-crew="copy">Copy code</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-crew="share">Share invite</button>
+          ${isOwner ? '<button type="button" class="btn btn--ghost btn--sm" data-crew="rotate" title="Invalidate the old code and issue a new one">New code</button>' : ''}
+        </span>
+        <span class="team-crew__spacer"></span>
+        ${status ? `<span class="team-crew__status" data-state="${status.state}">${esc(status.text)}</span>` : ''}
+        <button type="button" class="btn btn--ghost btn--sm" data-crew="joinmore" title="Join another team with a code">Join another</button>
+        <button type="button" class="btn btn--ghost btn--sm btn--danger" data-crew="leave">Leave</button>
+      </div>
+      <div class="team-crew__members">${members}</div>
+      ${showJoinForm ? `
+        <div class="team-crew__forms" style="margin-top:10px">
+          <div class="team-crew__form field">
+            <input class="field__input" data-crewfield="code" maxlength="10" placeholder="APX-XXXXXX" spellcheck="false" aria-label="Invite code" />
+            <button type="button" class="btn btn--ghost btn--sm" data-crew="join">Join</button>
+          </div>
+        </div>` : ''}
+      ${msg}`);
+  }
+
+  function setCrewMsg(kind, text) {
+    crewMsg = text ? { kind, text } : null;
+    lastHtml.delete(els.crew);
+    renderCrew();
+  }
+
+  async function crewOp(run, okText) {
+    if (crewBusy) return;
+    crewBusy = true;
+    try {
+      const res = await run();
+      if (res && res.ok === false) setCrewMsg('err', res.error || 'That did not work.');
+      else setCrewMsg('ok', okText || '');
+    } catch (err) {
+      setCrewMsg('err', err.message);
+    } finally {
+      crewBusy = false;
+    }
+  }
+
+  function shareMessage(team) {
+    return [
+      `Join "${team.name}" on Apex AIO System 🏁`,
+      `1. Install the app: ${DOWNLOAD_URL}`,
+      `2. Create your account in the app (each seat needs its own subscription)`,
+      `3. Team tab → Join with a code → ${team.invite_code}`,
+    ].join('\n');
+  }
+
+  function onCrewClick(e) {
+    const btn = e.target.closest('[data-crew]');
+    if (!btn) return;
+    const team = activeTeam() || (cloud && cloud.teams && cloud.teams[0]) || null;
+    switch (btn.dataset.crew) {
+      case 'create': {
+        const input = els.crew.querySelector('[data-crewfield="name"]');
+        void crewOp(() => window.apex.teamCreate(input ? input.value : ''), 'Team created — share the code with your crew.');
+        break;
+      }
+      case 'join': {
+        const input = els.crew.querySelector('[data-crewfield="code"]');
+        showJoinForm = false;
+        void crewOp(() => window.apex.teamJoin(input ? input.value : ''), 'Joined!');
+        break;
+      }
+      case 'joinmore':
+        showJoinForm = !showJoinForm;
+        lastHtml.delete(els.crew);
+        renderCrew();
+        break;
+      case 'copy':
+        if (team) {
+          navigator.clipboard.writeText(team.invite_code || '').then(
+            () => setCrewMsg('ok', 'Code copied.'),
+            () => setCrewMsg('err', 'Could not copy — select the code and copy it manually.'),
+          );
+        }
+        break;
+      case 'share':
+        if (team) {
+          navigator.clipboard.writeText(shareMessage(team)).then(
+            () => setCrewMsg('ok', 'Invite message copied — paste it in your team Discord.'),
+            () => setCrewMsg('err', 'Could not copy — select the code and copy it manually.'),
+          );
+        }
+        break;
+      case 'rotate':
+        if (team && window.confirm('Issue a new invite code? The old one stops working.')) {
+          void crewOp(() => window.apex.teamRotateCode(team.id), 'New code issued.');
+        }
+        break;
+      case 'leave':
+        if (team && window.confirm(`Leave "${team.name}"?${team.role === 'owner' ? ' Ownership passes to the longest-serving member (or the team is deleted if you are the last one).' : ''}`)) {
+          void crewOp(() => window.apex.teamLeave(team.id), 'Left the team.');
+        }
+        break;
+      case 'kick':
+        if (team && window.confirm(`Remove ${btn.dataset.name || 'this member'} from the team?`)) {
+          void crewOp(() => window.apex.teamRemoveMember(team.id, btn.dataset.user), 'Removed.');
+        }
+        break;
+    }
+  }
+
+  function onCrewChange(e) {
+    const sel = e.target.closest('[data-crew="pick"]');
+    if (!sel) return;
+    void window.apex.teamSetActive(sel.value);
+  }
+
+  // ── Source toggle ────────────────────────────────────────────────────────
+  function updateSourceSeg() {
+    if (!els.source) return;
+    const inTeam = !!(cloud && cloud.signedIn && cloud.teams && cloud.teams.length);
+    els.source.hidden = !inTeam;
+    if (!inTeam && prefs.source === 'team') setSource('my');
+    for (const btn of els.source.querySelectorAll('[data-teamsource]')) {
+      btn.setAttribute('data-active', String(btn.dataset.teamsource === prefs.source));
+    }
+  }
+
+  function setSource(source) {
+    const next = source === 'team' ? 'team' : 'my';
+    if (prefs.source === next) return;
+    prefs.source = next;
+    savePrefs();
+    // The relay poll runs only while the pit wall is actually watching it.
+    if (visible) void window.apex.teamWatch(next === 'team');
+    // Chart canvases keyed to the other source's data must repaint.
+    lastHtml.clear();
+    updateSourceSeg();
+    renderAll();
+    renderCrew();
+  }
+
   // ── Sub-tab router ───────────────────────────────────────────────────────
   const TABS = {
-    timing: () => renderTiming(snap.standings),
+    timing: (s) => renderTiming(s.standings),
     positions: () => renderPositions(),
-    strategy: () => {
-      renderFuel(snap.fuel);
-      renderStrategy(snap.fuel);
-      renderTyrePlan(snap.tyrePlan, snap.fuel);
+    strategy: (s) => {
+      renderFuel(s.fuel);
+      renderStrategy(s.fuel);
+      renderTyrePlan(s.tyrePlan, s.fuel);
     },
-    telemetry: () => {
+    telemetry: (s) => {
       renderMap();
-      renderTyres(snap.car && snap.car.tyres);
-      renderTelemetry(snap.car);
-      renderWeather(snap.weather);
+      renderTyres(s.car && s.car.tyres);
+      renderTelemetry(s.car);
+      renderWeather(s.weather);
       renderLaptimes();
     },
   };
@@ -615,17 +883,19 @@
     for (const btn of els.subtabs.querySelectorAll('[data-teamtab]')) {
       btn.setAttribute('data-active', String(btn.dataset.teamtab === tab));
     }
-    if (snap) TABS[tab]();
+    const s = viewSnap();
+    if (s) TABS[tab](s);
   }
 
   function renderAll() {
     renderAge();
-    const has = !!snap;
+    const s = viewSnap();
+    const has = !!s;
     if (els.empty) els.empty.hidden = has;
     if (els.live) els.live.hidden = !has;
     if (!has) return;
-    renderSession(snap.session);
-    TABS[TABS[prefs.tab] ? prefs.tab : 'timing']();
+    renderSession(s.session);
+    TABS[TABS[prefs.tab] ? prefs.tab : 'timing'](s);
   }
 
   // ── Wiring ──────────────────────────────────────────────────────────────
@@ -636,7 +906,8 @@
       prefs.safetyLaps = Number.isFinite(v) ? Math.min(10, Math.max(0, Math.round(v))) : 1;
       els.safety.value = prefs.safetyLaps;
       savePrefs();
-      if (snap) { renderStrategy(snap.fuel); renderTyrePlan(snap.tyrePlan, snap.fuel); }
+      const s = viewSnap();
+      if (s) { renderStrategy(s.fuel); renderTyrePlan(s.tyrePlan, s.fuel); }
     });
   }
 
@@ -645,6 +916,16 @@
       const btn = e.target.closest('[data-teamtab]');
       if (btn) setTab(btn.dataset.teamtab);
     });
+  }
+  if (els.source) {
+    els.source.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-teamsource]');
+      if (btn) setSource(btn.dataset.teamsource);
+    });
+  }
+  if (els.crew) {
+    els.crew.addEventListener('click', onCrewClick);
+    els.crew.addEventListener('change', onCrewChange);
   }
   if (els.posMode) {
     els.posMode.addEventListener('click', (e) => {
@@ -671,8 +952,9 @@
   if (els.laptimeLegend) {
     els.laptimeLegend.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-ltslot]');
-      if (!btn || !history) return;
-      const cars = history.cars || [];
+      const h = viewHistory();
+      if (!btn || !h) return;
+      const cars = h.cars || [];
       const sel = laptimeSelection(cars);
       const slot = Number(btn.dataset.ltslot);
       if (sel.has(slot)) sel.delete(slot);
@@ -685,8 +967,10 @@
     });
   }
 
-  // The push listener lives for the app's lifetime; main only sends while
-  // this tab is subscribed, so there is nothing to unhook on hidden().
+  // The push listeners live for the app's lifetime; main only sends the
+  // snapshot/relay streams while subscribed, so there is nothing to unhook on
+  // hidden(). Roster pushes ('team:cloud') arrive whenever membership or
+  // publish status changes — cheap and worth reflecting even in background.
   window.apex.onTeamUpdate((snapshot) => {
     if (snapshot) {
       // History and the map shape ride only when their revision moved (or on
@@ -697,7 +981,23 @@
     } else {
       snap = null;
     }
-    if (visible) renderAll();
+    if (visible && !teamView()) renderAll();
+    else if (visible) renderAge();
+  });
+
+  window.apex.onTeamCloud((state) => {
+    cloud = state;
+    updateSourceSeg();
+    if (visible) { lastHtml.delete(els.crew); renderCrew(); }
+  });
+
+  window.apex.onTeamRelay((update) => {
+    relay = update || null;
+    if (!visible) return;
+    if (teamView()) {
+      renderAll();
+      renderCrew(); // driving/online dots ride the relay
+    }
   });
 
   window.apexTeam = {
@@ -712,14 +1012,27 @@
         }
         if (visible) renderAll();
       });
+      window.apex.teamCloudState().then((state) => {
+        cloud = state;
+        updateSourceSeg();
+        if (visible) renderCrew();
+        // Entering the tab is a natural moment for a roster refresh — an
+        // invite accepted elsewhere shows up without a restart.
+        return window.apex.teamRefresh();
+      }).then((state) => {
+        if (state) { cloud = state; updateSourceSeg(); if (visible) { lastHtml.delete(els.crew); renderCrew(); } }
+      }).catch(() => { /* offline — the cached state stands */ });
+      if (teamView()) void window.apex.teamWatch(true);
       setTab(prefs.tab);
       renderAll();
+      renderCrew();
       if (!ageTimer) ageTimer = setInterval(renderAge, 1000);
     },
     hidden() {
       if (!visible) return;
       visible = false;
       window.apex.teamUnsubscribe();
+      void window.apex.teamWatch(false);
       if (ageTimer) { clearInterval(ageTimer); ageTimer = null; }
     },
   };

@@ -665,6 +665,12 @@ function loadSettings() {
         ? stored.lastSeenVersion
         : defaults.lastSeenVersion,
     updateChannel: updateChannel.normalizeChannel(stored.updateChannel),
+    // Which team the relay publishes to / the pit wall watches (a UUID from
+    // my_teams). team-cloud re-validates it against the live roster.
+    teamActiveId:
+      typeof stored.teamActiveId === 'string' && stored.teamActiveId
+        ? stored.teamActiveId
+        : null,
   };
 }
 
@@ -1003,6 +1009,7 @@ let lastFeedFrame = null; // newest parsed frame, so subscribe can answer instan
 const TEAM_PUSH_MS = 1000;
 const { buildTeamSnapshot } = require('./team-snapshot');
 const { TeamHistory, tyreProjection } = require('./team-history');
+const teamCloud = require('./team-cloud');
 
 /**
  * The race memory behind the Positions/lap-time charts and the tyre
@@ -1085,6 +1092,22 @@ function teamSnapshotWithExtras(frame, now, everything) {
     lastSentShapeRev = teamMapShape.revision;
   }
   return snap;
+}
+
+/**
+ * Everything the relay publisher needs, gathered from the feed state this file
+ * owns. Called by team-cloud on its own 3 s beat; cheap when there is no frame.
+ */
+function collectForRelay() {
+  if (!lastFeedFrame) return null;
+  const snapshot = buildTeamSnapshot(lastFeedFrame, Date.now());
+  if (snapshot) snapshot.tyrePlan = tyreProjection(teamHistory.wear);
+  return {
+    frame: lastFeedFrame,
+    snapshot,
+    mapShape: teamMapShape,
+    history: teamHistory.state(),
+  };
 }
 
 /** Push a pruned snapshot of this frame to the Team tab, at most 1/s. */
@@ -3557,6 +3580,21 @@ function registerIpc() {
     teamViewOpen = false;
   });
 
+  /* ---- Teams + relay (Phase 2, electron/team-cloud.js) ----
+   * Thin pass-throughs: the module owns the state and pushes changes over
+   * 'team:cloud' (roster/publish status) and 'team:relay' (watched car). */
+  ipcMain.handle('team:cloudState', () => teamCloud.stateForUi());
+  ipcMain.handle('team:refreshTeams', () => teamCloud.refreshTeams().then(() => teamCloud.stateForUi()));
+  ipcMain.handle('team:create', (_evt, name) => teamCloud.createTeam(name));
+  ipcMain.handle('team:join', (_evt, code) => teamCloud.joinTeam(code));
+  ipcMain.handle('team:leave', (_evt, id) => teamCloud.leaveTeam(id));
+  ipcMain.handle('team:delete', (_evt, id) => teamCloud.deleteTeam(id));
+  ipcMain.handle('team:removeMember', (_evt, id, userId) => teamCloud.removeMember(id, userId));
+  ipcMain.handle('team:rotateCode', (_evt, id) => teamCloud.rotateCode(id));
+  ipcMain.handle('team:rename', (_evt, id, name) => teamCloud.renameTeam(id, name));
+  ipcMain.handle('team:setActive', (_evt, id) => teamCloud.setActiveTeam(id));
+  ipcMain.handle('team:watch', (_evt, on) => teamCloud.setWatching(!!on));
+
   /** Bind (or clear, with an empty accelerator) one action. */
   ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {
     if (typeof actionId !== 'string' || typeof accelerator !== 'string') {
@@ -3735,6 +3773,7 @@ function registerIpc() {
       // Anything driven while signed out is sitting in the local files waiting
       // for exactly this moment. Not awaited — signing in must not block on it.
       void lapUpload.sync({ reason: 'sign-in' });
+      teamCloud.onAuthChanged();
     }
     return res;
   });
@@ -3764,6 +3803,7 @@ function registerIpc() {
     // The entitlement cache belongs to the account that just left — the next
     // sign-in may be someone else, and a comp must not carry across.
     billingService.clear();
+    teamCloud.onAuthChanged();
     loadPage('auth');
     return res;
   });
@@ -3801,6 +3841,7 @@ function registerIpc() {
       /* session file cleared regardless */
     }
     billingService.clear();
+    teamCloud.onAuthChanged();
     // The upload ledger belonged to the deleted account. A future sign-in on
     // this PC must not believe these laps were already submitted.
     try {
@@ -4547,6 +4588,30 @@ app.whenReady().then(async () => {
       });
       // Catch up on anything driven while signed out or offline.
       void lapUpload.sync({ reason: 'startup' });
+      // Teams + relay: started from the same chain because its first roster
+      // fetch wants a live token too. Publishing then gates itself on the
+      // feed, so with no team or no car this costs a timestamp check per beat.
+      teamCloud.init({
+        auth: authService,
+        collect: collectForRelay,
+        store: {
+          getActiveTeam: () => loadSettings().teamActiveId || null,
+          setActiveTeam: (id) => {
+            const current = loadSettings();
+            saveSettings({ ...current, teamActiveId: id || null });
+          },
+        },
+        onTeams: (state) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            try { mainWindow.webContents.send('team:cloud', state); } catch { /* teardown */ }
+          }
+        },
+        onRelay: (update) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            try { mainWindow.webContents.send('team:relay', update); } catch { /* teardown */ }
+          }
+        },
+      });
       // Start the usage heartbeat from inside the same chain, for the same
       // reason: its first beat wants a live token, so firing it before the
       // refresh lands would waste one signed-out attempt every launch.

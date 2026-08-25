@@ -507,6 +507,11 @@ const PANEL_CONTRACT = {
   'team-laptime-canvas': 'canvas',
   'team-laptime-legend': 'div',
   'team-safety': 'input:number',
+  // Phase 2 — crew card and the My car / Team source toggle. Both start out
+  // hidden (no team / no sign-in), so a lost id looks exactly like the
+  // feature correctly staying away.
+  'team-crew': 'section',
+  'team-source': 'nav',
 
   // Floating
   toast: 'div',

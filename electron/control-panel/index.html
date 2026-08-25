@@ -1497,8 +1497,18 @@
               Pit-wall view of the car — live fuel and energy, tyres, damage, weather, and a strategy that replans from what the car is actually using.
             </p>
           </div>
-          <span class="team-age" id="team-age" data-state="none">NO DATA</span>
+          <div class="team-head-controls">
+            <nav class="seg" id="team-source" aria-label="Whose car the pit wall shows" hidden>
+              <button type="button" data-teamsource="my" data-active="true">My car</button>
+              <button type="button" data-teamsource="team">Team</button>
+            </nav>
+            <span class="team-age" id="team-age" data-state="none">NO DATA</span>
+          </div>
         </div>
+
+        <!-- Crew: roster, invite code, join/create. Lives OUTSIDE the
+             empty/live split — managing the team must not need telemetry. -->
+        <section class="card team-crew" id="team-crew"></section>
 
         <div class="team-empty" id="team-empty">
           <svg class="icon"><use href="#i-users" /></svg>

@@ -349,3 +349,50 @@ never rebuilding the DOM per update — a full rebuild every 3 s would still be
 cheap, but a 6-hour race in a `backgroundThrottling:false` window deserves the
 tidy version. If we ever want proof, wrap the publisher in the usual headless
 test script and time 10k cycles.
+
+## Phase 2 — BUILT 2026-08-25 (v0.91.0-beta.8)
+
+Server: migration `team_engineer_phase2` (+ `team_caps_search_path`) on the
+live project — `teams` / `team_members` / `team_relay`, all writes through
+SECURITY DEFINER RPCs, member-read RLS via `is_team_member()`, every user FK
+`ON DELETE CASCADE` so delete-account keeps its promise untouched. Verified
+end-to-end in SQL (create → join → publish → read → leave) before any app
+code.
+
+Decisions locked with Carl 2026-08-25:
+
+- **Team size cap: 6** (`team_caps()`; also caps owned teams at 8 and
+  memberships at 16). Everything stays beta-gated for now.
+- **One persistent invite code per team**, Discord-invite style:
+  `APX-` + six characters from an unambiguous alphabet. Any member may share
+  it (the Share invite button copies a ready-made Discord message with the
+  download link); only the owner may rotate it. This one mechanism covers
+  both joining cases: an existing Apex user pastes the code into the Team
+  tab; a new user installs, registers, subscribes (every seat is a full
+  subscription — decision #3 above), then pastes the same code.
+- **Owner leaving hands the team to the earliest-joined member**; the last
+  member out deletes the team. No separate transfer UI needed.
+- **Relay is one row per (team, publisher)** — everyone MAY publish, nobody
+  fights over a row. The client publishes only when it is genuinely the
+  driving PC (live frame + on-track + local tyre data — the SimEndurance
+  rule); the reader follows the freshest row WITH tyre data, else the
+  freshest row. Payload = the same `buildTeamSnapshot` the local tab renders
+  (with tyrePlan attached); the learned map shape and the race history ride
+  in their own columns, sent/returned only when their revision moved
+  (history at most every 60 s, thinned under 240 KB for Le Mans-sized
+  fields).
+
+App: `electron/team-cloud.js` (roster RPCs, 3 s publisher gated by
+`eligibleToPublish`, 3 s reader while the tab watches Team view; pure
+helpers tested in `scripts/test-teamcloud.js`), IPC surface `team:*` in
+main + preload, `teamActiveId` persisted in settings. Panel: crew card
+(create/join/roster/kick/rotate/leave, publish status, driving/online dots)
+above the empty/live split, My car / Team seg in the view head, and every
+renderer reads through `viewSnap()/viewHistory()/viewShape()` so all four
+screens work identically on relayed data. Age pill in Team view reads
+`RELAY · <name>` and goes STALE past 12 s.
+
+Still open for Phase 2 live verification (needs two signed-in machines in
+one session): publisher eligibility against a real driver swap, relay
+staleness across a six-hour race, and whether 3 s cadence feels right on the
+watcher's map.

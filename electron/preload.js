@@ -99,6 +99,35 @@ contextBridge.exposeInMainWorld('apex', {
     return () => ipcRenderer.removeListener('team:update', listener);
   },
 
+  /* ---- Teams + relay (Phase 2: crew roster, invite codes, watched car) ---- */
+
+  /** Roster/publish state right now (also pushed via onTeamCloud on change). */
+  teamCloudState: () => ipcRenderer.invoke('team:cloudState'),
+  /** Re-fetch my teams from the server; resolves with the fresh state. */
+  teamRefresh: () => ipcRenderer.invoke('team:refreshTeams'),
+  teamCreate: (name) => ipcRenderer.invoke('team:create', name),
+  teamJoin: (code) => ipcRenderer.invoke('team:join', code),
+  teamLeave: (id) => ipcRenderer.invoke('team:leave', id),
+  teamDelete: (id) => ipcRenderer.invoke('team:delete', id),
+  teamRemoveMember: (id, userId) => ipcRenderer.invoke('team:removeMember', id, userId),
+  teamRotateCode: (id) => ipcRenderer.invoke('team:rotateCode', id),
+  teamRename: (id, name) => ipcRenderer.invoke('team:rename', id, name),
+  teamSetActive: (id) => ipcRenderer.invoke('team:setActive', id),
+  /** Start/stop the 3 s relay poll (Team source on the pit wall). */
+  teamWatch: (on) => ipcRenderer.invoke('team:watch', on),
+  /** Roster/publish-status pushes. Returns unsubscribe. */
+  onTeamCloud: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('team:cloud', listener);
+    return () => ipcRenderer.removeListener('team:cloud', listener);
+  },
+  /** Relay pushes while watching (the teammate's car). Returns unsubscribe. */
+  onTeamRelay: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('team:relay', listener);
+    return () => ipcRenderer.removeListener('team:relay', listener);
+  },
+
   /* ---- Wheel / controller bindings ---- */
 
   /** Attached controllers + whether background reading works on this host. */
