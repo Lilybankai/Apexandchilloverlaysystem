@@ -15,6 +15,9 @@
   <link rel="stylesheet" href="fuel-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
+  <!-- Get started checklist. Last, because its arrival flash ([data-pulse])
+       lands on cards styled by every one of the files above. -->
+  <link rel="stylesheet" href="onboarding.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
@@ -154,6 +157,41 @@
             </p>
           </div>
         </div>
+
+        <!-- ===================== GET STARTED =====================
+             The first-run checklist (onboarding.js). Hidden in the markup and
+             un-hidden by the module only for someone who has not dismissed it,
+             so a returning driver never sees it flash up on the first frame.
+
+             Above the stats deliberately: on a fresh install every stat tile
+             reads "—", and a wall of dashes is exactly the moment someone
+             needs to be told what to do rather than shown what they have not
+             done yet. -->
+        <section class="card card--start" id="onboard-card" hidden>
+          <div class="obhead">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-graduation-cap" /></svg>Get started
+            </h2>
+            <span class="obhead__count" id="onboard-count">—</span>
+          </div>
+          <p class="card__desc">
+            Six things to do once. Each one ticks itself when it is actually
+            done — click a row to go straight to the setting it needs.
+          </p>
+
+          <div class="obbar"><span class="obbar__fill" id="onboard-bar"></span></div>
+
+          <ul class="oblist" id="onboard-list"><!-- rows injected by JS --></ul>
+
+          <div class="obfoot">
+            <span class="obfoot__done" id="onboard-done" hidden>
+              That is everything — you are set up. Close this whenever you like.
+            </span>
+            <button class="btn btn--ghost btn--sm" id="onboard-hide" type="button">
+              Hide this
+            </button>
+          </div>
+        </section>
 
         <!-- The design system's Dashboard puts DRIVER stats here, not server
              ones (Laps this week / Time driven / Overlays active / rank). The
@@ -2309,7 +2347,11 @@
         <div class="settings-pane" data-settingspane="controls">
         <div class="two-col">
           <!-- -------------------- LMU CONTROLS ------------------ -->
-          <section class="card">
+          <!-- Carries an id purely so the Get started checklist can scroll to
+               it and flash it. This pane holds two cards that both say
+               "keyboard" in their title, and landing here from a checklist row
+               with no idea which one was meant is the whole failure it avoids. -->
+          <section class="card" id="lmu-controls-card">
             <div class="card__head">
               <h2 class="card__title"><svg class="icon"><use href="#i-keyboard" /></svg>LMU controls</h2>
               <p class="card__desc">
@@ -2346,7 +2388,8 @@
           </section>
 
           <!-- ---------------------- BINDINGS -------------------- -->
-          <section class="card">
+          <!-- id for the checklist's arrival flash — see LMU controls above. -->
+          <section class="card" id="bindings-card">
             <div class="card__head">
               <h2 class="card__title"><svg class="icon"><use href="#i-keyboard" /></svg>Bindings</h2>
               <p class="card__desc">
@@ -2638,5 +2681,11 @@
 <script src="fuel-strategy.js"></script>
 <script src="fuel-panel.js"></script>
 <script src="engineer-panel.js"></script>
+<!-- Get started checklist. LAST of all: it navigates through window.apexNav
+     (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can
+     be clicked the moment they paint — so everything it reaches for has to
+     already exist. control-panel.js calls its init() once settings have
+     arrived; nothing here runs on its own. -->
+<script src="onboarding.js"></script>
 </body>
 </html>

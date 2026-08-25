@@ -4,6 +4,22 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.90.1 — 2026-08-25
+
+### Added
+
+- **A Get started checklist on the Dashboard.** Six things to do once, at the
+  top of the first screen a new install shows — the telemetry plugin, giving
+  the sim's own controls a key, binding your own buttons, getting an overlay
+  on screen, laying the widgets out, and setting up the race engineer. Each
+  row **ticks itself** when the thing is genuinely done, so it tells you what
+  is left rather than asking whether you did it, and clicking a row takes you
+  straight to the card that does it — the right tab, the right settings pane,
+  the card scrolled to and lit up. Rows that cannot be finished yet say why
+  ("close Le Mans Ultimate first", "no voice downloaded yet") instead of just
+  sitting there unticked. **Hide this** puts it away for good, and it says so
+  when all six are done.
+
 ## 0.90.0 — 2026-08-23
 
 ### Added
