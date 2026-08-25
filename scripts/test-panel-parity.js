@@ -300,6 +300,7 @@ const PANEL_CONTRACT = {
   'onboard-hide': 'button',
   'onboard-tour': 'button',
   'onboard-done': 'span',
+  'onboard-reopen': 'button',
 
   // The guided walkthrough (tour.js). Every one of these is hidden until a
   // tour runs, so a lost id looks exactly like the tour correctly not being

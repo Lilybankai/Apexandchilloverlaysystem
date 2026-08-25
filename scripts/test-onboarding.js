@@ -286,5 +286,50 @@ check('copying a URL is recorded', /APEX_ONBOARDING\?\.copiedOverlayUrl\(\)/.tes
   check('its stylesheet is linked', html.includes('href="onboarding.css"'));
 }
 
+
+/* -------------------------------------------------------------------------- */
+console.log('\nHiding it, and getting it back');
+/* -------------------------------------------------------------------------- */
+/*
+ * The card is the ONLY way into the five tours, so "Hide this" was a one-way
+ * door: hide it on day one and the walkthrough was gone for good, with no
+ * control anywhere in the app to bring it back. These assert the way back
+ * exists, and that it clears the flag rather than only un-hiding the card.
+ */
+
+check('the header button is in the page', /id="onboard-reopen"/.test(html));
+check(
+  'and starts hidden, because the card is on screen when it is not',
+  /id="onboard-reopen"[^>]*\shidden/.test(html),
+);
+check('the module can bring the card back', typeof ob.restore === 'function');
+
+// The flag, not just the hidden attribute: a card un-hidden without clearing
+// DISMISS_KEY comes back for this session and is gone again next launch.
+{
+  const store = new Map();
+  const stub = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  let usable = true;
+  try {
+    globalThis.localStorage = stub;
+  } catch {
+    usable = false; // a Node build that owns the name — these checks are moot
+  }
+  if (usable) {
+    store.set(ob.DISMISS_KEY, ob.LIST_VERSION);
+    check('a hidden card reports itself dismissed', ob.dismissed() === true);
+    ob.undismiss();
+    check('and undismiss clears that', ob.dismissed() === false);
+    check('leaving nothing behind in storage', store.has(ob.DISMISS_KEY) === false);
+    // Twice over is what a double-click on the button is.
+    ob.undismiss();
+    check('which is safe to repeat', ob.dismissed() === false);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

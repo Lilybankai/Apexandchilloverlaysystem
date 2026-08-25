@@ -261,6 +261,19 @@
   }
 
   /**
+   * The other half of dismiss(). Storage refusing to forget is survivable:
+   * restore() un-hides the card directly, so the way back works either way —
+   * it just does not outlive the session.
+   */
+  function undismiss() {
+    try {
+      localStorage.removeItem(DISMISS_KEY);
+    } catch {
+      /* storage disabled — the card still comes back for this session */
+    }
+  }
+
+  /**
    * Called by control-panel.js whenever an overlay URL is copied. OBS is a
    * different program: there is no way to observe a Browser Source being
    * added, and the copy is the last moment this app is involved. Recording the
@@ -380,6 +393,7 @@
   let refreshTimer = null;
   let pending = false;
   let started = false;
+  let wiredReopen = false;
 
   function lookup() {
     if (els) return els;
@@ -393,6 +407,7 @@
       tour: document.getElementById('onboard-tour'),
       hide: document.getElementById('onboard-hide'),
       done: document.getElementById('onboard-done'),
+      reopen: document.getElementById('onboard-reopen'),
     };
     return els;
   }
@@ -553,6 +568,38 @@
     if (!e) return;
     e.root.hidden = true;
     dismiss();
+    syncReopen();
+  }
+
+  /**
+   * The header button is the exact inverse of the card: it exists to bring
+   * the checklist back, so it has nothing to say while the checklist is up.
+   */
+  function syncReopen() {
+    const e = lookup();
+    if (!e || !e.reopen) return;
+    e.reopen.hidden = !e.root.hidden;
+  }
+
+  /**
+   * Bring the card back — the Dashboard's Get started button. Hiding it is
+   * the only way to lose the five tours, which have no other entry point, so
+   * this undoes that completely: the flag goes, the card returns, and it
+   * pulses once so the eye lands on what just appeared further down the page.
+   */
+  function restore() {
+    const e = lookup();
+    if (!e) return;
+    undismiss();
+    // start() wires the card's own buttons the first time through and returns
+    // early ever after, so the un-hide below is not left to it.
+    start();
+    e.root.hidden = false;
+    syncReopen();
+    e.root.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    e.root.setAttribute('data-pulse', 'true');
+    setTimeout(() => e.root.removeAttribute('data-pulse'), 2000);
+    schedule();
   }
 
   /* ---- wiring ------------------------------------------------------------- */
@@ -570,13 +617,23 @@
     const e = lookup();
     if (!e) return;
     if (settings) settingsCache = settings;
-    if (dismissed()) return;
+    // Wired ahead of the guard below, and only once: this button exists for
+    // exactly the people that guard turns away.
+    if (!wiredReopen && e.reopen) {
+      wiredReopen = true;
+      e.reopen.addEventListener('click', restore);
+    }
+    if (dismissed()) {
+      syncReopen();
+      return;
+    }
     if (!started) {
       started = true;
       e.root.hidden = false;
       e.hide.addEventListener('click', hide);
       e.tour.addEventListener('click', runFullTour);
     }
+    syncReopen();
     schedule();
   }
 
@@ -608,5 +665,7 @@
     hasCopied,
     dismissed,
     hide,
+    undismiss,
+    restore,
   };
 });

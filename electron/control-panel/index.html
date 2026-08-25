@@ -167,6 +167,16 @@
               server's own state lives in the bar along the bottom.
             </p>
           </div>
+          <!-- Hiding the checklist used to be one-way, and the tours have no
+               other entry point: someone who put it away on their first day
+               could never reach them again. This is the way back, and it is
+               the same "How it works" idiom the Setups and Streamers tabs
+               already use to reopen their own walkthroughs. Hidden while the
+               card is on screen, where it would only be noise. -->
+          <button id="onboard-reopen" class="btn btn--ghost btn--sm" type="button"
+                  title="Bring the Get started checklist back" hidden>
+            <svg class="icon"><use href="#i-graduation-cap" /></svg>Get started
+          </button>
         </div>
 
         <!-- ===================== GET STARTED =====================
