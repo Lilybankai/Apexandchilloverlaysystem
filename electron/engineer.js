@@ -42,6 +42,7 @@ const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const stt = require('./engineerStt');
+const { normalizePracticePaceReminderLaps } = require('./engineer-settings');
 
 /* -------------------------------------------------------------------------- */
 /*  The grammar — one table for recognizer, panel help, and the spike          */
@@ -118,6 +119,41 @@ const GRAMMAR = [
   { intent: 'bestLap', group: 'Pace & laps', phrases: ['best lap', 'my best lap', 'personal best'] },
   { intent: 'fieldFastest', group: 'Pace & laps', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
   { intent: 'pace', group: 'Pace & laps', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
+  {
+    intent: 'paceAlien',
+    group: 'Pace & laps',
+    phrases: [
+      'alien pace',
+      'alien race pace',
+      'alien time',
+      'what is alien pace',
+      'how far off alien pace',
+      'how far am i off alien pace',
+    ],
+  },
+  {
+    intent: 'paceCompetitive',
+    group: 'Pace & laps',
+    phrases: [
+      'competitive pace',
+      'competitive time',
+      'what pace to be competitive',
+      'what pace do i need to be competitive',
+      'how far off competitive pace',
+    ],
+  },
+  {
+    intent: 'paceMidpack',
+    group: 'Pace & laps',
+    phrases: [
+      'midpack pace',
+      'mid pack pace',
+      'midpack time',
+      'mid pack time',
+      'what is midpack pace',
+      'what is mid pack pace',
+    ],
+  },
   { intent: 'position', group: 'Pace & laps', phrases: ['position', 'what position am i in', 'where am i'] },
   { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places'] },
   // -- Fuel & energy -----------------------------------------------------------
@@ -276,6 +312,7 @@ const TRIGGER_TIERS = {
   rivalPitted: 'standard',
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
+  practicePace: 'standard',
 };
 
 /**
@@ -559,7 +596,11 @@ class EngineerService {
     this.ws = null;
     this.wsTimer = null;
     this.commands = this.commandsMod ? new this.commandsMod.EngineerCommands() : null;
-    this.triggers = this.triggersMod ? new this.triggersMod.EngineerTriggers() : null;
+    this.triggers = this.triggersMod
+      ? new this.triggersMod.EngineerTriggers({
+          practicePaceLapInterval: this.practicePaceReminderLaps(),
+        })
+      : null;
     this.asking = false;
     this.wavDir = null;
     this.grammarPath = null;
@@ -669,6 +710,25 @@ class EngineerService {
     return preset === 'off' || preset === 'standard' ? preset : 'essential';
   }
 
+  /** Completed laps between unchanged practice-pace reminders. */
+  practicePaceReminderLaps() {
+    const settings = this.loadSettings();
+    return normalizePracticePaceReminderLaps(
+      settings.engineer && settings.engineer.practicePaceReminderLaps,
+    );
+  }
+
+  /**
+   * Apply settings that can change without rebuilding the voice pipeline.
+   * The trigger's state stays intact, so changing frequency mid-practice does
+   * not manufacture a new "first benchmark" call.
+   */
+  applyLiveSettings() {
+    if (this.triggers?.setPracticePaceLapInterval) {
+      this.triggers.setPracticePaceLapInterval(this.practicePaceReminderLaps());
+    }
+  }
+
   /** Radio volume 0–100, safe against settings written by older versions. */
   volumePct() {
     const settings = this.loadSettings();
@@ -694,6 +754,7 @@ class EngineerService {
     return {
       enabled: !!settings.engineerEnabled,
       readouts: this.readoutsPreset(),
+      practicePaceReminderLaps: this.practicePaceReminderLaps(),
       volume: this.volumePct(),
       running: this.running,
       engineInstalled: this.engineInstalled(),

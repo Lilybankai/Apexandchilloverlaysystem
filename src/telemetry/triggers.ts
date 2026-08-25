@@ -66,6 +66,10 @@
 
 import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
+import {
+  deltaToReferencePaceTarget,
+  referencePaceTargets,
+} from './paceTargets';
 
 /* -------------------------------------------------------------------------- */
 /*  What the engineer can be told about                                        */
@@ -116,7 +120,9 @@ export type EngineerTriggerKind =
   /** The current lap reached the fuel calculator's pit-window-open lap. */
   | 'pitWindowOpen'
   /** A faster-class car with the right of way is closing — blue flags coming. */
-  | 'yieldTo';
+  | 'yieldTo'
+  /** Practice benchmark established, improved into a new band, or due for a check. */
+  | 'practicePace';
 
 /**
  * Relative importance, higher wins. Used to order a coalesced cue and to choose
@@ -144,6 +150,7 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   fastestLapField: 28,
   positionChange: 25,
   rivalPitted: 22,
+  practicePace: 20,
 };
 
 /**
@@ -203,6 +210,9 @@ export const DEFAULT_MAX_HOLD_MS = 4_000;
 /** Laps of fuel/energy left at which the pit window is called. */
 export const DEFAULT_FUEL_WINDOW_LAPS = 3;
 
+/** Completed practice laps between unchanged reference-pace reminders. */
+export const DEFAULT_PRACTICE_PACE_LAP_INTERVAL = 4;
+
 /**
  * How long a new position must HOLD before it is announced, ms. The 2026-08-19
  * race replay showed the standings flickering a driver from P1 to P25 for a
@@ -234,6 +244,7 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   rivalPitted: 30_000,
   pitWindowOpen: 60_000,
   yieldTo: 60_000,
+  practicePace: 90_000,
 };
 
 /**
@@ -259,6 +270,8 @@ export interface EngineerTriggerConfig {
   maxHoldMs?: number;
   /** Laps of fuel remaining that opens the pit-window call. */
   fuelWindowLaps?: number;
+  /** Completed practice laps between unchanged reference-pace reminders. */
+  practicePaceLapInterval?: number;
   /**
    * Whether frames with `connected: false` are ignored. On by default: those are
    * the simulator's placeholder frames, and an engineer talking over demo data
@@ -421,6 +434,55 @@ function playerRow(frame: TelemetryFrame): StandingEntry | undefined {
   return frame.standings?.find((s) => s.isPlayer);
 }
 
+interface PracticePaceRead {
+  lap: number;
+  percent: number;
+  band: string;
+  facts: Record<string, string | number | boolean>;
+}
+
+/**
+ * The compact, fully resolved benchmark a practice call can safely speak.
+ * Test days share practice semantics; qualifying is excluded because this table
+ * is explicitly race pace and a hotlap session needs different coaching.
+ */
+function practicePaceRead(frame: TelemetryFrame): PracticePaceRead | null {
+  if (frame.session.type !== 'practice' && frame.session.type !== 'testday') return null;
+  const score = frame.player?.paceScore;
+  if (
+    !score?.ok ||
+    !known(score.percent) ||
+    !known(score.lapSec) ||
+    !known(score.refSec) ||
+    !score.bandLabel
+  ) {
+    return null;
+  }
+  const me = playerRow(frame);
+  const lap = me && known(me.lapsCompleted)
+    ? me.lapsCompleted
+    : known(frame.session.currentLap)
+      ? frame.session.currentLap
+      : UNKNOWN_VALUE;
+  if (!known(lap) || lap <= 0) return null;
+
+  const targets = referencePaceTargets(score);
+  const facts: Record<string, string | number | boolean> = {
+    lapSec: Math.round(score.lapSec * 10) / 10,
+    percent: Math.round(score.percent * 10) / 10,
+    band: score.bandLabel,
+    alienSec: Math.round(score.refSec * 10) / 10,
+  };
+  const alienDelta = deltaToReferencePaceTarget(score, targets.alien);
+  const competitiveDelta = deltaToReferencePaceTarget(score, targets.competitive);
+  if (alienDelta !== null) facts.deltaAlienSec = alienDelta;
+  if (targets.competitive) facts.competitiveSec = targets.competitive.lapSec;
+  if (competitiveDelta !== null) facts.deltaCompetitiveSec = competitiveDelta;
+  if (score.layoutName) facts.layout = score.layoutName;
+  if (score.sheetClass) facts.paceClass = score.sheetClass;
+  return { lap, percent: score.percent, band: score.bandLabel, facts };
+}
+
 /** This frame's race-story levels — computed once, compared and then stored. */
 interface RaceStoryLevels {
   /** Holder of the class fastest lap, when anyone has set one. */
@@ -512,6 +574,7 @@ export class EngineerTriggers {
   private readonly globalMinIntervalMs: number;
   private readonly maxHoldMs: number;
   private readonly fuelWindowLaps: number;
+  private practicePaceLapInterval: number;
   private readonly ignoreDisconnected: boolean;
 
   /** Session this detector's memory belongs to; a change wipes it. */
@@ -556,6 +619,11 @@ export class EngineerTriggers {
   private prevYieldAny = false;
   /** Whether the strategy window read as open last tick. */
   private prevWindowOpen = false;
+  /** Last resolved practice score, for detecting movement into a faster band. */
+  private prevPracticePacePercent: number = UNKNOWN_VALUE;
+  private prevPracticePaceBand = '';
+  /** Completed lap at the last practice benchmark event. */
+  private lastPracticePaceLap: number = UNKNOWN_VALUE;
 
   /* ---- debounce clocks --------------------------------------------------- */
   private lastFiredAt = new Map<EngineerTriggerKind, number>();
@@ -572,6 +640,10 @@ export class EngineerTriggers {
     this.globalMinIntervalMs = config.globalMinIntervalMs ?? DEFAULT_GLOBAL_MIN_INTERVAL_MS;
     this.maxHoldMs = config.maxHoldMs ?? DEFAULT_MAX_HOLD_MS;
     this.fuelWindowLaps = config.fuelWindowLaps ?? DEFAULT_FUEL_WINDOW_LAPS;
+    this.practicePaceLapInterval = DEFAULT_PRACTICE_PACE_LAP_INTERVAL;
+    this.setPracticePaceLapInterval(
+      config.practicePaceLapInterval ?? DEFAULT_PRACTICE_PACE_LAP_INTERVAL,
+    );
     this.ignoreDisconnected = config.ignoreDisconnected ?? true;
   }
 
@@ -588,6 +660,16 @@ export class EngineerTriggers {
   /** Zero the counters without disturbing the detector's memory. */
   public resetStats(): void {
     this.stats = freshStats();
+  }
+
+  /**
+   * Change the periodic practice reminder interval without resetting session
+   * history. UI settings call this live; invalid direct callers get the default.
+   */
+  public setPracticePaceLapInterval(laps: number): void {
+    this.practicePaceLapInterval = Number.isFinite(laps)
+      ? Math.max(1, Math.round(laps))
+      : DEFAULT_PRACTICE_PACE_LAP_INTERVAL;
   }
 
   /**
@@ -616,6 +698,9 @@ export class EngineerTriggers {
     this.prevNeighbourPit.clear();
     this.prevYieldAny = false;
     this.prevWindowOpen = false;
+    this.prevPracticePacePercent = UNKNOWN_VALUE;
+    this.prevPracticePaceBand = '';
+    this.lastPracticePaceLap = UNKNOWN_VALUE;
     this.lastFiredAt.clear();
     this.firedOnce.clear();
     this.lastCueAt = 0;
@@ -667,6 +752,7 @@ export class EngineerTriggers {
       // the neighbours' pit state, the blue flag and the window are all levels
       // on the frame we arrive on — an edge needs a before, and this is it.
       this.observeRaceStory(frame);
+      this.observePracticePace(frame);
       this.primed = true;
       return null;
     }
@@ -685,6 +771,7 @@ export class EngineerTriggers {
     this.detectPenalties(frame, now);
     this.detectFuel(frame, now);
     this.detectRaceStory(frame, now);
+    this.detectPracticePace(frame, now);
   }
 
   /** Green, yellow, red, white, chequered — the session's own lifecycle. */
@@ -994,12 +1081,57 @@ export class EngineerTriggers {
     this.storeRaceStory(cur);
   }
 
+  /**
+   * Practice-only pace coaching: establish the first scored benchmark, announce
+   * a move into a faster source-table band, then repeat the unchanged best only
+   * every few completed laps. The timing is deterministic for replay tuning;
+   * phrase variants provide the occasional, non-robotic delivery.
+   */
+  private detectPracticePace(frame: TelemetryFrame, now: number): void {
+    const read = practicePaceRead(frame);
+    if (!read) return;
+
+    const firstBenchmark = !known(this.prevPracticePacePercent);
+    const fasterBand =
+      !firstBenchmark &&
+      !!this.prevPracticePaceBand &&
+      read.band !== this.prevPracticePaceBand &&
+      read.percent < this.prevPracticePacePercent;
+    const periodic =
+      !firstBenchmark &&
+      !fasterBand &&
+      known(this.lastPracticePaceLap) &&
+      read.lap - this.lastPracticePaceLap >= this.practicePaceLapInterval;
+
+    if (firstBenchmark || fasterBand || periodic) {
+      const reason = firstBenchmark ? 'first' : fasterBand ? 'band-improved' : 'periodic';
+      this.offer('practicePace', now, `practice pace — ${read.band}`, {
+        ...read.facts,
+        reason,
+      });
+      // Absorb the event even if another radio call wins the gate. Repeating
+      // stale pace news after a cooldown would be worse than waiting four laps.
+      this.lastPracticePaceLap = read.lap;
+    }
+    this.prevPracticePacePercent = read.percent;
+    this.prevPracticePaceBand = read.band;
+  }
+
   /** Seed the race-story baselines from the priming frame — levels, no offers. */
   private observeRaceStory(frame: TelemetryFrame): void {
     const me = playerRow(frame);
     this.storeRaceStory(raceStoryLevels(frame, me));
     this.posAnnounced = me && known(me.position) ? me.position : UNKNOWN_VALUE;
     this.posCandidate = null;
+  }
+
+  /** Seed an existing practice score without announcing it on mid-session attach. */
+  private observePracticePace(frame: TelemetryFrame): void {
+    const read = practicePaceRead(frame);
+    if (!read) return;
+    this.prevPracticePacePercent = read.percent;
+    this.prevPracticePaceBand = read.band;
+    this.lastPracticePaceLap = read.lap;
   }
 
   /** Remember this frame's race-story levels for the next tick's comparisons. */

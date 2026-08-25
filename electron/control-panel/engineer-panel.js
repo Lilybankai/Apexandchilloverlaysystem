@@ -29,6 +29,7 @@
   const pttClear = $('#eng-ptt-clear');
   const readouts = $('#eng-readouts');
   const readoutsHint = $('#eng-readouts-hint');
+  const paceReminder = $('#eng-pace-reminder');
   const volume = $('#eng-volume');
   const volumeEcho = $('#eng-volume-echo');
   const sttStatus = $('#eng-stt-status');
@@ -48,8 +49,8 @@
       'stays quiet while you are side by side or deep in the brakes.',
     standard:
       'Essential plus the race story: your fastest laps, the field’s, places ' +
-      'gained and lost, the rivals’ stops, blue flags. Your question always ' +
-      'cuts in front of a call.',
+      'gained and lost, the rivals’ stops, blue flags and practice pace checks. ' +
+      'Your question always cuts in front of a call.',
   };
 
   function renderReadoutsHint() {
@@ -79,6 +80,9 @@
     fuelRatio: 'Fuel ratio',
     hybrid: 'Hybrid battery',
     pace: 'Pace score / predicted lap',
+    paceAlien: 'Alien race-pace target',
+    paceCompetitive: 'Competitive race-pace target',
+    paceMidpack: 'Midpack race-pace target',
     catching: 'Are you catching the car ahead',
     defending: 'Is the car behind catching you',
     tyreLife: 'Tyre life — laps left in them',
@@ -271,6 +275,12 @@
     toggle.checked = !!s.enabled;
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
+    if (
+      typeof s.practicePaceReminderLaps === 'number' &&
+      paceReminder.value !== String(s.practicePaceReminderLaps)
+    ) {
+      paceReminder.value = String(s.practicePaceReminderLaps);
+    }
     // Don't yank the thumb out from under a drag — status pushes arrive while
     // the debounced save is still in flight.
     if (typeof s.volume === 'number' && document.activeElement !== volume) {
@@ -431,6 +441,11 @@
   readouts.addEventListener('change', () => {
     renderReadoutsHint();
     void api.updateSettings({ engineer: { readouts: readouts.value } });
+  });
+  paceReminder.addEventListener('change', () => {
+    void api.updateSettings({
+      engineer: { practicePaceReminderLaps: parseInt(paceReminder.value, 10) },
+    });
   });
   // Echo instantly, save debounced — a drag through forty values is one write.
   // The new level applies to the next clip spoken (no restart), so the Radio
