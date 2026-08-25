@@ -1,0 +1,196 @@
+/*
+ * tour.css — the guided walkthrough (tour.js).
+ * -----------------------------------------------------------------------------
+ * A spotlight and a callout, and almost nothing else.
+ *
+ * The dim is ONE element's box-shadow. `.tour__ring` is a transparent box laid
+ * over the highlighted control, and its outward shadow — spread far enough to
+ * cover any screen — darkens everything outside it. That is the whole cutout:
+ * no four-panel scrim to keep in step, no SVG mask, and it animates as a
+ * single element when the ring moves between steps.
+ *
+ * The ring is `pointer-events: none` on purpose, and so is its container. The
+ * page underneath stays completely live, so someone can press the button the
+ * step is describing while the step is on screen. Only the callout takes
+ * clicks. A walkthrough you have to dismiss before you can do the thing it is
+ * describing is a slideshow.
+ */
+
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  /* See the header note — the page beneath keeps working. */
+  pointer-events: none;
+}
+
+/* ------------------------------- the ring ------------------------------- */
+
+.tour__ring {
+  position: fixed;
+  border-radius: var(--radius);
+  border: 2px solid var(--cyan);
+  /* The spotlight. 200vmax guarantees cover on any window this app can be
+     dragged to, including across a triple-screen desktop. */
+  box-shadow:
+    0 0 0 200vmax rgba(3, 6, 12, 0.72),
+    0 0 24px 2px color-mix(in srgb, var(--cyan) 40%, transparent);
+  transition:
+    left 220ms ease,
+    top 220ms ease,
+    width 220ms ease,
+    height 220ms ease;
+  pointer-events: none;
+}
+
+/* With no element to point at the ring is hidden — but the dim has to stay,
+   or the callout floats over a fully lit page and reads as a stray dialog. */
+.tour__ring[hidden] { display: none; }
+.tour[data-dim="true"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 12, 0.72);
+}
+
+/* ----------------------------- the callout ------------------------------ */
+
+.tour__pop {
+  position: fixed;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  /* The one thing in here that IS clickable. */
+  pointer-events: auto;
+  transition:
+    left 220ms ease,
+    top 220ms ease;
+}
+
+.tour__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tour__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  flex-shrink: 0;
+}
+.tour__icon .icon { width: 13px; height: 13px; color: var(--cyan); }
+
+.tour__section {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* Pushed to the far end of the header rather than sitting under the title:
+   "3 of 6" is the one thing someone looks for to decide whether to carry on. */
+.tour__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.tour__title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.tour__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* The caveat that would otherwise be discovered the hard way — close LMU
+   first, the runtime is missing. Amber: it is a warning, not an error. */
+.tour__note {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warn);
+}
+
+.tour__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* Skip sits apart from Back/Next, on the other side of the footer: it is the
+   one control here with a different consequence. */
+.tour__skip { margin-right: auto; }
+
+/* --------------------------- the pointer nib ---------------------------- */
+/*
+ * A small rotated square welded to the callout's edge, so a callout that has
+ * moved to the far side of a wide control still visibly belongs to the ring.
+ * Only drawn for above/below — a `beside` placement has no single edge facing
+ * the target and a nib would point at nothing.
+ */
+.tour__pop::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  transform: rotate(45deg);
+}
+
+.tour__pop[data-placement="below"]::after {
+  top: -6px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.tour__pop[data-placement="above"]::after {
+  bottom: -6px;
+  border-left: none;
+  border-top: none;
+}
+
+.tour__pop[data-placement="beside"]::after,
+.tour__pop[data-placement="center"]::after {
+  display: none;
+}
+
+/* --------------------------- reduced motion ----------------------------- */
+/*
+ * The ring slides between steps, which is most of what makes a tour feel like
+ * one thing moving rather than a series of flashes — but it is also exactly
+ * the kind of large-area movement that triggers motion sickness. Off on
+ * request; the ring still lands in the right place.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .tour__ring,
+  .tour__pop {
+    transition: none;
+  }
+}

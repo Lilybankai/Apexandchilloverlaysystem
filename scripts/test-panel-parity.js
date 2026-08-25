@@ -296,7 +296,24 @@ const PANEL_CONTRACT = {
   'onboard-bar': 'span',
   'onboard-list': 'ul',
   'onboard-hide': 'button',
+  'onboard-tour': 'button',
   'onboard-done': 'span',
+
+  // The guided walkthrough (tour.js). Every one of these is hidden until a
+  // tour runs, so a lost id looks exactly like the tour correctly not being
+  // open — and the failure is a walkthrough that dead-ends mid-step.
+  tour: 'div',
+  'tour-ring': 'div',
+  'tour-pop': 'div',
+  'tour-icon': 'span',
+  'tour-section': 'span',
+  'tour-count': 'span',
+  'tour-title': 'h2',
+  'tour-body': 'p',
+  'tour-note': 'p',
+  'tour-back': 'button',
+  'tour-next': 'button',
+  'tour-skip': 'button',
   'lmu-controls-card': 'section',
   'bindings-card': 'section',
 
@@ -730,6 +747,10 @@ verifyPage({
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
     'onboarding.js',
+    // The guided walkthrough. Its step ANCHORS are '#id' strings in the TOURS
+    // data for exactly this reason: a renamed control fails here rather than
+    // silently un-anchoring a step in front of a new driver.
+    'tour.js',
   ],
   contract: PANEL_CONTRACT,
 });
@@ -781,6 +802,10 @@ console.log('\nIcon sprite — icons.js');
     wanted.add(`i-${s.icon}`);
   }
   wanted.add('i-check');
+  // The tours' section icons, chosen as data the same way.
+  for (const t of require('../electron/control-panel/tour.js').TOURS) {
+    wanted.add(`i-${t.icon}`);
+  }
   const missing = [...wanted].filter((id) => !available.has(id)).sort();
   check(
     'every icon referenced by markup or JS exists in the sprite',

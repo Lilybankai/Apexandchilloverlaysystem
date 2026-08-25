@@ -57,6 +57,7 @@ const DONE = {
   engineerKnown: true,
   engineerVoiceInstalled: true,
   engineerReady: true,
+  setupsToured: true,
 };
 
 /** DONE with one field changed. */
@@ -82,9 +83,17 @@ check('no duplicate step ids', new Set(ob.STEPS.map((s) => s.id)).size === ob.ST
 // The plugin is the one that makes every other feature blank when it is wrong,
 // and the only one whose symptom gives no clue. It leads for that reason.
 check('the plugin comes first', ob.STEPS[0].id === 'plugin');
-// The order below it is "nothing works without this" first, and the voice —
-// the one genuinely optional feature — last.
-check('the engineer comes last', ob.STEPS[ob.STEPS.length - 1].id === 'engineer');
+// The order below it is "nothing works without this" first. The last two are
+// the ones nobody is blocked by: the voice, which is genuinely optional, and
+// the setup screen, which is a thing to learn rather than a thing to switch on.
+check(
+  'the optional two come last',
+  ob.STEPS.slice(-2).map((s) => s.id).join(',') === 'engineer,setups',
+  ob.STEPS.slice(-2).map((s) => s.id).join(','),
+);
+// The gap called out after the first cut: the checklist walked someone through
+// six things and never mentioned the Setups tab at all.
+check('the setup screen is on the list', ob.STEPS.some((s) => s.id === 'setups'));
 
 /* -------------------------------------------------------------------------- */
 console.log('\nA fresh install ticks nothing');
@@ -206,6 +215,16 @@ check('and is not done without them', done(but({ engineerReady: false }), 'engin
 check(
   'a missing voice is named',
   /voice/i.test(note(but({ engineerReady: false, engineerVoiceInstalled: false }), 'engineer') || ''),
+);
+
+check('the setups row ticks once the tour is taken', done(but({ setupsToured: true }), 'setups') === true);
+check('and not before', done(but({ setupsToured: false }), 'setups') === false);
+// The one row with nothing measurable behind it, so it must not pretend: the
+// tab is perfectly useful with an empty library, and checking for a saved
+// setup would nag anyone using it correctly.
+check(
+  'it says what taking the tour gets you',
+  /apply/i.test(note(but({ setupsToured: false }), 'setups') || ''),
 );
 
 /* -------------------------------------------------------------------------- */

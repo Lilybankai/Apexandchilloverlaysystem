@@ -12,11 +12,12 @@
  * and both have the same answer: the telemetry plugin, the two kinds of
  * bindings, and getting one overlay onto a screen.
  *
- * So this is a checklist, not a tour. Six rows, each one:
+ * So this is a checklist, not a tour. Seven rows, each one:
  *
  *   - says what it is for in a sentence,
  *   - TICKS ITSELF from state the panel already has, and
- *   - takes you to the exact card that does it when you click it.
+ *   - launches a guided tour of that section when you click it (tour.js),
+ *     which walks its controls one at a time with the page still live.
  *
  * The self-ticking is the whole point, and it is why this is worth building
  * rather than recording a video. Every one of these facts is already known to
@@ -25,7 +26,7 @@
  * layout — so the checklist can be honest instead of asking "did you do it?".
  * A video can only ever tell someone what to do; this tells them what is left.
  *
- * Two of the six cannot be observed and are recorded as intent instead:
+ * Two of the seven cannot be observed and are recorded as intent instead:
  * copying an overlay URL (OBS is another program — there is nothing to see
  * from in here) and whether anything has been laid out. The first is noted in
  * localStorage by the thing that does it, which is why `copiedOverlayUrl()` is
@@ -98,6 +99,7 @@
       view: 'settings',
       pane: 'general',
       focus: '#plugin-card',
+      tour: 'settings',
       check: (s) => s.plugin === 'ok',
       note: (s) =>
         s.plugin === 'no-lmu'
@@ -117,6 +119,7 @@
       view: 'settings',
       pane: 'controls',
       focus: '#lmu-controls-card',
+      tour: 'settings',
       check: (s) => s.lmuKeysKnown && s.lmuKeysToBind === 0,
       note: (s) =>
         !s.lmuKeysKnown
@@ -136,6 +139,7 @@
       view: 'settings',
       pane: 'controls',
       focus: '#bindings-card',
+      tour: 'settings',
       guide: 'APEX_BINDINGS_GUIDE',
       check: (s) => s.boundActions > 0,
       note: null,
@@ -150,6 +154,7 @@
       cta: 'Show me',
       view: 'overlays',
       focus: '#overlay-list',
+      tour: 'overlays',
       check: (s) => s.ingameEnabled || s.copiedUrl,
       note: null,
     },
@@ -163,6 +168,7 @@
       cta: 'Lay it out',
       view: 'dashboard',
       focus: '#ig-edit-btn',
+      tour: 'ingame',
       check: (s) => s.laidOut,
       note: (s) =>
         !s.ingameEnabled
@@ -179,10 +185,32 @@
       cta: 'Set it up',
       view: 'engineer',
       focus: '#eng-voices',
+      tour: 'engineer',
       check: (s) => s.engineerReady,
       note: (s) =>
         s.engineerKnown && !s.engineerVoiceInstalled
           ? 'No voice downloaded yet — the Engineer tab has them, and it is a one-off download.'
+          : null,
+    },
+    {
+      id: 'setups',
+      icon: 'sliders-horizontal',
+      title: 'Learn the setup screen',
+      lead:
+        'A live two-way editor for the car the sim is holding right now — every page the game has, ' +
+        'plus your own library and setups other drivers have published.',
+      cta: 'Show me round',
+      view: 'setups',
+      focus: '#setup-status',
+      tour: 'setups',
+      // The one row that cannot be measured from state, so it asks the honest
+      // question instead: has this driver been walked round the tab? The tab is
+      // useful with nothing saved and nothing downloaded, so "have you got a
+      // setup in your library" would nag people who are using it correctly.
+      check: (s) => s.setupsToured,
+      note: (s) =>
+        !s.setupsToured
+          ? 'Two minutes, and it covers the one thing that surprises everybody: nothing reaches the car until Apply.'
           : null,
     },
   ];
@@ -294,6 +322,9 @@
       engineerKnown: false,
       engineerVoiceInstalled: false,
       engineerReady: false,
+      // The Setups row. Read straight off the tour's seen flag rather than
+      // kept twice — one fact, one owner.
+      setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
     };
 
     const apex = typeof window !== 'undefined' ? window.apex : null;
@@ -359,6 +390,7 @@
       count: document.getElementById('onboard-count'),
       bar: document.getElementById('onboard-bar'),
       list: document.getElementById('onboard-list'),
+      tour: document.getElementById('onboard-tour'),
       hide: document.getElementById('onboard-hide'),
       done: document.getElementById('onboard-done'),
     };
@@ -443,6 +475,17 @@
    * refreshes, the remembered tab — all happens exactly as it would have.
    */
   function goTo(step) {
+    // The tour IS the answer to "how do I do this?" — it walks the section's
+    // controls one at a time with the page still live underneath, which is
+    // what someone clicking a row they have not done actually wants. It
+    // navigates for itself, so nothing here has to.
+    const tour = typeof window !== 'undefined' ? window.APEX_TOUR : null;
+    if (step.tour && tour && typeof tour.start === 'function') {
+      tour.start(step.tour);
+      return;
+    }
+
+    // Fallback for a row with no tour: go there and light the card up.
     const nav = typeof window !== 'undefined' ? window.apexNav : null;
     if (nav && typeof nav.showView === 'function') nav.showView(step.view);
     if (step.pane && nav && typeof nav.showSettingsPane === 'function') {
@@ -457,12 +500,13 @@
         target.setAttribute('data-pulse', 'true');
         setTimeout(() => target.removeAttribute('data-pulse'), 2000);
       }
-      // The bindings walkthrough is click-to-open by design (a modal on the
-      // way to changing the port would be a nuisance) — but arriving here from
-      // the checklist IS the deliberate click.
-      const guide = step.guide && typeof window !== 'undefined' ? window[step.guide] : null;
-      if (guide && typeof guide.open === 'function') guide.open(0);
     }, 60);
+  }
+
+  /** The header button: every tour, end to end, in checklist order. */
+  function runFullTour() {
+    const tour = typeof window !== 'undefined' ? window.APEX_TOUR : null;
+    if (tour && typeof tour.start === 'function') tour.start('all');
   }
 
   /* ---- refresh ------------------------------------------------------------ */
@@ -531,6 +575,7 @@
       started = true;
       e.root.hidden = false;
       e.hide.addEventListener('click', hide);
+      e.tour.addEventListener('click', runFullTour);
     }
     schedule();
   }
@@ -559,6 +604,7 @@
     refresh,
     onSettings,
     copiedOverlayUrl,
+    runFullTour,
     hasCopied,
     dismissed,
     hide,
