@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.9 — 2026-08-25
+
 ### Added
 
 - **The Get started checklist walks you through the app.** Shipped to everyone
@@ -12,6 +14,40 @@
   docking**, in the on-screen-layer tour. Twenty-six steps here, twenty-five
   there; a step whose feature is not in the build drops itself and the tour
   renumbers.
+
+### Fixed
+
+- **The new car dashboards had boxes wired to nothing.** Across the eleven
+  designs added this week, twenty-odd readouts were drawn, labelled, and left
+  showing a dash whatever the car was doing. The Aston's TC SLIP knob and both
+  ARB knobs, the BMW's SLIP tile, the Lexus's TCC and TCS boxes, the AMG's TCC
+  and TCS, five of the Huracán's eight tiles and four of the Mustang's eight
+  cells all fell into that group. They now read the channel they name.
+- **TC Slip was showing the TC map.** Traction control is three separate
+  settings on these cars — the map, the slip threshold and the power cut — and
+  the plates only ever read two of them, so a SLIP box either sat empty or
+  repeated the number in the TC box next to it. All three are now read apart,
+  everywhere, including a new SLIP readout on the Apex Real cluster.
+- **The AIR temperature box never worked**, on any design that has one (BMW,
+  Mercedes-AMG). It was reading a field that only exists on a weather forecast
+  entry, so it showed a dash in every session.
+- **Labels that named the wrong thing.** The Porsche's "Split" was showing the
+  best lap, the BMW's "STINT" and the Corvette's "STINT" were showing position
+  and the lap in progress, the McLaren's "PITLANE TIMER" was showing the
+  current lap, and the Mustang's "Energy +/-" was showing energy remaining.
+  Each label now says what is under it.
+- **The Ferrari's PED box was showing a hard-coded 1** — the one invented
+  reading anywhere in the set. It reads live throttle now. The Porsche's
+  condition box guessed "HOT"/"DRY" from track temperature; it shows the sim's
+  own wording for the surface instead.
+- **The Lexus's rev ladder was printed 1000–7000 regardless of the car.** It
+  now scales to the car's actual limiter, which is what the band above it has
+  always measured.
+- **Smaller wiring.** The Corvette's speed said "kph" even in mph and its delta
+  overlapped the position digit; the Mustang's name was drawn over its speed
+  and its two tyre-temperature grids showed the same four numbers (the second
+  is brake discs now); the Aston was missing two of its four tyre temperatures;
+  the Ferrari's lap-difference box was green whether you had gained or lost.
 
 ## 0.91.0-beta.8 — 2026-08-25
 

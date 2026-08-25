@@ -423,6 +423,14 @@
     g.fillStyle = "#e6ecf2";
     g.font = "600 20px " + FD;
     g.fillText(v.tcCut ? String(v.tcCut.value) : "—", x + 44, b.y + 294);
+    /* The cut's other half. The Apex cluster carries a SLIP chip beside its PWR
+       chip and this repaint of it should not be a channel short. */
+    g.fillStyle = "#93a1ae";
+    g.font = "13px " + FM;
+    g.fillText("SLIP", x + 120, b.y + 294);
+    g.fillStyle = "#e6ecf2";
+    g.font = "600 20px " + FD;
+    g.fillText(v.tcSlip ? String(v.tcSlip.value) : "—", x + 172, b.y + 294);
 
     /* right LCD: laps, fuel, position */
     var rb = WELL_R, rx = rb.x + rb.w - 26, lx2 = rb.x + 26;

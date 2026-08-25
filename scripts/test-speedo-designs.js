@@ -14,6 +14,14 @@
  * the contract test — a design must render dashes, never throw, when the feed
  * has no answer (the LMP2 rule: nothing is invented).
  *
+ * The full pass is the other half of that contract, and it is the one that was
+ * missing. A plate whose box is drawn, labelled, and wired to nothing does not
+ * throw and does not look broken in a screenshot — it renders a tidy "—" for
+ * ever, and the only way to notice is to know what the box was meant to say.
+ * So the stub canvas RECORDS every fillText, and a design that emits a single
+ * dash while the frame carries every channel this kit can read fails here.
+ * That is what caught the Aston's TC SLIP knob and the BMW's SLIP tile.
+ *
  * The wiring half checks the two registries that must agree (WIDGET_MODES and
  * the catalog designs list — the dropdown draws one, the validator trusts the
  * other), the CSS that parks the core canvas per design, and the script
@@ -30,6 +38,9 @@ const vm = require('node:vm');
 
 let passed = 0;
 let failed = 0;
+
+/** Every string any design has painted since the last reset. See the header. */
+const TEXTS = [];
 
 function check(name, cond, detail) {
   if (cond) {
@@ -58,7 +69,11 @@ function ctx2d() {
     arc: noop, rect: noop, quadraticCurveTo: noop, fill: noop, stroke: noop,
     clip: noop, save: noop, restore: noop, translate: noop, scale: noop,
     rotate: noop, setTransform: noop, clearRect: noop, fillRect: noop,
-    strokeRect: noop, fillText: noop, drawImage: noop,
+    strokeRect: noop, drawImage: noop,
+    // Recorded, not discarded: the dash sweep below reads this back.
+    fillText: (t) => {
+      TEXTS.push(String(t));
+    },
     createLinearGradient: () => grad,
     createRadialGradient: () => grad,
     createPattern: () => '#000',
@@ -181,7 +196,16 @@ const fmt = {
 };
 const wctx = { fmt, crit() {} };
 
-const corner = { tempC: 86, pressureKpa: 170, surfaceTempC: 90 };
+/*
+ * The FULL frame is the yardstick for the dash sweep, so it has to carry EVERY
+ * channel the kit can read — including the ones only a Hypercar publishes
+ * (the ARBs) and the ones that live outside `player` (pedals, motion). A gap
+ * here is a gap in the sweep: the fixture is what defines "the feed carries
+ * everything", and a channel missing from it can never be caught missing from
+ * a plate. `airTempC` sat here for exactly that reason — the fixture agreed
+ * with the widget and both disagreed with WeatherState.
+ */
+const corner = { tempC: 86, pressureKpa: 170, surfaceTempC: 90, brakeTempC: 412 };
 const FULL = {
   connected: true,
   session: { name: 'RACE' },
@@ -190,19 +214,24 @@ const FULL = {
     lap: { last: 83.456, best: 82.901, current: 21.4, delta: -0.12 },
     paceDeltas: { lapTimeSec: 83.1 },
     tyres: { frontLeft: corner, frontRight: corner, rearLeft: corner, rearRight: corner },
-    pit: { limiterOn: false },
+    pedals: { throttle: 0.62, brake: 0.14, clutch: 0, steer: -0.2, tc: 0.05, abs: 0 },
+    motion: { latG: 1.42, lonG: -0.3, vertG: 0, slipAngle: 1.1 },
+    pit: { limiterOn: true },
   },
   fuel: { levelLiters: 51.2, perLapAvgLiters: 2.29, lapsRemaining: 22.3, virtualEnergyPct: 51, virtualEnergyPerLapPct: 2.2 },
   mfd: {
     aids: [
       { key: 'tc', label: 'TC', value: 6, minValue: 0, maxValue: 11, text: '6' },
+      { key: 'tcSlip', label: 'TC Slip', value: 8, minValue: 0, maxValue: 11, text: '8' },
       { key: 'tcCut', label: 'TC Cut', value: 4, minValue: 0, maxValue: 11, text: '4' },
       { key: 'abs', label: 'ABS', value: 3, minValue: 0, maxValue: 11, text: '3' },
       { key: 'motorMap', label: 'Map', value: 1, minValue: 0, maxValue: 9, text: '1' },
+      { key: 'frontARB', label: 'Front ARB', value: 5, minValue: 0, maxValue: 9, text: '5' },
+      { key: 'rearARB', label: 'Rear ARB', value: 2, minValue: 0, maxValue: 9, text: '2' },
       { key: 'VM_BRAKE_BALANCE', label: 'Brake Bias', value: 12, minValue: 0, maxValue: 60, text: '52.5:47.5' },
     ],
   },
-  weather: { trackTempC: 35, airTempC: 24 },
+  weather: { trackTempC: 35, ambientTempC: 24, trackCondition: 'DRY' },
 };
 /* keys must match findAid's exact-match contract */
 FULL.mfd.aids.push({ key: 'BRAKE_BIAS', label: 'Brake Bias', value: 12, minValue: 0, maxValue: 60, text: '52.5:47.5' });
@@ -217,7 +246,23 @@ console.log('\nthe kit reads the frame, and survives its absence');
   check('delta signed', v.deltaStr === '-0.12', v.deltaStr);
   check('bias front percentage extracted', v.bias === '52.5', v.bias);
   check('tyre corner read', v.fl.p === 170 && v.fl.t === 86);
+  check('brake disc temp rides with the corner', v.fl.b === 412, v.fl.b);
   check('laps via the shared helper', v.laps === 24, v.laps);
+  // The three TC settings are three channels. Reading the map into a SLIP box
+  // is invisible on screen — the box shows A number — so it is pinned here.
+  check(
+    'the TC family stays three separate settings',
+    v.tc.value === 6 && v.tcSlip.value === 8 && v.tcCut.value === 4,
+    [v.tc.value, v.tcSlip.value, v.tcCut.value].join('/'),
+  );
+  check('the ARBs are read when the car publishes them', v.arbF.value === 5 && v.arbR.value === 2);
+  // WeatherState calls it `ambientTempC`; `airTempC` is a FORECAST slot field.
+  // Reading the wrong one made every AIR box a permanent dash.
+  check('air temp comes off WeatherState.ambientTempC', v.airC === 24, v.airC);
+  check('track condition is the sim\'s own wording', v.trackState === 'DRY', v.trackState);
+  check('pedal channels arrive as whole percent', v.throttle === 62 && v.brakePct === 14, v.throttle + '/' + v.brakePct);
+  check('lateral G is carried for the plates that print it', v.latG === 1.42, v.latG);
+  check('the rev ceiling is carried for the plates that print a ladder', v.maxRpm === 8000, v.maxRpm);
 }
 {
   const v = kit.pull(null, wctx);
@@ -225,6 +270,10 @@ console.log('\nthe kit reads the frame, and survives its absence');
   check('null frame: numbers are null, not NaN', v.speed === null && v.rpm === null && v.fuelL === null);
   check('null frame: tyres are null pairs', v.fl.p === null && v.rr.t === null);
   check('null frame: no aids', v.tc === null && v.bias === null);
+  check(
+    'null frame: no inputs, no motion, no weather wording',
+    v.throttle === null && v.brakePct === null && v.latG === null && v.trackState === null,
+  );
 }
 {
   check('biasText: non-ratio wording passes through', kit.biasText({ text: '9 (Understeer)', value: 9 }) === '9 (Understeer)');
@@ -248,6 +297,50 @@ IDS.forEach(function (id) {
     err = e;
   }
   check(`'${id}' bakes and draws without throwing`, !err, err ? err.message : undefined);
+});
+
+/* ----------------------------- the dash sweep ---------------------------- */
+/*
+ * Given a frame that carries everything, no plate may paint a dash.
+ *
+ * This is the test the ten plates shipped without, and every miss it would
+ * have caught was of one kind: a box drawn and labelled in bake(), with the
+ * matching slot in live() left as a `null` placeholder or pointed at the wrong
+ * channel. On screen that is a tidy "—" that looks like the feed being honest,
+ * which is why it survived a live check in Chrome against the simulator.
+ *
+ * A design that genuinely cannot fill a box on ANY feed should not draw the
+ * box (the rule at the top of speedo-gt3.js) — so "no dashes on a full frame"
+ * is the same statement as that rule, made checkable.
+ */
+console.log('\nno plate paints a dash when the feed carries everything');
+IDS.forEach(function (id) {
+  const d = designs[id];
+  if (!d) {
+    check(`'${id}' dash-free on a full frame`, false, 'not registered');
+    return;
+  }
+  TEXTS.length = 0;
+  d.init(rootEl, wctx);
+  d.update(FULL, wctx);
+  const dashes = TEXTS.filter((t) => t.indexOf('—') >= 0);
+  check(
+    `'${id}' dash-free on a full frame`,
+    dashes.length === 0,
+    dashes.length ? dashes.join(' | ') : 'all slots resolved',
+  );
+});
+
+/* The mirror image: with nothing on the feed, a plate must say nothing — not
+   guess, not hold the last value, not print a zero it made up. */
+console.log('\nand every plate falls to dashes when the feed carries nothing');
+IDS.forEach(function (id) {
+  const d = designs[id];
+  if (!d) return;
+  TEXTS.length = 0;
+  d.init(rootEl, wctx);
+  d.update({}, wctx);
+  check(`'${id}' shows dashes on an empty frame`, TEXTS.some((t) => t.indexOf('—') >= 0));
 });
 
 /* --------------------------- sizing under scale --------------------------- */

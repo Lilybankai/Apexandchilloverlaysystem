@@ -77,6 +77,8 @@
     var mfd = frame ? frame.mfd : null;
     var w = (frame && frame.weather) || {};
     var pd = p.paceDeltas || null;
+    var ped = p.pedals || null;
+    var mo = p.motion || null;
 
     function num(v) {
       return fmt.has(v) ? v : null;
@@ -90,8 +92,13 @@
     var tyres = p.tyres || null;
 
     function corner(t) {
-      if (!t) return { p: null, t: null };
-      return { p: num(t.pressureKpa), t: num(t.tempC) };
+      if (!t) return { p: null, t: null, b: null };
+      return { p: num(t.pressureKpa), t: num(t.tempC), b: num(t.brakeTempC) };
+    }
+
+    /** A 0..1 input channel as whole percent, null when the sim omits it. */
+    function pct01(x) {
+      return fmt.has(x) ? Math.round(x * 100) : null;
     }
 
     return {
@@ -101,6 +108,8 @@
       speed: speed === null ? null : Math.round(fmt.speedValue(speed)),
       unit: fmt.speedUnitLabel().toUpperCase(),
       rpm: num(p.rpm) === null ? null : Math.round(p.rpm),
+      /** The rev ceiling, so a plate that PRINTS a rev ladder can scale it. */
+      maxRpm: num(p.maxRpm),
       revFrac:
         window.ApexSpeedo && num(p.rpm) !== null && num(p.maxRpm) !== null
           ? window.ApexSpeedo.revFraction(p.rpm, p.maxRpm)
@@ -124,13 +133,32 @@
       fr: corner(tyres && tyres.frontRight),
       rl: corner(tyres && tyres.rearLeft),
       rr: corner(tyres && tyres.rearRight),
+      /* The TC family is THREE settings, not one: `tc` is the map, `tcSlip` the
+         slip threshold, `tcCut` the power cut. A wheel labels them apart, so a
+         plate that prints a SLIP box has to read the slip channel — pointing it
+         at the map made two boxes on the same plate show one number for ever. */
       tc: findAid(mfd, "tc"),
+      tcSlip: findAid(mfd, "tcSlip"),
       tcCut: findAid(mfd, "tcCut"),
       abs: findAid(mfd, "abs"),
       map: findAid(mfd, "motorMap"),
+      /* Hypercar-only: mfdControl skips these rows on a car with no such
+         adjustment, so the knobs carrying them read "—" on a GT3 and come alive
+         in an LMH. That is the contract working, not a dead box. */
+      arbF: findAid(mfd, "frontARB"),
+      arbR: findAid(mfd, "rearARB"),
       bias: biasText(findAid(mfd, "BRAKE_BIAS")),
+      /* Live driver inputs — what the pedals are DOING, as against what the
+         wheel is set to. The THR/BRK tiles several plates carry are these. */
+      throttle: ped ? pct01(ped.throttle) : null,
+      brakePct: ped ? pct01(ped.brake) : null,
+      latG: mo && fmt.has(mo.latG) ? mo.latG : null,
       trackC: num(w.trackTempC),
-      airC: num(w.airTempC),
+      /* `ambientTempC` is the channel's name on WeatherState; `airTempC` exists
+         only on a FORECAST slot, so reading it here made every AIR box on every
+         plate a permanent dash. */
+      airC: num(w.ambientTempC),
+      trackState: (w.trackCondition && String(w.trackCondition)) || null,
       limiter: !!(p.pit && p.pit.limiterOn),
     };
   }
@@ -351,7 +379,7 @@
       K.box(448, 100, 206, 130, { fill: "#43464a", r: 6 });
       K.txt("Time Diff", 551, 124, 16, "#e6e9ec", "center");
       K.txt("Position", 496, 208, 14, "#c9ced4", "center");
-      K.txt("Split", 606, 208, 14, "#c9ced4", "center");
+      K.txt("Best", 606, 208, 14, "#c9ced4", "center");
       /* tyre panel + bias */
       K.box(340, 300, 160, 128, { fill: "#0a0c0e", border: "#e2a33b", lw: 3, r: 4 });
       K.txt("TYRE", 420, 322, 15, "#e2a33b", "center", 700);
@@ -364,8 +392,12 @@
     live: function (g, v, K) {
       K.val(v.speed, 400, 72, 30, "#fff");
       K.val(v.laps >= 0 ? v.laps : null, 606, 70, 24, "#fff");
-      K.val(v.trackC !== null ? (v.trackC >= 30 ? "HOT" : "DRY") : "—", 744, 70, 22, "#000");
-      var aids = [v.map, v.tc, v.tcCut, v.abs];
+      /* The condition box says what the SURFACE is, in the sim's own words.
+         Track temperature is a different question and cannot answer this one —
+         a wet track at 31° was reading "HOT", which on this box means dry. */
+      K.val(v.trackState, 744, 70, 18, "#000");
+      /* TC-C is the power cut, TC-R the slip (regulation) threshold. */
+      var aids = [v.map, v.tcCut, v.tcSlip, v.abs];
       aids.forEach(function (a, i) {
         K.val(a ? a.value : null, 120, 129 + i * 52, 20, "#fff", "right");
       });
@@ -413,6 +445,8 @@
         K.txt(s[0], s[1], s[2] + 56, 13, "#cfd6dd", "right", 700);
         K.box(s[1] - 110, s[2] + 64, 110, 3, { fill: "#9dc22e" });
       });
+      /* the tyre grid, which carried no caption at all */
+      K.txt("T Y R E    kPa · °C", 700, 310, 12, "#5a6470", "center", 700);
       /* the ring */
       g.beginPath();
       g.arc(400, 160, 104, 0, 7);
@@ -454,11 +488,16 @@
       K.val(v.fr.p != null ? Math.round(v.fr.p) : null, 728, 250, 22, "#fff");
       K.val(v.rl.p != null ? Math.round(v.rl.p) : null, 668, 280, 22, "#fff");
       K.val(v.rr.p != null ? Math.round(v.rr.p) : null, 728, 280, 22, "#fff");
-      K.txt(v.fl.t != null ? Math.round(v.fl.t) : "—", 616, 250, 13, "#9aa5b0");
-      K.txt(v.rr.t != null ? Math.round(v.rr.t) : "—", 770, 280, 13, "#9aa5b0");
+      K.txt(v.fl.t != null ? Math.round(v.fl.t) : "—", 612, 250, 13, "#9aa5b0");
+      K.txt(v.fr.t != null ? Math.round(v.fr.t) : "—", 752, 250, 13, "#9aa5b0");
+      K.txt(v.rl.t != null ? Math.round(v.rl.t) : "—", 612, 280, 13, "#9aa5b0");
+      K.txt(v.rr.t != null ? Math.round(v.rr.t) : "—", 752, 280, 13, "#9aa5b0");
       K.val(v.gear, 400, 196, 108, "#111", "center");
       /* knob values */
-      var kv = [null, v.map, null, v.tc, null, v.abs, v.tcCut];
+      /* One value per knob, in the order the knobs are drawn. Three of these
+         were `null` placeholders: TC SLIP — the knob this wheel is best known
+         for — and both ARBs never read anything at all. */
+      var kv = [v.tcSlip, v.map, v.arbF, v.tc, v.arbR, v.abs, v.tcCut];
       kv.forEach(function (a, i) {
         K.val(a ? a.value : null, 68 + i * 111, 384, 26, "#fff");
       });
@@ -488,7 +527,9 @@
       K.tile("SLIP", 98, 372, 76, 62, { ls: 12 });
       K.tile("TRACK", 240, 372, 120, 62, { ls: 12 });
       K.tile("BRAKE", 368, 372, 120, 62, { ls: 12 });
-      K.tile("STINT", 530, 372, 76, 62, { ls: 12 });
+      /* Was labelled STINT over a value that has always been POSITION; the feed
+         carries no stint-lap counter, so the label follows the data. */
+      K.tile("POS", 530, 372, 76, 62, { ls: 12 });
       K.tile("LAP", 614, 372, 76, 62, { ls: 12 });
       K.tile("VE [%]", 698, 372, 88, 62, { ls: 12 });
     },
@@ -510,7 +551,7 @@
       K.val(v.last, 685, 208, 26, "#fff");
       K.val(v.best, 685, 276, 26, "#fff");
       K.val(v.tcCut ? v.tcCut.value : null, 52, 424, 26, "#fff");
-      K.val(v.tc ? v.tc.value : null, 136, 424, 26, "#fff");
+      K.val(v.tcSlip ? v.tcSlip.value : null, 136, 424, 26, "#fff");
       K.val(v.trackC !== null ? Math.round(v.trackC) + "°" : null, 300, 424, 24, "#fff");
       K.val(v.bias, 428, 424, 24, "#fff");
       K.val(v.pos, 568, 424, 26, "#fff");
@@ -536,16 +577,23 @@
         g.stroke();
       }
       K.txt("Z 0 6  G T 3 . R", DW / 2, 20, 12, "#5a6a9a", "center", 700);
-      ["Speed [" + "kph]", "Litre/Lap", "Energy/Lap"].forEach(function (s, i) {
+      /* The unit follows the operator's kph/mph choice, so it is drawn live
+         rather than baked into the label as a standing "kph". */
+      ["Speed", "Litre/Lap", "Energy/Lap"].forEach(function (s, i) {
         K.txt(s, 780, 44 + i * 74, 12, "#5a6a9a", "right");
       });
+      /* the two readouts that were floating with no name on them */
+      K.txt("RPM", 458, 34, 12, "#5a6a9a", "right");
       K.txt("GEAR", 190, 210, 12, "#5a6a9a", "center");
       ["LAST", "BEST", "PRED"].forEach(function (s, i) {
         K.txt(s, 330, 60 + i * 44, 12, "#5a6a9a");
       });
+      /* DELTA joins this row rather than sitting under the gear: at 34px in the
+         gear column it ran straight through the POS digit below it. */
       K.txt("BIAS", 40, 300, 12, "#5a6a9a");
       K.txt("POS", 180, 300, 12, "#5a6a9a");
-      K.txt("STINT", 300, 300, 12, "#5a6a9a");
+      K.txt("CUR", 300, 300, 12, "#5a6a9a");
+      K.txt("DELTA", 500, 300, 12, "#5a6a9a");
       /* bottom tile grid */
       var labels = ["TC", "CUT", "ABS", "ENERGY", "VE/LAP", "MAP", "FUEL L", "L/LAP", "LAPS", "SPD"];
       labels.forEach(function (t, i) {
@@ -557,10 +605,10 @@
     },
     live: function (g, v, K) {
       K.val(v.speed, 780, 78, 30, OL, "right");
+      K.txt(v.unit.toLowerCase(), 716, 78, 12, "#5a6a9a", "right");
       K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null, 780, 152, 30, OL, "right");
       K.val(v.vePerLap !== null ? v.vePerLap.toFixed(1) : null, 780, 226, 30, OL, "right");
       K.val(v.gear, 190, 180, 130, "#cfd4e2");
-      K.val(v.deltaStr, 190, 268, 34, "#fff");
       K.val(v.rpm, 470, 34, 42, OL, "left");
       K.val(v.last, 410, 64, 26, "#e6ebf5", "left");
       K.val(v.best, 410, 108, 26, "#8a7ddb", "left");
@@ -568,6 +616,7 @@
       K.val(v.bias, 40, 288, 32, "#e05a6a", "left");
       K.val(v.pos, 180, 288, 32, "#cfd4e2", "left");
       K.val(v.current, 300, 288, 32, "#e6ebf5", "left");
+      K.val(v.deltaStr, 500, 288, 32, v.delta !== null && v.delta < 0 ? "#8fd44a" : "#e6ebf5", "left");
       var cells = [
         v.tc && v.tc.value, v.tcCut && v.tcCut.value, v.abs && v.abs.value,
         v.vePct !== null ? Math.round(v.vePct) : null,
@@ -599,6 +648,9 @@
       K.box(636, 8, 74, 48, { fill: "#14161a", border: "#3a3f46", r: 4 });
       K.txt("BBAL", 673, 26, 12, "#9aa5b0", "center");
       K.box(718, 8, 72, 48, { fill: "#cfd4da", r: 4 });
+      /* The limiter lamp. Unlabelled, its "—" (limiter off) read as a readout
+         that had failed rather than one saying no. */
+      K.txt("LIM", 754, 26, 12, "#3a3f46", "center");
       /* flank panels */
       K.box(10, 78, 210, 150, { fill: RED, border: "#7d141c", lw: 4, r: 8 });
       K.txt("GEAR", 115, 100, 14, "#ffd0d4", "center", 700);
@@ -608,7 +660,7 @@
       K.box(250, 86, 300, 134, { fill: "#0e2a4a", border: "#2b6fd4", lw: 3, r: 8 });
       K.txt("LAP", 400, 110, 14, "#cfe3ff", "center", 700);
       /* bottom tiles */
-      K.tile("PED", 10, 250, 92, 76, { ls: 13, lh: 18 });
+      K.tile("THR %", 10, 250, 92, 76, { ls: 13, lh: 18 });
       K.tile("ENG", 112, 250, 92, 76, { ls: 13, lh: 18 });
       K.tile("ABS", 214, 250, 92, 76, { ls: 13, lh: 18 });
       [["LAP", 330], ["PRED", 434]].forEach(function (t) {
@@ -634,16 +686,19 @@
       K.val(v.gear, 115, 200, 92, "#fff");
       K.val(v.speed, 685, 200, 74, "#fff");
       K.val(v.current, 400, 190, 44, "#fff");
-      K.val(1, 56, 316, 34, "#fff"); /* PED page — fixed on this feed */
+      /* Was a hard-coded 1 — the one invented reading on any plate. The pedal
+         map is not on the feed; live throttle is, and it is the number a driver
+         actually reads off that corner of the 296's screen. */
+      K.val(v.throttle, 56, 316, 34, "#fff");
       K.val(v.map ? v.map.value : null, 158, 316, 34, "#fff");
       K.val(v.abs ? v.abs.value : null, 260, 316, 34, "#fff");
       K.val(v.laps >= 0 ? v.laps : null, 378, 314, 30, "#000");
       K.val(v.pred, 482, 310, 17, "#000");
       K.val(v.tcCut ? v.tcCut.value : null, 595, 316, 34, "#fff");
       K.val(v.tc ? v.tc.value : null, 675, 316, 34, "#fff");
-      K.val(v.tc ? v.tc.value : null, 755, 316, 34, "#fff");
+      K.val(v.tcSlip ? v.tcSlip.value : null, 755, 316, 34, "#fff");
       K.val(v.last, 135, 420, 34, "#fff");
-      K.val(v.deltaStr, 400, 420, 34, "#8fd44a");
+      K.val(v.deltaStr, 400, 420, 34, v.delta !== null && v.delta < 0 ? "#8fd44a" : "#fff");
       K.val(v.pred, 665, 420, 34, "#fff");
     },
   });
@@ -655,8 +710,13 @@
   var mstg = canvasDesign({
     bake: function (g, K) {
       K.box(0, 0, DW, DH, { fill: "#e9eaec" });
-      K.txt("M U S T A N G  G T 3", DW / 2, 18, 11, "#8a8e96", "center", 700);
-      var Ls = ["Energy Last Lap", "Energy +/-", "Fuel This Lap", "Fuel Remain"];
+      /* The name moves out of the top centre — the speed readout sits there and
+         the two were drawn over each other. */
+      K.txt("M U S T A N G  G T 3", 16, 26, 11, "#8a8e96", "left", 700);
+      K.txt("Speed", 356, 26, 13, "#26282c", "right", 700);
+      /* "Energy +/-" named a per-lap delta the feed does not carry; the value
+         under it has always been the remaining stint allowance. */
+      var Ls = ["Energy /Lap", "Energy Remain", "Fuel /Lap", "Fuel Remain"];
       Ls.forEach(function (s, i) {
         K.txt(s, 16, 46 + i * 62, 16, "#26282c", "left", 700);
         K.box(16, 78 + i * 62, 200, 2, { fill: "#2b6fd4" });
@@ -679,14 +739,17 @@
       g.fill();
       g.restore();
       K.txt("Bias", 336, 262, 17, "#26282c", "left", 700);
-      /* tyre grids */
-      [["p_Tyre", 260], ["t_Tyre", 545]].forEach(function (t) {
+      /* Tyre temps, tyre pressures, then the DISCS behind them — the right-hand
+         trio repeated the left one channel for channel before this. */
+      [["p_Tyre", 260], ["t_Brake", 545]].forEach(function (t) {
         K.txt(t[0], t[1] + 90, 292, 15, "#26282c", "center", 700);
         K.box(t[1] + 88, 300, 2, 62, { fill: "#26282c" });
       });
       K.txt("t_Tyre", 16, 292, 15, "#26282c", "left", 700);
       /* bottom cells */
-      var cells = [["Map", "#5a5e66"], ["Throttle", "#d97a2b"], ["TC", "#7a7e86"], ["TC LON", "#2b3fe2"], ["TC LAT", "#123c8f"], ["ABS", "#e2d52b"], ["PAS", "#b0b4bc"], ["Lap", "#26282c"]];
+      /* "PAS" (the steering assist map) is not on this feed and never could be,
+         so the cell reads the other pedal instead of standing empty. */
+      var cells = [["Map", "#5a5e66"], ["Throttle", "#d97a2b"], ["TC", "#7a7e86"], ["TC LON", "#2b3fe2"], ["TC LAT", "#123c8f"], ["ABS", "#e2d52b"], ["Brake", "#b0b4bc"], ["Lap", "#26282c"]];
       cells.forEach(function (c, i) {
         var x = 16 + i * 97;
         K.box(x, 384, 88, 54, { fill: "#fff", border: c[1], lw: 3, r: 6 });
@@ -695,6 +758,7 @@
     },
     live: function (g, v, K) {
       K.val(v.speed, 400, 26, 26, "#26282c");
+      K.txt(v.unit.toLowerCase(), 432, 26, 12, "#8a8e96", "left");
       K.val(v.vePerLap !== null ? v.vePerLap.toFixed(2) : null, 16, 72, 24, "#26282c", "left");
       K.val(v.vePct !== null ? Math.round(v.vePct) : null, 16, 134, 24, "#26282c", "left");
       K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(1) : null, 16, 196, 24, "#26282c", "left");
@@ -714,14 +778,23 @@
       pair(140, v.fr.t != null ? Math.round(v.fr.t) : null, v.rr.t != null ? Math.round(v.rr.t) : null);
       pair(305, v.fl.p != null ? Math.round(v.fl.p) : null, v.rl.p != null ? Math.round(v.rl.p) : null);
       pair(395, v.fr.p != null ? Math.round(v.fr.p) : null, v.rr.p != null ? Math.round(v.rr.p) : null);
-      pair(590, v.fl.t != null ? Math.round(v.fl.t) : null, v.rl.t != null ? Math.round(v.rl.t) : null);
-      pair(680, v.fr.t != null ? Math.round(v.fr.t) : null, v.rr.t != null ? Math.round(v.rr.t) : null);
-      var cv = [v.map, null, v.tc, v.tcCut, null, v.abs, null, null];
-      cv.forEach(function (a, i) {
-        var x = 16 + i * 97;
-        var t = i === 7 ? (v.laps >= 0 ? v.laps : null) : a ? a.value : null;
-        if (i === 1 || i === 4 || i === 6) t = null;
-        K.val(t, x + 44, 430, 22, "#26282c");
+      pair(590, v.fl.b != null ? Math.round(v.fl.b) : null, v.rl.b != null ? Math.round(v.rl.b) : null);
+      pair(680, v.fr.b != null ? Math.round(v.fr.b) : null, v.rr.b != null ? Math.round(v.rr.b) : null);
+      /* Aids where the wheel has a setting, live pedal channels where it does
+         not. Four of these eight used to be forced to null in the loop below —
+         a cell that could not have shown a number whatever the car was doing. */
+      var cv = [
+        v.map ? v.map.value : null,
+        v.throttle,
+        v.tc ? v.tc.value : null,
+        v.tcCut ? v.tcCut.value : null,
+        v.tcSlip ? v.tcSlip.value : null,
+        v.abs ? v.abs.value : null,
+        v.brakePct,
+        v.laps >= 0 ? v.laps : null,
+      ];
+      cv.forEach(function (t, i) {
+        K.val(t, 16 + i * 97 + 44, 430, 22, "#26282c");
       });
     },
   });
@@ -734,13 +807,19 @@
   var lambo = canvasDesign({
     bake: function (g, K) {
       K.box(0, 0, DW, DH, { fill: "#000" });
-      var tiles = [["LAT", "#fff"], ["MAP", "#2b3fe2"], ["ENG", "#8a5adb"], ["ABS", "#d97a2b"], ["EB", "#3dc94f"], ["THR", "#fff"], ["SLIP", "#c9313c"], ["GRIP", "#d97a2b"]];
+      /* The donor's tile row is wheel SETTINGS, three of which (engine brake,
+         grip level, the lateral TC map) this feed has no channel for at all.
+         Same row of eight, reading the live channels it does carry — a tile
+         with nothing behind it can only ever say "—", which is the house rule
+         at the top of this file arguing against drawing it. */
+      var tiles = [["LAT", "#fff"], ["MAP", "#2b3fe2"], ["TC", "#8a5adb"], ["ABS", "#d97a2b"], ["CUT", "#3dc94f"], ["THR", "#fff"], ["SLIP", "#c9313c"], ["BRK", "#d97a2b"]];
       tiles.forEach(function (t, i) {
         K.tile(t[0], 10 + i * 99, 8, 90, 62, { border: t[1], ls: 13, lh: 18 });
       });
       K.box(10, 84, 230, 56, { fill: "#0c0e10", border: "#3a3f46", r: 3 });
       K.txt("last laptime", 125, 102, 13, "#9aa5b0", "center");
       K.box(300, 84, 200, 44, { fill: "#e9eaec", r: 3 });
+      K.txt("speed", 294, 112, 12, "#9aa5b0", "right");
       K.box(560, 84, 230, 56, { fill: "#0c0e10", border: "#3a3f46", r: 3 });
       K.txt("Gain/Loss", 675, 102, 13, "#9aa5b0", "center");
       /* gear box + green tyre tiles */
@@ -762,9 +841,18 @@
       K.txt("H U R A C A N  G T 3  E V O 2", DW / 2, 448, 10, "#5a6470", "center", 700);
     },
     live: function (g, v, K) {
-      var tv = [null, v.map, null, v.abs, null, null, v.tc, null];
-      tv.forEach(function (a, i) {
-        K.val(a ? a.value : null, 55 + i * 99, 60, 28, "#fff");
+      var tv = [
+        v.latG !== null ? v.latG.toFixed(1) : null,
+        v.map ? v.map.value : null,
+        v.tc ? v.tc.value : null,
+        v.abs ? v.abs.value : null,
+        v.tcCut ? v.tcCut.value : null,
+        v.throttle,
+        v.tcSlip ? v.tcSlip.value : null,
+        v.brakePct,
+      ];
+      tv.forEach(function (t, i) {
+        K.val(t, 55 + i * 99, 60, 28, "#fff");
       });
       K.val(v.last, 125, 130, 26, "#fff");
       K.val(v.speed, 400, 118, 30, "#111");
@@ -843,8 +931,12 @@
       g.fillStyle = grd;
       g.fillRect(6, 0, 788 * Math.max(0.02, v.revFrac), 78);
       g.restore();
+      /* The band spans 0..maxRpm, so its ladder has to as well. A fixed
+         1000–7000 printed under it mislabelled every car whose limiter is not
+         at 8000, which is most of them. */
       for (var i = 1; i <= 7; i++) {
-        K.txt(i + "000", 6 + i * 98, 90, 10, "#8a97b8", "center");
+        var tick = v.maxRpm === null ? null : Math.round((v.maxRpm * i) / 8 / 100) * 100;
+        K.txt(tick, 6 + i * 98, 90, 10, "#8a97b8", "center");
       }
       K.val(v.speed, 110, 168, 52, "#fff");
       K.val(v.current, 460, 128, 24, "#fff", "right");
@@ -862,7 +954,9 @@
       tp(542, 196, v.fr);
       tp(542, 244, v.rr);
       K.val(v.gear, 400, 330, 110, "#fff");
-      [v.abs, v.tc, null, null, v.map].forEach(function (a, i) {
+      /* TCC and TCS are the cut and the slip — both boxes were drawn, labelled
+         and left reading nothing. */
+      [v.abs, v.tc, v.tcCut, v.tcSlip, v.map].forEach(function (a, i) {
         K.val(a ? a.value : null, 565 + i * 46, 342, 22, "#fff");
       });
       K.val(v.vePct !== null ? Math.round(v.vePct) + " %" : null, 240, 426, 24, "#fff");
@@ -881,7 +975,9 @@
       K.txt("7 2 0 S  G T 3", 786, 32, 20, "#e9eaec", "right", 700);
       K.txt("M c L A R E N", 14, 32, 20, "#e9eaec", "left", 700);
       K.txt("FUEL", 700, 100, 18, "#fff", "center", 700);
-      K.txt("PITLANE TIMER", 700, 300, 16, "#fff", "center", 700);
+      /* The value under this has always been the lap in progress; there is no
+         pitlane timer on the feed, so the label says what is actually there. */
+      K.txt("CURRENT LAP", 700, 300, 16, "#fff", "center", 700);
       K.txt("BRAKE BALANCE F", 110, 300, 16, "#fff", "center", 700);
       K.txt("OVERALL BEST", 400, 356, 16, PAP, "center", 700);
     },
@@ -891,12 +987,16 @@
       /* start-procedure list is a real-car page; this feed shows state lines */
       var lines = [
         [v.limiter ? "LIMITER ON" : "LIMITER OFF", v.limiter ? "#3dc94f" : "#8a8e96"],
-        ["TC  " + (v.tc ? v.tc.value : "—"), PAP],
-        ["ABS " + (v.abs ? v.abs.value : "—"), PAP],
-        ["MAP " + (v.map ? v.map.value : "—"), "#fff"],
+        ["TC   " + (v.tc ? v.tc.value : "—"), PAP],
+        ["SLIP " + (v.tcSlip ? v.tcSlip.value : "—"), PAP],
+        ["CUT  " + (v.tcCut ? v.tcCut.value : "—"), PAP],
+        ["ABS  " + (v.abs ? v.abs.value : "—"), PAP],
+        ["MAP  " + (v.map ? v.map.value : "—"), "#fff"],
       ];
+      /* Six lines in the room four used to take, so the stack still clears the
+         speed readout at y 244. */
       lines.forEach(function (l, i) {
-        K.txt(l[0], 110, 88 + i * 30, 17, l[1], "center", 700);
+        K.txt(l[0], 110, 88 + i * 26, 16, l[1], "center", 700);
       });
       K.val(v.speed !== null ? v.speed + " " + v.unit : null, 110, 244, 22, PAP);
       K.val(v.bias, 110, 330, 26, "#fff");
@@ -959,8 +1059,8 @@
       [v.abs, v.tc, v.map].forEach(function (a, i) {
         K.val(a ? a.value : null, 526 + i * 58, 236, 28, "#fff");
       });
-      K.val(null, 532, 326, 24, "#fff");
-      K.val(null, 622, 326, 24, "#fff");
+      K.val(v.tcCut ? v.tcCut.value : null, 532, 326, 24, "#fff");
+      K.val(v.tcSlip ? v.tcSlip.value : null, 622, 326, 24, "#fff");
       K.txt(v.deltaStr == null ? "—" : v.deltaStr, 160, 401, 14, "#3dc94f", "center", 700);
       K.txt(v.pos !== null ? "POS  " + v.pos : "—", 395, 401, 14, "#fff", "center", 700);
       K.txt(v.last == null ? "—" : v.last, 620, 401, 14, "#c9d2ea", "center", 700);
