@@ -78,6 +78,52 @@ function psQuote(value) {
 }
 
 /**
+ * Run one Invoke-TrustedSigning command, retrying a service-side failure.
+ *
+ * Trusted Signing can answer HTTP 200 with `{"status":"Failed","signature":
+ * null}` for a single digest — a failure on Azure's side, not ours. The module
+ * turns that into `SignerSign() failed (0x80004005)` and aborts the WHOLE
+ * invocation, so one unlucky digest fails a folder of a dozen binaries and
+ * takes the build with it. Seen twice in a row cutting v0.90.1, on the same
+ * file both times, which then signed first try on its own.
+ *
+ * It matters more than the odds suggest because a release invokes
+ * electron-builder twice (package, then publish) and each run signs every
+ * bundled folder, so one build is four or more chances to be unlucky.
+ *
+ * Retrying the whole command is safe: signing is idempotent — signtool
+ * replaces an existing signature rather than refusing or double-signing — so a
+ * retry re-signs the files that already succeeded and costs only time.
+ *
+ * Bounded, and it still throws on the last attempt. A build that cannot sign
+ * must fail: an unsigned installer is the SmartScreen warning this whole
+ * mechanism exists to remove.
+ */
+function runSigning(command, what, attempts = 3) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // powershell.exe rather than pwsh: the TrustedSigning module installs
+      // into the Windows PowerShell module path, and that is where it is found.
+      execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+        stdio: 'inherit',
+      });
+      return;
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      console.warn(
+        `\n  WARNING  signing ${what} failed (attempt ${attempt} of ${attempts}).\n` +
+          '           Trusted Signing fails a digest service-side now and then;\n' +
+          '           re-signing is harmless, so this is being retried.\n',
+      );
+      // A beat before retrying — the service's own 429s carry Retry-After: 1.
+      execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep 5'], {
+        stdio: 'ignore',
+      });
+    }
+  }
+}
+
+/**
  * Sign one file with Azure Trusted Signing.
  *
  * This deliberately does NOT use electron-builder's own `win.azureSignOptions`.
@@ -102,11 +148,7 @@ function signWithTrustedSigning(configuration) {
     ' -TimestampDigest SHA256' +
     ` -Files ${psQuote(configuration.path)}`;
 
-  // powershell.exe rather than pwsh: the TrustedSigning module installs into
-  // the Windows PowerShell module path, and that is where it will be found.
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-    stdio: 'inherit',
-  });
+  runSigning(command, configuration.path);
 }
 
 /**
@@ -127,9 +169,7 @@ function signFolderWithTrustedSigning(folder, filter = 'exe,dll') {
     ` -FilesFolderFilter ${psQuote(filter)}` +
     ' -FilesFolderRecurse';
 
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-    stdio: 'inherit',
-  });
+  runSigning(command, folder);
 }
 
 /**
