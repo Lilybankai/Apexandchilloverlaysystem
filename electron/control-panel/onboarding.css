@@ -1,0 +1,239 @@
+/*
+ * onboarding.css — the Get started checklist (onboarding.js).
+ * -----------------------------------------------------------------------------
+ * Sits at the very top of the Dashboard, above the stat tiles, and is the first
+ * thing a new install shows. It borrows the card chrome rather than inventing a
+ * surface — the point is that it is a card that goes away, not a wizard the app
+ * is trapped inside.
+ *
+ * Two deliberate departures from the other cards:
+ *
+ *   - the left edge carries the brand gradient, which nothing else on the
+ *     Dashboard does. It is a one-off state, so a one-off mark is honest, and
+ *     it makes the card scannable at a glance among four others.
+ *   - a finished row goes QUIET rather than green-and-loud. Six ticks shouting
+ *     at once reads as noise, and what someone actually needs to see is the
+ *     rows that are still open.
+ *
+ * `[data-pulse]` lives here too but is not about this card: it is the flash the
+ * checklist puts on whatever card it just navigated to. Landing on the Controls
+ * pane with two near-identical cards on it and no idea which one was meant is
+ * the failure this prevents.
+ */
+
+/* ------------------------------- the card ------------------------------- */
+
+.card--start {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+/* The brand edge. Absolutely positioned rather than a border so it survives
+   the card's radius without squaring the corners off. */
+.card--start::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--grad);
+}
+
+.obhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.obhead__count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Progress: a hairline, not a component. The count beside the title is the
+   number; this is only there so the direction of travel is visible. */
+.obbar {
+  height: 3px;
+  margin: 14px 0 4px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.obbar__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--grad);
+  transition: width 320ms ease;
+}
+
+/* ------------------------------- the rows ------------------------------- */
+
+.oblist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.obrow {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: start;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.obrow:first-child { border-top: none; }
+
+/* Done rows recede — see the header note. Everything fades together (mark,
+   title, lead) so the row reads as one settled thing rather than a tick
+   attached to text that is still shouting. */
+.obrow[data-done="true"] { opacity: 0.5; }
+.obrow[data-done="true"]:hover { opacity: 0.8; }
+
+.obrow__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  flex-shrink: 0;
+}
+
+.obrow__mark .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--cyan);
+}
+
+.obrow[data-done="true"] .obrow__mark {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.obrow[data-done="true"] .obrow__mark .icon { color: var(--ok); }
+
+.obrow__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.obrow__title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.obrow__lead {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* The blocked-on-something sentence. Amber rather than red: none of these are
+   errors — they are "not yet", and half of them are fixed by launching a game. */
+.obrow__note {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--warn);
+}
+
+/* Buttons sit on the row's first line rather than centred against three lines
+   of text, so a column of them stays a column. */
+.obrow > .btn {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* ------------------------------- the foot ------------------------------- */
+
+.obfoot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.obfoot__done {
+  font-size: 13px;
+  color: var(--ok);
+}
+
+/* Pushed right by the button rather than by space-between: the completion line
+   beside it is hidden until every row is ticked, and space-between with one
+   child would park Hide this on the left for the entire time it matters. */
+.obfoot > .btn { margin-left: auto; }
+
+/* --------------------------- the arrival flash -------------------------- */
+/*
+ * Set on the target card for two seconds after the checklist navigates to it.
+ * A ring rather than a background change: several of these targets are cards
+ * with their own busy interiors, and repainting the surface under a list of
+ * bindings makes the bindings look like they changed.
+ */
+/*
+ * A ring that BREATHES, not one that expands and fades. The usual expanding
+ * halo grows its spread while dropping its alpha to zero, which means it is
+ * faint at every moment and invisible at both ends — on a dark panel it reads
+ * as nothing at all. Holding the ring at a constant 2px and animating only its
+ * strength keeps it legible for the whole two seconds.
+ */
+[data-pulse="true"] {
+  animation: apex-pulse 500ms ease-in-out 4 alternate;
+  border-radius: var(--radius);
+}
+
+@keyframes apex-pulse {
+  from {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--cyan) 75%, transparent),
+      0 0 22px 0 color-mix(in srgb, var(--cyan) 30%, transparent);
+  }
+  to {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--cyan) 25%, transparent),
+      0 0 22px 0 color-mix(in srgb, var(--cyan) 5%, transparent);
+  }
+}
+
+/* Someone who has asked for less motion gets the ring without the throb — the
+   point is "this one", and a static ring says that just as well. */
+@media (prefers-reduced-motion: reduce) {
+  [data-pulse="true"] {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--cyan) 60%, transparent);
+  }
+}
+
+/* ------------------------------ narrow panel ---------------------------- */
+/*
+ * The panel is resizable and people do run it narrow beside OBS. Under ~640px
+ * the button drops onto its own line rather than squeezing the text into a
+ * two-word-per-line column.
+ */
+@media (max-width: 640px) {
+  .obrow {
+    grid-template-columns: 28px 1fr;
+  }
+  .obrow > .btn {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 6px;
+  }
+}

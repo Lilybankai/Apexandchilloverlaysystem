@@ -288,6 +288,20 @@ const PANEL_CONTRACT = {
   'sponsor-list': 'ul',
   'sponsor-add': 'button',
 
+  // Get started checklist (onboarding.js). Contracted for two reasons: the
+  // card is hidden in the markup, so a broken lookup here looks exactly like
+  // it correctly staying away from a returning driver — and the two card ids
+  // are only there for the checklist's arrival flash, which means nothing else
+  // on the page would notice them being renamed.
+  'onboard-card': 'section',
+  'onboard-count': 'span',
+  'onboard-bar': 'span',
+  'onboard-list': 'ul',
+  'onboard-hide': 'button',
+  'onboard-done': 'span',
+  'lmu-controls-card': 'section',
+  'bindings-card': 'section',
+
   // Keyboard + wheel bindings
   'binding-list': 'ul',
   'bindings-guide-open': 'button',
@@ -751,6 +765,10 @@ verifyPage({
     // The Team tab. Same split: team-fuel.js is a pure engine, only the
     // panel touches the DOM.
     'team-panel.js',
+    // The Get started checklist. Its navigation targets are written as '#id'
+    // strings in the STEPS data precisely so this scanner treats them as
+    // lookups and refuses to let the cards be renamed underneath it.
+    'onboarding.js',
   ],
   contract: PANEL_CONTRACT,
 });
@@ -796,6 +814,12 @@ console.log('\nIcon sprite — icons.js');
   for (const s of require('../electron/control-panel/bindings-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
+  // Same for the checklist's rows — plus the tick, which is chosen at paint
+  // time for a finished row and so appears in no source as an icon name.
+  for (const s of require('../electron/control-panel/onboarding.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
+  wanted.add('i-check');
   const missing = [...wanted].filter((id) => !available.has(id)).sort();
   check(
     'every icon referenced by markup or JS exists in the sprite',

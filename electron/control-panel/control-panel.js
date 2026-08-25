@@ -887,6 +887,12 @@
     renderOverlays(state.overlays, state.combinedUrl);
     renderStatus(state.status);
     renderVersion(state.appVersion);
+    // The Get started checklist starts hidden in the markup and decides for
+    // itself whether to appear. Handed the settings it already needs, so a
+    // fresh install's first paint is not one IPC round-trip behind. Safe from
+    // here: onboarding.js is the last script on the page, and this runs from a
+    // resolved promise, so it has certainly loaded.
+    window.APEX_ONBOARDING?.init(state.settings);
   }
 
   // --- Your week -----------------------------------------------------------
@@ -2075,6 +2081,11 @@
   async function copyUrl(url, label) {
     await window.apex.copy(url);
     showToast((label ? label + ' URL' : 'URL') + ' copied');
+    // The Get started checklist's "on screen" row. OBS is another program —
+    // there is no way to observe a Browser Source being added, and this copy
+    // is the last moment Apex is involved, so it is the honest signal to take.
+    // Every copy button in the panel funnels through here.
+    window.APEX_ONBOARDING?.copiedOverlayUrl();
   }
 
   async function toggleOverlay(id, enabled) {
@@ -2926,6 +2937,10 @@
   // panel was open. Keep the toggle and controls in sync without a reload.
   window.apex.onSettings((settings) => {
     if (settings) renderSettings(settings);
+    // Two of the checklist's rows are read straight off settings (Show in game,
+    // the saved in-game layout), and both can be changed from outside this
+    // window — the global hotkey, or a drag in edit mode. It debounces.
+    if (settings) window.APEX_ONBOARDING?.onSettings(settings);
   });
 
   // --- Suggestions (feedback) ----------------------------------------------
@@ -4595,6 +4610,11 @@
     if (target === 'dashboard') {
       refreshWeek();
       refreshPace();
+      // The checklist ticks itself off live app state, and most of what it
+      // reads changes on OTHER tabs — a binding captured in Settings, a voice
+      // downloaded on Engineer. Re-reading on arrival is what keeps a row from
+      // still nagging about something the driver just finished.
+      window.APEX_ONBOARDING?.shown();
     }
     if (target === 'leaderboard') {
       refreshPace();
@@ -4983,6 +5003,22 @@
   } catch {
     /* defaults to general */
   }
+
+  /*
+   * The panel's navigation, for the scripts that load after this one.
+   *
+   * Both routers are closures inside this IIFE, which is right — one owner of
+   * "which view is active" is the reason showView() can hang the per-tab work
+   * (apexSetup.shown(), the refreshes, the remembered tab) off itself. But the
+   * Get started checklist has to be able to send someone to a specific card on
+   * a specific settings pane, and the alternative — synthesising a click on the
+   * tab button — would route around exactly the bookkeeping showView() exists
+   * to do. So the two routers, and only the two routers, are published.
+   *
+   * Declared here rather than beside showView because this is the first point
+   * at which BOTH exist.
+   */
+  window.apexNav = { showView, showSettingsPane };
 
   if (delConfirmBtn) {
     delConfirmBtn.addEventListener('click', async () => {
