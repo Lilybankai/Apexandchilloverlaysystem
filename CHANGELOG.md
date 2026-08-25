@@ -4,6 +4,18 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.90.3 — 2026-08-25
+
+### Fixed
+
+- **Hiding the Get started checklist is no longer permanent.** *Hide this* put
+  the card away for good — and that card is the only way into the five guided
+  tours, so anyone who tidied it off their Dashboard on the first day lost the
+  walkthrough with no way anywhere in the app to ask for it back. A **Get
+  started** button now sits at the top of the Dashboard whenever the card is
+  hidden, and puts it back. Nothing has to be done twice: every row still reads
+  the real state of your setup, so the ticks return exactly as you left them.
+
 ## 0.90.2 — 2026-08-25
 
 ### Added
