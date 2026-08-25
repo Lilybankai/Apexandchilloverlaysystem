@@ -259,6 +259,8 @@
           id: 'dock',
           view: 'dashboard',
           anchor: '#ingame-dock-toggle',
+          // Not in every build — see `optional` on the step reader below.
+          optional: true,
           title: 'Magnetic docking',
           body:
             'While editing, a widget dragged near another snaps flush against it and takes its ' +
@@ -398,6 +400,33 @@
   /** Every step across every tour, in order — what runAll() walks. */
   function allSteps() {
     return TOURS.flatMap((t) => t.steps.map((s) => ({ ...s, tour: t.id })));
+  }
+
+  /**
+   * Drop steps whose feature is not in this build.
+   *
+   * Not every control exists in every package. Some features are gated to the
+   * beta channel, and a stable release is cut from an older tag, so a step
+   * written against `main` can describe something the running build simply
+   * does not have. The fallback for a missing anchor is a centred card that
+   * says its piece anyway — which is right for a control that is merely
+   * hidden, and exactly wrong here: it would explain a feature to someone who
+   * has no way to use it, and then it would not be there when they looked.
+   *
+   * So a step marked `optional` has to find its anchor in the document or it
+   * is not part of the tour at all. Presence, not visibility — the element may
+   * legitimately be on another tab when the tour starts.
+   */
+  function usableSteps(list) {
+    if (typeof document === 'undefined') return list;
+    return list.filter((s) => {
+      if (!s.optional || !s.anchor) return true;
+      try {
+        return !!document.querySelector(s.anchor);
+      } catch {
+        return false;
+      }
+    });
   }
 
   function seenKey(id) {
@@ -676,12 +705,12 @@
     const e = lookup();
     if (!e) return;
     if (id === 'all') {
-      steps = allSteps();
+      steps = usableSteps(allSteps());
       for (const t of TOURS) markSeen(t.id);
     } else {
       const tour = tourById(id);
       if (!tour) return;
-      steps = tour.steps.map((s) => ({ ...s, tour: tour.id }));
+      steps = usableSteps(tour.steps.map((s) => ({ ...s, tour: tour.id })));
       markSeen(tour.id);
     }
     if (!steps.length) return;
@@ -760,6 +789,7 @@
     SEEN_PREFIX,
     tourById,
     allSteps,
+    usableSteps,
     hasSeen,
     markSeen,
     start,

@@ -112,6 +112,45 @@ console.log('\nEvery step points at something that exists');
 }
 
 {
+  /*
+   * A step marked `optional` describes a feature that is not in every build —
+   * a stable release is cut from an older tag than main, so magnetic docking
+   * (0.91 beta) is absent from one and present in the other. Such a step must
+   * drop out entirely rather than fall back to a centred card, because the
+   * fallback would explain a control the driver has no way to reach.
+   *
+   * Asserted both ways: the marked ones survive when their anchor is there,
+   * and vanish when it is not.
+   */
+  const optional = tour.allSteps().filter((s) => s.optional);
+  check('optional steps declare an anchor to test for', optional.every((s) => !!s.anchor));
+  const present = { querySelector: () => ({}) };
+  const absent = { querySelector: () => null };
+  const withDoc = (doc, fn) => {
+    const had = 'document' in global;
+    const prev = global.document;
+    global.document = doc;
+    try {
+      return fn();
+    } finally {
+      if (had) global.document = prev;
+      else delete global.document;
+    }
+  };
+  const kept = withDoc(present, () => tour.usableSteps(tour.allSteps()).length);
+  const dropped = withDoc(absent, () => tour.usableSteps(tour.allSteps()).length);
+  check('optional steps are kept when the control exists', kept === tour.allSteps().length, kept);
+  check(
+    'and dropped when it does not',
+    dropped === tour.allSteps().length - optional.length,
+    `${dropped} of ${tour.allSteps().length}`,
+  );
+  // Everything not marked optional must exist in every build, or a tour cut
+  // for stable silently loses a step it was relying on.
+  check('a required step is never dropped', dropped >= tour.allSteps().length - optional.length);
+}
+
+{
   const views = new Set([...html.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]));
   const panes = new Set([...html.matchAll(/data-settingspane="([a-z]+)"/g)].map((m) => m[1]));
   const badView = steps.filter((s) => !views.has(s.view)).map((s) => `${s.tour}/${s.id}`);
