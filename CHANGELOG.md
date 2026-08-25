@@ -6,6 +6,27 @@
 
 ## 0.91.0-beta.8 — 2026-08-25
 
+### Added
+
+- **Teams.** The Team tab now has a crew card: create a team, or join one by
+  pasting its invite code — a short `APX-XXXXXX` code that works like a
+  Discord invite. Any member can copy the code, or hit **Share invite** to
+  copy a ready-made message (download link, sign-up steps, the code) for the
+  team Discord; the owner can issue a new code, rename the team, and remove
+  members with one click. Teams hold up to 6 drivers, you can be in more than
+  one (pick the active one from the dropdown), and if the owner leaves, the
+  team passes to the longest-serving member.
+- **The pit wall goes live for the whole crew.** While you're driving, the
+  app quietly relays your car's telemetry to your team every 3 seconds —
+  only when you're genuinely the one on track. Teammates flip the new
+  **My car / Team** switch on the Team page and all four screens — timing,
+  positions, strategy, telemetry — show the driving car instead: fuel and
+  energy, the live tyre widgets, damage, weather, the track map, the charts.
+  The pill in the corner reads `RELAY · <driver>` and turns stale the moment
+  the feed is more than a few seconds old, and the crew list shows who's
+  online and who's in the car. Nothing to configure, no port forwarding —
+  it rides each member's signed-in account.
+
 ### Fixed
 
 - **The new speedo designs blew up when you scaled the widget.** Drag the
