@@ -42,6 +42,7 @@ const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const stt = require('./engineerStt');
+const { normalizePracticePaceReminderLaps } = require('./engineer-settings');
 
 /* -------------------------------------------------------------------------- */
 /*  The grammar — one table for recognizer, panel help, and the spike          */
@@ -595,7 +596,11 @@ class EngineerService {
     this.ws = null;
     this.wsTimer = null;
     this.commands = this.commandsMod ? new this.commandsMod.EngineerCommands() : null;
-    this.triggers = this.triggersMod ? new this.triggersMod.EngineerTriggers() : null;
+    this.triggers = this.triggersMod
+      ? new this.triggersMod.EngineerTriggers({
+          practicePaceLapInterval: this.practicePaceReminderLaps(),
+        })
+      : null;
     this.asking = false;
     this.wavDir = null;
     this.grammarPath = null;
@@ -705,6 +710,25 @@ class EngineerService {
     return preset === 'off' || preset === 'standard' ? preset : 'essential';
   }
 
+  /** Completed laps between unchanged practice-pace reminders. */
+  practicePaceReminderLaps() {
+    const settings = this.loadSettings();
+    return normalizePracticePaceReminderLaps(
+      settings.engineer && settings.engineer.practicePaceReminderLaps,
+    );
+  }
+
+  /**
+   * Apply settings that can change without rebuilding the voice pipeline.
+   * The trigger's state stays intact, so changing frequency mid-practice does
+   * not manufacture a new "first benchmark" call.
+   */
+  applyLiveSettings() {
+    if (this.triggers?.setPracticePaceLapInterval) {
+      this.triggers.setPracticePaceLapInterval(this.practicePaceReminderLaps());
+    }
+  }
+
   /** Radio volume 0–100, safe against settings written by older versions. */
   volumePct() {
     const settings = this.loadSettings();
@@ -730,6 +754,7 @@ class EngineerService {
     return {
       enabled: !!settings.engineerEnabled,
       readouts: this.readoutsPreset(),
+      practicePaceReminderLaps: this.practicePaceReminderLaps(),
       volume: this.volumePct(),
       running: this.running,
       engineInstalled: this.engineInstalled(),

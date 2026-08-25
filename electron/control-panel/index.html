@@ -1438,6 +1438,20 @@
                 </label>
 
                 <label class="field">
+                  <span class="field__label">Practice pace reminders</span>
+                  <select class="field__input" id="eng-pace-reminder">
+                    <option value="2">Frequent · every 2 laps</option>
+                    <option value="4">Balanced · every 4 laps</option>
+                    <option value="6">Quiet · every 6 laps</option>
+                  </select>
+                  <span class="field__hint">
+                    With <strong>Standard</strong> radio calls, the engineer checks
+                    your reference pace at this interval. Your first benchmark and
+                    every move into a faster pace band are still called immediately.
+                  </span>
+                </label>
+
+                <label class="field">
                   <span class="field__label">Radio volume</span>
                   <div class="rate-row">
                     <input class="field__range" id="eng-volume" type="range" min="0" max="100" step="5" />

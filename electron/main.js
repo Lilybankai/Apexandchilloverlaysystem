@@ -44,6 +44,10 @@ const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const { overlayGeometryFrom } = require('./overlay-geometry');
+const {
+  DEFAULT_ENGINEER_SETTINGS,
+  sanitizeEngineer,
+} = require('./engineer-settings');
 
 /* -------------------------------------------------------------------------- */
 /*  Overlay catalog — every widget, each addable to OBS as its own source.    */
@@ -247,7 +251,9 @@ function defaultSettings() {
     // calls (fastest laps, position moves, rivals' stops, blue flags).
     // `volume` is the radio volume, 0–100 (100 = full). Applied to the audio
     // samples themselves — the player sidecar has no volume control.
-    engineer: { readouts: 'essential', volume: 100 },
+    // `practicePaceReminderLaps` controls unchanged reference-pace reminders;
+    // first benchmarks and faster-band moves are always called on Standard.
+    engineer: { ...DEFAULT_ENGINEER_SETTINGS },
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
     // width/height in px; absent means "the widget's own size".
@@ -516,27 +522,6 @@ function clamp(value, min, max, fallback) {
  * string (validity is enforced at register time, wrapped in try/catch); an
  * empty string is the explicit "unbound" state. Non-strings fall back.
  */
-/** The engineer's readouts dial — the only values the preset can hold. */
-const READOUT_PRESETS = ['off', 'essential', 'standard'];
-
-/**
- * The nested engineer settings block, sanitized as a unit. New engineer fields
- * are added HERE (and in defaultSettings) — never as new flat keys, so the
- * loadSettings / settings:update whitelists stay one line each forever.
- */
-function sanitizeEngineer(stored, defaults) {
-  const s = stored && typeof stored === 'object' ? stored : {};
-  const vol = Number(s.volume);
-  return {
-    readouts: READOUT_PRESETS.includes(s.readouts) ? s.readouts : defaults.readouts,
-    volume: Number.isFinite(vol)
-      ? Math.max(0, Math.min(100, Math.round(vol)))
-      : typeof defaults.volume === 'number'
-        ? defaults.volume
-        : 100,
-  };
-}
-
 function normalizeShortcut(value, fallback) {
   if (value === '') return '';
   if (typeof value === 'string' && value.trim()) return value.trim();
@@ -2385,7 +2370,7 @@ function registerIpc() {
       if (partial.engineer && typeof partial.engineer === 'object') {
         // Merge-then-sanitize, so a partial like { engineer: { readouts } }
         // can't wipe fields it didn't mention. No restart: the engineer reads
-        // this block per cue, so the dial takes effect on the next call.
+        // live fields from this block and applies interval changes in place.
         next.engineer = sanitizeEngineer(
           { ...current.engineer, ...partial.engineer },
           current.engineer,
@@ -2480,8 +2465,10 @@ function registerIpc() {
       engineerService &&
       JSON.stringify(next.engineer) !== JSON.stringify(current.engineer)
     ) {
-      // The readouts dial changes nothing about the pipeline — the service
-      // reads the block per cue — but the panel should see the new state.
+      // Nested controls change nothing about the voice pipeline. Apply mutable
+      // trigger tuning in place so its session history survives, then refresh
+      // the panel with the sanitized value.
+      engineerService.applyLiveSettings();
       engineerService.pushStatus();
     }
 

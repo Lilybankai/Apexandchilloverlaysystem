@@ -574,7 +574,7 @@ export class EngineerTriggers {
   private readonly globalMinIntervalMs: number;
   private readonly maxHoldMs: number;
   private readonly fuelWindowLaps: number;
-  private readonly practicePaceLapInterval: number;
+  private practicePaceLapInterval: number;
   private readonly ignoreDisconnected: boolean;
 
   /** Session this detector's memory belongs to; a change wipes it. */
@@ -640,9 +640,9 @@ export class EngineerTriggers {
     this.globalMinIntervalMs = config.globalMinIntervalMs ?? DEFAULT_GLOBAL_MIN_INTERVAL_MS;
     this.maxHoldMs = config.maxHoldMs ?? DEFAULT_MAX_HOLD_MS;
     this.fuelWindowLaps = config.fuelWindowLaps ?? DEFAULT_FUEL_WINDOW_LAPS;
-    this.practicePaceLapInterval = Math.max(
-      1,
-      Math.round(config.practicePaceLapInterval ?? DEFAULT_PRACTICE_PACE_LAP_INTERVAL),
+    this.practicePaceLapInterval = DEFAULT_PRACTICE_PACE_LAP_INTERVAL;
+    this.setPracticePaceLapInterval(
+      config.practicePaceLapInterval ?? DEFAULT_PRACTICE_PACE_LAP_INTERVAL,
     );
     this.ignoreDisconnected = config.ignoreDisconnected ?? true;
   }
@@ -660,6 +660,16 @@ export class EngineerTriggers {
   /** Zero the counters without disturbing the detector's memory. */
   public resetStats(): void {
     this.stats = freshStats();
+  }
+
+  /**
+   * Change the periodic practice reminder interval without resetting session
+   * history. UI settings call this live; invalid direct callers get the default.
+   */
+  public setPracticePaceLapInterval(laps: number): void {
+    this.practicePaceLapInterval = Number.isFinite(laps)
+      ? Math.max(1, Math.round(laps))
+      : DEFAULT_PRACTICE_PACE_LAP_INTERVAL;
   }
 
   /**

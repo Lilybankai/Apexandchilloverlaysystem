@@ -211,6 +211,7 @@ function rig(config, overrides) {
   };
 
   return {
+    triggers,
     step,
     hold,
     fire,
@@ -828,6 +829,24 @@ function playerRowOver(over) {
   });
   check('reference race-pace reminders stay out of qualifying',
     !quali.kinds().includes('practicePace'), quali.kinds().join());
+
+  const live = rig({}, {
+    session: { type: 'practice' },
+    standings: [playerRowOver({ lapsCompleted: 0, bestLapSec: UNKNOWN })],
+    player: { paceScore: { ok: false, lapSec: UNKNOWN } },
+  });
+  live.fire({
+    standings: [playerRowOver({ lapsCompleted: 1, bestLapSec: 104 })],
+    player: { paceScore: pace({}) },
+  });
+  live.hold(90_000);
+  live.triggers.setPracticePaceLapInterval(2);
+  cue = live.fire({
+    standings: [playerRowOver({ lapsCompleted: 3, bestLapSec: 104 })],
+  });
+  check('a live frequency change preserves state and uses the new interval',
+    cue && cue.kind === 'practicePace' && cue.triggers[0].facts.reason === 'periodic',
+    cue && cue.line);
 }
 
 /* -------------------------------------------------------------------------- */

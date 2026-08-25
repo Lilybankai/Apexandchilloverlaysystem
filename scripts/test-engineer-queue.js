@@ -15,9 +15,14 @@
 
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 const { EngineerService } = require('../electron/engineer');
+const {
+  DEFAULT_ENGINEER_SETTINGS,
+  sanitizeEngineer,
+} = require('../electron/engineer-settings');
 
 let pass = 0;
 let fail = 0;
@@ -44,7 +49,9 @@ function rig(preset) {
   return {
     svc,
     spoken,
-    setPreset: (p) => { settings = { ...settings, engineer: { readouts: p } }; },
+    setPreset: (p) => {
+      settings = { ...settings, engineer: { ...settings.engineer, readouts: p } };
+    },
   };
 }
 
@@ -285,7 +292,53 @@ console.log('\n9) The volume slider scales the audio, and old settings read as f
   check('no gain argument means unchanged output', Math.abs(full - 0.89) < 0.01, full.toFixed(3));
 }
 
-console.log('\n10) Bound callouts speak immediately, no microphone');
+console.log('\n10) Practice reminder settings are sanitized and apply live');
+{
+  check('fresh installs default to a balanced four-lap reminder',
+    DEFAULT_ENGINEER_SETTINGS.practicePaceReminderLaps === 4);
+  const frequent = sanitizeEngineer({
+    readouts: 'standard',
+    volume: 90,
+    practicePaceReminderLaps: 2,
+  });
+  check('two laps is accepted', frequent.practicePaceReminderLaps === 2);
+  const quiet = sanitizeEngineer({ practicePaceReminderLaps: '6' });
+  check('numeric persisted values normalize', quiet.practicePaceReminderLaps === 6);
+  const invalid = sanitizeEngineer({ practicePaceReminderLaps: 3 });
+  check('unsupported intervals fall back safely', invalid.practicePaceReminderLaps === 4);
+
+  let settings = {
+    engineerEnabled: true,
+    engineerVoice: 'en_GB-alan-medium',
+    engineer: { readouts: 'standard', volume: 100, practicePaceReminderLaps: 6 },
+  };
+  const svc = new EngineerService({
+    dir: path.join(require('node:os').tmpdir(), 'apex-queue-test'),
+    loadSettings: () => settings,
+    onStatus: () => {},
+  });
+  check('service starts with the persisted interval',
+    svc.status().practicePaceReminderLaps === 6 &&
+      svc.triggers.practicePaceLapInterval === 6);
+  settings = {
+    ...settings,
+    engineer: { ...settings.engineer, practicePaceReminderLaps: 2 },
+  };
+  svc.applyLiveSettings();
+  check('frequency changes live without replacing trigger history',
+    svc.status().practicePaceReminderLaps === 2 &&
+      svc.triggers.practicePaceLapInterval === 2);
+
+  const html = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
+  const panel = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
+  check('Engineer panel offers frequent, balanced and quiet choices',
+    /id="eng-pace-reminder"/.test(html) &&
+      /value="2"/.test(html) && /value="4"/.test(html) && /value="6"/.test(html));
+  check('Engineer panel persists the nested reminder setting',
+    /practicePaceReminderLaps:\s*parseInt\(paceReminder\.value/.test(panel));
+}
+
+console.log('\n11) Bound callouts speak immediately, no microphone');
 {
   // A Stream Deck / wheel press is driver-initiated: it speaks even when the
   // unprompted dial is Quiet and the driver is busy, and it never opens the mic.
@@ -339,7 +392,7 @@ console.log('\n10) Bound callouts speak immediately, no microphone');
   check('unknown intent is an error', unknown.ok === false);
 }
 
-console.log('\n11) Callout actions register and fire speakIntent');
+console.log('\n12) Callout actions register and fire speakIntent');
 {
   const { createActions } = require('../electron/actions');
   const { ENGINEER_CALLOUTS } = require('../electron/engineer');
