@@ -2916,12 +2916,12 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
    thing in the widget — and because it is still the row's OWN colour, it says
    *which* row without adding a second thing to decode. */
 .mfd__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 55%, transparent);
+  background: color-mix(in srgb, var(--mfd-sel, var(--mfd-cat, var(--ac-cyan))) 55%, transparent);
   border-left-width: 7px;
   padding-left: 5px;
   box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 85%, transparent),
-    0 0 10px color-mix(in srgb, var(--mfd-cat, var(--ac-cyan)) 40%, transparent);
+    inset 0 0 0 1.5px color-mix(in srgb, var(--mfd-sel, var(--mfd-cat, var(--ac-cyan))) 85%, transparent),
+    0 0 10px color-mix(in srgb, var(--mfd-sel, var(--mfd-cat, var(--ac-cyan))) 40%, transparent);
 }
 .mfd__row[data-selected="true"] .mfd__label,
 .mfd__row[data-selected="true"] .mfd__value {
@@ -2971,8 +2971,16 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
 .mfd__row[data-cat="traction"] { --mfd-cat: var(--ac-cyan); }
 .mfd__row[data-cat="engine"]   { --mfd-cat: var(--warn); }
 .mfd__row[data-cat="hybrid"]   { --mfd-cat: var(--pos-gain); }
+.mfd__row[data-cat="arb"]      { --mfd-cat: var(--ac-purple); }
 .mfd__row[data-cat="service"]  { --mfd-cat: var(--text-muted); }
 .mfd__row[data-cat="other"]    { --mfd-cat: var(--border-strong); }
+/* `service` and `other` are deliberately colourless — they are the rows with
+   nothing to say. But the selected-row tint is mixed FROM the category colour,
+   and mixing 55% of a dark border grey into a dark panel produces no visible
+   highlight at all, so the cursor vanished whenever it landed on one. They keep
+   their quiet stripe and borrow a light neutral for the selection only. */
+.mfd__row[data-cat="service"],
+.mfd__row[data-cat="other"]    { --mfd-sel: var(--text-secondary); }
 
 /* --- Row controls: ± steppers on adjustable rows -------------------------
    Pit rows change over LMU's REST API; aid rows fire a keystroke. Both are

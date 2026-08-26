@@ -195,6 +195,13 @@
     // Order matters — BRAKE_BIAS must not be caught by the ABS test.
     if (/^BRAKE|BIAS/.test(k)) return "brake";
     if (/^TC|ANTILOCK|TRACTION|^ABS/.test(k)) return "traction";
+    // The ARBs are a chassis-balance pair, not a driver aid like the rest, and
+    // they landed in "other" — whose colour is a dark border grey, so the
+    // selected-row tint drawn from it was invisible on a Hypercar (the only
+    // class that gets these rows). They take the aero purple: the same family
+    // of adjustment, and unused elsewhere in this group, which sits between
+    // brake magenta above and regen green below.
+    if (/ARB|ANTISWAY|ANTIROLL|ROLLBAR/.test(k)) return "arb";
     if (/REGEN|ELECTRIC|MOTOR/.test(k)) return "hybrid";
     if (/ENGINE/.test(k)) return "engine";
     return "other";
