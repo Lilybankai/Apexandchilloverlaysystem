@@ -99,8 +99,10 @@ function liveFrame() {
     && s.car.rpm === 7420 && s.car.maxRpm === 8600 && s.car.gear === 5);
   check('lap delta carried', s.car.lap.delta === 0.4);
   check('fuel copied whole', s.fuel.virtualEnergyPct === 38.5 && s.fuel.levelLiters === 41.2);
-  check('forecast pruned to timeline fields', s.weather.forecast[1].label === '50%'
-    && !('trackTempC' in s.weather.forecast[1]));
+  // The whole slot survives since the detailed weather card (2026-08-26):
+  // sky, temps, humidity and wind are what the pit wall renders per phase.
+  check('forecast carries the full slot', s.weather.forecast[1].label === '50%'
+    && s.weather.forecast[1].trackTempC === 26 && s.weather.forecast[1].rainChance === 0.7);
   check('30 Hz noise pruned', !('pedals' in s.car) && !('radar' in s) && !('relative' in s));
   check('sentinels survive untouched (renderer owns them)', s.car.pit.elapsedSec === -1);
   check('standings carried for the timing sheet', s.standings.length === 2

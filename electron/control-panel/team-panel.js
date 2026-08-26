@@ -610,31 +610,62 @@
       </div>`);
   }
 
+  /** LMU's coarse sky states, in pit-wall words. */
+  const SKY_WORDS = {
+    clear: 'Clear',
+    partlyCloudy: 'Part cloudy',
+    overcast: 'Overcast',
+    lightRain: 'Light rain',
+    rain: 'Rain',
+    storm: 'Storm',
+  };
+
   function renderWeather(w) {
     if (!w) { setCard(els.weather, `<p class="team-note">No weather data.</p>`); return; }
-    const nowBits = [
-      w.trackCondition ? `<b>${esc(w.trackCondition)}</b>` : null,
-      w.trackTrend && w.trackTrend !== 'steady' ? esc(w.trackTrend) : null,
-      known(w.trackTempC) ? `track ${degrees(w.trackTempC)}` : null,
-      known(w.ambientTempC) ? `air ${degrees(w.ambientTempC)}` : null,
-      known(w.rainIntensity) && w.rainIntensity > 0 ? `rain ${Math.round(w.rainIntensity * 100)}%` : null,
-      known(w.trackWetness) && w.trackWetness > 0.005 ? `wetness ${Math.round(w.trackWetness * 100)}%` : null,
-      known(w.trackSpread) && w.trackSpread > 0.15 ? 'uneven surface' : null,
-    ].filter(Boolean).join(' · ');
+
+    const rainNow = known(w.rainIntensity) && w.rainIntensity > 0;
+    const wetPct = known(w.trackWetness) && w.trackWetness > 0.005
+      ? Math.round(w.trackWetness * 100)
+      : null;
+    const surface = w.trackCondition
+      ? `${esc(w.trackCondition)}${wetPct != null ? ` <small>${wetPct}%</small>` : ''}`
+      : dash;
+    const surfaceBand = !w.trackCondition
+      ? {}
+      : w.trackCondition === 'DRY' ? { band: 'ok' } : { band: 'warn' };
+
+    const notes = [];
+    if (w.trackTrend === 'drying') notes.push('track is drying');
+    else if (w.trackTrend === 'wetting') notes.push('track is getting wetter');
+    if (known(w.trackSpread) && w.trackSpread > 0.15) notes.push('uneven surface — wet and dry patches');
 
     const slots = (w.forecast || []).map((f) => {
-      const when = f.label || (f.minutesAhead === 0 ? 'NOW' : `+${f.minutesAhead}m`);
+      const when = f.label || (f.minutesAhead === 0 ? 'NOW'
+        : known(f.minutesAhead) ? `+${f.minutesAhead}m` : dash);
       const chance = known(f.rainChance) ? Math.round(f.rainChance * 100) : null;
+      const meta = [
+        known(f.windKph) && f.windKph > 0 ? `wind ${Math.round(f.windKph)} kph` : null,
+        known(f.humidityPct) && f.humidityPct > 0 ? `hum ${Math.round(f.humidityPct)}%` : null,
+      ].filter(Boolean).join('<br>');
       return `
         <div class="team-wx" data-rain="${chance != null && chance >= 50}">
           <div class="team-wx__when">${esc(when)}</div>
+          <div class="team-wx__sky">${SKY_WORDS[f.sky] ? esc(SKY_WORDS[f.sky]) : dash}</div>
+          <div class="team-wx__temp">${degrees(known(f.trackTempC) ? f.trackTempC : f.airTempC)}</div>
           <div class="team-wx__chance">${chance != null ? `${chance}%` : dash}</div>
           <div class="team-wx__bar"><span style="width:${known(f.rainIntensity) ? Math.round(f.rainIntensity * 100) : 0}%"></span></div>
+          ${meta ? `<div class="team-wx__meta">${meta}</div>` : ''}
         </div>`;
     }).join('');
 
     setCard(els.weather, `
-      <p class="team-note">${nowBits || 'Conditions unknown.'}</p>
+      <div class="fuel-tiles team-tiles--4">
+        ${tile('Air', degreesU(w.ambientTempC))}
+        ${tile('Track', degreesU(w.trackTempC))}
+        ${tile('Rain', rainNow ? `${Math.round(w.rainIntensity * 100)}%` : 'Dry', rainNow ? { band: 'warn' } : {})}
+        ${tile('Surface', surface, surfaceBand)}
+      </div>
+      ${notes.length ? `<p class="team-note">${notes.map(esc).join(' · ')}</p>` : ''}
       ${slots ? `<div class="team-wxrow">${slots}</div>` : ''}`);
   }
 

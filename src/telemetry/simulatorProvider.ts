@@ -1859,11 +1859,17 @@ export class SimulatorProvider implements TelemetryProvider {
       else if (intensity > 0.1) sky = 'lightRain';
       else if (wave > 0.4) sky = 'overcast';
       else if (wave < -0.4) sky = 'clear';
+      const trackTempC = Math.round((30 + Math.sin(phase) * 1.5 - intensity * 6) * 10) / 10;
       return {
         minutesAhead,
         rainChance: Math.round(chance * 100) / 100,
         rainIntensity: Math.round(intensity * 100) / 100,
-        trackTempC: Math.round((30 + Math.sin(phase) * 1.5 - intensity * 6) * 10) / 10,
+        trackTempC,
+        // The live path fills these from LMU's forecast nodes; the demo keeps
+        // them plausible so the Team weather card renders its full shape.
+        airTempC: Math.round((trackTempC - 6) * 10) / 10,
+        humidityPct: Math.round(clamp01(0.45 + chance * 0.4) * 100),
+        windKph: Math.round(12 + wave * 8),
         sky,
       };
     });

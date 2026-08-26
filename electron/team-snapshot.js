@@ -188,12 +188,20 @@ function buildTeamSnapshot(frame, at) {
           trackCondition: frame.weather.trackCondition,
           trackTrend: frame.weather.trackTrend,
           trackSpread: frame.weather.trackSpread,
+          // The WHOLE forecast slot, not just the rain pair: the Team weather
+          // card prints sky, temperature, humidity and wind per phase, and a
+          // field dropped here reads as "LMU doesn't publish it" on the wall.
           forecast: Array.isArray(frame.weather.forecast)
             ? frame.weather.forecast.map((f) => ({
                 minutesAhead: f.minutesAhead,
                 label: f.label,
                 rainChance: f.rainChance,
                 rainIntensity: f.rainIntensity,
+                trackTempC: f.trackTempC,
+                airTempC: f.airTempC,
+                humidityPct: f.humidityPct,
+                windKph: f.windKph,
+                sky: f.sky,
               }))
             : [],
         }

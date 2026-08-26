@@ -311,7 +311,22 @@
   letter-spacing: 0.06em;
   color: var(--text-3);
 }
+.team-wx__sky {
+  margin-top: 2px;
+  font: 600 10px var(--font-display);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-wx__temp { font: 700 13px var(--font-display); color: var(--text-2); }
 .team-wx__chance { font: 700 16px var(--font-display); color: var(--text); }
+.team-wx__meta {
+  margin-top: 4px;
+  font: 500 9.5px var(--font-display);
+  color: var(--text-3);
+  line-height: 1.5;
+}
 .team-wx__bar {
   height: 4px;
   margin-top: 6px;
