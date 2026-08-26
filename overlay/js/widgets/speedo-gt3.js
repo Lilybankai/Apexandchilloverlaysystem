@@ -91,14 +91,25 @@
     var deltaS = fmt.has(lap.delta) ? lap.delta : null;
     var tyres = p.tyres || null;
 
+    // `t` is a DISPLAY number: already in the driver's unit and already
+    // rounded, because every plate below prints it and none of them judges it.
+    // Nothing Celsius reaches live() from here: the plates print temperatures,
+    // they never judge one, and a threshold compared against a Fahrenheit
+    // number would be wrong by a factor of nearly two.
     function corner(t) {
       if (!t) return { p: null, t: null, b: null };
-      return { p: num(t.pressureKpa), t: num(t.tempC), b: num(t.brakeTempC) };
+      return { p: num(t.pressureKpa), t: tempNum(t.tempC), b: tempNum(t.brakeTempC) };
     }
 
     /** A 0..1 input channel as whole percent, null when the sim omits it. */
     function pct01(x) {
       return fmt.has(x) ? Math.round(x * 100) : null;
+    }
+
+    /** A Celsius reading in the driver's unit, rounded. Display only. */
+    function tempNum(c) {
+      var v = fmt.tempValue(c);
+      return v === null ? null : Math.round(v);
     }
 
     return {
@@ -153,11 +164,15 @@
       throttle: ped ? pct01(ped.throttle) : null,
       brakePct: ped ? pct01(ped.brake) : null,
       latG: mo && fmt.has(mo.latG) ? mo.latG : null,
-      trackC: num(w.trackTempC),
+      /* Every temperature leaves here ALREADY in the driver's unit and already
+         rounded — no plate below judges one, they only print them, and nothing
+         Celsius should reach live() where the unit is no longer known. */
+      trackT: tempNum(w.trackTempC),
       /* `ambientTempC` is the channel's name on WeatherState; `airTempC` exists
          only on a FORECAST slot, so reading it here made every AIR box on every
          plate a permanent dash. */
-      airC: num(w.ambientTempC),
+      airT: tempNum(w.ambientTempC),
+      tempUnit: fmt.tempUnitLabel(),
       trackState: (w.trackCondition && String(w.trackCondition)) || null,
       limiter: !!(p.pit && p.pit.limiterOn),
     };
@@ -488,10 +503,10 @@
       K.val(v.fr.p != null ? Math.round(v.fr.p) : null, 728, 250, 22, "#fff");
       K.val(v.rl.p != null ? Math.round(v.rl.p) : null, 668, 280, 22, "#fff");
       K.val(v.rr.p != null ? Math.round(v.rr.p) : null, 728, 280, 22, "#fff");
-      K.txt(v.fl.t != null ? Math.round(v.fl.t) : "—", 612, 250, 13, "#9aa5b0");
-      K.txt(v.fr.t != null ? Math.round(v.fr.t) : "—", 752, 250, 13, "#9aa5b0");
-      K.txt(v.rl.t != null ? Math.round(v.rl.t) : "—", 612, 280, 13, "#9aa5b0");
-      K.txt(v.rr.t != null ? Math.round(v.rr.t) : "—", 752, 280, 13, "#9aa5b0");
+      K.txt(v.fl.t != null ? v.fl.t : "—", 612, 250, 13, "#9aa5b0");
+      K.txt(v.fr.t != null ? v.fr.t : "—", 752, 250, 13, "#9aa5b0");
+      K.txt(v.rl.t != null ? v.rl.t : "—", 612, 280, 13, "#9aa5b0");
+      K.txt(v.rr.t != null ? v.rr.t : "—", 752, 280, 13, "#9aa5b0");
       K.val(v.gear, 400, 196, 108, "#111", "center");
       /* knob values */
       /* One value per knob, in the order the knobs are drawn. Three of these
@@ -540,7 +555,7 @@
       });
       K.val(v.fuelPerLap !== null ? v.fuelPerLap.toFixed(2) : null, 98, 126, 30, "#fff");
       K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 98, 202, 30, "#fff");
-      K.val(v.airC !== null ? Math.round(v.airC) : null, 541, 56, 22, "#000");
+      K.val(v.airT, 541, 56, 22, "#000");
       [v.map, v.tc, v.abs].forEach(function (a, i) {
         K.val(a ? a.value : null, 616 + i * 72, 56, 26, "#fff");
       });
@@ -552,7 +567,7 @@
       K.val(v.best, 685, 276, 26, "#fff");
       K.val(v.tcCut ? v.tcCut.value : null, 52, 424, 26, "#fff");
       K.val(v.tcSlip ? v.tcSlip.value : null, 136, 424, 26, "#fff");
-      K.val(v.trackC !== null ? Math.round(v.trackC) + "°" : null, 300, 424, 24, "#fff");
+      K.val(v.trackT !== null ? v.trackT + "°" : null, 300, 424, 24, "#fff");
       K.val(v.bias, 428, 424, 24, "#fff");
       K.val(v.pos, 568, 424, 26, "#fff");
       K.val(v.laps >= 0 ? v.laps : null, 652, 424, 26, "#fff");
@@ -774,12 +789,12 @@
         K.val(a, x, 328, 22, "#26282c");
         K.val(b, x, 358, 22, "#26282c");
       }
-      pair(60, v.fl.t != null ? Math.round(v.fl.t) : null, v.rl.t != null ? Math.round(v.rl.t) : null);
-      pair(140, v.fr.t != null ? Math.round(v.fr.t) : null, v.rr.t != null ? Math.round(v.rr.t) : null);
+      pair(60, v.fl.t, v.rl.t);
+      pair(140, v.fr.t, v.rr.t);
       pair(305, v.fl.p != null ? Math.round(v.fl.p) : null, v.rl.p != null ? Math.round(v.rl.p) : null);
       pair(395, v.fr.p != null ? Math.round(v.fr.p) : null, v.rr.p != null ? Math.round(v.rr.p) : null);
-      pair(590, v.fl.b != null ? Math.round(v.fl.b) : null, v.rl.b != null ? Math.round(v.rl.b) : null);
-      pair(680, v.fr.b != null ? Math.round(v.fr.b) : null, v.rr.b != null ? Math.round(v.rr.b) : null);
+      pair(590, v.fl.b, v.rl.b);
+      pair(680, v.fr.b, v.rr.b);
       /* Aids where the wheel has a setting, live pedal channels where it does
          not. Four of these eight used to be forced to null in the loop below —
          a cell that could not have shown a number whatever the car was doing. */
@@ -859,10 +874,10 @@
       K.val(v.deltaStr, 675, 130, 26, "#fff");
       K.val(v.gear, 400, 310, 130, "#fff");
       /* tyre temps big, pressures small */
-      K.val(v.fl.t != null ? Math.round(v.fl.t) : null, 89, 202, 34, "#0a2410");
-      K.val(v.rl.t != null ? Math.round(v.rl.t) : null, 89, 272, 34, "#0a2410");
-      K.val(v.fr.t != null ? Math.round(v.fr.t) : null, 711, 202, 34, "#0a2410");
-      K.val(v.rr.t != null ? Math.round(v.rr.t) : null, 711, 272, 34, "#0a2410");
+      K.val(v.fl.t, 89, 202, 34, "#0a2410");
+      K.val(v.rl.t, 89, 272, 34, "#0a2410");
+      K.val(v.fr.t, 711, 202, 34, "#0a2410");
+      K.val(v.rr.t, 711, 272, 34, "#0a2410");
       K.val(v.fl.p != null ? Math.round(v.fl.p) : null, 213, 206, 22, "#0a2410");
       K.val(v.rl.p != null ? Math.round(v.rl.p) : null, 213, 266, 22, "#0a2410");
       K.val(v.fr.p != null ? Math.round(v.fr.p) : null, 593, 206, 22, "#0a2410");
@@ -870,7 +885,7 @@
       K.val(v.bias, 85, 424, 28, "#fff");
       K.val(v.fuelL !== null ? v.fuelL.toFixed(1) : null, 245, 424, 28, GRN);
       K.val(v.rpm, 420, 424, 32, "#fff");
-      K.val(v.trackC !== null ? Math.round(v.trackC) : null, 580, 424, 28, "#fff");
+      K.val(v.trackT, 580, 424, 28, "#fff");
       K.val(v.vePct !== null ? Math.round(v.vePct) : null, 720, 424, 28, "#fff");
     },
   });
@@ -946,8 +961,8 @@
       function tp(x, y, c) {
         K.val(c.p != null ? Math.round(c.p) : null, x + 48, y + 30, 20, "#fff");
         K.txt("kPa", x + 96, y + 28, 10, "#8a97b8");
-        K.val(c.t != null ? Math.round(c.t) : null, x + 174, y + 30, 20, "#fff");
-        K.txt("°C", x + 222, y + 28, 10, "#8a97b8");
+        K.val(c.t, x + 174, y + 30, 20, "#fff");
+        K.txt(v.tempUnit, x + 222, y + 28, 10, "#8a97b8");
       }
       tp(10, 196, v.fl);
       tp(10, 244, v.rl);
@@ -1049,8 +1064,8 @@
       /* the gear bar: filled to the current gear */
       var gearN = typeof v.gear === "string" && /^\d$/.test(v.gear) ? parseInt(v.gear, 10) : 0;
       K.box(120, 34, Math.max(0.02, gearN / 8) * 560, 10, { fill: "#2b8fe2", data: true });
-      K.val(v.trackC !== null ? Math.round(v.trackC) : null, 143, 132, 28, "#fff");
-      K.val(v.airC !== null ? Math.round(v.airC) : null, 239, 132, 28, "#fff");
+      K.val(v.trackT, 143, 132, 28, "#fff");
+      K.val(v.airT, 239, 132, 28, "#fff");
       K.val(v.deltaStr, 386, 134, 30, "#e05a6a");
       K.val(v.speed, 595, 134, 34, "#fff");
       K.val(v.vePct !== null ? v.vePct.toFixed(1) : null, 190, 226, 30, "#fff");

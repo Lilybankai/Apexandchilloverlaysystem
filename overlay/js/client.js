@@ -67,15 +67,6 @@
     return sign + Math.abs(sec).toFixed(1);
   }
 
-  /** Format a temperature in °C as an integer with a degree suffix. */
-  function tempC(c) {
-    return has(c) ? Math.round(c) + "°" : "—";
-  }
-
-  /** Format a temperature in °C to one decimal with a degree suffix. */
-  function tempC1(c) {
-    return has(c) ? c.toFixed(1) + "°" : "—";
-  }
 
   /** Format litres to one decimal (or em dash). */
   function liters(l) {
@@ -166,6 +157,82 @@
     return speedUnit;
   }
 
+  /* --------------------------- temperature units --------------------------- */
+
+  /**
+   * The sim reports every temperature in Celsius; plenty of drivers read tyres
+   * in Fahrenheit. Same argument as the speed unit above, and the same shape:
+   * the conversion lives here once, because tyre temps appear on the tyres
+   * widget, on three of the Speedo designs and on the weather panel, and a
+   * driver reading 96 on one and 205 on the next would be right to think
+   * something was broken.
+   *
+   * Everything BEHIND the number stays metric — the operating-window lamp, the
+   * blue-to-red thermal ramp, the wear buckets. Those are physics, judged
+   * against the sim's own optimum in the sim's own unit; only the printing
+   * changes.
+   */
+  var tempUnit = "c";
+  if (window.ApexAppearance && window.ApexAppearance.onTempUnit) {
+    window.ApexAppearance.onTempUnit(function (unit) {
+      // appearance.js already rejects anything else, but this is the last step
+      // before the number reaches a panel: a unit that got through here would
+      // take the Celsius branch and print a Fahrenheit label beside it.
+      if (unit === "c" || unit === "f") tempUnit = unit;
+    });
+  }
+
+  /**
+   * A Celsius reading as the driver's chosen unit, as a NUMBER — or null when
+   * there is no reading.
+   *
+   * Null rather than a dash so callers can round it themselves: the canvas
+   * Speedo designs draw the number and its unit in different type, and the
+   * tread strip prints three of them into cells barely wide enough for one.
+   *
+   * The `has()` guard is what keeps -1 out: the UNKNOWN sentinel converted to
+   * Fahrenheit is 30.2, which prints as a perfectly plausible cold tyre.
+   */
+  function tempValue(c) {
+    if (!has(c)) return null;
+    return tempUnit === "f" ? c * 1.8 + 32 : c;
+  }
+
+  /**
+   * A temperature DIFFERENCE in Celsius as the driver's unit — a window width,
+   * a spread, a "6 degrees over". Scaled without the +32 offset, because 8 C
+   * of margin is 14.4 F of margin and not 46.4 of anything.
+   */
+  function tempSpan(dC) {
+    if (typeof dC !== "number") return null;
+    return tempUnit === "f" ? dC * 1.8 : dC;
+  }
+
+  /** A temperature as an integer with a degree suffix: `"96°"` / `"205°"`. */
+  function temp(c) {
+    var v = tempValue(c);
+    return v === null ? "—" : Math.round(v) + "°";
+  }
+
+  /**
+   * The same, one decimal finer — but only in Celsius.
+   *
+   * A tenth of a degree Fahrenheit is below anything a driver acts on, and the
+   * extra glyph is not free: these land in the tyre widget's corner cells,
+   * which were sized for `96.4°` and would have to fit `205.5°`. Rounding the
+   * Fahrenheit reading keeps the cell the same width and loses nothing.
+   */
+  function temp1(c) {
+    var v = tempValue(c);
+    if (v === null) return "—";
+    return (tempUnit === "f" ? String(Math.round(v)) : v.toFixed(1)) + "°";
+  }
+
+  /** The driver's current unit as a bare label — `"°C"` or `"°F"`. */
+  function tempUnitLabel() {
+    return tempUnit === "f" ? "°F" : "°C";
+  }
+
   var fmt = {
     UNKNOWN: UNKNOWN,
     speed: speed,
@@ -177,8 +244,11 @@
     gap: gap,
     delta: delta,
     relGap: relGap,
-    tempC: tempC,
-    tempC1: tempC1,
+    temp: temp,
+    temp1: temp1,
+    tempValue: tempValue,
+    tempSpan: tempSpan,
+    tempUnitLabel: tempUnitLabel,
     liters: liters,
     intVal: intVal,
     pct: pct,

@@ -33,6 +33,7 @@
   const mfdFadeToggle = $('#mfd-fade-toggle');
   const startupToggle = $('#startup-toggle');
   const speedUnit = $('#speed-unit');
+  const tempUnit = $('#temp-unit');
   const audioToggle = $('#audio-toggle');
   const audioRange = $('#audio-range');
   const audioEcho = $('#audio-echo');
@@ -195,6 +196,7 @@
     mfdFadeToggle.checked = !!settings.mfdAutoFade;
     if (startupToggle) startupToggle.checked = !!settings.launchOnStartup;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
+    if (tempUnit) tempUnit.value = settings.tempUnit === 'f' ? 'f' : 'c';
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
     audioEcho.textContent = settings.audioVolume;
@@ -2225,6 +2227,15 @@
     speedUnit.addEventListener('change', async () => {
       await window.apex.updateSettings({
         speedUnit: speedUnit.value === 'mph' ? 'mph' : 'kph',
+      });
+    });
+  }
+
+  // Temperature units ride the same channel, for the same reason.
+  if (tempUnit) {
+    tempUnit.addEventListener('change', async () => {
+      await window.apex.updateSettings({
+        tempUnit: tempUnit.value === 'f' ? 'f' : 'c',
       });
     });
   }

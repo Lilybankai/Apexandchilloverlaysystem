@@ -72,7 +72,7 @@
     if (!w) return;
 
     // Header + now block.
-    var trackStr = fmt.tempC(w.trackTempC);
+    var trackStr = fmt.temp(w.trackTempC);
     if (headerState && cache.hdr !== trackStr) {
       cache.hdr = trackStr;
       headerState.textContent = "TRACK " + trackStr;
@@ -81,7 +81,7 @@
       cache.track = trackStr;
       tempEl.innerHTML = trackStr + "<small> track</small>";
     }
-    var airStr = "Air " + fmt.tempC(w.ambientTempC);
+    var airStr = "Air " + fmt.temp(w.ambientTempC);
     if (cache.air !== airStr) { cache.air = airStr; ambientEl.textContent = airStr; }
 
     // Wetness / rain description. The named condition leads when the provider
@@ -167,7 +167,7 @@
       var tempC = typeof s.airTempC === "number" ? s.airTempC : s.trackTempC;
       var temp = document.createElement("div");
       temp.className = "weather__slot-temp";
-      temp.textContent = fmt.has(tempC) ? Math.round(tempC) + "°" : "—";
+      temp.textContent = fmt.temp(tempC);
 
       var rain = document.createElement("div");
       rain.className = "weather__slot-rain";

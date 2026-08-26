@@ -193,6 +193,8 @@ const fmt = {
   gearLabel: (g) => (g === 0 ? 'N' : g === -1 ? 'R' : typeof g === 'number' ? String(g) : '—'),
   speedValue: (k) => k,
   speedUnitLabel: () => 'kph',
+  tempValue: (c) => (typeof c === 'number' && c !== UNKNOWN ? c : null),
+  tempUnitLabel: () => '°C',
 };
 const wctx = { fmt, crit() {} };
 
@@ -257,8 +259,11 @@ console.log('\nthe kit reads the frame, and survives its absence');
   );
   check('the ARBs are read when the car publishes them', v.arbF.value === 5 && v.arbR.value === 2);
   // WeatherState calls it `ambientTempC`; `airTempC` is a FORECAST slot field.
-  // Reading the wrong one made every AIR box a permanent dash.
-  check('air temp comes off WeatherState.ambientTempC', v.airC === 24, v.airC);
+  // Reading the wrong one made every AIR box a permanent dash. The field is
+  // `airT` rather than `airC` since v0.91.0: the view model converts to the
+  // driver's unit, so nothing Celsius reaches the plates. In °C — the default,
+  // and what this fixture runs — the number is unchanged.
+  check('air temp comes off WeatherState.ambientTempC', v.airT === 24, v.airT);
   check('track condition is the sim\'s own wording', v.trackState === 'DRY', v.trackState);
   check('pedal channels arrive as whole percent', v.throttle === 62 && v.brakePct === 14, v.throttle + '/' + v.brakePct);
   check('lateral G is carried for the plates that print it', v.latG === 1.42, v.latG);

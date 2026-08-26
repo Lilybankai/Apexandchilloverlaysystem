@@ -59,19 +59,51 @@ function findNamed(from, name) {
   return null;
 }
 
-function findCli(dir) {
-  if (!dir || !fs.existsSync(dir)) return null;
-  return findNamed(dir, 'whisper-cli.exe') || findNamed(dir, 'main.exe');
+/**
+ * The engine and the model are looked up SEPARATELY, across one or more roots.
+ *
+ * They no longer travel together. From v0.91 the installer ships the whisper
+ * binaries — small, and signed, which is the whole antivirus argument — but not
+ * `ggml-base.en.bin`, which is 141 MB of unchanging model data that used to be
+ * re-downloaded in full with every single release. So a working install is
+ * routinely "engine from the resources dir, model from userData", and anything
+ * that resolved both from one directory would conclude that neither was there.
+ *
+ * `dirs` takes a single path or a list in priority order.
+ */
+function roots(dirs) {
+  return (Array.isArray(dirs) ? dirs : [dirs]).filter(Boolean);
 }
 
+function findCli(dirs) {
+  for (const dir of roots(dirs)) {
+    if (!fs.existsSync(dir)) continue;
+    const cli = findNamed(dir, 'whisper-cli.exe') || findNamed(dir, 'main.exe');
+    if (cli) return cli;
+  }
+  return null;
+}
+
+/** Where the model lives, or would be written, inside one specific root. */
 function modelPath(dir) {
   return path.join(dir, 'ggml-base.en.bin');
 }
 
-function installed(dir) {
-  const cli = findCli(dir);
-  const model = modelPath(dir);
-  return !!(cli && fs.existsSync(model) && fs.statSync(model).size > 1_000_000);
+/** The first root that actually holds the model, or null. */
+function findModel(dirs) {
+  for (const dir of roots(dirs)) {
+    const model = modelPath(dir);
+    try {
+      if (fs.statSync(model).size > 1_000_000) return model;
+    } catch {
+      /* not here — try the next root */
+    }
+  }
+  return null;
+}
+
+function installed(dirs) {
+  return !!(findCli(dirs) && findModel(dirs));
 }
 
 function resample(samples, fromRate, toRate) {
@@ -117,10 +149,10 @@ function trimForWhisper(radioFx, inPath, outPath) {
  * `execFile` instead. The sync `transcribe` below stays for the spike script,
  * which is a plain CLI and can block all it likes.
  */
-function transcribeAsync(dir, wav) {
-  const cli = findCli(dir);
-  const model = modelPath(dir);
-  if (!cli || !fs.existsSync(model)) return Promise.reject(new Error('whisper not installed'));
+function transcribeAsync(dirs, wav) {
+  const cli = findCli(dirs);
+  const model = findModel(dirs);
+  if (!cli || !model) return Promise.reject(new Error('whisper not installed'));
   const prefix = wav.replace(/\.wav$/i, '');
   const jsonPath = `${prefix}.json`;
   try {
@@ -183,10 +215,10 @@ function transcribeAsync(dir, wav) {
   });
 }
 
-function transcribe(dir, wav) {
-  const cli = findCli(dir);
-  const model = modelPath(dir);
-  if (!cli || !fs.existsSync(model)) throw new Error('whisper not installed');
+function transcribe(dirs, wav) {
+  const cli = findCli(dirs);
+  const model = findModel(dirs);
+  if (!cli || !model) throw new Error('whisper not installed');
   const prefix = wav.replace(/\.wav$/i, '');
   const jsonPath = `${prefix}.json`;
   try {
@@ -246,13 +278,19 @@ function transcribe(dir, wav) {
 }
 
 /**
- * Fetch engine zip + base.en. `fetchFn` is EngineerService.fetch bound, so the
- * panel gets the same progress bar as a voice download. `progressId` is the
- * status.progress.voiceId the panel keys off.
+ * Fetch whatever is missing into `dir`. `fetchFn` is EngineerService.fetch
+ * bound, so the panel gets the same progress bar as a voice download, and
+ * `progressId` is the status.progress.voiceId the panel keys off.
+ *
+ * `extraRoots` are read-only places the engine may ALREADY live — the packaged
+ * resources dir, in practice. Without them a bundled-engine install would pull
+ * the 8 MB zip again on every fresh machine, which is both a wasted download
+ * and the unsigned-exe-into-AppData behaviour the bundling exists to avoid.
  */
-async function download(dir, fetchFn, progressId) {
+async function download(dir, fetchFn, progressId, extraRoots) {
   fs.mkdirSync(dir, { recursive: true });
-  if (!findCli(dir)) {
+  const engineRoots = [...roots(extraRoots), dir];
+  if (!findCli(engineRoots)) {
     const zip = path.join(dir, 'whisper.zip');
     await fetchFn(WHISPER_ZIP, zip, ENGINE_MB, progressId);
     const staging = path.join(dir, '_extract');
@@ -275,9 +313,8 @@ async function download(dir, fetchFn, progressId) {
     fs.rmSync(zip, { force: true });
     if (!findCli(dir)) throw new Error('whisper-cli.exe missing from the zip');
   }
-  const dest = modelPath(dir);
-  if (!fs.existsSync(dest) || fs.statSync(dest).size < 1_000_000) {
-    await fetchFn(MODEL_URL, dest, MODEL_MB, progressId);
+  if (!findModel([...roots(extraRoots), dir])) {
+    await fetchFn(MODEL_URL, modelPath(dir), MODEL_MB, progressId);
   }
 }
 
@@ -285,6 +322,7 @@ module.exports = {
   MODEL_MB,
   installed,
   findCli,
+  findModel,
   download,
   trimForWhisper,
   transcribe,

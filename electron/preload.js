@@ -77,6 +77,10 @@ contextBridge.exposeInMainWorld('apex', {
   engineerAsk: () => ipcRenderer.invoke('engineer:ask'),
   /** One-time whisper.cpp + base.en download for free-form questions. */
   engineerDownloadStt: () => ipcRenderer.invoke('engineer:downloadStt'),
+  /** Delete one downloaded voice. Never the selected one, never a bundled one. */
+  engineerRemoveVoice: (voiceId) => ipcRenderer.invoke('engineer:removeVoice', voiceId),
+  /** Delete every downloaded voice except the one on the radio. */
+  engineerRemoveUnusedVoices: () => ipcRenderer.invoke('engineer:removeUnusedVoices'),
   /** Mark the last free-form reply useful or wrong. */
   engineerRate: (id, rating) => ipcRenderer.invoke('engineer:rate', id, rating),
   /** Status pushes: download progress, running state. Returns unsubscribe. */

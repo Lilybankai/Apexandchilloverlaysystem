@@ -290,6 +290,14 @@
   var speedUnit = "kph";
   var speedUnitListeners = [];
 
+  /**
+   * 'c' or 'f'. Same argument as the speed unit, one line up: the tyres widget,
+   * the Speedo designs and the weather panel all print temperatures, and one
+   * preference is the only way they can be made to agree.
+   */
+  var tempUnit = "c";
+  var tempUnitListeners = [];
+
   /*
    * Whether the MFD fades itself out when idle (widgets/mfd.js). A subscription
    * rather than an attribute on <html> because the widget has timers to start
@@ -310,6 +318,19 @@
     }
   }
 
+  function applyTempUnit(next) {
+    var unit = next === "f" ? "f" : next === "c" ? "c" : null;
+    if (!unit || unit === tempUnit) return;
+    tempUnit = unit;
+    for (var i = 0; i < tempUnitListeners.length; i++) {
+      try {
+        tempUnitListeners[i](tempUnit);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
   function applySpeedUnit(next) {
     var unit = next === "mph" ? "mph" : next === "kph" ? "kph" : null;
     if (!unit || unit === speedUnit) return;
@@ -323,18 +344,29 @@
     }
   }
 
-  // `?units=mph` pins one OBS source, like every other override here: a source
-  // built for an American broadcast should not flip because the driver prefers
-  // kph on their own screen.
+  // `?units=mph` and `?temp=f` pin one OBS source, like every other override
+  // here: a source built for an American broadcast should not flip because the
+  // driver prefers kph and Celsius on their own screen. The two pin separately
+  // — a British driver streaming to an American audience is a real combination.
   var unitPinned = false;
+  var tempPinned = false;
   (function () {
     try {
-      var raw = (new URLSearchParams(window.location.search).get("units") || "")
-        .trim()
-        .toLowerCase();
+      var q = new URLSearchParams(window.location.search);
+      var raw = (q.get("units") || "").trim().toLowerCase();
       if (raw === "mph" || raw === "kph") {
         speedUnit = raw;
         unitPinned = true;
+      }
+      // `?temp=f`, `?temp=fahrenheit` and `?temp=°f` all mean the same thing to
+      // whoever typed the URL, so they mean the same thing here.
+      var t = (q.get("temp") || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (t === "f" || t === "fahrenheit") {
+        tempUnit = "f";
+        tempPinned = true;
+      } else if (t === "c" || t === "celsius" || t === "centigrade") {
+        tempUnit = "c";
+        tempPinned = true;
       }
     } catch (e) {
       /* no URLSearchParams / no location — keep the default */
@@ -454,6 +486,14 @@
       speedUnitListeners.push(cb);
       cb(speedUnit);
     },
+    /** Current temperature unit, and a subscription to it changing. */
+    tempUnit: function () {
+      return tempUnit;
+    },
+    onTempUnit: function (cb) {
+      tempUnitListeners.push(cb);
+      cb(tempUnit);
+    },
     /** Whether the MFD auto-fades when idle, and a subscription to it changing. */
     onMfdFade: function (cb) {
       mfdFadeListeners.push(cb);
@@ -562,6 +602,7 @@
       applyModes(appearance.widgetModes);
       applyStandings(appearance.standings);
       if (!unitPinned) applySpeedUnit(appearance.speedUnit);
+      if (!tempPinned) applyTempUnit(appearance.tempUnit);
       applyMfdFade(appearance.mfdAutoFade);
     });
     return; // the app pushes changes — nothing to poll
@@ -587,6 +628,7 @@
         applyModes(cfg.widgetModes);
         applyStandings(cfg.standings);
         if (!unitPinned) applySpeedUnit(cfg.speedUnit);
+        if (!tempPinned) applyTempUnit(cfg.tempUnit);
         applyMfdFade(cfg.mfdAutoFade);
       })
       .catch(function () {

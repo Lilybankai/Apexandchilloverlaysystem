@@ -1519,9 +1519,19 @@
                   Neural voices, spoken through the radio channel. <strong>Sample</strong>
                   streams a short clip of the raw voice; a download is one-time
                   (63–121&nbsp;MB), stored on this PC, and works offline from then on.
+                  Downloads survive app updates, and any voice you are not using
+                  can be given back.
                 </p>
               </div>
               <div id="eng-voices" class="eng-voices"></div>
+              <!-- Only shown when there is something to reclaim; the panel
+                   hides it otherwise so an empty row never sits here. -->
+              <p id="eng-voice-reclaim" class="eng-reclaim" hidden>
+                <span id="eng-voice-reclaim-text"></span>
+                <button type="button" id="eng-voice-reclaim-btn" class="btn btn--ghost btn--sm">
+                  Free up space
+                </button>
+              </p>
             </section>
           </div>
         </div>
@@ -2442,6 +2452,21 @@
                   Applies to every speed the overlays show — both
                   <strong>Inputs</strong> panels and <strong>Motion</strong> —
                   live, with no restart.
+                </span>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Temperature units</span>
+                <select class="field__input field__input--wide" id="temp-unit">
+                  <option value="c">°C — the sim's own</option>
+                  <option value="f">°F</option>
+                </select>
+                <span class="field__hint">
+                  Applies to every temperature the overlays show — tyres, the
+                  Speedo dashes and <strong>Weather</strong> — live, with no
+                  restart. The tyre widget still judges its operating-window
+                  lamp against the sim's own optimum, so the colours mean the
+                  same thing either way.
                 </span>
               </label>
 

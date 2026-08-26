@@ -38,6 +38,7 @@ const billingService = require('./billing');
 const startup = require('./startup');
 const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
+const updateCache = require('./updateCache');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
 const chatLink = require('./chatLink');
@@ -343,6 +344,16 @@ function defaultSettings() {
      */
     speedUnit: 'kph',
     /*
+     * Temperature readouts: 'c' (the sim's own unit) or 'f'.
+     *
+     * Same reasoning as speedUnit, and the same scope — the tyres widget, the
+     * Speedo designs and the weather panel all print temperatures, and one
+     * preference is the only way they can be made to agree. It changes the
+     * PRINTING only: the operating-window lamp and the thermal ramp still judge
+     * in Celsius against the sim's own optimum.
+     */
+    tempUnit: 'c',
+    /*
      * How much of the field the standings tower shows.
      *
      * A whole grid is 20-30 rows, which is right for a broadcast and far too
@@ -636,6 +647,7 @@ function loadSettings() {
     widgetModes: normalizeWidgetModes(stored),
     widgetOpacity: normalizeWidgetOpacity(stored),
     speedUnit: stored.speedUnit === 'mph' ? 'mph' : defaults.speedUnit,
+    tempUnit: stored.tempUnit === 'f' ? 'f' : defaults.tempUnit,
     standings: normalizeStandings(stored),
     wheelBindings: normalizeWheelBindings(stored),
     launchOnStartup:
@@ -1409,6 +1421,7 @@ function applyAppearance(settings) {
     widgetOpacity: s.widgetOpacity || {},
     standings: s.standings || defaultSettings().standings,
     speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
+    tempUnit: s.tempUnit === 'f' ? 'f' : 'c',
   };
   try {
     requireServer().setAppearance(payload);
@@ -1449,7 +1462,8 @@ function applySettings(partial) {
     partial.widgetModes !== undefined ||
     partial.widgetOpacity !== undefined ||
     partial.standings !== undefined ||
-    partial.speedUnit !== undefined
+    partial.speedUnit !== undefined ||
+    partial.tempUnit !== undefined
   ) {
     applyAppearance(next);
   }
@@ -2349,6 +2363,9 @@ function registerIpc() {
       if (partial.speedUnit === 'kph' || partial.speedUnit === 'mph') {
         next.speedUnit = partial.speedUnit;
       }
+      if (partial.tempUnit === 'c' || partial.tempUnit === 'f') {
+        next.tempUnit = partial.tempUnit;
+      }
       if (partial.radarIconScale !== undefined) {
         next.radarIconScale = clamp(partial.radarIconScale, 30, 150, current.radarIconScale);
       }
@@ -2411,7 +2428,8 @@ function registerIpc() {
       JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity) ||
       JSON.stringify(next.widgetModes) !== JSON.stringify(current.widgetModes) ||
       JSON.stringify(next.standings) !== JSON.stringify(current.standings) ||
-      next.speedUnit !== current.speedUnit
+      next.speedUnit !== current.speedUnit ||
+      next.tempUnit !== current.tempUnit
     ) {
       applyAppearance(next);
     }
@@ -3552,6 +3570,20 @@ function registerIpc() {
       return { ok: false, error: err && err.message ? err.message : String(err) };
     }
   });
+  ipcMain.handle('engineer:removeVoice', (_evt, voiceId) => {
+    try {
+      return { ok: true, bytes: getEngineer().removeVoice(String(voiceId)) };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('engineer:removeUnusedVoices', () => {
+    try {
+      return { ok: true, ...getEngineer().removeUnusedVoices() };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
   ipcMain.handle('engineer:rate', (_evt, id, rating) => getEngineer().rate(String(id), String(rating)));
 
   /* ---- Team tab (pit-wall view) ---- */
@@ -4195,6 +4227,23 @@ function setupAutoUpdate() {
   }
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+
+  /*
+   * A log, and a 287 MB reclaim.
+   *
+   * The logger goes on FIRST, before any check can run, because the one line
+   * worth having — "Cannot download differentially, fallback to full download"
+   * — is emitted during the very first download and nowhere else. Without it
+   * there is no way to tell a 10.7 MB differential update from a 287.5 MB full
+   * one; both look identical from outside.
+   *
+   * Then the pending copy of the installer that just ran is dropped. See
+   * electron/updateCache.js for why that is safe and why `installer.exe` stays.
+   */
+  const updaterLog = updateCache.createLogger(app);
+  autoUpdater.logger = updaterLog;
+  updaterLog.info(`--- ${app.getName()} ${app.getVersion()} (${updateState.channel}) ---`);
+  updateCache.reclaimPending(app, updaterLog);
 
   autoUpdater.on('checking-for-update', () => {
     updateState.status = 'checking';

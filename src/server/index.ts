@@ -177,6 +177,18 @@ export interface Appearance {
    * would be right to think something was broken.
    */
   speedUnit: 'kph' | 'mph';
+  /**
+   * Unit for every temperature readout: `'c'` (the sim's own) or `'f'`.
+   *
+   * App-wide for the same reason as `speedUnit`: tyre temps appear on the tyres
+   * widget, on three of the Speedo designs and on the weather panel, and a
+   * driver reading 96 on one and 205 on the next would be right to think
+   * something was broken.
+   *
+   * Printing only. The tyre widget's operating-window lamp and thermal ramp go
+   * on judging in Celsius against the sim's own published optimum.
+   */
+  tempUnit: 'c' | 'f';
 }
 
 /** @see Appearance.standings */
@@ -249,6 +261,7 @@ const appearance: Appearance = {
     names: 'full',
   },
   speedUnit: 'kph',
+  tempUnit: 'c',
 };
 
 /** Current appearance (a deep-enough copy — callers must not mutate the state). */
@@ -313,6 +326,9 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   // reset the other four to whatever its own defaults happen to be.
   if (next?.speedUnit === 'kph' || next?.speedUnit === 'mph') {
     appearance.speedUnit = next.speedUnit;
+  }
+  if (next?.tempUnit === 'c' || next?.tempUnit === 'f') {
+    appearance.tempUnit = next.tempUnit;
   }
   if (next?.standings && typeof next.standings === 'object') {
     const v = next.standings as Partial<StandingsView>;

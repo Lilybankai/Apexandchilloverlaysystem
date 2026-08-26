@@ -197,7 +197,17 @@ async function afterPack(context) {
   execFileSync(process.execPath, [path.join(__dirname, 'scripts', 'stage-bundled.js'), '--check'], {
     stdio: 'inherit',
   });
-  for (const probe of ['piper/piper.exe', 'whisper/ggml-base.en.bin', 'sidecars/voice-player.ps1']) {
+  // Probes are BINARIES only. From v0.91.0 the models (a 60 MB voice, a 141 MB
+  // ggml file) are downloaded once into userData instead of riding every
+  // release — see scripts/stage-bundled.js. Probing for one of them here would
+  // now fail every build.
+  const probes = [
+    'piper/piper.exe',
+    'piper/espeak-ng-data/en_dict',
+    'whisper/bin/Release/whisper-cli.exe',
+    'sidecars/voice-player.ps1',
+  ];
+  for (const probe of probes) {
     if (!fs.existsSync(path.join(resources, probe))) {
       throw new Error(
         `bundled engineer assets missing from the package (${probe}) — ` +

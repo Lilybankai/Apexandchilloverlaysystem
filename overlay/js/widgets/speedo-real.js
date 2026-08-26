@@ -308,9 +308,6 @@
     g.font = "13px " + FM;
     g.fillText("T Y R E S", WELL_L.x + 26, WELL_L.y + 34);
     g.fillText("L A P S", WELL_R.x + 26, WELL_R.y + 34);
-    g.fillStyle = "#5f7c99";
-    g.textAlign = "right";
-    g.fillText("kPa · °C", WELL_L.x + WELL_L.w - 26, WELL_L.y + 34);
     g.restore();
   }
 
@@ -399,8 +396,17 @@
       g.textAlign = "right";
       g.fillStyle = "#9fd3a8";
       g.font = "600 17px " + FD;
-      g.fillText(c.t == null ? "—" : Math.round(c.t) + "°", tx + 102, ty + 33);
+      g.fillText(c.t == null ? "—" : c.t + "°", tx + 102, ty + 33);
     });
+    /* The tyre well's unit caption. It belongs with the other static LCD labels
+       in bake(), and used to live there — but the plate is baked once per resize
+       and the temperature unit can change at any moment, so a baked caption
+       would keep saying °C while the numbers under it read Fahrenheit. Drawn
+       here, at bake()'s own colour and alignment, it simply follows. */
+    g.textAlign = "right";
+    g.fillStyle = "#5f7c99";
+    g.font = "13px " + FM;
+    g.fillText("kPa · " + v.tempUnit, WELL_L.x + WELL_L.w - 26, WELL_L.y + 34);
     g.textAlign = "left";
     g.fillStyle = "#93a1ae";
     g.font = "13px " + FM;

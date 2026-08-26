@@ -398,7 +398,7 @@
 
   function tyreCell(fmt, cell, tyre) {
     if (!tyre) return;
-    set(cell.t, "tt-" + cell.key, fmt.has(tyre.tempC) ? Math.round(tyre.tempC) + "°" : "—");
+    set(cell.t, "tt-" + cell.key, fmt.temp(tyre.tempC));
     set(
       cell.p,
       "tp-" + cell.key,
@@ -499,7 +499,7 @@
     var laps = window.ApexOverlay.playerLapsCompleted(frame);
     ctx.crit(elLaps, laps >= 0 ? String(laps) : "—");
     var w = frame.weather;
-    set(elTrkTemp, "trk", w && fmt.has(w.trackTempC) ? Math.round(w.trackTempC) + "°" : "—");
+    set(elTrkTemp, "trk", w ? fmt.temp(w.trackTempC) : "—");
 
     /* --- pedal strips --- */
     var ped = p.pedals || {};

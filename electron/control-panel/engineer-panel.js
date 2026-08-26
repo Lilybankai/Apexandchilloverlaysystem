@@ -23,6 +23,9 @@
   const toggle = $('#eng-toggle');
   const statusEl = $('#eng-status');
   const voicesEl = $('#eng-voices');
+  const reclaimEl = $('#eng-voice-reclaim');
+  const reclaimText = $('#eng-voice-reclaim-text');
+  const reclaimBtn = $('#eng-voice-reclaim-btn');
   const grammarEl = $('#eng-grammar');
   const pttChip = $('#eng-ptt-chip');
   const pttBind = $('#eng-ptt-bind');
@@ -212,6 +215,27 @@
         use.addEventListener('click', () => void api.updateSettings({ engineerVoice: v.id }));
         actions.appendChild(use);
       }
+
+      // Only ever offered for a voice the app itself downloaded and is not
+      // currently speaking through — see removableVoices() in engineer.js. A
+      // bundled voice is part of the install and never carries this.
+      if (v.removable && api.engineerRemoveVoice) {
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn--ghost btn--sm';
+        rm.textContent = `Remove · ${v.sizeMb} MB`;
+        rm.title = 'Delete this download. The voice stays in the list and can be downloaded again.';
+        rm.addEventListener('click', async () => {
+          rm.disabled = true;
+          rm.textContent = 'Removing…';
+          const res = await api.engineerRemoveVoice(v.id);
+          if (res && res.ok === false) {
+            rm.textContent = 'Could not remove';
+          }
+          // Success re-renders via the status push.
+        });
+        actions.appendChild(rm);
+      }
     }
     row.appendChild(actions);
 
@@ -231,6 +255,18 @@
     }
 
     return row;
+  }
+
+
+  if (reclaimBtn) {
+    reclaimBtn.addEventListener('click', async () => {
+      reclaimBtn.disabled = true;
+      reclaimBtn.textContent = 'Freeing…';
+      const res = await api.engineerRemoveUnusedVoices();
+      reclaimBtn.textContent = 'Free up space';
+      // Success re-renders via the status push, which hides the row entirely.
+      if (res && res.ok === false) reclaimBtn.disabled = false;
+    });
   }
 
   /* ---- push-to-talk binding --------------------------------------------------- */
@@ -292,11 +328,37 @@
     statusEl.className = 'eng-status' + (tone ? ` eng-status--${tone}` : '');
 
     voicesEl.replaceChildren(...s.voices.map((v) => voiceRow(v, s)));
+    renderReclaim(s);
 
     renderStt(s);
     renderLastCall(s);
 
     if (!grammarEl.childElementCount && s.grammar) renderGrammar(s.grammar);
+  }
+
+  /**
+   * "3 voices you're not using · 189 MB — Free up space".
+   *
+   * Six voices at 63-121 MB each are there to be auditioned, and auditioning
+   * them is what the Sample and Hear buttons invite — so a curious driver ends
+   * up carrying several hundred megabytes of models they will never hear again
+   * and nothing ever mentions it. The row appears only when there is something
+   * to reclaim, and never offers the voice on the radio.
+   */
+  function renderReclaim(s) {
+    if (!reclaimEl) return;
+    const list = Array.isArray(s.removable) ? s.removable : [];
+    if (!list.length || !api.engineerRemoveUnusedVoices) {
+      reclaimEl.hidden = true;
+      return;
+    }
+    const bytes = list.reduce((sum, v) => sum + (v.bytes || 0), 0);
+    const mb = Math.round(bytes / 1048576);
+    reclaimText.textContent =
+      `${list.length} downloaded ${list.length === 1 ? 'voice' : 'voices'} ` +
+      `you're not using · ${mb} MB`;
+    reclaimBtn.disabled = !!s.busy;
+    reclaimEl.hidden = false;
   }
 
   function renderStt(s) {

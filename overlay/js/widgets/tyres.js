@@ -4,7 +4,7 @@
  * Renders `frame.player.tyres` (TyreSet). For the locally-driven car the sim
  * supplies two live per-corner temperatures from shared memory: the **inner-
  * liner** temp — the number the in-game HUD shows — and the **surface**
- * (contact-patch) temp. The inner-liner is the primary readout (°C); the surface
+ * (contact-patch) temp. The inner-liner is the primary readout; the surface
  * shows on the sub-line as `surf NN°`. When no temperature is available
  * (spectating, or the car isn't running on track) the corner falls back to
  * remaining tread % as the primary readout. The colour band always reflects
@@ -269,8 +269,14 @@
     if (ref.lampCache === lamp) return;
     ref.lampCache = lamp;
     ref.led.setAttribute("data-lamp", lamp);
+    // The window is judged in Celsius (see IN_WINDOW_C) but named in whatever
+    // the driver reads, so the tooltip cannot quote the constant directly: ±8 C
+    // is ±14 F, and printing "±8°" beside a Fahrenheit optimum would describe a
+    // window four times tighter than the lamp is actually using.
     ref.led.title = fmt.has(t.optimalTempC)
-      ? "Core vs optimal " + fmt.tempC1(t.optimalTempC) + " (±" + IN_WINDOW_C + "°)"
+      ? "Core vs optimal " +
+        fmt.temp1(t.optimalTempC) +
+        " (±" + Math.round(fmt.tempSpan(IN_WINDOW_C)) + "°)"
       : "No optimal temperature published for this car";
   }
 
@@ -288,7 +294,7 @@
     var bands = bandsOf(t, "surface", fmt.has) || bandsOf(t, "liner", fmt.has);
     for (var b = 0; b < 3; b++) {
       var seg = ref.segs[b];
-      var txt = bands ? Math.round(bands[b]) + "°" : "—";
+      var txt = bands ? fmt.temp(bands[b]) : "—";
       var col = bands ? rampColor(bands[b], t.optimalTempC, fmt.has) : "";
       if (seg.textContent !== txt) seg.textContent = txt;
       if (seg.style.background !== col) seg.style.background = col;
@@ -342,29 +348,29 @@
         // `coreC` is the carcass; `tempC` (the liner mean) stands in when the
         // sim publishes no separate carcass reading.
         var core = fmt.has(t.coreC) ? t.coreC : t.tempC;
-        primaryStr = fmt.has(core) ? fmt.tempC1(core) : wearStr;
-        subStr = hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : "CORE";
+        primaryStr = fmt.has(core) ? fmt.temp1(core) : wearStr;
+        subStr = hasSurf ? "surf " + fmt.temp1(t.surfaceTempC) : "CORE";
         view = "map";
       } else if (mode === "tread" && hasWear) {
         primaryStr = wearStr;
-        subStr = hasCore ? fmt.tempC1(t.tempC) : hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : "TREAD";
+        subStr = hasCore ? fmt.temp1(t.tempC) : hasSurf ? "surf " + fmt.temp1(t.surfaceTempC) : "TREAD";
         view = "tread";
       } else if (mode === "surface" && hasSurf) {
-        primaryStr = fmt.tempC1(t.surfaceTempC);
+        primaryStr = fmt.temp1(t.surfaceTempC);
         subStr = wearStr;
         view = "surface";
       } else if (mode === "temp" && hasCore) {
-        primaryStr = fmt.tempC1(t.tempC);
+        primaryStr = fmt.temp1(t.tempC);
         subStr = wearStr;
         view = "core";
       } else if (hasCore) {
         // 'auto' (the default): core temp → surface temp → tread %, with the
         // surface temp on the sub-line when core is primary.
-        primaryStr = fmt.tempC1(t.tempC);
-        subStr = hasSurf ? "surf " + fmt.tempC1(t.surfaceTempC) : wearStr;
+        primaryStr = fmt.temp1(t.tempC);
+        subStr = hasSurf ? "surf " + fmt.temp1(t.surfaceTempC) : wearStr;
         view = "core";
       } else if (hasSurf) {
-        primaryStr = fmt.tempC1(t.surfaceTempC);
+        primaryStr = fmt.temp1(t.surfaceTempC);
         subStr = wearStr;
         view = "surface";
       } else {

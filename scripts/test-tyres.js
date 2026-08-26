@@ -95,7 +95,11 @@ function collect(root, className) {
 /** The `fmt` helpers the widget takes from the shared runtime. */
 const fmt = {
   has: (v) => typeof v === 'number' && v > -1,
-  tempC1: (c) => (typeof c === 'number' && c > -1 ? c.toFixed(1) + '°' : '—'),
+  // Celsius, the default — these assertions are about the widget's LOGIC, not
+  // about the unit; scripts/test-tempunit.js owns the conversion.
+  temp: (c) => (typeof c === 'number' && c > -1 ? Math.round(c) + '°' : '—'),
+  temp1: (c) => (typeof c === 'number' && c > -1 ? c.toFixed(1) + '°' : '—'),
+  tempSpan: (d) => d,
 };
 
 /**

@@ -652,12 +652,23 @@ class EngineerService {
     return path.join(this.dir, `${id}.onnx`);
   }
 
-  /** Where whisper actually lives on this install: bundled beats downloaded. */
-  sttDir() {
-    if (this.bundledWhisperDir && stt.installed(this.bundledWhisperDir)) {
-      return this.bundledWhisperDir;
-    }
-    return this.whisperDir;
+  /**
+   * Where whisper lives, in priority order — bundled first, downloaded second.
+   *
+   * A LIST rather than one directory, because from v0.91 the two halves come
+   * from different places: the installer ships the binaries (small, signed, and
+   * the executable was always the thing antivirus objected to) while the 141 MB
+   * `ggml-base.en.bin` is downloaded once into userData instead of riding every
+   * release. engineerStt.js resolves the engine and the model independently
+   * across these roots, so "bundled engine + downloaded model" is a normal,
+   * working install rather than two half-installs that each look absent.
+   *
+   * Bundled stays first for the model too: an install that has not yet taken
+   * this update still has one in resources, and re-downloading it would be a
+   * pointless 141 MB.
+   */
+  sttRoots() {
+    return [this.bundledWhisperDir, this.whisperDir].filter(Boolean);
   }
 
   engineInstalled() {
@@ -694,6 +705,91 @@ class EngineerService {
     try {
       fs.writeFileSync(this.manifestPath(), JSON.stringify(m));
     } catch {}
+  }
+
+  /* ---- reclaiming space -------------------------------------------------- */
+
+  /**
+   * The voices this app may delete: downloaded, into ITS OWN directory, and not
+   * the one currently on the radio.
+   *
+   * Six voices are on offer at 63-121 MB each, and trying them is the whole
+   * point of the Sample and Hear buttons — so a driver who auditions the list
+   * ends up with 400 MB of models they will never hear again, and nothing ever
+   * tells them or clears them. This is what the panel's "Free up space" offers.
+   *
+   * Two things are deliberately never listed. A voice that resolves into the
+   * BUNDLED directory is part of the install, not our data — deleting it would
+   * damage the package and it would come back on the next update anyway. And
+   * the selected voice is never offered, even when another is downloading, so
+   * the button can never leave the engineer mute.
+   */
+  removableVoices() {
+    const settings = this.loadSettings();
+    const selected = settings.engineerVoice;
+    // No selected voice means there is no way to tell which one is in use, so
+    // nothing is removable. Failing closed here costs a driver some disk;
+    // failing open costs them their engineer mid-race.
+    if (!selected) return [];
+    const out = [];
+    for (const v of VOICES) {
+      if (v.id === selected || !this.voiceInstalled(v.id)) continue;
+      const model = path.join(this.dir, `${v.id}.onnx`);
+      // modelPath() resolves bundled-first, so compare against the writable
+      // path directly: a voice that is only bundled has no file here.
+      if (!fs.existsSync(model)) continue;
+      let bytes = 0;
+      for (const f of [model, `${model}.json`]) {
+        try {
+          bytes += fs.statSync(f).size;
+        } catch {
+          /* the .json is ~1 KB and may be absent — the model is the number */
+        }
+      }
+      out.push({ id: v.id, label: v.label, bytes });
+    }
+    return out;
+  }
+
+  /**
+   * Delete one downloaded voice. Returns the bytes freed.
+   *
+   * Refuses the selected voice and refuses anything outside `this.dir`, rather
+   * than trusting the caller: this is a delete driven by an id that arrives
+   * over IPC, and the two things it must never do are silence the engineer and
+   * reach into the installed package.
+   */
+  removeVoice(id) {
+    const target = this.removableVoices().find((v) => v.id === id);
+    if (!target) throw new Error('that voice is not one this app can remove');
+    const model = path.join(this.dir, `${id}.onnx`);
+    fs.rmSync(model, { force: true });
+    fs.rmSync(`${model}.json`, { force: true });
+    const m = this.readManifest();
+    if (m.voices) delete m.voices[id];
+    try {
+      fs.writeFileSync(this.manifestPath(), JSON.stringify(m));
+    } catch {
+      /* the manifest is a nicety; the delete already happened */
+    }
+    this.pushStatus();
+    return target.bytes;
+  }
+
+  /** Every removable voice at once. Returns `{ removed, bytes }`. */
+  removeUnusedVoices() {
+    let bytes = 0;
+    let removed = 0;
+    for (const v of this.removableVoices()) {
+      try {
+        bytes += this.removeVoice(v.id);
+        removed++;
+      } catch {
+        // One locked file must not abandon the rest — piper holds the SELECTED
+        // voice open while it runs, and that one is not in this list anyway.
+      }
+    }
+    return { removed, bytes };
   }
 
   /** True when something that finished downloading is no longer on disk. */
@@ -751,6 +847,7 @@ class EngineerService {
   status() {
     const settings = this.loadSettings();
     const selected = settings.engineerVoice;
+    const removable = this.removableVoices();
     return {
       enabled: !!settings.engineerEnabled,
       readouts: this.readoutsPreset(),
@@ -763,16 +860,20 @@ class EngineerService {
       busy: this.busy,
       lastError: this.lastError,
       micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
-      sttInstalled: stt.installed(this.sttDir()),
+      sttInstalled: stt.installed(this.sttRoots()),
       freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
       lastCall: this.lastCall,
       budget: this.budget,
+      // Computed once and read twice below: removableVoices() stats the disk
+      // per voice, and status() is pushed on every download tick.
+      removable,
       voices: VOICES.map((v) => ({
         ...v,
         sampleUrl: sampleUrl(v.id),
         installed: this.voiceInstalled(v.id),
         selected: v.id === selected,
+        removable: removable.some((r) => r.id === v.id),
       })),
       grammar: GRAMMAR,
     };
@@ -838,7 +939,8 @@ class EngineerService {
     this.lastError = null;
     this.pushStatus();
     try {
-      await stt.download(this.whisperDir, this.fetch.bind(this), 'stt');
+      // The bundled binaries count: only what is genuinely missing is fetched.
+      await stt.download(this.whisperDir, this.fetch.bind(this), 'stt', this.bundledWhisperDir);
     } catch (err) {
       this.lastError = `Download failed: ${err.message}`;
       throw err;
@@ -1280,7 +1382,7 @@ class EngineerService {
   async askTier2(wav, dictationText) {
     let question = '';
     let sttMs = null;
-    const whisperAt = this.sttDir();
+    const whisperAt = this.sttRoots();
     if (wav && stt.installed(whisperAt)) {
       try {
         const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);

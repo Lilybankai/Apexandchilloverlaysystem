@@ -129,6 +129,16 @@ const PANEL_CONTRACT = {
   // leaves the overlays showing kph to someone who set mph, which reads as the
   // conversion being broken rather than the setting being unwired.
   'speed-unit': 'select',
+  'temp-unit': 'select',
+
+  // Reclaiming voice downloads (v0.91.0). Six voices at 63-121 MB each are
+  // there to be auditioned, so a curious driver ends up carrying several
+  // hundred megabytes they will never hear again. Contracted because an
+  // unwired button here leaves that space claimed with no other way to get it
+  // back, and nothing about the panel would look wrong.
+  'eng-voice-reclaim': 'p',
+  'eng-voice-reclaim-text': 'span',
+  'eng-voice-reclaim-btn': 'button',
 
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop
@@ -818,6 +828,9 @@ verifyPage({
     // data for exactly this reason: a renamed control fails here rather than
     // silently un-anchoring a step in front of a new driver.
     'tour.js',
+    // The Engineer tab. Same split as Fuel and Team — engineer-panel.js is the
+    // only one of the engineer files that touches the DOM.
+    'engineer-panel.js',
   ],
   contract: PANEL_CONTRACT,
 });

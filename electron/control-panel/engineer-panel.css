@@ -171,6 +171,23 @@
   color: var(--text-2);
   margin: 0;
 }
+/* "3 downloaded voices you're not using · 189 MB — Free up space". Sits under
+   the list, hidden by the panel whenever there is nothing to reclaim, so this
+   never renders as an empty row. */
+.eng-reclaim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 .eng-voice__actions {
   grid-column: 2;
   grid-row: 1 / span 2;

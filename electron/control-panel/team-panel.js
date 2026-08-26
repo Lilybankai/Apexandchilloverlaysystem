@@ -116,6 +116,20 @@
   const known = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
   const dash = '—';
 
+  /**
+   * The driver's temperature unit, from Settings ▸ Appearance.
+   *
+   * The pit wall reads the same tyres the overlay does, so it has to print them
+   * in the same unit — a teammate's front-left at 205 on the visor and 96 on
+   * this page is the disagreement the app-wide setting exists to prevent. Only
+   * the printing converts: `inWindow` below still judges in Celsius against the
+   * sim's own optimum, as the tyre widget does.
+   */
+  let tempUnit = 'c';
+  const degrees = (c) => (known(c) ? `${Math.round(tempUnit === 'f' ? c * 1.8 + 32 : c)}°` : dash);
+  /** The same with the unit letter on it — for a figure that stands alone. */
+  const degreesU = (c) => (known(c) ? `${degrees(c)}${tempUnit === 'f' ? 'F' : 'C'}` : dash);
+
   function fmtLap(sec) {
     if (!known(sec) || sec <= 0) return dash;
     const m = Math.floor(sec / 60);
@@ -461,8 +475,8 @@
             <span class="team-tyre__kpa">${known(t.pressureKpa) ? `<b>${t.pressureKpa.toFixed(0)}</b><i>kPa</i>` : dash}</span>
             ${bandBars(t)}
             <span class="team-tyre__temps">
-              <b>${known(t.tempC) ? `${Math.round(t.tempC)}°` : dash}</b>
-              <i>${known(t.brakeTempC) ? `Brake ${Math.round(t.brakeTempC)}°C` : ''}</i>
+              <b>${degrees(t.tempC)}</b>
+              <i>${known(t.brakeTempC) ? `Brake ${degreesU(t.brakeTempC)}` : ''}</i>
             </span>
           </div>
           ${inWindow != null ? `<div class="team-tyre__row"><span class="team-tyre__win" data-in="${inWindow}">${inWindow ? 'in window' : 'out of window'}</span></div>` : ''}
@@ -516,8 +530,8 @@
     const nowBits = [
       w.trackCondition ? `<b>${esc(w.trackCondition)}</b>` : null,
       w.trackTrend && w.trackTrend !== 'steady' ? esc(w.trackTrend) : null,
-      known(w.trackTempC) ? `track ${Math.round(w.trackTempC)}°` : null,
-      known(w.ambientTempC) ? `air ${Math.round(w.ambientTempC)}°` : null,
+      known(w.trackTempC) ? `track ${degrees(w.trackTempC)}` : null,
+      known(w.ambientTempC) ? `air ${degrees(w.ambientTempC)}` : null,
       known(w.rainIntensity) && w.rainIntensity > 0 ? `rain ${Math.round(w.rainIntensity * 100)}%` : null,
       known(w.trackWetness) && w.trackWetness > 0.005 ? `wetness ${Math.round(w.trackWetness * 100)}%` : null,
       known(w.trackSpread) && w.trackSpread > 0.15 ? 'uneven surface' : null,
@@ -899,6 +913,22 @@
   }
 
   // ── Wiring ──────────────────────────────────────────────────────────────
+  // Temperature unit. The memo below caches markup, so a unit change has to
+  // clear it or the cards would keep whichever unit they were last built with
+  // until a number underneath them happened to move.
+  const applyTempUnit = (settings) => {
+    const next = settings && settings.tempUnit === 'f' ? 'f' : 'c';
+    if (next === tempUnit) return;
+    tempUnit = next;
+    lastHtml.clear();
+    if (visible) renderAll();
+  };
+  window.apex
+    .getState()
+    .then((state) => applyTempUnit(state && state.settings))
+    .catch(() => { /* defaults stand */ });
+  window.apex.onSettings(applyTempUnit);
+
   if (els.safety) {
     els.safety.value = prefs.safetyLaps;
     els.safety.addEventListener('change', () => {

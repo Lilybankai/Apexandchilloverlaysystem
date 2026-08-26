@@ -1,16 +1,21 @@
 /**
  * scripts/test-bundledassets.js — the bundled engineer binaries (v0.79.0).
  * -----------------------------------------------------------------------------
- * The installer ships Piper + the default voice + whisper inside the package
+ * The installer ships the Piper and whisper BINARIES inside the package
  * (signed at build time) so antivirus never watches the app download and run
- * an unknown exe — the Norton-quarantine failure. This suite pins the two
- * halves that make that true:
+ * an unknown exe — the Norton-quarantine failure. This suite pins the halves
+ * that make that true:
  *
  *   1. the electron-builder config actually maps the staged dirs in and runs
  *      the afterPack verify/sign hook — a missing entry here ships the old
- *      download-at-runtime behaviour without a single test failing, and
+ *      download-at-runtime behaviour without a single test failing,
  *   2. EngineerService resolves bundled paths first, falls back to the
- *      userData downloads, and never points a DOWNLOAD at the resources dir.
+ *      userData downloads, and never points a DOWNLOAD at the resources dir,
+ *   3. the v0.91.0 split holds: MODEL data (a 60 MB voice, a 141 MB ggml file,
+ *      ~110 espeak dictionaries) is downloaded once and never shipped, while a
+ *      bundled engine plus a downloaded model still reads as a working
+ *      install. Getting this wrong puts 200 MB back into every release, or
+ *      leaves the engineer reporting itself uninstalled while it works.
  */
 
 'use strict';
@@ -20,6 +25,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { EngineerService } = require('../electron/engineer');
+const stt = require('../electron/engineerStt');
 const builderConfig = require('../electron-builder');
 
 let pass = 0;
@@ -92,7 +98,7 @@ let s = svc();
 check('no bundle → engine path is the download dir', s.enginePath() === path.join(userPiper, 'piper.exe'));
 check('no bundle → engine not installed', !s.engineInstalled());
 check('no bundle → voice path is the download dir', s.modelPath(VOICE) === path.join(userPiper, `${VOICE}.onnx`));
-check('no bundle → whisper dir is the download dir', s.sttDir() === userWhisper);
+check('no bundle → whisper roots end at the download dir', s.sttRoots().slice(-1)[0] === userWhisper);
 
 // Stage the bundle the way the installer lays it down.
 fs.writeFileSync(path.join(bundledPiper, 'piper.exe'), 'exe');
@@ -118,12 +124,107 @@ check(
   s.modelPath(VOICE) === path.join(bundledPiper, `${VOICE}.onnx`),
 );
 
-// Whisper: only a COMPLETE bundled install (cli + real-sized model) wins.
-fs.writeFileSync(path.join(bundledWhisper, 'whisper-cli.exe'), 'exe');
-check('bundled whisper without a model does not win', s.sttDir() === userWhisper);
-fs.writeFileSync(path.join(bundledWhisper, 'ggml-base.en.bin'), Buffer.alloc(1_100_000));
-check('complete bundled whisper wins', s.sttDir() === bundledWhisper);
+// Whisper: the engine and the model are found INDEPENDENTLY across the roots.
+// This is the v0.91.0 split — the installer ships the binaries, the 141 MB
+// model is downloaded into userData — and the state that has to work is the one
+// that used to look like two half-installs.
+check('nothing anywhere → not installed', !stt.installed(s.sttRoots()));
+
+fs.mkdirSync(path.join(bundledWhisper, 'bin', 'Release'), { recursive: true });
+fs.writeFileSync(path.join(bundledWhisper, 'bin', 'Release', 'whisper-cli.exe'), 'exe');
+check('the bundled engine is found', !!stt.findCli(s.sttRoots()));
+check(
+  'engine alone is not an install',
+  !stt.installed(s.sttRoots()),
+  'a missing model must not report ready — the ask would fail mid-race',
+);
+
+fs.mkdirSync(userWhisper, { recursive: true });
+fs.writeFileSync(path.join(userWhisper, 'ggml-base.en.bin'), Buffer.alloc(1_100_000));
+check('bundled engine + downloaded model IS an install', stt.installed(s.sttRoots()));
+check(
+  'the model resolves to userData',
+  stt.findModel(s.sttRoots()) === path.join(userWhisper, 'ggml-base.en.bin'),
+);
 check('status reports advanced questions ready', s.status().sttInstalled === true);
+
+// An install that predates this change still has the model in resources. It has
+// to be used where it is, not downloaded again for 141 MB of nothing.
+fs.writeFileSync(path.join(bundledWhisper, 'ggml-base.en.bin'), Buffer.alloc(1_100_000));
+check(
+  "an older install's bundled model beats re-downloading",
+  stt.findModel(s.sttRoots()) === path.join(bundledWhisper, 'ggml-base.en.bin'),
+);
+// A truncated model is not a model — the old size guard has to survive the move.
+fs.writeFileSync(path.join(bundledWhisper, 'ggml-base.en.bin'), Buffer.alloc(1000));
+fs.rmSync(path.join(userWhisper, 'ggml-base.en.bin'), { force: true });
+check('a truncated model does not count', !stt.installed(s.sttRoots()));
+
+/* -------------------------------------------------------------------------- */
+console.log('\n3) reclaiming voice downloads (v0.91.0)');
+
+// Six voices at 63-121 MB each are there to be auditioned, so a curious driver
+// ends up carrying several hundred megabytes they will never hear again. What
+// is asserted here is what the button must NEVER do: silence the engineer, or
+// reach into the installed package.
+const rs = svc();
+check('the selected voice is never removable', !rs.removableVoices().some((v) => v.id === VOICE));
+check('an undownloaded voice is not offered', !rs.removableVoices().some((v) => v.id === OTHER));
+
+fs.writeFileSync(path.join(userPiper, OTHER + '.onnx'), Buffer.alloc(2048));
+fs.writeFileSync(path.join(userPiper, OTHER + '.onnx.json'), '{}');
+check('once downloaded, it is offered', rs.removableVoices().some((v) => v.id === OTHER));
+check('and its size is reported', rs.removableVoices().find((v) => v.id === OTHER).bytes > 2000);
+
+check(
+  'removing the selected voice is refused',
+  (() => {
+    try {
+      rs.removeVoice(VOICE);
+      return false;
+    } catch {
+      return true;
+    }
+  })(),
+);
+check('the bundled voice file is untouched', fs.existsSync(path.join(bundledPiper, VOICE + '.onnx')));
+
+rs.removeVoice(OTHER);
+check('removing deletes the model', !fs.existsSync(path.join(userPiper, OTHER + '.onnx')));
+check('and its sidecar json', !fs.existsSync(path.join(userPiper, OTHER + '.onnx.json')));
+check('nothing is left to reclaim', rs.removableVoices().length === 0);
+check('the voice can be downloaded again', !rs.voiceInstalled(OTHER));
+
+// No selected voice at all: fail CLOSED. Offering everything here would let one
+// click leave the engineer with nothing to speak through.
+const blind = new EngineerService({
+  dir: userPiper,
+  whisperDir: userWhisper,
+  bundledDir: bundledPiper,
+  bundledWhisperDir: bundledWhisper,
+  loadSettings: () => ({ engineerEnabled: false }),
+  onStatus: () => {},
+});
+fs.writeFileSync(path.join(userPiper, OTHER + '.onnx'), Buffer.alloc(2048));
+fs.writeFileSync(path.join(userPiper, OTHER + '.onnx.json'), '{}');
+check('no selected voice → nothing is removable', blind.removableVoices().length === 0);
+
+/* -------------------------------------------------------------------------- */
+console.log('\n4) the staging rules keep model data out of the installer');
+
+// Each of these silently adds 60-141 MB to every future release: the build
+// succeeds, the app works, and only the download size says anything is wrong.
+const stageSrc = fs.readFileSync(path.join(__dirname, 'stage-bundled.js'), 'utf8');
+check('staging refuses .onnx model data', stageSrc.includes('is model data and is downloaded, not shipped'));
+check('staging no longer copies the ggml model', !/cpSync\([^)]*ggml-base\.en\.bin/.test(stageSrc));
+check('staging keeps only en_dict', stageSrc.includes("KEPT_DICT = 'en_dict'"));
+check('staging drops the Arabic diacritisation model', stageSrc.includes('libtashkeel_model.ort'));
+
+// afterPack must probe BINARIES. A probe for a model would fail every build.
+const builderSrc = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.js'), 'utf8');
+check("afterPack no longer probes for the ggml model", !builderSrc.includes("'whisper/ggml-base.en.bin'"));
+check('afterPack probes the whisper binary instead', builderSrc.includes('whisper/bin/Release/whisper-cli.exe'));
+check('afterPack probes the English dictionary', builderSrc.includes('piper/espeak-ng-data/en_dict'));
 
 fs.rmSync(root, { recursive: true, force: true });
 
