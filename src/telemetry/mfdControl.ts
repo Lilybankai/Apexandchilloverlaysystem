@@ -28,6 +28,7 @@
  */
 
 import http from 'node:http';
+import { aidsVetoedForClass } from './aidAvailability';
 import { GARAGE_WRITE_KEY } from './setupState';
 import type { AidSettings, AidStep } from './lmuLocalCar';
 import {
@@ -135,13 +136,19 @@ export function projectPitMenu(raw: RawPitRow[] | null | undefined): MfdPitRow[]
  * @param garageRaw - Raw garage data, for the brake-bias setup fallback.
  * @param liveRearBias - Live rear brake-bias fraction (0..1) from shared memory.
  * @param liveAids - The aid maps from the player's telemetry record.
+ * @param carClass - The player's car class, raw or canonical — see the veto note
+ *   on `row()` below. Omitted (spectating, class unknown) vetoes nothing.
  */
 export function projectAids(
   garageRaw: Record<string, RawGarageVal> | null | undefined,
   liveRearBias?: number,
   liveAids?: AidSettings | null,
+  carClass?: string,
 ): MfdAid[] {
   const aids: MfdAid[] = [];
+  // What this CLASS cannot adjust from the cockpit, whatever the bytes say —
+  // see `aidAvailability` for the proven lie this closes (ARB rows on a GT3).
+  const veto = aidsVetoedForClass(carClass);
 
   // Live value from shared memory wins — the whole point of the section.
   if (typeof liveRearBias === 'number' && liveRearBias > 0 && liveRearBias < 1) {
@@ -252,6 +259,11 @@ export function projectAids(
       // No step at all is the same statement as max 0 — this source does not
       // carry the control (an aids block from before the Hypercar trio, say).
       if (!step || step.max <= 0) return;
+      // The class veto second: `max > 0` is a claim the bytes have been caught
+      // making falsely (a GT3's ARB bytes mirror its garage SETUP), so a
+      // control the class does not have in the cockpit is dropped even when
+      // the car appears to publish it.
+      if (veto.has(key)) return;
       // The sim's own words first, then a ladder derived from them, then the
       // honest step. Never a label belonging to a step the driver has left.
       const named =
@@ -269,13 +281,26 @@ export function projectAids(
         text: named ?? `${step.value}/${step.max}`,
       });
     };
+    // No garage key for the main map on purpose: its garage label is the bare
+    // step ("5"), which would cost the "5/11" headroom and buy nothing.
     row('tc', 'Traction Control', liveAids.tc);
-    row('tcSlip', 'TC Slip', liveAids.tcSlip);
-    row('tcCut', 'TC Power Cut', liveAids.tcCut);
+    /*
+     * The sub-maps carry their garage keys for one word above all: **Linked**.
+     * LMU lets a car's slip and power-cut maps follow the main TC map instead
+     * of holding their own value, and while linked their live bytes MIRROR it —
+     * so both rows stepped in perfect unison whenever TC moved, showing numbers
+     * that looked like two independent settings being adjusted simultaneously
+     * (reported exactly so from a live car). The garage's own label for that
+     * state is "Linked", and with the key wired the row can now say it.
+     */
+    row('tcSlip', 'TC Slip', liveAids.tcSlip, 'VM_TRACTIONCONTROLSLIPANGLEMAP');
+    row('tcCut', 'TC Power Cut', liveAids.tcCut, 'VM_TRACTIONCONTROLPOWERCUTMAP');
     row('abs', 'ABS', liveAids.abs);
     row('motorMap', 'Motor Map', liveAids.motorMap, 'VM_ELECTRIC_MOTOR_MAP');
-    // The Hypercar trio. Each is skipped by the `max <= 0` guard on a car that
-    // does not offer it, so a GT3 simply gets no such rows.
+    // The prototype trio. The `max <= 0` guard drops each on a car that does
+    // not publish it, and the class veto drops them on the GT classes even
+    // when the bytes ARE published — a GT3's ARB bytes mirror its garage
+    // setup, which is how two un-steppable ARB rows got onto a GT3's MFD.
     row('brakeMigration', 'Brake Migration', liveAids.brakeMigration, 'VM_BRAKE_MIGRATION', migrationLabel);
     row('frontARB', 'Front ARB', liveAids.frontARB, 'VM_FRONT_ANTISWAY');
     row('rearARB', 'Rear ARB', liveAids.rearARB, 'VM_REAR_ANTISWAY');
@@ -297,7 +322,7 @@ export function projectAids(
    * right is far more use to a Hypercar driver than no regen row at all, and
    * because the label is the sim's own ("200kW"), not a number we derived.
    */
-  const regen = garageRaw ? garageRaw['VM_REGEN_LEVEL'] : undefined;
+  const regen = garageRaw && !veto.has('regen') ? garageRaw['VM_REGEN_LEVEL'] : undefined;
   if (
     regen &&
     typeof regen.value === 'number' &&
@@ -598,11 +623,12 @@ export function buildMfdState(
   garageRaw: Record<string, RawGarageVal> | null | undefined,
   liveRearBias?: number,
   liveAids?: AidSettings | null,
+  carClass?: string,
 ): MfdState {
   const tyres = projectTyreControl(pitRaw);
   return {
     pit: projectPitMenu(pitRaw),
-    aids: projectAids(garageRaw, liveRearBias, liveAids),
+    aids: projectAids(garageRaw, liveRearBias, liveAids, carClass),
     ...(tyres ? { tyres } : {}),
   };
 }

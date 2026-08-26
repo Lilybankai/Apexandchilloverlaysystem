@@ -1722,8 +1722,14 @@ export class LmuRestProvider implements TelemetryProvider {
       finish,
     );
     // The driving aids as the car holds them, from shared memory (the driven car
-    // only — every other record publishes zeros there).
-    const mfd = this.buildMfd(local ? local.rearBrakeBias : undefined, local?.aidSettings);
+    // only — every other record publishes zeros there). The class rides along so
+    // the projection can veto controls this class has no cockpit adjustment for,
+    // whatever the aid bytes claim — see telemetry/aidAvailability.
+    const mfd = this.buildMfd(
+      local ? local.rearBrakeBias : undefined,
+      local?.aidSettings,
+      playerCar?.carClass,
+    );
     // One whole-field shared-memory sweep per poll, shared by the radar and the
     // track map. Both want every car's world position; reading the buffer twice
     // would double the cost of the most expensive read in the frame.
@@ -1764,10 +1770,14 @@ export class LmuRestProvider implements TelemetryProvider {
    * staleness window as tyre wear / damage so the widget never drives the MFD
    * from a menu snapshot left over from a previous session.
    */
-  private buildMfd(liveRearBias?: number, liveAids?: AidSettings | null): MfdState | undefined {
+  private buildMfd(
+    liveRearBias?: number,
+    liveAids?: AidSettings | null,
+    carClass?: string,
+  ): MfdState | undefined {
     if (Date.now() - this.lastMfdOkAt >= GARAGE_STALE_AFTER_MS) return undefined;
     if (!this.pitMenuRaw && !this.garageDataRaw) return undefined;
-    return buildMfdState(this.pitMenuRaw, this.garageDataRaw, liveRearBias, liveAids);
+    return buildMfdState(this.pitMenuRaw, this.garageDataRaw, liveRearBias, liveAids, carClass);
   }
 
   /**

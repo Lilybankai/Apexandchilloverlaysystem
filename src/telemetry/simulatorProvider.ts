@@ -883,6 +883,11 @@ export class SimulatorProvider implements TelemetryProvider {
    * mid-stint, and it is the only way the change glow on a discrete setting is
    * reachable without a wheel plugged in; the cycle is long enough (45 s) that
    * it reads as someone adjusting rather than as a value that flickers.
+   *
+   * The list is deliberately NOT filtered by the demo player's class (an LMP2,
+   * which the live path would veto slip, ABS and the prototype rows for — see
+   * `telemetry/aidAvailability`). Demo mode's whole job here is to make every
+   * row and chip visible without a sim; class fidelity is the live path's.
    */
   private buildAids(nowMs: number): MfdAid[] {
     const step = (key: string, label: string, value: number, maxValue: number): MfdAid => ({

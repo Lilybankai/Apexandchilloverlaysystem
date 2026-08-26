@@ -4,6 +4,45 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.10 — 2026-08-26
+
+### Added
+
+- **The race engineer coaches you toward the reference pace.** In practice he
+  now reads your best lap against the same Ohne Speed band table the pace
+  score uses and tells you where you stand and what the next band costs —
+  “that is Midpack pace, eight tenths to Competitive” — with a reminder
+  frequency you can set (or silence) in the engineer settings. Ask him for
+  “target pace” any time and he answers with the named bands for this car
+  and track.
+
+### Fixed
+
+- **The MFD offered controls your car's class does not have.** A GT3 showed
+  Front ARB and Rear ARB rows — anti-roll bars are a setup-screen decision on a
+  GT car, not an in-cockpit adjustment — and an LMP2 showed a TC Slip row it
+  cannot step. The aid values are read live off the car, and the car publishes
+  numbers for some controls it does not actually let you adjust (a GT3's ARB
+  bytes mirror its garage setup), so the reading alone could not tell a control
+  from a readout. The MFD now also knows what each **class** has in the
+  cockpit: GT cars (GT3/GT4/GTE) never show anti-roll bars, brake migration or
+  regen; LMP2 never shows TC Slip; a Hypercar keeps the lot. The cursor's ▲▼
+  follow suit automatically, since they walk the same rows. Anything a class
+  lacks also stops appearing on that class's speedo dashboards as a live
+  number — the box stays with a "—" so the layout holds, which is the same
+  treatment a Hypercar-only readout has always had on a GT3 plate, and the same
+  one a GT3-only readout (ABS) will get on the Hypercar dashboards to come.
+- **TC Slip and TC Power Cut appeared to move together.** LMU can *link* a
+  car's slip and power-cut maps to the main TC map instead of giving them a
+  value of their own, and while linked their live readings mirror it — so
+  stepping TC marched both sub-rows along in unison, looking like two
+  independent settings being adjusted simultaneously. The rows now use the
+  sim's own word for that state: a linked map reads **Linked** rather than a
+  mirrored number, and shows a number again the moment it holds a value of its
+  own. (The keystrokes were never entangled — each sub-map has its own key,
+  pressed separately; it was the linked *display* that made one press look
+  like two changes.)
+
 ## 0.91.0-beta.9 — 2026-08-25
 
 ### Added

@@ -107,7 +107,7 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
   // moved the cut byte.
   {
     id: 'tcSlip',
-    vmKey: '',
+    vmKey: 'VM_TRACTIONCONTROLSLIPANGLEMAP',
     aliases: ['TC_SLIP'],
     label: 'TC Slip',
     decFunction: 'Traction Control Slip Angle Down',
@@ -115,7 +115,7 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
   },
   {
     id: 'tcCut',
-    vmKey: '',
+    vmKey: 'VM_TRACTIONCONTROLPOWERCUTMAP',
     aliases: ['TC_CUT', 'TC_POWER'],
     label: 'TC Power Cut',
     decFunction: 'Traction Control 2 Down',
@@ -139,9 +139,10 @@ const AID_FUNCTIONS: ReadonlyArray<Omit<AidBind, 'inc' | 'dec'>> = [
   },
   /*
    * The prototype-class controls — brake migration, both anti-roll bars and
-   * regeneration. A GT3 offers none of them and its rows never appear (the
-   * `max <= 0` guard in `projectAids`), so in practice these are the Hypercar,
-   * LMP2 and LMP3 rows.
+   * regeneration. A GT car offers none of them and its rows never appear —
+   * NOT because of the `max <= 0` guard in `projectAids`, which a GT3's ARB
+   * bytes get past by mirroring the garage setup, but because the class veto
+   * in `telemetry/aidAvailability` drops them by name.
    *
    * They were READ live for several releases and could not be changed: the MFD
    * showed four numbers with no ± beside them, because an aid with no entry in

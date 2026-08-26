@@ -450,6 +450,142 @@ console.log('\n5c) The cursor stops only on rows that are on screen');
     selectAidRows(allBound, []).length === 6);
 }
 
+console.log('\n5f) The class vetoes controls its cars cannot reach');
+
+{
+  /*
+   * Reported from a live GT3: both anti-roll-bar rows on the MFD, with ± that
+   * step a key the car ignores. The aid bytes were not lying about existing —
+   * LMU mirrors the garage SETUP values into them — they were lying about
+   * being a cockpit control, and nothing in the data stream can tell those
+   * apart. The car's CLASS can; see telemetry/aidAvailability for the matrix
+   * and the provenance of every cell.
+   */
+  const gtLive = {
+    tc: { value: 7, max: 11 },
+    tcSlip: { value: 7, max: 11 },
+    tcCut: { value: 7, max: 11 },
+    abs: { value: 9, max: 9 },
+    motorMap: { value: 1, max: 1 },
+    // The lie, verbatim: a GT3 publishing its garage ARB setup as if it were
+    // an in-car adjustment (garage-gt3.json holds 15/16 and 0/16 for the same
+    // car the report came from).
+    frontARB: { value: 15, max: 15 },
+    rearARB: { value: 0, max: 15 },
+    tcActive: false,
+    absActive: false,
+  };
+  const gt = projectAids(null, 0.51, gtLive, 'GT3').map((r) => r.key);
+  check('a GT3 gets no ARB rows however loud the bytes',
+    !gt.includes('frontARB') && !gt.includes('rearARB'), gt.join());
+  check('…and keeps every control it does have',
+    ['BRAKE_BIAS', 'tc', 'tcSlip', 'tcCut', 'abs', 'motorMap'].every((k) => gt.includes(k)),
+    gt.join());
+
+  // The frame spells the class however LMU's entry list does; the veto must
+  // resolve `LMGT3` the same way the standings tower does.
+  const spelt = projectAids(null, 0.51, gtLive, 'LMGT3').map((r) => r.key);
+  check("the frame's own spelling is normalised before the lookup",
+    !spelt.includes('frontARB'), spelt.join());
+
+  // Regen reaches the MFD from the garage endpoint, not the live bytes, so the
+  // veto has to hold on that path too — a GT3 has nothing to regenerate with.
+  const gtRegen = projectAids(
+    { VM_REGEN_LEVEL: { value: 5, maxValue: 9, stringValue: '200kW' } },
+    0.51, gtLive, 'GT3',
+  );
+  check('a GT3 gets no regen row even from the garage',
+    !gtRegen.some((r) => r.key === 'regen'), gtRegen.map((r) => r.key).join());
+
+  // The slip sub-map is not an LMP2 adjustment (driver report, 2026-08-26:
+  // the row was shown and stepped nothing). The power cut beside it is.
+  const p2Live = {
+    tc: { value: 5, max: 8 },
+    tcSlip: { value: 5, max: 8 },
+    tcCut: { value: 3, max: 8 },
+    abs: { value: 0, max: 0 },
+    motorMap: { value: 2, max: 4 },
+    tcActive: false,
+    absActive: false,
+  };
+  const p2 = projectAids(null, 0.51, p2Live, 'LMP2').map((r) => r.key);
+  check('an LMP2 loses the slip row', !p2.includes('tcSlip'), p2.join());
+  check('…but not the power cut beside it', p2.includes('tcCut'), p2.join());
+  const elms = projectAids(null, 0.51, p2Live, 'LMP2_ELMS').map((r) => r.key);
+  check('the ELMS P2 is the same car for this purpose', !elms.includes('tcSlip'), elms.join());
+
+  // A Hypercar keeps the prototype trio + regen — the veto is per-class, not a
+  // blanket suspicion of those four rows.
+  const hyLive = {
+    tc: { value: 7, max: 11 },
+    tcSlip: { value: 10, max: 11 },
+    tcCut: { value: 7, max: 11 },
+    abs: { value: 0, max: 0 },
+    motorMap: { value: 6, max: 10 },
+    brakeMigration: { value: 2, max: 5 },
+    frontARB: { value: 6, max: 15 },
+    rearARB: { value: 1, max: 15 },
+    tcActive: false,
+    absActive: false,
+  };
+  const hy = projectAids(
+    { VM_REGEN_LEVEL: { value: 10, maxValue: 11, stringValue: '200kW' } },
+    0.51, hyLive, 'HYPERCAR',
+  ).map((r) => r.key);
+  check('a Hypercar keeps migration, both ARBs and regen',
+    ['brakeMigration', 'frontARB', 'rearARB', 'regen'].every((k) => hy.includes(k)), hy.join());
+
+  // An unknown car is not a car with no controls — same judgement the cursor
+  // makes with no frame behind it. A mod class degrades to the bytes' answer.
+  const unk = projectAids(null, 0.51, gtLive, 'SOME_MOD_CLASS').map((r) => r.key);
+  check('an unknown class vetoes nothing', unk.includes('frontARB'), unk.join());
+  const none = projectAids(null, 0.51, gtLive).map((r) => r.key);
+  check('no class at all vetoes nothing', none.includes('frontARB'), none.join());
+}
+
+console.log('\n5g) A linked sub-map says so, instead of miming an adjustment');
+
+{
+  /*
+   * LMU can LINK a car's slip and power-cut maps to the main TC map instead of
+   * holding their own value, and while linked their live bytes MIRROR it. The
+   * rows showed those mirrored numbers as if they were settings of their own —
+   * so every step of TC moved "TC Slip" and "TC Power Cut" in perfect unison,
+   * which read as two independent controls being adjusted simultaneously
+   * (reported exactly so from a live car). The garage's own word for the state
+   * is "Linked", and the row now carries it through the same guarded
+   * garage-label path the motor map and ARBs already use.
+   */
+  const garage = {
+    VM_TRACTIONCONTROLSLIPANGLEMAP: { value: 5, maxValue: 9, stringValue: 'Linked' },
+    VM_TRACTIONCONTROLPOWERCUTMAP: { value: 5, maxValue: 9, stringValue: '5' },
+  };
+  const live = {
+    tc: { value: 5, max: 8 },
+    tcSlip: { value: 5, max: 8 },
+    tcCut: { value: 5, max: 8 },
+    abs: { value: 9, max: 9 },
+    motorMap: { value: 1, max: 1 },
+    tcActive: false,
+    absActive: false,
+  };
+  const byKey = Object.fromEntries(
+    projectAids(garage, 0.51, live, 'GT3').map((r) => [r.key, r]),
+  );
+  check('a linked slip map reads "Linked", not a mirrored number',
+    byKey.tcSlip.text === 'Linked', byKey.tcSlip.text);
+  check('an independent cut map keeps the sim\'s own value',
+    byKey.tcCut.text === '5', byKey.tcCut.text);
+
+  // The standing guard: a label belonging to a step the driver has left is
+  // worse than no label, so a moved sub-map falls back to the honest index.
+  const moved = projectAids(
+    garage, 0.51, { ...live, tcSlip: { value: 7, max: 8 } }, 'GT3',
+  ).find((r) => r.key === 'tcSlip');
+  check('a slip moved off the garage step falls back to the honest index',
+    moved.text === '7/8', moved.text);
+}
+
 console.log('\n6) What a stop-and-go strips, and what it must not');
 
 {
