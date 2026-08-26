@@ -1162,6 +1162,10 @@ export class EngineerCommands {
           .map((f, i) => (f === 'yellow' || f === 'doubleYellow' ? i + 1 : 0))
           .filter((n) => n > 0);
         if (!yellow.length) return yes('All clear — green all round.');
+        // All three lit is what a REST-only rig shows for ONE local yellow (the
+        // endpoint copies a single flag into every slot), so it must not be
+        // read out as three separate incidents.
+        if (yellow.length === 3) return yes('Yellow flags out — watch for a slow car.');
         return yes(
           yellow.length === 1
             ? `Yellow in sector ${yellow[0]}.`

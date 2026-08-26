@@ -290,6 +290,56 @@ console.log('\n2) Green, yellow, restart, white, chequered');
 }
 
 {
+  // Local sector yellows — the per-sector channel decoded live 2026-08-26.
+  // The rig starts with the rail present and green: the frame that INTRODUCES
+  // sector data primes silently, the way a live attach does.
+  const r = rig({}, { session: { sectorFlags: ['none', 'none', 'none'] } });
+  r.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  check('a local yellow fires', r.last?.kind === 'sectorYellow', r.last?.kind);
+  check('…and names its sector', r.last?.triggers[0]?.facts.sectors === '2',
+    String(r.last?.triggers[0]?.facts.sectors));
+  check('…and is not "all sectors"', r.last?.triggers[0]?.facts.all === false,
+    String(r.last?.triggers[0]?.facts.all));
+
+  r.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r.fire({ session: { sectorFlags: ['none', 'none', 'none'] } });
+  check('the withdrawal fires the all-clear', r.last?.kind === 'sectorClear', r.last?.kind);
+
+  // The REST-only collapse: one incident published as three lit sectors.
+  r.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r.fire({ session: { sectorFlags: ['yellow', 'yellow', 'yellow'] } });
+  check('an all-three collapse still fires', r.last?.kind === 'sectorYellow', r.last?.kind);
+  check('…marked as all sectors', r.last?.triggers[0]?.facts.all === true,
+    String(r.last?.triggers[0]?.facts.all));
+}
+
+{
+  // Blanket yellows under FCY are not local news, and neither is their
+  // withdrawal on the restart.
+  const r = rig();
+  r.fire({ session: {
+    phase: 'fullCourseYellow', flag: 'doubleYellow',
+    sectorFlags: ['yellow', 'yellow', 'yellow'],
+  } });
+  check('under FCY the sector detector stays out of it',
+    r.kinds().join(',') === 'fullCourseYellow', r.kinds().join(','));
+
+  r.hold(35_000);
+  r.fire({ session: { phase: 'green', flag: 'green', sectorFlags: ['none', 'none', 'none'] } });
+  check('the restart is not also an "all clear"',
+    r.kinds().filter((k) => k === 'sectorClear').length === 0
+      && r.kinds().includes('restart'),
+    r.kinds().join(','));
+}
+
+{
+  // Attaching mid-yellow teaches, it does not talk.
+  const r = rig({}, { session: { sectorFlags: ['yellow', 'none', 'none'] } });
+  r.hold(6000);
+  check('a yellow that predates the attach is silent', r.cues.length === 0, `${r.cues.length} cues`);
+}
+
+{
   const r = rig();
   r.fire({ session: { flag: 'white' } });
   check('the white flag fires', r.last?.kind === 'finalLap', r.last?.kind);
@@ -892,6 +942,12 @@ console.log('\n11) The phrasebook turns cues into radio lines');
   r3.fire({ session: { phase: 'redFlag', flag: 'red' } });
   collect(r3);
 
+  const r3b = rig({}, { session: { sectorFlags: ['none', 'none', 'none'] } });
+  r3b.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  r3b.hold(DEFAULT_GLOBAL_MIN_INTERVAL_MS);
+  r3b.fire({ session: { sectorFlags: ['none', 'none', 'none'] } });
+  collect(r3b);
+
   // One rolling race for the story kinds. The standings array is replaced
   // wholesale by the rig's merge, so each step re-states the whole grid.
   const grid = (s) => ({
@@ -931,7 +987,7 @@ console.log('\n11) The phrasebook turns cues into radio lines');
   collect(r5);
 
   const expected = [
-    'raceStart', 'fullCourseYellow', 'restart', 'finalLap', 'checkered',
+    'raceStart', 'fullCourseYellow', 'sectorYellow', 'sectorClear', 'restart', 'finalLap', 'checkered',
     'incident', 'penalty', 'penaltyServed', 'fuelWindow', 'fuelCritical', 'redFlag',
     'fastestLapSelf', 'fastestLapField', 'positionChange', 'rivalPitted', 'pitWindowOpen', 'yieldTo',
     'practicePace',

@@ -61,6 +61,9 @@ function pick(variant: number, bank: readonly string[]): string {
   return bank[Math.abs(variant) % bank.length]!;
 }
 
+/** Sector numbers as the radio says them — "sector two", never "sector 2". */
+const SECTOR_WORDS: Record<string, string> = { '1': 'one', '2': 'two', '3': 'three' };
+
 /** The driver's position for speech — class position when the cue knows it. */
 function spokenPosition(cue: EngineerCue): string | null {
   const cls = num(cue.context.classPosition);
@@ -104,6 +107,40 @@ function leadSentence(
         'Full course yellow — safety car. No overtaking, watch your delta.',
         'Safety car, safety car. Hold position, watch the delta.',
         'Full course yellow. Slow it down, no passing — think about the stop.',
+      ]);
+
+    case 'sectorYellow': {
+      // `all` = every sector reads yellow at once. On a REST-only rig that is
+      // one flag copied three times, so the line must not claim three separate
+      // incidents — "yellows out" is everything that is actually known.
+      const secs = String(f.sectors ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map((s) => SECTOR_WORDS[s] ?? s);
+      if (f.all === true || secs.length === 0) {
+        return pick(v, [
+          'Yellow flags out — expect a slow car, no overtaking under the yellow.',
+          'Caution, caution — yellows showing. Watch for a stopped car.',
+        ]);
+      }
+      if (secs.length === 1) {
+        return pick(v, [
+          `Yellow flag, sector ${secs[0]} — watch for a slow car through there.`,
+          `Local yellow in sector ${secs[0]}. No passing in the zone.`,
+          `Caution in sector ${secs[0]} — someone's off. Keep it tidy through there.`,
+        ]);
+      }
+      return pick(v, [
+        `Yellow flags in sectors ${secs.slice(0, -1).join(', ')} and ${secs[secs.length - 1]} — take care.`,
+        `Local yellows, sectors ${secs.join(' and ')}. No passing in the zones.`,
+      ]);
+    }
+
+    case 'sectorClear':
+      return pick(v, [
+        'Track is clear — green all round, you can push.',
+        "Yellow's been withdrawn. All clear — back to it.",
+        'All sectors green again. Push on.',
       ]);
 
     case 'redFlag':

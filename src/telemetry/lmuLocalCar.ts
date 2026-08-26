@@ -316,6 +316,19 @@ const MMF_TELEMETRY = '$rFactor2SMMP_Telemetry$';
  */
 const MMF_SCORING = '$rFactor2SMMP_Scoring$';
 const SCORING_GAME_PHASE_OFFSET = 120;
+/**
+ * `mSectorFlag[3]` — absolute bytes 122..124 (12-byte MMF header + SI offset
+ * 110), bracketed by mGamePhase@120 and mInRealtime@127 and pinned by
+ * mPlayerName@128. Decoded live 2026-08-26 (Daytona practice, 22-car field,
+ * two separate incidents): value **1 = local yellow in that sector, 11 =
+ * clear**, index 0..2 = S1..S3 — each yellow correlated with a car stopped on
+ * track whose REST `sector` string named the same sector. This is the ONLY
+ * per-sector source: REST's `sectorFlag` array published one value copied into
+ * all three slots both times, and missed the second (S3) yellow entirely.
+ * Values 2 and 3 have been seen once under a red flag (2026-08-22, undecoded);
+ * consumers must treat anything other than 1/11 as "no opinion".
+ */
+const SCORING_SECTOR_FLAGS_OFFSET = 122;
 const SCORING_IN_REALTIME_OFFSET = 127;
 const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
@@ -723,6 +736,36 @@ export class LmuLocalCarReader {
       const flag = w.readBytes(this.scoringView, SCORING_IN_REALTIME_OFFSET, 1)[0];
       if (flag !== 0 && flag !== 1) return null;
       return flag === 1;
+    } catch {
+      // Mapping may have gone away (sim closed); drop it so we re-open later.
+      this.stopScoring();
+      return null;
+    }
+  }
+
+  /**
+   * The three per-sector marshalling bytes from the Scoring header — see
+   * {@link SCORING_SECTOR_FLAGS_OFFSET} for the decode evidence. Raw bytes,
+   * deliberately: the enum is only partially decoded (1 = yellow, 11 = clear)
+   * and the mapping-to-FlagState policy belongs to the provider, which also
+   * holds the REST value to fall back on for anything unrecognised.
+   *
+   * `null` when shared memory is unavailable or the header fails the same
+   * layout check {@link inRealtime} applies.
+   */
+  public sectorFlagBytes(): [number, number, number] | null {
+    const w = this.win32;
+    if (w === null) return null;
+    if (!this.scoringView) {
+      this.openScoring();
+      if (!this.scoringView) return null;
+    }
+    try {
+      const phase = w.readBytes(this.scoringView, SCORING_GAME_PHASE_OFFSET, 1)[0];
+      if (phase === undefined || phase > 10) return null; // not the layout we verified
+      const b = w.readBytes(this.scoringView, SCORING_SECTOR_FLAGS_OFFSET, 3);
+      if (!b || b.length < 3) return null;
+      return [b[0]!, b[1]!, b[2]!];
     } catch {
       // Mapping may have gone away (sim closed); drop it so we re-open later.
       this.stopScoring();

@@ -249,7 +249,11 @@ const GRAMMAR = [
     ],
   },
   { intent: 'trackLimits', group: 'Race control', phrases: ['track limits', 'limits', 'penalty points'] },
-  { intent: 'flags', group: 'Race control', phrases: ['any yellows', 'yellows', 'flags', 'any flags'] },
+  {
+    intent: 'flags',
+    group: 'Race control',
+    phrases: ['any yellows', 'yellows', 'flags', 'any flags', 'yellow flag', 'yellow flags', 'where is the yellow', "where's the yellow"],
+  },
   // -- Conditions ----------------------------------------------------------------
   {
     intent: 'weather',
@@ -298,6 +302,10 @@ const TRIGGER_TIERS = {
   raceStart: 'essential',
   restart: 'essential',
   fullCourseYellow: 'essential',
+  // Local yellows are a rule change (no passing in the zone) and a hazard the
+  // driver may be arriving at — same tier as the FCY for the same reason.
+  sectorYellow: 'essential',
+  sectorClear: 'essential',
   redFlag: 'essential',
   finalLap: 'essential',
   checkered: 'essential',

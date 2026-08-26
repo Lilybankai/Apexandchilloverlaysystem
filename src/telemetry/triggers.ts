@@ -93,6 +93,10 @@ export type EngineerTriggerKind =
   | 'redFlag'
   /** Racing has resumed after a full-course yellow or a red flag. */
   | 'restart'
+  /** A LOCAL yellow appeared in one or more sectors (not a full-course yellow). */
+  | 'sectorYellow'
+  /** Every local yellow has cleared — the whole lap is green again. */
+  | 'sectorClear'
   /** The car has picked up damage it did not have. */
   | 'incident'
   /** The sim has issued a penalty. */
@@ -136,12 +140,14 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   redFlag: 100,
   fullCourseYellow: 90,
   incident: 85,
+  sectorYellow: 80, // timely: the driver may be arriving at it this corner
   penalty: 75,
   fuelCritical: 70,
   checkered: 65,
   finalLap: 60,
   penaltyServed: 55,
   restart: 50,
+  sectorClear: 48, // worth saying promptly — the driver can push again
   yieldTo: 47, // timely: the faster car is arriving NOW
   raceStart: 45,
   fuelWindow: 40,
@@ -236,6 +242,11 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   fuelCritical: 60_000,
   fullCourseYellow: 30_000,
   restart: 30_000,
+  // Local yellows come and go in seconds (both live probes cleared inside 7 s);
+  // a long cooldown here would eat the NEXT incident's call, not repeats of
+  // this one — the pending-dedupe already handles the same edge twice.
+  sectorYellow: 15_000,
+  sectorClear: 15_000,
   // The race-story kinds are lower-stakes, so they get LONGER cooldowns — a
   // position swap fight should be one call, not a commentary stream.
   fastestLapSelf: 20_000, // can't re-fire before the next lap anyway
@@ -597,6 +608,12 @@ export class EngineerTriggers {
   private fuelWindowArmed = true;
   /** `true` once the session has gone green at least once (so green = restart). */
   private seenGreen = false;
+  /**
+   * Which sectors read yellow last tick — or `null` before the first frame
+   * that carries sector data (and through FCY/red, whose blanket yellows are
+   * not local news; see {@link detectSessionFlags}). `null` re-primes silently.
+   */
+  private prevYellowSectors: [boolean, boolean, boolean] | null = null;
   /** Previous frame's `session.finalLap`, for the chequered-flag-shown edge. */
   private prevFinalLap = false;
   /** Previous frame's `player.finished`, for the crossed-the-line edge. */
@@ -688,6 +705,7 @@ export class EngineerTriggers {
     this.prevPitThisLap = false;
     this.fuelWindowArmed = true;
     this.seenGreen = false;
+    this.prevYellowSectors = null;
     this.prevFinalLap = false;
     this.prevFinished = false;
     this.prevBestSelf = UNKNOWN_VALUE;
@@ -791,6 +809,33 @@ export class EngineerTriggers {
     const isFcy = phase === 'fullCourseYellow' || flag === 'doubleYellow';
     if (isFcy && !wasFcy && this.prevFlag !== 'doubleYellow') {
       this.offer('fullCourseYellow', now, 'full-course yellow', { phase, flag });
+    }
+
+    // LOCAL yellows, per sector. Only meaningful outside FCY/red — under those
+    // every sector reads yellow and the calls above own the story — so the
+    // level is parked at null there and re-primes silently after, which also
+    // swallows the phantom "all clear" the blanket's withdrawal would fake.
+    //
+    // On an LMU rig with live shared memory the sectors are real (decoded
+    // 2026-08-26); with only REST the one published flag arrives copied into
+    // all three slots, so `all: true` is the phrase layer's cue to say
+    // "yellow flags out" rather than claim three separate incidents.
+    const sectors = frame.session.sectorFlags;
+    if (sectors && !isFcy && phase !== 'redFlag' && flag !== 'red') {
+      const yellowNow = sectors.map((f) => f === 'yellow' || f === 'doubleYellow');
+      const prev = this.prevYellowSectors; // maintained by record(), null re-primes
+      if (prev) {
+        const appeared = yellowNow.some((y, i) => y && !prev[i]);
+        if (appeared) {
+          const lit = yellowNow.flatMap((y, i) => (y ? [i + 1] : []));
+          this.offer('sectorYellow', now, `local yellow — S${lit.join(' S')}`, {
+            sectors: lit.join(','),
+            all: lit.length === 3,
+          });
+        } else if (prev.some(Boolean) && !yellowNow.some(Boolean)) {
+          this.offer('sectorClear', now, 'local yellows cleared', {});
+        }
+      }
     }
 
     // Green. The first one in a race is the start; a later one is a restart, and
@@ -1243,6 +1288,22 @@ export class EngineerTriggers {
     this.prevFlag = frame.session.flag;
     this.prevNotStarted = frame.session.notStarted === true;
     if (frame.session.phase === 'green') this.seenGreen = true;
+
+    // The sector-yellow level. Parked at null while FCY/red blankets the rail
+    // (their withdrawal must not read as a local all-clear) and while the
+    // provider carries no rail at all; the next plain frame re-primes silently.
+    const s = frame.session;
+    const blanket =
+      s.phase === 'fullCourseYellow' || s.flag === 'doubleYellow' ||
+      s.phase === 'redFlag' || s.flag === 'red';
+    this.prevYellowSectors =
+      !s.sectorFlags || blanket
+        ? null
+        : (s.sectorFlags.map((f) => f === 'yellow' || f === 'doubleYellow') as [
+            boolean,
+            boolean,
+            boolean,
+          ]);
 
     const damage = frame.player?.damage;
     if (damage) {

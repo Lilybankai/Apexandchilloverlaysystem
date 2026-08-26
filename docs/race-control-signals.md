@@ -87,15 +87,31 @@ file for the first two minutes), `race-probe-telemetry-2026-08-04T19-54-48.bin`
 - Served: count decremented (2→1) while `PitState == STOPPED`.
 
 ### Yellow flags
-- `sessionInfo.sectorFlag[3]`: `"UNKNOWN"` when clear; a car parked on track
-  ~51 s produced `["YELLOW","YELLOW","YELLOW"]`, cleared back to UNKNOWN after
-  rejoining. (All three lit for one stopped car at Daytona; per-sector
-  granularity presumably applies with marshalled sectors — treat array as
-  authoritative per sector.)
+- **DECODED 2026-08-26** (Daytona MP practice, 22 cars, 8 natural yellows via
+  `scripts/probe-sector-flags.js`): the real per-sector channel is the Scoring
+  shared-memory header's `mSectorFlag[3]` — absolute bytes 122..124 (12-byte
+  MMF header + SI offset 110, bracketed by mGamePhase@120 / mInRealtime@127,
+  pinned by mPlayerName@128). **Value 1 = local yellow, 11 = clear, index
+  0..2 = S1..S3.** Every observed yellow correlated with a car stopped on
+  track whose REST standings `sector` string named the same sector (all three
+  indices confirmed, S1 and S3 twice each). Values 2/3 seen once under a red
+  flag (2026-08-22) remain undecoded — treat anything ≠ 1/11 as no-opinion.
+  Read by `lmuLocalCar.sectorFlagBytes()`; composed into `session.sectorFlags`
+  by the provider.
+- `sessionInfo.sectorFlag[3]` (REST) is **sector 1's flag copied into all
+  three slots**: it showed `YELLOW×3` iff SM sector 0 was lit and `UNKNOWN×3`
+  through every S2/S3-only yellow — 5 of the 8 yellows never appeared on REST
+  at all. It remains the fallback on a rig with dead shared memory, rendered
+  as "yellows out" with no sector claim. (The earlier 2026-08-04 note — one
+  parked car lighting all three — was this same collapse, an S1 incident.)
 - `sessionInfo.yellowFlagState`: stayed `"NONE"` throughout — reserved for
   full-course-yellow / safety-car states (values UNSEEN; rF2 enum suggests
   PENDING/PITS_CLOSED/PITS_OPEN/RESUME etc.).
-- AI contact did NOT raise sector yellows by itself.
+- AI contact did NOT raise sector yellows by itself; MP yellows appear/clear
+  fast (observed 2–13 s for a spun car rejoining).
+- Standings `underYellow` never lit for any car through all 8 events — do not
+  build zone attribution on it. A stopped car's `sector` string is the honest
+  correlator (that is how the enum above was pinned).
 
 ### Incidents
 - `GET /rest/watch/getIncidentsList/{minSecondsBetween}` → array of

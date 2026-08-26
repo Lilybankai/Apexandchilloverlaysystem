@@ -2358,17 +2358,27 @@ export class LmuRestProvider implements TelemetryProvider {
     // inventing a flag the sim is not showing.
     //
     // KNOWN LIMITATION, measured 2026-08-22: this endpoint publishes the SAME
-    // value in all three slots — shared memory held `2,3,11` (three different
-    // sectors) at an instant REST reported `["RED","RED","RED"]`. So the rail is
-    // really one flag drawn three times on this path. It is left as it is
-    // because the question this feature asks — "is the chequered flag out" — is
-    // a session-wide one that the collapse cannot get wrong; per-sector accuracy
-    // needs the shared-memory bytes (SI.base + 110..112) and is its own change.
+    // value in all three slots — one flag drawn three times — and (measured
+    // 2026-08-26) sometimes misses a local yellow altogether. The shared-memory
+    // Scoring header's `mSectorFlag[3]` is the real per-sector channel, decoded
+    // live 2026-08-26: 1 = local yellow, 11 = clear, index 0..2 = S1..S3 (see
+    // lmuLocalCar.sectorFlagBytes for the evidence). Composition below: a
+    // shared-memory 1 marks its sector yellow, a shared-memory 11 clears a
+    // REST-collapsed yellow, and every other value keeps REST's word for that
+    // sector — so red/chequered (whose SM values are undecoded) pass through,
+    // and a rig with dead shared memory keeps the honest collapsed rail.
     const rawSectors = Array.isArray(si.sectorFlag) ? si.sectorFlag : null;
-    const sectorFlags =
+    let sectorFlags =
       rawSectors && rawSectors.length >= 3
         ? (rawSectors.slice(0, 3).map(mapSectorFlag) as [FlagState, FlagState, FlagState])
         : undefined;
+    const smSectors = this.localCar.sectorFlagBytes();
+    if (smSectors) {
+      const rest = sectorFlags ?? (['none', 'none', 'none'] as const);
+      sectorFlags = smSectors.map((b, i) =>
+        b === 1 ? 'yellow' : b === 11 && rest[i] === 'yellow' ? 'none' : rest[i],
+      ) as [FlagState, FlagState, FlagState];
+    }
     // The chequered flag is SHOWING — not the same as the session having reached
     // its checkered phase, which LMU only does when the leader crosses the line.
     // Probed live: the marshalling channel went CHEQUERED 23 s before the phase
