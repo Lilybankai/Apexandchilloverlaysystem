@@ -4,6 +4,44 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **The lap counter was showing the Hypercar's lap, not yours.** In a multiclass
+  race the "LAP 12/40" across the top of the standings tower and the fuel panel
+  was counted off the overall race leader — which in LMU is always a Hypercar.
+  A GT3 nine laps into that race was told it was on lap twelve. The counter is
+  now read off your own car in every session type, so it says the lap you are
+  actually on.
+
+  The **laps left** beside it became a proper prediction for **your class**,
+  and it now says so with a `~`. A 40-lap race is 40 laps for the car winning
+  it — everyone else races for the same length of *time* and covers whatever
+  their own pace covers. Measured in a live session at Sebring, a Hypercar laps
+  12 seconds quicker than a GT3, so across the leader's last 29 laps a GT3
+  actually completes about 26. The panel used to show that GT3 driver 29. It
+  now shows `~26 LAPS LEFT`.
+
+  A **timed** race gets the same treatment from the other direction: the
+  estimate used to divide the clock by the *leader's* pace, which over an hour
+  at Le Mans hands a GT3 driver roughly five laps that were never theirs to
+  run. It divides by your own class's pace now.
+
+  The number keeps the plain, unhedged form when it is genuinely exact — if you
+  are in the leading class, or if there is no pace data to work from, you get
+  the same confident `29 LAPS LEFT` as always. The tilde appears only when the
+  app is actually estimating. Asking the race engineer "how many laps left?"
+  gets the same answer as the strip, worded as an estimate when it is one.
+
+  Fuel is deliberately untouched: litres are still worked out from your own laps
+  and your own consumption, and still assume the full distance. That errs
+  slightly long for a lapped car, which is the safe direction to err, and we
+  would rather change it after watching the new prediction over a few real races
+  than before.
+
+  Nothing changes in a single-class field, where every one of these readings is
+  the same number it always was. Spectating or watching a replay falls back to
+  the old behaviour rather than blanking.
+
 ## 0.91.0-beta.11 — 2026-08-26
 
 ### Added
@@ -106,42 +144,6 @@
   and track.
 
 ### Fixed
-
-- **The lap counter was showing the Hypercar's lap, not yours.** In a multiclass
-  race the "LAP 12/40" across the top of the standings tower and the fuel panel
-  was counted off the overall race leader — which in LMU is always a Hypercar.
-  A GT3 nine laps into that race was told it was on lap twelve. The counter is
-  now read off your own car in every session type, so it says the lap you are
-  actually on.
-
-  The **laps left** beside it became a proper prediction for **your class**,
-  and it now says so with a `~`. A 40-lap race is 40 laps for the car winning
-  it — everyone else races for the same length of *time* and covers whatever
-  their own pace covers. Measured in a live session at Sebring, a Hypercar laps
-  12 seconds quicker than a GT3, so across the leader's last 29 laps a GT3
-  actually completes about 26. The panel used to show that GT3 driver 29. It
-  now shows `~26 LAPS LEFT`.
-
-  A **timed** race gets the same treatment from the other direction: the
-  estimate used to divide the clock by the *leader's* pace, which over an hour
-  at Le Mans hands a GT3 driver roughly five laps that were never theirs to
-  run. It divides by your own class's pace now.
-
-  The number keeps the plain, unhedged form when it is genuinely exact — if you
-  are in the leading class, or if there is no pace data to work from, you get
-  the same confident `29 LAPS LEFT` as always. The tilde appears only when the
-  app is actually estimating. Asking the race engineer "how many laps left?"
-  gets the same answer as the strip, worded as an estimate when it is one.
-
-  Fuel is deliberately untouched: litres are still worked out from your own laps
-  and your own consumption, and still assume the full distance. That errs
-  slightly long for a lapped car, which is the safe direction to err, and we
-  would rather change it after watching the new prediction over a few real races
-  than before.
-
-  Nothing changes in a single-class field, where every one of these readings is
-  the same number it always was. Spectating or watching a replay falls back to
-  the old behaviour rather than blanking.
 
 - **The MFD offered controls your car's class does not have.** A GT3 showed
   Front ARB and Rear ARB rows — anti-roll bars are a setup-screen decision on a
