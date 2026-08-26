@@ -4,6 +4,47 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **Tyre temperatures in Fahrenheit.** Settings ▸ Display & audio ▸ Appearance
+  has a **Temperature units** dropdown next to Speed units — °C (the sim's own)
+  or °F. It applies to every temperature the app shows and changes them live,
+  with no restart: the tyre widget's four corners and its tread-map strips, the
+  tyre readouts on the Speedo dashboards, the Weather panel's track and air
+  temps and its forecast, and the teammate tyre and weather cards on the Team
+  page. An OBS source can pin its own unit with `?temp=f` on the widget URL, the
+  same way `?units=mph` pins speed — so a British driver can stream to an
+  American audience in Fahrenheit while their own visor stays metric. The tyre
+  operating-window lamp and the blue-to-red tread colours are unchanged: they
+  still judge against the sim's own optimum for the compound fitted, so the
+  colours mean exactly what they did before. The race engineer still speaks in
+  Celsius for now.
+
+- **Updates got a lot smaller, and stopped leaving installers behind.** The
+  installer was 287 MB, and almost all of it was the race engineer's voice and
+  speech-recognition models — 201 MB of files that never change, re-downloaded
+  in full with every single release. Those now download once, into your own app
+  data, and survive every update after it; the engineer's programs still ship
+  inside the signed installer, which is the part antivirus ever cared about.
+  Another 26 MB went with the espeak pronunciation dictionaries for the hundred
+  languages the engineer does not speak. **The download is roughly 78% smaller.**
+
+  The app also used to keep two full copies of every installer it downloaded —
+  575 MB parked in a cache folder, and the reason a new `.exe` seemed to appear
+  on your machine with each update. The copy that has already been installed is
+  now deleted on the next launch. The other one stays on purpose: it is what
+  lets the updater rebuild the next release from the few megabytes that actually
+  changed instead of fetching the whole thing.
+
+  And the Engineer tab now says when downloaded voices are going unused —
+  "3 downloaded voices you're not using · 189 MB" — with a **Free up space**
+  button, plus a **Remove** on any voice that is not the one on the radio. The
+  voice you are using is never offered, and a removed voice can be downloaded
+  again whenever you want it.
+
+  Existing installs download their voice and, if you use spoken questions, the
+  speech model once more after this update. That is the last time.
+
 ## 0.91.0-beta.10 — 2026-08-26
 
 ### Added
@@ -46,45 +87,6 @@
 ## 0.91.0-beta.9 — 2026-08-25
 
 ### Added
-
-- **Tyre temperatures in Fahrenheit.** Settings ▸ Display & audio ▸ Appearance
-  has a **Temperature units** dropdown next to Speed units — °C (the sim's own)
-  or °F. It applies to every temperature the app shows and changes them live,
-  with no restart: the tyre widget's four corners and its tread-map strips, the
-  tyre readouts on the Speedo dashboards, the Weather panel's track and air
-  temps and its forecast, and the teammate tyre and weather cards on the Team
-  page. An OBS source can pin its own unit with `?temp=f` on the widget URL, the
-  same way `?units=mph` pins speed — so a British driver can stream to an
-  American audience in Fahrenheit while their own visor stays metric. The tyre
-  operating-window lamp and the blue-to-red tread colours are unchanged: they
-  still judge against the sim's own optimum for the compound fitted, so the
-  colours mean exactly what they did before. The race engineer still speaks in
-  Celsius for now.
-
-- **Updates got a lot smaller, and stopped leaving installers behind.** The
-  installer was 287 MB, and almost all of it was the race engineer's voice and
-  speech-recognition models — 201 MB of files that never change, re-downloaded
-  in full with every single release. Those now download once, into your own app
-  data, and survive every update after it; the engineer's programs still ship
-  inside the signed installer, which is the part antivirus ever cared about.
-  Another 26 MB went with the espeak pronunciation dictionaries for the hundred
-  languages the engineer does not speak. **The download is roughly 78% smaller.**
-
-  The app also used to keep two full copies of every installer it downloaded —
-  575 MB parked in a cache folder, and the reason a new `.exe` seemed to appear
-  on your machine with each update. The copy that has already been installed is
-  now deleted on the next launch. The other one stays on purpose: it is what
-  lets the updater rebuild the next release from the few megabytes that actually
-  changed instead of fetching the whole thing.
-
-  And the Engineer tab now says when downloaded voices are going unused —
-  "3 downloaded voices you're not using · 189 MB" — with a **Free up space**
-  button, plus a **Remove** on any voice that is not the one on the radio. The
-  voice you are using is never offered, and a removed voice can be downloaded
-  again whenever you want it.
-
-  Existing installs download their voice and, if you use spoken questions, the
-  speech model once more after this update. That is the last time.
 
 - **The Get started checklist walks you through the app.** Shipped to everyone
   in v0.90.2 — see that section below for what it does. On the beta channel it
