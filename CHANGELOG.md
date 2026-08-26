@@ -4,485 +4,65 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.91.0-beta.13 — 2026-08-26
+## 0.91.0 — 2026-08-26
+
+Everything below has been through the beta channel over the last few days.
+The Team pit wall stays in beta a little longer while we test it across
+machines.
+
+### Added
+
+- **Ten LMGT3 dashboards, plus the Apex Real cluster.** A speedo design for
+  every car in the class — Porsche, Aston, BMW, Corvette, Ferrari, Mustang,
+  Huracán, Lexus, McLaren and AMG — each drawn from the real car's display,
+  and a machined-instrument take on the house cluster. Pick one from the
+  Design dropdown, or pin it per OBS source with `?design=`.
+- **Magnetic docking.** Off by default, under Overlays. While editing the
+  layout, a widget dragged near another snaps flush and matches its size
+  along the shared edge. Hold Alt to place freely.
+- **The MFD can lie down.** A horizontal layout for the MFD Control widget
+  (`?layout=row` in OBS), and an optional auto-fade that tucks it away a few
+  seconds after you stop using the pit menu.
+- **Fahrenheit.** A temperature-units setting under Display & audio that
+  applies everywhere, live. `?temp=f` pins a single OBS source, same idea as
+  `?units=mph`.
+- **The engineer coaches your practice pace.** He reads your best lap against
+  the reference bands and tells you what the next band costs — ask him for
+  "target pace" any time. How often he brings it up is in his settings.
 
 ### Changed
 
-- **The menu moved from the top of the window to a side rail.** Eleven tabs
-  plus the mode toggle, the status pill, the gear, the account chip and
-  Start/Stop had stopped fitting one 58px row. The old bar coped by shedding
-  labels — tab names at 1220px wide, the Race/Training words at 900, the
-  status text and the brand at 820 — and near the window's 760px minimum it
-  was nine unlabelled icons with no way to tell them apart, plus a tab strip
-  that scrolled sideways with nothing to show that it had.
-
-  The rail grows *down* a column that already scrolls, so it has room the top
-  bar never had: the sections are now **grouped** — Driving, Broadcast,
-  League — instead of eleven equal-weight tabs in a row, and adding another
-  one later costs nothing that is in contention.
-
-  It **collapses to icons** with a button at the bottom, and unlike the old
-  icon-only bar each icon **names itself on hover**. Whether it is collapsed
-  is remembered. Below 1100px it collapses on its own and the toggle steps
-  aside, so a small window gets the content width without ever giving up a
-  readable menu.
-
-  **Start/Stop, the feed status, the mode toggle and your account stay in a
-  slim strip along the top.** Those are live controls, and a live control
-  should not live in something that can be put away.
-
-  **Settings is now a normal item in the rail**, at the bottom with
-  Suggestions. It used to be a gear with no tab of its own that toggled you
-  back to wherever you came from; there is room for it now, so that is gone.
-
-  Nothing else about the app moved: every section is the same section with the
-  same contents, and the first-run **Get started** checklist and its
-  walkthroughs work exactly as before.
+- **The menu is a side rail now.** Grouped sections instead of eleven tabs
+  across the top, collapsible to icons (it remembers), and Settings is a
+  normal item at the bottom rather than a gear that bounced you around.
+- **The delta widget docks into the speedo.** Its bottom edge is cut to the
+  cluster's notch so the two read as one instrument, and the fit is measured
+  from the cluster itself so it holds at any size or scale.
+- **Updates are a lot smaller.** The engineer's voice and speech models now
+  download once and survive every update instead of shipping inside each
+  installer — the download drops by roughly 78% — and the app stops leaving
+  old installers behind. The Engineer tab can also clear voices you don't
+  use.
 
 ### Fixed
 
-- **The wheel widget's tread stripes actually move now.** The first cut sorted
-  band temperatures into three fixed buckets around the compound's optimum,
-  and a GT3's tyres spend whole stints inside one bucket — so the stripes sat
-  solid blue looking broken while the temperatures underneath them moved.
-  They now use the same continuous blue→red thermal ramp as the overlay's
-  tyre widget, anchored on the sim's optimum, so every degree shows and both
-  displays tell the same story.
-
-- **The Team page's Damage tile spoke in raw fractions.** Losing a wheel
-  read "0.128665585136414" — the sim's internal severity number printed
-  unrounded and unnamed. It now names the worst component with a percentage,
-  the way the damage widget does: "FL susp 12% · 25s".
-
-- **The Team page's track map was a mirror image.** The sim's Z axis runs
-  the opposite way to a canvas' downward Y, so every circuit drew flipped —
-  left-handers became right-handers. Same one-sign correction the overlay's
-  track map has always applied; verified against Monza's real clockwise
-  direction. The car dots ride the same fix.
-
-- **The race engineer's damage report stopped lying twice.** "So many parts
-  hanging off" was counting sim part slots the car never had — a live car
-  that lost exactly one wheel reported thirteen. The count is now measured
-  against the cleanest state the car has shown, so it says what actually came
-  off (and says nothing, rather than a wrong number, when it joined the
-  session already damaged). And the repair time he quoted was only the
-  repair: when the sim publishes its own total for the stop as booked —
-  repairs, tyres and fuel together — he now gives both: "Repairs about 25
-  seconds — the stop as booked is about 35 all in."
-
-- **The section pills inside a page could be cut off instead of scrolling.**
-  The row of pills at the top of Settings (General / Display & audio /
-  Controls / Account) and the same control on Streamers, Team and Admin had no
-  overflow behaviour, so in a narrow window — or at a higher Windows scaling
-  — the last option was simply clipped off the edge with no way to reach it.
-  They scroll now.
-
-- **The ARB rows in the MFD did not look selected when they were.** On a
-  Hypercar, moving the cursor onto Front or Rear ARB left the row looking the
-  same as the others: those two rows had no category of their own, so they
-  fell back to a dark grey, and the highlight is mixed from the row's own
-  colour — dark grey mixed into a dark panel is not a highlight. They are now
-  their own colour, and any future row without one still highlights visibly.
-
-## 0.91.0-beta.12 — 2026-08-26
-
-### Added
-
-- **The Team page's tyre corners are now drawn as the wheel itself.** Each
-  corner is a round wheel: the tyre's three tread stripes coloured by their
-  temperature against the compound's optimum (inner shoulder drawn inboard,
-  the way the car sits), the brake disc in the middle coloured by its own
-  temperature, tread remaining as a thin arc around the outside, and — new —
-  the **tyre pressure in the hub**, in kPa. Pressures were always meant to be
-  there; the app simply never read them from the sim. It does now, live from
-  the car's shared memory, so the engineer's "pressures" question answers
-  from real numbers too. The old thumbnail-sized temperature bars are gone.
-
-- **The team relay runs at one second.** Publisher and pit-wall reader both
-  moved from every 3 seconds to every 1 — a teammate's screen is now at most
-  ~2 seconds behind the car instead of ~6.
-
-### Fixed
-
-- **The lap counter was showing the Hypercar's lap, not yours.** In a multiclass
-  race the "LAP 12/40" across the top of the standings tower and the fuel panel
-  was counted off the overall race leader — which in LMU is always a Hypercar.
-  A GT3 nine laps into that race was told it was on lap twelve. The counter is
-  now read off your own car in every session type, so it says the lap you are
-  actually on.
-
-  The **laps left** beside it became a proper prediction for **your class**,
-  and it now says so with a `~`. A 40-lap race is 40 laps for the car winning
-  it — everyone else races for the same length of *time* and covers whatever
-  their own pace covers. Measured in a live session at Sebring, a Hypercar laps
-  12 seconds quicker than a GT3, so across the leader's last 29 laps a GT3
-  actually completes about 26. The panel used to show that GT3 driver 29. It
-  now shows `~26 LAPS LEFT`.
-
-  A **timed** race gets the same treatment from the other direction: the
-  estimate used to divide the clock by the *leader's* pace, which over an hour
-  at Le Mans hands a GT3 driver roughly five laps that were never theirs to
-  run. It divides by your own class's pace now.
-
-  The number keeps the plain, unhedged form when it is genuinely exact — if you
-  are in the leading class, or if there is no pace data to work from, you get
-  the same confident `29 LAPS LEFT` as always. The tilde appears only when the
-  app is actually estimating. Asking the race engineer "how many laps left?"
-  gets the same answer as the strip, worded as an estimate when it is one.
-
-  Fuel is deliberately untouched: litres are still worked out from your own laps
-  and your own consumption, and still assume the full distance. That errs
-  slightly long for a lapped car, which is the safe direction to err, and we
-  would rather change it after watching the new prediction over a few real races
-  than before.
-
-  Nothing changes in a single-class field, where every one of these readings is
-  the same number it always was. Spectating or watching a replay falls back to
-  the old behaviour rather than blanking.
-
-## 0.91.0-beta.11 — 2026-08-26
-
-### Added
-
-- **Tyre temperatures in Fahrenheit.** Settings ▸ Display & audio ▸ Appearance
-  has a **Temperature units** dropdown next to Speed units — °C (the sim's own)
-  or °F. It applies to every temperature the app shows and changes them live,
-  with no restart: the tyre widget's four corners and its tread-map strips, the
-  tyre readouts on the Speedo dashboards, the Weather panel's track and air
-  temps and its forecast, and the teammate tyre and weather cards on the Team
-  page. An OBS source can pin its own unit with `?temp=f` on the widget URL, the
-  same way `?units=mph` pins speed — so a British driver can stream to an
-  American audience in Fahrenheit while their own visor stays metric. The tyre
-  operating-window lamp and the blue-to-red tread colours are unchanged: they
-  still judge against the sim's own optimum for the compound fitted, so the
-  colours mean exactly what they did before. The race engineer still speaks in
-  Celsius for now.
-
-- **Updates got a lot smaller, and stopped leaving installers behind.** The
-  installer was 287 MB, and almost all of it was the race engineer's voice and
-  speech-recognition models — 201 MB of files that never change, re-downloaded
-  in full with every single release. Those now download once, into your own app
-  data, and survive every update after it; the engineer's programs still ship
-  inside the signed installer, which is the part antivirus ever cared about.
-  Another 26 MB went with the espeak pronunciation dictionaries for the hundred
-  languages the engineer does not speak. **The download is roughly 78% smaller.**
-
-  The app also used to keep two full copies of every installer it downloaded —
-  575 MB parked in a cache folder, and the reason a new `.exe` seemed to appear
-  on your machine with each update. The copy that has already been installed is
-  now deleted on the next launch. The other one stays on purpose: it is what
-  lets the updater rebuild the next release from the few megabytes that actually
-  changed instead of fetching the whole thing.
-
-  And the Engineer tab now says when downloaded voices are going unused —
-  "3 downloaded voices you're not using · 189 MB" — with a **Free up space**
-  button, plus a **Remove** on any voice that is not the one on the radio. The
-  voice you are using is never offered, and a removed voice can be downloaded
-  again whenever you want it.
-
-  Existing installs download their voice and, if you use spoken questions, the
-  speech model once more after this update. That is the last time.
-
-### Fixed
-
-- **The motor map now speaks the car's own language.** On a GT3 and an LMP2
-  the row printed a bare "0" — it was reading the hybrid motor-map garage
-  entry, which exists on those cars only as a dead single-option "0", instead
-  of the engine mixture that is actually behind the control. It now reads the
-  right garage row for the car: a GT3 or LMP2 shows **Safety-car** on map 0
-  and **Race** on map 1, in the sim's own words (verified live on an Oreca
-  mid-session), and a Hypercar shows its map in kilowatts — **Off** at step
-  zero, then the ladder priced from the sim's own label, so "140kW" at step 7
-  reads "120kW" one press down instead of collapsing to "6/10".
-- **Regen shows a value again.** The row used to blank to "—" the moment
-  anything moved it, because the garage's number is a setup sample that never
-  follows the dial and a stale figure was judged worse than none. That
-  judgement is reversed: the row now shows the sample plus a count of the
-  presses the overlay itself has sent — clamped to the sim's bounds, priced
-  in the sample's own units ("200kW" at step 10 prices a step at 20kW, so
-  three down reads "140kW"), and re-anchored whenever the garage learns
-  something new. A press made through LMU's *own* controller binds is the one
-  thing the count cannot see; the next garage visit corrects it.
-- **The LMP2 also lost its phantom anti-roll-bar rows.** The Oreca publishes
-  its garage ARB setup in the aid bytes exactly the way the GT3 does — caught
-  live, "D18 S-S"/"Detached" riding along as 1/15 and 0/15 — and has no
-  cockpit lever behind them, so the class veto now covers LMP2 as well.
-- **The app's header no longer crops its controls in a narrow window.** With
-  the beta tabs visible the tab strip had outgrown the bar, and resizing the
-  window pushed the settings cog, the account chip and Start/Stop clean off
-  the right edge. The tab strip now gives way instead — it shrinks and
-  scrolls sideways while the controls hold their size — and near the window's
-  minimum width the feed pill and brand shed their text so every control
-  stays on screen down to the smallest size the window allows.
-
-## 0.91.0-beta.10 — 2026-08-26
-
-### Added
-
-- **The race engineer coaches you toward the reference pace.** In practice he
-  now reads your best lap against the same Ohne Speed band table the pace
-  score uses and tells you where you stand and what the next band costs —
-  “that is Midpack pace, eight tenths to Competitive” — with a reminder
-  frequency you can set (or silence) in the engineer settings. Ask him for
-  “target pace” any time and he answers with the named bands for this car
-  and track.
-
-### Fixed
-
-- **The MFD offered controls your car's class does not have.** A GT3 showed
-  Front ARB and Rear ARB rows — anti-roll bars are a setup-screen decision on a
-  GT car, not an in-cockpit adjustment — and an LMP2 showed a TC Slip row it
-  cannot step. The aid values are read live off the car, and the car publishes
-  numbers for some controls it does not actually let you adjust (a GT3's ARB
-  bytes mirror its garage setup), so the reading alone could not tell a control
-  from a readout. The MFD now also knows what each **class** has in the
-  cockpit: GT cars (GT3/GT4/GTE) never show anti-roll bars, brake migration or
-  regen; LMP2 never shows TC Slip; a Hypercar keeps the lot. The cursor's ▲▼
-  follow suit automatically, since they walk the same rows. Anything a class
-  lacks also stops appearing on that class's speedo dashboards as a live
-  number — the box stays with a "—" so the layout holds, which is the same
-  treatment a Hypercar-only readout has always had on a GT3 plate, and the same
-  one a GT3-only readout (ABS) will get on the Hypercar dashboards to come.
-- **TC Slip and TC Power Cut appeared to move together.** LMU can *link* a
-  car's slip and power-cut maps to the main TC map instead of giving them a
-  value of their own, and while linked their live readings mirror it — so
-  stepping TC marched both sub-rows along in unison, looking like two
-  independent settings being adjusted simultaneously. The rows now use the
-  sim's own word for that state: a linked map reads **Linked** rather than a
-  mirrored number, and shows a number again the moment it holds a value of its
-  own. (The keystrokes were never entangled — each sub-map has its own key,
-  pressed separately; it was the linked *display* that made one press look
-  like two changes.)
-
-## 0.91.0-beta.9 — 2026-08-25
-
-### Added
-
-- **The Get started checklist walks you through the app.** Shipped to everyone
-  in v0.90.2 — see that section below for what it does. On the beta channel it
-  carries one extra step the stable build has no control for: **magnetic
-  docking**, in the on-screen-layer tour. Twenty-six steps here, twenty-five
-  there; a step whose feature is not in the build drops itself and the tour
-  renumbers.
-
-### Fixed
-
-- **The new car dashboards had boxes wired to nothing.** Across the eleven
-  designs added this week, twenty-odd readouts were drawn, labelled, and left
-  showing a dash whatever the car was doing. The Aston's TC SLIP knob and both
-  ARB knobs, the BMW's SLIP tile, the Lexus's TCC and TCS boxes, the AMG's TCC
-  and TCS, five of the Huracán's eight tiles and four of the Mustang's eight
-  cells all fell into that group. They now read the channel they name.
-- **TC Slip was showing the TC map.** Traction control is three separate
-  settings on these cars — the map, the slip threshold and the power cut — and
-  the plates only ever read two of them, so a SLIP box either sat empty or
-  repeated the number in the TC box next to it. All three are now read apart,
-  everywhere, including a new SLIP readout on the Apex Real cluster.
-- **The AIR temperature box never worked**, on any design that has one (BMW,
-  Mercedes-AMG). It was reading a field that only exists on a weather forecast
-  entry, so it showed a dash in every session.
-- **Labels that named the wrong thing.** The Porsche's "Split" was showing the
-  best lap, the BMW's "STINT" and the Corvette's "STINT" were showing position
-  and the lap in progress, the McLaren's "PITLANE TIMER" was showing the
-  current lap, and the Mustang's "Energy +/-" was showing energy remaining.
-  Each label now says what is under it.
-- **The Ferrari's PED box was showing a hard-coded 1** — the one invented
-  reading anywhere in the set. It reads live throttle now. The Porsche's
-  condition box guessed "HOT"/"DRY" from track temperature; it shows the sim's
-  own wording for the surface instead.
-- **The Lexus's rev ladder was printed 1000–7000 regardless of the car.** It
-  now scales to the car's actual limiter, which is what the band above it has
-  always measured.
-- **Smaller wiring.** The Corvette's speed said "kph" even in mph and its delta
-  overlapped the position digit; the Mustang's name was drawn over its speed
-  and its two tyre-temperature grids showed the same four numbers (the second
-  is brake discs now); the Aston was missing two of its four tyre temperatures;
-  the Ferrari's lap-difference box was green whether you had gained or lost.
-
-## 0.91.0-beta.8 — 2026-08-25
-
-### Added
-
-- **Teams.** The Team tab now has a crew card: create a team, or join one by
-  pasting its invite code — a short `APX-XXXXXX` code that works like a
-  Discord invite. Any member can copy the code, or hit **Share invite** to
-  copy a ready-made message (download link, sign-up steps, the code) for the
-  team Discord; the owner can issue a new code, rename the team, and remove
-  members with one click. Teams hold up to 6 drivers, you can be in more than
-  one (pick the active one from the dropdown), and if the owner leaves, the
-  team passes to the longest-serving member.
-- **The pit wall goes live for the whole crew.** While you're driving, the
-  app quietly relays your car's telemetry to your team every 3 seconds —
-  only when you're genuinely the one on track. Teammates flip the new
-  **My car / Team** switch on the Team page and all four screens — timing,
-  positions, strategy, telemetry — show the driving car instead: fuel and
-  energy, the live tyre widgets, damage, weather, the track map, the charts.
-  The pill in the corner reads `RELAY · <driver>` and turns stale the moment
-  the feed is more than a few seconds old, and the crew list shows who's
-  online and who's in the car. Nothing to configure, no port forwarding —
-  it rides each member's signed-in account.
-
-### Fixed
-
-- **The new speedo designs blew up when you scaled the widget.** Drag the
-  cluster bigger in the in-game editor and, on release, the Apex Real design and
-  all ten LMGT3 dashboards jumped to roughly four times the size they should be
-  and were cut off by the widget's own frame — at 2x the plate drew itself 4x,
-  at 3x it drew itself 9x. The original Apex and LMP2 designs were never
-  affected. The canvas was sizing itself from its on-screen rectangle, which
-  already includes the widget's scale, so the scale was applied twice: once to
-  the canvas and once again by the widget around it. It now measures the
-  unscaled box, and separately gives the bitmap the extra pixels a scaled-up
-  widget needs — so the plates stay in their frame and stay sharp at any size.
-- **The BG slider now fades the new designs' plate**, not just the values drawn
-  on top of it. The background was painted once when the design loaded and kept
-  that setting for the session.
-
-## 0.91.0-beta.7 — 2026-08-24
-
-### Added
-
-- **The Apex Real cluster.** A new speedo design (Design dropdown → "Apex Real —
-  machined cluster") that repaints the house cluster as a physical instrument:
-  graphite body lit from above, machined rim with a gasket seam and metal
-  grain, blue rim-light on the shoulders, backlit LCD wells, red shift lamps,
-  and the rev bar as light filling a machined groove. The gear sits ABOVE the
-  speed, the way a driver reads a real DDU. The LCDs carry the GT3 staples the
-  feed knows: four-corner tyre pressures and temperatures, brake bias and
-  aids on the left; last/best/projected laps, fuel and position on the right.
-  Same silhouette and notch as the original Apex design — which is untouched
-  and stays the default — so the delta widget docks identically.
-- **Ten LMGT3 per-car dashboards.** One speedo design per car in the class —
-  Porsche 911 GT3 R, Aston Martin Vantage, BMW M4, Corvette Z06, Ferrari 296,
-  Ford Mustang, Lamborghini Huracán, Lexus RC F, McLaren 720S and
-  Mercedes-AMG — each an original recreation of that car's real display
-  character, drawn from photographs of the actual dashes: the Porsche's
-  colour-bordered telemetry boxes, the Aston's white gear ring and rotary
-  row, the BMW's chunky tiles, the Lexus's rainbow rev band, the McLaren's
-  papaya-on-black, and so on. All run on live telemetry, all follow the house
-  rule that nothing is invented — a channel the feed does not carry reads
-  "—", and no manufacturer logos are drawn. Selectable per source with
-  `?design=` like every other design.
-
-## 0.91.0-beta.6 — 2026-08-24
-
-### Added
-
-- **The Team tab becomes four screens.** A pit wall is not one scroll, so the
-  page now has its own sections. **Timing**: the full sheet, grouped by class
-  — positions in class and overall, pit status and stop counts, last / best /
-  five-lap average, gap to the class leader, interval to the car ahead,
-  Virtual Energy and compound, with your car highlighted. **Positions**: the
-  whole race drawn lap by lap, every car a line, overall or in-class, with
-  click-to-hide driver chips. **Strategy**: the fuel plan joined by a tyre
-  plan — wear rate measured lap over lap per corner, laps until the 25%
-  cliff, and the verdict that matters: do the tyres outlast the fuel stint?
-  **Telemetry**: a big 2D map of the learned circuit with every car placed on
-  it live, the tyre and car widgets, weather, and a lap-time comparison
-  graph with pickable drivers. The position and lap-time charts remember the
-  whole race even if you open the page on lap 40 — the app records the field
-  from the moment the server starts.
-
-## 0.91.0-beta.5 — 2026-08-24
-
-### Added
-
-- **The MFD Control widget can lie down.** A DESIGN dropdown on its card offers
-  the original stacked column or a **horizontal layout** with the sections side
-  by side — for a rig that has more width than height to give it: a bottom
-  edge, an ultrawide's flank. `?layout=row` pins one OBS source, same idiom as
-  the speedo's `?design=`.
-- **MFD auto-fade.** (Off by default — Settings → Display → MFD auto-fade.)
-  The widget fades itself out after three seconds untouched and comes straight
-  back the moment the pit-menu cursor moves — the bound ▲ ▼ + − buttons — or
-  the pointer arrives. The pointer resting on it holds it awake, because fading
-  a menu out from under a mouse that is aiming at it turns clicks into
-  misclicks; and it never fades while the in-game layout is being edited, since
-  an invisible widget cannot be dragged. The pit menu on screen only while it
-  is actually being worked.
-
-## 0.91.0-beta.4 — 2026-08-24
-
-### Fixed
-
-- **The delta widget now measures the notch instead of guessing at it.** The cut
-  in its bottom edge was three pixel values hand-converted from the cluster's
-  silhouette at one specific width (490px) and pasted into the stylesheet, with
-  nothing connecting the copy back to the original. It was therefore correct at
-  exactly one size: scaling or stretching either widget slid the notch out from
-  under a cut that stayed where it was. The shape is now read from the cluster
-  itself every time either widget moves or resizes, so the two stay seated at
-  any size, any scale and any text size. Three things the hand-converted numbers
-  could never account for come with it: the cluster's own 1px border, the
-  letterboxing that shifts and shrinks the artwork when the cluster is
-  height-boxed, and a delta that is not centred on the notch — which used to
-  shear the cut off the recess entirely.
-- The delta's default placement is now measured after layout rather than derived
-  from a hardcoded guess at its own height, which was wrong at every text scale
-  but 1.0 and seated the tip below the plateau.
-
-### Added
-
-- **Magnetic window docking.** (Off by default — Overlay → Magnetic docking.)
-  While laying out the in-game overlay, a widget dragged or resized near another
-  one snaps flush against it and takes the neighbour's measurement along the
-  edge they share: side by side matches height, stacked matches width. A magnet
-  mark shows on the seam that is about to take. Holding **Alt** suppresses it
-  for a drag that wants to land somewhere a snap would fight. Corner-scale drags
-  are deliberately left alone — scale moves in 1% steps, so the edge being aimed
-  at is frequently not reachable, and a magnet that visibly refuses to land is
-  worse than none.
-
-## 0.91.0-beta.3 — 2026-08-24
-
-### Added
-
-- **The Team tab now reads like a real pit wall.** Each tyre corner is a
-  proper widget: tyre life, pressure, a three-bar tread strip showing
-  inner/middle/outer temperatures against the compound's own window, the
-  inner-layer average, and — new to the whole app — the **brake disc
-  temperature** at that corner, read from a channel the telemetry reader had
-  verified long ago but never published. A Car telemetry card joins it:
-  speed, revs, gear, worst tyre, pit status, pit limiter, compound and hybrid
-  charge. The weather line gains track wetness. Engine water/oil temperatures
-  are the one gap left, waiting on a live offset probe rather than a guess.
-
-## 0.91.0-beta.2 — 2026-08-24
-
-### Changed
-
-- **The delta widget docks into the speedo cluster.** Its bottom edge is now
-  cut to the cluster's top-centre notch — flat flanks that rest on the bezel
-  rim, chamfers matching the silhouette's, and a tip that seats on the notch
-  plateau — so the two read as one instrument instead of a bar floating over a
-  recess shaped for it. It spawns there by default (above the cluster's own
-  default spot, on the same centre line) and stays a normal widget: drag it
-  anywhere, stretch it wider, or corner-scale it — corner-scaling by the same
-  factor as the cluster is what re-fits the shape to a resized cluster.
-- The delta widget's brand gradient strip is gone: on a symmetric,
-  centre-anchored widget docked into the bezel it read as a misaligned edge,
-  and its 3px sat the whole bar fractionally off the notch's centreline.
-
-## 0.91.0-beta.1 — 2026-08-24
-
-### Added
-
-- **The Team tab: a pit wall for the car.** (Beta channel.) A new panel page
-  showing the race the way an engineer wants it: fuel or Virtual Energy with
-  laps in the tank and the margin at the flag, all four tyre corners with wear,
-  temperature against the compound's window and pressures, damage and repair
-  time, position and lap times, current conditions and the remaining-race rain
-  timeline. A data-age pill says LIVE, DEMO or STALE at all times — the page
-  never lets old numbers look current. This is Phase 1 of the team engineer
-  plan (docs/TEAM-ENGINEER-PAGE.md): today it shows your own car from local
-  telemetry; the team relay that shows whoever is driving comes next.
-- **Fuel strategy that replans itself.** The Team tab's strategy card answers
-  "from here to the flag" from what the car is actually using: stops still
-  needed, the pit window in laps, each remaining stint's length and fill, and
-  a live save target — the per-lap number that would drop a stop, flagged
-  honestly when no realistic lift-and-coast could reach it. Works in litres
-  and Virtual Energy, and updates every second. The grid-planning Fuel tab is
-  unchanged; this is the in-race half it never had.
+- The new dashboards had wiring faults — some two dozen readouts showing a
+  dash, the wrong channel or the wrong label. Everything reads what it names
+  now, and scaling a cluster up no longer blows the artwork out of its frame.
+- In a multiclass race the lap counter was the overall leader's — always a
+  Hypercar's — not yours, and laps-left was the leader's number too. Both now
+  follow your car and your class, with a `~` when the number is genuinely an
+  estimate.
+- The engineer's damage report counted parts the car never had, and quoted
+  the repair time as if it were the whole stop. He now says what actually
+  came off, and gives the booked stop time alongside the repairs.
+- The MFD offered controls your class doesn't have — anti-roll bars on a GT3,
+  TC Slip on an LMP2 — showed linked TC sub-maps as if they moved on their
+  own, printed the motor map as a bare number instead of the car's own words,
+  and blanked regen the moment you touched it. All put right.
+- Narrow windows behave: header controls stay on screen, section pills
+  scroll instead of clipping, and the MFD's ARB rows highlight properly when
+  selected.
 
 ## 0.90.3 — 2026-08-25
 
