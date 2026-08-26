@@ -564,7 +564,7 @@ function unit() {
   }));
   a = engA.answer('damage');
   check('damage: moderate aero + repair time',
-    a.ok && /Moderate damage — aero/.test(a.text) && /12 seconds to fix/.test(a.text), a.text);
+    a.ok && /Moderate damage — aero/.test(a.text) && /Repairs about 12 seconds/.test(a.text), a.text);
 
   // pit window
   const engW = new EngineerCommands();
