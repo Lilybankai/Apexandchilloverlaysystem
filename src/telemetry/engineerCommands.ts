@@ -802,7 +802,19 @@ export class EngineerCommands {
           parts.push(d.partsDetached === 1 ? `Something's hanging off.` : `${d.partsDetached} parts hanging off.`);
         }
         if (known(d.repairSeconds) && d.repairSeconds > 0) {
-          parts.push(`About ${Math.round(d.repairSeconds)} seconds to fix if you box.`);
+          // The repair figure alone reads as a stop estimate and is not one —
+          // a booked stop usually also swaps tyres and fuels. When the sim
+          // publishes its own total for the stop as currently booked, say
+          // both; the driver planning a box call needs the bigger number.
+          const stop =
+            known(d.stopLengthSeconds) && d.stopLengthSeconds > d.repairSeconds + 1
+              ? Math.round(d.stopLengthSeconds)
+              : undefined;
+          parts.push(
+            stop !== undefined
+              ? `Repairs about ${Math.round(d.repairSeconds)} seconds — the stop as booked is about ${stop} all in.`
+              : `About ${Math.round(d.repairSeconds)} seconds to fix if you box.`,
+          );
         }
         return yes(parts.join(' '));
       }

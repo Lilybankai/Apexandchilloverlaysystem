@@ -258,7 +258,12 @@
     const ox = (w - (maxX - minX) * scale) / 2;
     const oz = (h - (maxZ - minZ) * scale) / 2;
     const px = (x) => ox + (x - minX) * scale;
-    const pz = (z) => oz + (z - minZ) * scale;
+    // The sim's Z axis vs the canvas' downward Y: plotted straight, every
+    // circuit draws as its own MIRROR IMAGE — left-handers become
+    // right-handers. The overlay's track map corrects the same handedness with
+    // one sign (overlay/js/widgets/trackmap.js viewV); flipping Z here fixes
+    // the ribbon and every car dot together, since both go through this pair.
+    const pz = (z) => oz + (maxZ - z) * scale;
 
     // Road ribbon + centreline.
     ctx.lineJoin = 'round';

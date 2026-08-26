@@ -262,10 +262,9 @@
    tyre (three tread stripes), brake disc, pressure hub. Status colours match
    the rest of the page: green in the window, red hot, cyan cold. */
 .team-wheel { width: 92px; height: 92px; flex: 0 0 auto; display: block; }
+/* Stripe colour is inline (the overlay's blue→red thermal ramp, anchored on
+   the compound's optimum); this fill is the no-data fallback only. */
 .team-wheel__tread rect { fill: var(--panel-3); }
-.team-wheel__tread rect[data-heat="ok"] { fill: var(--ok); }
-.team-wheel__tread rect[data-heat="hot"] { fill: var(--bad); }
-.team-wheel__tread rect[data-heat="cold"] { fill: var(--cyan); }
 .team-wheel__rim { fill: none; stroke: var(--line); stroke-width: 1; }
 .team-wheel__weartrack { fill: none; stroke: var(--line); stroke-width: 2.5; }
 .team-wheel__weararc {

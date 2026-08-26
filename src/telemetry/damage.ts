@@ -228,9 +228,13 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     ? (brakesM.map((m) => Math.round(m * M_TO_MM * 10) / 10) as [number, number, number, number])
     : [UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE];
 
-  // `detachableParts` is a per-part "still attached" flag. Its length varies by
-  // car (18 entries on the car this was probed against), so the count is taken
-  // over whatever is present rather than against a fixed part list.
+  // `detachableParts` is a per-part flag whose length varies by car (18 entries
+  // on the car this was probed against). CAUTION: `false` does not mean "was
+  // attached and fell off" — a clean car already reports `false` for parts the
+  // model doesn't have (13 of 18 on a live GT3, probed 2026-08-26), so this raw
+  // false-count is only usable as a DELTA against the car's cleanest observed
+  // state. The provider owns that baseline (see lmuRestProvider.refreshGarage);
+  // this decode stays pure and returns the raw count.
   const parts = w.body?.detachableParts;
   const partsDetached = Array.isArray(parts)
     ? parts.filter((p) => p === false).length

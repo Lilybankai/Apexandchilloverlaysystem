@@ -109,6 +109,12 @@ function buildTeamSnapshot(frame, at) {
       damage: p.damage
         ? {
             aero: p.damage.aero,
+            // Per-corner severities ride along so the panel can NAME the worst
+            // component the way the overlay's damage widget does — `worst`
+            // alone is an anonymous fraction.
+            suspension: Array.isArray(p.damage.suspension)
+              ? p.damage.suspension.slice(0, 4)
+              : undefined,
             worst: p.damage.worst,
             hasDamage: p.damage.hasDamage,
             repairSeconds: p.damage.repairSeconds,

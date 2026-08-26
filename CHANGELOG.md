@@ -4,6 +4,89 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **The wheel widget's tread stripes actually move now.** The first cut sorted
+  band temperatures into three fixed buckets around the compound's optimum,
+  and a GT3's tyres spend whole stints inside one bucket — so the stripes sat
+  solid blue looking broken while the temperatures underneath them moved.
+  They now use the same continuous blue→red thermal ramp as the overlay's
+  tyre widget, anchored on the sim's optimum, so every degree shows and both
+  displays tell the same story.
+
+- **The Team page's Damage tile spoke in raw fractions.** Losing a wheel
+  read "0.128665585136414" — the sim's internal severity number printed
+  unrounded and unnamed. It now names the worst component with a percentage,
+  the way the damage widget does: "FL susp 12% · 25s".
+
+- **The Team page's track map was a mirror image.** The sim's Z axis runs
+  the opposite way to a canvas' downward Y, so every circuit drew flipped —
+  left-handers became right-handers. Same one-sign correction the overlay's
+  track map has always applied; verified against Monza's real clockwise
+  direction. The car dots ride the same fix.
+
+- **The race engineer's damage report stopped lying twice.** "So many parts
+  hanging off" was counting sim part slots the car never had — a live car
+  that lost exactly one wheel reported thirteen. The count is now measured
+  against the cleanest state the car has shown, so it says what actually came
+  off (and says nothing, rather than a wrong number, when it joined the
+  session already damaged). And the repair time he quoted was only the
+  repair: when the sim publishes its own total for the stop as booked —
+  repairs, tyres and fuel together — he now gives both: "Repairs about 25
+  seconds — the stop as booked is about 35 all in."
+
+## Unreleased
+
+### Changed
+
+- **The menu moved from the top of the window to a side rail.** Eleven tabs
+  plus the mode toggle, the status pill, the gear, the account chip and
+  Start/Stop had stopped fitting one 58px row. The old bar coped by shedding
+  labels — tab names at 1220px wide, the Race/Training words at 900, the
+  status text and the brand at 820 — and near the window's 760px minimum it
+  was nine unlabelled icons with no way to tell them apart, plus a tab strip
+  that scrolled sideways with nothing to show that it had.
+
+  The rail grows *down* a column that already scrolls, so it has room the top
+  bar never had: the sections are now **grouped** — Driving, Broadcast,
+  League — instead of eleven equal-weight tabs in a row, and adding another
+  one later costs nothing that is in contention.
+
+  It **collapses to icons** with a button at the bottom, and unlike the old
+  icon-only bar each icon **names itself on hover**. Whether it is collapsed
+  is remembered. Below 1100px it collapses on its own and the toggle steps
+  aside, so a small window gets the content width without ever giving up a
+  readable menu.
+
+  **Start/Stop, the feed status, the mode toggle and your account stay in a
+  slim strip along the top.** Those are live controls, and a live control
+  should not live in something that can be put away.
+
+  **Settings is now a normal item in the rail**, at the bottom with
+  Suggestions. It used to be a gear with no tab of its own that toggled you
+  back to wherever you came from; there is room for it now, so that is gone.
+
+  Nothing else about the app moved: every section is the same section with the
+  same contents, and the first-run **Get started** checklist and its
+  walkthroughs work exactly as before.
+
+### Fixed
+
+- **The section pills inside a page could be cut off instead of scrolling.**
+  The row of pills at the top of Settings (General / Display & audio /
+  Controls / Account) and the same control on Streamers, Team and Admin had no
+  overflow behaviour, so in a narrow window — or at a higher Windows scaling
+  — the last option was simply clipped off the edge with no way to reach it.
+  They scroll now.
+
+- **The ARB rows in the MFD did not look selected when they were.** On a
+  Hypercar, moving the cursor onto Front or Rear ARB left the row looking the
+  same as the others: those two rows had no category of their own, so they
+  fell back to a dark grey, and the highlight is mixed from the row's own
+  colour — dark grey mixed into a dark panel is not a highlight. They are now
+  their own colour, and any future row without one still highlights visibly.
+
+
 ## 0.91.0-beta.12 — 2026-08-26
 
 ### Added

@@ -434,14 +434,23 @@
     return 'bad';
   }
 
-  /** Tread-band heat vs this tyre's own optimum — same thresholds the old
-   *  bar strip used, now painting the wheel graphic's tread stripes. */
-  function heatState(c, optimalC) {
-    if (!known(c) || !known(optimalC)) return 'flat';
-    const d = c - optimalC;
-    if (d > 10) return 'hot';
-    if (d < -12) return 'cold';
-    return 'ok';
+  /**
+   * A tread temperature's colour on the same blue→red thermal ramp the
+   * overlay's tyre widget uses (overlay/js/widgets/tyres.js rampColor) —
+   * anchored on the sim's optimum so green lands on the window, falling back
+   * to a fixed 35–105 °C sweep when no optimum is published. Continuous on
+   * purpose: the first cut bucketed the stripes into three states around
+   * optimal±12, and a GT3's liner spends whole stints inside one bucket, so
+   * the stripes sat solid blue looking dead while the car's own tread map
+   * visibly moved. '' when the temperature itself is unknown.
+   */
+  function rampColor(c, optimalC) {
+    if (!known(c)) return '';
+    const lo = known(optimalC) ? optimalC - 45 : 35;
+    const hi = known(optimalC) ? optimalC + 25 : 105;
+    let t = (c - lo) / (hi - lo);
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return `hsl(${Math.round(210 * (1 - t))}, 85%, 52%)`;
   }
 
   /** Brake-disc heat. A working GT disc lives ~150–750 °C; below that it is
@@ -462,13 +471,13 @@
    */
   function wheelSvg(t, key, rightSide) {
     const bands = [t.innerC, t.middleC, t.outerC];
-    const overall = heatState(t.tempC, t.optimalTempC);
     // Left-to-right stripes as drawn: the inner shoulder sits toward the car's
     // centreline, so left-side wheels read outer→inner and right-side wheels
-    // inner→outer. No usable bands → paint the whole tread the overall state.
+    // inner→outer. No usable bands → paint the whole tread off the corner's
+    // one temperature; no temperature at all → the CSS fallback grey.
     const stripes = bands.every(known)
-      ? (rightSide ? bands : [...bands].reverse()).map((c) => heatState(c, t.optimalTempC))
-      : [overall, overall, overall];
+      ? (rightSide ? bands : [...bands].reverse()).map((c) => rampColor(c, t.optimalTempC))
+      : Array(3).fill(rampColor(t.tempC, t.optimalTempC));
     const C = 2 * Math.PI * 50;
     const wearKnown = known(t.wear);
     const wearLen = wearKnown ? Math.max(0.02, Math.min(1, t.wear)) * C : 0;
@@ -483,9 +492,9 @@
           </mask>
         </defs>
         <g class="team-wheel__tread" mask="url(#team-tyremask-${key})">
-          <rect x="4" y="4" width="30.6" height="96" data-heat="${stripes[0]}"/>
-          <rect x="36.7" y="4" width="30.6" height="96" data-heat="${stripes[1]}"/>
-          <rect x="69.4" y="4" width="30.6" height="96" data-heat="${stripes[2]}"/>
+          <rect x="4" y="4" width="30.6" height="96"${stripes[0] ? ` style="fill:${stripes[0]}"` : ''}/>
+          <rect x="36.7" y="4" width="30.6" height="96"${stripes[1] ? ` style="fill:${stripes[1]}"` : ''}/>
+          <rect x="69.4" y="4" width="30.6" height="96"${stripes[2] ? ` style="fill:${stripes[2]}"` : ''}/>
         </g>
         <circle class="team-wheel__rim" cx="52" cy="52" r="45"/>
         <circle class="team-wheel__rim" cx="52" cy="52" r="28"/>
@@ -534,6 +543,37 @@
       <div class="team-tyres">${corners}</div>`);
   }
 
+  /**
+   * The Damage tile's text, matching the overlay damage widget's language:
+   * the worst COMPONENT named with its severity — "FL susp 12%", "aero 13%" —
+   * plus the sim's fix-all time. `worst` itself is a bare 0..1 fraction
+   * (max across aero + the four suspension corners) and printing it raw is
+   * exactly the "0.128665…" bug this replaces. Older relay rows may predate
+   * the snapshot carrying `suspension`; without it the damage stays nameless.
+   */
+  const DMG_CORNERS = ['FL', 'FR', 'RL', 'RR'];
+  function damageText(dmg) {
+    if (!dmg) return dash;
+    if (!dmg.hasDamage) return 'clean';
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    let where = null;
+    if (Array.isArray(dmg.suspension) && known(dmg.aero)) {
+      let idx = -1;
+      let max = dmg.aero;
+      dmg.suspension.forEach((v, i) => {
+        if (known(v) && v > max) { max = v; idx = i; }
+      });
+      where = idx < 0 ? `aero ${pct(dmg.aero)}` : `${DMG_CORNERS[idx]} susp ${pct(max)}`;
+    } else if (known(dmg.worst)) {
+      where = `worst ${pct(dmg.worst)}`;
+    } else {
+      where = 'damage';
+    }
+    const secs = known(dmg.repairSeconds) && dmg.repairSeconds > 0
+      ? ` · ${fmt0(dmg.repairSeconds)}s` : '';
+    return `${esc(where)}${secs}`;
+  }
+
   function renderTelemetry(car) {
     if (!car) { setCard(els.telemetry, ''); return; }
     const gearText = !known(car.gear) && car.gear !== 0 && car.gear !== -1 ? dash
@@ -547,9 +587,7 @@
       ? (car.pit.working ? `stopped ${fmt0(car.pit.elapsedSec)}s` : pitPhase)
       : (car.inPit ? 'in pit lane' : 'on track');
     const dmg = car.damage;
-    const dmgText = dmg
-      ? (dmg.hasDamage ? `${esc(dmg.worst || 'damage')}${known(dmg.repairSeconds) && dmg.repairSeconds > 0 ? ` · ${fmt0(dmg.repairSeconds)}s` : ''}` : 'clean')
-      : dash;
+    const dmgText = damageText(dmg);
     setCard(els.telemetry, `
       <div class="fuel-tiles team-tiles--4">
         ${tile('Speed', known(car.speedKph) ? `${car.speedKph} km/h` : dash)}

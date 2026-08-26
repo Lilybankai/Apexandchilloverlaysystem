@@ -726,6 +726,11 @@ export class LmuRestProvider implements TelemetryProvider {
   private damage: DamageState | null = null;
   private lastDamageOkAt = 0;
   /**
+   * Fewest `false` entries seen in `detachableParts` since the last stale gap —
+   * the car's own baseline of parts it never had. See {@link refreshGarage}.
+   */
+  private partsFalseBaseline: number | null = null;
+  /**
    * The player's live pit work, or `null` when the crew is not on the car.
    *
    * `plannedSec` / `slackSec` are snapshotted the instant the car comes to rest
@@ -1083,8 +1088,31 @@ export class LmuRestProvider implements TelemetryProvider {
       }
       // Decoded on arrival rather than at frame time so a malformed payload is
       // rejected once, here, instead of every frame for the next ten seconds.
-      this.damage = decodeDamage(data);
-      if (this.damage) this.lastDamageOkAt = Date.now();
+      const decoded = decodeDamage(data);
+      if (decoded) {
+        // `detachableParts` turned out to be per-CAR, not per-event: a car
+        // reports `false` for every part the model simply doesn't have, so the
+        // absolute false-count is meaningless (13 of 18 on a live GT3 that had
+        // lost exactly one wheel — probed 2026-08-26). Only the RISE above the
+        // cleanest state seen for this car is damage, so track the minimum and
+        // publish the delta. Joining mid-damage under-reports (delta 0) until
+        // the car is next clean, which beats announcing thirteen phantom
+        // parts; a stale gap (menus, session change) resets the baseline.
+        const rawParts = decoded.partsDetached;
+        if (rawParts !== UNKNOWN_VALUE) {
+          const stale = Date.now() - this.lastDamageOkAt > GARAGE_STALE_AFTER_MS;
+          if (stale || this.partsFalseBaseline === null) {
+            this.partsFalseBaseline = rawParts;
+          } else if (rawParts < this.partsFalseBaseline) {
+            this.partsFalseBaseline = rawParts;
+          }
+          decoded.partsDetached = rawParts - this.partsFalseBaseline;
+        }
+        this.damage = decoded;
+        this.lastDamageOkAt = Date.now();
+      } else {
+        this.damage = decoded;
+      }
     } catch (err) {
       // Endpoint is only alive inside a session; keep the last data until stale.
       if (this.verbose) console.error('[lmu] garage refresh failed:', (err as Error).message);
