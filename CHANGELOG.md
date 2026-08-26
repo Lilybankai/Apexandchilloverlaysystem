@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.13 — 2026-08-26
+
 ### Changed
 
 - **The menu moved from the top of the window to a side rail.** Eleven tabs
