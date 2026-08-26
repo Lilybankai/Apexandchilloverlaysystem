@@ -4,16 +4,22 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.92.0-beta.1 — 2026-08-26
+## 0.92.0 — 2026-08-26
 
-### Changed
+The Team pit wall and the Fuel tab stay in beta a little longer while we
+test them across machines.
 
-- **The beta line starts again from the 0.91.0 stable.** Same build as the
-  stable release underneath — every 0.91.0 note applies — with the beta-only
-  features still on top: the Team pit wall with teams, invite codes and the
-  live relay, and the Fuel tab. If you were on 0.91.0-beta.13, nothing here
-  is new to you; this build exists so the beta channel has a current version
-  to update to now that stable has caught up.
+### Added
+
+- **The engineer calls local yellows — and names the sector.** A yellow
+  appearing in a sector gets a radio call ("Yellow flag, sector two — watch
+  for a slow car through there"), and the withdrawal gets the all-clear.
+  Asking "any yellows" / "yellow flag" now answers with the real sector too.
+  The sector comes straight from the sim's shared memory, decoded live in a
+  22-car session — the web feed alone publishes sector 1's flag copied into
+  all three slots and misses sector 2/3 yellows entirely, so on a rig
+  without shared memory the engineer says "yellows out" rather than
+  inventing a location.
 
 ## 0.91.0 — 2026-08-26
 
