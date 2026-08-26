@@ -4,6 +4,19 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **The coloured line running down the stream, past the overlays.** Each
+  widget's 3px brand accent bar was escaping its panel on the OBS Browser
+  Source pages and stretching over the FULL height of the source — a
+  cyan-to-magenta line running the whole screen, top to bottom, out of a
+  panel only a few dozen pixels tall. With several widgets added as their
+  own sources there was one line per source. The panel had stopped being
+  the bar's containing block, so it re-parented to the page itself, and the
+  panel's own clipping could not catch it. Nothing about the widgets moved;
+  the bar is simply back inside its panel, where it now also follows the
+  panel's rounded corner in the in-game layer instead of squaring it off.
+
 ## 0.93.0-beta.1 — 2026-08-27
 
 ### Added
