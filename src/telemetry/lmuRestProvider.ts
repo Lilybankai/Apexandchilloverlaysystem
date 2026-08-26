@@ -48,6 +48,7 @@ import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { LmuTraceLimitsReader } from './lmuTraceLimits';
 import { PaceAverageTracker } from './paceAverage';
+import { predictLapsToFlag } from './lapsToFlag';
 import { buildRadar, type RadarCar } from './radar';
 import { TrackMapBuilder } from './trackMap';
 import {
@@ -618,6 +619,13 @@ export class LmuRestProvider implements TelemetryProvider {
   private lastNameProbeAt = 0;
   /** Rolling last-5-lap pace per car, for the standings AVG column. */
   private readonly paceAvg = new PaceAverageTracker();
+  /**
+   * The last rolling-pace map {@link buildStandings} produced, slot -> avg of
+   * the car's recent laps. Kept on the instance because `buildSession` needs it
+   * one call later and the two are built from the same poll: recomputing it
+   * there would double the work and could disagree with the tower.
+   */
+  private paceBySlot: Map<number, number> = new Map();
   /**
    * The driven car's model, latched from the Scoring buffer.
    *
@@ -1927,6 +1935,7 @@ export class LmuRestProvider implements TelemetryProvider {
       })),
       sessionKey,
     );
+    this.paceBySlot = avgBySlot;
     const rows = cars.map((c) => {
       const ranks = this.driverRanksFor(c.driverName);
       const lastS1 = posOrUnknown(c.lastSectorTime1);
@@ -2211,6 +2220,25 @@ export class LmuRestProvider implements TelemetryProvider {
     gs: RestGameState | null,
   ): SessionState {
     const leaderLaps = cars.reduce((m, c) => Math.max(m, c.lapsCompleted | 0), 0);
+    // The leader of the PLAYER'S class, which is who the driver's own race ends
+    // behind.
+    //
+    // Chosen by lowest `position`, NOT by taking the first matching row. `cars`
+    // is the raw REST array and is NOT in position order — `buildStandings`
+    // sorts a mapped COPY of it (see the sort at the end of that method), which
+    // is exactly why the unsorted original is easy to mistake for ordered.
+    // Taking the first match picked an arbitrary car of the class: probed live
+    // 2026-08-26 it returned a Hypercar with no laps at all while the class
+    // leader had seventeen, so the strip would have counted the driver's race
+    // off a car sitting in the garage.
+    const focusClass = focus ? normalizeClass(focus.carClass) : undefined;
+    const classLeader = focusClass
+      ? cars.reduce<RestStanding | undefined>((best, c) => {
+          if (normalizeClass(c.carClass) !== focusClass) return best;
+          return !best || c.position < best.position ? c : best;
+        }, undefined)
+      : undefined;
+    const classLeaderLap = classLeader ? (classLeader.lapsCompleted | 0) + 1 : UNKNOWN_VALUE;
     const endET = typeof si.endEventTime === 'number' ? si.endEventTime : 0;
     const curET = typeof si.currentEventTime === 'number' ? si.currentEventTime : 0;
     // Prefer LMU's own "time left in the current phase" — during a green timed
@@ -2235,19 +2263,43 @@ export class LmuRestProvider implements TelemetryProvider {
     // standings can show "~N laps left" alongside the countdown. The race ends
     // when the leader next crosses the line after the clock hits zero, so round
     // up and keep at least one lap while the clock is running.
-    const leader = cars.find((c) => c.position === 1);
-    const leaderPace =
-      leader && typeof leader.estimatedLapTime === 'number' && leader.estimatedLapTime > 0
-        ? leader.estimatedLapTime
-        : leader && leader.bestLapTime > 0
-          ? leader.bestLapTime
-          : focus && focus.bestLapTime > 0
-            ? focus.bestLapTime
-            : 0;
-    const lapsRemaining =
-      maxLaps === 0 && timeRemaining > 0 && leaderPace > 0
-        ? Math.max(1, Math.ceil(timeRemaining / leaderPace))
-        : UNKNOWN_VALUE;
+    // A car's race pace: the rolling average of its recent laps (pit laps
+    // already excluded, see telemetry/paceAverage), falling back to its best.
+    //
+    // NOT `estimatedLapTime`, which the name promises and does not deliver:
+    // probed across a full 24-car field at Sebring (2026-08-26) it was ONE
+    // identical value on every row — 108.777 s on the Hypercars, the LMP2s, the
+    // GT3s and on cars that had never turned a lap. Reading it per car would
+    // hand every class the same pace and silently undo the class split below.
+    const paceOf = (c: RestStanding | undefined): number => {
+      if (!c) return 0;
+      const avg = this.paceBySlot.get(c.slotID);
+      if (typeof avg === 'number' && avg > 0) return avg;
+      return c.bestLapTime > 0 ? c.bestLapTime : 0;
+    };
+    const overallLeader = cars.find((c) => c.position === 1);
+    // The pace the driver's own class runs at, which is what their remaining
+    // laps have to be counted in. Their class leader's, falling back to their
+    // own car when the class cannot be resolved.
+    const classPace = paceOf(classLeader) || paceOf(focus);
+    const leaderPace = paceOf(overallLeader) || classPace;
+    // One prediction for both race types — the time still to run divided by the
+    // class's lap time. In a lap race that time is the leader's remaining laps
+    // at the leader's pace, which is why a GT3 does not get the Hypercar's lap
+    // count. See telemetry/lapsToFlag for the arithmetic and the probe behind
+    // it. `estimated` false means it came out as the plain subtraction, which
+    // is exact; the strip only hedges with a `~` when it did not.
+    const toFlag = predictLapsToFlag({
+      totalLaps: maxLaps,
+      timeRemainingSec: timeRemaining,
+      leaderLapsCompleted: leaderLaps,
+      leaderPaceSec: leaderPace,
+      paceSec: classPace,
+    });
+    // Published only when it is genuinely a prediction. Left unknown otherwise
+    // so the overlay falls back to the exact lap subtraction it can do for
+    // itself, and "lapsRemaining is present" keeps meaning "this is a guess".
+    const lapsRemaining = toFlag.estimated ? toFlag.laps : UNKNOWN_VALUE;
     // Prefer the focused car's flag/phase strings (reliable); then
     // GetGameState's GPHASE_* string, which exists even before any car does
     // (GPHASE_BEFORE while the session loads); sessionInfo's gamePhase is
@@ -2332,6 +2384,7 @@ export class LmuRestProvider implements TelemetryProvider {
       totalLaps: maxLaps,
       lapsRemaining,
       currentLap: leaderLaps + 1,
+      classLeaderLap,
       numCars: typeof si.numberOfVehicles === 'number' ? si.numberOfVehicles : cars.length,
       notStarted: isPreGreen(phase),
       scheduledLengthSec,
@@ -2782,6 +2835,7 @@ export class LmuRestProvider implements TelemetryProvider {
       tyreHudTempsC: unknown4(),
       tyreCoreC: unknown4(),
       tyreBrakeC: unknown4(),
+      tyrePressureKpa: unknown4(),
       tyreSurfaceBandsC: [null, null, null, null],
       tyreLinerBandsC: [null, null, null, null],
       motion: null,
@@ -2897,6 +2951,7 @@ export class LmuRestProvider implements TelemetryProvider {
       const liner = local ? local.tyreLinerBandsC[i] : null;
       const core = local ? local.tyreCoreC[i] : UNKNOWN_VALUE;
       const brake = local ? local.tyreBrakeC[i] : UNKNOWN_VALUE;
+      const press = local ? local.tyrePressureKpa[i] : UNKNOWN_VALUE;
       const s = spec ? spec[i] : undefined;
       return {
         // Primary = inner-liner temp (matches the in-game HUD); surface on the sub-line.
@@ -2905,6 +2960,7 @@ export class LmuRestProvider implements TelemetryProvider {
         wear: wear ? round2(wear[i] as number) : UNKNOWN_VALUE,
         ...(core !== UNKNOWN_VALUE ? { coreC: core } : {}),
         ...(brake !== UNKNOWN_VALUE ? { brakeTempC: brake } : {}),
+        ...(press !== UNKNOWN_VALUE ? { pressureKpa: press } : {}),
         ...(liner ? { innerC: liner[0], middleC: liner[1], outerC: liner[2] } : {}),
         ...(surf
           ? { surfaceInnerC: surf[0], surfaceMiddleC: surf[1], surfaceOuterC: surf[2] }

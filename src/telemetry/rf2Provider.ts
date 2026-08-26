@@ -69,6 +69,7 @@ import {
   lapFractionOf,
   normalizeClass,
 } from './carClass';
+import { predictLapsToFlag } from './lapsToFlag';
 import { decodeMotion } from './motion';
 import { buildRadar, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
@@ -587,6 +588,25 @@ export class RF2Provider implements TelemetryProvider {
     const playerBest = playerStanding?.bestLapSec ?? UNKNOWN_VALUE;
     const playerLast = playerStanding?.lastLapSec ?? UNKNOWN_VALUE;
     const leaderLaps = standings[0]?.lapsCompleted ?? 0;
+    // The leader of the PLAYER'S class — who the driver's own race ends behind,
+    // and what "N LAPS LEFT" counts from. `standings` is in overall-position
+    // order, so the first row of the class is its leader.
+    const classLeader = playerStanding?.carClass
+      ? standings.find((r) => r.carClass === playerStanding.carClass)
+      : undefined;
+    const classLeaderLap = classLeader ? classLeader.lapsCompleted + 1 : UNKNOWN_VALUE;
+    // How many laps the driver's class still has to run — the time left in the
+    // race divided by the class's lap time, not the leader's lap total handed
+    // to everyone. See telemetry/lapsToFlag. rF2 publishes no rolling average,
+    // so best laps stand in; they are optimistic in the same direction for both
+    // cars, so the RATIO between them is still about right.
+    const toFlag = predictLapsToFlag({
+      totalLaps: maxLaps > 0 ? maxLaps : 0,
+      timeRemainingSec: timeRemaining,
+      leaderLapsCompleted: leaderLaps,
+      leaderPaceSec: standings[0]?.bestLapSec ?? UNKNOWN_VALUE,
+      paceSec: classLeader?.bestLapSec ?? playerBest,
+    });
 
     // --- weather (current from scoring; a short flat forecast) -----------
     const trackTempC = scoring.readDoubleLE(SI.base + SI.mTrackTemp);
@@ -663,8 +683,9 @@ export class RF2Provider implements TelemetryProvider {
         track: trackName,
         timeRemainingSec: timeRemaining,
         totalLaps: maxLaps > 0 ? maxLaps : 0,
-        lapsRemaining: UNKNOWN_VALUE,
+        lapsRemaining: toFlag.estimated ? toFlag.laps : UNKNOWN_VALUE,
         currentLap: leaderLaps + 1,
+        classLeaderLap,
         numCars: numVehicles,
         notStarted: isPreGreen(sessionPhase),
         // `mEndET` is the session's full booked length on the sim's own clock,

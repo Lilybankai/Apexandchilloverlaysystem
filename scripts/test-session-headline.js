@@ -9,12 +9,20 @@
  *   timed race      LAP 12      · 28:14 · ~24 LAPS LEFT
  *   practice/quali  LAP 5       · 28:14 · PRACTICE
  *
- * That last row is the one worth a test. Practice and qualifying have no lap
- * total, so the counter there is the DRIVER's tally — laps they have completed,
- * counting up — rather than where the session is up to, and it is read off
- * their own standings row rather than off `session.currentLap`, which is the
- * leader's. Wiring it to the wrong one would look right in a single-car test
- * session and be wrong the moment anyone else is on track.
+ * The counter and the note beside it are counted off two DIFFERENT cars, and
+ * section 11 is the one that pins that down:
+ *
+ *   - "LAP n" is always the driver's own lap, read off their standings row.
+ *     It used to be `session.currentLap`, which is the OVERALL leader's — in a
+ *     multiclass LMU race always a Hypercar's, so a GT3 nine laps in was told
+ *     it was on lap twelve. Wiring it to the leader looks right in a single-car
+ *     test session and is wrong the moment anyone faster is on track.
+ *   - "N LAPS LEFT" is counted off the leader of the driver's OWN class, since
+ *     the flag falls on the leader: a lapped car does not get its laps back.
+ *
+ * So the two are NOT required to add up to the lap total, and for a lapped car
+ * they will not. Several checks below exist purely to stop someone "fixing"
+ * that back into agreement.
  *
  * Both panels take the wording from the same function so they cannot disagree
  * about how many laps are to go, which is a subtraction the driver makes between
@@ -110,6 +118,7 @@ const session = (over) => Object.assign({
   phase: 'green',
   notStarted: false,
   currentLap: 12,
+  classLeaderLap: -1,
   totalLaps: 0,
   lapsRemaining: -1,
   timeRemainingSec: -1,
@@ -218,12 +227,14 @@ console.log('\n6) The tally comes off the player\'s own standings row');
 
 console.log('\n7) The lap limit decides, not the name');
 {
-  // A lap-limited qualifying session is unusual and entirely legal. The reason
-  // practice counts the driver's own laps is that there is no total to count
-  // towards — so when there is one, the race-shaped counter is right again, and
-  // it beats the tally even when one is passed in.
+  // A lap-limited qualifying session is unusual and entirely legal. Having a
+  // total to count towards changes the SHAPE of the counter — "n/8" rather than
+  // a bare tally — but not whose laps it counts: in a qualifying session every
+  // driver runs their own eight, so the leader's lap is nobody else's business.
+  // Asserted 'LAP 3/8' until 2026-08-26, which was the leader's lap wearing the
+  // driver's label.
   const h = sessionHeadline(session({ type: 'qualifying', currentLap: 3, totalLaps: 8 }), 5);
-  check('a lap-limited qualifying counts laps', h.primary === 'LAP 3/8', h.primary);
+  check("a lap-limited qualifying counts the driver's own laps", h.primary === 'LAP 6/8', h.primary);
   check('and says what is left', h.note === '6 LAPS LEFT', h.note);
 }
 
@@ -381,6 +392,84 @@ console.log('\n10) The header position reads the field, or the driver\'s own cla
   });
   check('the driver is found by slot when nothing is flagged',
     positionMeta(bySlot, 'class') === 'GT3 2 / 2', positionMeta(bySlot, 'class'));
+}
+
+console.log("\n11) The counter is the driver's lap; the laps left are their class's");
+{
+  // The bug this section exists for: a GT3 nine laps into a race led by a
+  // Hypercar on lap twelve was shown "LAP 12/40". Every number in the strip was
+  // about a car the driver has never seen.
+  //
+  // The fix splits the strip in two, because it was answering two questions off
+  // one car:
+  //   - the COUNTER is the driver's own lap, from their standings row;
+  //   - the LAPS LEFT are their CLASS leader's, because the flag falls on the
+  //     leader and a lapped car does not get its laps back.
+  const h = sessionHeadline(session({ currentLap: 12, classLeaderLap: 11, totalLaps: 40 }), 9);
+  check("the counter is the driver's own lap, not the Hypercar's",
+    h.primary === 'LAP 10/40', h.primary);
+  check('laps left come off the class leader, not the race leader',
+    h.note === '30 LAPS LEFT', h.note);
+
+  // 10 + 30 = 40 only for a car on its class's lead lap. A car further down
+  // will not drive the full distance, and the strip must not pretend otherwise:
+  // the two halves are allowed to disagree with the total. Handing those laps
+  // back is exactly what would over-fuel the car.
+  const lapped = sessionHeadline(session({ currentLap: 12, classLeaderLap: 11, totalLaps: 40 }), 7);
+  check('a lapped car reads its own lap', lapped.primary === 'LAP 8/40', lapped.primary);
+  check('and is not handed its lost laps back', lapped.note === '30 LAPS LEFT', lapped.note);
+
+  // Taking the flag must not roll the counter over to 41/40 for the lap home.
+  const flag = sessionHeadline(session({ currentLap: 41, classLeaderLap: 41, totalLaps: 40 }), 40);
+  check('the chequered flag reads the distance, not past it',
+    flag.primary === 'LAP 40/40', flag.primary);
+
+  // Spectating or a replay: no player row, so fall back to the overall leader
+  // for both halves rather than blanking the strip.
+  const spec = sessionHeadline(session({ currentLap: 12, totalLaps: 40 }));
+  check('no player row falls back to the race leader', spec.primary === 'LAP 12/40', spec.primary);
+  check('and so does the laps-left', spec.note === '29 LAPS LEFT', spec.note);
+
+  // A mod class nothing recognises: the driver still has their own lap count,
+  // and only the half that needs a class falls back.
+  const noClass = sessionHeadline(session({ currentLap: 12, totalLaps: 40 }), 9);
+  check('a known driver with no class keeps their own counter',
+    noClass.primary === 'LAP 10/40', noClass.primary);
+  check('but falls back to the race leader for laps left',
+    noClass.note === '29 LAPS LEFT', noClass.note);
+
+  // A timed race: the counter is still the driver's, and the estimate is the
+  // provider's — already derived from the class leader's pace upstream.
+  const timed = sessionHeadline(session({
+    currentLap: 12, classLeaderLap: 11, totalLaps: 0, timeRemainingSec: 3600, lapsRemaining: 22,
+  }), 9);
+  check("a timed race counts the driver's lap too", timed.primary === 'LAP 10', timed.primary);
+  check("and passes the provider's estimate through", timed.note === '~22 LAPS LEFT', timed.note);
+
+  // When the provider publishes a PREDICTION for a lap race it wins, and wears
+  // a tilde. A 40-lap race is 40 laps for the Hypercar winning it; the GT3s
+  // behind run for the same length of time and finish around lap 36, so the
+  // exact-looking subtraction was three laps long. `lapsRemaining` is published
+  // only when it is a guess, so its presence alone earns the hedge.
+  const pred = sessionHeadline(
+    session({ currentLap: 12, classLeaderLap: 10, totalLaps: 40, lapsRemaining: 26 }), 9);
+  check('a published prediction beats the subtraction',
+    pred.note === '~26 LAPS LEFT', pred.note);
+  check('and the counter is still the driver\'s own lap',
+    pred.primary === 'LAP 10/40', pred.primary);
+
+  // No prediction: the exact subtraction, unhedged. A car in the leading class
+  // must not have a confident number turned into a vague one.
+  const exact = sessionHeadline(session({ currentLap: 12, classLeaderLap: 12, totalLaps: 40 }), 11);
+  check('no prediction leaves the exact answer unhedged',
+    exact.note === '29 LAPS LEFT', exact.note);
+
+  // A single-class field reads identically either way, which is what makes this
+  // safe to ship without a setting to opt into.
+  const solo = sessionHeadline(session({ currentLap: 12, classLeaderLap: 12, totalLaps: 40 }), 11);
+  check('a single-class field reads identically either way',
+    solo.primary === 'LAP 12/40' && solo.note === '29 LAPS LEFT',
+    solo.primary + ' | ' + solo.note);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

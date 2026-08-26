@@ -782,10 +782,11 @@
    * How many laps the DRIVER has completed this session, read from their own
    * standings row — the one place every provider fills it in.
    *
-   * Not `session.currentLap`, which is the LEADER's lap: in a race those two
-   * questions have nearly the same answer, but in a practice session with a
-   * dozen cars circulating on their own schedules they have nothing to do with
-   * each other, and the driver's tally is the one being asked for.
+   * Not `session.currentLap`, which is the OVERALL leader's lap. Those two are
+   * the same number only for a car on the lead lap of a single-class race: in a
+   * multiclass field the leader is a Hypercar and in practice a dozen cars are
+   * circulating on their own schedules. Every counter a driver reads as "my
+   * lap" is fed from here — see `sessionHeadline`.
    *
    * @param {object} frame  A telemetry frame.
    * @returns {number} Laps completed, or `-1` when there is no player row at all
@@ -831,8 +832,11 @@
    *
    * @param {object} session  `frame.session` (SessionState).
    * @param {number} [lapsDone]  Laps the driver has completed, from
-   *   {@link playerLapsCompleted}. Only read for practice/qualifying; `-1` or
-   *   omitted there falls back to naming the session, as before.
+   *   {@link playerLapsCompleted}. Drives the lap counter in EVERY session type:
+   *   the counter is always the driver's own lap, never the leader's. `-1` or
+   *   omitted falls back to `session.currentLap` in a race (a spectator feed or
+   *   replay, where there is no player to count for) and to naming the session
+   *   in practice/qualifying.
    * @returns {{primary: string, clock: string, note: string, urgent: boolean}}
    *   `clock`/`note` are `""` when they have nothing to say and should be hidden.
    */
@@ -850,22 +854,62 @@
 
     var cur = session.currentLap;
     var tot = session.totalLaps;
+    // The counter and the note answer two different questions and are counted
+    // off two different cars.
+    //
+    //   - "LAP n" is the driver's OWN lap, the one they are on right now:
+    //     their laps completed plus the one in progress. It used to be
+    //     `session.currentLap`, which is the OVERALL leader's — in a multiclass
+    //     LMU race always a Hypercar's, so a GT3 running its ninth lap was told
+    //     it was on lap twelve. That is the one number on the panel a driver
+    //     has no way to sanity-check, and it was simply somebody else's.
+    //   - "N LAPS LEFT" is counted off the leader of the driver's OWN class
+    //     (`session.classLeaderLap`), because the flag falls on the leader, not
+    //     on them: a car two laps down does not get two extra laps to run.
+    //
+    // Which means the two do not have to add up to `tot`, and for a lapped car
+    // they will not — that is the arithmetic of being lapped, not a bug.
+    var myLap = has(lapsDone) ? Math.max(0, Math.round(lapsDone)) + 1 : cur;
+    // The class leader, falling back to the overall leader on a feed that has
+    // no player row or no class for them (spectating, a replay, an unknown mod
+    // class). Never falls back to the driver's own lap: counting THEIR laps
+    // left off THEIR position is what over-fuels a lapped car.
+    var leadLap = has(session.classLeaderLap) ? session.classLeaderLap : cur;
 
     if (has(tot) && tot > 0) {
       // A lap-limited session has no clock worth showing — it ends on a lap, and a
       // countdown next to a lap counter invites planning against the wrong one.
       //
       // Laps left INCLUDES the lap being run: on lap 40 of 40 there is 1 to go,
-      // and on lap 12 of 40 there are 29 still to drive. That is deliberately
-      // the same count the fuel calculator finishes the race on (lapsToFinish
-      // = totalRaceLaps − lapsCompleted, telemetry/fuelCalculator.ts) — this
-      // strip sits directly above the litres derived from it in the fuel panel,
-      // and the two disagreeing by a lap would discredit both.
-      var left = has(cur) && cur > 0 ? Math.max(0, tot - (cur - 1)) : 0;
+      // and on lap 12 of 40 there are 29 still to drive.
+      //
+      // Two ways to get there, and which one answered decides whether the number
+      // wears a `~`:
+      //
+      //   - The provider's PREDICTION, when it has one. A 40-lap race is 40 laps
+      //     for the car winning it; everyone else runs for the same length of
+      //     TIME and covers what their own pace covers. At Sebring a Hypercar
+      //     laps 12 s quicker than a GT3, so over a leader's last 29 laps a GT3
+      //     completes about 26 — and it is published only when it genuinely is
+      //     a guess (telemetry/lapsToFlag), which is what earns the tilde.
+      //   - Otherwise the exact subtraction off the driver's CLASS leader, which
+      //     is what a car in the leading class has always been shown, and is not
+      //     hedged because it is not a guess.
+      var pred = session.lapsRemaining;
+      var left = has(leadLap) && leadLap > 0 ? Math.max(0, tot - (leadLap - 1)) : 0;
+      var note =
+        has(pred) && pred > 0
+          ? lapsLeftText(Math.round(pred), true)
+          : left > 0
+            ? lapsLeftText(left, false)
+            : "";
+      // Clamped so taking the chequered flag reads "LAP 40/40" rather than
+      // rolling over to 41/40 for the lap home.
+      var shown = has(myLap) ? Math.min(myLap, tot) : myLap;
       return {
-        primary: "LAP " + intVal(cur) + "/" + tot,
+        primary: "LAP " + intVal(shown) + "/" + tot,
         clock: "",
-        note: left > 0 ? lapsLeftText(left, false) : "",
+        note: note,
         urgent: false,
       };
     }
@@ -892,9 +936,13 @@
       return { primary: sessionLabel(session.type), clock: clock, note: "", urgent: urgent };
     }
 
+    // Timed race. The counter is the driver's own lap, as above; the estimate is
+    // the provider's, and is the same prediction the lap-limited branch prefers
+    // — the clock divided by the driver's CLASS pace rather than the overall
+    // leader's (telemetry/lapsToFlag, SessionState.lapsRemaining).
     var est = session.lapsRemaining;
     return {
-      primary: "LAP " + intVal(cur),
+      primary: "LAP " + intVal(myLap),
       clock: clock,
       note: has(est) && est > 0 ? lapsLeftText(Math.round(est), true) : "",
       urgent: urgent,
@@ -1265,8 +1313,9 @@
    *   (the 400px fuel panel, which already has its own Tier 1 stats below).
    * @returns {function(object, number=): void} `set(session, lapsDone)`, cheap to
    *   call every frame. `lapsDone` is {@link playerLapsCompleted} of the frame —
-   *   the driver's own lap tally, which is what the counter shows in practice
-   *   and qualifying where there is no lap total to count towards.
+   *   the driver's own lap tally, and what the counter shows in every session
+   *   type. The laps-left note beside it is counted off the driver's CLASS
+   *   leader instead; {@link sessionHeadline} owns why they differ.
    */
   function sessionStrip(parent, opts) {
     opts = opts || {};

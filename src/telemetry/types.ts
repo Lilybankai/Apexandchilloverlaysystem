@@ -125,13 +125,47 @@ export interface SessionState {
   /** Total laps for a lap-based session; `0` when the session is timed. */
   totalLaps: number;
   /**
-   * Estimated laps still to run, for a **timed** race — LMU only gives a clock,
-   * so this is derived from the time remaining and the leader's lap pace.
-   * {@link UNKNOWN_VALUE} for lap-based sessions or when pace isn't known yet.
+   * Predicted laps the PLAYER'S CLASS still has to run before the flag, in
+   * **either** race type — or {@link UNKNOWN_VALUE} when no prediction can be
+   * made, which is also how a consumer knows the number it has is exact.
+   *
+   * Set only when this is genuinely a guess. That is the contract: if it is
+   * present, hedge it (the strip prints "~26 LAPS LEFT"); if it is absent, fall
+   * back to `totalLaps − classLeaderLap + 1`, which is exact for a car in the
+   * leading class and is what the panel showed for years.
+   *
+   * Both race types are one idea — the time still to run, divided by the class's
+   * lap time. For a timed race the clock IS the time still to run. For a
+   * lap-limited race it is the LEADER's remaining laps at the leader's pace,
+   * because a 40-lap race is 40 laps for the car winning it and everyone else
+   * runs for the same length of time. At Sebring a Hypercar laps 12.6 s quicker
+   * than a GT3, so over a leader's last 29 laps a GT3 completes about 26 — the
+   * old subtraction over-counted by three, in the direction that costs a stop.
+   *
+   * See {@link module:telemetry/lapsToFlag} for the arithmetic, the live probe
+   * behind those numbers, and why LMU's own `estimatedLapTime` cannot be the
+   * pace input.
    */
   lapsRemaining: number;
   /** Race leader's current lap number (1-based); {@link UNKNOWN_VALUE} if unknown. */
   currentLap: number;
+  /**
+   * The lap number (1-based) the leader of the PLAYER'S class is on, or
+   * {@link UNKNOWN_VALUE} when there is no player row or their class is unknown.
+   *
+   * Separate from {@link currentLap} because the two answer different questions
+   * and only agree in a single-class field. `currentLap` is where the RACE is,
+   * which is set by the overall leader — in LMU that is always a Hypercar.
+   * This is where the player's own race is, and it is what "N LAPS LEFT" has
+   * to be counted from: the chequered flag ends the class contest at the same
+   * moment it ends the race, so the laps a GT3 driver still has to run are the
+   * ones their class leader still has to run, not the ones the Hypercar does.
+   *
+   * Neither of them is the driver's OWN lap — that comes off the player's
+   * standings row (`lapsCompleted`, via `playerLapsCompleted` in the overlay
+   * runtime) and is the only thing the "LAP n" counter may ever show.
+   */
+  classLeaderLap: number;
   /** Number of cars/entries in the session. */
   numCars: number;
   /** Optional server / lobby name. */

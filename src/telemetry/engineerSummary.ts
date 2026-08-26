@@ -401,7 +401,13 @@ export function engineerSummary(
   if (me?.carClass) out.class = me.carClass;
   if (me && known(me.position)) out.position = me.position;
   if (me && known(me.classPosition)) out.classPosition = me.classPosition;
-  if (known(s.currentLap) && s.currentLap > 0) out.currentLap = s.currentLap;
+  // The DRIVER'S lap, not the race's. `s.currentLap` is the overall leader's,
+  // which in a multiclass field is a Hypercar's — an engineer told "currentLap
+  // 12" while its driver is on lap 10 will talk about a race the driver is not
+  // in. Falls back to the leader's only when there is no player row at all.
+  const ownLap = me && known(me.lapsCompleted) && me.lapsCompleted >= 0 ? me.lapsCompleted + 1 : UNKNOWN_VALUE;
+  if (known(ownLap) && ownLap > 0) out.currentLap = ownLap;
+  else if (known(s.currentLap) && s.currentLap > 0) out.currentLap = s.currentLap;
   if (fuel && known(fuel.lapsToFinish) && fuel.lapsToFinish > 0) out.lapsToFinish = round1(fuel.lapsToFinish);
   else if (known(s.lapsRemaining) && s.lapsRemaining > 0) out.lapsToFinish = round1(s.lapsRemaining);
   if (known(s.timeRemainingSec) && s.timeRemainingSec > 0) {

@@ -597,10 +597,25 @@ export class EngineerCommands {
 
       case 'lapsLeft': {
         const s = frame.session;
-        if (known(s.totalLaps) && s.totalLaps > 0 && known(s.currentLap) && s.currentLap > 0) {
-          const left = Math.max(0, s.totalLaps - s.currentLap + 1);
+        // Counted off the leader of the DRIVER'S class, not the overall leader:
+        // the flag falls on the leader, so a lapped car does not get its laps
+        // back, and in a multiclass LMU race the overall leader is a Hypercar
+        // whose lap count has nothing to do with a GT3's race. Same number the
+        // standings strip prints, which is the point — the driver must not be
+        // able to get two different answers by asking twice.
+        const lead = known(s.classLeaderLap) && s.classLeaderLap > 0 ? s.classLeaderLap : s.currentLap;
+        if (known(s.totalLaps) && s.totalLaps > 0 && known(lead) && lead > 0) {
+          // The provider's prediction when it has one — a lap total belongs to
+          // the car winning the race, and a slower class covers fewer laps in
+          // the same time (telemetry/lapsToFlag). It is published only when it
+          // really is a guess, so "about" is said exactly when it is earned.
+          const pred = known(s.lapsRemaining) && s.lapsRemaining > 0 ? s.lapsRemaining : 0;
+          const left = pred || Math.max(0, s.totalLaps - lead + 1);
+          if (left <= 1) return yes('This is the last lap.');
           return yes(
-            left <= 1 ? 'This is the last lap.' : `${left} laps to go, including this one.`,
+            pred
+              ? `About ${left} laps to go, including this one.`
+              : `${left} laps to go, including this one.`,
           );
         }
         if (known(s.timeRemainingSec) && s.timeRemainingSec >= 0) {

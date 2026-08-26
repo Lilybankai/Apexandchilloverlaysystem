@@ -398,6 +398,34 @@ function unit() {
   eng4.update(frame({ session: { totalLaps: 0, currentLap: 8 } }));
   a = eng4.answer('lapsLeft');
   check('lapsLeft: nothing known -> refuses', a.ok === false, a.text);
+  // Counted off the leader of the DRIVER'S class, not the overall leader — the
+  // same number the standings strip prints. A GT3 in a race led by a Hypercar
+  // two laps up the road must not be told the Hypercar's laps-to-go, or the
+  // driver gets two different answers depending on which they look at.
+  eng4.update(frame({ session: { totalLaps: 20, currentLap: 17, classLeaderLap: 15 } }));
+  a = eng4.answer('lapsLeft');
+  check('lapsLeft: counts off the class leader, not the race leader',
+    a.ok && /6 laps to go/.test(a.text), a.text);
+  // No class resolved (spectating, an unknown mod class): fall back to the
+  // overall leader rather than refusing to answer at all.
+  eng4.update(frame({ session: { totalLaps: 20, currentLap: 17, classLeaderLap: -1 } }));
+  a = eng4.answer('lapsLeft');
+  check('lapsLeft: falls back to the race leader when no class is known',
+    a.ok && /4 laps to go/.test(a.text), a.text);
+  // A published prediction wins and is spoken as one — the driver hears that it
+  // is an estimate, which the subtraction never was.
+  eng4.update(frame({
+    session: { totalLaps: 20, currentLap: 17, classLeaderLap: 15, lapsRemaining: 5 },
+  }));
+  a = eng4.answer('lapsLeft');
+  check('lapsLeft: a prediction is spoken as an estimate',
+    a.ok && /About 5 laps to go/.test(a.text), a.text);
+  // ...but the last lap is the last lap, never "about one".
+  eng4.update(frame({
+    session: { totalLaps: 20, currentLap: 20, classLeaderLap: 20, lapsRemaining: 1 },
+  }));
+  a = eng4.answer('lapsLeft');
+  check('lapsLeft: the final lap is never hedged', a.ok && /last lap/.test(a.text), a.text);
 
   // -- fuel ------------------------------------------------------------------
   // The answer speaks the TIGHTER budget: LMU cars run a tank AND a virtual-

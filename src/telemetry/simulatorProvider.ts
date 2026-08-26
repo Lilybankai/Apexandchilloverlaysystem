@@ -40,6 +40,7 @@ import {
   type WeatherForecastSlot,
 } from './types';
 import { assignClassPositions, copyClassPositions, isFasterClass } from './carClass';
+import { predictLapsToFlag } from './lapsToFlag';
 import { referenceCredit, scoreLap } from './referencePace';
 import { buildRadar, headingOri, type RadarCar } from './radar';
 import type { Vec3 } from './motion';
@@ -523,6 +524,22 @@ export class SimulatorProvider implements TelemetryProvider {
     const leader = this.cars.reduce((a, b) =>
       this.total(b) > this.total(a) ? b : a,
     );
+    // The demo field is multiclass on purpose (SIM_CLASSES), so it is the one
+    // harness where a class-leader lap differs from the overall one — which is
+    // exactly the case the standings strip has to get right.
+    const classLeader = this.cars
+      .filter((c) => c.carClass === player.carClass)
+      .reduce((a, b) => (this.total(b) > this.total(a) ? b : a), player);
+    // The demo classes are given real pace offsets (SIM_CLASSES), so this is the
+    // one harness where the class prediction visibly differs from the leader's
+    // lap total — which is exactly what makes it worth exercising here.
+    const toFlag = predictLapsToFlag({
+      totalLaps: RACE_LAPS,
+      timeRemainingSec: UNKNOWN_VALUE,
+      leaderLapsCompleted: leader.lapsCompleted,
+      leaderPaceSec: leader.lapSec,
+      paceSec: classLeader.lapSec,
+    });
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -537,8 +554,9 @@ export class SimulatorProvider implements TelemetryProvider {
         trackConfig: DEMO_TRACK_CONFIG,
         timeRemainingSec: UNKNOWN_VALUE,
         totalLaps: RACE_LAPS,
-        lapsRemaining: UNKNOWN_VALUE,
+        lapsRemaining: toFlag.estimated ? toFlag.laps : UNKNOWN_VALUE,
         currentLap: Math.min(RACE_LAPS, leader.lapsCompleted + 1),
+        classLeaderLap: Math.min(RACE_LAPS, classLeader.lapsCompleted + 1),
         numCars: this.cars.length,
         serverName: 'Apex & Chill — Midweek Endurance',
         notStarted: preSession !== null,
