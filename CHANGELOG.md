@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.93.0-beta.1 — 2026-08-27
+
+### Added
+
+- **A proper weather station on the Team pit wall.** The weather card now
+  shows air and track temperature, rain, and the surface's state at a
+  glance, plus LMU's own session forecast in full: sky, temperature, rain
+  chance, wind and humidity for each phase of the session (start → 25% →
+  50% → 75% → finish). Previously it was a rain-chance strip and nothing
+  else.
+
+### Changed
+
+- **The beta line re-anchors on the 0.92.0 stable** — every 0.92.0 note
+  applies, including the engineer's local-yellow callouts — with the
+  beta-only features still on top: the Team pit wall with teams, invite
+  codes and the live relay, and the Fuel tab.
+
 ## 0.92.0 — 2026-08-26
 
 The Team pit wall and the Fuel tab stay in beta a little longer while we
