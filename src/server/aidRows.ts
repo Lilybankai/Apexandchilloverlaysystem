@@ -114,11 +114,13 @@ export async function stepAid(
   const repeat = Math.min(20, Math.max(1, Math.round(Number(opts.repeat) || 1)));
   const result = await keys.pressScanTimes(bound, repeat, { requireSim: opts.requireSim ?? true });
 
-  // Regen is the one aid with no live source, so its garage reading is only
-  // true until something moves it — and this is the something. Told before the
-  // result is inspected, deliberately: a press we are not sure landed is
-  // exactly when the number should stop being presented as fact.
-  if (aid.id === 'regen') noteRegenStepped();
+  // Regen is the one aid with no live source, so its row is the garage sample
+  // plus a count of the presses this overlay has sent — and this is where they
+  // are counted. `sent` rather than `repeat`, deliberately: a press the key
+  // sender refused (sim not frontmost) moved nothing and must count nothing.
+  if (aid.id === 'regen' && result.sent > 0) {
+    noteRegenStepped(dir === 'inc' ? result.sent : -result.sent);
+  }
 
   return {
     ok: result.ok,

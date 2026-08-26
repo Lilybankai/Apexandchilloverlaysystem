@@ -27,9 +27,12 @@
  * - **Prototypes** (Hypercar, LMP2, LMP3): brake bias, TC map, TC power cut,
  *   motor map; no ABS (the cars do not run it — the live bytes get this right,
  *   verified by the phantom-ABS cursor bug reported from a live LMP2). Brake
- *   migration, the ARBs and regen are read live and stepped where the car
- *   offers them. The **TC slip** sub-map is not an LMP2 adjustment (driver
- *   report, 2026-08-26 — the row was shown and stepped nothing).
+ *   migration, the ARBs and regen are Hypercar controls: an LMP2 publishes
+ *   ARB bytes exactly the way a GT3 does (caught live on an Oreca,
+ *   2026-08-26 — bytes 762..765 carrying the garage's "D18 S-S"/"Detached"
+ *   setup as 1/15 and 0/15) and has no cockpit lever behind them. The
+ *   **TC slip** sub-map is not an LMP2 adjustment either (driver report,
+ *   2026-08-26 — the row was shown and stepped nothing).
  * - **GT cars** (GT3, GT4, GTE): brake bias, TC map with both sub-maps, ABS,
  *   motor map; no brake migration, no ARBs, no regen (driver report,
  *   2026-08-26: ARB rows shown on a GT3 that has no such adjustment).
@@ -57,19 +60,21 @@ const NOT_ON_GT: readonly string[] = ['brakeMigration', 'frontARB', 'rearARB', '
  * stream answers. Keys are {@link module:telemetry/carClass} canonical labels;
  * values are aid keys as `projectAids` emits them.
  *
- * The prototype classes deliberately carry no ARB/migration/regen veto: which
- * of those a prototype offers varies by car and the live bytes have not been
- * caught lying there, and vetoing a control a car does have is the worse
- * failure. LMP3 carries no slip veto for the same reason — its TC hardware is
- * not the Oreca's. If a live car shows a row that steps nothing, add the cell
- * here with that report as provenance.
+ * The LMP2 cells carry the slip veto (driver report) and the ARB veto (caught
+ * live on an Oreca publishing its garage ARB setup as aid bytes, exactly the
+ * GT3 lie). Migration and regen are left to the live/REST guards on the P2s —
+ * both read absent on the live Oreca (bytes 760/761 zero, REST regen a
+ * one-option "0%") — and LMP3 carries no veto at all: its hardware is not the
+ * Oreca's, the bytes have not been caught lying there, and vetoing a control
+ * a car does have is the worse failure. If a live LMP3 shows a row that steps
+ * nothing, add the cell here with that report as provenance.
  */
 const CLASS_VETO: Readonly<Record<string, ReadonlySet<string>>> = {
   GT3: new Set(NOT_ON_GT),
   GT4: new Set(NOT_ON_GT),
   GTE: new Set(NOT_ON_GT),
-  LMP2: new Set(['tcSlip']),
-  LMP2_ELMS: new Set(['tcSlip']),
+  LMP2: new Set(['tcSlip', 'frontARB', 'rearARB']),
+  LMP2_ELMS: new Set(['tcSlip', 'frontARB', 'rearARB']),
 };
 
 const NO_VETO: ReadonlySet<string> = new Set();

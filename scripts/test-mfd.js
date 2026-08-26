@@ -339,48 +339,70 @@ console.log('\n5e) Brake migration reads in the car\'s own words at every step')
   check('no anchor at all does the same', at(0, {}) === '0/5', at(0, {}));
 }
 
-console.log('\n5d) Regen stops claiming a value it can no longer read');
+console.log('\n5d) Regen counts its own presses between garage visits');
 
 {
   /*
-   * Regen is the only aid with no live source anywhere. That was established
-   * twice: first by scanning the player's telemetry record for the value the
-   * garage endpoint reported, and then — properly — by DIFFING all 1888 bytes at
-   * 10 Hz while the driver stepped regen through its whole range, which saw
-   * nothing move but tyre and brake temperatures. The first method could only
-   * ever have worked if the garage endpoint were live, and the same run proved
-   * it is not: it sat on `10 "200kW"` throughout, while the driver wound the car
-   * down to zero.
-   *
-   * So the row was showing 200kW on a car deploying nothing — not merely stale,
-   * but most wrong exactly when a Hypercar driver is leaning on it. The value
-   * now goes to a dash once anything has moved it, and comes back if the garage
-   * ever reports something new.
+   * Regen is the only aid with no live source anywhere — the shared-memory
+   * scan found nothing (re-confirmed 2026-08-26, bytes 766+ a zero run on a
+   * live car) and the garage endpoint is a setup sample that never follows
+   * the dial. For a while the row blanked to "—" the moment anything moved
+   * it; a driver report reversed that judgement. It now shows the garage
+   * sample plus the presses this overlay itself sent, clamped to the sim's
+   * bounds, priced in the sample's own units, and re-anchored whenever the
+   * garage reports something new.
    */
   const { noteRegenStepped, resetRegenStale } = require('../dist/telemetry/mfdControl');
-  const at = (v, s) => ({ VM_REGEN_LEVEL: { value: v, maxValue: 11, stringValue: s } });
-  const text = (g) => projectAids(g, 0.51, null).find((r) => r.key === 'regen').text;
+  const at = (v, s, maxValue) => ({
+    VM_REGEN_LEVEL: { value: v, maxValue: maxValue ?? 11, stringValue: s },
+  });
+  const row = (g) => projectAids(g, 0.51, null).find((r) => r.key === 'regen');
 
   resetRegenStale();
-  check('before anything moves it, the setup value stands', text(at(10, '200kW')) === '200kW');
+  check('before anything moves it, the setup value stands', row(at(10, '200kW')).text === '200kW');
 
-  noteRegenStepped();
-  check('after a press the value goes, not stale-but-shown', text(at(10, '200kW')) === '—',
-    text(at(10, '200kW')));
-  check('…and stays gone while the endpoint repeats itself', text(at(10, '200kW')) === '—');
+  noteRegenStepped(-3);
+  const stepped = row(at(10, '200kW'));
+  check('three presses down read off the sample-priced ladder', stepped.text === '140kW', stepped.text);
+  check('…and the value follows the count', stepped.value === 7, stepped.value);
 
-  // The row must not be blanked for the rest of the session: a driver who goes
-  // back to the garage should get their number back.
-  check('a garage that reports something new is believed again',
-    text(at(7, '140kW')) === '140kW', text(at(7, '140kW')));
-  check('…and keeps being believed', text(at(7, '140kW')) === '140kW');
+  noteRegenStepped(-20);
+  const floor = row(at(10, '200kW'));
+  check('the count clamps at the floor', floor.value === 0, floor.value);
+  check('…and prices the floor honestly', floor.text === '0kW', floor.text);
 
-  // The control itself is untouched — the point is to lose the false reading,
-  // not the working ±.
-  noteRegenStepped();
-  const row = projectAids(at(10, '200kW'), 0.51, null).find((r) => r.key === 'regen');
-  check('the row and its bounds survive so ± still works',
-    !!row && row.maxValue === 10 && row.value === 10, JSON.stringify(row));
+  noteRegenStepped(40);
+  const ceil = row(at(10, '200kW'));
+  check('…and at the ceiling', ceil.value === 10, ceil.value);
+  check('a count back on the sample speaks the sim\'s own words again', ceil.text === '200kW', ceil.text);
+
+  // The garage reporting something NEW means it has learned something — the
+  // driver visited the setup screen, or the session reset — so the count
+  // restarts from the fresh sample rather than compounding onto it.
+  resetRegenStale();
+  row(at(10, '200kW'));
+  noteRegenStepped(-3);
+  const fresh = row(at(7, '140kW'));
+  check('a new garage sample is believed and the count restarts', fresh.text === '140kW', fresh.text);
+  check('…at the new sample\'s own value', fresh.value === 7, fresh.value);
+
+  // A car that words its regen as a percentage prices the ladder the same way.
+  resetRegenStale();
+  row(at(8, '80%'));
+  noteRegenStepped(-3);
+  const pct = row(at(8, '80%'));
+  check('a percent car derives percent', pct.text === '50%', pct.text);
+
+  // A sample that cannot price a step — a zero anchor — never invents one.
+  resetRegenStale();
+  row(at(0, '0%'));
+  noteRegenStepped(4);
+  const und = row(at(0, '0%'));
+  check('an anchor that cannot price a step falls back to the honest index',
+    und.text === '4/10', und.text);
+
+  // The bounds survive throughout, so the ± beside the number still works.
+  check('the row keeps its bounds for the ±', und.maxValue === 10 && und.minValue === 0);
   resetRegenStale();
 }
 
@@ -505,11 +527,16 @@ console.log('\n5f) The class vetoes controls its cars cannot reach');
     tcCut: { value: 3, max: 8 },
     abs: { value: 0, max: 0 },
     motorMap: { value: 2, max: 4 },
+    // The same mirrored-setup lie the GT3 told, caught live on an Oreca
+    // (2026-08-26): its garage ARB positions published as aid bytes.
+    frontARB: { value: 1, max: 15 },
+    rearARB: { value: 0, max: 15 },
     tcActive: false,
     absActive: false,
   };
   const p2 = projectAids(null, 0.51, p2Live, 'LMP2').map((r) => r.key);
   check('an LMP2 loses the slip row', !p2.includes('tcSlip'), p2.join());
+  check('…and both ARB rows', !p2.includes('frontARB') && !p2.includes('rearARB'), p2.join());
   check('…but not the power cut beside it', p2.includes('tcCut'), p2.join());
   const elms = projectAids(null, 0.51, p2Live, 'LMP2_ELMS').map((r) => r.key);
   check('the ELMS P2 is the same car for this purpose', !elms.includes('tcSlip'), elms.join());
@@ -584,6 +611,63 @@ console.log('\n5g) A linked sub-map says so, instead of miming an adjustment');
   ).find((r) => r.key === 'tcSlip');
   check('a slip moved off the garage step falls back to the honest index',
     moved.text === '7/8', moved.text);
+}
+
+console.log("\n5h) The motor map speaks the right garage row's language");
+
+{
+  /*
+   * One live byte pair, two garage descriptions. A hybrid's motor map is
+   * VM_ELECTRIC_MOTOR_MAP ("140kW"); on a GT3 or an LMP2 that key still
+   * exists but as a dead single-option "0", and because a dead map's value is
+   * 0 whenever the live byte is 0 it used to claim the row and print a bare
+   * "0" — reported from both a GT3 and an LMP2, whose real map is the engine
+   * mixture (0 the safety-car map, 1 the race map). The shapes below are the
+   * live LMP2 capture and the garage-gt3 fixture, verbatim.
+   */
+  const live = (v, m) => ({
+    tc: { value: 5, max: 8 },
+    tcSlip: { value: 5, max: 8 },
+    tcCut: { value: 5, max: 8 },
+    abs: { value: 9, max: 9 },
+    motorMap: { value: v, max: m },
+    tcActive: false,
+    absActive: false,
+  });
+  const text = (g, v, m, cls) =>
+    projectAids(g, 0.51, live(v, m), cls).find((r) => r.key === 'motorMap').text;
+
+  const gtGarage = {
+    VM_ELECTRIC_MOTOR_MAP: { value: 0, maxValue: 1, stringValue: '0' },
+    VM_ENGINE_MIXTURE: { value: 1, maxValue: 2, stringValue: 'Race' },
+  };
+  check("a mixture the garage tracks reads the sim's own word",
+    text(gtGarage, 1, 1, 'GT3') === 'Race', text(gtGarage, 1, 1, 'GT3'));
+  check('the dead electric map cannot claim the row with its "0"',
+    text(gtGarage, 0, 1, 'GT3') === 'Safety-car', text(gtGarage, 0, 1, 'GT3'));
+  check('…and an LMP2 reads the same ladder',
+    text(gtGarage, 0, 1, 'LMP2') === 'Safety-car', text(gtGarage, 0, 1, 'LMP2'));
+
+  // A hybrid: the electric map is real (more than one option), and its own
+  // sample prices the ladder — "140kW" at step 7 is 20kW a step, from Off.
+  const hyGarage = { VM_ELECTRIC_MOTOR_MAP: { value: 7, maxValue: 11, stringValue: '140kW' } };
+  check("a hybrid map the garage tracks keeps the sim's word",
+    text(hyGarage, 7, 10, 'HYPERCAR') === '140kW', text(hyGarage, 7, 10, 'HYPERCAR'));
+  check('a stepped hybrid map reads off the priced ladder',
+    text(hyGarage, 6, 10, 'HYPERCAR') === '120kW', text(hyGarage, 6, 10, 'HYPERCAR'));
+  check('step zero is Off', text(hyGarage, 0, 10, 'HYPERCAR') === 'Off',
+    text(hyGarage, 0, 10, 'HYPERCAR'));
+
+  // A sample that cannot price a step declines to guess, in both directions.
+  const offAnchor = { VM_ELECTRIC_MOTOR_MAP: { value: 0, maxValue: 11, stringValue: 'Off' } };
+  check('an anchor at Off keeps its own word on its own step',
+    text(offAnchor, 0, 10, 'HYPERCAR') === 'Off', text(offAnchor, 0, 10, 'HYPERCAR'));
+  check('…and says the honest index off it',
+    text(offAnchor, 4, 10, 'HYPERCAR') === '4/10', text(offAnchor, 4, 10, 'HYPERCAR'));
+
+  // No garage at all: the honest index, as ever.
+  check('no garage data means the honest index', text(null, 3, 10, 'HYPERCAR') === '3/10',
+    text(null, 3, 10, 'HYPERCAR'));
 }
 
 console.log('\n6) What a stop-and-go strips, and what it must not');
