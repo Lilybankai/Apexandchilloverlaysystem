@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.11 — 2026-08-26
+
 ### Added
 
 - **The Team page's tyre corners are now drawn as the wheel itself.** Each
@@ -58,6 +60,38 @@
 
   Existing installs download their voice and, if you use spoken questions, the
   speech model once more after this update. That is the last time.
+
+### Fixed
+
+- **The motor map now speaks the car's own language.** On a GT3 and an LMP2
+  the row printed a bare "0" — it was reading the hybrid motor-map garage
+  entry, which exists on those cars only as a dead single-option "0", instead
+  of the engine mixture that is actually behind the control. It now reads the
+  right garage row for the car: a GT3 or LMP2 shows **Safety-car** on map 0
+  and **Race** on map 1, in the sim's own words (verified live on an Oreca
+  mid-session), and a Hypercar shows its map in kilowatts — **Off** at step
+  zero, then the ladder priced from the sim's own label, so "140kW" at step 7
+  reads "120kW" one press down instead of collapsing to "6/10".
+- **Regen shows a value again.** The row used to blank to "—" the moment
+  anything moved it, because the garage's number is a setup sample that never
+  follows the dial and a stale figure was judged worse than none. That
+  judgement is reversed: the row now shows the sample plus a count of the
+  presses the overlay itself has sent — clamped to the sim's bounds, priced
+  in the sample's own units ("200kW" at step 10 prices a step at 20kW, so
+  three down reads "140kW"), and re-anchored whenever the garage learns
+  something new. A press made through LMU's *own* controller binds is the one
+  thing the count cannot see; the next garage visit corrects it.
+- **The LMP2 also lost its phantom anti-roll-bar rows.** The Oreca publishes
+  its garage ARB setup in the aid bytes exactly the way the GT3 does — caught
+  live, "D18 S-S"/"Detached" riding along as 1/15 and 0/15 — and has no
+  cockpit lever behind them, so the class veto now covers LMP2 as well.
+- **The app's header no longer crops its controls in a narrow window.** With
+  the beta tabs visible the tab strip had outgrown the bar, and resizing the
+  window pushed the settings cog, the account chip and Start/Stop clean off
+  the right edge. The tab strip now gives way instead — it shrinks and
+  scrolls sideways while the controls hold their size — and near the window's
+  minimum width the feed pill and brand shed their text so every control
+  stays on screen down to the smallest size the window allows.
 
 ## 0.91.0-beta.10 — 2026-08-26
 

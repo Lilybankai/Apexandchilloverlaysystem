@@ -249,6 +249,62 @@ export function projectAids(
       return `${pct.toFixed(1)}% F`;
     };
 
+    /**
+     * The motor map's wording, from whichever garage row is actually behind it.
+     *
+     * The live byte pair is ONE control that two different garage keys
+     * describe, depending on the car. A hybrid's map is
+     * `VM_ELECTRIC_MOTOR_MAP` ("140kW"); on a GT3 or an LMP2 that key still
+     * EXISTS but as a dead single-option "0" — and because a dead map's value
+     * is 0 whenever the live byte is 0, it used to claim the row and print a
+     * bare "0" on cars whose real map is the engine mixture
+     * (`VM_ENGINE_MIXTURE`: "Safety-car" / "Race"). So the hybrid key is only
+     * consulted when the garage says it is a real map (more than one option),
+     * and the mixture is the source otherwise.
+     *
+     * Two ladders are derived when the garage sample has gone stale (the
+     * driver moved the map and the endpoint did not follow):
+     *
+     * - A hybrid map whose sample parses as kilowatts is read linearly from
+     *   zero — step 0 is "Off", and each step is the sample's kW over its
+     *   step. The Porsche's "140kW" at step 7 prices a step at 20kW, so a
+     *   move to 6 reads "120kW" rather than dropping to "6/10".
+     * - A two-option mixture whose sample names one of the two modes is read
+     *   off the step directly: 0 is the safety-car map, 1 the race map — the
+     *   sim's own option order, confirmed on both a GT3 and an LMP2 capture.
+     *
+     * Either ladder returns null the moment its shape does not hold, and the
+     * row keeps the honest step index.
+     */
+    const motorMapLabel = (liveValue: number, max: number): string | null => {
+      const el = garageRaw ? garageRaw['VM_ELECTRIC_MOTOR_MAP'] : undefined;
+      if (el && typeof el.maxValue === 'number' && el.maxValue > 1) {
+        const named = simLabel('VM_ELECTRIC_MOTOR_MAP', liveValue);
+        if (named) return named;
+        const m = /^([0-9]+(?:\.[0-9]+)?)\s*kW$/i.exec(
+          typeof el.stringValue === 'string' ? el.stringValue.trim() : '',
+        );
+        if (m && typeof el.value === 'number' && el.value > 0) {
+          const per = parseFloat(m[1] ?? '') / el.value;
+          const kw = liveValue * per;
+          if (isFinite(per) && per > 0 && liveValue >= 0 && liveValue <= max) {
+            if (liveValue === 0) return 'Off';
+            if (Math.abs(kw - Math.round(kw)) < 1e-6) return `${Math.round(kw)}kW`;
+          }
+        }
+        return null;
+      }
+      const mix = garageRaw ? garageRaw['VM_ENGINE_MIXTURE'] : undefined;
+      if (!mix || typeof mix.value !== 'number' || typeof mix.maxValue !== 'number') return null;
+      const named = simLabel('VM_ENGINE_MIXTURE', liveValue);
+      if (named) return named;
+      const s = typeof mix.stringValue === 'string' ? mix.stringValue.trim() : '';
+      if (mix.maxValue === 2 && max === 1 && /^(race|safety)/i.test(s)) {
+        return liveValue === 0 ? 'Safety-car' : 'Race';
+      }
+      return null;
+    };
+
     const row = (
       key: string,
       label: string,
@@ -296,7 +352,10 @@ export function projectAids(
     row('tcSlip', 'TC Slip', liveAids.tcSlip, 'VM_TRACTIONCONTROLSLIPANGLEMAP');
     row('tcCut', 'TC Power Cut', liveAids.tcCut, 'VM_TRACTIONCONTROLPOWERCUTMAP');
     row('abs', 'ABS', liveAids.abs);
-    row('motorMap', 'Motor Map', liveAids.motorMap, 'VM_ELECTRIC_MOTOR_MAP');
+    // No plain garageKey here — the resolution between the hybrid map and the
+    // engine mixture lives in motorMapLabel, where the dead single-option
+    // electric key on a GT car cannot claim the row. See its note.
+    row('motorMap', 'Motor Map', liveAids.motorMap, undefined, motorMapLabel);
     // The prototype trio. The `max <= 0` guard drops each on a car that does
     // not publish it, and the class veto drops them on the GT classes even
     // when the bytes ARE published — a GT3's ARB bytes mirror its garage
@@ -316,11 +375,18 @@ export function projectAids(
    * from the garage endpoint, which is the same fallback brake bias uses when
    * there is no live car.
    *
-   * That carries the garage endpoint's known weakness — it can report a SETUP
-   * value rather than a live one — so this row can lag what the driver has on
-   * the wheel. It is published anyway because a regen level that is usually
-   * right is far more use to a Hypercar driver than no regen row at all, and
-   * because the label is the sim's own ("200kW"), not a number we derived.
+   * That carries the garage endpoint's known weakness — it is a SETUP sample
+   * that never follows an in-car change (proven live: it sat on `10 "200kW"`
+   * through a full sweep of the dial). So the row is the garage's sample plus
+   * a COUNT of the presses this overlay has sent since — see
+   * {@link noteRegenStepped} — clamped to the sim's own bounds and re-anchored
+   * whenever the garage reports something new. The wording is the sim's own
+   * while the sample stands, and a ladder read off that sample once the count
+   * has moved: "200kW" at step 10 prices a step at 20kW, so three presses down
+   * reads "140kW" rather than a dash. This row used to blank to "—" the moment
+   * anything moved it; the count replaced that on a driver report — a value
+   * that is right except across an unwatched wheel-bind press beats no value,
+   * and the garage re-anchor still corrects any drift at the next visit.
    */
   const regen = garageRaw && !veto.has('regen') ? garageRaw['VM_REGEN_LEVEL'] : undefined;
   if (
@@ -331,17 +397,20 @@ export function projectAids(
     typeof regen.stringValue === 'string' &&
     regen.stringValue.trim() !== 'N/A'
   ) {
-    // Once regen has been stepped in the car, the garage's number is a claim we
-    // can no longer make — see `noteRegenStepped`. The row stays, with its ±,
-    // because the CONTROL still works; only the reading goes.
-    const stale = isRegenStale(regen.value);
+    // The garage reporting a DIFFERENT value from its last one means it has
+    // learned something — the driver visited the setup screen, or the session
+    // reset — and the counted presses since the old sample no longer apply.
+    if (regenAnchor !== null && regen.value !== regenAnchor) regenOffset = 0;
+    regenAnchor = regen.value;
+    const max = inclusiveMax(0, regen.maxValue);
+    const value = clamp(regen.value + regenOffset, 0, max);
     aids.push({
       key: 'regen',
       label: 'Regen',
-      value: regen.value,
+      value,
       minValue: 0,
-      maxValue: inclusiveMax(0, regen.maxValue),
-      text: stale ? UNKNOWN_TEXT : regen.stringValue.trim(),
+      maxValue: max,
+      text: regenText(value, regen.value, regen.stringValue.trim(), max),
     });
   }
 
@@ -349,88 +418,81 @@ export function projectAids(
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Regen: controllable, and — once moved — unreadable                         */
+/*  Regen: controllable, and — between garage visits — counted                 */
 /* -------------------------------------------------------------------------- */
 
 /**
- * What the regen row shows when its value can no longer be trusted.
+ * Net presses this overlay has sent to the regen dial since the garage's
+ * current sample was taken.
  *
- * A dash, not the last number we saw. The distinction matters most at exactly
- * the moment the row is worst: a driver who has wound deployment down to save
- * energy would otherwise be looking at "200kW" while the car runs at 60.
- */
-const UNKNOWN_TEXT = '—';
-
-/**
- * The garage value at the moment regen was last stepped, or null while the
- * reading is still believed.
- *
- * ## Why this exists
+ * ## Why a count, when counting was ripped out of every other aid
  * Regen is the only aid with **no live source anywhere**. Every other row is
  * read from the car's own telemetry record, so a press is confirmed by the next
  * frame. Regen is not in that record — established twice, and the second time
  * properly: a differential scan of all 1888 bytes of the player's record, taken
  * at 10 Hz while the driver stepped regen through its whole range, saw nothing
- * move but tyre and brake temperatures (`scripts/probe-lmu-diffscan.js`). The
- * first scan had searched for the value `getPlayerGarageData` was reporting,
- * which could only ever have worked if that endpoint were live — and the same
- * run showed it is not: it sat on `10 "200kW"` throughout. LMU's REST API has no
- * other candidate; 179 paths, nothing hybrid- or energy-shaped.
+ * move but tyre and brake temperatures (`scripts/probe-lmu-diffscan.js`) — and
+ * re-confirmed 2026-08-26 on a live car, bytes 766+ a zero run. The garage
+ * endpoint is a setup sample that never follows the dial (it sat on
+ * `10 "200kW"` through that same sweep). LMU's REST API has no other candidate;
+ * 179 paths, nothing hybrid- or energy-shaped.
  *
- * So the garage value is right until the first change and wrong forever after,
- * and nothing in the system can tell the difference — except us, because we are
- * the ones pressing the key.
+ * So for a while this row went to "—" the moment anything moved it — the
+ * counted estimate was judged worse than no reading. A driver report reversed
+ * that judgement: a Hypercar driver working the dial down the Mulsanne wants
+ * the number, and the count is grounded in everything short of confirmation —
+ * each press is one the overlay itself sent (`sent` from the key sender, so a
+ * refused press counts zero), the result is clamped to the sim's own bounds,
+ * and the garage re-anchors it whenever it reports something new. What the
+ * count cannot see is a press made through LMU's own controller binds; that
+ * drift lasts exactly until the next garage visit.
  */
-let regenStale = false;
+let regenOffset = 0;
 
 /**
- * The garage value first seen AFTER the press, which is the thing the endpoint
- * has to move off before it is worth believing again. Captured on the next
- * projection rather than at the press, because the press site has no garage
- * data in hand — and a sentinel there would clear itself on the very next frame.
+ * The garage sample the count is measured from. When the endpoint reports a
+ * different value, it has learned something — the driver visited the setup
+ * screen, or the session reset — and the count restarts from the new sample.
  */
 let regenAnchor: number | null = null;
 
 /**
- * Record that regen has been stepped, from the one place that presses its key.
- *
- * Called by `server/aidRows.stepAid`. It is deliberately not conditional on the
- * press succeeding: a press we are unsure about is exactly the case where the
- * reading should stop being trusted.
+ * Record presses sent to the regen dial: `delta` is signed, `+n` for n
+ * increments that actually reached the game. Called by `server/aidRows.stepAid`
+ * with the key sender's own `sent` count, so a press the sender refused (sim
+ * not frontmost) moves nothing.
  */
-export function noteRegenStepped(): void {
-  regenStale = true;
+export function noteRegenStepped(delta: number): void {
+  if (Number.isFinite(delta)) regenOffset += Math.round(delta);
+}
+
+/** Forget the counted presses — a new session starts from the setup value. */
+export function resetRegenStale(): void {
+  regenOffset = 0;
   regenAnchor = null;
 }
 
 /**
- * Whether the garage's regen value should be believed.
+ * The regen row's wording for a possibly-counted value.
  *
- * It comes back to life on its own: if the endpoint ever reports a DIFFERENT
- * value from the one it held when we marked it stale, the garage has learned
- * something — the driver went back to the setup screen, or the session reset —
- * and it is once again the best information available. Without that, one press
- * would blank the row for the rest of the session including a return to the
- * garage, which is worse than the problem it fixes.
+ * While the count is zero the garage's own words stand, verbatim. Once it has
+ * moved, the ladder is read off that sample — `"200kW"` at step 10 prices a
+ * step at 20kW, `"80%"` at step 8 at 10% — linearly from zero, which is the
+ * only shape a one-sample anchor can support. A sample that cannot price a
+ * step (a zero anchor, or wording that is not a number with a unit) drops to
+ * the honest `value/max` index rather than inventing a figure.
  */
-function isRegenStale(currentValue: number): boolean {
-  if (!regenStale) return false;
-  if (regenAnchor === null) {
-    regenAnchor = currentValue;
-    return true;
+function regenText(value: number, sampleValue: number, sampleText: string, max: number): string {
+  if (value === sampleValue) return sampleText;
+  const m = /^([0-9]+(?:\.[0-9]+)?)\s*(kW|%)$/i.exec(sampleText);
+  if (m && sampleValue > 0) {
+    const per = parseFloat(m[1] ?? '') / sampleValue;
+    const out = value * per;
+    if (isFinite(per) && per > 0 && Math.abs(out - Math.round(out)) < 1e-6) {
+      return `${Math.round(out)}${m[2] === '%' ? '%' : 'kW'}`;
+    }
   }
-  if (currentValue !== regenAnchor) {
-    regenStale = false;
-    regenAnchor = null;
-    return false;
-  }
-  return true;
-}
-
-/** Forget that regen was stepped — a new session starts from the setup value. */
-export function resetRegenStale(): void {
-  regenStale = false;
-  regenAnchor = null;
+  return `${value}/${max}`;
 }
 
 /**

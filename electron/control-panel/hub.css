@@ -55,7 +55,24 @@ html, body { height: 100%; overflow: hidden; }
 
 .nav__brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 
-.tabs { display: flex; gap: 2px; height: 100%; }
+/* The tab strip is the one part of the nav allowed to give way. It grew from
+ * five tabs to as many as eleven (Team, Fuel and Admin appear per account and
+ * channel), and at the window's minimum width even the icon-only fallback no
+ * longer fits beside the mode toggle, the feed pill, the gear, the account
+ * chip and the power button — which are the controls that must NEVER leave
+ * the screen. So the strip shrinks (`min-width: 0`) and scrolls its overflow
+ * sideways instead of shoving the right-hand controls out of the window. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 
 .tab {
   display: flex;
@@ -85,6 +102,14 @@ html, body { height: 100%; overflow: hidden; }
 .tab .tab__lock.icon { width: 12px; height: 12px; }
 
 .nav__spacer { flex: 1; min-width: 0; }
+
+/* The controls to the right of the spacer hold their size; the tab strip and
+ * the spacer are where a narrow window takes its space from. Without this a
+ * squeezed flex row shrinks these too, and the power button was the first
+ * thing to be crushed out of sight. */
+.nav > .feed-pill,
+.nav > .account,
+.nav > .btn { flex: 0 0 auto; }
 
 .iconbtn {
   width: 34px;
@@ -201,6 +226,16 @@ html, body { height: 100%; overflow: hidden; }
 @media (max-width: 900px) {
   .seg__label { display: none; }
   .nav { gap: 8px; padding: 0 10px; }
+}
+
+/* Near the window's 760px minimum every remaining label goes: the feed pill
+ * keeps its dot, the brand keeps its mark, and the controls keep their icons —
+ * so the gear, the account chip and Start/Stop are still on screen at the
+ * smallest size the window can reach. */
+@media (max-width: 820px) {
+  .feed-pill__text { display: none; }
+  .feed-pill { padding: 6px 8px; }
+  .brand__name { display: none; }
 }
 
 /* -------------------------------- stat tile ----------------------------- */
