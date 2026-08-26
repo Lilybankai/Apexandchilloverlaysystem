@@ -1,8 +1,8 @@
-# Discord launch post — Apex AIO System v0.91.0
+# Discord launch post — Apex AIO System v0.92.0
 
 Ready to paste. Discord caps a message at 2000 characters, so this is split
 into six messages — post them in order in `#announcements`. Every claim below
-is checked against the app as it ships in v0.91.0; nothing here is promised
+is checked against the app as it ships in v0.92.0; nothing here is promised
 ahead of the build. A one-message short version for a pin or an embed is at
 the bottom.
 
@@ -14,10 +14,10 @@ Swap `#suggestions` in message 6 for whatever your channel is actually called.
 
 # 🏁 Apex AIO System — out now
 
-The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, setups, fuel strategy, league leaderboards and stream tools.
+The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, setups, fuel and energy maths, league leaderboards and stream tools.
 
-**⬇️ Download — v0.91.0, Windows**
-https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.91.0/Apex-AIO-System-Setup-0.91.0.exe
+**⬇️ Download — v0.92.0, Windows**
+https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.92.0/Apex-AIO-System-Setup-0.92.0.exe
 
 **It's free for everyone who races with us.** How that works is in the fifth message — read that one before you pay for anything. 👇
 
@@ -53,6 +53,8 @@ Bind a wheel button, press it, wait for the chirp, ask.
 
 ▸ **He calls the race.** Green flag, chequered, final lap, safety car, red flag, penalties given and served, damage, the fuel window. Turn the dial up for the race story on top — your fastest laps, the field's, places gained and lost, rivals pitting, blue flags — or down to answer-only
 
+▸ **He calls yellows by sector.** "Yellow flag, sector two — watch for a slow car through there", and the all-clear when it withdraws. Read live from the sim's shared memory, so it's the real sector rather than a guess
+
 ▸ **And he coaches.** Ask for **"target pace"** and he reads your best lap against the reference bands and tells you what the next band up actually costs you
 
 ▸ **He shuts up when he should.** Never while you're side by side or deep in the brakes, never reads out what's already on your screen, and your question always cuts in front of his
@@ -72,8 +74,6 @@ Six voices, through a proper comms channel — band-limited, squelch, hiss. Your
 ▸ **A setup library** — save the car as the garage holds it, tag it Race or Quali, and sort it by *your best clean lap* on that track. Share a tune as a file, or copy it straight into a Discord message
 
 ▸ **Community setups** — filtered to the exact car and track you're sitting in, and it re-filters itself when you swap
-
-▸ **Fuel & strategy planner** — the whole race: total fuel or Virtual Energy, how many stops, every stint's fill and lap count, and what each stop costs under LMU's refuel-then-tyres rule. Plus the strategies that would save a stop — and an honest word when that consumption target is a fantasy
 
 ▸ **League leaderboards** — every member's best clean lap, by track and class, your own row marked
 
@@ -107,7 +107,7 @@ Exactly the same app, cancel any time. **7-day free trial** to try it properly f
 
 ## ⚙️ Up and running in about five minutes
 
-**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.91.0/Apex-AIO-System-Setup-0.91.0.exe
+**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.92.0/Apex-AIO-System-Setup-0.92.0.exe
 *(Windows, ~98 MB. Signed by The Lilybank Agency Ltd, so no "unknown publisher" warning. The engineer's voice downloads once the first time you switch him on, then survives every update.)*
 
 **2.** Create your account — or hit **Continue offline** if you only want the overlays on your own PC.
@@ -133,13 +133,13 @@ Right. Go and be quick. 🏁
 
 # 🏁 Apex AIO System is live
 
-Overlays, a voice race engineer, setups, fuel strategy and league leaderboards for **Le Mans Ultimate** and **rFactor 2** — in OBS and over the game at the same time.
+Overlays, a voice race engineer, setups, fuel and energy maths and league leaderboards for **Le Mans Ultimate** and **rFactor 2** — in OBS and over the game at the same time.
 
 **Standings · relative · speedo · radar · track map · track limits · fuel · pedals · motion · tyres · weather · damage · MFD** — every one draggable, resizable and fadeable, on stream and in game, plus **ten LMGT3 dashboards** drawn from the real cars.
 **A race engineer on a wheel button** — 28 answers instantly and offline, race calls he knows when to hold, pace coaching, and 300 advanced questions a month.
-**Setups, a fuel planner, community tunes, league boards, reference pace, the SimGrid schedule and a full streamer toolkit.**
+**Setups, community tunes, league boards, reference pace, the SimGrid schedule and a full streamer toolkit.**
 
 **Racing an Apex & Chill league or one of our special events? It's free — DM me for your access code.** Stops being free if you stop racing.
 **Everyone else: £4.99/month launch price, 7-day free trial.**
 
-⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.91.0/Apex-AIO-System-Setup-0.91.0.exe
+⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.92.0/Apex-AIO-System-Setup-0.92.0.exe
