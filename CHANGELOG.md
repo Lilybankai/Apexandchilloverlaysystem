@@ -4,6 +4,17 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.92.0-beta.1 — 2026-08-26
+
+### Changed
+
+- **The beta line starts again from the 0.91.0 stable.** Same build as the
+  stable release underneath — every 0.91.0 note applies — with the beta-only
+  features still on top: the Team pit wall with teams, invite codes and the
+  live relay, and the Fuel tab. If you were on 0.91.0-beta.13, nothing here
+  is new to you; this build exists so the beta channel has a current version
+  to update to now that stable has caught up.
+
 ## 0.91.0 — 2026-08-26
 
 Everything below has been through the beta channel over the last few days.
