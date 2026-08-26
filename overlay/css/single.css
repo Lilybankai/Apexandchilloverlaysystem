@@ -20,14 +20,40 @@ body {
   background: transparent !important;
 }
 
-/* The one widget on the page: cancel the stage's absolute anchoring. */
+/* The one widget on the page: cancel the stage's absolute anchoring.
+
+   `position: relative` on the mount, not the default static: it is the last
+   line of defence for anything inside a widget that is absolutely positioned
+   against an ancestor that turns out not to be one. Escaping to here bounds it
+   to the widget's own box; escaping past here bounds it to the OBS source,
+   which is how a 3px accent bar became a full-height line down the stream. */
 .single-page {
+  position: relative;
   display: inline-block;
   padding: 6px; /* breathing room so drop shadows/borders are not clipped */
 }
 
+/* RELATIVE, not static. With every offset left at `auto` the two lay out
+   identically — the widget still sits at its natural size in the flow — but
+   `.panel` (theme.css) is `position: relative` precisely so it is the
+   containing block for its own chrome, and `static` here took that away.
+
+   What that cost: `.panel::before`, the 3px brand accent bar, is
+   `position: absolute; inset: 0 auto 0 0`. With the panel unpositioned it
+   resolved against the initial containing block instead, so `inset: 0 … 0`
+   stretched it over the FULL HEIGHT of the browser source — a coloured line
+   running the whole screen past the top and bottom of the widget. `.panel`'s
+   `overflow: hidden` could not clip it: overflow only clips descendants whose
+   containing block is the element or something inside it, and the bar's had
+   become the viewport. In-game escapes this by accident (`.ig-item` is
+   absolutely positioned, so the bar lands on the widget's box anyway), which
+   is why the lines only ever showed up on the OBS sources.
+
+   Widget code has hit this before from the other side: motion/damage/mfd/radar/
+   chat each build their hover slider off a 0px `position: relative` anchor div
+   rather than the section, for exactly this reason. Keep this `relative`. */
 .single-page .widget {
-  position: static !important;
+  position: relative !important;
   top: auto !important;
   left: auto !important;
   right: auto !important;
