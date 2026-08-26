@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.91.0-beta.12 — 2026-08-26
+
+### Added
+
+- **The Team page's tyre corners are now drawn as the wheel itself.** Each
+  corner is a round wheel: the tyre's three tread stripes coloured by their
+  temperature against the compound's optimum (inner shoulder drawn inboard,
+  the way the car sits), the brake disc in the middle coloured by its own
+  temperature, tread remaining as a thin arc around the outside, and — new —
+  the **tyre pressure in the hub**, in kPa. Pressures were always meant to be
+  there; the app simply never read them from the sim. It does now, live from
+  the car's shared memory, so the engineer's "pressures" question answers
+  from real numbers too. The old thumbnail-sized temperature bars are gone.
+
+- **The team relay runs at one second.** Publisher and pit-wall reader both
+  moved from every 3 seconds to every 1 — a teammate's screen is now at most
+  ~2 seconds behind the car instead of ~6.
+
 ### Fixed
 
 - **The lap counter was showing the Hypercar's lap, not yours.** In a multiclass
@@ -45,20 +63,6 @@
 ## 0.91.0-beta.11 — 2026-08-26
 
 ### Added
-
-- **The Team page's tyre corners are now drawn as the wheel itself.** Each
-  corner is a round wheel: the tyre's three tread stripes coloured by their
-  temperature against the compound's optimum (inner shoulder drawn inboard,
-  the way the car sits), the brake disc in the middle coloured by its own
-  temperature, tread remaining as a thin arc around the outside, and — new —
-  the **tyre pressure in the hub**, in kPa. Pressures were always meant to be
-  there; the app simply never read them from the sim. It does now, live from
-  the car's shared memory, so the engineer's "pressures" question answers
-  from real numbers too. The old thumbnail-sized temperature bars are gone.
-
-- **The team relay runs at one second.** Publisher and pit-wall reader both
-  moved from every 3 seconds to every 1 — a teammate's screen is now at most
-  ~2 seconds behind the car instead of ~6.
 
 - **Tyre temperatures in Fahrenheit.** Settings ▸ Display & audio ▸ Appearance
   has a **Temperature units** dropdown next to Speed units — °C (the sim's own)
