@@ -4,39 +4,6 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-### Fixed
-
-- **The wheel widget's tread stripes actually move now.** The first cut sorted
-  band temperatures into three fixed buckets around the compound's optimum,
-  and a GT3's tyres spend whole stints inside one bucket — so the stripes sat
-  solid blue looking broken while the temperatures underneath them moved.
-  They now use the same continuous blue→red thermal ramp as the overlay's
-  tyre widget, anchored on the sim's optimum, so every degree shows and both
-  displays tell the same story.
-
-- **The Team page's Damage tile spoke in raw fractions.** Losing a wheel
-  read "0.128665585136414" — the sim's internal severity number printed
-  unrounded and unnamed. It now names the worst component with a percentage,
-  the way the damage widget does: "FL susp 12% · 25s".
-
-- **The Team page's track map was a mirror image.** The sim's Z axis runs
-  the opposite way to a canvas' downward Y, so every circuit drew flipped —
-  left-handers became right-handers. Same one-sign correction the overlay's
-  track map has always applied; verified against Monza's real clockwise
-  direction. The car dots ride the same fix.
-
-- **The race engineer's damage report stopped lying twice.** "So many parts
-  hanging off" was counting sim part slots the car never had — a live car
-  that lost exactly one wheel reported thirteen. The count is now measured
-  against the cleanest state the car has shown, so it says what actually came
-  off (and says nothing, rather than a wrong number, when it joined the
-  session already damaged). And the repair time he quoted was only the
-  repair: when the sim publishes its own total for the stop as booked —
-  repairs, tyres and fuel together — he now gives both: "Repairs about 25
-  seconds — the stop as booked is about 35 all in."
-
-## Unreleased
-
 ### Changed
 
 - **The menu moved from the top of the window to a side rail.** Eleven tabs
@@ -72,6 +39,35 @@
 
 ### Fixed
 
+- **The wheel widget's tread stripes actually move now.** The first cut sorted
+  band temperatures into three fixed buckets around the compound's optimum,
+  and a GT3's tyres spend whole stints inside one bucket — so the stripes sat
+  solid blue looking broken while the temperatures underneath them moved.
+  They now use the same continuous blue→red thermal ramp as the overlay's
+  tyre widget, anchored on the sim's optimum, so every degree shows and both
+  displays tell the same story.
+
+- **The Team page's Damage tile spoke in raw fractions.** Losing a wheel
+  read "0.128665585136414" — the sim's internal severity number printed
+  unrounded and unnamed. It now names the worst component with a percentage,
+  the way the damage widget does: "FL susp 12% · 25s".
+
+- **The Team page's track map was a mirror image.** The sim's Z axis runs
+  the opposite way to a canvas' downward Y, so every circuit drew flipped —
+  left-handers became right-handers. Same one-sign correction the overlay's
+  track map has always applied; verified against Monza's real clockwise
+  direction. The car dots ride the same fix.
+
+- **The race engineer's damage report stopped lying twice.** "So many parts
+  hanging off" was counting sim part slots the car never had — a live car
+  that lost exactly one wheel reported thirteen. The count is now measured
+  against the cleanest state the car has shown, so it says what actually came
+  off (and says nothing, rather than a wrong number, when it joined the
+  session already damaged). And the repair time he quoted was only the
+  repair: when the sim publishes its own total for the stop as booked —
+  repairs, tyres and fuel together — he now gives both: "Repairs about 25
+  seconds — the stop as booked is about 35 all in."
+
 - **The section pills inside a page could be cut off instead of scrolling.**
   The row of pills at the top of Settings (General / Display & audio /
   Controls / Account) and the same control on Streamers, Team and Admin had no
@@ -85,7 +81,6 @@
   fell back to a dark grey, and the highlight is mixed from the row's own
   colour — dark grey mixed into a dark panel is not a highlight. They are now
   their own colour, and any future row without one still highlights visibly.
-
 
 ## 0.91.0-beta.12 — 2026-08-26
 

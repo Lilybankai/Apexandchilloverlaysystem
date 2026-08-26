@@ -30,61 +30,24 @@
 
 <div class="app">
 
-  <!-- ========================= TOP NAV ================================= -->
-  <header class="nav">
+  <!-- ======================== TOP STRIP ================================
+       Deliberately NOT the navigation. Everything left here is either identity
+       or a LIVE control, and a live control must never live in a rail that
+       collapses to icons — Start/Stop above all, which is the one button that
+       has to be readable at every window size. The destinations moved to the
+       rail below.
+
+       This is what the old top bar could not do. Eleven tabs plus these
+       controls in one 58px row had already burned every escape hatch (tab
+       labels gone at 1220px, seg labels at 900px, feed text and brand at
+       820px) and still overflowed: near the window's 760px minimum the nav
+       was nine unlabelled glyphs. A rail grows DOWN a column that already
+       scrolls, so a twelfth destination costs this strip nothing. -->
+  <header class="topbar">
     <div class="nav__brand">
       <img class="brand__mark" src="assets/mark.svg" alt="" />
       <span class="brand__name">APEX <span class="brand__amp">&amp;</span> CHILL</span>
     </div>
-
-    <nav class="tabs">
-      <button class="tab" type="button" data-tab="dashboard" data-active="true">
-        <svg class="icon"><use href="#i-layout-grid" /></svg><span class="tab__label">Dashboard</span>
-      </button>
-      <button class="tab" type="button" data-tab="overlays">
-        <svg class="icon"><use href="#i-monitor" /></svg><span class="tab__label">Overlays</span>
-      </button>
-      <button class="tab" type="button" data-tab="streamers">
-        <svg class="icon"><use href="#i-video" /></svg><span class="tab__label">Streamers</span>
-      </button>
-      <!-- No padlock: the tab has real content as of the reference-pace work.
-           The league's own boards are still to come and the view says so, but a
-           lock on a tab that scores every lap you have driven would be lying
-           about what is behind it. -->
-      <button class="tab" type="button" data-tab="leaderboard">
-        <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
-      </button>
-      <button class="tab" type="button" data-tab="schedule">
-        <svg class="icon"><use href="#i-calendar" /></svg><span class="tab__label">Schedule</span>
-      </button>
-      <button class="tab" type="button" data-tab="setups">
-        <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
-      </button>
-      <button class="tab" type="button" data-tab="engineer">
-        <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
-      </button>
-      <!-- Beta-channel feature: the pit-wall view (docs/TEAM-ENGINEER-PAGE.md
-           Phase 1). Same visibility rule and reasoning as the Fuel tab below
-           (control-panel.js applyTeamTabVisibility). -->
-      <button class="tab" type="button" data-tab="team" hidden>
-        <svg class="icon"><use href="#i-users" /></svg><span class="tab__label">Team</span>
-      </button>
-      <!-- Beta-channel feature for now: hidden until the update state says the
-           user follows beta (control-panel.js applyFuelTabVisibility). Hidden
-           by default so a stable install never flashes a tab it can't keep. -->
-      <button class="tab" type="button" data-tab="fuel" hidden>
-        <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
-      </button>
-      <button class="tab" type="button" data-tab="suggestions">
-        <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
-      </button>
-      <!-- League staff only. Hidden until admin:whoami confirms this account is
-           an admin — the server-side RPCs authorise every read regardless, so
-           the hidden attribute is convenience, not the security boundary. -->
-      <button class="tab" type="button" data-tab="admin" id="admin-tab" hidden>
-        <svg class="icon"><use href="#i-shield" /></svg><span class="tab__label">Admin</span>
-      </button>
-    </nav>
 
     <span class="nav__spacer"></span>
 
@@ -104,10 +67,6 @@
       <span class="feed-pill__dot"></span>
       <span class="feed-pill__text" id="feed-text">STOPPED</span>
     </div>
-
-    <button class="iconbtn" id="settings-btn" type="button" title="Settings" aria-label="Settings">
-      <svg class="icon"><use href="#i-settings" /></svg>
-    </button>
 
     <!-- Account: the signed-in driver, or a way in when working offline. -->
     <div class="account" id="account" hidden>
@@ -153,6 +112,91 @@
     <span class="error-banner__icon">!</span>
     <span class="error-banner__text" id="error-text"></span>
   </div>
+
+  <!-- ============================ RAIL =================================
+       The destinations. A vertical rail grows down a column that already
+       scrolls, so adding a section costs nothing that is in contention —
+       which is the whole reason this stopped being a top bar.
+
+       Grouped, because eleven peer-level tabs is a list, not a hierarchy.
+       Every group keeps at least one always-visible member, so a group
+       header can never be left labelling nothing when Team, Fuel or Admin
+       are hidden for an account.
+
+       COLLAPSED, the rail is icons only — and unlike the old icon-only top
+       bar, each one names itself on hover (`data-tip`, filled in from the
+       label by control-panel.js so the two can never drift apart). An
+       unlabelled glyph you cannot identify was the bug, not the width. -->
+  <div class="body">
+  <nav class="rail" id="rail" aria-label="Sections">
+    <div class="rail__scroll">
+      <button class="tab" type="button" data-tab="dashboard" data-active="true">
+        <svg class="icon"><use href="#i-layout-grid" /></svg><span class="tab__label">Dashboard</span>
+      </button>
+
+      <p class="rail__group">Driving</p>
+      <button class="tab" type="button" data-tab="engineer">
+        <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
+      </button>
+      <button class="tab" type="button" data-tab="setups">
+        <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
+      </button>
+      <!-- Beta-channel feature for now: hidden until the update state says the
+           user follows beta (control-panel.js applyFuelTabVisibility). Hidden
+           by default so a stable install never flashes a tab it can't keep. -->
+      <button class="tab" type="button" data-tab="fuel" hidden>
+        <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
+      </button>
+      <!-- Beta-channel feature: the pit-wall view (docs/TEAM-ENGINEER-PAGE.md
+           Phase 1). Same visibility rule and reasoning as the Fuel tab above
+           (control-panel.js applyTeamTabVisibility). -->
+      <button class="tab" type="button" data-tab="team" hidden>
+        <svg class="icon"><use href="#i-users" /></svg><span class="tab__label">Team</span>
+      </button>
+
+      <p class="rail__group">Broadcast</p>
+      <button class="tab" type="button" data-tab="overlays">
+        <svg class="icon"><use href="#i-monitor" /></svg><span class="tab__label">Overlays</span>
+      </button>
+      <button class="tab" type="button" data-tab="streamers">
+        <svg class="icon"><use href="#i-video" /></svg><span class="tab__label">Streamers</span>
+      </button>
+
+      <p class="rail__group">League</p>
+      <!-- No padlock: the tab has real content as of the reference-pace work.
+           The league's own boards are still to come and the view says so, but a
+           lock on a tab that scores every lap you have driven would be lying
+           about what is behind it. -->
+      <button class="tab" type="button" data-tab="leaderboard">
+        <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
+      </button>
+      <button class="tab" type="button" data-tab="schedule">
+        <svg class="icon"><use href="#i-calendar" /></svg><span class="tab__label">Schedule</span>
+      </button>
+      <!-- League staff only. Hidden until admin:whoami confirms this account is
+           an admin — the server-side RPCs authorise every read regardless, so
+           the hidden attribute is convenience, not the security boundary. -->
+      <button class="tab" type="button" data-tab="admin" id="admin-tab" hidden>
+        <svg class="icon"><use href="#i-shield" /></svg><span class="tab__label">Admin</span>
+      </button>
+    </div>
+
+    <!-- Pinned to the bottom. Settings is a destination like any other now —
+         in a top bar it had no room for a tab and made do with a gear that
+         toggled back to wherever you came from. The rail has the room, so the
+         gear is just the Settings item and that toggle is gone. -->
+    <div class="rail__foot">
+      <button class="tab" type="button" data-tab="suggestions">
+        <svg class="icon"><use href="#i-message-square-plus" /></svg><span class="tab__label">Suggestions</span>
+      </button>
+      <button class="tab" type="button" id="settings-btn" data-tab="settings">
+        <svg class="icon"><use href="#i-settings" /></svg><span class="tab__label">Settings</span>
+      </button>
+      <button class="rail__collapse" id="rail-toggle" type="button">
+        <svg class="icon"><use href="#i-chevron-down" /></svg><span class="tab__label">Collapse</span>
+      </button>
+    </div>
+  </nav>
 
   <div class="content" id="content">
 
@@ -2769,6 +2813,8 @@
         </div>
 
   </div>
+
+  </div><!-- /.body -->
 
   <!-- ========================== FOOTER ================================ -->
   <footer class="foot">

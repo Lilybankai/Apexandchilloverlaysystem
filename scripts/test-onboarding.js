@@ -331,5 +331,109 @@ check('the module can bring the card back', typeof ob.restore === 'function');
   }
 }
 
+
+/* -------------------------------------------------------------------------- */
+console.log('\nSurviving the nav');
+/* -------------------------------------------------------------------------- */
+/*
+ * The checklist is the first thing a new install shows and the only way into
+ * the five tours, so it is the last thing that should break when the shell is
+ * restyled. It survived the top-bar-to-side-rail move in v0.91 for one reason:
+ * it navigates through the ROUTER (window.apexNav.showView), never by finding
+ * and clicking a nav button. A rail item, a tab, a command palette -- none of
+ * it matters to a caller that asks the router to go somewhere.
+ *
+ * These freeze that. The failure they exist to catch is someone "simplifying"
+ * goTo() into a `document.querySelector('.tab[data-tab=...]').click()`, which
+ * would work perfectly until the day the nav markup changes again -- and then
+ * strand every new driver on a checklist whose rows do nothing.
+ */
+
+const obJs = fs.readFileSync(path.join(PANEL, 'onboarding.js'), 'utf8');
+const tourJs = fs.readFileSync(path.join(PANEL, 'tour.js'), 'utf8');
+
+check('the checklist navigates through the router', /apexNav/.test(obJs));
+check('and so does the walkthrough it launches', /apexNav/.test(tourJs));
+check(
+  'neither reaches into the nav markup for a button to click',
+  !/\.tab\[data-tab|querySelector\([^)]*\.tab\b|getElementById\(['"]rail/.test(obJs + tourJs),
+);
+check('the router still exports showView for them', /window\.apexNav\s*=\s*\{[^}]*showView/.test(panelJs));
+check(
+  'and showSettingsPane, which the pane-deep rows need',
+  /window\.apexNav\s*=\s*\{[^}]*showSettingsPane/.test(panelJs),
+);
+
+// Every view the checklist and the tours navigate to must be a real section.
+// A typo here is a row that goes nowhere, which looks exactly like a dead app.
+{
+  const declared = new Set([...html.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]));
+  const wanted = new Set([
+    ...[...obJs.matchAll(/view:\s*'([a-z]+)'/g)].map((m) => m[1]),
+    ...[...tourJs.matchAll(/view:\s*'([a-z]+)'/g)].map((m) => m[1]),
+  ]);
+  const missing = [...wanted].filter((v) => !declared.has(v));
+  check('every view they navigate to exists', missing.length === 0, missing.join(', ') || 'all present');
+}
+
+// The card itself lives inside a view, so it rides along with the content
+// column wherever the nav goes. If it ever ends up outside .content it would
+// be laid out beside the rail instead of inside the page.
+check(
+  'the card is inside the content column, not the shell chrome',
+  html.indexOf('id="onboard-card"') > html.indexOf('<div class="content" id="content">'),
+);
+check(
+  'and inside the dashboard view specifically',
+  html.indexOf('id="onboard-card"') > html.indexOf('data-view="dashboard"'),
+);
+
+
+/* -------------------------------------------------------------------------- */
+console.log('\nThe rail it now sits beside');
+/* -------------------------------------------------------------------------- */
+/*
+ * The side rail (v0.91). The router finds its items with `.tab[data-tab]` and
+ * nothing else, which is why the move cost it no changes -- so that selector,
+ * and the labels the tooltips are copied from, are the contract.
+ */
+
+check('the rail is in the page', /<nav class="rail" id="rail"/.test(html));
+check('it wraps the content in a row', /<div class="body">/.test(html));
+
+{
+  // Every destination the router knows must be a rail item, and every rail
+  // item must have a view behind it. Either half missing is a dead click.
+  const tabs = [...html.matchAll(/class="tab"[^>]*data-tab="([a-z]+)"/g)].map((m) => m[1]);
+  const declared = new Set([...html.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]));
+  const orphans = tabs.filter((t) => !declared.has(t));
+  check('every rail item has a view behind it', orphans.length === 0, orphans.join(', ') || 'all wired');
+  check('nothing was dropped in the move', tabs.length === 12, `${tabs.length} items`);
+  check('settings is a destination of its own now', tabs.includes('settings'));
+  check(
+    'and the gear that used to toggle back to the last tab is gone',
+    !/lastContentTab/.test(panelJs),
+  );
+}
+
+{
+  // The collapsed rail is icons only. Every item must carry a label for the
+  // tooltip to be copied FROM -- an item with no label collapses to an
+  // anonymous glyph, which is the exact bug the old icon-only top bar had.
+  const items = [...html.matchAll(/<button class="(?:tab|rail__collapse)"[\s\S]{0,320}?<\/button>/g)].map(
+    (m) => m[0],
+  );
+  const unlabelled = items.filter((h) => !/class="tab__label">[^<]+</.test(h));
+  check(
+    'every rail item has a label to name itself by',
+    unlabelled.length === 0,
+    `${items.length} items`,
+  );
+  check('the tooltip text is copied from that label, not written twice', /data-tip/.test(panelJs));
+  check('and an aria-label with it, for when the label is display:none', /aria-label/.test(panelJs));
+  check('the collapse toggle exists', /id="rail-toggle"/.test(html));
+  check('and its state is remembered', /apex\.panel\.railCollapsed/.test(panelJs));
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

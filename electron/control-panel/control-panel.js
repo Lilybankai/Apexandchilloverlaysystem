@@ -4555,20 +4555,26 @@
 
   // --- Tab router ----------------------------------------------------------
   /*
-   * The Hub shell's five tabs plus the gear, over one document: each view is a
-   * [data-view] section and only the active one is displayed. No routing library
-   * and no page loads — a reload would drop the WebSocket status feed and make
-   * the panel flash black between tabs.
+   * The shell's sections over one document: each view is a [data-view] section
+   * and only the active one is displayed. No routing library and no page loads
+   * — a reload would drop the WebSocket status feed and make the panel flash
+   * black between tabs.
    *
    * The chosen tab is remembered, because the tab someone lives in says what
    * they use the app for: a streamer setting up sits in Overlays, and being
    * dropped back on Dashboard every launch would be a small daily annoyance.
+   *
+   * The nav moved from a top bar to a side rail in v0.91, and this router did
+   * not change: it finds its buttons with `.tab[data-tab]`, and the rail items
+   * kept both. The one thing that DID change is Settings. In the top bar it had
+   * no room for a tab of its own and made do with a gear that toggled back to
+   * whichever tab you came from; the rail has the room, so Settings is now an
+   * ordinary destination and that toggle is gone.
    */
 
   const TAB_STORAGE_KEY = 'apex.panel.tab';
   const views = Array.from(document.querySelectorAll('[data-view]'));
   const tabButtons = Array.from(document.querySelectorAll('.tab[data-tab]'));
-  const settingsBtn = $('#settings-btn');
 
   /**
    * The Fuel tab is a beta-channel feature for now — it reached stable ahead
@@ -4610,8 +4616,6 @@
     for (const tab of tabButtons) {
       tab.setAttribute('data-active', String(tab.dataset.tab === target));
     }
-    // Settings has no tab of its own — the gear is its affordance, so light it.
-    settingsBtn.setAttribute('data-active', String(target === 'settings'));
     // Each view scrolls from its own top; carrying the previous view's scroll
     // position over lands you halfway down an unrelated page.
     const content = $('#content');
@@ -4668,22 +4672,67 @@
     }
   }
 
-  /** The last tab-bar view, so the gear has somewhere to return to. */
-  let lastContentTab = 'dashboard';
-
   for (const tab of tabButtons) {
-    tab.addEventListener('click', () => {
-      lastContentTab = tab.dataset.tab;
-      showView(tab.dataset.tab);
-    });
+    tab.addEventListener('click', () => showView(tab.dataset.tab));
   }
 
-  settingsBtn.addEventListener('click', () => {
-    // The gear both opens and closes Settings: it is the only affordance for a
-    // view with no tab of its own, so it has to be able to undo itself.
-    const open = settingsBtn.getAttribute('data-active') === 'true';
-    showView(open ? lastContentTab : 'settings');
-  });
+  /* ---- the rail: tooltips, then collapse ---------------------------------
+   *
+   * A collapsed rail is icons only, and an icon you cannot identify is exactly
+   * the bug the old top bar shipped: at its narrowest it became nine unnamed
+   * glyphs with no way to find out what they were. So every rail item carries
+   * its own name, and the name is COPIED from the label rather than written
+   * twice in the markup — duplicated strings drift, and a tooltip that
+   * disagrees with the menu is worse than no tooltip.
+   *
+   * `data-tip` draws the hover chip (CSS, hover-only, nothing on the hot path)
+   * and `aria-label` is what a screen reader reads once the label is display:
+   * none. Both are set here, from one source, for both states.
+   */
+  const rail = $('#rail');
+  const railToggle = $('#rail-toggle');
+
+  for (const el of document.querySelectorAll('.rail .tab, .rail__collapse')) {
+    const label = el.querySelector('.tab__label');
+    const text = label && label.textContent ? label.textContent.trim() : '';
+    if (!text) continue;
+    el.setAttribute('data-tip', text);
+    el.setAttribute('aria-label', text);
+  }
+
+  /*
+   * Collapse is remembered per install: someone who puts the rail away wants it
+   * away tomorrow too. Below 1100px the CSS shuts the rail regardless of this
+   * value and hides the toggle — the preference is kept, not overwritten, so
+   * widening the window restores whatever the driver actually chose.
+   */
+  const RAIL_STORAGE_KEY = 'apex.panel.railCollapsed';
+
+  function applyRail(collapsed) {
+    if (!rail) return;
+    rail.setAttribute('data-collapsed', String(!!collapsed));
+    if (railToggle) railToggle.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  let railCollapsed = false;
+  try {
+    railCollapsed = localStorage.getItem(RAIL_STORAGE_KEY) === 'true';
+  } catch {
+    /* storage disabled — the rail just opens expanded every launch */
+  }
+  applyRail(railCollapsed);
+
+  if (railToggle) {
+    railToggle.addEventListener('click', () => {
+      railCollapsed = !railCollapsed;
+      applyRail(railCollapsed);
+      try {
+        localStorage.setItem(RAIL_STORAGE_KEY, String(railCollapsed));
+      } catch {
+        /* storage disabled — it just won't persist */
+      }
+    });
+  }
 
   let restored = 'dashboard';
   try {
@@ -4691,7 +4740,6 @@
   } catch {
     /* storage disabled */
   }
-  if (restored !== 'settings') lastContentTab = restored;
   showView(restored);
 
   // --- Subscription (the Settings card) ------------------------------------
