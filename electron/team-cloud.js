@@ -27,10 +27,10 @@
 
 'use strict';
 
-/** Publish cadence — Carl signed off ~3 s for the pit wall (2026-08-24). */
-const PUBLISH_MS = 3000;
-/** Read cadence while watching. Same rhythm; worst-case staleness ~6 s. */
-const READ_MS = 3000;
+/** Publish cadence — Carl moved it to 1 s (2026-08-26; was 3 s at launch). */
+const PUBLISH_MS = 1000;
+/** Read cadence while watching. Same rhythm; worst-case staleness ~2 s. */
+const READ_MS = 1000;
 /** Re-send the race history at most this often — it is the one heavy block. */
 const HISTORY_EVERY_MS = 60 * 1000;
 /** The server refuses history over 256 KB; stay clear of the line. */
@@ -352,7 +352,7 @@ function setWatching(on) {
   if (want) {
     readTimer = setInterval(() => void readTick(), READ_MS);
     readTimer.unref?.();
-    void readTick(); // paint now, not in 3 s
+    void readTick(); // paint now, not a tick from now
   }
   pushTeams();
   return stateForUi();

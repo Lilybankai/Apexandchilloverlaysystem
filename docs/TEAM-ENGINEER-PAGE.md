@@ -297,9 +297,9 @@ digest feeding `veCarsAhead*` on the watcher side.
    `team_members` tables stand; membership is just expected to churn, so the
    UI must make add/remove first-class (not buried in settings), and RLS/
    session logic must tolerate a member joining mid-event.
-2. **Cadence: ~3 s is fine.** Shape A (RPC upsert + poll) confirmed as the
-   transport; trim later only if testers ask. Realtime (Shape B) stays a
-   documented option, not planned work.
+2. **Cadence: 1 s** (Carl, 2026-08-26 — launched at ~3 s, trimmed after first
+   live use). Shape A (RPC upsert + poll) confirmed as the transport. Realtime
+   (Shape B) stays a documented option, not planned work.
 3. **Entitlement: every team member needs their own subscription.** Deliberate
    — each seat gets the full app, which is the selling point. No special
    watcher tier; league vouchers remain the free path for league deals.
@@ -331,15 +331,15 @@ untouched.
 
 Per machine, what's actually new:
 
-- **Driving PC (the one that matters for FPS):** once every ~3 s, in the
-  Electron server process — build `EngineerSummary` (pure function over the
-  current frame, well under 1 ms), build the ~5–10 KB standings digest,
-  `JSON.stringify`, one HTTPS POST (async I/O, keep-alive). Order of 1 ms of
-  CPU every 3 s ≈ ~0.03% of one core. For scale: the existing REST provider
-  parses a larger standings JSON every 150 ms — the publisher is ~1/20th of
-  work the app already does continuously. Network: a few KB/s up. The game
-  process is not touched at all.
-- **Watcher PC:** one RPC poll every ~3 s plus panel rendering — and it isn't
+- **Driving PC (the one that matters for FPS):** once every ~1 s (was 3 s
+  until 2026-08-26), in the Electron server process — build `EngineerSummary`
+  (pure function over the current frame, well under 1 ms), build the ~5–10 KB
+  standings digest, `JSON.stringify`, one HTTPS POST (async I/O, keep-alive).
+  Order of 1 ms of CPU per second ≈ ~0.1% of one core. For scale: the existing
+  REST provider parses a larger standings JSON every 150 ms — the publisher is
+  still a fraction of work the app already does continuously. Network: a few
+  KB/s up. The game process is not touched at all.
+- **Watcher PC:** one RPC poll every ~1 s plus panel rendering — and it isn't
   running the sim, so headroom is huge anyway.
 - **Phase 1 (local-only)** adds only panel rendering of data already produced.
 

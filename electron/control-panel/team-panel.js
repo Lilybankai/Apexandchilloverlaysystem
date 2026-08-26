@@ -434,20 +434,69 @@
     return 'bad';
   }
 
-  function bandBars(t) {
+  /** Tread-band heat vs this tyre's own optimum — same thresholds the old
+   *  bar strip used, now painting the wheel graphic's tread stripes. */
+  function heatState(c, optimalC) {
+    if (!known(c) || !known(optimalC)) return 'flat';
+    const d = c - optimalC;
+    if (d > 10) return 'hot';
+    if (d < -12) return 'cold';
+    return 'ok';
+  }
+
+  /** Brake-disc heat. A working GT disc lives ~150–750 °C; below that it is
+   *  cold carbon that won't bite, above it is cooking. */
+  function brakeHeat(c) {
+    if (!known(c)) return 'flat';
+    if (c < 150) return 'cold';
+    if (c > 750) return 'hot';
+    return 'ok';
+  }
+
+  /**
+   * One corner drawn as the wheel itself, concentric from the outside in:
+   * a thin tread-remaining arc, the tyre (three tread stripes, oriented so the
+   * inner shoulder faces the car's centreline), the brake disc coloured by its
+   * temperature, and the pressure in the hub — the number the pit wall was
+   * missing. `key` keeps the SVG mask id unique per corner.
+   */
+  function wheelSvg(t, key, rightSide) {
     const bands = [t.innerC, t.middleC, t.outerC];
-    if (!bands.every(known)) return '';
-    const h = (c) => Math.round(Math.min(100, Math.max(8, ((c - 40) / 90) * 100)));
-    const state = (c) => {
-      if (!known(t.optimalTempC)) return 'flat';
-      const d = c - t.optimalTempC;
-      if (d > 10) return 'hot';
-      if (d < -12) return 'cold';
-      return 'ok';
-    };
-    return `<span class="team-tyre__bars" title="Inner / middle / outer tread (inner layer)">
-      ${bands.map((c) => `<i data-heat="${state(c)}" style="height:${h(c)}%"></i>`).join('')}
-    </span>`;
+    const overall = heatState(t.tempC, t.optimalTempC);
+    // Left-to-right stripes as drawn: the inner shoulder sits toward the car's
+    // centreline, so left-side wheels read outer→inner and right-side wheels
+    // inner→outer. No usable bands → paint the whole tread the overall state.
+    const stripes = bands.every(known)
+      ? (rightSide ? bands : [...bands].reverse()).map((c) => heatState(c, t.optimalTempC))
+      : [overall, overall, overall];
+    const C = 2 * Math.PI * 50;
+    const wearKnown = known(t.wear);
+    const wearLen = wearKnown ? Math.max(0.02, Math.min(1, t.wear)) * C : 0;
+    const kpa = known(t.pressureKpa) ? String(Math.round(t.pressureKpa)) : dash;
+    return `
+      <svg class="team-wheel" viewBox="0 0 104 104" role="img"
+           aria-label="tyre: ${kpa} kPa, ${degrees(t.tempC)}, brake ${degrees(t.brakeTempC)}">
+        <defs>
+          <mask id="team-tyremask-${key}">
+            <circle cx="52" cy="52" r="45" fill="white"/>
+            <circle cx="52" cy="52" r="28" fill="black"/>
+          </mask>
+        </defs>
+        <g class="team-wheel__tread" mask="url(#team-tyremask-${key})">
+          <rect x="4" y="4" width="30.6" height="96" data-heat="${stripes[0]}"/>
+          <rect x="36.7" y="4" width="30.6" height="96" data-heat="${stripes[1]}"/>
+          <rect x="69.4" y="4" width="30.6" height="96" data-heat="${stripes[2]}"/>
+        </g>
+        <circle class="team-wheel__rim" cx="52" cy="52" r="45"/>
+        <circle class="team-wheel__rim" cx="52" cy="52" r="28"/>
+        <circle class="team-wheel__weartrack" cx="52" cy="52" r="50"/>
+        ${wearKnown ? `<circle class="team-wheel__weararc" data-band="${wearBand(t.wear)}" cx="52" cy="52" r="50"
+          stroke-dasharray="${wearLen.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 52 52)"/>` : ''}
+        <circle class="team-wheel__disc" data-heat="${brakeHeat(t.brakeTempC)}" cx="52" cy="52" r="24"/>
+        <circle class="team-wheel__hub" cx="52" cy="52" r="17"/>
+        <text class="team-wheel__kpa" x="52" y="${known(t.pressureKpa) ? 55 : 57}" text-anchor="middle">${kpa}</text>
+        ${known(t.pressureKpa) ? `<text class="team-wheel__unit" x="52" y="64" text-anchor="middle">kPa</text>` : ''}
+      </svg>`;
   }
 
   function renderTyres(tyres) {
@@ -458,32 +507,30 @@
     const compounds = new Set(CORNERS.map(([k]) => tyres[k] && tyres[k].compound).filter(Boolean));
     const corners = CORNERS.map(([key, label]) => {
       const t = tyres[key];
+      const right = key.endsWith('Right');
       if (!t) return `<div class="team-tyre"><div class="team-tyre__corner">${label}</div><div class="team-tyre__wear">${dash}</div></div>`;
       const band = wearBand(t.wear);
       const inWindow = known(t.tempC) && known(t.optimalTempC)
         ? Math.abs(t.tempC - t.optimalTempC) <= 8 : null;
       return `
-        <div class="team-tyre${band ? ` team-band--${band}` : ''}">
-          <div class="team-tyre__top">
-            <span class="team-tyre__corner">${label}</span>
-            <span class="team-tyre__wearwrap">
-              <span class="team-tyre__wear">${known(t.wear) ? `${(t.wear * 100).toFixed(1)}%` : dash}</span>
-              <span class="team-tyre__cap">tyre left</span>
-            </span>
-          </div>
-          <div class="team-tyre__mid">
-            <span class="team-tyre__kpa">${known(t.pressureKpa) ? `<b>${t.pressureKpa.toFixed(0)}</b><i>kPa</i>` : dash}</span>
-            ${bandBars(t)}
+        <div class="team-tyre${band ? ` team-band--${band}` : ''}${right ? ' team-tyre--right' : ''}">
+          ${wheelSvg(t, key, right)}
+          <div class="team-tyre__info">
+            <div class="team-tyre__head">
+              <span class="team-tyre__corner">${label}</span>
+              ${inWindow != null ? `<span class="team-tyre__win" data-in="${inWindow}">${inWindow ? 'in window' : 'out of window'}</span>` : ''}
+            </div>
+            <span class="team-tyre__wear">${known(t.wear) ? `${(t.wear * 100).toFixed(1)}%` : dash}</span>
+            <span class="team-tyre__cap">tyre left</span>
             <span class="team-tyre__temps">
               <b>${degrees(t.tempC)}</b>
-              <i>${known(t.brakeTempC) ? `Brake ${degreesU(t.brakeTempC)}` : ''}</i>
+              <i>${known(t.brakeTempC) ? `brake ${degreesU(t.brakeTempC)}` : ''}</i>
             </span>
           </div>
-          ${inWindow != null ? `<div class="team-tyre__row"><span class="team-tyre__win" data-in="${inWindow}">${inWindow ? 'in window' : 'out of window'}</span></div>` : ''}
         </div>`;
     }).join('');
     setCard(els.tyres, `
-      ${compounds.size ? `<p class="team-note">${esc(Array.from(compounds).join(' / '))} fitted · temps are the inner-layer average, bars inner/middle/outer</p>` : ''}
+      ${compounds.size ? `<p class="team-note">${esc(Array.from(compounds).join(' / '))} fitted · tread stripes face the car (inner shoulder inboard) · disc shows brake temp · hub is pressure</p>` : ''}
       <div class="team-tyres">${corners}</div>`);
   }
 

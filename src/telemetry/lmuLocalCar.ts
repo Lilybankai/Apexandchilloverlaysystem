@@ -275,6 +275,14 @@ const VT = {
    * the surface-temp base.
    */
   mWheelBrakeRel: 24,
+  /**
+   * `mPressure` — tyre pressure, one double per wheel in **kPa**, at
+   * wheel-start +120. Another of the four anchors that pin the wheel struct
+   * (brake +24, pressure +120, temperature +128, wear +152); like the brake
+   * disc it was used for validation before being published. Reads 0 in the
+   * garage (like the temps' 0 K), so implausible values become unknown.
+   */
+  mWheelPressureRel: 120,
 } as const;
 
 /** Kelvin → Celsius. LMU stores tyre temps in Kelvin. */
@@ -424,6 +432,11 @@ export interface LocalCarPhysics {
    * `UNKNOWN_VALUE` when unavailable (garage reads 0 K, like the tyres).
    */
   tyreBrakeC: [number, number, number, number];
+  /**
+   * Per-corner tyre pressure in **kPa** `[FL, FR, RL, RR]`. `UNKNOWN_VALUE`
+   * when unavailable (the garage publishes 0, exactly like the temps' 0 K).
+   */
+  tyrePressureKpa: [number, number, number, number];
   /** Current lap number for this car (for fuel lap-boundary detection). */
   lapNumber: number;
   /**
@@ -1056,6 +1069,20 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     brakeC(3),
   ];
 
+  // Tyre pressures — already kPa in the buffer, no unit conversion. The window
+  // accepts anything from a badly flat tyre to well over race pressure; the
+  // garage's 0 falls outside it and reads as unknown, like the temps.
+  const pressureKpa = (wheel: number): number => {
+    const p = rec.readDoubleLE(VT.mWheelBase + wheel * VT.mWheelStride + VT.mWheelPressureRel);
+    return p >= 30 && p <= 500 ? round1(p) : UNKNOWN_VALUE;
+  };
+  const tyrePressureKpa: [number, number, number, number] = [
+    pressureKpa(0),
+    pressureKpa(1),
+    pressureKpa(2),
+    pressureKpa(3),
+  ];
+
   // Exact lap clock: elapsed − lapStart. Guard against pre-session junk (both
   // zero, negative spans, absurd values) — report unknown rather than wrong.
   const elapsed = rec.readDoubleLE(VT.mElapsedTime);
@@ -1124,6 +1151,7 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     tyreLinerBandsC,
     tyreCoreC,
     tyreBrakeC,
+    tyrePressureKpa,
     lapNumber: Math.max(0, rec.readInt32LE(VT.mLapNumber)),
     lapTimeSec,
     lapStartET: Number.isFinite(lapStart) && lapStart >= 0 ? lapStart : 0,

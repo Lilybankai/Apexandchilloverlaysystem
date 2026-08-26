@@ -213,23 +213,31 @@
   gap: 10px;
 }
 .team-tyre {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   padding: 10px 12px;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
+/* Right-side corners mirror, so all four wheels face outward like the car. */
+.team-tyre--right { flex-direction: row-reverse; }
+.team-tyre--right .team-tyre__info { text-align: right; }
+.team-tyre--right .team-tyre__head { flex-direction: row-reverse; }
 .team-tyre__corner {
   font: 600 10.5px var(--font-display);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-3);
 }
-.team-tyre__top {
+.team-tyre__info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.team-tyre__head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: baseline;
+  gap: 6px;
 }
-.team-tyre__wearwrap { text-align: right; }
 .team-tyre__wear { font: 700 22px var(--font-display); color: var(--text); }
 .team-tyre__cap {
   display: block;
@@ -241,57 +249,45 @@
 .team-tyre.team-band--ok .team-tyre__wear { color: var(--ok); }
 .team-tyre.team-band--warn .team-tyre__wear { color: var(--warn); }
 .team-tyre.team-band--bad .team-tyre__wear { color: var(--bad); }
-
-/* Middle strip: pressure | tread-band bars | temp + brake. */
-.team-tyre__mid {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 8px;
-  margin-top: 8px;
-  min-height: 34px;
-}
-.team-tyre__kpa b { font: 700 14px var(--font-mono); color: var(--text); }
-.team-tyre__kpa i {
-  display: block;
-  font: 600 9px var(--font-display);
-  font-style: normal;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
-}
-.team-tyre__bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 30px;
-}
-.team-tyre__bars i {
-  display: block;
-  width: 6px;
-  border-radius: 2px 2px 0 0;
-  background: var(--cyan);
-}
-.team-tyre__bars i[data-heat="ok"] { background: var(--ok); }
-.team-tyre__bars i[data-heat="hot"] { background: var(--bad); }
-.team-tyre__bars i[data-heat="cold"] { background: var(--cyan); }
-.team-tyre__temps { text-align: right; }
+.team-tyre__temps { display: flex; flex-direction: column; margin-top: 4px; }
 .team-tyre__temps b { font: 700 14px var(--font-mono); color: var(--text); }
 .team-tyre__temps i {
-  display: block;
   font: 500 9.5px var(--font-display);
   font-style: normal;
   color: var(--text-3);
 }
-.team-tyre__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--text-2);
-  font-size: 12px;
-  margin-top: 4px;
-}
 .team-tyre__win { font-size: 10.5px; letter-spacing: 0.04em; }
+
+/* The wheel graphic — concentric from the outside in: tread-remaining arc,
+   tyre (three tread stripes), brake disc, pressure hub. Status colours match
+   the rest of the page: green in the window, red hot, cyan cold. */
+.team-wheel { width: 92px; height: 92px; flex: 0 0 auto; display: block; }
+.team-wheel__tread rect { fill: var(--panel-3); }
+.team-wheel__tread rect[data-heat="ok"] { fill: var(--ok); }
+.team-wheel__tread rect[data-heat="hot"] { fill: var(--bad); }
+.team-wheel__tread rect[data-heat="cold"] { fill: var(--cyan); }
+.team-wheel__rim { fill: none; stroke: var(--line); stroke-width: 1; }
+.team-wheel__weartrack { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.team-wheel__weararc {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.team-wheel__weararc[data-band="warn"] { stroke: var(--warn); }
+.team-wheel__weararc[data-band="bad"] { stroke: var(--bad); }
+.team-wheel__disc { fill: var(--panel-3); opacity: 0.85; }
+.team-wheel__disc[data-heat="ok"] { fill: var(--ok); }
+.team-wheel__disc[data-heat="hot"] { fill: var(--bad); }
+.team-wheel__disc[data-heat="cold"] { fill: var(--cyan); }
+.team-wheel__hub { fill: var(--panel-2); }
+.team-wheel__kpa { font: 700 15px var(--font-mono); fill: var(--text); }
+.team-wheel__unit {
+  font: 600 7.5px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  fill: var(--text-3);
+}
 .team-tyre__win[data-in="true"] { color: var(--ok); }
 .team-tyre__win[data-in="false"] { color: var(--warn); }
 
