@@ -4,6 +4,10 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.94.0-beta.2 — 2026-08-28
+
+Two fixes straight from the first night's racing on the reliability beta.
+
 ### Fixed
 
 - **"CHEQUERED FLAG" no longer follows you from qualifying into the race.**
