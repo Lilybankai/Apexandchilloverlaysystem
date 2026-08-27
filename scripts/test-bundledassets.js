@@ -11,11 +11,12 @@
  *      download-at-runtime behaviour without a single test failing,
  *   2. EngineerService resolves bundled paths first, falls back to the
  *      userData downloads, and never points a DOWNLOAD at the resources dir,
- *   3. the v0.91.0 split holds: MODEL data (a 60 MB voice, a 141 MB ggml file,
- *      ~110 espeak dictionaries) is downloaded once and never shipped, while a
- *      bundled engine plus a downloaded model still reads as a working
- *      install. Getting this wrong puts 200 MB back into every release, or
- *      leaves the engineer reporting itself uninstalled while it works.
+ *   3. the v0.93.0 bundle is exactly right: the default voice and base.en ship
+ *      in the installer (the v0.91.0 download-only split turned "can't reach
+ *      HuggingFace" into a mute engineer), the other five voices and ~110
+ *      espeak dictionaries never do, and a 0.91.x-era install — bundled engine
+ *      plus a model downloaded into userData — still reads as the working
+ *      install it is.
  */
 
 'use strict';
@@ -125,9 +126,9 @@ check(
 );
 
 // Whisper: the engine and the model are found INDEPENDENTLY across the roots.
-// This is the v0.91.0 split — the installer ships the binaries, the 141 MB
-// model is downloaded into userData — and the state that has to work is the one
-// that used to look like two half-installs.
+// The v0.91.x installers shipped the binaries and downloaded the 141 MB model
+// into userData; those installs are still in the field, so the state that has
+// to keep working is the one that used to look like two half-installs.
 check('nothing anywhere → not installed', !stt.installed(s.sttRoots()));
 
 fs.mkdirSync(path.join(bundledWhisper, 'bin', 'Release'), { recursive: true });
@@ -210,23 +211,66 @@ fs.writeFileSync(path.join(userPiper, OTHER + '.onnx.json'), '{}');
 check('no selected voice → nothing is removable', blind.removableVoices().length === 0);
 
 /* -------------------------------------------------------------------------- */
-console.log('\n4) the staging rules keep model data out of the installer');
+console.log('\n4) the staging rules ship the models and only the models we mean to');
 
-// Each of these silently adds 60-141 MB to every future release: the build
-// succeeds, the app works, and only the download size says anything is wrong.
+// v0.93.0 re-bundles the default voice and base.en — the v0.91.0 download-only
+// split turned "can't reach HuggingFace" into a mute engineer on first run.
+// What must still never creep in: the OTHER voices (60+ MB each, silently) and
+// model data for languages the engineer never speaks.
 const stageSrc = fs.readFileSync(path.join(__dirname, 'stage-bundled.js'), 'utf8');
-check('staging refuses .onnx model data', stageSrc.includes('is model data and is downloaded, not shipped'));
-check('staging no longer copies the ggml model', !/cpSync\([^)]*ggml-base\.en\.bin/.test(stageSrc));
+check('staging ships the default voice', stageSrc.includes("BUNDLED_VOICE = 'en_GB-alan-medium'"));
+check('staging refuses every other voice', stageSrc.includes('is not the bundled voice and must not ship'));
+check('staging copies the ggml model again', /cpSync\([^)]*ggml-base\.en\.bin/.test(stageSrc));
 check('staging keeps only en_dict', stageSrc.includes("KEPT_DICT = 'en_dict'"));
 check('staging drops the Arabic diacritisation model', stageSrc.includes('libtashkeel_model.ort'));
 
-// afterPack must probe BINARIES. A probe for a model would fail every build.
+// afterPack must refuse a package missing either model — a build that succeeds
+// while shipping a mute engineer is this repo's most expensive failure mode.
 const builderSrc = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.js'), 'utf8');
-check("afterPack no longer probes for the ggml model", !builderSrc.includes("'whisper/ggml-base.en.bin'"));
-check('afterPack probes the whisper binary instead', builderSrc.includes('whisper/bin/Release/whisper-cli.exe'));
+check('afterPack probes the ggml model', builderSrc.includes("'whisper/ggml-base.en.bin'"));
+check('afterPack probes the bundled voice', builderSrc.includes("'piper/en_GB-alan-medium.onnx'"));
+check('afterPack probes the whisper binary', builderSrc.includes('whisper/bin/Release/whisper-cli.exe'));
 check('afterPack probes the English dictionary', builderSrc.includes('piper/espeak-ng-data/en_dict'));
 
 fs.rmSync(root, { recursive: true, force: true });
+
+/* -------------------------------------------------------------------------- */
+console.log('\n5) downloads survive proxies and say why they failed (v0.93.0)');
+
+// The field report behind this: v0.91.0 stopped shipping the models, so every
+// driver must download a voice — and one behind a proxy / TLS-scanning AV got
+// a bare "fetch failed" from Node's undici, which uses neither the system
+// proxy nor the Windows certificate store. Chromium's net.fetch uses both.
+const { fetchStacks, describeFetchError } = require('../electron/engineer');
+
+// Outside Electron (this test) only Node's stack exists; inside Electron the
+// Chromium stack must be tried FIRST. Pin the source for the electron half —
+// require('electron') resolves to a path string out here, so the list itself
+// can only prove the fallback.
+const stacks = fetchStacks();
+check('plain Node gets exactly the node stack', stacks.length === 1 && stacks[0].name === 'node');
+check('the node stack is global fetch', stacks[0].fetch === globalThis.fetch);
+check("engineer.js puts Chromium's net.fetch before Node's", /net\.fetch/.test(engineerSrc));
+check('downloads still follow redirects (HF resolve → CDN)', engineerSrc.includes("redirect: 'follow'"));
+
+// undici buries the actual reason in err.cause; a screenshot of the status
+// line is often ALL the diagnostics a Discord report carries.
+const dns = new Error('fetch failed');
+dns.cause = new Error('getaddrinfo ENOTFOUND huggingface.co');
+check(
+  'a DNS failure names the host, not just "fetch failed"',
+  describeFetchError(dns) === 'fetch failed — getaddrinfo ENOTFOUND huggingface.co',
+);
+const dual = new Error('fetch failed');
+dual.cause = new AggregateError([new Error('connect ECONNREFUSED 2600::1:443')], 'aggregate');
+check(
+  'a dual-stack connect failure surfaces a per-address error',
+  describeFetchError(dual).includes('ECONNREFUSED'),
+);
+check('a plain error passes through untouched', describeFetchError(new Error('HTTP 404')) === 'HTTP 404');
+const loop = new Error('a');
+loop.cause = loop;
+check('a self-referential cause chain terminates', describeFetchError(loop) === 'a');
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${pass} passed, ${fail} failed`);

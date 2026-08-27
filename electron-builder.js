@@ -197,14 +197,17 @@ async function afterPack(context) {
   execFileSync(process.execPath, [path.join(__dirname, 'scripts', 'stage-bundled.js'), '--check'], {
     stdio: 'inherit',
   });
-  // Probes are BINARIES only. From v0.91.0 the models (a 60 MB voice, a 141 MB
-  // ggml file) are downloaded once into userData instead of riding every
-  // release — see scripts/stage-bundled.js. Probing for one of them here would
-  // now fail every build.
+  // From v0.93.0 the models ship in the installer again (the v0.91.0 split
+  // made every first run depend on reaching HuggingFace, and a proxy/AV-MITM
+  // tester ended up with a mute engineer — see scripts/stage-bundled.js). A
+  // package missing one of these ships that failure back.
   const probes = [
     'piper/piper.exe',
     'piper/espeak-ng-data/en_dict',
+    'piper/en_GB-alan-medium.onnx',
+    'piper/en_GB-alan-medium.onnx.json',
     'whisper/bin/Release/whisper-cli.exe',
+    'whisper/ggml-base.en.bin',
     'sidecars/voice-player.ps1',
   ];
   for (const probe of probes) {

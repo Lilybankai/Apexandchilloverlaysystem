@@ -399,6 +399,53 @@ function sampleUrl(id) {
   return p ? `${HF_BASE}/${p}/samples/speaker_0.mp3` : null;
 }
 
+/**
+ * The fetch implementations to try, in order. Inside Electron the Chromium
+ * stack comes first: it goes through the system proxy and trusts the Windows
+ * certificate store, and Node's fetch does neither — so a driver behind a
+ * proxy, a VPN or an antivirus that intercepts TLS gets `fetch failed` from
+ * undici while every browser on the machine (and this app's own renderer,
+ * which plays the voice SAMPLES fine) works. Since v0.91.0 removed the bundled
+ * models from the installer, that driver can no longer get a voice at all.
+ * Node's fetch stays as the fallback, and is the whole list for the dev/test
+ * scripts, which run outside Electron (where require('electron') resolves to
+ * a path string, not the API — hence the shape check, not just a try/catch).
+ */
+function fetchStacks() {
+  const stacks = [];
+  try {
+    const { net } = require('electron');
+    if (net && typeof net.fetch === 'function') {
+      stacks.push({ name: 'app', fetch: net.fetch.bind(net) });
+    }
+  } catch {
+    /* plain Node — the spike/test scripts */
+  }
+  stacks.push({ name: 'node', fetch: globalThis.fetch });
+  return stacks;
+}
+
+/**
+ * undici reports every connection-level failure as a bare "fetch failed" and
+ * buries the reason ("getaddrinfo ENOTFOUND huggingface.co", a certificate
+ * error, a refused connection) in `err.cause` — which is exactly the part a
+ * tester's screenshot needs to show. Walk the cause chain (and the first
+ * branch of an AggregateError, e.g. the per-address failures of a dual-stack
+ * connect) into one line.
+ */
+function describeFetchError(err) {
+  const parts = [];
+  let e = err;
+  // Bounded by HOPS, not by parts collected: a cause chain that repeats its
+  // message (or points at itself) must still terminate.
+  for (let hops = 0; e && hops < 4; hops++) {
+    const msg = e.message ? String(e.message) : String(e);
+    if (!parts.includes(msg)) parts.push(msg);
+    e = Array.isArray(e.errors) && e.errors.length ? e.errors[0] : e.cause;
+  }
+  return parts.join(' — ');
+}
+
 /* -------------------------------------------------------------------------- */
 /*  PowerShell sidecars (plain signed .ps1 files, run with -File)              */
 /* -------------------------------------------------------------------------- */
@@ -663,17 +710,14 @@ class EngineerService {
   /**
    * Where whisper lives, in priority order — bundled first, downloaded second.
    *
-   * A LIST rather than one directory, because from v0.91 the two halves come
-   * from different places: the installer ships the binaries (small, signed, and
-   * the executable was always the thing antivirus objected to) while the 141 MB
-   * `ggml-base.en.bin` is downloaded once into userData instead of riding every
-   * release. engineerStt.js resolves the engine and the model independently
-   * across these roots, so "bundled engine + downloaded model" is a normal,
-   * working install rather than two half-installs that each look absent.
-   *
-   * Bundled stays first for the model too: an install that has not yet taken
-   * this update still has one in resources, and re-downloading it would be a
-   * pointless 141 MB.
+   * A LIST rather than one directory. v0.91 split the install in two — binaries
+   * in the installer, `ggml-base.en.bin` downloaded into userData — and v0.93
+   * put the model back in the package (the download was a hard dependency on
+   * reaching HuggingFace, and a proxy/AV-MITM tester ended up with a mute
+   * engineer). The list stays because installs from the 0.91.x era genuinely
+   * hold the model in userData, and engineerStt.js resolving the engine and
+   * the model independently across these roots makes every mix — all-bundled,
+   * all-downloaded, one of each — read as the working install it is.
    */
   sttRoots() {
     return [this.bundledWhisperDir, this.whisperDir].filter(Boolean);
@@ -960,9 +1004,10 @@ class EngineerService {
 
   /**
    * Stream a URL to a .part file, promoted on success; progress via file size.
-   * Node's own fetch (redirects followed) rather than shelling out to
+   * In-process fetch (redirects followed) rather than shelling out to
    * curl.exe — an app spawning curl to pull files is another behaviour
    * antivirus heuristics score against, and this needs nothing curl has.
+   * Chromium's stack first, Node's as the fallback — see fetchStacks().
    */
   async fetch(url, dest, sizeMb, voiceId) {
     const part = `${dest}.part`;
@@ -976,7 +1021,20 @@ class EngineerService {
       }
     }, 1000);
     try {
-      const res = await globalThis.fetch(url, { redirect: 'follow' });
+      // A stack that cannot CONNECT is worth trying past (a proxy the other
+      // stack knows about, a certificate store the other one trusts); an HTTP
+      // status is a real answer from the real server and is final.
+      let res = null;
+      let connectErr = null;
+      for (const stack of fetchStacks()) {
+        try {
+          res = await stack.fetch(url, { redirect: 'follow' });
+          break;
+        } catch (err) {
+          connectErr = err;
+        }
+      }
+      if (!res) throw connectErr;
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const { Readable } = require('node:stream');
       const { pipeline } = require('node:stream/promises');
@@ -984,7 +1042,7 @@ class EngineerService {
       fs.renameSync(part, dest);
     } catch (err) {
       fs.rmSync(part, { force: true });
-      throw new Error(`download: ${err && err.message ? err.message : err}`);
+      throw new Error(`download: ${describeFetchError(err)}`);
     } finally {
       clearInterval(poll);
     }
@@ -1550,4 +1608,13 @@ class EngineerService {
   }
 }
 
-module.exports = { EngineerService, VOICES, GRAMMAR, ENGINEER_CALLOUTS, sampleUrl, matchGrammarText };
+module.exports = {
+  EngineerService,
+  VOICES,
+  GRAMMAR,
+  ENGINEER_CALLOUTS,
+  sampleUrl,
+  matchGrammarText,
+  fetchStacks,
+  describeFetchError,
+};

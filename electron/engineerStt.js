@@ -62,12 +62,11 @@ function findNamed(from, name) {
 /**
  * The engine and the model are looked up SEPARATELY, across one or more roots.
  *
- * They no longer travel together. From v0.91 the installer ships the whisper
- * binaries — small, and signed, which is the whole antivirus argument — but not
- * `ggml-base.en.bin`, which is 141 MB of unchanging model data that used to be
- * re-downloaded in full with every single release. So a working install is
- * routinely "engine from the resources dir, model from userData", and anything
- * that resolved both from one directory would conclude that neither was there.
+ * v0.91 shipped the binaries without `ggml-base.en.bin` (a one-time download
+ * into userData); v0.93 bundles the model again, but installs from the 0.91.x
+ * era are still out there holding "engine from the resources dir, model from
+ * userData" — a working install that anything resolving both halves from one
+ * directory would conclude was absent.
  *
  * `dirs` takes a single path or a list in priority order.
  */

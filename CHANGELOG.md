@@ -4,6 +4,12 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.93.0 — 2026-08-27
+
+The Team pit wall — which gains a full weather station this release — and
+the Fuel tab stay in beta a little longer while we test them across
+machines.
+
 ### Fixed
 
 - **The coloured line running down the stream, past the overlays.** Each
@@ -16,24 +22,19 @@
   panel's own clipping could not catch it. Nothing about the widgets moved;
   the bar is simply back inside its panel, where it now also follows the
   panel's rounded corner in the in-game layer instead of squaring it off.
-
-## 0.93.0-beta.1 — 2026-08-27
-
-### Added
-
-- **A proper weather station on the Team pit wall.** The weather card now
-  shows air and track temperature, rain, and the surface's state at a
-  glance, plus LMU's own session forecast in full: sky, temperature, rain
-  chance, wind and humidity for each phase of the session (start → 25% →
-  50% → 75% → finish). Previously it was a rain-chance strip and nothing
-  else.
-
-### Changed
-
-- **The beta line re-anchors on the 0.92.0 stable** — every 0.92.0 note
-  applies, including the engineer's local-yellow callouts — with the
-  beta-only features still on top: the Team pit wall with teams, invite
-  codes and the live relay, and the Fuel tab.
+- **The engineer's voice and speech models ship in the installer again.**
+  0.91.0 moved them to a one-time download, which left anyone who couldn't
+  reach the download server with a mute engineer ("Download failed: fetch
+  failed"). The default voice and the speech-recognition model are back in
+  the (signed) package, so a fresh install talks out of the box; the five
+  optional voices remain in-app downloads. Voices already downloaded are
+  found and used where they are.
+- **The optional voice downloads work behind proxies and TLS-scanning
+  antivirus.** They previously went through networking that ignores the
+  system proxy and the Windows certificate store — the cause of the bare
+  "fetch failed" above. Downloads now use the same network stack as the
+  browser, and when one still fails, the status line names the actual
+  reason.
 
 ## 0.92.0 — 2026-08-26
 

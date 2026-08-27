@@ -9,28 +9,29 @@
  * laid down by our signed installer — and themselves signed at build time, see
  * electron-builder.js — carry none of that.
  *
- * ## v0.91.0: the MODELS stopped riding along
- * The executables were always the quarantine bait. The model data never was,
- * and it was enormous and unchanging: `ggml-base.en.bin` (141 MB) and
- * `en_GB-alan-medium.onnx` (60 MB) made up 201 MB of a 287 MB installer, and
- * every release re-shipped both byte-for-byte. A driver taking ten betas
- * downloaded the same 201 MB ten times.
+ * ## v0.93.0: the models ride along again
+ * v0.91.0 split them out — `ggml-base.en.bin` (141 MB) and the default voice
+ * `en_GB-alan-medium.onnx` (60 MB) became a one-time download into userData,
+ * saving 201 MB off every release. The first field report paid for it: the
+ * update wiped the bundled copies, every driver suddenly NEEDED that download,
+ * and a tester behind a proxy/TLS-scanning AV got "fetch failed" and a mute
+ * engineer. The 201 MB argument was also weaker than it looked — blockmap
+ * differential updates already skip unchanged model bytes on the update path.
+ * So the default voice and the whisper model ship in the installer again;
+ * only the five OTHER voices remain in-app downloads.
  *
- * So the split is now by KIND rather than by component: executables ship signed
- * in the installer, model data is fetched once into userData and survives every
- * update after it. electron/engineerStt.js resolves the engine and the model
- * independently for exactly this reason.
- *
- * Non-English espeak-ng dictionaries go the same way, minus the download — the
- * engineer speaks English, and `ru_dict`, `cmn_dict`, `libtashkeel_model.ort`
- * and ~100 others were 26 MB of an installer nothing would ever read. Verified
- * by synthesising with the pruned tree and transcribing the result back.
+ * What did NOT come back: the non-English espeak-ng dictionaries. The engineer
+ * speaks English, and `ru_dict`, `cmn_dict`, `libtashkeel_model.ort` and ~100
+ * others were 26 MB of an installer nothing would ever read. Verified by
+ * synthesising with the pruned tree and transcribing the result back.
+ * electron/engineerStt.js still resolves the engine and the model
+ * independently, because installs from the 0.91.x era hold models in userData.
  *
  * This script fills `build/bundled/` (gitignored) from the `tools/` caches,
  * downloading via the existing setup scripts only if the caches are empty:
  *
- *   build/bundled/piper/     engine + English phoneme data only (~14 MB)
- *   build/bundled/whisper/   whisper-cli tree, no model          (~20 MB)
+ *   build/bundled/piper/     engine + English phoneme data + Alan (~77 MB)
+ *   build/bundled/whisper/   whisper-cli tree + base.en          (~168 MB)
  *
  * electron-builder maps both into the installer as extraResources, and its
  * afterPack hook REFUSES to build if they are missing — a package without its
@@ -57,6 +58,12 @@ const TOOLS_PIPER = path.join(ROOT, 'tools', 'piper', 'piper');
 const TOOLS_WHISPER = path.join(ROOT, 'tools', 'whisper');
 
 const checkOnly = process.argv.includes('--check');
+
+/**
+ * The voice the installer ships — the default engineer. The other five stay
+ * in-app downloads; a stray one in staging grows every release by 60+ MB.
+ */
+const BUNDLED_VOICE = 'en_GB-alan-medium';
 
 /**
  * The only espeak-ng dictionary the engineer can ever use.
@@ -115,17 +122,29 @@ function verify(root) {
     problems.push('whisper/whisper-cli.exe missing');
   }
 
+  // The models ship again from v0.93.0 — see the header. A package without
+  // them boots a first install into "download or stay mute", which is exactly
+  // the proxy/AV failure the re-bundle exists to close.
+  if (!fs.existsSync(path.join(pDir, `${BUNDLED_VOICE}.onnx`))) {
+    problems.push(`piper/${BUNDLED_VOICE}.onnx missing`);
+  }
+  if (!fs.existsSync(path.join(pDir, `${BUNDLED_VOICE}.onnx.json`))) {
+    problems.push(`piper/${BUNDLED_VOICE}.onnx.json missing`);
+  }
+  const ggml = path.join(wDir, 'ggml-base.en.bin');
+  if (!fs.existsSync(ggml) || fs.statSync(ggml).size < 100_000_000) {
+    problems.push('whisper/ggml-base.en.bin missing or truncated');
+  }
+
   /*
-   * The other half of the check, and the one that actually earns its keep now:
-   * nothing here may ship MODEL DATA. A voice or a ggml model that creeps back
-   * into the staging dir adds 60-141 MB to every future release, and it would
-   * do it silently — the build succeeds, the app works, and only the download
-   * size says anything is wrong. See the header for the split.
+   * What still must NOT ship: any voice beyond the default (60+ MB each,
+   * silently — the build succeeds and only the installer size says anything is
+   * wrong), and the model data for languages the engineer never speaks.
    */
   if (fs.existsSync(pDir)) {
     for (const f of fs.readdirSync(pDir)) {
-      if (f.endsWith('.onnx') || f.endsWith('.onnx.json')) {
-        problems.push(`piper/${f} is model data and is downloaded, not shipped`);
+      if (f.endsWith('.onnx') && !f.startsWith(BUNDLED_VOICE)) {
+        problems.push(`piper/${f} is not the bundled voice and must not ship`);
       }
       if (DROPPED_MODELS.includes(f)) {
         problems.push(`piper/${f} is for a language the engineer never speaks`);
@@ -138,9 +157,6 @@ function verify(root) {
     if (strays.length) {
       problems.push(`piper/espeak-ng-data holds ${strays.length} dictionaries the app cannot use`);
     }
-  }
-  if (fs.existsSync(path.join(wDir, 'ggml-base.en.bin'))) {
-    problems.push('whisper/ggml-base.en.bin is model data and is downloaded, not shipped');
   }
   return problems;
 }
@@ -155,7 +171,7 @@ function fail(problems) {
 if (checkOnly) {
   const problems = verify(OUT);
   if (problems.length) fail(problems);
-  console.log('[bundled] build/bundled verified — binaries present, no model data.');
+  console.log('[bundled] build/bundled verified — engine, default voice and whisper all present.');
   process.exit(0);
 }
 
@@ -172,11 +188,12 @@ fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT_PIPER, { recursive: true });
 fs.mkdirSync(OUT_WHISPER, { recursive: true });
 
-// Piper: the engine, and nothing that is model data. The tools cache holds
-// every voice ever spiked plus the full espeak dictionary set; all of it is
-// either downloaded at runtime (voices) or unusable in an English-only app.
+// Piper: the engine plus the ONE bundled voice. The tools cache holds every
+// voice ever spiked plus the full espeak dictionary set; the other voices stay
+// in-app downloads, the extra dictionaries are unusable in an English-only app.
 for (const e of fs.readdirSync(TOOLS_PIPER, { withFileTypes: true })) {
-  if (e.name.endsWith('.onnx') || e.name.endsWith('.onnx.json')) continue;
+  const isVoiceFile = e.name.endsWith('.onnx') || e.name.endsWith('.onnx.json');
+  if (isVoiceFile && !e.name.startsWith(BUNDLED_VOICE)) continue;
   if (DROPPED_MODELS.includes(e.name)) continue;
   fs.cpSync(path.join(TOOLS_PIPER, e.name), path.join(OUT_PIPER, e.name), { recursive: true });
 }
@@ -189,11 +206,10 @@ for (const f of fs.readdirSync(dictDir)) {
   if (f.endsWith('_dict') && f !== KEPT_DICT) fs.rmSync(path.join(dictDir, f), { force: true });
 }
 
-// Whisper: the cli tree as-is (the ggml DLLs must stay next to whisper-cli).
-// `ggml-base.en.bin` is deliberately NOT copied — 141 MB of unchanging model
-// data that used to be re-shipped with every release. engineerStt.js finds the
-// engine here and the model in userData.
+// Whisper: the cli tree as-is (the ggml DLLs must stay next to whisper-cli)
+// plus base.en at the root, which is where electron/engineerStt.js looks.
 fs.cpSync(path.join(TOOLS_WHISPER, 'bin'), path.join(OUT_WHISPER, 'bin'), { recursive: true });
+fs.cpSync(path.join(TOOLS_WHISPER, 'ggml-base.en.bin'), path.join(OUT_WHISPER, 'ggml-base.en.bin'));
 
 const problems = verify(OUT);
 if (problems.length) fail(problems);
@@ -213,6 +229,6 @@ const size = (dir) => {
 };
 console.log(
   `[bundled] staged — piper ${size(OUT_PIPER)} MB, whisper ${size(OUT_WHISPER)} MB ` +
-    '(binaries only; voices and ggml-base.en are downloaded once into userData). ' +
+    '(engine + default voice + base.en; the other voices stay in-app downloads). ' +
     'electron-builder picks these up as extraResources.',
 );
