@@ -4,6 +4,13 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.94.0-beta.1 — 2026-08-27
+
+The reliability release: every way an overlay could quietly stop mid-race
+now heals itself in seconds, and a full performance pass has the whole
+pipeline back to fighting weight. Testers: put the update-rate slider back
+to 30 Hz — the freezes were never a rate problem, and 60 Hz only costs.
+
 ### Fixed
 
 - **Overlays no longer stop mid-race and stay stopped.** Two testers' reports
