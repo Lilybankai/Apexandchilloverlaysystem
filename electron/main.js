@@ -1029,7 +1029,9 @@ let lastSentHistoryRev = -1;
  */
 let teamMapShape = null; // {key, revision, lengthM, points: [[x,z],...]}
 let teamMapShapeFetching = false;
-let lastSentShapeRev = -1;
+/** `key|revision` of the shape last pushed to the renderer — same composite
+ *  identity as the fetch gate above, for the same restart-collision reason. */
+let lastSentShapeId = '';
 let feedHttpPort = 0;
 
 function fetchTeamMapShape(revision) {
@@ -1075,7 +1077,17 @@ function teamSnapshotWithExtras(frame, now, everything) {
   const snap = buildTeamSnapshot(frame, now);
   if (!snap) return snap;
   const tm = frame.trackMap;
-  if (tm && tm.ready && (!teamMapShape || teamMapShape.revision !== tm.revision)) {
+  // Keyed on the CIRCUIT as well as the revision. The revision alone is a
+  // per-provider-instance counter that restarts at 1, so across a server
+  // restart — or the demo feed giving way to the live one — two different
+  // circuits can wear the same number, and the Portimão race that exposed
+  // this (2026-08-28) sat behind a cached shape from before the session
+  // that the gate refused to replace: the pit wall never loaded its map.
+  if (
+    tm &&
+    tm.ready &&
+    (!teamMapShape || teamMapShape.key !== tm.key || teamMapShape.revision !== tm.revision)
+  ) {
     fetchTeamMapShape(tm.revision);
   }
   snap.historyRevision = teamHistory.revision;
@@ -1086,9 +1098,12 @@ function teamSnapshotWithExtras(frame, now, everything) {
   // Tiny (four subtractions over ≤5 laps) — computed every push so the tyre
   // plan is always current without the renderer owning any maths.
   snap.tyrePlan = tyreProjection(teamHistory.wear);
-  if (teamMapShape && (everything || teamMapShape.revision !== lastSentShapeRev)) {
-    snap.mapShape = teamMapShape;
-    lastSentShapeRev = teamMapShape.revision;
+  if (teamMapShape) {
+    const shapeId = `${teamMapShape.key}|${teamMapShape.revision}`;
+    if (everything || shapeId !== lastSentShapeId) {
+      snap.mapShape = teamMapShape;
+      lastSentShapeId = shapeId;
+    }
   }
   return snap;
 }
@@ -1300,6 +1315,11 @@ function disconnectStatusFeed() {
   // Blank the pit wall promptly rather than letting it age out: a stopped
   // server is "no data", not "data from 8 seconds ago".
   lastFeedFrame = null;
+  // The cached circuit shape dies with the server that published it. A new
+  // server counts its map revisions from 1 again, so a survivor here is a
+  // cache the fetch gate can be fooled by — see teamSnapshotWithExtras.
+  teamMapShape = null;
+  lastSentShapeId = '';
   if (teamViewOpen && mainWindow && !mainWindow.isDestroyed()) {
     try {
       mainWindow.webContents.send('team:update', null);

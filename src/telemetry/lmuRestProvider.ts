@@ -201,6 +201,16 @@ const SCENE_NAME_RETRY_MS = 5_000;
  */
 const CLOSING_WINDOW_MS = 800;
 
+/**
+ * How long the finish latch survives the sim NOT repeating its FINISHED
+ * verdict (ms). The verdict is re-published on every 150 ms standings poll for
+ * the whole rest of a finished session, so this only elapses when the sim has
+ * genuinely withdrawn it — a session restart or change. Long enough to ride
+ * out a multi-second session-load stall; short enough that a stale latch can
+ * never outlive a formation lap.
+ */
+const FINISH_BRIDGE_MS = 5000;
+
 /** A car entry from `/rest/watch/standings` (only the fields we consume). */
 interface RestStanding {
   slotID: number;
@@ -604,6 +614,8 @@ export class LmuRestProvider implements TelemetryProvider {
     slotId: number;
     position: number;
     classPosition?: number;
+    /** Wall clock (ms) when the sim last repeated the FINISHED verdict. */
+    corroboratedAt: number;
   } | null = null;
   /**
    * The last team rosters seen, kept so the lookup can be re-run the moment the
@@ -1759,8 +1771,14 @@ export class LmuRestProvider implements TelemetryProvider {
     const paceScore = this.buildPaceScore(playerCar, session, trackLen);
     // Has THIS car taken the flag, and where did it finish — latched, because a
     // live position keeps moving while the rest of the field is still coming
-    // round. See trackFinish.
-    const finish = this.trackFinish(focus, standings, frameSessionKey);
+    // round. See trackFinish — including why the session's pre-green state has
+    // to be passed in.
+    const finish = this.trackFinish(
+      focus,
+      standings,
+      frameSessionKey,
+      session.notStarted === true || isPreGreen(session.phase),
+    );
     const player = this.buildPlayer(
       focus,
       standings,
@@ -2954,19 +2972,40 @@ export class LmuRestProvider implements TelemetryProvider {
     focus: RestStanding | undefined,
     standings: StandingEntry[],
     sessionKey: string,
+    preGreen: boolean,
   ): { finished: boolean; position?: number; classPosition?: number } {
     if (!focus) {
       this.finishLatch = null;
       return { finished: false };
     }
-    const done = /FINISH/i.test(String(focus.finishStatus ?? ''));
+    // A FINISHED verdict seen before this session has gone green is the LAST
+    // session's, still sitting in the feed: LMU carries the standings rows'
+    // finishStatus across the qualifying → race transition, and it only resets
+    // around the start. Latching it here filed yesterday's result under
+    // TODAY'S session key — and once the real reset came, the dropout bridge
+    // below saw a latch whose key matched and held "CHEQUERED FLAG" over the
+    // entire race (live tester report, 2026-08-28). A car cannot finish a
+    // session it has not started; ignore the claim and clear any latch that
+    // has already been mis-filed under this key.
+    const done = !preGreen && /FINISH/i.test(String(focus.finishStatus ?? ''));
+    if (preGreen && this.finishLatch && this.finishLatch.key === sessionKey) {
+      this.finishLatch = null;
+    }
     if (!done) {
-      // Only clear a latch that belongs to this car and session: the standings
-      // feed can drop a car for a frame, and forgetting a result because of one
-      // bad poll is worse than holding it a moment too long.
+      // Only bridge a latch that belongs to this car and session — the
+      // standings feed can drop a car for a frame, and forgetting a result
+      // because of one bad poll is worse than holding it a moment too long.
+      // But only for MOMENTS: the sim repeats FINISHED every poll for the rest
+      // of a genuinely-over session, so a latch it has stopped corroborating
+      // for whole seconds is one the sim has taken back (a restart, a session
+      // change this key failed to catch), not a dropped frame.
       if (this.finishLatch && this.finishLatch.slotId === focus.slotID) {
         if (this.finishLatch.key !== sessionKey) this.finishLatch = null;
-        else return { ...this.finishLatch, finished: true };
+        else if (Date.now() - this.finishLatch.corroboratedAt < FINISH_BRIDGE_MS) {
+          return { ...this.finishLatch, finished: true };
+        } else {
+          this.finishLatch = null;
+        }
       }
       return { finished: false };
     }
@@ -2981,8 +3020,10 @@ export class LmuRestProvider implements TelemetryProvider {
         slotId: focus.slotID,
         position: row ? row.position : focus.position,
         classPosition: row?.classPosition,
+        corroboratedAt: Date.now(),
       };
     }
+    this.finishLatch.corroboratedAt = Date.now();
     return {
       finished: true,
       position: this.finishLatch.position,

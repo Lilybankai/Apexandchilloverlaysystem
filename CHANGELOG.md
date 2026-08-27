@@ -4,6 +4,28 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **"CHEQUERED FLAG" no longer follows you from qualifying into the race.**
+  The sim carries each car's finished-in-qualifying verdict across the
+  session change and only resets it around the race start. The Race Control
+  banner latched that stale verdict under the race's own name during the
+  grid phases — and when the sim's reset came, the "ride out one dropped
+  frame" hold kept the latch alive, so the banner said CHEQUERED FLAG for
+  the entire race. A finish reported before a session has gone green is now
+  ignored (a car cannot finish a session it has not started), and the
+  dropped-frame hold lasts seconds rather than forever, so a session restart
+  can never resurrect an old result either.
+- **The Team pit wall's track map loads reliably (seen missing at Portimão).**
+  If the Team tab was opened while the app was still showing demo data —
+  start the app, peek at the pit wall, then launch into the session, the
+  normal race-night order — the page cached the demo circuit's shape, and
+  the check for "has the circuit changed?" compared a counter that both the
+  demo shape and the first real circuit of the run share. The real map was
+  never fetched, locally or on the cloud relay. The check now compares the
+  circuit itself as well as the counter, and a stopped server takes its
+  cached shape with it, so the map can no longer be blocked by a stale one.
+
 ## 0.94.0-beta.1 — 2026-08-27
 
 The reliability release: every way an overlay could quietly stop mid-race
