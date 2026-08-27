@@ -474,7 +474,13 @@
         row.pitFlag.classList.toggle("is-off", !inPit);
       }
 
-      tbody.appendChild(row.tr);
+      // Positional insert: touch the DOM only when the row is genuinely out of
+      // place. An unconditional appendChild is a remove + insert on the live
+      // table — a layout invalidation per row per update for an order that is
+      // stable most of the time.
+      if (tbody.childNodes[i] !== row.tr) {
+        tbody.insertBefore(row.tr, tbody.childNodes[i] || null);
+      }
     }
 
     rows.forEach(function (row, slot) {

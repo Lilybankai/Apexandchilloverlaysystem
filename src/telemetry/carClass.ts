@@ -88,10 +88,22 @@ function key(raw: string): string {
  */
 export function normalizeClass(raw: string | undefined | null): string | undefined {
   if (!raw) return undefined;
+  const hit = normalizeCache.get(raw);
+  if (hit !== undefined) return hit;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
-  return ALIASES[key(trimmed)] ?? trimmed.toUpperCase();
+  const out = ALIASES[key(trimmed)] ?? trimmed.toUpperCase();
+  // A field carries a handful of distinct spellings, but this runs per car per
+  // frame across half a dozen builders — ~130 regex+case-fold passes a frame
+  // for answers that never change. The cap only matters if something feeds
+  // unbounded garbage in; real inputs never come close.
+  if (normalizeCache.size > 512) normalizeCache.clear();
+  normalizeCache.set(raw, out);
+  return out;
 }
+
+/** raw spelling → canonical label; see the note inside {@link normalizeClass}. */
+const normalizeCache = new Map<string, string>();
 
 /**
  * Speed rank of a class: `0` is the fastest known category, higher is slower.

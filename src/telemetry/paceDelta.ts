@@ -687,15 +687,20 @@ function interpTime(ref: Sample[], d: number): number {
   if (d < ref[0]!.d - EDGE || d > ref[n - 1]!.d + EDGE) return -1;
   if (d <= ref[0]!.d) return ref[0]!.t;
   if (d >= ref[n - 1]!.d) return ref[n - 1]!.t;
-  for (let i = 1; i < n; i++) {
-    const b = ref[i]!;
-    if (b.d >= d) {
-      const a = ref[i - 1]!;
-      const span = b.d - a.d;
-      return span <= 0 ? a.t : a.t + (b.t - a.t) * ((d - a.d) / span);
-    }
+  // Binary search for the first sample at or past `d`. The trace is sorted by
+  // `d` and ~500 samples long, and this runs six times a frame — a scan from
+  // the front was ~1,500 iterations a frame to find what nine compares find.
+  let lo = 1;
+  let hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ref[mid]!.d >= d) hi = mid;
+    else lo = mid + 1;
   }
-  return ref[n - 1]!.t;
+  const b = ref[lo]!;
+  const a = ref[lo - 1]!;
+  const span = b.d - a.d;
+  return span <= 0 ? a.t : a.t + (b.t - a.t) * ((d - a.d) / span);
 }
 
 /**
@@ -709,15 +714,19 @@ function interpDist(ref: Sample[], t: number): number {
   if (t < ref[0]!.t - EDGE || t > ref[n - 1]!.t + EDGE) return -1;
   if (t <= ref[0]!.t) return ref[0]!.d;
   if (t >= ref[n - 1]!.t) return ref[n - 1]!.d;
-  for (let i = 1; i < n; i++) {
-    const b = ref[i]!;
-    if (b.t >= t) {
-      const a = ref[i - 1]!;
-      const span = b.t - a.t;
-      return span <= 0 ? a.d : a.d + (b.d - a.d) * ((t - a.t) / span);
-    }
+  // Binary search — same argument as interpTime: sorted by `t` too (the doc
+  // note above), so the first-at-or-past sample is nine compares away.
+  let lo = 1;
+  let hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ref[mid]!.t >= t) hi = mid;
+    else lo = mid + 1;
   }
-  return ref[n - 1]!.d;
+  const b = ref[lo]!;
+  const a = ref[lo - 1]!;
+  const span = b.t - a.t;
+  return span <= 0 ? a.d : a.d + (b.d - a.d) * ((t - a.t) / span);
 }
 
 function round2(v: number): number {

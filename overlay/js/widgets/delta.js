@@ -102,6 +102,20 @@
     if (root.getAttribute("data-delta") !== state) root.setAttribute("data-delta", state);
   }
 
+  /** Write the fill's left/width only when they actually changed. */
+  var fillLeft = null;
+  var fillWidth = null;
+  function setFill(left, width) {
+    if (left !== fillLeft) {
+      fillLeft = left;
+      fillEl.style.left = left;
+    }
+    if (width !== fillWidth) {
+      fillWidth = width;
+      fillEl.style.width = width;
+    }
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var d = frame.player && frame.player.lap ? frame.player.lap.delta : fmt.UNKNOWN;
@@ -113,7 +127,7 @@
     // implausible for a lap delta, and the provider rounds, so this is safe).
     if (typeof d !== "number" || d === fmt.UNKNOWN) {
       if (valueEl.textContent !== "—") valueEl.textContent = "—";
-      fillEl.style.width = "0%";
+      setFill("50%", "0%");
       setState("none");
       return;
     }
@@ -134,17 +148,14 @@
 
     // Centre-anchored fill, matching LMU's on-screen delta: when AHEAD (faster,
     // negative) the green fill grows RIGHT; when BEHIND (slower) the red fill
-    // grows LEFT.
-    if (ahead) {
-      fillEl.style.left = "50%";
-      fillEl.style.width = half + "%";
-    } else if (behind) {
-      fillEl.style.left = 50 - half + "%";
-      fillEl.style.width = half + "%";
-    } else {
-      fillEl.style.left = "50%";
-      fillEl.style.width = "0%";
-    }
+    // grows LEFT. Quantised to a tenth of a percent — sub-pixel at any panel
+    // width — and written only on change, same argument as the chevron above:
+    // an unquantised float is a fresh 17-digit string and a forced layout on
+    // every update even when the bar has not visibly moved.
+    var w = half.toFixed(1) + "%";
+    if (ahead) setFill("50%", w);
+    else if (behind) setFill((50 - half).toFixed(1) + "%", w);
+    else setFill("50%", "0%");
 
     setState(ahead ? "ahead" : behind ? "behind" : "flat");
 

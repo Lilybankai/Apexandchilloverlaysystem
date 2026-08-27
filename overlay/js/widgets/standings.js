@@ -980,6 +980,7 @@
     }
 
     var seenGroups = new Set();
+    domCursor = 0;
     for (var g = 0; g < order.length; g++) {
       var cls = order[g];
       var members = byClass[cls];
@@ -1004,7 +1005,7 @@
           ? members.length + " OF " + total + " CARS"
           : total + (total === 1 ? " CAR" : " CARS");
       set(grp, "count", grp.count, "textContent", countText);
-      tbody.appendChild(grp.tr);
+      placeNext(grp.tr);
 
       // Member rows. Which lap wears the purple is the `fastest` setting: the
       // one fastest lap in the race, or this class's. In per-class mode the
@@ -1105,9 +1106,11 @@
         el.cache.txt = txt;
         el.div.textContent = txt;
       }
-      // appendChild on an existing child is a move, so this also fixes the order
-      // when a class's leader position changes.
-      sessFastest.appendChild(el.div);
+      // Positional insert keeps the order right when a class's leader changes,
+      // without re-inserting (and re-laying-out) lines that have not moved.
+      if (sessFastest.childNodes[n] !== el.div) {
+        sessFastest.insertBefore(el.div, sessFastest.childNodes[n] || null);
+      }
     }
 
     // Drop lines for classes that are no longer in the field — and, on a switch
@@ -1363,8 +1366,27 @@
       row.lastTd.classList.toggle("lap-green", lastState === "pb");
     }
 
-    // Reorder: append in standings order (moves existing node, no rebuild).
-    tbody.appendChild(row.tr);
+    // Reorder: keep the node in standings order — see placeNext for why this
+    // must not be an unconditional appendChild.
+    placeNext(row.tr);
+  }
+
+  /** Where the next group/row belongs in the tbody this update. */
+  var domCursor = 0;
+
+  /**
+   * Put an element at the next tbody position, touching the DOM only when it
+   * is not already there. `appendChild` on a node already in the tree is a
+   * remove + insert — it dirties the table's layout even when nothing moved,
+   * and race order is stable for most of a race, so the old unconditional
+   * append was hundreds of layout-invalidating mutations a second saying
+   * "stay where you are".
+   */
+  function placeNext(el) {
+    if (tbody.childNodes[domCursor] !== el) {
+      tbody.insertBefore(el, tbody.childNodes[domCursor] || null);
+    }
+    domCursor++;
   }
 
   window.ApexOverlay.registerWidget("standings", {

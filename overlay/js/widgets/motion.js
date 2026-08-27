@@ -30,6 +30,8 @@
   var TRAIL = 45;
   var trailLat = new Float32Array(TRAIL);
   var trailLon = new Float32Array(TRAIL);
+  /** Signature of the picture last painted — repaint only on change. */
+  var lastDrawSig = null;
   var head = 0;
   var count = 0;
 
@@ -587,7 +589,29 @@
     if (mag > peakG) peakG = mag;
     else peakG *= PEAK_DECAY;
 
-    draw(m);
+    // Repaint only when something the canvas shows has moved by a visible
+    // amount. This widget runs at the full broadcast rate and used to clear
+    // and redraw all three panes unconditionally — a parked car paid the whole
+    // bill for a picture that never changed. The trail's drain is covered by
+    // its energy term: as old cornering samples age out of the ring the sum
+    // keeps changing, so the fade-out still animates; only a genuinely
+    // quiescent picture skips.
+    var trailEnergy = 0;
+    for (var ti = 0; ti < TRAIL; ti++) {
+      trailEnergy += Math.abs(trailLat[ti]) + Math.abs(trailLon[ti]);
+    }
+    var sig =
+      cssW + "x" + cssH + "|" +
+      m.latG.toFixed(2) + "|" + m.lonG.toFixed(2) + "|" +
+      (typeof m.vertG === "number" ? m.vertG.toFixed(2) : "") + "|" +
+      m.yawRate.toFixed(2) + "|" + m.slipAngle.toFixed(1) + "|" +
+      (typeof m.pitch === "number" ? m.pitch.toFixed(1) : "") + "|" +
+      (typeof m.roll === "number" ? m.roll.toFixed(1) : "") + "|" +
+      peakG.toFixed(2) + "|" + trailEnergy.toFixed(2);
+    if (sig !== lastDrawSig) {
+      lastDrawSig = sig;
+      draw(m);
+    }
 
     if (modeG) {
       setText(elLat, "lat", signed(m.latG, 2) + "g");

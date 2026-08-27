@@ -202,13 +202,59 @@
       /** The BG-slider alpha the plate was baked at; see draw(). */
       bakedAlpha = -1,
       lastFrame = null,
-      lastCtx = null;
+      lastCtx = null,
+      /** Signature of the values last painted — see draw(). */
+      lastSig = null,
+      /** Cached BG-slider alpha + the tick that refreshes it — see panelAlpha(). */
+      cachedAlpha = 1,
+      alphaTick = 0;
 
-    /** The operator's BG slider, as the stylesheet publishes it. */
+    /**
+     * The operator's BG slider, as the stylesheet publishes it.
+     *
+     * Sampled every ALPHA_EVERY draws, not every draw: getComputedStyle is a
+     * forced style recalculation, and this factory runs at the full broadcast
+     * rate for eleven of the twelve designs — it was the single most expensive
+     * call in the overlay's hot path, run mid-dispatch right after other
+     * widgets had written DOM. The Apex cluster in speedo.js already samples
+     * its alpha a few times a second for exactly this reason; this is the same
+     * cadence. A slider move lands within a third of a second, far inside how
+     * long the drag itself takes.
+     */
+    var ALPHA_EVERY = 10;
     function panelAlpha() {
       if (!stageEl) return 1;
-      var v = parseFloat(getComputedStyle(stageEl).getPropertyValue("--panel-alpha"));
-      return isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+      if (alphaTick++ % ALPHA_EVERY === 0) {
+        var v = parseFloat(getComputedStyle(stageEl).getPropertyValue("--panel-alpha"));
+        cachedAlpha = isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+      }
+      return cachedAlpha;
+    }
+
+    /**
+     * What the live layer is about to paint, flattened to one string. The
+     * continuous channels are quantised to below what a pixel can show, so a
+     * car sitting in the garage — or an OBS source of a parked car — stops
+     * paying for a full clear + plate + live repaint per frame. Any real
+     * movement changes the string and paints normally.
+     */
+    function liveSignature(v) {
+      // Quantise the continuous channels IN PLACE, so both the signature and
+      // the paint read the same (sub-pixel-rounded) numbers: delta and latG to
+      // hundredths, the rev fraction to 1/400 of the ladder (the same quantum
+      // speedo.js chose), pressures to a tenth of a kPa.
+      if (v.delta !== null) v.delta = Math.round(v.delta * 100) / 100;
+      if (v.latG !== null) v.latG = Math.round(v.latG * 100) / 100;
+      v.revFrac = Math.round((v.revFrac || 0) * 400) / 400;
+      quantCorner(v.fl);
+      quantCorner(v.fr);
+      quantCorner(v.rl);
+      quantCorner(v.rr);
+      return JSON.stringify(v);
+    }
+
+    function quantCorner(c) {
+      if (c && c.p !== null && c.p !== undefined) c.p = Math.round(c.p * 10) / 10;
     }
 
     function kit(ctx2d, pa) {
@@ -306,6 +352,7 @@
       baked.width = canvas.width;
       baked.height = canvas.height;
       bakedAlpha = pa;
+      lastSig = null; // a fresh plate always repaints its live layer
       var bg = baked.getContext("2d");
       bg.scale(scale, scale);
       bg.textBaseline = "alphabetic";
@@ -325,12 +372,23 @@
         rebake();
         return;
       }
+      // Nothing the live layer paints has moved by a visible amount? Keep the
+      // bitmap that is already on screen — the same early-out the Apex cluster
+      // has always had (speedo.js lastFrameKey), ported here so the other
+      // eleven designs stop repainting a parked car at the broadcast rate.
+      var v = null;
+      if (lastFrame && lastCtx) {
+        v = pull(lastFrame, lastCtx);
+        var sig = liveSignature(v);
+        if (sig === lastSig) return;
+        lastSig = sig;
+      }
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, canvas.width, canvas.height);
       g.drawImage(baked, 0, 0);
       g.setTransform(scale, 0, 0, scale, 0, 0);
       g.textBaseline = "alphabetic";
-      if (lastFrame && lastCtx) spec.live(g, pull(lastFrame, lastCtx), kit(g, pa));
+      if (v) spec.live(g, v, kit(g, pa));
     }
 
     return {

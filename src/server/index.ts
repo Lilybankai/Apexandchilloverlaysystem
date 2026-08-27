@@ -911,6 +911,14 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const tickMs = Math.max(1, Math.min(intervalMs, 8));
   let lastPollMs = Date.now();
   let nextDueMs = Date.now();
+  // Frame-loop timing probe, on only when asked for (APEX_PERF=1): per-frame
+  // poll cost via hrtime, reported as avg/max every 5 s with the frame size and
+  // client count. Cheap enough to leave compiled in; free when the env is off.
+  const perfOn = process.env.APEX_PERF === '1';
+  let perfCount = 0;
+  let perfPollSumMs = 0;
+  let perfPollMaxMs = 0;
+  let perfLastReport = Date.now();
   const loop = setInterval(() => {
     const now = Date.now();
     if (now < nextDueMs) return;
@@ -918,6 +926,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     nextDueMs = Math.max(nextDueMs + intervalMs, now);
     const dt = now - lastPollMs;
     lastPollMs = now;
+    const t0 = perfOn ? process.hrtime.bigint() : 0n;
     try {
       const frame = provider.poll(now, dt);
       // The PIT REQUEST row reads the sim's own request flag off the frame —
@@ -930,6 +939,22 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       // have?" — and a prototype's missing ABS becomes an invisible stop.
       noteLiveAids(frame.mfd ? frame.mfd.aids : null);
       wsServer.broadcast(frame);
+      if (perfOn) {
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        perfCount++;
+        perfPollSumMs += ms;
+        if (ms > perfPollMaxMs) perfPollMaxMs = ms;
+        if (now - perfLastReport >= 5000) {
+          console.log(
+            `[perf] frames=${perfCount} poll+broadcast avg=${(perfPollSumMs / perfCount).toFixed(2)}ms ` +
+              `max=${perfPollMaxMs.toFixed(2)}ms frame=${wsServer.lastFrameBytes}B clients=${wsServer.clientCount}`,
+          );
+          perfCount = 0;
+          perfPollSumMs = 0;
+          perfPollMaxMs = 0;
+          perfLastReport = now;
+        }
+      }
     } catch (err) {
       // A provider must never take down the loop; log and keep broadcasting.
       console.error('[loop] provider poll failed:', (err as Error).message);

@@ -470,9 +470,15 @@
   /** Elements currently glowing, swept for expiry at the end of each frame. */
   var glowing = [];
 
-  /** The operator can turn the glow off; js/appearance.js owns the attribute. */
+  /**
+   * The operator can turn the glow off; js/appearance.js owns the attribute.
+   * Read once per dispatched frame (see dispatch) rather than on every value
+   * change — mid-race that is dozens of attribute reads a frame for a setting
+   * that changes a handful of times a season.
+   */
+  var glowEnabledCache = true;
   function glowEnabled() {
-    return document.documentElement.getAttribute("data-glow-enabled") !== "false";
+    return glowEnabledCache;
   }
 
   /** Arm (or re-arm) the bloom on an element that just changed. */
@@ -1050,19 +1056,22 @@
     return classAbbrev(me.carClass) + " " + me.classPosition + " / " + total;
   }
 
+  /** The two session-meta targets, resolved once at boot — they never change. */
+  var sessionMetaEl = null;
+  var lapsMetaEl = null;
+
   function updateSessionMeta(frame) {
     // Standings header: position / field size, or the driver's class position
     // when they asked for it. Tier 1 and glow-eligible — your own position
     // changing is the single most consequential discrete event in a race, and it
     // is the one the driver most often misses while driving.
-    var s = document.querySelector('#widget-standings [data-role="session"]');
+    var s = sessionMetaEl;
     if (s && frame.player && frame.session) {
-      if (!s.classList.contains("is-crit")) s.classList.add("is-crit");
       crit(s, positionMeta(frame));
     }
     // Relative header: current lap / total (or time remaining for timed races),
     // and before the flag drops, which session is about to run.
-    var laps = document.querySelector('#widget-relative [data-role="laps"]');
+    var laps = lapsMetaEl;
     if (laps && frame.session) {
       var cur = frame.session.currentLap;
       var tot = frame.session.totalLaps;
@@ -1084,7 +1093,6 @@
         text = "LAP " + fmt.intVal(cur);
       }
       // Steps once a lap (or once a minute on the timed variant), so it blooms.
-      if (!laps.classList.contains("is-crit")) laps.classList.add("is-crit");
       crit(laps, text);
     }
   }
@@ -1096,6 +1104,8 @@
   function dispatch(frame) {
     var now = nowMs();
 
+    glowEnabledCache =
+      document.documentElement.getAttribute("data-glow-enabled") !== "false";
     setDemo(frame.connected === false);
     updateSessionMeta(frame);
 
@@ -1128,6 +1138,73 @@
   var reconnectDelay = 500; // ms, doubles up to the cap
   var RECONNECT_MAX = 5000;
   var reconnectTimer = null;
+  /** Newest undispatched frame + the rAF that will paint it — see onmessage. */
+  var pendingFrame = null;
+  var rafId = 0;
+  var raf =
+    typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : function (fn) {
+          // Ancient CEF fallback: still coalesces, on a frame-ish timer.
+          return window.setTimeout(fn, 16);
+        };
+
+  /**
+   * Stale-feed watchdog. Reconnect-on-close alone is not enough: a connection
+   * can die without ever delivering a close event (the server's machine going
+   * away mid-race, a network blip on a two-PC setup, OBS's CEF resuming from a
+   * throttled state), and the browser then sits on a socket that says OPEN
+   * while no frame will ever arrive again — the overlay freezes wearing a LIVE
+   * pill, until TCP gives up many minutes later or never. The server never
+   * stops sending while it is up (worst case it broadcasts simulator frames),
+   * so "no frame for a few seconds" IS the dead-link signal; force the socket
+   * closed and let the ordinary reconnect path take over.
+   */
+  var STALE_FEED_MS = 5000;
+  /** How long a socket may sit in CONNECTING/CLOSING before it is abandoned. */
+  var HANDSHAKE_LIMIT_MS = 8000;
+  var lastFrameAt = 0;
+  /** When the current socket entered its current lifecycle state. */
+  var wsStateSince = 0;
+
+  /** Abandon the current socket outright and re-enter the reconnect path. */
+  function abandonSocket(reason) {
+    console.warn("[Apex] " + reason + " — forcing reconnect");
+    var dead = ws;
+    ws = null;
+    if (dead) {
+      // Detach first so the stale socket's late events cannot fight the new one.
+      dead.onopen = dead.onmessage = dead.onclose = dead.onerror = null;
+      try {
+        dead.close();
+      } catch (e) {
+        /* a wedged socket may refuse even close(); it is unreferenced now */
+      }
+    }
+    if (glowing.length) sweepGlow(Infinity);
+    scheduleReconnect();
+  }
+
+  setInterval(function () {
+    if (!ws) return;
+    var now = Date.now();
+    if (ws.readyState === WebSocket.OPEN) {
+      wsStateSince = 0;
+      if (lastFrameAt !== 0 && now - lastFrameAt > STALE_FEED_MS) {
+        setStatus("closed", "STALLED");
+        abandonSocket("no frames for " + STALE_FEED_MS + " ms on an open socket");
+      }
+      return;
+    }
+    // CONNECTING that never completes (server machine gone without a RST) or
+    // CLOSING that never finishes (the close handshake needs the peer too).
+    if (wsStateSince === 0) {
+      wsStateSince = now;
+    } else if (now - wsStateSince > HANDSHAKE_LIMIT_MS) {
+      wsStateSince = 0;
+      abandonSocket("socket stuck in handshake for " + HANDSHAKE_LIMIT_MS + " ms");
+    }
+  }, 1000);
 
   /** Resolve the WS URL from the page location, allowing ?ws= / ?port= overrides. */
   function resolveWsUrl() {
@@ -1163,13 +1240,19 @@
       scheduleReconnect();
       return;
     }
+    wsStateSince = Date.now(); // arm the handshake limit for this attempt
+    lastFrameAt = 0; // the stale check waits for this socket's first frame
 
     ws.onopen = function () {
       reconnectDelay = 500; // reset backoff on a good connection
       setStatus("open", "LIVE");
+      // Baseline for the stale check: a healthy server broadcasts every tick,
+      // so an open socket that stays frameless is as dead as one that stopped.
+      lastFrameAt = Date.now();
     };
 
     ws.onmessage = function (event) {
+      lastFrameAt = Date.now();
       var frame;
       try {
         frame = JSON.parse(event.data);
@@ -1178,7 +1261,23 @@
         return;
       }
       if (!frame || typeof frame !== "object") return;
-      dispatch(frame);
+      // Latest-wins, painted on the display's clock rather than the socket's.
+      // Dispatching inline let the BROADCAST rate set the workload: a 60 Hz
+      // feed into a 30 FPS OBS source did every second frame's DOM and canvas
+      // work for a paint that never happened, an occluded source kept paying
+      // full price for nothing, and a renderer hitch drained its message
+      // backlog as N full dispatches back-to-back — the visible "lurch".
+      // Telemetry frames supersede each other, so the frames dropped here are
+      // exactly the ones that would never have been seen.
+      pendingFrame = frame;
+      if (!rafId) {
+        rafId = raf(function () {
+          rafId = 0;
+          var f = pendingFrame;
+          pendingFrame = null;
+          if (f) dispatch(f);
+        });
+      }
     };
 
     ws.onclose = function () {
@@ -1209,6 +1308,13 @@
   function boot() {
     statusEl = document.getElementById("conn-status");
     statusText = statusEl ? statusEl.querySelector(".conn-status__text") : null;
+
+    // Session-meta targets, once — these used to be two descendant-selector
+    // queries per frame, run even on pages carrying neither widget.
+    sessionMetaEl = document.querySelector('#widget-standings [data-role="session"]');
+    if (sessionMetaEl) sessionMetaEl.classList.add("is-crit");
+    lapsMetaEl = document.querySelector('#widget-relative [data-role="laps"]');
+    if (lapsMetaEl) lapsMetaEl.classList.add("is-crit");
 
     // Create the DEMO badge once, next to the connection pill.
     var stage = document.getElementById("stage");

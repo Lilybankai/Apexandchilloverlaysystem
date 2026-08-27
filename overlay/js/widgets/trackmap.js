@@ -1258,9 +1258,12 @@
     ensureShape(map);
 
     if (headerMeta) {
-      headerMeta.textContent = frame.session && frame.session.track
-        ? frame.session.track
-        : "—";
+      var trackName = frame.session && frame.session.track ? frame.session.track : "—";
+      // Changes once per session; write once per session.
+      if (trackName !== lastHeaderText) {
+        lastHeaderText = trackName;
+        headerMeta.textContent = trackName;
+      }
     }
 
     if (!shape) {
@@ -1345,10 +1348,13 @@
   }
 
   function setStatus(text) {
-    if (!statusEl) return;
+    if (!statusEl || text === lastStatusText) return;
+    lastStatusText = text;
     statusEl.textContent = text;
     statusEl.style.display = text ? "" : "none";
   }
+  var lastStatusText = null;
+  var lastHeaderText = null;
 
   window.ApexOverlay.registerWidget("trackmap", {
     // 20 Hz. The dots move continuously, but a whole circuit in a panel runs at

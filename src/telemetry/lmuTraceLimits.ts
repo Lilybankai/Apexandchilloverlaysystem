@@ -797,6 +797,14 @@ export function newestTrace(dir: string): string | null {
 /** How often to re-check which trace file is newest (ms). */
 const RESCAN_INTERVAL_MS = 30_000;
 
+/**
+ * Floor between filesystem polls (ms) — see {@link LmuTraceLimitsReader.poll}
+ * for why the frame loop must not set this cadence. ~4 Hz against a signal the
+ * sim flushes seconds late is instant for the driver and 8–15× fewer blocking
+ * syscalls for the loop.
+ */
+const TRACE_POLL_INTERVAL_MS = 250;
+
 /** Cap on bytes consumed per poll, so a huge catch-up cannot stall the frame. */
 const MAX_READ_BYTES = 1 << 20;
 
@@ -823,6 +831,8 @@ export class LmuTraceLimitsReader {
   /** Trailing bytes of an unterminated line, held for the next read. */
   private carry = '';
   private lastScanAt = 0;
+  /** Last time {@link poll} actually touched the filesystem. */
+  private lastPollAt = 0;
   private started = false;
   /** Whether the lines being pushed are a backfill replay, for the predicate. */
   private replaying = false;
@@ -877,9 +887,20 @@ export class LmuTraceLimitsReader {
    *
    * Cheap by construction: a `stat` and a read of only the new bytes. The file
    * reaches several MB over a session and is never re-read.
+   *
+   * Rate-limited internally rather than by the caller, because the caller is
+   * the FRAME loop: these are synchronous filesystem calls, on the event-loop
+   * thread, against a file the GAME holds open for writing in its own install
+   * directory — the one place an antivirus interception or a slow disk can
+   * turn a "cheap" stat/read into tens of milliseconds, and a blocked event
+   * loop here stalls the poll, the broadcast and the HTTP server together.
+   * The signal itself is a steward's charge that flushes up to ~25 s late, so
+   * reading at a few Hz gives up nothing.
    */
   public poll(nowMs: number = Date.now()): void {
     if (!this.started || !this.dir) return;
+    if (nowMs - this.lastPollAt < TRACE_POLL_INTERVAL_MS) return;
+    this.lastPollAt = nowMs;
     if (nowMs - this.lastScanAt > RESCAN_INTERVAL_MS) this.rescan(nowMs);
     if (!this.file) return;
 

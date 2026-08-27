@@ -145,6 +145,10 @@ export class RaceosRanksClient {
 
   /** The badges for a driver name, if resolved. Pure cache read. */
   public get(name: string): DriverRanks | undefined {
+    // Empty cache = single-player, or the service unreachable — the common
+    // case, asked per car per frame. Skip the regex+lowercase key build then,
+    // the same short-circuit the provider's badge lookup already has.
+    if (this.cache.size === 0) return undefined;
     const hit = this.cache.get(keyOf(name));
     return hit ?? undefined;
   }

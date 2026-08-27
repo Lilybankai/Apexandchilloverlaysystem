@@ -110,6 +110,9 @@ function makeElement(tag) {
     clientWidth: tag === 'canvas' ? 300 : 280,
     clientHeight: tag === 'canvas' ? 90 : 140,
     children: [],
+    get childNodes() {
+      return this.children;
+    },
     attrs: {},
     parentNode: null,
     style: { setProperty() {}, removeProperty() {}, cssText: '', display: '', width: '', height: '' },

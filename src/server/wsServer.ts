@@ -81,6 +81,11 @@ export class TelemetryWsServer {
     return this.wss.clients.size;
   }
 
+  /** Byte size of the last broadcast frame (0 before the first) — perf probe. */
+  public get lastFrameBytes(): number {
+    return this.lastFrameJson === null ? 0 : Buffer.byteLength(this.lastFrameJson);
+  }
+
   /**
    * Complete a WebSocket upgrade the HTTP server's `upgrade` router has decided
    * belongs to this endpoint. Kept explicit (rather than auto-attached) so the
@@ -99,6 +104,12 @@ export class TelemetryWsServer {
   public broadcast(frame: TelemetryFrame): void {
     const json = JSON.stringify(frame);
     this.lastFrameJson = json;
+    if (this.wss.clients.size === 0) return;
+    // Encode to UTF-8 once. Handing `ws` the string would re-encode it inside
+    // send() for every client — at ~20 KB/frame and several OBS sources that
+    // is megabytes per second of identical encoding. The Buffer still goes out
+    // as an ordinary text frame, so no client can tell the difference.
+    const payload = Buffer.from(json);
     for (const client of this.wss.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
       // Backpressure guard: if this client hasn't drained its buffer, drop the
@@ -110,7 +121,7 @@ export class TelemetryWsServer {
         }
         continue;
       }
-      client.send(json);
+      client.send(payload, { binary: false });
     }
   }
 

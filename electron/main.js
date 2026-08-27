@@ -993,6 +993,8 @@ const status = {
 
 let statusWs = null;
 let lastFrameAt = 0;
+/** Last time a status-feed frame was actually parsed (they are mostly dropped). */
+let lastStateScanAt = 0;
 let feedWatchTimer = null;
 
 /* ---- Team tab feed (docs/TEAM-ENGINEER-PAGE.md Phase 1) -------------------
@@ -1147,19 +1149,82 @@ function setFeedOnTrack(onTrack) {
   applyIngameVisibility();
 }
 
+/**
+ * Where the status feed should be connected, or null when it should not be.
+ *
+ * This is what makes the feed self-healing: the socket's own close/error
+ * handlers redial while a target stands, and disconnectStatusFeed() clears the
+ * target so a deliberate stop stays stopped. Without the redial, one dropped
+ * socket silently ended the feed for the rest of the run — the watchdog then
+ * read "no data" forever, and with auto show/hide on that HID THE IN-GAME
+ * OVERLAYS mid-race until the operator pressed stop/start (the exact tester
+ * report this fixes).
+ */
+let statusFeedTarget = null;
+let statusFeedRedialTimer = null;
+let statusFeedRedialDelay = 1000;
+const STATUS_FEED_REDIAL_MAX_MS = 10_000;
+
+function scheduleStatusFeedRedial() {
+  if (!statusFeedTarget || statusFeedRedialTimer) return;
+  statusFeedRedialTimer = setTimeout(() => {
+    statusFeedRedialTimer = null;
+    if (!statusFeedTarget) return;
+    console.warn('[app] status feed down — redialling');
+    dialStatusFeed();
+  }, statusFeedRedialDelay);
+  statusFeedRedialTimer.unref?.();
+  statusFeedRedialDelay = Math.min(STATUS_FEED_REDIAL_MAX_MS, statusFeedRedialDelay * 2);
+}
+
 function connectStatusFeed(port, wsPath) {
   disconnectStatusFeed();
+  statusFeedTarget = { port, wsPath };
+  statusFeedRedialDelay = 1000;
+  dialStatusFeed();
+}
+
+function dialStatusFeed() {
+  if (!statusFeedTarget) return;
+  const { port, wsPath } = statusFeedTarget;
   lastFrameAt = 0;
   feedHttpPort = port; // the Team map shape is fetched from this same server
   const url = `ws://127.0.0.1:${port}${wsPath}`;
+  let sock;
   try {
-    statusWs = new WebSocket(url);
+    sock = new WebSocket(url);
   } catch {
     statusWs = null;
+    scheduleStatusFeedRedial();
     return;
   }
-  statusWs.on('message', (data) => {
-    lastFrameAt = Date.now();
+  statusWs = sock;
+  sock.on('open', () => {
+    statusFeedRedialDelay = 1000; // a good connection resets the backoff
+  });
+  sock.on('close', () => {
+    // Identity-guarded: a replaced socket's late close must not tear down (or
+    // redial over) the one that replaced it.
+    if (statusWs !== sock) return;
+    statusWs = null;
+    scheduleStatusFeedRedial();
+  });
+  sock.on('message', (data) => {
+    if (statusWs !== sock) return; // a replaced socket's stragglers
+    const now = Date.now();
+    lastFrameAt = now; // liveness is the message arriving; it needs no content
+    // Parse only when a consumer is actually due. Every consumer of this feed
+    // is slow — the live/demo/on-track flags move perhaps twice a session and
+    // the Team beat is 1 Hz — but the parse itself used to run at the full
+    // broadcast rate: a ~20-50 KB JSON graph allocated 30-120×/s ON THE
+    // ELECTRON MAIN THREAD, whose GC pauses are exactly the periodic hitch the
+    // transparent in-game window cannot hide. ~4 Hz keeps every consumer
+    // fresher than the 1 s no-data watchdog while shedding ~95% of the work.
+    const teamDue =
+      now - lastHistoryFeedAt >= TEAM_PUSH_MS ||
+      (teamViewOpen && now - lastTeamPushAt >= TEAM_PUSH_MS);
+    if (!teamDue && now - lastStateScanAt < 250) return; // dropped unparsed
+    lastStateScanAt = now;
     try {
       const frame = JSON.parse(data.toString());
       // client.js treats connected === false as the demo/simulator feed.
@@ -1186,30 +1251,51 @@ function connectStatusFeed(port, wsPath) {
       /* ignore malformed frame */
     }
   });
-  statusWs.on('error', () => {
-    /* reported via the no-data watchdog below */
+  sock.on('error', () => {
+    /* 'close' follows and owns the redial; the watchdog reports the gap */
   });
 
-  // Watchdog: if frames stop arriving, reflect "no data" in the panel.
+  // Watchdog: if frames stop arriving, reflect "no data" in the panel — and
+  // put a silent-but-open socket down so the redial path can replace it. A
+  // socket can stop delivering without ever closing (the server side wedged,
+  // or the connection dying without a RST); terminate() forces the 'close'
+  // that schedules the redial, so a blip costs seconds, not the session.
   //
   // Only pushes when something actually changed. It used to send unconditionally
   // every second, which re-rendered the whole panel once a second for the entire
   // time the app was open — pure churn, since the live/demo/no-data flag is the
   // only thing this timer can alter, and the socket's own message handler
   // already pushes when the feed state flips the other way.
-  feedWatchTimer = setInterval(() => {
-    if (!status.running) return;
-    const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
-    if (stale) setFeedOnTrack(false);
-    if (stale && status.feed !== 'no-data') {
-      status.feed = 'no-data';
-      pushStatus();
-    }
-  }, 1000);
-  feedWatchTimer.unref?.();
+  if (!feedWatchTimer) {
+    feedWatchTimer = setInterval(() => {
+      if (!status.running) return;
+      const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
+      if (stale) setFeedOnTrack(false);
+      if (stale && status.feed !== 'no-data') {
+        status.feed = 'no-data';
+        pushStatus();
+      }
+      if (stale && statusWs && lastFrameAt !== 0) {
+        console.warn('[app] status feed silent on an open socket — recycling it');
+        try {
+          statusWs.terminate(); // its 'close' handler schedules the redial
+        } catch {
+          statusWs = null;
+          scheduleStatusFeedRedial();
+        }
+      }
+    }, 1000);
+    feedWatchTimer.unref?.();
+  }
 }
 
 function disconnectStatusFeed() {
+  // A deliberate stop: drop the redial target first so no handler re-dials.
+  statusFeedTarget = null;
+  if (statusFeedRedialTimer) {
+    clearTimeout(statusFeedRedialTimer);
+    statusFeedRedialTimer = null;
+  }
   setFeedOnTrack(false);
   // Blank the pit wall promptly rather than letting it age out: a stopped
   // server is "no data", not "data from 8 seconds ago".

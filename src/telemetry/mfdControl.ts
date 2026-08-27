@@ -85,9 +85,15 @@ function inclusiveMax(min: number, maxCount: number): number {
  * agree perfectly. Showing that would be a lie a driver cannot check at a
  * glance, and the corners are the thing the crew actually fits.
  */
-export function projectPitMenu(raw: RawPitRow[] | null | undefined): MfdPitRow[] {
+export function projectPitMenu(
+  raw: RawPitRow[] | null | undefined,
+  tyresIn?: MfdTyreControl | null,
+): MfdPitRow[] {
   if (!Array.isArray(raw)) return [];
-  const tyres = projectTyreControl(raw);
+  // The caller may hand in the tyre projection it already computed from the
+  // same payload (buildMfdState does); recomputing it here doubled the most
+  // regex-heavy part of the whole projection.
+  const tyres = tyresIn === undefined ? projectTyreControl(raw) : tyresIn;
   const rows: MfdPitRow[] = [];
   for (const r of raw) {
     if (!r || typeof r.name !== 'string') continue;
@@ -679,6 +685,19 @@ export function projectTyreControl(raw: RawPitRow[] | null | undefined): MfdTyre
   };
 }
 
+/**
+ * Memo for the pit-menu half of {@link buildMfdState}, keyed on the raw
+ * payload's identity. The payload is replaced wholesale by each 500 ms fetch
+ * while this runs at the frame rate — so without the memo the same ~20 rows
+ * went through ~160 regex tests and dozens of array allocations 30–60 times a
+ * second to produce a byte-identical result. The aids half is NOT cached: its
+ * live inputs (rear bias, the shared-memory aid bytes) genuinely move between
+ * fetches.
+ */
+let pitProjFor: RawPitRow[] | null | undefined = undefined;
+let pitProjPit: MfdPitRow[] = [];
+let pitProjTyres: MfdTyreControl | null = null;
+
 /** Builds the frame's {@link MfdState} from the raw payloads + the live car. */
 export function buildMfdState(
   pitRaw: RawPitRow[] | null | undefined,
@@ -687,11 +706,15 @@ export function buildMfdState(
   liveAids?: AidSettings | null,
   carClass?: string,
 ): MfdState {
-  const tyres = projectTyreControl(pitRaw);
+  if (pitRaw !== pitProjFor || pitProjFor === undefined) {
+    pitProjTyres = projectTyreControl(pitRaw);
+    pitProjPit = projectPitMenu(pitRaw, pitProjTyres);
+    pitProjFor = pitRaw;
+  }
   return {
-    pit: projectPitMenu(pitRaw),
+    pit: pitProjPit,
     aids: projectAids(garageRaw, liveRearBias, liveAids, carClass),
-    ...(tyres ? { tyres } : {}),
+    ...(pitProjTyres ? { tyres: pitProjTyres } : {}),
   };
 }
 

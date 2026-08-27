@@ -153,6 +153,8 @@
   var revealOverrideM = null;
   var FADE_RATE = 0.15;
   var revealAlpha = 0;
+  /** Last opacity string written to the canvas — write only on change. */
+  var lastAlphaText = "";
 
   /**
    * Distance fade — how far out an opponent stays visible, in the player's own
@@ -1113,8 +1115,15 @@
     // release exists to announce would be the one moment the HUD was invisible.
     var target = anyoneInRange(blips) || pitActive() ? 1 : 0;
     revealAlpha += (target - revealAlpha) * FADE_RATE;
-    if (target === 0 && revealAlpha < 0.003) revealAlpha = 0;
-    canvas.style.opacity = String(revealAlpha);
+    // Snap at BOTH ends: the easing is asymptotic, and without the snap at 1
+    // the opacity string was a fresh 17-digit float — a new style write on the
+    // canvas element every frame, forever, while cars were in range.
+    if (Math.abs(target - revealAlpha) < 0.003) revealAlpha = target;
+    var alphaText = revealAlpha.toFixed(2);
+    if (alphaText !== lastAlphaText) {
+      lastAlphaText = alphaText;
+      canvas.style.opacity = alphaText;
+    }
 
     // Fully hidden — clear and skip the draw entirely.
     if (revealAlpha <= 0.003) {

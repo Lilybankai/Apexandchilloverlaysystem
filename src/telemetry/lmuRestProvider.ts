@@ -986,10 +986,25 @@ export class LmuRestProvider implements TelemetryProvider {
    * a poll; a skipped tick costs 150 ms of freshness, nothing more.
    */
   private refreshInFlight = false;
+  /** When the in-flight refresh started, for the stuck-flight deadline below. */
+  private refreshInFlightSince = 0;
+
+  /**
+   * Hard deadline on the single-flight guard. Every request under it carries
+   * its own timeout, so this firing means something outside the contract — a
+   * response neither completing nor erroring. Abandoning the flight costs at
+   * worst one duplicate request; NOT abandoning it is the whole feed silently
+   * demoted to the simulator until the operator restarts the server.
+   */
+  private static readonly REFRESH_STUCK_MS = 15_000;
 
   private async refresh(): Promise<void> {
-    if (this.refreshInFlight) return;
+    if (this.refreshInFlight) {
+      if (Date.now() - this.refreshInFlightSince < LmuRestProvider.REFRESH_STUCK_MS) return;
+      console.warn('[lmu] refresh stuck in flight — abandoning it and repolling');
+    }
     this.refreshInFlight = true;
+    this.refreshInFlightSince = Date.now();
     try {
       const [standings, session, gameState] = await Promise.all([
         this.getJson<RestStanding[]>('/rest/watch/standings'),
@@ -1952,6 +1967,19 @@ export class LmuRestProvider implements TelemetryProvider {
     sessionKey: string,
     trackLen: number,
   ): StandingEntry[] {
+    // The whole build is a pure projection of the REST snapshot — and that
+    // snapshot is replaced wholesale every 150 ms while this runs per frame,
+    // so at 60 Hz the same input built the same ~30 rows (each ~26 fields),
+    // sorted them and re-ranked the classes nine times over. Reference
+    // identity of `cars` keys the memo; the scalar inputs ride beside it. A
+    // badge or manufacturer that resolves between refreshes appears on the
+    // next one, which is sooner than any eye can ask for it.
+    if (
+      cars === this.standingsCacheCars &&
+      this.standingsCacheKey === `${focusId}|${sessionKey}|${trackLen}`
+    ) {
+      return this.standingsCache;
+    }
     // Rolling last-5 pace for the whole field, fed from this same poll — see
     // telemetry/paceAverage for what counts as a keepable lap.
     const avgBySlot = this.paceAvg.update(
@@ -1991,7 +2019,9 @@ export class LmuRestProvider implements TelemetryProvider {
       lastLapSec: posOrUnknown(c.lastLapTime),
       ...(lastS1 !== UNKNOWN_VALUE ? { lastSector1Sec: lastS1 } : {}),
       ...(lastS2 !== UNKNOWN_VALUE ? { lastSector2Sec: lastS2 } : {}),
-      avg5Sec: avgBySlot.get(c.slotID),
+      // Rounded at the wire: the raw mean is a full double, and 96.45333333333333
+      // costs 17 characters per row per frame to say what 96.453 says.
+      avg5Sec: round3(avgBySlot.get(c.slotID)),
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),
       pitStops: typeof c.pitstops === 'number' ? c.pitstops : undefined,
@@ -2009,8 +2039,16 @@ export class LmuRestProvider implements TelemetryProvider {
     });
     rows.sort((a, b) => a.position - b.position);
     assignClassPositions(rows);
+    this.standingsCacheCars = cars;
+    this.standingsCacheKey = `${focusId}|${sessionKey}|${trackLen}`;
+    this.standingsCache = rows;
     return rows;
   }
+
+  /** The standings memo — see the head of {@link buildStandings}. */
+  private standingsCacheCars: RestStanding[] | null = null;
+  private standingsCacheKey = '';
+  private standingsCache: StandingEntry[] = [];
 
   /**
    * Cars physically nearest the focused car on track, with a signed time gap
@@ -2491,9 +2529,16 @@ export class LmuRestProvider implements TelemetryProvider {
     const avg = typeof si.averagePathWetness === 'number' ? clamp01(si.averagePathWetness) : max;
 
     const now = Date.now();
-    this.wetHistory.push({ at: now, wet: avg });
-    while (this.wetHistory.length > 1 && now - this.wetHistory[0]!.at > WET_TREND_WINDOW_MS) {
-      this.wetHistory.shift();
+    // Sampled at 1 Hz, not per frame: the trend is judged minutes apart, and a
+    // per-frame history at 60 Hz was ~10,800 live entries with a whole-array
+    // shift() every frame — a memmove costing more than the rest of the
+    // weather block put together, for identical output.
+    const newest = this.wetHistory[this.wetHistory.length - 1];
+    if (!newest || now - newest.at >= 1000) {
+      this.wetHistory.push({ at: now, wet: avg });
+      while (this.wetHistory.length > 1 && now - this.wetHistory[0]!.at > WET_TREND_WINDOW_MS) {
+        this.wetHistory.shift();
+      }
     }
     const oldest = this.wetHistory[0]!;
     const spanMs = now - oldest.at;
@@ -3869,6 +3914,11 @@ function round1(v: number): number {
 }
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/** Round to 3 dp — millisecond precision for a lap time; undefined passes through. */
+function round3(v: number | undefined): number | undefined {
+  return v === undefined ? undefined : Math.round(v * 1000) / 1000;
 }
 
 /* ----------------------------- lap-delta tracker -------------------------- */

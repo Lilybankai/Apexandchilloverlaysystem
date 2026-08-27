@@ -66,6 +66,23 @@ function makeElement(tag) {
       this.children.push(c);
       return c;
     },
+    // The tower now places rows POSITIONALLY (childNodes[i] + insertBefore)
+    // instead of blanket appendChild, so the stub mirrors both — with the same
+    // move semantics, for the same reason appendChild has them.
+    get childNodes() {
+      return this.children;
+    },
+    insertBefore(c, ref) {
+      if (c.parentNode) {
+        const i = c.parentNode.children.indexOf(c);
+        if (i >= 0) c.parentNode.children.splice(i, 1);
+      }
+      c.parentNode = this;
+      const idx = ref ? this.children.indexOf(ref) : -1;
+      if (idx >= 0) this.children.splice(idx, 0, c);
+      else this.children.push(c);
+      return c;
+    },
     removeChild(c) {
       const i = this.children.indexOf(c);
       if (i >= 0) this.children.splice(i, 1);

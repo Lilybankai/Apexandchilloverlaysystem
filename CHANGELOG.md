@@ -4,6 +4,54 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **Overlays no longer stop mid-race and stay stopped.** Two testers' reports
+  came down to the same missing reflex: a data connection that died *quietly*
+  was never noticed, so the overlays sat frozen (or hidden, on the in-game
+  layer) until Stop/Start was pressed in the dashboard. Three layers now heal
+  themselves: every overlay page watches for frames going quiet on a
+  connection that still claims to be open and force-reconnects within
+  seconds; the app's own feed — the one that decides when the in-game layer
+  is shown — redials automatically instead of giving up after one dropped
+  socket; and the telemetry poller can no longer wedge behind a request that
+  never comes back. A frozen fuel panel that "fixed itself after a while" was
+  the same fault on a patient clock — it heals in seconds now too.
+
+### Changed
+
+- **A full performance pass over the frame pipeline, end to end.** The audit
+  found the overlays doing yesterday's work at today's field sizes, and the
+  hot paths have been retuned:
+  - The stewards' trace log is now read a few times a second instead of at
+    the frame rate — it was synchronous disk I/O inside the frame loop, and
+    the one place a slow disk or an antivirus scan could stall every overlay
+    at once. The most likely cause of the mid-race hitches.
+  - The desktop app no longer parses every telemetry frame at the broadcast
+    rate for status flags that change twice a session — the constant
+    allocation churn caused periodic pauses on the very thread that
+    composites the in-game overlay window.
+  - Overlay pages now paint on the display's clock rather than the socket's:
+    frames that arrive faster than the screen can show them are dropped
+    unpainted, an OBS source in a hidden scene costs almost nothing, and a
+    renderer hitch no longer drains its backlog as one visible lurch.
+  - The standings, relative and fastest-lap tables stop re-inserting rows
+    that have not moved (hundreds of layout-invalidating table mutations a
+    second, gone); eleven of the twelve Speedo designs stop forcing a style
+    recalculation and a full canvas repaint every frame for a parked car; the
+    motion widget gained the same repaint guard; the radar stops rewriting
+    its opacity forever; several unguarded per-frame DOM writes got guards.
+  - Server-side, the standings block is rebuilt only when the game publishes
+    new data instead of at the frame rate, the pit-menu projection is cached
+    on its payload, class-name normalisation is memoised, the broadcast
+    encodes each frame to bytes once instead of once per connected overlay,
+    and the wetness-trend history stopped shifting a ten-thousand-entry
+    array every frame.
+- **The server can report its own frame timing.** Started with `APEX_PERF=1`,
+  it logs poll + broadcast cost, frame size and client count every five
+  seconds — so a stutter on a long race can be told apart from a GPU hitch
+  with numbers rather than guesses.
+
 ## 0.93.0 — 2026-08-27
 
 The Team pit wall — which gains a full weather station this release — and
