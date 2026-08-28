@@ -1,8 +1,8 @@
-# Discord launch post — Apex AIO System v0.95.1
+# Discord launch post — Apex AIO System v0.95.2
 
 Ready to paste. Discord caps a message at 2000 characters, so this is split
 into six messages — post them in order in `#announcements`. Every claim below
-is checked against the app as it ships in v0.95.1; nothing here is promised
+is checked against the app as it ships in v0.95.2; nothing here is promised
 ahead of the build. A one-message short version for a pin or an embed is at
 the bottom.
 
@@ -16,8 +16,8 @@ Swap `#suggestions` in message 6 for whatever your channel is actually called.
 
 The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, setups, fuel and energy maths, league leaderboards and stream tools.
 
-**⬇️ Download — v0.95.1, Windows**
-https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
+**⬇️ Download — v0.95.2, Windows**
+https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
 
 **It's free for everyone who races with us.** How that works is in the fifth message — read that one before you pay for anything. 👇
 
@@ -111,7 +111,7 @@ Exactly the same app, cancel any time. **7-day free trial** to try it properly f
 
 ## ⚙️ Up and running in about five minutes
 
-**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
+**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
 *(Windows, ~285 MB. Signed by The Lilybank Agency Ltd, so no "unknown publisher" warning. It's a chunky download because the engineer's voice rides inside it — he talks straight out of the box, nothing to fetch. The five alternative voices are a one-click download in the app if you fancy a change.)*
 
 **2.** Create your account — or hit **Continue offline** if you only want the overlays on your own PC.
@@ -146,4 +146,4 @@ Overlays, a voice race engineer, setups, fuel and energy maths and league leader
 **Racing an Apex & Chill league or one of our special events? It's free — DM me for your access code.** Stops being free if you stop racing.
 **Everyone else: £4.99/month launch price, 7-day free trial.**
 
-⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
+⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
