@@ -4,6 +4,20 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.95.1 — 2026-08-28
+
+### Changed
+
+- **"Better ears" now installs itself.** The sharper listening model that
+  0.95.0 offered behind a Download button was too easy to walk past, so the
+  button is gone: the first time the engineer is switched on, the app fetches
+  the model quietly in the background — never while you're on track, and
+  picking up where it left off if the connection drops — and the standard
+  model keeps answering until it lands. The Engineer tab shows what it's
+  doing; nothing to press. If the download can't happen (a proxy, a firewall)
+  the engineer simply carries on with the standard model and tries again
+  later, without nagging.
+
 ## 0.95.0 — 2026-08-28
 
 The voice release: the engineer's ears rebuilt around the recogniser that

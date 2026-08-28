@@ -39,7 +39,6 @@
   const sttDownload = $('#eng-stt-download');
   const sttSmallWrap = $('#eng-stt-small-wrap');
   const sttSmallStatus = $('#eng-stt-small-status');
-  const sttSmallDownload = $('#eng-stt-small-download');
   const lastWrap = $('#eng-last-call-wrap');
   const lastQ = $('#eng-last-q');
   const lastA = $('#eng-last-a');
@@ -407,27 +406,32 @@
       return;
     }
     sttSmallWrap.hidden = false;
-    const busy = s.busy === 'download:stt-small';
+    // No button any more (v0.96): the app fetches this itself the first time
+    // the engineer is enabled, so this line only ever REPORTS — downloading,
+    // active, waiting, or why it could not — and the standard model answers
+    // in the meantime whatever the line says.
+    const mb = s.sttSmallSizeMb || 466;
     if (s.progress && s.progress.voiceId === 'stt-small') {
       const pct = Math.min(100, Math.round((s.progress.mb / s.progress.totalMb) * 100));
-      sttSmallStatus.textContent = `Downloading… ${pct}%`;
+      sttSmallStatus.textContent = `Downloading in the background… ${pct}% — the standard model answers until it lands.`;
       sttSmallStatus.className = 'eng-status';
-      sttSmallDownload.hidden = true;
       return;
     }
     if (s.sttSmallInstalled) {
-      sttSmallStatus.textContent = 'Installed — short calls use the sharper model.';
+      sttSmallStatus.textContent = 'Active — every question is heard by the sharper model.';
       sttSmallStatus.className = 'eng-status eng-status--live';
-      sttSmallDownload.hidden = true;
       return;
     }
-    sttSmallStatus.textContent = 'Optional — the standard model works, this one mishears less.';
+    const failure = s.betterEars && s.betterEars.error;
+    if (failure) {
+      sttSmallStatus.textContent = `${failure} — will try again later. The standard model works meanwhile.`;
+      sttSmallStatus.className = 'eng-status eng-status--warn';
+      return;
+    }
+    sttSmallStatus.textContent = s.enabled
+      ? `Downloads in the background (${mb} MB) once you're off track.`
+      : `Downloads in the background (${mb} MB) when the engineer is switched on.`;
     sttSmallStatus.className = 'eng-status';
-    sttSmallDownload.hidden = false;
-    sttSmallDownload.disabled = busy || !!s.busy;
-    sttSmallDownload.textContent = busy
-      ? 'Downloading…'
-      : `Download · ${s.sttSmallSizeMb || 466} MB`;
   }
 
   function renderLastCall(s) {
@@ -581,20 +585,6 @@
         sttDownload.textContent = 'Retry download';
         sttStatus.textContent = res.error || 'Download failed';
         sttStatus.className = 'eng-status eng-status--warn';
-      }
-    });
-  }
-
-  if (sttSmallDownload) {
-    sttSmallDownload.addEventListener('click', async () => {
-      sttSmallDownload.disabled = true;
-      sttSmallDownload.textContent = 'Downloading…';
-      const res = await api.engineerDownloadSttSmall();
-      if (res && res.ok === false) {
-        sttSmallDownload.disabled = false;
-        sttSmallDownload.textContent = 'Retry download';
-        sttSmallStatus.textContent = res.error || 'Download failed';
-        sttSmallStatus.className = 'eng-status eng-status--warn';
       }
     });
   }

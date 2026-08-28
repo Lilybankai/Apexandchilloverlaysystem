@@ -25,8 +25,10 @@ const MODEL_MB = 148;
  * The optional accuracy upgrade: `small.en`. `base.en` is what mishears "tyre
  * temps" as "tie attempts" (live call log, 2026-08-26) — small is the tier
  * where short domain phrases become reliable, at ~3× the inference cost, which
- * on a push-to-talk clip is still well under a second. Optional download, like
- * a voice: 466 MB does not belong in the installer.
+ * on a push-to-talk clip is still well under a second. A download, like a
+ * voice — 466 MB does not belong in the installer — but since v0.96 one the
+ * app makes for itself in the background (EngineerService.ensureBetterEars),
+ * because the v0.95 Download button was exactly what drivers never pressed.
  */
 const SMALL_MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin';
 const SMALL_MODEL_MB = 466;

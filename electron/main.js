@@ -1162,6 +1162,8 @@ function setFeedOnTrack(onTrack) {
   if (onTrack === feedOnTrack) return;
   feedOnTrack = onTrack;
   applyIngameVisibility();
+  // Leaving the track is the moment a deferred "better ears" fetch may run.
+  if (!onTrack) maybeFetchBetterEars();
 }
 
 /**
@@ -1687,7 +1689,24 @@ async function syncEngineer(settings) {
   } else {
     eng.lastError = null;
   }
+  maybeFetchBetterEars(s);
   eng.pushStatus();
+}
+
+/**
+ * Start the background "better ears" (small.en) fetch if this machine still
+ * needs it — never while the driver is on track, never for a driver who has
+ * the engineer switched off (466 MB nobody would hear). Returns at once; the
+ * service owns the download, the backoff and the status line.
+ */
+function maybeFetchBetterEars(settings) {
+  const s = settings || loadSettings();
+  if (!s.engineerEnabled) return;
+  try {
+    getEngineer().ensureBetterEars({ onTrack: feedOnTrack });
+  } catch (err) {
+    console.warn('[engineer] better ears check failed:', err && err.message ? err.message : err);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3671,14 +3690,6 @@ function registerIpc() {
   ipcMain.handle('engineer:downloadStt', async () => {
     try {
       await getEngineer().downloadStt();
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err && err.message ? err.message : String(err) };
-    }
-  });
-  ipcMain.handle('engineer:downloadSttSmall', async () => {
-    try {
-      await getEngineer().downloadSttSmall();
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err && err.message ? err.message : String(err) };

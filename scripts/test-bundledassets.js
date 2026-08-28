@@ -273,5 +273,159 @@ loop.cause = loop;
 check('a self-referential cause chain terminates', describeFetchError(loop) === 'a');
 
 /* -------------------------------------------------------------------------- */
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log('\n6) "better ears" fetches itself, quietly, and never in the way (v0.96.0)');
+
+// v0.95.0 put small.en behind a Download button and drivers never found it.
+// It now downloads in the background the first time the engineer is enabled;
+// what is pinned here is everything that makes that safe: it returns before
+// the network is touched, the standard model keeps answering, it never runs
+// on track, a failure never becomes the warning banner, and a dropped
+// connection resumes rather than restarts.
+const bigEnough = (file, bytes) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '');
+  fs.truncateSync(file, bytes);
+};
+
+(async () => {
+  const r6 = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-ears-test-'));
+  const bWhisper = path.join(r6, 'resources', 'whisper');
+  const uWhisper = path.join(r6, 'user', 'whisper');
+  const piperDir = path.join(r6, 'user', 'piper');
+  fs.mkdirSync(piperDir, { recursive: true });
+  const ears = (extra = {}) =>
+    new EngineerService({
+      dir: piperDir,
+      whisperDir: uWhisper,
+      bundledDir: path.join(r6, 'resources', 'piper'),
+      bundledWhisperDir: bWhisper,
+      loadSettings: () => ({ engineerEnabled: true, engineerVoice: VOICE }),
+      onStatus: () => {},
+      ...extra,
+    });
+
+  // No base install at all: nothing to upgrade, nothing fetched.
+  let e = ears();
+  let fetched = [];
+  e.fetch = async (url, dest) => {
+    fetched.push(url);
+    bigEnough(dest, 100_000_001);
+  };
+  check('no base install → no-base, nothing fetched', e.ensureBetterEars() === 'no-base' && fetched.length === 0);
+
+  // The bundled layout the installer lays down: engine + base.en.
+  bigEnough(path.join(bWhisper, 'bin', 'Release', 'whisper-cli.exe'), 10);
+  bigEnough(path.join(bWhisper, 'ggml-base.en.bin'), 1_100_000);
+  check('the fixture is a working base install', stt.installed(e.sttRoots()) && !stt.smallInstalled(e.sttRoots()));
+
+  check('on track → deferred, nothing fetched', e.ensureBetterEars({ onTrack: true }) === 'on-track' && fetched.length === 0);
+
+  // Off track: it starts, and the CALL returns before the download has done
+  // anything — startup must never wait on HuggingFace.
+  let release;
+  const gate = new Promise((res) => (release = res));
+  e.fetch = async (url, dest) => {
+    fetched.push(url);
+    await gate;
+    bigEnough(dest, 100_000_001);
+  };
+  const verdict = e.ensureBetterEars();
+  check('off track → started', verdict === 'started');
+  check('the call returned while the fetch is still pending', fetched.length === 1 && !stt.smallInstalled(e.sttRoots()));
+  check('it fetches small.en, into userData', fetched[0].endsWith('ggml-small.en.bin'));
+  check('the base model still answers meanwhile', stt.findModel(e.sttRoots()) === path.join(bWhisper, 'ggml-base.en.bin'));
+  check('a second call while running → busy, not a second download', e.ensureBetterEars() === 'busy' && fetched.length === 1);
+  check('the panel sees the same progress key the voice bar uses', e.busy === 'download:stt-small');
+  release();
+  await new Promise((res) => setTimeout(res, 20));
+  check('once landed → installed', e.ensureBetterEars() === 'installed');
+  check('and small.en is now preferred', stt.findModel(e.sttRoots()) === path.join(uWhisper, 'ggml-small.en.bin'));
+  check('no error, no banner', e.betterEars.error === null && e.lastError === null);
+
+  // Failure is quiet and backed off: the status line, never the warning
+  // banner, and no retry storm against a proxy that just said no.
+  fs.rmSync(path.join(uWhisper, 'ggml-small.en.bin'), { force: true });
+  e = ears();
+  e.fetch = async () => {
+    throw new Error('download: fetch failed — getaddrinfo ENOTFOUND huggingface.co');
+  };
+  check('failure attempt starts', e.ensureBetterEars() === 'started');
+  await new Promise((res) => setTimeout(res, 20));
+  check('the failure is kept on the status line', /ENOTFOUND/.test(e.betterEars.error || ''));
+  check('and never becomes lastError (the banner)', e.lastError === null);
+  check('busy is released', e.busy === null);
+  check('the next call backs off', e.ensureBetterEars() === 'backoff');
+  check('status carries a retry time for the panel', typeof e.status().betterEars.retryAt === 'number' && e.status().betterEars.retryAt > Date.now());
+  e.betterEars.nextTryAt = 0;
+  check('after the backoff it tries again', e.ensureBetterEars() === 'started');
+  await new Promise((res) => setTimeout(res, 20));
+
+  // Resume: a real HTTP round trip against a local server that honours Range.
+  // 466 MB on a home line WILL drop; the .part must be a head start, not waste.
+  const http = require('node:http');
+  const body = Buffer.alloc(3000);
+  for (let i = 0; i < body.length; i++) body[i] = i % 251;
+  const seen = [];
+  let honourRange = true;
+  const server = http.createServer((req, res) => {
+    seen.push(req.headers.range || null);
+    const m = honourRange && /^bytes=(\d+)-$/.exec(req.headers.range || '');
+    if (m) {
+      const from = Number(m[1]);
+      res.writeHead(206, { 'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}` });
+      res.end(body.subarray(from));
+    } else {
+      res.writeHead(200);
+      res.end(body);
+    }
+  });
+  await new Promise((res) => server.listen(0, '127.0.0.1', res));
+  const url = `http://127.0.0.1:${server.address().port}/ggml-small.en.bin`;
+  const dl = ears();
+  const dest = path.join(r6, 'dl', 'model.bin');
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+
+  fs.writeFileSync(`${dest}.part`, body.subarray(0, 1000));
+  await dl.fetch(url, dest, 1, 'stt-small', { resume: true });
+  check('resume asks for the bytes it lacks', seen[seen.length - 1] === 'bytes=1000-');
+  check('and the finished file is whole and correct', fs.readFileSync(dest).equals(body));
+  check('the .part is promoted away', !fs.existsSync(`${dest}.part`));
+
+  fs.rmSync(dest, { force: true });
+  fs.writeFileSync(`${dest}.part`, Buffer.from('stale garbage'));
+  honourRange = false;
+  await dl.fetch(url, dest, 1, 'stt-small', { resume: true });
+  check('a 200 to a ranged request starts the file over', fs.readFileSync(dest).equals(body));
+  honourRange = true;
+
+  fs.rmSync(dest, { force: true });
+  fs.writeFileSync(`${dest}.part`, body.subarray(0, 1000));
+  await dl.fetch(url, dest, 1, 'voice');
+  check('a normal (non-resume) download never sends Range', seen[seen.length - 1] === null);
+  check('and still produces the whole file', fs.readFileSync(dest).equals(body));
+
+  // Drain the client pool's keep-alive sockets BEFORE the process ends: a
+  // process.exit() with undici sockets still open trips a libuv assertion on
+  // Windows (async.c: UV_HANDLE_CLOSING) after the summary has printed.
+  server.closeAllConnections();
+  await new Promise((res) => server.close(res));
+  fs.rmSync(r6, { recursive: true, force: true });
+
+  // The wiring in main.js and the panel: no button left to miss.
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
+  const panelSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
+  check('main.js kicks the fetch from syncEngineer', /maybeFetchBetterEars\(s\)/.test(mainSrc));
+  check('main.js kicks it again when the driver leaves the track', /if \(!onTrack\) maybeFetchBetterEars\(\)/.test(mainSrc));
+  check('main.js passes the on-track state through', /ensureBetterEars\(\{ onTrack: feedOnTrack \}\)/.test(mainSrc));
+  check('the Download button is gone from the panel', !htmlSrc.includes('eng-stt-small-download'));
+  check('and from the panel script', !panelSrc.includes('engineerDownloadSttSmall'));
+
+  /* ------------------------------------------------------------------------ */
+  console.log(`\n${pass} passed, ${fail} failed`);
+  // Let the loop drain rather than process.exit() — see the note above.
+  process.exitCode = fail ? 1 : 0;
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

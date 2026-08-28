@@ -406,6 +406,13 @@ function sampleUrl(id) {
 }
 
 /**
+ * How long ensureBetterEars waits after a failed background fetch before it
+ * tries again — long enough not to hammer a proxy that just said no, short
+ * enough that a flaky evening still ends with the model on disk.
+ */
+const BETTER_EARS_RETRY_MS = 15 * 60 * 1000;
+
+/**
  * The fetch implementations to try, in order. Inside Electron the Chromium
  * stack comes first: it goes through the system proxy and trusts the Windows
  * certificate store, and Node's fetch does neither — so a driver behind a
@@ -647,6 +654,9 @@ class EngineerService {
     this.running = false;
     this.busy = null; // 'download:<id>' while a download runs
     this.lastError = null;
+    // The background small.en fetch (ensureBetterEars): when it last started,
+    // why it last failed, and when it may try again. Never surfaces as lastError.
+    this.betterEars = { startedAt: 0, error: null, nextTryAt: 0 };
     this.piper = null;
     this.player = null;
     this.recognizer = null;
@@ -921,6 +931,7 @@ class EngineerService {
       sttInstalled: stt.installed(this.sttRoots()),
       sttSmallInstalled: stt.smallInstalled(this.sttRoots()),
       sttSmallSizeMb: stt.SMALL_MODEL_MB,
+      betterEars: { error: this.betterEars.error, retryAt: this.betterEars.nextTryAt || null },
       freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
       lastCall: this.lastCall,
@@ -1014,21 +1025,71 @@ class EngineerService {
    * The optional `small.en` accuracy upgrade (~466 MB). Once on disk it is
    * preferred automatically for every transcription — there is no toggle to
    * remember, exactly like a downloaded voice.
+   *
+   * `quiet` is the background path (see ensureBetterEars): a failure is kept
+   * on `betterEars.error` for the status line instead of `lastError`, which
+   * the panel renders as a warning banner — the driver did not ask for this
+   * download, so it must never nag when it cannot happen.
    */
-  async downloadSttSmall() {
+  async downloadSttSmall({ quiet = false } = {}) {
     if (this.busy) throw new Error('another download is already running');
     this.busy = 'download:stt-small';
-    this.lastError = null;
+    if (!quiet) this.lastError = null;
+    this.betterEars.error = null;
     this.pushStatus();
     try {
-      await stt.downloadSmall(this.whisperDir, this.fetch.bind(this), 'stt-small');
+      // Resumable: 466 MB over a home connection WILL be interrupted now and
+      // then, and a `.part` that survived is bytes nobody should pay for twice.
+      const resumable = (url, dest, mb, id) => this.fetch(url, dest, mb, id, { resume: true });
+      await stt.downloadSmall(this.whisperDir, resumable, 'stt-small');
+      this.betterEars.nextTryAt = 0;
     } catch (err) {
-      this.lastError = `Download failed: ${err.message}`;
+      if (quiet) {
+        this.betterEars.error = `Download failed: ${err.message}`;
+        this.betterEars.nextTryAt = Date.now() + BETTER_EARS_RETRY_MS;
+      } else {
+        this.lastError = `Download failed: ${err.message}`;
+      }
       throw err;
     } finally {
       this.busy = null;
       this.pushStatus();
     }
+  }
+
+  /**
+   * Fetch "better ears" (`small.en`) in the background, without being asked.
+   *
+   * v0.95.0 shipped it behind a Download button in the Engineer tab, and a
+   * button is exactly what drivers miss — while a 466 MB file has no business
+   * in the installer either (it would double every release AND the two copies
+   * the updater parks per machine). So the app fetches it itself, once, the
+   * first time the engineer is enabled on a machine without it, and the
+   * standard model keeps answering until the sharper one lands: findModel
+   * prefers `small.en` the moment the file is whole, no restart needed.
+   *
+   * Returns at once with the reason it did or did not start; the download
+   * itself runs detached and is never awaited by a caller — startup, a
+   * settings change and the on-track watcher all call this and none of them
+   * may block on a network the driver might not even have. Failure is quiet
+   * (status line, not a banner) and retried after a backoff, or next launch.
+   *
+   * `onTrack` defers it: whoever is lapping does not need 466 MB competing
+   * with the sim's own traffic. The off-track transition calls again.
+   */
+  ensureBetterEars({ onTrack = false } = {}) {
+    const rootsNow = this.sttRoots();
+    if (stt.smallInstalled(rootsNow)) return 'installed';
+    // Only on top of a working base install: the engine ships bundled, but a
+    // 0.91.x-era machine that never fetched base.en has nothing to upgrade.
+    if (!stt.installed(rootsNow)) return 'no-base';
+    if (this.busy) return 'busy';
+    if (onTrack) return 'on-track';
+    if (Date.now() < this.betterEars.nextTryAt) return 'backoff';
+    this.betterEars.startedAt = Date.now();
+    // Detached on purpose — see above. downloadSttSmall records the outcome.
+    this.downloadSttSmall({ quiet: true }).catch(() => {});
+    return 'started';
   }
 
   /**
@@ -1038,9 +1099,20 @@ class EngineerService {
    * antivirus heuristics score against, and this needs nothing curl has.
    * Chromium's stack first, Node's as the fallback — see fetchStacks().
    */
-  async fetch(url, dest, sizeMb, voiceId) {
+  async fetch(url, dest, sizeMb, voiceId, { resume = false } = {}) {
     const part = `${dest}.part`;
-    fs.rmSync(part, { force: true });
+    // A surviving .part is only worth keeping when the caller asked to resume;
+    // every other download starts clean, as it always has.
+    let have = 0;
+    if (resume) {
+      try {
+        have = fs.statSync(part).size;
+      } catch {
+        have = 0;
+      }
+    } else {
+      fs.rmSync(part, { force: true });
+    }
     const poll = setInterval(() => {
       try {
         const mb = fs.statSync(part).size / 1e6;
@@ -1055,9 +1127,10 @@ class EngineerService {
       // status is a real answer from the real server and is final.
       let res = null;
       let connectErr = null;
+      const headers = have > 0 ? { Range: `bytes=${have}-` } : {};
       for (const stack of fetchStacks()) {
         try {
-          res = await stack.fetch(url, { redirect: 'follow' });
+          res = await stack.fetch(url, { redirect: 'follow', headers });
           break;
         } catch (err) {
           connectErr = err;
@@ -1065,12 +1138,21 @@ class EngineerService {
       }
       if (!res) throw connectErr;
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      // 206 = the server honoured the Range and the .part is appended to. A
+      // 200 to a ranged request means "here is the whole file" (a CDN that
+      // ignores ranges, or a part it cannot place) and the part starts over.
+      const append = have > 0 && res.status === 206;
       const { Readable } = require('node:stream');
       const { pipeline } = require('node:stream/promises');
-      await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(part));
+      await pipeline(
+        Readable.fromWeb(res.body),
+        fs.createWriteStream(part, { flags: append ? 'a' : 'w' }),
+      );
       fs.renameSync(part, dest);
     } catch (err) {
-      fs.rmSync(part, { force: true });
+      // A resumable part is the next attempt's head start; anything else is
+      // a half-file nothing will ever read.
+      if (!resume) fs.rmSync(part, { force: true });
       throw new Error(`download: ${describeFetchError(err)}`);
     } finally {
       clearInterval(poll);
