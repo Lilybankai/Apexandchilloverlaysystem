@@ -4,6 +4,11 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.95.0-beta.1 — 2026-08-28
+
+The voice beta: the engineer's ears rebuilt around the recogniser that was
+already doing the hard half of the job.
+
 ### Fixed
 
 - **The engineer hears short radio calls.** "Tyres", "temps", "fuel" — the
@@ -28,9 +33,14 @@
   now handles the phrase list well — this is for the last few percent, and
   everything still stays on your PC.
 
-## 0.94.0-beta.2 — 2026-08-28
+## 0.94.0 — 2026-08-28
 
-Two fixes straight from the first night's racing on the reliability beta.
+The reliability release: every way an overlay could quietly stop mid-race
+now heals itself in seconds, and a full performance pass has the whole
+pipeline back to fighting weight — plus two fixes straight from the first
+night's racing on it. If you ever raised the update-rate slider chasing a
+freeze, put it back to 30 Hz: the freezes were never a rate problem, and
+60 Hz only costs.
 
 ### Fixed
 
@@ -53,15 +63,6 @@ Two fixes straight from the first night's racing on the reliability beta.
   never fetched, locally or on the cloud relay. The check now compares the
   circuit itself as well as the counter, and a stopped server takes its
   cached shape with it, so the map can no longer be blocked by a stale one.
-
-## 0.94.0-beta.1 — 2026-08-27
-
-The reliability release: every way an overlay could quietly stop mid-race
-now heals itself in seconds, and a full performance pass has the whole
-pipeline back to fighting weight. Testers: put the update-rate slider back
-to 30 Hz — the freezes were never a rate problem, and 60 Hz only costs.
-
-### Fixed
 
 - **Overlays no longer stop mid-race and stay stopped.** Two testers' reports
   came down to the same missing reflex: a data connection that died *quietly*
