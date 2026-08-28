@@ -4,10 +4,10 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.95.0-beta.1 — 2026-08-28
+## 0.95.0 — 2026-08-28
 
-The voice beta: the engineer's ears rebuilt around the recogniser that was
-already doing the hard half of the job.
+The voice release: the engineer's ears rebuilt around the recogniser that
+was already doing the hard half of the job.
 
 ### Fixed
 

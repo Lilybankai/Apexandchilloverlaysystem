@@ -1,7 +1,7 @@
 {
   "name": "apex-overlay-system",
   "//name": "The npm package name predates the rename to Apex AIO System and stays put: Electron derives the userData path from it.",
-  "version": "0.95.0-beta.1",
+  "version": "0.95.0",
   "private": true,
   "description": "Apex AIO System - Apex & Chill Racing League all-in-one rFactor2 / Le Mans Ultimate telemetry suite for live streams, with an Electron desktop control panel.",
   "type": "commonjs",
