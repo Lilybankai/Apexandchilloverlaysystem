@@ -4,6 +4,30 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **The engineer hears short radio calls.** "Tyres", "temps", "fuel" — the
+  one-word calls a driver actually makes — used to live or die in Windows'
+  own 2006-era speech recognizer, and mostly died; a full sentence survived
+  only because it fell through to the better recognizer on its way to the
+  AI. The pipeline is now the other way up: Windows only captures the audio,
+  and the same recogniser that handles advanced questions hears everything —
+  with short clips padded the way it needs, and the phrase list checked
+  against its transcript BEFORE anything is sent to the AI. Field wordings
+  from the last week's calls ("weather update", "tyre status") joined the
+  phrase list while we were in there. A confident instant match still
+  answers instantly, so nothing got slower — the misses just stopped being
+  dead ends.
+
+### Added
+
+- **"Better ears" — an optional sharper listening model.** One 466 MB
+  download in the Engineer tab; from then on every question is heard by the
+  larger model, which mishears far less over engine noise ("tyre temps" was
+  reaching the AI as "tie attempts"). Optional because the standard model
+  now handles the phrase list well — this is for the last few percent, and
+  everything still stays on your PC.
+
 ## 0.94.0-beta.2 — 2026-08-28
 
 Two fixes straight from the first night's racing on the reliability beta.

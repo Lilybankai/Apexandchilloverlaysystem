@@ -3676,6 +3676,14 @@ function registerIpc() {
       return { ok: false, error: err && err.message ? err.message : String(err) };
     }
   });
+  ipcMain.handle('engineer:downloadSttSmall', async () => {
+    try {
+      await getEngineer().downloadSttSmall();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
   ipcMain.handle('engineer:removeVoice', (_evt, voiceId) => {
     try {
       return { ok: true, bytes: getEngineer().removeVoice(String(voiceId)) };

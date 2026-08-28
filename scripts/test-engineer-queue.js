@@ -208,6 +208,16 @@ console.log('\n8) The grammar still wins over dictation text');
   check('midpack target wording stays local',
     matchGrammarText('what is mid pack pace') === 'paceMidpack');
   check('empty text does not match', matchGrammarText('') === null);
+  check('null text does not match', matchGrammarText(null) === null);
+  // 2026-08-26 field wordings that fell through to the cloud and were refused
+  // — the answers were sitting on the phrase list the whole time.
+  check('"weather update" stays local', matchGrammarText('weather update') === 'weather');
+  check('"what are my tyre temperatures?" stays local',
+    matchGrammarText('what are my tyre temperatures?') === 'tyres');
+  check('"tyre status" stays local', matchGrammarText('what is my tyre status?') === 'tyres');
+  check('bare "temps" stays local', matchGrammarText('temps') === 'tyres');
+  check('"track temps" reads the WEATHER, not the tyres',
+    matchGrammarText('track temps') === 'weather');
   check('"sector times" reaches sectors', matchGrammarText('sector times') === 'sectors');
   check('"last lap sectors" prefers sectors over last lap',
     matchGrammarText('last lap sectors') === 'sectors');

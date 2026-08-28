@@ -37,6 +37,9 @@
   const volumeEcho = $('#eng-volume-echo');
   const sttStatus = $('#eng-stt-status');
   const sttDownload = $('#eng-stt-download');
+  const sttSmallWrap = $('#eng-stt-small-wrap');
+  const sttSmallStatus = $('#eng-stt-small-status');
+  const sttSmallDownload = $('#eng-stt-small-download');
   const lastWrap = $('#eng-last-call-wrap');
   const lastQ = $('#eng-last-q');
   const lastA = $('#eng-last-a');
@@ -331,6 +334,7 @@
     renderReclaim(s);
 
     renderStt(s);
+    renderSttSmall(s);
     renderLastCall(s);
 
     if (!grammarEl.childElementCount && s.grammar) renderGrammar(s.grammar);
@@ -393,6 +397,37 @@
     sttDownload.hidden = false;
     sttDownload.disabled = busy || !!s.busy;
     sttDownload.textContent = busy ? 'Downloading…' : `Download · ${s.sttSizeMb || 148} MB`;
+  }
+
+  function renderSttSmall(s) {
+    if (!sttSmallWrap) return;
+    // The upgrade only makes sense on top of a working base install.
+    if (!s.sttInstalled) {
+      sttSmallWrap.hidden = true;
+      return;
+    }
+    sttSmallWrap.hidden = false;
+    const busy = s.busy === 'download:stt-small';
+    if (s.progress && s.progress.voiceId === 'stt-small') {
+      const pct = Math.min(100, Math.round((s.progress.mb / s.progress.totalMb) * 100));
+      sttSmallStatus.textContent = `Downloading… ${pct}%`;
+      sttSmallStatus.className = 'eng-status';
+      sttSmallDownload.hidden = true;
+      return;
+    }
+    if (s.sttSmallInstalled) {
+      sttSmallStatus.textContent = 'Installed — short calls use the sharper model.';
+      sttSmallStatus.className = 'eng-status eng-status--live';
+      sttSmallDownload.hidden = true;
+      return;
+    }
+    sttSmallStatus.textContent = 'Optional — the standard model works, this one mishears less.';
+    sttSmallStatus.className = 'eng-status';
+    sttSmallDownload.hidden = false;
+    sttSmallDownload.disabled = busy || !!s.busy;
+    sttSmallDownload.textContent = busy
+      ? 'Downloading…'
+      : `Download · ${s.sttSmallSizeMb || 466} MB`;
   }
 
   function renderLastCall(s) {
@@ -546,6 +581,20 @@
         sttDownload.textContent = 'Retry download';
         sttStatus.textContent = res.error || 'Download failed';
         sttStatus.className = 'eng-status eng-status--warn';
+      }
+    });
+  }
+
+  if (sttSmallDownload) {
+    sttSmallDownload.addEventListener('click', async () => {
+      sttSmallDownload.disabled = true;
+      sttSmallDownload.textContent = 'Downloading…';
+      const res = await api.engineerDownloadSttSmall();
+      if (res && res.ok === false) {
+        sttSmallDownload.disabled = false;
+        sttSmallDownload.textContent = 'Retry download';
+        sttSmallStatus.textContent = res.error || 'Download failed';
+        sttSmallStatus.className = 'eng-status eng-status--warn';
       }
     });
   }

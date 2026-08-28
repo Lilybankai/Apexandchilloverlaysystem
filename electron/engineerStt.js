@@ -21,6 +21,15 @@ const WHISPER_ZIP =
   `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_RELEASE}/whisper-bin-x64.zip`;
 const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
 const MODEL_MB = 148;
+/**
+ * The optional accuracy upgrade: `small.en`. `base.en` is what mishears "tyre
+ * temps" as "tie attempts" (live call log, 2026-08-26) — small is the tier
+ * where short domain phrases become reliable, at ~3× the inference cost, which
+ * on a push-to-talk clip is still well under a second. Optional download, like
+ * a voice: 466 MB does not belong in the installer.
+ */
+const SMALL_MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin';
+const SMALL_MODEL_MB = 466;
 const ENGINE_MB = 8;
 const WHISPER_RATE = 16000;
 
@@ -35,7 +44,7 @@ const RACING_PROMPT =
   'car ahead, car behind, last lap, sector times, best lap, fastest lap, position, ' +
   'laps left, time left, how much time is left, when should I pit, pit window, pit stop, ' +
   'how many laps till I need to pit, fuel, fuel level, fuel ratio, virtual energy, battery, ' +
-  'tyres, tyre temperatures, tyre pressures, brakes, brake bias, traction control, damage, ' +
+  'tyres, tyre temps, temps, tyre status, tyre temperatures, tyre pressures, brakes, brake bias, traction control, damage, ' +
   'track limits, penalty points, yellow flags, safety car, weather, rain, track temperature, ' +
   'last five average, box this lap, backmarkers, traffic';
 
@@ -88,17 +97,41 @@ function modelPath(dir) {
   return path.join(dir, 'ggml-base.en.bin');
 }
 
-/** The first root that actually holds the model, or null. */
-function findModel(dirs) {
-  for (const dir of roots(dirs)) {
-    const model = modelPath(dir);
-    try {
-      if (fs.statSync(model).size > 1_000_000) return model;
-    } catch {
-      /* not here — try the next root */
-    }
+/** Where the optional accuracy-upgrade model lives inside one root. */
+function smallModelPath(dir) {
+  return path.join(dir, 'ggml-small.en.bin');
+}
+
+/** A model file that plausibly downloaded whole, or null. */
+function presentModel(file, minBytes) {
+  try {
+    if (fs.statSync(file).size > minBytes) return file;
+  } catch {
+    /* not here */
   }
   return null;
+}
+
+/**
+ * The first root that actually holds a model — preferring `small.en` in ANY
+ * root over `base.en` in any root, so downloading the upgrade takes effect
+ * without touching the bundled model it upgrades.
+ */
+function findModel(dirs) {
+  for (const dir of roots(dirs)) {
+    const small = presentModel(smallModelPath(dir), 100_000_000);
+    if (small) return small;
+  }
+  for (const dir of roots(dirs)) {
+    const base = presentModel(modelPath(dir), 1_000_000);
+    if (base) return base;
+  }
+  return null;
+}
+
+/** Whether the accuracy-upgrade model is installed in any root. */
+function smallInstalled(dirs) {
+  return roots(dirs).some((dir) => presentModel(smallModelPath(dir), 100_000_000) !== null);
 }
 
 function installed(dirs) {
@@ -136,8 +169,22 @@ function trimForWhisper(radioFx, inPath, outPath) {
   end = Math.min(samples.length - 1, end + pad);
   const cut = samples.subarray(start, end + 1);
   const durationMs = (cut.length / sampleRate) * 1000;
-  if (durationMs < 280) return null;
-  radioFx.writeWav(outPath, WHISPER_RATE, resample(cut, sampleRate, WHISPER_RATE));
+  // 180 ms, down from 280: a crisp one-word command ("box", "fuel") is real
+  // speech at ~200 ms, and dropping it here was one of the ways a short
+  // command died without ever reaching a recognizer.
+  if (durationMs < 180) return null;
+  let out = resample(cut, sampleRate, WHISPER_RATE);
+  // Whisper is trained on longer windows and is unreliable — silent output,
+  // hallucinated syllables — on sub-second clips. Padding a short utterance
+  // out to ~1.2 s with trailing silence costs nothing and measurably steadies
+  // one-word commands; longer clips pass through untouched.
+  const MIN_SAMPLES = Math.round(WHISPER_RATE * 1.2);
+  if (out.length < MIN_SAMPLES) {
+    const padded = new Float64Array(MIN_SAMPLES);
+    padded.set(out);
+    out = padded;
+  }
+  radioFx.writeWav(outPath, WHISPER_RATE, out);
   return { path: outPath, durationMs };
 }
 
@@ -317,12 +364,27 @@ async function download(dir, fetchFn, progressId, extraRoots) {
   }
 }
 
+/**
+ * Fetch the optional `small.en` accuracy upgrade into `dir`. The engine must
+ * already be installed (it ships bundled); this only adds the bigger model,
+ * which {@link findModel} then prefers automatically.
+ */
+async function downloadSmall(dir, fetchFn, progressId) {
+  fs.mkdirSync(dir, { recursive: true });
+  if (!smallInstalled(dir)) {
+    await fetchFn(SMALL_MODEL_URL, smallModelPath(dir), SMALL_MODEL_MB, progressId);
+  }
+}
+
 module.exports = {
   MODEL_MB,
+  SMALL_MODEL_MB,
   installed,
+  smallInstalled,
   findCli,
   findModel,
   download,
+  downloadSmall,
   trimForWhisper,
   transcribe,
   transcribeAsync,

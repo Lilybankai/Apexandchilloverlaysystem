@@ -60,18 +60,23 @@ while ($true) {
     continue
   }
   $conf = [math]::Round($r.Confidence, 2)
+  # Retain the utterance audio for EVERY result, not only dictation ones. A
+  # low-confidence grammar match used to arrive with no audio at all, so the
+  # app could neither verify it with whisper nor fall through to the cloud —
+  # the driver's "tyres" simply died. The wav rides the HEARD line so the app
+  # can second-guess SAPI with the better recognizer.
+  $saved = ''
+  try {
+    if ($null -ne $r.Audio) {
+      $wav = Join-Path $env:APEX_ENGINEER_WAVDIR ("free-" + [DateTime]::UtcNow.Ticks + ".wav")
+      $fsOut = [System.IO.File]::Create($wav)
+      try { $r.Audio.WriteToWaveStream($fsOut) } finally { $fsOut.Close() }
+      $saved = $wav
+    }
+  } catch { $saved = '' }
   if ($r.Grammar.Name -ne 'free') {
-    [Console]::Out.WriteLine("HEARD`t$($r.Grammar.Name)`t$conf`t$($r.Text)")
+    [Console]::Out.WriteLine("HEARD`t$($r.Grammar.Name)`t$conf`t$saved`t$($r.Text)")
   } else {
-    $saved = ''
-    try {
-      if ($null -ne $r.Audio) {
-        $wav = Join-Path $env:APEX_ENGINEER_WAVDIR ("free-" + [DateTime]::UtcNow.Ticks + ".wav")
-        $fsOut = [System.IO.File]::Create($wav)
-        try { $r.Audio.WriteToWaveStream($fsOut) } finally { $fsOut.Close() }
-        $saved = $wav
-      }
-    } catch { $saved = '' }
     [Console]::Out.WriteLine("FREE`t$saved`t$conf`t$($r.Text)")
   }
   [Console]::Out.Flush()

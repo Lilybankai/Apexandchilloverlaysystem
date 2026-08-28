@@ -205,7 +205,9 @@ const GRAMMAR = [
     // "tyre temperatures" spoken in full got "Say again?" from the cloud on
     // 2026-08-20; whisper also writes the US spelling ("tire temp"), which the
     // matcher normalizes to these.
-    phrases: ['tyres', 'how are my tyres', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures'],
+    // "tyre status" and "my tyres" are field wordings from the 2026-08-26
+    // call log that fell through to the cloud.
+    phrases: ['tyres', 'how are my tyres', 'my tyres', 'tyre status', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures', 'temps'],
   },
   // Wear RATE and laps left, not temps — a different question from 'tyres'.
   {
@@ -258,7 +260,11 @@ const GRAMMAR = [
   {
     intent: 'weather',
     group: 'Conditions',
-    phrases: ['weather', 'any rain', 'is it going to rain', 'rain coming', 'track temp', 'track temperature', 'air temperature'],
+    // "weather update" is a field wording (2026-08-26 log) that went to the
+    // cloud and got a refusal while the answer sat here.
+    // 'track temps' must outrank the tyres list's bare 'temps' (longest phrase
+    // wins), or "track temps" would read the tyres.
+    phrases: ['weather', 'weather update', 'whats the weather', 'any rain', 'is it going to rain', 'rain coming', 'track temp', 'track temps', 'track temperature', 'air temperature'],
   },
 ];
 
@@ -913,6 +919,8 @@ class EngineerService {
       lastError: this.lastError,
       micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
       sttInstalled: stt.installed(this.sttRoots()),
+      sttSmallInstalled: stt.smallInstalled(this.sttRoots()),
+      sttSmallSizeMb: stt.SMALL_MODEL_MB,
       freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
       lastCall: this.lastCall,
@@ -993,6 +1001,27 @@ class EngineerService {
     try {
       // The bundled binaries count: only what is genuinely missing is fetched.
       await stt.download(this.whisperDir, this.fetch.bind(this), 'stt', this.bundledWhisperDir);
+    } catch (err) {
+      this.lastError = `Download failed: ${err.message}`;
+      throw err;
+    } finally {
+      this.busy = null;
+      this.pushStatus();
+    }
+  }
+
+  /**
+   * The optional `small.en` accuracy upgrade (~466 MB). Once on disk it is
+   * preferred automatically for every transcription — there is no toggle to
+   * remember, exactly like a downloaded voice.
+   */
+  async downloadSttSmall() {
+    if (this.busy) throw new Error('another download is already running');
+    this.busy = 'download:stt-small';
+    this.lastError = null;
+    this.pushStatus();
+    try {
+      await stt.downloadSmall(this.whisperDir, this.fetch.bind(this), 'stt-small');
     } catch (err) {
       this.lastError = `Download failed: ${err.message}`;
       throw err;
@@ -1214,7 +1243,7 @@ class EngineerService {
   }
 
   onRecognizerLine(line) {
-    const [kind, a, b, c] = line.split('\t');
+    const [kind, a, b, c, d] = line.split('\t');
     if (kind === 'READY') {
       this.recognizerReady = true;
       this.pushStatus();
@@ -1237,9 +1266,14 @@ class EngineerService {
     if (this.pendingListen) {
       const resolve = this.pendingListen;
       this.pendingListen = null;
-      if (kind === 'HEARD') resolve({ kind, intent: a, confidence: Number(b), text: c });
-      else if (kind === 'FREE') resolve({ kind, wav: a || null, confidence: Number(b), text: c || '' });
-      else resolve({ kind: 'NONE' });
+      // HEARD now carries the utterance wav too (4th field), so a
+      // low-confidence grammar guess can be second-guessed by whisper instead
+      // of dying — see ask().
+      if (kind === 'HEARD') {
+        resolve({ kind, intent: a, confidence: Number(b), wav: c || null, text: d || '' });
+      } else if (kind === 'FREE') {
+        resolve({ kind, wav: a || null, confidence: Number(b), text: c || '' });
+      } else resolve({ kind: 'NONE' });
     }
   }
 
@@ -1401,8 +1435,10 @@ class EngineerService {
         }, (LISTEN_WINDOW_SEC + 3) * 1000);
       });
 
-      // Tier 1, exactly as before Tier 2 existed: the closed grammar returns
-      // THE INSTANT it matches, and the answer is on the radio inside a second.
+      // Fast path: SAPI's closed grammar, CONFIDENT. Kept because it answers
+      // the instant the phrase ends, and a month of field use shows its
+      // failure mode is missing, not mis-matching. Everything it misses now
+      // falls to whisper below instead of to "Say again?".
       if (heard.kind === 'HEARD' && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
@@ -1415,17 +1451,30 @@ class EngineerService {
         return { ok: true };
       }
 
-      // Dictation caught it instead: a free-form question — unless a phrase is
-      // buried in the dictation text, in which case the grammar still wins.
-      if (heard.kind === 'FREE') {
-        const intent = matchGrammarText(heard.text);
+      // Whisper is the real ear from here on. SAPI's job above was capture and
+      // endpointing; whatever it made of the words is only a fallback. This is
+      // the fix for the field report that "tyres" was never picked up while a
+      // whole sentence reached the cloud and worked: a short command SAPI
+      // fumbled used to die right here — a low-confidence grammar guess
+      // carried no audio at all, and the phrase list was only ever matched
+      // against SAPI's dictation text while whisper's better transcript went
+      // straight past it to the AI (the 2026-08-26 call log shows "what are my
+      // tyre temperatures?" doing exactly that).
+      if (heard.kind === 'HEARD' || heard.kind === 'FREE') {
+        const sapiText = (heard.text || '').trim();
+        const { question, sttMs } = await this.transcribeClip(heard.wav);
+        const text = question || sapiText;
+        // The phrase list wins wherever it can answer — checked against the
+        // whisper transcript first, then SAPI's reading of the same audio.
+        const intent =
+          matchGrammarText(question) || matchGrammarText(sapiText);
         if (intent && this.commands) {
           const answer = this.commands.answer(intent);
           this.speak(answer.text);
-          this.lastExchange = { question: heard.text, answer: answer.text, atMs: Date.now() };
+          this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
           return { ok: true };
         }
-        await this.askTier2(heard.wav, heard.text);
+        await this.askTier2(text, sttMs);
         return { ok: true };
       }
 
@@ -1437,32 +1486,36 @@ class EngineerService {
   }
 
   /**
-   * Tier 2: transcribe the retained clip locally (async — the beta.6 spawnSync
-   * froze the whole main process for the length of the transcription), fall
-   * back to SAPI's own dictation text when whisper is missing or stumbles,
-   * then put question + bucketed summary to the proxy. An asked question that
-   * fails gets a short spoken failure — the readouts fail to silence, but
-   * silence after a button press reads as a dead engineer (beta.6 field
-   * report).
+   * Transcribe one retained push-to-talk clip with local whisper (async — the
+   * beta.6 spawnSync froze the whole main process for the length of the
+   * transcription). Returns `{ question: '', sttMs: null }` when whisper is
+   * missing, the clip is too short, or the engine stumbles — callers fall back
+   * to SAPI's own dictation text. Hoisted out of askTier2 so ask() can run the
+   * PHRASE LIST against the whisper transcript before anything goes near the
+   * cloud.
    */
-  async askTier2(wav, dictationText) {
-    let question = '';
-    let sttMs = null;
+  async transcribeClip(wav) {
     const whisperAt = this.sttRoots();
-    if (wav && stt.installed(whisperAt)) {
-      try {
-        const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
-        const clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
-        if (clip) {
-          const result = await stt.transcribeAsync(whisperAt, clip.path);
-          question = (result.text || '').trim();
-          sttMs = result.ms;
-        }
-      } catch {
-        question = '';
-      }
+    if (!wav || !stt.installed(whisperAt)) return { question: '', sttMs: null };
+    try {
+      const trimmed = path.join(this.wavDir, `ask-16k-${Date.now()}.wav`);
+      const clip = stt.trimForWhisper(this.radioFx, wav, trimmed);
+      if (!clip) return { question: '', sttMs: null };
+      const result = await stt.transcribeAsync(whisperAt, clip.path);
+      return { question: (result.text || '').trim(), sttMs: result.ms };
+    } catch {
+      return { question: '', sttMs: null };
     }
-    if (!question) question = String(dictationText || '').trim();
+  }
+
+  /**
+   * Tier 2: put the transcribed question + bucketed summary to the proxy. An
+   * asked question that fails gets a short spoken failure — the readouts fail
+   * to silence, but silence after a button press reads as a dead engineer
+   * (beta.6 field report).
+   */
+  async askTier2(question, sttMs) {
+    question = String(question || '').trim();
     // Whisper renders silence and coughs as "..." or a stray syllable, and each
     // one was burning a budgeted cloud call to be told "Say again?" (2026-08-22
     // log). Fewer than four letters cannot be a question — say it locally.
