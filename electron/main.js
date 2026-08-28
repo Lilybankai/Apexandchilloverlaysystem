@@ -1605,7 +1605,7 @@ function getActions() {
       rescanWheels: async () => {
         await new Promise((resolve) => setImmediate(resolve));
         const g = getGamepad();
-        g.rescan();
+        await g.rescan();
         syncGamepad();
         pushWheelDevices();
         return g.list().map((d) => d.product);
@@ -3833,11 +3833,11 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('wheel:devices', () => {
+  ipcMain.handle('wheel:devices', async () => {
     const g = getGamepad();
     // A full re-enumeration, so a wheel plugged in since boot is picked up —
     // opening alone never did that, whatever the old comment here claimed.
-    g.rescan();
+    await g.rescan();
     g.setActive(true);
     const devices = g.list();
     syncGamepad();

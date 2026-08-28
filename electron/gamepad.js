@@ -57,12 +57,37 @@
  * signal that survives is that the *instance GUID set* DirectInput enumerates
  * no longer matches the devices we hold, so the poll loop re-checks that set
  * every {@link PRESENCE_POLLS} and rescans on any difference. That check is an
- * EnumDevices pass with no device opens — cheap enough to run forever.
+ * EnumDevices pass with no device opens — usually a few milliseconds.
+ *
+ * ## Why all of this runs on a worker thread
+ * "Usually" is the operative word. `EnumDevices` asks every HID device on the
+ * machine for its product and serial strings — every HID device, not just game
+ * controllers, attached-only or not — and a USB device whose firmware has
+ * stopped answering those requests costs a 5 s control-transfer timeout per
+ * string. Measured on a wedged USB microphone on 2026-08-28: **10.1 s per
+ * enumeration**, every ~10 s, on the Electron main thread — which hosts the
+ * overlay server, so the overlays froze 10 s on / 10 s off until the mic was
+ * replugged. Nothing about that device was a controller, and nothing in the
+ * app had changed since it last worked.
+ *
+ * So DirectInput now lives on a `worker_threads` Worker ({@link GamepadReader}
+ * is the main-thread proxy, {@link DirectInputReader} the thing itself, hosted
+ * by gamepadWorker.js). Button edges cross back as messages — sub-millisecond,
+ * against an 8 ms poll. If the worker cannot start at all the reader falls
+ * back to running in-thread, exactly as before, rather than losing wheel
+ * bindings altogether.
+ *
+ * A slow enumeration is also *diagnosed*: past {@link SLOW_ENUM_MS} the worker
+ * opens each HID interface itself and times the two string requests, so the
+ * bindings page can name the device that is not answering (by USB VID:PID,
+ * resolved to its Windows description) and tell the driver to replug it —
+ * instead of "the overlays freeze sometimes". While a device is slow the
+ * presence check backs off to {@link SLOW_PRESENCE_MULT}× its usual interval.
  *
  * ## Cost
  * Polling only runs while something is actually bound to a wheel button
  * ({@link GamepadReader.setActive}); with no wheel bindings this module opens no
- * devices and starts no timer.
+ * devices, starts no timer and spawns no worker.
  *
  * Degrades to a no-op on non-Windows, without koffi, or with no controllers.
  */
@@ -151,6 +176,19 @@ const PRESENCE_POLLS = 625;
  * recover through the cheap re-Acquire in {@link GamepadReader._poll} alone.
  */
 const LOST_POLLS = 125;
+/**
+ * An enumeration slower than this is a device not answering, not a busy
+ * machine: a healthy pass over a dozen HID interfaces measures well under
+ * 300 ms even on a loaded rig. Past it the worker runs the per-device probe
+ * and the presence check backs off.
+ */
+const SLOW_ENUM_MS = 1000;
+/** Presence-check interval multiplier while an enumeration is slow (~2 min). */
+const SLOW_PRESENCE_MULT = 12;
+/** One HID string request slower than this names its device as the culprit. */
+const SLOW_HID_MS = 1000;
+/** How long the main thread waits for a worker rescan before answering anyway. */
+const RESCAN_TIMEOUT_MS = 30000;
 
 /**
  * Human-readable name for a button number, including the synthetic hat ones.
@@ -166,14 +204,27 @@ function describeButton(button) {
 }
 
 /**
- * Reads controller buttons and reports edges.
+ * Reads controller buttons and reports edges — the DirectInput half, which
+ * blocks its thread for as long as DirectInput likes. Hosted on a worker by
+ * {@link GamepadReader}; usable directly only where blocking is acceptable
+ * (the worker itself, scripts, the in-thread fallback).
  *
  * Events are delivered through the `onButton` callback as
  * `(deviceId, buttonNumber, isDown)`, where `buttonNumber` is 1-based to match
  * how LMU and every wheel vendor number them.
  */
-class GamepadReader {
+class DirectInputReader {
   constructor(options = {}) {
+    /**
+     * Whether a slow enumeration triggers the per-device HID probe. The probe
+     * can itself take 5 s per wedged device, so the in-thread fallback turns
+     * it off — there it would be the very stall this module exists to avoid.
+     */
+    this.diagnoseSlow = options.diagnoseSlow !== false;
+    /** Last enumeration's duration, and the culprits when it was slow. */
+    this.lastEnumMs = 0;
+    this.slow = null; // { ms, devices: [{ vid, pid, path, productMs, serialMs }] }
+    this.presenceEvery = PRESENCE_POLLS;
     this.onButton = options.onButton || (() => {});
     /**
      * Called (with no arguments) whenever an enumeration ends with a different
@@ -216,6 +267,27 @@ class GamepadReader {
    */
   list() {
     return this.devices.map((d) => ({ id: d.id, product: d.product, caps: d.caps }));
+  }
+
+  /** Open DirectInput and enumerate, without starting the poll timer. */
+  open() {
+    if (this.di) return true;
+    return this._open();
+  }
+
+  /**
+   * Everything the main thread needs, as plain data that survives a
+   * postMessage: the list, the open failures, and the slow-device diagnosis.
+   */
+  snapshot() {
+    return {
+      available: this.available,
+      failed: this.failed,
+      devices: this.list(),
+      problems: this.problems.slice(),
+      slow: this.slow ? { ms: this.slow.ms, devices: this.slow.devices.slice() } : null,
+      lastEnumMs: this.lastEnumMs,
+    };
   }
 
   /**
@@ -408,8 +480,10 @@ class GamepadReader {
       return 1; // DIENUM_CONTINUE
     }, koffi.pointer(this.P.EnumCallback));
 
+    const enumStarted = Date.now();
     this._vcall(this.di, 4, this.P.EnumDevices, DI8DEVCLASS_GAMECTRL, this.enumFn, null,
       DIEDFL_ATTACHEDONLY);
+    this._noteEnum(Date.now() - enumStarted);
 
     // A base and a rim plugged in on its own USB port can report the same
     // product string; bindings key on it, so make the duplicates distinct.
@@ -643,10 +717,13 @@ class GamepadReader {
     // the only failure signal there is. Any difference — device gone, device
     // added, or the same wheel back under a new instance GUID — forces a
     // rescan immediately, skipping the empty-list backoff.
-    if (++this.pollsSincePresence >= PRESENCE_POLLS) {
+    if (++this.pollsSincePresence >= this.presenceEvery) {
       this.pollsSincePresence = 0;
       try {
-        const attached = this._attachedGuids().sort().join(',');
+        const started = Date.now();
+        const guids = this._attachedGuids();
+        this._noteEnum(Date.now() - started);
+        const attached = guids.sort().join(',');
         const held = this.devices.map((d) => d.guidHex).sort().join(',');
         if (attached !== held) {
           stale = true;
@@ -669,6 +746,107 @@ class GamepadReader {
   }
 
   /**
+   * Record how long an enumeration took. Past {@link SLOW_ENUM_MS} a device
+   * on this machine is not answering DirectInput: find out which (once per
+   * slow pass, on this thread — the worker's, normally) and stretch the
+   * presence check so the wedged device is asked ~every 2 min, not ~10 s.
+   */
+  _noteEnum(ms) {
+    this.lastEnumMs = ms;
+    if (ms < SLOW_ENUM_MS) {
+      if (this.slow) {
+        this.slow = null;
+        this.presenceEvery = PRESENCE_POLLS;
+        this._notifyChanged();
+      }
+      return;
+    }
+    const devices = this.diagnoseSlow ? this._probeSlowHid() : [];
+    const before = JSON.stringify(this.slow && this.slow.devices);
+    this.slow = { ms, devices };
+    this.presenceEvery = PRESENCE_POLLS * SLOW_PRESENCE_MULT;
+    if (this.verbose) console.warn(`[gamepad] EnumDevices took ${ms} ms`, devices);
+    if (JSON.stringify(devices) !== before) this._notifyChanged();
+  }
+
+  _notifyChanged() {
+    if (!this.onDevicesChanged) return;
+    try {
+      this.onDevicesChanged();
+    } catch (err) {
+      console.error('[gamepad] devices-changed handler failed:', err.message);
+    }
+  }
+
+  /**
+   * Which HID interface is not answering. Repeats what DirectInput does per
+   * device — open the interface, ask for the product and serial strings — and
+   * times each. On a wedged device both fail after the USB stack's 5 s
+   * control-transfer timeout; everything healthy answers in milliseconds.
+   * Returns `[{ vid, pid, path, productMs, serialMs }]`, or `[]` when nothing
+   * here can be blamed (or the probe itself is unavailable).
+   */
+  _probeSlowHid() {
+    const koffi = this.koffi;
+    if (!koffi || process.platform !== 'win32') return [];
+    try {
+      const cfg = koffi.load('cfgmgr32.dll');
+      const k32 = koffi.load('kernel32.dll');
+      const hid = koffi.load('hid.dll');
+      const ListSize = cfg.func('uint32 __stdcall CM_Get_Device_Interface_List_SizeW(_Out_ uint32*, void*, void*, uint32)');
+      const List = cfg.func('uint32 __stdcall CM_Get_Device_Interface_ListW(void*, void*, _Out_ uint8*, uint32, uint32)');
+      const CreateFileW = k32.func('void* __stdcall CreateFileW(str16, uint32, uint32, void*, uint32, uint32, void*)');
+      const CloseHandle = k32.func('int __stdcall CloseHandle(void*)');
+      const GetProduct = hid.func('int __stdcall HidD_GetProductString(void*, _Out_ uint8*, uint32)');
+      const GetSerial = hid.func('int __stdcall HidD_GetSerialNumberString(void*, _Out_ uint8*, uint32)');
+
+      // GUID_DEVINTERFACE_HID {4D1E55B2-F16F-11CF-88CB-001111000030}
+      const guid = Buffer.alloc(16);
+      guid.writeUInt32LE(0x4d1e55b2, 0);
+      guid.writeUInt16LE(0xf16f, 4);
+      guid.writeUInt16LE(0x11cf, 6);
+      Buffer.from([0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30]).copy(guid, 8);
+
+      const CM_GET_DEVICE_INTERFACE_LIST_PRESENT = 0;
+      const size = [0];
+      if (ListSize(size, guid, null, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) !== 0 || !size[0]) return [];
+      const buf = Buffer.alloc(size[0] * 2);
+      if (List(guid, null, buf, size[0], CM_GET_DEVICE_INTERFACE_LIST_PRESENT) !== 0) return [];
+      const paths = buf.toString('utf16le').split('\0').filter(Boolean);
+
+      const INVALID = 0xffffffffffffffffn;
+      const out = [];
+      for (const p of paths) {
+        // Zero access: a query-only open, which is what DirectInput's
+        // enumeration does and what a device holding the interface allows.
+        const h = CreateFileW(p, 0, 3, null, 3, 0x40000000, null);
+        if (!h || koffi.address(h) === INVALID) continue;
+        const str = Buffer.alloc(256);
+        let t = Date.now();
+        GetProduct(h, str, 256);
+        const productMs = Date.now() - t;
+        t = Date.now();
+        GetSerial(h, str, 256);
+        const serialMs = Date.now() - t;
+        CloseHandle(h);
+        if (productMs < SLOW_HID_MS && serialMs < SLOW_HID_MS) continue;
+        const m = /vid_([0-9a-f]{4}).*?pid_([0-9a-f]{4})/i.exec(p);
+        out.push({
+          vid: m ? m[1].toUpperCase() : null,
+          pid: m ? m[2].toUpperCase() : null,
+          path: p,
+          productMs,
+          serialMs,
+        });
+      }
+      return out;
+    } catch (err) {
+      if (this.verbose) console.warn('[gamepad] slow-device probe failed:', err.message);
+      return [];
+    }
+  }
+
+  /**
    * POV value (hundredths of a degree clockwise from up) to one of 8 compass
    * directions, or -1 for centred. Centred is documented as 0xFFFF in the low
    * word, but drivers also use -1 and 0xFFFFFFFF, and anything past a full
@@ -681,4 +859,304 @@ class GamepadReader {
   }
 }
 
-module.exports = { GamepadReader, describeButton };
+/* -------------------------------------------------------------------------- */
+/*  The main-thread proxy                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The reader the app talks to. Same surface as before (`available`, `failed`,
+ * `problems`, `list()`, `setActive()`, `rescan()`, `close()`, `onButton`,
+ * `onDevicesChanged`) but DirectInput runs on a worker, so nothing here can
+ * block the main thread however long a USB device takes to answer.
+ *
+ * `rescan()` returns a promise now — it always was a round trip to hardware,
+ * it just used to make the caller wait in place.
+ *
+ * Falls back to an in-thread {@link DirectInputReader} if the worker cannot
+ * start (with the slow-device probe off — see `diagnoseSlow`).
+ */
+class GamepadReader {
+  constructor(options = {}) {
+    this.onButton = options.onButton || (() => {});
+    this.onDevicesChanged = options.onDevicesChanged || null;
+    this.verbose = options.verbose || false;
+    /** The last snapshot the reader reported; see DirectInputReader.snapshot. */
+    this.snap = { available: true, failed: null, devices: [], problems: [], slow: null, lastEnumMs: 0 };
+    this.worker = null;
+    this.workerReady = false;
+    this.inline = null;
+    this.closing = false;
+    this.active = false;
+    this.pending = new Map(); // rescan id -> resolve
+    this.seq = 0;
+    /** USB VID:PID -> Windows description, resolved once per device. */
+    this.usbNames = new Map();
+    this.lastKey = '';
+  }
+
+  get available() {
+    return this.snap.failed === null;
+  }
+
+  get failed() {
+    return this.snap.failed;
+  }
+
+  /** Open failures plus, when enumeration is slow, the device to blame. */
+  get problems() {
+    return this.snap.problems.concat(this._slowProblems());
+  }
+
+  list() {
+    return this.snap.devices.slice();
+  }
+
+  setActive(active) {
+    this.active = !!active;
+    if (!this._ensure()) return false;
+    if (this.inline) return this.inline.setActive(this.active);
+    this._post({ cmd: 'setActive', active: this.active });
+    return true;
+  }
+
+  /** Re-enumerate; resolves with the device list once the hardware answered. */
+  rescan() {
+    if (!this._ensure()) return Promise.resolve(this.list());
+    if (this.inline) {
+      this.inline.rescan();
+      this._absorb(this.inline.snapshot());
+      return Promise.resolve(this.list());
+    }
+    const id = ++this.seq;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) resolve(this.list());
+      }, RESCAN_TIMEOUT_MS);
+      timer.unref?.();
+      this.pending.set(id, () => {
+        clearTimeout(timer);
+        resolve(this.list());
+      });
+      this._post({ cmd: 'rescan', id });
+    });
+  }
+
+  close() {
+    this.closing = true;
+    if (this.inline) {
+      this.inline.close();
+      this.inline = null;
+    }
+    if (this.worker) {
+      try {
+        this.worker.postMessage({ cmd: 'close' });
+        this.worker.terminate();
+      } catch {
+        /* already gone */
+      }
+      this.worker = null;
+    }
+    for (const resolve of this.pending.values()) resolve();
+    this.pending.clear();
+  }
+
+  /* ------------------------------ internals ----------------------------- */
+
+  /** Start the worker (or the fallback) on first use. False only when neither can run. */
+  _ensure() {
+    if (this.worker || this.inline) return true;
+    if (this.closing) return false;
+    try {
+      // eslint-disable-next-line global-require
+      const { Worker } = require('node:worker_threads');
+      const worker = new Worker(require('node:path').join(__dirname, 'gamepadWorker.js'));
+      worker.unref();
+      worker.on('message', (m) => this._onMessage(worker, m));
+      worker.on('error', (err) => {
+        if (this.verbose) console.warn('[gamepad] worker error:', err && err.message);
+        this._workerGone(worker, err);
+      });
+      worker.on('exit', () => this._workerGone(worker, null));
+      this.worker = worker;
+      this._post({ cmd: 'open', verbose: this.verbose });
+      return true;
+    } catch (err) {
+      if (this.verbose) console.warn('[gamepad] no worker, reading in-thread:', err && err.message);
+      return this._fallback();
+    }
+  }
+
+  _fallback() {
+    if (this.inline) return true;
+    this.inline = new DirectInputReader({
+      verbose: this.verbose,
+      diagnoseSlow: false,
+      onButton: (device, button, down) => this._emit(device, button, down),
+      onDevicesChanged: () => this._absorb(this.inline.snapshot()),
+    });
+    this.inline.open();
+    this._absorb(this.inline.snapshot());
+    if (this.active) this.inline.setActive(true);
+    return true;
+  }
+
+  _workerGone(worker, err) {
+    if (this.worker !== worker) return; // an older one
+    this.worker = null;
+    const wasReady = this.workerReady;
+    this.workerReady = false;
+    for (const resolve of this.pending.values()) resolve();
+    this.pending.clear();
+    if (this.closing) return;
+    if (!wasReady) {
+      // Never came up: run in-thread rather than lose wheel bindings.
+      this._fallback();
+      return;
+    }
+    // Died mid-session (a DirectInput fault inside the worker). Say so; the
+    // next setActive/rescan starts a fresh one.
+    this._absorb({ ...this.snap, failed: `controller reader stopped${err ? ` (${err.message})` : ''}` });
+  }
+
+  _post(msg) {
+    if (!this.worker) return;
+    try {
+      this.worker.postMessage(msg);
+    } catch {
+      /* terminated */
+    }
+  }
+
+  _onMessage(worker, m) {
+    if (this.worker !== worker || !m) return;
+    switch (m.ev) {
+      case 'ready':
+        if (m.snapshot && m.snapshot.failed !== null) {
+          // The worker came up but DirectInput did not (koffi unreachable
+          // from the worker in some packaging, say). In-thread is how this
+          // always used to run; a genuine failure fails the same way there,
+          // and its message is the one worth showing.
+          this.worker = null;
+          try {
+            worker.terminate();
+          } catch {
+            /* ignore */
+          }
+          this._fallback();
+          break;
+        }
+        this.workerReady = true;
+        this._absorb(m.snapshot);
+        if (this.active) this._post({ cmd: 'setActive', active: true });
+        break;
+      case 'state':
+        this._absorb(m.snapshot);
+        break;
+      case 'rescanned': {
+        this._absorb(m.snapshot);
+        const resolve = this.pending.get(m.id);
+        if (resolve) {
+          this.pending.delete(m.id);
+          resolve();
+        }
+        break;
+      }
+      case 'button':
+        this._emit(m.device, m.button, m.down);
+        break;
+      default:
+        break;
+    }
+  }
+
+  _emit(device, button, down) {
+    try {
+      this.onButton(device, button, down);
+    } catch (err) {
+      console.error('[gamepad] button handler failed:', err.message);
+    }
+  }
+
+  /** Take a snapshot from the reader; tell the app only when it differs. */
+  _absorb(snap) {
+    if (!snap) return;
+    this.snap = snap;
+    if (snap.slow) {
+      for (const d of snap.slow.devices) {
+        if (d.vid && d.pid) this._resolveUsbName(d.vid, d.pid);
+      }
+    }
+    const key = JSON.stringify([
+      snap.failed,
+      snap.devices.map((d) => d.id),
+      this.problems,
+    ]);
+    if (key === this.lastKey) return;
+    this.lastKey = key;
+    if (this.onDevicesChanged) {
+      try {
+        this.onDevicesChanged();
+      } catch (err) {
+        console.error('[gamepad] devices-changed handler failed:', err.message);
+      }
+    }
+  }
+
+  _slowProblems() {
+    const slow = this.snap.slow;
+    if (!slow) return [];
+    const secs = (slow.ms / 1000).toFixed(1);
+    if (slow.devices.length === 0) {
+      return [{
+        kind: 'slow',
+        product: 'A USB device',
+        error:
+          `is not answering Windows — every controller scan takes ${secs} s. ` +
+          'Unplug and replug USB devices until it stops.',
+      }];
+    }
+    return slow.devices.map((d) => {
+      const id = d.vid && d.pid ? `${d.vid}:${d.pid}` : 'unknown';
+      const name = this.usbNames.get(id) || `USB device ${id}`;
+      return {
+        kind: 'slow',
+        product: name,
+        error:
+          `is not answering Windows — every controller scan waits ${secs} s on it. ` +
+          'Unplug it and plug it back in.',
+      };
+    });
+  }
+
+  /**
+   * "USB device 0D8C:0134" is a clue; "TONOR TC310 USB MIC" is an
+   * instruction. One PowerShell PnP lookup per VID:PID, off the main thread,
+   * result folded into the next `problems` read.
+   */
+  _resolveUsbName(vid, pid) {
+    const id = `${vid}:${pid}`;
+    if (this.usbNames.has(id) || process.platform !== 'win32') return;
+    this.usbNames.set(id, null); // in flight
+    const script =
+      `$d = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\\VID_${vid}&PID_${pid}\\*' } | Select-Object -First 1; ` +
+      "if ($d) { (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName DEVPKEY_Device_BusReportedDeviceDesc).Data }";
+    // eslint-disable-next-line global-require
+    require('node:child_process').execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { windowsHide: true, timeout: 10000, encoding: 'utf8' },
+      (err, stdout) => {
+        const name = !err && stdout ? stdout.trim() : '';
+        if (!name) {
+          this.usbNames.delete(id);
+          return;
+        }
+        this.usbNames.set(id, name);
+        this.lastKey = '';
+        this._absorb(this.snap);
+      },
+    );
+  }
+}
+
+module.exports = { GamepadReader, DirectInputReader, describeButton };

@@ -1182,7 +1182,8 @@ class EngineerService {
     // player's PLAYED lines are the speech queue's clock: each one frees the
     // channel, which is when a held readout gets its (only) second chance.
     this.player = spawnPs(path.join(this.sidecarsDir, PLAYER_SIDECAR));
-    this.player.on('error', (err) => this.onChildError('audio player', err));
+    const player = this.player;
+    player.on('error', (err) => this.player === player && this.onChildError('audio player', err));
     require('node:readline')
       .createInterface({ input: this.player.stdout })
       .on('line', (line) => {
@@ -1194,7 +1195,8 @@ class EngineerService {
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
     });
-    this.piper.on('error', (err) => this.onChildError('voice engine', err));
+    const piperChild = this.piper;
+    this.piper.on('error', (err) => this.piper === piperChild && this.onChildError('voice engine', err));
     this.piper.stdin.on('error', () => {});
     require('node:readline')
       .createInterface({ input: this.piper.stdout })
@@ -1214,7 +1216,15 @@ class EngineerService {
           this.player.stdin.write(out + '\n');
         }
       });
-    this.piper.on('exit', () => {
+    // Identity-guarded: a voice change is stop() + start(), and the OLD
+    // engine's exit lands on the event loop only after the new one is already
+    // running. Without the guard that late exit read as "the engine died" and
+    // stopped the pipeline it had just been replaced by — the engineer went
+    // silent on every voice change until the app was restarted (field
+    // report, 2026-08-28), and push-to-talk answered "not running".
+    const piper = this.piper;
+    piper.on('exit', () => {
+      if (this.piper !== piper) return; // an engine we already replaced
       if (this.running) {
         this.lastError = 'The voice engine stopped unexpectedly.';
         this.stop();
@@ -1227,11 +1237,16 @@ class EngineerService {
       APEX_ENGINEER_GRAMMAR: this.grammarPath,
       APEX_ENGINEER_WAVDIR: this.wavDir,
     });
-    this.recognizer.on('error', (err) => this.onChildError('listener', err));
+    const recognizerChild = this.recognizer;
+    this.recognizer.on('error', (err) => this.recognizer === recognizerChild && this.onChildError('listener', err));
     require('node:readline')
       .createInterface({ input: this.recognizer.stdout })
       .on('line', (line) => this.onRecognizerLine(line));
-    this.recognizer.on('exit', () => {
+    // Same guard as the engine: the replaced listener's exit must not mark
+    // the new listener's microphone "not ready" after its READY line landed.
+    const recognizer = this.recognizer;
+    recognizer.on('exit', () => {
+      if (this.recognizer !== recognizer) return;
       this.recognizerReady = false;
     });
 

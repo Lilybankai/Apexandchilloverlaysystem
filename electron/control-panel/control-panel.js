@@ -2683,7 +2683,11 @@
       const spec = c ? ` (${c.buttons} buttons, ${c.povs} hats, ${c.axes} axes)` : '';
       return d.product + spec;
     });
-    for (const p of res.problems || []) parts.push(`${p.product} — could not open: ${p.error}`);
+    for (const p of res.problems || []) {
+      // 'slow' names a USB device that is not answering Windows (see
+      // gamepad.js) — a replug instruction, not an open failure.
+      parts.push(p.kind === 'slow' ? `⚠ ${p.product} ${p.error}` : `${p.product} — could not open: ${p.error}`);
+    }
     wheelDevicesOut.textContent = parts.length
       ? ` ${parts.join(' · ')}`
       : ' no controllers attached';

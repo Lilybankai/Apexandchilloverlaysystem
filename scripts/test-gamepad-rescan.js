@@ -25,7 +25,9 @@
 
 'use strict';
 
-const { GamepadReader, describeButton } = require('../electron/gamepad');
+// The in-thread reader: this test drives _poll() by hand, which the
+// worker-backed GamepadReader proxy deliberately does not expose.
+const { DirectInputReader: GamepadReader, describeButton } = require('../electron/gamepad');
 
 let passed = 0;
 let failed = 0;

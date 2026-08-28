@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.95.2 — 2026-08-28
+
+### Fixed
+
+- **Overlays no longer freeze in step with a USB device that has stopped
+  answering.** The wheel reader asks Windows for the list of controllers
+  every few seconds, and Windows answers that by asking *every* USB device
+  on the machine to identify itself — so one wedged device (a microphone,
+  on the rig this was caught on) made each scan take ten seconds, on the
+  same thread that draws the overlays. Ten seconds frozen, ten seconds
+  fine, repeat. The reader now runs on its own thread, so a slow device
+  costs the overlays nothing; and when a scan *is* slow, the Bindings page
+  names the device and says to replug it, instead of leaving you to guess.
+- **Changing the engineer's voice no longer silences the engineer.** A voice
+  change restarts the voice engine, and the outgoing engine's exit was being
+  read as the new one crashing — the engineer stopped, push-to-talk answered
+  "not running", and only an app restart brought it back. Fixed.
+
 ## 0.95.1 — 2026-08-28
 
 ### Changed
