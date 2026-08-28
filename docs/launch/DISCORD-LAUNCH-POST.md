@@ -1,8 +1,8 @@
-# Discord launch post — Apex AIO System v0.95.0
+# Discord launch post — Apex AIO System v0.95.1
 
 Ready to paste. Discord caps a message at 2000 characters, so this is split
 into six messages — post them in order in `#announcements`. Every claim below
-is checked against the app as it ships in v0.95.0; nothing here is promised
+is checked against the app as it ships in v0.95.1; nothing here is promised
 ahead of the build. A one-message short version for a pin or an embed is at
 the bottom.
 
@@ -16,8 +16,8 @@ Swap `#suggestions` in message 6 for whatever your channel is actually called.
 
 The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, setups, fuel and energy maths, league leaderboards and stream tools.
 
-**⬇️ Download — v0.95.0, Windows**
-https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.0/Apex-AIO-System-Setup-0.95.0.exe
+**⬇️ Download — v0.95.1, Windows**
+https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
 
 **It's free for everyone who races with us.** How that works is in the fifth message — read that one before you pay for anything. 👇
 
@@ -51,11 +51,11 @@ Bind a wheel button, press it, wait for the chirp, ask.
 
 ▸ **37 questions answered instantly — on your PC, offline, unlimited.** Gaps, who's ahead and what they're doing, backmarkers, fuel and energy to the flag, tyres, damage and repair time, brake bias, track-limit points, yellows, weather. Around 126 ways of asking, and phrases work inside a sentence: "mate, what's the gap ahead right now" lands the same as "gap ahead"
 
-▸ **One-word calls work.** "Tyres." "Temps." "Fuel." The short ones you actually make mid-corner. They used to die in Windows' own 2006-era recogniser; he now hears everything through the good one
+▸ **One-word calls work.** "Tyres." "Temps." "Fuel." The short ones you actually make mid-corner — the ones that used to get lost
 
 ▸ **He calls the race.** Green flag, chequered, final lap, safety car, red flag, penalties given and served, damage, the fuel window. Turn the dial up for the race story on top — your fastest laps, the field's, places gained and lost, rivals pitting, blue flags — or down to answer-only
 
-▸ **He calls yellows by sector.** "Yellow flag, sector two — watch for a slow car through there", and the all-clear when it withdraws. Read live from the sim's shared memory, so it's the real sector rather than a guess
+▸ **He calls yellows by sector.** "Yellow flag, sector two — watch for a slow car through there", and the all-clear when it withdraws. Read from the sim itself, so it's the real sector rather than a guess
 
 ▸ **And he coaches.** Ask for **"target pace"** and he reads your best lap against the reference bands and tells you what the next band up actually costs you
 
@@ -63,7 +63,7 @@ Bind a wheel button, press it, wait for the chirp, ask.
 
 ▸ **Advanced questions** — "should I pit under this safety car?" — worked out from your live race. 300 a month; the instant answers stay unlimited
 
-▸ **Loud rig?** An optional **Better ears** model on the Engineer tab — one 466 MB download, and every question is heard by the sharper model. Still all on your PC
+▸ **Loud rig?** He sharpens his own hearing. Switch him on and he pulls a bigger listening model down in the background — never while you're on track — answering with the standard one until it lands. Nothing to press, and it never leaves your PC
 
 Six voices, through a proper comms channel — band-limited, squelch, hiss. Your mic is only live for the few seconds after you press the button. Never in the background.
 
@@ -111,7 +111,7 @@ Exactly the same app, cancel any time. **7-day free trial** to try it properly f
 
 ## ⚙️ Up and running in about five minutes
 
-**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.0/Apex-AIO-System-Setup-0.95.0.exe
+**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
 *(Windows, ~285 MB. Signed by The Lilybank Agency Ltd, so no "unknown publisher" warning. It's a chunky download because the engineer's voice rides inside it — he talks straight out of the box, nothing to fetch. The five alternative voices are a one-click download in the app if you fancy a change.)*
 
 **2.** Create your account — or hit **Continue offline** if you only want the overlays on your own PC.
@@ -146,4 +146,4 @@ Overlays, a voice race engineer, setups, fuel and energy maths and league leader
 **Racing an Apex & Chill league or one of our special events? It's free — DM me for your access code.** Stops being free if you stop racing.
 **Everyone else: £4.99/month launch price, 7-day free trial.**
 
-⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.0/Apex-AIO-System-Setup-0.95.0.exe
+⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.1/Apex-AIO-System-Setup-0.95.1.exe
