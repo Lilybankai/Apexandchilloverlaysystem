@@ -165,7 +165,88 @@ check('a nonsense lap fraction falls back rather than being clamped',
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
-console.log('\n3b) Class positions reach the relative panel by slot id, not by counting');
+console.log('\n3a) A lap deficit you can read next to the row above it');
+
+// `classLapsBehind` is a per-row FLOOR, so subtracting two of them is not the
+// distance between those two cars. Measured live at Daytona (2026-08-30): an
+// LMP2 3.57 laps down and one 5.04 laps down printed +3L and +5L, so the pit
+// wall read two laps between cars that were 1.47 apart. `classLapsBehindExact`
+// is the same deficit unfloored, and it differences correctly.
+const floorTrap = [
+  { slotId: 1, position: 6, carClass: 'LMP2', gapToLeaderSec: UNKNOWN, lapsBehind: 9,
+    lapsCompleted: 188, lapFraction: 0.12 },
+  { slotId: 2, position: 7, carClass: 'LMP2', gapToLeaderSec: UNKNOWN, lapsBehind: 12,
+    lapsCompleted: 184, lapFraction: 0.554 },
+  { slotId: 3, position: 9, carClass: 'LMP2', gapToLeaderSec: UNKNOWN, lapsBehind: 14,
+    lapsCompleted: 183, lapFraction: 0.085 },
+];
+assignClassPositions(floorTrap);
+check('the whole-lap column still floors, as a timing sheet expects',
+  floorTrap[1].classLapsBehind === 3 && floorTrap[2].classLapsBehind === 5,
+  floorTrap[1].classLapsBehind + ' / ' + floorTrap[2].classLapsBehind);
+check('the exact deficit keeps the fraction the floor threw away',
+  Math.abs(floorTrap[1].classLapsBehindExact - 3.566) < 0.002 &&
+  Math.abs(floorTrap[2].classLapsBehindExact - 5.035) < 0.002,
+  floorTrap[1].classLapsBehindExact + ' / ' + floorTrap[2].classLapsBehindExact);
+// The reason the field exists: this subtraction has to come out at the truth.
+const impliedByFloors = floorTrap[2].classLapsBehind - floorTrap[1].classLapsBehind;
+const impliedByExact = floorTrap[2].classLapsBehindExact - floorTrap[1].classLapsBehindExact;
+check('differencing the floors invents a lap (which is why it must not be done)',
+  impliedByFloors === 2, String(impliedByFloors));
+check('differencing the exact figures gives the real 1.47 laps',
+  Math.abs(impliedByExact - 1.469) < 0.002, String(impliedByExact));
+check('no track position means no exact figure, rather than a made-up one',
+  noPosition[1].classLapsBehindExact === undefined,
+  String(noPosition[1].classLapsBehindExact));
+
+/* -------------------------------------------------------------------------- */
+console.log("\n3b) The sim's own class gap, where ours cannot answer");
+
+// LMU zeroes `timeBehindLeader` for every LAPPED car, so in a long race the
+// subtraction above has nothing to work with — but its `timeBehindClassLeader`
+// survives for cars on their class leader's lap. It stands in ONLY there.
+const hinted = [
+  { slotId: 10, position: 10, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 16,
+    lapsCompleted: 180, lapFraction: 0.339 },
+  { slotId: 11, position: 11, carClass: 'GT3', gapToLeaderSec: UNKNOWN, lapsBehind: 17,
+    lapsCompleted: 179, lapFraction: 0.63 },
+];
+const hints = new Map([[11, { gapSec: 78.51, lapsBehind: 0 }]]);
+assignClassPositions(hinted, hints);
+check('a lapped field still gets its seconds from the sim',
+  hinted[1].gapToClassLeaderSec === 78.51, String(hinted[1].gapToClassLeaderSec));
+check('and the counted lap deficit is unchanged by the hint',
+  hinted[1].classLapsBehind === 0, String(hinted[1].classLapsBehind));
+
+// A hint must never override an answer we derived ourselves — ours is counted
+// off track position and is the one that cannot invent a lap.
+const hintLoses = [
+  { slotId: 20, position: 7, carClass: 'GT3', gapToLeaderSec: 0, lapsBehind: 1,
+    lapsCompleted: 19, lapFraction: 0.002 },
+  { slotId: 21, position: 8, carClass: 'GT3', gapToLeaderSec: 15.2, lapsBehind: 1,
+    lapsCompleted: 18, lapFraction: 0.995 },
+];
+assignClassPositions(hintLoses, new Map([[21, { gapSec: 999, lapsBehind: 7 }]]));
+check('a hint never overrides a gap we could derive',
+  hintLoses[1].gapToClassLeaderSec === 15.2, String(hintLoses[1].gapToClassLeaderSec));
+check('nor a lap count we could count',
+  hintLoses[1].classLapsBehind === 0, String(hintLoses[1].classLapsBehind));
+
+// A car more than a lap down has no meaningful seconds gap, whoever published
+// it — the figure has wrapped through the line and says nothing.
+const lappedHint = [
+  { slotId: 30, position: 6, carClass: 'LMP2', gapToLeaderSec: UNKNOWN, lapsBehind: 9,
+    lapsCompleted: 188, lapFraction: 0.12 },
+  { slotId: 31, position: 7, carClass: 'LMP2', gapToLeaderSec: UNKNOWN, lapsBehind: 12,
+    lapsCompleted: 184, lapFraction: 0.554 },
+];
+assignClassPositions(lappedHint, new Map([[31, { gapSec: 42 }]]));
+check('a seconds hint is refused once the car is a lap or more down',
+  lappedHint[1].gapToClassLeaderSec === UNKNOWN,
+  String(lappedHint[1].gapToClassLeaderSec));
+
+/* -------------------------------------------------------------------------- */
+console.log('\n3c) Class positions reach the relative panel by slot id, not by counting');
 
 // The relative list is a handful of cars picked by PROXIMITY, so a class
 // position counted within it would number a car by how many of its class happen

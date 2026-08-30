@@ -201,6 +201,72 @@
     setCard(els.session, bits.join(''));
   }
 
+  /**
+   * The Pit column. A retired car keeps every one of the sim's pit flags raised
+   * for the rest of the race, so it must be tested first or a car that stopped
+   * on lap 16 still reads "PIT" at the flag.
+   */
+  const pitCell = (r) => {
+    if (r.retired) return '<span class="team-t__out">OUT</span>';
+    return r.inPit ? '<span class="team-t__pit">PIT</span>' : '';
+  };
+
+  /**
+   * A car's progress as one continuous number of laps, or `null` when the sim
+   * placed no car on the track. The only scale on which two cars can honestly
+   * be compared — see `classLapsBehindExact` on the server.
+   */
+  function progressOf(r) {
+    const f = r && r.lapFraction;
+    if (typeof f !== 'number' || !Number.isFinite(f) || f < 0 || f > 1) return null;
+    return (known(r.lapsCompleted) ? r.lapsCompleted : 0) + f;
+  }
+
+  /**
+   * A lap deficit, printed so it can be read ALONGSIDE the row above it.
+   *
+   * One decimal, not a whole number. `classLapsBehind` is floored per row, and
+   * two floors do not subtract: at Daytona an LMP2 3.57 laps down printed +3L
+   * and one 5.04 down printed +5L, so the sheet said two laps between cars that
+   * were 1.47 apart — which is the whole reason this function exists. Falls
+   * back to the floored count (with no decimal, so it is visibly the coarser
+   * reading) when the sim published no track position to count from.
+   */
+  function fmtLapGap(exact, whole) {
+    if (known(exact)) return `+${exact.toFixed(1)}L`;
+    return known(whole) ? `+${whole}L` : dash;
+  }
+
+  /**
+   * The signed gap from our own car to `r`, as the driver would say it: a car
+   * in front is a negative number, one behind a positive one. Laps once the
+   * pair is more than one apart, seconds below that.
+   *
+   * This is the column the sheet was missing. Every other gap on it is measured
+   * to a leader or to the car ahead, so the one question a pit wall actually
+   * asks — "how far away is HE" — could only be answered by subtracting two
+   * numbers that do not subtract.
+   */
+  function fmtVsMe(r, me) {
+    if (!me || !r || r.slotId === me.slotId) return dash;
+    const a = progressOf(r);
+    const b = progressOf(me);
+    if (a === null || b === null) return dash;
+    const laps = a - b;
+    if (Math.abs(laps) >= 1) return `${laps > 0 ? '−' : '+'}${Math.abs(laps).toFixed(1)}L`;
+    // Inside a lap, seconds are the readable unit — priced at the pace the car
+    // in question is actually running, since a lap of track is worth different
+    // amounts of time to a Hypercar and a GT3.
+    const pace = known(r.avg5Sec) && r.avg5Sec > 0
+      ? r.avg5Sec
+      : known(r.bestLapSec) && r.bestLapSec > 0
+        ? r.bestLapSec
+        : 0;
+    if (!pace) return dash;
+    const sec = Math.abs(laps) * pace;
+    return `${laps > 0 ? '−' : '+'}${sec.toFixed(1)}`;
+  }
+
   // ── Timing sheet ─────────────────────────────────────────────────────────
   function renderTiming(standings) {
     if (!standings || !standings.length) {
@@ -220,14 +286,20 @@
       return best(a[1]) - best(b[1]);
     });
 
+    // Our own car, the reference for the "vs Me" column. `isPlayer` follows the
+    // broadcast focus, so in a team race it is our car whenever the camera has
+    // not been panned away from it.
+    const me = standings.find((r) => r.isPlayer) || null;
+
     const head = `
       <tr>
         <th>P</th><th>Ovr</th><th>#</th><th class="team-t__driver">Driver</th>
         <th>Pit</th><th>Stops</th>
         <th>Last</th><th>Best</th><th>Avg 5</th>
-        <th>Gap</th><th>Int</th>
+        <th>Gap</th><th>Int</th>${me ? '<th>vs Me</th>' : ''}
         ${anyVe ? '<th>VE</th>' : ''}<th>Tyre</th>
       </tr>`;
+    const cols = (anyVe ? 13 : 12) + (me ? 1 : 0);
 
     const groups = classes.map(([cls, rows]) => {
       rows.sort((a, b) => {
@@ -236,29 +308,56 @@
         return ap - bp;
       });
       const color = CHARTS.classColor(cls);
-      const body = rows.map((r) => {
-        const gap = known(r.classLapsBehind) && r.classLapsBehind > 0
-          ? `+${r.classLapsBehind}L`
-          : fmtGap(r.gapToClassLeaderSec);
+      // The interval to the car ahead IN CLASS, which is the block this row is
+      // being read inside. `gapToAheadSec` is the sim's gap to the next car
+      // OVERALL — under a class subheader that is an interval to whichever
+      // Hypercar happens to be sitting between two GT3s, which is not the
+      // number the row appears to be claiming. Counted off track position for
+      // the same reason the Gap column is.
+      const intervals = rows.map((r, i) => {
+        const prev = rows[i - 1];
+        if (!prev) return dash;
+        const a = progressOf(prev);
+        const b = progressOf(r);
+        if (a !== null && b !== null && a - b >= 1) return `+${(a - b).toFixed(1)}L`;
+        return fmtGap(r.gapToAheadSec);
+      });
+      const body = rows.map((r, i) => {
+        // A class leader has nobody to be behind; "+0.0" read as a real gap.
+        const gap = r.classPosition === 1
+          ? dash
+          : known(r.classLapsBehindExact) && r.classLapsBehindExact >= 1
+            ? fmtLapGap(r.classLapsBehindExact, r.classLapsBehind)
+            : known(r.gapToClassLeaderSec)
+              ? fmtGap(r.gapToClassLeaderSec)
+              : fmtLapGap(r.classLapsBehindExact, r.classLapsBehind);
+        // "Avg 5" over fewer than five laps is the heading overstating what it
+        // knows — true for the first minutes of a session, after every stop and
+        // after every driver swap. Mark it rather than hide it.
+        const partial = known(r.avg5Sec) && known(r.avg5Laps) && r.avg5Laps < 5;
+        const avg = partial
+          ? `<span class="team-t__partial" title="mean of ${r.avg5Laps} lap${r.avg5Laps === 1 ? '' : 's'}, not 5">${fmtLap(r.avg5Sec)}<sup>${r.avg5Laps}</sup></span>`
+          : fmtLap(r.avg5Sec);
         return `
         <tr class="${r.isPlayer ? 'team-t__me' : ''}">
           <td>${fmt0(r.classPosition)}</td>
           <td class="team-t__dim">${fmt0(r.position)}</td>
           <td class="team-t__num">${r.carNumber != null ? esc(String(r.carNumber)) : ''}</td>
           <td class="team-t__driver">${esc(r.driverName || '')}</td>
-          <td>${r.inPit ? '<span class="team-t__pit">PIT</span>' : ''}</td>
+          <td>${pitCell(r)}</td>
           <td>${fmt0(r.pitStops)}</td>
           <td>${fmtLap(r.lastLapSec)}</td>
           <td>${fmtLap(r.bestLapSec)}</td>
-          <td>${fmtLap(r.avg5Sec)}</td>
+          <td>${avg}</td>
           <td>${gap}</td>
-          <td class="team-t__dim">${fmtGap(r.gapToAheadSec)}</td>
+          <td class="team-t__dim">${intervals[i]}</td>
+          ${me ? `<td class="team-t__vsme">${fmtVsMe(r, me)}</td>` : ''}
           ${anyVe ? `<td>${known(r.virtualEnergy) ? `${Math.round(r.virtualEnergy)}%` : dash}</td>` : ''}
           <td>${r.tyreCompound ? esc(String(r.tyreCompound)).slice(0, 6) : dash}</td>
         </tr>`;
       }).join('');
       return `
-        <tr class="team-t__class"><td colspan="${anyVe ? 13 : 12}">
+        <tr class="team-t__class"><td colspan="${cols}">
           <span class="team-t__dot" style="background:${color}"></span>${esc(cls)} · ${rows.length}
         </td></tr>${body}`;
     }).join('');
@@ -267,7 +366,11 @@
       <div class="team-t__wrap"><table class="team-t">
         <thead>${head}</thead><tbody>${groups}</tbody>
       </table></div>
-      <p class="team-note">Gap is to the class leader; Int is to the car ahead overall.</p>`);
+      <p class="team-note">Gap is to the class leader, Int to the car ahead in class,
+      vs&nbsp;Me to your own car (− ahead of you, + behind). Lap gaps carry a decimal
+      so they can be compared row to row — a whole-lap figure is floored per row and
+      two of them cannot be subtracted. A superscript on Avg&nbsp;5 means it is the
+      mean of fewer than five laps.</p>`);
   }
 
   // ── Positions chart ──────────────────────────────────────────────────────
@@ -727,6 +830,9 @@
       if (!a || !relay.at) {
         els.age.dataset.state = 'none';
         els.age.textContent = relay && relay.error ? 'RELAY ERROR' : 'NO TEAM DATA';
+        // The reason, not just the fact — "signed out" and "nobody driving"
+        // look the same on the pill and want completely different actions.
+        els.age.title = relay && relay.error ? String(relay.error) : '';
         return;
       }
       // Age of the data itself: server-reported age at read time, plus the

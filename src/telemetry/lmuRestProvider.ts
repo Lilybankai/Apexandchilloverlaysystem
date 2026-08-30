@@ -47,7 +47,8 @@ import {
 import { LmuScoringReader, type ScoringCar } from './lmuScoring';
 import { TrackLimitsTracker } from './trackLimits';
 import { LmuTraceLimitsReader } from './lmuTraceLimits';
-import { PaceAverageTracker } from './paceAverage';
+import { PaceAverageTracker, type PaceAvgResult } from './paceAverage';
+import { PitStopCounter } from './pitStopCounter';
 import { predictLapsToFlag } from './lapsToFlag';
 import { buildRadar, type RadarCar } from './radar';
 import { TrackMapBuilder } from './trackMap';
@@ -89,6 +90,7 @@ import {
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, type LapRecord } from './lapLog';
+import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
 import {
   LapTraceRecorder,
@@ -99,6 +101,7 @@ import {
 } from './lapTrace';
 import {
   assignClassPositions,
+  type ClassGapHint,
   copyClassPositions,
   isFasterClass,
   lapFractionOf,
@@ -239,6 +242,17 @@ interface RestStanding {
   timeBehindLeader: number;
   timeBehindNext: number;
   lapsBehindLeader: number;
+  /**
+   * LMU's OWN class figures. Worth having because `timeBehindLeader` above is
+   * zeroed for every lapped car — in an 8 h race that is nearly the whole field
+   * (measured live at Daytona 2026-08-30: 1 car of 39 still carried one), and
+   * with it goes the subtraction `assignClassPositions` derives the class gap
+   * from. `timeBehindClassLeader` survives for cars on their class leader's lap,
+   * so it is passed down as a fallback hint. Both are zeroed for a lapped car
+   * too, which is why they are a fallback and not the primary source.
+   */
+  timeBehindClassLeader?: number;
+  lapsBehindClassLeader?: number;
   lapsCompleted: number;
   estimatedLapTime?: number;
   fuelFraction?: number;
@@ -637,7 +651,7 @@ export class LmuRestProvider implements TelemetryProvider {
    * one call later and the two are built from the same poll: recomputing it
    * there would double the work and could disagree with the tower.
    */
-  private paceBySlot: Map<number, number> = new Map();
+  private paceBySlot: Map<number, PaceAvgResult> = new Map();
   /**
    * The driven car's model, latched from the Scoring buffer.
    *
@@ -672,6 +686,12 @@ export class LmuRestProvider implements TelemetryProvider {
   /** Turns the driven car's lap boundaries into the lap database; see `lapLog.ts`. */
   private readonly lapRecorder = new LapRecorder();
   /**
+   * The stop database — one record per pit visit, the other half of the
+   * strategy corpus. Driven from the same place as the lap recorder because it
+   * needs the same driven-car identity and the same pit-lane truth.
+   */
+  private readonly stopRecorder = new StopRecorder();
+  /**
    * Per-lap driving-trace recorder for the driven car — the training feature's
    * capture side. Fed at frame rate beside the delta engine with the same
    * filtered position and clock, so its laps are the delta's laps.
@@ -693,6 +713,12 @@ export class LmuRestProvider implements TelemetryProvider {
    * every frame.
    */
   private readonly gapHistory = new Map<number, { gap: number; at: number; rate: number }>();
+  /**
+   * Completed stops per car, counted off pit-lane entries. LMU's own
+   * `pitstops` resets (driver swaps), so it cannot be believed — see
+   * telemetry/pitStopCounter for the probe that established that.
+   */
+  private readonly pitStops = new PitStopCounter();
   /** Last good local physics + when, to bridge single missed reads (flicker). */
   private lastLocal: LocalCarPhysics | null = null;
   private lastLocalAt = 0;
@@ -1814,7 +1840,17 @@ export class LmuRestProvider implements TelemetryProvider {
     const trackMap = this.buildTrackMap(session, trackLen, playerCar, playerScoringCar, field, cars);
     // The lap database. Last, because it reads the results of everything above
     // (the excursion count, the pit flags) to decide whether the lap was clean.
-    this.recordLap(playerCar, playerScoringCar, session, trackLimits, si, trackLen, nowMs);
+    this.recordLap(
+      playerCar,
+      playerScoringCar,
+      session,
+      trackLimits,
+      si,
+      trackLen,
+      nowMs,
+      local,
+      player.tyres,
+    );
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -2006,10 +2042,17 @@ export class LmuRestProvider implements TelemetryProvider {
         lapsCompleted: Math.max(0, c.lapsCompleted | 0),
         lastLapSec: posOrUnknown(c.lastLapTime),
         inPit: isInPit(c),
+        // A team car keeps its slot across a driver swap, so the name is the
+        // only thing that says the stint changed — see telemetry/paceAverage.
+        driverName: c.driverName,
       })),
       sessionKey,
     );
     this.paceBySlot = avgBySlot;
+    const stopsBySlot = this.pitStops.update(
+      cars.map((c) => ({ slotId: c.slotID, onPitLane: isOnPitLane(c), simStops: c.pitstops })),
+      sessionKey,
+    );
     const rows = cars.map((c) => {
       const ranks = this.driverRanksFor(c.driverName);
       const lastS1 = posOrUnknown(c.lastSectorTime1);
@@ -2026,7 +2069,15 @@ export class LmuRestProvider implements TelemetryProvider {
       safetyRank: ranks?.safety,
       gridPosition:
         typeof c.qualification === 'number' && c.qualification > 0 ? c.qualification : undefined,
-      gapToLeaderSec: posOrUnknown(c.timeBehindLeader),
+      // P1's gap to P1 is a real 0, not a missing reading — and `posOrUnknown`
+      // cannot tell the two apart, because LMU also writes 0 for every LAPPED
+      // car. Getting this wrong cost the whole leading class its seconds
+      // column: the class leader's own gap read unknown, so the subtraction
+      // `assignClassPositions` does had nothing to subtract FROM, and every car
+      // on the lead lap showed a dash. Seen live at Daytona (2026-08-30) with
+      // P2 sitting 3.94 s back and the tower showing "—". The same
+      // `position === 1` test already guards the relative panel's copy below.
+      gapToLeaderSec: c.position === 1 ? 0 : posOrUnknown(c.timeBehindLeader),
       gapToAheadSec: posOrUnknown(c.timeBehindNext),
       lapsBehind: Math.max(0, c.lapsBehindLeader | 0),
       // Track position, so `assignClassPositions` can COUNT laps down within the
@@ -2039,10 +2090,12 @@ export class LmuRestProvider implements TelemetryProvider {
       ...(lastS2 !== UNKNOWN_VALUE ? { lastSector2Sec: lastS2 } : {}),
       // Rounded at the wire: the raw mean is a full double, and 96.45333333333333
       // costs 17 characters per row per frame to say what 96.453 says.
-      avg5Sec: round3(avgBySlot.get(c.slotID)),
+      avg5Sec: round3(avgBySlot.get(c.slotID)?.avgSec),
+      avg5Laps: avgBySlot.get(c.slotID)?.laps,
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),
-      pitStops: typeof c.pitstops === 'number' ? c.pitstops : undefined,
+      retired: isRetired(c) || undefined,
+      pitStops: stopsBySlot.get(c.slotID),
       // LMU publishes a 0..1 energy fraction per car (its overlay shows this to
       // the cars ahead), but a car/class that isn't running a virtual-energy
       // budget reports a flat 0 all race (seen on LMP2). That must read as "not
@@ -2056,7 +2109,17 @@ export class LmuRestProvider implements TelemetryProvider {
       };
     });
     rows.sort((a, b) => a.position - b.position);
-    assignClassPositions(rows);
+    // LMU's own class gaps, as a fallback for the rows our subtraction cannot
+    // answer for. See the "What the sim already knows" note in carClass.
+    const classHints = new Map<number, ClassGapHint>();
+    for (const c of cars) {
+      classHints.set(c.slotID, {
+        gapSec: typeof c.timeBehindClassLeader === 'number' ? c.timeBehindClassLeader : undefined,
+        lapsBehind:
+          typeof c.lapsBehindClassLeader === 'number' ? c.lapsBehindClassLeader : undefined,
+      });
+    }
+    assignClassPositions(rows, classHints);
     this.standingsCacheCars = cars;
     this.standingsCacheKey = `${focusId}|${sessionKey}|${trackLen}`;
     this.standingsCache = rows;
@@ -2357,15 +2420,35 @@ export class LmuRestProvider implements TelemetryProvider {
     // hand every class the same pace and silently undo the class split below.
     const paceOf = (c: RestStanding | undefined): number => {
       if (!c) return 0;
-      const avg = this.paceBySlot.get(c.slotID);
+      const avg = this.paceBySlot.get(c.slotID)?.avgSec;
       if (typeof avg === 'number' && avg > 0) return avg;
       return c.bestLapTime > 0 ? c.bestLapTime : 0;
     };
     const overallLeader = cars.find((c) => c.position === 1);
-    // The pace the driver's own class runs at, which is what their remaining
-    // laps have to be counted in. Their class leader's, falling back to their
-    // own car when the class cannot be resolved.
-    const classPace = paceOf(classLeader) || paceOf(focus);
+    // The pace to count THIS car's remaining laps in — its own, measured.
+    //
+    // It used to be the CLASS LEADER's, which fixed the multiclass error (a GT3
+    // no longer got the Hypercar's lap count) but stopped one car short: inside
+    // a class the leader is by definition the fastest of it, so every other car
+    // was told it would cover the leader's distance. Measured live at Daytona
+    // (2026-08-30, 8 h, 2 h 27 m left): the LMP2 class leader was lapping
+    // 101.4 s and the car being fuelled 104.7 s, so the strip said 88 laps left
+    // where the car had 85 — three laps of fuel it did not need, and the module
+    // note in telemetry/lapsToFlag is explicit that erring long is the
+    // direction that costs a stop.
+    //
+    // In a TIMED race there is no argument for anyone else's pace at all: the
+    // clock is the same for every car and the only question is how many laps
+    // this one fits into it. In a lap-limited race the leader still decides
+    // when the flag falls, which is what `leaderPaceSec` below carries — the
+    // ratio in `predictLapsToFlag` converts their remaining laps into time and
+    // then into OUR laps, so this stays the subject car's pace there too.
+    //
+    // The class leader remains the fallback for the frames before our own car
+    // has a measured lap (and before it has a best), which is the only reason
+    // it is still consulted.
+    const ownPace = paceOf(focus);
+    const classPace = ownPace || paceOf(classLeader);
     const leaderPace = paceOf(overallLeader) || classPace;
     // One prediction for both race types — the time still to run divided by the
     // class's lap time. In a lap race that time is the leader's remaining laps
@@ -3532,8 +3615,51 @@ export class LmuRestProvider implements TelemetryProvider {
     si: RestSession,
     trackLenM: number,
     nowMs: number,
+    local: LocalCarPhysics | null,
+    tyres: TyreCorners | undefined,
   ): void {
     if (!playerCar) return;
+    // The consumption block (LapRecord v5) and the stop record are built from
+    // the same reads, so they are gathered once here. All of it comes from
+    // shared memory, so all of it is absent while spectating — which is right:
+    // these two logs are the strategy corpus, and a corpus of laps we did not
+    // drive is worse than no corpus. See docs/RACE-STRATEGY-ENGINE.md.
+    const wear = wearTuple(tyres);
+    const compound = tyres?.frontLeft?.compound;
+    const consumption = {
+      ...(local && local.fuelLiters > 0 ? { fuelL: local.fuelLiters } : {}),
+      ...(local && local.capacityLiters > 0 ? { capacityL: local.capacityLiters } : {}),
+      // LMU publishes a 0..1 energy fraction; a class with no energy budget
+      // reports a flat 0, which lapLog filters rather than storing as a reading.
+      ...(typeof playerCar.veFraction === 'number' && playerCar.veFraction > 0
+        ? { vePct: clamp01(playerCar.veFraction) * 100 }
+        : {}),
+      ...(wear ? { wear } : {}),
+      ...(compound ? { compound } : {}),
+    };
+
+    // Pit visits. Physically in the lane — a booked stop is not a stop.
+    const stop = this.stopRecorder.update(
+      {
+        sim: 'lmu',
+        track: session.track,
+        trackLengthM: trackLenM,
+        car: this.playerVehicleName,
+        carClass: normalizeClass(playerCar.carClass) || '',
+        sessionType: session.type,
+        lapsCompleted: playerCar.lapsCompleted,
+        inPit: (scoringCar ? scoringCar.inPit : false) || isOnPitLane(playerCar),
+        ...(local && Number.isFinite(local.speedKph) ? { speedKph: local.speedKph } : {}),
+        ...consumption,
+        // The sim's own total for the booked service — a prediction, and the
+        // only figure a strategy engine has BEFORE the stop.
+        ...(this.damage && this.damage.stopLengthSeconds > 0
+          ? { bookedSec: this.damage.stopLengthSeconds }
+          : {}),
+      },
+      nowMs,
+    );
+    if (stop) appendStop(stop);
     const lap = this.lapRecorder.update(
       {
         sim: 'lmu',
@@ -3582,6 +3708,7 @@ export class LmuRestProvider implements TelemetryProvider {
         // SETUP, frozen — cockpit clicks never appear (probed live 2026-08-11)
         // — so the cached 3 s read is exact, not approximate.
         ...(this.currentSetupFp() ? { setupFp: this.currentSetupFp() } : {}),
+        ...consumption,
       },
       nowMs,
     );
@@ -3769,33 +3896,89 @@ function pitPhase(c: RestStanding, speedKph: number): PitPhase {
 }
 
 /**
- * Whether the car is physically on the pit lane (or in its box) right now —
- * which is what makes the lap it is on unusable as a measurement of burn.
+ * The pit-lane states that mean the car is in the lane RIGHT NOW.
  *
- * Deliberately NOT {@link isInPit}: that one counts a *requested* stop as being
- * in the pits, which is right for "is this car about to stop" but wrong here. A
- * driver requests the stop laps before they take it, and those are green laps —
- * the last green laps before the stop, the ones the burn average most needs.
+ * `pitState` is not a live reading — it LATCHES on the way out of a stop and is
+ * never cleared. Probed live at Daytona (2026-08-30, lap 175 of a team race):
+ * 34 of 39 cars reported `"EXITING"`, 18 of them while doing over 80 km/h, the
+ * leader among them at 314 km/h. Treating any non-`NONE` state as "in the pits"
+ * therefore flags almost the whole field for the rest of the race.
+ *
+ * The real sequence, captured end to end on a live stop (#97, same session):
+ *
+ * ```
+ * +8s   REQUEST -> ENTERING   pitting false -> true
+ * +15s  ENTERING -> STOPPED
+ * +25s  STOPPED -> NONE       pitstops 0 -> 1
+ * +28s  NONE -> STOPPED       driver change
+ * ...   -> EXITING, and stays EXITING to the flag
+ * ```
+ *
+ * So `ENTERING`/`STOPPED` are trustworthy, `EXITING` is a leftover, and
+ * `REQUEST` is a stop the driver booked but has not taken — green laps, and the
+ * last green laps before a stop are exactly the ones a burn average most wants.
+ * `pitting` stays true across the whole visit, which is what absorbs the
+ * `STOPPED -> NONE -> STOPPED` flutter in the middle of the box time.
  */
-function isOnPitLane(c: RestStanding): boolean {
-  const raw = typeof c.pitState === 'string' ? c.pitState.trim().toUpperCase() : '';
-  return (
-    c.pitting === true ||
-    c.inGarageStall === true ||
-    raw === 'ENTERING' ||
-    raw === 'ENTER' ||
-    raw === 'STOPPED' ||
-    raw === 'EXITING' ||
-    raw === 'EXIT'
-  );
+const PIT_LANE_STATES = new Set(['ENTERING', 'ENTER', 'STOPPED']);
+
+/**
+ * The four corners' wear as a plain tuple, or undefined unless all four are
+ * real readings. Partial wear is not a wear vector: three corners and a hole
+ * would sit in the strategy corpus looking like a measurement.
+ */
+/** The four corners as the player block carries them. */
+interface TyreCorners {
+  frontLeft?: TyreState;
+  frontRight?: TyreState;
+  rearLeft?: TyreState;
+  rearRight?: TyreState;
 }
 
-function isInPit(c: RestStanding): boolean {
-  return (
-    c.pitting === true ||
-    c.inGarageStall === true ||
-    (typeof c.pitState === 'string' && c.pitState !== 'NONE' && c.pitState !== '')
+function wearTuple(
+  tyres: TyreCorners | undefined,
+): [number, number, number, number] | undefined {
+  if (!tyres) return undefined;
+  const v = [tyres.frontLeft, tyres.frontRight, tyres.rearLeft, tyres.rearRight].map((t) =>
+    t && typeof t.wear === 'number' && t.wear !== UNKNOWN_VALUE && Number.isFinite(t.wear)
+      ? t.wear
+      : NaN,
   );
+  return v.every((n) => !Number.isNaN(n)) ? (v as [number, number, number, number]) : undefined;
+}
+
+function pitStateOf(c: RestStanding): string {
+  return typeof c.pitState === 'string' ? c.pitState.trim().toUpperCase() : '';
+}
+
+/**
+ * Parked for good — retired or disqualified. LMU keeps `inGarageStall` AND
+ * `pitting` true on these for the rest of the race, so without this every DNF
+ * flies a PIT badge to the flag; in the probe above that was 14 of the 39 cars,
+ * and it was every badge actually visible on the timing sheet.
+ */
+export function isRetired(c: RestStanding): boolean {
+  const s = typeof c.finishStatus === 'string' ? c.finishStatus.trim().toUpperCase() : '';
+  return s === 'FSTAT_DNF' || s === 'FSTAT_DQ';
+}
+
+/**
+ * Whether the car is physically on the pit lane (or in its box) right now —
+ * which is what makes the lap it is on unusable as a measurement of burn.
+ */
+export function isOnPitLane(c: RestStanding): boolean {
+  return c.pitting === true || c.inGarageStall === true || PIT_LANE_STATES.has(pitStateOf(c));
+}
+
+/**
+ * The display-side name for the same fact. These used to differ: `isInPit` also
+ * counted a *booked* stop (`REQUEST`) as being in the pits. That reads as "PIT"
+ * on the timing sheet for the several green laps between booking a stop and
+ * taking it, and it threw those laps out of the pace average, so the two have
+ * been collapsed onto the physical test above.
+ */
+export function isInPit(c: RestStanding): boolean {
+  return isOnPitLane(c);
 }
 
 function mapSessionType(session: string | undefined): SessionType {

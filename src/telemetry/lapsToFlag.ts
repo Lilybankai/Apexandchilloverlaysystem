@@ -22,7 +22,9 @@
  * One idea in both race types: **the time still to run, divided by this car's
  * lap time.**
  *
- *   - **Timed race.** The time still to run is the clock. Straightforward.
+ *   - **Timed race.** The time still to run is the clock. Straightforward —
+ *     and note that the clock is the same for every car in the race, so the
+ *     only thing that varies the answer is whose pace is divided into it.
  *   - **Lap-limited race.** The time still to run is however long the leader
  *     needs for their remaining laps: `(totalLaps − leaderLaps) × leaderPace`.
  *
@@ -56,9 +58,21 @@ export interface PredictInput {
    */
   leaderPaceSec: number;
   /**
-   * The subject car's representative lap time — in practice the leader of the
-   * player's CLASS, which is what makes this a class prediction rather than a
-   * personal one. Never LMU's `estimatedLapTime`; see the module note.
+   * The subject car's representative lap time — **its own**, which is what
+   * makes this a prediction about this car rather than about somebody else.
+   *
+   * This used to be the leader of the player's class, which fixed the
+   * multiclass error but stopped one car short of the answer: inside a class
+   * the leader is by definition the quickest of it, so every other car was
+   * told it would cover the leader's distance. Measured at Daytona
+   * (2026-08-30) the LMP2 class leader lapped 101.4 s and the car being
+   * fuelled 104.7 s, which over the 2 h 27 m remaining was 88 laps against a
+   * real 85 — three laps of fuel carried for nothing, in the direction the
+   * module note above calls the expensive one.
+   *
+   * A class leader's pace remains a reasonable FALLBACK for the frames before
+   * the subject car has turned a lap of its own. Never LMU's
+   * `estimatedLapTime`; see the module note.
    */
   paceSec: number;
 }

@@ -1124,8 +1124,20 @@ export interface StandingEntry {
   /**
    * Whole laps behind the **class** leader (`0` when on the class leader's lap).
    * Omitted when the class is unknown.
+   *
+   * This is a per-row FLOOR, so two rows' copies of it cannot be subtracted to
+   * get the distance between those two cars — use {@link classLapsBehindExact}
+   * for that, or count off {@link lapFraction} directly.
    */
   classLapsBehind?: number;
+  /**
+   * The same deficit unfloored: laps (and the fraction of one) behind the class
+   * leader, to 3 dp. Unlike {@link classLapsBehind} this CAN be differenced
+   * between two rows in the same class, which is what a timing sheet needs to
+   * show one car's deficit next to another's without implying a lap that is not
+   * there. Omitted when the sim publishes no track position for the pair.
+   */
+  classLapsBehindExact?: number;
   /**
    * Remaining **virtual energy** as a fraction, `0`..`1`, when the sim exposes
    * it (LMU's per-car energy budget — what its native overlay shows to the
@@ -1155,10 +1167,19 @@ export interface StandingEntry {
    * Average of this car's last few laps (up to 5), seconds — the pace it is
    * actually running, as opposed to the one-off {@link bestLapSec}. Collected
    * live from lap edges by `telemetry/paceAverage`; laps through the pit lane
-   * are left out. Omitted until the car has completed a clean lap under our
-   * watch, so a widget can tell "no pace yet" from a slow one.
+   * are left out, and a driver change starts the window again. Omitted until
+   * the car has completed a clean lap under our watch, so a widget can tell
+   * "no pace yet" from a slow one.
    */
   avg5Sec?: number;
+  /**
+   * How many laps {@link avg5Sec} is actually the mean of, `1`..`5`. Present
+   * whenever `avg5Sec` is. A column headed "Avg 5" showing a two-lap mean is
+   * overstating what it knows — which happens for the first few minutes of
+   * every session, after every pit stop, and after every driver change in a
+   * team race — so a widget should mark a value whose count is below 5.
+   */
+  avg5Laps?: number;
   /** Laps completed. */
   lapsCompleted: number;
   /**
@@ -1174,7 +1195,19 @@ export interface StandingEntry {
   lapFraction?: number;
   /** Whether the car is currently in the pit lane / stall. */
   inPit: boolean;
-  /** Completed pit stops, when tracked. */
+  /**
+   * Retired or disqualified — parked in its garage for the rest of the race.
+   * LMU keeps such a car's pit flags raised to the flag, so it also reads as
+   * {@link inPit}; consumers should check this FIRST and say "OUT", because a
+   * car that retired on lap 16 is not making a pit stop on lap 175.
+   */
+  retired?: boolean;
+  /**
+   * Completed pit stops. Counted by the provider off pit-lane entries, NOT
+   * taken from the sim: LMU's own `pitstops` field resets (driver swaps in a
+   * team race), so it reported 0 for cars on their ninth stop. Counting starts
+   * when the app first sees the car, so joining mid-race can undercount.
+   */
   pitStops?: number;
   /** Fitted tyre compound, when known. */
   tyreCompound?: string;

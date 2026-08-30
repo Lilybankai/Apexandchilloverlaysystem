@@ -27,6 +27,20 @@
  * Two laps into a run the average is of two laps. Requiring a full window
  * would blank the column for the first quarter of a short race, which helps
  * nobody; the headline says AVG and the number converges as the window fills.
+ * How many laps went into it rides along as {@link PaceAvgResult.laps} so a
+ * widget can say so — a three-lap mean under a heading that reads "Avg 5" is
+ * the column overstating what it knows, and the caller is the only one placed
+ * to mark it.
+ *
+ * ## A driver change starts a new window
+ * In an endurance race the slot outlives the driver: a team car swaps every
+ * stint and keeps its `slotId` throughout. Carrying the outgoing driver's laps
+ * into the incoming one's average has the column reporting a pace nobody is
+ * running for the ten minutes it takes the window to roll over — measured live
+ * at Daytona (2026-08-30), where a GT3 swapped mid-stint and its "Avg 5" was
+ * four laps of the driver who had just got out. So `driverName` is part of a
+ * car's identity here: when it changes the window is emptied and refills from
+ * the new driver's laps, exactly as it would for a car that had just appeared.
  */
 
 import { UNKNOWN_VALUE } from './types';
@@ -42,6 +56,8 @@ interface CarPace {
   pitted: boolean;
   /** The kept lap times, newest first, capped at {@link PACE_AVG_WINDOW}. */
   times: number[];
+  /** Who was driving when those laps were collected — see the module note. */
+  driver: string;
 }
 
 /** The slice of a standings row this tracker reads. Matches StandingEntry. */
@@ -51,6 +67,21 @@ export interface PaceAvgInput {
   /** Last lap in seconds; {@link UNKNOWN_VALUE} / non-positive when none. */
   lastLapSec: number;
   inPit: boolean;
+  /**
+   * The driver at the wheel right now. A change empties the car's window, so
+   * a team car's average never blends two drivers' stints. Omit (or leave
+   * constant) on a feed with no per-car driver name and the tracker behaves
+   * exactly as it did before.
+   */
+  driverName?: string;
+}
+
+/** One car's answer: the mean, and how many laps it is the mean OF. */
+export interface PaceAvgResult {
+  /** Mean of the kept laps, seconds. */
+  avgSec: number;
+  /** How many laps went in, `1`..{@link PACE_AVG_WINDOW}. */
+  laps: number;
 }
 
 /**
@@ -67,23 +98,27 @@ export class PaceAverageTracker {
   }
 
   /**
-   * Advance by one poll and return `slotId → average seconds` for every car
-   * that has at least one kept lap.
+   * Advance by one poll and return `slotId → {@link PaceAvgResult}` for every
+   * car that has at least one kept lap.
    *
    * `sessionKey` is the same track+type identity the other trackers key on: a
    * change wipes the windows, because carrying qualifying laps into the race
    * would have the column claiming a pace nobody is running.
    */
-  public update(cars: ReadonlyArray<PaceAvgInput>, sessionKey: string): Map<number, number> {
+  public update(
+    cars: ReadonlyArray<PaceAvgInput>,
+    sessionKey: string,
+  ): Map<number, PaceAvgResult> {
     if (sessionKey !== this.sessionKey) {
       this.sessionKey = sessionKey;
       this.reset();
     }
 
     const seen = new Set<number>();
-    const out = new Map<number, number>();
+    const out = new Map<number, PaceAvgResult>();
     for (const c of cars) {
       seen.add(c.slotId);
+      const driver = c.driverName ?? '';
       let s = this.cars.get(c.slotId);
       if (!s) {
         // First sight of the car: note where its lap count stands and start
@@ -91,8 +126,16 @@ export class PaceAverageTracker {
         // are gone; only `lastLapSec` for the most recent one survives, and a
         // one-lap "average" pretending to be five would be the column lying
         // on its first frame.
-        s = { laps: c.lapsCompleted, pitted: c.inPit, times: [] };
+        s = { laps: c.lapsCompleted, pitted: c.inPit, times: [], driver };
         this.cars.set(c.slotId, s);
+      } else if (s.driver !== driver) {
+        // A driver swap on a car we have been watching. The laps in the window
+        // belong to whoever just got out, so they go with them — but the lap
+        // COUNT and the pit flag describe the car, which has not changed, and
+        // must survive or the swap would be read as a fresh lap edge and the
+        // in-lap collected. See the module note.
+        s.times = [];
+        s.driver = driver;
       }
 
       if (c.lapsCompleted > s.laps) {
@@ -111,7 +154,7 @@ export class PaceAverageTracker {
 
       if (s.times.length > 0) {
         const sum = s.times.reduce((a, b) => a + b, 0);
-        out.set(c.slotId, sum / s.times.length);
+        out.set(c.slotId, { avgSec: sum / s.times.length, laps: s.times.length });
       }
     }
 

@@ -178,6 +178,13 @@
 .team-t__driver { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .team-t__dim { color: var(--text-3); }
 .team-t__num { color: var(--text); font-weight: 700; }
+/* Gap to our own car — the column a pit wall reads first, so it holds the
+   full text colour while the reference gaps beside it stay dim. */
+.team-t__vsme { color: var(--text); font-variant-numeric: tabular-nums; }
+/* An "Avg 5" built on fewer than five laps: the number stays readable, the
+   count rides above it so the shortfall is visible rather than implied. */
+.team-t__partial { color: var(--text-2); }
+.team-t__partial sup { font-size: 0.7em; opacity: 0.75; margin-left: 1px; }
 .team-t__class td {
   padding-top: 12px;
   font: 700 11px var(--font-display);
@@ -196,6 +203,14 @@
 .team-t__me td {
   background: color-mix(in srgb, var(--cyan) 8%, transparent);
   color: var(--text);
+}
+.team-t__out {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-2) 14%, transparent);
+  color: var(--text-2);
+  font: 700 10px var(--font-display);
+  letter-spacing: 0.06em;
 }
 .team-t__pit {
   padding: 1px 6px;

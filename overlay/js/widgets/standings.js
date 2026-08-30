@@ -1352,6 +1352,17 @@
     // display:none and writing them every lap would be pure waste.
     if (view && view.avg === "on") {
       set(row, "avg", row.avgTd, "textContent", fmt.lapTime(e.avg5Sec));
+      // The heading says 5, and for the first minutes of a session — and after
+      // every stop and every driver change — it is the mean of fewer. There is
+      // no room for a marker in this column, so the count goes on the title.
+      var n = e.avg5Laps;
+      set(
+        row,
+        "avgTitle",
+        row.avgTd,
+        "title",
+        typeof n === "number" && n > 0 && n < 5 ? "mean of " + n + " lap" + (n === 1 ? "" : "s") : ""
+      );
     }
 
     set(row, "last", row.lastTd, "textContent", fmt.lapTime(e.lastLapSec));

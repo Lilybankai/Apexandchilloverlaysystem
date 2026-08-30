@@ -147,6 +147,19 @@ export function lapFractionOf(distM: number, trackLenM: number): { lapFraction?:
 }
 
 /**
+ * A sim's OWN answer for one car's gap to its class leader, used only where
+ * {@link assignClassPositions} cannot derive one. Both members are optional
+ * because a sim may publish one and not the other; a value that is absent,
+ * negative or {@link UNKNOWN_VALUE} is ignored.
+ */
+export interface ClassGapHint {
+  /** Seconds behind the class leader, as the sim reports it. */
+  gapSec?: number;
+  /** Whole laps behind the class leader, as the sim reports it. */
+  lapsBehind?: number;
+}
+
+/**
  * Fill in `classPosition`, `classLapsBehind` and `gapToClassLeaderSec` on rows
  * that are already sorted by overall position.
  *
@@ -179,9 +192,30 @@ export function lapFractionOf(distM: number, trackLenM: number): { lapFraction?:
  * position there is nothing better than the old difference, so that stays as the
  * fallback — a sim that publishes no positions renders exactly what it did.
  *
+ * ## What the sim already knows
+ *
+ * Some sims publish their own class figures, and where ours cannot answer,
+ * theirs is better than a dash. LMU is the case that forced this: it zeroes
+ * `timeBehindLeader` for every LAPPED car, so in a long race almost the whole
+ * field arrives here with an unknown gap to the overall leader and there is
+ * nothing left to difference — measured live at Daytona (2026-08-30, 8 h,
+ * 39 cars: exactly ONE car still carried a non-zero figure). Its
+ * `timeBehindClassLeader` survives that, so the provider passes it through as
+ * a {@link ClassGapHint} and the seconds column stays alive.
+ *
+ * The hint is a FALLBACK, never an override: the counted answer above is
+ * derived from track position and is the one that does not invent a lap, so it
+ * wins wherever it exists. A hint is consulted only where this function would
+ * otherwise write {@link UNKNOWN_VALUE}.
+ *
  * @param rows - Standings rows, pre-sorted by overall position. Mutated in place.
+ * @param hints - Optional `slotId → `{@link ClassGapHint}, from a sim that
+ *   publishes class gaps of its own. Omit on providers that do not.
  */
-export function assignClassPositions(rows: StandingEntry[]): void {
+export function assignClassPositions(
+  rows: StandingEntry[],
+  hints?: ReadonlyMap<number, ClassGapHint>,
+): void {
   /**
    * A car's progress in laps, as one continuous number, or `null` when the sim
    * has not placed it. Rejects a fraction outside `0..1` rather than clamping:
@@ -213,6 +247,11 @@ export function assignClassPositions(rows: StandingEntry[]): void {
       leader = row;
     }
 
+    const hint = hints?.get(row.slotId);
+    /** A hint member worth using: a real, non-negative number. */
+    const usable = (v: number | undefined): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 0 && v !== UNKNOWN_VALUE;
+
     const ownLaps = progress(row);
     const leaderLaps = progress(leader);
     row.classLapsBehind =
@@ -220,16 +259,56 @@ export function assignClassPositions(rows: StandingEntry[]): void {
         ? // The epsilon is against float noise at the line, not a tolerance:
           // two cars a millimetre apart must not read as a lap.
           Math.max(0, Math.floor(leaderLaps - ownLaps + 1e-6))
-        : Math.max(0, row.lapsBehind - leader.lapsBehind);
+        : // No track position for one of the pair, so the difference is all
+          // there is — unless the sim counted it for us, which it does without
+          // the phantom-lap problem because it is counting, not differencing.
+          usable(hint?.lapsBehind)
+          ? hint.lapsBehind
+          : Math.max(0, row.lapsBehind - leader.lapsBehind);
+
+    /**
+     * Laps down as one continuous number, for the gap below. A car a third of a
+     * lap down is not "on the leader's lap" in any sense a seconds figure can
+     * express, but `classLapsBehind` floors it to 0 and would let the (wrapped,
+     * meaningless) seconds through. Falls back to the whole count.
+     */
+    const lapsDownExact =
+      ownLaps !== null && leaderLaps !== null
+        ? leaderLaps - ownLaps
+        : (row.classLapsBehind ?? 0);
 
     const own = row.gapToLeaderSec;
     const lead = leader.gapToLeaderSec;
-    row.gapToClassLeaderSec =
+    const derived =
       row === leader
         ? 0
-        : row.classLapsBehind === 0 && own !== UNKNOWN_VALUE && lead !== UNKNOWN_VALUE
+        : lapsDownExact < 1 && own !== UNKNOWN_VALUE && lead !== UNKNOWN_VALUE
           ? Math.round((own - lead) * 100) / 100
           : UNKNOWN_VALUE;
+    // The sim's own figure stands in only where ours came out unknown, and only
+    // while the car is on the class leader's lap — a seconds gap across a lap
+    // boundary has wrapped and says nothing, whoever published it.
+    row.gapToClassLeaderSec =
+      derived !== UNKNOWN_VALUE
+        ? derived
+        : lapsDownExact < 1 && usable(hint?.gapSec)
+          ? Math.round(hint.gapSec * 100) / 100
+          : UNKNOWN_VALUE;
+
+    /**
+     * The fractional lap deficit, published so a timing sheet can print a gap
+     * that survives being compared with the row above it. `classLapsBehind` is
+     * floored per row, and the difference of two floors is not the distance
+     * between two cars: at Daytona (2026-08-30) an LMP2 3.57 laps down read +3L
+     * and one 5.04 laps down read +5L, so the sheet implied two laps between
+     * cars that were 1.47 apart. Omitted when there is no track position to
+     * count from, which is the only case where nothing better than the floor
+     * exists.
+     */
+    row.classLapsBehindExact =
+      ownLaps !== null && leaderLaps !== null
+        ? Math.round(Math.max(0, leaderLaps - ownLaps) * 1000) / 1000
+        : undefined;
   }
 }
 
