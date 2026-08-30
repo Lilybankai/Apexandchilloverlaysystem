@@ -45,6 +45,7 @@ const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const { overlayGeometryFrom } = require('./overlay-geometry');
+const stallWatch = require('./stall-watch');
 const {
   DEFAULT_ENGINEER_SETTINGS,
   sanitizeEngineer,
@@ -1114,14 +1115,21 @@ function teamSnapshotWithExtras(frame, now, everything) {
  */
 function collectForRelay() {
   if (!lastFeedFrame) return null;
-  const snapshot = buildTeamSnapshot(lastFeedFrame, Date.now());
-  if (snapshot) snapshot.tyrePlan = tyreProjection(teamHistory.wear);
-  return {
-    frame: lastFeedFrame,
-    snapshot,
-    mapShape: teamMapShape,
-    history: teamHistory.state(),
-  };
+  // Synchronous, on the main thread, once a second: a prime suspect whenever
+  // the overlays hitch, so leave a breadcrumb the stall log can name.
+  stallWatch.mark('relay:collect');
+  try {
+    const snapshot = buildTeamSnapshot(lastFeedFrame, Date.now());
+    if (snapshot) snapshot.tyrePlan = tyreProjection(teamHistory.wear);
+    return {
+      frame: lastFeedFrame,
+      snapshot,
+      mapShape: teamMapShape,
+      history: teamHistory.state(),
+    };
+  } finally {
+    stallWatch.mark('idle');
+  }
 }
 
 /** Push a pruned snapshot of this frame to the Team tab, at most 1/s. */
@@ -4712,6 +4720,13 @@ if (!hasSingleInstanceLock) {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return; // a copy is already running; this one is on its way out
+  // First thing up, so it is watching before any of the suspects exist. Every
+  // overlay is a renderer fed from here, so a main-thread block freezes all of
+  // them at once and then lets them snap back — the "froze and then refreshed"
+  // report. Without this the cause is unrecoverable after the fact.
+  stallWatch.start(app.getPath('userData'), () => ({
+    overlays: BrowserWindow.getAllWindows().length,
+  }));
   // Before createWindow(): whether a session is remembered decides which page
   // the window opens on.
   authService.init(app.getPath('userData'));

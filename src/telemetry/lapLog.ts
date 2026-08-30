@@ -96,8 +96,16 @@ export interface LapRecord {
    * `4` added {@link setupFp}. A pre-v4 lap simply cannot be attributed to a
    * setup — the honest outcome, since nobody recorded what the car was
    * running that day.
+   *
+   * `5` added the **consumption** block: fuel in and out, tyre wear at the
+   * line, compound, and where the lap sat in its stint. Nothing migrates — a
+   * pre-v5 lap simply cannot contribute to a strategy fit, which is the honest
+   * outcome, since none of it was written down. See
+   * `docs/RACE-STRATEGY-ENGINE.md` §3 for what these are for: they are the
+   * training set the fuel-load and tyre-degradation coefficients are fitted
+   * from, and without them every one of those numbers would be invented.
    */
-  v: 1 | 2 | 3 | 4;
+  v: 1 | 2 | 3 | 4 | 5;
   /**
    * Unique id for this lap (UUID), minted when the record is built. This is the
    * join key between the lap database and everything recorded ABOUT the lap —
@@ -169,6 +177,55 @@ export interface LapRecord {
    * not answered yet this stint (or on pre-v4 laps).
    */
   setupFp?: string;
+
+  /* --- the consumption block (v5) ------------------------------------------
+   *
+   * Every field here is optional and every one is omitted rather than guessed:
+   * a lap driven without shared memory has no fuel reading, and a zero would
+   * be indistinguishable from an empty tank in the fit.
+   */
+
+  /** Fuel in the tank as the lap began, litres. */
+  fuelStartL?: number;
+  /** Fuel in the tank as it ended, litres. */
+  fuelEndL?: number;
+  /**
+   * Litres burned over the lap.
+   *
+   * Present only when the difference is a **measurement**: absent on any lap
+   * that touched the pit lane, and absent when the level rose (the rig put
+   * fuel in, so the lap's start and end are not two points on one burn).
+   * `fuelStartL`/`fuelEndL` are still recorded in those cases — the raw levels
+   * are true even when the difference between them is not a burn.
+   */
+  fuelUsedL?: number;
+  /** Tank capacity, litres — so a load can be expressed as a fraction. */
+  capacityL?: number;
+  /**
+   * Virtual energy remaining at the start and end of the lap, percent.
+   *
+   * The binding constraint for classes that run an energy budget (Hypercar);
+   * absent for classes that do not (LMP2 reports a flat 0 all race, which is
+   * why it is filtered out rather than stored as zero).
+   */
+  veStartPct?: number;
+  veEndPct?: number;
+  /** Tyre wear at the line, `[FL, FR, RL, RR]`, `1` = new. */
+  wearAtLine?: [number, number, number, number];
+  /** Compound fitted for this lap, as the sim names it. */
+  compound?: string;
+  /**
+   * Which lap of the stint this was, 1-based, where the out-lap is 1.
+   *
+   * The x-axis of the tyre-degradation fit. Counted from pit visits, so it
+   * survives a driver swap; absent before the first stop has been seen in a
+   * session we joined mid-stint, because then it would be a guess.
+   */
+  stintLap?: number;
+  /** The lap began in the pit lane / box. */
+  isOutLap?: boolean;
+  /** The lap entered the pit lane, having started on track. */
+  isInLap?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -184,6 +241,11 @@ export interface LapRecord {
  * it. Only the slow side used to be checked there, which is how a 48 s half-lap
  * once beat a genuine 94 s best.
  */
+/** Rounding for the recorded consumption figures — a litre to 10 ml is more
+ *  precision than the sim's own byte-quantised readings carry. */
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+
 const MIN_LAP_MS = 5_000;
 const MAX_LAP_MS = 3_600_000;
 
@@ -330,6 +392,24 @@ export interface LapInput {
    * has succeeded; the lap then records no attribution rather than a guess.
    */
   setupFp?: string;
+  /**
+   * Fuel in the tank right now, litres, and the tank's capacity. From shared
+   * memory (`LocalCarPhysics`), so both are absent while spectating — which is
+   * correct: a lap database records what YOU drove.
+   */
+  fuelL?: number;
+  capacityL?: number;
+  /**
+   * Virtual energy remaining, percent, for classes that run an energy budget.
+   * Omit (or pass `0`) for classes that do not — LMU reports a flat 0 all race
+   * on LMP2, and storing that as a reading would put a fictional constraint in
+   * the strategy fit.
+   */
+  vePct?: number;
+  /** Per-corner tyre wear `[FL, FR, RL, RR]`, `1` = new. */
+  wear?: [number, number, number, number];
+  /** Compound currently fitted, as the sim names it. */
+  compound?: string;
 }
 
 /**
@@ -353,6 +433,26 @@ export class LapRecorder {
   private lapNo: number = UNKNOWN_VALUE;
   /** A finished lap waiting for the stewards' verdict to arrive — see below. */
   private held: HeldLap | null = null;
+
+  /* --- the consumption block (v5) — see LapRecord ------------------------- */
+  /** Fuel and energy as the current lap began. */
+  private fuelAtStart: number = UNKNOWN_VALUE;
+  private veAtStart: number = UNKNOWN_VALUE;
+  /**
+   * The level at the previous poll, so a refuel is caught the moment it
+   * happens rather than inferred from a lap that ends higher than it started.
+   * A stop that adds LESS than the lap burned would otherwise look like a
+   * normal lap with a smaller burn — the same trap `FuelCalculator` documents.
+   */
+  private lastFuelSeen: number = UNKNOWN_VALUE;
+  /** Something other than driving moved the level during this lap. */
+  private fuelDirty = false;
+  /** Which lap of the stint this is, or UNKNOWN before a stint is established. */
+  private stintLap: number = UNKNOWN_VALUE;
+  /** The lap began in the pits (an out-lap). */
+  private startedInPit = false;
+  /** The car entered the pits during a lap that began on track (an in-lap). */
+  private enteredPit = false;
 
   /**
    * Feed one poll's state. Returns a record once a lap has completed **and** its
@@ -459,6 +559,21 @@ export class LapRecorder {
   /** Fold this poll's state into the current lap's fault set. */
   private observe(input: LapInput): void {
     if (input.inPit) this.dirty.add('pit');
+    // An in-lap is one that began on track and reached the pits. Latched, so a
+    // car that crosses the line inside the lane still records the lap it was
+    // actually driving when it turned in.
+    if (input.inPit && !this.startedInPit) this.enteredPit = true;
+    // Fuel going UP is the rig, not the road. Caught sample to sample rather
+    // than across the lap: a stop that adds less than the lap burned leaves the
+    // level below where it started, so comparing the two ends of the lap would
+    // read a refuel as a small burn.
+    if (typeof input.fuelL === 'number' && Number.isFinite(input.fuelL)) {
+      const cap = typeof input.capacityL === 'number' && input.capacityL > 0 ? input.capacityL : 1;
+      if (this.lastFuelSeen !== UNKNOWN_VALUE && input.fuelL - this.lastFuelSeen > cap * 0.002) {
+        this.fuelDirty = true;
+      }
+      this.lastFuelSeen = input.fuelL;
+    }
     // `this.lapNo` is deliberately NOT refreshed here — it is set once, at the
     // line, by `startLap`. The provider derives it from the completed-lap
     // count, so on the poll that crosses the line it has ALREADY become the
@@ -499,7 +614,7 @@ export class LapRecorder {
 
     const reasons = [...dirty];
     return {
-      v: 4,
+      v: 5,
       id: crypto.randomUUID(),
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
@@ -520,7 +635,60 @@ export class LapRecorder {
       ...(input.wet !== undefined ? { wet: !!input.wet } : {}),
       ...sectorSplits(input.sector1Sec, input.sector2Sec, lapMs),
       ...(input.setupFp ? { setupFp: input.setupFp } : {}),
+      ...this.consumption(input),
     };
+  }
+
+  /**
+   * The v5 consumption block for the lap that just ended.
+   *
+   * Read at the line, on the poll `lapsCompleted` moved — the same instant the
+   * sector times are read, and the last instant the numbers still describe the
+   * lap being closed rather than the one starting.
+   */
+  private consumption(input: LapInput): Partial<LapRecord> {
+    const num = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && v !== UNKNOWN_VALUE;
+    const out: Partial<LapRecord> = {};
+
+    if (num(input.fuelL)) {
+      out.fuelEndL = round2(input.fuelL);
+      if (num(this.fuelAtStart)) {
+        out.fuelStartL = round2(this.fuelAtStart);
+        const used = this.fuelAtStart - input.fuelL;
+        // A burn, or not a measurement at all. Both ends are still recorded
+        // above; only the DIFFERENCE is withheld, and only when it would be a
+        // fiction: a lap through the pits, a refuel, or a level that rose.
+        //
+        // `partial` counts too, and is the subtle one. A lap already in
+        // progress when we started watching anchored its fuel HALF WAY ROUND,
+        // so the difference is the burn of the part we saw — a number that
+        // looks exactly like a lap of unusually good economy and would drag
+        // every fit that trusted it.
+        if (used > 0 && !this.fuelDirty && !this.dirty.has('pit') && !this.dirty.has('partial')) {
+          out.fuelUsedL = round3(used);
+        }
+      }
+    }
+    if (num(input.capacityL) && input.capacityL > 0) out.capacityL = round2(input.capacityL);
+
+    // Energy only for classes that actually run a budget. LMP2 publishes a
+    // flat 0 all race; recording that as a reading would put a constraint in
+    // the fit that does not exist on the car.
+    if (num(input.vePct) && input.vePct > 0) {
+      out.veEndPct = round2(input.vePct);
+      if (num(this.veAtStart) && this.veAtStart > 0) out.veStartPct = round2(this.veAtStart);
+    }
+
+    if (Array.isArray(input.wear) && input.wear.length === 4 && input.wear.every(num)) {
+      out.wearAtLine = input.wear.map((w) => round3(w)) as [number, number, number, number];
+    }
+    if (input.compound) out.compound = input.compound;
+
+    if (num(this.stintLap)) out.stintLap = this.stintLap;
+    if (this.startedInPit) out.isOutLap = true;
+    if (this.enteredPit) out.isInLap = true;
+    return out;
   }
 
   /** Begin a fresh lap, re-baselining the counters we watch for movement. */
@@ -535,12 +703,33 @@ export class LapRecorder {
     // The car is usually still ON the line when this runs, but if it is in the
     // pit lane the new lap is already compromised.
     if (input.inPit) this.dirty.add('pit');
+
+    // --- the consumption baselines ---------------------------------------
+    const num = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && v !== UNKNOWN_VALUE;
+    this.fuelAtStart = num(input.fuelL) ? input.fuelL : UNKNOWN_VALUE;
+    this.veAtStart = num(input.vePct) && input.vePct > 0 ? input.vePct : UNKNOWN_VALUE;
+    this.lastFuelSeen = this.fuelAtStart;
+    this.fuelDirty = false;
+    this.startedInPit = input.inPit === true;
+    this.enteredPit = false;
+    // A stint is the run between pit visits, and the out-lap is lap 1 of it —
+    // the convention every tyre-degradation curve is drawn against. Crossing
+    // the line inside the pit lane therefore RESTARTS the count rather than
+    // advancing it.
+    if (this.startedInPit) this.stintLap = 1;
+    else if (num(this.stintLap)) this.stintLap = this.stintLap + 1;
   }
 
   /** Full reset — new stint, or a rewound lap count. */
   private reset(input: LapInput): void {
     this.prevLaps = -1;
     this.held = null;
+    // Joining part way through a run, the stint lap number is unknowable —
+    // and a wrong one is worse than none, because it would place these laps on
+    // the wrong part of the degradation curve. It stays unknown until a pit
+    // visit establishes a real origin.
+    this.stintLap = UNKNOWN_VALUE;
     this.startLap(input);
   }
 }

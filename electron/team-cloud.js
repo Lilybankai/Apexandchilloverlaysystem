@@ -27,6 +27,8 @@
 
 'use strict';
 
+const stall = require('./stall-watch');
+
 /** Publish cadence — Carl moved it to 1 s (2026-08-26; was 3 s at launch). */
 const PUBLISH_MS = 1000;
 /** Read cadence while watching. Same rhythm; worst-case staleness ~2 s. */
@@ -297,7 +299,17 @@ async function publishTick() {
     history.revision !== lastHistoryRevSent &&
     now - lastHistorySentAt >= HISTORY_EVERY_MS
   ) {
+    // thinHistory stringifies the whole race history up to four times to find
+    // a size that fits — the heaviest synchronous thing this module does.
+    stall.mark('relay:thinHistory');
     args.p_history = thinHistory(history);
+    stall.mark('idle');
+    // Charge the attempt to the clock whether or not it produced anything. The
+    // success path below only advances lastHistorySentAt when a history was
+    // actually built, so a history too big to fit even at 1-in-8 left the
+    // 60 s gate permanently open and re-ran those stringifies on EVERY 1 Hz
+    // tick for the rest of the race — worst exactly when the race is longest.
+    if (!args.p_history) lastHistorySentAt = now;
   }
 
   publishing = true;
@@ -360,7 +372,18 @@ function setWatching(on) {
 
 async function readTick() {
   if (reading || !state.watching) return;
-  if (!state.activeTeamId || !signedIn()) return;
+  // Say WHY the pit wall went quiet. A dropped session used to early-return
+  // here without a word, so a relay that stopped mid-race looked identical to
+  // a team that simply had nobody driving — see the refresh race fixed in
+  // auth.js (2026-08-30).
+  if (!signedIn()) {
+    onRelaySafe({ at: Date.now(), error: 'Signed out — sign in again to see the team.', sources: [], active: null });
+    return;
+  }
+  if (!state.activeTeamId) {
+    onRelaySafe({ at: Date.now(), error: 'No active team selected.', sources: [], active: null });
+    return;
+  }
   reading = true;
   try {
     const res = await auth.rpc('team_relay_read', {

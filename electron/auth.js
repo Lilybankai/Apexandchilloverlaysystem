@@ -55,6 +55,9 @@ const REFRESH_SKEW_SEC = 60;
  * disk only when the operator ticked "Remember me" (`persist`).
  */
 let session = null;
+/** In-flight token refresh, shared so concurrent callers cannot race — see
+ *  {@link accessToken} for why that race signs the operator out. */
+let refreshInFlight = null;
 
 /** Set by main.js — app.getPath('userData'). Kept injectable for tests. */
 let userDataDir = null;
@@ -468,17 +471,32 @@ async function accessToken() {
   if (session.access_token && session.expires_at - REFRESH_SKEW_SEC > now) {
     return session.access_token;
   }
-  const res = await api('/auth/v1/token?grant_type=refresh_token', {
-    body: { refresh_token: session.refresh_token },
-  });
-  if (!res.ok) {
-    // A 4xx means the token is gone for good; a network blip must NOT sign the
-    // operator out mid-race weekend, so only the former clears the session.
-    if (res.status >= 400 && res.status < 500) clearSession();
-    return null;
+  // One refresh at a time, shared by every caller. Supabase ROTATES the refresh
+  // token on use and invalidates the old one, so two callers refreshing at once
+  // is not merely wasteful — the loser is handed a 4xx and, by the rule below,
+  // signs the operator out. The pit-wall relay publishes and reads on separate
+  // 1 Hz timers and the lap uploader runs alongside them, so the moment a token
+  // expires mid-race there are several callers on the same tick. That is very
+  // likely what dropped team data mid-race at Daytona (2026-08-30) and why
+  // restarting the app brought it back.
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const res = await api('/auth/v1/token?grant_type=refresh_token', {
+        body: { refresh_token: session.refresh_token },
+      });
+      if (!res.ok) {
+        // A 4xx means the token is gone for good; a network blip must NOT sign
+        // the operator out mid-race weekend, so only the former clears it.
+        if (res.status >= 400 && res.status < 500) clearSession();
+        return null;
+      }
+      adoptSession(res.body);
+      return session ? session.access_token : null;
+    })().finally(() => {
+      refreshInFlight = null;
+    });
   }
-  adoptSession(res.body);
-  return session.access_token;
+  return refreshInFlight;
 }
 
 /**
