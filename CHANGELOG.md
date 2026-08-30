@@ -4,6 +4,83 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.96.0-beta.1 — 2026-08-30
+
+### Added
+
+- **A "vs Me" column on the pit wall's timing sheet.** Every other gap on that
+  sheet is measured to a leader or to the car in front, so the one question a
+  pit wall actually asks — how far away is *that* car, from mine — could only
+  be answered by subtracting two numbers that do not subtract. It now has its
+  own column: a minus sign means ahead of you, a plus means behind, in laps
+  when the pair are more than one apart and in seconds when they are not.
+- **The groundwork for race strategy.** Two new records go into the local
+  database, and nothing on screen changes yet: every lap now stores what it
+  burned — fuel in and out, virtual energy, tyre wear at the line, compound,
+  and which lap of the stint it was — and every pit visit is written down with
+  how long the car stood still, how long it was in the lane, and what the sim
+  had predicted the stop would take. These are the measurements a refuel rate,
+  a tyre-degradation curve and a stop-cost model have to be fitted from; until
+  now none of them was recorded, so every one of those numbers would have had
+  to be invented. Laps driven before this build cannot contribute — the figures
+  were never written down — so the useful data starts accumulating now.
+- **A stall log.** When the main process blocks, every overlay freezes together
+  and then snaps back, which is what gets reported as "it froze for a second
+  and then refreshed" — and the cause was impossible to find afterwards,
+  because the app recovers on its own and left no trace. It now measures its
+  own responsiveness continuously and writes anything past a quarter of a
+  second to a small rotating log, along with what it was doing at the time.
+  Costs nothing when nothing is wrong.
+
+### Fixed
+- **Laps left no longer counts your race off the class leader's pace.** In a
+  timed race the clock is the same for everyone, so the only question is how
+  many laps *your* car fits into it — but the figure was being divided by the
+  pace of whoever leads your class, who is by definition the quickest car in
+  it. In an eight-hour race at Daytona that read 88 laps to go where the car
+  had 85, and the fuel plan sitting under it carried three laps of fuel for
+  nothing. It now uses your own measured pace, and falls back to the class
+  leader's only until you have turned a lap.
+- **The pit wall's lap gaps can be read against each other again.** The
+  timing sheet's Gap column showed whole laps down to the class leader,
+  rounded down on every row — so a car 3.6 laps back read "+3L", one 5.0 back
+  read "+5L", and the two together implied two laps between cars that were
+  1.5 apart. Lap gaps now carry a decimal, which subtracts correctly, and a
+  new **vs Me** column answers the question the sheet never could: how far
+  away is that car, from mine. The Int column now measures to the car ahead
+  *in class*, matching the block it is printed inside.
+- **The leading class gets its seconds back.** The race leader's gap to
+  themselves is zero, which was being read as "no reading available" — and
+  since every other car's gap is worked out by subtracting the leader's, the
+  whole lead lap fell back to a dash. P2 sitting 3.9 s behind showed nothing
+  at all.
+- **Class gaps survive a long race.** Le Mans Ultimate stops publishing a
+  car's gap to the leader once that car is lapped, which in an eight-hour
+  race is nearly the whole field. Where that happens the app now reads the
+  game's own class gap instead of giving up.
+- **"Avg 5" no longer blends two drivers.** A team car keeps its place in the
+  field across a driver change, so the rolling five-lap average was still
+  reporting the pace of whoever had just got out for ten minutes after the
+  swap. The window now restarts with the new driver. An average built on
+  fewer than five laps — after a swap, a stop, or a late join — is marked
+  with the number of laps it actually used instead of passing as a full one.
+- **Team data no longer drops out mid-race.** The sign-in token is renewed
+  automatically as it expires, and the pit-wall relay publishes, reads and
+  uploads laps on separate timers — so when the token came due, several of
+  them tried to renew it at the same instant. Only one such attempt can win;
+  the losers were told their token was invalid, and the app took that at face
+  value and signed you out. Mid-race, with no explanation, and a restart
+  brought it back. Renewals are now shared, so there is nothing to lose. And
+  when the pit wall genuinely does go quiet it now says why, instead of
+  looking identical to a team with nobody driving.
+- **The relay stops sawing at the race history in long races.** The team relay
+  sends a trimmed race history at most once a minute, and it finds a size that
+  fits by rebuilding it up to four times. If the history had grown too large to
+  fit even at its coarsest, the attempt produced nothing — and because nothing
+  was sent, the once-a-minute gate never closed, so it rebuilt it again on
+  every single second for the rest of the race. Worst exactly when the race is
+  longest.
+
 ## 0.95.2 — 2026-08-28
 
 ### Fixed
