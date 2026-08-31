@@ -4667,8 +4667,17 @@
     // Same zero-cost-when-hidden contract for the Team tab: shown() subscribes
     // main's 1 Hz snapshot pusher, hidden() stops it. Optional-chained because
     // team-panel.js loads after this file.
-    if (target === 'team') window.apexTeam?.shown();
-    else window.apexTeam?.hidden();
+    if (target === 'team') {
+      window.apexTeam?.shown();
+      // First visit gets the page's own walkthrough — same manners as the
+      // Setups and Streamers guides. It matters more here than on either:
+      // anyone who did the first-run tour before the board existed will never
+      // be offered the Team tour again, so this is their one introduction.
+      window.APEX_TEAM_GUIDE?.maybeAutoOpen();
+    } else {
+      window.apexTeam?.hidden();
+      window.APEX_TEAM_GUIDE?.cancelAutoOpen();
+    }
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {

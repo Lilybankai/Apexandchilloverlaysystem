@@ -44,40 +44,6 @@
 .team-empty .icon { width: 28px; height: 28px; }
 .team-empty p { max-width: 46ch; }
 
-/* Session strip across the top of the live view. */
-.team-session {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 18px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-.team-session__track { font: 700 15px var(--font-display); color: var(--text); }
-.team-session__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-2);
-  font-size: 12.5px;
-}
-.team-session__meta .icon { width: 13px; height: 13px; }
-.team-session__server { color: var(--text-3); }
-
-/* Card grid: two independent column stacks, so cards of different heights
-   never hollow out a shared row. */
-.team-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 1000px) { .team-grid { grid-template-columns: 1fr; } }
-.team-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-
 .team-note { color: var(--text-3); font-size: 12.5px; margin: 2px 0 10px; }
 
 /* 3-up / 4-up tile variants (the shared .fuel-tiles folds to 2 at 1200px). */
@@ -103,28 +69,6 @@
 .team-headline .icon { width: 16px; height: 16px; }
 .team-headline.team-band--ok { color: var(--ok); }
 .team-headline.team-band--warn { color: var(--warn); }
-
-/* ── Sub-tabs and sections ─────────────────────────────────────────────── */
-.team-subtabs { margin-bottom: 16px; }
-.team-tab { display: none; }
-.team-tab[data-active="true"] { display: block; }
-
-/* Chart head: title left, mode seg right. */
-.team-chart-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-/* Canvases size themselves from these boxes each repaint. */
-.team-canvas {
-  display: block;
-  width: 100%;
-  height: 420px;
-}
-.team-canvas--map { height: 460px; }
-.team-canvas--laptime { height: 260px; }
 
 /* Legend chips under the charts — click to hide/show a driver. */
 .team-legend {
@@ -355,16 +299,7 @@
   background: var(--cyan);
 }
 
-/* ── Crew card (Phase 2: teams + relay) ──────────────────────────────────────
-   Roster, invite code and the join/create empty states. Sits above the
-   telemetry split because managing the team must not need a live feed. */
-.team-head-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  align-self: flex-start;
-}
-.team-crew { margin-bottom: 16px; padding: 14px 16px; }
+
 .team-crew__row {
   display: flex;
   flex-wrap: wrap;
@@ -455,3 +390,451 @@
 .team-crew__form .field__input { width: 180px; }
 .team-crew__msg { margin-top: 8px; font-size: 12.5px; color: var(--warn); }
 .team-crew__msg[data-kind="ok"] { color: var(--ok); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE BOARD — the pit-wall dashboard
+   ───────────────────────────────────────────────────────────────────────────
+   The four sub-tabs became one draggable board. Everything below is chrome:
+   the header strip, the widget shell, and the states a drag puts them in.
+   Widget CONTENT styling (timing sheet, tyre corners, weather slots) is
+   unchanged above — the move cost the renderers nothing.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* A pit wall is as wide as the screen. The 1120px reading measure that suits
+   Settings is pure dead space here — it was the loudest complaint about the
+   old page. */
+.view[data-view="team"] .wrap--wide {
+  max-width: none;
+  gap: 12px;
+}
+
+/* ── Header strip ──────────────────────────────────────────────────────────
+   Track, session, clock and the board controls on ONE line. The old page
+   spent ~190px on a title, a subtitle and a session bar before a single
+   number appeared. */
+.team-hud {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--cyan) 5%, transparent), transparent 60%),
+    var(--panel);
+  position: relative;
+}
+/* The hairline the whole page hangs off — reads as the timing-tower spine.
+   It carries its own left-side radius rather than being trimmed by an
+   `overflow: hidden` on the strip: the Board menu hangs BELOW the strip, and
+   clipping the spine clipped the menu with it. */
+.team-hud::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--grad);
+}
+.team-hud__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+}
+.team-hud__ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.team-hud__sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line-2);
+  margin: 0 2px;
+}
+
+/* Circuit identity — the biggest words on the strip. */
+.team-hud__track {
+  font: 700 17px/1.1 var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.team-hud__cfg { color: var(--text-3); font-weight: 600; }
+
+/* The race clock. Mono and tabular so the digits do not dance at 1 Hz. */
+.team-hud__clock {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.team-hud__clock b {
+  font: 700 26px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.team-hud__clock i {
+  font: 600 9.5px var(--font-display);
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.team-hud__clock[data-low="true"] b { color: var(--warn); }
+
+/* Everything else on the strip: phase, laps, car count, server, driver. */
+.team-hud__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11.5px var(--font-display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.team-hud__meta .icon { width: 13px; height: 13px; color: var(--text-3); }
+.team-hud__meta b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.team-hud__meta--dim { color: var(--text-3); font-weight: 500; text-transform: none; letter-spacing: 0; }
+/* Whose car the board is showing, when it is not ours. */
+.team-hud__driver {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 45%, transparent);
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+  color: var(--cyan);
+  font: 700 11px var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Green flag / SC / chequered read as a light, not as a word in a list. */
+.team-hud__phase {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font: 700 11px var(--font-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.team-hud__phase[data-flag="green"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.team-hud__phase[data-flag="yellow"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.team-hud__phase[data-flag="chequered"] { color: var(--text); border-color: var(--text-3); }
+
+.team-age { align-self: center; }
+
+.seg--sm { padding: 2px; }
+.seg--sm button { padding: 3px 10px; font-size: 10px; }
+
+/* ── Board menu (presets + which widgets are on) ───────────────────────── */
+.team-pop { position: relative; }
+.team-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 60;
+  width: 330px;
+  max-height: 72vh;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.55);
+}
+.team-menu__head {
+  font: 700 9.5px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  padding: 6px 4px 5px;
+}
+.team-menu__presets { display: flex; flex-direction: column; gap: 4px; }
+.team-menu__preset {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--panel-3);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.team-menu__preset:hover { border-color: var(--line-2); color: var(--text); }
+.team-menu__preset[data-active="true"] {
+  border-color: color-mix(in srgb, var(--cyan) 55%, transparent);
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+}
+.team-menu__preset b {
+  display: block;
+  font: 700 12.5px var(--font-display);
+  color: var(--text);
+  letter-spacing: 0.03em;
+}
+.team-menu__preset i { display: block; font-style: normal; font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.team-menu__list { display: flex; flex-direction: column; gap: 2px; }
+.team-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-3);
+  font: 600 12.5px var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.team-menu__item:hover { background: var(--panel-3); }
+.team-menu__item[data-on="true"] { color: var(--text); }
+.team-menu__item .icon { width: 14px; height: 14px; flex: none; }
+/* The on/off state as a switch, so a glance down the list reads as a board. */
+.team-menu__sw {
+  margin-left: auto;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--line-2);
+  position: relative;
+  flex: none;
+  transition: background 0.14s ease;
+}
+.team-menu__sw::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform 0.14s ease, background 0.14s ease;
+}
+.team-menu__item[data-on="true"] .team-menu__sw { background: color-mix(in srgb, var(--cyan) 40%, transparent); }
+.team-menu__item[data-on="true"] .team-menu__sw::after { transform: translateX(11px); background: var(--cyan); }
+
+.team-menu__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+.team-menu__hint { flex: 1; font-size: 10.5px; line-height: 1.4; color: var(--text-3); }
+/* The reset button must not fold its icon onto a second line beside the
+   hint, which is the only thing in the row allowed to wrap. */
+.team-menu__foot .btn { flex: none; white-space: nowrap; }
+
+/* ── The grid ──────────────────────────────────────────────────────────────
+   Absolutely positioned children (team-dashboard.js owns left/top/width/
+   height) so a card that gets pushed out of the way GLIDES — CSS cannot
+   transition grid placement, and the motion is what makes the board read as
+   a tool rather than a page reflow. */
+.tw-grid { position: relative; width: 100%; }
+.tw-grid[data-narrow="true"] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: auto !important;
+}
+
+/* A drag tints the whole board very slightly, so the eye knows the layout —
+   not the data — is what is moving. */
+.tw-grid[data-live]::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--cyan) 4%, transparent);
+  pointer-events: none;
+}
+
+/* Where the dragged widget will land. */
+.tw-ghost {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--cyan) 70%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--cyan) 9%, transparent);
+  pointer-events: none;
+  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
+}
+
+/* ── A widget ─────────────────────────────────────────────────────────── */
+.tw {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  transition: left 0.16s cubic-bezier(0.2, 0, 0, 1), top 0.16s cubic-bezier(0.2, 0, 0, 1),
+              width 0.16s cubic-bezier(0.2, 0, 0, 1), height 0.16s cubic-bezier(0.2, 0, 0, 1),
+              border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.tw[hidden] { display: none; }
+.tw:hover { border-color: var(--line-2); }
+.tw-grid[data-narrow="true"] .tw {
+  position: static;
+  height: auto;
+  min-height: 220px;
+}
+
+/* Title bar — also the drag handle. Kept to 30px: on a pit wall every row of
+   chrome is a row of timing sheet you cannot see. */
+.tw__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.tw__bar:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.tw__icon { width: 13px; height: 13px; color: var(--text-3); flex: none; }
+.tw__title {
+  margin: 0;
+  font: 700 10.5px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tw:hover .tw__title { color: var(--text); }
+.tw__extra {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+/* Inline control in a title bar (the strategy margin). */
+.tw__field { display: inline-flex; align-items: center; gap: 6px; }
+.tw__field > span {
+  font: 600 9.5px var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.tw__field .field__input { width: 52px; padding: 2px 6px; font-size: 11.5px; text-align: center; }
+
+.tw__x {
+  flex: none;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.tw__x .icon { width: 13px; height: 13px; }
+.tw:hover .tw__x, .tw__bar:focus-within .tw__x { opacity: 1; }
+.tw__x:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+
+/* Body. `min-height: 0` is what lets a flex child actually scroll instead of
+   growing the widget past the height the board gave it. */
+.tw__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px 12px;
+}
+.tw__body--scroll { overflow-y: auto; overflow-x: hidden; }
+.tw__body--chart { display: flex; flex-direction: column; padding: 8px 10px 10px; }
+.tw__body--flush { display: flex; padding: 6px; }
+.tw__body::-webkit-scrollbar { width: 8px; height: 8px; }
+.tw__body::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; }
+.tw__body::-webkit-scrollbar-track { background: transparent; }
+.tw__body > .team-note:last-child { margin-bottom: 0; }
+
+/* Canvases fill whatever box the board gave them — the painters re-measure
+   from the CSS box on every repaint, so resizing a widget just works. */
+.team-canvas {
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tw-grid[data-narrow="true"] .team-canvas { height: 300px; }
+.team-legend { flex: 0 0 auto; max-height: 54px; overflow-y: auto; margin-top: 8px; }
+
+/* Resize grip: two hairlines in the corner, only while the widget is hovered. */
+.tw__grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  touch-action: none;
+}
+.tw__grip::before,
+.tw__grip::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  background: var(--text-3);
+  transform: rotate(-45deg);
+  transform-origin: 100% 100%;
+}
+.tw__grip::before { bottom: 3px; width: 9px; height: 1.5px; }
+.tw__grip::after { bottom: 7px; width: 5px; height: 1.5px; }
+.tw:hover .tw__grip { opacity: 0.75; }
+.tw-grid[data-narrow="true"] .tw__grip { display: none; }
+
+/* ── Live drag / resize states ─────────────────────────────────────────── */
+.tw[data-live] {
+  z-index: 30;
+  transition: none;
+  border-color: color-mix(in srgb, var(--cyan) 65%, transparent);
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in srgb, var(--cyan) 30%, transparent);
+}
+.tw[data-live="move"] .tw__bar { cursor: grabbing; }
+.tw[data-live] .tw__grip { opacity: 1; }
+/* While anything is being dragged, nothing else should feel clickable. */
+.tw-grid[data-live] .tw:not([data-live]) { pointer-events: none; }
+
+/* ── Crew strip ────────────────────────────────────────────────────────────
+   Team management, folded away behind the Crew button — it is needed once a
+   season, and the board is needed all race. */
+.team-crew { padding: 12px 14px; }
+.team-crew[hidden] { display: none; }

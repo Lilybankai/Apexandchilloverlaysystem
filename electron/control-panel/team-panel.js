@@ -1,13 +1,15 @@
 /**
  * team-panel.js — the Team tab: a pit-wall view of the race.
  * -----------------------------------------------------------------------------
- * Phase 1.5 of docs/TEAM-ENGINEER-PAGE.md: four sections under one page —
- * Timing (the full class-grouped sheet), Positions (the race drawn per lap),
- * Strategy (fuel + tyre planning to the flag), Telemetry (track map, tyre
- * widgets, car state, weather, lap-time comparison). All of it renders from
- * main's 1 Hz snapshot (electron/team-snapshot.js) plus two revision-cached
- * extras: the race history (electron/team-history.js) and the learned circuit
- * shape.
+ * Phase 3 of docs/TEAM-ENGINEER-PAGE.md: ONE board, not four sub-tabs. Ten
+ * widgets — Timing (the full class-grouped sheet), the track map, fuel and
+ * energy, strategy to the flag, tyre plan, tyre and brake corners, car state,
+ * weather, position changes and lap-time progression — all on screen at once,
+ * each dragged wherever the engineer wants it. team-dashboard.js owns the
+ * geometry; this file owns which widget is worth rendering and what goes in
+ * it. All of it renders from main's 1 Hz snapshot (electron/team-snapshot.js)
+ * plus two revision-cached extras: the race history (electron/team-history.js)
+ * and the learned circuit shape.
  *
  * Phase 2 adds the crew: a card for creating/joining teams by invite code
  * (electron/team-cloud.js), and a My car / Team source toggle. In Team view
@@ -19,9 +21,10 @@
  * Zero-cost-when-hidden, enforced the same way as the Setups tab: the router
  * calls shown()/hidden(), shown() subscribes main's pusher (and the relay
  * poll, in Team view), hidden() unsubscribes both. Within the page only the
- * ACTIVE section renders — a canvas repaint for a hidden section is pure
- * waste at any rate. The one steady cost while visible is a 1 s ticker for
- * the data-age pill, which must move even when frames stop (that is its job).
+ * widgets actually ON THE BOARD render — taking a widget off is not merely a
+ * display choice, it is the way an engineer buys back the cost of painting
+ * it. The one steady cost while visible is a 1 s ticker for the data-age
+ * pill, which must move even when frames stop (that is its job).
  *
  * The maths lives elsewhere on purpose: remaining-race fuel in team-fuel.js,
  * tyre projection in main (team-history.js), chart painting in
@@ -41,17 +44,23 @@
   const STORAGE_KEY = 'apex.panel.team';
 
   let prefs = {
-    safetyLaps: 1, tab: 'timing', posMode: 'overall',
+    safetyLaps: 1, posMode: 'overall',
     hiddenPos: [], laptimeSel: [], source: 'my',
+    // The board. `layout` is the driver's own arrangement (null until they
+    // move something); `preset` names the stock layout it started from, so
+    // the menu can show which one is still in force.
+    layout: null, preset: 'engineer', crewOpen: false,
   };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     if (Number.isFinite(saved.safetyLaps)) prefs.safetyLaps = saved.safetyLaps;
-    if (typeof saved.tab === 'string') prefs.tab = saved.tab;
     if (saved.posMode === 'class') prefs.posMode = 'class';
     if (Array.isArray(saved.hiddenPos)) prefs.hiddenPos = saved.hiddenPos;
     if (Array.isArray(saved.laptimeSel)) prefs.laptimeSel = saved.laptimeSel;
     if (saved.source === 'team') prefs.source = 'team';
+    if (Array.isArray(saved.layout)) prefs.layout = saved.layout;
+    if (typeof saved.preset === 'string') prefs.preset = saved.preset;
+    prefs.crewOpen = saved.crewOpen === true;
   } catch { /* corrupted save — defaults */ }
 
   const savePrefs = () => {
@@ -88,11 +97,13 @@
     empty: $('#team-empty'),
     live: $('#team-live'),
     session: $('#team-session'),
-    subtabs: $('#team-subtabs'),
-    tabTiming: $('#team-tab-timing'),
-    tabPositions: $('#team-tab-positions'),
-    tabStrategy: $('#team-tab-strategy'),
-    tabTelemetry: $('#team-tab-telemetry'),
+    dash: $('#team-dash'),
+    crewToggle: $('#team-crew-toggle'),
+    boardToggle: $('#team-board-toggle'),
+    boardMenu: $('#team-board-menu'),
+    boardReset: $('#team-board-reset'),
+    presets: $('#team-presets'),
+    widgetList: $('#team-widget-list'),
     timing: $('#team-timing-body'),
     posMode: $('#team-pos-mode'),
     posCanvas: $('#team-positions-canvas'),
@@ -180,23 +191,43 @@
   }
 
   // ── Session strip ────────────────────────────────────────────────────────
+  /**
+   * The session phase as a flag colour. LMU spells the phase in words and the
+   * words vary by session type, so this matches loosely and falls through to
+   * an unlit chip rather than guessing green — a pit wall that shows green
+   * under a safety car is worse than one that shows nothing.
+   */
+  function flagOf(phase) {
+    const p = String(phase || '').toLowerCase();
+    if (/chequer|checker|finish/.test(p)) return 'chequered';
+    if (/yellow|caution|safety|fcy|full course|red/.test(p)) return 'yellow';
+    if (/green|racing|session/.test(p)) return 'green';
+    return '';
+  }
+
+  /**
+   * The header strip: circuit, flag, race clock, laps, field size, server.
+   * Everything the old page spent a title, a subtitle and a session bar on,
+   * in one 50px line — the rest of the screen belongs to the board.
+   */
   function renderSession(s) {
-    const track = [s.track, s.trackConfig].filter(Boolean).join(' — ');
-    const lap = known(s.currentLap)
-      ? `Lap ${s.currentLap}${known(s.totalLaps) && s.totalLaps > 0 ? ` / ${s.totalLaps}` : ''}`
-      : null;
+    const cfg = s.trackConfig ? `<span class="team-hud__cfg"> · ${esc(s.trackConfig)}</span>` : '';
+    const phase = [s.type, s.phase].filter(Boolean).join(' · ');
     const driver = teamView() && relay && relay.active
-      ? `<span class="team-session__meta">${icon('user')}${esc(relay.active.name || 'teammate')}'s car</span>`
+      ? `<span class="team-hud__driver">${esc(relay.active.name || 'teammate')}</span>`
       : null;
     const bits = [
-      `<span class="team-session__track">${esc(track || 'Unknown circuit')}</span>`,
+      `<span class="team-hud__track">${esc(s.track || 'Unknown circuit')}${cfg}</span>`,
       driver,
-      `<span class="team-session__meta">${esc([s.type, s.phase].filter(Boolean).join(' · '))}</span>`,
+      phase ? `<span class="team-hud__phase" data-flag="${flagOf(s.phase)}">${esc(phase)}</span>` : null,
       known(s.timeRemainingSec) && s.timeRemainingSec > 0
-        ? `<span class="team-session__meta">${icon('clock')}${fmtClock(s.timeRemainingSec)} left</span>` : null,
-      lap ? `<span class="team-session__meta">${icon('list-ordered')}${esc(lap)}</span>` : null,
-      known(s.numCars) ? `<span class="team-session__meta">${s.numCars} cars</span>` : null,
-      s.serverName ? `<span class="team-session__meta team-session__server">${esc(s.serverName)}</span>` : null,
+        ? `<span class="team-hud__clock" data-low="${s.timeRemainingSec < 300}">
+             <b>${fmtClock(s.timeRemainingSec)}</b><i>to go</i></span>` : null,
+      known(s.currentLap)
+        ? `<span class="team-hud__meta">${icon('list-ordered')}Lap&nbsp;<b>${s.currentLap}${
+            known(s.totalLaps) && s.totalLaps > 0 ? `/${s.totalLaps}` : ''}</b></span>` : null,
+      known(s.numCars) ? `<span class="team-hud__meta"><b>${s.numCars}</b>&nbsp;cars</span>` : null,
+      s.serverName ? `<span class="team-hud__meta team-hud__meta--dim">${esc(s.serverName)}</span>` : null,
     ].filter(Boolean);
     setCard(els.session, bits.join(''));
   }
@@ -889,7 +920,11 @@
   function renderCrew() {
     if (!els.crew) return;
     if (!cloud) { setCard(els.crew, ''); els.crew.hidden = true; return; }
-    els.crew.hidden = false;
+    // Folded away by default — the crew is set up once a season and the board
+    // is needed all race. The exception is a driver with no team yet: hiding
+    // the only join/create form behind a button would hide the feature.
+    const mustShow = !cloud.signedIn || !(cloud.teams || []).length;
+    els.crew.hidden = !(prefs.crewOpen || mustShow);
 
     if (!cloud.signedIn) {
       setCard(els.crew, `<p class="team-note">Sign in to create or join a team — the pit wall can then follow whoever is in the car.</p>`);
@@ -1087,40 +1122,136 @@
     renderCrew();
   }
 
-  // ── Sub-tab router ───────────────────────────────────────────────────────
-  const TABS = {
-    timing: (s) => renderTiming(s.standings),
-    positions: () => renderPositions(),
-    strategy: (s) => {
-      renderFuel(s.fuel);
-      renderStrategy(s.fuel);
-      renderTyrePlan(s.tyrePlan, s.fuel);
+  // ── The board ───────────────────────────────────────────────────────────
+  /**
+   * The widget catalogue. `id` matches the `data-widget` on the shell in
+   * index.html and the key in every preset below; `min` is the smallest box
+   * the content stays honest in (a timing sheet three columns wide is not a
+   * timing sheet). Order here is the order of the Board menu, and the reading
+   * order a narrow panel falls back to.
+   */
+  const WIDGETS = [
+    { id: 'timing', title: 'Timing', icon: 'list-ordered', min: { w: 4, h: 6 },
+      render: (s) => renderTiming(s.standings) },
+    { id: 'map', title: 'Track map', icon: 'circuit', min: { w: 3, h: 6 },
+      render: () => renderMap() },
+    { id: 'fuel', title: 'Fuel & energy', icon: 'fuel', min: { w: 3, h: 6 },
+      render: (s) => renderFuel(s.fuel) },
+    { id: 'strategy', title: 'Strategy to the flag', icon: 'target', min: { w: 3, h: 5 },
+      render: (s) => renderStrategy(s.fuel) },
+    { id: 'tyreplan', title: 'Tyre plan', icon: 'timer', min: { w: 3, h: 5 },
+      render: (s) => renderTyrePlan(s.tyrePlan, s.fuel) },
+    { id: 'tyres', title: 'Tyres & brakes', icon: 'tyre', min: { w: 3, h: 7 },
+      render: (s) => renderTyres(s.car && s.car.tyres) },
+    { id: 'telemetry', title: 'Car', icon: 'gauge', min: { w: 2, h: 4 },
+      render: (s) => renderTelemetry(s.car) },
+    { id: 'weather', title: 'Weather', icon: 'cloud-rain', min: { w: 4, h: 7 },
+      render: (s) => renderWeather(s.weather) },
+    { id: 'positions', title: 'Position changes', icon: 'trending-up', min: { w: 3, h: 6 },
+      render: () => renderPositions() },
+    { id: 'laptimes', title: 'Lap times', icon: 'clock', min: { w: 3, h: 5 },
+      render: () => renderLaptimes() },
+  ];
+  const WIDGET = new Map(WIDGETS.map((w) => [w.id, w]));
+
+  /**
+   * The stock boards, on the engine's 12 columns. These are what the four
+   * sub-tabs became: a driver who lived in the old Strategy tab picks
+   * "Strategist" and has the same three cards at the top of the screen — with
+   * the rest of the race still visible underneath instead of one click away.
+   */
+  const PRESETS = {
+    engineer: {
+      timing: { x: 0, y: 0, w: 7, h: 17 },
+      map: { x: 7, y: 0, w: 5, h: 10 },
+      fuel: { x: 7, y: 10, w: 5, h: 7 },
+      tyres: { x: 0, y: 17, w: 4, h: 9 },
+      telemetry: { x: 4, y: 17, w: 3, h: 9 },
+      strategy: { x: 7, y: 17, w: 5, h: 9 },
+      positions: { x: 0, y: 26, w: 7, h: 10 },
+      laptimes: { x: 7, y: 26, w: 5, h: 10 },
+      weather: { x: 0, y: 36, w: 7, h: 8 },
+      tyreplan: { x: 7, y: 36, w: 5, h: 8 },
     },
-    telemetry: (s) => {
-      renderMap();
-      renderTyres(s.car && s.car.tyres);
-      renderTelemetry(s.car);
-      renderWeather(s.weather);
-      renderLaptimes();
+    strategy: {
+      fuel: { x: 0, y: 0, w: 4, h: 9 },
+      strategy: { x: 4, y: 0, w: 4, h: 9 },
+      tyreplan: { x: 8, y: 0, w: 4, h: 9 },
+      timing: { x: 0, y: 9, w: 7, h: 17 },
+      tyres: { x: 7, y: 9, w: 5, h: 9 },
+      weather: { x: 7, y: 18, w: 5, h: 8 },
+      map: { x: 0, y: 26, w: 6, h: 10 },
+      laptimes: { x: 6, y: 26, w: 6, h: 10 },
+      telemetry: { x: 0, y: 36, w: 4, h: 9 },
+      positions: { x: 4, y: 36, w: 8, h: 9 },
+    },
+    telemetry: {
+      map: { x: 0, y: 0, w: 6, h: 14 },
+      tyres: { x: 6, y: 0, w: 4, h: 10 },
+      telemetry: { x: 10, y: 0, w: 2, h: 10 },
+      weather: { x: 6, y: 10, w: 6, h: 8 },
+      timing: { x: 0, y: 14, w: 6, h: 11 },
+      fuel: { x: 6, y: 18, w: 3, h: 7 },
+      strategy: { x: 9, y: 18, w: 3, h: 7 },
+      tyreplan: { x: 0, y: 25, w: 4, h: 10 },
+      laptimes: { x: 4, y: 25, w: 8, h: 10 },
+      positions: { x: 0, y: 35, w: 12, h: 9 },
     },
   };
 
-  function setTab(name) {
-    const tab = TABS[name] ? name : 'timing';
-    prefs.tab = tab;
+  let board = null;
+  let boardRender = 0;
+
+  /** Paint the widgets that are actually on the board, and only those. */
+  function renderBoard(s) {
+    const ids = board ? board.visible() : WIDGETS.map((w) => w.id);
+    for (const id of ids) {
+      const w = WIDGET.get(id);
+      if (w) w.render(s);
+    }
+  }
+
+  /**
+   * A move or a resize changes a canvas's box, and the painters size
+   * themselves from that box — so the charts have to be repainted after the
+   * board settles. Trailing-edge only, and longer than the 160 ms card
+   * transition, so a drag across the screen costs one repaint at the end
+   * rather than one per frame.
+   */
+  function boardSettled() {
+    clearTimeout(boardRender);
+    boardRender = setTimeout(() => {
+      const s = viewSnap();
+      if (visible && s) renderBoard(s);
+    }, 200);
+  }
+
+  /** The Board menu: which preset is in force, and which widgets are on. */
+  function renderBoardMenu() {
+    if (!els.widgetList || !board) return;
+    const name = board.presetName();
+    for (const btn of els.presets.querySelectorAll('[data-preset]')) {
+      btn.setAttribute('data-active', String(btn.dataset.preset === name));
+    }
+    setCard(els.widgetList, WIDGETS.map((w) => `
+      <button type="button" class="team-menu__item" data-widget-toggle="${w.id}"
+              data-on="${board.isOn(w.id)}" aria-pressed="${board.isOn(w.id)}">
+        ${icon(w.icon)}<span>${esc(w.title)}</span><span class="team-menu__sw"></span>
+      </button>`).join(''));
+  }
+
+  function setBoardMenu(open) {
+    if (!els.boardMenu) return;
+    els.boardMenu.hidden = !open;
+    els.boardToggle.setAttribute('aria-expanded', String(!!open));
+    if (open) renderBoardMenu();
+  }
+
+  function setCrewOpen(open) {
+    prefs.crewOpen = !!open;
     savePrefs();
-    const sections = {
-      timing: els.tabTiming, positions: els.tabPositions,
-      strategy: els.tabStrategy, telemetry: els.tabTelemetry,
-    };
-    for (const [key, el] of Object.entries(sections)) {
-      if (el) el.setAttribute('data-active', String(key === tab));
-    }
-    for (const btn of els.subtabs.querySelectorAll('[data-teamtab]')) {
-      btn.setAttribute('data-active', String(btn.dataset.teamtab === tab));
-    }
-    const s = viewSnap();
-    if (s) TABS[tab](s);
+    if (els.crewToggle) els.crewToggle.setAttribute('aria-expanded', String(prefs.crewOpen));
+    renderCrew();
   }
 
   function renderAll() {
@@ -1131,7 +1262,7 @@
     if (els.live) els.live.hidden = !has;
     if (!has) return;
     renderSession(s.session);
-    TABS[TABS[prefs.tab] ? prefs.tab : 'timing'](s);
+    renderBoard(s);
   }
 
   // ── Wiring ──────────────────────────────────────────────────────────────
@@ -1163,11 +1294,70 @@
     });
   }
 
-  if (els.subtabs) {
-    els.subtabs.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-teamtab]');
-      if (btn) setTab(btn.dataset.teamtab);
+  // ── The board ───────────────────────────────────────────────────────────
+  if (els.dash && window.APEX_TEAM_DASH) {
+    board = window.APEX_TEAM_DASH.create({
+      grid: els.dash,
+      catalog: WIDGETS.map((w) => ({
+        id: w.id, min: w.min, el: els.dash.querySelector(`[data-widget="${w.id}"]`),
+      })).filter((c) => c.el),
+      presets: PRESETS,
+      onLayout: boardSettled,
+      onSave: (layout, preset) => {
+        prefs.layout = layout;
+        prefs.preset = preset;
+        savePrefs();
+        renderBoardMenu();
+      },
     });
+    board.adopt(prefs.layout, prefs.preset || 'engineer');
+
+    // Taking a widget off from its own title bar — the fastest way to clear
+    // the screen mid-race without opening a menu.
+    els.dash.addEventListener('click', (e) => {
+      const off = e.target.closest('[data-twoff]');
+      if (off) board.setOn(off.dataset.twoff, false);
+    });
+  }
+
+  if (els.boardToggle) {
+    els.boardToggle.addEventListener('click', () => setBoardMenu(els.boardMenu.hidden));
+  }
+  if (els.boardMenu) {
+    els.boardMenu.addEventListener('click', (e) => {
+      const preset = e.target.closest('[data-preset]');
+      if (preset && board) {
+        board.usePreset(preset.dataset.preset);
+        renderBoardMenu();
+        return;
+      }
+      const toggle = e.target.closest('[data-widget-toggle]');
+      if (toggle && board) {
+        const id = toggle.dataset.widgetToggle;
+        board.setOn(id, !board.isOn(id));
+        renderBoardMenu();
+        const s = viewSnap();
+        if (s) renderBoard(s);
+      }
+    });
+  }
+  if (els.boardReset && board) {
+    els.boardReset.addEventListener('click', () => {
+      board.usePreset('engineer');
+      renderBoardMenu();
+    });
+  }
+  // A menu that only closes on its own button is a menu in the way.
+  document.addEventListener('pointerdown', (e) => {
+    if (!els.boardMenu || els.boardMenu.hidden) return;
+    if (!e.target.closest('.team-pop')) setBoardMenu(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && els.boardMenu && !els.boardMenu.hidden) setBoardMenu(false);
+  });
+
+  if (els.crewToggle) {
+    els.crewToggle.addEventListener('click', () => setCrewOpen(!prefs.crewOpen));
   }
   if (els.source) {
     els.source.addEventListener('click', (e) => {
@@ -1275,7 +1465,7 @@
         if (state) { cloud = state; updateSourceSeg(); if (visible) { lastHtml.delete(els.crew); renderCrew(); } }
       }).catch(() => { /* offline — the cached state stands */ });
       if (teamView()) void window.apex.teamWatch(true);
-      setTab(prefs.tab);
+      if (board) board.apply();
       renderAll();
       renderCrew();
       if (!ageTimer) ageTimer = setInterval(renderAge, 1000);
@@ -1286,6 +1476,8 @@
       window.apex.teamUnsubscribe();
       void window.apex.teamWatch(false);
       if (ageTimer) { clearInterval(ageTimer); ageTimer = null; }
+      clearTimeout(boardRender);
+      setBoardMenu(false);
     },
   };
 })();

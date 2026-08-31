@@ -4,6 +4,54 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.96.0-beta.2 — 2026-08-31
+
+### Changed
+
+- **The Team page is one pit wall now, not four tabs.** Everything that used to
+  be behind Timing, Positions, Strategy and Telemetry is on screen together:
+  the timing sheet, the track map, fuel and energy, the plan to the flag, the
+  tyre plan, the tyre and brake corners, car state, weather, position changes
+  and lap-time progression. Nothing was dropped and no number changed — the
+  page simply stopped hiding three quarters of itself, and stopped leaving half
+  a widescreen empty while it did.
+- **Every widget can be dragged where you want it.** Take a card by its title
+  bar and move it; the rest of the board slides out of the way and closes the
+  gap behind it, so there is never a hole in the middle of the screen. Drag the
+  bottom-right corner to resize — the charts, the map and the timing sheet all
+  redraw at whatever size you give them. Arrow keys nudge a selected card, and
+  shift with the arrows resizes it. Your arrangement is remembered between
+  sessions and between races.
+- **Three stock boards, and a widget list.** The Board button offers Engineer
+  (timing-led), Strategist (fuel, stints and the plan up front) and Car (map,
+  tyres, brakes and weather at full size) — the old tabs, as starting points
+  rather than walls — plus a switch per widget, so anything you do not want on
+  the wall this race can come off it, and comes off the app's workload with it.
+  Reset board puts everything back.
+- **The header is one strip.** Circuit, session, flag, race clock, lap, field
+  size and how fresh the data is, on a single line, with the crew roster folded
+  behind a button. That is roughly 190 pixels of title and sub-heading given
+  back to the numbers.
+
+### Added
+
+- **The walkthrough now covers the pit wall.** The first-run guide gained a
+  Team section, and the checklist a "Set up your pit wall" row alongside it. It
+  covers arranging the board, and then the three things that are not controls
+  at all but decide whether the page works: how team-mates are added (one
+  person creates the team, Apex issues a single invite code, everyone else
+  joins with it), that every team-mate needs their own active subscription —
+  there is no watcher seat — and that whoever is driving has to be running Apex
+  with their overlays during the race, because tyres, fuel, energy and damage
+  exist only on the driving PC and it is their own app that relays them to you.
+  A crew that has any of that wrong gets a page that stays empty and says
+  nothing, which is indistinguishable from a session that has not started yet.
+- **And the Team tab introduces itself.** Anyone who walked the first-run guide
+  before the board existed will never be offered that section again, so the
+  first time the Team tab is opened it runs a short walkthrough of its own —
+  the same manners as the Setups and Streamers tabs, with "How it works" beside
+  the header to bring it back whenever you want it.
+
 ## 0.96.0-beta.1 — 2026-08-30
 
 ### Added

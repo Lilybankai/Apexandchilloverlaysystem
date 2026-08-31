@@ -213,6 +213,31 @@
           ? 'Two minutes, and it covers the one thing that surprises everybody: nothing reaches the car until Apply.'
           : null,
     },
+    {
+      id: 'team',
+      icon: 'users',
+      title: 'Set up your pit wall',
+      lead:
+        'One board of live widgets for a team endurance race — and the three things every '
+        + 'team-mate has to have before the pit wall can see their car.',
+      cta: 'Show me round',
+      view: 'team',
+      focus: '#team-dash',
+      tour: 'team',
+      // Beta-gated, like the tab itself. A row nagging about a page that is
+      // not in this build is the exact failure `note` exists to avoid, and no
+      // note can fix it — there is nothing the driver could do. So the row is
+      // not on the list at all until the tab is.
+      gate: (s) => s.teamTabAvailable,
+      // Same honest question as the Setups row: this cannot be measured from
+      // state, because a crew of one with the board arranged is a correct
+      // outcome and so is a crew of six.
+      check: (s) => s.teamToured,
+      note: (s) =>
+        !s.teamToured
+          ? 'Worth two minutes before an endurance race: every team-mate needs their own subscription and has to be running Apex while they drive.'
+          : null,
+    },
   ];
 
   /* ---- pure: state -> ticks ---------------------------------------------- */
@@ -224,7 +249,7 @@
    */
   function evaluate(state) {
     const s = state || {};
-    const rows = STEPS.map((step) => ({
+    const rows = STEPS.filter((step) => !step.gate || step.gate(s)).map((step) => ({
       id: step.id,
       icon: step.icon,
       title: step.title,
@@ -338,6 +363,14 @@
       // The Setups row. Read straight off the tour's seen flag rather than
       // kept twice — one fact, one owner.
       setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
+      teamToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('team')),
+      // Whether this build HAS a Team tab. The nav button's `hidden` is the
+      // one owner of that fact (control-panel.js applyTeamTabVisibility), so
+      // it is read rather than duplicated as a second channel check.
+      teamTabAvailable:
+        typeof document !== 'undefined'
+        && !!document.querySelector('[data-tab="team"]')
+        && !document.querySelector('[data-tab="team"]').hidden,
     };
 
     const apex = typeof window !== 'undefined' ? window.apex : null;

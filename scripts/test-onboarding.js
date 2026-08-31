@@ -83,13 +83,26 @@ check('no duplicate step ids', new Set(ob.STEPS.map((s) => s.id)).size === ob.ST
 // The plugin is the one that makes every other feature blank when it is wrong,
 // and the only one whose symptom gives no clue. It leads for that reason.
 check('the plugin comes first', ob.STEPS[0].id === 'plugin');
-// The order below it is "nothing works without this" first. The last two are
-// the ones nobody is blocked by: the voice, which is genuinely optional, and
-// the setup screen, which is a thing to learn rather than a thing to switch on.
+// The order below it is "nothing works without this" first. The last three are
+// the ones nobody is blocked by: the voice, which is genuinely optional; the
+// setup screen, which is a thing to learn rather than a thing to switch on;
+// and the pit wall, which only matters to someone racing as a team.
 check(
-  'the optional two come last',
-  ob.STEPS.slice(-2).map((s) => s.id).join(',') === 'engineer,setups',
-  ob.STEPS.slice(-2).map((s) => s.id).join(','),
+  'the optional ones come last',
+  ob.STEPS.slice(-3).map((s) => s.id).join(',') === 'engineer,setups,team',
+  ob.STEPS.slice(-3).map((s) => s.id).join(','),
+);
+// The Team row is the only one that is not on every build: the tab is
+// beta-gated, and a row nagging about a page this build does not have is
+// exactly the dead-end `note` cannot rescue.
+check('the pit-wall row is gated', typeof ob.STEPS.find((s) => s.id === 'team').gate === 'function');
+check(
+  'and is absent when the tab is not in this build',
+  !ob.evaluate({}).rows.some((r) => r.id === 'team'),
+);
+check(
+  'but present when it is',
+  ob.evaluate({ teamTabAvailable: true }).rows.some((r) => r.id === 'team'),
 );
 // The gap called out after the first cut: the checklist walked someone through
 // six things and never mentioned the Setups tab at all.

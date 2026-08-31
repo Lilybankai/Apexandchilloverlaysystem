@@ -530,11 +530,13 @@ const PANEL_CONTRACT = {
   'team-empty': 'div',
   'team-live': 'div',
   'team-session': 'div',
-  'team-subtabs': 'nav',
-  'team-tab-timing': 'div',
-  'team-tab-positions': 'div',
-  'team-tab-strategy': 'div',
-  'team-tab-telemetry': 'div',
+  'team-dash': 'div',
+  'team-crew-toggle': 'button',
+  'team-board-toggle': 'button',
+  'team-board-menu': 'div',
+  'team-board-reset': 'button',
+  'team-presets': 'div',
+  'team-widget-list': 'div',
   'team-timing-body': 'div',
   'team-pos-mode': 'nav',
   'team-positions-canvas': 'canvas',
@@ -818,8 +820,10 @@ verifyPage({
     // scanner, and neither engine file touches the DOM anyway.
     'fuel-panel.js',
     // The Team tab. Same split: team-fuel.js is a pure engine, only the
-    // panel touches the DOM.
+    // panel touches the DOM. team-guide.js is the first-visit walkthrough and
+    // owns its own dialog ids.
     'team-panel.js',
+    'team-guide.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.

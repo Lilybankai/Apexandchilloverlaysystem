@@ -1618,154 +1618,287 @@
          data in fuel-data.js / fuel-strategy.js — no sim connection, no IPC,
          no polling — so this view has no shown()/hidden() lifecycle. -->
     <!-- =========================== TEAM =============================== -->
-    <!-- Phase 1 of docs/TEAM-ENGINEER-PAGE.md: an engineer view of OUR car
-         from local telemetry. The relay (a teammate's car through the same
-         cards) is Phase 2; the markup deliberately never says "my car". -->
+    <!-- The pit wall. Phase 3 of docs/TEAM-ENGINEER-PAGE.md replaced the four
+         sub-tabs with ONE board: every widget is on screen at once and the
+         engineer drags them into the order their race wants. Each widget is a
+         <section class="tw" data-widget="…"> whose BODY is exactly the markup
+         the tabs used to hold, so every renderer in team-panel.js is untouched
+         by the move; team-dashboard.js only positions the shells. The markup
+         deliberately never says "my car" — Team view feeds the same widgets
+         from a teammate's relayed snapshot. -->
     <section class="view" data-view="team">
-      <div class="wrap">
-        <div class="view__head">
-          <div>
-            <h1 class="view__title">Team</h1>
-            <p class="view__sub">
-              Pit-wall view of the car — live fuel and energy, tyres, damage, weather, and a strategy that replans from what the car is actually using.
-            </p>
-          </div>
-          <div class="team-head-controls">
-            <nav class="seg" id="team-source" aria-label="Whose car the pit wall shows" hidden>
+      <div class="wrap wrap--wide">
+
+        <!-- ── Pit-wall header: who we are watching, the race clock, and the
+             board's own controls. One strip, because vertical space on an
+             engineer screen belongs to data. ──────────────────────────── -->
+        <header class="team-hud">
+          <div class="team-hud__info" id="team-session"></div>
+          <div class="team-hud__ctl">
+            <nav class="seg seg--sm" id="team-source" aria-label="Whose car the pit wall shows" hidden>
               <button type="button" data-teamsource="my" data-active="true">My car</button>
               <button type="button" data-teamsource="team">Team</button>
             </nav>
             <span class="team-age" id="team-age" data-state="none">NO DATA</span>
+            <span class="team-hud__sep" aria-hidden="true"></span>
+            <!-- The walkthrough opens by itself the first time this tab is
+                 used; this is how it comes back afterwards. -->
+            <button type="button" class="btn btn--ghost btn--sm" id="team-guide-open"
+                    title="A short walkthrough of the board, and what a team needs">
+              <svg class="icon"><use href="#i-graduation-cap" /></svg><span>How it works</span>
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" id="team-crew-toggle"
+                    aria-expanded="false" aria-controls="team-crew">
+              <svg class="icon"><use href="#i-users" /></svg><span>Crew</span>
+            </button>
+            <div class="team-pop">
+              <button type="button" class="btn btn--ghost btn--sm" id="team-board-toggle"
+                      aria-expanded="false" aria-controls="team-board-menu">
+                <svg class="icon"><use href="#i-layout-grid" /></svg><span>Board</span>
+              </button>
+              <div class="team-menu" id="team-board-menu" hidden>
+                <div class="team-menu__head">Layout</div>
+                <div class="team-menu__presets" id="team-presets">
+                  <button type="button" class="team-menu__preset" data-preset="engineer">
+                    <b>Engineer</b><i>Timing-led — the whole sheet, the map and fuel</i>
+                  </button>
+                  <button type="button" class="team-menu__preset" data-preset="strategy">
+                    <b>Strategist</b><i>Fuel, stints and the plan to the flag up front</i>
+                  </button>
+                  <button type="button" class="team-menu__preset" data-preset="telemetry">
+                    <b>Car</b><i>Map, tyres, brakes and weather at full size</i>
+                  </button>
+                </div>
+                <div class="team-menu__head">Widgets</div>
+                <div class="team-menu__list" id="team-widget-list"></div>
+                <div class="team-menu__foot">
+                  <span class="team-menu__hint">Drag a title bar to move, the corner to resize. Arrow keys nudge.</span>
+                  <button type="button" class="btn btn--ghost btn--sm" id="team-board-reset">
+                    <svg class="icon"><use href="#i-rotate-ccw" /></svg>Reset board
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </header>
 
-        <!-- Crew: roster, invite code, join/create. Lives OUTSIDE the
-             empty/live split — managing the team must not need telemetry. -->
-        <section class="card team-crew" id="team-crew"></section>
+        <!-- Crew: roster, invite code, join/create. Collapsed by default and
+             OUTSIDE the empty/live split — managing the team must not need
+             telemetry, but it must not eat the board either. -->
+        <section class="card team-crew" id="team-crew" hidden></section>
 
         <div class="team-empty" id="team-empty">
           <svg class="icon"><use href="#i-users" /></svg>
           <p>Waiting for telemetry. Start the overlay server on the Dashboard and join a session in Le Mans Ultimate — the pit wall lights up as soon as frames flow.</p>
         </div>
 
+        <!-- ── The board ─────────────────────────────────────────────────
+             Every widget lives here at once. DOM order is only the reading
+             order a narrow panel falls back to; on a real screen
+             team-dashboard.js places them from the saved layout. -->
         <div id="team-live" hidden>
-          <div class="team-session" id="team-session"></div>
+          <div class="tw-grid" id="team-dash">
 
-          <!-- The page's own sections — a pit wall is four screens, not one
-               scroll. Same seg control as Race/Training; the chosen section
-               persists (an engineer lives in one of these for a whole race). -->
-          <nav class="seg team-subtabs" id="team-subtabs" aria-label="Team page sections">
-            <button type="button" data-teamtab="timing" data-active="true">
-              <svg class="icon"><use href="#i-list-ordered" /></svg><span>Timing</span>
-            </button>
-            <button type="button" data-teamtab="positions">
-              <svg class="icon"><use href="#i-trending-up" /></svg><span>Positions</span>
-            </button>
-            <button type="button" data-teamtab="strategy">
-              <svg class="icon"><use href="#i-target" /></svg><span>Strategy</span>
-            </button>
-            <button type="button" data-teamtab="telemetry">
-              <svg class="icon"><use href="#i-activity" /></svg><span>Telemetry</span>
-            </button>
-          </nav>
-
-          <!-- ── Timing: the full sheet ─────────────────────────────────── -->
-          <div class="team-tab" id="team-tab-timing" data-active="true">
-            <section class="card">
-              <div id="team-timing-body"></div>
+            <!-- Timing: the full class-grouped sheet. -->
+            <section class="tw" data-widget="timing" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Timing widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-list-ordered" /></svg>
+                <h2 class="tw__title">Timing</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="timing" aria-label="Take Timing off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-timing-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
             </section>
-          </div>
 
-          <!-- ── Positions: the race, drawn ─────────────────────────────── -->
-          <div class="team-tab" id="team-tab-positions">
-            <section class="card">
-              <div class="card__head team-chart-head">
-                <h2 class="card__title"><svg class="icon"><use href="#i-trending-up" /></svg>Race position changes</h2>
-                <nav class="seg" id="team-pos-mode" aria-label="Position chart mode">
-                  <button type="button" data-posmode="overall" data-active="true"><span>Overall</span></button>
-                  <button type="button" data-posmode="class"><span>In class</span></button>
-                </nav>
+            <!-- Track map. -->
+            <section class="tw" data-widget="map" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Track map widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-circuit" /></svg>
+                <h2 class="tw__title">Track map</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="map" aria-label="Take Track map off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--flush">
+                <canvas id="team-map-canvas" class="team-canvas team-canvas--map"></canvas>
               </div>
-              <canvas id="team-positions-canvas" class="team-canvas"></canvas>
-              <div id="team-positions-legend" class="team-legend"></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
             </section>
-          </div>
 
-          <!-- ── Strategy: fuel + tyres to the flag ─────────────────────── -->
-          <div class="team-tab" id="team-tab-strategy">
-            <div class="team-grid">
-              <div class="team-col">
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Fuel &amp; energy</h2>
-                  </div>
-                  <div id="team-fuel-body"></div>
-                </section>
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyre plan</h2>
-                    <p class="card__desc">Wear rate measured lap over lap; the cliff is 25% tread.</p>
-                  </div>
-                  <div id="team-tyreplan-body"></div>
-                </section>
-              </div>
-              <div class="team-col">
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-target" /></svg>Strategy to the flag</h2>
-                    <p class="card__desc">Replanned every second from live consumption and the race remaining.</p>
-                  </div>
-                  <label class="field">
-                    <span class="field__label">Safety margin (laps)</span>
+            <!-- Fuel and energy. -->
+            <section class="tw" data-widget="fuel" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Fuel and energy widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-fuel" /></svg>
+                <h2 class="tw__title">Fuel &amp; energy</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="fuel" aria-label="Take Fuel and energy off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-fuel-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Strategy to the flag. -->
+            <section class="tw" data-widget="strategy" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Strategy widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-target" /></svg>
+                <h2 class="tw__title" title="Replanned every second from live consumption and the race remaining.">Strategy to the flag</h2>
+                <span class="tw__extra">
+                  <label class="tw__field" title="Laps of fuel held back when the plan is built">
+                    <span>Margin</span>
                     <input class="field__input" type="number" id="team-safety" min="0" max="10" step="1" />
                   </label>
-                  <div id="team-strategy-body"></div>
-                </section>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Telemetry: the live car ────────────────────────────────── -->
-          <div class="team-tab" id="team-tab-telemetry">
-            <section class="card">
-              <div class="card__head">
-                <h2 class="card__title"><svg class="icon"><use href="#i-circuit" /></svg>Track map</h2>
-              </div>
-              <canvas id="team-map-canvas" class="team-canvas team-canvas--map"></canvas>
+                </span>
+                <button type="button" class="tw__x" data-twoff="strategy" aria-label="Take Strategy off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-strategy-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
             </section>
-            <div class="team-grid">
-              <div class="team-col">
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-thermometer" /></svg>Tyres &amp; brakes</h2>
-                  </div>
-                  <div id="team-tyres-body"></div>
-                </section>
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-cloud-rain" /></svg>Weather</h2>
-                  </div>
-                  <div id="team-weather-body"></div>
-                </section>
+
+            <!-- Tyre plan. -->
+            <section class="tw" data-widget="tyreplan" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Tyre plan widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-timer" /></svg>
+                <h2 class="tw__title" title="Wear rate measured lap over lap; the cliff is 25% tread.">Tyre plan</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="tyreplan" aria-label="Take Tyre plan off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-tyreplan-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Tyres and brakes. -->
+            <section class="tw" data-widget="tyres" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Tyres and brakes widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-tyre" /></svg>
+                <h2 class="tw__title">Tyres &amp; brakes</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="tyres" aria-label="Take Tyres and brakes off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-tyres-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Car telemetry. -->
+            <section class="tw" data-widget="telemetry" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Car widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-gauge" /></svg>
+                <h2 class="tw__title">Car</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="telemetry" aria-label="Take Car off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-telemetry-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Weather. -->
+            <section class="tw" data-widget="weather" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Weather widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-cloud-rain" /></svg>
+                <h2 class="tw__title">Weather</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="weather" aria-label="Take Weather off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--scroll"><div id="team-weather-body"></div></div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Race position changes. -->
+            <section class="tw" data-widget="positions" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Position changes widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-trending-up" /></svg>
+                <h2 class="tw__title" title="Click a driver chip below to hide or show their line.">Position changes</h2>
+                <span class="tw__extra">
+                  <nav class="seg seg--sm" id="team-pos-mode" aria-label="Position chart mode">
+                    <button type="button" data-posmode="overall" data-active="true"><span>Overall</span></button>
+                    <button type="button" data-posmode="class"><span>Class</span></button>
+                  </nav>
+                </span>
+                <button type="button" class="tw__x" data-twoff="positions" aria-label="Take Position changes off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--chart">
+                <canvas id="team-positions-canvas" class="team-canvas"></canvas>
+                <div id="team-positions-legend" class="team-legend"></div>
               </div>
-              <div class="team-col">
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-gauge" /></svg>Car telemetry</h2>
-                  </div>
-                  <div id="team-telemetry-body"></div>
-                </section>
-                <section class="card">
-                  <div class="card__head">
-                    <h2 class="card__title"><svg class="icon"><use href="#i-clock" /></svg>Lap times</h2>
-                    <p class="card__desc">Pick drivers below to compare their progression.</p>
-                  </div>
-                  <canvas id="team-laptime-canvas" class="team-canvas team-canvas--laptime"></canvas>
-                  <div id="team-laptime-legend" class="team-legend"></div>
-                </section>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
+            <!-- Lap-time progression. -->
+            <section class="tw" data-widget="laptimes" hidden>
+              <header class="tw__bar" data-twmove tabindex="0" role="button"
+                      aria-label="Lap times widget — drag to move, arrow keys to nudge, shift and arrow keys to resize">
+                <svg class="icon tw__icon"><use href="#i-clock" /></svg>
+                <h2 class="tw__title" title="Click a driver chip below to add or drop them from the comparison.">Lap times</h2>
+                <span class="tw__extra"></span>
+                <button type="button" class="tw__x" data-twoff="laptimes" aria-label="Take Lap times off the board">
+                  <svg class="icon"><use href="#i-x" /></svg>
+                </button>
+              </header>
+              <div class="tw__body tw__body--chart">
+                <canvas id="team-laptime-canvas" class="team-canvas team-canvas--laptime"></canvas>
+                <div id="team-laptime-legend" class="team-legend"></div>
               </div>
-            </div>
+              <span class="tw__grip" data-twresize aria-hidden="true"></span>
+            </section>
+
           </div>
+        </div>
+
+        <!-- ================== HOW IT WORKS ========================== -->
+        <!-- First-run walkthrough. Steps are built by team-guide.js — only
+             the frame is static, same contract as the Setups and Streamers
+             guides. Reuses the su-guide dialog styling; deliberately NOT
+             "sheet" or "su-pop" so it yields to those without yielding to
+             itself. -->
+        <div id="team-guide" class="su-guide" hidden role="dialog" aria-modal="true"
+             aria-labelledby="team-guide-title">
+          <div id="team-guide-scrim" class="su-guide__scrim"></div>
+          <section class="su-guide__panel">
+            <header class="su-guide__head">
+              <span id="team-guide-icon" class="su-guide__icon"></span>
+              <span class="su-guide__titles">
+                <h2 id="team-guide-title" class="su-guide__title"></h2>
+                <p id="team-guide-sub" class="su-guide__sub"></p>
+              </span>
+              <button id="team-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+            </header>
+            <div id="team-guide-body" class="su-guide__body"></div>
+            <footer class="su-guide__foot">
+              <div id="team-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
+              <div class="su-guide__nav">
+                <button id="team-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
+                <button id="team-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
+              </div>
+            </footer>
+          </section>
         </div>
       </div>
     </section>
@@ -3010,7 +3143,9 @@
      pit-wall view itself. -->
 <script src="team-fuel.js"></script>
 <script src="team-charts.js"></script>
+<script src="team-dashboard.js"></script>
 <script src="team-panel.js"></script>
+<script src="team-guide.js"></script>
 <script src="engineer-panel.js"></script>
 <!-- Get started checklist. LAST of all: it navigates through window.apexNav
      (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can

@@ -20,13 +20,14 @@
  * the button being described while it is being described. A walkthrough you
  * have to close before you can do the thing is a slideshow.
  *
- * Five tours, one per section, in the order the checklist lists them:
+ * Six tours, one per section, in the order the checklist lists them:
  *
  *   settings  — the plugin, the sim's own controls, your own bindings
  *   overlays  — which overlays go where, and how one reaches OBS
  *   ingame    — the on-screen layer, the hotkey that cycles, laying it out
  *   engineer  — voice, push-to-talk, how much it volunteers
  *   setups    — the sim holds the car, nothing moves until Apply
+ *   team      — the pit-wall board, and the three things a crew needs to feed it
  *
  * `runAll()` chains them, which is the "walk me through the whole app" the
  * checklist's own button offers.
@@ -388,6 +389,92 @@
         },
       ],
     },
+    {
+      id: 'team',
+      title: 'Team',
+      icon: 'users',
+      blurb: 'The pit wall: one board of live widgets, and the crew who feed it.',
+      steps: [
+        {
+          id: 'board',
+          view: 'team',
+          anchor: '#team-dash',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'The whole race on one board',
+          body:
+            'Timing, the track map, fuel and energy, the plan to the flag, tyres, brakes, weather, ' +
+            'position changes and lap times — all on screen together. Drag a widget by its title ' +
+            'bar to move it, or by its bottom-right corner to resize it; everything else slides out ' +
+            'of the way and closes the gap behind it.',
+          note: 'Your arrangement is saved on this PC and comes back next race.',
+        },
+        {
+          id: 'presets',
+          view: 'team',
+          anchor: '#team-board-toggle',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'Board — layouts, and what is on the wall',
+          body:
+            'Three ready-made boards to start from — Engineer, Strategist and Car — plus a ' +
+            'switch for every widget. Turn off what you do not want this race and it is not drawn ' +
+            'at all. Reset board puts it back the way it shipped.',
+        },
+        {
+          id: 'crew',
+          view: 'team',
+          anchor: '#team-crew-toggle',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'Crew — how team-mates get added',
+          body:
+            'One person creates the team and Apex issues a single invite code, like a Discord ' +
+            'invite. Share invite copies a whole message — download link, sign-up step and code ' +
+            '— to paste into your team chat; everyone else opens this tab and uses Join with a code.',
+          note: 'Up to six seats. The owner can issue a new code or remove someone at any time.',
+        },
+        {
+          id: 'seats',
+          view: 'team',
+          anchor: '#team-crew',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'Everyone needs their own subscription',
+          body:
+            'There is no watcher seat. Each team-mate signs in with their own active Apex ' +
+            'subscription — someone without one cannot join the team, and cannot be seen from ' +
+            'the pit wall.',
+        },
+        {
+          id: 'relay',
+          view: 'team',
+          anchor: '#team-source',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'And has to be running Apex while they drive',
+          body:
+            'Tyres, fuel, energy and damage exist only on the PC of whoever is in the car — the ' +
+            'sim never publishes them to anyone else. So the driver keeps Apex running with their ' +
+            'overlays during the race, and their own app relays those numbers to the rest of you.',
+          note:
+            'Nothing is handed over at a driver swap: Apex follows whichever team-mate has live ' +
+            'tyre data, so the board switches car on its own.',
+        },
+        {
+          id: 'age',
+          view: 'team',
+          anchor: '#team-age',
+          optional: true,
+          gate: '[data-tab="team"]',
+          title: 'Always check the age',
+          body:
+            'LIVE while frames are arriving, STALE with the seconds since the last one, DEMO when ' +
+            'the numbers are simulated. A screen full of confident-looking old numbers is the ' +
+            'dangerous failure, so this pill never lets one hide.',
+        },
+      ],
+    },
   ];
 
   /* ---- pure helpers ------------------------------------------------------- */
@@ -422,7 +509,17 @@
     return list.filter((s) => {
       if (!s.optional || !s.anchor) return true;
       try {
-        return !!document.querySelector(s.anchor);
+        if (!document.querySelector(s.anchor)) return false;
+        // `gate` is the beta-channel case, and it is the one place presence is
+        // not enough. The Team tab's markup is in every build; what decides
+        // whether a driver can reach it is the nav button's `hidden`. A step
+        // whose gate is hidden would otherwise walk someone to a tab that
+        // cannot be opened, which is exactly what `optional` exists to prevent.
+        if (s.gate) {
+          const el = document.querySelector(s.gate);
+          if (!el || el.hidden) return false;
+        }
+        return true;
       } catch {
         return false;
       }
@@ -723,7 +820,9 @@
      * one being scheduled; this closes one that is already up, and drops any
      * pending timer, so a tour never starts underneath a modal.
      */
-    for (const name of ['APEX_SETUP_GUIDE', 'APEX_STREAMER_GUIDE', 'APEX_BINDINGS_GUIDE']) {
+    for (const name of [
+      'APEX_SETUP_GUIDE', 'APEX_STREAMER_GUIDE', 'APEX_BINDINGS_GUIDE', 'APEX_TEAM_GUIDE',
+    ]) {
       const guide = window[name];
       guide?.cancelAutoOpen?.();
       guide?.close?.();

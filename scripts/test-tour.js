@@ -31,6 +31,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const tour = require('../electron/control-panel/tour.js');
 const onboarding = require('../electron/control-panel/onboarding.js');
+const teamGuide = require('../electron/control-panel/team-guide.js');
 
 const PANEL = path.join(__dirname, '..', 'electron', 'control-panel');
 const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8');
@@ -158,6 +159,26 @@ console.log('\nEvery step points at something that exists');
   // Everything not marked optional must exist in every build, or a tour cut
   // for stable silently loses a step it was relying on.
   check('a required step is never dropped', dropped >= tour.allSteps().length - optional.length);
+
+  /*
+   * `gate` is the beta-channel case: the Team tab's markup is in every build,
+   * so presence alone would keep its steps on a stable release where the nav
+   * button is hidden and the tab cannot be opened at all. Asserted both ways
+   * against the same stub the optional checks use.
+   */
+  const gated = tour.allSteps().filter((s) => s.gate);
+  check('gated steps exist', gated.length > 0, gated.length);
+  check('gated steps are also optional', gated.every((s) => s.optional));
+  const shown = { querySelector: () => ({ hidden: false }) };
+  const hiddenTab = { querySelector: (sel) => (sel.includes('data-tab') ? { hidden: true } : {}) };
+  const withGate = withDoc(shown, () => tour.usableSteps(tour.allSteps()).length);
+  const withoutGate = withDoc(hiddenTab, () => tour.usableSteps(tour.allSteps()).length);
+  check('gated steps run when their tab is available', withGate === tour.allSteps().length, withGate);
+  check(
+    'and are dropped when the tab is hidden',
+    withoutGate === tour.allSteps().length - gated.length,
+    `${withoutGate} of ${tour.allSteps().length}`,
+  );
 }
 
 {
@@ -201,6 +222,50 @@ check('push-to-talk is explained', /push-to-talk/.test(inTour('engineer')));
 // The single most surprising thing about the Setups tab.
 check('Apply-before-anything-happens is explained', /apply/.test(inTour('setups')));
 check('the setup library is explained', /library/.test(inTour('setups')));
+
+/*
+ * The Team tab. Three of these are PRECONDITIONS rather than controls, and
+ * they are the reason the tab looks broken when it is merely set up wrong:
+ * a crew whose team-mates are not subscribed, or are not running Apex while
+ * they drive, gets a page that stays empty and says nothing. Losing any of
+ * these sentences in a rewrite would put that failure back, so each is pinned
+ * by subject here rather than by step id.
+ */
+check('a tour covers the pit wall', !!tour.tourById('team'));
+check('dragging the board is explained', /drag/.test(inTour('team')));
+check('the invite code is explained', /invite/.test(inTour('team')));
+check('every seat needing a subscription is stated', /subscription/.test(inTour('team')));
+check(
+  'and that the driver must be running Apex',
+  /running apex/.test(inTour('team')),
+  'the relay only exists on the driving PC',
+);
+check('the data-age pill is explained', /stale/.test(inTour('team')));
+
+{
+  // The first-visit guide carries the same three preconditions, because
+  // anyone who walked the first-run tour before the board existed will never
+  // be offered the Team tour again — this modal is their only introduction.
+  const guide = teamGuide.STEPS
+    .map((s) => `${s.title} ${s.lead} ${s.points.join(' ')}`)
+    .join('\n')
+    .toLowerCase();
+  check('the Team guide has steps', teamGuide.STEPS.length >= 4, teamGuide.STEPS.length);
+  check('no duplicate guide step ids',
+    new Set(teamGuide.STEPS.map((s) => s.id)).size === teamGuide.STEPS.length);
+  check('every guide step says something', teamGuide.STEPS.every((s) => s.lead && s.points.length));
+  check('the guide explains adding team-mates', /join with a code/.test(guide));
+  check('the guide states every seat needs a subscription', /subscription/.test(guide));
+  check('the guide states the driver must be running Apex', /running apex/.test(guide));
+  check('the guide explains the overlays are part of that', /overlay/.test(guide));
+  check('the guide explains rearranging the board', /drag/.test(guide));
+  check('the guide is in the page', /id="team-guide"/.test(html));
+  check('and starts hidden', /id="team-guide"[^>]*\shidden/.test(html));
+  check('its script is loaded', html.includes('src="team-guide.js"'));
+  check('"How it works" can reopen it', /id="team-guide-open"/.test(html));
+  check('the router offers it on arrival', /APEX_TEAM_GUIDE\?\.maybeAutoOpen/.test(panelJs));
+  check('and cancels it on the way out', /APEX_TEAM_GUIDE\?\.cancelAutoOpen/.test(panelJs));
+}
 
 /* -------------------------------------------------------------------------- */
 console.log('\nThe checklist and the tours agree');
