@@ -1,8 +1,8 @@
-# Discord launch post — Apex AIO System v0.95.2
+# Discord launch post — Apex AIO System v0.96.0
 
 Ready to paste. Discord caps a message at 2000 characters, so this is split
-into six messages — post them in order in `#announcements`. Every claim below
-is checked against the app as it ships in v0.95.2; nothing here is promised
+into seven messages — post them in order in `#announcements`. Every claim below
+is checked against the app as it ships in v0.96.0; nothing here is promised
 ahead of the build. A one-message short version for a pin or an embed is at
 the bottom.
 
@@ -14,10 +14,10 @@ Swap `#suggestions` in message 6 for whatever your channel is actually called.
 
 # 🏁 Apex AIO System — out now
 
-The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, setups, fuel and energy maths, league leaderboards and stream tools.
+The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, a full pit wall, setups, fuel and energy maths, league leaderboards and stream tools.
 
-**⬇️ Download — v0.95.2, Windows**
-https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
+**⬇️ Download — v0.96.0, Windows**
+https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
 
 **It's free for everyone who races with us.** How that works is in the fifth message — read that one before you pay for anything. 👇
 
@@ -89,7 +89,23 @@ Six voices, through a proper comms channel — band-limited, squelch, hiss. Your
 
 ---
 
-## Message 5 — how you get it
+## Message 5 — the pit wall
+
+## 🖥️ The pit wall
+
+New in this build, and the biggest thing in it. One board with the whole race on it: the class-grouped timing sheet, the track map, fuel and virtual energy, a strategy that replans to the flag off what your car is actually using, tyre wear and brake temps, the weather forecast, positions gained and lost, lap-time progression.
+
+▸ **A gap column that means something.** **vs Me** is every car's gap to *you* — minus for ahead, plus for behind, seconds when they're close and laps when they're not. Every other timing sheet measures off the leader and leaves you doing the sums
+
+▸ **Build the board you want.** Drag a panel by its title bar, resize it from the corner, and the rest slides out of the way and closes the gap behind it. Three layouts to start from — Engineer, Strategist, Car — and a switch for every panel, so anything you don't want this race comes off entirely. It remembers your arrangement
+
+▸ **Built for a team enduro.** With a crew it follows whoever is in the car, so whoever's on the wall sees *the driver's* tyres, fuel and damage — the things the sim shows nobody but the driver. One person creates the team, everyone else joins with the invite code
+
+**Two things to sort before you plan a crew:** everyone in it needs their own subscription — there's no watcher seat — and whoever's driving has to be running Apex with their overlays on, because that telemetry only exists on their PC. Get either wrong and the board just sits there empty.
+
+---
+
+## Message 6 — how you get it
 
 ## 💷 Getting access
 
@@ -107,18 +123,18 @@ Exactly the same app, cancel any time. **7-day free trial** to try it properly f
 
 ---
 
-## Message 6 — getting started
+## Message 7 — getting started
 
 ## ⚙️ Up and running in about five minutes
 
-**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
+**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
 *(Windows, ~285 MB. Signed by The Lilybank Agency Ltd, so no "unknown publisher" warning. It's a chunky download because the engineer's voice rides inside it — he talks straight out of the box, nothing to fetch. The five alternative voices are a one-click download in the app if you fancy a change.)*
 
 **2.** Create your account — or hit **Continue offline** if you only want the overlays on your own PC.
 
 **3.** Redeem your league code, or start the trial.
 
-**4.** Work down the **Get started checklist** on the Dashboard. It covers the telemetry plugin, giving the sim's own controls a key, binding your buttons, getting an overlay on screen, laying the widgets out and setting up the engineer — and each row ticks itself when the thing is genuinely done, so it tells you what's left rather than asking. Click a row and it runs a guided tour of that section.
+**4.** Work down the **Get started checklist** on the Dashboard. It covers the telemetry plugin, giving the sim's own controls a key, binding your buttons, getting an overlay on screen, laying the widgets out, setting up the engineer and building your pit wall — and each row ticks itself when the thing is genuinely done, so it tells you what's left rather than asking. Click a row and it runs a guided tour of that section.
 
 **5. For OBS:** **Overlays** in the side rail → **Copy** on any widget → paste into a Browser Source.
 **5. For in game:** flip **Show in game**, then **Edit layout** and drag things where you want them. Turn on **Magnetic docking** and widgets snap flush to each other and match their neighbour's size, so a row of panels comes out aligned.
@@ -141,9 +157,10 @@ Overlays, a voice race engineer, setups, fuel and energy maths and league leader
 
 **Standings · relative · speedo · radar · track map · track limits · fuel · pedals · motion · tyres · weather · damage · MFD** — every one draggable, resizable and fadeable, on stream and in game, plus **ten LMGT3 dashboards** drawn from the real cars.
 **A race engineer on a wheel button** — 37 answers instantly and offline, race calls he knows when to hold, pace coaching, and 300 advanced questions a month.
+**A pit wall with the whole race on one board** — timing sheet, track map, strategy, tyres, weather — and a gap column that reads to *you* instead of the leader. In a team enduro it follows whoever's driving.
 **Setups, community tunes, league boards, reference pace, the SimGrid schedule and a full streamer toolkit.**
 
 **Racing an Apex & Chill league or one of our special events? It's free — DM me for your access code.** Stops being free if you stop racing.
 **Everyone else: £4.99/month launch price, 7-day free trial.**
 
-⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.95.2/Apex-AIO-System-Setup-0.95.2.exe
+⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
