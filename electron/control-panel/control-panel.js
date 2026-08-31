@@ -4596,20 +4596,14 @@
     }
   }
 
-  /**
-   * The Team tab (pit-wall view, docs/TEAM-ENGINEER-PAGE.md) ships to the
-   * beta channel first for the same reason the sync doc demands it: its
-   * endgame is multi-machine, and none of those failure modes reproduce solo.
-   * Identical rule and manners to the Fuel tab above.
+  /*
+   * The Team tab used to sit behind the same `followingBeta` gate as Fuel
+   * above, because its endgame is multi-machine and none of those failure
+   * modes reproduce solo. It came off that gate in v0.96.0 after the beta
+   * channel had run it through real endurance races, so there is no
+   * applyTeamTabVisibility() any more — the tab is simply visible, and its
+   * markup no longer carries `hidden`. Fuel deliberately stays gated.
    */
-  function applyTeamTabVisibility() {
-    const tab = tabButtons.find((t) => t.dataset.tab === 'team');
-    if (tab) tab.hidden = !followingBeta;
-    if (!followingBeta) {
-      const teamView = views.find((v) => v.dataset.view === 'team');
-      if (teamView && teamView.getAttribute('data-active') === 'true') showView('dashboard');
-    }
-  }
 
   function showView(name) {
     const known = views.some((v) => v.dataset.view === name);
@@ -6020,7 +6014,6 @@
     followingBeta = beta || !!u.runningIsBeta;
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
-    applyTeamTabVisibility();
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';

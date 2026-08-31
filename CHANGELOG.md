@@ -4,64 +4,47 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.96.0-beta.2 — 2026-08-31
-
-### Changed
-
-- **The Team page is one pit wall now, not four tabs.** Everything that used to
-  be behind Timing, Positions, Strategy and Telemetry is on screen together:
-  the timing sheet, the track map, fuel and energy, the plan to the flag, the
-  tyre plan, the tyre and brake corners, car state, weather, position changes
-  and lap-time progression. Nothing was dropped and no number changed — the
-  page simply stopped hiding three quarters of itself, and stopped leaving half
-  a widescreen empty while it did.
-- **Every widget can be dragged where you want it.** Take a card by its title
-  bar and move it; the rest of the board slides out of the way and closes the
-  gap behind it, so there is never a hole in the middle of the screen. Drag the
-  bottom-right corner to resize — the charts, the map and the timing sheet all
-  redraw at whatever size you give them. Arrow keys nudge a selected card, and
-  shift with the arrows resizes it. Your arrangement is remembered between
-  sessions and between races.
-- **Three stock boards, and a widget list.** The Board button offers Engineer
-  (timing-led), Strategist (fuel, stints and the plan up front) and Car (map,
-  tyres, brakes and weather at full size) — the old tabs, as starting points
-  rather than walls — plus a switch per widget, so anything you do not want on
-  the wall this race can come off it, and comes off the app's workload with it.
-  Reset board puts everything back.
-- **The header is one strip.** Circuit, session, flag, race clock, lap, field
-  size and how fresh the data is, on a single line, with the crew roster folded
-  behind a button. That is roughly 190 pixels of title and sub-heading given
-  back to the numbers.
+## 0.96.0 — 2026-08-31
 
 ### Added
 
-- **The walkthrough now covers the pit wall.** The first-run guide gained a
-  Team section, and the checklist a "Set up your pit wall" row alongside it. It
-  covers arranging the board, and then the three things that are not controls
-  at all but decide whether the page works: how team-mates are added (one
-  person creates the team, Apex issues a single invite code, everyone else
-  joins with it), that every team-mate needs their own active subscription —
-  there is no watcher seat — and that whoever is driving has to be running Apex
-  with their overlays during the race, because tyres, fuel, energy and damage
-  exist only on the driving PC and it is their own app that relays them to you.
-  A crew that has any of that wrong gets a page that stays empty and says
-  nothing, which is indistinguishable from a session that has not started yet.
-- **And the Team tab introduces itself.** Anyone who walked the first-run guide
-  before the board existed will never be offered that section again, so the
-  first time the Team tab is opened it runs a short walkthrough of its own —
-  the same manners as the Setups and Streamers tabs, with "How it works" beside
-  the header to bring it back whenever you want it.
-
-## 0.96.0-beta.1 — 2026-08-30
-
-### Added
-
-- **A "vs Me" column on the pit wall's timing sheet.** Every other gap on that
-  sheet is measured to a leader or to the car in front, so the one question a
-  pit wall actually asks — how far away is *that* car, from mine — could only
-  be answered by subtracting two numbers that do not subtract. It now has its
-  own column: a minus sign means ahead of you, a plus means behind, in laps
-  when the pair are more than one apart and in seconds when they are not.
+- **The pit wall.** A new Team tab, and the largest thing in this release: one
+  board that shows everything the car is doing at once — the full
+  class-grouped timing sheet, the track map with every car on it, fuel and
+  virtual energy, a strategy that replans to the flag from what the car is
+  actually using, tyre wear and brake temperatures corner by corner, weather
+  with the rest of the forecast, position changes and lap-time progression.
+  The timing sheet answers the question a pit wall actually asks, which no
+  sheet in this app could before: its **vs Me** column is the gap from each car
+  to *yours* — minus for ahead, plus for behind, in seconds when they are
+  close and in laps when they are not.
+  It is useful on your own, and it is built for a team endurance race: with
+  team-mates in a crew it follows whoever is currently in the car, so whoever
+  is on the wall sees the driver's own telemetry — tyres, fuel and damage
+  included, none of which the sim publishes to anybody but the driver. It has
+  been in beta since v0.91.0 and has now run enough real races to come out.
+- **Arrange the board the way the race wants it.** Drag a widget by its title
+  bar to move it, or by its bottom-right corner to resize it; everything else
+  slides out of the way and closes the gap behind it, so the board never ends
+  up with a hole in the middle of the screen. Three layouts to start from —
+  Engineer, Strategist and Car — plus a switch for every widget, so anything
+  you do not want this race comes off the board entirely, and off the app's
+  workload with it. Your arrangement is remembered between sessions and
+  between races.
+- **A walkthrough that explains it.** The first-run guide has a Team section
+  and the get-started checklist a "Set up your pit wall" row, and the tab runs
+  a short introduction of its own the first time you open it — with "How it
+  works" beside the header to bring it back. Between them they cover
+  rearranging the board and, more importantly, the three things that decide
+  whether a crew works at all and that nothing on screen can tell you: how
+  team-mates are added (one person creates the team, Apex issues a single
+  invite code, everyone else joins with it), that **every team-mate needs
+  their own active subscription** — there is no watcher seat — and that
+  **whoever is driving has to be running Apex with their overlays** during the
+  race, because tyres, fuel, energy and damage exist only on the driving PC
+  and it is their own app that relays them to the wall. A crew with any of
+  that wrong gets a page that stays empty and says nothing, which looks
+  exactly like a session that has not started.
 - **The groundwork for race strategy.** Two new records go into the local
   database, and nothing on screen changes yet: every lap now stores what it
   burned — fuel in and out, virtual energy, tyre wear at the line, compound,
@@ -81,6 +64,14 @@
   Costs nothing when nothing is wrong.
 
 ### Fixed
+
+- **You are no longer signed out in the middle of a race.** The sign-in token
+  is renewed automatically as it expires, and several parts of the app work on
+  their own timers — so when the token came due, several of them tried to
+  renew it at the same instant. Only one such attempt can win; the losers were
+  told their token was invalid, the app took that at face value, and it signed
+  you out mid-race with no explanation. A restart brought it back. Renewals
+  are now shared, so there is nothing to lose.
 - **Laps left no longer counts your race off the class leader's pace.** In a
   timed race the clock is the same for everyone, so the only question is how
   many laps *your* car fits into it — but the figure was being divided by the
@@ -89,45 +80,32 @@
   had 85, and the fuel plan sitting under it carried three laps of fuel for
   nothing. It now uses your own measured pace, and falls back to the class
   leader's only until you have turned a lap.
-- **The pit wall's lap gaps can be read against each other again.** The
-  timing sheet's Gap column showed whole laps down to the class leader,
-  rounded down on every row — so a car 3.6 laps back read "+3L", one 5.0 back
-  read "+5L", and the two together implied two laps between cars that were
-  1.5 apart. Lap gaps now carry a decimal, which subtracts correctly, and a
-  new **vs Me** column answers the question the sheet never could: how far
-  away is that car, from mine. The Int column now measures to the car ahead
-  *in class*, matching the block it is printed inside.
-- **The leading class gets its seconds back.** The race leader's gap to
+- **Gaps survive a long race, and the leaders get their seconds back.** Two
+  faults that showed up together over eight hours. The race leader's gap to
   themselves is zero, which was being read as "no reading available" — and
-  since every other car's gap is worked out by subtracting the leader's, the
-  whole lead lap fell back to a dash. P2 sitting 3.9 s behind showed nothing
-  at all.
-- **Class gaps survive a long race.** Le Mans Ultimate stops publishing a
-  car's gap to the leader once that car is lapped, which in an eight-hour
-  race is nearly the whole field. Where that happens the app now reads the
-  game's own class gap instead of giving up.
+  because every other car's gap is worked out by subtracting the leader's, the
+  whole lead lap fell back to a dash, with P2 sitting 3.9 s behind showing
+  nothing at all. Separately, Le Mans Ultimate stops publishing a car's gap to
+  the leader once that car is lapped, which late in a long race is nearly the
+  whole field; where that happens the app now reads the game's own class gap
+  instead of giving up. Gaps measured in laps also carry a decimal now, so two
+  of them can be compared against each other — rounded down on every row, a
+  car 3.6 laps back and one 5.0 back implied two laps between cars that were
+  1.5 apart.
 - **"Avg 5" no longer blends two drivers.** A team car keeps its place in the
   field across a driver change, so the rolling five-lap average was still
   reporting the pace of whoever had just got out for ten minutes after the
   swap. The window now restarts with the new driver. An average built on
   fewer than five laps — after a swap, a stop, or a late join — is marked
   with the number of laps it actually used instead of passing as a full one.
-- **Team data no longer drops out mid-race.** The sign-in token is renewed
-  automatically as it expires, and the pit-wall relay publishes, reads and
-  uploads laps on separate timers — so when the token came due, several of
-  them tried to renew it at the same instant. Only one such attempt can win;
-  the losers were told their token was invalid, and the app took that at face
-  value and signed you out. Mid-race, with no explanation, and a restart
-  brought it back. Renewals are now shared, so there is nothing to lose. And
-  when the pit wall genuinely does go quiet it now says why, instead of
-  looking identical to a team with nobody driving.
-- **The relay stops sawing at the race history in long races.** The team relay
-  sends a trimmed race history at most once a minute, and it finds a size that
-  fits by rebuilding it up to four times. If the history had grown too large to
-  fit even at its coarsest, the attempt produced nothing — and because nothing
-  was sent, the once-a-minute gate never closed, so it rebuilt it again on
-  every single second for the rest of the race. Worst exactly when the race is
-  longest.
+- **The pit wall keeps up over a long race.** The relay that carries a
+  driver's telemetry to their team sends a trimmed race history at most once a
+  minute, and finds a size that fits by rebuilding it a few times. Once a race
+  grew long enough that the history would not fit even at its coarsest, the
+  attempt produced nothing — and because nothing was sent, the once-a-minute
+  gate never closed, so it rebuilt it again every second for the rest of the
+  race. Worst exactly when the race was longest. It also now says why the wall
+  has gone quiet, instead of looking identical to a team with nobody driving.
 
 ## 0.95.2 — 2026-08-28
 
