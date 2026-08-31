@@ -365,8 +365,9 @@
       setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
       teamToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('team')),
       // Whether this build HAS a Team tab. The nav button's `hidden` is the
-      // one owner of that fact (control-panel.js applyTeamTabVisibility), so
-      // it is read rather than duplicated as a second channel check.
+      // one owner of that fact, so it is read rather than duplicated as a
+      // second channel check. Nothing hides it as of v0.96.0; the read stays
+      // because it is what makes a future re-gate need no change here.
       teamTabAvailable:
         typeof document !== 'undefined'
         && !!document.querySelector('[data-tab="team"]')

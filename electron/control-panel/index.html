@@ -147,9 +147,12 @@
       <button class="tab" type="button" data-tab="fuel" hidden>
         <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
       </button>
-      <!-- Beta-channel feature: the pit-wall view (docs/TEAM-ENGINEER-PAGE.md
-           Phase 1). Same visibility rule and reasoning as the Fuel tab above
-           (control-panel.js applyTeamTabVisibility). -->
+      <!-- The pit-wall view (docs/TEAM-ENGINEER-PAGE.md). Beta-gated from
+           v0.91.0 and visible to everyone since v0.96.0, so unlike the Fuel
+           tab above it no longer ships `hidden`. The tour and the get-started
+           checklist read this button's `hidden` to decide whether to offer
+           their Team sections, so re-gating the tab would re-gate those with
+           it and needs nothing else changed. -->
       <button class="tab" type="button" data-tab="team">
         <svg class="icon"><use href="#i-users" /></svg><span class="tab__label">Team</span>
       </button>
