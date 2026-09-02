@@ -4,7 +4,7 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.97.0-beta.2 — 2026-09-02
+## 0.97.0 — 2026-09-02
 
 ### Changed
 
@@ -21,28 +21,20 @@
   clash is filed as "(2)" instead. The old behaviour is still one click away
   under **Stage in editor**, for when you actually do want to preview a tune
   against the car row by row and Apply it.
-
-## 0.97.0-beta.1 — 2026-09-02
-
-### Changed
-
-- **Naming what freezes the overlays.** A build for the testers who see the
-  overlays lock up for a second and then catch back up. Nothing on screen is
-  different — this release only makes the app better at recording what it was
-  doing at the moment it stopped.
-  The stall log the app already keeps (`stalls.log`, in the app's data folder)
-  had one flaw that mattered: it could only remember a single job at a time, so
-  when several were running at once — which is always — a quick one finishing
-  would erase the name of the slow one still going, and the freeze got recorded
-  as "nothing in particular". It now tracks every job that is open, reports how
-  long each has been running, and names the slowest one to have finished during
-  the freeze itself.
-  All eight of the checks the app makes against Le Mans Ultimate now leave their
-  name in that log, as does the moment each of their replies is unpacked — which
-  is the part that costs real time in a full field, and the part with no name
-  until now. Each freeze is also stamped with the size of the field and the
-  session you were in, so a report can say whether these track a 40-car race or
-  happen just as often in an empty practice session.
+- **The app can now name what froze it.** For the drivers who see the overlays
+  lock up for a second and then catch back up: nothing on screen is different,
+  but the stall log the app keeps (`stalls.log`, in its data folder) is worth
+  reading now. It could only remember one job at a time, so when several were
+  running at once — which is always — a quick one finishing would erase the name
+  of the slow one still going, and the freeze got recorded as "nothing in
+  particular". It now tracks every job that is open, reports how long each has
+  been running, and names the slowest one to finish during the freeze itself.
+  All eight of the checks the app makes against Le Mans Ultimate leave their
+  name in that log, as does the moment each of their replies is unpacked — the
+  part that costs real time in a full field, and the part with no name until
+  now. Each freeze is also stamped with the size of the field and the session
+  you were in, so a report can say whether these track a 40-car race or happen
+  just as often in an empty practice session.
 
 ### Fixed
 
