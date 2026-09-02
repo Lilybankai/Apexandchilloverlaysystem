@@ -1,8 +1,8 @@
-# Discord launch post — Apex AIO System v0.96.0
+# Discord launch post — Apex AIO System v0.97.0
 
 Ready to paste. Discord caps a message at 2000 characters, so this is split
 into seven messages — post them in order in `#announcements`. Every claim below
-is checked against the app as it ships in v0.96.0; nothing here is promised
+is checked against the app as it ships in v0.97.0; nothing here is promised
 ahead of the build. A one-message short version for a pin or an embed is at
 the bottom.
 
@@ -16,8 +16,8 @@ Swap `#suggestions` in message 6 for whatever your channel is actually called.
 
 The league's own overlay and race-engineer system for **Le Mans Ultimate** and **rFactor 2**. One Windows app: telemetry overlays for OBS *and* on top of the game, a voice race engineer on your wheel button, a full pit wall, setups, fuel and energy maths, league leaderboards and stream tools.
 
-**⬇️ Download — v0.96.0, Windows**
-https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
+**⬇️ Download — v0.97.0, Windows**
+https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.97.0/Apex-AIO-System-Setup-0.97.0.exe
 
 **It's free for everyone who races with us.** How that works is in the fifth message — read that one before you pay for anything. 👇
 
@@ -75,9 +75,9 @@ Six voices, through a proper comms channel — band-limited, squelch, hiss. Your
 
 ▸ **Setup editor** *(LMU)* — ten intent sliders (front turn-in, rear traction, top speed, softer over kerbs, braking stability and friends), each moving a weighted set of real settings at once. Nothing touches the car while you drag — rows preview old → new and one **Apply** sends the lot
 
-▸ **A setup library** — save the car as the garage holds it, tag it Race or Quali, and sort it by *your best clean lap* on that track. Share a tune as a file, or copy it straight into a Discord message
+▸ **A setup library** — save the car as the garage holds it, tag it Race or Quali, and sort it by *your best clean lap* on that track. Share a tune as a file, or copy it straight into a Discord message. **Send to game** hands any of them to LMU — with the game shut too, it's simply there next time you start — and it never writes over one you'd already saved under that name
 
-▸ **Community setups** — filtered to the exact car and track you're sitting in, and it re-filters itself when you swap
+▸ **Community setups** — filtered to the exact car and track you're sitting in, and it re-filters itself when you swap. New in this build: a download goes into LMU's own custom setups rather than onto the car you're driving. It tells you where it landed — **pit garage → Setups** — and the tune you were working on is left exactly as it was
 
 ▸ **League leaderboards** — every member's best clean lap, by track and class, your own row marked
 
@@ -127,7 +127,7 @@ Exactly the same app, cancel any time. **7-day free trial** to try it properly f
 
 ## ⚙️ Up and running in about five minutes
 
-**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
+**1.** Install it → https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.97.0/Apex-AIO-System-Setup-0.97.0.exe
 *(Windows, ~285 MB. Signed by The Lilybank Agency Ltd, so no "unknown publisher" warning. It's a chunky download because the engineer's voice rides inside it — he talks straight out of the box, nothing to fetch. The five alternative voices are a one-click download in the app if you fancy a change.)*
 
 **2.** Create your account — or hit **Continue offline** if you only want the overlays on your own PC.
@@ -163,4 +163,4 @@ Overlays, a voice race engineer, setups, fuel and energy maths and league leader
 **Racing an Apex & Chill league or one of our special events? It's free — DM me for your access code.** Stops being free if you stop racing.
 **Everyone else: £4.99/month launch price, 7-day free trial.**
 
-⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.96.0/Apex-AIO-System-Setup-0.96.0.exe
+⬇️ https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/download/v0.97.0/Apex-AIO-System-Setup-0.97.0.exe
