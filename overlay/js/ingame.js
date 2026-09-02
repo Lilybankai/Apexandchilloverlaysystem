@@ -1110,7 +1110,11 @@
       setTimeout(function () {
         if (el.parentNode) el.parentNode.removeChild(el);
       }, 400);
-    }, n.kind === "error" ? 6000 : 2500);
+      // 2.5 s is right for "pit request sent" — a glance confirming a press the
+      // driver just made. A notice that asks them to go and FIND something (a
+      // setup landing in the garage list) has to outlast a glance, so a sender
+      // can buy more time; the error budget stays the ceiling.
+    }, Math.min(12000, Number(n.dwellMs) || (n.kind === "error" ? 6000 : 2500)));
   }
 
   /* --------------------------------- boot -------------------------------- */

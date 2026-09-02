@@ -1320,6 +1320,26 @@
           </div>
         </div>
 
+        <!-- "It's in the game now" dialog. Shown after a community download or
+             a library "Send to game": nothing changed on the car, so the driver
+             has to be told, in the game's own words, where the setup went. -->
+        <div id="setup-ingame-pop" class="su-pop" hidden>
+          <div class="su-pop__box">
+            <h3 class="su-pop__title">Saved to your custom setups</h3>
+            <div class="su-pop__body">
+              <p id="setup-ingame-text"></p>
+              <p class="su-pop__hint">
+                In LMU: <strong>pit garage → Setups → your custom setups</strong>, then load it there.
+                Your current setup on the car has not been touched.
+              </p>
+              <p id="setup-ingame-warn" class="su-pop__error" hidden></p>
+            </div>
+            <div class="su-pop__buttons">
+              <button id="setup-ingame-ok" class="btn btn--accent btn--sm" type="button">Got it</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Share dialog: clipboard-as-file for chat apps, or a save dialog. -->
         <div id="setup-share-pop" class="su-pop" hidden>
           <div class="su-pop__box">

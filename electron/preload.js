@@ -223,6 +223,9 @@ contextBridge.exposeInMainWorld('apex', {
     libClip: (id) => ipcRenderer.invoke('setuplib:clip', { id }),
     /** Import a .svm someone sent you (OS open dialog). */
     libImport: () => ipcRenderer.invoke('setuplib:import'),
+    /** Install into LMU's own custom setups for its car+track, leaving the car
+     *  alone: `{ ok, inGameName, trackFolder, entry, error? }`. */
+    libToGame: (id) => ipcRenderer.invoke('setuplib:togame', { id }),
 
     /* ---- community setups (cloud) ----
      * The library's public half. All five can come back `{ ok: false,
@@ -233,7 +236,8 @@ contextBridge.exposeInMainWorld('apex', {
     cloudPublish: (payload) => ipcRenderer.invoke('setupcloud:publish', payload),
     /** Take your own share down (the cloud copy only; local files stay). */
     cloudUnpublish: (id) => ipcRenderer.invoke('setupcloud:unpublish', { id }),
-    /** Fetch into the sim's Settings tree AND the library: `{ ok, inGame, entry }`. */
+    /** Fetch into the sim's Settings tree AND the library:
+     *  `{ ok, inGame, inGameName, inGameError, trackName, entry }`. */
     cloudDownload: (id) => ipcRenderer.invoke('setupcloud:download', { id }),
     /** Rate a downloaded setup 1–5: `{ id, stars, trackName, carClass, fingerprint }` —
      *  main attaches your verified lap, preferring one driven on that very setup. */

@@ -82,6 +82,10 @@
   const elShareFile = $('#setup-share-file');
   const elShareCancel = $('#setup-share-cancel');
   const elSharePublish = $('#setup-share-publish');
+  const elInGamePop = $('#setup-ingame-pop');
+  const elInGameText = $('#setup-ingame-text');
+  const elInGameWarn = $('#setup-ingame-warn');
+  const elInGameOk = $('#setup-ingame-ok');
 
   // Community card + publish/rate dialogs.
   const elComFollow = $('#setup-com-follow');
@@ -1005,17 +1009,49 @@
     const buttons = document.createElement('span');
     buttons.className = 'su-lib__buttons';
 
+    const noValues = !entry.values || Object.keys(entry.values).length === 0;
+
+    // The primary action is now "hand it to the game", not "stamp it on the
+    // car". A saved tune belongs in LMU's own setup list where the driver
+    // picks it deliberately; the old behaviour silently replaced whatever they
+    // were running, which is what made shared setups feel destructive.
+    // It works with the sim closed too — the file is just waiting at launch.
+    const gameBtn = document.createElement('button');
+    gameBtn.type = 'button';
+    gameBtn.className = 'btn btn--accent btn--sm';
+    gameBtn.textContent = 'Send to game';
+    gameBtn.disabled = noValues;
+    gameBtn.title = noValues
+      ? 'This file could not be read as a setup'
+      : 'Save it into LMU’s custom setups for this car & track — your current setup is untouched';
+    gameBtn.addEventListener('click', async () => {
+      gameBtn.disabled = true;
+      const label = gameBtn.textContent;
+      gameBtn.textContent = '…';
+      let res = null;
+      try {
+        res = await window.apex.setup.libToGame(entry.id);
+      } catch {
+        res = null;
+      }
+      gameBtn.disabled = false;
+      gameBtn.textContent = label;
+      reportInstall(res, entry.name, entry.trackName || entry.trackFolder);
+    });
+    buttons.appendChild(gameBtn);
+
+    // Staging survives as the deliberate, secondary path: it is still the only
+    // way to preview a tune row-by-row against what is on the car right now.
     const loadBtn = document.createElement('button');
     loadBtn.type = 'button';
-    loadBtn.className = 'btn btn--accent btn--sm';
-    loadBtn.textContent = 'Load';
-    const noValues = !entry.values || Object.keys(entry.values).length === 0;
+    loadBtn.className = 'btn btn--ghost btn--sm';
+    loadBtn.textContent = 'Stage in editor';
     loadBtn.disabled = !(lastState && lastState.connected) || noValues;
     loadBtn.title = noValues
       ? 'This file could not be read as a setup'
       : loadBtn.disabled
-        ? 'Start LMU and enter the garage to load'
-        : 'Stage this tune in the editor — Apply sends it to the car';
+        ? 'Start LMU and enter the garage to stage a tune'
+        : 'Preview this tune in the editor — Apply replaces what is on the car now';
     loadBtn.addEventListener('click', () => stageLibraryEntry(entry));
     buttons.appendChild(loadBtn);
 
@@ -1237,6 +1273,62 @@
     loadedStage = { name: entry.name, values, skipped, warnings };
     restage();
   }
+
+  /* ---- "it is in the game now" dialog ---------------------------------------
+   *
+   * The one piece of UI this whole path exists for. Installing a setup changes
+   * nothing the driver can see — not the car, not the editor — so without a
+   * prompt it reads exactly like the old complaint in reverse ("I clicked Get
+   * and nothing happened"). The dialog names the file the way the GAME will
+   * name it, because that is the string the driver has to find in the pit
+   * garage, and says out loud that the current setup was left alone.
+   */
+
+  function showInGamePop(inGameName, trackLabel, warning) {
+    elInGameText.innerHTML = '';
+    const strong = document.createElement('strong');
+    strong.textContent = inGameName || 'The setup';
+    elInGameText.appendChild(strong);
+    elInGameText.appendChild(
+      document.createTextNode(
+        trackLabel
+          ? ` is saved with your ${trackLabel} setups for this car.`
+          : ' is saved with your setups for this car and track.',
+      ),
+    );
+    elInGameWarn.hidden = !warning;
+    elInGameWarn.textContent = warning || '';
+    elInGamePop.hidden = false;
+  }
+
+  /** The library/community half of an install: prompt on success, explain on failure. */
+  function reportInstall(res, fallbackName, trackLabel) {
+    if (res && res.ok && res.inGame !== false) {
+      showInGamePop(
+        res.inGameName || fallbackName,
+        trackLabel,
+        // A running sim rescans on the poke; a closed one rescans on launch.
+        lastState && lastState.connected
+          ? ''
+          : 'LMU was not running — it will appear the next time you start it.',
+      );
+      return true;
+    }
+    // Getting the file is still worth something even when the sim tree is
+    // missing, so this is a note, not a failure banner.
+    showInGamePop(
+      fallbackName,
+      '',
+      (res && (res.inGameError || res.error)) ||
+        'Could not reach your LMU setup folder — it is saved in your Apex library only.',
+    );
+    return false;
+  }
+
+  elInGameOk.addEventListener('click', () => (elInGamePop.hidden = true));
+  elInGamePop.addEventListener('click', (e) => {
+    if (e.target === elInGamePop) elInGamePop.hidden = true;
+  });
 
   /* ---- share dialog ---------------------------------------------------------- */
 
@@ -1572,7 +1664,7 @@
     // the library is not the one to click, so it stops shouting for the click.
     getBtn.className = `btn btn--sm ${row.downloaded ? 'btn--ghost' : 'btn--accent'}`;
     getBtn.textContent = row.downloaded ? 'Get again' : 'Get';
-    getBtn.title = 'Download into the game’s setup screen and your library';
+    getBtn.title = 'Save it into the game’s custom setups and your library';
     getBtn.addEventListener('click', async () => {
       getBtn.disabled = true;
       getBtn.textContent = '…';
@@ -1587,8 +1679,11 @@
         row.downloaded = true;
         getBtn.textContent = res.inGame ? 'In the game ✓' : 'In library ✓';
         getBtn.title = res.inGame
-          ? 'Saved into LMU’s setup folder — load it from the game’s setup screen'
+          ? 'Saved into LMU’s custom setups — load it from the game’s setup screen'
           : 'LMU install not found — saved to your library only';
+        // A download's whole payoff is invisible until the driver looks in the
+        // right place, so say where it went rather than trusting a tick.
+        reportInstall(res, row.name, res.trackName || row.trackName || row.trackFolder);
         void refreshLibrary();
         renderCommunityList();
       } else {

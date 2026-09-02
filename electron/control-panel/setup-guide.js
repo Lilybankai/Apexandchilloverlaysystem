@@ -102,7 +102,8 @@
       points: [
         'It files itself under the track and car it came from, so the filters are already right for wherever you are.',
         'Sort by your best clean lap on that track in that class — read live from your lap database, so the number never goes stale.',
-        'Load stages the tune in the editor first: every row previews old → new, and nothing touches the car until you press Apply.',
+        '“Send to game” saves it into LMU’s own custom setups for that car and track, then tells you where to find it — the setup on your car is left exactly as it was.',
+        '“Stage in editor” is the other way round: it previews the tune row by row, old → new, and Apply replaces what is on the car now.',
         'Share hands you the raw .svm — save it as a file, or copy it straight into a Discord or WhatsApp message. Import brings one back in.',
       ],
     },
@@ -113,7 +114,7 @@
       lead: 'The Community setups card lists every tune the league has published.',
       points: [
         'With the sim running it follows the car and track you are in — turn that off to browse anything.',
-        'A download is written into LMU’s own setup folder for that track, so it appears in the game’s setup screen without a restart, and a copy is filed in your library.',
+        'A download goes straight into your custom setups for that track — load it from the pit garage’s own setup screen, no restart needed. It never overwrites the setup you are running, and a copy is filed in your library.',
         'Publish any library entry with a note. The app suggests character chips read from the tune’s own numbers — Sharp turn-in, Stable & safe, Low drag — and you can change them before it goes up.',
         'Unpublish whenever you like. Your local files are never touched either way.',
       ],

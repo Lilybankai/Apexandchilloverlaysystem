@@ -693,6 +693,17 @@
 .su-pop__body .su-pop__effect {
   color: var(--cyan);
 }
+/* The "where to find it in the game" line: the instruction the whole dialog
+   exists to carry, so it sits apart from the naming sentence above it. */
+.su-pop__hint {
+  border-left: 2px solid var(--cyan);
+  padding-left: 10px;
+  color: var(--text);
+}
+.su-pop__hint strong {
+  color: var(--cyan);
+  font-weight: 600;
+}
 
 /* ==================== community setups ==================== */
 

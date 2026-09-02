@@ -286,5 +286,52 @@ console.log('\nsample-tune.svm — the .svm → REST-key translation');
   );
 }
 
+/* ---- installing into the sim's own custom setups ---------------------------
+ *
+ * The path a shared setup takes now: a file dropped into
+ * `Settings/<trackFolder>/`, never a write onto the car. Two things have to
+ * hold or the feature is worse than what it replaced — it must not overwrite a
+ * setup the driver already had under that name, and it must refuse rather than
+ * guess when it does not know the track.
+ */
+{
+  const { SetupLibrary } = require('../dist/telemetry/setupLibrary.js');
+  const os = require('node:os');
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-setuplib-'));
+  const settingsDir = path.join(root, 'Settings');
+  fs.mkdirSync(settingsDir, { recursive: true });
+  const stubController = { refreshSetupFiles: async () => ({ ok: true }) };
+  const lib = new SetupLibrary(path.join(root, 'lib'), stubController, settingsDir);
+  const svm = ['[GENERAL]', 'VehicleClassSetting=GT3 Test_Car_LMGT3 WEC2025', ''].join(String.fromCharCode(10));
+
+  const first = lib.writeIntoSim(svm, 'Spa race — low drag', 'Spa');
+  check('install writes into Settings/<trackFolder>', first.ok && first.inGameName === 'Spa race — low drag');
+  check(
+    'the .svm lands where the game looks',
+    fs.existsSync(path.join(settingsDir, 'Spa', 'Spa race — low drag.svm')),
+  );
+
+  // The driver's own file of the same name is the exact thing this must not eat.
+  const second = lib.writeIntoSim('DIFFERENT', 'Spa race — low drag', 'Spa');
+  check(
+    'a name collision suffixes instead of overwriting',
+    second.ok && second.inGameName === 'Spa race — low drag (2)',
+  );
+  check(
+    'the original file survives a collision',
+    fs.readFileSync(path.join(settingsDir, 'Spa', 'Spa race — low drag.svm'), 'utf8') === svm,
+  );
+
+  const noFolder = lib.writeIntoSim(svm, 'Nowhere', '');
+  check('install refuses without a track folder', !noFolder.ok, noFolder.error);
+
+  const noSim = new SetupLibrary(path.join(root, 'lib2'), stubController, null);
+  const missing = noSim.writeIntoSim(svm, 'Nowhere', 'Spa');
+  check('install refuses with no LMU install', !missing.ok, missing.error);
+
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log(failures === 0 ? '\nAll setup checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

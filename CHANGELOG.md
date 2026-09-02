@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.0-beta.2 — 2026-09-02
+
+### Changed
+
+- **A setup you download no longer lands on top of the one you are driving.**
+  Getting a community setup used to end with its numbers stamped onto the car in
+  the garage, which read as the app throwing away the setup you had just been
+  working on. It now goes where a setup belongs: LMU's own custom setups for that
+  car and track. A message names the file and tells you where it is — pit garage
+  → Setups — both in the app and, if the game is already running, on the overlay
+  in front of you. What is on your car is left alone.
+  The same is true of anything in your library: **Send to game** hands it to LMU
+  (it works with the game closed too — it is simply there next time you start),
+  and it will never overwrite a setup you already had saved under that name; a
+  clash is filed as "(2)" instead. The old behaviour is still one click away
+  under **Stage in editor**, for when you actually do want to preview a tune
+  against the car row by row and Apply it.
+
 ## 0.97.0-beta.1 — 2026-09-02
 
 ### Changed

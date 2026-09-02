@@ -22,6 +22,13 @@
  * (parsed via svmMap), the panel stages them like a macro, and Apply writes
  * them key-by-key — the path that provably repaints the game's screen.
  *
+ * INSTALLING is the third endpoint, added after drivers reported the app
+ * "eating" their setup: installToSim() drops the archived .svm into the sim's
+ * own `Settings/<trackFolder>/` so it appears under the pit garage's custom
+ * setups for that car and track, leaving the live garage alone. Staging is
+ * still there for anyone who wants the editor preview, but it is no longer
+ * what a shared setup does by default.
+ *
  * Sharing is file-based by design: export hands out the raw .svm (playable by
  * ANY LMU install, app or no app); import takes a .svm from anywhere.
  *
@@ -238,6 +245,83 @@ export class SetupLibrary {
     }
     this.write(entries.filter((e) => e.id !== id));
     return { ok: true, entry };
+  }
+
+  /* ---------------------------- install to sim --------------------------- */
+
+  /**
+   * Writes the entry's .svm into LMU's own `Settings/<trackFolder>/` so it
+   * turns up under the pit garage's custom setups for that car and track —
+   * WITHOUT touching the setup currently on the car.
+   *
+   * This is the counterpart to staging: staging edits the live garage (and so
+   * lands on top of whatever the driver was running, which read as the app
+   * eating their setup); this hands the file to the sim and lets the driver
+   * choose it in the game's own screen, which is where they expect a "custom
+   * setup" to live.
+   *
+   * The name is kept readable and collision-safe — an existing file with the
+   * same name is never overwritten, because it may well be the driver's own
+   * work. `refreshsetups` makes a RUNNING sim rescan; a closed one rescans on
+   * launch anyway, so that poke is allowed to fail.
+   */
+  public async installToSim(
+    id: string,
+  ): Promise<SetupLibraryResult & { inGameName?: string; trackFolder?: string }> {
+    const entry = this.list().find((e) => e.id === id);
+    if (!entry) return { ok: false, error: 'setup not in library' };
+    let svmText: string;
+    try {
+      svmText = fs.readFileSync(this.fileOf(entry), 'utf8');
+    } catch (err) {
+      return { ok: false, error: `cannot read the saved file: ${(err as Error).message}` };
+    }
+    const res = this.writeIntoSim(
+      svmText,
+      entry.name,
+      entry.trackFolder || (await this.controller.currentTrackFolder()) || '',
+    );
+    if (!res.ok) return res;
+    await this.pokeSim();
+    return { ok: true, entry, inGameName: res.inGameName, trackFolder: res.trackFolder };
+  }
+
+  /**
+   * The raw half of installToSim, for callers holding .svm text that is not in
+   * the library yet (the community download stages its file and imports it in
+   * the same breath). Synchronous: no sim call, just the file drop.
+   */
+  public writeIntoSim(
+    svmText: string,
+    name: string,
+    trackFolder: string,
+  ): SetupLibraryResult & { inGameName?: string; trackFolder?: string } {
+    if (!this.settingsDir) return { ok: false, error: 'LMU install not found' };
+    if (!trackFolder) return { ok: false, error: 'no track folder — enter the garage first' };
+    const dir = path.join(this.settingsDir, trackFolder);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const base = sanitizeName(name);
+      let inGameName = base;
+      // Never clobber a file already sitting in the sim's folder: it could be
+      // the driver's own tune under the same name. Suffix instead.
+      for (let n = 2; fs.existsSync(path.join(dir, `${inGameName}.svm`)) && n < 100; n++) {
+        inGameName = `${base} (${n})`;
+      }
+      fs.writeFileSync(path.join(dir, `${inGameName}.svm`), svmText);
+      return { ok: true, inGameName, trackFolder };
+    } catch (err) {
+      return { ok: false, error: `could not write into the sim: ${(err as Error).message}` };
+    }
+  }
+
+  /** Ask a running sim to rescan its setup folder. Never fatal. */
+  public async pokeSim(): Promise<void> {
+    try {
+      await this.controller.refreshSetupFiles();
+    } catch {
+      /* sim not running — it rescans on launch */
+    }
   }
 
   /** Copies the raw .svm out — the share artifact any LMU player can use. */

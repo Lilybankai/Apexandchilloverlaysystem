@@ -3120,6 +3120,37 @@ function registerIpc() {
     }
   });
 
+  /**
+   * Put a saved setup into the SIM's own custom setups, for the car and track
+   * it was saved on — the answer to the commonest setups complaint: a shared
+   * tune used to arrive by being stamped onto the setup already on the car,
+   * which looked like the app overwriting the driver's work. Now it lands in
+   * the pit garage's setup list and the driver chooses it themselves.
+   *
+   * The prompt is deliberately doubled: a dialog in the panel (where the click
+   * happened) AND a transient in-game notice (where the driver actually is, if
+   * the sim is up), because the whole point is that nothing visibly changed on
+   * the car and the driver needs telling where to look.
+   */
+  ipcMain.handle('setuplib:togame', async (_evt, payload) => {
+    try {
+      const res = await getSetupLibrary().installToSim(String((payload && payload.id) || ''));
+      if (!res.ok) {
+        console.error('[app] setup install to sim failed:', res.error);
+        return res;
+      }
+      sendIngameNotice({
+        kind: 'ok',
+        text: `“${res.inGameName}” is in your custom setups — pit garage → Setups`,
+        dwellMs: 9000,
+      });
+      return res;
+    } catch (err) {
+      console.error('[app] setup install to sim failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
   /* ---- League leaderboard ----
    *
    * The boards themselves live in Postgres, because a leaderboard is the one
@@ -3311,25 +3342,30 @@ function registerIpc() {
         sessionType: s.sessionType,
       });
 
-      // Into the sim's own tree, where the in-game setup screen looks.
-      let inGame = false;
-      const kb = require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
-      const kbPath = kb.findKeyboardConfig();
-      const settingsDir = kbPath ? path.join(path.dirname(kbPath), 'Settings') : null;
-      if (settingsDir && fs.existsSync(settingsDir) && s.trackFolder) {
-        const dir = path.join(settingsDir, s.trackFolder);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, `${safe}.svm`), s.svm);
-        inGame = true;
-        // Only works while LMU runs; failing to poke a closed sim is fine —
-        // it rescans the folder on its next launch anyway.
-        try {
-          await getSetupController().refreshSetupFiles();
-        } catch {
-          /* sim not running */
-        }
+      // Into the sim's own tree, where the in-game setup screen looks. Same
+      // writer the library's "Send to game" uses, so a download and a manual
+      // install land under identical names and neither can clobber a file the
+      // driver already had.
+      const lib = getSetupLibrary();
+      const placed = lib.writeIntoSim(s.svm, safe, s.trackFolder || '');
+      if (placed.ok) {
+        await lib.pokeSim();
+        sendIngameNotice({
+          kind: 'ok',
+          text: `“${placed.inGameName}” is in your custom setups — pit garage → Setups`,
+          dwellMs: 9000,
+        });
       }
-      return { ok: true, inGame, entry: imported.ok ? imported.entry : null, setup: { ...s, svm: undefined } };
+      return {
+        ok: true,
+        inGame: placed.ok,
+        inGameName: placed.inGameName || null,
+        inGameError: placed.ok ? null : placed.error,
+        trackFolder: s.trackFolder || '',
+        trackName: s.trackName || '',
+        entry: imported.ok ? imported.entry : null,
+        setup: { ...s, svm: undefined },
+      };
     } catch (err) {
       console.error('[app] setup download failed:', err.message);
       return { ok: false, error: err.message };
