@@ -839,6 +839,18 @@ function requireServer() {
     );
   }
   serverModule = require(entry);
+  // The server runs IN this process, on the thread that composites every
+  // overlay, so its pollers are stall suspects like any of ours — but it also
+  // runs under the bench and test harnesses where Electron does not exist, so
+  // it cannot reach the watcher itself. Hand it over once, here, the one place
+  // that knows both sides are present. See src/telemetry/stallMark.ts.
+  try {
+    require(
+      path.join(__dirname, '..', 'dist', 'telemetry', 'stallMark.js'),
+    ).setStallSink({ begin: stallWatch.begin, end: stallWatch.end });
+  } catch {
+    /* diagnostics must never be the thing that stops the server starting */
+  }
   return serverModule;
 }
 
@@ -4724,8 +4736,17 @@ app.whenReady().then(async () => {
   // overlay is a renderer fed from here, so a main-thread block freezes all of
   // them at once and then lets them snap back — the "froze and then refreshed"
   // report. Without this the cause is unrecoverable after the fact.
+  //
+  // The context is what a stall has to be read AGAINST. Window count never
+  // varied across a whole log and told us nothing; field size and session
+  // phase are the two things the suspect work actually scales with, so a
+  // report can say whether the freezes track a 40-car race or happen in an
+  // empty practice session.
   stallWatch.start(app.getPath('userData'), () => ({
     overlays: BrowserWindow.getAllWindows().length,
+    cars: lastFeedFrame?.standings?.length ?? 0,
+    session: lastFeedFrame?.session?.type ?? 'none',
+    phase: lastFeedFrame?.session?.phase ?? 'none',
   }));
   // Before createWindow(): whether a session is remembered decides which page
   // the window opens on.

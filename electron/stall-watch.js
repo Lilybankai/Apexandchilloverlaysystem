@@ -43,6 +43,23 @@ let breadcrumbAt = 0;
 /** Worst lateness seen this run, for the diagnostics readout. */
 let worstMs = 0;
 let stallCount = 0;
+/**
+ * Steps running right now, label → the ms they started at.
+ *
+ * A single breadcrumb cannot describe this process: the provider alone has
+ * eight pollers in flight at once, and with one variable the one that finishes
+ * first wipes the label of the one still running — so the slow step gets
+ * reported as 'idle'. A set keeps every step that is genuinely open, which is
+ * the question a stall report has to answer.
+ */
+const inflight = new Map();
+/**
+ * The slowest step to have COMPLETED since the last report, and how long it
+ * took. This is the smoking gun: a step that took 1.4 s and finished as the
+ * stall ended is the stall, whether or not it was still open when the timer
+ * fired. Cleared after each report so it always describes the recent past.
+ */
+let worstStep = null;
 
 /**
  * Note what the main process is about to do. Cheap enough to call on every
@@ -55,13 +72,34 @@ function mark(what) {
   breadcrumbAt = Date.now();
 }
 
-/** Wrap an async step in a breadcrumb, restoring 'idle' when it settles. */
+/**
+ * Open a step. Safe to nest and to overlap with other steps: each label keeps
+ * its own start time, so two pollers in flight are both reported.
+ *
+ * A label already open is left at its original start time — a poller that
+ * re-entered before its last run settled has been running since the FIRST one,
+ * and that is the age worth printing.
+ */
+function begin(what) {
+  if (!inflight.has(what)) inflight.set(what, Date.now());
+}
+
+/** Close a step, remembering it if it was the slowest one this window. */
+function end(what) {
+  const startedAt = inflight.get(what);
+  if (startedAt === undefined) return;
+  inflight.delete(what);
+  const took = Date.now() - startedAt;
+  if (!worstStep || took > worstStep.ms) worstStep = { what, ms: took, at: Date.now() };
+}
+
+/** Wrap an async step so it is reported for as long as it is in flight. */
 async function around(what, fn) {
-  mark(what);
+  begin(what);
   try {
     return await fn();
   } finally {
-    mark('idle');
+    end(what);
   }
 }
 
@@ -92,6 +130,10 @@ function start(userDataDir, context) {
   if (timer) return;
   logPath = path.join(userDataDir, 'stalls.log');
   last = Date.now();
+  // Without this the first stall of every session subtracts from zero and
+  // prints the epoch as a breadcrumb age ("stale 1788341542844ms"), which is
+  // the first thing anyone reading the log has to be told to ignore.
+  breadcrumbAt = last;
   write(`--- session started ${new Date().toISOString()} (threshold ${THRESHOLD_MS}ms) ---`);
   timer = setInterval(() => {
     const now = Date.now();
@@ -104,6 +146,25 @@ function start(userDataDir, context) {
     // rather than blaming the last thing that happened to run.
     const age = now - breadcrumbAt;
     const during = age <= late + TICK_MS * 2 ? breadcrumb : `${breadcrumb} (stale ${age}ms)`;
+    // Steps still open, oldest first — the one that spans the whole stall is
+    // the candidate, and the young ones beside it are just what a busy process
+    // looks like.
+    let open = '';
+    if (inflight.size) {
+      const names = [...inflight.entries()]
+        .sort((a, b) => a[1] - b[1])
+        .map(([what, at]) => `${what}+${now - at}ms`)
+        .join(',');
+      open = ` inflight=${names}`;
+    }
+    // Only quote a completed step that finished inside this stall. A slow
+    // step from ten minutes ago is not what just froze the overlays, and
+    // printing it beside this timestamp would read as though it were.
+    let slowest = '';
+    if (worstStep && worstStep.ms >= THRESHOLD_MS && now - worstStep.at <= late + TICK_MS * 2) {
+      slowest = ` slowest=${worstStep.what}/${worstStep.ms}ms`;
+    }
+    worstStep = null;
     let extra = '';
     if (context) {
       try {
@@ -112,7 +173,9 @@ function start(userDataDir, context) {
         /* context is a nicety */
       }
     }
-    write(`${new Date(now).toISOString()} STALL ${late}ms during=${during}${extra}`);
+    write(
+      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${extra}`,
+    );
   }, TICK_MS);
   if (timer.unref) timer.unref();
 }
@@ -121,6 +184,8 @@ function stop() {
   if (!timer) return;
   clearInterval(timer);
   timer = null;
+  inflight.clear();
+  worstStep = null;
 }
 
 /** For the diagnostics panel / support bundle. */
@@ -128,4 +193,4 @@ function summary() {
   return { stalls: stallCount, worstMs, thresholdMs: THRESHOLD_MS, logPath };
 }
 
-module.exports = { start, stop, mark, around, summary, TICK_MS, THRESHOLD_MS };
+module.exports = { start, stop, mark, begin, end, around, summary, TICK_MS, THRESHOLD_MS };

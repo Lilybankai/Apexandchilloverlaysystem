@@ -90,6 +90,7 @@ import {
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, type LapRecord } from './lapLog';
+import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
 import {
@@ -903,35 +904,58 @@ export class LmuRestProvider implements TelemetryProvider {
     // Age out old driving traces once per app run — they are the one thing the
     // lap store keeps that is big enough to be worth pruning. See lapTrace.ts.
     pruneTraces(Date.now());
+    // Each poller below runs unattended on the Electron main thread — the one
+    // compositing every overlay — so each is wrapped in a breadcrumb the stall
+    // log can name. The wrap is at the timer rather than inside the method so
+    // that only the unattended path is instrumented: a refresh driven by a
+    // user action is not the thing freezing a race. Free until main injects
+    // the watcher; see stallMark.ts.
     await this.refresh(); // prime the cache before the first poll
-    this.timer = setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
+    this.timer = setInterval(
+      () => void stallAround('lmu:poll', () => this.refresh()),
+      REFRESH_INTERVAL_MS,
+    );
     this.timer.unref?.();
     void this.refreshGarage();
     void this.refreshGarageAids();
     this.garageTimer = setInterval(() => {
-      void this.refreshGarage();
-      void this.refreshGarageAids();
+      void stallAround('lmu:garage', () => this.refreshGarage());
+      void stallAround('lmu:garageAids', () => this.refreshGarageAids());
     }, GARAGE_REFRESH_INTERVAL_MS);
     this.garageTimer.unref?.();
     void this.refreshPitMenu();
-    this.pitMenuTimer = setInterval(() => void this.refreshPitMenu(), PIT_MENU_REFRESH_INTERVAL_MS);
+    this.pitMenuTimer = setInterval(
+      () => void stallAround('lmu:pitMenu', () => this.refreshPitMenu()),
+      PIT_MENU_REFRESH_INTERVAL_MS,
+    );
     this.pitMenuTimer.unref?.();
     void this.refreshWeather();
-    this.weatherTimer = setInterval(() => void this.refreshWeather(), WEATHER_REFRESH_INTERVAL_MS);
+    this.weatherTimer = setInterval(
+      () => void stallAround('lmu:weather', () => this.refreshWeather()),
+      WEATHER_REFRESH_INTERVAL_MS,
+    );
     this.weatherTimer.unref?.();
     void this.refreshTyreSpec();
     this.tyreSpecTimer = setInterval(
-      () => void this.refreshTyreSpec(),
+      () => void stallAround('lmu:tyreSpec', () => this.refreshTyreSpec()),
       TYRE_SPEC_REFRESH_INTERVAL_MS,
     );
     this.tyreSpecTimer.unref?.();
     void this.refreshRules();
-    this.rulesTimer = setInterval(() => void this.refreshRules(), RULES_REFRESH_INTERVAL_MS);
+    this.rulesTimer = setInterval(
+      () => void stallAround('lmu:rules', () => this.refreshRules()),
+      RULES_REFRESH_INTERVAL_MS,
+    );
     this.rulesTimer.unref?.();
     this.ranks = new RaceosRanksClient(this.port, this.verbose);
     this.ranks.start();
     void this.refreshTeams();
-    this.teamsTimer = setInterval(() => void this.refreshTeams(), TEAMS_REFRESH_INTERVAL_MS);
+    // The 10 s cadence in the stalls.log gap analysis (2026-09-02) matched this
+    // timer and nothing else on the thread, which is why it is here.
+    this.teamsTimer = setInterval(
+      () => void stallAround('lmu:teams', () => this.refreshTeams()),
+      TEAMS_REFRESH_INTERVAL_MS,
+    );
     this.teamsTimer.unref?.();
     if (this.lastOkAt > 0) {
       console.log(`[lmu] connected to LMU REST API on :${this.port}`);
@@ -1513,10 +1537,18 @@ export class LmuRestProvider implements TelemetryProvider {
           res.setEncoding('utf8');
           res.on('data', (chunk) => (body += chunk));
           res.on('end', () => {
+            // The one part of a REST read that is not waiting on a socket:
+            // parsing the body blocks the thread every overlay renders on, and
+            // it scales with the size of the field. Bracketed rather than
+            // wrapped so the breadcrumb covers the synchronous parse alone —
+            // the step the stall log names here is the step that really ran.
+            stallBegin(`lmu:parse${path}`);
             try {
               resolve(JSON.parse(body) as T);
             } catch (e) {
               reject(e as Error);
+            } finally {
+              stallEnd(`lmu:parse${path}`);
             }
           });
         },

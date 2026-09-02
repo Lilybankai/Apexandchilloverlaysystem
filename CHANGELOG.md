@@ -4,6 +4,33 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.0-beta.1 — 2026-09-02
+
+### Changed
+
+- **Naming what freezes the overlays.** A build for the testers who see the
+  overlays lock up for a second and then catch back up. Nothing on screen is
+  different — this release only makes the app better at recording what it was
+  doing at the moment it stopped.
+  The stall log the app already keeps (`stalls.log`, in the app's data folder)
+  had one flaw that mattered: it could only remember a single job at a time, so
+  when several were running at once — which is always — a quick one finishing
+  would erase the name of the slow one still going, and the freeze got recorded
+  as "nothing in particular". It now tracks every job that is open, reports how
+  long each has been running, and names the slowest one to have finished during
+  the freeze itself.
+  All eight of the checks the app makes against Le Mans Ultimate now leave their
+  name in that log, as does the moment each of their replies is unpacked — which
+  is the part that costs real time in a full field, and the part with no name
+  until now. Each freeze is also stamped with the size of the field and the
+  session you were in, so a report can say whether these track a 40-car race or
+  happen just as often in an empty practice session.
+
+### Fixed
+
+- The first freeze recorded in each session used to print a nonsensical age
+  alongside it (a number in the trillions). It now prints the real one.
+
 ## 0.96.0 — 2026-08-31
 
 ### Added
