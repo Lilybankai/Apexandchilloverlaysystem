@@ -776,6 +776,29 @@ html, body { height: 100%; overflow: hidden; }
   font-size: 10.5px;
 }
 
+/* The Browser-Source size this widget wants, under its URL. Only the cards
+ * whose catalog entry declares `obs` have one, so it is a line that appears
+ * rather than a row that is usually empty — and it is quiet type, because it is
+ * an instruction for the one minute the source is being created, not a control.
+ * The dimensions themselves are lifted out of the muted colour: they are the
+ * part that gets copied into OBS. */
+.ovcard__size {
+  margin: -2px 0 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--text-3);
+}
+
+.ovcard__size strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.ovcard[data-enabled="false"] .ovcard__size { opacity: 0.45; }
+
 /* This widget's own background opacity — its exception to the global slider in
  * Appearance. Sits above the destination switches because it describes how the
  * widget LOOKS, which is the card's subject; the switches below are about where

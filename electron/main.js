@@ -98,6 +98,28 @@ const OVERLAY_CATALOG = [
     label: 'Speedo Cluster',
     description:
       'Speed, revs, gear + fuel, energy and hybrid battery — the panel lights up with the revs',
+    // The Browser-Source size this widget WANTS, shown on its card.
+    //
+    // Generic machinery, like `banner`/`designs`: any widget can declare one
+    // and the card renders it; a widget without one says nothing, because for
+    // the other twenty the panel sizes itself from its own text and whatever
+    // the operator drew is right.
+    //
+    // The cluster is the exception, and it is why this field exists. It is the
+    // one widget with a STATED width — it is absolute boxes over a canvas, so
+    // there is no text to measure — which comes to 914px with the page's
+    // padding and the panel's border. OBS creates a Browser Source at 800x600,
+    // and at 800 the cluster used to be cropped down its right-hand side: the
+    // PROJECTED column and the right rev bar were simply off the source. (It
+    // now scales down to fit instead — see the fitting rule in single.css —
+    // but scaled down is not what anyone wants of the widget they chose for the
+    // revs, so the card says what to type.)
+    //
+    // 950 x 560 is that 914 with a little room, and a height that clears the
+    // TALLEST design rather than the default one: the LMP2 CDU is a 1200x720
+    // plate, 554px high at this width, and a source cut to the Apex cluster's
+    // 437 would crop it the moment the operator tried another cluster.
+    obs: { w: 950, h: 560 },
     // Selectable cluster designs, drawn as a dropdown on the card. Generic
     // machinery: any widget can grow one by declaring `designs` here plus a
     // matching WIDGET_MODES entry — the card builder and the settings handler

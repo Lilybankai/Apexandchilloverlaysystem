@@ -803,6 +803,29 @@
       urlWrap.appendChild(copyBtn);
       urlWrap.appendChild(previewBtn);
 
+      /* -- the size to give the Browser Source, for the widgets that need a
+       * particular one (`obs` on the catalog entry — see OVERLAY_CATALOG in
+       * main.js). Data-driven like the banner and the design list: a widget
+       * without one renders nothing here, because for most of them the panel
+       * sizes itself from its own text and any source big enough is right.
+       *
+       * It sits directly under the URL because that is the order OBS asks the
+       * two questions in — paste the address, then type the size — and the
+       * size is the half nothing else on screen could tell you. */
+      let sizeEl = null;
+      if (o.obs && o.obs.w && o.obs.h) {
+        sizeEl = document.createElement('p');
+        sizeEl.className = 'ovcard__size';
+        const dims = document.createElement('strong');
+        dims.textContent = `${o.obs.w} × ${o.obs.h}`;
+        sizeEl.appendChild(document.createTextNode('Source size '));
+        sizeEl.appendChild(dims);
+        sizeEl.title =
+          `Set this Browser Source to ${o.obs.w} × ${o.obs.h} in OBS. This widget draws at a ` +
+          'fixed size rather than growing to its text, so a smaller source scales it down ' +
+          "— OBS's own default (800 × 600) is not big enough for it.";
+      }
+
       /* -- footer: the two destinations, each labelled --
        *
        * Both switches live here side by side rather than one in the header,
@@ -864,6 +887,7 @@
       li.appendChild(head);
       li.appendChild(desc);
       li.appendChild(urlWrap);
+      if (sizeEl) li.appendChild(sizeEl);
       li.appendChild(opacityRow(o));
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));

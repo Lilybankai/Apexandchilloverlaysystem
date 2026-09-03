@@ -538,9 +538,17 @@
   /*  Registration                                                           */
   /* ---------------------------------------------------------------------- */
 
+  /** Put the design down when another takes the slot — see the kit's stop(). */
+  function stop() {
+    if (observer) observer.disconnect();
+    observer = null;
+    window.removeEventListener("resize", size);
+  }
+
   window.ApexSpeedoDesigns = window.ApexSpeedoDesigns || {};
   window.ApexSpeedoDesigns.lmp2 = {
     init: init,
     update: update,
+    stop: stop,
   };
 })();

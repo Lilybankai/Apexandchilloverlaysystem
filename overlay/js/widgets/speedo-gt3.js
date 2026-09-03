@@ -207,7 +207,9 @@
       lastSig = null,
       /** Cached BG-slider alpha + the tick that refreshes it — see panelAlpha(). */
       cachedAlpha = 1,
-      alphaTick = 0;
+      alphaTick = 0,
+      /** This design's ONE stage observer, re-aimed on re-init — see init(). */
+      observer = null;
 
     /**
      * The operator's BG slider, as the stylesheet publishes it.
@@ -403,7 +405,16 @@
         g = canvas.getContext("2d");
         baked = null;
         scale = 0;
-        if (typeof ResizeObserver === "function") new ResizeObserver(rebake).observe(stageEl);
+        // Re-aimed rather than added to, the same contract speedo.js and the
+        // LMP2 design keep: init() runs again every time the operator picks a
+        // different cluster, and an observer outlives the canvas it was set up
+        // for — so without this a design switched away from and back to again
+        // left a live observer per visit, all rebaking the same plate.
+        if (observer) observer.disconnect();
+        if (typeof ResizeObserver === "function") {
+          observer = new ResizeObserver(rebake);
+          observer.observe(stageEl);
+        }
         window.addEventListener("resize", rebake, { passive: true });
         rebake();
       },
@@ -412,6 +423,23 @@
         lastCtx = ctx;
         if (!baked) rebake();
         else draw();
+      },
+      /**
+       * Put this design down when another one takes the slot (speedo.js calls
+       * it on the outgoing design). Without it the observer kept watching a
+       * stage this design no longer draws into: every later switch changes the
+       * stage's aspect ratio, which is a resize, which had every plate the
+       * operator had ever selected re-bake itself onto a detached canvas
+       * nobody would ever see.
+       */
+      stop: function () {
+        if (observer) observer.disconnect();
+        observer = null;
+        window.removeEventListener("resize", rebake);
+        // Dropped so a design put down mid-session cannot pin the last frame
+        // it saw (and the whole ctx behind it) for the rest of the stream.
+        lastFrame = null;
+        lastCtx = null;
       },
     };
   }

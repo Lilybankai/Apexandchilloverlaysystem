@@ -191,7 +191,9 @@
           title: 'This is the bit OBS needs',
           body:
             'Copy takes the widget’s URL. In OBS: + under Sources, Browser, paste it, set the ' +
-            'size, OK. The eye beside it opens the same page in your browser so you can see it works.',
+            'size, OK. Where a widget needs a particular source size — the speedo cluster does — ' +
+            'the card prints it under the URL, because OBS’s own default is too small for it. ' +
+            'The eye beside it opens the same page in your browser so you can see it works.',
         },
         {
           id: 'opacity',

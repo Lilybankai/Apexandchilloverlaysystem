@@ -72,3 +72,40 @@ body {
   background: rgba(180, 30, 40, 0.92);
   border-radius: 6px;
 }
+
+/* =========================================================================
+ * FITTING THE BROWSER SOURCE
+ *
+ * Every widget but one gets its width from its own text, so shrink-to-fit
+ * gives the page whatever the panel needs and the operator sizes the source to
+ * match. The speedo cluster is the exception: it STATES a width (900px — see
+ * `.speedo` in overlay.css, which has no content to measure), and a definite
+ * width is a floor as well as a ceiling. It becomes the panel's min-content
+ * too, so `.single-page` lays out at 914px no matter how wide the source is,
+ * and OBS — whose Browser Source defaults to 800 wide — simply cut the
+ * right-hand rev bar and the ENERGY column off the stream.
+ *
+ * `max-width: 100%` on the stage cannot fix that. Its containing block is the
+ * shrink-to-fit chain the stage is itself sizing, so the percentage resolves
+ * against a box that has already grown to 900px and the cap is a no-op.
+ * Viewport units break the circularity: they answer to the Browser Source,
+ * which is the box the cluster actually has to fit inside. 14px is the chrome
+ * around the stage — `.single-page`'s 6px padding each side, plus the panel's
+ * 1px border each side.
+ *
+ * The stage keeps its 900px natural size whenever there is room for it, so an
+ * existing source that was already big enough is not resized under anyone. A
+ * source SMALLER than that now shrinks the cluster instead of cropping it: the
+ * canvas designs all letterbox their artwork into whatever box the stage ends
+ * up with (`Math.min(w / DW, h / DH)` in speedo.js and speedo-gt3.js), which is
+ * why the height cap can clamp the aspect ratio here without distorting
+ * anything — it letterboxes, it does not stretch.
+ *
+ * The recommended source size for this widget is on its card in the control
+ * panel (950 x 560 — see OVERLAY_CATALOG in electron/main.js), which is the
+ * 914 the panel needs plus room for the tallest design.
+ * ========================================================================= */
+.single-page .speedo {
+  max-width: calc(100vw - 14px);
+  max-height: calc(100vh - 14px);
+}

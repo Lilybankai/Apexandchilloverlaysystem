@@ -639,9 +639,24 @@
     placeBoxes();
   }
 
+  /**
+   * One observer for the module, re-aimed on re-init — the same contract the
+   * LMP2 design keeps. init() runs again on every design switch, and an
+   * observer is not collected just because its target was re-rendered: without
+   * the disconnect, a stream where the operator tried a few clusters ended up
+   * with a stack of live observers all calling the same sizer.
+   *
+   * The window listener needs no such care: `sizeCanvas` is one stable
+   * function, and addEventListener ignores a duplicate registration of the
+   * same type/listener/capture triple.
+   */
+  var sizeObserver = null;
+
   function watchSize(el) {
+    if (sizeObserver) sizeObserver.disconnect();
     if (typeof ResizeObserver === "function") {
-      new ResizeObserver(sizeCanvas).observe(el);
+      sizeObserver = new ResizeObserver(sizeCanvas);
+      sizeObserver.observe(el);
     }
     window.addEventListener("resize", sizeCanvas, { passive: true });
   }
@@ -1541,8 +1556,31 @@
     return (name !== DESIGN_DEFAULT && reg && reg[name]) || null;
   }
 
+  /**
+   * Put the OUTGOING design down before the incoming one builds.
+   *
+   * `stop` is optional on the design contract, so a design that has nothing to
+   * release simply omits it. What the ones that have it release is their stage
+   * observer: an observer is not collected because its target was re-rendered,
+   * and every switch changes the stage's aspect ratio — which is a resize — so
+   * a slot handed round a few clusters had every design the operator had tried
+   * still redrawing itself, off screen, for the rest of the session.
+   */
+  function stopActive() {
+    if (activeDesign) {
+      if (typeof activeDesign.stop === "function") activeDesign.stop();
+      return;
+    }
+    // The Apex cluster is this file, so it has no entry in the registry to
+    // carry a stop() — its observer is released here instead.
+    if (sizeObserver) sizeObserver.disconnect();
+    sizeObserver = null;
+    window.removeEventListener("resize", sizeCanvas);
+  }
+
   function buildDesign() {
     if (!designRoot) return;
+    if (designBuilt) stopActive();
     activeDesign = designFor(designName);
     var stage = designRoot.querySelector('[data-role="stage"]');
     if (stage) stage.setAttribute("data-design", activeDesign ? designName : DESIGN_DEFAULT);
