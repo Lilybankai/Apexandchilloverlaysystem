@@ -42,6 +42,9 @@ let failed = 0;
 /** Every string any design has painted since the last reset. See the header. */
 const TEXTS = [];
 
+/** Every ResizeObserver any design has constructed. See the sandbox stub. */
+const OBSERVERS = [];
+
 function check(name, cond, detail) {
   if (cond) {
     passed++;
@@ -135,6 +138,7 @@ const sandbox = {
   window: {
     devicePixelRatio: 1,
     addEventListener() {},
+    removeEventListener() {},
     ApexSpeedo: {
       revFraction: (rpm, max) =>
         typeof rpm === 'number' && typeof max === 'number' && max > 0
@@ -152,8 +156,20 @@ const sandbox = {
   document: { createElement: () => makeCanvas() },
   Math,
   getComputedStyle: () => ({ getPropertyValue: () => '1' }),
+  // Modelled with disconnect(), not just observe(): a design is expected to put
+  // its own observer down when the slot is handed to another one (see the
+  // switch test below), and a stub that only answered observe() would let a
+  // design that never released anything pass.
   ResizeObserver: class {
+    constructor(cb) {
+      this.cb = cb;
+      OBSERVERS.push(this);
+      this.live = true;
+    }
     observe() {}
+    disconnect() {
+      this.live = false;
+    }
   },
   console,
 };
@@ -454,6 +470,185 @@ check('css gives the GT3 plates their 800/450 box', /aspect-ratio: 800 \/ 450/.t
     gt3 > -1 && real > -1 && core > -1 && gt3 < core && real < core,
   );
 });
+
+/* ========================================================================== *
+ *  SWITCHING BACK — the bug this section exists for
+ * ==========================================================================
+ * Reported as "the speedo won't switch back to the Apex twin rev bars, the
+ * others work". Three facts, and only together do they explain it:
+ *
+ *   1. The card sends `null` for the FIRST design in the list, which is how
+ *      "back to the default" is said everywhere in this app — main.js DELETES
+ *      the widget's key from widgetModes rather than storing 'apex'.
+ *   2. appearance.js reads a key's ABSENCE as that same instruction, and
+ *      sweeps its own map for keys that have vanished.
+ *   3. setAppearance() in between merged the map key by key. A removal has no
+ *      key to carry it, so it could not survive the hop: /appearance.json kept
+ *      serving the last non-default design for the rest of the session.
+ *
+ * Which is why it looked like one bad design rather than one bad direction:
+ * switching BETWEEN alternates is a changed value and always worked, and the
+ * in-game layer is pushed the map directly without passing through the server,
+ * so it switched back fine while every OBS source refused to.
+ *
+ * The server half is exercised for real (the compiled module, not a regex) —
+ * it is one function with no I/O, and the whole bug lived in three lines of it.
+ */
+console.log('\nswitching back to the default design');
+{
+  const server = require('../dist/server/index.js');
+  server.setAppearance({ widgetModes: { speedo: 'p911', mfd: 'row' } });
+  check(
+    'server: a chosen design reaches the appearance served to OBS',
+    server.getAppearance().widgetModes.speedo === 'p911',
+    JSON.stringify(server.getAppearance().widgetModes),
+  );
+  // The app always sends the COMPLETE map, so "back to Apex" arrives as the
+  // speedo key simply not being in it.
+  server.setAppearance({ widgetModes: { mfd: 'row' } });
+  const after = server.getAppearance().widgetModes;
+  check(
+    'server: a REMOVED key is removed — the whole bug, in one assertion',
+    !('speedo' in after),
+    JSON.stringify(after),
+  );
+  check('server: and the widgets still in the map are left alone', after.mfd === 'row');
+  server.setAppearance({ panelOpacity: 50 });
+  check(
+    'server: an update that says nothing about modes does not clear them',
+    server.getAppearance().widgetModes.mfd === 'row',
+    JSON.stringify(server.getAppearance().widgetModes),
+  );
+  server.setAppearance({ widgetModes: { speedo: '../../etc', mfd: 'row' } });
+  check(
+    'server: a non-slug id is still refused rather than served',
+    !('speedo' in server.getAppearance().widgetModes),
+  );
+
+  // The consumer's half of the same contract. Without this sweep the removal
+  // would arrive on the wire and still change nothing on screen.
+  const appearanceJs = read('overlay', 'js', 'appearance.js');
+  check(
+    'appearance.js: a key that has vanished from the map is a change',
+    /!Object\.prototype\.hasOwnProperty\.call\(next, id\)[\s\S]{0,80}delete modes\[id\]/.test(
+      appearanceJs,
+    ),
+  );
+  check(
+    'main.js: null from the dropdown deletes the entry rather than pinning it',
+    /if \(value === null \|\| value === undefined\) delete merged\[id\];/.test(main),
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  A switch puts the outgoing design DOWN                                    */
+/* -------------------------------------------------------------------------- */
+/*
+ * A design's stage observer outlives the canvas it was built for: the element
+ * is re-rendered, not destroyed, and an observer holds its own reference. Every
+ * switch changes the stage's aspect ratio, which is a resize — so before this,
+ * a slot handed round a few clusters had every design the operator had ever
+ * tried still re-baking its plate, off screen, at every resize for the rest of
+ * the session.
+ */
+console.log('\na design switch releases what the outgoing design held');
+{
+  const speedoJs = read('overlay', 'js', 'widgets', 'speedo.js');
+  check(
+    'speedo.js: the dispatcher stops the outgoing design before building the next',
+    /if \(designBuilt\) stopActive\(\);/.test(speedoJs) && /function stopActive\(\)/.test(speedoJs),
+  );
+  check(
+    'speedo.js: the Apex cluster re-aims one observer instead of stacking them',
+    /if \(sizeObserver\) sizeObserver\.disconnect\(\);/.test(speedoJs),
+  );
+
+  // lmp2 is not loaded into this sandbox (it is its own test); the eleven
+  // canvas designs all come off the one kit, so this covers the kit too.
+  IDS.forEach(function (id) {
+    const d = designs[id];
+    check(`'${id}' exposes stop()`, !!d && typeof d.stop === 'function');
+  });
+
+  // Behavioural, on the stub: init twice (as a switch away and back does) and
+  // stop, then assert nothing this design built is still watching.
+  const d = designs.p911;
+  OBSERVERS.length = 0;
+  d.init(rootEl, wctx);
+  d.init(rootEl, wctx);
+  check(
+    'a re-init re-aims the observer rather than adding a second',
+    OBSERVERS.filter((o) => o.live).length === 1,
+    OBSERVERS.filter((o) => o.live).length + ' live of ' + OBSERVERS.length + ' built',
+  );
+  d.stop();
+  check(
+    'and stop() leaves nothing watching the stage',
+    OBSERVERS.every((o) => !o.live),
+    OBSERVERS.filter((o) => o.live).length + ' still live',
+  );
+  d.init(rootEl, wctx); // put it back for anything that runs after this
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Fitting the Browser Source                                                */
+/* -------------------------------------------------------------------------- */
+/*
+ * The other half of the report: cropped in OBS. The cluster is the one widget
+ * with a STATED width (it is absolute boxes over a canvas, so it has no text to
+ * measure), and a definite width is a floor as well as a ceiling — it becomes
+ * the panel's min-content too, so widget.html laid out at 914px whatever the
+ * source was and OBS, whose Browser Source defaults to 800 wide, cut the
+ * PROJECTED column and the right-hand rev bar off the stream.
+ *
+ * `max-width: 100%` cannot fix it: the containing block is the shrink-to-fit
+ * chain the stage is itself sizing, so the percentage resolves against a box
+ * that has already grown to 900px. The cap has to be in viewport units, which
+ * answer to the source.
+ */
+console.log('\nthe cluster fits the Browser Source it is given');
+{
+  const single = read('overlay', 'css', 'single.css');
+  const rule = /\.single-page \.speedo \{([^}]*)\}/.exec(single);
+  check('single.css caps the stage on the standalone (OBS) page', !!rule);
+  check(
+    'the cap is in viewport units — a percentage here is a no-op',
+    !!rule && /max-width:\s*calc\(100vw/.test(rule[1]) && /max-height:\s*calc\(100vh/.test(rule[1]),
+    rule ? rule[1].trim().replace(/\s+/g, ' ') : 'no rule',
+  );
+  check(
+    'and it allows for the page padding and the panel border (14px)',
+    !!rule && (rule[1].match(/- 14px\)/g) || []).length === 2,
+  );
+  check(
+    'the stage still states its natural width, so a big enough source is unchanged',
+    /\.speedo \{[\s\S]*?width: 900px;/.test(css),
+  );
+
+  const obsM = /obs: \{ w: (\d+), h: (\d+) \}/.exec(main);
+  check('main.js: the speedo catalog entry names the source size it wants', !!obsM);
+  check(
+    'the recommended width clears the 914px the panel needs',
+    !!obsM && Number(obsM[1]) >= 914,
+    obsM ? obsM[1] : 'none',
+  );
+  // 1200x720 at the stage's 900px is 540 high, plus the same 14px of chrome.
+  check(
+    'and the height clears the TALLEST design, not the default one',
+    !!obsM && Number(obsM[2]) >= 554,
+    obsM ? obsM[2] : 'none',
+  );
+
+  const panelJs = read('electron', 'control-panel', 'control-panel.js');
+  check(
+    'the card prints it under the URL, driven by the catalog and not by an id',
+    /o\.obs && o\.obs\.w && o\.obs\.h/.test(panelJs) && /ovcard__size/.test(panelJs),
+  );
+  check(
+    'and the panel stylesheet has a rule for it',
+    /\.ovcard__size \{/.test(read('electron', 'control-panel', 'hub.css')),
+  );
+}
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

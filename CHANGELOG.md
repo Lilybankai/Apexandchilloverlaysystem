@@ -4,6 +4,32 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.1 — 2026-09-03
+
+### Fixed
+
+- **The speedo cluster would not go back to the Apex twin rev bars in OBS.**
+  Picking any of the other clusters worked, and picking a different one after
+  that worked too — it was only the way back to the default that did nothing, and
+  only in OBS: in game it switched back fine, which is what made it look like one
+  broken design rather than one broken direction. "Back to the default" is said
+  by *removing* the choice rather than by storing it, and the step that hands
+  your settings to the overlay pages could add and change entries but never drop
+  one — so the cluster you had tried stayed pinned in every Browser Source for
+  the rest of the session. Both directions now reach the sources, and switching
+  away from a cluster also puts it down properly instead of leaving it redrawing
+  itself off screen for the rest of the stream.
+- **The speedo cluster was cropped in OBS.** It is the one widget that draws at
+  a fixed size rather than growing to fit its text, and it needs 914 pixels of
+  width — but OBS creates a Browser Source at 800 × 600, so the PROJECTED column
+  and the right-hand rev bar were simply off the edge of the source, with nothing
+  on screen to say why. A source that is too small now scales the cluster down to
+  fit instead of cutting it off, and its card in **Overlays** prints the size to
+  give it: **950 × 560**, which is room for the widest design and the tallest one
+  (the LMP2 dash is taller than the Apex cluster, so a source cut to the Apex
+  cluster's height cropped the moment you tried another). A source that was
+  already big enough is unchanged.
+
 ## 0.97.0 — 2026-09-02
 
 ### Changed

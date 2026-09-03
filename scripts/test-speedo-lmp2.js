@@ -61,6 +61,10 @@ check(
   typeof win.ApexSpeedoDesigns.lmp2.init === 'function' &&
     typeof win.ApexSpeedoDesigns.lmp2.update === 'function',
 );
+check(
+  'and a stop(), so the slot can be handed to another design cleanly',
+  typeof win.ApexSpeedoDesigns.lmp2.stop === 'function',
+);
 check('exposes its pure half', typeof banner === 'function');
 
 /* -------------------------------------------------------------------------- */

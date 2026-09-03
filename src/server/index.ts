@@ -301,13 +301,25 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   if (typeof next?.audioVolume === 'number' && Number.isFinite(next.audioVolume)) {
     appearance.audioVolume = Math.min(100, Math.max(0, Math.round(next.audioVolume)));
   }
+  // Replaced wholesale rather than merged, for the same reason widgetOpacity
+  // below is: the app sends the COMPLETE map every time, and "back to the
+  // default design" is expressed by the widget's key being ABSENT — the card's
+  // dropdown sends null for the first option and main.js deletes the entry.
+  // Merged key by key, a removal could never reach the wire: the speedo pinned
+  // to a GT3 plate stayed pinned in /appearance.json for the rest of the
+  // session, so every OBS Browser Source refused to go back to the Apex
+  // cluster while the in-game layer — which is pushed the map directly and
+  // never passed through here — switched back fine. Switching BETWEEN
+  // alternates always worked, which is what made it look like one bad design.
   if (next?.widgetModes && typeof next.widgetModes === 'object') {
+    const clean: Record<string, string> = {};
     for (const [widget, mode] of Object.entries(next.widgetModes)) {
       // Ids/modes are short slugs; anything else is a caller bug, not data.
       if (/^[a-z][a-z0-9]{0,23}$/i.test(widget) && /^[a-z][a-z0-9]{0,23}$/i.test(String(mode))) {
-        appearance.widgetModes[widget] = String(mode);
+        clean[widget] = String(mode);
       }
     }
+    appearance.widgetModes = clean;
   }
   // Replaced wholesale rather than merged: this map's meaning is "the complete
   // set of widgets that opt out of the global slider", so a widget handed back
