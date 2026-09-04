@@ -46,6 +46,12 @@ const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
+// Before anything schedules a timer. The census can only name callbacks that
+// were scheduled through the patched functions, so a poller started during a
+// require above this line would be exactly the invisible work it exists to
+// find. Nothing here starts one — they all wait for app-ready — but the
+// ordering is the guarantee, so it stays at the top rather than in whenReady.
+stallWatch.installCensus();
 const {
   DEFAULT_ENGINEER_SETTINGS,
   sanitizeEngineer,
@@ -4800,12 +4806,16 @@ app.whenReady().then(async () => {
   // phase are the two things the suspect work actually scales with, so a
   // report can say whether the freezes track a 40-car race or happen in an
   // empty practice session.
-  stallWatch.start(app.getPath('userData'), () => ({
-    overlays: BrowserWindow.getAllWindows().length,
-    cars: lastFeedFrame?.standings?.length ?? 0,
-    session: lastFeedFrame?.session?.type ?? 'none',
-    phase: lastFeedFrame?.session?.phase ?? 'none',
-  }));
+  stallWatch.start(
+    app.getPath('userData'),
+    () => ({
+      overlays: BrowserWindow.getAllWindows().length,
+      cars: lastFeedFrame?.standings?.length ?? 0,
+      session: lastFeedFrame?.session?.type ?? 'none',
+      phase: lastFeedFrame?.session?.phase ?? 'none',
+    }),
+    app.getVersion(),
+  );
   // Before createWindow(): whether a session is remembered decides which page
   // the window opens on.
   authService.init(app.getPath('userData'));

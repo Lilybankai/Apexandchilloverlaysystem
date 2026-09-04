@@ -4,6 +4,30 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.2-beta.1 — 2026-09-04
+
+### Changed
+
+- **The freeze log now names what froze the overlays.** The stall log has been
+  catching the hitch you see on screen for a fortnight, and every entry said the
+  same unhelpful thing: the app was idle, and the pollers it knows how to name
+  had only just started when the loop came back — the block was over before any
+  of them ran. The freezes arrive every 130 seconds almost to the tenth, in
+  practice and in a 44-car race alike, and nothing on the thread would own up to
+  it, because the log could only name work somebody had thought to label.
+  So it now labels all of it. Every scheduled job in the app is timed, and
+  anything that holds the main thread past 50 ms is written onto the freeze
+  report by the file and line it was scheduled at — `ran=main.js:1329/812ms`
+  instead of a period and a shrug. Only work that genuinely blocks is counted:
+  waiting on the game or the network is not a freeze and never appears. A report
+  that comes back `ran=none` is an answer too — it clears every job in the app
+  and points at the graphics driver, the garbage collector or Windows itself.
+- **Each session in the freeze log says which build wrote it.** A log spans
+  weeks and several updates, and until now there was no way to tell a session on
+  the current build from one three releases back — which makes "did that fix
+  help" unanswerable from the only evidence there is. The header line now
+  carries the version.
+
 ## 0.97.1 — 2026-09-03
 
 ### Fixed
