@@ -1051,6 +1051,23 @@ html, body {
   grid-template-columns: 1fr 60px 96px 160px;
 }
 
+/* The strategy corpus is a numbers table — six narrow figures after the
+   class/track cell. Figures are right-aligned and monospaced so a column of
+   medians can be read down; a zero or a missing median is dimmed rather than
+   hidden, because "no fuel stops yet at Spa" is the information. */
+.admin-table__head--corpus,
+.admin-table--corpus .admin-row {
+  grid-template-columns: 1fr 76px 56px 72px 56px 72px 56px;
+}
+.admin-table__head--corpus span:not(:first-child) { text-align: right; }
+.admin-row__num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+.admin-row__num[data-dim="true"] { color: var(--text-3); }
+
 /* Access control: one <select> per driver that both SHOWS how that account is
    covered and changes it. A select rather than a pair of buttons because the
    states are mutually exclusive and there are six of them — the same reasoning

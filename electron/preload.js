@@ -381,6 +381,12 @@ contextBridge.exposeInMainWorld('apex', {
     whoami: () => ipcRenderer.invoke('admin:whoami'),
     /** Headline usage numbers: `{ ok, data, signedOut?, error? }`. */
     overview: () => ipcRenderer.invoke('admin:overview'),
+    /**
+     * The strategy corpus: `{ ok, data: { stops, raceStops, fuelStops, laps,
+     * burnLaps, wearLaps, drivers, rows[] }, signedOut?, error? }`. Counts and
+     * medians per class/track — never a driver's rows.
+     */
+    strategyCorpus: () => ipcRenderer.invoke('admin:strategyCorpus'),
     /** The feedback inbox: `{ status? }` → `{ ok, rows[], signedOut?, error? }`. */
     feedback: (query) => ipcRenderer.invoke('admin:feedback', query),
     /**

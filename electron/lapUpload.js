@@ -18,6 +18,16 @@
  *
  * Four hundred practice laps become one row saying "400", not four hundred rows.
  *
+ * Plus, since 0.98.0, the **strategy corpus** — which IS per-row, deliberately:
+ *
+ *   - every pit stop in `~/.apex-overlay/stops`           → `submit_pit_stop`
+ *   - every lap carrying a fuel or tyre reading (v5 laps)  → `submit_lap_consumption`
+ *
+ * A stop is an event, not an aggregate; the fit that reads these needs the
+ * rows themselves (`docs/RACE-STRATEGY-ENGINE.md`). Each is sent once, keyed
+ * by its own id on both ends, so a re-offer is a no-op. See
+ * `src/telemetry/strategyCorpus.ts` for the plan and the wire shape.
+ *
  * ## Why there is no queue
  * Both RPCs are idempotent — the server keeps the greater counter and the faster
  * lap — so the right client recomputes the desired state and sends it, rather
@@ -47,6 +57,14 @@ let auth = null;
 let lapLog = null;
 /** Lazily required beside it — the trace store (`readTrace`). */
 let lapTrace = null;
+/** Lazily required beside it — the strategy corpus plan (`buildCorpusPlan`). */
+let corpus = null;
+/**
+ * Where the local logs live. Null means the logs' own defaults (the real
+ * `~/.apex-overlay` folders); a test points them at temp directories so a
+ * headless `sync()` never reads the machine's real laps.
+ */
+let dirs = null;
 
 /**
  * How often to try, in ms. Laps arrive continuously while someone is driving,
@@ -73,6 +91,16 @@ const MAX_PER_RUN = 40;
  * class is a rare event), without ever turning a sync into an upload session.
  */
 const MAX_TRACES_PER_RUN = 5;
+
+/**
+ * Most strategy-corpus rows to send in one run, per kind (stops, laps).
+ *
+ * Rows are a few hundred bytes, so this is about request count, not bytes: a
+ * driver whose install predates the corpus can have a few hundred consumption
+ * laps waiting, and forty a run drains that inside an hour of the app being
+ * open without ever looking like a flood.
+ */
+const MAX_CORPUS_PER_RUN = 40;
 
 /** Current state, mirrored to the renderer so a driver can see it working. */
 const state = {
@@ -113,6 +141,7 @@ function loadCache() {
       bests: raw && typeof raw.bests === 'object' ? raw.bests : empty.bests,
       traces: raw && typeof raw.traces === 'object' ? raw.traces : empty.traces,
       rejected: raw && typeof raw.rejected === 'object' ? raw.rejected : empty.rejected,
+      corpus: raw && typeof raw.corpus === 'object' ? raw.corpus : empty.corpus || {},
     };
   } catch {
     return empty; // first run, or hand-edited — re-send everything
@@ -162,6 +191,29 @@ function requireLapTrace() {
 }
 
 /**
+ * Require the compiled corpus planner, or null. Same reasoning as the trace
+ * store: a build without it must still sync laps, and "no module" reads as
+ * "nothing to send".
+ */
+function requireCorpus() {
+  if (corpus) return corpus;
+  try {
+    corpus = require(path.join(__dirname, '..', 'dist', 'telemetry', 'strategyCorpus.js'));
+  } catch {
+    return null;
+  }
+  return corpus;
+}
+
+/** The corpus rows still to send, or an empty plan when the module is absent. */
+function pendingCorpus(cache) {
+  const c = requireCorpus();
+  if (!c) return { stops: [], laps: [] };
+  const plan = dirs ? c.buildCorpusPlan(dirs.laps, dirs.stops) : c.buildCorpusPlan();
+  return c.diffCorpus(plan, cache);
+}
+
+/**
  * Send everything the local files say is missing from the league database.
  *
  * Never throws and never rejects: it is called from a timer and from IPC, and
@@ -177,7 +229,7 @@ async function sync({ reason = 'timer' } = {}) {
   running = true;
   setState({ status: 'syncing', error: null });
   try {
-    const plan = lapLog.buildUploadPlan();
+    const plan = dirs ? lapLog.buildUploadPlan(dirs.laps) : lapLog.buildUploadPlan();
     const cache = loadCache();
     const pending = lapLog.diffPlan(plan, cache);
     // Traces pend independently of their best row: a best can be cached as sent
@@ -187,7 +239,13 @@ async function sync({ reason = 'timer' } = {}) {
       typeof lapLog.traceNeedsSend === 'function'
         ? plan.bests.filter((row) => lapLog.traceNeedsSend(row, cache))
         : [];
-    const total = pending.activity.length + pending.bests.length + pendingTraces.length;
+    const corpusRows = pendingCorpus(cache);
+    const total =
+      pending.activity.length +
+      pending.bests.length +
+      pendingTraces.length +
+      corpusRows.stops.length +
+      corpusRows.laps.length;
 
     if (total === 0) {
       setState({ status: 'ok', pending: 0, sent: 0, lastOkAt: Date.now(), error: null });
@@ -209,6 +267,20 @@ async function sync({ reason = 'timer' } = {}) {
     }
     for (const row of activity) {
       const res = await sendActivity(row, cache);
+      if (res.stop) return finish(res, sent, total, dirty, cache);
+      if (res.sent) sent++;
+      dirty = dirty || res.cached;
+    }
+    // The strategy corpus next: small rows, but many of them on a first run,
+    // and nothing a driver is waiting to see — they feed an offline fit.
+    for (const row of corpusRows.stops.slice(0, MAX_CORPUS_PER_RUN)) {
+      const res = await sendStop(row, cache);
+      if (res.stop) return finish(res, sent, total, dirty, cache);
+      if (res.sent) sent++;
+      dirty = dirty || res.cached;
+    }
+    for (const row of corpusRows.laps.slice(0, MAX_CORPUS_PER_RUN)) {
+      const res = await sendConsumption(row, cache);
       if (res.stop) return finish(res, sent, total, dirty, cache);
       if (res.sent) sent++;
       dirty = dirty || res.cached;
@@ -372,6 +444,26 @@ async function sendActivity(row, cache) {
   return out;
 }
 
+/**
+ * Send one pit stop. Accepted rows are remembered by id and never offered
+ * again; a refusal (`implausible_lane`, `unknown_class`) is about this exact
+ * stop and can never change, so `classify` caching it is the right outcome.
+ */
+async function sendStop(stop, cache) {
+  const res = await auth.rpc('submit_pit_stop', corpus.stopPayload(stop, appVersion));
+  const out = classify(res, corpus.stopKey(stop), cache);
+  if (out.sent) corpus.markCorpusSent(cache, corpus.stopKey(stop));
+  return out;
+}
+
+/** Send one lap's consumption block. Same lifecycle as a stop. */
+async function sendConsumption(lap, cache) {
+  const res = await auth.rpc('submit_lap_consumption', corpus.lapPayload(lap, appVersion));
+  const out = classify(res, corpus.lapKey(lap), cache);
+  if (out.sent) corpus.markCorpusSent(cache, corpus.lapKey(lap));
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Lifecycle                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -399,14 +491,18 @@ function stateForUi() {
  * @param opts.auth         the auth module (injected for headless tests)
  * @param opts.appVersion   stamped onto each submitted lap
  * @param opts.onChange     called with the state after every run
+ * @param opts.dirs         `{ laps, stops }` — override the log folders (tests only)
+ * @param opts.noTimer      skip the interval (tests only; `sync()` still works)
  */
 function init(opts) {
   userDataDir = opts.userDataDir;
   auth = opts.auth;
   appVersion = opts.appVersion || '';
+  dirs = opts.dirs && opts.dirs.laps && opts.dirs.stops ? { ...opts.dirs } : null;
   if (typeof opts.onChange === 'function') onChange = opts.onChange;
 
   stop();
+  if (opts.noTimer) return;
   timer = setInterval(() => void sync({ reason: 'timer' }), SYNC_INTERVAL_MS);
   // Timers must not hold the app open at quit.
   if (timer.unref) timer.unref();
@@ -427,4 +523,5 @@ module.exports = {
   // Exported for the offline test.
   SYNC_INTERVAL_MS,
   MAX_PER_RUN,
+  MAX_CORPUS_PER_RUN,
 };

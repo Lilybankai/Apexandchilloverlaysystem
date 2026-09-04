@@ -4,7 +4,7 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.97.2-beta.4 — 2026-09-04
+## 0.98.1-beta.1 — 2026-09-04
 
 ### Changed
 
@@ -28,30 +28,6 @@
   PDF produced a nearly blank page, because the document is pale text on black.
   A printed copy is now black on white, with the full web address written out
   after each link.
-
-## 0.97.2-beta.2 — 2026-09-04
-
-### Changed
-
-- **The freeze log now watches garbage collection, and records the heap.** The
-  first beta answered its own question with a no: across fifteen freezes in a
-  42-car race it reported `ran=none` every time, meaning not one scheduled job
-  in the app was holding the thread. The pollers were cleared at the same time
-  — one whose work had blocked would still be shown running across the freeze,
-  and on the two-second ones it is not. Between them that rules out the app's
-  own code, which leaves something that is not code at all.
-  Top of that list is the memory collector: it stops everything, it recurs on a
-  period set by how fast memory fills, its pause grows with how much is being
-  held — the slow climb the log has been drawing for a fortnight — and it is
-  invisible to anything that watches the app's own work, which is exactly the
-  hole the first beta fell into. Freezes now carry `gc=major/1912ms` when a
-  collection lands inside one, and every report carries the heap size, so the
-  climb between freezes and the drop across them can be read straight off.
-
-## 0.97.2-beta.1 — 2026-09-04
-
-### Changed
-
 - **The freeze log now names what froze the overlays.** The stall log has been
   catching the hitch you see on screen for a fortnight, and every entry said the
   same unhelpful thing: the app was idle, and the pollers it knows how to name
@@ -63,14 +39,49 @@
   anything that holds the main thread past 50 ms is written onto the freeze
   report by the file and line it was scheduled at — `ran=main.js:1329/812ms`
   instead of a period and a shrug. Only work that genuinely blocks is counted:
-  waiting on the game or the network is not a freeze and never appears. A report
-  that comes back `ran=none` is an answer too — it clears every job in the app
-  and points at the graphics driver, the garbage collector or Windows itself.
+  waiting on the game or the network is not a freeze and never appears.
+- **And it watches the memory collector, which is the remaining suspect.**
+  Asked the above, the log answered `ran=none` on all fifteen freezes of a
+  42-car race — not one scheduled job in the app was holding the thread, and the
+  pollers were cleared alongside them. That rules out the app's own code and
+  leaves something that is not code at all. Top of that list is garbage
+  collection: it stops everything, it recurs on a period set by how fast memory
+  fills, its pause grows with how much is being held, and it is invisible to
+  anything watching the app's own work. Freezes now carry `gc=major/1912ms` when
+  a collection lands inside one, and every report carries the heap size, so the
+  climb between freezes and the drop across them can be read straight off.
 - **Each session in the freeze log says which build wrote it.** A log spans
   weeks and several updates, and until now there was no way to tell a session on
   the current build from one three releases back — which makes "did that fix
   help" unanswerable from the only evidence there is. The header line now
   carries the version.
+
+## 0.98.0 — 2026-09-04
+
+### Added
+
+- **Your pit stops and fuel readings now feed the pit-stop predictor.** Since
+  0.96.0 the app has written down every pit visit (lane time, time stationary,
+  fuel added, tyres changed) and, on every lap, the fuel level in and out and
+  the tyre wear at the line. Those files never left your PC — which meant the
+  fuel and pit-stop predictor was waiting on data that one machine can only
+  produce a few real race stops of a week. They now upload alongside your lap
+  times, on the same five-minute sync, so every driver's stops and laps land
+  in one place and the refuel-rate, fuel-burn and tyre-wear models can be
+  fitted per class and track from all of it.
+  Each stop and lap is sent once and remembered by its own id, so a crash
+  mid-upload or a re-install never double-counts; a backlog from before this
+  release drains at forty rows a run. Nothing new is recorded — this is the
+  data the app already kept, and it only exists when shared memory is live
+  (spectating produces none). Only you can see your own rows; admins see
+  totals and medians, never another driver's laps. The Privacy Policy names
+  the new data under "Fuel & pit stops".
+- **Admin: a Strategy corpus card on the overview.** How many stops and laps
+  have landed, how many are usable (real race stops, fuel-only stops a refuel
+  rate can be read from, clean laps with a measured burn), how many drivers
+  are contributing, and a per class/track table with the current median
+  litres-per-second and litres-per-lap — plus a count of pairs that have
+  reached the bar for a fit.
 
 ## 0.97.1 — 2026-09-03
 
