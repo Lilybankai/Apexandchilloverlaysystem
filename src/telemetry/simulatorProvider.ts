@@ -55,10 +55,25 @@ import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
 /** Number of cars in the synthetic field. */
 const FIELD_SIZE = 12;
-/** Total race laps for the simulated session. */
-const RACE_LAPS = 16;
+/**
+ * Total race laps for the simulated session.
+ *
+ * Thirty, not sixteen: at Hypercar pace that is a fifty-minute race, which is
+ * long enough for the demo to need a real fuel stop in the middle of it (see
+ * {@link START_FUEL_L}) and long enough that a launch video or a widget
+ * layout session runs its whole length without the race ending underneath it.
+ * When the leader does take the flag the demo starts a fresh race.
+ */
+const RACE_LAPS = 30;
 /** Laps every car has already completed when the simulation starts. */
 const START_LAPS = 3;
+/**
+ * Fuel in the tank at the start, litres. Sized so the demo driver has to stop
+ * roughly ten minutes in: the fuel widget then counts a real window down, calls
+ * the stop, and the stop that follows is the one the pit-lane phases are built
+ * from — rather than a stop on a timer with a tank that never needed one.
+ */
+const START_FUEL_L = 22;
 /**
  * Nominal lap time in seconds before per-car pace offset and noise.
  *
@@ -206,19 +221,189 @@ const SIM_TRACK_B = 75;
 const TAU = Math.PI * 2;
 
 /**
- * Synthetic corner layout as a fraction of the lap (0..1) plus braking effort.
- * Drives the pedal-input / trail-braking trace so the overlay shows a realistic
- * throttle/brake dance rather than random noise.
+ * The demo circuit's corners: where each apex sits as a fraction of the lap,
+ * how fast the car can carry through it (km/h), which way it turns, and how
+ * long the arc is (metres of track spent at the apex speed).
+ *
+ * This table is the whole driver. The speed profile in {@link buildSpeedProfile}
+ * is derived from it — flat out between corners, braking as late as the car
+ * can for each apex — and everything the player's widgets show (speed, gear,
+ * revs, throttle, brake, steering, G, delta) is read off that profile at the
+ * car's lap position. Nothing here runs on a timer: a gear change happens
+ * because the car reached the revs for it, a braking trace happens because a
+ * corner is coming, and the same corner produces the same trace every lap.
+ *
+ * Speeds are Hypercar-shaped for a 5.9 km lap: two fast sweeps, a hairpin, a
+ * couple of medium corners. Not a real circuit; see {@link buildDemoCircuit}.
  */
-const CORNERS: ReadonlyArray<{ pos: number; brake: number }> = [
-  { pos: 0.08, brake: 0.92 },
-  { pos: 0.21, brake: 0.55 },
-  { pos: 0.36, brake: 1.0 },
-  { pos: 0.5, brake: 0.5 },
-  { pos: 0.66, brake: 0.85 },
-  { pos: 0.82, brake: 0.7 },
-  { pos: 0.93, brake: 0.4 },
+const CORNERS: ReadonlyArray<{ pos: number; apexKph: number; dir: 1 | -1; arcM: number }> = [
+  { pos: 0.08, apexKph: 142, dir: 1, arcM: 90 },
+  { pos: 0.21, apexKph: 200, dir: -1, arcM: 130 },
+  { pos: 0.36, apexKph: 72, dir: 1, arcM: 55 },
+  { pos: 0.5, apexKph: 210, dir: -1, arcM: 150 },
+  { pos: 0.66, apexKph: 114, dir: 1, arcM: 80 },
+  { pos: 0.82, apexKph: 130, dir: -1, arcM: 90 },
+  { pos: 0.93, apexKph: 170, dir: 1, arcM: 100 },
 ];
+
+/**
+ * Corner exits where the demo driver runs wide now and then — the track-limits
+ * charges come from here, at the exit of the corner, not from a clock. The
+ * medium corner after the hairpin is the usual one (a wheel over the exit
+ * kerb); the last corner rarely.
+ */
+const LIMITS_CORNERS: ReadonlyArray<{ corner: number; perLap: number; charge: number }> = [
+  { corner: 4, perLap: 0.12, charge: 0.25 },
+  { corner: 6, perLap: 0.03, charge: 0.5 },
+];
+
+/** Where the pit lane leaves and rejoins the lap, as fractions of it. */
+const PIT_ENTRY_AT = 0.972;
+const PIT_BOX_AT = 0.994;
+const PIT_EXIT_AT = 0.028;
+/** Pit-lane speed limit, km/h. */
+const PIT_LANE_KPH = 60;
+/** Refuelling rate, litres per second — the figure the strategy doc measured. */
+const REFUEL_L_PER_SEC = 2.6;
+/** A four-tyre change, seconds, the sim's own published figure. */
+const FOUR_TYRES_SEC = 12;
+
+/**
+ * Road speed at the shift point in each gear, km/h, gears 1..7. The demo's
+ * whole gearbox: revs are `speed / vmax[gear]` of the shift point, so the car
+ * upshifts when it reaches these speeds and lands mid-range in the next gear,
+ * and a downshift under braking brings the revs back up — a rev counter that
+ * saws through the gears the way a real one does.
+ */
+const GEAR_MAX_KPH: readonly number[] = [0, 62, 122, 160, 196, 232, 266, 300];
+/** Engine idle, rpm — what the counter shows in the box with the car in neutral. */
+const SIM_IDLE_RPM = 2200;
+/** Revs below which a braking car takes the next gear down. */
+const SIM_RPM_DOWNSHIFT_AT = 4300;
+
+/* ----------------------------- speed profile ----------------------------- */
+
+/** Bins the lap is divided into for the speed profile. */
+const PROFILE_BINS = 720;
+/** Straight-line top speed, m/s (≈ 306 km/h). */
+const V_MAX_MS = 76.5;
+/** Full-throttle acceleration from rest, m/s², before drag. */
+const ACCEL_A0 = 7.2;
+/** Drag term, m/s² per (m/s)²: chosen so acceleration fades to ~0.5 m/s² at top speed. */
+const ACCEL_K = (ACCEL_A0 - 0.5) / (V_MAX_MS * V_MAX_MS);
+/** Peak braking deceleration, m/s² (≈ 1.7 g with the aero on). */
+const BRAKE_A = 15;
+
+/** Acceleration available at full throttle at speed `v` (m/s), m/s². */
+function accelAt(v: number): number {
+  return Math.max(0.3, ACCEL_A0 - ACCEL_K * v * v);
+}
+
+/**
+ * The lap's speed profile: `v[i]` is the speed (m/s) in bin `i`, `tAt[i]` the
+ * time from the line to the start of bin `i`, `lapSec` the whole lap.
+ *
+ * Built the way a race engineer's simulation does it: a speed ceiling from the
+ * corner table (apex speed through each arc, top speed elsewhere), then a
+ * forward pass that lets the car accelerate no faster than the engine allows,
+ * then a backward pass that pulls speed down ahead of each corner no faster
+ * than the brakes allow. Two rounds of both so the wrap at the line settles.
+ */
+interface SpeedProfile {
+  v: Float64Array;
+  tAt: Float64Array;
+  lapSec: number;
+  binM: number;
+}
+
+function buildSpeedProfile(): SpeedProfile {
+  const n = PROFILE_BINS;
+  const binM = DEMO_TRACK_LENGTH_M / n;
+  const ceiling = new Float64Array(n).fill(V_MAX_MS);
+  for (const c of CORNERS) {
+    const half = c.arcM / 2 / DEMO_TRACK_LENGTH_M;
+    const apex = c.apexKph / 3.6;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(wrapHalf(i / n - c.pos));
+      if (d <= half) ceiling[i] = Math.min(ceiling[i] as number, apex);
+    }
+  }
+  const v = Float64Array.from(ceiling);
+  for (let round = 0; round < 2; round++) {
+    // Forward: accelerate out of each corner.
+    for (let k = 0; k < n; k++) {
+      const i = k % n;
+      const j = (i + 1) % n;
+      const vi = v[i] as number;
+      const reach = Math.sqrt(vi * vi + 2 * accelAt(vi) * binM);
+      v[j] = Math.min(v[j] as number, reach, ceiling[j] as number);
+    }
+    // Backward: brake for each corner.
+    for (let k = n - 1; k >= 0; k--) {
+      const i = k % n;
+      const h = (i - 1 + n) % n;
+      const vi = v[i] as number;
+      const reach = Math.sqrt(vi * vi + 2 * BRAKE_A * binM);
+      v[h] = Math.min(v[h] as number, reach);
+    }
+  }
+  const tAt = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) tAt[i + 1] = (tAt[i] as number) + binM / (v[i] as number);
+  return { v, tAt, lapSec: tAt[n] as number, binM };
+}
+
+const PROFILE: SpeedProfile = buildSpeedProfile();
+/** The profile's own lap time, seconds — exported so a test can pin it near the demo's pace. */
+export const DEMO_PROFILE_LAP_SEC = PROFILE.lapSec;
+
+/** Speed (m/s) at a lap fraction, linearly interpolated between bins. */
+function profileSpeedAt(p: number): number {
+  const x = (((p % 1) + 1) % 1) * PROFILE_BINS;
+  const i = Math.floor(x) % PROFILE_BINS;
+  const j = (i + 1) % PROFILE_BINS;
+  return lerp(PROFILE.v[i] as number, PROFILE.v[j] as number, x - Math.floor(x));
+}
+
+/** Time from the line to a lap fraction on the profile lap, seconds. */
+function profileTimeAt(p: number): number {
+  const x = (((p % 1) + 1) % 1) * PROFILE_BINS;
+  const i = Math.floor(x) % PROFILE_BINS;
+  const frac = x - Math.floor(x);
+  return (PROFILE.tAt[i] as number) + (frac * PROFILE.binM) / (PROFILE.v[i] as number);
+}
+
+/** Longitudinal acceleration the profile calls for at a lap fraction, m/s². */
+function profileAccelAt(p: number): number {
+  const step = 1 / PROFILE_BINS;
+  const v0 = profileSpeedAt(p - step);
+  const v1 = profileSpeedAt(p + step);
+  // a = v · dv/ds
+  return (profileSpeedAt(p) * (v1 - v0)) / (2 * step * DEMO_TRACK_LENGTH_M);
+}
+
+/**
+ * Steering demand at a lap fraction, −1..1: each corner contributes a smooth
+ * bell of lock around its apex, turned in a little before it and unwound after,
+ * scaled by how tight the corner is.
+ */
+function steerAt(p: number): number {
+  let steer = 0;
+  for (const c of CORNERS) {
+    const halfArc = c.arcM / 2 / DEMO_TRACK_LENGTH_M;
+    // The lock is held for the arc and blended in/out over ~40 m each side.
+    const blend = 40 / DEMO_TRACK_LENGTH_M;
+    const d = Math.abs(wrapHalf(p - (c.pos - blend * 0.3)));
+    let k = 0;
+    if (d <= halfArc) k = 1;
+    else if (d <= halfArc + blend) k = 1 - (d - halfArc) / blend;
+    if (k <= 0) continue;
+    const amp = clamp(1.05 - c.apexKph / 240, 0.18, 0.92);
+    // Smooth the shoulders so the trace has no corners of its own.
+    const s = k * k * (3 - 2 * k);
+    steer += c.dir * amp * s;
+  }
+  return clamp(steer, -1, 1);
+}
 
 /** Driver name pool for the synthetic field. */
 const DRIVER_NAMES: readonly string[] = [
@@ -248,8 +433,6 @@ const DRIVER_NAMES: readonly string[] = [
 const SIM_MAX_RPM = 8600;
 /** Where the demo car upshifts — inside the shift band, deliberately. */
 const SIM_RPM_SHIFT_AT = 8560;
-/** Where the revs land after an upshift: mid-range, well clear of amber. */
-const SIM_RPM_AFTER_SHIFT = 5600;
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -288,9 +471,49 @@ function simWetnessBand(wet: number): string {
   return 'SATURATED';
 }
 
+/**
+ * The demo's own random source — a seeded generator, so two runs of demo mode
+ * are the same race. That is what makes a layout session or a screen recording
+ * repeatable, and what lets a test assert that a rare event (a track-limits
+ * charge, a contact) happens where it did last time.
+ */
+let rngState = 0x9e3779b9;
+function rnd(): number {
+  // xorshift32 — plenty for picking lap noise and the odd incident.
+  let x = rngState;
+  x ^= x << 13;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  rngState = x >>> 0;
+  return rngState / 4294967296;
+}
+function resetRng(): void {
+  rngState = 0x9e3779b9;
+}
+
 /** Small symmetric jitter in [-amp, amp]. */
 function jitter(amp: number): number {
-  return (Math.random() * 2 - 1) * amp;
+  return (rnd() * 2 - 1) * amp;
+}
+
+/**
+ * Slow, band-limited noise: a value that wanders rather than flickers. Used for
+ * the human in the driver — the throttle that is not quite steady on a straight,
+ * the steering that corrects a little mid-corner — where per-frame jitter would
+ * read as a fault in the feed rather than a hand on the wheel.
+ */
+class Wander {
+  private value = 0;
+  constructor(
+    private readonly amp: number,
+    private readonly tauSec: number,
+  ) {}
+  step(dt: number): number {
+    // Ornstein–Uhlenbeck: pulled back to zero, kicked by noise scaled to dt.
+    const pull = clamp(dt / this.tauSec, 0, 1);
+    this.value += -this.value * pull + jitter(this.amp) * Math.sqrt(pull);
+    return clamp(this.value, -this.amp, this.amp);
+  }
 }
 
 /* ------------------------------ internal state ---------------------------- */
@@ -315,6 +538,26 @@ interface SimCar {
   bestLapSec: number;
   inPit: boolean;
   pitStops: number;
+  /**
+   * The lap this car will stop at the end of (its pit entry comes on that
+   * lap's last stretch), or −1 once it has stopped or if it never will.
+   */
+  pitLap: number;
+  /** Seconds the car will stand in its box on its next stop. */
+  stopSec: number;
+  /** Seconds it has stood so far in the current stop, while stationary. */
+  stoodSec: number;
+  /** Where the car is in its pit visit. */
+  pitPhase: PitPhase;
+  /**
+   * Traffic: how long this car has been held behind a slower car, and how
+   * long it needs before it gets by. A pass takes laps of pressure, not one
+   * frame of overlapping progress.
+   */
+  attackSec: number;
+  attackNeedSec: number;
+  /** The share of natural pace this frame after traffic and the pit lane, 0..1. */
+  rateScale: number;
   /** Profile badge, as on {@link StandingEntry.driverBadge}; most cars none. */
   driverBadge?: string;
   /** DR rank badge, as on {@link StandingEntry.driverRank}. */
@@ -374,13 +617,36 @@ export class SimulatorProvider implements TelemetryProvider {
   public readonly name = 'simulator';
 
   private cars: SimCar[] = [];
-  private fuelLevel = 62;
+  private fuelLevel = START_FUEL_L;
   private readonly recentBurns: number[] = [];
   /** Count of player laps for which fuel has been burned (independent of the
    * 5-entry rolling `recentBurns` window). */
   private lapsBurned = 0;
   /** Player's driver-input state, smoothed frame-to-frame. */
   private pedals: PedalInputs = { throttle: 1, brake: 0, clutch: 0, steer: 0 };
+
+  /* --- the driven car -------------------------------------------------------
+   * The player's car is integrated, not sampled: speed follows the profile at
+   * its lap position, the gear is a state that changes when the revs say so,
+   * and the lap clock is the time actually spent. Everything the speedo, the
+   * trace and the delta show comes from these few numbers.
+   */
+  /** Road speed, m/s. */
+  private speedMs = 0;
+  private gear = 1;
+  /** Seconds since the last gear change — spaces a downshift sequence out. */
+  private sinceShiftSec = 1;
+  /** Time into the current lap, seconds. */
+  private lapElapsedSec = 0;
+  /** Time the current lap is being driven to, seconds — set at the line. */
+  private lapTargetSec = BASE_LAP_SEC;
+  /** Time the lap's braking zones were reached on the best lap, for the delta. */
+  private bestLapScale = 1;
+  /** The human: slow wander on throttle, brake and wheel. */
+  private readonly throttleWander = new Wander(0.05, 0.6);
+  private readonly steerWander = new Wander(0.03, 0.35);
+  /** The player's next stop: litres to add and the crew's other jobs, or null. */
+  private pitPlan: { fuelL: number; tyres: boolean; repair: boolean } | null = null;
   private tyreTemps = { fl: 78, fr: 80, rl: 82, rr: 84 };
   private tyreWear = { fl: 1, fr: 1, rl: 1, rr: 1 };
   /** Demo hybrid state of charge, 0..1. Stepped by {@link stepHybrid}. */
@@ -390,7 +656,8 @@ export class SimulatorProvider implements TelemetryProvider {
   private rainIntensity = 0;
   /** Which way the demo track is going, for the weather widget's trend arrow. */
   private wetTrend: 'drying' | 'wetting' | 'steady' = 'steady';
-  private weatherPhase = 0;
+  /** Starts on the dry side of the cycle: the first shower is half an hour off. */
+  private weatherPhase = Math.PI / 0.12;
   /**
    * Seconds of simulated session time. Demo mode has no sim clock of its own,
    * but {@link ChassisTracker} advances its reference average on one, so the
@@ -402,13 +669,29 @@ export class SimulatorProvider implements TelemetryProvider {
   private started = false;
 
   public start(): void {
+    resetRng();
     // Reset fuel state and seed a short burn history so the fuel widget shows
-    // meaningful numbers from the very first frame (the 62 L level already
-    // reflects these historical laps).
-    this.fuelLevel = 62;
+    // meaningful numbers from the very first frame (the level already reflects
+    // these historical laps).
+    this.fuelLevel = START_FUEL_L;
     this.recentBurns.length = 0;
     for (let i = 0; i < 3; i++) this.recentBurns.push(2.6 + jitter(0.1));
     this.lapsBurned = 0;
+    this.pitPlan = null;
+    this.speedMs = profileSpeedAt(0);
+    this.gear = 7;
+    this.sinceShiftSec = 1;
+    this.lapElapsedSec = 0;
+    this.lapTargetSec = BASE_LAP_SEC + jitter(0.3);
+    this.bestLapScale = (BASE_LAP_SEC - 0.3) / PROFILE.lapSec;
+    this.limitsFirstDone = false;
+    this.weatherPhase = Math.PI / 0.12;
+    this.rainIntensity = 0;
+    this.demoContact = 0;
+    this.yellowUntilSec = 0;
+    this.yellowSector = 1;
+    this.nextIncidentAtSec = 58;
+    this.kerbNow = false;
 
     this.cars = [];
     // Expand SIM_CLASSES into a per-car class lookup: [HC,HC,HC,HC,LMP2,…].
@@ -445,11 +728,25 @@ export class SimulatorProvider implements TelemetryProvider {
         bestLapSec: BASE_LAP_SEC + paceOffset - 0.3,
         inPit: false,
         pitStops: 0,
+        // Everyone stops once, spread over five laps around the player's own
+        // window (which the fuel model sets — see advanceFieldCar). The player's
+        // is decided by fuel, so it starts undecided.
+        pitLap: i === PLAYER_INDEX ? -1 : START_LAPS + 5 + Math.floor(rnd() * 5),
+        stopSec: 26 + rnd() * 8,
+        stoodSec: 0,
+        pitPhase: 'none',
+        attackSec: 0,
+        attackNeedSec: 0,
+        rateScale: 1,
         driverBadge: SIM_BADGES[i % SIM_BADGES.length],
         driverRank: { rank: simRank.dr[0], tier: simRank.dr[1] },
         safetyRank: { rank: simRank.sr[0], tier: simRank.sr[1] },
       });
     }
+    // The lap clock starts where the car starts, not at zero: the first lap
+    // time is then a real lap, not the fraction left to the line.
+    this.lapTargetSec = this.player().lapSec + jitter(0.3);
+    this.lapElapsedSec = profileTimeAt(this.player().progress) * (this.lapTargetSec / PROFILE.lapSec);
     this.started = true;
   }
 
@@ -467,7 +764,13 @@ export class SimulatorProvider implements TelemetryProvider {
     if (!this.started) this.start();
     const dt = clamp(dtMs, 0, 250) / 1000; // seconds, guarded against long stalls
 
+    // The flag: once the leader has done the distance the demo starts the
+    // same race again from the top (seeded, so it IS the same race), rather
+    // than running on past the end with nothing left to count down.
+    if (this.cars.some((c) => c.lapsCompleted >= RACE_LAPS)) this.start();
+
     this.clockSec += dt;
+    this.sinceShiftSec += dt;
     this.advanceField(dt);
     this.advanceWeather(dt);
 
@@ -486,36 +789,34 @@ export class SimulatorProvider implements TelemetryProvider {
     // Built once and shared: the chassis model is derived from the same motion
     // state the frame reports, so calling motionFor() twice would risk the two
     // drifting apart if it ever gains any per-call state.
-    const motion = this.motionFor(this.pedals);
+    const motion = this.motionFor();
     const chassis = this.buildChassis(motion);
     const damage = this.buildDamage();
-    // After the damage block, which is where the booked stop length comes from
-    // when a stop starts.
-    const pit = this.advancePit(dt, damage);
-    const trackLimits = this.buildTrackLimits(dt);
+    const pit = this.advancePit(damage);
+    const trackLimits = this.buildTrackLimits();
     // Which pre-green phase the demo is in, or null once it has gone green.
     const preSession = this.advancePreSession(dt);
     const paceScore = this.buildPaceScore(player);
 
-    // The demo's live delta, and the pace block derived from it. Demo mode is
-    // how the overlay is set up and how it looks when LMU is unreachable, so
-    // the delta widget's projected lap has to have something to show here or it
-    // reads as broken rather than as waiting.
+    // The live delta: time spent so far this lap against the time the best lap
+    // had spent reaching the same point. It ramps as the lap is driven, wobbles
+    // where traffic or the driver's hand cost a tenth, and blows up on a pit
+    // lap — which is what a predictive delta does.
     const simDelta =
-      Math.round(
-        (Math.sin(player.progress * Math.PI * 3) * 0.35 +
-          (player.lapSec - player.bestLapSec) * (player.progress - 0.5)) *
-          100,
-      ) / 100;
+      Math.round((this.lapElapsedSec - profileTimeAt(player.progress) * this.bestLapScale) * 100) /
+      100;
+    const lastScale = player.lastLapSec / PROFILE.lapSec;
+    const deltaToLast =
+      Math.round((this.lapElapsedSec - profileTimeAt(player.progress) * lastScale) * 100) / 100;
     const paceDeltas: PaceDeltas = {
       tSession: simDelta,
       tAllTime: round2(simDelta + 0.21),
-      tLast: round2(simDelta - 0.13),
+      tLast: deltaToLast,
       vSession: round2(simDelta * 0.9),
       vAllTime: round2(simDelta * 0.9 + 0.21),
-      vLast: round2(simDelta * 0.9 - 0.13),
+      vLast: round2(deltaToLast * 0.9),
       predictedLapSec: round2(player.bestLapSec + simDelta),
-      lapTimeSec: round2(player.progress * player.lapSec),
+      lapTimeSec: round2(this.lapElapsedSec),
       refSessionSec: round2(player.bestLapSec),
       refAllTimeSec: round2(player.bestLapSec - 0.21),
       lastLapSec: round2(player.lastLapSec),
@@ -577,17 +878,14 @@ export class SimulatorProvider implements TelemetryProvider {
         position: this.positionOf(player),
         pedals: { ...this.pedals },
         motion,
-        gear: this.gearFor(this.pedals),
-        speedKph: this.speedFor(this.pedals),
-        rpm: this.rpmFor(this.pedals),
+        gear: this.gear,
+        speedKph: Math.round(this.speedMs * 3.6),
+        rpm: this.rpmNow(),
         maxRpm: SIM_MAX_RPM,
         lap: {
-          current: player.progress * player.lapSec,
+          current: this.lapElapsedSec,
           last: player.lastLapSec,
           best: player.bestLapSec,
-          // Wandering live delta vs. best: swings a few tenths either side of zero
-          // through the lap (green when up, red when down) so the delta bar reads
-          // like a real predictive delta rather than a one-way drift.
           delta: simDelta,
           sector: Math.min(3, Math.floor(player.progress * 3) + 1),
         },
@@ -686,36 +984,235 @@ export class SimulatorProvider implements TelemetryProvider {
 
   /* ----------------------------- field motion ---------------------------- */
 
-  /** Advances every car around the lap and records completed laps. */
+  /** The player's lap position at the start of this frame, for edge detection. */
+  private prevPlayerProgress = 0;
+  /** Set while the player's inside wheels are over an exit kerb. */
+  private kerbNow = false;
+
+  /**
+   * Advances every car around the lap and records completed laps.
+   *
+   * Three things make the field move like a race rather than like beads on a
+   * string: a car does not drive through the one ahead of it (traffic holds it
+   * up until it has earned the pass — see {@link trafficScale}), a pit visit is
+   * a place on the lap the car slows into and stands still at, and the player
+   * moves at the speed the driver model is actually doing.
+   */
   private advanceField(dt: number): void {
+    const player = this.player();
+    this.prevPlayerProgress = player.progress;
+    // Eased, so being caught behind someone is a lift, not a stamp on the brakes.
     for (const car of this.cars) {
-      const speedFactor = car.inPit ? 0.35 : 1;
-      const prev = car.progress;
-      car.progress += (dt / car.lapSec) * speedFactor;
+      car.rateScale = lerp(car.rateScale, this.trafficScale(car, dt), clamp(dt / 0.8, 0, 1));
+    }
+
+    for (const car of this.cars) {
+      const isPlayer = car === player;
+      this.advancePitState(car, dt);
+      if (car.pitPhase === 'stopped') {
+        // Standing in the box.
+      } else if (isPlayer) {
+        car.progress += (this.speedMs * dt) / DEMO_TRACK_LENGTH_M;
+      } else {
+        // Every car drives the same profile — slow in the same corners, fast
+        // on the same straights — at its own pace. A field of cars moving at
+        // uniform rates against a player who brakes for corners would see the
+        // gaps swing by seconds every lap and positions flip back and forth
+        // with nobody having passed anyone.
+        const lane = car.pitPhase !== 'none';
+        const speedMs = lane
+          ? PIT_LANE_KPH / 3.6
+          : profileSpeedAt(car.progress) * (PROFILE.lapSec / car.lapSec) * car.rateScale;
+        car.progress += (speedMs * dt) / DEMO_TRACK_LENGTH_M;
+      }
       if (car.progress >= 1) {
         car.progress -= 1;
         car.lapsCompleted += 1;
-        // Fresh lap time with a little variance, around THIS car's own pace.
-        // (It used to re-derive the pace from the slot id, which threw away the
-        // class offset the car was actually running — so every completed lap
-        // reset a GT3's time to Hypercar pace and the tower disagreed with the
-        // gaps.)
-        const lap = car.lapSec + jitter(0.6);
-        car.lastLapSec = lap;
-        if (lap < car.bestLapSec) car.bestLapSec = lap;
+        if (isPlayer) this.playerCrossedLine(car);
+        else {
+          // Fresh lap time with a little variance, around THIS car's own pace.
+          const lap = car.lapSec + jitter(0.35) + (car.pitPhase !== 'none' ? 20 : 0);
+          car.lastLapSec = lap;
+          if (lap < car.bestLapSec) car.bestLapSec = lap;
+        }
         // Burn a lap's worth of virtual energy — faster in the quicker classes,
         // which is what makes the energy-overlap readout meaningful.
         const drain = car.carClass === 'HYPERCAR' ? 0.055 : car.carClass === 'LMP2' ? 0.048 : 0.04;
         car.virtualEnergy = clamp01(car.virtualEnergy - drain + jitter(0.005));
-        // Occasional pit stop for cars other than the player.
-        if (car.slotId !== this.player().slotId && Math.random() < 0.02) {
-          car.inPit = true;
-          car.pitStops += 1;
-        }
       }
-      // Leave the pit lane shortly after entering.
-      if (car.inPit && prev < 0.1 && car.progress >= 0.1) car.inPit = false;
     }
+  }
+
+  /**
+   * The player's line crossing: the lap time is the time actually spent, the
+   * next lap gets its own target, fuel is burned, and the fuel model decides
+   * whether this is the lap to stop on — the same rule the fuel widget lights
+   * PIT THIS LAP on, so the call and the stop agree.
+   */
+  private playerCrossedLine(car: SimCar): void {
+    // The overshoot past the line belongs to the new lap.
+    const overshootSec = car.progress > 0 && this.speedMs > 1 ? (car.progress * DEMO_TRACK_LENGTH_M) / this.speedMs : 0;
+    const lap = Math.max(1, this.lapElapsedSec - overshootSec);
+    this.lapElapsedSec = overshootSec;
+    car.lastLapSec = round2(lap);
+    if (lap < car.bestLapSec && lap > BASE_LAP_SEC * 0.9 && car.pitPhase === 'none' && car.pitLap !== car.lapsCompleted - 1) {
+      car.bestLapSec = round2(lap);
+      this.bestLapScale = car.bestLapSec / PROFILE.lapSec;
+    }
+    // Next lap's pace: the car's own, a few tenths either way, and now and
+    // then a lap with a mistake in it.
+    this.lapTargetSec = car.lapSec + jitter(0.45) + (rnd() < 0.12 ? 0.9 + rnd() * 1.2 : 0);
+
+    // Burn this lap's fuel here, before the stop decision reads the level.
+    const burn = 2.6 + jitter(0.15);
+    this.fuelLevel = Math.max(0, this.fuelLevel - burn);
+    this.recentBurns.push(burn);
+    if (this.recentBurns.length > 5) this.recentBurns.shift();
+    this.lapsBurned += 1;
+
+    // A brush with someone, now and then. Repaired at the stop.
+    if (this.demoContact === 0 && car.lapsCompleted > START_LAPS + 1 && rnd() < 0.05) {
+      this.demoContact = 0.4 + rnd() * 0.6;
+    }
+
+    // The stop call — the fuel widget's own rule (buildFuel), applied at the line.
+    const perLap = this.recentBurns.reduce((a, b) => a + b, 0) / this.recentBurns.length;
+    const fuelLaps = this.fuelLevel / perLap;
+    const toFinish = RACE_LAPS - car.lapsCompleted;
+    if (car.pitLap < 0 && car.pitStops === 0 && toFinish > 1 && fuelLaps < 2 * 0.9 + 0.05) {
+      car.pitLap = car.lapsCompleted;
+      const need = toFinish * perLap + 2 - this.fuelLevel;
+      this.pitPlan = {
+        fuelL: round1(clamp(need, 5, FUEL_CAPACITY_L - this.fuelLevel)),
+        tyres: true,
+        repair: this.demoContact > 0,
+      };
+    }
+  }
+
+  /**
+   * How much of its natural pace a car runs this frame, given who is ahead.
+   *
+   * A faster car closing on a slower one is held at the slower car's pace once
+   * it is within a second, and stays there for a spell — seconds for a faster
+   * class lapping traffic, most of a lap or more for a same-class fight —
+   * before it gets a run and goes by. Positions therefore change the way they
+   * do on a timing screen: a gap that closes over laps, holds, then flips.
+   */
+  private trafficScale(car: SimCar, dt: number): number {
+    if (car.pitPhase !== 'none') return 1;
+    let ahead: SimCar | null = null;
+    let gap = 1;
+    for (const o of this.cars) {
+      if (o === car || o.pitPhase !== 'none') continue;
+      const d = wrapHalf(o.progress - car.progress);
+      if (d > 0 && d < gap) {
+        gap = d;
+        ahead = o;
+      }
+    }
+    if (!ahead) {
+      car.attackSec = 0;
+      return 1;
+    }
+    const gapSec = gap * BASE_LAP_SEC;
+    // The pace each is ACTUALLY doing: the player's is the lap it is driving
+    // to, which wanders a few tenths either side of its nominal.
+    const paceOf = (c: SimCar): number => (c === this.player() ? this.lapTargetSec : c.lapSec);
+    const myRate = 1 / paceOf(car);
+    const theirRate = 1 / paceOf(ahead);
+    if (myRate <= theirRate * 1.0005 || gapSec > 1.2) {
+      car.attackSec = 0;
+      car.attackNeedSec = 0;
+      return 1;
+    }
+    if (car.attackNeedSec === 0) {
+      car.attackNeedSec = isFasterClass(car.carClass, ahead.carClass) ? 3 + rnd() * 5 : 15 + rnd() * 45;
+    }
+    car.attackSec += dt;
+    if (car.attackSec < car.attackNeedSec) {
+      // Held: sit at the car ahead's pace, a touch slower if right on its tail.
+      if (gapSec < 0.55) return (theirRate / myRate) * (gapSec < 0.35 ? 0.995 : 1);
+      return 1;
+    }
+    // The move: a run at it until it is past.
+    return 1.03;
+  }
+
+  /**
+   * One car's pit visit, as places on the lap: into the lane on its pit lap,
+   * to a standstill in the box for as long as the stop takes, then out along
+   * the exit road and back to racing on the far side of the line.
+   */
+  private advancePitState(car: SimCar, dt: number): void {
+    const isPlayer = car === this.player();
+    switch (car.pitPhase) {
+      case 'none':
+        if (car.pitLap === car.lapsCompleted && car.progress >= PIT_ENTRY_AT) {
+          car.pitPhase = 'entering';
+          car.inPit = true;
+        }
+        break;
+      case 'entering':
+        if (car.progress >= PIT_BOX_AT) {
+          car.pitPhase = 'stopped';
+          car.stoodSec = 0;
+          if (isPlayer) {
+            const booked = this.plannedStop();
+            // The crew's own delay, drawn at the stop like the sim's.
+            car.stopSec = round1(booked.total + rnd() * booked.slack);
+          }
+        }
+        break;
+      case 'stopped':
+        car.stoodSec += dt;
+        if (car.stoodSec >= car.stopSec) {
+          car.pitPhase = 'exiting';
+          car.pitStops += 1;
+          car.pitLap = -1;
+          if (isPlayer) this.serviceDone();
+        }
+        break;
+      case 'exiting':
+        if (car.progress >= PIT_EXIT_AT && car.progress < 0.5) {
+          car.pitPhase = 'none';
+          car.inPit = false;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** What the player's crew did: fuel in, fresh tyres, damage fixed. */
+  private serviceDone(): void {
+    if (this.pitPlan) {
+      this.fuelLevel = Math.min(FUEL_CAPACITY_L, this.fuelLevel + this.pitPlan.fuelL);
+      if (this.pitPlan.tyres) {
+        this.tyreWear = { fl: 1, fr: 1, rl: 1, rr: 1 };
+        this.tyreTemps = { fl: 68, fr: 68, rl: 66, rr: 66 };
+      }
+      if (this.pitPlan.repair) this.demoContact = 0;
+    }
+    this.pitPlan = null;
+  }
+
+  /**
+   * The stop as booked: the sim's own arithmetic on the jobs — the longest of
+   * refuelling and tyres, since the crew works in parallel, plus any repair,
+   * which does not start until the car is serviced.
+   */
+  private plannedStop(): { total: number; refuel: number; tyres: number; fixAll: number; slack: number } {
+    const plan = this.pitPlan;
+    const perLap = this.recentBurns.length
+      ? this.recentBurns.reduce((a, b) => a + b, 0) / this.recentBurns.length
+      : 2.6;
+    const toFinish = Math.max(0, RACE_LAPS - this.player().lapsCompleted);
+    const fuelL = plan ? plan.fuelL : clamp(toFinish * perLap + 2 - this.fuelLevel, 0, FUEL_CAPACITY_L - this.fuelLevel);
+    const refuel = round2(fuelL / REFUEL_L_PER_SEC);
+    const tyres = plan ? (plan.tyres ? FOUR_TYRES_SEC : 0) : FOUR_TYRES_SEC;
+    const fixAll = this.demoContact > 0 ? round2(30 + 5.1 * this.demoContact) : 0;
+    return { total: round2(Math.max(refuel, tyres) + fixAll), refuel, tyres, fixAll, slack: 5 };
   }
 
   /** Total race progress used for ordering: laps completed + lap fraction. */
@@ -738,51 +1235,107 @@ export class SimulatorProvider implements TelemetryProvider {
   /* ---------------------------- driver inputs ---------------------------- */
 
   /**
-   * Computes target throttle/brake/steer from the player's lap position using
-   * the synthetic corner layout, including a trail-braking overlap (brake
-   * bleeding off while throttle builds through the apex), then smooths toward
-   * the target so the trace looks like real inputs.
+   * Drives the player's car for one frame.
+   *
+   * The speed the profile wants at this point of the lap (scaled for the lap
+   * being driven and for any car it is stuck behind) is the target; the car
+   * gets there with the acceleration the profile calls for plus a correction,
+   * never faster than the engine can pull or the brakes can stop. Throttle and
+   * brake are then whatever produces that acceleration, steering is the
+   * corner's lock, and the gear changes when the revs reach the shift point
+   * (up) or fall through the downshift point under braking (down). In the pit
+   * lane the car sits on the limiter; in the box it is in neutral, idling.
    */
   private advanceDriverInputs(player: SimCar, dt: number): void {
     const p = player.progress;
-    let throttle = 1;
-    let brake = 0;
-    let steer = 0;
+    const phase = player.pitPhase;
+    this.lapElapsedSec += dt;
 
-    CORNERS.forEach((c, i) => {
-      const sign = i % 2 === 0 ? 1 : -1;
-      const d = wrapHalf(c.pos - p); // >0 => corner is ahead of the player
-      const approach = 0.06;
-      const exit = 0.05;
-      if (d >= 0 && d <= approach) {
-        // Braking zone before the apex: brake builds, throttle lifts.
-        const k = 1 - d / approach; // 0 far → 1 at apex
-        brake = Math.max(brake, c.brake * k);
-        throttle = Math.min(throttle, 1 - 0.9 * k);
-        steer = sign * 0.6 * k;
-      } else if (d < 0 && d >= -exit) {
-        // Exit: trail-brake bleeds off while throttle progressively returns.
-        const k = 1 + d / exit; // 1 at apex → 0 at exit end
-        brake = Math.max(brake, c.brake * 0.8 * k);
-        throttle = Math.min(throttle, 1 - 0.55 * k);
-        steer = sign * 0.6 * k;
+    let throttle: number;
+    let brake: number;
+    let steer: number;
+    let accel: number;
+
+    if (phase === 'stopped') {
+      this.speedMs = 0;
+      this.gear = 0;
+      accel = 0;
+      throttle = 0;
+      brake = 0;
+      steer = 0;
+    } else if (phase !== 'none') {
+      // On the limiter down the lane.
+      const target = PIT_LANE_KPH / 3.6;
+      accel = clamp((target - this.speedMs) * 1.5, -8, 4);
+      this.speedMs = Math.max(0, this.speedMs + accel * dt);
+      throttle = this.speedMs < target - 0.5 ? 0.35 : 0.22;
+      brake = accel < -1 ? clamp01(-accel / BRAKE_A) : 0;
+      steer = 0;
+      if (this.gear === 0) this.gear = 1;
+      this.shiftFor(accel);
+    } else {
+      const scale = (PROFILE.lapSec / this.lapTargetSec) * player.rateScale;
+      let target = profileSpeedAt(p) * scale;
+      // On the pit lap, brake for the entry so the car meets the limiter at
+      // the line rather than sailing in at racing speed.
+      if (player.pitLap === player.lapsCompleted) {
+        const distM = wrapHalf(PIT_ENTRY_AT - p) * DEMO_TRACK_LENGTH_M;
+        if (distM > 0) {
+          const laneV = PIT_LANE_KPH / 3.6;
+          // Down to the limit a car-length before the line, not on it.
+          target = Math.min(target, Math.sqrt(laneV * laneV + 2 * BRAKE_A * 0.8 * Math.max(0, distM - 20)));
+        }
       }
-    });
+      const wanted = profileAccelAt(p) * scale * scale + (target - this.speedMs) * 6;
+      accel = clamp(wanted, -BRAKE_A, accelAt(this.speedMs));
+      this.speedMs = Math.max(5, this.speedMs + accel * dt);
 
-    // Smooth toward the target inputs (first-order response) + tiny jitter.
-    const resp = clamp(dt * 12, 0, 1);
-    const smThrottle = clamp01(lerp(this.pedals.throttle, throttle, resp) + jitter(0.01));
-    const smBrake = clamp01(lerp(this.pedals.brake, brake, resp) + jitter(0.01));
-    const smSteer = clamp(lerp(this.pedals.steer, steer, resp), -1, 1);
+      const v = this.speedMs;
+      if (accel >= 0) {
+        // Enough throttle to make the acceleration against the drag at this
+        // speed — measured against the lap being driven, so a driver a few
+        // tenths off the profile is still flat where the profile is flat.
+        throttle = clamp01((accel + ACCEL_K * v * v) / (ACCEL_A0 * scale * scale));
+        // Flat is flat: a foot on the stop, not 97% of the way there.
+        if (throttle > 0.97) throttle = 1;
+        brake = 0;
+      } else {
+        throttle = 0;
+        brake = clamp01(-accel / BRAKE_A);
+      }
+      steer = steerAt(p);
+      // A driver holds a little throttle through an apex rather than coasting.
+      if (brake === 0 && Math.abs(steer) > 0.3) throttle = Math.max(throttle, 0.16);
+      // The human: a hand that is not quite steady when it is not pinned.
+      if (throttle > 0.08 && throttle < 0.96) throttle = clamp01(throttle + this.throttleWander.step(dt));
+      steer = clamp(steer + this.steerWander.step(dt) * (1 - Math.abs(steer) * 0.5), -1, 1);
+      if (this.gear === 0) this.gear = 1;
+      this.shiftFor(accel);
 
-    // Synthetic driver aids so the TC/ABS indicators can be seen in demo mode:
-    // ABS pulses under heavy braking; TC trims the throttle when power goes
-    // down mid-corner. Pulsing mimics the modulation a real system shows.
-    const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 45);
-    const abs = smBrake > 0.72 ? clamp01((smBrake - 0.72) * 2.4) * pulse : 0;
+      // Exit kerbs at the two corners the driver uses them on.
+      this.kerbNow = false;
+      for (const idx of [0, 4]) {
+        const c = CORNERS[idx]!;
+        const exitAt = c.pos + c.arcM / 2 / DEMO_TRACK_LENGTH_M;
+        const d = wrapHalf(p - exitAt) * DEMO_TRACK_LENGTH_M;
+        if (d >= 0 && d < 22) this.kerbNow = true;
+      }
+    }
+
+    // Smooth toward the target inputs — a foot and a hand, not a step function.
+    const resp = clamp(dt * 14, 0, 1);
+    const smThrottle = clamp01(lerp(this.pedals.throttle, throttle, resp));
+    const smBrake = clamp01(lerp(this.pedals.brake, brake, resp));
+    const smSteer = clamp(lerp(this.pedals.steer, steer, clamp(dt * 10, 0, 1)), -1, 1);
+
+    // Driver aids: ABS chatters at the top of a hard stop from high speed; TC
+    // trims the throttle when the power goes down with lock still on.
+    const pulse = 0.55 + 0.45 * Math.sin(this.clockSec * 75);
+    const abs =
+      smBrake > 0.88 && this.speedMs > 35 ? clamp01((smBrake - 0.88) * 8) * pulse : 0;
     const tc =
-      smThrottle > 0.35 && smThrottle < 0.95 && Math.abs(smSteer) > 0.18
-        ? clamp01(Math.abs(smSteer) * 1.4) * clamp01((smThrottle - 0.35) * 2) * pulse * 0.6
+      accel > 1.5 && smThrottle > 0.5 && Math.abs(smSteer) > 0.25
+        ? clamp01((smThrottle - 0.5) * 2) * clamp01(Math.abs(smSteer) * 1.6) * pulse * 0.7
         : 0;
 
     this.pedals = {
@@ -797,52 +1350,37 @@ export class SimulatorProvider implements TelemetryProvider {
     this.stepHybrid(dt, smThrottle, smBrake);
   }
 
-  private gearFor(pedals: PedalInputs): number {
-    return SimulatorProvider.gearBand(this.speedFor(pedals)).gear;
-  }
-
-  private speedFor(pedals: PedalInputs): number {
-    // Fast on throttle, slow under braking; smooth mid-range.
-    const base = lerp(115, 255, clamp01(pedals.throttle * (1 - pedals.brake)));
-    return Math.round(base - pedals.brake * 40);
-  }
-
   /**
-   * Which gear a speed is in, and the speed band that gear spans.
-   *
-   * One table, consulted by both {@link gearFor} and {@link rpmFor}, because the
-   * whole point of the rev model below is that the revs and the gear agree — two
-   * copies of these edges would eventually drift and produce a car that upshifts
-   * somewhere other than where it hits the limiter.
+   * The gearbox: up a gear at the shift point when accelerating, down a gear
+   * when the revs fall through the downshift point under braking — one at a
+   * time, spaced like a paddle sequence, and never into a gear that would put
+   * the engine over its limit.
    */
-  private static gearBand(speedKph: number): { gear: number; lo: number; hi: number } {
-    const EDGES = [0, 70, 110, 150, 190, 230, 265];
-    for (let i = 0; i < EDGES.length - 1; i++) {
-      if (speedKph < (EDGES[i + 1] as number) || i === EDGES.length - 2) {
-        return { gear: i + 2, lo: EDGES[i] as number, hi: EDGES[i + 1] as number };
+  private shiftFor(accel: number): void {
+    const kph = this.speedMs * 3.6;
+    const rpm = this.rpmNow();
+    if (this.gear < 1) return;
+    if (accel > 0.4 && rpm >= SIM_RPM_SHIFT_AT && this.gear < 7 && this.sinceShiftSec > 0.15) {
+      this.gear += 1;
+      this.sinceShiftSec = 0;
+      return;
+    }
+    const wantsDown = (accel < -1 && rpm < SIM_RPM_DOWNSHIFT_AT) || rpm < 3200;
+    if (wantsDown && this.gear > 1 && this.sinceShiftSec > 0.26) {
+      const rpmBelow = (SIM_RPM_SHIFT_AT * kph) / (GEAR_MAX_KPH[this.gear - 1] as number);
+      if (rpmBelow <= SIM_MAX_RPM) {
+        this.gear -= 1;
+        this.sinceShiftSec = 0;
       }
     }
-    return { gear: 7, lo: 230, hi: 265 };
   }
 
-  /**
-   * Engine speed, derived from where the car is **within its current gear**.
-   *
-   * It used to be a straight function of throttle position, which meant the demo
-   * car's revs never sawtoothed and never came near the limiter: they sat at
-   * 8400 of 8600 whenever it was flat, so the Speedo's shift band — the widget's
-   * single most important state — was unreachable without a sim running. That is
-   * the same defect as a battery pinned at one rail: the gauge looks alive while
-   * the one thing it exists for can never happen.
-   *
-   * Now the revs climb through each gear's speed band and drop on the upshift,
-   * which is what a rev counter does and what makes the shift light testable.
-   */
-  private rpmFor(pedals: PedalInputs): number {
-    const speed = this.speedFor(pedals);
-    const band = SimulatorProvider.gearBand(speed);
-    const through = clamp01((speed - band.lo) / Math.max(1, band.hi - band.lo));
-    return Math.round(lerp(SIM_RPM_AFTER_SHIFT, SIM_RPM_SHIFT_AT, through));
+  /** Engine speed from road speed and gear; idle in neutral or at rest. */
+  private rpmNow(): number {
+    if (this.gear < 1 || this.speedMs < 0.5) return SIM_IDLE_RPM;
+    const kph = this.speedMs * 3.6;
+    const rpm = (SIM_RPM_SHIFT_AT * kph) / (GEAR_MAX_KPH[this.gear] as number);
+    return Math.round(clamp(rpm, SIM_IDLE_RPM, SIM_MAX_RPM));
   }
 
   /**
@@ -917,7 +1455,11 @@ export class SimulatorProvider implements TelemetryProvider {
       text: `${value}/${maxValue}`,
     });
 
-    const tc = Math.floor(nowMs / 45000) % 2 === 0 ? 7 : 5;
+    // A driver adjusts the map now and then — a step every few minutes, not a
+    // setting that flickers. `nowMs` is kept in the signature for the live
+    // shape; the demo's own clock is what the cadence is read from.
+    void nowMs;
+    const tc = Math.floor(this.clockSec / 420) % 2 === 0 ? 7 : 5;
     return [
       {
         key: 'BRAKE_BIAS',
@@ -964,27 +1506,34 @@ export class SimulatorProvider implements TelemetryProvider {
    * live decode is inverted: both obey the same relation, so a sign error shows
    * up as the two disagreeing.
    */
-  private motionFor(pedals: PedalInputs): MotionState {
-    const speedMs = this.speedFor(pedals) / 3.6;
+  private motionFor(): MotionState {
+    const pedals = this.pedals;
+    const speedMs = this.speedMs;
     // Steering to yaw rate via a plausible constant lock-to-rate gain. Real
     // cars vary with speed and load; a demo does not need to.
-    const yawRate = round2(pedals.steer * 0.42);
+    const yawRate = round2(pedals.steer * 1.0);
     const latG = round2((speedMs * yawRate) / 9.80665);
     // Braking dominates longitudinal G, as it does in a real car — and is
     // POSITIVE here, matching the display convention decodeMotion() applies.
     const lonG = round2(pedals.brake * 1.65 - pedals.throttle * 0.55);
     // Vertical is ZERO-centred, matching what LMU actually publishes (gravity
     // is cancelled by the normal force, so flat ground reads ~0 — verified live
-    // at 200 kph). An earlier version sat this at 1 g, which made demo mode
-    // disagree with the sim and would have hidden a real regression.
-    const vertG = round2(Math.sin(this.weatherPhase * 7) * 0.18);
+    // at 200 kph). A kerb is the one thing that moves it.
+    const vertG = round2(this.kerbNow ? -0.32 : 0);
     // Attitude follows load transfer: nose dives under brakes, body rolls away
     // from the corner. Both lag the input slightly in reality; not modelled.
     const pitch = round2(pedals.throttle * 0.4 - pedals.brake * 1.9);
     const roll = round2(-pedals.steer * 2.2);
     // A little more slip than the yaw implies, so the readout is not pinned to
     // zero — a demo showing 0.0° forever looks broken rather than neutral.
-    const slipAngle = round2(pedals.steer * 2.6 + jitter(0.15));
+    const slipAngle = round2(pedals.steer * 2.6);
+    // Heading from the direction the demo circuit runs at this point of the
+    // lap, so the compass turns with the corners rather than on its own.
+    const n = DEMO_MAP.points.length;
+    const i = Math.floor((((this.player().progress % 1) + 1) % 1) * n) % n;
+    const a = DEMO_MAP.points[i]!;
+    const b = DEMO_MAP.points[(i + 1) % n]!;
+    const heading = round2((Math.atan2((b[0] as number) - (a[0] as number), (b[1] as number) - (a[1] as number)) * 180) / Math.PI);
     return {
       latG,
       lonG,
@@ -994,7 +1543,7 @@ export class SimulatorProvider implements TelemetryProvider {
       rollRate: round2(-pedals.steer * 0.06),
       pitch,
       roll,
-      heading: round2(((this.weatherPhase * 40) % 360) - 180),
+      heading,
       slipAngle,
       speedMs: round2(speedMs),
     };
@@ -1067,95 +1616,28 @@ export class SimulatorProvider implements TelemetryProvider {
   /* -------------------------------- pit stop ------------------------------- */
 
   /**
-   * How long the demo spends out on track between stops, seconds. Long enough
-   * that the overlay is not permanently in the pits, short enough that anyone
-   * checking the countdown does not have to wait around for it.
+   * The player's pit block, read off the pit-lane state machine that
+   * {@link advancePitState} runs on lap position: the entry marker counts down
+   * over the last 900 m of the pit lap, goes negative past the commit point,
+   * the limiter is on from just before the entry to just after the exit, and
+   * the stop's countdown is the crew's booked time against time stood.
    */
-  private static readonly PIT_INTERVAL_SEC = 100;
-  /** Seconds spent trundling down the lane, each way. */
-  private static readonly PIT_LANE_SEC = 5;
-  /**
-   * Seconds the demo stop overruns its booked length by.
-   *
-   * Fixed rather than random: the whole point of the overrun is to exercise the
-   * widget's past-zero state, and a random one would make the demo behave
-   * differently on every run for no gain. 3.2 s is the residual actually
-   * measured on a real stop (published 184.5, finished 187.7) — see
-   * `telemetry/damage.ts`.
-   */
-  private static readonly PIT_OVERRUN_SEC = 3.2;
+  private advancePit(damage: DamageState | null): PitState {
+    const player = this.player();
+    const phase = player.pitPhase;
+    const toEntryM = wrapHalf(PIT_ENTRY_AT - player.progress) * DEMO_TRACK_LENGTH_M;
+    const onPitLap = player.pitLap === player.lapsCompleted;
 
-  /** Seconds into the current lap of the pit cycle. */
-  private pitClockSec = 0;
-  /**
-   * The booked stop length and slack, captured when the crew starts work and
-   * held until the cycle comes round again — NOT cleared at the release.
-   *
-   * The stop's length is what puts the release and the end of the cycle on the
-   * clock, so dropping it the instant the car is let go would move both
-   * boundaries backwards and skip the exiting stage entirely on the next frame.
-   */
-  private pitWork: { plannedSec: number; slackSec: number } | null = null;
+    let entryDistM: number | undefined;
+    if (phase === 'none' && onPitLap && toEntryM > 0 && toEntryM <= 900) entryDistM = Math.round(toEntryM);
+    else if (phase === 'entering') entryDistM = Math.round(toEntryM);
 
-  /**
-   * Runs the demo through a full stop on a loop — approaching, stationary with
-   * the crew working, then released — so the damage widget's countdown can be
-   * seen and tuned without a race running.
-   *
-   * The stop's length is the sim's own published total for whatever the demo
-   * damage block currently has booked, exactly as the live path takes it from
-   * the repair screen, so the countdown is exercised against real figures rather
-   * than a made-up duration.
-   */
-  private advancePit(dt: number, damage: DamageState | null): PitState {
-    this.pitClockSec += dt;
-    const lane = SimulatorProvider.PIT_LANE_SEC;
-    const enterAt = SimulatorProvider.PIT_INTERVAL_SEC;
-    const stopAt = enterAt + lane;
+    // On from the last car-lengths of the approach to the exit line.
+    const limiterOn = phase !== 'none' || (onPitLap && toEntryM > 0 && toEntryM < 90);
 
-    // The crew's work begins the moment the car reaches the box, so the booked
-    // length is captured there — before it is needed to place the release.
-    if (this.pitClockSec >= stopAt && !this.pitWork) {
-      this.pitWork = {
-        plannedSec: damage ? damage.stopLengthSeconds : UNKNOWN_VALUE,
-        slackSec: damage ? damage.randomDelayMaxSeconds : UNKNOWN_VALUE,
-      };
-    }
-    const booked =
-      this.pitWork && this.pitWork.plannedSec !== UNKNOWN_VALUE ? this.pitWork.plannedSec : 30;
-    const releaseAt = stopAt + booked + SimulatorProvider.PIT_OVERRUN_SEC;
-    const doneAt = releaseAt + lane;
-
-    if (this.pitClockSec >= doneAt) {
-      this.pitClockSec -= doneAt; // keep the overshoot, so the cycle does not drift
-      this.pitWork = null;
-    }
-    const t = this.pitClockSec;
-
-    let phase: PitPhase = 'none';
-    if (t >= releaseAt) phase = 'exiting';
-    else if (t >= stopAt) phase = 'stopped';
-    else if (t >= enterAt) phase = 'entering';
-
-    // The player's own standings row should agree with the phase, or the tower
-    // would show a car on track while the widget counts its stop down.
-    this.player().inPit = phase !== 'none';
-
-    // The race-control extras, on the same cycle: the pit entry approaches at
-    // a demo-realistic 22 m/s for the last half-kilometre before `enterAt`,
-    // goes negative past the commit point, and disappears in between — exactly
-    // the envelope the marker widget has to handle. The limiter comes on just
-    // before the entry and off just after the exit, so both prompt edges are
-    // reachable in demo mode.
-    const APPROACH_MPS = 22;
-    const toEntrySec = enterAt - t;
-    const entryDistM =
-      toEntrySec < 25 && toEntrySec > -lane
-        ? Math.round(toEntrySec * APPROACH_MPS)
-        : undefined;
     const extras = {
       ...(entryDistM !== undefined ? { entryDistM } : {}),
-      limiterOn: t > enterAt - 4 && t < releaseAt + lane * 0.6,
+      limiterOn,
     };
 
     if (phase !== 'stopped') {
@@ -1171,9 +1653,9 @@ export class SimulatorProvider implements TelemetryProvider {
     return {
       phase,
       working: true,
-      elapsedSec: round1(t - stopAt),
-      plannedSec: this.pitWork ? this.pitWork.plannedSec : UNKNOWN_VALUE,
-      slackSec: this.pitWork ? this.pitWork.slackSec : UNKNOWN_VALUE,
+      elapsedSec: round1(player.stoodSec),
+      plannedSec: damage ? damage.stopLengthSeconds : this.plannedStop().total,
+      slackSec: damage ? damage.randomDelayMaxSeconds : UNKNOWN_VALUE,
       ...extras,
     };
   }
@@ -1207,8 +1689,12 @@ export class SimulatorProvider implements TelemetryProvider {
   /** Seconds since the demo booted, capped once the session has gone green. */
   private preSessionClockSec = 0;
 
-  /** Clock for the demo's periodic sector yellow; independent of the pit cycle. */
-  private flagClockSec = 0;
+  /** When the current sector yellow clears (demo clock), or 0 when green. */
+  private yellowUntilSec = 0;
+  /** Which sector the current yellow is in, 1..3. */
+  private yellowSector = 1;
+  /** Demo clock at which the next incident happens. */
+  private nextIncidentAtSec = 58;
 
   /**
    * The demo gantry: dark until the countdown phase, one red per second
@@ -1237,14 +1723,26 @@ export class SimulatorProvider implements TelemetryProvider {
   private greenClockSec = 0;
 
   /**
-   * A sector-2 yellow for twelve seconds out of every ninety, so the flag rail
-   * has both states in demo without a car having to crash for it.
+   * Incidents. Someone goes off on the opening lap — a sector-2 yellow forty
+   * seconds after the green, which is when first-lap contact usually clears
+   * itself — and after that a yellow somewhere every five to fifteen minutes,
+   * held for twenty to forty seconds. The rail is green the rest of the time,
+   * which is what it looks like for most of a real race.
    */
   private buildSectorFlags(dt: number): [FlagState, FlagState, FlagState] {
-    this.flagClockSec += dt;
-    const m = this.flagClockSec % 90;
-    const yellow = m >= 40 && m < 52;
-    return ['none', yellow ? 'yellow' : 'none', 'none'];
+    void dt;
+    const t = this.clockSec;
+    if (this.yellowUntilSec > 0 && t >= this.yellowUntilSec) {
+      this.yellowUntilSec = 0;
+      this.nextIncidentAtSec = t + 300 + rnd() * 600;
+    }
+    if (this.yellowUntilSec === 0 && t >= this.nextIncidentAtSec) {
+      this.yellowSector = this.nextIncidentAtSec === 58 ? 2 : 1 + Math.floor(rnd() * 3);
+      this.yellowUntilSec = t + (this.nextIncidentAtSec === 58 ? 25 : 20 + rnd() * 20);
+    }
+    const flags: [FlagState, FlagState, FlagState] = ['none', 'none', 'none'];
+    if (this.yellowUntilSec > 0) flags[this.yellowSector - 1] = 'yellow';
+    return flags;
   }
 
   /**
@@ -1264,29 +1762,11 @@ export class SimulatorProvider implements TelemetryProvider {
 
   /* ------------------------------ track limits ----------------------------- */
 
-  /**
-   * How often the demo driver picks up a charge, seconds. Frequent enough that
-   * the widget's flash, its charge strip and the audio cue can all be seen
-   * without waiting around; slow enough that the panel is mostly showing its
-   * clean state, which is what it will be doing for most of a real stint.
-   */
-  private static readonly LIMITS_INTERVAL_SEC = 35;
-  /**
-   * The charges the demo cycles through, points.
-   *
-   * The sim's own vocabulary: quarter-point multiples, from a wheel over the line
-   * to a cut worth a whole point. Cycling rather than random keeps the demo
-   * reproducible, and covers both the amounts the flash has to render (`0.25`,
-   * `1`) and the arithmetic that trips on floats (`0.25 + 0.5 + 0.25`).
-   */
-  private static readonly LIMITS_CHARGES = [0.25, 0.5, 0.25, 1, 0.5, 2];
   /** The allowance the demo counts down from — LMU's own observed default. */
   private static readonly LIMITS_ALLOWANCE = 5;
 
-  /** Seconds since the last demo charge. */
-  private limitsClockSec = 0;
-  /** Which charge of the cycle comes next. */
-  private limitsCycle = 0;
+  /** Whether the opening-lap wide moment has happened yet. */
+  private limitsFirstDone = false;
   /** The demo's running total, its charge history and its penalty count. */
   private demoPoints = 0;
   private demoCharges: number[] = [];
@@ -1294,6 +1774,10 @@ export class SimulatorProvider implements TelemetryProvider {
   private demoPenalties = 0;
   /** When the last demo charge landed, ms, or 0 before the first one. */
   private demoChargeAt = 0;
+  /** Demo clock when the outstanding penalty was earned, to serve it a lap on. */
+  private demoPenaltyAtSec = 0;
+  /** Severity of the damage the car is carrying, 0 clean .. 1 the measured hit. */
+  private demoContact = 0;
   /**
    * The real penalty tracker, fed the demo's penalty count — so the timestamps
    * the widget flashes on (`msSincePenalty`, `msSinceServed`) come out of the
@@ -1305,40 +1789,52 @@ export class SimulatorProvider implements TelemetryProvider {
    * Fabricates what the trace reader would publish on LMU: a running total, the
    * charges behind it, and the drive-through the allowance eventually earns.
    *
-   * Invented outright rather than run through a tracker, because there is no
-   * longer anything to exercise — the stewards' figures are read, not derived,
-   * and the demo's job here is to drive the *widget* through all of its states
-   * (clean, a fresh charge, an allowance nearly spent, a penalty) without anyone
-   * having to run wide in a real session on purpose.
+   * A charge happens where one would: at the exit of a corner the driver uses
+   * all of, on the laps they use a little more than all of it
+   * ({@link LIMITS_CORNERS}). The first pass after the green is always one —
+   * cold tyres — so the widget's flash is seen early; after that it is a
+   * wheel over the line every few laps, and the allowance is a real
+   * accounting that would take most of a race to spend.
    */
-  private buildTrackLimits(dt: number): TrackLimitsState | undefined {
+  private buildTrackLimits(): TrackLimitsState | undefined {
     const nowMs = Date.now();
-    this.limitsClockSec += dt;
-    if (this.limitsClockSec >= SimulatorProvider.LIMITS_INTERVAL_SEC) {
-      this.limitsClockSec -= SimulatorProvider.LIMITS_INTERVAL_SEC;
-      const charges = SimulatorProvider.LIMITS_CHARGES;
-      const charge = charges[this.limitsCycle % charges.length]!;
-      this.limitsCycle += 1;
-      // Rounded on every step, like the reader: 0.25 + 0.5 is 0.7500000000000001
-      // in floating point, and that would reach the overlay verbatim.
-      this.demoPoints = Math.round((this.demoPoints + charge) * 100) / 100;
-      this.demoCharges = [charge, ...this.demoCharges].slice(0, 5);
-      this.demoCharged += 1;
-      this.demoChargeAt = nowMs;
+    const player = this.player();
+    if (player.pitPhase === 'none') {
+      for (const rule of LIMITS_CORNERS) {
+        const c = CORNERS[rule.corner]!;
+        const exitAt = ((c.pos + (c.arcM / 2 + 15) / DEMO_TRACK_LENGTH_M) % 1 + 1) % 1;
+        const crossed =
+          (this.prevPlayerProgress < exitAt && player.progress >= exitAt) ||
+          (this.prevPlayerProgress > player.progress && exitAt <= player.progress);
+        if (!crossed) continue;
+        const forced = !this.limitsFirstDone && rule.corner === 4 && this.clockSec > 20;
+        if (!forced && rnd() >= rule.perLap) continue;
+        this.limitsFirstDone = true;
+        const charge = rule.charge;
+        // Rounded on every step, like the reader: 0.25 + 0.5 is
+        // 0.7500000000000001 in floating point, and that would reach the
+        // overlay verbatim.
+        this.demoPoints = Math.round((this.demoPoints + charge) * 100) / 100;
+        this.demoCharges = [charge, ...this.demoCharges].slice(0, 5);
+        this.demoCharged += 1;
+        this.demoChargeAt = nowMs;
 
-      // The allowance spent earns a drive-through, and the sim starts the
-      // account again — the same discharge the trace reader mirrors.
-      if (this.demoPoints >= SimulatorProvider.LIMITS_ALLOWANCE) {
-        this.demoPenalties += 1;
-        this.demoPoints = 0;
-        this.demoCharges = [];
-        this.demoCharged = 0;
+        // The allowance spent earns a drive-through, and the sim starts the
+        // account again — the same discharge the trace reader mirrors.
+        if (this.demoPoints >= SimulatorProvider.LIMITS_ALLOWANCE) {
+          this.demoPenalties += 1;
+          this.demoPenaltyAtSec = this.clockSec;
+          this.demoPoints = 0;
+          this.demoCharges = [];
+          this.demoCharged = 0;
+        }
       }
     }
 
-    // The demo serves its penalty a lap or so later, so the "PENALTY SERVED"
-    // path is reachable too.
-    if (this.demoPenalties > 0 && this.limitsClockSec > 12) this.demoPenalties = 0;
+    // The penalty is served on the following lap.
+    if (this.demoPenalties > 0 && this.clockSec - this.demoPenaltyAtSec > BASE_LAP_SEC) {
+      this.demoPenalties = 0;
+    }
 
     const state = this.limits.update({
       penalties: this.demoPenalties,
@@ -1378,37 +1874,54 @@ export class SimulatorProvider implements TelemetryProvider {
    * looks like the thing rather than like a designer's guess at it.
    */
   private buildDamage(): DamageState | null {
-    // ~40 s clean, ~40 s damaged. `weatherPhase` advances at 0.02/s (see
-    // advanceWeather), so the multiplier here is what sets the period:
-    // 2π / (3.9 × 0.02) ≈ 80 s. Slow enough to read, fast enough that nobody
-    // checking the widget has to wait minutes to see the other state.
-    const damaged = Math.sin(this.weatherPhase * 3.9) > 0;
-    if (!damaged) {
+    const booked = this.plannedStop();
+    // The pit menu as the driver has it set: tyres booked for the stop, the
+    // repair only when there is something to repair.
+    const tyre = (on: boolean) => ({
+      currentSetting: on ? 1 : 0,
+      settings: [{ text: 'No Change' }, { text: 'New Medium' }],
+    });
+    const tyresOn = this.pitPlan ? this.pitPlan.tyres : true;
+    const times = {
+      FixAllDamage: booked.fixAll || 30,
+      FixAeroDamage: 30,
+      TwoTireChange: 4.5,
+      FourTireChange: FOUR_TYRES_SEC,
+      // The caps on the delays the sim draws at stop time. Published so the
+      // widget's range line — the only part describing something the sim will
+      // NOT say up front — has something to show.
+      FixRandomDelay: booked.slack,
+      RandomTireDelay: 1,
+    };
+    if (this.demoContact === 0) {
       return decodeDamage({
         wearables: {
           body: { aero: 0, detachableParts: [true, true, true, true] },
           suspension: [0, 0, 0, 0],
           brakes: [0.0356, 0.0356, 0.032, 0.032],
         },
-        // On a clean car the sim really does offer a lone "N/A" here.
-        pitMenu: { pitMenu: [{ name: 'DAMAGE:', currentSetting: 0, settings: [{ text: 'N/A' }] }] },
-        pitStopTimes: { times: { FixAllDamage: 30, FixAeroDamage: 30 } },
-        // Nothing selected, so the sim's bare stop length — measured at ~2 s.
-        pitStopLength: { timeInSeconds: 2 },
+        pitMenu: {
+          pitMenu: [
+            // On a clean car the sim really does offer a lone "N/A" here.
+            { name: 'DAMAGE:', currentSetting: 0, settings: [{ text: 'N/A' }] },
+            { name: 'FL TIRE:', ...tyre(tyresOn) },
+            { name: 'FR TIRE:', ...tyre(tyresOn) },
+            { name: 'RL TIRE:', ...tyre(tyresOn) },
+            { name: 'RR TIRE:', ...tyre(tyresOn) },
+          ],
+        },
+        pitStopTimes: { times },
+        pitStopLength: { timeInSeconds: Math.max(2, booked.total) },
       });
     }
-    // Ramp the severity in over the damaged half so the bars move rather than
-    // snapping, and the repair seconds track them the way the sim's do.
-    //
-    // Rounded to 4dp, NOT with round2: severity is a 0..1 fraction, so two
-    // decimals is 1% granularity and the widget — which prints a tenth of a
-    // percent — would show the ramp stepping in whole percent jumps and the
-    // measured 9.5% arriving as 10.0%.
-    const ramp = Math.min(1, Math.sin(this.weatherPhase * 3.9) * 2.2);
-    const sev = (v: number): number => Math.round(v * ramp * 10000) / 10000;
+    // Carrying damage from a brush with someone. The figures are the measured
+    // ones from a real impact (9.5% aero, 19.5% FR, 12.2% RR), scaled by how
+    // hard this one was. Rounded to 4dp: severity is a 0..1 fraction and the
+    // widget prints a tenth of a percent.
+    const sev = (v: number): number => Math.round(v * this.demoContact * 10000) / 10000;
     return decodeDamage({
       wearables: {
-        body: { aero: sev(0.095), detachableParts: [true, false, true, true] },
+        body: { aero: sev(0.095), detachableParts: [true, this.demoContact < 0.7, true, true] },
         suspension: [0, sev(0.195), 0, sev(0.1215)],
         brakes: [0.0356, 0.0356, 0.032, 0.032],
       },
@@ -1419,32 +1932,14 @@ export class SimulatorProvider implements TelemetryProvider {
             currentSetting: 2,
             settings: [{ text: 'Do Not Repair' }, { text: 'Repair Body' }, { text: 'Repair All' }],
           },
-          // Two corners selected, so the tyre line is exercised too — and at a
-          // count that resolves to TwoTireChange rather than the four-tyre one.
-          { name: 'FL TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
-          { name: 'FR TIRE:', currentSetting: 1, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
-          { name: 'RL TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
-          { name: 'RR TIRE:', currentSetting: 0, settings: [{ text: 'No Change' }, { text: 'New Medium' }] },
+          { name: 'FL TIRE:', ...tyre(tyresOn) },
+          { name: 'FR TIRE:', ...tyre(tyresOn) },
+          { name: 'RL TIRE:', ...tyre(tyresOn) },
+          { name: 'RR TIRE:', ...tyre(tyresOn) },
         ],
       },
-      pitStopTimes: {
-        times: {
-          FixAllDamage: round2(30 + 5.1 * ramp),
-          FixAeroDamage: 30,
-          TwoTireChange: 4.5,
-          FourTireChange: 12,
-          // The caps on the delays the sim draws at stop time. Published here
-          // so demo mode exercises the range line, which is the only part of
-          // the widget describing something the sim will NOT tell us up front.
-          FixRandomDelay: 5,
-          RandomTireDelay: 1,
-        },
-      },
-      // The sim publishes the total already summed — verified equal to
-      // FixAllDamage + TwoTireChange on a live stop — so the demo sums it here
-      // rather than leaving the field out, or the widget's headline would be
-      // exercised against a payload shape the game never sends.
-      pitStopLength: { timeInSeconds: round2(30 + 5.1 * ramp + 4.5) },
+      pitStopTimes: { times },
+      pitStopLength: { timeInSeconds: booked.total },
     });
   }
 
@@ -1490,9 +1985,8 @@ export class SimulatorProvider implements TelemetryProvider {
     // right-hand corner, which loads the LEFT (outside) wheels.
     const leftShare = clamp(0.5 + motion.latG * LAT_TRANSFER_PER_G, 0.02, 0.98);
 
-    // A kerb strike every so often, so the airborne/light paths are reachable
-    // in demo mode instead of being dead code nobody ever sees run.
-    const kerb = Math.sin(this.weatherPhase * 3.1) > 0.985 ? 0.12 : 1;
+    // Over the exit kerb: the inside front goes light for the length of it.
+    const kerb = this.kerbNow ? 0.12 : 1;
 
     const cornerN = (front: boolean, left: boolean): number => {
       const axle = front ? frontShare : 1 - frontShare;
@@ -1834,11 +2328,20 @@ export class SimulatorProvider implements TelemetryProvider {
 
   /* ------------------------------- weather ------------------------------- */
 
+  /**
+   * Rain at a point on the weather cycle. Mostly dry: a light shower for a
+   * few minutes out of every three-quarters of an hour, which is enough for
+   * the widget's wet branch to be seen in a long session without the demo
+   * spending half its life in the rain.
+   */
+  private static rainAt(phase: number): { wave: number; intensity: number } {
+    const wave = Math.sin(phase * 0.12);
+    return { wave, intensity: clamp01(Math.max(0, wave - 0.8) * 1.4) };
+  }
+
   private advanceWeather(dt: number): void {
     this.weatherPhase += dt * 0.02;
-    // Slowly build then clear light rain over the stint to exercise the widget.
-    const wave = Math.sin(this.weatherPhase * 0.5);
-    const next = clamp01(Math.max(0, wave - 0.5) * 0.8);
+    const next = SimulatorProvider.rainAt(this.weatherPhase).intensity;
     // Which way the surface is going, for the widget's trend arrow. The live
     // provider works this out over three minutes of history because the real
     // feed jitters; here the curve is smooth, so the sign of one step is enough.
@@ -1850,10 +2353,9 @@ export class SimulatorProvider implements TelemetryProvider {
   private buildForecast(): WeatherForecastSlot[] {
     const slots = [0, 15, 30, 45, 60];
     return slots.map((minutesAhead) => {
-      const phase = this.weatherPhase + minutesAhead * 0.02;
-      const wave = Math.sin(phase * 0.5);
-      const intensity = clamp01(Math.max(0, wave - 0.5) * 0.8);
-      const chance = clamp01(0.15 + Math.max(0, wave) * 0.6);
+      const phase = this.weatherPhase + minutesAhead * 60 * 0.02;
+      const { wave, intensity } = SimulatorProvider.rainAt(phase);
+      const chance = clamp01(0.1 + Math.max(0, wave) * 0.5);
       let sky: WeatherForecastSlot['sky'] = 'partlyCloudy';
       if (intensity > 0.5) sky = 'rain';
       else if (intensity > 0.1) sky = 'lightRain';

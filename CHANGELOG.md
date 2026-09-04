@@ -4,6 +4,30 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.98.1-beta.2 — 2026-09-04
+
+### Changed
+
+- **Demo mode now drives like a race.** Every overlay runs on the demo feed
+  when the sim is not running, and it used to be sine waves and timers: inputs
+  that fluttered, a speed that jumped with the pedals, a track-limits charge
+  every thirty-five seconds, damage that came and went on a clock, a pit stop
+  every hundred seconds with the car still moving, positions that flipped back
+  and forth. The demo car is now driven round its circuit: it brakes for each
+  corner as late as the brakes allow and accelerates out as hard as the engine
+  does, so the throttle, brake and steering traces are the shape a lap has, the
+  speed and revs follow from that, and the gearbox shifts when the revs say so —
+  up at the shift light, down through the box under braking. The whole field
+  drives the same corners, so cars bunch and spread the way a real train does,
+  and a faster car closing on a slower one is held behind it until it earns the
+  pass; positions change the way a timing screen's do. Fuel calls the one pit
+  stop — the widget says PIT THIS LAP, the car brakes for the entry, sits on
+  the limiter, stands still in the box for the crew's booked time, and rejoins
+  with a full tank and fresh tyres. Track limits, contact, sector yellows and
+  a shower are now things that happen now and then, at the places they would,
+  rather than on a cycle. The race is thirty laps and, being seeded, is the
+  same race every time you start it.
+
 ## 0.98.1-beta.1 — 2026-09-04
 
 ### Changed
