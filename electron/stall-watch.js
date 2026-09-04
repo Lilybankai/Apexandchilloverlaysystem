@@ -60,6 +60,12 @@ const MAX_BYTES = 512 * 1024;
 const CENSUS_FLOOR_MS = 50;
 /** Slow fires kept. A report only quotes the ones inside the stall window. */
 const CENSUS_KEEP = 16;
+/**
+ * Report a collection that paused the thread this long. Lower than the census
+ * floor on purpose: a run of minor collections adding up is a different shape
+ * of problem from one long major, and the report should be able to show it.
+ */
+const GC_FLOOR_MS = 20;
 
 /**
  * The real timer functions, captured before {@link installCensus} can patch
@@ -99,6 +105,9 @@ const census = [];
 let censusOn = false;
 /** Stamped into the session header so a log says which build wrote it. */
 let appVersion = '';
+/** Recent GC pauses, oldest first: `{ kind, ms, at }`. See {@link watchGc}. */
+const collections = [];
+let gcObserver = null;
 
 /**
  * Note what the main process is about to do. Cheap enough to call on every
@@ -231,6 +240,62 @@ function censusFor(now, late) {
   return ` ran=${hits.length ? hits.reverse().join(',') : 'none'}`;
 }
 
+/**
+ * Watch garbage collection.
+ *
+ * The census answered `ran=none` for every stall in the 4 Sep race — no timer
+ * callback in the process held the thread — and the breadcrumbs cleared the
+ * pollers at the same time: a poller whose post-await work had blocked would
+ * still be `inflight` across the stall, and on the two-second ones it is either
+ * absent or `+0ms`. Between them they rule out the app's own JavaScript.
+ *
+ * What remains is work that is not a callback at all, and a major GC is the
+ * first candidate: it stops the thread outright, it cannot be seen by anything
+ * that instruments JavaScript, it recurs on a period set by how fast the heap
+ * fills, and its pause scales with the live set — which is the sawtooth the log
+ * has been drawing since 30 Aug, ceiling and all.
+ *
+ * V8 reports its own pauses, so this costs nothing to ask: the observer is only
+ * called after a collection that already happened.
+ */
+function watchGc() {
+  try {
+    const { PerformanceObserver, constants, performance } = require('node:perf_hooks');
+    const kinds = {
+      [constants.NODE_PERFORMANCE_GC_MINOR]: 'minor',
+      [constants.NODE_PERFORMANCE_GC_MAJOR]: 'major',
+      [constants.NODE_PERFORMANCE_GC_INCREMENTAL]: 'incremental',
+      [constants.NODE_PERFORMANCE_GC_WEAKCB]: 'weakcb',
+    };
+    gcObserver = new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        if (e.duration < GC_FLOOR_MS) continue;
+        // Entries are delivered after the fact, so date the pause from V8's own
+        // clock rather than from when this callback happened to run.
+        collections.push({
+          kind: kinds[e.detail && e.detail.kind] || 'gc',
+          ms: Math.round(e.duration),
+          at: Math.round(performance.timeOrigin + e.startTime + e.duration),
+        });
+        if (collections.length > CENSUS_KEEP) collections.shift();
+      }
+    });
+    gcObserver.observe({ entryTypes: ['gc'] });
+  } catch {
+    gcObserver = null; // an older runtime: the rest of the watcher still works
+  }
+}
+
+/** The collections that overlap this stall, on the same recent-past rule. */
+function gcFor(now, late) {
+  if (!gcObserver) return '';
+  const window = late + TICK_MS * 2;
+  const hits = [];
+  for (const e of collections) if (now - e.at <= window) hits.push(`${e.kind}/${e.ms}ms`);
+  collections.length = 0;
+  return hits.length ? ` gc=${hits.reverse().join(',')}` : '';
+}
+
 function rotate() {
   try {
     const st = fs.statSync(logPath);
@@ -264,6 +329,7 @@ function start(userDataDir, context, version) {
   // prints the epoch as a breadcrumb age ("stale 1788341542844ms"), which is
   // the first thing anyone reading the log has to be told to ignore.
   breadcrumbAt = last;
+  watchGc();
   // The build belongs on this line. A log spans weeks and several updates, and
   // "did the fix help" is unanswerable without knowing which session ran which
   // build — the 130 s beat was read across four builds before anyone noticed
@@ -306,6 +372,8 @@ function start(userDataDir, context, version) {
     // anybody wrapped it in a breadcrumb. This is the line that names an
     // uninstrumented culprit; `ran=none` names one too, by exclusion.
     const ran = censusFor(now, late);
+    // Not a callback and not instrumentable as one: V8 stopping the thread.
+    const gc = gcFor(now, late);
     let extra = '';
     if (context) {
       try {
@@ -315,7 +383,7 @@ function start(userDataDir, context, version) {
       }
     }
     write(
-      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${ran}${extra}`,
+      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${ran}${gc}${extra}`,
     );
   }, TICK_MS);
   if (timer.unref) timer.unref();
@@ -328,6 +396,11 @@ function stop() {
   inflight.clear();
   worstStep = null;
   census.length = 0;
+  collections.length = 0;
+  if (gcObserver) {
+    gcObserver.disconnect();
+    gcObserver = null;
+  }
 }
 
 /** For the diagnostics panel / support bundle. */
@@ -339,6 +412,7 @@ function summary() {
     logPath,
     version: appVersion,
     census: censusOn,
+    gc: gcObserver !== null,
   };
 }
 
@@ -354,4 +428,5 @@ module.exports = {
   TICK_MS,
   THRESHOLD_MS,
   CENSUS_FLOOR_MS,
+  GC_FLOOR_MS,
 };
