@@ -65,6 +65,14 @@ them is a wall.
 
 ## 3. The corpus does not exist yet — Phase 0
 
+> **Status 2026-09-04.** Phase 0 shipped in 0.96.0 (`LapRecord` v5 +
+> `stopLog.ts`), and 0.98.0 sends both to the cloud: `pit_stops` and
+> `lap_consumption` (migration `0015_strategy_corpus.sql`), one raw row per
+> event, via `src/telemetry/strategyCorpus.ts` riding `electron/lapUpload.js`.
+> The Admin overview's **Strategy corpus** card (`admin_strategy_corpus()`)
+> answers "enough yet?" per class and track. What follows is the reasoning as
+> it stood before any of that existed, kept because it says *why*.
+
 **`LapRecord` stores no fuel and no tyre data.** Grep `src/telemetry/lapLog.ts`
 for `fuel|tyre|wear|compound`: zero matches. Lap traces
 (`src/telemetry/lapTrace.ts`) capture throttle, brake, steer, gear, speed, gs,
@@ -262,6 +270,12 @@ best per mode. Milliseconds, once per lap.
 One row per `(carClass, car, trackKey)`. Shipped as a JSON table fitted offline,
 overridden by locally-fitted rows once enough local laps exist — same
 local-first pattern as the lap database.
+
+The offline fit reads the cloud corpus (`pit_stops`, `lap_consumption`), not
+one machine's files. The bar the Admin card uses for "ready to fit" is at least
+five fuel-only race stops (≥ 5 L added, no tyres, ≥ 5 s stationary) for
+`refuelLPerSec`, and at least thirty clean laps with a measured burn for
+`burnBaseLPerLap`; below that a median is a guess with a decimal point.
 
 ```json
 {

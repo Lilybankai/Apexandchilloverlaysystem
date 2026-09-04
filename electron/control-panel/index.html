@@ -2280,6 +2280,63 @@
           </section>
         </div>
 
+        <!-- Strategy corpus (migration 0015): the pit stops and per-lap fuel /
+             tyre readings every driver's app uploads, which the strategy
+             engine's coefficients are fitted from. The question this answers
+             is "do we have enough data yet?" — so the tiles count what is
+             USABLE (real race stops, clean burn laps), not just rows, and the
+             table says where the corpus is deep enough per class and track. -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-timer" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Pit stops logged</span>
+                <span class="stat__value" id="adm-corpus-stops">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-corpus-stops-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-fuel" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Fuel-burn laps</span>
+                <span class="stat__value" id="adm-corpus-laps">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-corpus-laps-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-users" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Drivers contributing</span>
+                <span class="stat__value" id="adm-corpus-drivers">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-corpus-drivers-sub"></span>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-fuel" /></svg>Strategy corpus · by class and track</h2>
+          </div>
+          <div class="admin-table__head admin-table__head--corpus">
+            <span>Class · track</span>
+            <span title="Race stops that added fuel and changed no tyres — the only stops a refuel rate can be read from">Fuel stops</span>
+            <span title="Median litres per second over those stops">L/s</span>
+            <span title="Clean laps with a measured fuel burn">Burn laps</span>
+            <span title="Median litres per lap over those laps">L/lap</span>
+            <span title="Laps with tyre wear and a stint position">Wear laps</span>
+            <span>Drivers</span>
+          </div>
+          <ul class="admin-table admin-table--corpus" id="adm-corpus-list"></ul>
+          <p class="weekempty" id="adm-corpus-empty" hidden>Nothing uploaded yet. Rows arrive as drivers on 0.98.0 or later pit and lap with shared memory running.</p>
+          <p class="admin-foot" id="adm-corpus-foot" hidden></p>
+        </section>
+
         </div><!-- /overview -->
 
         <!-- ------------------------- MEMBERS -------------------------- -->

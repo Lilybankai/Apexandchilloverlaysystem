@@ -3292,6 +3292,93 @@
     renderAdminVersions(Array.isArray(d.versions) ? d.versions : []);
   }
 
+  /**
+   * The strategy corpus card (migration 0015). `data` is null when the backend
+   * predates it or the call failed, in which case every tile reads "—" and the
+   * table stays empty — the same quiet degradation as the setup tiles.
+   */
+  function renderAdminCorpus(data) {
+    const d = data || {};
+    const plural = (n, word) => `${numberOr(n)} ${word}${Number(n) === 1 ? '' : 's'}`;
+
+    setText('#adm-corpus-stops', numberOr(d.stops));
+    setText(
+      '#adm-corpus-stops-sub',
+      d.stops != null
+        ? `${numberOr(d.raceStops)} real race stops · ${numberOr(d.fuelStops)} fuel-only · ${numberOr(d.stops7d)} in 7d`
+        : '',
+    );
+    setText('#adm-corpus-laps', numberOr(d.burnLaps));
+    setText(
+      '#adm-corpus-laps-sub',
+      d.laps != null
+        ? `of ${plural(d.laps, 'lap')} uploaded · ${numberOr(d.wearLaps)} with tyre wear · ${numberOr(d.laps7d)} in 7d`
+        : '',
+    );
+    setText('#adm-corpus-drivers', numberOr(d.drivers));
+    setText('#adm-corpus-drivers-sub', d.drivers != null ? 'with at least one stop or lap up' : '');
+
+    const list = $('#adm-corpus-list');
+    const empty = $('#adm-corpus-empty');
+    const foot = $('#adm-corpus-foot');
+    if (!list) return;
+    list.textContent = '';
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    if (!rows.length) {
+      if (empty) empty.hidden = false;
+      if (foot) foot.hidden = true;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    for (const row of rows) list.append(buildCorpusRow(row));
+    if (foot) {
+      // The bar a fit needs, stated once, so nobody has to remember it: a
+      // refuel rate wants a handful of fuel-only race stops; a burn wants a
+      // few dozen clean laps. Below that a median is a guess with a decimal.
+      const ready = rows.filter((r) => Number(r.fuelStops) >= 5 && Number(r.burnLaps) >= 30).length;
+      foot.textContent =
+        `${plural(rows.length, 'class/track pair')} · ${ready} ready to fit (≥5 fuel stops and ≥30 burn laps)`;
+      foot.hidden = false;
+    }
+  }
+
+  function buildCorpusRow(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+    const fixed = (v, digits) => (Number.isFinite(Number(v)) && v !== null ? Number(v).toFixed(digits) : '—');
+
+    const who = document.createElement('div');
+    who.className = 'admin-row__who';
+    const cls = document.createElement('span');
+    cls.className = 'admin-row__name';
+    cls.textContent = row.carClass || '?';
+    const track = document.createElement('span');
+    track.className = 'admin-row__email';
+    track.textContent = row.track || '?';
+    who.append(cls, track);
+
+    const cell = (text, dim) => {
+      const s = document.createElement('span');
+      s.className = 'admin-row__num';
+      s.textContent = text;
+      if (dim) s.setAttribute('data-dim', 'true');
+      return s;
+    };
+    const fuelStops = Number(row.fuelStops) || 0;
+    const burnLaps = Number(row.burnLaps) || 0;
+    li.append(
+      who,
+      cell(`${fuelStops} / ${numberOr(row.raceStops)}`, fuelStops === 0),
+      cell(fixed(row.refuelLPerSec, 2), row.refuelLPerSec == null),
+      cell(String(burnLaps), burnLaps === 0),
+      cell(fixed(row.burnLPerLap, 2), row.burnLPerLap == null),
+      cell(numberOr(row.wearLaps), !Number(row.wearLaps)),
+      cell(numberOr(row.drivers)),
+    );
+    li.title = `${numberOr(row.stops)} stops and ${numberOr(row.laps)} laps uploaded in total for this pair`;
+    return li;
+  }
+
   /** The 14-day active-users chart — the week card's bars, keyed on users. */
   function renderAdminDaily(days) {
     const chart = $('#adm-daily-chart');
@@ -3863,13 +3950,17 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free, billing, pastDue] = await Promise.all([
+      const [overview, feedback, users, free, billing, pastDue, corpus] = await Promise.all([
         window.apex.admin.overview(),
         window.apex.admin.feedback({ status: filter ? filter.value : '' }),
         window.apex.admin.users(adminUsersQuery()),
         window.apex.admin.freeAccess(),
         window.apex.admin.billing(),
         window.apex.admin.pastDue(),
+        // Absent on an older preload; the card then simply reads "—".
+        typeof window.apex.admin.strategyCorpus === 'function'
+          ? window.apex.admin.strategyCorpus()
+          : Promise.resolve(null),
       ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
@@ -3885,6 +3976,7 @@
       renderFreeAccess(free && free.ok ? free.data : null);
       renderAdminBilling(billing && billing.ok ? billing.data : null);
       renderAdminPastDue(pastDue && pastDue.ok ? pastDue.rows : []);
+      renderAdminCorpus(corpus && corpus.ok ? corpus.data : null);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
