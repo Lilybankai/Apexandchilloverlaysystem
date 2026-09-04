@@ -17,6 +17,24 @@
  *
  * Costs nothing when nothing is wrong: one timer, one Date.now(), no allocation
  * on the happy path.
+ *
+ * ## The census
+ * Breadcrumbs only name work somebody thought to wrap. The 130 s beat in the
+ * logs from 30 Aug–3 Sep 2026 is the other case: every stall reported
+ * `during=idle` with each in-flight poller `+0ms` old — i.e. those timers had
+ * only just fired as the loop came back, so they were the block's victims, not
+ * its cause. Nothing on the thread owned up to it, which is exactly what an
+ * uninstrumented callback looks like.
+ *
+ * So {@link installCensus} wraps the global timer functions once, at startup,
+ * and remembers any fire whose SYNCHRONOUS part ran long (only synchronous work
+ * can block the loop — an await returns to it). Timers are named by where they
+ * were created, so the report says `ran=main.js:1329/812ms` rather than leaving
+ * us to infer a culprit from a period. Two clock reads per fire, an entry only
+ * past {@link CENSUS_FLOOR_MS}, and a fixed-size ring: cheap enough to leave on.
+ *
+ * A stall that prints `ran=none` is a finding too — it rules out every JS timer
+ * in the process and points at native work, GC, or the OS.
  */
 
 'use strict';
@@ -33,6 +51,28 @@ const TICK_MS = 100;
 const THRESHOLD_MS = 250;
 /** Keep the log honest about size: two files, this big each. */
 const MAX_BYTES = 512 * 1024;
+/**
+ * A timer fire whose synchronous part ran this long is worth a census entry.
+ * Well under THRESHOLD_MS on purpose: a stall is often several callbacks
+ * landing in the same turn, and the report should show all of them, not only
+ * the one that on its own crossed the line.
+ */
+const CENSUS_FLOOR_MS = 50;
+/** Slow fires kept. A report only quotes the ones inside the stall window. */
+const CENSUS_KEEP = 16;
+/**
+ * Report a collection that paused the thread this long. Lower than the census
+ * floor on purpose: a run of minor collections adding up is a different shape
+ * of problem from one long major, and the report should be able to show it.
+ */
+const GC_FLOOR_MS = 20;
+
+/**
+ * The real timer functions, captured before {@link installCensus} can patch
+ * them, so this file's own tick is never wrapped by its own census — the log
+ * would otherwise blame the watcher for the fs append it does while reporting.
+ */
+const nativeSetInterval = setInterval;
 
 let timer = null;
 let last = 0;
@@ -60,6 +100,14 @@ const inflight = new Map();
  * fired. Cleared after each report so it always describes the recent past.
  */
 let worstStep = null;
+/** Slow timer fires, oldest first: `{ site, ms, at }`. See {@link installCensus}. */
+const census = [];
+let censusOn = false;
+/** Stamped into the session header so a log says which build wrote it. */
+let appVersion = '';
+/** Recent GC pauses, oldest first: `{ kind, ms, at }`. See {@link watchGc}. */
+const collections = [];
+let gcObserver = null;
 
 /**
  * Note what the main process is about to do. Cheap enough to call on every
@@ -103,6 +151,151 @@ async function around(what, fn) {
   }
 }
 
+/**
+ * Where a timer was scheduled, as `file.js:line`, read off a stack captured at
+ * SCHEDULE time. Creating an interval happens once; its callback then fires
+ * forever with the name already in hand, so the stack costs nothing per fire.
+ *
+ * @param {number} depth frames above this one to name
+ * @param {string} fallback used when the stack is unreadable (bundled/native)
+ */
+function siteOf(depth, fallback) {
+  const line = (new Error().stack || '').split('\n')[depth];
+  if (!line) return fallback;
+  const m = /([^()\s]+[\\/][^()\s]+?):(\d+):\d+\)?\s*$/.exec(line);
+  return m ? `${path.basename(m[1])}:${m[2]}` : fallback;
+}
+
+/**
+ * Wrap a timer callback so a long synchronous run leaves a census entry.
+ *
+ * Only the synchronous part is timed, and deliberately: an `async` callback
+ * hands the loop back at its first await, so the time after that is not a
+ * freeze. This is what makes the census readable — `lmu:poll` awaiting a REST
+ * call for 400 ms never appears, while a 900 ms JSON.parse does.
+ */
+function watched(fn, site) {
+  return function censused(...args) {
+    const started = Date.now();
+    try {
+      return fn.apply(this, args);
+    } finally {
+      const took = Date.now() - started;
+      if (took >= CENSUS_FLOOR_MS) {
+        census.push({ site, ms: took, at: Date.now() });
+        if (census.length > CENSUS_KEEP) census.shift();
+      }
+    }
+  };
+}
+
+/**
+ * Patch the global timer functions so every scheduled callback in this process
+ * is named and timed — ours, Electron's, and our dependencies'. Call it once,
+ * as early in main as possible: anything scheduled before it stays invisible.
+ *
+ * The patch is careful to be boring. It wraps the callback and nothing else, so
+ * the caller still gets the real `Timeout` back and `clearInterval`, `unref()`
+ * and `util.promisify` keep working; a non-function first argument is passed
+ * straight through untouched.
+ *
+ * @param {object} [target] the object holding the timer functions (tests)
+ * @returns {boolean} whether this call was the one that installed it
+ */
+function installCensus(target = globalThis) {
+  if (censusOn) return false;
+  censusOn = true;
+  const realInterval = target.setInterval;
+  const realTimeout = target.setTimeout;
+  const promisify = Symbol.for('nodejs.util.promisify.custom');
+  target.setInterval = function setInterval(fn, ms, ...args) {
+    if (typeof fn !== 'function') return realInterval.call(this, fn, ms, ...args);
+    return realInterval.call(this, watched(fn, siteOf(3, `interval@${ms}ms`)), ms, ...args);
+  };
+  // A timeout is scheduled far more often than an interval — every socket in
+  // the process arms one — so it is named by its callback rather than by a
+  // stack we would pay for thousands of times an hour. Repeating work almost
+  // always uses setInterval, which is the case the census exists for.
+  target.setTimeout = function setTimeout(fn, ms, ...args) {
+    if (typeof fn !== 'function') return realTimeout.call(this, fn, ms, ...args);
+    return realTimeout.call(this, watched(fn, `${fn.name || 'timeout'}@${ms || 0}ms`), ms, ...args);
+  };
+  target.setInterval[promisify] = realInterval[promisify];
+  target.setTimeout[promisify] = realTimeout[promisify];
+  return true;
+}
+
+/**
+ * The census entries that overlap a stall of `late` ms ending now, newest
+ * first, and drop everything older — the same "recent past only" rule the
+ * worst-step line follows, for the same reason: a slow callback from ten
+ * minutes ago is not what just froze the overlays.
+ */
+function censusFor(now, late) {
+  if (!censusOn) return '';
+  const window = late + TICK_MS * 2;
+  const hits = [];
+  for (const e of census) if (now - e.at <= window) hits.push(`${e.site}/${e.ms}ms`);
+  census.length = 0;
+  return ` ran=${hits.length ? hits.reverse().join(',') : 'none'}`;
+}
+
+/**
+ * Watch garbage collection.
+ *
+ * The census answered `ran=none` for every stall in the 4 Sep race — no timer
+ * callback in the process held the thread — and the breadcrumbs cleared the
+ * pollers at the same time: a poller whose post-await work had blocked would
+ * still be `inflight` across the stall, and on the two-second ones it is either
+ * absent or `+0ms`. Between them they rule out the app's own JavaScript.
+ *
+ * What remains is work that is not a callback at all, and a major GC is the
+ * first candidate: it stops the thread outright, it cannot be seen by anything
+ * that instruments JavaScript, it recurs on a period set by how fast the heap
+ * fills, and its pause scales with the live set — which is the sawtooth the log
+ * has been drawing since 30 Aug, ceiling and all.
+ *
+ * V8 reports its own pauses, so this costs nothing to ask: the observer is only
+ * called after a collection that already happened.
+ */
+function watchGc() {
+  try {
+    const { PerformanceObserver, constants, performance } = require('node:perf_hooks');
+    const kinds = {
+      [constants.NODE_PERFORMANCE_GC_MINOR]: 'minor',
+      [constants.NODE_PERFORMANCE_GC_MAJOR]: 'major',
+      [constants.NODE_PERFORMANCE_GC_INCREMENTAL]: 'incremental',
+      [constants.NODE_PERFORMANCE_GC_WEAKCB]: 'weakcb',
+    };
+    gcObserver = new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        if (e.duration < GC_FLOOR_MS) continue;
+        // Entries are delivered after the fact, so date the pause from V8's own
+        // clock rather than from when this callback happened to run.
+        collections.push({
+          kind: kinds[e.detail && e.detail.kind] || 'gc',
+          ms: Math.round(e.duration),
+          at: Math.round(performance.timeOrigin + e.startTime + e.duration),
+        });
+        if (collections.length > CENSUS_KEEP) collections.shift();
+      }
+    });
+    gcObserver.observe({ entryTypes: ['gc'] });
+  } catch {
+    gcObserver = null; // an older runtime: the rest of the watcher still works
+  }
+}
+
+/** The collections that overlap this stall, on the same recent-past rule. */
+function gcFor(now, late) {
+  if (!gcObserver) return '';
+  const window = late + TICK_MS * 2;
+  const hits = [];
+  for (const e of collections) if (now - e.at <= window) hits.push(`${e.kind}/${e.ms}ms`);
+  collections.length = 0;
+  return hits.length ? ` gc=${hits.reverse().join(',')}` : '';
+}
+
 function rotate() {
   try {
     const st = fs.statSync(logPath);
@@ -125,17 +318,27 @@ function write(line) {
 /**
  * @param {string} userDataDir where to keep stalls.log
  * @param {() => object} [context] optional extra facts to record with a stall
+ * @param {string} [version] the running build, stamped on the session header
  */
-function start(userDataDir, context) {
+function start(userDataDir, context, version) {
   if (timer) return;
   logPath = path.join(userDataDir, 'stalls.log');
+  appVersion = version || '';
   last = Date.now();
   // Without this the first stall of every session subtracts from zero and
   // prints the epoch as a breadcrumb age ("stale 1788341542844ms"), which is
   // the first thing anyone reading the log has to be told to ignore.
   breadcrumbAt = last;
-  write(`--- session started ${new Date().toISOString()} (threshold ${THRESHOLD_MS}ms) ---`);
-  timer = setInterval(() => {
+  watchGc();
+  // The build belongs on this line. A log spans weeks and several updates, and
+  // "did the fix help" is unanswerable without knowing which session ran which
+  // build — the 130 s beat was read across four builds before anyone noticed
+  // the file never says so.
+  const build = appVersion ? `, v${appVersion}` : '';
+  write(
+    `--- session started ${new Date().toISOString()} (threshold ${THRESHOLD_MS}ms${build}) ---`,
+  );
+  timer = nativeSetInterval(() => {
     const now = Date.now();
     const late = now - last - TICK_MS;
     last = now;
@@ -165,6 +368,12 @@ function start(userDataDir, context) {
       slowest = ` slowest=${worstStep.what}/${worstStep.ms}ms`;
     }
     worstStep = null;
+    // Every timer callback that ran long inside this stall, whether or not
+    // anybody wrapped it in a breadcrumb. This is the line that names an
+    // uninstrumented culprit; `ran=none` names one too, by exclusion.
+    const ran = censusFor(now, late);
+    // Not a callback and not instrumentable as one: V8 stopping the thread.
+    const gc = gcFor(now, late);
     let extra = '';
     if (context) {
       try {
@@ -174,7 +383,7 @@ function start(userDataDir, context) {
       }
     }
     write(
-      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${extra}`,
+      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${ran}${gc}${extra}`,
     );
   }, TICK_MS);
   if (timer.unref) timer.unref();
@@ -186,11 +395,38 @@ function stop() {
   timer = null;
   inflight.clear();
   worstStep = null;
+  census.length = 0;
+  collections.length = 0;
+  if (gcObserver) {
+    gcObserver.disconnect();
+    gcObserver = null;
+  }
 }
 
 /** For the diagnostics panel / support bundle. */
 function summary() {
-  return { stalls: stallCount, worstMs, thresholdMs: THRESHOLD_MS, logPath };
+  return {
+    stalls: stallCount,
+    worstMs,
+    thresholdMs: THRESHOLD_MS,
+    logPath,
+    version: appVersion,
+    census: censusOn,
+    gc: gcObserver !== null,
+  };
 }
 
-module.exports = { start, stop, mark, begin, end, around, summary, TICK_MS, THRESHOLD_MS };
+module.exports = {
+  start,
+  stop,
+  mark,
+  begin,
+  end,
+  around,
+  installCensus,
+  summary,
+  TICK_MS,
+  THRESHOLD_MS,
+  CENSUS_FLOOR_MS,
+  GC_FLOOR_MS,
+};

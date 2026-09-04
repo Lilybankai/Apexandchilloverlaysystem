@@ -4,6 +4,58 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.98.1-beta.1 — 2026-09-04
+
+### Changed
+
+- **The terms and privacy policy now say what YouTube does on your PC, and the
+  links in them work.** Linking a YouTube account has always been a plain
+  exchange — the app reads your live chat, and posts to it only if you switch
+  the bot on — but the documents never spelled it out, and Google requires that
+  they do before an app is allowed to keep using YouTube at scale. So they now
+  do, in full: the four things the link is used for, the list of things it never
+  touches (your videos, subscribers, analytics, watch history), where any of it
+  goes, and how long it is kept. The answer to the last two is the one worth
+  reading — none of it reaches our servers, your tokens sit on your machine, and
+  viewer messages are held only long enough to draw them on screen and are never
+  written to disk. There are two ways to end it, both listed: Unlink in
+  Settings, or revoke the app at Google directly.
+- **Links inside the terms window open in your browser.** They used to open in
+  the terms window itself, which has no back button — one click and the document
+  you were reading was gone until you closed the window and reopened it. They
+  now go to your browser and leave the document where it was.
+- **The terms print properly.** Sending them to a printer or saving them as a
+  PDF produced a nearly blank page, because the document is pale text on black.
+  A printed copy is now black on white, with the full web address written out
+  after each link.
+- **The freeze log now names what froze the overlays.** The stall log has been
+  catching the hitch you see on screen for a fortnight, and every entry said the
+  same unhelpful thing: the app was idle, and the pollers it knows how to name
+  had only just started when the loop came back — the block was over before any
+  of them ran. The freezes arrive every 130 seconds almost to the tenth, in
+  practice and in a 44-car race alike, and nothing on the thread would own up to
+  it, because the log could only name work somebody had thought to label.
+  So it now labels all of it. Every scheduled job in the app is timed, and
+  anything that holds the main thread past 50 ms is written onto the freeze
+  report by the file and line it was scheduled at — `ran=main.js:1329/812ms`
+  instead of a period and a shrug. Only work that genuinely blocks is counted:
+  waiting on the game or the network is not a freeze and never appears.
+- **And it watches the memory collector, which is the remaining suspect.**
+  Asked the above, the log answered `ran=none` on all fifteen freezes of a
+  42-car race — not one scheduled job in the app was holding the thread, and the
+  pollers were cleared alongside them. That rules out the app's own code and
+  leaves something that is not code at all. Top of that list is garbage
+  collection: it stops everything, it recurs on a period set by how fast memory
+  fills, its pause grows with how much is being held, and it is invisible to
+  anything watching the app's own work. Freezes now carry `gc=major/1912ms` when
+  a collection lands inside one, and every report carries the heap size, so the
+  climb between freezes and the drop across them can be read straight off.
+- **Each session in the freeze log says which build wrote it.** A log spans
+  weeks and several updates, and until now there was no way to tell a session on
+  the current build from one three releases back — which makes "did that fix
+  help" unanswerable from the only evidence there is. The header line now
+  carries the version.
+
 ## 0.98.0 — 2026-09-04
 
 ### Added
