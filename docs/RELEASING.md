@@ -54,7 +54,23 @@ build script, and this is the fact itself.
    ```
 
 3. Bump `package.json` to `0.57.1-beta.1` in its own `chore(release):` commit.
-4. Publish:
+4. **Tag that commit and push the tag — before publishing.**
+
+   ```bash
+   git tag -a v0.57.1-beta.1 -m "0.57.1-beta.1" && git push origin v0.57.1-beta.1
+   ```
+
+   Not optional, and not cosmetic. If the tag does not already exist, GitHub
+   creates it at the **default branch's HEAD** — so a release cut from an
+   unmerged branch is tagged on a commit that has nothing to do with the build,
+   and the release inherits *that* commit's date. An install on the beta channel
+   reads `releases.atom`, which is ordered by tag date and not by version, and
+   takes the first entry: a release tagged onto an older commit sorts below the
+   build the tester is already running and is never offered. It is signed, it is
+   flagged, its `latest.yml` is correct, and it is invisible. This is what
+   happened to `v0.97.2-beta.3` on 2026-09-04.
+
+5. Publish:
 
    ```bash
    GH_TOKEN=$(gh auth token) npm run release
@@ -62,7 +78,7 @@ build script, and this is the fact itself.
 
    It prints the channel it has decided on before it does anything. Read that
    line.
-5. The next beta is `-beta.2`, and so on. Each gets its own changelog section —
+6. The next beta is `-beta.2`, and so on. Each gets its own changelog section —
    that is what the beta channel's What's New sheet shows.
 
 `npm run release:dry` builds the installer and the notes without publishing
