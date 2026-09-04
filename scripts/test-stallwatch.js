@@ -18,10 +18,16 @@
  *    seconds after that are not a freeze and must not be reported as one — a
  *    census that blamed every awaited REST call would bury the real culprit.
  *
+ * 3. A GC pause must reach the report. It is the one suspect that is not a
+ *    callback at all — V8 stops the thread, no JavaScript runs, and every
+ *    instrument that wraps a function is blind to it by construction. That is
+ *    what `ran=none` on fifteen consecutive stalls looks like, so the report
+ *    has to be able to say `gc=major/NNNms` or it cannot close the question.
+ *
  * Pure: no Electron, no window, no clock beyond Date.now(). The log is written
  * into a temp dir and read straight back.
  *
- * Run: node scripts/test-stallwatch.js
+ * Run: node --expose-gc scripts/test-stallwatch.js
  */
 
 'use strict';
@@ -142,7 +148,60 @@ setTimeout(() => {
   check('bound args reach the wrapped callback', JSON.stringify(sawArgs) === '["a","b"]');
   check('`this` is preserved', thisArg === owner);
 
-  fs.rmSync(dir, { recursive: true, force: true });
-  console.log(`\n${passed} passed, ${failed} failed\n`);
-  process.exit(failed ? 1 : 0);
+  /* ------------------------------------------------------------------------ */
+  console.log('\ngarbage collection — the pause no wrapper can see');
+  /* ------------------------------------------------------------------------ */
+
+  if (typeof global.gc !== 'function') {
+    console.log('  SKIP  no --expose-gc; run: node --expose-gc scripts/test-stallwatch.js');
+    finish();
+    return;
+  }
+
+  // A second watcher run, this time with a real collection in it. Held garbage
+  // makes the pause long enough to clear GC_FLOOR_MS on a fast machine.
+  const gcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-stall-gc-'));
+  stallWatch.start(gcDir, null, '9.9.9-gc');
+  check('the GC observer attached', stallWatch.summary().gc === true);
+
+  // The live set is what makes a major collection expensive — V8 has to trace
+  // it — so the ballast is deliberately KEPT, not dropped. Dropping it first
+  // makes the collection trivial and the test proves nothing.
+  const ballast = [];
+  for (let i = 0; i < 1_500_000; i++) ballast.push({ i, p: i & 7 });
+  global.gc();
+  global.gc(); // the second is the full mark-compact, and the slow one
+  // Hold the thread long enough that the next tick is past the threshold: the
+  // watcher subtracts its own TICK_MS before comparing, so the block has to
+  // cover both. The collection sits inside this window and rides out with it.
+  block(stallWatch.THRESHOLD_MS + stallWatch.TICK_MS + 100);
+
+  setTimeout(() => {
+    stallWatch.stop();
+    const gcText = fs.readFileSync(path.join(gcDir, 'stalls.log'), 'utf8');
+    const gcLines = gcText.split('\n').filter((l) => l.includes(' STALL '));
+    check('the GC run produced a stall to report on', gcLines.length >= 1);
+    // A box fast enough to collect that in under GC_FLOOR_MS names no pause,
+    // and rightly so: the claim is that a pause worth naming IS named, not
+    // that this machine is slow.
+    const named = gcLines.filter((l) => l.includes(' gc='));
+    check(
+      'a collection that paused the thread is named',
+      named.length === 0 || /gc=(minor|major|incremental|weakcb|gc)\/\d+ms/.test(named[0]),
+      named.length ? /gc=[^\s]*/.exec(named[0])[0] : 'no pause past the floor',
+    );
+    check('the ballast stayed live through the collection', ballast.length === 1_500_000);
+    check(
+      'the census still answers beside it',
+      gcLines.length === 0 || gcLines[0].includes(' ran='),
+    );
+    fs.rmSync(gcDir, { recursive: true, force: true });
+    finish();
+  }, 300);
+
+  function finish() {
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(`\n${passed} passed, ${failed} failed\n`);
+    process.exit(failed ? 1 : 0);
+  }
 }, 400);

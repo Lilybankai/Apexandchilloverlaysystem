@@ -4813,6 +4813,11 @@ app.whenReady().then(async () => {
       cars: lastFeedFrame?.standings?.length ?? 0,
       session: lastFeedFrame?.session?.type ?? 'none',
       phase: lastFeedFrame?.session?.phase ?? 'none',
+      // Read only when a stall is being written, never on the happy path. If
+      // the freezes are collections, this climbs between them and drops across
+      // them, and the shape of that sawtooth says whether it is a leak or
+      // simply a heap being filled and emptied at a steady rate.
+      heapMB: Math.round(process.memoryUsage().heapUsed / 1048576),
     }),
     app.getVersion(),
   );

@@ -4,6 +4,25 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.2-beta.2 — 2026-09-04
+
+### Changed
+
+- **The freeze log now watches garbage collection, and records the heap.** The
+  first beta answered its own question with a no: across fifteen freezes in a
+  42-car race it reported `ran=none` every time, meaning not one scheduled job
+  in the app was holding the thread. The pollers were cleared at the same time
+  — one whose work had blocked would still be shown running across the freeze,
+  and on the two-second ones it is not. Between them that rules out the app's
+  own code, which leaves something that is not code at all.
+  Top of that list is the memory collector: it stops everything, it recurs on a
+  period set by how fast memory fills, its pause grows with how much is being
+  held — the slow climb the log has been drawing for a fortnight — and it is
+  invisible to anything that watches the app's own work, which is exactly the
+  hole the first beta fell into. Freezes now carry `gc=major/1912ms` when a
+  collection lands inside one, and every report carries the heap size, so the
+  climb between freezes and the drop across them can be read straight off.
+
 ## 0.97.2-beta.1 — 2026-09-04
 
 ### Changed
