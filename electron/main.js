@@ -4220,6 +4220,15 @@ const EXTERNAL_HOSTS = new Set([
   'youtube.com',
   'docs.google.com',
   'discord.gg',
+  // Legal window — the citations the YouTube API Services terms require the
+  // privacy policy and terms to carry, plus the UK regulator named in the
+  // policy. See electron/control-panel/legal.html.
+  'policies.google.com',
+  'www.google.com',
+  'myaccount.google.com',
+  'security.google.com',
+  'ico.org.uk',
+  'www.ico.org.uk',
   // Schedule tab — championship signup / results pages on SimGrid.
   'www.thesimgrid.com',
   'thesimgrid.com',
@@ -4596,6 +4605,19 @@ function openLegalWindow(section) {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   legalWindow.removeMenu?.();
+  // The policy documents cite outside pages — the YouTube Terms, Google's
+  // privacy policy, the Google permissions page — and the YouTube API Services
+  // terms REQUIRE those to be there and to work. `target="_blank"` lands here:
+  // hand the allowed ones to the system browser and refuse the rest, so the
+  // legal window itself can never navigate away from the document it exists to
+  // show (there is no back button in it to return with).
+  legalWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternal(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  legalWindow.webContents.on('will-navigate', (evt, url) => {
+    if (!url.startsWith('file:')) evt.preventDefault();
+  });
   legalWindow.on('closed', () => {
     legalWindow = null;
   });

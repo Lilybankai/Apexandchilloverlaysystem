@@ -4,6 +4,31 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.97.2-beta.3 — 2026-09-04
+
+### Changed
+
+- **The terms and privacy policy now say what YouTube does on your PC, and the
+  links in them work.** Linking a YouTube account has always been a plain
+  exchange — the app reads your live chat, and posts to it only if you switch
+  the bot on — but the documents never spelled it out, and Google requires that
+  they do before an app is allowed to keep using YouTube at scale. So they now
+  do, in full: the four things the link is used for, the list of things it never
+  touches (your videos, subscribers, analytics, watch history), where any of it
+  goes, and how long it is kept. The answer to the last two is the one worth
+  reading — none of it reaches our servers, your tokens sit on your machine, and
+  viewer messages are held only long enough to draw them on screen and are never
+  written to disk. There are two ways to end it, both listed: Unlink in
+  Settings, or revoke the app at Google directly.
+- **Links inside the terms window open in your browser.** They used to open in
+  the terms window itself, which has no back button — one click and the document
+  you were reading was gone until you closed the window and reopened it. They
+  now go to your browser and leave the document where it was.
+- **The terms print properly.** Sending them to a printer or saving them as a
+  PDF produced a nearly blank page, because the document is pale text on black.
+  A printed copy is now black on white, with the full web address written out
+  after each link.
+
 ## 0.97.2-beta.2 — 2026-09-04
 
 ### Changed
