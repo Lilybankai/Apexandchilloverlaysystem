@@ -41,6 +41,9 @@
     main { max-width: 760px; margin: 0 auto; padding: 26px 28px 60px; }
     h2 { font-size: 18px; margin: 38px 0 6px; }
     h3 { font-size: 14px; margin: 24px 0 4px; color: var(--text); }
+    h4 { font-size: 13px; margin: 18px 0 2px; color: var(--text); font-weight: 600; }
+    code { font-family: Consolas, "Courier New", monospace; font-size: 12px; color: var(--text); }
+    main a { color: var(--accent); }
     p, li { color: var(--dim); }
     strong { color: var(--text); font-weight: 600; }
     .updated { font-size: 12px; color: var(--dim); margin-top: 0; }
@@ -48,6 +51,26 @@
     th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; color: var(--dim); }
     th { color: var(--text); background: var(--panel); }
     hr { border: 0; border-top: 1px solid var(--line); margin: 46px 0; }
+
+    /* Printing and PDF export. The screen palette is light text on near-black,
+       which prints as almost nothing — so the printed copy inverts to plain
+       black on white and shows link targets in full, since a printed URL that
+       cannot be typed out is not a citation. Needed for real: the YouTube API
+       Services compliance audit is submitted as PDFs of these documents. */
+    @media print {
+      body { background: #fff; color: #000; }
+      header { position: static; background: #fff; border-bottom: 1px solid #999; }
+      header nav { display: none; }
+      main { max-width: none; padding: 0 0 24px; }
+      p, li, td, th, .updated { color: #222; }
+      strong, h1, h2, h3, h4 { color: #000; }
+      main a { color: #000; }
+      main a[href^="https://"]::after { content: " (" attr(href) ")"; font-size: 11px; color: #444; }
+      th, td { border-color: #999; }
+      th { background: #eee; }
+      h2, h3, h4 { break-after: avoid; }
+      hr { border-top: 1px solid #999; }
+    }
   </style>
 </head>
 <body>
@@ -56,12 +79,13 @@
   <nav>
     <a href="#terms">Terms of Use</a>
     <a href="#privacy">Privacy Policy</a>
+    <a href="#youtube">YouTube API Services</a>
   </nav>
 </header>
 <main>
 
   <h2 id="terms">Terms of Use</h2>
-  <p class="updated">Last updated: 21 August 2026</p>
+  <p class="updated">Last updated: 4 September 2026</p>
 
   <p>These terms cover the <strong>Apex AIO System</strong> desktop application
   (previously called the Apex Overlay System) and the online services behind it.
@@ -113,7 +137,28 @@
   entertainment and information, not professional advice — you stay
   responsible for how you drive.</p>
 
-  <h3>7. Beta software, no warranty</h3>
+  <h3>7. Streaming services — YouTube and Twitch</h3>
+  <p>The Chat and StreamBot features can link your <strong>YouTube</strong> and
+  <strong>Twitch</strong> accounts so the app can read your live chat and, if
+  you turn it on, post messages to it.</p>
+  <p>The YouTube half of those features uses <strong>YouTube API
+  Services</strong>. By linking a YouTube account you additionally agree to be
+  bound by the
+  <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube
+  Terms of Service</a>, and Google's handling of your data is covered by the
+  <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google
+  Privacy Policy</a>. Our Privacy Policy below sets out exactly what the app
+  reads through those services and where it goes.</p>
+  <p>Linking is optional and reversible. You can unlink at any time in
+  Settings → Streaming chat, and you can revoke the app's access to your Google account
+  entirely from the
+  <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google
+  security settings page</a>. Either one ends the app's access immediately.</p>
+  <p>These accounts stay yours and remain subject to YouTube's and Twitch's own
+  rules — including their rules about automated messages. You are responsible
+  for what the app posts to your channel on your instruction.</p>
+
+  <h3>8. Beta software, no warranty</h3>
   <p>The app is under active development. It is provided <strong>as is</strong>,
   without warranties of any kind: we don't promise it will be uninterrupted,
   error-free, or compatible with every sim update. To the fullest extent the
@@ -122,12 +167,12 @@
   us in the 12 months before the claim. Nothing in these terms limits
   liability that cannot legally be limited.</p>
 
-  <h3>8. Ending things</h3>
+  <h3>9. Ending things</h3>
   <p>You can stop using the app and delete your account at any time
   (Settings → Account &amp; privacy → Delete account). We can suspend or
   terminate accounts that break these terms or where the subscription lapses.</p>
 
-  <h3>9. Changes and contact</h3>
+  <h3>10. Changes and contact</h3>
   <p>We may update these terms as the app evolves; material changes will be
   announced in the app before they apply. These terms are governed by the law
   of England and Wales. Questions:
@@ -136,7 +181,7 @@
   <hr />
 
   <h2 id="privacy">Privacy Policy</h2>
-  <p class="updated">Last updated: 21 August 2026</p>
+  <p class="updated">Last updated: 4 September 2026</p>
 
   <p><strong>The Lilybank Agency Ltd</strong> is the data controller for the
   Apex AIO System. This policy says exactly what we collect, where it goes,
@@ -197,12 +242,73 @@
         never uploaded.</li>
     <li><strong>Streaming logins.</strong> If you link Twitch or YouTube, the
         tokens are stored only on your machine and talk directly to Twitch and
-        Google — they are never sent to our servers.</li>
+        Google — they are never sent to our servers. See
+        <a href="#youtube">YouTube API Services</a> below for the detail.</li>
     <li><strong>Your full lap history.</strong> Every lap you drive is recorded
         to local files on your PC. Only the boards' best laps, daily totals,
         and the per-lap fuel/tyre and pit-stop readings described above are
         uploaded.</li>
     <li>Viewer chat messages pass through the app live and are not stored.</li>
+  </ul>
+
+  <h3 id="youtube">YouTube API Services</h3>
+  <p>The Chat and StreamBot features use <strong>YouTube API Services</strong>.
+  Linking a YouTube account is optional — the rest of the app works without it —
+  and nothing below happens until you link one.</p>
+  <p>By using those features you agree to the
+  <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube
+  Terms of Service</a>. Google's own handling of your information is governed by
+  the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google
+  Privacy Policy</a> (google.com/policies/privacy), which we ask you to read
+  alongside this one.</p>
+
+  <h4>What the app accesses through YouTube</h4>
+  <p>When you link an account, you grant the app the
+  <code>youtube.force-ssl</code> permission, and it uses that to:</p>
+  <ul>
+    <li>read your <strong>channel name and channel ID</strong>, so the app can
+        show you which account is linked;</li>
+    <li>find your <strong>active live broadcast</strong> and the ID of its live
+        chat, so it knows which chat to attach to;</li>
+    <li><strong>read the messages in that live chat</strong> while you are
+        streaming — the author's display name, the message text and the badges
+        YouTube supplies (owner, moderator, member) — so the Chat overlay can
+        show them;</li>
+    <li><strong>post messages to that live chat</strong> as you, but only for
+        chat commands and announcements you have switched on in StreamBot. It
+        never posts unless you enable it.</li>
+  </ul>
+  <p>It does not access your videos, playlists, subscribers, analytics, watch
+  history or account settings, and it does not upload, edit or delete anything
+  on your channel.</p>
+
+  <h4>Where that information goes, and how long it is kept</h4>
+  <ul>
+    <li><strong>Nothing from YouTube is sent to our servers.</strong> The app on
+        your PC talks to Google directly. We never see your YouTube data, your
+        tokens or your viewers' messages, and none of it is stored in our
+        database or shared with anyone.</li>
+    <li><strong>Your access tokens</strong> are stored only in the app's own
+        folder on your PC, and are used solely to keep the link alive.</li>
+    <li><strong>Viewer chat messages are not stored.</strong> They are held in
+        memory only long enough to draw the on-screen chat, are dropped as newer
+        messages arrive, and are never written to disk or uploaded. Nothing read
+        from YouTube API Services is retained beyond the session it was read in.</li>
+  </ul>
+
+  <h4>Removing the link and deleting the data</h4>
+  <ul>
+    <li><strong>In the app:</strong> Settings → Streaming chat → YouTube account → <strong>Unlink</strong>. This deletes the
+        stored tokens from your PC and stops all access immediately.</li>
+    <li><strong>At Google:</strong> you can revoke the app's access to your
+        Google account at any time from the Google security settings page,
+        <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>
+        (also reachable at security.google.com/settings/security/permissions).
+        Revoking there ends the app's access even if the app is not running.</li>
+    <li><strong>Uninstalling</strong> the app and deleting its data folder
+        removes the stored tokens along with everything else held locally.</li>
+    <li>Because no YouTube data ever reaches our servers, deleting your Apex
+        account does not need to — and cannot — remove anything at Google.</li>
   </ul>
 
   <h3>Who sees what</h3>
@@ -227,7 +333,12 @@
     <tr><td>OpenRouter → AI model providers (OpenAI by default)</td>
         <td>Generating race-engineer answers from your question + race summary.</td></tr>
     <tr><td>GitHub</td><td>Hosting app downloads and auto-updates.</td></tr>
-    <tr><td>Twitch / Google (YouTube)</td><td>Only if you link them, from your PC directly.</td></tr>
+    <tr><td>Google — YouTube API Services</td>
+        <td>Only if you link a YouTube account, and only from your PC directly.
+            Your live chat and channel name, read under Google's own
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy
+            Policy</a> — see <a href="#youtube">YouTube API Services</a> above.</td></tr>
+    <tr><td>Twitch</td><td>Only if you link it, from your PC directly.</td></tr>
   </table>
 
   <h3>Retention</h3>
@@ -250,7 +361,7 @@
   or object to processing, and take your data elsewhere. Email
   <strong>marketing@thelilybankagency.co.uk</strong> and we'll sort it. If
   you're unhappy with how we handle your data you can complain to the UK
-  Information Commissioner's Office (<strong>ico.org.uk</strong>).</p>
+  Information Commissioner's Office (<a href="https://ico.org.uk" target="_blank" rel="noopener">ico.org.uk</a>).</p>
 
   <h3>Changes</h3>
   <p>If this policy changes materially, the app will tell you before the
