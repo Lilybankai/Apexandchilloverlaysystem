@@ -4,6 +4,33 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.98.0 — 2026-09-04
+
+### Added
+
+- **Your pit stops and fuel readings now feed the pit-stop predictor.** Since
+  0.96.0 the app has written down every pit visit (lane time, time stationary,
+  fuel added, tyres changed) and, on every lap, the fuel level in and out and
+  the tyre wear at the line. Those files never left your PC — which meant the
+  fuel and pit-stop predictor was waiting on data that one machine can only
+  produce a few real race stops of a week. They now upload alongside your lap
+  times, on the same five-minute sync, so every driver's stops and laps land
+  in one place and the refuel-rate, fuel-burn and tyre-wear models can be
+  fitted per class and track from all of it.
+  Each stop and lap is sent once and remembered by its own id, so a crash
+  mid-upload or a re-install never double-counts; a backlog from before this
+  release drains at forty rows a run. Nothing new is recorded — this is the
+  data the app already kept, and it only exists when shared memory is live
+  (spectating produces none). Only you can see your own rows; admins see
+  totals and medians, never another driver's laps. The Privacy Policy names
+  the new data under "Fuel & pit stops".
+- **Admin: a Strategy corpus card on the overview.** How many stops and laps
+  have landed, how many are usable (real race stops, fuel-only stops a refuel
+  rate can be read from, clean laps with a measured burn), how many drivers
+  are contributing, and a per class/track table with the current median
+  litres-per-second and litres-per-lap — plus a count of pairs that have
+  reached the bar for a fit.
+
 ## 0.97.1 — 2026-09-03
 
 ### Fixed

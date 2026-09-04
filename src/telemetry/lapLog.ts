@@ -1177,10 +1177,17 @@ export interface SyncCache {
   traces: Record<string, number>;
   /** Keys the server permanently refused, with its reason. */
   rejected: Record<string, string>;
+  /**
+   * Strategy-corpus rows the server has accepted — `stop:<id>` / `burn:<id>`
+   * (see `strategyCorpus.ts`). A row is sent once and never again; there is no
+   * "newer value" to re-send, because a stop that happened is a fact. Optional
+   * so a cache written before the corpus shipped reads as "nothing sent yet".
+   */
+  corpus?: Record<string, 1>;
 }
 
 export function emptySyncCache(): SyncCache {
-  return { activity: {}, bests: {}, traces: {}, rejected: {} };
+  return { activity: {}, bests: {}, traces: {}, rejected: {}, corpus: {} };
 }
 
 /** Stable identity for an activity row. */

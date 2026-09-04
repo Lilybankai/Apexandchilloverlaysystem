@@ -3508,6 +3508,23 @@ function registerIpc() {
     return { ok: true, data: res.body || {} };
   });
 
+  /**
+   * The strategy corpus (migration 0015): how many pit stops and consumption
+   * laps have landed from every driver, and per class/track where it is deep
+   * enough to fit. Aggregates only — the RPC never returns a row.
+   */
+  ipcMain.handle('admin:strategyCorpus', async () => {
+    const res = await authService.rpc('admin_strategy_corpus', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || {} };
+  });
+
   /** The feedback inbox, optionally filtered by status. */
   ipcMain.handle('admin:feedback', async (_evt, query) => {
     const q = query || {};

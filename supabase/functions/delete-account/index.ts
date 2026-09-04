@@ -10,8 +10,9 @@
 //      message can name its author, so anonymising the user_id isn't enough.
 //   3. auth.users: deleted last. Every other user-linked table — profiles,
 //      public_drivers, setups (+ ratings/downloads on them), lap_traces,
-//      driver_best_laps, driver_activity_days, engineer_calls, app_sessions,
-//      billing_subscriptions — hangs off it with ON DELETE CASCADE, so this
+//      driver_best_laps, driver_activity_days, pit_stops, lap_consumption,
+//      engineer_calls, app_sessions, billing_subscriptions — hangs off it with
+//      ON DELETE CASCADE, so this
 //      one delete empties the lot. league_codes keeps its rows but SET NULLs
 //      the user references (a redeemed code stays burned).
 //
