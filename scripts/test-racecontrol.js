@@ -105,8 +105,9 @@ console.log('\nrace-control frame contract, via the simulator\n');
 
   /* ------------------------ the pit-lane envelope ------------------------ */
 
-  // The demo pit cycle is minutes long; walk far enough to see all of it.
-  const pitRun = run(sim, state, 400);
+  // The demo stops when its fuel says so — about ten laps in, a quarter of
+  // an hour at its pace — so walk far enough to see the whole visit.
+  const pitRun = run(sim, state, 1000);
   const pit = (f) => f.player.pit || {};
   check(
     'limiter state is always a boolean in demo',
