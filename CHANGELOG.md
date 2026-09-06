@@ -4,7 +4,7 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.98.1-beta.2 — 2026-09-04
+## 0.99.1-beta.1 — 2026-09-06
 
 ### Changed
 
@@ -28,10 +28,38 @@
   rather than on a cycle. The race is thirty laps and, being seeded, is the
   same race every time you start it.
 
-## 0.98.1-beta.1 — 2026-09-04
+## 0.99.0 — 2026-09-06
 
 ### Changed
 
+- **The race engineer stops answering its own voice.** Push-to-talk keeps
+  whatever the microphone heard, and the transcriber always returns *something*
+  — so a hot mic that caught nothing at all still produced a "question", and
+  the engineer answered it out loud. Reading a fortnight of calls back, nearly
+  a third were never questions: silence transcribed as a stray word, the same
+  two words repeated a dozen times, and — the one that gives it away — the
+  engineer's own callout picked up by the mic and read back to it. One driver
+  was told "I'd box this lap" in reply to the engineer having just said "box
+  this lap". All three are now recognised and dropped before they go anywhere.
+  A clip that carried nothing gets the same "Say again?" it always did; the
+  engineer's own voice coming back gets silence, because replying to it is what
+  started the loop. Your questions are untouched — the filter needs five words
+  and near-total overlap before it will call something an echo, so repeating a
+  call back as a genuine question still reaches the engineer.
+- **"Tyre", "ahead" and "behind" are answered instantly.** The phrase list knew
+  "tyres" and every compound but not the singular a driver actually clips it
+  to, and it knew "gap ahead" but not the bare "ahead" and "behind" you fall
+  into once you trust the radio. Those four went out to the cloud and came back
+  a second and a half later. They are now answered on your own machine, free
+  and immediately, like the rest of the list.
+- **The engineer no longer makes up rules.** Asked to "box to retire the car",
+  it replied that the car could not be retired yet because the damage meant a
+  pit stop was needed first — a regulation it invented whole. It has never been
+  allowed to invent a lap time or a fuel figure; it is now equally barred from
+  inventing procedure, requirements or what you are permitted to do. It will
+  also stop answering "session update" with "Copy that.", stop saying "Say
+  again?" to short but perfectly clear questions like "retired a car", and stop
+  repeating the same brush-off twice in a row.
 - **The terms and privacy policy now say what YouTube does on your PC, and the
   links in them work.** Linking a YouTube account has always been a plain
   exchange — the app reads your live chat, and posts to it only if you switch
