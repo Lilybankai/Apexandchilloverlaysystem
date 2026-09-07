@@ -8,7 +8,7 @@
  * painted it — so the failure this file guards is the same one coming back:
  * a sky that reaches the widget and renders as nothing.
  *
- * Three things are pinned, each of which broke or nearly broke while this was
+ * Five things are pinned, each of which broke or nearly broke while this was
  * being built:
  *
  *   1. EVERY SkyState HAS A GLYPH. The union is read out of src/telemetry/
@@ -27,6 +27,20 @@
  *      pass and every icon rendered in the SVG default of BLACK — on a
  *      near-black panel, which is to say invisible. Nothing else in the build
  *      catches that: it is valid CSS, valid SVG, and a widget that looks empty.
+ *
+ *   4. RAIN INTENSITY IS NOT TRAPPED BEHIND THE FORECAST GATE. The strip is
+ *      only rebuilt when its signature changes, because forecasts evolve
+ *      slowly. Intensity does not — it moves while the forecast stands still.
+ *      Writing the PRECIPITATION row inside that gate (the obvious place, right
+ *      beside the icon reading the same slot) freezes the number at whatever it
+ *      said when the forecast last shifted, and nothing looks broken: the row is
+ *      populated, plausible and stale. Two frames with one forecast and two
+ *      intensities is the whole test.
+ *
+ *   5. THE SUN DOES NOT BORROW THE CAUTION COLOUR. --warn means "something is
+ *      wrong" everywhere else in this overlay. A sunny forecast is not a
+ *      warning, so the glyphs carry their own palette; the storm bolt is the one
+ *      deliberate exception.
  *
  * Run: node scripts/test-weather-sky.js
  */
@@ -157,18 +171,42 @@ const fmt = {
 };
 const ctx = { fmt, critPulse() {} };
 
-/** Mount the widget on a fresh root and drive one frame through it. */
-function render(weather) {
+/** Mount the widget on a fresh root. `push` drives another frame through it. */
+function mount(weather) {
   const root = makeEl('section');
   const header = makeEl('span');
   header.setAttribute('data-role', 'track-state');
-  const mount = makeEl('div');
-  mount.setAttribute('data-role', 'mount');
+  const body = makeEl('div');
+  body.setAttribute('data-role', 'mount');
   root.appendChild(header);
-  root.appendChild(mount);
+  root.appendChild(body);
   widget.init(root);
-  widget.update({ weather }, ctx);
-  return { root, mount };
+  const push = (w) => {
+    widget.update({ weather: w }, ctx);
+    return body;
+  };
+  push(weather);
+  return { root, mount: body, push };
+}
+
+/** Mount and drive one frame — the common case. */
+function render(weather) {
+  return mount(weather);
+}
+
+/** The named facts, as a { LABEL: value } map. */
+function factsOf(node) {
+  const cells = flatten(node);
+  const out = {};
+  for (let i = 0; i < cells.length; i++) {
+    if (/(^|\s)weather__fact-k(\s|$)/.test(String(cells[i].className))) {
+      const v = cells.find(
+        (c, j) => j > i && /(^|\s)weather__fact-v(\s|$)/.test(String(c.className)),
+      );
+      if (v) out[cells[i].textContent] = v.textContent;
+    }
+  }
+  return out;
 }
 
 function slotsOf(mount) {
@@ -283,6 +321,102 @@ const theme = read('overlay', 'css', 'theme.css');
 check('--sky-drop is defined', /--sky-drop:/.test(theme));
 check('the glyphs get a halo when the panel goes translucent, as the text does',
   /html\[data-panel-bg="translucent"\][^{]*\.weather__icon[^{]*\{[^}]*drop-shadow/.test(theme));
+
+/* --------------------- 5. the current-conditions block ------------------- */
+
+console.log('\ncurrent conditions reads as three named facts');
+const conds = mount(
+  baseWeather([
+    { label: 'START', minutesAhead: 0, sky: 'rain', airTempC: 21, trackTempC: 22, rainChance: 0.75 },
+    { label: '25%', minutesAhead: 15, sky: 'rain', airTempC: 21, trackTempC: 22, rainChance: 0.7 },
+  ]),
+);
+const f = factsOf(conds.mount);
+check('AIR TEMP is named and filled', f['AIR TEMP'] === '21°', JSON.stringify(f));
+check('CONDITION carries the band and the wetness', f.CONDITION === 'WET (40%)', f.CONDITION);
+check('PRECIPITATION names what is falling, with its intensity',
+  f.PRECIPITATION === 'RAIN 40%', f.PRECIPITATION);
+check('the track temperature keeps a caption of its own',
+  flatten(conds.mount).some((el) => String(el.className) === 'weather__temp-cap'
+    && el.textContent === 'TRACK TEMP'));
+check('the track temperature is the number alone, with nothing inline',
+  flatten(conds.mount).some((el) => String(el.className) === 'weather__temp'
+    && el.textContent === '22°'));
+
+// A dry, clear session must not read as raining anywhere in the block.
+const dry = mount({
+  trackTempC: 30, ambientTempC: 22, rainIntensity: 0, trackWetness: 0,
+  forecast: [{ label: 'START', minutesAhead: 0, sky: 'clear', airTempC: 22, trackTempC: 30, rainChance: 0 }],
+});
+const fd = factsOf(dry.mount);
+check('a clear, dry session precipitates NONE', fd.PRECIPITATION === 'NONE', fd.PRECIPITATION);
+check('a dry track reads DRY, not "WET (0%)"', fd.CONDITION === 'DRY', fd.CONDITION);
+
+// An overcast sky is not precipitation. This is the distinction the row exists
+// for — the icon says cloud, and the row says nothing is coming out of it.
+const grey = mount({
+  trackTempC: 24, ambientTempC: 19, rainIntensity: 0, trackWetness: 0,
+  forecast: [{ label: 'START', minutesAhead: 0, sky: 'overcast', airTempC: 19, trackTempC: 24, rainChance: 0.2 }],
+});
+check('an overcast sky still precipitates NONE',
+  factsOf(grey.mount).PRECIPITATION === 'NONE', factsOf(grey.mount).PRECIPITATION);
+
+// The trend survived the rebuild. A track at 30% drying and one at 30% getting
+// wetter are opposite calls and the percentage alone cannot separate them.
+const trend = mount({
+  trackTempC: 22, ambientTempC: 21, rainIntensity: 0.1, trackWetness: 0.3,
+  trackCondition: 'DAMP', trackTrend: 'drying',
+  forecast: [{ label: 'START', minutesAhead: 0, sky: 'lightRain', airTempC: 21, trackTempC: 22, rainChance: 0.3 }],
+});
+check('a drying track is marked as drying',
+  /▼/.test(factsOf(trend.mount).CONDITION), factsOf(trend.mount).CONDITION);
+
+/* ------- 6. precipitation is not stuck behind the forecast gate ---------- */
+
+// The forecast strip is only rebuilt when its SIGNATURE changes, because
+// forecasts evolve slowly. Rain intensity does not: it moves while the forecast
+// stands still. Writing the precipitation row inside that gate — the obvious
+// place, right beside the icon that reads the same slot — freezes it at
+// whatever it said when the forecast last shifted. Nothing on screen looks
+// broken; the number is simply old.
+console.log('\nrain intensity is not trapped behind the forecast-signature gate');
+const FIXED_FORECAST = [
+  { label: 'START', minutesAhead: 0, sky: 'rain', airTempC: 21, trackTempC: 22, rainChance: 0.75 },
+  { label: '25%', minutesAhead: 15, sky: 'rain', airTempC: 21, trackTempC: 22, rainChance: 0.7 },
+];
+const live = mount({
+  trackTempC: 22, ambientTempC: 21, rainIntensity: 0.2, trackWetness: 0.4,
+  trackCondition: 'WET', forecast: FIXED_FORECAST,
+});
+check('it starts at the first intensity', factsOf(live.mount).PRECIPITATION === 'RAIN 20%',
+  factsOf(live.mount).PRECIPITATION);
+// Same forecast object shape, harder rain.
+live.push({
+  trackTempC: 22, ambientTempC: 21, rainIntensity: 0.8, trackWetness: 0.4,
+  trackCondition: 'WET', forecast: FIXED_FORECAST,
+});
+check('it follows the intensity up while the forecast stands still',
+  factsOf(live.mount).PRECIPITATION === 'RAIN 80%', factsOf(live.mount).PRECIPITATION);
+
+/* ----------------------------- 7. the palette ---------------------------- */
+
+console.log('\nthe glyphs are painted, not left to inherit');
+check('the sun has its own colour', /\.wx-sun\s*\{[^}]*fill:\s*var\(--sky-sun\)/.test(css));
+check('the rays are the same colour as the sun',
+  /\.wx-ray\s*\{[^}]*stroke:\s*var\(--sky-sun\)/.test(css));
+check('a cloud with weather in it is painted heavier',
+  /\.wx-cloud\s*\{[^}]*fill:\s*var\(--sky-cloud\)/.test(css));
+check('a fair-weather cloud is painted lighter',
+  /\.wx-cloud-fair\s*\{[^}]*fill:\s*var\(--sky-cloud-fair\)/.test(css));
+['--sky-sun', '--sky-cloud', '--sky-cloud-fair', '--sky-drop'].forEach((tok) => {
+  check('theme.css defines ' + tok, new RegExp(tok.replace(/-/g, '\\-') + ':').test(theme));
+});
+// The sun must not borrow the caution amber: --warn means "something is wrong"
+// everywhere else in the overlay, and a sunny forecast is not a warning. The
+// storm bolt is the one deliberate exception.
+check('the sun does not borrow the caution colour',
+  !/\.wx-sun\s*\{[^}]*var\(--warn\)/.test(css));
+check('every glyph shape carries a class', !/wx-(sun|ray|cloud|cloud-fair|wet|bolt)="/.test(widgetSrc));
 
 /* -------------------------------- summary -------------------------------- */
 

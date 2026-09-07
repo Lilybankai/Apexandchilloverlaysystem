@@ -1272,10 +1272,57 @@
 .weather__now {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   padding-bottom: 8px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--border-soft);
+}
+/* The icon and the track temperature, read as one thing. */
+.weather__lead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.weather__temp-block { line-height: 1; }
+/* The caption the number used to carry inline as "22° track". Out on its own
+   line it stops competing with the value for the same optical row, which is
+   what lets the number be this size in a 440px panel. */
+.weather__temp-cap {
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+/* Three named facts. The rule down the left is a border rather than an element
+   so it cannot fall out of step with the rows' height. */
+.weather__facts {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 3px 12px;
+  margin-left: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--border-soft);
+}
+.weather__fact-k {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.weather__fact-v {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-body);
+  line-height: 1.15;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 .weather__temp {
   font-family: var(--font-mono);
@@ -1283,7 +1330,7 @@
   font-size: var(--fs-value);
   color: var(--text-primary);
 }
-.weather__temp small { font-size: var(--fs-body); color: var(--text-muted); }
+
 /* ---------------------------------------------------------------------------
  * SKY GLYPHS (see js/widgets/weather.js for the geometry and why they exist).
  *
@@ -1300,9 +1347,12 @@
   color: var(--text-secondary);
 }
 .weather__icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }
-.weather__icon .wx-ray  { stroke: currentColor; fill: none; }
-.weather__icon .wx-wet  { stroke: var(--sky-drop); fill: none; }
-.weather__icon .wx-bolt { fill: var(--warn); }
+.weather__icon .wx-sun        { fill: var(--sky-sun); }
+.weather__icon .wx-ray        { stroke: var(--sky-sun); fill: none; }
+.weather__icon .wx-cloud      { fill: var(--sky-cloud); }
+.weather__icon .wx-cloud-fair { fill: var(--sky-cloud-fair); }
+.weather__icon .wx-wet        { stroke: var(--sky-drop); fill: none; }
+.weather__icon .wx-bolt       { fill: var(--warn); }
 /* Beside the big track temperature, at its cap height. */
 .weather__icon--now {
   width: 34px;
@@ -1310,21 +1360,11 @@
   color: var(--text-primary);
 }
 .weather__slot .weather__icon { width: 18px; height: 18px; }
-.weather__meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--fs-label);
-  color: var(--text-secondary);
-}
-/* Tier 1 — the one line in this block that changes how the car is driven. */
+/* Tier 1 — the one row in this block that changes how the car is driven, so
+   it is the row that is larger than its neighbours and the row that blooms. */
 .weather__wet {
-  font-family: var(--font-display);
-  font-weight: 700;
   font-size: var(--fs-data);
-  letter-spacing: 0.04em;
-  color: var(--text-primary);
-  line-height: 1.1;
+  letter-spacing: 0.03em;
 }
 .weather__forecast {
   display: grid;

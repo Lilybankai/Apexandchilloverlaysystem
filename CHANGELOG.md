@@ -4,6 +4,27 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Changed
+
+- **The weather panel says what it is showing you.** The block at the top of
+  the weather widget now names its three readings instead of running them
+  together: **air temp**, **condition** and **precipitation**, each on its own
+  line with its value beside it. Condition still leads — it is the one that
+  changes what tyres you are on — and still carries the arrow telling you
+  whether the track is drying or getting wetter. Precipitation is new as a
+  reading of its own, and it answers a different question from the other two:
+  condition is how wet the track already *is*, precipitation is what is falling
+  on it *now*. An overcast sky that is not raining says so.
+  The track temperature keeps the large number and gains its own caption
+  underneath, rather than the word "track" sitting inside it.
+- **The forecast icons are in colour.** The sun is yellow, rain is blue, and a
+  storm keeps its amber bolt. Cloud comes in two weights — a fair-weather cloud
+  is lighter than one with rain in it — so a glance across the strip separates
+  the dry part of the session from the wet part on colour alone, before you have
+  resolved a single shape.
+
 ## 0.99.2-beta.1 — 2026-09-07
 
 ### Changed

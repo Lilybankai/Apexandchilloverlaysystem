@@ -70,7 +70,17 @@
   --pos-gain: #35d07f;   /* gaining / green sector / faster */
   --pos-loss: #ff5470;   /* losing / red / hotter          */
   --warn: #ffb020;       /* caution / marginal fuel         */
-  --sky-drop: #4aa8ff;   /* falling rain in the weather glyphs */
+  /* --- Weather glyphs -------------------------------------------------
+   * A palette of its own rather than the status colours, on purpose. --warn
+   * and --pos-loss mean "caution" and "losing" everywhere else in the overlay,
+   * and a sun painted in the caution amber would be saying something the
+   * weather is not. The only overlap is deliberate: a storm's bolt IS --warn.
+   * The clouds carry a light/heavy pair so a cloud with weather in it reads
+   * differently from a fair-weather one before you resolve its drops. */
+  --sky-sun: #ffcf4d;        /* the sun disc and its rays        */
+  --sky-cloud-fair: #e2e8f4; /* fair-weather cloud               */
+  --sky-cloud: #b3bdd2;      /* a cloud with weather in it       */
+  --sky-drop: #4aa8ff;       /* falling rain                     */
   --purple-fastest: #b06bff; /* overall fastest (purple)    */
   /* RankBar ladder (matches Apex control panel hub.css) */
   --rank-blue: #309be1;

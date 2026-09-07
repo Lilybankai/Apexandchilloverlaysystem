@@ -47,20 +47,29 @@
    * making instantly; clear-vs-partly-cloudy is not, because neither changes a
    * tyre call.
    * -------------------------------------------------------------------- */
+  /* Every shape is CLASSED rather than left to inherit, so colour is decided
+   * in the stylesheet and can answer to the theme. Two clouds, not one: a cloud
+   * with weather in it is painted heavier than a fair-weather one, which is the
+   * same distinction the glyph is already making with its drops, said again in
+   * a channel you do not have to resolve detail to read. */
   var CLOUD =
+    '<g class="wx-cloud">' +
     '<circle cx="8" cy="11" r="4.6"/>' +
     '<circle cx="15.5" cy="11" r="5.2"/>' +
     '<circle cx="11.5" cy="7.6" r="5.6"/>' +
-    '<rect x="3" y="10.2" width="17.5" height="5.6" rx="2.8"/>';
+    '<rect x="3" y="10.2" width="17.5" height="5.6" rx="2.8"/>' +
+    '</g>';
 
   /** The partly-cloudy sun sits clear of its cloud rather than behind it: at
    *  16px a cutout gap is thinner than a pixel, so an overlap merges the two
    *  shapes into one unreadable blob. */
   var CLOUD_SM =
+    '<g class="wx-cloud-fair">' +
     '<circle cx="13" cy="15.6" r="3.6"/>' +
     '<circle cx="18" cy="15.6" r="4"/>' +
     '<circle cx="15.4" cy="12.4" r="4.4"/>' +
-    '<rect x="9.6" y="15" width="11.6" height="5" rx="2.5"/>';
+    '<rect x="9.6" y="15" width="11.6" height="5" rx="2.5"/>' +
+    '</g>';
 
   /** Falling rain as slanted strokes, not teardrops — a 3px teardrop is a dot.
    *  2.6 units of stroke, not 2: at 18px a 2-unit line lands on 1.5 device
@@ -89,18 +98,19 @@
   var SKY_ICON = {
     clear:
       rays(12, 12, 7.6, 10.4, [0, 45, 90, 135, 180, 225, 270, 315]) +
-      '<circle cx="12" cy="12" r="5.2"/>',
+      '<circle class="wx-sun" cx="12" cy="12" r="5.2"/>',
     // Five rays, not eight: the three the cloud would sit on are the three that
     // cannot be drawn without the two shapes touching.
     partlyCloudy:
       rays(7.4, 7.2, 5.6, 7.8, [45, 90, 135, 180, 225]) +
-      '<circle cx="7.4" cy="7.2" r="4"/>' +
+      '<circle class="wx-sun" cx="7.4" cy="7.2" r="4"/>' +
       CLOUD_SM,
     overcast: CLOUD,
     lightRain: CLOUD + rain([10.4, 15.4], 17.6, 21.8),
     rain: CLOUD + rain([8.4, 12.6, 16.8], 17.4, 22.4),
-    // The bolt is the one glyph carrying a second colour. At this size the
-    // zigzag alone is marginal, so amber does the work the shape cannot.
+    // At this size the zigzag alone is marginal, so amber does the work the
+    // shape cannot — and it is the only amber in the set, so a storm cannot be
+    // mistaken for anything else in the strip.
     storm:
       CLOUD +
       rain([17.4], 17.4, 22.4) +
@@ -128,8 +138,22 @@
     return el;
   }
 
+  /**
+   * What is actually FALLING, which is not the same question as what the sky
+   * looks like: an overcast sky and a clear one both precipitate nothing, and
+   * that is the answer worth printing on its own row.
+   */
+  var PRECIP_LABEL = {
+    clear: "NONE",
+    partlyCloudy: "NONE",
+    overcast: "NONE",
+    lightRain: "LIGHT RAIN",
+    rain: "RAIN",
+    storm: "STORM",
+  };
+
   var mount, headerState;
-  var tempEl, ambientEl, wetEl, nowIconEl, forecastEl;
+  var tempEl, ambientEl, wetEl, precipEl, nowIconEl, forecastEl;
   var cache = {};
 
   /** Coarse rain bucket used to colour a forecast slot's top border. */
@@ -140,6 +164,12 @@
   }
 
   function init(root) {
+    // Every value below is written only when it CHANGES, against this cache.
+    // init() means a new root with nothing on it yet, so the cache has to go
+    // with the old one — carry it over and the first frame writes nothing and
+    // the block sits full of dashes until each value happens to move. A page
+    // load gives a fresh module and hides this; being mounted twice does not.
+    cache = {};
     headerState = root.querySelector('[data-role="track-state"]');
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
@@ -152,25 +182,52 @@
     // meta column, which buys the block a line back as well as a faster read.
     nowIconEl = makeIcon("weather__icon weather__icon--now");
 
+    // The track temperature and its caption travel together, so the number can
+    // be as large as it is without the word "track" having to sit inside it.
+    var lead = document.createElement("div");
+    lead.className = "weather__lead";
+
+    var tempBlock = document.createElement("div");
+    tempBlock.className = "weather__temp-block";
     tempEl = document.createElement("div");
     tempEl.className = "weather__temp";
-    tempEl.innerHTML = '—<small> track</small>';
+    tempEl.textContent = "—";
+    var tempCap = document.createElement("div");
+    tempCap.className = "weather__temp-cap";
+    tempCap.textContent = "TRACK TEMP";
+    tempBlock.appendChild(tempEl);
+    tempBlock.appendChild(tempCap);
 
-    var meta = document.createElement("div");
-    meta.className = "weather__meta";
-    ambientEl = document.createElement("span");
-    ambientEl.textContent = "Air —°";
-    // Tier 1. Whether the track is wet, and how wet, changes tyre choice, brake
-    // points and everything else — it was previously one of three 11px lines.
-    wetEl = document.createElement("span");
-    wetEl.className = "weather__wet is-crit";
-    wetEl.textContent = "Dry";
-    meta.appendChild(ambientEl);
-    meta.appendChild(wetEl);
+    lead.appendChild(nowIconEl);
+    lead.appendChild(tempBlock);
 
-    now.appendChild(nowIconEl);
-    now.appendChild(tempEl);
-    now.appendChild(meta);
+    // The three facts, each named. A label costs width that a driver at speed
+    // does not read — the argument for the old unlabelled lines — but it also
+    // makes the block answerable rather than memorised, which is what was asked
+    // for. Tier 1 is still typographic: CONDITION is the row that changes how
+    // the car is driven, so it is the row that is heavier and the row that
+    // blooms.
+    var facts = document.createElement("div");
+    facts.className = "weather__facts";
+
+    function fact(label, valueClass) {
+      var k = document.createElement("span");
+      k.className = "weather__fact-k";
+      k.textContent = label;
+      var v = document.createElement("span");
+      v.className = "weather__fact-v" + (valueClass ? " " + valueClass : "");
+      v.textContent = "—";
+      facts.appendChild(k);
+      facts.appendChild(v);
+      return v;
+    }
+
+    ambientEl = fact("AIR TEMP", "");
+    wetEl = fact("CONDITION", "weather__wet is-crit");
+    precipEl = fact("PRECIPITATION", "");
+
+    now.appendChild(lead);
+    now.appendChild(facts);
 
     forecastEl = document.createElement("div");
     forecastEl.className = "weather__forecast";
@@ -192,9 +249,9 @@
     }
     if (cache.track !== trackStr) {
       cache.track = trackStr;
-      tempEl.innerHTML = trackStr + "<small> track</small>";
+      tempEl.textContent = trackStr;
     }
-    var airStr = "Air " + fmt.temp(w.ambientTempC);
+    var airStr = fmt.temp(w.ambientTempC);
     if (cache.air !== airStr) { cache.air = airStr; ambientEl.textContent = airStr; }
 
     // Wetness / rain description. The named condition leads when the provider
@@ -207,14 +264,13 @@
     var wetStr;
     if (w.trackCondition) {
       wetStr = w.trackCondition;
-      if (wetPct > 2) wetStr += " " + Math.round(wetPct) + "%";
-      if (rainPct > 2) wetStr += " · rain " + Math.round(rainPct) + "%";
+      if (wetPct > 2) wetStr += " (" + Math.round(wetPct) + "%)";
+      // The trend stays. A track at 30% drying and a track at 30% getting
+      // wetter are opposite calls, and the percentage alone cannot say which.
       if (w.trackTrend === "drying") wetStr += " ▼";
       else if (w.trackTrend === "wetting") wetStr += " ▲";
     } else {
-      wetStr = rainPct > 2 ? "Rain " + Math.round(rainPct) + "%"
-        : wetPct > 2 ? "Wet " + Math.round(wetPct) + "%"
-        : "Dry";
+      wetStr = wetPct > 2 ? "WET (" + Math.round(wetPct) + "%)" : "DRY";
     }
     if (cache.wet !== wetStr) {
       cache.wet = wetStr;
@@ -242,6 +298,29 @@
     // of the signature so a pure sky change (at unchanged rain %) still refreshes
     // the "now" sky label below.
     var slots = w.forecast || [];
+    var nowSlot = slots.length ? slots[0] : null;
+
+    // Precipitation is written HERE, ahead of the signature gate below, and not
+    // down with the icon. Rain intensity moves while the forecast does not, and
+    // the gate only fires when a forecast SLOT changes — behind it, this row
+    // would have frozen at whatever it said when the forecast last shifted.
+    //
+    // It also carries the intensity, which is the only place left that says how
+    // HARD it is raining: CONDITION says how wet the track already is, and the
+    // strip says how likely rain is later. No sky and no intensity is no answer,
+    // and it says so rather than guessing at "NONE".
+    var precipStr;
+    if (nowSlot && PRECIP_LABEL[nowSlot.sky]) {
+      precipStr = PRECIP_LABEL[nowSlot.sky];
+      if (rainPct > 2 && precipStr !== "NONE") precipStr += " " + Math.round(rainPct) + "%";
+    } else {
+      precipStr = rainPct > 2 ? "RAIN " + Math.round(rainPct) + "%" : "—";
+    }
+    if (cache.precip !== precipStr) {
+      cache.precip = precipStr;
+      precipEl.textContent = precipStr;
+    }
+
     var sig = "";
     for (var i = 0; i < slots.length; i++) {
       var fs = slots[i];
@@ -253,7 +332,6 @@
     cache.sig = sig;
 
     // Current sky from the now-slot when present.
-    var nowSlot = slots.length ? slots[0] : null;
     if (nowSlot && cache.sky !== nowSlot.sky) {
       cache.sky = nowSlot.sky;
       setIcon(nowIconEl, nowSlot.sky);
