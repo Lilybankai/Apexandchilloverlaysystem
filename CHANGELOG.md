@@ -4,12 +4,41 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **Tell Apex where the game is.** If Le Mans Ultimate is installed somewhere
+  Steam does not list — another drive, a copied install, a second Steam — the
+  app could not find it on disk, and the result was baffling: live telemetry,
+  the standings, the delta and moving a slider in the garage all worked
+  perfectly, while installing a community setup and writing the key bindings
+  both failed with "LMU install not found". Those are the only things that
+  touch a file; everything else talks to the game over its own connection and
+  never needed a path. **Settings ▸ General ▸ Game folder** now shows where
+  the game was found and lets you point at it yourself when it was not. Pick
+  the folder the game is in — or its UserData folder, or the folder above it;
+  each lands in the right place — and community setups, the key bindings and
+  the telemetry plugin all start working. "Find it automatically" puts it back.
+  The two error messages now say this instead of just "not found".
+
+- **A setup slider that would not send now says so.** Dragging a slider in the
+  Setups tab writes straight to the car. If one of those writes failed the row
+  simply sprang back to its old value with no explanation, and after three
+  failures the tab stopped sending altogether — for the rest of the session,
+  with no way back short of leaving the garage. The macros kept working the
+  whole time, because Apply takes a different route, so it read as "the main
+  sliders are broken". A failed write now tells you what the sim said, and the
+  pause lifts by itself as soon as the sim answers again.
+
+- **Setups work on a profile that has never bound a key.** The setup library
+  looked for the game through its *controls* file, so a fresh profile with no
+  keyboard bindings reported no install and could not save or load anything.
+
 ## 0.99.1-beta.1 — 2026-09-06
 
 ### Added
 
 - **The pit wall in a browser.** The Team tab — both of its screens, My car
-  and Team — now lives at aio.apexandchill.co.uk as well as in the app. Sign
+  and Team — now lives at aio.apexandchillracing.co.uk as well as in the app. Sign
   in there with the same account, on a PC or a tablet, and the board is the
   one you know: the same widgets, the same layouts, dragged and resized the
   same way, saved per device. Nothing runs on the tablet: the app on your

@@ -482,6 +482,12 @@
 .su-staged[data-ready='true'] .su-staged__count {
   color: var(--text-2);
 }
+/* A live slider write that did not reach the sim. Nothing is staged in this
+   state, so the bar is otherwise idle and the line is free to carry the why —
+   a slider springing back with no explanation reads as a broken app. */
+.su-staged[data-error='true'] .su-staged__count {
+  color: var(--warn);
+}
 .su-staged[data-ready='true'] .btn--accent {
   animation: su-apply-pulse 1.6s ease-in-out infinite;
 }

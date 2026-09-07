@@ -143,6 +143,7 @@
   let shownVehId = ''; // whose artwork the Car card currently shows
   let writesFrozen = false;
   let failedWrites = 0;
+  let lastWriteError = ''; // why the last live slider write did not take
 
   const THREE_D_PREF_KEY = 'apex.setup.3d';
 
@@ -307,8 +308,28 @@
         row.paint(settingsMap.get(key), staged.has(key) ? staged.get(key) : null);
       }
     }
-    const wroteOk = failedWrites === 0;
-    if (wroteOk) writesFrozen = false;
+    /*
+     * Thaw the writes on any healthy poll.
+     *
+     * This used to read `failedWrites === 0`, which could never become true
+     * once the burst guard had tripped: three failures set `writesFrozen`,
+     * `writeKey` then returned early for every subsequent slider, so no write
+     * could succeed, so nothing could ever clear the counter. The editor's
+     * sliders went dead for the rest of the session — silently, since a failed
+     * write only repaints the row back to its old value — while the macros
+     * kept working, because Apply goes through `writeBatch`, which this guard
+     * does not gate. That asymmetry is exactly how it was reported: "the
+     * macros send, the main sliders do not".
+     *
+     * The guard is still worth having — it stops a dead sim being machine-
+     * gunned with one request per slider tick — but it has to be a PAUSE, and
+     * a poll coming back connected is the sim saying it is answering again.
+     */
+    if (writesFrozen || failedWrites) {
+      writesFrozen = false;
+      failedWrites = 0;
+      showWriteError('');
+    }
   }
 
   /* ---- sub-tabs ----------------------------------------------------------- */
@@ -587,6 +608,23 @@
     );
   }
 
+  /**
+   * Puts a live-write failure in front of the driver, in the bar that already
+   * reports on Apply. A slider that silently springs back reads as a broken
+   * app with nothing to report; the sim's own words ("not in the garage",
+   * "value out of range") are usually the whole answer.
+   *
+   * Only ever writes into the bar while nothing is staged — a staged batch
+   * owns that line, and a stale write error must not bury "12 settings
+   * staged".
+   */
+  function showWriteError(message) {
+    lastWriteError = message || '';
+    if (staged.size > 0) return;
+    elStagedCount.textContent = lastWriteError || 'Drag a slider to stage changes.';
+    elStaged.setAttribute('data-error', String(Boolean(lastWriteError)));
+  }
+
   async function writeKey(key, value) {
     if (writesFrozen) return;
     markDirtyLocal(key);
@@ -603,6 +641,7 @@
     const row = rowsByKey.get(key);
     if (res && res.ok) {
       failedWrites = 0;
+      showWriteError('');
       if (res.setting) {
         settingsMap.set(key, res.setting);
         if (row) {
@@ -614,6 +653,12 @@
     } else {
       failedWrites += 1;
       if (row) row.paint(settingsMap.get(key), staged.get(key) ?? null);
+      const why = (res && res.error) || 'the sim refused it';
+      showWriteError(
+        failedWrites >= 3
+          ? `Setup changes are not reaching the sim — ${why}. Retrying shortly.`
+          : `That change did not take — ${why}.`,
+      );
       if (failedWrites >= 3) {
         // Something is systematically wrong (on track? sim gone?) — stop
         // machine-gunning failures; the next good poll unfreezes.
@@ -725,13 +770,18 @@
     // The Apply bar never hides — it arms. A control that only appears after
     // an invisible precondition is a control nobody finds.
     elStaged.setAttribute('data-ready', String(staged.size > 0));
+    elStaged.setAttribute('data-error', String(staged.size === 0 && Boolean(lastWriteError)));
     elApply.disabled = staged.size === 0;
     elRevert.disabled = staged.size === 0;
 
     if (staged.size === 0) {
-      elStagedCount.textContent = loadedStage
-        ? `“${loadedStage.name}” already matches the car.`
-        : 'Drag a slider to stage changes.';
+      // A live-write failure outranks the idle hint: the driver just moved a
+      // slider and it did not take, which is the only thing worth saying here.
+      elStagedCount.textContent =
+        lastWriteError ||
+        (loadedStage
+          ? `“${loadedStage.name}” already matches the car.`
+          : 'Drag a slider to stage changes.');
     } else {
       const parts = [];
       if (loadedStage) parts.push(`“${loadedStage.name}” loaded`);

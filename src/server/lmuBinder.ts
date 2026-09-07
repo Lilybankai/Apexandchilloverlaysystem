@@ -224,6 +224,15 @@ export interface BindPlan {
   unbindable: number;
 }
 
+/**
+ * Shown when the game's folder could not be found. Says what to do: the bare
+ * "config not found" left a driver with a plainly running game nothing to act
+ * on.
+ */
+const NO_CONFIG =
+  'Apex could not find your Le Mans Ultimate folder, so there is no controls file to write. ' +
+  'Point it at the folder in Settings → General → Game folder.';
+
 /** Whether Le Mans Ultimate is running right now. */
 export function isLmuRunning(): boolean {
   try {
@@ -318,7 +327,7 @@ const BACKUP_PREFIX = 'keyboard.apex-backup-';
 export function applyLmuBindings(): BindResult {
   const plan = planLmuBindings();
   if (!plan.path) {
-    return { ok: false, error: 'Le Mans Ultimate config not found', written: [] };
+    return { ok: false, error: NO_CONFIG, written: [] };
   }
   if (plan.lmuRunning) {
     return {
@@ -366,7 +375,7 @@ export function applyLmuBindings(): BindResult {
 /** Puts the newest backup back, so this is always undoable. */
 export function restoreLmuBindings(): { ok: boolean; error?: string; from?: string } {
   const path = findKeyboardConfig();
-  if (!path) return { ok: false, error: 'Le Mans Ultimate config not found' };
+  if (!path) return { ok: false, error: NO_CONFIG };
   if (isLmuRunning()) {
     return { ok: false, error: 'Close Le Mans Ultimate first — it would overwrite the restore.' };
   }

@@ -2255,7 +2255,7 @@
       await window.apex.updateSettings({ webRelay: webRelayToggle.checked });
       showToast(
         webRelayToggle.checked
-          ? 'Your car will be sent to aio.apexandchill.co.uk while you drive.'
+          ? 'Your car will be sent to aio.apexandchillracing.co.uk while you drive.'
           : 'Your car will no longer be sent to the web pit wall.',
       );
     });
@@ -2867,6 +2867,137 @@
       void renderPluginStatus();
     });
   }
+
+  // --- Where the game is on disk --------------------------------------------
+  /*
+   * The manual override for LMU's install folder, and the readout of where we
+   * looked.
+   *
+   * This card exists because of a failure mode with no visible cause. The app
+   * reaches the game two completely different ways: over its loopback REST API
+   * (telemetry, standings, the delta, the live garage sliders) and through the
+   * FILE SYSTEM (dropping a community setup into the sim's Settings folder,
+   * writing the missing key bindings into keyboard.json, installing the
+   * shared-memory plugin). The REST half needs nothing but a port and works on
+   * any install anywhere. The file half needs the install's path, which is
+   * inferred from Steam's registry keys and its library list — and on a rig
+   * where those do not name the game, the app looks completely healthy while
+   * exactly two features fail with "LMU install not found".
+   *
+   * So the card leads with what was FOUND, not with a button: a driver whose
+   * detection is fine should be able to read one line and stop, and a driver
+   * whose detection is broken should see which of the two halves is missing
+   * before being asked to go hunting for a folder.
+   */
+  const lmuPathChecks = document.getElementById('lmu-path-checks');
+  const lmuPathStatus = document.getElementById('lmu-path-status');
+  const lmuPathPick = document.getElementById('lmu-path-pick');
+  const lmuPathClear = document.getElementById('lmu-path-clear');
+  const lmuPathRecheck = document.getElementById('lmu-path-recheck');
+
+  /** One "what we found" row: a label, a tick or a cross, and the path. */
+  function lmuPathRow(label, ok, detail) {
+    const li = document.createElement('li');
+    li.className = 'binding-row';
+    const name = document.createElement('span');
+    name.className = 'binding-row__label';
+    name.textContent = label;
+    const state = document.createElement('span');
+    state.className = ok ? 'field__hint' : 'field__hint plugin-check--bad';
+    state.textContent = `${ok ? '✓' : '✗'} ${detail}`;
+    // Paths run long and a truncated one is useless for support; let it wrap
+    // and keep the whole thing on hover.
+    state.title = detail;
+    li.appendChild(name);
+    li.appendChild(state);
+    return li;
+  }
+
+  function paintLmuPaths(report) {
+    if (!lmuPathChecks) return;
+    lmuPathChecks.innerHTML = '';
+    if (!report || report.ok === false) {
+      lmuPathStatus.textContent = (report && report.error) || 'Could not check the game folder.';
+      return;
+    }
+    lmuPathChecks.appendChild(
+      lmuPathRow(
+        'Game folder',
+        Boolean(report.root),
+        report.root || 'not found on this PC',
+      ),
+    );
+    lmuPathChecks.appendChild(
+      lmuPathRow(
+        'Setups + controls',
+        Boolean(report.playerDir),
+        report.playerDir || 'no UserData\\player folder',
+      ),
+    );
+    if (report.chosen) {
+      lmuPathChecks.appendChild(
+        lmuPathRow(
+          'You chose',
+          report.chosenValid,
+          report.chosenValid ? report.chosen : `${report.chosen} — not there any more`,
+        ),
+      );
+    }
+
+    lmuPathClear.hidden = !report.chosen;
+    if (report.found) {
+      lmuPathStatus.textContent = report.chosen
+        ? 'Using the folder you chose. Community setups and key bindings can write.'
+        : 'Found automatically. Nothing to do here.';
+      lmuPathPick.textContent = 'Choose a different folder…';
+      lmuPathPick.className = 'btn btn--ghost btn--sm';
+    } else {
+      lmuPathStatus.textContent =
+        'Le Mans Ultimate was not found. Installing community setups and writing the key ' +
+        'bindings need the game’s folder — everything else works without it. Point the ' +
+        'app at it and both start working.';
+      lmuPathPick.textContent = 'Choose the folder…';
+      lmuPathPick.className = 'btn btn--accent';
+    }
+  }
+
+  async function renderLmuPaths() {
+    if (!lmuPathChecks) return;
+    paintLmuPaths(await window.apex.lmuPaths());
+  }
+
+  if (lmuPathPick) {
+    lmuPathPick.addEventListener('click', async () => {
+      lmuPathPick.disabled = true;
+      const res = await window.apex.lmuPickPath();
+      lmuPathPick.disabled = false;
+      if (res && res.canceled) return;
+      if (res && res.ok === false) {
+        lmuPathStatus.textContent = res.error || 'That folder could not be used.';
+        return;
+      }
+      paintLmuPaths(res);
+      // The two features this unblocks both read the path when they render, so
+      // refresh them here rather than leaving stale "not found" cards behind.
+      void renderLmuBindings();
+      void renderPluginStatus();
+    });
+  }
+  if (lmuPathClear) {
+    lmuPathClear.addEventListener('click', async () => {
+      const res = await window.apex.lmuSetPath('');
+      paintLmuPaths(res);
+      void renderLmuBindings();
+      void renderPluginStatus();
+    });
+  }
+  if (lmuPathRecheck) {
+    lmuPathRecheck.addEventListener('click', () => {
+      lmuPathStatus.textContent = 'Checking…';
+      void renderLmuPaths();
+    });
+  }
+  void renderLmuPaths();
 
   // --- LMU's own controls file ----------------------------------------------
   /*

@@ -47,6 +47,21 @@ contextBridge.exposeInMainWorld('apex', {
   /** Trigger an action now (the per-row Test button). `dir` is ±1 for deltas. */
   actionRun: (actionId, dir) => ipcRenderer.invoke('actions:run', actionId, dir),
 
+  /* ---- Where the game is on disk ---- */
+
+  /*
+   * Everything file-backed needs this and nothing REST-backed does, which is
+   * why a wrong answer here is so confusing: telemetry, standings and garage
+   * edits keep working while community setups and the key bindings fail.
+   */
+
+  /** Where the game was looked for, what was found, and what is in use. */
+  lmuPaths: () => ipcRenderer.invoke('lmu:paths'),
+  /** Open a folder picker and store the choice. Validates before saving. */
+  lmuPickPath: () => ipcRenderer.invoke('lmu:pickPath'),
+  /** Store a typed folder; '' clears it and goes back to auto-detection. */
+  lmuSetPath: (folder) => ipcRenderer.invoke('lmu:setPath', folder),
+
   /* ---- LMU's own controls file ---- */
 
   /** What the overlay would bind in LMU, and what is already bound. */

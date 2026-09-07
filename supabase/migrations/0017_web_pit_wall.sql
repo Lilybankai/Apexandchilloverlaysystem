@@ -1,4 +1,4 @@
--- 0017_web_pit_wall.sql — the pit wall in a browser (aio.apexandchill.co.uk)
+-- 0017_web_pit_wall.sql — the pit wall in a browser (aio.apexandchillracing.co.uk)
 -- -----------------------------------------------------------------------------
 -- Phase 1 of docs/COMPANION-APP-PLAN.md. The web app shows the same two
 -- screens the desktop Team tab has — "My car" and "Team" — but a browser has

@@ -31,7 +31,7 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 /** A resolved key press: a set-1 scancode plus whether it is an extended key. */
@@ -252,6 +252,111 @@ export function dikToScanKey(dik: number): ScanKey | null {
 }
 
 /**
+ * A game folder the driver pointed us at **by hand**, when nothing automatic
+ * found it.
+ *
+ * ## Why a manual escape hatch had to exist
+ * Everything the app does over LMU's REST API works on any install, because
+ * the API is on loopback and knows its own paths. Everything that touches a
+ * FILE — writing a community setup into the sim's `Settings` folder, writing
+ * the missing key bindings into `keyboard.json`, dropping the shared-memory
+ * plugin into `Plugins\` — needs the install's location on disk, and until now
+ * the only ways to find it were the Steam registry keys and the Steam library
+ * list. A driver whose game is not where those say (a second Steam that never
+ * registered, a copied install, a drive Steam no longer lists) gets a very
+ * confusing failure: live telemetry, the standings, the delta and editing the
+ * setup in the garage all work perfectly, while installing a downloaded setup
+ * and binding the controls both fail with "LMU install not found".
+ *
+ * Reported live 2026-09-07 by a tester with the game on `Z:`: telemetry fine,
+ * his own setup changes reaching the car fine (that half is REST), community
+ * setups refusing to install and the key bindings never writing (both file).
+ *
+ * ## The transport
+ * `APEX_LMU_ROOT` — an environment variable rather than a config file, because
+ * this module is deliberately free of any dependency on Electron or on the
+ * app's user-data directory: it is also loaded by the standalone server and by
+ * the scripts in `scripts/`. The desktop app stores the chosen folder in its
+ * settings and pushes it into `process.env` at boot and whenever it changes,
+ * and it is read on EVERY call here (never cached), so a folder picked in the
+ * UI takes effect without a restart.
+ */
+export function lmuRootOverride(): string | null {
+  const raw = process.env.APEX_LMU_ROOT;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/[\\/]+$/, '');
+  return trimmed ? trimmed : null;
+}
+
+/** What a folder has to contain before we will call it an LMU install. */
+function rootMarkers(root: string): { hasExe: boolean; hasPlayer: boolean } {
+  let hasExe = false;
+  let hasPlayer = false;
+  try {
+    hasExe = existsSync(join(root, 'Le Mans Ultimate.exe'));
+  } catch {
+    /* unreadable/offline drive — counts as absent */
+  }
+  try {
+    hasPlayer = existsSync(join(root, 'UserData', 'player'));
+  } catch {
+    /* ditto */
+  }
+  return { hasExe, hasPlayer };
+}
+
+/** True when a folder looks like an LMU install (either marker is enough). */
+export function looksLikeLmuRoot(root: string): boolean {
+  const m = rootMarkers(root);
+  return m.hasExe || m.hasPlayer;
+}
+
+/**
+ * Turns whatever the driver picked in a folder dialog into the game ROOT.
+ *
+ * A file picker is an invitation to land one level off, and every near-miss
+ * here is a plausible thing to choose: the `UserData\player` folder (it is the
+ * one they were told the setups live in), `UserData` itself, the
+ * `steamapps\common` folder above the game, or — if the dialog was left in
+ * file mode — `keyboard.json`. Rejecting those with "that is not an LMU
+ * install" would be technically true and useless, so each is walked to the
+ * root it implies and accepted.
+ *
+ * Returns null when none of them is an install, which is the honest answer for
+ * a folder that simply is not the game.
+ */
+export function normalizeLmuRoot(input: string): string | null {
+  if (typeof input !== 'string') return null;
+  const start = input.trim().replace(/[\\/]+$/, '');
+  if (!start || !isAbsolute(start)) return null;
+
+  const tried = new Set<string>();
+  const candidates: string[] = [];
+  const add = (p: string): void => {
+    if (p && !tried.has(p)) {
+      tried.add(p);
+      candidates.push(p);
+    }
+  };
+
+  add(start);
+  // …\UserData\player  ->  the root two levels up. Also covers a picked FILE
+  // inside it (keyboard.json), whose dirname is that same folder.
+  add(dirname(start)); //  …\UserData  (from a picked file, or from \player)
+  add(dirname(dirname(start)));
+  add(dirname(dirname(dirname(start))));
+  // The other direction: the folder ABOVE the game (steamapps\common, or a
+  // "Games" folder holding it).
+  add(join(start, 'Le Mans Ultimate'));
+  add(join(start, 'steamapps', 'common', 'Le Mans Ultimate'));
+
+  for (const c of candidates) {
+    if (looksLikeLmuRoot(c)) return c;
+  }
+  return null;
+}
+
+/**
  * Steam's real install root(s), from the registry. A Steam installed anywhere
  * but Program Files (D:\Steam and the like) is invisible to path guessing, but
  * its libraryfolders.vdf still knows every library — proven live by a tester
@@ -288,6 +393,10 @@ function steamRootsFromRegistry(): string[] {
  */
 export function candidateLmuRoots(): string[] {
   const out: string[] = [];
+  // The folder the driver picked by hand wins over every guess — it is the one
+  // piece of information here that is not inferred. See lmuRootOverride().
+  const override = lmuRootOverride();
+  if (override) out.push(override);
   // APEX_LMU_USERDATA points at UserData/player, two levels under the root.
   const explicit = process.env.APEX_LMU_USERDATA;
   if (explicit) out.push(join(explicit, '..', '..'));
@@ -335,6 +444,104 @@ export function findKeyboardConfig(): string | null {
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+/**
+ * Locates `<LMU>/UserData/player` — the folder holding `keyboard.json` and the
+ * per-track `Settings` tree the setup library writes into.
+ *
+ * Deliberately NOT derived from {@link findKeyboardConfig}, which is how the
+ * setup library used to reach the same place: that made installing a setup
+ * depend on a *controls* file existing, so a profile that has never had a
+ * keyboard bind lost its setup folder too, for no reason. Both callers want
+ * the player directory; only one of them wants a keyboard.
+ */
+export function findLmuPlayerDir(): string | null {
+  const explicit = process.env.APEX_LMU_USERDATA;
+  if (explicit && existsSync(explicit)) return explicit;
+  for (const root of candidateLmuRoots()) {
+    const dir = join(root, 'UserData', 'player');
+    try {
+      if (existsSync(dir)) return dir;
+    } catch {
+      /* unreadable/offline drive — try the next candidate */
+    }
+  }
+  return null;
+}
+
+/** LMU's per-track setup folder (`<LMU>/UserData/player/Settings`), or null. */
+export function findLmuSettingsDir(): string | null {
+  const player = findLmuPlayerDir();
+  if (!player) return null;
+  const dir = join(player, 'Settings');
+  // A brand-new profile has no Settings folder until the first setup is saved;
+  // the writer creates it, so the PLAYER folder existing is the real test.
+  return dir;
+}
+
+/** One place we looked for the game, and what was actually there. */
+export interface LmuPathCandidate {
+  root: string;
+  /** Where this candidate came from, for a support screenshot. */
+  source: 'chosen' | 'env' | 'steam';
+  hasExe: boolean;
+  hasPlayer: boolean;
+}
+
+/** Everything the "where is the game?" UI needs, in one read. */
+export interface LmuPathReport {
+  /** The folder the driver picked, verbatim, or null when none is set. */
+  chosen: string | null;
+  /** True when that folder still looks like an install (a moved game does not). */
+  chosenValid: boolean;
+  /** The install we would actually use, or null when nothing was found. */
+  root: string | null;
+  playerDir: string | null;
+  settingsDir: string | null;
+  keyboardPath: string | null;
+  /**
+   * True when the two file-backed features can work at all.
+   *
+   * Deliberately NOT called `ok`: this report is handed to the renderer spread
+   * into an IPC envelope that carries its own `ok` for "the call succeeded",
+   * and the two mean opposite things in the case that matters — the game not
+   * being found is a perfectly successful call with a `found: false` answer.
+   * Sharing the name made the spread overwrite the envelope, and the card
+   * rendered "could not check the game folder" for the one driver it exists to
+   * help.
+   */
+  found: boolean;
+  candidates: LmuPathCandidate[];
+}
+
+/**
+ * Reports where the game was looked for and what was found — the readout
+ * behind the "Game folder" card, and the one thing worth asking a driver to
+ * screenshot when setups or bindings will not write.
+ */
+export function describeLmuPaths(): LmuPathReport {
+  const chosen = lmuRootOverride();
+  const envUserData = process.env.APEX_LMU_USERDATA;
+  const candidates: LmuPathCandidate[] = [];
+  for (const root of candidateLmuRoots()) {
+    if (candidates.some((c) => c.root === root)) continue;
+    const source: LmuPathCandidate['source'] =
+      chosen && root === chosen ? 'chosen' : envUserData && candidates.length === 0 ? 'env' : 'steam';
+    candidates.push({ root, source, ...rootMarkers(root) });
+  }
+  const playerDir = findLmuPlayerDir();
+  const winner = candidates.find((c) => c.hasPlayer) ?? candidates.find((c) => c.hasExe) ?? null;
+  return {
+    chosen,
+    chosenValid: !!chosen && looksLikeLmuRoot(chosen),
+    root: winner ? winner.root : null,
+    playerDir,
+    settingsDir: findLmuSettingsDir(),
+    keyboardPath: findKeyboardConfig(),
+    found: !!playerDir,
+    candidates,
+  };
 }
 
 /*

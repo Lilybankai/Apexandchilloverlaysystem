@@ -2593,6 +2593,42 @@
           </div>
         </section>
 
+        <!-- ------------------ GAME FOLDER ------------------ -->
+        <!-- Second, because it is the other half of the same problem and it
+             fails in a way that looks like nothing is wrong at all: everything
+             the app does over LMU's loopback API — telemetry, standings, the
+             delta, moving a slider in the garage — works no matter where the
+             game is installed. Only the things that touch a FILE need this,
+             so when it is wrong the symptom is "community setups will not
+             install and the key bindings never write", with a healthy-looking
+             app all around it. Reported live by a tester with the game on Z:. -->
+        <section class="card" id="lmu-path-card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-folder" /></svg>Game folder
+            </h2>
+            <p class="card__desc">
+              Apex normally finds Le Mans Ultimate through Steam. If your install is
+              somewhere Steam does not list it, installing community setups and writing
+              the key bindings will fail while everything else keeps working — point
+              the app at the folder here and both start working again.
+            </p>
+          </div>
+          <ul class="binding-list" id="lmu-path-checks"><!-- rows injected by JS --></ul>
+          <div class="lmu-bind__actions">
+            <button class="btn btn--accent" id="lmu-path-pick" type="button">
+              Choose the folder…
+            </button>
+            <button class="btn btn--ghost btn--sm" id="lmu-path-clear" type="button" hidden>
+              Find it automatically
+            </button>
+            <button class="btn btn--ghost btn--sm" id="lmu-path-recheck" type="button">
+              Re-check
+            </button>
+            <span class="field__hint" id="lmu-path-status">Checking…</span>
+          </div>
+        </section>
+
         <div class="two-col">
           <!-- ---------------------- UPDATES ---------------------- -->
           <!-- League staff only, like the Admin tab: hidden until admin:whoami
@@ -2709,7 +2745,7 @@
                   <span class="switch__track"><span class="switch__thumb"></span></span>
                 </span>
                 <span class="field__hint">
-                  Sends your car to <strong>aio.apexandchill.co.uk</strong> while
+                  Sends your car to <strong>aio.apexandchillracing.co.uk</strong> while
                   you drive, so the Team board can be opened in a browser on a
                   tablet or another PC — sign in there with this account. Off,
                   the site only shows a team you are in.

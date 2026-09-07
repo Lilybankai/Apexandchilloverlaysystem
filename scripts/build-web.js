@@ -1,5 +1,5 @@
 /**
- * scripts/build-web.js — assemble the web pit wall (aio.apexandchill.co.uk).
+ * scripts/build-web.js — assemble the web pit wall (aio.apexandchillracing.co.uk).
  * -----------------------------------------------------------------------------
  * The web app is the desktop's Team tab and account screens, served over
  * https. "Looks the same" is not a goal here, it is a build rule: every file

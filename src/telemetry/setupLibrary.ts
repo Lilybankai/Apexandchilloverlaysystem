@@ -92,6 +92,19 @@ function sanitizeName(name: string): string {
   );
 }
 
+/**
+ * What a driver is told when the game's folder is unknown.
+ *
+ * Names the fix, because the bare "LMU install not found" was actively
+ * misleading: the sim is plainly running — its live data is on screen behind
+ * this very panel — so being told it is "not found" reads as a bug rather
+ * than as a path the app could not guess. See
+ * server/lmuKeybinds.lmuRootOverride().
+ */
+const NO_INSTALL =
+  'Apex could not find your Le Mans Ultimate folder, so it cannot write the setup file into ' +
+  'the game. Point it at the folder in Settings → General → Game folder.';
+
 export class SetupLibrary {
   private readonly filesDir: string;
   private readonly indexFile: string;
@@ -160,7 +173,7 @@ export class SetupLibrary {
     color?: string;
     notes?: string;
   }): Promise<SetupLibraryResult> {
-    if (!this.settingsDir) return { ok: false, error: 'LMU install not found' };
+    if (!this.settingsDir) return { ok: false, error: NO_INSTALL };
     const folder = await this.controller.currentTrackFolder();
     if (!folder) return { ok: false, error: 'not in a garage (no active track folder)' };
 
@@ -296,7 +309,7 @@ export class SetupLibrary {
     name: string,
     trackFolder: string,
   ): SetupLibraryResult & { inGameName?: string; trackFolder?: string } {
-    if (!this.settingsDir) return { ok: false, error: 'LMU install not found' };
+    if (!this.settingsDir) return { ok: false, error: NO_INSTALL };
     if (!trackFolder) return { ok: false, error: 'no track folder — enter the garage first' };
     const dir = path.join(this.settingsDir, trackFolder);
     try {

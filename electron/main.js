@@ -242,6 +242,21 @@ function defaultSettings() {
     forceSimulator: false,
     provider: 'lmu', // 'lmu' | 'rf2' | 'simulator'
     lmuApiPort: 6397,
+    /*
+     * The game's folder on disk, when the driver has had to point at it.
+     *
+     * Empty means "find it yourself", which is right for almost everyone: the
+     * Steam registry keys and libraryfolders.vdf cover a normal install on any
+     * drive. What they do not cover is an install Steam no longer lists — a
+     * copied game folder, a second Steam that never registered, a drive that
+     * was re-lettered — and the failure that causes is genuinely baffling,
+     * because only the FILE half of the app breaks: telemetry, standings, the
+     * delta and editing the setup in the garage all go over LMU's loopback API
+     * and keep working perfectly, while installing a community setup and
+     * writing the key bindings both fail with "LMU install not found".
+     * See server/lmuKeybinds.lmuRootOverride().
+     */
+    lmuRoot: '',
     enabledOverlays,
     // In-game display: overlays rendered over the sim itself (transparent
     // click-through window) instead of / as well as OBS Browser Sources.
@@ -481,7 +496,7 @@ function defaultSettings() {
      */
     launchOnStartup: false,
     // Web pit wall: publish my own car to the cloud while I drive, so the
-    // Team board can be opened in a browser (aio.apexandchill.co.uk) on a
+    // Team board can be opened in a browser (aio.apexandchillracing.co.uk) on a
     // tablet or second PC signed in as this account. Same 1 Hz beat and the
     // same payload as the team relay; on by default because the page is
     // useless without it and the switch is the first thing support would ask
@@ -639,6 +654,7 @@ function loadSettings() {
         ? stored.provider
         : defaults.provider,
     lmuApiPort: clamp(stored.lmuApiPort, MIN_PORT, MAX_PORT, defaults.lmuApiPort),
+    lmuRoot: typeof stored.lmuRoot === 'string' ? stored.lmuRoot.trim() : defaults.lmuRoot,
     enabledOverlays,
     ingameEnabled:
       typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
@@ -819,6 +835,29 @@ function saveSettings(settings) {
   } catch (err) {
     console.error('[app] failed to save settings:', err.message);
   }
+  publishLmuRoot(settings);
+}
+
+/**
+ * Pushes the hand-picked game folder into the environment, where the path
+ * finder reads it.
+ *
+ * An environment variable, and not a settings import, because
+ * `dist/server/lmuKeybinds` is loaded by three things: this app, the
+ * standalone `npm start` server, and the scripts in `scripts/` — none of which
+ * should have to know where Electron keeps its user data. Everything runs in
+ * THIS process (the telemetry server is required in-process, not forked), and
+ * the finder re-reads the variable on every call, so a folder picked in the UI
+ * takes effect on the next slider or Apply without a restart.
+ *
+ * An empty setting DELETES the variable rather than setting it to '', so
+ * "clear it and let the app find the game again" really does go back to plain
+ * auto-detection.
+ */
+function publishLmuRoot(settings) {
+  const root = settings && typeof settings.lmuRoot === 'string' ? settings.lmuRoot.trim() : '';
+  if (root) process.env.APEX_LMU_ROOT = root;
+  else delete process.env.APEX_LMU_ROOT;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3018,20 +3057,53 @@ function registerIpc() {
    * main already owns lapLog, and freezing the lap into the entry at save
    * time would show a stale best forever after.
    */
+  /**
+   * The path finder. Separate from the binder and the plugin installer because
+   * all three ask it the same question — where is the game? — and the answer
+   * has to be one answer.
+   */
+  const lmuPaths = () => {
+    try {
+      return require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
+    } catch {
+      return null;
+    }
+  };
+
   let setupLibrary = null;
   const getSetupLibrary = () => {
     const controller = getSetupController();
-    if (!setupLibrary || setupLibrary.__controller !== controller) {
+    const kb = lmuPaths();
+    /*
+     * The sim's own setup folder, straight from the player directory.
+     *
+     * This used to be derived from `findKeyboardConfig()` — `dirname` of
+     * keyboard.json plus `Settings` — which quietly made installing a setup
+     * depend on a CONTROLS file existing, and left the whole library inert on
+     * any profile that had never bound a key. `findLmuSettingsDir()` asks the
+     * question that is actually being asked.
+     *
+     * Not existence-checked either: LMU creates `Settings` on the first setup
+     * it saves, so a fresh profile legitimately has a player folder and no
+     * Settings folder, and `writeIntoSim` mkdirs the track folder anyway.
+     * Requiring it to exist turned that into "LMU install not found".
+     */
+    const settingsDir = kb ? kb.findLmuSettingsDir() : null;
+    if (
+      !setupLibrary ||
+      setupLibrary.__controller !== controller ||
+      setupLibrary.__settingsDir !== settingsDir
+    ) {
       const lib = require(path.join(__dirname, '..', 'dist', 'telemetry', 'setupLibrary.js'));
-      const kb = require(path.join(__dirname, '..', 'dist', 'server', 'lmuKeybinds.js'));
-      const kbPath = kb.findKeyboardConfig();
-      const settingsDir = kbPath ? path.join(path.dirname(kbPath), 'Settings') : null;
       setupLibrary = new lib.SetupLibrary(
         path.join(app.getPath('userData'), 'setups'),
         controller,
-        settingsDir && fs.existsSync(settingsDir) ? settingsDir : null,
+        settingsDir,
       );
       setupLibrary.__controller = controller;
+      // Cached alongside the controller so a folder picked in Settings takes
+      // effect on the next Get/Load, with no restart and no stale null.
+      setupLibrary.__settingsDir = settingsDir;
     }
     return setupLibrary;
   };
@@ -3892,6 +3964,72 @@ function registerIpc() {
       return null;
     }
   };
+
+  ipcMain.handle('lmu:paths', () => {
+    const mod = lmuPaths();
+    if (!mod) return { ok: false, error: 'path finder unavailable (build not present)' };
+    try {
+      return { ok: true, ...mod.describeLmuPaths() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /**
+   * "Tell it where to look" — the folder picker behind the Game folder card.
+   *
+   * Validated on the way in rather than trusted, because every near-miss in a
+   * folder dialog is a plausible thing to pick (`UserData\player` most of all,
+   * since that is the folder the setup docs name). `normalizeLmuRoot` walks
+   * each of them to the install root and only refuses a folder that genuinely
+   * is not the game — at which point saying so beats storing a path that will
+   * fail silently later.
+   */
+  ipcMain.handle('lmu:pickPath', async () => {
+    const mod = lmuPaths();
+    if (!mod) return { ok: false, error: 'path finder unavailable (build not present)' };
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Where is Le Mans Ultimate installed?',
+      properties: ['openDirectory'],
+      message: 'Pick the folder containing "Le Mans Ultimate.exe".',
+    });
+    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    return applyLmuRoot(mod, res.filePaths[0]);
+  });
+
+  /** The typed-path route, for a driver who would rather paste than browse. */
+  ipcMain.handle('lmu:setPath', (_evt, folder) => {
+    const mod = lmuPaths();
+    if (!mod) return { ok: false, error: 'path finder unavailable (build not present)' };
+    if (typeof folder !== 'string' || !folder.trim()) {
+      // The explicit "go back to finding it yourself" case.
+      const settings = loadSettings();
+      saveSettings({ ...settings, lmuRoot: '' });
+      setupLibrary = null;
+      return { ok: true, cleared: true, ...mod.describeLmuPaths() };
+    }
+    return applyLmuRoot(mod, folder);
+  });
+
+  /** Shared tail of both routes: validate, store, republish, re-read. */
+  function applyLmuRoot(mod, folder) {
+    const root = mod.normalizeLmuRoot(folder);
+    if (!root) {
+      return {
+        ok: false,
+        error:
+          `That folder does not look like a Le Mans Ultimate install — nothing named ` +
+          `"Le Mans Ultimate.exe" and no UserData\player inside it. Pick the folder the ` +
+          `game itself is in (the one Steam opens with "Browse local files").`,
+      };
+    }
+    const settings = loadSettings();
+    saveSettings({ ...settings, lmuRoot: root }); // saveSettings republishes the env var
+    // The library caches its settings folder; drop it so the next Get/Load
+    // builds against the folder just chosen.
+    setupLibrary = null;
+    return { ok: true, ...mod.describeLmuPaths() };
+  }
 
   ipcMain.handle('lmuBind:plan', () => {
     const mod = lmuBinder();
@@ -4846,6 +4984,10 @@ if (!hasSingleInstanceLock) {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return; // a copy is already running; this one is on its way out
+  // Before anything can look for the game: a hand-picked folder is only known
+  // to the path finder through the environment, and both the setup library and
+  // the binder read it the moment the panel opens.
+  publishLmuRoot(loadSettings());
   // First thing up, so it is watching before any of the suspects exist. Every
   // overlay is a renderer fed from here, so a main-thread block freezes all of
   // them at once and then lets them snap back — the "froze and then refreshed"

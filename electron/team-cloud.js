@@ -16,7 +16,7 @@
  *      only frames carrying tyres are worth relaying.
  *      Since migration `web_pit_wall` (2026-09-07) the same call also writes
  *      the driver's OWN row (public.driver_relay), team or no team, so the
- *      web pit wall at aio.apexandchill.co.uk can show "My car" in a browser
+ *      web pit wall at aio.apexandchillracing.co.uk can show "My car" in a browser
  *      — the Settings ▸ Application switch (`webRelay`) turns that half off.
  *   3. **Reader** — while the Team tab is open in "Team" view, poll
  *      team_relay_read every READ_MS and hand the panel the active source:
