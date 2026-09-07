@@ -418,6 +418,30 @@ function squareMap(rise) {
 }
 
 {
+  // Dragging a stretch out has to be visible while it is being dragged: a
+  // selection you only see once you let go is a guess, not a gesture.
+  const plain = fakeCanvas(800, 400);
+  CHARTS.drawChannels(plain.canvas, chans(200), CHARTS.channelBands({}), {});
+  const picking = fakeCanvas(800, 400);
+  const geom = CHARTS.drawChannels(picking.canvas, chans(200), CHARTS.channelBands({}), {
+    select: [0.3, 0.55],
+  });
+  check('the stretch being dragged out is drawn',
+    picking.calls.length > plain.calls.length);
+  check('with an edge at each end',
+    picking.calls.filter(([op, , y]) => op === 'moveTo' && Math.abs(y - geom.top) < 1).length
+    >= 2);
+  check('a backwards drag is the same stretch as a forwards one',
+    CHARTS.drawChannels(fakeCanvas(800, 400).canvas, chans(200), CHARTS.channelBands({}), {
+      select: [0.55, 0.3],
+    }) !== null);
+  check('a selection outside the window does not paint outside it',
+    CHARTS.drawChannels(fakeCanvas(800, 400).canvas, chans(200), CHARTS.channelBands({}), {
+      window: [0.6, 0.8], select: [0.1, 0.2],
+    }) !== null);
+}
+
+{
   // The delta band only exists when there is a delta to draw.
   const plain = CHARTS.channelBands({});
   const withDelta = CHARTS.channelBands({ delta: true });

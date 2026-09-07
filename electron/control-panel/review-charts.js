@@ -563,6 +563,27 @@
       }
     }
 
+    // The stretch being dragged out, under the cursor and over everything
+    // else: it is a gesture in progress, so it has to be visible on top of the
+    // traces it is being drawn across, and gone the moment the mouse comes up.
+    if (Array.isArray(o.select) && o.select.length === 2) {
+      const a = Math.max(wFrom, Math.min(o.select[0], o.select[1]));
+      const b = Math.min(wTo, Math.max(o.select[0], o.select[1]));
+      if (b > a) {
+        ctx.fillStyle = 'rgba(38,187,244,0.13)';
+        ctx.fillRect(px(a), top, px(b) - px(a), bottom - top);
+        ctx.strokeStyle = 'rgba(38,187,244,0.55)';
+        ctx.lineWidth = 1;
+        for (const edge of [a, b]) {
+          const ex = Math.round(px(edge)) + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(ex, top);
+          ctx.lineTo(ex, bottom);
+          ctx.stroke();
+        }
+      }
+    }
+
     // The cursor, last, over everything.
     if (typeof o.cursorD === 'number' && o.cursorD >= 0 && inWindow(o.cursorD)) {
       const cx = Math.round(px(o.cursorD)) + 0.5;

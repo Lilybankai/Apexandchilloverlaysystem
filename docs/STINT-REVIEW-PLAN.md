@@ -514,6 +514,15 @@ before you could say what to compare it with, when the decision is made while
 reading the column of times. The picker stays as the way to *change* the
 reference, and writes back to the session so the two never disagree.
 
+**The charts answer the same gestures as the map.** Clicking the road on the
+map moved the view to it; clicking the trace did nothing. Now a click on the
+charts PINS a sample — the map marker stays on it after the pointer has gone,
+which is what makes it possible to look at the corner instead of at the chart —
+and from the whole lap it takes the map there too. Dragging across the charts
+picks out a stretch of road and fills them with it, drawn as it is dragged;
+shift-drag keeps the pan. Leaving the charts falls back to the held point
+rather than to nothing.
+
 **A big map.** Zoomed into a corner, a 390 px map beside the charts is too
 small to read the line on — which is the one thing it is there for. One button
 throws the circuit full width under the charts at 16:9, with the readings

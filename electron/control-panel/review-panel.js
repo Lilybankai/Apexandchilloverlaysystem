@@ -722,7 +722,8 @@
           ${cell('V-max', `${speedOf(d.vMaxKph)} <u>${speedUnitLabel()}</u>`)}
           ${cell('Samples', String(d.count))}
           ${cell('Measured', `${fix(d.lapSec, 3)}<u>s</u>`)}
-          <span class="rv-read__hint">Move across the charts to read the lap · scroll to zoom</span>
+          <span class="rv-read__hint">Move to read · click to hold a point on the map ·
+            drag across a section to zoom it · scroll to zoom</span>
         </div>`;
     }
 
@@ -733,7 +734,7 @@
     // delta was built on this lap's own grid — see lapDetail.deltaTrace.
     const gapSec = view.delta && known(view.delta.dt[i]) ? view.delta.dt[i] : null;
     return `
-      <div class="rv-read">
+      <div class="rv-read"${view.pin !== null && view.pin !== undefined ? ' data-pinned="true"' : ''}>
         ${gapSec === null ? '' : cell('Delta', `${fmtSec(gapSec)}<u>s</u>`, deltaBand(gapSec))}
         ${cell('Distance', `${Math.round(metres)}<u>m</u>`)}
         ${cell('Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
@@ -744,6 +745,9 @@
         ${cell('Steering', steer === null ? dash
           : `${Math.abs(Math.round(steer * 100))}<u>${steer > 0.005 ? 'R' : steer < -0.005 ? 'L' : ''}</u>`)}
         ${cell('G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
+        ${view.pin === null || view.pin === undefined ? '' : `
+        <button type="button" class="rv-read__pin" data-unpin
+                title="Stop holding this point">held · release</button>`}
       </div>`;
   }
 
@@ -979,6 +983,7 @@
           lengthM: view.lengthM,
           cursorD,
           window: view.window,
+          select: view.select,
           vs: view.vs ? view.vs.channels : null,
           delta: view.delta,
           micro: view.micro,
@@ -1042,15 +1047,30 @@
       return Math.min(b, Math.max(a, a + Math.min(1, Math.max(0, f)) * (b - a)));
     };
 
+    /** Far enough from where the button went down to be a drag, not a click. */
+    const DRAG_PX = 4;
+
     const onMove = (evt) => {
       if (!geom) return;
       if (drag) {
-        // Panning: the road under the pointer stays under the pointer.
-        const per = (drag.to - drag.from) / Math.max(1, geom.x1 - geom.x0);
-        const span = drag.to - drag.from;
-        const from = Math.max(0, Math.min(1 - span, drag.from + (drag.x - evt.clientX) * per));
-        setWindow(from, from + span);
-        return;
+        const moved = Math.abs(evt.clientX - drag.x) > DRAG_PX;
+        if (moved) drag.moved = true;
+        if (drag.pan) {
+          // Panning: the road under the pointer stays under the pointer.
+          const span = drag.to - drag.from;
+          const per = span / Math.max(1, geom.x1 - geom.x0);
+          const from = Math.max(0, Math.min(1 - span, drag.from + (drag.x - evt.clientX) * per));
+          setWindow(from, from + span);
+          return;
+        }
+        if (drag.moved) {
+          // Dragging out a stretch of road to zoom to. Shown as it is drawn,
+          // because a selection you cannot see until you let go is a guess.
+          view.select = [drag.d, distanceAtX(evt.clientX)];
+          view.cursor = indexAt(view.select[1]);
+          repaint();
+          return;
+        }
       }
       const next = indexAt(distanceAtX(evt.clientX));
       if (next === view.cursor) return;
@@ -1058,8 +1078,10 @@
       repaint();
     };
     const onLeave = () => {
-      if (view.cursor === null) return;
-      view.cursor = null;
+      // Back to the held point, not to nothing: that is what holding one is
+      // for — the map keeps showing the corner while you read the sheet.
+      if (view.cursor === view.pin) return;
+      view.cursor = view.pin;
       repaint();
     };
 
@@ -1073,13 +1095,48 @@
 
     let drag = null;
     const onDown = (evt) => {
-      if (view.window[1] - view.window[0] >= 0.999) return;
-      drag = { x: evt.clientX, from: view.window[0], to: view.window[1] };
-      canvas.setAttribute('data-drag', 'true');
+      if (!geom) return;
+      const zoomed = view.window[1] - view.window[0] < 0.999;
+      drag = {
+        x: evt.clientX,
+        d: distanceAtX(evt.clientX),
+        from: view.window[0],
+        to: view.window[1],
+        moved: false,
+        // Shift pans, and only once there is somewhere to pan to. Plain drag
+        // is the one a driver reaches for first, so it gets the gesture that
+        // does the useful thing: pick out a corner and fill the charts with it.
+        pan: evt.shiftKey && zoomed,
+      };
+      canvas.setAttribute('data-drag', drag.pan ? 'pan' : 'select');
+      evt.preventDefault();
     };
-    const onUp = () => {
+
+    const onUp = (evt) => {
+      if (!drag) return;
+      const was = drag;
       drag = null;
       canvas.removeAttribute('data-drag');
+      view.select = null;
+      if (was.pan) { repaint(); return; }
+
+      if (!was.moved) {
+        // A click holds this point: the map marker stays on it after the
+        // pointer has gone, which is what makes it possible to look at the
+        // corner rather than at the chart.
+        view.pin = indexAt(was.d);
+        view.cursor = view.pin;
+        // From the whole lap it also takes the map TO that corner, which is
+        // the useful thing to do with a click on 5 km of road. Already zoomed,
+        // it holds and nothing moves — recentring under every click would make
+        // the view feel like it was being dragged out from under the pointer.
+        if (was.to - was.from >= 0.999) focusOn(was.d);
+        else repaint();
+        return;
+      }
+
+      const to = distanceAtX(evt && evt.clientX !== undefined ? evt.clientX : was.x);
+      setWindow(Math.min(was.d, to), Math.max(was.d, to));
     };
 
     const onResize = () => repaint();
@@ -1100,7 +1157,8 @@
         view.mapGeom, evt.clientX - box.left, evt.clientY - box.top,
       );
       if (dd === null) return;
-      view.cursor = indexAt(dd);
+      view.pin = indexAt(dd);
+      view.cursor = view.pin;
       focusOn(dd);
     };
     const onMapWheel = (evt) => {
@@ -1159,6 +1217,13 @@
       map: null,
       mapGeom: null,
       cursor: null,
+      // The sample the map is held on. The scrub cursor follows the pointer and
+      // is gone the moment it leaves the charts, which is right for reading a
+      // lap and useless for studying one point of it — so a click PINS a
+      // sample, and leaving the charts falls back to that rather than to
+      // nothing.
+      pin: null,
+      select: null,
       lengthM: 0,
       window: held,
       elevation: 0,
@@ -1604,6 +1669,13 @@
           closeLap();
           return;
         }
+        if (evt.target.closest('[data-unpin]') && lapView) {
+          lapView.pin = null;
+          lapView.cursor = null;
+          if (lapView.repaint) lapView.repaint();
+          return;
+        }
+
         // Choosing what to measure against, from the sheet. Checked before
         // the row itself, because the button sits inside a clickable row and
         // "compare against this" must not also mean "open this".

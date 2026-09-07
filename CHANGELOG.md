@@ -25,6 +25,17 @@
   after you have opened one of them. The picker inside the lap view still
   works, and now keeps the session's choice in step with it.
 
+- **Click the trace, hold the corner.** Click anywhere on the channel charts
+  and the map goes to that point and STAYS there — the marker used to follow
+  your pointer and vanish the moment it left the charts, which is fine for
+  skimming a lap and useless for studying one corner of it. From the whole lap
+  a click also takes the map to that stretch of road; already zoomed in, it
+  just holds. A pill in the readout says the point is held, and lets it go.
+
+- **Drag across a section to zoom it.** Sweep the pointer across the charts and
+  that stretch of road fills them, with the selection drawn as you make it.
+  Shift-drag still pans once you are zoomed in.
+
 - **Big map.** The circuit can take the full width under the charts instead of
   sitting beside them, which is what makes a corner at full zoom readable. One
   button on the lap's toolbar, remembered per machine.

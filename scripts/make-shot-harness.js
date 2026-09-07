@@ -88,16 +88,22 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // idle state. A real mousemove, so it goes through the same handler a
     // driver does.
     const scrub = () => {
-      const at = Number(new URLSearchParams(location.search).get('scrub'));
+      const q3 = new URLSearchParams(location.search);
+      const at = Number(q3.get('scrub'));
       if (!Number.isFinite(at) || at < 0 || at > 1) return;
       const canvas = document.querySelector('.rv-chan canvas');
       if (!canvas) return;
       const box = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new MouseEvent('mousemove', {
-        bubbles: true,
-        clientX: box.left + 46 + (box.width - 54) * at,
-        clientY: box.top + box.height / 2,
-      }));
+      const x = box.left + 46 + (box.width - 54) * at;
+      const y = box.top + box.height / 2;
+      canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
+      // ?hold=1 clicks there as well, which is the gesture that pins the map
+      // to that point — mousedown then mouseup, because that is what the panel
+      // listens for, and a synthetic click event alone would prove nothing.
+      if (!q3.get('hold')) return;
+      canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
+      canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
     };
     // ?vs=1 then picks the first lap in the comparison list, so the delta
     // band, the second line on the map and the micro-sector chips are all in
@@ -480,4 +486,4 @@ fs.writeFileSync(
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
-console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34]');
+console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');

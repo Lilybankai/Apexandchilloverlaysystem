@@ -1352,3 +1352,29 @@
 .rv-refbar__time { font-family: var(--font-mono); color: var(--text-2); }
 .rv-refbar__note { font-size: 11.5px; color: var(--text-3); }
 .rv-refbar [data-refclear] { margin-left: auto; }
+
+/* ---- the gestures on the charts ---------------------------------------- */
+
+/* Drag picks out a stretch of road; shift-drag pans once there is somewhere
+   to pan to. The pointer says which is happening before the mouse moves. */
+.rv-chan canvas[data-drag='select'] { cursor: col-resize; }
+.rv-chan canvas[data-drag='pan'] { cursor: grabbing; }
+
+/* A held point: the map keeps showing it after the pointer has left the
+   charts, so there has to be something on screen saying it is held and how to
+   let it go. */
+.rv-read__pin {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(38, 187, 244, 0.1);
+  border: 1px solid rgba(38, 187, 244, 0.35);
+  border-radius: 999px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.rv-read__pin:hover { background: rgba(38, 187, 244, 0.18); }
+.rv-read[data-pinned='true'] { border-color: rgba(38, 187, 244, 0.28); }
