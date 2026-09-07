@@ -640,16 +640,22 @@
    */
   const TILT = 0.55;
   /**
-   * The lift given to the full elevation range, as a share of planar width.
+   * The lift given to the full elevation range, as a share of the CANVAS
+   * HEIGHT — in pixels, not in metres.
    *
-   * Higher than the in-car map's 0.16, and capped higher too. That map is
-   * glanced at mid-corner and must not turn a circuit into a sculpture; this
-   * one is studied after the session, where the whole reason a driver is
-   * looking at a corner in profile is to see whether the road fell away
-   * underneath them.
+   * The in-car map defines its lift as a share of the circuit's width, which
+   * is right for a map that is always drawn whole in a box of one shape. This
+   * one is zoomed and resized, and a lift defined in world units scales with
+   * both: Barcelona's 30 m rise became a 230 px curtain in the big map at
+   * 1.5x and a 1 300 px one at 9x, a cliff that hid the road it was meant to
+   * be explaining. Defined against the screen, the hill is always the same
+   * visible size — tall enough to read, never taller than the map.
    */
-  const ELEV_SHARE = 0.22;
-  /** Ceiling on that exaggeration, so a hilly circuit is not drawn as a wall. */
+  const LIFT_SHARE = 0.2;
+  /**
+   * Ceiling on the exaggeration in world terms, so a nearly flat circuit in a
+   * tall box is not given a mountain to fill the space with.
+   */
   const ELEV_MAX_GAIN = 8;
   /** The light, in view space: above, to the left, tipped toward the viewer. */
   const LIGHT = [-0.45, 0.3, 0.84];
@@ -731,7 +737,11 @@
   function buildRibbon(map, w, h, zoom, focus) {
     const all = map && Array.isArray(map.points) ? map.points : [];
     if (all.length < 8) return null;
-    const step = Math.max(1, Math.floor(all.length / TARGET_SEGMENTS));
+    const z = zoom > 1 ? zoom : 1;
+    // Whole, the circuit is a few hundred segments; zoomed, the same segments
+    // are metres long on screen and a hairpin turns into a polygon, so the
+    // path is decimated less the closer it is looked at.
+    const step = Math.max(1, Math.floor(all.length / (TARGET_SEGMENTS * Math.min(3, z))));
     const pts = [];
     for (let i = 0; i < all.length; i += step) pts.push(all[i]);
     const n = pts.length;
@@ -754,13 +764,10 @@
       if (e > maxY) maxY = e;
     }
     const rise = maxY - minY;
-    // Real circuits move ±30 m over a 1.5 km footprint, which is under 2% of
-    // the map's width and invisible at true scale. So the lift is a fixed share
-    // of the width, capped — Spa's hill is unmistakable and a flat circuit
-    // stays flat rather than being given terrain it does not have.
-    const gain = rise > 0.5 ? Math.min(ELEV_MAX_GAIN, (ELEV_SHARE * (maxU - minU)) / rise) : 0;
 
-    // The road's two edges, `half` metres either side of the path.
+    // The road's two edges, `half` metres either side of the path — first
+    // FLAT, because the fit has to be known before the lift can be, and the
+    // lift is what the fit has to leave room for.
     const half = Math.max(map.halfWidthM > 0 ? map.halfWidthM : 6, 4);
     const rails = new Array(n);
     let bMinX = Infinity;
@@ -777,33 +784,51 @@
       const nx = (tz / len) * half;
       const nz = (-tx / len) * half;
       const e = typeof p[2] === 'number' && Number.isFinite(p[2]) ? p[2] : minY;
-      const lift = (e - minY) * gain;
       const lu = viewU(p[0] + nx, p[1] + nz, ca, sa);
       const lv = viewV(p[0] + nx, p[1] + nz, ca, sa);
       const ru = viewU(p[0] - nx, p[1] - nz, ca, sa);
       const rv = viewV(p[0] - nx, p[1] - nz, ca, sa);
-      const flY = lv * TILT;
-      const frY = rv * TILT;
-      rails[i] = {
-        lu, lv, ru, rv, lift,
-        lx: lu, ly: flY - lift, rx: ru, ry: frY - lift, fly: flY, fry: frY,
-        // Higher ground sorts as nearer: where a circuit crosses itself the two
-        // roads share a footprint, so `v` alone is a coin flip between the
-        // bridge and the road under it.
-        depth: (lv + rv) / 2 + lift * TILT,
-      };
+      rails[i] = { lu, lv, ru, rv, e, fly: lv * TILT, fry: rv * TILT };
       bMinX = Math.min(bMinX, lu, ru);
       bMaxX = Math.max(bMaxX, lu, ru);
-      bMinY = Math.min(bMinY, flY - lift, frY - lift);
-      bMaxY = Math.max(bMaxY, flY, frY);
+      bMinY = Math.min(bMinY, rails[i].fly, rails[i].fry);
+      bMaxY = Math.max(bMaxY, rails[i].fly, rails[i].fry);
     }
 
+    // The fit, from the flat footprint, with the top LIFT_SHARE of the box
+    // held back for the hill to rise into.
     const pad = 12;
+    const liftPx = LIFT_SHARE * h;
     const boxW = Math.max(1, bMaxX - bMinX);
     const boxH = Math.max(1, bMaxY - bMinY);
-    const base = Math.min((w - pad * 2) / boxW, (h - pad * 2 - WALL_PX) / boxH);
-    const z = zoom > 1 ? zoom : 1;
+    const base = Math.min((w - pad * 2) / boxW, (h - pad * 2 - WALL_PX - liftPx) / boxH);
     const scale = base * z;
+
+    // Now the lift. The full rise gets LIFT_SHARE of the canvas, in pixels,
+    // converted back into view units at THIS scale — so the hill is the same
+    // visible height zoomed in as it is zoomed out, rather than growing nine
+    // times taller with the road. Capped in world terms too, so a two-metre
+    // bump in a tall box is not stretched into a mountain.
+    const gain = rise > 0.5 ? Math.min(ELEV_MAX_GAIN, liftPx / (rise * scale)) : 0;
+    let liftMin = Infinity;
+    let liftMax = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const r = rails[i];
+      const lift = (r.e - minY) * gain;
+      r.lift = lift;
+      r.lx = r.lu;
+      r.ly = r.fly - lift;
+      r.rx = r.ru;
+      r.ry = r.fry - lift;
+      // Higher ground sorts as nearer: where a circuit crosses itself the two
+      // roads share a footprint, so `v` alone is a coin flip between the
+      // bridge and the road under it.
+      r.depth = (r.lv + r.rv) / 2 + lift * TILT;
+      liftMin = Math.min(liftMin, r.ly, r.ry);
+      liftMax = Math.max(liftMax, r.fly, r.fry);
+    }
+    bMinY = liftMin;
+    bMaxY = liftMax;
     // Centred on the whole circuit at 1×, and on the focus point once zoomed —
     // so zooming in walks toward the corner rather than toward the middle of
     // the map with the corner sliding off an edge.
@@ -811,7 +836,9 @@
     let cy = (bMinY + bMaxY) / 2;
     if (z > 1 && focus) {
       cu = focus.u;
-      cy = focus.y;
+      // The focus arrives flat and is lifted HERE, at this build's own gain:
+      // the 1x fit that found it used a different one.
+      cy = focus.v * TILT - (focus.e - minY) * gain;
     }
     const offX = w / 2 - cu * scale;
     const offY = (h - WALL_PX) / 2 - cy * scale;
@@ -856,10 +883,13 @@
         const v = viewV(x, zz, ca, sa);
         return { x: u * scale + offX, y: (v * TILT - lift) * scale + offY, depth: v };
       },
-      /** …and the view-space point a focus is expressed in. */
+      /** …and the flat view-space point a focus is expressed in. */
       viewOf(x, zz, e) {
-        const lift = ((typeof e === 'number' && Number.isFinite(e) ? e : minY) - minY) * gain;
-        return { u: viewU(x, zz, ca, sa), y: viewV(x, zz, ca, sa) * TILT - lift };
+        return {
+          u: viewU(x, zz, ca, sa),
+          v: viewV(x, zz, ca, sa),
+          e: typeof e === 'number' && Number.isFinite(e) ? e : minY,
+        };
       },
     };
   }

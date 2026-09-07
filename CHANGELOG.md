@@ -4,6 +4,18 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Fixed
+
+- **The map's hills were scaling with the zoom.** The elevation was drawn as a
+  share of the circuit's width in metres, so the closer you zoomed the taller
+  it got — Barcelona's 30 m rise was a 230 px wall in the big map and a
+  1 300 px cliff at full zoom, hiding the road it was there to explain. The
+  hill is now a fixed fifth of the map's height at every zoom and every size,
+  and a zoomed corner is drawn from the fine path rather than the decimated
+  one, so a hairpin is a curve and not a polygon.
+
 ## 0.99.2-beta.4 — 2026-09-08
 
 ### Changed
