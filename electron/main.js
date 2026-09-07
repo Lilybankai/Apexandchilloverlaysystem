@@ -3321,6 +3321,42 @@ function registerIpc() {
    */
   ipcMain.handle('laps:sync', () => lapUpload.sync({ reason: 'manual' }));
 
+  /* ---- Stint review ----
+   *
+   * The Review tab (docs/STINT-REVIEW-PLAN.md, phase 1). Both handlers read the
+   * lap files the server has been writing since August and derive everything
+   * else — there is no store behind this, no schema and no network.
+   *
+   * Two calls rather than one, and the split matters: the list is opened every
+   * time the tab is, and shipping every lap of every session through the bridge
+   * to render a column of headline numbers would make arriving cost more than
+   * studying does. Laps come over only when a session is actually opened.
+   *
+   * Lazily required and defensive for the same reason `laps:week` is: an
+   * unbuilt `dist/` must cost this tab its content, not take down the window
+   * that starts the server.
+   */
+  ipcMain.handle('review:sessions', () => {
+    try {
+      const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+      return { ok: true, sessions: review.listSessions() };
+    } catch (err) {
+      console.error('[app] session list unavailable:', err.message);
+      return { ok: false, sessions: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('review:session', (_evt, id) => {
+    if (typeof id !== 'string' || !id) return { ok: false, session: null, error: 'no session' };
+    try {
+      const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+      return { ok: true, session: review.loadSession(id) };
+    } catch (err) {
+      console.error('[app] session unavailable:', err.message);
+      return { ok: false, session: null, error: err.message };
+    }
+  });
+
   /* ---- Community setups ----
    *
    * The setup library's cloud half: publish a library entry (the raw .svm

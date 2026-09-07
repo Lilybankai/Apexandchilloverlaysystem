@@ -26,8 +26,6 @@ const {
   writeTrace,
   readTrace,
   traceFilePath,
-  pruneTraces,
-  TRACE_KEEP_DAYS,
 } = require('../dist/telemetry/lapTrace');
 const { LapRecorder, VERDICT_HOLD_MS } = require('../dist/telemetry/lapLog');
 
@@ -136,6 +134,58 @@ console.log('\n— channels land in the right columns —');
   check('and nothing outside it', lap.brake[outside] === 0 && lap.throttle[outside] === 0.8);
 }
 
+console.log('\n— the driven line is recorded, or honestly absent —');
+{
+  // A circle of radius 500 m centred on the origin: a lap's worth of position
+  // that any assertion can predict exactly.
+  const onCircle = (d) => ({
+    x: 500 * Math.cos(2 * Math.PI * d),
+    z: 500 * Math.sin(2 * Math.PI * d),
+  });
+
+  const rec = new LapTraceRecorder();
+  const car = rig(rec, 0.4);
+  car.lap(90, { channels: onCircle });
+  const lap = car.lap(90, { channels: onCircle });
+  check('position columns are present', lap && Array.isArray(lap.x) && Array.isArray(lap.z));
+  check('and index-aligned with the rest', lap.x.length === lap.count && lap.z.length === lap.count);
+  const offRadius = lap.x.some((x, i) => Math.abs(Math.hypot(x, lap.z[i]) - 500) > 2);
+  check('the line traces the driven path', !offRadius);
+  check('and is rounded to 10 cm', lap.x.every((v) => Math.abs(v * 10 - Math.round(v * 10)) < 1e-9));
+
+  // Two laps round the same circuit but a metre apart: `d` cannot tell them
+  // apart, the line can. This is the whole reason the columns exist.
+  const rec2 = new LapTraceRecorder();
+  const car2 = rig(rec2, 0.4);
+  const wide = (d) => ({ x: 501 * Math.cos(2 * Math.PI * d), z: 501 * Math.sin(2 * Math.PI * d) });
+  car2.lap(90, { channels: wide });
+  const lap2 = car2.lap(90, { channels: wide });
+  const apart = Math.hypot(lap2.x[10], lap2.z[10]) - Math.hypot(lap.x[10], lap.z[10]);
+  check('two laps on different lines are distinguishable', Math.abs(apart - 1) < 0.3, apart);
+
+  // No shared memory: the channel graphs still record, the map stays empty.
+  const rec3 = new LapTraceRecorder();
+  const car3 = rig(rec3, 0.4);
+  car3.lap(90);
+  const blind = car3.lap(90);
+  check('a lap with no position still records', blind && blind.count > 500);
+  check('and carries no line rather than a fake one', blind.x === undefined && blind.z === undefined);
+
+  // Position arriving part way through a lap must not yield half a line.
+  const rec4 = new LapTraceRecorder();
+  const car4 = rig(rec4, 0.4);
+  car4.lap(90);
+  const late = car4.lap(90, { channels: (d) => (d > 0.5 ? onCircle(d) : {}) });
+  check('a lap only half placed carries no line', late.x === undefined);
+
+  // A dropped frame mid-lap is bridged, not treated as the end of the line.
+  const rec5 = new LapTraceRecorder();
+  const car5 = rig(rec5, 0.4);
+  car5.lap(90, { channels: onCircle });
+  const gap = car5.lap(90, { channels: (d) => (d > 0.4 && d < 0.42 ? {} : onCircle(d)) });
+  check('a dropped position read is bridged', gap && gap.x !== undefined && gap.x.length === gap.count);
+}
+
 console.log('\n— a stationary car keeps recording on the time backstop —');
 {
   // Hand-rolled: drive 40% of a lap, spin to a stop for 20 s, finish the lap.
@@ -231,12 +281,13 @@ console.log('\n— store: write, read back, prune —');
   const bytes = fs.statSync(traceFilePath('test-lap-id', at, dir)).size;
   check('file size is tens of KB, not MB', bytes > 5_000 && bytes < 200_000, `${Math.round(bytes / 1024)} KB`);
 
-  // Prune: a day inside the window survives, one outside it goes.
-  const oldAt = new Date(Date.parse(at) - (TRACE_KEEP_DAYS + 5) * 86_400_000).toISOString();
+  // Retention is "keep everything" (docs/STINT-REVIEW-PLAN.md). A trace written
+  // years ago must still read back: nothing in this module may delete history.
+  const oldAt = new Date(Date.parse(at) - 900 * 86_400_000).toISOString();
   writeTrace({ ...file, lapId: 'old-lap', at: oldAt }, dir);
-  pruneTraces(Date.parse(at), dir);
-  check('pruning removes days past retention', readTrace('old-lap', oldAt, dir) === null);
-  check('and keeps days inside it', readTrace('test-lap-id', at, dir) !== null);
+  check('a trace from years ago is still there', readTrace('old-lap', oldAt, dir) !== null);
+  check('and so is a recent one', readTrace('test-lap-id', at, dir) !== null);
+  check('the module exports no pruner', require('../dist/telemetry/lapTrace').pruneTraces === undefined);
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

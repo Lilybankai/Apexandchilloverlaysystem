@@ -76,6 +76,24 @@ export interface TraceChannels {
   tc: number;
   /** ABS intervention 0..1. */
   abs: number;
+  /**
+   * The car's world position on the ground plane, metres, in the sim's own
+   * axes — the same `[x, z]` a {@link TrackMapPath} point is drawn at, so a
+   * trace and a learned map render in one coordinate system with no fitting.
+   *
+   * Absent when shared memory is not publishing a position (spectating, or the
+   * plugin missing), which is why they are optional: every other channel here
+   * has an honest neutral value and a position does not — `0, 0` is a real
+   * point on the circuit, not "unknown".
+   *
+   * Elevation is deliberately NOT recorded. The `y` of a lap is the road's, not
+   * the driver's — it differs between two laps only by suspension travel — so
+   * it belongs to the track map (which already stores it, {@link TrackMapPath})
+   * and is read from there at draw time. Storing it per lap would cost a third
+   * of the file to say the same thing every lap.
+   */
+  x?: number;
+  z?: number;
 }
 
 /**
@@ -88,6 +106,9 @@ interface TracePoint extends TraceChannels {
   /** Seconds into the lap on the delta engine's clock. */
   t: number;
 }
+
+/** A point that carries a position, once the recorder has established one. */
+type PlacedPoint = TracePoint & { x: number; z: number };
 
 /**
  * Distance decimation step, as a fraction of the lap.
@@ -151,10 +172,19 @@ export interface CompletedTrace {
   lonG: number[];
   tc: number[];
   abs: number[];
+  /**
+   * World position per point, metres — the driven LINE, which `d` alone cannot
+   * express (two laps with identical distance curves can be a metre apart at
+   * the apex). Present together or not at all, and index-aligned with the rest
+   * when present; see {@link TraceChannels.x}.
+   */
+  x?: number[];
+  z?: number[];
 }
 
 /** Round helpers — wire precision per channel, chosen to keep files small
  *  without quantising anything a training overlay would show. */
+const r1 = (v: number): number => Math.round(v * 10) / 10;
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 const r4 = (v: number): number => Math.round(v * 10000) / 10000;
 const r5 = (v: number): number => Math.round(v * 100000) / 100000;
@@ -180,6 +210,14 @@ export class LapTraceRecorder {
   private fromLine = false;
   private points: TracePoint[] = [];
   private truncated = false;
+  /**
+   * The last world position seen, carried across frames where shared memory
+   * did not answer. A single missed field read is tens of milliseconds — the
+   * car has moved a couple of metres, and holding the previous point keeps the
+   * columns index-aligned, which is worth far more than that error. It is NOT
+   * cleared at the line: position is continuous through a lap crossing.
+   */
+  private lastPos: { x: number; z: number } | null = null;
 
   /** Drop everything — session change, feed loss, spectating. */
   public reset(): void {
@@ -189,6 +227,7 @@ export class LapTraceRecorder {
     this.fromLine = false;
     this.points = [];
     this.truncated = false;
+    this.lastPos = null;
   }
 
   /**
@@ -244,6 +283,10 @@ export class LapTraceRecorder {
     this.prevD = d;
     this.prevElapsed = elapsedSec;
 
+    if (Number.isFinite(ch.x as number) && Number.isFinite(ch.z as number)) {
+      this.lastPos = { x: r1(ch.x as number), z: r1(ch.z as number) };
+    }
+
     const t = elapsedSec - this.lapStartElapsed;
     if (t < 0) return done;
 
@@ -270,6 +313,7 @@ export class LapTraceRecorder {
           lonG: r3(numOr(ch.lonG, 0)),
           tc: r3(clamp01(ch.tc)),
           abs: r3(clamp01(ch.abs)),
+          ...(this.lastPos ? { x: this.lastPos.x, z: this.lastPos.z } : {}),
         });
       }
     }
@@ -311,6 +355,19 @@ export class LapTraceRecorder {
       tc: [],
       abs: [],
     };
+    // Position is all-or-nothing for a lap. Carry-forward means that once a
+    // position is seen it is present on every later point, so the only way to
+    // hold a partial column is a lap that began before shared memory answered
+    // — and half a racing line drawn on a map is worse than none.
+    const placed = pts.every(isPlaced) ? (pts as PlacedPoint[]) : null;
+    if (placed) {
+      out.x = [];
+      out.z = [];
+      for (const p of placed) {
+        out.x.push(p.x);
+        out.z.push(p.z);
+      }
+    }
     for (const p of pts) {
       out.d.push(p.d);
       out.t.push(p.t);
@@ -326,6 +383,10 @@ export class LapTraceRecorder {
     }
     return out;
   }
+}
+
+function isPlaced(p: TracePoint): p is PlacedPoint {
+  return typeof p.x === 'number' && typeof p.z === 'number';
 }
 
 function clamp01(v: number): number {
@@ -351,7 +412,15 @@ function numOr(v: number, fallback: number): number {
  * own (or shipped to the cloud) still says what it is.
  */
 export interface TraceFile {
-  v: 1;
+  /**
+   * `1` — inputs and motion only.
+   * `2` — adds the driven line (`trace.x` / `trace.z`), when shared memory was
+   * publishing a position for the whole lap. Nothing migrates: a v1 lap was
+   * never placed on the circuit and never can be, so a reader draws its
+   * channel graphs and leaves the map empty rather than guessing a line from
+   * the centreline.
+   */
+  v: 1 | 2;
   /** The owning `LapRecord.id`. Also the file's basename. */
   lapId: string;
   /** Wall-clock completion time of the lap, ISO 8601 — the record's `at`. */
@@ -402,37 +471,22 @@ export function readTrace(lapId: string, atIso: string, dir = traceDir()): Trace
     const raw = JSON.parse(fs.readFileSync(traceFilePath(lapId, atIso, dir), 'utf8')) as TraceFile;
     if (raw && raw.lapId === lapId && raw.trace && Array.isArray(raw.trace.d)) return raw;
   } catch {
-    /* never recorded (spectating, feature not yet shipped), or pruned */
+    /* never recorded (spectating, feature not yet shipped), or the file is torn */
   }
   return null;
 }
 
 /**
- * How long trace files are kept locally, in days.
+ * Trace files are kept **forever**, and this is deliberate (Carl, 2026-09-07).
  *
- * Traces are ~40–80 KB where lap records are a few hundred bytes, so unlike the
- * lap files they do get pruned. Sixty days comfortably covers the rolling week
- * and a league season's retrospectives; the one trace that must outlive this —
- * the driver's board best — is uploaded, and the cloud copy is the durable one.
+ * They used to age out after 60 days, back when the only trace worth keeping
+ * was the driver's board best and the cloud held that one. The stint reviewer
+ * changes what these files are for: a driver's whole history of sessions is the
+ * feature, and `docs/STINT-REVIEW-PLAN.md` settles retention as "keep it all".
+ * A prune here would be the only thing on the system destroying that history,
+ * and until the cloud archive ships there is nothing to restore from.
+ *
+ * The cost is small enough not to argue about: ~18 KB a lap, so a driver doing
+ * 2 000 laps a year accumulates ~35 MB. If this ever needs a limit it should be
+ * a size budget the driver can see and set, not a silent age cutoff.
  */
-export const TRACE_KEEP_DAYS = 60;
-
-/** Delete whole day-folders older than the retention window. Best-effort. */
-export function pruneTraces(nowMs: number, dir = traceDir()): void {
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return; // nothing recorded yet
-  }
-  const cutoff = dayStamp(nowMs - TRACE_KEEP_DAYS * 86_400_000);
-  for (const name of names) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(name)) continue;
-    if (name >= cutoff) continue;
-    try {
-      fs.rmSync(path.join(dir, name), { recursive: true, force: true });
-    } catch {
-      /* locked file, races with a write — next start will retry */
-    }
-  }
-}

@@ -195,9 +195,116 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     getUpdateState: P({ state: 'none', current: 'dev', channel: 'stable', statusText: 'Up to date on the stable channel.' }),
     checkForUpdate: P({}), setUpdateChannel: P({}), downloadUpdate: P({}), installUpdate: P({}), onUpdate: noopUnsub,
     changelog: { pending: P({ show: false, entries: [] }), history: P({ entries: [] }), markSeen: P({}) },
+    // The Review tab. The fixture below is real output from the compiled
+    // stintReview module fed a synthetic lap log, rather than hand-written
+    // JSON — so the harness cannot drift from what the tab actually receives.
+    reviewSessions: P({ ok: true, sessions: REVIEW.summaries }),
+    reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
   };
 })();
 `;
+
+/**
+ * The Review tab's fixture: a synthetic evening of laps, grouped by the SAME
+ * module the app uses. Built here rather than written out by hand because a
+ * hand-written session drifts the moment the shape changes, and this one
+ * cannot — if stintReview stops compiling, the harness says so.
+ *
+ * Two sessions: a two-stint practice at Spa with a lap-limits mistake and a
+ * degrading set of tyres, and a short qualifying run the evening before.
+ */
+function reviewFixture() {
+  let mod;
+  try {
+    mod = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+  } catch {
+    return { summaries: [], byId: {} }; // unbuilt dist: the tab shows its empty state
+  }
+
+  const laps = [];
+  let t = Date.parse('2026-09-06T19:04:00.000Z');
+  const push = (over) => {
+    const lapMs = over.lapMs;
+    t += lapMs;
+    laps.push({
+      v: 6, id: `fx-${laps.length}`, at: new Date(t).toISOString(), sim: 'lmu',
+      track: 'Circuit de Spa-Francorchamps', trackKey: 'circuitdespafrancorchamps_6980',
+      trackLengthM: 6980, car: 'Ferrari 296 GT3', carClass: 'LMGT3',
+      distanceM: 6980, sessionType: 'practice', clean: !(over.dirty || []).length,
+      dirty: over.dirty || [], trackTempC: 35, ambientTempC: 22, compound: 'Soft',
+      ...over,
+    });
+  };
+
+  // Stint one: out-lap, eight flying laps drifting off as the tyres go, an
+  // in-lap. Stint two: fresher rubber, the session best, one lap lost to
+  // limits.
+  const stint = (base, n, first, opts) => {
+    for (let i = 0; i < n; i += 1) {
+      const outLap = i === 0;
+      const inLap = i === n - 1 && opts.pit;
+      const lapMs = outLap ? 132_400 : inLap ? 121_900 : Math.round(base + i * opts.drift + (i % 3) * 180);
+      push({
+        lapMs,
+        s1Ms: outLap || inLap ? undefined : Math.round(lapMs * 0.276),
+        s2Ms: outLap || inLap ? undefined : Math.round(lapMs * 0.372),
+        s3Ms: outLap || inLap ? undefined : lapMs - Math.round(lapMs * 0.276) - Math.round(lapMs * 0.372),
+        dirty: outLap || inLap ? ['pit'] : (opts.dirtyAt === i ? ['limits'] : []),
+        isOutLap: outLap, isInLap: inLap, stintLap: first + i,
+        fuelStartL: 78 - i * 2.9, fuelEndL: 78 - (i + 1) * 2.9,
+        fuelUsedL: outLap || inLap ? undefined : 2.86 + (i % 4) * 0.04,
+        capacityL: 96,
+        veStartPct: 100 - i * 3.4, veEndPct: 100 - (i + 1) * 3.4,
+        wearAtLine: [1 - i * 0.011, 1 - i * 0.013, 1 - i * 0.009, 1 - i * 0.0125].map((w) => Math.max(0.2, opts.wear0 * w)),
+        tempAtLine: [86 + i * 0.9, 89 + i * 1.1, 80 + i * 0.6, 82 + i * 0.7],
+      });
+    }
+  };
+  stint(107_900, 10, 1, { drift: 240, pit: true, wear0: 1, dirtyAt: 5 });
+  t += 148_000; // the stop
+  stint(107_200, 12, 1, { drift: 165, pit: false, wear0: 1, dirtyAt: 8 });
+
+  // The evening before: a short qualifying run, so the list has two rows and a
+  // 30-day trend line has two points to join.
+  let q = Date.parse('2026-09-05T20:30:00.000Z');
+  for (let i = 0; i < 5; i += 1) {
+    q += 108_600;
+    laps.push({
+      v: 6, id: `fq-${i}`, at: new Date(q).toISOString(), sim: 'lmu',
+      track: 'Circuit de Spa-Francorchamps', trackKey: 'circuitdespafrancorchamps_6980',
+      trackLengthM: 6980, car: 'Ferrari 296 GT3', carClass: 'LMGT3', distanceM: 6980,
+      sessionType: 'qualifying', clean: i > 0, dirty: i > 0 ? [] : ['pit'],
+      lapMs: i === 0 ? 129_800 : 108_600 - i * 210,
+      s1Ms: i === 0 ? undefined : 30_100 - i * 60,
+      s2Ms: i === 0 ? undefined : 40_300 - i * 70,
+      s3Ms: i === 0 ? undefined : 38_200 - i * 80,
+      isOutLap: i === 0, stintLap: i + 1, compound: 'Soft',
+      trackTempC: 33, ambientTempC: 21,
+      tempAtLine: [84 + i, 87 + i, 79 + i, 81 + i],
+      wearAtLine: [1 - i * 0.01, 1 - i * 0.011, 1 - i * 0.008, 1 - i * 0.01],
+      fuelUsedL: i === 0 ? undefined : 2.74,
+    });
+  }
+
+  const sessions = mod.groupSessions(laps).reverse();
+  const byId = {};
+  for (const s of sessions) {
+    // pbMs/trend are loadSession's work and need the whole log; the harness
+    // fills them the same way so the hero note and the trend card both paint.
+    const best = Math.min(...laps.filter((l) => l.clean).map((l) => l.lapMs));
+    s.pbMs = best;
+    s.pbHere = s.stats.bestMs === best;
+    const byDay = new Map();
+    for (const l of laps) {
+      if (!l.clean) continue;
+      const day = l.at.slice(0, 10);
+      if (!byDay.has(day) || l.lapMs < byDay.get(day)) byDay.set(day, l.lapMs);
+    }
+    s.trend = [...byDay.entries()].sort().map(([day, bestMs]) => ({ day, bestMs }));
+    byId[s.id] = s;
+  }
+  return { summaries: sessions.map(mod.summaryOf), byId };
+}
 
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const marker = '<script src="icons.js"></script>';
@@ -205,10 +312,14 @@ if (!html.includes(marker)) {
   console.error('make-shot-harness: icons.js include not found in index.html — update this script.');
   process.exit(1);
 }
-fs.writeFileSync(path.join(DIR, '__shot-stub.js'), STUB);
+fs.writeFileSync(
+  path.join(DIR, '__shot-stub.js'),
+  STUB.replace('REVIEW.summaries', `${JSON.stringify(reviewFixture().summaries)}`)
+      .replace('REVIEW.byId[id] || null', `(${JSON.stringify(reviewFixture().byId)})[id] || null`),
+);
 fs.writeFileSync(
   path.join(DIR, '__shot-harness.html'),
   html.replace(marker, `${marker}<script src="__shot-stub.js"></script>`),
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
-console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|schedule|settings>&pane=<general|display|controls|account>');
+console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');

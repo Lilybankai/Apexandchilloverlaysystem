@@ -1,0 +1,759 @@
+/* =========================================================================
+ * review-panel.css — the Review tab: sessions, stints and the lap sheet.
+ * -------------------------------------------------------------------------
+ * Phase 1 of docs/STINT-REVIEW-PLAN.md. The reference screens (Coach Dave
+ * Delta) put the session summary behind a modal and the stint stats in a
+ * right-hand rail of dials. Neither survives here, and both changes are
+ * deliberate:
+ *
+ *   - The summary is the FIRST thing on the page, not a dialog. It is what a
+ *     driver came to the tab for; making them click a button called "Session
+ *     reports" to reach it is a click charged for nothing.
+ *   - Consistency leads with the real spread in seconds and uses the
+ *     percentage only to fill a bar. "±0.31 s" is a number a driver can do
+ *     something about; "84%" is a number they can only feel.
+ *
+ * Everything else is house style: the panel's own tokens, Bahnschrift for
+ * headings, mono for every figure that a reader compares down a column, and
+ * the brand gradient reserved for the one number per screen that matters most.
+ *
+ * Loaded after team-panel.css so the tiles here can restyle the shared
+ * .fuel-tile shapes without !important.
+ * ========================================================================= */
+
+:root {
+  /* Lap colouring, shared by the sheet, the chart and the tooltips. Purple is
+     the session's best and green the stint's, the way every timing screen in
+     the sport has coloured them for thirty years — a driver reads these
+     without being taught. Amber is a lap that has a real time but broke the
+     clean rule; it is still their lap and still on the sheet. */
+  --rv-session-best: #b388ff;
+  --rv-stint-best: var(--ok);
+  --rv-dirty: var(--warn);
+}
+
+/* ============================== SHELL =================================== */
+
+/* A lap sheet is a wide thing — ten columns of figures beside a rail. The
+   1120px reading measure that suits Settings puts it in a permanent
+   horizontal scroll, which is the worst possible way to read a column of lap
+   times. Capped rather than uncapped (the pit wall's answer for the Team tab)
+   because the report and the charts above it are still prose-shaped and stop
+   reading well much past this. */
+.view[data-view="review"] .wrap--wide { max-width: 1520px; }
+
+.rv {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* One column below the width where a 292px rail plus a readable lap sheet
+   stop fitting side by side. The list keeps its own scroll either way. */
+@media (max-width: 1180px) {
+  .rv { grid-template-columns: minmax(0, 1fr); }
+  .rv__rail { position: static; max-height: 340px; }
+}
+
+/* ============================== THE RAIL ================================ */
+
+.rv__rail {
+  position: sticky;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Its own scroll, so a driver three years in can reach March without
+     dragging the lap sheet off the top of the window. */
+  max-height: calc(100vh - 132px);
+  min-height: 0;
+}
+
+.rv__find {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rv__find input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.rv__find input:focus-visible {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+.rv__find select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font: inherit;
+  padding: 7px 8px;
+  max-width: 116px;
+}
+
+.rv__list {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.rv__day {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 12px 2px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+.rv__day:first-child { padding-top: 2px; }
+
+/* ---- one session ---------------------------------------------------------
+ *
+ * A card, not a table row: a session has four facts of different weights
+ * (where, what in, how fast, how much) and a row would flatten them into one.
+ * The 3px spine on the left is the only colour it carries, and it names the
+ * session type — practice, qualifying, race — so the list reads as bands of
+ * activity before any word on it has been read.
+ */
+.rv__card {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  padding: 9px 10px 9px 11px;
+  cursor: pointer;
+  transition: background 90ms linear, border-color 90ms linear;
+}
+
+.rv__card:hover { background: var(--panel-2); }
+.rv__card:focus-visible { outline: none; border-color: var(--cyan); }
+
+.rv__card[data-active='true'] {
+  background: var(--panel-2);
+  border-color: var(--line-2);
+  border-left-color: var(--cyan);
+}
+
+.rv__card[data-type='race'] { border-left-color: var(--bad); }
+.rv__card[data-type='qualifying'] { border-left-color: var(--warn); }
+.rv__card[data-type='practice'] { border-left-color: var(--blue); }
+.rv__card[data-active='true'][data-type='race'] { border-left-color: var(--bad); }
+.rv__card[data-active='true'][data-type='qualifying'] { border-left-color: var(--warn); }
+
+.rv__card b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rv__card i {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.rv__cardfoot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.rv__cardtime {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--cyan);
+}
+.rv__cardtime[data-none='true'] { color: var(--text-3); }
+
+.rv__cardmeta {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+/* ============================== DETAIL ================================== */
+
+.rv__detail { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.rv-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.rv-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.rv-card__title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---- the session header --------------------------------------------------
+ *
+ * Where, in what, when, and under what sky. One strip: this is context for
+ * everything below it, not a finding of its own.
+ */
+.rv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+}
+
+.rv-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.rv-head__sub { color: var(--text-2); font-size: 13px; }
+.rv-head__when { color: var(--text-3); font-size: 12px; margin-left: auto; }
+
+.rv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.rv-pill--race { border-color: rgba(255, 84, 112, 0.5); color: var(--bad); }
+.rv-pill--qualifying { border-color: rgba(255, 176, 32, 0.5); color: var(--warn); }
+.rv-pill--wet { border-color: rgba(48, 155, 225, 0.5); color: var(--blue); }
+
+/* ---- the report ----------------------------------------------------------
+ *
+ * The hero holds the one number the session is remembered by; the tiles hold
+ * everything that qualifies it. Splitting them this way is what lets the best
+ * lap be read from across a desk, which is how a driver actually uses it —
+ * they already know roughly what they did, they want the headline confirmed.
+ */
+.rv-report {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .rv-report { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rv-hero {
+  position: relative;
+  border-radius: var(--radius);
+  padding: 14px 16px 15px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(106, 47, 214, 0.32), transparent 62%),
+    linear-gradient(135deg, rgba(48, 155, 225, 0.16), rgba(38, 187, 244, 0.05) 55%, transparent);
+  border: 1px solid var(--line-2);
+  display: flex;
+  flex-direction: column;
+  /* The big number at the top, its context at the foot. The block is as tall
+     as the tile grid beside it, and pushing the two apart is what stops that
+     height reading as an empty box. */
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rv-hero__label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.rv-hero__time {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  line-height: 1.06;
+  margin-top: 4px;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* The gradient is unreadable when there is no time — a dash in three
+     colours reads as a rendering fault rather than as "nothing yet". */
+}
+.rv-hero__time[data-none='true'] {
+  background: none;
+  color: var(--text-3);
+  -webkit-text-fill-color: var(--text-3);
+}
+
+.rv-hero__note {
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rv-hero__note .icon { width: 13px; height: 13px; }
+.rv-hero__note[data-tone='pb'] { color: var(--rv-session-best); }
+.rv-hero__note[data-tone='off'] { color: var(--text-2); }
+
+/* The best sectors, under the hero's rule. They fill space the big number
+   leaves and they earn it: this is where the optimal lap in the tile beside it
+   comes FROM, so a driver can see which third of the circuit is costing them
+   without opening a stint. */
+.rv-hero__sectors {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--rv-session-best);
+}
+.rv-hero__sectors b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  color: var(--text-3);
+  margin-right: 5px;
+}
+
+.rv-tiles {
+  display: grid;
+  /* Wide enough that a tile never has to hyphenate its label, narrow enough
+     that nine of them still form tidy rows beside the hero on a laptop. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+.rv-tile {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px 10px;
+  min-width: 0;
+}
+
+.rv-tile__label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rv-tile__value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+.rv-tile__value[data-none='true'] { color: var(--text-3); }
+.rv-tile--good .rv-tile__value { color: var(--ok); }
+.rv-tile--warn .rv-tile__value { color: var(--warn); }
+.rv-tile--accent .rv-tile__value { color: var(--cyan); }
+
+.rv-tile__note {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The consistency bar. It fills a tile rather than standing alone, because it
+   is a reading of the number above it and not a fact in its own right. */
+.rv-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  margin-top: 7px;
+  overflow: hidden;
+}
+.rv-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--blue), var(--cyan));
+}
+.rv-bar[data-band='low'] span { background: var(--bad); }
+.rv-bar[data-band='mid'] span { background: var(--warn); }
+
+/* ---- charts --------------------------------------------------------------
+ *
+ * Canvas, like every other chart in the app: the CSP forbids a chart library
+ * and none of these need one. Height is set here rather than on the element so
+ * the painter can measure its own CSS box.
+ */
+.rv-chart {
+  position: relative;
+  width: 100%;
+  height: 156px;
+}
+.rv-chart canvas { display: block; width: 100%; height: 100%; }
+
+.rv-chart--trend { height: 74px; }
+
+.rv-tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--panel-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -120%);
+}
+.rv-tip b { font-family: var(--font-mono); font-weight: 400; }
+
+.rv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.rv-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rv-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  font-style: normal;
+}
+
+/* ============================== STINTS ================================== */
+
+.rv-stint {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.rv-stint + .rv-stint { margin-top: 12px; }
+
+/* The header is the button: a whole strip of numbers is a much easier target
+   than a caret, and there is nothing else in it to click. */
+.rv-stint__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  background: var(--panel-2);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.rv-stint__head:hover { background: var(--panel-3); }
+.rv-stint__head:focus-visible { outline: 1px solid var(--cyan); outline-offset: -2px; }
+.rv-stint[data-open='false'] .rv-stint__head { border-bottom-color: transparent; }
+
+.rv-stint__caret {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-3);
+  transition: transform 120ms ease;
+}
+.rv-stint[data-open='false'] .rv-stint__caret { transform: rotate(-90deg); }
+
+.rv-stint__name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.rv-stint__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.rv-fact { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.rv-fact b {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rv-fact span { font-family: var(--font-mono); font-size: 13px; }
+.rv-fact span[data-none='true'] { color: var(--text-3); }
+.rv-fact--best span { color: var(--rv-stint-best); }
+
+.rv-stint__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 244px;
+  gap: 0;
+  align-items: start;
+}
+.rv-stint[data-open='false'] .rv-stint__body { display: none; }
+
+@media (max-width: 1400px) {
+  .rv-stint__body { grid-template-columns: minmax(0, 1fr); }
+  .rv-stint__side { border-left: 0 !important; border-top: 1px solid var(--line); }
+}
+
+/* ---- the lap sheet ------------------------------------------------------ */
+
+.rv-sheet__scroll { overflow-x: auto; }
+
+.rv-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.rv-sheet th {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: right;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.rv-sheet th:first-child, .rv-sheet td:first-child { text-align: left; padding-left: 14px; }
+.rv-sheet th:last-child, .rv-sheet td:last-child { padding-right: 14px; }
+
+.rv-sheet td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid rgba(29, 37, 54, 0.55);
+  color: var(--text);
+}
+
+.rv-sheet tbody tr:last-child td { border-bottom: 0; }
+.rv-sheet tbody tr:hover td { background: var(--panel-2); }
+
+/* A lap that is not a time is dimmed whole rather than struck through: it is
+   still part of the stint's story (an out-lap tells you when the driver went
+   out), it just is not a lap time. */
+.rv-sheet tr[data-timed='false'] td { color: var(--text-3); }
+
+.rv-sheet .num { color: var(--text-3); }
+.rv-sheet .lap { font-size: 13px; }
+.rv-sheet .lap[data-rank='session'] { color: var(--rv-session-best); }
+.rv-sheet .lap[data-rank='stint'] { color: var(--rv-stint-best); }
+.rv-sheet .sec[data-rank='session'] { color: var(--rv-session-best); }
+.rv-sheet .sec[data-rank='stint'] { color: var(--rv-stint-best); }
+.rv-sheet .dim { color: var(--text-3); }
+.rv-sheet .gain { color: var(--ok); }
+.rv-sheet .loss { color: var(--bad); }
+
+/* Why a lap is not clean, spelled out. Delta shows a percentage; a driver
+   trying to find their lap back needs the reason, and we have it. */
+.rv-flag {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text-3);
+  margin-left: 4px;
+}
+.rv-flag[data-why='limits'] { color: var(--warn); border-color: rgba(255, 176, 32, 0.45); }
+.rv-flag[data-why='penalty'] { color: var(--bad); border-color: rgba(255, 84, 112, 0.45); }
+
+/* A lap whose trace was captured can be studied in phase 2. Until that view
+   exists the mark is a statement of fact, not a control — an affordance that
+   does nothing is worse than none. */
+.rv-trace { color: var(--cyan); opacity: 0.62; }
+.rv-trace .icon { width: 12px; height: 12px; vertical-align: -1px; }
+
+/* ---- the stint's own rail ---------------------------------------------- */
+
+.rv-stint__side {
+  border-left: 1px solid var(--line);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rv-side__title {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Four corners in the car's own orientation, so the front-left of the card is
+   the front-left of the car. Colour reads the corner against the CAR's mean
+   rather than against an absolute window: the right operating range depends on
+   compound, class and weather, and none of those are ours to assume — but a
+   front axle running ten degrees over the rear is an imbalance in any of them. */
+.rv-corners {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rv-corner {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px 8px;
+}
+
+.rv-corner__label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+.rv-corner__temp {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  margin-top: 1px;
+}
+.rv-corner__temp[data-heat='hot'] { color: var(--bad); }
+.rv-corner__temp[data-heat='warm'] { color: var(--warn); }
+.rv-corner__temp[data-heat='cool'] { color: var(--blue); }
+.rv-corner__temp[data-none='true'] { color: var(--text-3); font-size: 15px; }
+
+.rv-corner__wear {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.rv-corner__wear span { display: block; height: 100%; background: var(--ok); }
+.rv-corner__wear[data-band='mid'] span { background: var(--warn); }
+.rv-corner__wear[data-band='low'] span { background: var(--bad); }
+
+.rv-corner__pct {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 3px;
+}
+
+.rv-rows { display: flex; flex-direction: column; gap: 5px; }
+
+.rv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.rv-row b {
+  font-weight: 400;
+  color: var(--text-3);
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.rv-row span { font-family: var(--font-mono); font-size: 12.5px; }
+.rv-row span[data-none='true'] { color: var(--text-3); }
+
+/* ============================== STATES ================================== */
+
+.rv-empty {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  padding: 34px 24px;
+  text-align: center;
+  color: var(--text-2);
+}
+.rv-empty .icon {
+  width: 26px;
+  height: 26px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.rv-empty b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+.rv-empty p { margin: 0 auto; max-width: 46ch; font-size: 13px; line-height: 1.55; }

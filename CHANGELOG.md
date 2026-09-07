@@ -4,6 +4,34 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Added
+
+- **Review — every session you have driven.** A new tab. It reads the lap
+  files this machine has been writing since August and lays your driving out
+  the way you actually think about it: sessions on the left, and on the right
+  the one you picked — its report, its lap times, and a card per stint.
+
+  The report is the top of the page rather than a dialog you have to open. Best
+  lap and the three best sectors that make up your optimal lap; what is left on
+  the table between them; your average; how consistent you were; how much of it
+  was clean, and *what* the rest was lost to — "2 laps lost to track limits",
+  not just a percentage. Underneath, every lap of the session as a chart, with
+  the stints marked and your best drawn across it; hover a point for the lap,
+  click one to jump to it in the sheet. Then, per stint, the full sheet —
+  sectors, lap, gap to your best, fuel, energy, tyre temperatures and wear —
+  beside the four corners as the stint left them and the range the track
+  temperature moved through.
+
+  Consistency leads with the real number: **±0.31 s**, the spread of your clean
+  laps, with the percentage only filling the bar behind it. A spread in seconds
+  is something you can go and fix.
+
+  None of it needs an account or a connection — it is your own laps, on your own
+  machine, and nothing is thrown away. Reading your history from another PC, and
+  studying a single lap's throttle, brake and line, are the phases after this.
+
 ## 0.99.1 — 2026-09-07
 
 ### Added

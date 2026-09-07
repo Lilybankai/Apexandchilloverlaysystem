@@ -825,6 +825,9 @@ verifyPage({
     // owns its own dialog ids.
     'team-panel.js',
     'team-guide.js',
+    // The Review tab. Self-contained: it owns its own ids and its own canvas
+    // painters, and reaches for nothing on the pages above it.
+    'review-panel.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
@@ -864,7 +867,12 @@ console.log('\nIcon sprite — icons.js');
 
 {
   const available = spriteIds();
-  const sources = ['index.html', 'auth.html', 'control-panel.js', 'auth.js', 'icons.js'].map((f) =>
+  const sources = [
+    'index.html', 'auth.html', 'control-panel.js', 'auth.js', 'icons.js',
+    // The Review tab writes its <use> refs from JS, so the sprite check has to
+    // read it too or a typo'd glyph ships as a blank square.
+    'review-panel.js',
+  ].map((f) =>
     fs.readFileSync(path.join(PANEL, f), 'utf8'),
   );
   const wanted = iconRefs(sources);

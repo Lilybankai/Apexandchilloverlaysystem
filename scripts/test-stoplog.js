@@ -182,7 +182,7 @@ check('a green lap records its burn', measured.length >= 1, `${measured.length} 
 check('…and the burn is the difference', measured[0] && Math.abs(measured[0].fuelUsedL - 3) < 0.01, measured[0] && measured[0].fuelUsedL);
 check('both ends of the lap are recorded', measured[0] && measured[0].fuelStartL === 57 && measured[0].fuelEndL === 54);
 check('capacity rides along', measured[0] && measured[0].capacityL === 75);
-check('the record is v5', laps[0] && laps[0].v === 5, laps[0] && laps[0].v);
+check('the record is v6', laps[0] && laps[0].v === 6, laps[0] && laps[0].v);
 
 console.log('\nwhat is not a burn');
 const pitted = driveLaps([
@@ -241,6 +241,20 @@ const partialWear = driveLaps([
   ...rep(4, { lapsCompleted: 11, fuelL: 57, wear: [0.9, 0.91, 0.88] }),
 ]);
 check('three corners is not a wear vector', partialWear.every((l) => l.wearAtLine === undefined));
+const withTemps = driveLaps([
+  ...rep(4, { lapsCompleted: 10, fuelL: 60, tempC: [88.4, 91.2, 85.6, 86.1] }),
+  ...rep(4, { lapsCompleted: 11, fuelL: 57, tempC: [89.1, 92.7, 86.0, 86.9] }),
+]);
+check('tyre temperature at the line is recorded', withTemps[0] && Array.isArray(withTemps[0].tempAtLine));
+check('...all four corners, to a tenth', withTemps[0] && withTemps[0].tempAtLine.join(',') === '89.1,92.7,86,86.9',
+  withTemps[0] && String(withTemps[0].tempAtLine));
+const deadSensor = driveLaps([
+  ...rep(4, { lapsCompleted: 10, fuelL: 60, tempC: [88.4, 0, 85.6, 86.1] }),
+  ...rep(4, { lapsCompleted: 11, fuelL: 57, tempC: [89.1, 0, 86.0, 86.9] }),
+]);
+check('a dead corner voids the set rather than reading as a cold tyre',
+  deadSensor.every((l) => l.tempAtLine === undefined));
+check('a lap carrying temperatures is v6', withTemps[0] && withTemps[0].v === 6, withTemps[0] && withTemps[0].v);
 const energy = driveLaps([
   ...rep(4, { lapsCompleted: 10, fuelL: 60, vePct: 80 }),
   ...rep(4, { lapsCompleted: 11, fuelL: 57, vePct: 76 }),
@@ -260,6 +274,7 @@ const spectated = driveLaps([
 ]);
 check('no fuel', spectated.every((l) => l.fuelEndL === undefined));
 check('no wear', spectated.every((l) => l.wearAtLine === undefined));
+check('no tyre temperatures', spectated.every((l) => l.tempAtLine === undefined));
 check('but the lap is still a lap', spectated.length >= 1 && spectated[0].lapMs === 100300);
 
 console.log(`\ntest-stoplog: ${pass} passed, ${fail} failed`);

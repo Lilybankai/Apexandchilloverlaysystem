@@ -421,7 +421,9 @@ check('it wraps the content in a row', /<div class="body">/.test(html));
   const declared = new Set([...html.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]));
   const orphans = tabs.filter((t) => !declared.has(t));
   check('every rail item has a view behind it', orphans.length === 0, orphans.join(', ') || 'all wired');
-  check('nothing was dropped in the move', tabs.length === 12, `${tabs.length} items`);
+  // A frozen count, so a tab lost to a bad merge fails here rather than
+  // quietly disappearing. 12 through v0.99.1; 13 with Review (0.99.2).
+  check('nothing was dropped in the move', tabs.length === 13, `${tabs.length} items`);
   check('settings is a destination of its own now', tabs.includes('settings'));
   check(
     'and the gear that used to toggle back to the last tab is gone',

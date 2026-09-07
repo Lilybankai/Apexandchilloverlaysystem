@@ -104,8 +104,13 @@ export interface LapRecord {
    * `docs/RACE-STRATEGY-ENGINE.md` §3 for what these are for: they are the
    * training set the fuel-load and tyre-degradation coefficients are fitted
    * from, and without them every one of those numbers would be invented.
+   *
+   * `6` added {@link tempAtLine} — per-corner tyre temperature at the line, for
+   * the stint reviewer (`docs/STINT-REVIEW-PLAN.md`). A pre-v6 lap shows no
+   * temperatures, which is the honest outcome: the reading existed only while
+   * the lap was being driven and cannot be reconstructed after it.
    */
-  v: 1 | 2 | 3 | 4 | 5;
+  v: 1 | 2 | 3 | 4 | 5 | 6;
   /**
    * Unique id for this lap (UUID), minted when the record is built. This is the
    * join key between the lap database and everything recorded ABOUT the lap —
@@ -212,6 +217,16 @@ export interface LapRecord {
   veEndPct?: number;
   /** Tyre wear at the line, `[FL, FR, RL, RR]`, `1` = new. */
   wearAtLine?: [number, number, number, number];
+  /**
+   * Tyre temperature at the line, degrees C, `[FL, FR, RL, RR]`.
+   *
+   * The corner's representative temperature ({@link TyreState.tempC}) — the
+   * inner-liner mean, which is the number LMU's own HUD shows, so the stint
+   * table quotes what the driver saw in the car. Stored per lap because it is
+   * how a stint is read backwards: a lap that fell away with the fronts ten
+   * degrees over is a different story from one that fell away with them cold.
+   */
+  tempAtLine?: [number, number, number, number];
   /** Compound fitted for this lap, as the sim names it. */
   compound?: string;
   /**
@@ -243,6 +258,7 @@ export interface LapRecord {
  */
 /** Rounding for the recorded consumption figures — a litre to 10 ml is more
  *  precision than the sim's own byte-quantised readings carry. */
+const round1 = (n: number): number => Math.round(n * 10) / 10;
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 
@@ -408,6 +424,8 @@ export interface LapInput {
   vePct?: number;
   /** Per-corner tyre wear `[FL, FR, RL, RR]`, `1` = new. */
   wear?: [number, number, number, number];
+  /** Per-corner tyre temperature `[FL, FR, RL, RR]`, degrees C. */
+  tempC?: [number, number, number, number];
   /** Compound currently fitted, as the sim names it. */
   compound?: string;
 }
@@ -614,7 +632,7 @@ export class LapRecorder {
 
     const reasons = [...dirty];
     return {
-      v: 5,
+      v: 6,
       id: crypto.randomUUID(),
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
@@ -682,6 +700,17 @@ export class LapRecorder {
 
     if (Array.isArray(input.wear) && input.wear.length === 4 && input.wear.every(num)) {
       out.wearAtLine = input.wear.map((w) => round3(w)) as [number, number, number, number];
+    }
+    // A cold-garage read and a sensor that never answered both land near zero,
+    // and a stint table cannot tell them apart — so a corner has to be above
+    // freezing for the set to count. All four or none, like the splits: three
+    // real corners and one dead one reads as a car with a puncture.
+    if (
+      Array.isArray(input.tempC) &&
+      input.tempC.length === 4 &&
+      input.tempC.every((t) => num(t) && t > 0 && t < 400)
+    ) {
+      out.tempAtLine = input.tempC.map((t) => round1(t)) as [number, number, number, number];
     }
     if (input.compound) out.compound = input.compound;
 

@@ -16,6 +16,9 @@
   <!-- Team tab styles — after fuel-panel.css: the pit-wall view reuses the
        fuel result classes (tiles, stints) and restyles on top of them. -->
   <link rel="stylesheet" href="team-panel.css" />
+  <!-- Review tab styles. After team-panel.css: the session report reuses the
+       tile shapes the pit wall established and restyles on top of them. -->
+  <link rel="stylesheet" href="review-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
   <!-- Get started checklist. Last, because its arrival flash ([data-pulse])
@@ -155,6 +158,12 @@
            it and needs nothing else changed. -->
       <button class="tab" type="button" data-tab="team">
         <svg class="icon"><use href="#i-users" /></svg><span class="tab__label">Team</span>
+      </button>
+      <!-- The stint reviewer (docs/STINT-REVIEW-PLAN.md). Not gated: it reads
+           the lap files this machine has been writing since August, so it has
+           content on a fresh stable install and needs no account. -->
+      <button class="tab" type="button" data-tab="review">
+        <svg class="icon"><use href="#i-activity" /></svg><span class="tab__label">Review</span>
       </button>
 
       <p class="rail__group">Broadcast</p>
@@ -1930,6 +1939,44 @@
       </div>
     </section>
 
+    <!-- ========================= REVIEW =============================== -->
+    <!-- Phase 1 of docs/STINT-REVIEW-PLAN.md. Everything below the header is
+         painted by review-panel.js from the local lap files; the markup here
+         is only the frame and the two controls that filter the list. -->
+    <section class="view" data-view="review">
+      <div class="wrap wrap--wide">
+        <div class="view__head">
+          <div>
+            <h1>Review</h1>
+            <p>Every session you have driven, stint by stint. Read off this machine's own lap
+               files — no account needed, and nothing is ever thrown away.</p>
+          </div>
+          <button class="btn btn--ghost btn--sm" id="rv-refresh" type="button"
+                  title="Re-read the lap files">
+            <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
+          </button>
+        </div>
+
+        <div class="rv">
+          <aside class="rv__rail">
+            <div class="rv__find">
+              <input id="rv-search" type="search" placeholder="Find a track or car"
+                     aria-label="Filter sessions by track or car" />
+              <select id="rv-type" aria-label="Filter sessions by type">
+                <option value="all">All</option>
+                <option value="practice">Practice</option>
+                <option value="qualifying">Qualifying</option>
+                <option value="race">Race</option>
+              </select>
+            </div>
+            <div class="rv__list" id="rv-sessions"></div>
+          </aside>
+
+          <div class="rv__detail" id="rv-detail"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="view" data-view="fuel">
       <div class="wrap">
         <div class="view__head">
@@ -3285,6 +3332,10 @@
 <script src="team-dashboard.js"></script>
 <script src="team-panel.js"></script>
 <script src="team-guide.js"></script>
+<!-- Review tab: the canvas painters first (pure, also require()d by
+     scripts/test-reviewcharts.js), then the page itself. -->
+<script src="review-charts.js"></script>
+<script src="review-panel.js"></script>
 <script src="engineer-panel.js"></script>
 <!-- Get started checklist. LAST of all: it navigates through window.apexNav
      (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can

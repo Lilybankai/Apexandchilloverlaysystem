@@ -278,6 +278,19 @@ contextBridge.exposeInMainWorld('apex', {
   /** Push everything pending to the league now, rather than on the next tick. */
   lapsSync: () => ipcRenderer.invoke('laps:sync'),
 
+  /* ---- Stint review (docs/STINT-REVIEW-PLAN.md) ----
+   *
+   * Local only: both read the lap files on this machine and derive the rest.
+   * Nothing here signs in, so unlike the leaderboard calls above neither can
+   * come back `signedOut` — a driver with no account still has their sessions.
+   */
+
+  /** Every session ever driven, newest first, summaries only: `{ ok, sessions[] }`. */
+  reviewSessions: () => ipcRenderer.invoke('review:sessions'),
+
+  /** One session in full — stints, laps and its trend line: `{ ok, session }`. */
+  reviewSession: (id) => ipcRenderer.invoke('review:session', id),
+
   /** Subscribe to uploader state changes. Returns an unsubscribe function. */
   onLapSync: (callback) => {
     const listener = (_evt, payload) => callback(payload);

@@ -95,7 +95,6 @@ import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
 import {
   LapTraceRecorder,
-  pruneTraces,
   writeTrace,
   type CompletedTrace,
   type TraceChannels,
@@ -901,9 +900,6 @@ export class LmuRestProvider implements TelemetryProvider {
       return rose > 0 && Date.now() - rose < OWN_PENALTY_ATTRIBUTION_MS;
     });
     this.traceLimits.start(); // …and the trace log, for the sim's own points
-    // Age out old driving traces once per app run — they are the one thing the
-    // lap store keeps that is big enough to be worth pruning. See lapTrace.ts.
-    pruneTraces(Date.now());
     // Each poller below runs unattended on the Electron main thread — the one
     // compositing every overlay — so each is wrapped in a breadcrumb the stall
     // log can name. The wrap is at the timer rather than inside the method so
@@ -1638,6 +1634,14 @@ export class LmuRestProvider implements TelemetryProvider {
       local = this.lastLocal;
     }
 
+    // One whole-field shared-memory sweep per poll, shared by the radar, the
+    // track map and the training trace. All three want world positions, and
+    // reading the buffer three times would triple the cost of the most
+    // expensive read in the frame. It sits up here, rather than beside its
+    // first consumer, because the trace recorder runs earlier than either
+    // widget and a lap's driven line cannot be reconstructed afterwards.
+    const field = playerCar ? this.localCar.readField(playerCar.slotID) : null;
+
     // Spectator fallback: no car is being driven on this PC, but the broadcast-
     // focused car's telemetry record is still in shared memory with live gear,
     // revs and pedals (proven against a remote car in a live team race — see
@@ -1803,6 +1807,10 @@ export class LmuRestProvider implements TelemetryProvider {
         lonG: m ? m.lonG : 0,
         tc: local!.tc,
         abs: local!.abs,
+        // Where the car actually was, so the lap can be drawn as a LINE on the
+        // learned map instead of on its centreline. Omitted (not zeroed) when
+        // shared memory is silent — see TraceChannels.x.
+        ...(field ? { x: field.playerPos.x, z: field.playerPos.z } : {}),
       } satisfies TraceChannels);
       if (doneTrace) {
         this.pendingTraces.push({ trace: doneTrace, wallMs: nowMs });
@@ -1857,10 +1865,6 @@ export class LmuRestProvider implements TelemetryProvider {
       local?.aidSettings,
       playerCar?.carClass,
     );
-    // One whole-field shared-memory sweep per poll, shared by the radar and the
-    // track map. Both want every car's world position; reading the buffer twice
-    // would double the cost of the most expensive read in the frame.
-    const field = playerCar ? this.localCar.readField(playerCar.slotID) : null;
     // Radar is centred on the DRIVEN car (a driver aid), not the broadcast focus:
     // it needs that car's world position + orientation, which shared memory only
     // publishes for the car driven on this PC. Omitted when spectating.
@@ -3657,6 +3661,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // these two logs are the strategy corpus, and a corpus of laps we did not
     // drive is worse than no corpus. See docs/RACE-STRATEGY-ENGINE.md.
     const wear = wearTuple(tyres);
+    const tyreTemp = tempTuple(tyres);
     const compound = tyres?.frontLeft?.compound;
     const consumption = {
       ...(local && local.fuelLiters > 0 ? { fuelL: local.fuelLiters } : {}),
@@ -3667,6 +3672,7 @@ export class LmuRestProvider implements TelemetryProvider {
         ? { vePct: clamp01(playerCar.veFraction) * 100 }
         : {}),
       ...(wear ? { wear } : {}),
+      ...(tyreTemp ? { tempC: tyreTemp } : {}),
       ...(compound ? { compound } : {}),
     };
 
@@ -3793,7 +3799,7 @@ export class LmuRestProvider implements TelemetryProvider {
     this.pendingTraces.splice(bestIdx, 1);
     if (lap.lapMs > 0 && Math.abs(trace.lapSec * 1000 - lap.lapMs) > 2000) return;
     writeTrace({
-      v: 1,
+      v: 2,
       lapId: lap.id,
       at: lap.at,
       sim: lap.sim,
@@ -3974,6 +3980,26 @@ function wearTuple(
   const v = [tyres.frontLeft, tyres.frontRight, tyres.rearLeft, tyres.rearRight].map((t) =>
     t && typeof t.wear === 'number' && t.wear !== UNKNOWN_VALUE && Number.isFinite(t.wear)
       ? t.wear
+      : NaN,
+  );
+  return v.every((n) => !Number.isNaN(n)) ? (v as [number, number, number, number]) : undefined;
+}
+
+/**
+ * The four corners' representative tyre temperature, or nothing.
+ *
+ * Reads {@link TyreState.tempC} — the inner-liner mean the sim's own HUD shows
+ * — and, like {@link wearTuple}, is all-or-nothing: a partial set would put a
+ * missing corner next to three real ones in the stint table, where a reader
+ * has no way to tell the gap from a cold tyre.
+ */
+function tempTuple(
+  tyres: TyreCorners | undefined,
+): [number, number, number, number] | undefined {
+  if (!tyres) return undefined;
+  const v = [tyres.frontLeft, tyres.frontRight, tyres.rearLeft, tyres.rearRight].map((t) =>
+    t && typeof t.tempC === 'number' && t.tempC !== UNKNOWN_VALUE && Number.isFinite(t.tempC)
+      ? t.tempC
       : NaN,
   );
   return v.every((n) => !Number.isNaN(n)) ? (v as [number, number, number, number]) : undefined;

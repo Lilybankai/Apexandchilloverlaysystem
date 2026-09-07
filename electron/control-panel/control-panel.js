@@ -4935,6 +4935,13 @@
       window.apexTeam?.hidden();
       window.APEX_TEAM_GUIDE?.cancelAutoOpen();
     }
+    // The Review tab, same contract again: the reviewer loads the lap files on
+    // arrival and does nothing at all while it is hidden. It is the one tab
+    // whose content can change without the app doing anything — a session
+    // driven since the last visit is simply on disk — so shown() is where the
+    // list is re-read, not a timer.
+    if (target === 'review') window.apexReview?.shown();
+    else window.apexReview?.hidden();
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
