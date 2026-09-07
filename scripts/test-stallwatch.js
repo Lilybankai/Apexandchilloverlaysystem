@@ -184,7 +184,9 @@ setTimeout(() => {
     // A box fast enough to collect that in under GC_FLOOR_MS names no pause,
     // and rightly so: the claim is that a pause worth naming IS named, not
     // that this machine is slow.
-    const named = gcLines.filter((l) => l.includes(' gc='));
+    // `gc=none` is the observer reporting a clean window, not a pause. Only a
+    // line that names a kind counts as one.
+    const named = gcLines.filter((l) => / gc=(?!none)/.test(l));
     check(
       'a collection that paused the thread is named',
       named.length === 0 || /gc=(minor|major|incremental|weakcb|gc)\/\d+ms/.test(named[0]),

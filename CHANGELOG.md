@@ -4,7 +4,35 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## Unreleased
+## 0.99.2-beta.1 — 2026-09-07
+
+### Changed
+
+- **The freeze hunt, with an instrument that can finally see.** The overlays
+  have been hitching for a fortnight, and every log came back saying the same
+  thing: nothing ran. That was the log's fault, not the freeze's. The watcher
+  could only see work started by a timer, and almost nothing in this app is
+  still on a timer by the time it does the work — so a block that held the
+  thread for two seconds left no trace at all, and we spent nine days reading
+  that silence as a clue.
+
+  This build profiles the main process continuously — one sample every
+  millisecond — and when a freeze happens it writes down the code that was
+  actually running, however that code got there. Each stall line now also says
+  whether the app was *busy* or simply *stopped*: two opposite explanations
+  that until now produced an identical line. A long freeze leaves a profile
+  file beside the log that opens in a browser's developer tools and can be read
+  frame by frame.
+
+  Nothing about driving changes. If you are one of the drivers seeing the
+  hitches: next time, send the whole app folder rather than stalls.log on its
+  own — the answer will be in the files beside it.
+
+- **The freezes are not every 130 seconds.** Reading them back against the
+  moment each one *began*, rather than the moment it ended, puts every single
+  one on an exact ten-second beat. 130 seconds is just how often one of them
+  grows long enough to cross the threshold and get written down. Much smaller
+  haystack.
 
 ### Added
 

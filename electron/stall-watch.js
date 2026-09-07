@@ -33,14 +33,41 @@
  * us to infer a culprit from a period. Two clock reads per fire, an entry only
  * past {@link CENSUS_FLOOR_MS}, and a fixed-size ring: cheap enough to leave on.
  *
- * A stall that prints `ran=none` is a finding too — it rules out every JS timer
- * in the process and points at native work, GC, or the OS.
+ * A stall that prints `ran=none` rules out every JS timer in the process. It
+ * does NOT rule out JavaScript: an `async` poller's real work runs after its
+ * first await, as a promise continuation the census never wrapped, and so does
+ * every IPC handler and socket callback. `ran=none` on 200 consecutive stalls
+ * is the shape of that blind spot, not the absence of a culprit.
+ *
+ * ## What a stall line answers now
+ * Three fields, added 7 Sep 2026 after the census had returned `ran=none` for
+ * every stall across four builds and nine days:
+ *
+ *   - `cpu=NN%(usrN/sysN)` — was the thread BUSY or PARKED? A freeze that burned
+ *     a core was running something and a stack will name it; one that burned
+ *     nothing was blocked in the kernel or descheduled by Windows, and no stack
+ *     in the process is guilty. Nothing else in the log separates these.
+ *   - `hot=frame/NNNms` — the frames that owned the profiler's samples during
+ *     the freeze, whatever scheduled them. See {@link module:electron/stall-profiler}.
+ *   - `gc=none` — printed rather than omitted, so silence from V8 reads as an
+ *     answer instead of as a field that never fired.
+ *
+ * ## What the 4–7 Sep logs actually say about the beat
+ * Subtracting each stall's own duration from its timestamp puts every one of
+ * them on an exact 10.000 s grid, phase-locked to the session and drifting less
+ * than 20 ms across five hours. So the trigger is a 10 s interval, not a 130 s
+ * one: 130 s is every 13th of them, the ones whose block grew past the 250 ms
+ * threshold. Within a run the duration falls ~250 ms per beat until it drops
+ * under the threshold and vanishes, then returns at ~2 s with the run's grid
+ * slot moved on by exactly four (40 s) — two periodic things sliding through
+ * each other, one of them anchored to that 10 s grid.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const profiler = require('./stall-profiler');
 
 /** How often we ask to be woken. Short enough to catch a one-frame hitch. */
 const TICK_MS = 100;
@@ -83,6 +110,19 @@ let breadcrumbAt = 0;
 /** Worst lateness seen this run, for the diagnostics readout. */
 let worstMs = 0;
 let stallCount = 0;
+/**
+ * The process CPU counters as of the last tick, so a stall can say whether the
+ * thread was BUSY or PARKED.
+ *
+ * This is the one question no amount of JavaScript instrumentation can answer,
+ * and it splits the suspect list in half. A freeze that burned a core was
+ * running something — our code, V8's collector, a native call — and a profile
+ * will name it. A freeze that burned nothing was not running at all: the thread
+ * was blocked in the kernel or descheduled by Windows, and every stack in the
+ * process is innocent. Two counters and a subtraction, read only when there is
+ * already something to report.
+ */
+let lastCpu = null;
 /**
  * Steps running right now, label → the ms they started at.
  *
@@ -286,14 +326,47 @@ function watchGc() {
   }
 }
 
-/** The collections that overlap this stall, on the same recent-past rule. */
+/**
+ * The collections that overlap this stall, on the same recent-past rule.
+ *
+ * Prints `gc=none` rather than nothing when the observer is up, because a
+ * missing field is ambiguous in exactly the wrong way: for a week the logs read
+ * as though GC had been ruled out, when all they said was that this line never
+ * printed. `gc=none` clears V8; no `gc=` field at all says the runtime would not
+ * give us an observer and the question is still open.
+ */
 function gcFor(now, late) {
   if (!gcObserver) return '';
   const window = late + TICK_MS * 2;
   const hits = [];
   for (const e of collections) if (now - e.at <= window) hits.push(`${e.kind}/${e.ms}ms`);
   collections.length = 0;
-  return hits.length ? ` gc=${hits.reverse().join(',')}` : '';
+  return ` gc=${hits.length ? hits.reverse().join(',') : 'none'}`;
+}
+
+/**
+ * Whether the thread was BUSY or PARKED across a stall of `late` ms, as the
+ * share of it spent on a CPU. `usr` and `sys` are split because they answer
+ * different questions: user time is JavaScript or V8, system time is the kernel
+ * — a file write, a process spawn, a driver.
+ *
+ * `cpu=3%` and `cpu=98%` are opposite diagnoses from an identical stall line,
+ * and until now the log could not tell them apart.
+ *
+ * Process-wide, not per-thread — Node has no per-thread counter — so the wheel
+ * worker and the libuv pool are in the number too. That blurs the middle of the
+ * range and not the ends, which is where the answer is: near zero, nothing in
+ * this process ran and the thread was parked by the kernel; near a full core,
+ * something ran, and `hot=` says what.
+ */
+function cpuFor(late) {
+  if (!lastCpu) return '';
+  const next = process.cpuUsage();
+  const usr = (next.user - lastCpu.user) / 1000;
+  const sys = (next.system - lastCpu.system) / 1000;
+  lastCpu = next;
+  const span = late + TICK_MS;
+  return ` cpu=${Math.round(((usr + sys) / span) * 100)}%(usr${Math.round(usr)}/sys${Math.round(sys)})`;
 }
 
 function rotate() {
@@ -329,26 +402,45 @@ function start(userDataDir, context, version) {
   // prints the epoch as a breadcrumb age ("stale 1788341542844ms"), which is
   // the first thing anyone reading the log has to be told to ignore.
   breadcrumbAt = last;
+  lastCpu = process.cpuUsage();
   watchGc();
+  const profiling = profiler.start(userDataDir);
   // The build belongs on this line. A log spans weeks and several updates, and
   // "did the fix help" is unanswerable without knowing which session ran which
   // build — the 130 s beat was read across four builds before anyone noticed
   // the file never says so.
   const build = appVersion ? `, v${appVersion}` : '';
+  // Say whether the profiler came up. Without it `hot=` is simply absent, and
+  // an absent field has already cost this investigation a week once.
+  const prof = profiling ? `, profiling ${profiler.SAMPLE_US / 1000}ms` : ', no profiler';
   write(
-    `--- session started ${new Date().toISOString()} (threshold ${THRESHOLD_MS}ms${build}) ---`,
+    `--- session started ${new Date().toISOString()} (threshold ${THRESHOLD_MS}ms${build}${prof}) ---`,
   );
   timer = nativeSetInterval(() => {
     const now = Date.now();
     const late = now - last - TICK_MS;
     last = now;
-    if (late < THRESHOLD_MS) return;
+    if (late < THRESHOLD_MS) {
+      // The happy path pays for the two things a stall cannot reconstruct after
+      // the fact: a CPU baseline from the tick BEFORE the freeze, and a profile
+      // window young enough to still hold its samples.
+      if (lastCpu) lastCpu = process.cpuUsage();
+      profiler.recycle(now);
+      return;
+    }
     stallCount++;
     if (late > worstMs) worstMs = late;
     // A mark that predates the stall by a long way was not the cause; say so
     // rather than blaming the last thing that happened to run.
     const age = now - breadcrumbAt;
-    const during = age <= late + TICK_MS * 2 ? breadcrumb : `${breadcrumb} (stale ${age}ms)`;
+    // 'idle' has no age worth printing: it is the ABSENCE of a mark, so dating
+    // it says only how long ago the marked work last ran. The 7 Sep log spent
+    // its right-hand column on `(stale 15412067ms)` — four hours of nothing,
+    // reported once a beat, and read by two people as a clue.
+    const during =
+      breadcrumb === 'idle' || age <= late + TICK_MS * 2
+        ? breadcrumb
+        : `${breadcrumb} (stale ${age}ms)`;
     // Steps still open, oldest first — the one that spans the whole stall is
     // the candidate, and the young ones beside it are just what a busy process
     // looks like.
@@ -374,6 +466,11 @@ function start(userDataDir, context, version) {
     const ran = censusFor(now, late);
     // Not a callback and not instrumentable as one: V8 stopping the thread.
     const gc = gcFor(now, late);
+    // Was anything running at all, and if so, what? `cpu` splits blocked from
+    // busy; `hot` names the frames that owned the samples, whatever scheduled
+    // them — which is the half of the process the census cannot see.
+    const cpu = cpuFor(late);
+    const hot = profiler.report(now, late, TICK_MS * 2);
     let extra = '';
     if (context) {
       try {
@@ -383,7 +480,7 @@ function start(userDataDir, context, version) {
       }
     }
     write(
-      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${ran}${gc}${extra}`,
+      `${new Date(now).toISOString()} STALL ${late}ms during=${during}${open}${slowest}${ran}${gc}${cpu}${hot}${extra}`,
     );
   }, TICK_MS);
   if (timer.unref) timer.unref();
@@ -393,6 +490,8 @@ function stop() {
   if (!timer) return;
   clearInterval(timer);
   timer = null;
+  profiler.stop();
+  lastCpu = null;
   inflight.clear();
   worstStep = null;
   census.length = 0;
@@ -413,6 +512,7 @@ function summary() {
     version: appVersion,
     census: censusOn,
     gc: gcObserver !== null,
+    profiler: profiler.summary(),
   };
 }
 
