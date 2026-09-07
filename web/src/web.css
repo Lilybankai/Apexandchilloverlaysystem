@@ -1,0 +1,52 @@
+/* web.css — the web pit wall's own rules.
+   ---------------------------------------------------------------------------
+   Everything that makes the page LOOK like the desktop Team tab comes from
+   the desktop's stylesheets, copied unchanged. This file only covers what a
+   browser frame needs that the Electron frame did not: the strip without its
+   rail, phones and tablets, and safe areas. Keep it short — a rule that
+   changes how a widget renders belongs in team-panel.css so both stay
+   identical. */
+
+/* The brand strip's subtitle: says which app this is without a second logo. */
+.web-brand__sub {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  font: 700 9.5px var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* The demo badge shares the age pill's look so it reads as a data state. */
+.web-demo { align-self: center; }
+
+/* No rail on the web: the content column is the whole width. */
+.body > .content { width: 100%; }
+
+/* iOS/Android standalone mode paints under the notch; keep the strip clear. */
+.topbar { padding-top: env(safe-area-inset-top, 0); box-sizing: content-box; }
+.content { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0)); }
+
+/* Phones: the strip is 46px of identity — drop the email and the subtitle so
+   the sign-out button always has room, and tighten the content margin so the
+   board gets the pixels. */
+@media (max-width: 560px) {
+  .topbar { padding-left: 10px; padding-right: 10px; gap: 8px; }
+  .brand__name { display: none; }
+  .web-brand__sub { margin-left: 0; }
+  .account__email { display: none; }
+  .account { max-width: 190px; }
+  .content { padding: 12px; }
+}
+
+/* Very small phones: the strip keeps the mark, the unit switch and the
+   account; the subtitle goes. */
+@media (max-width: 420px) {
+  .web-brand__sub { display: none; }
+  .topbar { gap: 6px; }
+  .seg--sm button { padding: 3px 7px; }
+  .account { gap: 6px; }
+}

@@ -65,9 +65,14 @@ const GRAMMAR = [
     group: 'Gaps & rivals',
     // "gap to car ahead" and "whats the gap" are first-week field wordings
     // (2026-08-21 engineer_calls log) that fell through to the cloud.
-    phrases: ['gap ahead', 'gap in front', 'gap front', 'gap to the car ahead', 'gap to car ahead', 'whats the gap'],
+    // Bare "ahead" / "in front" are the shorthand drivers actually use once
+    // they trust the radio — three cloud calls on 2026-08-30 and 2026-08-31
+    // ("ahead", "ahead.", "in front") that the phrase list should have taken.
+    // Longest-needle-wins keeps 'car ahead', 'whos ahead' and 'gap in front'
+    // with their own intents.
+    phrases: ['gap ahead', 'gap in front', 'gap front', 'gap to the car ahead', 'gap to car ahead', 'whats the gap', 'ahead', 'in front'],
   },
-  { intent: 'gapBehind', group: 'Gaps & rivals', phrases: ['gap behind', 'gap to the car behind', 'gap to car behind'] },
+  { intent: 'gapBehind', group: 'Gaps & rivals', phrases: ['gap behind', 'gap to the car behind', 'gap to car behind', 'behind'] },
   {
     intent: 'carAhead',
     group: 'Gaps & rivals',
@@ -207,7 +212,9 @@ const GRAMMAR = [
     // matcher normalizes to these.
     // "tyre status" and "my tyres" are field wordings from the 2026-08-26
     // call log that fell through to the cloud.
-    phrases: ['tyres', 'how are my tyres', 'my tyres', 'tyre status', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures', 'temps'],
+    // Bare singular "tyre" reached the cloud on 2026-08-31: the list had the
+    // plural and every compound but not the one word a driver clips it to.
+    phrases: ['tyres', 'tyre', 'how are my tyres', 'my tyres', 'tyre status', 'tyre temps', 'tyre temp', 'tyre temperature', 'tyre temperatures', 'temps'],
   },
   // Wear RATE and laps left, not temps — a different question from 'tyres'.
   {
@@ -589,6 +596,114 @@ function fuzzyGrammarMatch(haystack) {
   return best ? best.intent : null;
 }
 
+/**
+ * Every word the phrase list knows, plus the single-word asks drivers make
+ * that no phrase covers. Used only by {@link radioNoise} to tell a clipped
+ * question from a transcript of nothing.
+ */
+const GRAMMAR_VOCAB = (() => {
+  const set = new Set();
+  for (const g of GRAMMAR) {
+    for (const p of g.phrases) {
+      for (const w of p.toLowerCase().replace(/['’]/g, '').split(/\s+/)) if (w) set.add(w);
+    }
+  }
+  // Legitimate one-word asks the cloud answers well but no phrase contains —
+  // "overall" got a correct class-position readout on 2026-08-30.
+  for (const w of [
+    'overall', 'standings', 'classification', 'rundown', 'situation',
+    'retirements', 'retired', 'update', 'report', 'strategy', 'plan', 'advice',
+  ]) set.add(w);
+  return set;
+})();
+
+/**
+ * One token reduced to what echo comparison should care about: numbers all
+ * collapse together (we say "one", the mic returns "1.1") and a trailing
+ * plural is dropped ("minutes" is "minute").
+ */
+function stem(w) {
+  if (/^[\d.]+$/.test(w)) return '#';
+  const NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  if (NUM.includes(w)) return '#';
+  return w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w;
+}
+
+/** Question words that make even a two-word fragment a real ask. */
+const QUESTION_WORDS = new Set(['what', 'whats', 'how', 'when', 'where', 'who', 'why', 'which', 'should', 'can', 'do', 'is', 'am', 'are']);
+
+/**
+ * Is this transcript something nobody actually said to us?
+ * -----------------------------------------------------------------------------
+ * The 2026-09-06 review of the engineer_calls log: 30 of 104 cloud calls — 29% —
+ * were not questions. Push-to-talk retains a clip whatever is on the mic, and
+ * whisper always returns *something*, so three kinds of non-question were
+ * reaching the cloud, burning a budget slot each and getting an answer spoken
+ * over the driver:
+ *
+ *   loop   — whisper's repetition hallucination on silence or noise
+ *            ("rear, tyre, rear, tyre, rear, tyre, box, box, box, box, ...").
+ *   echo   — our own Piper voice picked up by the mic and read back. On
+ *            2026-08-30 "this lap, box this lap, box this lap" was answered
+ *            with "I'd box this lap." — the engineer replying to itself.
+ *   noword — a single stray word carrying nothing the radio knows
+ *            ("prompt,", "heads,", "switch.", "lows", "mate", "ladder").
+ *
+ * Returns the reason, or null when this is a real ask. Deliberately narrow:
+ * `loop` and `noword` only ever replace a cloud call that answered "Say
+ * again?" anyway, so the driver hears exactly what they heard before and we
+ * simply stop paying for it. `echo` is the one case that must stay silent —
+ * answering our own voice is the bug, and a reply would feed the loop.
+ *
+ * @param {string} text        the transcript
+ * @param {string[]} [spoken]  lines this engineer spoke in the last ~20 s
+ */
+function radioNoise(text, spoken) {
+  // Same US-spelling fold matchGrammarText applies, or the vocabulary check
+  // below would call whisper's "tires" a word the radio has never heard.
+  const norm = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\btire\b/g, 'tyre')
+      .replace(/\btires\b/g, 'tyres')
+      .trim();
+  const words = norm(text).split(/\s+/).filter(Boolean);
+  if (!words.length) return 'empty';
+
+  // Whisper loops a short token run when the audio carries no speech. A real
+  // sentence of six-plus words does not spend 60% of itself repeating.
+  const distinct = new Set(words);
+  if (words.length >= 6 && distinct.size <= Math.ceil(words.length * 0.4)) return 'loop';
+
+  // Our own voice, back through the mic. Needs five words AND near-total
+  // containment: a driver echoing a phrase back as a genuine question
+  // ("box this lap?") is short, and must survive.
+  //
+  // Compared on stems, because the mic never hears us cleanly: we speak "One
+  // minute remaining in session" and whisper writes back "1.1 minutes
+  // remaining in session." — digits for words and a stray plural.
+  if (Array.isArray(spoken) && words.length >= 5) {
+    const stems = (ws) => new Set(ws.map(stem));
+    const mine = stems([...distinct]);
+    for (const line of spoken) {
+      const said = stems(norm(line).split(/\s+/).filter(Boolean));
+      if (!said.size) continue;
+      let hit = 0;
+      for (const w of mine) if (said.has(w)) hit++;
+      if (hit / mine.size >= 0.7) return 'echo';
+    }
+  }
+
+  // One word, and the radio has never heard of it. Two-plus words always go
+  // through: they carry enough for the model to route honestly.
+  if (words.length === 1 && !GRAMMAR_VOCAB.has(words[0]) && !QUESTION_WORDS.has(words[0]) && !/^\d+$/.test(words[0])) {
+    return 'noword';
+  }
+  return null;
+}
+
 function spawnPs(scriptPath, env) {
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
     stdio: ['pipe', 'pipe', 'ignore'],
@@ -610,6 +725,13 @@ function spawnPs(scriptPath, env) {
 
 const LISTEN_WINDOW_SEC = 6;
 const MIN_CONFIDENCE = 0.82;
+
+/**
+ * How long one of our own spoken lines stays a candidate for echo detection.
+ * Piper takes a couple of seconds to speak a sentence and the listen window is
+ * six, so a line the mic caught can only be this recent.
+ */
+const ECHO_WINDOW_MS = 20_000;
 
 /** Requires a compiled module from dist/, or null when unavailable. */
 function tryRequire(rel) {
@@ -1377,7 +1499,21 @@ class EngineerService {
   /* ---- speaking ------------------------------------------------------------ */
 
   speak(text) {
+    // Remember what we said so radioNoise can recognise our own voice coming
+    // back through the driver's mic. Every line the engineer utters — Tier 1,
+    // Tier 2 and the proactive callouts — funnels through here, so this is the
+    // one place that sees all of it.
+    this.spokenLog = (this.spokenLog || []).filter((e) => Date.now() - e.atMs < ECHO_WINDOW_MS);
+    this.spokenLog.push({ text: String(text || ''), atMs: Date.now() });
+    if (this.spokenLog.length > 8) this.spokenLog.shift();
     if (this.piper && this.piper.stdin.writable) this.piper.stdin.write(text + '\n');
+  }
+
+  /** Lines spoken inside the echo window, newest last — for {@link radioNoise}. */
+  recentlySpoken() {
+    return (this.spokenLog || [])
+      .filter((e) => Date.now() - e.atMs < ECHO_WINDOW_MS)
+      .map((e) => e.text);
   }
 
   /* ---- proactive readouts (Track B) ---------------------------------------- */
@@ -1561,6 +1697,15 @@ class EngineerService {
         const sapiText = (heard.text || '').trim();
         const { question, sttMs } = await this.transcribeClip(heard.wav);
         const text = question || sapiText;
+        // Noise is judged BEFORE the phrase list, not after. A whisper
+        // repetition loop reliably contains a grammar word — the 2026-08-31
+        // clip "rear, tyre, rear, tyre, ... box, box" would otherwise match
+        // 'tyre' and get a confident tyre readout for audio nobody spoke.
+        const noise = radioNoise(text, this.recentlySpoken());
+        if (noise) {
+          if (noise !== 'echo') this.speak('Say again?');
+          return { ok: true, noise };
+        }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
         const intent =
@@ -1765,6 +1910,7 @@ module.exports = {
   ENGINEER_CALLOUTS,
   sampleUrl,
   matchGrammarText,
+  radioNoise,
   fetchStacks,
   describeFetchError,
 };

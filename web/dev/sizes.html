@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Pit wall — size sweep</title>
+<style>
+  body { margin: 0; background: #1a1f2b; color: #ddd; font: 12px system-ui; }
+  .row { display: flex; gap: 12px; padding: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .f { display: flex; flex-direction: column; gap: 4px; }
+  iframe { border: 2px solid #444; background: #060a12; }
+  pre { margin: 0; white-space: pre-wrap; max-width: 420px; font-size: 11px; color: #ffb020; }
+</style>
+</head>
+<body>
+<div class="row" id="row"></div>
+<script>
+  // The widths that matter: a full desktop, a small desktop window, the
+  // desktop's minimum, a tablet in portrait and a phone.
+  const q = new URLSearchParams(location.search);
+  const widths = (q.get('w') || '1280,1000,820,768,390').split(',').map(Number);
+  const height = Number(q.get('h') || 900);
+  const src = q.get('src') || 'board.html?demo=1';
+  // The first-visit walkthrough would sit over every frame: mark it read.
+  try { localStorage.setItem('apex.team.guide.seen', '1'); } catch {}
+  const row = document.getElementById('row');
+  for (const w of widths) {
+    const f = document.createElement('div');
+    f.className = 'f';
+    f.innerHTML = `<b>${w}px</b><iframe width="${w}" height="${height}" src="../${src}"></iframe><pre></pre>`;
+    row.appendChild(f);
+  }
+  /**
+   * Overflow census: any element inside a widget or the header strip whose
+   * content is wider than its box, and not inside a deliberate horizontal
+   * scroller (.team-t__wrap). Printed under each frame, and exposed as
+   * window.__overflow for a script to read.
+   */
+  function census(doc) {
+    const out = [];
+    const scopes = doc.querySelectorAll('.team-hud, .tw, .team-crew');
+    for (const scope of scopes) {
+      const nodes = [scope, ...scope.querySelectorAll('*')];
+      for (const el of nodes) {
+        if (el.closest('.team-t__wrap') && el !== el.closest('.team-t__wrap')) continue;
+        if (el.tagName === 'CANVAS' || el.tagName === 'svg' || el.closest('svg')) continue;
+        const over = el.scrollWidth - el.clientWidth;
+        const cs = doc.defaultView.getComputedStyle(el);
+        if (over > 2 && cs.overflowX !== 'auto' && cs.overflowX !== 'scroll') {
+          const id = el.id ? `#${el.id}` : '';
+          const cls = el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').filter(Boolean).slice(0, 2).join('.') : '';
+          const widget = el.closest('[data-widget]');
+          out.push(`${widget ? widget.dataset.widget + ' › ' : ''}${el.tagName.toLowerCase()}${id}${cls} +${over}px`);
+        }
+      }
+    }
+    // Widgets whose box is narrower than the content they hold are the ones
+    // the user saw "chopped".
+    return Array.from(new Set(out));
+  }
+  window.__overflow = {};
+  setTimeout(() => {
+    for (const f of row.querySelectorAll('.f')) {
+      const iframe = f.querySelector('iframe');
+      const pre = f.querySelector('pre');
+      try {
+        const doc = iframe.contentDocument;
+        const list = census(doc);
+        window.__overflow[iframe.width] = list;
+        pre.textContent = list.length ? list.join('\n') : 'no overflow';
+      } catch (e) { pre.textContent = String(e); }
+    }
+  }, 4000);
+</script>
+</body>
+</html>

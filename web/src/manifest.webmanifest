@@ -1,0 +1,14 @@
+{
+  "name": "Apex Pit Wall",
+  "short_name": "Apex Pit Wall",
+  "description": "The Apex AIO System race engineer board, in a browser.",
+  "start_url": "./board.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#060a12",
+  "theme_color": "#060a12",
+  "icons": [
+    { "src": "assets/icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}

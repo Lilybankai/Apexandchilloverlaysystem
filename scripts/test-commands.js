@@ -846,7 +846,7 @@ function unit() {
   // exists on one side only, the button either can't reach an answer or hears
   // a phrase nothing will answer. Checked here so it fails in `npm test`, not
   // in a race.
-  const { GRAMMAR, ENGINEER_CALLOUTS } = require('../electron/engineer');
+  const { GRAMMAR, ENGINEER_CALLOUTS, matchGrammarText, radioNoise } = require('../electron/engineer');
   const gIntents = new Set(GRAMMAR.map((g) => g.intent));
   check(
     'grammar covers every intent',
@@ -878,6 +878,43 @@ function unit() {
   check(
     'callouts cover last lap, sectors and track limits',
     ['lastLap', 'sectors', 'trackLimits'].every((i) => ENGINEER_CALLOUTS.some((c) => c.intent === i)),
+  );
+
+  /* ---- ask routing: noise guard, then phrase list, then cloud ------------- */
+  // Every transcript below is verbatim from the engineer_calls log. The order
+  // matters: radioNoise runs FIRST, because a whisper repetition loop reliably
+  // contains a grammar word and would otherwise earn a confident Tier 1 answer.
+  const SPOKEN = ["I'd box this lap.", 'One minute remaining in session.'];
+  const route = (q) => radioNoise(q, SPOKEN) || (matchGrammarText(q) ? 'grammar' : 'cloud');
+  const routes = (name, want, qs) =>
+    check(
+      `route/${name} -> ${want}`,
+      qs.every((q) => route(q) === want),
+      qs.filter((q) => route(q) !== want).map((q) => `${q}=${route(q)}`).join(' | ') || 'all',
+    );
+
+  // Shorthand the phrase list missed until 2026-09-06; each was a paid call.
+  routes('clipped shorthand', 'grammar', ['tyre', 'tyres', 'tires', 'ahead', 'ahead.', 'behind', 'in front', 'damage', 'gap ahead']);
+  // Whisper's repetition hallucination on silence, and our own voice returning
+  // through the mic — neither is a question and neither may reach the cloud.
+  routes('whisper loop', 'loop', [
+    'rear, tyre, rear, tyre, rear, tyre, box, box, box, box, rear, tyre',
+    'this lap, box this lap, box this lap',
+  ]);
+  routes('own voice echoed back', 'echo', ['1.1 minutes remaining in session.']);
+  routes('stray single words', 'noword', ['prompt,', 'heads,', 'switch.', 'lows', 'mate', 'ladder', 'fire', 'hardship']);
+  routes('nothing at all', 'empty', ['...', '']);
+  // Real asks the guard must never swallow: racing questions the cloud answers.
+  routes('real questions survive', 'cloud', [
+    'session update', 'retired a car', 'round of the pack', 'and the next lap.',
+    'box to retire the car.', 'overall', 'status.', 'and the', 'car at',
+    'how many cars are pitting before me I had?',
+    'what time do I need on this track to be competitive',
+  ]);
+  check(
+    'echo needs five words — a driver repeating a call still gets through',
+    radioNoise('box this lap', SPOKEN) === null,
+    String(radioNoise('box this lap', SPOKEN)),
   );
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

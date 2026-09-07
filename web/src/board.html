@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <!-- Same lockdown as the desktop panel, plus the one origin a browser has to
+       talk to: the Supabase project. Nothing else loads from anywhere. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self' https://svtyxuhbsbbodsecbnsc.supabase.co; manifest-src 'self'; base-uri 'self'; form-action 'self';" />
+  <meta name="theme-color" content="#060a12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Apex Pit Wall</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.png" />
+  <link rel="apple-touch-icon" href="assets/icon.png" />
+  <!-- The desktop panel's own stylesheets, copied verbatim by
+       scripts/build-web.js, in the desktop's own order (see the notes in
+       electron/control-panel/index.html for why the order matters). -->
+  <link rel="stylesheet" href="control-panel.css" />
+  <link rel="stylesheet" href="hub.css" />
+  <link rel="stylesheet" href="setup-editor.css" />
+  <link rel="stylesheet" href="fuel-panel.css" />
+  <link rel="stylesheet" href="team-panel.css" />
+  <!-- The handful of rules the web frame needs on top. Last, so they win. -->
+  <link rel="stylesheet" href="web.css" />
+</head>
+<body>
+<!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
+<script src="icons.js"></script>
+<!-- The browser's window.apex — must exist before team-panel.js runs. -->
+<script src="web-bridge.js"></script>
+
+<div class="app">
+
+  <!-- ======================== TOP STRIP ================================
+       The desktop's strip minus its live controls (Start/Stop, the feed
+       pill, Race/Training): a browser has no server to start. What remains
+       is identity — who is signed in and the way out — plus the one
+       preference the board reads. -->
+  <header class="topbar">
+    <div class="nav__brand">
+      <img class="brand__mark" src="assets/mark.svg" alt="" />
+      <span class="brand__name">APEX <span class="brand__amp">&amp;</span> CHILL</span>
+      <span class="web-brand__sub">Pit wall</span>
+    </div>
+
+    <span class="nav__spacer"></span>
+
+    <span class="team-age web-demo" id="web-demo" data-state="demo" hidden>DEMO</span>
+
+    <!-- Temperature unit — Settings ▸ Appearance on the desktop. The board
+         prints tyres in it, so it has to be reachable here too. -->
+    <nav class="seg seg--sm" id="web-temp-unit" aria-label="Temperature unit" title="Temperature unit">
+      <button type="button" data-unit="c" data-active="true">°C</button>
+      <button type="button" data-unit="f">°F</button>
+    </nav>
+
+    <div class="account" id="account" hidden>
+      <span class="account__avatar" id="account-initials"></span>
+      <span class="account__text">
+        <span class="account__name" id="account-name"></span>
+        <span class="account__email" id="account-email"></span>
+      </span>
+      <button class="account__out" id="signout-btn" type="button" title="Sign out">Sign out</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <div class="content" id="content">
+<!--TEAM_VIEW-->
+    </div>
+  </div>
+</div>
+
+<!-- The board's own files, verbatim from electron/control-panel/, in the
+     desktop's load order. -->
+<script src="team-fuel.js"></script>
+<script src="team-charts.js"></script>
+<script src="team-dashboard.js"></script>
+<script src="team-panel.js"></script>
+<script src="team-guide.js"></script>
+<script src="web-shell.js"></script>
+</body>
+</html>

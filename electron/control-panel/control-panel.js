@@ -32,6 +32,7 @@
   const glowToggle = $('#glow-toggle');
   const mfdFadeToggle = $('#mfd-fade-toggle');
   const startupToggle = $('#startup-toggle');
+  const webRelayToggle = $('#webrelay-toggle');
   const speedUnit = $('#speed-unit');
   const tempUnit = $('#temp-unit');
   const audioToggle = $('#audio-toggle');
@@ -195,6 +196,8 @@
     // Ships OFF, so plain truthiness rather than the !== false idiom.
     mfdFadeToggle.checked = !!settings.mfdAutoFade;
     if (startupToggle) startupToggle.checked = !!settings.launchOnStartup;
+    // Ships ON, so the !== false idiom: an old config with no key means on.
+    if (webRelayToggle) webRelayToggle.checked = settings.webRelay !== false;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     if (tempUnit) tempUnit.value = settings.tempUnit === 'f' ? 'f' : 'c';
     audioToggle.checked = settings.audioCues !== false;
@@ -2241,6 +2244,19 @@
         startupToggle.checked
           ? 'Apex will start with Windows, minimised.'
           : 'Apex will no longer start with Windows.',
+      );
+    });
+  }
+
+  // The web pit wall relay. Confirmed with a toast for the same reason as the
+  // startup switch: nothing on this screen changes when it moves.
+  if (webRelayToggle) {
+    webRelayToggle.addEventListener('change', async () => {
+      await window.apex.updateSettings({ webRelay: webRelayToggle.checked });
+      showToast(
+        webRelayToggle.checked
+          ? 'Your car will be sent to aio.apexandchill.co.uk while you drive.'
+          : 'Your car will no longer be sent to the web pit wall.',
       );
     });
   }

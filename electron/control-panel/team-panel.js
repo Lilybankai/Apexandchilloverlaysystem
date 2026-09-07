@@ -910,7 +910,12 @@
   function publishStatusText() {
     if (!cloud) return null;
     switch (cloud.publishStatus) {
-      case 'publishing': return { state: 'publishing', text: 'relaying your car to the team' };
+      case 'publishing':
+        // Same relay, two audiences: a team we are in, or only the browser
+        // pit wall at aio.apexandchill.co.uk (no team selected).
+        return cloud.publishTarget === 'web'
+          ? { state: 'publishing', text: 'relaying your car to the web pit wall' }
+          : { state: 'publishing', text: 'relaying your car to the team' };
       case 'waiting': return { state: 'waiting', text: 'relay armed — publishes while you drive' };
       case 'error': return { state: 'error', text: `relay: ${cloud.publishError || 'error'}` };
       default: return null;

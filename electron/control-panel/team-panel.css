@@ -414,8 +414,9 @@
    number appeared. */
 .team-hud {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 10px 16px;
   padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -444,11 +445,16 @@
   gap: 8px 20px;
   flex-wrap: wrap;
 }
+/* The controls wrap onto a second row on a narrow screen (a tablet held
+   upright, a small desktop window) rather than running off the right edge,
+   which is where the Board button used to go. */
 .team-hud__ctl {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  max-width: 100%;
 }
 .team-hud__sep {
   width: 1px;
@@ -463,7 +469,9 @@
   letter-spacing: 0.02em;
   color: var(--text);
   text-transform: uppercase;
-  white-space: nowrap;
+  /* Allowed to break: a long circuit name on a phone was the one thing on
+     the strip that could not wrap, and it pushed the whole row off-screen. */
+  min-width: 0;
 }
 .team-hud__cfg { color: var(--text-3); font-weight: 600; }
 
@@ -693,6 +701,11 @@
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  /* A widget is its own layout context: the tyre corners, the fuel tiles and
+     the weather slots below fold by the width of the BOX they are in, not
+     the window. A 4-column widget in a 1000px window is 300px wide, and a
+     media query on the window cannot know that. */
+  container-type: inline-size;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
@@ -776,7 +789,10 @@
   min-height: 0;
   padding: 10px 12px 12px;
 }
-.tw__body--scroll { overflow-y: auto; overflow-x: hidden; }
+/* Sideways too, as the last resort: content the folds below still cannot
+   fit gets a scrollbar rather than a clipped edge. Nothing on the board is
+   allowed to be chopped off. */
+.tw__body--scroll { overflow-y: auto; overflow-x: auto; }
 .tw__body--chart { display: flex; flex-direction: column; padding: 8px 10px 10px; }
 .tw__body--flush { display: flex; padding: 6px; }
 .tw__body::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -820,6 +836,11 @@
 .tw__grip::after { bottom: 7px; width: 5px; height: 1.5px; }
 .tw:hover .tw__grip { opacity: 0.75; }
 .tw-grid[data-narrow="true"] .tw__grip { display: none; }
+/* A finger cannot hover: on a touch screen the close and resize affordances
+   are simply there. */
+@media (hover: none) {
+  .tw__x, .tw__grip { opacity: 0.75; }
+}
 
 /* ── Live drag / resize states ─────────────────────────────────────────── */
 .tw[data-live] {
@@ -838,3 +859,28 @@
    season, and the board is needed all race. */
 .team-crew { padding: 12px 14px; }
 .team-crew[hidden] { display: none; }
+
+/* ── Narrow widgets ─────────────────────────────────────────────────────────
+   Container queries against the widget box (see .tw). Each rule is the
+   point where the content stopped fitting, measured on the board rather than
+   guessed: the tyre pair needs ~520px, the 3/4-up tiles ~360px. */
+@container (max-width: 520px) {
+  /* Four corners in one column, still mirrored left/right like the car. */
+  .team-tyres { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 380px) {
+  .fuel-tiles.team-tiles--3,
+  .fuel-tiles.team-tiles--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fuel-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The forecast row scrolls sideways rather than squeezing six slots into
+     a space that fits three. */
+  .team-wxrow { grid-auto-columns: minmax(96px, 1fr); overflow-x: auto; padding-bottom: 4px; }
+}
+@container (max-width: 300px) {
+  .team-tyre { gap: 10px; padding: 8px 10px; }
+  .team-wheel { width: 72px; height: 72px; }
+  .team-tyre__wear { font-size: 19px; }
+}
+/* "In window" beside the wear figure drops under it when the card is tight,
+   instead of pushing the figure out of the card. */
+.team-tyre__head { flex-wrap: wrap; }
