@@ -285,17 +285,26 @@ contextBridge.exposeInMainWorld('apex', {
    * come back `signedOut` — a driver with no account still has their sessions.
    */
 
-  /** Every session ever driven, newest first, summaries only: `{ ok, sessions[] }`. */
+  /**
+   * Every session ever driven, newest first: `{ ok, sessions[], career }`.
+   *
+   * Summaries only, plus the driver's whole-history totals — both out of one
+   * read of the log, so the strip across the top of the tab can never disagree
+   * with the list underneath it.
+   */
   reviewSessions: () => ipcRenderer.invoke('review:sessions'),
 
   /** One session in full — stints, laps and its trend line: `{ ok, session }`. */
   reviewSession: (id) => ipcRenderer.invoke('review:session', id),
 
   /**
-   * One lap's trace and circuit: `{ ok, detail, map, reason? }`.
+   * One lap's trace and circuit: `{ ok, detail, map, vs, delta, micro, reason? }`.
    *
-   * `{ id, at, haveMapKey }` — pass the map key already held and the circuit is
-   * omitted from the answer rather than resent.
+   * `{ id, at, haveMapKey, vs }` — pass the map key already held and the
+   * circuit is omitted from the answer rather than resent. `vs` is a second
+   * lap `{ id, at }` to lay underneath this one; with it come the running
+   * delta between the two and the per-micro-sector splits, both computed in
+   * main from the two traces together.
    */
   reviewLap: (req) => ipcRenderer.invoke('review:lap', req),
 

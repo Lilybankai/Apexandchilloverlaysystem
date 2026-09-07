@@ -808,7 +808,7 @@
 
 .rv-lap__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 316px;
+  grid-template-columns: minmax(0, 1fr) 392px;
   gap: 14px;
   align-items: start;
 }
@@ -835,9 +835,10 @@
 .rv-map {
   position: relative;
   width: 100%;
-  /* Square: a circuit is as tall as it is wide often enough that any other
-     ratio wastes the space on one axis or squashes the shape on the other. */
-  aspect-ratio: 1 / 1;
+  /* Wider than tall, because the map is projected as a VIEW rather than a
+     plan: the depth axis is squashed to 55% on the way to the screen, so a
+     square box leaves a band of nothing above and below every circuit. */
+  aspect-ratio: 4 / 3;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -936,3 +937,318 @@
   margin-bottom: 5px;
 }
 .rv-empty p { margin: 0 auto; max-width: 46ch; font-size: 13px; line-height: 1.55; }
+
+/* ============================ SCROLLBARS ================================
+ *
+ * The panel's own, everywhere the Review tab scrolls: the session rail, the
+ * lap sheet's sideways run of columns, and the chip row.
+ *
+ * A default Windows scrollbar is a light grey slab on a near-black page —
+ * the brightest thing on the screen, sitting right beside a column of lap
+ * times it has nothing to do with. These are the same idea as the track's own
+ * furniture: dark, thin, and only worth noticing while the pointer is over
+ * the thing they belong to.
+ *
+ * Both syntaxes, deliberately. `scrollbar-color` is what Firefox and modern
+ * Chromium honour; the ::-webkit- rules are what actually paint in the
+ * Electron build shipped today, and they are the ones that give the thumb its
+ * rounded cap and its hover state.
+ */
+.view[data-view='review'] .rv__list,
+.view[data-view='review'] .rv-sheet__scroll,
+.view[data-view='review'] .rv-micro {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.view[data-view='review'] .rv__list::-webkit-scrollbar,
+.view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar,
+.view[data-view='review'] .rv-micro::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.view[data-view='review'] .rv__list::-webkit-scrollbar-track,
+.view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-track,
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.view[data-view='review'] .rv__list::-webkit-scrollbar-thumb,
+.view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-thumb,
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+.view[data-view='review'] .rv__list:hover::-webkit-scrollbar-thumb,
+.view[data-view='review'] .rv-sheet__scroll:hover::-webkit-scrollbar-thumb,
+.view[data-view='review'] .rv-micro:hover::-webkit-scrollbar-thumb {
+  background: var(--text-3);
+  background-clip: content-box;
+}
+
+.view[data-view='review'] ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ============================== CAREER ==================================
+ *
+ * The driver's whole history, across the top. A strip rather than a card:
+ * it is context for everything below it, not another thing to read, and a
+ * card with a border would put it in the same visual class as a session.
+ */
+
+#rv-career:empty { display: none; }
+
+.rv-career {
+  margin-bottom: 14px;
+  padding: 12px 14px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(38, 187, 244, 0.07), transparent 62%),
+    var(--panel-2);
+}
+
+.rv-career__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rv-career__title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.rv-career__sub { font-size: 11.5px; color: var(--text-3); }
+
+.rv-career__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px 14px;
+}
+
+.rv-stat {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 8px;
+}
+
+.rv-stat .icon {
+  grid-row: 1 / span 2;
+  width: 17px;
+  height: 17px;
+  color: var(--text-3);
+}
+
+.rv-stat__value {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.rv-stat__value u {
+  text-decoration: none;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+
+.rv-stat__label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.rv-career__top {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* ============================ COMPARE BAR ===============================
+ *
+ * The comparison picker, the zoom controls and where they have got to, on one
+ * line under the lap's header. They belong together because they are the two
+ * halves of the same question — WHICH laps, and WHICH stretch of them.
+ */
+
+.rv-lap__bar2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: -4px 0 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rv-cmp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.rv-cmp select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  max-width: 260px;
+}
+
+.rv-cmp select:focus-visible { outline: none; border-color: var(--cyan); }
+
+.rv-cmp--none { font-size: 11.5px; color: var(--text-3); font-style: italic; }
+
+/* What is currently underneath, in the comparison lap's own violet — the same
+   colour the line is drawn in, so the legend needs no legend. */
+.rv-cmp__read {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 4px 9px;
+  border: 1px solid rgba(139, 125, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(139, 125, 255, 0.09);
+  font-size: 12px;
+}
+.rv-cmp__read b { font-weight: 500; color: #8b7dff; }
+.rv-cmp__read span { font-family: var(--font-mono); color: var(--text-2); }
+.rv-cmp__read i { font-family: var(--font-mono); font-style: normal; color: var(--text-3); }
+.rv-cmp__read[data-band='gain'] i { color: var(--ok); }
+.rv-cmp__read[data-band='loss'] i { color: var(--bad); }
+
+.rv-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.rv-zoom__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  min-width: 96px;
+  text-align: right;
+}
+
+.rv-zoom__step {
+  min-width: 28px;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+/* ========================== MICRO-SECTORS ===============================
+ *
+ * The chips: one per ~500 m of road, carrying what that stretch cost or
+ * gained against the comparison lap, and clicking one takes the charts and
+ * the map to it.
+ *
+ * A row that scrolls rather than wraps. Twenty chips over two lines stop
+ * reading as a lap — the order round the circuit is the whole information,
+ * and a wrap breaks it in an arbitrary place.
+ */
+
+.rv-micro {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.rv-micro__chip {
+  flex: 1 1 0;
+  min-width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.rv-micro__chip b {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.rv-micro__chip i {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.rv-micro__chip:hover { border-color: var(--line-2); background: var(--panel-3); }
+
+/* Where the time actually went. The tint is on the chip and the colour on the
+   figure, so a row of chips reads as a shape first and a set of numbers
+   second — which is how a driver finds the corner that cost them. */
+.rv-micro__chip[data-band='loss'] {
+  background: rgba(255, 84, 112, 0.10);
+  border-color: rgba(255, 84, 112, 0.28);
+}
+.rv-micro__chip[data-band='loss'] i { color: var(--bad); }
+.rv-micro__chip[data-band='gain'] {
+  background: rgba(53, 208, 127, 0.10);
+  border-color: rgba(53, 208, 127, 0.28);
+}
+.rv-micro__chip[data-band='gain'] i { color: var(--ok); }
+
+/* The stretch currently on the charts. */
+.rv-micro__chip[data-on='true'] {
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 0 1px rgba(38, 187, 244, 0.35);
+}
+.rv-micro__chip[data-on='true'] b { color: var(--cyan); }
+
+/* ============================ THE ZOOMED VIEW =========================== */
+
+/* Dragging pans the window; the cursor says so before the drag starts. */
+.rv-chan canvas { cursor: crosshair; }
+.rv-chan canvas[data-drag='true'] { cursor: grabbing; }
+.rv-map canvas { cursor: zoom-in; }
+
+.rv-card__note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.rv-read__cell[data-band='loss'] i { color: var(--bad); }
+.rv-read__cell[data-band='gain'] i { color: var(--ok); }
+
+@media (max-width: 1100px) {
+  .rv-career__stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  .rv-stat__value { font-size: 16px; }
+}

@@ -4,6 +4,43 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Added
+
+- **Put one lap on top of another.** Open a lap and pick any other lap of the
+  session to lay underneath it. A delta band goes across the top of the charts —
+  green where you were up, red where you were down, filled so you read the size
+  of it at a glance — and the reference lap's speed and pedals are drawn dashed
+  under your own, with its line on the circuit beside them. Under the charts,
+  one chip per stretch of road (about every 500 m) carries what that stretch
+  cost or gained: the difference between "I was seven tenths slower" and "I was
+  0.18 s slower into turn 3".
+
+- **Zoom into a corner.** Click any part of the road on the map and the charts
+  and the map both go there. So does clicking a chip, scrolling on either of
+  them, or the + and − buttons; dragging the charts sideways pans. Zoomed in,
+  the speed and steering axes rescale to the stretch you are looking at, and a
+  small outline of the whole circuit appears on the map with your position on
+  it, so a corner filling the screen is still a corner you can place.
+
+- **The circuit stands up.** The track map in the lap view is now drawn the way
+  the in-car overlay draws it — tilted into a view, lifted by its own elevation,
+  and standing on its own shadow — instead of as a flat plan with a shaded road.
+  Spa's climb and COTA's turn 1 look like what they are.
+
+- **Everything you have ever driven**, across the top of the Review tab: laps,
+  distance, hours at the wheel, circuits, cars, sessions, and which circuit and
+  car you have done the most laps in. Counted from your own lap files, so it
+  needs no account and was already true before this update shipped.
+
+- **Tyre wear, lap by lap** — one line per corner across the whole session, with
+  the stint changes marked, so a set going off is a shape rather than a number
+  you have to remember from four laps ago.
+
+- **The Review tab's scrollbars** are the panel's own now, instead of the grey
+  Windows default sitting next to a column of lap times.
+
 ## 0.99.2-beta.2 — 2026-09-07
 
 ### Changed

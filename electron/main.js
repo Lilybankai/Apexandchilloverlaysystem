@@ -3339,7 +3339,10 @@ function registerIpc() {
   ipcMain.handle('review:sessions', () => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
-      return { ok: true, sessions: review.listSessions() };
+      // Both out of ONE read of the log: the career totals are a fold over the
+      // same records the sessions are grouped from, so asking separately would
+      // read every lap file twice to answer one screen.
+      return { ok: true, ...review.listSessionsWithCareer() };
     } catch (err) {
       console.error('[app] session list unavailable:', err.message);
       return { ok: false, sessions: [], error: err.message };
@@ -3372,7 +3375,14 @@ function registerIpc() {
     try {
       const detail = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
       const have = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
-      return { ok: true, ...detail.loadLapDetail(id, at, have) };
+      // `vs` is the lap to lay underneath this one. The delta trace and the
+      // micro-sector splits are computed HERE rather than in the renderer:
+      // they are arithmetic over two full traces, they are the phase's whole
+      // claim to correctness, and main is where a test can reach them.
+      const vs = req && req.vs && typeof req.vs.id === 'string' && typeof req.vs.at === 'string'
+        ? { id: req.vs.id, at: req.vs.at }
+        : null;
+      return { ok: true, ...detail.loadLapCompare(id, at, vs, have) };
     } catch (err) {
       console.error('[app] lap detail unavailable:', err.message);
       return { ok: false, detail: null, map: null, error: err.message };

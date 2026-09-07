@@ -38,6 +38,11 @@ function fakeCanvas(w = 640, h = 160) {
   const calls = [];
   const ctx = {
     setTransform() {}, clearRect() {}, fillRect() {}, closePath() {},
+    // Phase 3's additions: the bands clip to their own box, the delta is
+    // filled, and the ribbon's curtain is a gradient.
+    save() {}, restore() {}, clip() {}, rect() {}, drawImage() {},
+    createLinearGradient() { return { addColorStop() {} }; },
+    createRadialGradient() { return { addColorStop() {} }; },
     beginPath() { calls.push(['beginPath']); },
     moveTo(x, y) { calls.push(['moveTo', x, y]); },
     lineTo(x, y) { calls.push(['lineTo', x, y]); },
@@ -369,6 +374,207 @@ function squareMap(rise) {
     CHARTS.drawLapMap(fakeCanvas().canvas, null, chans(10), {}) === null);
   check('no cursor is safe',
     CHARTS.drawLapMap(fakeCanvas().canvas, squareMap(0), chans(160), {}) !== null);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Phase 3 — the window, the delta and the comparison                        */
+/* -------------------------------------------------------------------------- */
+
+{
+  // The window is the whole of zoom: the same stretch of lap fills the plot,
+  // and an auto-ranged band re-measures its axis over it.
+  const tr = chans(400);
+  // A speed profile that only moves in the middle fifth of the lap, so a
+  // zoomed axis and a whole-lap axis cannot possibly agree.
+  tr.speedKph = tr.d.map((v) => (v > 0.4 && v < 0.6 ? 100 + (v - 0.4) * 400 : 300));
+
+  const whole = fakeCanvas(800, 400);
+  CHARTS.drawChannels(whole.canvas, tr, CHARTS.channelBands({}), { lengthM: 5000 });
+  const zoomed = fakeCanvas(800, 400);
+  const geom = CHARTS.drawChannels(zoomed.canvas, tr, CHARTS.channelBands({}), {
+    lengthM: 5000, window: [0.4, 0.6],
+  });
+  const tops = (f) => f.calls.filter(([op]) => op === 'fillText').map(([, t]) => String(t));
+  check('the window comes back with the geometry',
+    geom.window[0] === 0.4 && geom.window[1] === 0.6);
+  check('the speed axis rescales to the window',
+    tops(whole)[0] !== tops(zoomed)[0], `${tops(whole)[0]} vs ${tops(zoomed)[0]}`);
+  check('the axis names both ends of a zoomed window in metres',
+    tops(zoomed).includes('3000 m') && tops(zoomed).includes('2000 m'),
+    tops(zoomed).join(' '));
+  check('a whole lap names one end only',
+    tops(whole).includes('5000 m') && !tops(whole).includes('0 m'));
+
+  // A window is clamped rather than trusted: the panel computes it from mouse
+  // positions and a bad one must not divide by zero.
+  const silly = CHARTS.drawChannels(fakeCanvas().canvas, tr, CHARTS.channelBands({}), {
+    window: [0.9, 0.2],
+  });
+  check('an inverted window still paints', silly !== null);
+  const tiny = CHARTS.drawChannels(fakeCanvas().canvas, tr, CHARTS.channelBands({}), {
+    window: [0.5, 0.5],
+  });
+  check('and so does one with no width', tiny !== null && tiny.window[1] > tiny.window[0]);
+}
+
+{
+  // The delta band only exists when there is a delta to draw.
+  const plain = CHARTS.channelBands({});
+  const withDelta = CHARTS.channelBands({ delta: true });
+  check('no comparison, no delta band', plain.length === 4 && plain[0].label === 'Speed');
+  check('a comparison puts the delta on top', withDelta.length === 5
+    && withDelta[0].label === 'Delta' && withDelta[1].label === 'Speed');
+  check('it reads its own column, not the lap\'s',
+    withDelta[0].from === 'delta' && withDelta[0].series[0].key === 'dt');
+  check('it keeps zero in the middle', withDelta[0].symmetric === true && withDelta[0].zero === true);
+  check('with a floor, so two matched laps are not drawn as a mountain range',
+    withDelta[0].floor === 0.1);
+  check('speed and the pedals accept a second lap', plain[0].compare === true && plain[1].compare === true);
+  check('gear and steering do not — two staircases are unreadable',
+    !plain[2].compare && !plain[3].compare);
+}
+
+{
+  const tr = chans(200);
+  const delta = { d: tr.d.slice(), dt: tr.d.map((v) => -2 * v), reach: 2 };
+  const { canvas, calls } = fakeCanvas(800, 400);
+  const geom = CHARTS.drawChannels(canvas, tr, CHARTS.channelBands({ delta: true }), {
+    delta, lengthM: 5000,
+  });
+  check('five bands when there is a delta', geom.bands.length === 5);
+  check('the delta is the first of them', geom.bands[0].label === 'Delta');
+
+  const band = geom.bands[0];
+  const inBand = calls.filter(([op, , y]) => (op === 'lineTo' || op === 'moveTo')
+    && y >= band.y0 && y <= band.y1);
+  // dt runs 0 -> -2: the lap is gaining, and a gain is drawn DOWNWARD from the
+  // zero rule. The sign is the whole message of this band, so it is pinned.
+  check('a lap that gains time is drawn below the zero rule',
+    inBand[inBand.length - 1][2] > (band.y0 + band.y1) / 2,
+    `${inBand[inBand.length - 1][2]} vs ${(band.y0 + band.y1) / 2}`);
+
+  // …and the band is dropped entirely when the delta is empty, rather than
+  // drawn as a stripe of nothing.
+  const empty = CHARTS.drawChannels(fakeCanvas().canvas, tr,
+    CHARTS.channelBands({ delta: true }), { delta: { d: [], dt: [], reach: 0 } });
+  check('an empty delta drops the band rather than drawing a blank one',
+    empty.bands.length === 4, `${empty.bands.length}`);
+}
+
+{
+  // The comparison lap is drawn as well as, not instead of.
+  const mine = chans(200);
+  const theirs = chans(200);
+  theirs.speedKph = theirs.d.map(() => 50);
+  const solo = fakeCanvas(800, 400);
+  CHARTS.drawChannels(solo.canvas, mine, CHARTS.channelBands({}), {});
+  const both = fakeCanvas(800, 400);
+  CHARTS.drawChannels(both.canvas, mine, CHARTS.channelBands({}), { vs: theirs });
+  check('a second lap adds strokes rather than replacing them',
+    both.calls.filter(([op]) => op === 'stroke').length
+    > solo.calls.filter(([op]) => op === 'stroke').length);
+  check('and it is dashed, so the two are never confused',
+    both.calls.some(([op, n]) => op === 'setLineDash' && n === 2));
+  check('the speed axis covers both laps',
+    both.calls.filter(([op]) => op === 'fillText').some(([, t]) => String(t) === '0'));
+}
+
+{
+  // Micro-sector edges are ruled onto the charts, so the chips underneath and
+  // the divisions above them are visibly the same thing.
+  const micro = [];
+  for (let i = 0; i < 8; i++) micro.push({ no: i + 1, from: i / 8, to: (i + 1) / 8 });
+  const bare = fakeCanvas(800, 400);
+  CHARTS.drawChannels(bare.canvas, chans(200), CHARTS.channelBands({}), {});
+  const ruled = fakeCanvas(800, 400);
+  CHARTS.drawChannels(ruled.canvas, chans(200), CHARTS.channelBands({}), { micro });
+  check('the micro-sector edges are drawn across the bands',
+    ruled.calls.length > bare.calls.length);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The zoomed map, and its locator                                           */
+/* -------------------------------------------------------------------------- */
+
+{
+  const map = squareMap(20);
+  const wide = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, map, chans(160), {});
+  check('a whole lap is drawn at 1x', wide.zoom === 1, `${wide.zoom}`);
+  const near = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, map, chans(160), {
+    window: [0.4, 0.5],
+  });
+  check('a tenth of the lap zooms in', near.zoom > 4, `${near.zoom}`);
+  check('the elevation is unchanged by zooming',
+    near.minY === wide.minY && near.maxY === wide.maxY);
+
+  // The locator only appears once there is something to be lost.
+  const zoomedCalls = fakeCanvas(300, 240);
+  CHARTS.drawLapMap(zoomedCalls.canvas, map, chans(160), { window: [0.4, 0.5] });
+  const wholeCalls = fakeCanvas(300, 240);
+  CHARTS.drawLapMap(wholeCalls.canvas, map, chans(160), {});
+  check('a zoomed map draws the locator inset',
+    zoomedCalls.calls.length > wholeCalls.calls.length);
+}
+
+{
+  // A click on the map answers with a place on the LAP, which is what the
+  // charts and the chips are indexed by.
+  const out = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, squareMap(0), chans(160), {});
+  const g = out.geom;
+  const sc = g.screen[Math.floor(g.n / 4)];
+  const hit = CHARTS.distanceAtPoint(g, (sc.lx + sc.rx) / 2, (sc.ly + sc.ry) / 2);
+  check('a click on the road names the point of the lap it landed on',
+    Math.abs(hit - 0.25) < 0.05, `${hit}`);
+  check('a click miles from the road names nothing',
+    CHARTS.distanceAtPoint(g, -900, -900) === null);
+  check('and no geometry is safe', CHARTS.distanceAtPoint(null, 10, 10) === null);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Tyre wear                                                                 */
+/* -------------------------------------------------------------------------- */
+
+{
+  const wearSession = (n, from = 1) => ({
+    stints: [{
+      no: 1,
+      laps: Array.from({ length: n }, (_, i) => ({
+        lapNo: i + 1,
+        wear: [from - i * 0.01, from - i * 0.012, from - i * 0.008, from - i * 0.011],
+      })),
+    }],
+  });
+
+  const { canvas, calls } = fakeCanvas(600, 150);
+  const out = CHARTS.drawWear(canvas, wearSession(12));
+  check('the wear chart paints', out !== null);
+  check('one point per lap that reported wear', out.laps === 12, `${out.laps}`);
+  check('the axis is the percentage USED, so it climbs',
+    calls.some(([op, t]) => op === 'fillText' && String(t).endsWith('%')));
+  check('the first and last lap are named',
+    calls.some(([op, t]) => op === 'fillText' && String(t) === 'LAP 1')
+    && calls.some(([op, t]) => op === 'fillText' && String(t) === 'LAP 12'));
+  check('four corners are drawn',
+    calls.filter(([op]) => op === 'stroke').length >= 4);
+
+  check('a session that reported no wear paints nothing',
+    CHARTS.drawWear(fakeCanvas().canvas, { stints: [{ no: 1, laps: [{ lapNo: 1 }] }] }) === null);
+  check('and neither does one with a single lap of it',
+    CHARTS.drawWear(fakeCanvas().canvas, wearSession(1)) === null);
+
+  // A stint change is ruled in, because that is where a new set went on.
+  const twoStints = {
+    stints: [
+      { no: 1, laps: wearSession(6).stints[0].laps },
+      { no: 2, laps: wearSession(6, 0.94).stints[0].laps },
+    ],
+  };
+  const marked = fakeCanvas(600, 150);
+  CHARTS.drawWear(marked.canvas, twoStints);
+  check('the stint change is ruled in',
+    marked.calls.some(([op, n]) => op === 'setLineDash' && n === 2));
+  check('over every lap of both stints',
+    CHARTS.drawWear(fakeCanvas(600, 150).canvas, twoStints).laps === 12);
 }
 
 console.log(`\ntest-reviewcharts: ${passed} passed, ${failed} failed`);

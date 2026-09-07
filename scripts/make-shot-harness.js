@@ -57,7 +57,7 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     const stopAt = Date.now() + 5000;
     const tick = () => {
       const row = document.querySelector('tr[data-open]');
-      if (row) { row.click(); setTimeout(scrub, 400); return; }
+      if (row) { row.click(); setTimeout(compare, 400); return; }
       if (Date.now() < stopAt) setTimeout(tick, 120);
     };
     // ?scrub=0.62 then parks the cursor 62% of the way round the lap, so the
@@ -75,6 +75,26 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
         clientX: box.left + 46 + (box.width - 54) * at,
         clientY: box.top + box.height / 2,
       }));
+    };
+    // ?vs=1 then picks the first lap in the comparison list, so the delta
+    // band, the second line on the map and the micro-sector chips are all in
+    // the shot. Dispatched as a real change event, through the same handler.
+    const compare = () => {
+      if (!new URLSearchParams(location.search).get('vs')) { scrub(); return; }
+      const sel = document.querySelector('[data-cmp]');
+      if (!sel || sel.options.length < 2) { scrub(); return; }
+      sel.selectedIndex = 1;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      setTimeout(() => { chip(); scrub(); }, 500);
+    };
+
+    // ?sq=5 then clicks that micro-sector chip, which is how the zoomed state
+    // of the charts and the map gets into a shot.
+    const chip = () => {
+      const no = Number(new URLSearchParams(location.search).get('sq'));
+      if (!Number.isFinite(no) || no < 1) return;
+      const el = document.querySelector('[data-micro="' + no + '"]');
+      if (el) el.click();
     };
     setTimeout(tick, 300);
   }
@@ -228,14 +248,17 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // The Review tab. The fixture below is real output from the compiled
     // stintReview module fed a synthetic lap log, rather than hand-written
     // JSON — so the harness cannot drift from what the tab actually receives.
-    reviewSessions: P({ ok: true, sessions: REVIEW.summaries }),
+    reviewSessions: P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
     // Every row opens the SAME lap, and deliberately: this is a screenshot
     // harness, the detail is a real trace and a real circuit read off this
     // machine, and matching it to a synthetic lap id would only make the
     // fixture lie in a different place. On a machine with no laps recorded it
     // comes back empty and the view shows its own no-telemetry state.
-    reviewLap: () => Promise.resolve(REVIEW.lap),
+    // Two fixtures, because the comparison is a different answer and not a
+    // decoration on the same one: the delta trace and the micro-sector splits
+    // only exist when a second lap was asked for.
+    reviewLap: (req) => Promise.resolve(req && req.vs ? REVIEW.lapVs : REVIEW.lap),
   };
 })();
 `;
@@ -339,7 +362,14 @@ function reviewFixture() {
     s.trend = [...byDay.entries()].sort().map(([day, bestMs]) => ({ day, bestMs }));
     byId[s.id] = s;
   }
-  return { summaries: sessions.map(mod.summaryOf), byId };
+  return {
+    summaries: sessions.map(mod.summaryOf),
+    byId,
+    // The career strip, from the same laps — so the totals across the top of
+    // the harness agree with the sessions underneath it rather than being a
+    // second set of invented numbers.
+    career: mod.careerStats(laps),
+  };
 }
 
 /**
@@ -353,18 +383,34 @@ function reviewFixture() {
  * never recorded a lap, which is itself a state the view has to handle.
  */
 function reviewLapFixture() {
+  const empty = { ok: true, detail: null, map: null, reason: 'no-trace' };
   try {
     const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
     const detail = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
     const laps = review.readAllLaps().filter((l) => l.id && l.clean && l.s1Ms);
+    let one = null;
+    let oneRec = null;
     for (let i = laps.length - 1; i >= 0 && i > laps.length - 400; i -= 1) {
-      const got = detail.loadLapDetail(laps[i].id, laps[i].at);
-      if (got.detail) return { ok: true, ...got };
+      const got = detail.loadLapCompare(laps[i].id, laps[i].at, null);
+      if (got.detail) { one = got; oneRec = laps[i]; break; }
     }
+    if (!one) return { lap: empty, lapVs: empty };
+    // A second lap at the same circuit, in the same car, for the comparison
+    // fixture — which is the only comparison the app itself offers, so a
+    // fixture that paired two circuits would be testing a screen nobody can
+    // reach.
+    for (let i = laps.length - 1; i >= 0 && i > laps.length - 400; i -= 1) {
+      const other = laps[i];
+      if (other.id === oneRec.id) continue;
+      if (other.trackKey !== oneRec.trackKey || other.car !== oneRec.car) continue;
+      const pair = detail.loadLapCompare(oneRec.id, oneRec.at, { id: other.id, at: other.at });
+      if (pair.detail && pair.vs) return { lap: one, lapVs: pair };
+    }
+    return { lap: one, lapVs: one };
   } catch {
     /* unbuilt dist, or no laps here — the view shows its empty state */
   }
-  return { ok: true, detail: null, map: null, reason: 'no-trace' };
+  return { lap: empty, lapVs: empty };
 }
 
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
@@ -381,17 +427,20 @@ if (!html.includes(marker)) {
   for (const session of Object.values(fixture.byId)) {
     for (const stint of session.stints) for (const lap of stint.laps) lap.hasTrace = true;
   }
-  const lap = reviewLapFixture();
+  const { lap, lapVs } = reviewLapFixture();
   fs.writeFileSync(
     path.join(DIR, '__shot-stub.js'),
     STUB.replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
+        .replace('REVIEW.career', `${JSON.stringify(fixture.career)}`)
+        .replace('REVIEW.lapVs', `${JSON.stringify(lapVs)}`)
         .replace('REVIEW.lap', `${JSON.stringify(lap)}`),
   );
   console.log(
     lap.detail
       ? `  review: real lap fixture — ${lap.detail.track}, ${lap.detail.count} points, ` +
-        `${lap.detail.hasLine ? 'with' : 'without'} the driven line`
+        `${lap.detail.hasLine ? 'with' : 'without'} the driven line` +
+        `${lapVs.vs ? `, compared against a second real lap (${lapVs.micro.length} micro-sectors)` : ''}`
       : '  review: no lap on this machine — the detail view will show its empty state',
   );
 }
@@ -401,3 +450,4 @@ fs.writeFileSync(
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
+console.log('  the lap view: ?tab=review&lap=1[&vs=1][&sq=5][&scrub=0.34]');

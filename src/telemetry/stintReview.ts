@@ -696,3 +696,159 @@ export function loadSession(id: string, dir = lapDir()): ReviewSession | null {
     .map(([day, bestMs]) => ({ day, bestMs }));
   return session;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  The driver, over everything                                               */
+/* -------------------------------------------------------------------------- */
+
+/** One line of a career tally, so the same shape can name a track or a car. */
+export interface CareerTally {
+  name: string;
+  laps: number;
+  /** Metres driven under this name. */
+  distanceM: number;
+  bestMs: number | null;
+}
+
+/**
+ * Everything a driver has ever done with Apex running, in one row of numbers.
+ *
+ * Derived, like everything else here, from the lap log alone — so it needs no
+ * counter to keep up to date, cannot drift out of step with the sessions below
+ * it, and is retrospectively correct the moment a rule changes.
+ */
+export interface CareerStats {
+  /** Every lap on disk, including out-laps, in-laps and laps with no time. */
+  laps: number;
+  cleanLaps: number;
+  timedLaps: number;
+  /** Metres, summed per lap from the circuit's length. */
+  distanceM: number;
+  /** Time actually on a lap, ms — the sum of the timed laps. */
+  driveMs: number;
+  sessions: number;
+  /** Distinct circuits, by the lap log's own track key. */
+  tracks: number;
+  cars: number;
+  classes: number;
+  /** Days with at least one lap on them. */
+  days: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  /** The circuits and cars with the most laps, most first. */
+  topTracks: CareerTally[];
+  topCars: CareerTally[];
+}
+
+const EMPTY_CAREER: CareerStats = {
+  laps: 0,
+  cleanLaps: 0,
+  timedLaps: 0,
+  distanceM: 0,
+  driveMs: 0,
+  sessions: 0,
+  tracks: 0,
+  cars: 0,
+  classes: 0,
+  days: 0,
+  firstAt: null,
+  lastAt: null,
+  topTracks: [],
+  topCars: [],
+};
+
+/** Fold a lap into a name's tally, creating the tally on first sight. */
+function tallyInto(
+  into: Map<string, CareerTally>,
+  name: string,
+  distanceM: number,
+  lapMs: number | undefined,
+  clean: boolean,
+): void {
+  if (!name) return;
+  const row = into.get(name) || { name, laps: 0, distanceM: 0, bestMs: null };
+  row.laps += 1;
+  row.distanceM += distanceM;
+  if (clean && lapMs !== undefined && lapMs > 0 && (row.bestMs === null || lapMs < row.bestMs)) {
+    row.bestMs = lapMs;
+  }
+  into.set(name, row);
+}
+
+/**
+ * The driver's whole history as a handful of totals.
+ *
+ * Distance is summed **per lap from the circuit's length**, which is what a lap
+ * log can honestly answer: it counts an out-lap and an in-lap as a full lap
+ * each, because the car did go round, and it has no way to know a lap was
+ * abandoned halfway. Over thousands of laps the error is a fraction of a
+ * percent and always in the same direction, which is the right trade for a
+ * figure read as "how far have I driven" rather than used in a calculation.
+ *
+ * `sessions` is the same inference the list uses, so the number here and the
+ * number of cards below it can never disagree.
+ */
+export function careerStats(records: LapRecord[], traces = ''): CareerStats {
+  if (!records.length) return { ...EMPTY_CAREER };
+
+  const tracks = new Map<string, CareerTally>();
+  const cars = new Map<string, CareerTally>();
+  const classes = new Set<string>();
+  const days = new Set<string>();
+  let distanceM = 0;
+  let driveMs = 0;
+  let cleanLaps = 0;
+  let timedLaps = 0;
+
+  for (const rec of records) {
+    const metres = num(rec.distanceM) ?? num(rec.trackLengthM) ?? 0;
+    const lapMs = num(rec.lapMs);
+    const clean = rec.clean === true;
+    distanceM += metres;
+    if (lapMs !== undefined && lapMs > 0) {
+      timedLaps += 1;
+      driveMs += lapMs;
+    }
+    if (clean) cleanLaps += 1;
+    if (rec.carClass) classes.add(rec.carClass);
+    const day = String(rec.at || '').slice(0, 10);
+    if (day) days.add(day);
+    tallyInto(tracks, rec.track || rec.trackKey || '', metres, lapMs, clean);
+    tallyInto(cars, rec.car || '', metres, lapMs, clean);
+  }
+
+  const byLaps = (a: CareerTally, b: CareerTally): number => b.laps - a.laps;
+  const first = records[0] as LapRecord;
+  const last = records[records.length - 1] as LapRecord;
+
+  return {
+    laps: records.length,
+    cleanLaps,
+    timedLaps,
+    distanceM,
+    driveMs,
+    sessions: groupSessions(records, traces).length,
+    tracks: tracks.size,
+    cars: cars.size,
+    classes: classes.size,
+    days: days.size,
+    firstAt: first.at || null,
+    lastAt: last.at || null,
+    topTracks: [...tracks.values()].sort(byLaps).slice(0, 5),
+    topCars: [...cars.values()].sort(byLaps).slice(0, 5),
+  };
+}
+
+/** The sessions list and the career totals from one read of the log. */
+export function listSessionsWithCareer(
+  dir = lapDir(),
+  limit = 400,
+): { sessions: SessionSummary[]; career: CareerStats } {
+  const records = readAllLaps(dir);
+  const traces = tracesBeside(dir);
+  const sessions = groupSessions(records, traces)
+    .reverse()
+    .slice(0, Math.max(1, limit))
+    .map(summaryOf);
+  return { sessions, career: careerStats(records, traces) };
+}

@@ -49,6 +49,7 @@
   const FMT = { fmtLap: null, dayLabel: null };
 
   const els = {
+    career: null,
     view: null, search: null, filter: null, list: null, detail: null,
   };
 
@@ -76,6 +77,8 @@
   let speedUnit = 'kph';
   /** The page has been found and wired. See init() for why this is checked. */
   let ready = false;
+  /** The driver's whole history, from the same read as the sessions list. */
+  let career = null;
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -167,6 +170,68 @@
   /* ---------------------------------------------------------------------- */
   /*  The session list                                                      */
   /* ---------------------------------------------------------------------- */
+
+  /* ---------------------------------------------------------------------- */
+  /*  Everything, ever                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The driver's own totals, across the top of the page.
+   *
+   * It sits above the session list rather than inside a session because it is
+   * the one thing here that is not about a session: it is the answer to "how
+   * much have I actually done", which is the question a driver asks first and
+   * which no single card below can answer. Derived from the same read of the
+   * lap log the list comes from, so it cannot drift out of step with what is
+   * underneath it.
+   */
+  function careerHtml() {
+    if (!career || !career.laps) return '';
+    const miles = speedUnit === 'mph';
+    const distance = career.distanceM / (miles ? 1609.344 : 1000);
+    const hours = career.driveMs / 3_600_000;
+
+    const stat = (icon, value, unit, label) => `
+      <div class="rv-stat">
+        <svg class="icon"><use href="#i-${icon}" /></svg>
+        <span class="rv-stat__value">${value}<u>${esc(unit)}</u></span>
+        <span class="rv-stat__label">${esc(label)}</span>
+      </div>`;
+
+    // Thousands of laps and tens of thousands of kilometres are the normal
+    // case after a season, so the big numbers are grouped rather than left as
+    // an unreadable run of digits.
+    const group = (n) => Math.round(n).toLocaleString();
+    const top = [
+      career.topTracks[0] ? `${career.topTracks[0].name} (${career.topTracks[0].laps} laps)` : '',
+      career.topCars[0] ? `${career.topCars[0].name} (${career.topCars[0].laps} laps)` : '',
+    ].filter(Boolean).join(' · ');
+
+    return `
+      <div class="rv-career">
+        <div class="rv-career__head">
+          <span class="rv-career__title">Everything you have driven</span>
+          <span class="rv-career__sub">${
+            career.firstAt ? `since ${esc(dayLabel(career.firstAt))}` : ''
+          }${career.days ? ` · ${career.days} day${career.days === 1 ? '' : 's'} with laps` : ''}</span>
+        </div>
+        <div class="rv-career__stats">
+          ${stat('flag', group(career.laps), '', `laps${
+            career.cleanLaps ? `, ${group(career.cleanLaps)} clean` : ''
+          }`)}
+          ${stat('orbit', group(distance), miles ? 'mi' : 'km', 'distance')}
+          ${stat('clock', hours >= 10 ? group(hours) : hours.toFixed(1), 'h', 'at the wheel')}
+          ${stat('circuit', String(career.tracks), '', `circuit${career.tracks === 1 ? '' : 's'}`)}
+          ${stat('gauge', String(career.cars), '', `car${career.cars === 1 ? '' : 's'}`)}
+          ${stat('list-ordered', group(career.sessions), '', 'sessions')}
+        </div>
+        ${top ? `<div class="rv-career__top">Most laps: ${esc(top)}</div>` : ''}
+      </div>`;
+  }
+
+  function renderCareer() {
+    if (els.career) els.career.innerHTML = careerHtml();
+  }
 
   function matchesFilter(row) {
     const type = els.filter ? els.filter.value : 'all';
@@ -537,13 +602,88 @@
     known(kph) ? `${Math.round(speedUnit === 'mph' ? kph * 0.621371 : kph)}` : dash;
   const speedUnitLabel = () => (speedUnit === 'mph' ? 'mph' : 'km/h');
 
+  /** A signed number of seconds, as a driver reads a delta: `+0.18`, `-1.04`. */
+  function fmtSec(sec, dp = 2) {
+    if (!known(sec)) return dash;
+    // Anything inside half of the last digit shown is printed as zero rather
+    // than as a signed nothing: "-0.00" reads as a loss and is not one.
+    if (Math.abs(sec) < 0.5 / 10 ** dp) return (0).toFixed(dp);
+    const s = sec.toFixed(dp);
+    return sec > 0 ? `+${s}` : s;
+  }
+
+  /** Which way a delta went, for colour. A hundredth is inside the noise. */
+  const deltaBand = (sec) => {
+    if (!known(sec)) return 'none';
+    if (sec < -0.01) return 'gain';
+    if (sec > 0.01) return 'loss';
+    return 'level';
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /*  The window                                                            */
+  /*                                                                        */
+  /*  One window, shared by the charts and the map. Zoom is not a property  */
+  /*  of a chart here — it is a property of the STRETCH OF ROAD being       */
+  /*  studied, and the whole point of the lap view is that everything on it */
+  /*  is talking about the same piece of track at the same moment.          */
+  /* ---------------------------------------------------------------------- */
+
+  /** The tightest window allowed, as a lap fraction — about 20 m at Spa. */
+  const MIN_SPAN = 0.004;
+  /** What a click on the map opens up to, when nothing was zoomed yet. */
+  const CLICK_SPAN = 0.1;
+
+  function setWindow(from, to) {
+    if (!lapView) return;
+    let a = Math.max(0, Math.min(1, from));
+    let b = Math.max(0, Math.min(1, to));
+    if (b - a < MIN_SPAN) {
+      const mid = (a + b) / 2;
+      a = Math.max(0, mid - MIN_SPAN / 2);
+      b = Math.min(1, a + MIN_SPAN);
+      a = Math.max(0, b - MIN_SPAN);
+    }
+    lapView.window = [a, b];
+    if (lapView.repaint) lapView.repaint();
+  }
+
+  /** Zoom about a point of the lap, keeping that point where it is on screen. */
+  function zoomAbout(factor, anchorD) {
+    if (!lapView) return;
+    const [a, b] = lapView.window;
+    const span = b - a;
+    const next = Math.max(MIN_SPAN, Math.min(1, span * factor));
+    if (Math.abs(next - span) < 1e-6) return;
+    const anchor = known(anchorD) ? Math.min(b, Math.max(a, anchorD)) : (a + b) / 2;
+    // The fraction of the plot the anchor sits at is preserved, which is what
+    // makes a wheel zoom land where the pointer is rather than in the middle.
+    const f = span > 0 ? (anchor - a) / span : 0.5;
+    let from = anchor - f * next;
+    if (from < 0) from = 0;
+    if (from + next > 1) from = 1 - next;
+    setWindow(from, from + next);
+  }
+
+  /** Centre the window on a point of the lap, opening it up if it was whole. */
+  function focusOn(dd, span) {
+    if (!lapView || !known(dd)) return;
+    const [a, b] = lapView.window;
+    const width = span || (b - a >= 0.999 ? CLICK_SPAN : b - a);
+    setWindow(dd - width / 2, dd + width / 2);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  One lap                                                               */
+  /* ---------------------------------------------------------------------- */
+
   /** The values at the cursor, or the lap's own headline when there is none. */
   function readoutHtml(view) {
     const d = view.detail;
     const ch = d.channels;
     const i = view.cursor;
-    const cell = (label, value) =>
-      `<span class="rv-read__cell"><b>${esc(label)}</b><i>${value}</i></span>`;
+    const cell = (label, value, band) =>
+      `<span class="rv-read__cell"${band ? ` data-band="${band}"` : ''}><b>${esc(label)}</b><i>${value}</i></span>`;
 
     if (i === null || i === undefined || !ch.d || i >= ch.d.length) {
       return `
@@ -551,17 +691,21 @@
           ${cell('V-max', `${speedOf(d.vMaxKph)} <u>${speedUnitLabel()}</u>`)}
           ${cell('Samples', String(d.count))}
           ${cell('Measured', `${fix(d.lapSec, 3)}<u>s</u>`)}
-          <span class="rv-read__hint">Move across the charts to read the lap</span>
+          <span class="rv-read__hint">Move across the charts to read the lap · scroll to zoom</span>
         </div>`;
     }
 
     const at = (key, dp) => (Array.isArray(ch[key]) && known(ch[key][i]) ? fix(ch[key][i], dp) : dash);
     const steer = Array.isArray(ch.steer) && known(ch.steer[i]) ? ch.steer[i] : null;
     const metres = d.channels.d[i] * (view.lengthM || 0);
+    // The gap at the cursor comes off the delta trace by index, because the
+    // delta was built on this lap's own grid — see lapDetail.deltaTrace.
+    const gapSec = view.delta && known(view.delta.dt[i]) ? view.delta.dt[i] : null;
     return `
       <div class="rv-read">
+        ${gapSec === null ? '' : cell('Delta', `${fmtSec(gapSec)}<u>s</u>`, deltaBand(gapSec))}
         ${cell('Distance', `${Math.round(metres)}<u>m</u>`)}
-        ${cell('Time', `${fix(ch.t[i], 2)}<u>s</u>`)}
+        ${cell('Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
         ${cell('Speed', `${speedOf(ch.speedKph[i])}<u>${speedUnitLabel()}</u>`)}
         ${cell('Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
         ${cell('Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
@@ -580,12 +724,121 @@
     return known(sectors.s1) ? 'S3' : '';
   }
 
+  /**
+   * Every other lap of the session that could be laid under this one.
+   *
+   * Only laps with telemetry, and only from the same session — which is the
+   * plan's "your own laps" comparison (decision 2) at its narrowest and
+   * fairest: same car, same circuit, same afternoon, same tyres give or take a
+   * stint. The session's best is offered first because it is the comparison a
+   * driver reaches for nine times out of ten.
+   */
+  function compareOptions(view) {
+    const s = view.session;
+    if (!s) return [];
+    const laps = [];
+    for (const stint of s.stints) {
+      for (const lap of stint.laps) {
+        if (!lap.hasTrace || lap.id === view.lap.id) continue;
+        laps.push(lap);
+      }
+    }
+    const best = known(s.stats.bestMs)
+      ? laps.find((l) => l.timed && l.clean && l.lapMs === s.stats.bestMs)
+      : null;
+    return laps
+      .slice()
+      .sort((a, b) => {
+        if (best && a.id === best.id) return -1;
+        if (best && b.id === best.id) return 1;
+        return a.lapNo - b.lapNo;
+      })
+      .map((lap) => ({
+        lap,
+        label: `Lap ${lap.lapNo}${best && lap.id === best.id ? ' · session best' : ''} · ${
+          lap.timed ? fmtLap(lap.lapMs) : 'no time'
+        }`,
+      }));
+  }
+
+  /** The comparison picker, and what it is currently showing. */
+  function compareHtml(view) {
+    const opts = compareOptions(view);
+    if (!opts.length) {
+      return '<span class="rv-cmp rv-cmp--none">No other lap here has telemetry</span>';
+    }
+    const chosen = view.vsLap ? view.vsLap.id : '';
+    return `
+      <label class="rv-cmp">
+        <span>Compare with</span>
+        <select data-cmp aria-label="Lay another lap under this one">
+          <option value=""${chosen ? '' : ' selected'}>Nothing</option>
+          ${opts.map((o) => `<option value="${esc(o.lap.id || '')}"${
+            chosen === o.lap.id ? ' selected' : ''
+          }>${esc(o.label)}</option>`).join('')}
+        </select>
+      </label>`;
+  }
+
+  /** The zoom controls, and the stretch of road they have arrived at. */
+  function zoomHtml(view) {
+    const [a, b] = view.window;
+    const whole = b - a >= 0.999;
+    const m = view.lengthM || 0;
+    const label = whole
+      ? 'Whole lap'
+      : `${Math.round(a * m)}–${Math.round(b * m)} m`;
+    return `
+      <div class="rv-zoom">
+        <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
+        <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
+                title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
+        <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="in"
+                title="Zoom in" aria-label="Zoom in"><span>+</span></button>
+        <button type="button" class="btn btn--ghost btn--sm" data-zoom="reset"
+                title="Back to the whole lap"${whole ? ' disabled' : ''}>
+          <span>Whole lap</span>
+        </button>
+      </div>`;
+  }
+
+  /**
+   * The micro-sector chips.
+   *
+   * The load-bearing idea of the whole comparison: they are how a driver gets
+   * from "I was 0.7 s slower" to "I was 0.18 s slower in SQ3", and they are the
+   * click target that focuses the charts and the map on one piece of road.
+   * Without a comparison lap they still divide the lap up and still zoom, they
+   * just have no number on them yet.
+   */
+  function microHtml(view) {
+    if (!view.micro || !view.micro.length) return '';
+    const [a, b] = view.window;
+    return `
+      <div class="rv-micro" role="group" aria-label="Micro-sectors">
+        ${view.micro.map((seg) => {
+          const inside = seg.from >= a - 1e-6 && seg.to <= b + 1e-6 && b - a < 0.999;
+          return `
+          <button type="button" class="rv-micro__chip" data-micro="${seg.no}"
+                  data-band="${deltaBand(seg.deltaSec)}" data-on="${String(inside)}"
+                  title="${esc(`SQ${seg.no} · ${Math.round(seg.from * (view.lengthM || 0))}–${
+                    Math.round(seg.to * (view.lengthM || 0))
+                  } m`)}">
+            <b>SQ${seg.no}</b>
+            <i>${seg.deltaSec === null ? (known(seg.aSec) ? `${seg.aSec.toFixed(1)}s` : dash)
+              : fmtSec(seg.deltaSec)}</i>
+          </button>`;
+        }).join('')}
+      </div>`;
+  }
+
   function lapViewHtml(view) {
     const d = view.detail;
     const lap = view.lap;
     const s = view.session;
     const best = s && known(s.stats.bestMs) ? s.stats.bestMs : null;
     const gap = best !== null && lap.timed && lap.lapMs !== best ? lap.lapMs - best : null;
+    const vsGap = view.vs && view.vs.lapMs > 0 && lap.lapMs > 0 ? lap.lapMs - view.vs.lapMs : null;
 
     const sectorChip = (n, ms) => `
       <span class="rv-chip"><b>S${n}</b>${known(ms) ? fmtSector(ms) : dash}</span>`;
@@ -611,10 +864,22 @@
           </span>
         </div>
 
+        <div class="rv-lap__bar2">
+          ${compareHtml(view)}
+          ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}">
+            <b>Lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}</b>
+            <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
+            ${vsGap === null ? '' : `<i>${fmtDelta(vsGap)}</i>`}
+          </span>` : ''}
+          ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
+          ${zoomHtml(view)}
+        </div>
+
         <div class="rv-lap__body">
           <div class="rv-lap__charts">
             <div class="rv-readwrap">${readoutHtml(view)}</div>
             <div class="rv-chan"><canvas></canvas></div>
+            ${microHtml(view)}
           </div>
           <aside class="rv-lap__side">
             <div class="rv-map">${view.map ? '<canvas></canvas>' : `
@@ -624,9 +889,10 @@
               </div>`}</div>
             <p class="rv-lap__note">${
               d.hasLine
-                ? 'The cyan line is the line you drove. The road is shaded by elevation.'
+                ? 'The cyan line is the line you drove, standing on the circuit’s own elevation. '
+                  + 'Click any part of the road to zoom in on it.'
                 : 'This lap was recorded before Apex captured the driven line, so the marker follows the centreline. '
-                  + 'Laps driven from the next update carry the line you actually took.'
+                  + 'Click any part of the road to zoom in on it.'
             }</p>
             <div class="rv-rows">
               <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>
@@ -634,6 +900,8 @@
               <div class="rv-row"><b>Circuit</b><span data-none="${String(!view.map)}">${
                 view.map ? `${view.map.points.length} pts${view.map.builtin ? ', bundled' : ', learned'}` : dash
               }</span></div>
+              ${view.elevation ? `<div class="rv-row"><b>Elevation</b><span>${
+                Math.round(view.elevation)} m rise</span></div>` : ''}
             </div>
           </aside>
         </div>
@@ -641,12 +909,16 @@
   }
 
   /**
-   * Paint the lap view and wire the scrub.
+   * Paint the lap view and wire the scrub, the zoom and the map.
    *
    * The cursor is an INDEX into the columns, not a pixel and not a distance:
    * every readout, the map marker and the vertical rule all have to name the
    * same sample, and carrying anything else means three places rounding a
    * distance back to an index and disagreeing about it.
+   *
+   * The window, by contrast, IS a pair of distances — it has to be, because the
+   * map and the charts index their samples differently and the one thing they
+   * agree on is where they are on the road.
    */
   function paintLapView() {
     const view = lapView;
@@ -661,20 +933,53 @@
     let geom = null;
 
     const repaint = () => {
-      geom = CHARTS.drawChannels(canvas, ch, CHARTS.channelBands({ mph: speedUnit === 'mph' }), {
-        sectors: view.detail.sectors,
-        lengthM: view.lengthM,
-        cursorD: view.cursor === null ? -1 : ch.d[view.cursor],
-      });
-      if (mapCanvas && view.map) {
-        CHARTS.drawLapMap(mapCanvas, view.map, ch, {
+      const cursorD = view.cursor === null ? -1 : ch.d[view.cursor];
+      geom = CHARTS.drawChannels(
+        canvas, ch,
+        CHARTS.channelBands({ mph: speedUnit === 'mph', delta: !!view.delta }),
+        {
           sectors: view.detail.sectors,
-          cursorD: view.cursor === null ? -1 : ch.d[view.cursor],
+          lengthM: view.lengthM,
+          cursorD,
+          window: view.window,
+          vs: view.vs ? view.vs.channels : null,
+          delta: view.delta,
+          micro: view.micro,
+        },
+      );
+      if (mapCanvas && view.map) {
+        const out = CHARTS.drawLapMap(mapCanvas, view.map, ch, {
+          sectors: view.detail.sectors,
+          cursorD,
           cursorIndex: view.cursor === null ? -1 : view.cursor,
+          window: view.window,
+          vs: view.vs ? view.vs.channels : null,
         });
+        view.mapGeom = out ? out.geom : null;
       }
       if (readout) readout.innerHTML = readoutHtml(view);
+
+      // The window moved, so the two things that describe it have to move with
+      // it. Rewritten in place rather than by re-rendering the card: a zoom
+      // must not cost the canvases their event listeners.
+      const label = els.detail.querySelector('[data-zoomlabel]');
+      const [a, b] = view.window;
+      const whole = b - a >= 0.999;
+      if (label) {
+        label.textContent = whole
+          ? 'Whole lap'
+          : `${Math.round(a * view.lengthM)}–${Math.round(b * view.lengthM)} m`;
+      }
+      const reset = els.detail.querySelector('[data-zoom="reset"]');
+      if (reset) reset.disabled = whole;
+      for (const chip of els.detail.querySelectorAll('.rv-micro__chip')) {
+        const seg = view.micro[Number(chip.dataset.micro) - 1];
+        if (!seg) continue;
+        chip.setAttribute('data-on',
+          String(!whole && seg.from >= a - 1e-6 && seg.to <= b + 1e-6));
+      }
     };
+    view.repaint = repaint;
     repaint();
 
     // Distance -> index by binary search: `d` is sorted and a lap is a couple
@@ -691,12 +996,26 @@
       return lo;
     };
 
+    /** Where on the LAP a pixel across the charts is, honouring the window. */
+    const distanceAtX = (clientX) => {
+      const box = canvas.getBoundingClientRect();
+      const x = clientX - box.left;
+      const f = (x - geom.x0) / Math.max(1, geom.x1 - geom.x0);
+      const [a, b] = view.window;
+      return Math.min(b, Math.max(a, a + Math.min(1, Math.max(0, f)) * (b - a)));
+    };
+
     const onMove = (evt) => {
       if (!geom) return;
-      const box = canvas.getBoundingClientRect();
-      const x = evt.clientX - box.left;
-      const f = (x - geom.x0) / Math.max(1, geom.x1 - geom.x0);
-      const next = indexAt(Math.min(1, Math.max(0, f)));
+      if (drag) {
+        // Panning: the road under the pointer stays under the pointer.
+        const per = (drag.to - drag.from) / Math.max(1, geom.x1 - geom.x0);
+        const span = drag.to - drag.from;
+        const from = Math.max(0, Math.min(1 - span, drag.from + (drag.x - evt.clientX) * per));
+        setWindow(from, from + span);
+        return;
+      }
+      const next = indexAt(distanceAtX(evt.clientX));
       if (next === view.cursor) return;
       view.cursor = next;
       repaint();
@@ -706,34 +1025,121 @@
       view.cursor = null;
       repaint();
     };
+
+    // The wheel zooms about the pointer. `passive: false` because the whole
+    // point is to stop the panel scrolling underneath the gesture.
+    const onWheel = (evt) => {
+      if (!geom) return;
+      evt.preventDefault();
+      zoomAbout(evt.deltaY > 0 ? 1.25 : 0.8, distanceAtX(evt.clientX));
+    };
+
+    let drag = null;
+    const onDown = (evt) => {
+      if (view.window[1] - view.window[0] >= 0.999) return;
+      drag = { x: evt.clientX, from: view.window[0], to: view.window[1] };
+      canvas.setAttribute('data-drag', 'true');
+    };
+    const onUp = () => {
+      drag = null;
+      canvas.removeAttribute('data-drag');
+    };
+
     const onResize = () => repaint();
 
     canvas.addEventListener('mousemove', onMove);
     canvas.addEventListener('mouseleave', onLeave);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mouseup', onUp);
     window.addEventListener('resize', onResize);
+
+    // The map is the other half of the same control: click a corner and every
+    // chart beside it follows you there.
+    const onMapClick = (evt) => {
+      if (!view.mapGeom) return;
+      const box = mapCanvas.getBoundingClientRect();
+      const dd = CHARTS.distanceAtPoint(
+        view.mapGeom, evt.clientX - box.left, evt.clientY - box.top,
+      );
+      if (dd === null) return;
+      view.cursor = indexAt(dd);
+      focusOn(dd);
+    };
+    const onMapWheel = (evt) => {
+      evt.preventDefault();
+      const [a, b] = view.window;
+      zoomAbout(evt.deltaY > 0 ? 1.25 : 0.8, (a + b) / 2);
+    };
+    if (mapCanvas) {
+      mapCanvas.addEventListener('click', onMapClick);
+      mapCanvas.addEventListener('wheel', onMapWheel, { passive: false });
+    }
+
     lapOff = () => {
       canvas.removeEventListener('mousemove', onMove);
       canvas.removeEventListener('mouseleave', onLeave);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mouseup', onUp);
       window.removeEventListener('resize', onResize);
+      if (mapCanvas) {
+        mapCanvas.removeEventListener('click', onMapClick);
+        mapCanvas.removeEventListener('wheel', onMapWheel);
+      }
+      if (lapView) lapView.repaint = null;
     };
   }
 
-  /** Open one lap for study. `lap` is the ReviewLap from the sheet. */
-  async function openLap(lap) {
+  /**
+   * Open one lap for study, optionally with another laid under it.
+   *
+   * `lap` is the ReviewLap from the sheet; `vsLap` is the one to compare
+   * against, and passing it re-reads BOTH traces rather than patching the
+   * comparison onto what is already on screen — the delta and the micro-sector
+   * splits are computed in main from the two traces together, and half of that
+   * answer computed here would be a second implementation to keep in step.
+   */
+  async function openLap(lap, vsLap) {
     if (!lap || !lap.id) return;
     if (chartOff) { chartOff(); chartOff = null; }
     if (lapOff) { lapOff(); lapOff = null; }
-    lapView = { lap, session: current, detail: null, map: null, cursor: null, lengthM: 0 };
+    // A window survives a change of comparison lap: the driver is still looking
+    // at the same corner, and having it jump back to the whole lap every time
+    // they pick a reference makes the picker feel like it lost their place.
+    const held = lapView && lapView.lap === lap ? lapView.window : [0, 1];
+    lapView = {
+      lap,
+      vsLap: vsLap || null,
+      session: current,
+      detail: null,
+      vs: null,
+      delta: null,
+      micro: [],
+      map: null,
+      mapGeom: null,
+      cursor: null,
+      lengthM: 0,
+      window: held,
+      elevation: 0,
+      repaint: null,
+    };
+    const mine = lapView;
     renderDetail();
     let res = null;
     try {
-      res = await window.apex.reviewLap({ id: lap.id, at: lap.at, haveMapKey: heldMapKey });
+      res = await window.apex.reviewLap({
+        id: lap.id,
+        at: lap.at,
+        haveMapKey: heldMapKey,
+        vs: vsLap ? { id: vsLap.id, at: vsLap.at } : null,
+      });
     } catch {
       res = null;
     }
     // A click that lands after the driver has already gone back, or moved on to
     // another lap, must not paint over what they are looking at now.
-    if (!lapView || lapView.lap !== lap) return;
+    if (lapView !== mine) return;
     if (!res || !res.detail) {
       lapView.error = (res && res.reason === 'no-trace')
         ? 'No telemetry was recorded for this lap.'
@@ -742,6 +1148,15 @@
       return;
     }
     lapView.detail = res.detail;
+    lapView.vs = res.vs || null;
+    lapView.delta = res.delta || null;
+    lapView.micro = Array.isArray(res.micro) ? res.micro : [];
+    if (vsLap && !res.vs) {
+      lapView.vsLap = null;
+      lapView.vsError = res.vsReason === 'no-trace'
+        ? `Lap ${vsLap.lapNo} has no telemetry to compare against.`
+        : `Lap ${vsLap.lapNo} could not be read.`;
+    }
     if (res.map) {
       heldMap = res.map;
       heldMapKey = res.detail.mapKey;
@@ -749,7 +1164,28 @@
     lapView.map = res.detail.mapKey === heldMapKey ? heldMap : null;
     lapView.lengthM = (lapView.map && lapView.map.lengthM)
       || (current && current.trackLengthM) || 0;
+    lapView.elevation = elevationRise(lapView.map);
     renderDetail();
+  }
+
+  /** Where the cursor is on the lap, for a zoom that has no pointer of its own. */
+  function cursorDistance() {
+    if (!lapView || !lapView.detail || lapView.cursor === null) return null;
+    return lapView.detail.channels.d[lapView.cursor];
+  }
+
+  /** How much the circuit climbs, end to end — the one number the map cannot say. */
+  function elevationRise(map) {
+    if (!map || !Array.isArray(map.points) || !map.points.length) return 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const p of map.points) {
+      const e = p[2];
+      if (!known(e)) continue;
+      if (e < lo) lo = e;
+      if (e > hi) hi = e;
+    }
+    return hi > lo ? hi - lo : 0;
   }
 
   /** The one control both half-states of the lap view need. */
@@ -772,6 +1208,15 @@
   /* ---------------------------------------------------------------------- */
   /*  Detail                                                                */
   /* ---------------------------------------------------------------------- */
+
+  /** How many laps of a session reported tyre wear. Fewer than two is no chart. */
+  function wearLaps(session) {
+    let n = 0;
+    for (const stint of session.stints) {
+      for (const lap of stint.laps) if (Array.isArray(lap.wear) && lap.wear.length === 4) n += 1;
+    }
+    return n;
+  }
 
   function emptyState(icon, title, body) {
     return `
@@ -867,6 +1312,22 @@
         <div class="rv-chart rv-chart--trend"><canvas></canvas></div>
       </div>` : ''}
 
+      ${wearLaps(s) > 1 ? `
+      <div class="rv-card">
+        <div class="rv-card__head">
+          <span class="rv-card__title">Tyre wear, lap by lap</span>
+          <span class="rv-legend">
+            <span style="color:var(--cyan)"><i></i>FL</span>
+            <span style="color:var(--rv-session-best)"><i></i>FR</span>
+            <span style="color:var(--ok)"><i></i>RL</span>
+            <span style="color:var(--warn)"><i></i>RR</span>
+          </span>
+        </div>
+        <div class="rv-chart rv-chart--wear"><canvas></canvas></div>
+        <p class="rv-card__note">Percentage of the tyre used, so it climbs as the stint
+          goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
+      </div>` : ''}
+
       <div>${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
     `;
 
@@ -884,6 +1345,7 @@
     if (!current || !els.detail) return;
     const lapWrap = els.detail.querySelector('.rv-chart--laps');
     const trendWrap = els.detail.querySelector('.rv-chart--trend');
+    const wearWrap = els.detail.querySelector('.rv-chart--wear');
     let hits = [];
 
     const repaint = () => {
@@ -894,6 +1356,7 @@
         CHARTS.drawTrend(trendWrap.querySelector('canvas'), current.trend,
           String(current.endedAt).slice(0, 10), FMT);
       }
+      if (wearWrap) CHARTS.drawWear(wearWrap.querySelector('canvas'), current);
     };
     repaint();
 
@@ -997,9 +1460,12 @@
     try {
       const res = await window.apex.reviewSessions();
       summaries = (res && Array.isArray(res.sessions)) ? res.sessions : [];
+      career = (res && res.career) || null;
     } catch {
       summaries = [];
+      career = null;
     }
+    renderCareer();
     loadedOnce = true;
     loading = false;
     // A session that has gone (the file was deleted, or a lap landed that
@@ -1065,6 +1531,7 @@
     els.filter = $('#rv-type');
     els.list = $('#rv-sessions');
     els.detail = $('#rv-detail');
+    els.career = $('#rv-career');
 
     if (els.search) els.search.addEventListener('input', renderList);
     if (els.filter) els.filter.addEventListener('change', renderList);
@@ -1082,6 +1549,32 @@
           closeLap();
           return;
         }
+        // The zoom controls and the micro-sector chips, both of which move
+        // the shared window rather than re-rendering anything.
+        const zoomBtn = evt.target.closest('[data-zoom]');
+        if (zoomBtn && lapView && lapView.detail) {
+          const kind = zoomBtn.dataset.zoom;
+          if (kind === 'reset') setWindow(0, 1);
+          else zoomAbout(kind === 'in' ? 0.6 : 1.7, cursorDistance());
+          return;
+        }
+        const chip = evt.target.closest('[data-micro]');
+        if (chip && lapView && lapView.detail) {
+          const seg = lapView.micro[Number(chip.dataset.micro) - 1];
+          if (seg) {
+            const [a, b] = lapView.window;
+            const on = b - a < 0.999 && seg.from >= a - 1e-6 && seg.to <= b + 1e-6;
+            // Clicking the chip you are already on steps back out, so the same
+            // control both focuses and releases and there is no dead click.
+            if (on) setWindow(0, 1);
+            else {
+              const pad = (seg.to - seg.from) * 0.15;
+              setWindow(seg.from - pad, seg.to + pad);
+            }
+          }
+          return;
+        }
+
         const row = evt.target.closest('tr[data-open]');
         if (row && current) {
           const id = row.dataset.open;
@@ -1100,6 +1593,21 @@
         else collapsed.add(no);
         if (card) card.setAttribute('data-open', String(open));
         head.setAttribute('aria-expanded', String(open));
+      });
+    }
+
+    // The comparison picker. Changing it re-reads both laps rather than
+    // patching a second trace onto what is on screen — see openLap().
+    if (els.detail) {
+      els.detail.addEventListener('change', (evt) => {
+        const sel = evt.target.closest('[data-cmp]');
+        if (!sel || !lapView || !lapView.lap || !current) return;
+        const id = sel.value;
+        if (!id) { void openLap(lapView.lap, null); return; }
+        for (const stint of current.stints) {
+          const lap = stint.laps.find((l) => l.id === id);
+          if (lap) { void openLap(lapView.lap, lap); return; }
+        }
       });
     }
 
@@ -1134,7 +1642,7 @@
       if (nextTemp === tempUnit && nextSpeed === speedUnit) return;
       tempUnit = nextTemp;
       speedUnit = nextSpeed;
-      if (visible) renderDetail();
+      if (visible) { renderCareer(); renderDetail(); }
     };
     window.apex.getState().then((state) => applyTempUnit(state && state.settings))
       .catch(() => { /* Celsius stands */ });

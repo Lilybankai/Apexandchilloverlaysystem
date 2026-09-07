@@ -384,5 +384,54 @@ function run(startMs, n, over = () => ({})) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+/* -------------------------------------------------------------------------- */
+/*  The career strip                                                          */
+/*                                                                            */
+/*  Every total across the top of the Review tab, derived from the log alone. */
+/* -------------------------------------------------------------------------- */
+
+{
+  // Two circuits, two cars, two days, and one lap with no time on it — which
+  // is the shape every one of these totals has to survive.
+  const day2 = Date.parse('2026-09-07T18:00:00.000Z');
+  const recs = [
+    lap(T0 + 108_000, { id: 'c1', lapMs: 108_000 }),
+    lap(T0 + 215_000, { id: 'c2', lapMs: 107_000 }),
+    lap(T0 + 320_000, { id: 'c3', lapMs: 0, dirty: ['pit'] }),
+    lap(day2, {
+      id: 'c4', lapMs: 96_000, track: 'Monza', trackKey: 'monza_5780',
+      trackLengthM: 5780, distanceM: 5780, car: 'Porsche 963', carClass: 'HYPERCAR',
+    }),
+  ];
+  const c = R.careerStats(recs);
+
+  check('every lap is counted, timed or not', c.laps === 4, `${c.laps}`);
+  check('clean laps are counted separately', c.cleanLaps === 3, `${c.cleanLaps}`);
+  check('and timed laps separately again', c.timedLaps === 3, `${c.timedLaps}`);
+  check('distance is the sum of the circuits driven',
+    c.distanceM === 6980 * 3 + 5780, `${c.distanceM}`);
+  check('time at the wheel is the timed laps only',
+    c.driveMs === 108_000 + 107_000 + 96_000, `${c.driveMs}`);
+  check('circuits are distinct', c.tracks === 2, `${c.tracks}`);
+  check('cars are distinct', c.cars === 2, `${c.cars}`);
+  check('classes are distinct', c.classes === 2, `${c.classes}`);
+  check('days are distinct', c.days === 2, `${c.days}`);
+  check('sessions agree with the grouping the list itself uses',
+    c.sessions === R.groupSessions(recs).length, `${c.sessions}`);
+  check('the first and last lap bracket the history',
+    c.firstAt === recs[0].at && c.lastAt === recs[3].at);
+
+  check('the busiest circuit leads',
+    c.topTracks[0].name === 'Spa-Francorchamps' && c.topTracks[0].laps === 3,
+    JSON.stringify(c.topTracks[0]));
+  check('carrying its own best lap', c.topTracks[0].bestMs === 107_000);
+  check('a lap with no time never becomes a best', c.topCars[0].bestMs === 107_000);
+  check('and the busiest car with it', c.topCars[0].name === 'Ferrari 296 GT3');
+
+  const none = R.careerStats([]);
+  check('an empty log is zeroes, not a throw', none.laps === 0 && none.tracks === 0);
+  check('and names no first lap', none.firstAt === null);
+}
+
 console.log(`\ntest-stintreview: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

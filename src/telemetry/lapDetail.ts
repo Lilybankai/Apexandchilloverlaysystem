@@ -280,3 +280,211 @@ export function loadLapDetail(
   const map = haveMapKey === mapKey ? null : loadTrackMap(mapKey);
   return { detail, map };
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Two laps                                                                  */
+/*                                                                            */
+/*  Phase 3. Everything below compares a lap against another of the driver's  */
+/*  own laps, which is the only comparison the plan allows for now (decision  */
+/*  2) and the only one that is fair: same car, same circuit, same hands.     */
+/* -------------------------------------------------------------------------- */
+
+/** The running time difference between two laps, on the studied lap's grid. */
+export interface DeltaTrace {
+  /** Lap distances, 0..1 — the same column as the studied lap's `d`. */
+  d: number[];
+  /**
+   * Seconds the studied lap is BEHIND the comparison lap at that point.
+   * Positive is losing, negative is gaining, and the last value is the
+   * difference between the two lap times.
+   */
+  dt: number[];
+  /** The widest the gap ever got, either way — the delta band's own scale. */
+  reach: number;
+}
+
+/** One micro-sector, and what it cost or gained. */
+export interface MicroSector {
+  /** 1-based, so a chip can be labelled SQ1 without arithmetic. */
+  no: number;
+  /** Where it starts and ends on the lap, 0..1. */
+  from: number;
+  to: number;
+  /** Seconds spent in this stretch on each lap, and the difference. */
+  aSec: number | null;
+  bSec: number | null;
+  deltaSec: number | null;
+}
+
+/**
+ * How many micro-sectors a circuit gets.
+ *
+ * Roughly one every 500 m, clamped to 8..20 (plan decision 3), so Silverstone
+ * National gets eight and Le Mans gets twenty rather than both being cut into
+ * Delta's fixed thirteen. A chip has to be a piece of road a driver can picture
+ * — 500 m is a corner and its approach — and twenty chips is about as many as
+ * one row can carry before they stop being readable.
+ */
+export function microSectorCount(lengthM: number): number {
+  const n = Math.round((Number(lengthM) || 0) / 500);
+  return Math.min(20, Math.max(8, Number.isFinite(n) ? n : 8));
+}
+
+/**
+ * The lap clock at a given distance, in seconds from the line.
+ *
+ * Interpolated between the two straddling samples, and normalised so the lap
+ * starts at zero — a trace's first `t` is wherever the recorder's clock
+ * happened to be, and two laps compared without that subtraction differ by a
+ * constant with no visible cause.
+ */
+export function timeAtDistance(trace: CompletedTrace, dd: number): number | null {
+  const d = trace.d;
+  const t = trace.t;
+  if (!Array.isArray(d) || !Array.isArray(t) || d.length < 2 || d.length !== t.length) return null;
+  const base = t[0] as number;
+  const target = Math.min(1, Math.max(0, dd));
+  if (target <= (d[0] as number)) return 0;
+  if (target >= (d[d.length - 1] as number)) return (t[t.length - 1] as number) - base;
+
+  let lo = 0;
+  let hi = d.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((d[mid] as number) < target) lo = mid + 1;
+    else hi = mid;
+  }
+  const i = Math.max(1, lo);
+  const d0 = d[i - 1] as number;
+  const d1 = d[i] as number;
+  const span = d1 - d0;
+  const f = span > 0 ? (target - d0) / span : 0;
+  const t0 = (t[i - 1] as number) - base;
+  const t1 = (t[i] as number) - base;
+  return t0 + (t1 - t0) * f;
+}
+
+/**
+ * The delta trace: how far up or down the studied lap was, all the way round.
+ *
+ * Built on **distance**, not on time, and on the studied lap's own sample grid.
+ * That is the only alignment that answers the question a driver is asking —
+ * "at this point on the road, was I up or down?" — and it needs no resampling
+ * of either lap: the comparison lap's clock is interpolated at each of the
+ * studied lap's distances.
+ */
+export function deltaTrace(a: CompletedTrace, b: CompletedTrace): DeltaTrace | null {
+  const d = a.d;
+  const t = a.t;
+  if (!Array.isArray(d) || !Array.isArray(t) || d.length < 2 || d.length !== t.length) return null;
+  if (!Array.isArray(b.d) || b.d.length < 2) return null;
+  const base = t[0] as number;
+  const out: DeltaTrace = { d: [], dt: [], reach: 0 };
+  for (let i = 0; i < d.length; i++) {
+    const dd = d[i] as number;
+    const other = timeAtDistance(b, dd);
+    if (other === null) continue;
+    const gap = ((t[i] as number) - base) - other;
+    out.d.push(dd);
+    out.dt.push(gap);
+    const mag = Math.abs(gap);
+    if (mag > out.reach) out.reach = mag;
+  }
+  return out.d.length > 1 ? out : null;
+}
+
+/**
+ * Cut the lap into micro-sectors and time both laps through each one.
+ *
+ * Evenly spaced by distance rather than by corner: Apex does not know where the
+ * corners are, and a chip that is "the same stretch of road on both laps" is
+ * exactly as useful for finding where the time went. A stretch with no answer
+ * on one lap — a truncated trace, a comparison that stopped short — reports
+ * `null` rather than a difference computed against nothing.
+ */
+export function microSectors(
+  a: CompletedTrace,
+  b: CompletedTrace | null,
+  lengthM: number,
+): MicroSector[] {
+  const n = microSectorCount(lengthM);
+  const out: MicroSector[] = [];
+  for (let i = 0; i < n; i++) {
+    const from = i / n;
+    const to = (i + 1) / n;
+    const a0 = timeAtDistance(a, from);
+    const a1 = timeAtDistance(a, to);
+    const aSec = a0 !== null && a1 !== null ? a1 - a0 : null;
+    let bSec: number | null = null;
+    if (b) {
+      const b0 = timeAtDistance(b, from);
+      const b1 = timeAtDistance(b, to);
+      bSec = b0 !== null && b1 !== null ? b1 - b0 : null;
+    }
+    out.push({
+      no: i + 1,
+      from,
+      to,
+      aSec,
+      bSec,
+      deltaSec: aSec !== null && bSec !== null ? aSec - bSec : null,
+    });
+  }
+  return out;
+}
+
+/** A lap and its comparison, ready to draw over one another. */
+export interface LapCompareResult extends LapDetailResult {
+  /** The lap being compared against, or `null` when none was asked for. */
+  vs: LapDetail | null;
+  delta: DeltaTrace | null;
+  micro: MicroSector[];
+  /** Why there is no comparison, when one was asked for and could not be made. */
+  vsReason?: 'no-lap' | 'no-trace';
+}
+
+/** The circuit's length as the lap itself recorded it, metres. */
+function trackLengthOf(lapId: string, atIso: string, dir: string): number {
+  const lap = findLap(lapId, atIso, dir);
+  return lap ? Number(lap.trackLengthM) || 0 : 0;
+}
+
+/**
+ * One lap, optionally with a second laid over it.
+ *
+ * The comparison lap comes back in full rather than as a delta alone: the
+ * charts draw its speed and pedals under the studied lap's, and the map draws
+ * the line it took. A delta trace on its own says *that* time was lost without
+ * ever saying how.
+ */
+export function loadLapCompare(
+  lapId: string,
+  atIso: string,
+  vs: { id: string; at: string } | null,
+  haveMapKey = '',
+  dirs: { laps?: string; traces?: string } = {},
+): LapCompareResult {
+  const base = loadLapDetail(lapId, atIso, haveMapKey, dirs);
+  const out: LapCompareResult = { ...base, vs: null, delta: null, micro: [] };
+  if (!base.detail) return out;
+
+  const lengthM = trackLengthOf(lapId, atIso, dirs.laps ?? lapDir());
+  if (!vs || !vs.id || !vs.at) {
+    out.micro = microSectors(base.detail.channels, null, lengthM);
+    return out;
+  }
+
+  // The circuit is never sent twice: both laps come out of one session, so the
+  // comparison lap is on the same track by construction and the caller is
+  // already holding it.
+  const other = loadLapDetail(vs.id, vs.at, base.detail.mapKey, dirs);
+  if (!other.detail) {
+    out.vsReason = other.reason;
+    out.micro = microSectors(base.detail.channels, null, lengthM);
+    return out;
+  }
+  out.vs = other.detail;
+  out.delta = deltaTrace(base.detail.channels, other.detail.channels);
+  out.micro = microSectors(base.detail.channels, other.detail.channels, lengthM);
+  return out;
+}

@@ -1,7 +1,8 @@
 # Stint Review — the session reviewer, and the groundwork for training
 
-**Status:** in progress, 2026-09-07. Phases 0 (capture), 1 (the Review tab) and
-2 (the lap detail view) are built; phases 3-5 are unstarted. Decisions settled with Carl the same day —
+**Status:** in progress, 2026-09-07. Phases 0 (capture), 1 (the Review tab),
+2 (the lap detail view) and 3 (comparison, zoom and the career strip) are
+built; phases 4-5 are unstarted. Decisions settled with Carl the same day —
 see the bottom.
 **Goal:** after a session, a driver opens Apex and sees every stint they drove —
 lap times, sectors, fuel, wear, limits — clicks a lap, and studies what they
@@ -389,6 +390,128 @@ the two things this phase can get wrong are both about real data, and a
 hand-written fixture would answer neither; `?tab=review&lap=1&scrub=0.34` opens
 it with the cursor parked.
 
+
+---
+
+## Built 2026-09-07: phase 3, two laps — and four things Carl asked for
+
+### The window is a property of the ROAD, not of a chart
+
+Everything zooms together because zoom is not a chart's state here — it is one
+pair of lap distances, `[from, to]`, held by the lap view and handed to both
+painters. The charts map it to their x axis; the map fits its projection to the
+stretch it names. A driver studying the exit of turn 11 is looking at *one*
+piece of tarmac, and any design where the map and the charts can disagree about
+which piece is a design that will eventually lie to them.
+
+Four ways to move it, all the same window:
+
+- **Click the road on the map.** {@link distanceAtPoint} answers with the point
+  of the LAP the pointer landed nearest — nearest station of the drawn ribbon,
+  nearer road winning where a circuit crosses itself, because the projection
+  itself is not invertible.
+- **Scroll** on either the charts or the map, zooming about the pointer.
+- **Drag** the charts sideways to pan, once zoomed.
+- **Click a micro-sector chip**, which is the one that turns "0.7 s slower" into
+  a corner. Clicking the chip you are already on steps back out, so there is no
+  dead click.
+
+An **auto-ranged band re-measures its axis over the window**. That is what makes
+zooming worth doing rather than just bigger: a 40 km/h swing through a corner is
+a flat line on an axis scaled to a 300 km/h straight.
+
+### The map is a solid now, not a plan
+
+The flat shaded ribbon of phase 2 is gone. The circuit is drawn the way the
+in-car overlay draws it (`overlay/js/widgets/trackmap.js`): rotated onto its own
+principal axis, tilted to a view, lifted by its elevation, and extruded down to
+a ground plane so the gap between the road and its own foot IS the height of the
+place. Same projection constants, deliberately — a driver who has been staring
+at the in-car map all session should recognise the shape instantly rather than
+learn a second projection of the same circuit.
+
+Two numbers differ from the overlay's, and only two: the elevation share (0.22
+against 0.16) and its cap (8× against 5×). That map is glanced at mid-corner and
+must not turn a circuit into a sculpture; this one is studied afterwards, where
+seeing the road fall away is the whole point.
+
+The ribbon is ~1 400 fills, and the scrub cursor repaints on every mouse move,
+so it is **rendered once to an offscreen canvas and blitted** — cached against
+the map object's identity and the window, so scrubbing costs a blit and only
+zooming rebuilds.
+
+Zoomed past about three times, a corner fills the box and the map can no longer
+say *where* that corner is. So a **locator inset** appears bottom-right: the
+whole circuit as a thin outline, the visible stretch picked out in cyan, the
+cursor a dot on it. Drawn from the 1× fit that was built anyway, so it is the
+same shape as the map above it rather than a second, differently-rotated view.
+
+### The delta, and the sign that carries it
+
+`deltaTrace(a, b)` is built on **distance**, on the studied lap's own sample
+grid, with the comparison lap's clock interpolated at each of its distances.
+That is the only alignment that answers "at this point on the road, was I up or
+down?", and it needs no resampling of either lap.
+
+`dt = t_studied − t_reference`, so **positive is losing**. The band fills to its
+own zero rule — red above, green below, interpolated across the crossing so the
+two colours meet exactly on the rule — because the area between the trace and
+zero IS the time, and a driver reads a mass faster than the height of a line.
+The sign convention is pinned by a test in both directions; getting it backwards
+would be invisible and would invert every judgement made on the screen.
+
+Micro-sectors are ~500 m each, clamped 8–20 (decision 3): COTA gets 11, Spa 14,
+Le Mans 20, Silverstone National the floor of 8. A stretch with no answer on one
+lap reports `null` rather than a difference computed against nothing.
+
+The comparison lap comes back **in full**, not as a delta alone — the charts
+draw its speed and pedals under the studied lap's and the map draws its line,
+because a delta on its own says *that* time was lost without ever saying how.
+Only laps from the same session are offered, which is decision 2 at its
+narrowest and fairest.
+
+### Everything you have driven
+
+A strip across the top of the tab: laps, distance, hours at the wheel, circuits,
+cars, sessions, since when, and the circuit and car with the most laps. Derived
+from the lap log like everything else — no counter to keep up to date, no way to
+drift out of step with the sessions underneath it, and retrospectively correct
+the moment a rule changes.
+
+It rides on the sessions read rather than adding an IPC call:
+`listSessionsWithCareer()` folds both out of one pass over the log.
+
+Distance is summed per lap from the circuit's length, which counts an out-lap as
+a full lap. That is what a lap log can honestly answer, the error is a fraction
+of a percent over thousands of laps, and it is always in the same direction —
+the right trade for a figure read as "how far have I driven" rather than used in
+a calculation.
+
+### Tyre wear, lap by lap
+
+Four lines, one per corner, over the whole session, with the stint changes
+ruled in — the drop across a rule is a new set going on. Drawn as the percentage
+**used**, which climbs, because a driver reads a climbing line as something
+being spent. Laps that reported no wear are skipped rather than plotted at zero:
+LMU publishes the block only for some cars and sessions, and a flat line along
+the floor would read as "the tyres never wore" instead of "nothing was said".
+
+### And the scrollbars
+
+The Review tab's three scrolling areas — the session rail, the lap sheet's run
+of columns, the chip row — had the default Windows scrollbar, which on a
+near-black page is the brightest thing on screen and sits right beside a column
+of lap times it has nothing to do with. Now dark, thin, rounded, and brighter
+only while the pointer is over the thing they belong to.
+
+**Files:** `deltaTrace` / `microSectors` / `timeAtDistance` / `loadLapCompare`
+in `src/telemetry/lapDetail.ts`, `careerStats` / `listSessionsWithCareer` in
+`src/telemetry/stintReview.ts`, the ribbon and the delta/wear/locator painters
+in `review-charts.js`, the window and the comparison picker in
+`review-panel.js`. Tests: `test:lapdetail` (82), `test:stintreview` (92),
+`test:reviewcharts` (90). The harness reads two REAL laps off this machine and
+compares them: `?tab=review&lap=1&vs=1&sq=5&scrub=0.42`.
+
 ---
 
 ## Phasing
@@ -407,9 +530,12 @@ planned: channel charts against distance in
 `team-charts.js` style, sector boundaries marked, the driven line on the track
 map with elevation shading, a scrub cursor tying the two together.
 
-**Phase 3 — Lap comparison.** Two laps overlaid, the delta trace between them,
-micro-sector chips, and click-a-chip-to-zoom on both the charts and the map.
-This is the expensive phase and the one drivers will actually use daily.
+**Phase 3 — Lap comparison. Done 2026-09-07.** See the section below. As
+planned: two laps overlaid, the delta trace between them, micro-sector chips,
+and click-a-chip-to-zoom on both the charts and the map. Carl added four things
+to it on the day — a click-anywhere-on-the-road zoom, the overlay's raised
+elevation ribbon instead of the flat shaded plan, a career strip across the top
+of the tab, and tyre wear lap by lap.
 
 **Phase 4 — Cloud + web.** Migration 0018, Storage upload, and the same
 components running on the pit wall. The reference lap stays **your own**

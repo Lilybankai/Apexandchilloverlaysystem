@@ -252,5 +252,146 @@ function evenTrace(points, lapSec) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Phase 3 — two laps                                                        */
+/* -------------------------------------------------------------------------- */
+
+{
+  // The lap clock at a distance, on a lap driven at constant speed: the answer
+  // is the fraction of the lap, times the lap time, and nothing else.
+  const trace = evenTrace(201, 100);
+  check('the line is time zero', D.timeAtDistance(trace, 0) === 0);
+  check('half way round is half the lap', Math.abs(D.timeAtDistance(trace, 0.5) - 50) < 0.01);
+  check('and the end is the whole lap', Math.abs(D.timeAtDistance(trace, 1) - 100) < 0.01);
+  check('between samples it interpolates',
+    Math.abs(D.timeAtDistance(trace, 0.5025) - 50.25) < 0.05,
+    `${D.timeAtDistance(trace, 0.5025)}`);
+  check('past the end is clamped, not extrapolated',
+    D.timeAtDistance(trace, 4) === D.timeAtDistance(trace, 1));
+
+  // The clock is normalised: a recorder that started its clock at 812.4 must
+  // give the same answers as one that started at zero.
+  const late = evenTrace(201, 100);
+  late.t = late.t.map((v) => v + 812.4);
+  check('a trace whose clock did not start at zero reads the same',
+    Math.abs(D.timeAtDistance(late, 0.5) - 50) < 0.01,
+    `${D.timeAtDistance(late, 0.5)}`);
+
+  check('a trace with one sample has no clock', D.timeAtDistance(evenTrace(1, 10), 0.5) === null);
+}
+
+{
+  // Two laps, the second five percent slower everywhere. At every point of the
+  // road the first is ahead, and the gap grows to the difference in lap time.
+  const fast = evenTrace(201, 100);
+  const slow = evenTrace(201, 105);
+  const delta = D.deltaTrace(fast, slow);
+  check('the delta is on the studied lap\'s own grid', delta.d.length === fast.d.length);
+  check('it starts level', Math.abs(delta.dt[0]) < 0.001);
+  check('the faster lap is AHEAD, so the gap is negative',
+    delta.dt[100] < 0, `${delta.dt[100]}`);
+  check('and it ends at the difference between the two lap times',
+    Math.abs(delta.dt[delta.dt.length - 1] + 5) < 0.02, `${delta.dt[delta.dt.length - 1]}`);
+  check('the reach is the widest the gap ever got',
+    Math.abs(delta.reach - 5) < 0.02, `${delta.reach}`);
+
+  // …and the other way round, because the sign is the whole message.
+  const other = D.deltaTrace(slow, fast);
+  check('the slower lap is BEHIND, so the gap is positive',
+    other.dt[other.dt.length - 1] > 4.9, `${other.dt[other.dt.length - 1]}`);
+
+  check('a lap with nothing to compare against is null',
+    D.deltaTrace(fast, evenTrace(1, 10)) === null);
+}
+
+{
+  // Micro-sectors scale with the circuit: ~500 m each, clamped 8..20 (plan
+  // decision 3), so a short national layout and Le Mans do not both get 13.
+  check('Silverstone National (1.6 km) gets the floor', D.microSectorCount(1640) === 8);
+  check('COTA (5.5 km) gets eleven', D.microSectorCount(5497) === 11);
+  check('Spa (7 km) gets fourteen', D.microSectorCount(6980) === 14);
+  check('Le Mans (13.6 km) gets the ceiling, not 27', D.microSectorCount(13_626) === 20);
+  check('a circuit of no length still gets a sane count', D.microSectorCount(0) === 8);
+}
+
+{
+  const fast = evenTrace(401, 100);
+  const slow = evenTrace(401, 110);
+  const segs = D.microSectors(fast, slow, 5497);
+  check('one entry per micro-sector', segs.length === 11, `${segs.length}`);
+  check('they are numbered from one', segs[0].no === 1 && segs[10].no === 11);
+  check('they tile the lap end to end',
+    segs[0].from === 0 && Math.abs(segs[10].to - 1) < 1e-9);
+  check('each one is the same stretch of road on both laps',
+    segs.every((s, i) => i === 0 || Math.abs(s.from - segs[i - 1].to) < 1e-9));
+  check('the studied lap takes a lap\'s worth of time in total',
+    Math.abs(segs.reduce((a, s) => a + s.aSec, 0) - 100) < 0.05);
+  check('a lap ten percent slower loses in every sector',
+    segs.every((s) => s.deltaSec < 0), `${segs[0].deltaSec}`);
+  check('and the losses add up to the difference in lap time',
+    Math.abs(segs.reduce((a, s) => a + s.deltaSec, 0) + 10) < 0.05,
+    `${segs.reduce((a, s) => a + s.deltaSec, 0)}`);
+
+  const alone = D.microSectors(fast, null, 5497);
+  check('with nothing to compare against the sectors are still cut',
+    alone.length === 11 && alone[0].aSec > 0);
+  check('…but no difference is invented',
+    alone.every((s) => s.deltaSec === null && s.bSec === null));
+}
+
+{
+  // The whole join, end to end, against two laps on disk.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-lapcmp-'));
+  const laps = path.join(root, 'laps');
+  const traces = path.join(root, 'traces');
+  fs.mkdirSync(laps, { recursive: true });
+  const at = '2026-09-06T20:14:31.000Z';
+  const at2 = '2026-09-06T20:16:31.000Z';
+  const base = {
+    v: 6, at, sim: 'lmu', track: 'Circuit of the Americas',
+    trackKey: 'circuit-of-the-americas_5497', trackLengthM: 5497,
+    car: 'Ferrari 296 GT3', carClass: 'LMGT3', distanceM: 5497,
+    sessionType: 'practice', clean: true, dirty: [],
+    s1Ms: 30_000, s2Ms: 40_000, s3Ms: 30_000,
+  };
+  fs.writeFileSync(path.join(laps, '2026-09-06.jsonl'),
+    `${JSON.stringify({ ...base, id: 'one', lapMs: 100_000 })}\n`
+    + `${JSON.stringify({ ...base, id: 'two', at: at2, lapMs: 104_000 })}\n`);
+  const writeTrace = (id, when, lapSec) => {
+    const dir = path.join(traces, '2026-09-06');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
+      v: 1, lapId: id, at: when, sim: 'lmu', trackKey: base.trackKey,
+      track: base.track, trackLengthM: 5497, car: base.car, carClass: base.carClass,
+      lapMs: lapSec * 1000, trace: evenTrace(201, lapSec),
+    }));
+  };
+  writeTrace('one', at, 100);
+  writeTrace('two', at2, 104);
+
+  const solo = D.loadLapCompare('one', at, null, '', { laps, traces });
+  check('one lap on its own still loads', solo.detail !== null);
+  check('with no comparison', solo.vs === null && solo.delta === null);
+  check('but with its micro-sectors already cut', solo.micro.length === 11);
+
+  const pair = D.loadLapCompare('one', at, { id: 'two', at: at2 }, '', { laps, traces });
+  check('the comparison lap comes back in full, not as a delta alone',
+    pair.vs !== null && pair.vs.channels.d.length === 201);
+  check('the delta is built', pair.delta !== null);
+  check('and says the studied lap was four seconds up by the line',
+    Math.abs(pair.delta.dt[pair.delta.dt.length - 1] + 4) < 0.05,
+    `${pair.delta.dt[pair.delta.dt.length - 1]}`);
+  check('the micro-sectors carry both laps', pair.micro.every((s) => s.bSec !== null));
+  // The circuit crosses the bridge once, not twice: both laps are on it.
+  check('the circuit is sent once', pair.map !== null);
+
+  const missing = D.loadLapCompare('one', at, { id: 'ghost', at: at2 }, '', { laps, traces });
+  check('a comparison lap that is not there does not lose the lap being studied',
+    missing.detail !== null && missing.vs === null);
+  check('and the reason is named', missing.vsReason === 'no-lap');
+
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log(`\ntest-lapdetail: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
