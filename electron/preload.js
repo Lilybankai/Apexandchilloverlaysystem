@@ -291,6 +291,14 @@ contextBridge.exposeInMainWorld('apex', {
   /** One session in full — stints, laps and its trend line: `{ ok, session }`. */
   reviewSession: (id) => ipcRenderer.invoke('review:session', id),
 
+  /**
+   * One lap's trace and circuit: `{ ok, detail, map, reason? }`.
+   *
+   * `{ id, at, haveMapKey }` — pass the map key already held and the circuit is
+   * omitted from the answer rather than resent.
+   */
+  reviewLap: (req) => ipcRenderer.invoke('review:lap', req),
+
   /** Subscribe to uploader state changes. Returns an unsubscribe function. */
   onLapSync: (callback) => {
     const listener = (_evt, payload) => callback(payload);

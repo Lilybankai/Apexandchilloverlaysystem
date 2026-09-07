@@ -1,7 +1,7 @@
 # Stint Review — the session reviewer, and the groundwork for training
 
-**Status:** in progress, 2026-09-07. Phases 0 (capture) and 1 (the Review tab)
-are built; phases 2-5 are unstarted. Decisions settled with Carl the same day —
+**Status:** in progress, 2026-09-07. Phases 0 (capture), 1 (the Review tab) and
+2 (the lap detail view) are built; phases 3-5 are unstarted. Decisions settled with Carl the same day —
 see the bottom.
 **Goal:** after a session, a driver opens Apex and sees every stint they drove —
 lap times, sectors, fuel, wear, limits — clicks a lap, and studies what they
@@ -292,6 +292,103 @@ shape rather than hand-written JSON.
 the web pit wall — the browser bridge has no `reviewSessions`, and there is no
 row data up there to serve. That is phase 4.
 
+
+---
+
+## Built 2026-09-07: phase 2, one lap
+
+Click a lap on the sheet and the detail column becomes that lap: four channel
+bands against distance, the circuit beside them with the lap on it, and one
+scrub cursor tying the two together. It replaces the session rather than
+expanding under it — the charts want the width, and a driver studying a braking
+zone is not also reading a forty-row sheet.
+
+`src/telemetry/lapDetail.ts` joins the trace to the circuit. Three probes
+against the live machine on 2026-09-07 settled how, and each found something
+that would otherwise have shipped broken and silent.
+
+### A lap's track key is NOT a track map's track key
+
+The single most important finding, and it would have been invisible: the map
+view would simply have been empty, forever, with no error anywhere.
+
+| | built by | Circuit of the Americas |
+|---|---|---|
+| lap log / trace | `paceDelta.trackKeyOf(name, m)` | `circuit-of-the-americas_5497` |
+| track map | `trackMap.trackKey(name, config, m)` | `circuit-of-the-americas-5500` |
+
+Underscore against hyphen, exact metres against metres rounded to ten, and the
+map key can carry a layout segment the lap key never has. They are not
+convertible by string surgery. `mapKeyForLap()` therefore **rebuilds** the key
+from the fields the lap already carries — `track`, `trackConfig`,
+`trackLengthM` — through the map module's own key function, so the two cannot
+drift again.
+
+Probed over every lap on the build machine: **11 of 11 track identities
+resolved**, 944 laps, mixing bundled and locally-learned shapes. A test walks
+`data/trackmaps/index.json` and asserts every bundled circuit is reachable from
+a lap driven on it, so a renamed file or a changed scheme fails in CI.
+
+### Sector lines are found on the trace's own clock
+
+The record's `s1Ms`/`s2Ms` are durations on the SIM's clock; the trace's `t` is
+the delta engine's measured lap clock. The split is scaled by the ratio of the
+two lap times, looked up in `t`, and answered as a **distance** — which is the
+axis both the charts and the map are drawn on. Interpolated between the two
+straddling samples, because a sample is 4–7 m of road.
+
+Probed on three separate Spa laps: S1 at 31.1%, 31.0%, 31.1%; S2 at 70.7%,
+70.7%, 70.7%. A fixed line on the road answering the same to a tenth of a
+percent across laps is what a correct derivation looks like.
+
+### Every trace on disk is v1, and that is the interesting case
+
+`TraceFile.v` reached 2 on 2026-09-07 and nothing migrates. The build the
+driver is actually running predates the recorder, so on the build machine that
+day: **664 traces, every one v1** — no driven line, anywhere, yet.
+
+So the map degrades rather than guessing. A v1 lap draws the circuit and puts
+the scrub marker on the **centreline** at the right distance, which is true and
+useful ("this is the corner you are looking at") and is exactly how the pit
+wall's map has always placed a car it has no position for. A v2 lap draws the
+line the driver took, in cyan, over a muted centreline. The view says which it
+is showing, in words, under the map. What is never done is inventing a line
+from the centreline and presenting it as theirs.
+
+### The rest of the design
+
+- **Four bands on ONE canvas** — speed, throttle+brake, gear, steering. One
+  canvas because the cursor has to cross every band at the same distance; four
+  canvases means four repaints and four chances to disagree about where 62% of
+  the lap is.
+- **Throttle and brake share a band.** They are the same axis, and the thing
+  worth seeing — the gap between lifting and braking, or the overlap — only
+  exists when they are drawn together.
+- **TC and ABS are ticks along the floor of the pedal band**, not bands of
+  their own. They are almost always zero, so a band each would be two empty
+  stripes; as ticks they say the one thing that matters, which is where the car
+  was driving instead of the driver.
+- **Steering scales to the lap**, symmetric about zero with a floor. A GT car
+  uses a few degrees of wheel nearly everywhere, so a fixed −100..100 axis draws
+  every lap as a flat line with a wobble at the hairpin.
+- **The readout sits above the charts, not over them.** A tooltip that follows
+  the mouse covers the trace it is describing, and with four stacked bands there
+  is always something underneath worth seeing.
+- **The road is shaded by elevation**, cold at the circuit's lowest point and
+  warm at its highest, which puts Eau Rouge on the screen without a word. From
+  the map's `y`, per the phase 0 decision not to store elevation per lap.
+- **V-max** finally appears — the one figure on the reference screens that no
+  `LapRecord` field could answer, and which a trace answers trivially.
+
+**Files:** `src/telemetry/lapDetail.ts`, the `review:lap` IPC and its bridge
+method, `drawChannels` / `drawLapMap` / `channelBands` in `review-charts.js`,
+and the lap view in `review-panel.js`. Tests: `npm run test:lapdetail` (44) and
+the phase 2 half of `npm run test:reviewcharts`. `make-shot-harness.js` now
+serves a **real** lap read off this machine — real trace, real circuit — because
+the two things this phase can get wrong are both about real data, and a
+hand-written fixture would answer neither; `?tab=review&lap=1&scrub=0.34` opens
+it with the cursor parked.
+
 ---
 
 ## Phasing
@@ -305,7 +402,8 @@ window in the same release (see "Consequence of keep everything" below).
 **Phase 1 — Sessions list and stint table, local only. Done 2026-09-07.** See
 the section below.
 
-**Phase 2 — Lap detail, one lap.** Channel charts against distance in
+**Phase 2 — Lap detail, one lap. Done 2026-09-07.** See the section below. As
+planned: channel charts against distance in
 `team-charts.js` style, sector boundaries marked, the driven line on the track
 map with elevation shading, a scrub cursor tying the two together.
 

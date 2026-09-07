@@ -733,6 +733,185 @@
 .rv-row span { font-family: var(--font-mono); font-size: 12.5px; }
 .rv-row span[data-none='true'] { color: var(--text-3); }
 
+
+/* ============================== ONE LAP ================================= */
+/*
+ * Phase 2. The lap view REPLACES the session in the detail column rather than
+ * expanding under it: the channel charts want every pixel of width they can
+ * get, and a driver looking at one braking zone is not also reading a forty-row
+ * sheet. Coming back is one button, top left, where back always is.
+ */
+
+/* A sheet row that has a trace behind it is a link to that lap. Rows without
+   one are deliberately left inert — see the note in sheetHtml(). */
+.rv-sheet tr[data-open] { cursor: pointer; }
+.rv-sheet tr[data-open]:hover td { background: rgba(38, 187, 244, 0.07); }
+.rv-sheet tr[data-open]:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: -1px;
+}
+
+.rv-lap__bar,
+.rv-lap__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rv-lap__head { margin-bottom: 12px; }
+.rv-lap__bar { margin-bottom: 12px; }
+
+.rv-lap__name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rv-lap__name i { font-style: normal; font-weight: 400; color: var(--text-3); font-size: 13px; }
+
+.rv-lap__time { font-family: var(--font-mono); font-size: 19px; }
+.rv-lap__time[data-best='true'] { color: var(--rv-session-best); }
+.rv-lap__gap { font-family: var(--font-mono); font-size: 13px; color: var(--text-3); }
+
+.rv-lap__where {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.rv-lap__chips { display: flex; gap: 6px; margin-left: auto; }
+
+.rv-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.rv-chip b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+/* ---- the two halves ----------------------------------------------------- */
+
+.rv-lap__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 14px;
+  align-items: start;
+}
+
+/* Below this the map would be too small to find a corner on, and the charts
+   too narrow to see a braking zone in. Stacked, both stay usable. */
+@media (max-width: 1240px) {
+  .rv-lap__body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rv-lap__charts { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* Four bands on one canvas — see drawChannels() for why one and not four. */
+.rv-chan {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  cursor: crosshair;
+}
+.rv-chan canvas { display: block; width: 100%; height: 100%; }
+
+.rv-lap__side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.rv-map {
+  position: relative;
+  width: 100%;
+  /* Square: a circuit is as tall as it is wide often enough that any other
+     ratio wastes the space on one axis or squashes the shape on the other. */
+  aspect-ratio: 1 / 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.rv-map canvas { display: block; width: 100%; height: 100%; }
+
+.rv-map__none {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rv-map__none .icon { width: 22px; height: 22px; }
+
+.rv-lap__note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+/* ---- the readout --------------------------------------------------------
+ *
+ * Above the charts, not floating over them. A tooltip that follows the mouse
+ * covers the trace it is describing, and at four stacked bands there is always
+ * something underneath it worth seeing. Fixed at the top, the numbers change
+ * and nothing moves.
+ */
+.rv-read {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  min-height: 42px;
+}
+
+.rv-read__cell { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.rv-read__cell b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rv-read__cell i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+}
+.rv-read__cell i u {
+  text-decoration: none;
+  font-size: 10px;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+
+.rv-read__hint { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.rv-read[data-idle='true'] .rv-read__cell i { color: var(--text-2); }
+
 /* ============================== STATES ================================== */
 
 .rv-empty {

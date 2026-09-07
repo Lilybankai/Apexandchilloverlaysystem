@@ -49,6 +49,36 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     }
   } catch (e) { /* storage disabled: the harness still loads, on the default tab */ }
 
+  // ?lap=1 opens the first studiable lap once the Review tab has painted, so the
+  // lap-detail view can be screenshotted: the harness cannot click, and that
+  // view is two clicks deep. Gives up after five seconds rather than polling
+  // forever on a tab that was never opened.
+  if (new URLSearchParams(location.search).get('lap')) {
+    const stopAt = Date.now() + 5000;
+    const tick = () => {
+      const row = document.querySelector('tr[data-open]');
+      if (row) { row.click(); setTimeout(scrub, 400); return; }
+      if (Date.now() < stopAt) setTimeout(tick, 120);
+    };
+    // ?scrub=0.62 then parks the cursor 62% of the way round the lap, so the
+    // readout strip and the map marker are in the shot rather than only the
+    // idle state. A real mousemove, so it goes through the same handler a
+    // driver does.
+    const scrub = () => {
+      const at = Number(new URLSearchParams(location.search).get('scrub'));
+      if (!Number.isFinite(at) || at < 0 || at > 1) return;
+      const canvas = document.querySelector('.rv-chan canvas');
+      if (!canvas) return;
+      const box = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: box.left + 46 + (box.width - 54) * at,
+        clientY: box.top + box.height / 2,
+      }));
+    };
+    setTimeout(tick, 300);
+  }
+
   // Read again out here: the block above runs inside a try, so its \`q\` is not
   // in scope for the stub object below, which also wants query flags.
   const q = new URLSearchParams(location.search);
@@ -200,6 +230,12 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // JSON — so the harness cannot drift from what the tab actually receives.
     reviewSessions: P({ ok: true, sessions: REVIEW.summaries }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
+    // Every row opens the SAME lap, and deliberately: this is a screenshot
+    // harness, the detail is a real trace and a real circuit read off this
+    // machine, and matching it to a synthetic lap id would only make the
+    // fixture lie in a different place. On a machine with no laps recorded it
+    // comes back empty and the view shows its own no-telemetry state.
+    reviewLap: () => Promise.resolve(REVIEW.lap),
   };
 })();
 `;
@@ -306,17 +342,59 @@ function reviewFixture() {
   return { summaries: sessions.map(mod.summaryOf), byId };
 }
 
+/**
+ * A real lap for the detail view: the newest clean lap on this machine that
+ * still has its trace, plus the circuit it was driven on.
+ *
+ * Real rather than synthetic because the two things phase 2 can get wrong are
+ * both about real data — whether the track map resolves from a lap's fields at
+ * all, and how a v1 trace (no driven line) degrades. A hand-written fixture
+ * would answer neither. Comes back `{ detail: null }` on a machine that has
+ * never recorded a lap, which is itself a state the view has to handle.
+ */
+function reviewLapFixture() {
+  try {
+    const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+    const detail = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
+    const laps = review.readAllLaps().filter((l) => l.id && l.clean && l.s1Ms);
+    for (let i = laps.length - 1; i >= 0 && i > laps.length - 400; i -= 1) {
+      const got = detail.loadLapDetail(laps[i].id, laps[i].at);
+      if (got.detail) return { ok: true, ...got };
+    }
+  } catch {
+    /* unbuilt dist, or no laps here — the view shows its empty state */
+  }
+  return { ok: true, detail: null, map: null, reason: 'no-trace' };
+}
+
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const marker = '<script src="icons.js"></script>';
 if (!html.includes(marker)) {
   console.error('make-shot-harness: icons.js include not found in index.html — update this script.');
   process.exit(1);
 }
-fs.writeFileSync(
-  path.join(DIR, '__shot-stub.js'),
-  STUB.replace('REVIEW.summaries', `${JSON.stringify(reviewFixture().summaries)}`)
-      .replace('REVIEW.byId[id] || null', `(${JSON.stringify(reviewFixture().byId)})[id] || null`),
-);
+{
+  const fixture = reviewFixture();
+  // Every lap row is made openable: the fixture's own laps are synthetic and
+  // have no trace beside them, but the detail the harness serves is real, and a
+  // sheet with no clickable row could not reach it.
+  for (const session of Object.values(fixture.byId)) {
+    for (const stint of session.stints) for (const lap of stint.laps) lap.hasTrace = true;
+  }
+  const lap = reviewLapFixture();
+  fs.writeFileSync(
+    path.join(DIR, '__shot-stub.js'),
+    STUB.replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
+        .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
+        .replace('REVIEW.lap', `${JSON.stringify(lap)}`),
+  );
+  console.log(
+    lap.detail
+      ? `  review: real lap fixture — ${lap.detail.track}, ${lap.detail.count} points, ` +
+        `${lap.detail.hasLine ? 'with' : 'without'} the driven line`
+      : '  review: no lap on this machine — the detail view will show its empty state',
+  );
+}
 fs.writeFileSync(
   path.join(DIR, '__shot-harness.html'),
   html.replace(marker, `${marker}<script src="__shot-stub.js"></script>`),

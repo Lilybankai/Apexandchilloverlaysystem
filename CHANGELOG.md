@@ -4,9 +4,41 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Added
+
+- **Click a lap and study it.** Any lap with telemetry behind it opens into its
+  own view: speed, throttle and brake together, gear and steering, all against
+  distance round the lap, with the sector lines marked — and beside them the
+  circuit, shaded by elevation, with the lap on it. Move across the charts and
+  one cursor crosses every one of them while the marker runs round the track
+  map, reading out distance, time, speed, both pedals, gear, steering and G at
+  that exact point. Amber and violet ticks under the pedals show where traction
+  control and ABS stepped in. V-max is there too, which nothing in Apex could
+  tell you before.
+
+  Laps you have already driven show the marker on the centreline: Apex only
+  started recording the line you actually took on 7 September, and a lap that
+  was never placed on the circuit cannot be placed afterwards. Laps from this
+  update on draw the real line, in cyan, over the road.
+
 ## 0.99.2-beta.1 — 2026-09-07
 
 ### Changed
+
+- **The weather forecast now shows you the sky, not just a number.** Each step
+  of the forecast strip — START, 25%, halfway and so on — carries the sky it is
+  forecasting: sun, sun behind cloud, cloud, light rain, rain, or a storm. The
+  same picture sits next to the big track temperature, in place of the
+  "PART CLOUD" line that used to be tucked in beside it.
+  This is information the app was already being told and was not showing you.
+  Le Mans Ultimate sends a sky with every step of its forecast; until now the
+  strip only had room for a temperature and a rain percentage, so the one line
+  that said what the weather was actually *doing* described this minute only,
+  and the four steps telling you what was coming said nothing. Reading "34%" and
+  working out what it means takes longer than a glance out of the cockpit
+  allows; a cloud with rain under it does not.
 
 - **The freeze hunt, with an instrument that can finally see.** The overlays
   have been hitching for a fortnight, and every log came back saying the same
@@ -57,8 +89,7 @@
   is something you can go and fix.
 
   None of it needs an account or a connection — it is your own laps, on your own
-  machine, and nothing is thrown away. Reading your history from another PC, and
-  studying a single lap's throttle, brake and line, are the phases after this.
+  machine, and nothing is thrown away.
 
 ## 0.99.1 — 2026-09-07
 

@@ -37,7 +37,8 @@ function check(name, cond, detail) {
 function fakeCanvas(w = 640, h = 160) {
   const calls = [];
   const ctx = {
-    setTransform() {}, clearRect() {}, beginPath() { calls.push(['beginPath']); },
+    setTransform() {}, clearRect() {}, fillRect() {}, closePath() {},
+    beginPath() { calls.push(['beginPath']); },
     moveTo(x, y) { calls.push(['moveTo', x, y]); },
     lineTo(x, y) { calls.push(['lineTo', x, y]); },
     arc(x, y, r) { calls.push(['arc', x, y, r]); },
@@ -199,6 +200,175 @@ function session(stints) {
   const only = single.calls.filter(([op]) => op === 'arc');
   check('one day is centred rather than divided by zero',
     only.length === 1 && Number.isFinite(only[0][1]) && only[0][1] > 200, `${only[0] && only[0][1]}`);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*  The lap's channels (phase 2)                                              */
+/* -------------------------------------------------------------------------- */
+
+/** A synthetic lap's columns, constant-speed so distance tracks time. */
+function chans(n, over) {
+  const d = [];
+  const t = [];
+  for (let i = 0; i < n; i++) { d.push(i / (n - 1)); t.push((i / (n - 1)) * 100); }
+  return {
+    d, t,
+    throttle: d.map(() => 1),
+    brake: d.map(() => 0),
+    steer: d.map(() => 0),
+    gear: d.map(() => 4),
+    speedKph: d.map((v) => 100 + v * 100),
+    latG: d.map(() => 0),
+    lonG: d.map(() => 0),
+    tc: d.map(() => 0),
+    abs: d.map(() => 0),
+    lapSec: 100,
+    count: n,
+    truncated: false,
+    ...over,
+  };
+}
+
+{
+  const bands = CHARTS.channelBands({ mph: false });
+  check('four bands, in reading order',
+    bands.map((b) => b.label).join() === 'Speed,Throttle / brake,Gear,Steering',
+    bands.map((b) => b.label).join());
+  check('throttle and brake share one band',
+    bands[1].series.length === 2 && bands[1].series.map((s) => s.key).join() === 'throttle,brake');
+  check('TC and ABS are ticks on that band, not bands of their own',
+    (bands[1].marks || []).map((m) => m.key).join() === 'tc,abs');
+  check('gear is stepped', bands[2].series[0].step === true);
+  check('mph rescales the speed series, not the axis label',
+    Math.abs(CHARTS.channelBands({ mph: true })[0].series[0].scale - 0.621371) < 1e-6);
+  check('km/h leaves it alone', bands[0].series[0].scale === 1);
+}
+
+{
+  const { canvas } = fakeCanvas(800, 400);
+  const geom = CHARTS.drawChannels(canvas, chans(200), CHARTS.channelBands({}), {
+    sectors: { s1: 0.3, s2: 0.7 }, lengthM: 5497, cursorD: -1,
+  });
+  check('the geometry comes back', geom !== null);
+  check('one entry per band', geom.bands.length === 4, `${geom.bands.length}`);
+  check('bands stack downward without overlapping',
+    geom.bands.every((b, i) => i === 0 || b.y0 >= geom.bands[i - 1].y1));
+  check('and all of them fit the box',
+    geom.bands.every((b) => b.y0 >= 0 && b.y1 <= 400));
+  check('the plot leaves room for the axis on the left', geom.x0 > 20 && geom.x0 < 80);
+  check('and reaches the right edge', geom.x1 > 780, `${geom.x1}`);
+}
+
+{
+  // Steering scaled to the lap: a GT car uses a few degrees nearly everywhere,
+  // and on a fixed -100..100 axis every lap is a flat line.
+  const small = chans(200, { steer: null });
+  small.steer = small.d.map((v) => Math.sin(v * 6) * 0.08);
+  const { canvas, calls } = fakeCanvas(800, 400);
+  CHARTS.drawChannels(canvas, small, CHARTS.channelBands({}), {});
+  const labels = calls.filter(([op]) => op === 'fillText').map(([, t]) => String(t));
+  check('the steering axis shrinks to the lap',
+    labels.some((t) => t === '12R' || t === '12L'), labels.join(' '));
+
+  const big = chans(200, {});
+  big.steer = big.d.map((v) => Math.sin(v * 6) * 0.9);
+  const second = fakeCanvas(800, 400);
+  CHARTS.drawChannels(second.canvas, big, CHARTS.channelBands({}), {});
+  const l2 = second.calls.filter(([op]) => op === 'fillText').map(([, t]) => String(t));
+  check('…and grows for a lap that used the wheel',
+    l2.some((t) => /^1\d\dR$/.test(t)), l2.join(' '));
+}
+
+{
+  // Sector rules are drawn once each, across every band — the reason the bands
+  // share a canvas at all.
+  const { canvas, calls } = fakeCanvas(800, 400);
+  CHARTS.drawChannels(canvas, chans(200), CHARTS.channelBands({}), {
+    sectors: { s1: 0.3, s2: 0.7 }, lengthM: 5497,
+  });
+  const labels = calls.filter(([op]) => op === 'fillText').map(([, t]) => String(t));
+  check('every sector is named', ['S1', 'S2', 'S3'].every((n) => labels.includes(n)),
+    labels.join(' '));
+  check('the lap length is on the axis', labels.includes('5497 m'));
+  check('a lap with no sectors still draws', CHARTS.drawChannels(
+    fakeCanvas().canvas, chans(200), CHARTS.channelBands({}), { sectors: { s1: null, s2: null } },
+  ) !== null);
+  check('an empty trace paints nothing',
+    CHARTS.drawChannels(fakeCanvas().canvas, chans(1), CHARTS.channelBands({}), {}) === null);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The lap on the circuit                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** A square circuit, 100 m a side, rising 20 m along one edge. */
+function squareMap(rise) {
+  const points = [];
+  for (let i = 0; i < 40; i++) points.push([i * 2.5, 0, rise ? (i / 40) * rise : 0]);
+  for (let i = 0; i < 40; i++) points.push([100, i * 2.5, rise || 0]);
+  for (let i = 0; i < 40; i++) points.push([100 - i * 2.5, 100, rise ? rise - (i / 40) * rise : 0]);
+  for (let i = 0; i < 40; i++) points.push([0, 100 - i * 2.5, 0]);
+  return { key: 'square-400', name: 'Square', lengthM: 400, halfWidthM: 6, binM: 2.5, points,
+    builtAt: '', revision: 1 };
+}
+
+{
+  const { canvas, calls } = fakeCanvas(300, 300);
+  const out = CHARTS.drawLapMap(canvas, squareMap(20), chans(160), { cursorD: 0.5 });
+  check('the map paints', out !== null);
+  check('elevation is read off the circuit', out.minY === 0 && out.maxY === 20);
+  check('and a circuit with real rise is shaded', out.shaded === true);
+  check('a flat circuit is not', CHARTS.drawLapMap(fakeCanvas().canvas, squareMap(0), chans(160), {}).shaded === false);
+  check('a v1 lap reports no line on the map', out.placed === false);
+  check('the cursor is drawn', calls.some(([op, , , r]) => op === 'arc' && r === 4));
+}
+
+{
+  // The v1 fallback: the marker goes on the centreline at the right distance.
+  // Half way round the square is the far corner, (100, 100).
+  const { canvas, calls } = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(canvas, squareMap(0), chans(160), { cursorD: 0.5 });
+  const dot = calls.filter(([op, , , r]) => op === 'arc' && r === 4)[0];
+  const { calls: c2 } = (() => {
+    const f = fakeCanvas(300, 300);
+    CHARTS.drawLapMap(f.canvas, squareMap(0), chans(160), { cursorD: 0 });
+    return f;
+  })();
+  const start = c2.filter(([op, , , r]) => op === 'arc' && r === 4)[0];
+  check('the marker moves with the distance',
+    Math.hypot(dot[1] - start[1], dot[2] - start[2]) > 100,
+    `${Math.round(dot[1])},${Math.round(dot[2])} vs ${Math.round(start[1])},${Math.round(start[2])}`);
+  check('and stays inside the canvas',
+    dot[1] >= 0 && dot[1] <= 300 && dot[2] >= 0 && dot[2] <= 300);
+}
+
+{
+  // A v2 lap draws its own line and puts the marker on THAT, not the centreline.
+  const placed = chans(160);
+  placed.x = placed.d.map((v) => v * 100);
+  placed.z = placed.d.map(() => 50);
+  const { canvas } = fakeCanvas(300, 300);
+  const out = CHARTS.drawLapMap(canvas, squareMap(0), placed, { cursorD: 0.5, cursorIndex: 80 });
+  check('a v2 lap reports its line', out.placed === true);
+
+  const f = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(f.canvas, squareMap(0), placed, { cursorD: 0.5, cursorIndex: 80 });
+  const dot = f.calls.filter(([op, , , r]) => op === 'arc' && r === 4)[0];
+  // Index 80 of 160 is x=50, z=50 — the middle of the box, which the centreline
+  // fallback (the far corner) is nowhere near.
+  check('the marker follows the driven line, not the centreline',
+    Math.abs(dot[1] - 150) < 40 && Math.abs(dot[2] - 150) < 40,
+    `${Math.round(dot[1])},${Math.round(dot[2])}`);
+}
+
+{
+  check('a circuit with no shape paints nothing',
+    CHARTS.drawLapMap(fakeCanvas().canvas, { points: [] }, chans(10), {}) === null);
+  check('no map at all is safe',
+    CHARTS.drawLapMap(fakeCanvas().canvas, null, chans(10), {}) === null);
+  check('no cursor is safe',
+    CHARTS.drawLapMap(fakeCanvas().canvas, squareMap(0), chans(160), {}) !== null);
 }
 
 console.log(`\ntest-reviewcharts: ${passed} passed, ${failed} failed`);

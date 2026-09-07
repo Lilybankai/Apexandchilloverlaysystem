@@ -3357,6 +3357,28 @@ function registerIpc() {
     }
   });
 
+  /**
+   * One lap in full: its driving trace and the circuit it was driven on.
+   *
+   * `haveMapKey` is the circuit the renderer is already holding. Clicking
+   * through the laps of one session asks for the same track every time, and Le
+   * Mans is two thousand points — so the map crosses the bridge once and the
+   * renderer keeps it. See `lapDetail.loadLapDetail`.
+   */
+  ipcMain.handle('review:lap', (_evt, req) => {
+    const id = req && typeof req.id === 'string' ? req.id : '';
+    const at = req && typeof req.at === 'string' ? req.at : '';
+    if (!id || !at) return { ok: false, detail: null, map: null, error: 'no lap' };
+    try {
+      const detail = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
+      const have = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
+      return { ok: true, ...detail.loadLapDetail(id, at, have) };
+    } catch (err) {
+      console.error('[app] lap detail unavailable:', err.message);
+      return { ok: false, detail: null, map: null, error: err.message };
+    }
+  });
+
   /* ---- Community setups ----
    *
    * The setup library's cloud half: publish a library entry (the raw .svm

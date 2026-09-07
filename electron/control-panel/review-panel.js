@@ -65,6 +65,15 @@
   const collapsed = new Set();
   /** Teardown for the lap chart's listeners, so a re-render never stacks them. */
   let chartOff = null;
+  /** The same, for the lap-detail view's scrub. */
+  let lapOff = null;
+  /** The lap being studied, or null when the session is on screen. */
+  let lapView = null;
+  /** The circuit last shipped over the bridge, kept so clicking through the
+   *  laps of one session does not re-send two thousand points every time. */
+  let heldMap = null;
+  let heldMapKey = '';
+  let speedUnit = 'kph';
   /** The page has been found and wired. See init() for why this is checked. */
   let ready = false;
 
@@ -375,8 +384,13 @@
       const mark = lap.hasTrace
         ? `<span class="rv-trace" title="Telemetry captured for this lap"><svg class="icon"><use href="#i-activity" /></svg></span>`
         : '';
+      // A row is a link to the lap only when there is a trace behind it.
+      // Making every row look clickable and then telling a third of them
+      // "nothing recorded" is the affordance lying about itself.
       return `
-        <tr data-timed="${String(lap.timed)}" data-lap="${lap.lapNo}">
+        <tr data-timed="${String(lap.timed)}" data-lap="${lap.lapNo}"
+            ${lap.hasTrace ? `data-open="${esc(lap.id || '')}"` : ''}
+            ${lap.hasTrace ? 'tabindex="0" role="button" title="Study this lap"' : ''}>
           <td class="num">${lap.lapNo}${mark}</td>
           <td class="sec"${rank(lap.s1Ms, tSec[0], sSec[0])}>${fmtSector(lap.s1Ms)}</td>
           <td class="sec"${rank(lap.s2Ms, tSec[1], sSec[1])}>${fmtSector(lap.s2Ms)}</td>
@@ -516,6 +530,246 @@
   }
 
   /* ---------------------------------------------------------------------- */
+  /*  One lap (phase 2)                                                     */
+  /* ---------------------------------------------------------------------- */
+
+  const speedOf = (kph) =>
+    known(kph) ? `${Math.round(speedUnit === 'mph' ? kph * 0.621371 : kph)}` : dash;
+  const speedUnitLabel = () => (speedUnit === 'mph' ? 'mph' : 'km/h');
+
+  /** The values at the cursor, or the lap's own headline when there is none. */
+  function readoutHtml(view) {
+    const d = view.detail;
+    const ch = d.channels;
+    const i = view.cursor;
+    const cell = (label, value) =>
+      `<span class="rv-read__cell"><b>${esc(label)}</b><i>${value}</i></span>`;
+
+    if (i === null || i === undefined || !ch.d || i >= ch.d.length) {
+      return `
+        <div class="rv-read" data-idle="true">
+          ${cell('V-max', `${speedOf(d.vMaxKph)} <u>${speedUnitLabel()}</u>`)}
+          ${cell('Samples', String(d.count))}
+          ${cell('Measured', `${fix(d.lapSec, 3)}<u>s</u>`)}
+          <span class="rv-read__hint">Move across the charts to read the lap</span>
+        </div>`;
+    }
+
+    const at = (key, dp) => (Array.isArray(ch[key]) && known(ch[key][i]) ? fix(ch[key][i], dp) : dash);
+    const steer = Array.isArray(ch.steer) && known(ch.steer[i]) ? ch.steer[i] : null;
+    const metres = d.channels.d[i] * (view.lengthM || 0);
+    return `
+      <div class="rv-read">
+        ${cell('Distance', `${Math.round(metres)}<u>m</u>`)}
+        ${cell('Time', `${fix(ch.t[i], 2)}<u>s</u>`)}
+        ${cell('Speed', `${speedOf(ch.speedKph[i])}<u>${speedUnitLabel()}</u>`)}
+        ${cell('Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
+        ${cell('Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
+        ${cell('Gear', String(ch.gear[i]))}
+        ${cell('Steering', steer === null ? dash
+          : `${Math.abs(Math.round(steer * 100))}<u>${steer > 0.005 ? 'R' : steer < -0.005 ? 'L' : ''}</u>`)}
+        ${cell('G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
+      </div>`;
+  }
+
+  /** Which sector the cursor is in, for the header pill. */
+  function sectorAt(dd, sectors) {
+    if (!sectors) return '';
+    if (known(sectors.s1) && dd < sectors.s1) return 'S1';
+    if (known(sectors.s2) && dd < sectors.s2) return 'S2';
+    return known(sectors.s1) ? 'S3' : '';
+  }
+
+  function lapViewHtml(view) {
+    const d = view.detail;
+    const lap = view.lap;
+    const s = view.session;
+    const best = s && known(s.stats.bestMs) ? s.stats.bestMs : null;
+    const gap = best !== null && lap.timed && lap.lapMs !== best ? lap.lapMs - best : null;
+
+    const sectorChip = (n, ms) => `
+      <span class="rv-chip"><b>S${n}</b>${known(ms) ? fmtSector(ms) : dash}</span>`;
+
+    return `
+      <div class="rv-card rv-lap">
+        <div class="rv-lap__head">
+          <button type="button" class="btn btn--ghost btn--sm" data-lapback>
+            <svg class="icon"><use href="#i-arrow-left" /></svg><span>Session</span>
+          </button>
+          <span class="rv-lap__name">Lap ${lap.lapNo}<i> · stint ${lap.stintNo}</i></span>
+          <span class="rv-lap__time"${lap.clean && best !== null && lap.lapMs === best ? ' data-best="true"' : ''}>${
+            lap.timed ? fmtLap(lap.lapMs) : dash
+          }</span>
+          ${gap === null ? '' : `<span class="rv-lap__gap">${fmtDelta(gap)}</span>`}
+          ${lap.clean ? '' : lap.dirty.map((why) =>
+            `<span class="rv-flag" data-why="${esc(why)}">${esc(why)}</span>`).join('')}
+          <span class="rv-lap__where">${esc(d.track || '')}${
+            d.car ? ` · ${esc(d.car)}` : ''
+          }</span>
+          <span class="rv-lap__chips">
+            ${sectorChip(1, lap.s1Ms)}${sectorChip(2, lap.s2Ms)}${sectorChip(3, lap.s3Ms)}
+          </span>
+        </div>
+
+        <div class="rv-lap__body">
+          <div class="rv-lap__charts">
+            <div class="rv-readwrap">${readoutHtml(view)}</div>
+            <div class="rv-chan"><canvas></canvas></div>
+          </div>
+          <aside class="rv-lap__side">
+            <div class="rv-map">${view.map ? '<canvas></canvas>' : `
+              <div class="rv-map__none">
+                <svg class="icon"><use href="#i-circuit" /></svg>
+                <span>No circuit shape for ${esc(d.track || 'this track')} yet.</span>
+              </div>`}</div>
+            <p class="rv-lap__note">${
+              d.hasLine
+                ? 'The cyan line is the line you drove. The road is shaded by elevation.'
+                : 'This lap was recorded before Apex captured the driven line, so the marker follows the centreline. '
+                  + 'Laps driven from the next update carry the line you actually took.'
+            }</p>
+            <div class="rv-rows">
+              <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>
+              <div class="rv-row"><b>Samples</b><span>${d.count}${d.truncated ? ' (capped)' : ''}</span></div>
+              <div class="rv-row"><b>Circuit</b><span data-none="${String(!view.map)}">${
+                view.map ? `${view.map.points.length} pts${view.map.builtin ? ', bundled' : ', learned'}` : dash
+              }</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Paint the lap view and wire the scrub.
+   *
+   * The cursor is an INDEX into the columns, not a pixel and not a distance:
+   * every readout, the map marker and the vertical rule all have to name the
+   * same sample, and carrying anything else means three places rounding a
+   * distance back to an index and disagreeing about it.
+   */
+  function paintLapView() {
+    const view = lapView;
+    if (!view || !view.detail || !els.detail) return;
+    const chanWrap = els.detail.querySelector('.rv-chan');
+    const mapWrap = els.detail.querySelector('.rv-map');
+    const readout = els.detail.querySelector('.rv-readwrap');
+    if (!chanWrap) return;
+    const canvas = chanWrap.querySelector('canvas');
+    const mapCanvas = mapWrap ? mapWrap.querySelector('canvas') : null;
+    const ch = view.detail.channels;
+    let geom = null;
+
+    const repaint = () => {
+      geom = CHARTS.drawChannels(canvas, ch, CHARTS.channelBands({ mph: speedUnit === 'mph' }), {
+        sectors: view.detail.sectors,
+        lengthM: view.lengthM,
+        cursorD: view.cursor === null ? -1 : ch.d[view.cursor],
+      });
+      if (mapCanvas && view.map) {
+        CHARTS.drawLapMap(mapCanvas, view.map, ch, {
+          sectors: view.detail.sectors,
+          cursorD: view.cursor === null ? -1 : ch.d[view.cursor],
+          cursorIndex: view.cursor === null ? -1 : view.cursor,
+        });
+      }
+      if (readout) readout.innerHTML = readoutHtml(view);
+    };
+    repaint();
+
+    // Distance -> index by binary search: `d` is sorted and a lap is a couple
+    // of thousand points, but this runs on every mouse move.
+    const indexAt = (dd) => {
+      let lo = 0;
+      let hi = ch.d.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (ch.d[mid] < dd) lo = mid + 1;
+        else hi = mid;
+      }
+      if (lo > 0 && Math.abs(ch.d[lo - 1] - dd) < Math.abs(ch.d[lo] - dd)) return lo - 1;
+      return lo;
+    };
+
+    const onMove = (evt) => {
+      if (!geom) return;
+      const box = canvas.getBoundingClientRect();
+      const x = evt.clientX - box.left;
+      const f = (x - geom.x0) / Math.max(1, geom.x1 - geom.x0);
+      const next = indexAt(Math.min(1, Math.max(0, f)));
+      if (next === view.cursor) return;
+      view.cursor = next;
+      repaint();
+    };
+    const onLeave = () => {
+      if (view.cursor === null) return;
+      view.cursor = null;
+      repaint();
+    };
+    const onResize = () => repaint();
+
+    canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mouseleave', onLeave);
+    window.addEventListener('resize', onResize);
+    lapOff = () => {
+      canvas.removeEventListener('mousemove', onMove);
+      canvas.removeEventListener('mouseleave', onLeave);
+      window.removeEventListener('resize', onResize);
+    };
+  }
+
+  /** Open one lap for study. `lap` is the ReviewLap from the sheet. */
+  async function openLap(lap) {
+    if (!lap || !lap.id) return;
+    if (chartOff) { chartOff(); chartOff = null; }
+    if (lapOff) { lapOff(); lapOff = null; }
+    lapView = { lap, session: current, detail: null, map: null, cursor: null, lengthM: 0 };
+    renderDetail();
+    let res = null;
+    try {
+      res = await window.apex.reviewLap({ id: lap.id, at: lap.at, haveMapKey: heldMapKey });
+    } catch {
+      res = null;
+    }
+    // A click that lands after the driver has already gone back, or moved on to
+    // another lap, must not paint over what they are looking at now.
+    if (!lapView || lapView.lap !== lap) return;
+    if (!res || !res.detail) {
+      lapView.error = (res && res.reason === 'no-trace')
+        ? 'No telemetry was recorded for this lap.'
+        : 'That lap could not be found on disk.';
+      renderDetail();
+      return;
+    }
+    lapView.detail = res.detail;
+    if (res.map) {
+      heldMap = res.map;
+      heldMapKey = res.detail.mapKey;
+    }
+    lapView.map = res.detail.mapKey === heldMapKey ? heldMap : null;
+    lapView.lengthM = (lapView.map && lapView.map.lengthM)
+      || (current && current.trackLengthM) || 0;
+    renderDetail();
+  }
+
+  /** The one control both half-states of the lap view need. */
+  function backBar(lap) {
+    return `
+      <div class="rv-card rv-lap__bar">
+        <button type="button" class="btn btn--ghost btn--sm" data-lapback>
+          <svg class="icon"><use href="#i-arrow-left" /></svg><span>Session</span>
+        </button>
+        <span class="rv-lap__name">Lap ${lap ? lap.lapNo : ''}</span>
+      </div>`;
+  }
+
+  function closeLap() {
+    if (lapOff) { lapOff(); lapOff = null; }
+    lapView = null;
+    renderDetail();
+  }
+
+  /* ---------------------------------------------------------------------- */
   /*  Detail                                                                */
   /* ---------------------------------------------------------------------- */
 
@@ -553,6 +807,25 @@
         'Pick a session',
         'Choose one on the left to see its report, its lap times and every stint you drove.',
       );
+      return;
+    }
+
+    // One lap, studied. It replaces the session rather than sitting under it:
+    // the charts want the width, and a driver looking at a braking zone is not
+    // also reading a forty-row sheet.
+    if (lapView) {
+      if (lapView.error) {
+        els.detail.innerHTML = `
+          ${backBar(lapView.lap)}
+          ${emptyState('activity', 'Nothing to show for this lap', esc(lapView.error))}`;
+      } else if (!lapView.detail) {
+        els.detail.innerHTML = `
+          ${backBar(lapView.lap)}
+          ${emptyState('clock', 'Reading the lap\u2026', 'One moment.')}`;
+      } else {
+        els.detail.innerHTML = lapViewHtml(lapView);
+        paintLapView();
+      }
       return;
     }
 
@@ -744,6 +1017,8 @@
 
   async function openSession(id) {
     if (!id) return;
+    if (lapOff) { lapOff(); lapOff = null; }
+    lapView = null;
     currentId = id;
     current = null;
     collapsed.clear();
@@ -803,6 +1078,19 @@
 
     if (els.detail) {
       els.detail.addEventListener('click', (evt) => {
+        if (evt.target.closest('[data-lapback]')) {
+          closeLap();
+          return;
+        }
+        const row = evt.target.closest('tr[data-open]');
+        if (row && current) {
+          const id = row.dataset.open;
+          for (const stint of current.stints) {
+            const lap = stint.laps.find((l) => l.id === id);
+            if (lap) { void openLap(lap); return; }
+          }
+          return;
+        }
         const head = evt.target.closest('[data-toggle]');
         if (!head) return;
         const no = Number(head.dataset.toggle);
@@ -812,6 +1100,20 @@
         else collapsed.add(no);
         if (card) card.setAttribute('data-open', String(open));
         head.setAttribute('aria-expanded', String(open));
+      });
+    }
+
+    // A sheet row is a button, so it answers to Enter and Space like one.
+    if (els.detail) {
+      els.detail.addEventListener('keydown', (evt) => {
+        if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        const row = evt.target.closest && evt.target.closest('tr[data-open]');
+        if (!row || !current) return;
+        evt.preventDefault();
+        for (const stint of current.stints) {
+          const lap = stint.laps.find((l) => l.id === row.dataset.open);
+          if (lap) { void openLap(lap); return; }
+        }
       });
     }
 
@@ -827,9 +1129,11 @@
     // overlay and the pit wall print tyres in. A driver reading 88 on the visor
     // and 190 here would rightly assume one of them is broken.
     const applyTempUnit = (settings) => {
-      const next = settings && settings.tempUnit === 'f' ? 'f' : 'c';
-      if (next === tempUnit) return;
-      tempUnit = next;
+      const nextTemp = settings && settings.tempUnit === 'f' ? 'f' : 'c';
+      const nextSpeed = settings && settings.speedUnit === 'mph' ? 'mph' : 'kph';
+      if (nextTemp === tempUnit && nextSpeed === speedUnit) return;
+      tempUnit = nextTemp;
+      speedUnit = nextSpeed;
       if (visible) renderDetail();
     };
     window.apex.getState().then((state) => applyTempUnit(state && state.settings))
@@ -859,6 +1163,7 @@
     hidden() {
       visible = false;
       if (chartOff) { chartOff(); chartOff = null; }
+      if (lapOff) { lapOff(); lapOff = null; }
     },
   };
 
