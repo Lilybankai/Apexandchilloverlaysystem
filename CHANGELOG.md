@@ -4,6 +4,31 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Changed
+
+- **The delta says which way it goes, in words.** A red `+2.123` on a lap you
+  know was two seconds slower is correct — `+` is behind, the way every timing
+  screen in the sport has read for fifty years — but it still makes you stop
+  and work it out. The band is now captioned **"slower above, faster below"**,
+  and the comparison lap's pill reads **"2.123 s slower"** rather than a bare
+  sign. Nothing about the maths changed; it now says out loud what it was
+  already doing.
+
+- **Pick the lap to compare against on the session screen.** Every lap with
+  telemetry has a **vs** button at the end of its row. Press it and that lap
+  becomes the reference for the whole session — a bar at the top of the sheet
+  says so — and every lap you open from then on opens already compared against
+  it. That is the order the decision actually happens in: you are reading the
+  column of times when you decide two laps are worth putting together, not
+  after you have opened one of them. The picker inside the lap view still
+  works, and now keeps the session's choice in step with it.
+
+- **Big map.** The circuit can take the full width under the charts instead of
+  sitting beside them, which is what makes a corner at full zoom readable. One
+  button on the lap's toolbar, remembered per machine.
+
 ## 0.99.2-beta.3 — 2026-09-07
 
 ### Added

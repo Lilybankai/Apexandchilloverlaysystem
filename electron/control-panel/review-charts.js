@@ -1361,7 +1361,13 @@
     const bands = [];
     if (opts && opts.delta) {
       bands.push({
-        label: 'Delta',
+        // The band NAMES its direction. `+` for behind is the convention every
+        // timing screen in the sport uses, but a driver reading a red +2.1 on
+        // a lap they know was two seconds slower still has to stop and work
+        // out which way round it is — and a delta trace read backwards inverts
+        // every judgement made on the screen. Six words in the caption end
+        // that, permanently, for everyone who ever opens this.
+        label: 'Delta — slower above, faster below',
         from: 'delta',
         // The tallest of the lot after speed: it is the answer to the question
         // the comparison was opened to ask, and a tenth of a second has to be

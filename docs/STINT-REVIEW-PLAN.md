@@ -496,6 +496,29 @@ being spent. Laps that reported no wear are skipped rather than plotted at zero:
 LMU publishes the block only for some cars and sessions, and a flat line along
 the floor would read as "the tyres never wore" instead of "nothing was said".
 
+### Three things live testing changed, the same evening
+
+**The sign needed words, not a better sign.** `+` for behind is the sport's own
+convention and the maths was right, but Carl read a red `+2.123` against a lap
+he knew was two seconds slower and had to stop and check which way round it
+was. On a screen where reading the delta backwards inverts every judgement
+made on it, that pause is the bug. So the band is captioned "slower above,
+faster below" and the comparison pill spells out "2.123 s slower". The
+convention stayed; the ambiguity went.
+
+**The reference lap is chosen on the SESSION screen.** A `vs` button at the end
+of every lap row with telemetry makes that lap the session's reference, said in
+a bar above the sheet, and every lap opened afterwards opens already compared.
+The picker inside the lap view was the wrong way round: it made you open a lap
+before you could say what to compare it with, when the decision is made while
+reading the column of times. The picker stays as the way to *change* the
+reference, and writes back to the session so the two never disagree.
+
+**A big map.** Zoomed into a corner, a 390 px map beside the charts is too
+small to read the line on — which is the one thing it is there for. One button
+throws the circuit full width under the charts at 16:9, with the readings
+beside it, remembered per machine.
+
 ### And the scrollbars
 
 The Review tab's three scrolling areas — the session rail, the lap sheet's run

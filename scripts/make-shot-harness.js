@@ -53,11 +53,34 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   // lap-detail view can be screenshotted: the harness cannot click, and that
   // view is two clicks deep. Gives up after five seconds rather than polling
   // forever on a tab that was never opened.
-  if (new URLSearchParams(location.search).get('lap')) {
+  if (new URLSearchParams(location.search).get('lap')
+      || new URLSearchParams(location.search).get('ref')) {
     const stopAt = Date.now() + 5000;
     const tick = () => {
       const row = document.querySelector('tr[data-open]');
-      if (row) { row.click(); setTimeout(compare, 400); return; }
+      if (row) {
+        // ?ref=12 first picks lap 12 on the SHEET as the comparison, which is
+        // the path a driver actually takes — the picker inside the lap view is
+        // the fallback, not the way in.
+        const q2 = new URLSearchParams(location.search);
+        const ref = q2.get('ref');
+        const btn = ref && document.querySelector('tr[data-lap="' + ref + '"] [data-ref]');
+        if (btn) {
+          btn.click();
+          // ?ref on its own shoots the SESSION screen with a reference chosen,
+          // which is the state the sheet is in between the two clicks.
+          if (!q2.get('lap')) return;
+          setTimeout(() => {
+            const again = document.querySelector('tr[data-open]');
+            if (again) again.click();
+            setTimeout(compare, 400);
+          }, 200);
+          return;
+        }
+        row.click();
+        setTimeout(compare, 400);
+        return;
+      }
       if (Date.now() < stopAt) setTimeout(tick, 120);
     };
     // ?scrub=0.62 then parks the cursor 62% of the way round the lap, so the
@@ -80,12 +103,19 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // band, the second line on the map and the micro-sector chips are all in
     // the shot. Dispatched as a real change event, through the same handler.
     const compare = () => {
-      if (!new URLSearchParams(location.search).get('vs')) { scrub(); return; }
+      if (!new URLSearchParams(location.search).get('vs')) { big(); chip(); scrub(); return; }
       const sel = document.querySelector('[data-cmp]');
       if (!sel || sel.options.length < 2) { scrub(); return; }
       sel.selectedIndex = 1;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      setTimeout(() => { chip(); scrub(); }, 500);
+      setTimeout(() => { big(); chip(); scrub(); }, 500);
+    };
+
+    // ?big=1 throws the circuit full width under the charts.
+    const big = () => {
+      if (!new URLSearchParams(location.search).get('big')) return;
+      const el = document.querySelector('[data-mapsize]');
+      if (el) el.click();
     };
 
     // ?sq=5 then clicks that micro-sector chip, which is how the zoomed state
@@ -450,4 +480,4 @@ fs.writeFileSync(
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
-console.log('  the lap view: ?tab=review&lap=1[&vs=1][&sq=5][&scrub=0.34]');
+console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34]');

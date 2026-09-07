@@ -1252,3 +1252,103 @@
   .rv-career__stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
   .rv-stat__value { font-size: 16px; }
 }
+
+/* ============================ THE BIG MAP ===============================
+ *
+ * Zoomed into a corner, a 390px map beside the charts is too small to read
+ * the line on — which is the one thing it exists to show. So the circuit can
+ * take the full width under the charts instead, where a corner at 9x is a
+ * corner you can actually study. The choice is remembered per machine.
+ *
+ * The readings and the note move alongside it rather than under it: at full
+ * width they would otherwise sit a screen below the map they describe.
+ */
+
+.rv-lap__body[data-map='big'] { grid-template-columns: minmax(0, 1fr); }
+
+.rv-lap__body[data-map='big'] .rv-lap__side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-areas:
+    'map rows'
+    'map note';
+  align-content: start;
+  gap: 10px 14px;
+}
+
+.rv-lap__body[data-map='big'] .rv-map {
+  grid-area: map;
+  /* Wider than the side map and much taller in absolute terms: this is the
+     view a driver leans into, so it gets the shape a circuit actually is. */
+  aspect-ratio: 16 / 9;
+}
+
+.rv-lap__body[data-map='big'] .rv-rows { grid-area: rows; align-self: start; }
+.rv-lap__body[data-map='big'] .rv-lap__note { grid-area: note; margin: 0; align-self: start; }
+
+@media (max-width: 1240px) {
+  .rv-lap__body[data-map='big'] .rv-lap__side { grid-template-columns: minmax(0, 1fr); }
+  .rv-lap__body[data-map='big'] .rv-lap__side {
+    grid-template-areas: 'map' 'rows' 'note';
+  }
+}
+
+/* ========================= THE REFERENCE LAP ============================
+ *
+ * Picked on the SESSION screen, from the sheet — where a driver is looking
+ * when they decide two laps are worth comparing.
+ */
+
+.rv-sheet td.ref { text-align: right; padding-right: 8px; width: 1%; }
+
+.rv-refbtn {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+  /* Quiet until the row is under the pointer: forty of these down a sheet of
+     lap times would be forty things competing with the times themselves. */
+  opacity: 0.32;
+  transition: opacity 110ms linear, border-color 110ms linear, color 110ms linear;
+}
+
+.rv-sheet tr:hover .rv-refbtn { opacity: 1; }
+.rv-refbtn:hover { border-color: var(--cyan); color: var(--cyan); }
+.rv-refbtn:focus-visible { opacity: 1; outline: none; border-color: var(--cyan); }
+
+.rv-refbtn[data-on='true'] {
+  opacity: 1;
+  color: #8b7dff;
+  border-color: rgba(139, 125, 255, 0.55);
+  background: rgba(139, 125, 255, 0.12);
+}
+
+.rv-refbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  border: 1px solid rgba(139, 125, 255, 0.3);
+  border-radius: var(--radius);
+  background: rgba(139, 125, 255, 0.07);
+}
+
+.rv-refbar__tag {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.rv-refbar b { font-weight: 500; color: #8b7dff; }
+.rv-refbar__time { font-family: var(--font-mono); color: var(--text-2); }
+.rv-refbar__note { font-size: 11.5px; color: var(--text-3); }
+.rv-refbar [data-refclear] { margin-left: auto; }

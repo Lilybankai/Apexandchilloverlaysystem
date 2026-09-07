@@ -79,6 +79,18 @@
   let ready = false;
   /** The driver's whole history, from the same read as the sessions list. */
   let career = null;
+  /**
+   * The lap every other lap in this session is measured against.
+   *
+   * Chosen on the SESSION screen, from the sheet, because that is where a
+   * driver is looking when they decide two laps are worth comparing — they
+   * have just read the column of times. Picking it inside the lap view meant
+   * opening a lap before you could say what to compare it with, which is the
+   * wrong way round.
+   */
+  let refLap = null;
+  /** Whether the circuit is drawn full width under the charts. Per machine. */
+  let bigMap = false;
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -403,7 +415,7 @@
 
   const sheetCols = () => [
     'Lap', 'S1', 'S2', 'S3', 'Time', 'Δ best', 'Fuel L', 'VE %',
-    `Tyres °${tempUnit === 'f' ? 'F' : 'C'}`, 'Wear',
+    `Tyres °${tempUnit === 'f' ? 'F' : 'C'}`, 'Wear', 'vs',
   ];
 
   /**
@@ -468,6 +480,12 @@
           <td>${known(lap.veUsedPct) ? `${fix(lap.veUsedPct, 2)}` : `<span class="dim">${dash}</span>`}</td>
           <td class="dim">${temps}</td>
           <td>${known(worst) ? pct(worst) : `<span class="dim">${dash}</span>`}</td>
+          <td class="ref">${lap.hasTrace ? `
+            <button type="button" class="rv-refbtn" data-ref="${esc(lap.id || '')}"
+                    data-on="${String(!!refLap && refLap.id === lap.id)}"
+                    title="${refLap && refLap.id === lap.id
+                      ? 'Stop comparing against this lap'
+                      : 'Compare every other lap against this one'}">vs</button>` : ''}</td>
         </tr>`;
     }).join('');
 
@@ -610,6 +628,19 @@
     if (Math.abs(sec) < 0.5 / 10 ** dp) return (0).toFixed(dp);
     const s = sec.toFixed(dp);
     return sec > 0 ? `+${s}` : s;
+  }
+
+  /**
+   * A gap in milliseconds, in words: `2.123 s slower`.
+   *
+   * The sign alone is not enough on a screen someone meets once. `+` for
+   * behind is the sport's own convention and it stays — but on the one figure
+   * that says which of these two laps was the quicker, the word is spelled
+   * out, because reading it backwards inverts everything else on the page.
+   */
+  function gapWords(ms) {
+    if (!known(ms) || Math.abs(ms) < 5) return 'the same time';
+    return `${fix(Math.abs(ms) / 1000, 3)} s ${ms > 0 ? 'slower' : 'faster'}`;
   }
 
   /** Which way a delta went, for colour. A hundredth is inside the noise. */
@@ -790,6 +821,12 @@
       : `${Math.round(a * m)}–${Math.round(b * m)} m`;
     return `
       <div class="rv-zoom">
+        <button type="button" class="btn btn--ghost btn--sm" data-mapsize
+                title="${bigMap ? 'Put the circuit back beside the charts'
+                  : 'Draw the circuit full width, under the charts'}">
+          <svg class="icon"><use href="#i-${bigMap ? 'orbit' : 'circuit'}" /></svg>
+          <span>${bigMap ? 'Small map' : 'Big map'}</span>
+        </button>
         <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
         <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
                 title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
@@ -823,7 +860,7 @@
                   data-band="${deltaBand(seg.deltaSec)}" data-on="${String(inside)}"
                   title="${esc(`SQ${seg.no} · ${Math.round(seg.from * (view.lengthM || 0))}–${
                     Math.round(seg.to * (view.lengthM || 0))
-                  } m`)}">
+                  } m${seg.deltaSec === null ? '' : ` · ${gapWords(seg.deltaSec * 1000)}`}`)}">
             <b>SQ${seg.no}</b>
             <i>${seg.deltaSec === null ? (known(seg.aSec) ? `${seg.aSec.toFixed(1)}s` : dash)
               : fmtSec(seg.deltaSec)}</i>
@@ -869,13 +906,13 @@
           ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}">
             <b>Lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}</b>
             <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
-            ${vsGap === null ? '' : `<i>${fmtDelta(vsGap)}</i>`}
+            ${vsGap === null ? '' : `<i>${esc(gapWords(vsGap))}</i>`}
           </span>` : ''}
           ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
           ${zoomHtml(view)}
         </div>
 
-        <div class="rv-lap__body">
+        <div class="rv-lap__body" data-map="${bigMap ? 'big' : 'side'}">
           <div class="rv-lap__charts">
             <div class="rv-readwrap">${readoutHtml(view)}</div>
             <div class="rv-chan"><canvas></canvas></div>
@@ -890,9 +927,9 @@
             <p class="rv-lap__note">${
               d.hasLine
                 ? 'The cyan line is the line you drove, standing on the circuit’s own elevation. '
-                  + 'Click any part of the road to zoom in on it.'
+                  + 'Click any part of the road to zoom in on it, and Big map for a closer look.'
                 : 'This lap was recorded before Apex captured the driven line, so the marker follows the centreline. '
-                  + 'Click any part of the road to zoom in on it.'
+                  + 'Click any part of the road to zoom in on it, and Big map for a closer look.'
             }</p>
             <div class="rv-rows">
               <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>
@@ -1102,6 +1139,9 @@
    */
   async function openLap(lap, vsLap) {
     if (!lap || !lap.id) return;
+    // The reference chosen on the sheet follows you into every lap you open,
+    // which is the whole point of choosing it there.
+    if (vsLap === undefined) vsLap = refLap && refLap.id !== lap.id ? refLap : null;
     if (chartOff) { chartOff(); chartOff = null; }
     if (lapOff) { lapOff(); lapOff = null; }
     // A window survives a change of comparison lap: the driver is still looking
@@ -1328,6 +1368,17 @@
           goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
       </div>` : ''}
 
+      ${refLap ? `
+      <div class="rv-refbar">
+        <span class="rv-refbar__tag">Comparing against</span>
+        <b>Lap ${refLap.lapNo}</b>
+        <span class="rv-refbar__time">${refLap.timed ? fmtLap(refLap.lapMs) : dash}</span>
+        <span class="rv-refbar__note">Open any lap and it opens against this one.</span>
+        <button type="button" class="btn btn--ghost btn--sm" data-refclear>
+          <svg class="icon"><use href="#i-x" /></svg><span>Clear</span>
+        </button>
+      </div>` : ''}
+
       <div>${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
     `;
 
@@ -1487,6 +1538,7 @@
     lapView = null;
     currentId = id;
     current = null;
+    refLap = null;
     collapsed.clear();
     loading = true;
     renderList();
@@ -1532,6 +1584,9 @@
     els.list = $('#rv-sessions');
     els.detail = $('#rv-detail');
     els.career = $('#rv-career');
+    try { bigMap = window.localStorage.getItem('apex.review.bigMap') === '1'; } catch {
+      /* storage off: the circuit starts beside the charts */
+    }
 
     if (els.search) els.search.addEventListener('input', renderList);
     if (els.filter) els.filter.addEventListener('change', renderList);
@@ -1549,6 +1604,38 @@
           closeLap();
           return;
         }
+        // Choosing what to measure against, from the sheet. Checked before
+        // the row itself, because the button sits inside a clickable row and
+        // "compare against this" must not also mean "open this".
+        const ref = evt.target.closest('[data-ref]');
+        if (ref && current) {
+          const id = ref.dataset.ref;
+          if (refLap && refLap.id === id) refLap = null;
+          else {
+            for (const stint of current.stints) {
+              const found = stint.laps.find((l) => l.id === id);
+              if (found) { refLap = found; break; }
+            }
+          }
+          renderDetail();
+          return;
+        }
+        if (evt.target.closest('[data-refclear]')) {
+          refLap = null;
+          renderDetail();
+          return;
+        }
+
+        // The circuit, beside the charts or full width under them.
+        if (evt.target.closest('[data-mapsize]')) {
+          bigMap = !bigMap;
+          try { window.localStorage.setItem('apex.review.bigMap', bigMap ? '1' : '0'); } catch {
+            /* storage off: the choice lasts the session */
+          }
+          renderDetail();
+          return;
+        }
+
         // The zoom controls and the micro-sector chips, both of which move
         // the shared window rather than re-rendering anything.
         const zoomBtn = evt.target.closest('[data-zoom]');
@@ -1603,10 +1690,13 @@
         const sel = evt.target.closest('[data-cmp]');
         if (!sel || !lapView || !lapView.lap || !current) return;
         const id = sel.value;
-        if (!id) { void openLap(lapView.lap, null); return; }
+        if (!id) { refLap = null; void openLap(lapView.lap, null); return; }
         for (const stint of current.stints) {
           const lap = stint.laps.find((l) => l.id === id);
-          if (lap) { void openLap(lapView.lap, lap); return; }
+          // Changing it here changes it for the session too: going back to the
+          // sheet and opening a third lap should keep comparing against the
+          // reference you just picked, not the one you picked before it.
+          if (lap) { refLap = lap; void openLap(lapView.lap, lap); return; }
         }
       });
     }

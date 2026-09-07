@@ -423,7 +423,12 @@ function squareMap(rise) {
   const withDelta = CHARTS.channelBands({ delta: true });
   check('no comparison, no delta band', plain.length === 4 && plain[0].label === 'Speed');
   check('a comparison puts the delta on top', withDelta.length === 5
-    && withDelta[0].label === 'Delta' && withDelta[1].label === 'Speed');
+    && withDelta[0].label.startsWith('Delta') && withDelta[1].label === 'Speed');
+  // The caption names the direction. Read backwards, a delta trace inverts
+  // every judgement made on the screen, and a `+` alone does not say which
+  // way round it is to someone meeting the screen for the first time.
+  check('and the band says which way it goes',
+    /slower above/i.test(withDelta[0].label), withDelta[0].label);
   check('it reads its own column, not the lap\'s',
     withDelta[0].from === 'delta' && withDelta[0].series[0].key === 'dt');
   check('it keeps zero in the middle', withDelta[0].symmetric === true && withDelta[0].zero === true);
@@ -442,7 +447,7 @@ function squareMap(rise) {
     delta, lengthM: 5000,
   });
   check('five bands when there is a delta', geom.bands.length === 5);
-  check('the delta is the first of them', geom.bands[0].label === 'Delta');
+  check('the delta is the first of them', geom.bands[0].label.startsWith('Delta'));
 
   const band = geom.bands[0];
   const inBand = calls.filter(([op, , y]) => (op === 'lineTo' || op === 'moveTo')
