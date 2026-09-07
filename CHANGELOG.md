@@ -16,6 +16,13 @@
   and a zoomed corner is drawn from the fine path rather than the decimated
   one, so a hairpin is a curve and not a polygon.
 
+- **You can tell the other lap's throttle from its brake now.** The comparison
+  lap was drawn in one violet on every band, so on the pedal band its throttle
+  and its brake were the same dashed line — the one pair a driver is actually
+  comparing. Dashed stays its mark; the colour is now each channel's own,
+  paler: dashed pale green is its throttle, dashed pale red its brake, and the
+  comparison pill carries a dashed swatch so it is clear which lap is which.
+
 ## 0.99.2-beta.4 — 2026-09-08
 
 ### Changed

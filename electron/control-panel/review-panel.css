@@ -1378,3 +1378,14 @@
 }
 .rv-read__pin:hover { background: rgba(38, 187, 244, 0.18); }
 .rv-read[data-pinned='true'] { border-color: rgba(38, 187, 244, 0.28); }
+
+/* The dashed swatch in the comparison pill: the other lap is the dashed line
+   on every band, in that band's own colour, and this is the one place that
+   says so without needing a legend of its own. */
+.rv-cmp__swatch {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed #bfe9fb;
+  align-self: center;
+}

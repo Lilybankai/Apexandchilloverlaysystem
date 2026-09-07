@@ -447,13 +447,16 @@
         ctx.setLineDash([]);
       };
 
-      // The comparison lap goes down FIRST and stays thin and violet: it is the
-      // thing being measured against, not the thing being read, and a second
-      // trace at equal weight turns every band into a puzzle about which line
-      // is yours.
+      // The comparison lap goes down FIRST, thin and DASHED: it is the thing
+      // being measured against, not the thing being read, and a second trace
+      // at equal weight turns every band into a puzzle about which line is
+      // yours. Dashed is its one identifying mark; the COLOUR stays the
+      // channel's own, paler. One violet for everything the other lap did
+      // meant its throttle and its brake were the same line on the same band,
+      // which is exactly the pair a driver compares.
       if (band.compare && o.vs) {
         for (const s of band.series) {
-          stroke(o.vs, o.vs.d || [], s, { color: CSS.compare, width: 1.1, dash: [4, 3] });
+          stroke(o.vs, o.vs.d || [], s, { color: s.cmp || CSS.compare, width: 1.2, dash: [4, 3] });
         }
       }
 
@@ -1441,7 +1444,7 @@
         min: 0,
         compare: true,
         series: [{
-          key: 'speedKph', color: CSS.cyan,
+          key: 'speedKph', color: CSS.cyan, cmp: '#bfe9fb',
           scale: mph ? 0.621371 : 1, fill: 'rgba(38,187,244,0.10)',
         }],
         fmt: (v) => String(Math.round(v)),
@@ -1453,8 +1456,8 @@
         max: 100,
         compare: true,
         series: [
-          { key: 'throttle', color: CSS.ok, scale: 100, fill: 'rgba(53,208,127,0.12)' },
-          { key: 'brake', color: CSS.bad, scale: 100, fill: 'rgba(255,84,112,0.12)' },
+          { key: 'throttle', color: CSS.ok, cmp: '#b6f0cf', scale: 100, fill: 'rgba(53,208,127,0.12)' },
+          { key: 'brake', color: CSS.bad, cmp: '#ffbcc8', scale: 100, fill: 'rgba(255,84,112,0.12)' },
         ],
         marks: [
           { key: 'tc', color: 'rgba(255,176,32,0.9)' },

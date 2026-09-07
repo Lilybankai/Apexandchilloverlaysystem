@@ -907,7 +907,9 @@
 
         <div class="rv-lap__bar2">
           ${compareHtml(view)}
-          ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}">
+          ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
+                title="Drawn dashed, in each channel's own colour. This lap is the solid line.">
+            <i class="rv-cmp__swatch" aria-hidden="true"></i>
             <b>Lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}</b>
             <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
             ${vsGap === null ? '' : `<i>${esc(gapWords(vsGap))}</i>`}

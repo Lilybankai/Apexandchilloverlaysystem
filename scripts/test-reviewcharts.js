@@ -504,6 +504,11 @@ function squareMap(rise) {
     > solo.calls.filter(([op]) => op === 'stroke').length);
   check('and it is dashed, so the two are never confused',
     both.calls.some(([op, n]) => op === 'setLineDash' && n === 2));
+  // The other lap's throttle and brake must not be one colour: they share a
+  // band, and that pair is the comparison a driver is actually making.
+  const pedals = CHARTS.channelBands({})[1].series;
+  check('the comparison lap\'s throttle and brake are told apart by colour',
+    pedals[0].cmp && pedals[1].cmp && pedals[0].cmp !== pedals[1].cmp);
   check('the speed axis covers both laps',
     both.calls.filter(([op]) => op === 'fillText').some(([, t]) => String(t) === '0'));
 }
