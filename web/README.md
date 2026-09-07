@@ -1,4 +1,4 @@
-# The web pit wall — aio.apexandchill.co.uk
+# The web pit wall — aio.apexandchillracing.co.uk
 
 Phase 1 of `docs/COMPANION-APP-PLAN.md`: the desktop Team tab (both of its
 screens — **My car** and **Team**) in a browser, on a PC or a tablet, behind
@@ -60,10 +60,10 @@ npm run web:dev           # build web/dist and serve it on http://127.0.0.1:8790
 Pages on every push to `main` that touches the Team tab or `web/`, and on
 demand from the Actions tab. `src/CNAME` names the custom domain.
 
-DNS for the domain (one record, at whoever hosts apexandchill.co.uk):
+DNS for the domain (one record, at whoever hosts apexandchillracing.co.uk):
 
 ```
-aio.apexandchill.co.uk   CNAME   lilybankai.github.io
+aio.apexandchillracing.co.uk   CNAME   lilybankai.github.io
 ```
 
 GitHub issues the HTTPS certificate itself once the record resolves

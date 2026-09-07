@@ -2255,7 +2255,7 @@
       await window.apex.updateSettings({ webRelay: webRelayToggle.checked });
       showToast(
         webRelayToggle.checked
-          ? 'Your car will be sent to aio.apexandchill.co.uk while you drive.'
+          ? 'Your car will be sent to aio.apexandchillracing.co.uk while you drive.'
           : 'Your car will no longer be sent to the web pit wall.',
       );
     });

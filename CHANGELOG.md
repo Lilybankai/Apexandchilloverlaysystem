@@ -38,7 +38,7 @@
 ### Added
 
 - **The pit wall in a browser.** The Team tab — both of its screens, My car
-  and Team — now lives at aio.apexandchill.co.uk as well as in the app. Sign
+  and Team — now lives at aio.apexandchillracing.co.uk as well as in the app. Sign
   in there with the same account, on a PC or a tablet, and the board is the
   one you know: the same widgets, the same layouts, dragged and resized the
   same way, saved per device. Nothing runs on the tablet: the app on your

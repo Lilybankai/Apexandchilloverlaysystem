@@ -496,7 +496,7 @@ function defaultSettings() {
      */
     launchOnStartup: false,
     // Web pit wall: publish my own car to the cloud while I drive, so the
-    // Team board can be opened in a browser (aio.apexandchill.co.uk) on a
+    // Team board can be opened in a browser (aio.apexandchillracing.co.uk) on a
     // tablet or second PC signed in as this account. Same 1 Hz beat and the
     // same payload as the team relay; on by default because the page is
     // useless without it and the switch is the first thing support would ask

@@ -1,5 +1,5 @@
 # Deploys the web pit wall (web/dist) to GitHub Pages, which serves
-# aio.apexandchill.co.uk (web/src/CNAME). The build is scripts/build-web.js —
+# aio.apexandchillracing.co.uk (web/src/CNAME). The build is scripts/build-web.js —
 # plain Node, no install — so a push to main that touches the Team tab's
 # files ships the same change to the browser version.
 name: Web pit wall

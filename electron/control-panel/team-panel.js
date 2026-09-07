@@ -912,7 +912,7 @@
     switch (cloud.publishStatus) {
       case 'publishing':
         // Same relay, two audiences: a team we are in, or only the browser
-        // pit wall at aio.apexandchill.co.uk (no team selected).
+        // pit wall at aio.apexandchillracing.co.uk (no team selected).
         return cloud.publishTarget === 'web'
           ? { state: 'publishing', text: 'relaying your car to the web pit wall' }
           : { state: 'publishing', text: 'relaying your car to the team' };

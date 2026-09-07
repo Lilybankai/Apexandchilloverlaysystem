@@ -9,7 +9,7 @@ Delta session history). Plan only — nothing here is built.
 - **2026-09-07 — Phase 1 built (web only; mobile apps parked, Carl's call).**
   `web/` + `scripts/build-web.js` assemble the desktop Team tab (both screens,
   My car and Team) and the account screens into a static site for
-  aio.apexandchill.co.uk, deployed by `.github/workflows/web-pages.yml` to
+  aio.apexandchillracing.co.uk, deployed by `.github/workflows/web-pages.yml` to
   GitHub Pages. Same account, same widgets, same files — the board's sources
   are copied verbatim at build time, see `web/README.md`. Migration
   `0017_web_pit_wall` adds the per-driver relay row the My car view needs
