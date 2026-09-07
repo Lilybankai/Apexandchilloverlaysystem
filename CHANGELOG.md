@@ -4,6 +4,21 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.1 — 2026-09-07
+
+### Added
+
+- **The pit wall in a browser.** The Team tab — both of its screens, My car
+  and Team — now lives at aio.apexandchillracing.co.uk as well as in the app. Sign
+  in there with the same account, on a PC or a tablet, and the board is the
+  one you know: the same widgets, the same layouts, dragged and resized the
+  same way, saved per device. Nothing runs on the tablet: the app on your
+  racing PC sends your car to the cloud once a second while you drive (the
+  same relay a team already uses), and the page reads it back. A new switch,
+  Settings ▸ Application ▸ **Web pit wall**, turns that sending off; it ships
+  on. The Crew card says where your car is going — to the team, or to the web
+  pit wall when you are not in one.
+
 ### Fixed
 
 - **Tell Apex where the game is.** If Le Mans Ultimate is installed somewhere
@@ -32,23 +47,6 @@
 - **Setups work on a profile that has never bound a key.** The setup library
   looked for the game through its *controls* file, so a fresh profile with no
   keyboard bindings reported no install and could not save or load anything.
-
-## 0.99.1-beta.1 — 2026-09-06
-
-### Added
-
-- **The pit wall in a browser.** The Team tab — both of its screens, My car
-  and Team — now lives at aio.apexandchillracing.co.uk as well as in the app. Sign
-  in there with the same account, on a PC or a tablet, and the board is the
-  one you know: the same widgets, the same layouts, dragged and resized the
-  same way, saved per device. Nothing runs on the tablet: the app on your
-  racing PC sends your car to the cloud once a second while you drive (the
-  same relay a team already uses), and the page reads it back. A new switch,
-  Settings ▸ Application ▸ **Web pit wall**, turns that sending off; it ships
-  on. The Crew card says where your car is going — to the team, or to the web
-  pit wall when you are not in one.
-
-### Fixed
 
 - **Widgets no longer get chopped off in a small window.** Shrink the app and
   the tyre corners, the fuel tiles and the header strip used to be clipped at
