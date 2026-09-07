@@ -356,6 +356,7 @@ const PANEL_CONTRACT = {
   // until the operator reboots. (Minimise-to-tray is deliberately NOT here any
   // more — it is no longer a setting; the panel always minimises to the tray.)
   'startup-toggle': 'input:checkbox',
+  'webrelay-toggle': 'input:checkbox',
 
   // Settings — appearance (all three ride the live appearance channel)
   'bg-range': 'input:range',

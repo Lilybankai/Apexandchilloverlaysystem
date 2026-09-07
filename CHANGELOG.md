@@ -6,6 +6,31 @@
 
 ## 0.99.1-beta.1 — 2026-09-06
 
+### Added
+
+- **The pit wall in a browser.** The Team tab — both of its screens, My car
+  and Team — now lives at aio.apexandchill.co.uk as well as in the app. Sign
+  in there with the same account, on a PC or a tablet, and the board is the
+  one you know: the same widgets, the same layouts, dragged and resized the
+  same way, saved per device. Nothing runs on the tablet: the app on your
+  racing PC sends your car to the cloud once a second while you drive (the
+  same relay a team already uses), and the page reads it back. A new switch,
+  Settings ▸ Application ▸ **Web pit wall**, turns that sending off; it ships
+  on. The Crew card says where your car is going — to the team, or to the web
+  pit wall when you are not in one.
+
+### Fixed
+
+- **Widgets no longer get chopped off in a small window.** Shrink the app and
+  the tyre corners, the fuel tiles and the header strip used to be clipped at
+  their right edge — the board gave a widget a narrow box and its contents
+  kept the width they had at full size. Each widget now folds by the width of
+  its OWN box: the four tyre corners stack in one column, tiles go two-up, the
+  header's controls wrap onto a second line, and anything that still cannot
+  fit scrolls sideways inside the widget instead of being cut. Close and
+  resize handles also show on touch screens, where there is no hover to
+  reveal them.
+
 ### Changed
 
 - **Demo mode now drives like a race.** Every overlay runs on the demo feed

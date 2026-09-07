@@ -14,6 +14,10 @@
  *      nobody fights over a shared one. Eligibility is the SimEndurance rule
  *      in reverse: only the machine with real local tyre data is driving, so
  *      only frames carrying tyres are worth relaying.
+ *      Since migration `web_pit_wall` (2026-09-07) the same call also writes
+ *      the driver's OWN row (public.driver_relay), team or no team, so the
+ *      web pit wall at aio.apexandchill.co.uk can show "My car" in a browser
+ *      — the Settings ▸ Application switch (`webRelay`) turns that half off.
  *   3. **Reader** — while the Team tab is open in "Team" view, poll
  *      team_relay_read every READ_MS and hand the panel the active source:
  *      freshest row that has tyre data (the car being driven), else the
@@ -31,6 +35,13 @@ const stall = require('./stall-watch');
 
 /** Publish cadence — Carl moved it to 1 s (2026-08-26; was 3 s at launch). */
 const PUBLISH_MS = 1000;
+/**
+ * Stamped into every relayed payload as `v`. A second reader (the web pit
+ * wall) now consumes this shape, so it has to be able to tell a payload it
+ * understands from one written by a newer desktop — bump this when a field the
+ * board reads changes meaning, never for additions.
+ */
+const RELAY_VERSION = 1;
 /** Read cadence while watching. Same rhythm; worst-case staleness ~2 s. */
 const READ_MS = 1000;
 /** Re-send the race history at most this often — it is the one heavy block. */
@@ -118,8 +129,9 @@ let auth = null;
 /** () => ({ frame, snapshot, mapShape, history }) — supplied by main, which
  *  owns the status feed, the snapshot builder and the race memory. */
 let collect = null;
-/** Persisted settings bridge: getActiveTeam() / setActiveTeam(id). */
-let store = { getActiveTeam: () => null, setActiveTeam: () => {} };
+/** Persisted settings bridge: getActiveTeam() / setActiveTeam(id) /
+ *  getWebRelay() — whether the driver's own row is published for the web. */
+let store = { getActiveTeam: () => null, setActiveTeam: () => {}, getWebRelay: () => true };
 let onTeams = () => {};
 let onRelay = () => {};
 
@@ -128,6 +140,10 @@ const state = {
   activeTeamId: null,
   /** 'off' | 'waiting' | 'publishing' | 'error' — for the crew header. */
   publishStatus: 'off',
+  /** Where the last publish went: 'team' (team + own row), 'web' (own row
+   *  only — no team selected) or null. The crew header words its status
+   *  from this. */
+  publishTarget: null,
   lastPublishAt: null,
   publishError: null,
   watching: false,
@@ -161,10 +177,21 @@ function stateForUi() {
     teams: state.teams,
     activeTeamId: state.activeTeamId,
     publishStatus: state.publishStatus,
+    publishTarget: state.publishTarget,
     lastPublishAt: state.lastPublishAt,
     publishError: state.publishError,
     watching: state.watching,
+    webRelay: webRelayOn(),
   };
+}
+
+/** The Settings ▸ Application switch: publish my own row for the browser. */
+function webRelayOn() {
+  try {
+    return store.getWebRelay ? store.getWebRelay() !== false : true;
+  } catch {
+    return true;
+  }
 }
 
 function pushTeams() {
@@ -268,7 +295,11 @@ function setActiveTeam(id) {
 
 async function publishTick() {
   if (publishing) return;
-  if (!state.activeTeamId || !signedIn()) {
+  // Two reasons to publish: a team to relay to, or the web pit wall wanting
+  // my own car. Neither, or signed out, and the relay is off.
+  const toTeam = !!state.activeTeamId;
+  const toWeb = webRelayOn();
+  if (!signedIn() || (!toTeam && !toWeb)) {
     setPublishStatus('off');
     return;
   }
@@ -285,8 +316,9 @@ async function publishTick() {
   }
 
   const args = {
-    p_team_id: state.activeTeamId,
-    p_payload: snapshot,
+    p_payload: { ...snapshot, v: RELAY_VERSION },
+    p_team_id: toTeam ? state.activeTeamId : null,
+    p_driver: toWeb,
     p_map_shape: null,
     p_history: null,
   };
@@ -314,7 +346,7 @@ async function publishTick() {
 
   publishing = true;
   try {
-    const res = await auth.rpc('team_relay_publish', args);
+    const res = await auth.rpc('relay_publish', args);
     if (res.ok && res.body && res.body.ok !== false) {
       failStreak = 0;
       state.lastPublishAt = Date.now();
@@ -323,7 +355,16 @@ async function publishTick() {
         lastHistorySentAt = now;
         lastHistoryRevSent = history.revision;
       }
-      setPublishStatus('publishing');
+      // The server says whether the team half landed. A team we were removed
+      // from mid-race must read as an error on the crew header, not as
+      // "publishing" — the own-row half succeeding is not what the driver
+      // cares about when they picked a team.
+      if (toTeam && res.body.team === 'not_member') {
+        setPublishStatus('error', 'not a member of the selected team');
+      } else {
+        state.publishTarget = toTeam ? 'team' : 'web';
+        setPublishStatus('publishing');
+      }
     } else {
       failStreak++;
       if (failStreak >= FAILS_BEFORE_BACKOFF) backoffLeft = BACKOFF_TICKS;
@@ -495,4 +536,5 @@ module.exports = {
   PUBLISH_MS,
   READ_MS,
   HISTORY_MAX_BYTES,
+  RELAY_VERSION,
 };

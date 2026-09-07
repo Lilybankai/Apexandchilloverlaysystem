@@ -480,6 +480,13 @@ function defaultSettings() {
      * createWindow's backgroundThrottling).
      */
     launchOnStartup: false,
+    // Web pit wall: publish my own car to the cloud while I drive, so the
+    // Team board can be opened in a browser (aio.apexandchill.co.uk) on a
+    // tablet or second PC signed in as this account. Same 1 Hz beat and the
+    // same payload as the team relay; on by default because the page is
+    // useless without it and the switch is the first thing support would ask
+    // someone to check. See electron/team-cloud.js.
+    webRelay: true,
     // Account: the operator picked "Continue offline" on the sign-in screen, so
     // don't show it again on launch (they can still sign in from the top bar).
     offlineMode: false,
@@ -683,6 +690,7 @@ function loadSettings() {
       typeof stored.launchOnStartup === 'boolean'
         ? stored.launchOnStartup
         : defaults.launchOnStartup,
+    webRelay: typeof stored.webRelay === 'boolean' ? stored.webRelay : defaults.webRelay,
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
       typeof stored.lastAuthEmail === 'string' ? stored.lastAuthEmail : defaults.lastAuthEmail,
@@ -2544,6 +2552,9 @@ function registerIpc() {
       }
       if (typeof partial.launchOnStartup === 'boolean') {
         next.launchOnStartup = partial.launchOnStartup;
+      }
+      if (typeof partial.webRelay === 'boolean') {
+        next.webRelay = partial.webRelay;
       }
       if (typeof partial.audioCues === 'boolean') {
         next.audioCues = partial.audioCues;
@@ -4909,6 +4920,7 @@ app.whenReady().then(async () => {
             const current = loadSettings();
             saveSettings({ ...current, teamActiveId: id || null });
           },
+          getWebRelay: () => loadSettings().webRelay !== false,
         },
         onTeams: (state) => {
           if (mainWindow && !mainWindow.isDestroyed()) {

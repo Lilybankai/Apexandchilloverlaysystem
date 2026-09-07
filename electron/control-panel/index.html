@@ -2697,6 +2697,25 @@
                 </span>
               </label>
 
+              <!-- The pit wall in a browser. The Team board reads from a relay
+                   of this PC's own telemetry; this is the switch that sends it.
+                   Lives here rather than on the Team tab because it is about
+                   what leaves this machine, and every other "what leaves" switch
+                   is in Settings. -->
+              <label class="field field--toggle">
+                <span class="field__label">Web pit wall</span>
+                <span class="switch">
+                  <input type="checkbox" id="webrelay-toggle" />
+                  <span class="switch__track"><span class="switch__thumb"></span></span>
+                </span>
+                <span class="field__hint">
+                  Sends your car to <strong>aio.apexandchill.co.uk</strong> while
+                  you drive, so the Team board can be opened in a browser on a
+                  tablet or another PC — sign in there with this account. Off,
+                  the site only shows a team you are in.
+                </span>
+              </label>
+
             </div>
           </section>
         </div>
