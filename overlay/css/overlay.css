@@ -1284,6 +1284,32 @@
   color: var(--text-primary);
 }
 .weather__temp small { font-size: var(--fs-body); color: var(--text-muted); }
+/* ---------------------------------------------------------------------------
+ * SKY GLYPHS (see js/widgets/weather.js for the geometry and why they exist).
+ *
+ * Everything structural is on the holder, not the <svg>: the svg fills it, so a
+ * size is set in exactly one place per context. Colour comes through
+ * currentColor, which is what makes the icons follow the translucent-panel text
+ * lift in theme.css for free — the same rule that rescues the numbers beside
+ * them rescues the cloud.
+ * ------------------------------------------------------------------------ */
+.weather__icon {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  color: var(--text-secondary);
+}
+.weather__icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+.weather__icon .wx-ray  { stroke: currentColor; fill: none; }
+.weather__icon .wx-wet  { stroke: var(--sky-drop); fill: none; }
+.weather__icon .wx-bolt { fill: var(--warn); }
+/* Beside the big track temperature, at its cap height. */
+.weather__icon--now {
+  width: 34px;
+  height: 34px;
+  color: var(--text-primary);
+}
+.weather__slot .weather__icon { width: 18px; height: 18px; }
 .weather__meta {
   display: flex;
   flex-direction: column;
@@ -1317,13 +1343,21 @@
   font-size: var(--fs-label);
   color: var(--text-muted);
 }
+/* Sky and temperature on one line. Stacking the glyph would have added ~18px
+   to the strip, and this widget sits top-centre where the car is. */
+.weather__slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 3px;
+}
 .weather__slot-temp {
   font-family: var(--font-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-data);
   line-height: 1.1;
-  margin-top: 3px;
   color: var(--text-primary);
 }
 .weather__slot-rain {
@@ -1332,12 +1366,6 @@
   font-size: var(--fs-label);
   margin-top: 1px;
   color: var(--text-secondary);
-}
-/* A tiny raindrop hint before the rain-chance number. */
-.weather__slot-rain::before {
-  content: "☂ ";
-  font-size: var(--fs-micro);
-  color: var(--text-muted);
 }
 /* The next slot is the actionable one: rain arriving in 15 minutes is a strategy
    call, rain forecast for hour three is not. Its rain chance is promoted out of
@@ -1350,6 +1378,7 @@
   font-weight: 700;
   color: var(--text-primary);
 }
+.weather__slot[data-next="true"] .weather__icon { color: var(--text-primary); }
 
 /* Rain-chance intensity is signalled by the slot's top border colour. */
 .weather__slot[data-rain="dry"]   { border-top: 2px solid var(--pos-gain); }

@@ -70,6 +70,7 @@
   --pos-gain: #35d07f;   /* gaining / green sector / faster */
   --pos-loss: #ff5470;   /* losing / red / hotter          */
   --warn: #ffb020;       /* caution / marginal fuel         */
+  --sky-drop: #4aa8ff;   /* falling rain in the weather glyphs */
   --purple-fastest: #b06bff; /* overall fastest (purple)    */
   /* RankBar ladder (matches Apex control panel hub.css) */
   --rank-blue: #309be1;
@@ -273,6 +274,18 @@ html[data-panel-bg="translucent"] .panel,
   --text-muted: #c6cfe1;
 }
 
+/* The weather glyphs need the same rescue as the text beside them, and cannot
+   get it from text-shadow: an SVG is painted, not typeset. drop-shadow follows
+   the alpha channel, so it haloes the cloud's actual outline rather than boxing
+   it. Same two shadows as above, so an icon and the number next to it sit on the
+   same ground. */
+html[data-panel-bg="translucent"] .panel .weather__icon,
+.panel[data-panel-bg="translucent"] .weather__icon {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9))
+    drop-shadow(0 0 6px rgba(0, 0, 0, 0.6));
+}
+
 /* …and the reverse: ONE widget turned back up to solid while the rest of the
    overlay is faded. The rule above matches it through <html> and would leave it
    wearing the lifted text and a halo it no longer needs — over its own dark
@@ -282,6 +295,9 @@ html[data-panel-bg="translucent"] .panel[data-panel-bg="solid"] {
   text-shadow: none;
   --text-secondary: #aeb6c8;
   --text-muted: #6b7387;
+}
+html[data-panel-bg="translucent"] .panel[data-panel-bg="solid"] .weather__icon {
+  filter: none;
 }
 
 .panel__header {

@@ -1,0 +1,18 @@
+{
+  "session": { "type": "race", "phase": "green", "flag": "green", "track": "Fixture" },
+  "weather": {
+    "trackTempC": 22,
+    "ambientTempC": 21,
+    "rainIntensity": 0.4,
+    "trackWetness": 0.4,
+    "trackCondition": "WET",
+    "trackTrend": "wetting",
+    "forecast": [
+      { "label": "START", "minutesAhead": 0, "sky": "rain", "airTempC": 21, "trackTempC": 22, "rainChance": 0.75 },
+      { "label": "25%", "minutesAhead": 15, "sky": "lightRain", "airTempC": 21, "trackTempC": 22, "rainChance": 0.55 },
+      { "label": "50%", "minutesAhead": 30, "sky": "overcast", "airTempC": 20, "trackTempC": 21, "rainChance": 0.34 },
+      { "label": "75%", "minutesAhead": 45, "sky": "partlyCloudy", "airTempC": 22, "trackTempC": 24, "rainChance": 0.12 },
+      { "label": "END", "minutesAhead": 60, "sky": "clear", "airTempC": 24, "trackTempC": 28, "rainChance": 0.04 }
+    ]
+  }
+}
