@@ -542,11 +542,13 @@
           title: 'The circuit, seen from directly above',
           body:
             'Drawn in plan and to scale, so a metre is a metre whichever way the road points — which ' +
-            'is what lets you lay two racing lines side by side and believe the gap. Cyan is your ' +
-            'line, violet the lap you are comparing with, each with its own car on it.',
+            'is what lets you lay two racing lines side by side and believe the gap. With a lap to ' +
+            'compare against, the quicker of the two is green and the slower red; on its own your ' +
+            'line is cyan. Each line carries its own car at the point you are reading.',
           note:
-            'Click any part of the road to frame that corner. The road is shaded by its elevation, ' +
-            'and a scale bar in the corner says how far apart those two lines actually were.',
+            'Click any part of the road to frame that corner, and drag the map to move along the lap. ' +
+            'The road is shaded by its elevation, and a scale bar in the corner says how far apart ' +
+            'those two lines actually were.',
         },
         {
           id: 'career',

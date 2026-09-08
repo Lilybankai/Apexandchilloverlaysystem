@@ -4,6 +4,46 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.3-beta.1 — 2026-09-08
+
+### Changed
+
+- **The two racing lines are green and red now, and green is the quicker one.**
+  Cyan against violet was two cool colours a few pixels apart on a road about
+  as wide as both of them, and at whole-lap scale they read as a single thick
+  line. Which rather defeated the point of drawing them in plan in the first
+  place.
+
+  So the colours mean **pace** instead of identity: the quicker of the two laps
+  is green and the slower is red, whichever of them is yours. Both cars on the
+  map carry the same colour as their line, the pill at the top naming the other
+  lap wears its colour too, and the sentence under the map spells out which one
+  is yours. With nothing to compare against there is no faster lap to name, so
+  a single lap stays cyan and the map claims nothing.
+
+  It is also the colour language the rest of the screen already speaks: the
+  delta band and the micro-sector chips have always been green for gained and
+  red for lost.
+
+- **Drag the map to move along the lap.** Once you are zoomed into a corner,
+  grab the road and pull — the map slides up or down the circuit and the charts
+  come with you, so you can walk a whole sequence of corners without going back
+  out to the whole lap and picking the next one. The pointer turns into a hand
+  when there is somewhere to drag to.
+
+  It slides along the lap rather than freely in two directions, and that is
+  deliberate: everything on this screen is framed on one stretch of road, and a
+  map that could be dragged off sideways would be showing you a corner the
+  charts beside it were not.
+
+### Fixed
+
+- **The comparison pill was blaming the wrong lap.** With lap 7 at 1:59.737
+  loaded under a 2:01.778, the pill read "Lap 7 · 1:59.737 · 2.041 s slower" —
+  about the lap that was two seconds *faster*. The gap has always belonged to
+  the lap you are studying; it just never said whose it was. It now reads "you
+  were 2.041 s slower".
+
 ## 0.99.2 — 2026-09-08
 
 ### Added

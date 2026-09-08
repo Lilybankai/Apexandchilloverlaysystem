@@ -643,6 +643,37 @@
     return `${fix(Math.abs(ms) / 1000, 3)} s ${ms > 0 ? 'slower' : 'faster'}`;
   }
 
+  /**
+   * Which of the two laps was actually quicker — `mine`, `theirs`, or null.
+   *
+   * The map colours by this rather than by which lap you happen to be
+   * studying. Null covers both "there is no comparison" and "they set the same
+   * time": in neither case is there a faster lap, and a green line that only
+   * means "this one is yours" would be the map saying something it cannot back
+   * up. Five milliseconds is the same threshold {@link gapWords} calls a draw.
+   */
+  function fasterOf(view) {
+    const mine = view.lap && view.lap.lapMs > 0 ? view.lap.lapMs : null;
+    const theirs = view.vs && view.vs.lapMs > 0 ? view.vs.lapMs : null;
+    if (mine === null || theirs === null) return null;
+    if (Math.abs(mine - theirs) < 5) return null;
+    return mine < theirs ? 'mine' : 'theirs';
+  }
+
+  /**
+   * The gap, said from the side of the person reading it.
+   *
+   * `gapWords` alone was being printed straight after the OTHER lap's number
+   * and time, so the pill read "Lap 7 · 1:59.737 · 2.041 s slower" about a lap
+   * that was two seconds FASTER. The gap has always belonged to the lap being
+   * studied; it just never said whose it was.
+   */
+  function yourGapWords(ms) {
+    if (!known(ms)) return '';
+    if (Math.abs(ms) < 5) return 'the same time';
+    return `you were ${gapWords(ms)}`;
+  }
+
   /** Which way a delta went, for colour. A hundredth is inside the noise. */
   const deltaBand = (sec) => {
     if (!known(sec)) return 'none';
@@ -888,6 +919,34 @@
       </div>`;
   }
 
+  /**
+   * What the map is showing, in a sentence — including which line is whose.
+   *
+   * Once the colours mean PACE rather than identity, "which one is mine" stops
+   * being answerable from the picture alone, so it is answered here instead.
+   * It is one line of prose against a legend nobody reads, and it is only ever
+   * one of three cases.
+   */
+  function mapNote(view) {
+    const shaded = 'The road is shaded by its elevation, pale for the high ground.';
+    const moving = 'Click any part of it to zoom in, drag it to move along the lap, and Big map for a closer look.';
+    if (!view.detail.hasLine) {
+      return `This lap was recorded before Apex captured the driven line, so the marker follows the centreline. ${shaded} ${moving}`;
+    }
+    const faster = fasterOf(view);
+    if (!faster) {
+      return `Seen from directly above, to scale. Cyan is the line you drove${
+        view.vs ? ', violet the lap you are comparing with — the two set the same time, so neither is the quicker' : ''
+      }. ${shaded} ${moving}`;
+    }
+    const theirs = `lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}`;
+    const green = faster === 'mine' ? 'yours' : theirs;
+    const red = faster === 'mine' ? theirs : 'yours';
+    return `Seen from directly above, to scale. <b>Green is the quicker lap</b> — here that is ${green} — `
+      + `and red the slower, which is ${red}. Each carries its own car at the point of road you are reading. `
+      + `${shaded} ${moving}`;
+  }
+
   function lapViewHtml(view) {
     const d = view.detail;
     const lap = view.lap;
@@ -923,11 +982,11 @@
         <div class="rv-lap__bar2">
           ${compareHtml(view)}
           ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
-                title="Drawn dashed, in each channel's own colour. This lap is the solid line.">
+                title="Dashed on the charts, in each channel's own colour. On the map the quicker of the two laps is green and the slower red.">
             <i class="rv-cmp__swatch" aria-hidden="true"></i>
             <b>Lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}</b>
             <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
-            ${vsGap === null ? '' : `<i>${esc(gapWords(vsGap))}</i>`}
+            ${vsGap === null ? '' : `<i>${esc(yourGapWords(vsGap))}</i>`}
           </span>` : ''}
           ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
           ${zoomHtml(view)}
@@ -945,16 +1004,7 @@
                 <svg class="icon"><use href="#i-circuit" /></svg>
                 <span>No circuit shape for ${esc(d.track || 'this track')} yet.</span>
               </div>`}</div>
-            <p class="rv-lap__note">${
-              d.hasLine
-                ? `Seen from directly above, to scale. Cyan is the line you drove${
-                  view.vs ? ', violet the lap you are comparing with' : ''
-                }; the road is shaded by its elevation, pale for the high ground. `
-                  + 'Click any part of it to zoom in, and Big map for a closer look.'
-                : 'This lap was recorded before Apex captured the driven line, so the marker follows the centreline. '
-                  + 'The road is shaded by its elevation, pale for the high ground. '
-                  + 'Click any part of it to zoom in, and Big map for a closer look.'
-            }</p>
+            <p class="rv-lap__note">${mapNote(view)}</p>
             <div class="rv-rows">
               <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>
               <div class="rv-row"><b>Samples</b><span>${d.count}${d.truncated ? ' (capped)' : ''}</span></div>
@@ -1016,8 +1066,12 @@
           cursorIndex: view.cursor === null ? -1 : view.cursor,
           window: view.window,
           vs: view.vs ? view.vs.channels : null,
+          faster: fasterOf(view),
         });
         view.mapGeom = out ? out.geom : null;
+        // The cursor is the only thing that says a zoomed map can be dragged,
+        // so it is set from the same fact the drag handler gates on.
+        mapCanvas.dataset.pan = String(!!(out && out.zoom > 1.05));
       }
       if (readout) readout.innerHTML = readoutHtml(view);
 
@@ -1170,7 +1224,14 @@
 
     // The map is the other half of the same control: click a corner and every
     // chart beside it follows you there.
+    let mapDrag = null;
+    let mapDragged = false;
+
     const onMapClick = (evt) => {
+      // A drag that ended on this canvas still fires a click. Swallow it once:
+      // letting go after moving the map half a lap must not also re-pin the
+      // cursor wherever the pointer happened to stop.
+      if (mapDragged) { mapDragged = false; return; }
       if (!view.mapGeom) return;
       const box = mapCanvas.getBoundingClientRect();
       const dd = CHARTS.distanceAtPoint(
@@ -1186,9 +1247,75 @@
       const [a, b] = view.window;
       zoomAbout(evt.deltaY > 0 ? 1.25 : 0.8, (a + b) / 2);
     };
+
+    /**
+     * Drag the map to move along the lap.
+     *
+     * The view is framed on the WINDOW — a stretch of road, not a rectangle —
+     * so there is no free two-axis pan to give: dragging sideways off the road
+     * would take the charts somewhere the map is not, and the one window
+     * shared by both is what makes every part of this screen talk about the
+     * same corner. What a drag can honestly do is slide that window up and
+     * down the circuit, which is what someone reaching for it wants anyway:
+     * grab the road, pull it, arrive at the next corner with the charts.
+     *
+     * Everything the drag needs is frozen at mousedown — the scale, the
+     * direction the road runs in under the pointer, and the window it started
+     * from. A pan that re-read the geometry it was moving would be measuring
+     * against a picture its own last frame had already shifted.
+     */
+    const onMapDown = (evt) => {
+      const g = view.mapGeom;
+      if (!g || !(g.zoom > 1.05)) return;
+      const box = mapCanvas.getBoundingClientRect();
+      const tangent = CHARTS.tangentAtPoint(g, evt.clientX - box.left, evt.clientY - box.top);
+      if (!tangent) return;
+      mapDrag = {
+        x: evt.clientX,
+        y: evt.clientY,
+        from: view.window[0],
+        to: view.window[1],
+        scale: g.scale,
+        tangent,
+        moved: false,
+      };
+      mapCanvas.setAttribute('data-drag', 'pan');
+      evt.preventDefault();
+    };
+
+    const onMapMove = (evt) => {
+      if (!mapDrag) return;
+      const dx = evt.clientX - mapDrag.x;
+      const dy = evt.clientY - mapDrag.y;
+      if (!mapDrag.moved && Math.hypot(dx, dy) <= DRAG_PX) return;
+      mapDrag.moved = true;
+      // How far along the road the pointer has come, in pixels, then in metres,
+      // then as a fraction of the lap. Negative because the road follows the
+      // hand: drag right and the window walks backwards, the way dragging a
+      // map has always worked.
+      const along = dx * mapDrag.tangent[0] + dy * mapDrag.tangent[1];
+      const metres = along / Math.max(1e-6, mapDrag.scale);
+      const span = mapDrag.to - mapDrag.from;
+      const delta = -metres / Math.max(1, view.lengthM || 1);
+      const from = Math.max(0, Math.min(1 - span, mapDrag.from + delta));
+      setWindow(from, from + span);
+    };
+
+    const onMapUp = () => {
+      if (!mapDrag) return;
+      mapDragged = mapDrag.moved;
+      mapDrag = null;
+      mapCanvas.removeAttribute('data-drag');
+    };
+
     if (mapCanvas) {
       mapCanvas.addEventListener('click', onMapClick);
       mapCanvas.addEventListener('wheel', onMapWheel, { passive: false });
+      mapCanvas.addEventListener('mousedown', onMapDown);
+      // On the window, not the canvas: a pan that stops the moment the pointer
+      // leaves a 390px box is a pan you have to keep rescuing.
+      window.addEventListener('mousemove', onMapMove);
+      window.addEventListener('mouseup', onMapUp);
     }
 
     lapOff = () => {
@@ -1197,10 +1324,13 @@
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('mousedown', onDown);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('mousemove', onMapMove);
+      window.removeEventListener('mouseup', onMapUp);
       window.removeEventListener('resize', onResize);
       if (mapCanvas) {
         mapCanvas.removeEventListener('click', onMapClick);
         mapCanvas.removeEventListener('wheel', onMapWheel);
+        mapCanvas.removeEventListener('mousedown', onMapDown);
       }
       if (lapView) lapView.repaint = null;
     };

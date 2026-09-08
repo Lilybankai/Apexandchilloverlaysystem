@@ -1152,6 +1152,25 @@
 .rv-cmp__read[data-band='gain'] i { color: var(--ok); }
 .rv-cmp__read[data-band='loss'] i { color: var(--bad); }
 
+/* The pill wears the colour that lap is DRAWN in on the map, which is decided
+   by which of the two was quicker — so `gain` (you were faster) means the lap
+   named here is the slower one, and therefore the red one. Getting this the
+   right way round is the whole point of the swatch: it is what saves the map
+   from needing a legend. The gap text keeps its own colour, because it is
+   about you rather than about the lap named beside it. */
+.rv-cmp__read[data-band='gain'] {
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+  background: color-mix(in srgb, var(--bad) 9%, transparent);
+}
+.rv-cmp__read[data-band='gain'] b { color: var(--bad); }
+.rv-cmp__read[data-band='gain'] .rv-cmp__swatch { border-top-color: var(--bad); }
+.rv-cmp__read[data-band='loss'] {
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  background: color-mix(in srgb, var(--ok) 9%, transparent);
+}
+.rv-cmp__read[data-band='loss'] b { color: var(--ok); }
+.rv-cmp__read[data-band='loss'] .rv-cmp__swatch { border-top-color: var(--ok); }
+
 .rv-zoom {
   display: inline-flex;
   align-items: center;
@@ -1253,7 +1272,12 @@
 /* Dragging pans the window; the cursor says so before the drag starts. */
 .rv-chan canvas { cursor: crosshair; }
 .rv-chan canvas[data-drag='true'] { cursor: grabbing; }
+/* Whole, the only thing a click does is zoom in. Zoomed, there is road off
+   both edges of the box and the map can be dragged along the lap — which
+   nothing on screen says, so the pointer says it. */
 .rv-map canvas { cursor: zoom-in; }
+.rv-map canvas[data-pan='true'] { cursor: grab; }
+.rv-map canvas[data-drag='pan'] { cursor: grabbing; }
 
 .rv-card__note {
   margin: 8px 0 0;

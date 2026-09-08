@@ -1109,6 +1109,22 @@
     // the two things on the screen and everything else is context.
     const lineW = clamp(1.1 + g.zoom * 0.3, 1.4, 3.2);
 
+    // Which lap was actually QUICKER decides the colours, not which one you
+    // happen to be studying. Cyan against violet is two cool colours a few
+    // pixels apart on a road the width of both of them, and at whole-lap scale
+    // they read as one thick line — the exact failure this map was rebuilt to
+    // fix, arrived at from the other direction. Green and red are the app's
+    // own language for gained and lost, they are already what the delta band
+    // and the micro-sector chips say, and they are two colours nobody has to
+    // hold side by side to tell apart.
+    //
+    // With no comparison, or with two laps that set the same time, there is no
+    // faster and no slower — so the studied lap keeps its cyan and says
+    // nothing it cannot back up.
+    const faster = o.faster === 'mine' || o.faster === 'theirs' ? o.faster : null;
+    const mineStyle = faster === 'mine' ? CSS.ok : faster === 'theirs' ? CSS.bad : CSS.cyan;
+    const vsStyle = faster === 'mine' ? CSS.bad : faster === 'theirs' ? CSS.ok : CSS.compare;
+
     /** One driven line. */
     const line = (tr, style, width) => {
       if (!tr || !Array.isArray(tr.x) || !Array.isArray(tr.z)) return false;
@@ -1125,10 +1141,19 @@
       return true;
     };
 
-    // The comparison lap first, so the studied lap is the one on top wherever
-    // they touch — it is the subject, not the reference.
-    const vsPlaced = line(o.vs, CSS.compare, lineW * 0.85);
-    const placed = line(trace, CSS.cyan, lineW);
+    // The SLOWER lap first, so the quicker one is on top wherever they touch:
+    // once the colours mean pace, the quick line is the subject and the slow
+    // one is what it is being read against. With no pace to go on, the studied
+    // lap goes on top and the reference is drawn a shade thinner.
+    let vsPlaced;
+    let placed;
+    if (faster === 'theirs') {
+      placed = line(trace, mineStyle, lineW);
+      vsPlaced = line(o.vs, vsStyle, lineW);
+    } else {
+      vsPlaced = line(o.vs, vsStyle, faster ? lineW : lineW * 0.85);
+      placed = line(trace, mineStyle, lineW);
+    }
 
     // The cars: where each lap was at this point of the road. The real
     // position when the lap was placed, otherwise the point on the centreline
@@ -1138,7 +1163,7 @@
         const j = sampleAtDistance(o.vs, o.cursorD);
         if (j >= 0 && j < o.vs.x.length) {
           const q = g.project(o.vs.x[j], o.vs.z[j]);
-          marker(ctx, q.x, q.y, CSS.compare, 3.2, 6);
+          marker(ctx, q.x, q.y, vsStyle, 3.2, 6);
         }
       }
       let p;
@@ -1149,7 +1174,7 @@
         const k = Math.min(pts.length - 1, Math.max(0, Math.floor(o.cursorD * pts.length)));
         p = g.project(pts[k][0], pts[k][1]);
       }
-      marker(ctx, p.x, p.y, CSS.cyan, 4, 7.5);
+      marker(ctx, p.x, p.y, mineStyle, 4, 7.5);
     }
 
     return {
@@ -1157,8 +1182,12 @@
       maxY: g.maxEl,
       shaded: g.rise > 0.5,
       placed,
+      vsPlaced,
       zoom: g.zoom,
       metresPerPx: g.scale > 0 ? 1 / g.scale : null,
+      // What each lap ended up drawn in, so the legend beside the map can be
+      // the same colour without a second copy of the rule that chose it.
+      colours: { mine: mineStyle, vs: vsStyle },
       geom: g,
     };
   }
@@ -1255,6 +1284,37 @@
     }
     if (!best || best.dist > (geom.hitPx || 42)) return null;
     return best.i / geom.n;
+  }
+
+  /**
+   * Which way the road is pointing, on screen, under a pixel.
+   *
+   * A unit vector along the centreline at the nearest station, or null if the
+   * pointer is nowhere near the road. It is what lets a drag on the map pan
+   * ALONG the lap: the window this view is framed on is a stretch of road, not
+   * a rectangle, so "drag the map" can only mean "slide the window up or down
+   * the circuit" — and the direction to slide it in is the direction the road
+   * under your finger happens to be running.
+   */
+  function tangentAtPoint(geom, x, y) {
+    if (!geom || !geom.screen) return null;
+    let best = null;
+    for (let i = 0; i < geom.n; i++) {
+      const sc = geom.screen[i];
+      const mx = (sc.lx + sc.rx) / 2;
+      const my = (sc.ly + sc.ry) / 2;
+      const dist = Math.hypot(mx - x, my - y);
+      if (!best || dist < best.dist) best = { dist, i };
+    }
+    if (!best || best.dist > (geom.hitPx || 42) * 3) return null;
+    const n = geom.n;
+    const a = geom.screen[(best.i - 1 + n) % n];
+    const b = geom.screen[(best.i + 1) % n];
+    const tx = (b.lx + b.rx) / 2 - (a.lx + a.rx) / 2;
+    const ty = (b.ly + b.ry) / 2 - (a.ly + a.ry) / 2;
+    const len = Math.hypot(tx, ty);
+    if (!(len > 0)) return null;
+    return [tx / len, ty / len];
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1468,6 +1528,6 @@
 
   return {
     drawLapChart, drawTrend, drawChannels, drawLapMap, drawWear,
-    channelBands, distanceAtPoint,
+    channelBands, distanceAtPoint, tangentAtPoint,
   };
 });

@@ -421,6 +421,62 @@ function squareMap(rise) {
 }
 
 {
+  // The two driven lines are coloured by WHICH LAP WAS QUICKER, not by which
+  // one you happen to be studying. Getting this backwards paints the slow lap
+  // green, which is worse than no colour at all — so both directions are
+  // pinned, and so is the case where there is nothing to be quicker THAN.
+  const mineTr = chans(160);
+  mineTr.x = mineTr.d.map((v) => v * 100);
+  mineTr.z = mineTr.d.map(() => 50);
+  const theirsTr = chans(160);
+  theirsTr.x = theirsTr.d.map((v) => v * 100);
+  theirsTr.z = theirsTr.d.map(() => 70);
+
+  const OK = '#35d07f';
+  const BAD = '#ff5470';
+  const CYAN = '#26bbf4';
+
+  const draw = (faster) => CHARTS.drawLapMap(
+    fakeCanvas(300, 300).canvas, squareMap(0), mineTr,
+    { cursorD: 0.5, cursorIndex: 80, vs: theirsTr, faster },
+  );
+
+  const mineFaster = draw('mine');
+  check('your line is green when you were quicker',
+    mineFaster.colours.mine === OK && mineFaster.colours.vs === BAD,
+    JSON.stringify(mineFaster.colours));
+
+  const theirsFaster = draw('theirs');
+  check('and red when the other lap was',
+    theirsFaster.colours.mine === BAD && theirsFaster.colours.vs === OK,
+    JSON.stringify(theirsFaster.colours));
+
+  const noPace = draw(null);
+  check('with no faster lap to name, nothing is claimed',
+    noPace.colours.mine === CYAN, JSON.stringify(noPace.colours));
+
+  check('both lines are drawn either way',
+    mineFaster.placed && mineFaster.vsPlaced && theirsFaster.placed && theirsFaster.vsPlaced);
+}
+
+{
+  // A drag on the map slides the WINDOW along the lap, and the direction to
+  // slide it in is the direction the road under the pointer runs. A unit
+  // vector, or nothing at all when the pointer is off the road.
+  const out = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, squareMap(0), chans(160), {});
+  const g = out.geom;
+  const sc = g.screen[Math.floor(g.n / 8)];
+  const t = CHARTS.tangentAtPoint(g, (sc.lx + sc.rx) / 2, (sc.ly + sc.ry) / 2);
+  check('the road has a direction under the pointer', Array.isArray(t) && t.length === 2);
+  check('and it is a unit vector', Math.abs(Math.hypot(t[0], t[1]) - 1) < 1e-6, `${t}`);
+  check('the first side of the square runs along one axis',
+    Math.abs(t[1]) < 0.05, `${t}`);
+  check('a pointer miles from the road has no direction',
+    CHARTS.tangentAtPoint(g, -900, -900) === null);
+  check('and no geometry is safe', CHARTS.tangentAtPoint(null, 10, 10) === null);
+}
+
+{
   check('a circuit with no shape paints nothing',
     CHARTS.drawLapMap(fakeCanvas().canvas, { points: [] }, chans(10), {}) === null);
   check('no map at all is safe',

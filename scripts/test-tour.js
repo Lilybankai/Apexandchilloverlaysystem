@@ -282,6 +282,9 @@ check('the optimal lap is explained', /optimal/.test(inTour('review')));
 check('two laps at once is explained', /compare with/.test(inTour('review')));
 check('which way the delta goes is stated', /slower above/.test(inTour('review')));
 check('the map being to scale is stated', /to scale/.test(inTour('review')));
+check('the map colours are said to mean pace',
+  /quicker of the two is green/.test(inTour('review')));
+check('and dragging it is explained', /drag the map/.test(inTour('review')));
 check(
   'and that a lap without telemetry is merely older',
   /older/.test(inTour('review')),
@@ -306,7 +309,13 @@ check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
   check('the guide explains comparing two laps', /compare with/.test(guide));
   check('the guide explains the micro-sector chips', /cost or gained/.test(guide));
   check('the guide explains the map is a plan', /to scale/.test(guide));
-  check('the guide names both lines', /cyan/.test(guide) && /violet/.test(guide));
+  // The map's two lines are coloured by PACE, not by whose they are — which is
+  // the one thing a reader can get backwards, and the reason the guide has to
+  // say it out loud rather than leave a green line to be read as "mine".
+  check('the guide says the map colours mean pace',
+    /green is the quicker/.test(guide) && /red the slower/.test(guide));
+  check('and that a lap with nothing to compare against is cyan', /cyan/.test(guide));
+  check('the guide explains dragging the map', /drag the map/.test(guide));
   check('the guide says a lap without a trace is just older', /older/.test(guide));
   check('the guide is in the page', /id="review-guide"/.test(html));
   check('and starts hidden', /id="review-guide"[^>]*\shidden/.test(html));
