@@ -4,180 +4,123 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-## 0.99.2-beta.6 — 2026-09-08
-
-### Changed
-
-- **The circuit is drawn from directly above now, not tilted.** The lap map was
-  the in-car overlay's raised ribbon — rotated, tipped over and stood on its own
-  elevation. That is a good map to glance at mid-corner and the wrong one to
-  measure with, and this screen measures: the tilt squashed one axis to just
-  over half, so two driven lines a metre apart were drawn a metre apart where
-  the road ran across the screen and half that where it ran away from you.
-  Zoomed into a corner, the slab filled the box and both lines rode its top
-  edge. It is now a plan — straight down, to scale, both axes equal — so the
-  line you drove and the line you are comparing with are two separate lines
-  wherever they go, in cyan and violet, each with its own car on it at the
-  point of the road you are reading. The elevation did not go anywhere: it
-  shades the road surface instead, pale for the high ground.
-
-- **Zoom frames the corner rather than multiplying the map.** The window's own
-  stretch of road is measured and the box is fitted to it, so a click lands on
-  that corner filling the panel instead of a bigger picture of the whole
-  circuit with the corner somewhere in it. Clicking the road opens 260 m — a
-  braking zone, a turn-in and the exit — at Brands Hatch and at Le Mans alike,
-  rather than a tenth of the lap, which was 550 m at COTA and 1 360 m at the
-  Sarthe. There is a scale bar in the corner, so "how far apart were those two
-  lines" is now a question the map answers.
-
-### Fixed
-
-- **The lap's header was wedged against the top of its card.** The four small
-  buttons in the Review tab are the only ones in the app with an icon inside
-  them, and the shared icon rule stacked each glyph on top of its own label —
-  two 40 px buttons setting the height of two rows of 13 px text, with the
-  compare bar pulled up into them by a negative margin. The buttons are laid
-  out inline, the negative margin is gone, and the header, the compare bar and
-  the rule under them are evenly spaced. The session's own header strip got the
-  same air under it that every other card's heading has.
-
-## 0.99.2-beta.5 — 2026-09-08
-
-### Fixed
-
-- **The map's hills were scaling with the zoom.** The elevation was drawn as a
-  share of the circuit's width in metres, so the closer you zoomed the taller
-  it got — Barcelona's 30 m rise was a 230 px wall in the big map and a
-  1 300 px cliff at full zoom, hiding the road it was there to explain. The
-  hill is now a fixed fifth of the map's height at every zoom and every size,
-  and a zoomed corner is drawn from the fine path rather than the decimated
-  one, so a hairpin is a curve and not a polygon.
-
-- **You can tell the other lap's throttle from its brake now.** The comparison
-  lap was drawn in one violet on every band, so on the pedal band its throttle
-  and its brake were the same dashed line — the one pair a driver is actually
-  comparing. Dashed stays its mark; the colour is now each channel's own,
-  paler: dashed pale green is its throttle, dashed pale red its brake, and the
-  comparison pill carries a dashed swatch so it is clear which lap is which.
-
-## 0.99.2-beta.4 — 2026-09-08
-
-### Changed
-
-- **The delta says which way it goes, in words.** A red `+2.123` on a lap you
-  know was two seconds slower is correct — `+` is behind, the way every timing
-  screen in the sport has read for fifty years — but it still makes you stop
-  and work it out. The band is now captioned **"slower above, faster below"**,
-  and the comparison lap's pill reads **"2.123 s slower"** rather than a bare
-  sign. Nothing about the maths changed; it now says out loud what it was
-  already doing.
-
-- **Pick the lap to compare against on the session screen.** Every lap with
-  telemetry has a **vs** button at the end of its row. Press it and that lap
-  becomes the reference for the whole session — a bar at the top of the sheet
-  says so — and every lap you open from then on opens already compared against
-  it. That is the order the decision actually happens in: you are reading the
-  column of times when you decide two laps are worth putting together, not
-  after you have opened one of them. The picker inside the lap view still
-  works, and now keeps the session's choice in step with it.
-
-- **Click the trace, hold the corner.** Click anywhere on the channel charts
-  and the map goes to that point and STAYS there — the marker used to follow
-  your pointer and vanish the moment it left the charts, which is fine for
-  skimming a lap and useless for studying one corner of it. From the whole lap
-  a click also takes the map to that stretch of road; already zoomed in, it
-  just holds. A pill in the readout says the point is held, and lets it go.
-
-- **Drag across a section to zoom it.** Sweep the pointer across the charts and
-  that stretch of road fills them, with the selection drawn as you make it.
-  Shift-drag still pans once you are zoomed in.
-
-- **Big map.** The circuit can take the full width under the charts instead of
-  sitting beside them, which is what makes a corner at full zoom readable. One
-  button on the lap's toolbar, remembered per machine.
-
-## 0.99.2-beta.3 — 2026-09-07
+## 0.99.2 — 2026-09-08
 
 ### Added
 
-- **Put one lap on top of another.** Open a lap and pick any other lap of the
-  session to lay underneath it. A delta band goes across the top of the charts —
-  green where you were up, red where you were down, filled so you read the size
-  of it at a glance — and the reference lap's speed and pedals are drawn dashed
-  under your own, with its line on the circuit beside them. Under the charts,
-  one chip per stretch of road (about every 500 m) carries what that stretch
-  cost or gained: the difference between "I was seven tenths slower" and "I was
-  0.18 s slower into turn 3".
+- **Review — a new tab, and every session you have ever driven is already in
+  it.** Apex has been writing a file for every lap since the day you installed
+  it. Until now nothing read them back. This tab does, and it needs no account,
+  uploads nothing and throws nothing away: sessions down the left, and on the
+  right the one you picked.
 
-- **Zoom into a corner.** Click any part of the road on the map and the charts
-  and the map both go there. So does clicking a chip, scrolling on either of
-  them, or the + and − buttons; dragging the charts sideways pans. Zoomed in,
-  the speed and steering axes rescale to the stretch you are looking at, and a
-  small outline of the whole circuit appears on the map with your position on
-  it, so a corner filling the screen is still a corner you can place.
+  The report is the top of the page rather than a dialog you have to go and
+  open. Your best lap and the three best sectors that make up your optimal lap;
+  the time left on the table between them; your average; how consistent you
+  were; how much of it was clean and *what* the rest was lost to — "2 laps lost
+  to track limits", not just a percentage. Consistency leads with the real
+  number, **±0.31 s**, the spread of your clean laps, with the percentage only
+  filling the bar behind it: a spread in seconds is something you can go and
+  fix, a score is something you can only feel.
 
-- **The circuit stands up.** The track map in the lap view is now drawn the way
-  the in-car overlay draws it — tilted into a view, lifted by its own elevation,
-  and standing on its own shadow — instead of as a flat plan with a shaded road.
-  Spa's climb and COTA's turn 1 look like what they are.
+  Underneath: every lap of the session as a chart with the stints marked and
+  your best ruled across it, your best at this circuit over the last 30 days,
+  and tyre wear lap by lap — one line per corner, with the set changes marked,
+  so a set going off is a shape rather than a number you had to remember from
+  four laps ago. Then a card per stint holding the full sheet — sectors, lap,
+  gap to your best, fuel, energy, tyre temperatures and wear — beside the four
+  corners as the stint left them.
 
-- **Everything you have ever driven**, across the top of the Review tab: laps,
-  distance, hours at the wheel, circuits, cars, sessions, and which circuit and
+- **Open a lap and study it.** Any lap with telemetry behind it opens into its
+  own view: speed, throttle and brake together, gear and steering, all drawn
+  against **distance** round the circuit rather than against time — which is
+  what makes two laps line up at the same corner instead of drifting apart.
+  Move the mouse across and one cursor crosses every chart at once, reading out
+  distance, time, speed, both pedals, gear, steering and G at that exact point,
+  while the car moves round the circuit beside them. Amber and violet ticks
+  under the pedals show where traction control and ABS stepped in. V-max is
+  there too, which nothing in Apex could tell you before.
+
+- **Put one lap on top of another.** Pick any other lap of the session and it
+  is laid underneath yours, dashed, in each channel's own colour. A delta band
+  runs across the top — captioned *slower above, faster below*, so there is
+  nothing to work out — filled green where you were up and red where you were
+  down. Under the charts, one chip per stretch of road of about 500 m carries
+  what that stretch cost or gained. That is the difference between "I was seven
+  tenths slower" and "I was 0.18 s slower into turn 3", and it is what the tab
+  is for. The **vs** button on any row of the lap sheet makes that lap the
+  reference for the whole session.
+
+- **The circuit, seen from directly above.** The map is drawn in plan and to
+  scale, both axes the same, so a metre is a metre whichever way the road is
+  pointing — which is what lets you lay two racing lines beside each other and
+  believe the gap between them. Cyan is the line you drove and violet the lap
+  you are comparing with, each carrying its own car at the point of road you
+  are reading. The road is shaded by its elevation, pale for the high ground,
+  so Spa's climb and COTA's turn 1 are on the screen without anything being
+  tilted at you. A scale bar in the corner says how far apart those two lines
+  actually were.
+
+  Click any part of the road and the map frames that corner — the box is fitted
+  to the stretch you asked for, so a hairpin fills the panel — and the charts
+  follow you there. So does clicking a chip, scrolling on either of them, or
+  the + and − buttons; dragging the charts sideways pans. Zoomed in, the speed
+  and steering axes rescale to the stretch in front of you, and a small outline
+  of the whole circuit appears on the map with your position on it, so a corner
+  filling the screen is still a corner you can place. **Big map** draws it full
+  width under the charts, which is the view to lean into.
+
+  Laps you drove before 7 September show the car on the centreline: Apex only
+  started recording the line you actually took then, and a lap that was never
+  placed on the circuit cannot be placed afterwards. Everything driven since
+  draws the real line.
+
+- **Everything you have ever driven**, across the top of the tab: laps,
+  distance, hours at the wheel, circuits, cars, sessions, and the circuit and
   car you have done the most laps in. Counted from your own lap files, so it
-  needs no account and was already true before this update shipped.
+  was already true before this update shipped.
 
-- **Tyre wear, lap by lap** — one line per corner across the whole session, with
-  the stint changes marked, so a set going off is a shape rather than a number
-  you have to remember from four laps ago.
-
-- **The Review tab's scrollbars** are the panel's own now, instead of the grey
-  Windows default sitting next to a column of lap times.
-
-## 0.99.2-beta.2 — 2026-09-07
+- **The tab shows you round itself.** The first time you open Review you get a
+  short walkthrough — the report, and what optimal and untapped actually mean;
+  the lap sheet's colours; comparing two laps; and the map. **How it works**
+  beside Refresh brings it back any time. There is a Review section in the full
+  guided tour as well, and a row on the Get started checklist, so it is not a
+  tab you have to discover by clicking it.
 
 ### Changed
 
 - **The weather panel says what it is showing you.** The block at the top of
-  the weather widget now names its three readings instead of running them
-  together: **air temp**, **condition** and **precipitation**, each on its own
-  line with its value beside it. Condition still leads — it is the one that
-  changes what tyres you are on — and still carries the arrow telling you
-  whether the track is drying or getting wetter. Precipitation is new as a
-  reading of its own, and it answers a different question from the other two:
-  condition is how wet the track already *is*, precipitation is what is falling
-  on it *now*. An overcast sky that is not raining says so.
-  The track temperature keeps the large number and gains its own caption
-  underneath, rather than the word "track" sitting inside it.
-- **The forecast icons are in colour.** The sun is yellow, rain is blue, and a
-  storm keeps its amber bolt. Cloud comes in two weights — a fair-weather cloud
-  is lighter than one with rain in it — so a glance across the strip separates
-  the dry part of the session from the wet part on colour alone, before you have
-  resolved a single shape.
+  the weather widget names its three readings instead of running them together:
+  **air temp**, **condition** and **precipitation**, each on its own line with
+  its value beside it. Condition still leads — it is the one that changes what
+  tyres you are on — and still carries the arrow telling you whether the track
+  is drying or getting wetter. Precipitation is new as a reading of its own,
+  and answers a different question from the other two: condition is how wet the
+  track already *is*, precipitation is what is falling on it *now*. An overcast
+  sky that is not raining now says so. The track temperature keeps the large
+  number and gains its own caption underneath.
 
-## 0.99.2-beta.1 — 2026-09-07
+- **The forecast shows you the sky, not just a number.** Each step of the
+  forecast strip — START, 25%, halfway and so on — carries the sky it is
+  forecasting: sun, sun behind cloud, cloud, light rain, rain, or a storm, in
+  colour. The sun is yellow, rain is blue, a storm keeps its amber bolt, and
+  cloud comes in two weights so a fair-weather cloud is lighter than one with
+  rain in it. A glance across the strip separates the dry part of the session
+  from the wet part before you have resolved a single shape.
 
-### Changed
-
-- **The weather forecast now shows you the sky, not just a number.** Each step
-  of the forecast strip — START, 25%, halfway and so on — carries the sky it is
-  forecasting: sun, sun behind cloud, cloud, light rain, rain, or a storm. The
-  same picture sits next to the big track temperature, in place of the
-  "PART CLOUD" line that used to be tucked in beside it.
   This is information the app was already being told and was not showing you.
   Le Mans Ultimate sends a sky with every step of its forecast; until now the
   strip only had room for a temperature and a rain percentage, so the one line
-  that said what the weather was actually *doing* described this minute only,
-  and the four steps telling you what was coming said nothing. Reading "34%" and
-  working out what it means takes longer than a glance out of the cockpit
-  allows; a cloud with rain under it does not.
+  that said what the weather was actually *doing* described this minute only.
+
+### Fixed
 
 - **The freeze hunt, with an instrument that can finally see.** The overlays
-  have been hitching for a fortnight, and every log came back saying the same
+  have been hitching for a fortnight and every log came back saying the same
   thing: nothing ran. That was the log's fault, not the freeze's. The watcher
   could only see work started by a timer, and almost nothing in this app is
   still on a timer by the time it does the work — so a block that held the
-  thread for two seconds left no trace at all, and we spent nine days reading
-  that silence as a clue.
+  thread for two seconds left no trace at all.
 
   This build profiles the main process continuously — one sample every
   millisecond — and when a freeze happens it writes down the code that was
@@ -187,55 +130,16 @@
   file beside the log that opens in a browser's developer tools and can be read
   frame by frame.
 
-  Nothing about driving changes. If you are one of the drivers seeing the
-  hitches: next time, send the whole app folder rather than stalls.log on its
-  own — the answer will be in the files beside it.
+  It has already moved the answer on: read back against the moment each freeze
+  *began* rather than the moment it ended, every one of them lands on an exact
+  ten-second beat. The 130 seconds we had been chasing is only how often one
+  grows long enough to cross the threshold and be written down. Much smaller
+  haystack. Nothing about driving changes — but if you are one of the drivers
+  seeing the hitches, next time send the whole app folder rather than
+  stalls.log on its own.
 
-- **The freezes are not every 130 seconds.** Reading them back against the
-  moment each one *began*, rather than the moment it ended, puts every single
-  one on an exact ten-second beat. 130 seconds is just how often one of them
-  grows long enough to cross the threshold and get written down. Much smaller
-  haystack.
-
-### Added
-
-- **Review — every session you have driven.** A new tab. It reads the lap
-  files this machine has been writing since August and lays your driving out
-  the way you actually think about it: sessions on the left, and on the right
-  the one you picked — its report, its lap times, and a card per stint.
-
-  The report is the top of the page rather than a dialog you have to open. Best
-  lap and the three best sectors that make up your optimal lap; what is left on
-  the table between them; your average; how consistent you were; how much of it
-  was clean, and *what* the rest was lost to — "2 laps lost to track limits",
-  not just a percentage. Underneath, every lap of the session as a chart, with
-  the stints marked and your best drawn across it; hover a point for the lap,
-  click one to jump to it in the sheet. Then, per stint, the full sheet —
-  sectors, lap, gap to your best, fuel, energy, tyre temperatures and wear —
-  beside the four corners as the stint left them and the range the track
-  temperature moved through.
-
-  Consistency leads with the real number: **±0.31 s**, the spread of your clean
-  laps, with the percentage only filling the bar behind it. A spread in seconds
-  is something you can go and fix.
-
-  None of it needs an account or a connection — it is your own laps, on your own
-  machine, and nothing is thrown away.
-
-- **Click a lap and study it.** Any lap with telemetry behind it opens into its
-  own view: speed, throttle and brake together, gear and steering, all against
-  distance round the lap, with the sector lines marked — and beside them the
-  circuit, shaded by elevation, with the lap on it. Move across the charts and
-  one cursor crosses every one of them while the marker runs round the track
-  map, reading out distance, time, speed, both pedals, gear, steering and G at
-  that exact point. Amber and violet ticks under the pedals show where traction
-  control and ABS stepped in. V-max is there too, which nothing in Apex could
-  tell you before.
-
-  Laps you have already driven show the marker on the centreline: Apex only
-  started recording the line you actually took on 7 September, and a lap that
-  was never placed on the circuit cannot be placed afterwards. Laps from this
-  update on draw the real line, in cyan, over the road.
+- **The Review tab's scrollbars** are the panel's own, instead of the grey
+  Windows default sitting next to a column of lap times.
 
 ## 0.99.1 — 2026-09-07
 

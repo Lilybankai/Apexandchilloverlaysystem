@@ -58,6 +58,7 @@ const DONE = {
   engineerVoiceInstalled: true,
   engineerReady: true,
   setupsToured: true,
+  reviewToured: true,
 };
 
 /** DONE with one field changed. */
@@ -83,14 +84,16 @@ check('no duplicate step ids', new Set(ob.STEPS.map((s) => s.id)).size === ob.ST
 // The plugin is the one that makes every other feature blank when it is wrong,
 // and the only one whose symptom gives no clue. It leads for that reason.
 check('the plugin comes first', ob.STEPS[0].id === 'plugin');
-// The order below it is "nothing works without this" first. The last three are
+// The order below it is "nothing works without this" first. The last four are
 // the ones nobody is blocked by: the voice, which is genuinely optional; the
 // setup screen, which is a thing to learn rather than a thing to switch on;
-// and the pit wall, which only matters to someone racing as a team.
+// the pit wall, which only matters to someone racing as a team; and the
+// reviewer, which needs nothing set up at all and cannot even be reached until
+// there is a session behind you.
 check(
   'the optional ones come last',
-  ob.STEPS.slice(-3).map((s) => s.id).join(',') === 'engineer,setups,team',
-  ob.STEPS.slice(-3).map((s) => s.id).join(','),
+  ob.STEPS.slice(-4).map((s) => s.id).join(',') === 'engineer,setups,team,review',
+  ob.STEPS.slice(-4).map((s) => s.id).join(','),
 );
 // The Team row is the only one that is not on every build: the tab is
 // beta-gated, and a row nagging about a page this build does not have is
@@ -128,6 +131,23 @@ console.log('\nA fresh install ticks nothing');
 }
 
 check('every step ticks when everything is done', ob.evaluate(DONE).complete === true);
+
+/*
+ * The Review row. Nothing about it can be measured — a driver with two hundred
+ * sessions on disk who has never opened the tab is exactly who the row is for
+ * — so, like Setups, it ticks on having been shown round and on nothing else.
+ * Unlike Team it is on every build, because the tab is.
+ */
+check('there is a Review row', ob.STEPS.some((r) => r.id === 'review'));
+check('the Review row is on every build',
+  typeof ob.STEPS.find((s) => s.id === 'review').gate !== 'function');
+check('it ticks once the tour is taken', done(but({ reviewToured: true }), 'review') === true);
+check('and not before', done(but({ reviewToured: false }), 'review') === false);
+check(
+  'and says the laps are already there and stay on this PC',
+  /lap files/i.test(note(but({ reviewToured: false }), 'review') || ''),
+  note(but({ reviewToured: false }), 'review'),
+);
 
 /* -------------------------------------------------------------------------- */
 console.log('\nTelemetry plugin');

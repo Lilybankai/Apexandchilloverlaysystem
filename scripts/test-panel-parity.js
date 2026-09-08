@@ -826,8 +826,11 @@ verifyPage({
     'team-panel.js',
     'team-guide.js',
     // The Review tab. Self-contained: it owns its own ids and its own canvas
-    // painters, and reaches for nothing on the pages above it.
+    // painters, and reaches for nothing on the pages above it. review-charts.js
+    // is deliberately NOT scanned — its hex colour literals read as id lookups
+    // to this scanner, which is why the painters live in their own file.
     'review-panel.js',
+    'review-guide.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
@@ -887,6 +890,9 @@ console.log('\nIcon sprite — icons.js');
     wanted.add(`i-${s.icon}`);
   }
   for (const s of require('../electron/control-panel/bindings-guide.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
+  for (const s of require('../electron/control-panel/review-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
   // Same for the checklist's rows — plus the tick, which is chosen at paint

@@ -1951,10 +1951,18 @@
             <p>Every session you have driven, stint by stint. Read off this machine's own lap
                files — no account needed, and nothing is ever thrown away.</p>
           </div>
-          <button class="btn btn--ghost btn--sm" id="rv-refresh" type="button"
-                  title="Re-read the lap files">
-            <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
-          </button>
+          <div class="view__head-actions">
+            <!-- The walkthrough opens by itself the first time this tab is
+                 used; this is how it comes back afterwards. -->
+            <button class="btn btn--ghost btn--sm" id="review-guide-open" type="button"
+                    title="A short walkthrough of the session report, the lap view and the map">
+              <svg class="icon"><use href="#i-graduation-cap" /></svg><span>How it works</span>
+            </button>
+            <button class="btn btn--ghost btn--sm" id="rv-refresh" type="button"
+                    title="Re-read the lap files">
+              <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
+            </button>
+          </div>
         </div>
 
         <div id="rv-career"></div>
@@ -1975,6 +1983,37 @@
           </aside>
 
           <div class="rv__detail" id="rv-detail"></div>
+        </div>
+
+        <!-- ================== HOW IT WORKS ========================== -->
+        <!-- First-run walkthrough. Steps are built by review-guide.js — only
+             the frame is static, same contract as the Setups, Streamers and
+             Team guides. Reuses the su-guide dialog styling; deliberately NOT
+             "sheet" or "su-pop" so it yields to those without yielding to
+             itself. -->
+        <div id="review-guide" class="su-guide" hidden role="dialog" aria-modal="true"
+             aria-labelledby="review-guide-title">
+          <div id="review-guide-scrim" class="su-guide__scrim"></div>
+          <section class="su-guide__panel">
+            <header class="su-guide__head">
+              <span id="review-guide-icon" class="su-guide__icon"></span>
+              <span class="su-guide__titles">
+                <h2 id="review-guide-title" class="su-guide__title"></h2>
+                <p id="review-guide-sub" class="su-guide__sub"></p>
+              </span>
+              <button id="review-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+            </header>
+            <div id="review-guide-body" class="su-guide__body"></div>
+            <footer class="su-guide__foot">
+              <div id="review-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
+              <div class="su-guide__nav">
+                <button id="review-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
+                <button id="review-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
+              </div>
+            </footer>
+          </section>
         </div>
       </div>
     </section>
@@ -3338,6 +3377,7 @@
      scripts/test-reviewcharts.js), then the page itself. -->
 <script src="review-charts.js"></script>
 <script src="review-panel.js"></script>
+<script src="review-guide.js"></script>
 <script src="engineer-panel.js"></script>
 <!-- Get started checklist. LAST of all: it navigates through window.apexNav
      (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can

@@ -238,6 +238,28 @@
           ? 'Worth two minutes before an endurance race: every team-mate needs their own subscription and has to be running Apex while they drive.'
           : null,
     },
+    {
+      id: 'review',
+      icon: 'activity',
+      title: 'Read a session back',
+      lead:
+        'Every lap this PC has recorded is already waiting — sessions, stints, the lap sheet, and '
+        + 'any lap with telemetry opened against another one on the same screen.',
+      cta: 'Show me round',
+      view: 'review',
+      focus: '#rv-sessions',
+      tour: 'review',
+      // Nothing to set up and nothing to switch on, so there is no state that
+      // could answer this — the same honest question as the Setups and Team
+      // rows. Having driven laps is not the tick either: a driver with two
+      // hundred sessions on disk who has never opened the tab is exactly who
+      // this row is for.
+      check: (s) => s.reviewToured,
+      note: (s) =>
+        !s.reviewToured
+          ? 'Nothing to set up: it reads the lap files this PC has been writing since you installed Apex, and nothing leaves the machine.'
+          : null,
+    },
   ];
 
   /* ---- pure: state -> ticks ---------------------------------------------- */
@@ -364,6 +386,7 @@
       // kept twice — one fact, one owner.
       setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
       teamToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('team')),
+      reviewToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('review')),
       // Whether this build HAS a Team tab. The nav button's `hidden` is the
       // one owner of that fact, so it is read rather than duplicated as a
       // second channel check. Nothing hides it as of v0.96.0; the read stays

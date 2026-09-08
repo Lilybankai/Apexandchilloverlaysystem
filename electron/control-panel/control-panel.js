@@ -4940,8 +4940,17 @@
     // whose content can change without the app doing anything — a session
     // driven since the last visit is simply on disk — so shown() is where the
     // list is re-read, not a timer.
-    if (target === 'review') window.apexReview?.shown();
-    else window.apexReview?.hidden();
+    if (target === 'review') {
+      window.apexReview?.shown();
+      // And its own first-visit walkthrough, same manners as the Setups,
+      // Streamers and Team guides. It matters here for the same reason it
+      // does on Team: anyone who walked the first-run tour before this tab
+      // existed will never be offered the Review tour again.
+      window.APEX_REVIEW_GUIDE?.maybeAutoOpen();
+    } else {
+      window.apexReview?.hidden();
+      window.APEX_REVIEW_GUIDE?.cancelAutoOpen();
+    }
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {

@@ -32,6 +32,7 @@ const path = require('node:path');
 const tour = require('../electron/control-panel/tour.js');
 const onboarding = require('../electron/control-panel/onboarding.js');
 const teamGuide = require('../electron/control-panel/team-guide.js');
+const reviewGuide = require('../electron/control-panel/review-guide.js');
 
 const PANEL = path.join(__dirname, '..', 'electron', 'control-panel');
 const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8');
@@ -268,6 +269,53 @@ check('the data-age pill is explained', /stale/.test(inTour('team')));
 }
 
 /* -------------------------------------------------------------------------- */
+/*
+ * The Review tab. Two of these are the same shape of trap the Team tab has:
+ * a lap with no telemetry and a lap with no driven line both look like the
+ * feature is broken, and neither is. The third is that nothing here leaves the
+ * machine — a driver who assumes their session went to a server behaves
+ * differently about it. Pinned by subject, so a rewrite cannot drop them.
+ */
+check('a tour covers the reviewer', !!tour.tourById('review'));
+check('reading a session back is explained', /session/.test(inTour('review')));
+check('the optimal lap is explained', /optimal/.test(inTour('review')));
+check('two laps at once is explained', /compare with/.test(inTour('review')));
+check('which way the delta goes is stated', /slower above/.test(inTour('review')));
+check('the map being to scale is stated', /to scale/.test(inTour('review')));
+check(
+  'and that a lap without telemetry is merely older',
+  /older/.test(inTour('review')),
+  'an empty trace mark is not a fault',
+);
+check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
+
+{
+  // Same argument as the Team guide: anyone who walked the first-run tour
+  // before this tab existed will never be offered the Review tour again, so
+  // this modal is their only introduction to the module.
+  const guide = reviewGuide.STEPS
+    .map((s) => `${s.title} ${s.lead} ${s.points.join(' ')}`)
+    .join('\n')
+    .toLowerCase();
+  check('the Review guide has steps', reviewGuide.STEPS.length >= 4, reviewGuide.STEPS.length);
+  check('no duplicate guide step ids',
+    new Set(reviewGuide.STEPS.map((s) => s.id)).size === reviewGuide.STEPS.length);
+  check('every guide step says something', reviewGuide.STEPS.every((s) => s.lead && s.points.length));
+  check('the guide states nothing is uploaded', /uploaded/.test(guide));
+  check('the guide explains the optimal lap', /optimal/.test(guide));
+  check('the guide explains comparing two laps', /compare with/.test(guide));
+  check('the guide explains the micro-sector chips', /cost or gained/.test(guide));
+  check('the guide explains the map is a plan', /to scale/.test(guide));
+  check('the guide names both lines', /cyan/.test(guide) && /violet/.test(guide));
+  check('the guide says a lap without a trace is just older', /older/.test(guide));
+  check('the guide is in the page', /id="review-guide"/.test(html));
+  check('and starts hidden', /id="review-guide"[^>]*\shidden/.test(html));
+  check('its script is loaded', html.includes('src="review-guide.js"'));
+  check('"How it works" can reopen it', /id="review-guide-open"/.test(html));
+  check('the router offers it on arrival', /APEX_REVIEW_GUIDE\?\.maybeAutoOpen/.test(panelJs));
+  check('and cancels it on the way out', /APEX_REVIEW_GUIDE\?\.cancelAutoOpen/.test(panelJs));
+}
+
 console.log('\nThe checklist and the tours agree');
 /* -------------------------------------------------------------------------- */
 

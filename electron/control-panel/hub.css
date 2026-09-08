@@ -368,6 +368,10 @@ html, body { height: 100%; overflow: hidden; }
 }
 
 .view__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+/* Two or more controls at the right-hand end of a view's header. Without a
+   wrapper the head's own space-between spreads them to opposite corners, which
+   reads as two unrelated controls rather than as this page's actions. */
+.view__head-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 
 .view__title {
   margin: 0;

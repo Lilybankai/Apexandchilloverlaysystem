@@ -477,6 +477,88 @@
         },
       ],
     },
+    {
+      id: 'review',
+      title: 'Review',
+      icon: 'activity',
+      blurb: 'Every session you have driven, read back off this PC — and two laps side by side.',
+      steps: [
+        {
+          id: 'sessions',
+          view: 'review',
+          anchor: '#rv-sessions',
+          title: 'Every session is already in here',
+          body:
+            'Apex writes a file for every lap you drive, and this tab reads them back. Nothing is ' +
+            'uploaded, nothing needs an account, and nothing is ever thrown away. One card per ' +
+            'session, newest first — search by track or car, or narrow to practice, qualifying or race.',
+          note:
+            'Sessions land while you are in the sim, not while you are looking at this page, so ' +
+            'arriving on the tab is the refresh.',
+        },
+        {
+          id: 'report',
+          view: 'review',
+          anchor: '#rv-detail',
+          title: 'What the session came to',
+          body:
+            'Best lap, and then the part that matters: optimal is your own best three sectors added ' +
+            'together, and untapped is the gap to it — time you have already driven, in pieces. ' +
+            'Consistency leads with the real spread in seconds rather than a percentage.',
+          note:
+            'A lap that broke the limits still appears, with the reason printed on it, instead of ' +
+            'quietly vanishing from your average.',
+        },
+        {
+          id: 'sheet',
+          view: 'review',
+          anchor: '#rv-detail',
+          title: 'Stints, and the lap sheet',
+          body:
+            'Open a stint for its lap sheet and the tyres it ended on. Purple is the session best, ' +
+            'green a stint best, amber a lap that broke the clean rule. A row with a trace mark has ' +
+            'telemetry behind it — click it and the lap opens.',
+          note:
+            'Only laps driven with Apex running have telemetry. An older session may have times and ' +
+            'no traces; that is the lap being older, not the tab being broken.',
+        },
+        {
+          id: 'lap',
+          view: 'review',
+          anchor: '#rv-detail',
+          title: 'Two laps, one window',
+          body:
+            'Speed, throttle and brake, gear and steering, drawn against DISTANCE round the circuit ' +
+            'so two laps line up at the same corner. Compare with lays a second lap underneath and a ' +
+            'delta band runs above them: slower above the line, faster below.',
+          note:
+            'The chips under the charts split the lap into stretches of about 500 m and say what ' +
+            'each cost or gained. Click one and the charts and the map both go there.',
+        },
+        {
+          id: 'map',
+          view: 'review',
+          anchor: '#rv-detail',
+          title: 'The circuit, seen from directly above',
+          body:
+            'Drawn in plan and to scale, so a metre is a metre whichever way the road points — which ' +
+            'is what lets you lay two racing lines side by side and believe the gap. Cyan is your ' +
+            'line, violet the lap you are comparing with, each with its own car on it.',
+          note:
+            'Click any part of the road to frame that corner. The road is shaded by its elevation, ' +
+            'and a scale bar in the corner says how far apart those two lines actually were.',
+        },
+        {
+          id: 'career',
+          view: 'review',
+          anchor: '#rv-career',
+          title: 'And everything, added up',
+          body:
+            'Laps, distance, hours at the wheel and the circuit you have driven most — the whole of ' +
+            'what this PC has recorded, across every session on the list.',
+        },
+      ],
+    },
   ];
 
   /* ---- pure helpers ------------------------------------------------------- */
