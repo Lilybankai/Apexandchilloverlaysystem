@@ -244,6 +244,10 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px 14px;
+  /* The same air every other card puts under its heading. Without it the
+     circuit's name sits on the roof of the best-lap block, and the strip
+     reads as part of the report rather than as the label above it. */
+  margin-bottom: 13px;
 }
 
 .rv-head h2 {
@@ -751,15 +755,27 @@
   outline-offset: -1px;
 }
 
+/* These four are the only buttons in the panel with an icon inside them, and
+   the shared `.icon` is `display: block` — so left alone they stack the glyph
+   on top of its own label and stand twice as tall as everything they sit
+   beside. That is what wedged the lap's header against the top of its card:
+   two 40px buttons setting the height of two rows of 13px text. Laid out
+   inline they are the height of the line they are on. */
+.rv .btn--sm { display: inline-flex; align-items: center; gap: 6px; }
+
 .rv-lap__bar,
 .rv-lap__head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   flex-wrap: wrap;
 }
 
-.rv-lap__head { margin-bottom: 12px; }
+/* One block: the lap's name, then what it is being compared with and where on
+   it we are looking, then a rule. Even spacing top to bottom — the card's own
+   padding above the first row, the same gap between the two rows, and the
+   rule sitting the same distance under the second. */
+.rv-lap__head { margin-bottom: 11px; }
 .rv-lap__bar { margin-bottom: 12px; }
 
 .rv-lap__name {
@@ -835,9 +851,10 @@
 .rv-map {
   position: relative;
   width: 100%;
-  /* Wider than tall, because the map is projected as a VIEW rather than a
-     plan: the depth axis is squashed to 55% on the way to the screen, so a
-     square box leaves a band of nothing above and below every circuit. */
+  /* Wider than tall, because a circuit laid on its own longest axis is — that
+     is what the projection's rotation is for. Not much wider: the map is now
+     a plan, so a zoomed corner is as likely to be tall as it is to be broad,
+     and 4:3 is the box that suits both without wasting a third of itself. */
   aspect-ratio: 4 / 3;
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -1087,9 +1104,9 @@
 .rv-lap__bar2 {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   flex-wrap: wrap;
-  margin: -4px 0 12px;
+  margin: 0 0 14px;
   padding-bottom: 11px;
   border-bottom: 1px solid var(--line);
 }

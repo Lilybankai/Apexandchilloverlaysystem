@@ -631,74 +631,75 @@
   }
 
   /* ------------------------------------------------------------------------ */
-  /*  The circuit, as a solid                                                 */
+  /*  The circuit, in plan                                                    */
   /* ------------------------------------------------------------------------ */
 
   /**
-   * How the map is projected. These are the overlay track map's own constants
-   * (`overlay/js/widgets/trackmap.js`), and deliberately the same numbers: a
-   * driver who has been staring at the in-car map all session should recognise
-   * the shape here instantly, not have to re-learn a second projection of the
-   * same circuit.
-   */
-  const TILT = 0.55;
-  /**
-   * The lift given to the full elevation range, as a share of the CANVAS
-   * HEIGHT — in pixels, not in metres.
+   * Straight down, and flat.
    *
-   * The in-car map defines its lift as a share of the circuit's width, which
-   * is right for a map that is always drawn whole in a box of one shape. This
-   * one is zoomed and resized, and a lift defined in world units scales with
-   * both: Barcelona's 30 m rise became a 230 px curtain in the big map at
-   * 1.5x and a 1 300 px one at 9x, a cliff that hid the road it was meant to
-   * be explaining. Defined against the screen, the hill is always the same
-   * visible size — tall enough to read, never taller than the map.
+   * This map used to be the in-car overlay's ribbon: rotated, tilted to 0.55,
+   * lifted by its own elevation and hung on a curtain down to a ground plane.
+   * That is a good map to glance at and a bad one to measure with, and this
+   * screen measures. Two things broke:
+   *
+   *   - **A tilt is a lie about distance.** Squashing the depth axis to 55%
+   *     makes a metre across the screen and a metre up it different lengths,
+   *     so two lines a metre apart are drawn a metre apart where the road runs
+   *     left-to-right and half that where it runs away from you. Telling those
+   *     two lines apart is the entire job of this view.
+   *   - **Zoomed in, the solid WAS the view.** A corner at 9x filled the box
+   *     with road, and both driven lines rode along its top edge.
+   *
+   * So: drawn from directly above, to scale, both axes equal. The elevation
+   * the lift used to carry is still on the screen — it shades the surface,
+   * pale for the high ground and dark for the low, the way a relief map has
+   * always said it — and it costs the lines nothing, because it is under them.
+   *
+   * The other half of the change is the framing. Zoom is no longer a number
+   * the road is multiplied by; the window's own stretch of road is measured
+   * and the box is fitted to IT. Click a hairpin and you get that hairpin,
+   * filling the panel, at whatever scale that takes.
    */
-  const LIFT_SHARE = 0.2;
+
+  /** Air kept inside the box, in px. */
+  const MAP_PAD = 14;
+  /** Roughly how many segments the whole circuit is drawn with. */
+  const TARGET_SEGMENTS = 320;
   /**
-   * Ceiling on the exaggeration in world terms, so a nearly flat circuit in a
-   * tall box is not given a mountain to fill the space with.
+   * The narrowest the road is ever drawn, in px.
+   *
+   * Wide enough that the surface still has a shade to it either side of a
+   * driven line — at whole-lap scale a real 12 m road is under a pixel, and a
+   * road the same width as the line on it is not a road, it is the line.
    */
-  const ELEV_MAX_GAIN = 8;
-  /** The light, in view space: above, to the left, tipped toward the viewer. */
-  const LIGHT = [-0.45, 0.3, 0.84];
-  /** Floor on shading, so an unlit face is dark paint rather than a hole. */
-  const AMBIENT = 0.36;
-  /** Base colour of the road, before the light gets to it. */
-  const ROAD = [122, 138, 168];
-  /** How far down the curtain darkens, top and foot. */
-  const CURTAIN_TOP_MUL = 0.6;
-  const CURTAIN_FOOT_MUL = 0.26;
-  /** Roughly how many segments to draw, whatever the source path's resolution. */
-  const TARGET_SEGMENTS = 280;
-  /** The narrowest the road is ever drawn, in px, and its wall height. */
-  const MIN_ROAD_PX = 6;
-  const WALL_PX = 4;
-  /** The ground the circuit stands on: a pool of light, never a plate. */
-  const PLANE_TINT = '150,170,210';
+  const MIN_ROAD_PX = 10;
+  /**
+   * How much of the framed stretch's own size is left around it as air —
+   * ZOOMED only. Whole, the circuit is its own subject and the padding round
+   * the box is enough; a margin on top of that leaves a third of the panel
+   * empty round a map already too small to read.
+   */
+  const FRAME_MARGIN = 0.14;
+  const FRAME_MARGIN_WHOLE = 0.015;
+  /** The road surface: low ground, high ground, and ground not worth shading. */
+  const ROAD_LOW = [32, 38, 51];
+  const ROAD_HIGH = [104, 118, 145];
+  const ROAD_FLAT = [60, 69, 89];
+  /** Its edges — the thing a driven line is actually read against. */
+  const ROAD_EDGE = 'rgba(196,210,236,0.42)';
+  /** Nice round distances for the scale bar. */
+  const NICE_M = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-  function norm3(x, y, z) {
-    const l = Math.sqrt(x * x + y * y + z * z) || 1;
-    return [x / l, y / l, z / l];
-  }
-
-  /** How much of the light a face with normal `n` receives, floored at ambient. */
-  function lambert(n) {
-    const dp = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
-    return AMBIENT + (1 - AMBIENT) * Math.max(0, dp);
-  }
-
-  function shade(k, alpha) {
-    const c = (i) => Math.round(clamp(ROAD[i] * k, 0, 255));
-    return `rgba(${c(0)},${c(1)},${c(2)},${alpha === undefined ? 1 : alpha})`;
-  }
 
   /**
    * The angle that lays the circuit's longest axis across the box — the
    * principal axis of the point cloud, which is the closed-form answer to
    * "which way round wastes least of the panel".
+   *
+   * Taken from the WHOLE circuit even when the view is framed on one corner,
+   * so zooming in never rotates the map under the reader: the shape they
+   * learned at a glance is the shape they are looking closely at.
    */
   function principalAngle(points) {
     const n = points.length;
@@ -728,23 +729,24 @@
   const viewV = (x, z, ca, sa) => -(x * sa + z * ca);
 
   /**
-   * Build the projected ribbon: the road's two edges in screen space, the lift
-   * elevation gives each station, and the depth each segment sorts by.
+   * Build the circuit in plan: both road edges in screen space, framed on the
+   * stretch of lap the window asks for.
    *
-   * `zoom` and `focus` are applied to the FIT, not to the geometry: the same
-   * solid is built once and then framed, so zooming into a corner cannot change
-   * which way the circuit is rotated or how tall its hill is drawn — both of
-   * which would make the zoomed view a different map rather than a closer look
-   * at this one.
+   * Whole-lap and zoomed differ in two places and nowhere else — how much of
+   * the path is kept, and which bounding box the fit is taken from. Everything
+   * downstream of here is the same code looking at the same solid.
    */
-  function buildRibbon(map, w, h, zoom, focus) {
+  function buildPlan(map, w, h, wFrom, wTo) {
     const all = map && Array.isArray(map.points) ? map.points : [];
     if (all.length < 8) return null;
-    const z = zoom > 1 ? zoom : 1;
-    // Whole, the circuit is a few hundred segments; zoomed, the same segments
-    // are metres long on screen and a hairpin turns into a polygon, so the
-    // path is decimated less the closer it is looked at.
-    const step = Math.max(1, Math.floor(all.length / (TARGET_SEGMENTS * Math.min(3, z))));
+    const from01 = clamp(isNum(wFrom) ? wFrom : 0, 0, 1);
+    const to01 = clamp(isNum(wTo) ? wTo : 1, 0, 1);
+    const whole = to01 - from01 >= 0.999;
+
+    // Whole, a few hundred segments is plenty and more is wasted fills.
+    // Zoomed, every dropped station is a flat spot on a curve that the reader
+    // is looking at from six metres away, so the path is kept entire.
+    const step = whole ? Math.max(1, Math.floor(all.length / TARGET_SEGMENTS)) : 1;
     const pts = [];
     for (let i = 0; i < all.length; i += step) pts.push(all[i]);
     const n = pts.length;
@@ -754,29 +756,22 @@
     const ca = Math.cos(ang);
     const sa = Math.sin(ang);
 
-    let minU = Infinity;
-    let maxU = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
+    let minEl = Infinity;
+    let maxEl = -Infinity;
     for (const p of all) {
-      const u = viewU(p[0], p[1], ca, sa);
-      const e = typeof p[2] === 'number' && Number.isFinite(p[2]) ? p[2] : 0;
-      if (u < minU) minU = u;
-      if (u > maxU) maxU = u;
-      if (e < minY) minY = e;
-      if (e > maxY) maxY = e;
+      const e = isNum(p[2]) ? p[2] : 0;
+      if (e < minEl) minEl = e;
+      if (e > maxEl) maxEl = e;
     }
-    const rise = maxY - minY;
+    const rise = maxEl - minEl;
 
-    // The road's two edges, `half` metres either side of the path — first
-    // FLAT, because the fit has to be known before the lift can be, and the
-    // lift is what the fit has to leave room for.
+    // The road's two edges, `half` metres either side of the path.
     const half = Math.max(map.halfWidthM > 0 ? map.halfWidthM : 6, 4);
     const rails = new Array(n);
-    let bMinX = Infinity;
-    let bMaxX = -Infinity;
-    let bMinY = Infinity;
-    let bMaxY = -Infinity;
+    let fullMinX = Infinity;
+    let fullMaxX = -Infinity;
+    let fullMinY = Infinity;
+    let fullMaxY = -Infinity;
     for (let i = 0; i < n; i++) {
       const p = pts[i];
       const a = pts[(i - 1 + n) % n];
@@ -786,81 +781,71 @@
       const len = Math.hypot(tx, tz) || 1;
       const nx = (tz / len) * half;
       const nz = (-tx / len) * half;
-      const e = typeof p[2] === 'number' && Number.isFinite(p[2]) ? p[2] : minY;
-      const lu = viewU(p[0] + nx, p[1] + nz, ca, sa);
-      const lv = viewV(p[0] + nx, p[1] + nz, ca, sa);
-      const ru = viewU(p[0] - nx, p[1] - nz, ca, sa);
-      const rv = viewV(p[0] - nx, p[1] - nz, ca, sa);
-      rails[i] = { lu, lv, ru, rv, e, fly: lv * TILT, fry: rv * TILT };
-      bMinX = Math.min(bMinX, lu, ru);
-      bMaxX = Math.max(bMaxX, lu, ru);
-      bMinY = Math.min(bMinY, rails[i].fly, rails[i].fry);
-      bMaxY = Math.max(bMaxY, rails[i].fly, rails[i].fry);
+      const r = {
+        lu: viewU(p[0] + nx, p[1] + nz, ca, sa),
+        lv: viewV(p[0] + nx, p[1] + nz, ca, sa),
+        ru: viewU(p[0] - nx, p[1] - nz, ca, sa),
+        rv: viewV(p[0] - nx, p[1] - nz, ca, sa),
+        e: isNum(p[2]) ? p[2] : minEl,
+      };
+      rails[i] = r;
+      fullMinX = Math.min(fullMinX, r.lu, r.ru);
+      fullMaxX = Math.max(fullMaxX, r.lu, r.ru);
+      fullMinY = Math.min(fullMinY, r.lv, r.rv);
+      fullMaxY = Math.max(fullMaxY, r.lv, r.rv);
     }
 
-    // The fit, from the flat footprint, with the top LIFT_SHARE of the box
-    // held back for the hill to rise into.
-    const pad = 12;
-    const liftPx = LIFT_SHARE * h;
-    const boxW = Math.max(1, bMaxX - bMinX);
-    const boxH = Math.max(1, bMaxY - bMinY);
-    const base = Math.min((w - pad * 2) / boxW, (h - pad * 2 - WALL_PX - liftPx) / boxH);
-    const scale = base * z;
+    /** Fit a view-space box into the canvas, and say how many px a metre is. */
+    const fit = (x0, x1, y0, y1, margin) => {
+      const mx = (x1 - x0) * margin;
+      const my = (y1 - y0) * margin;
+      const boxW = Math.max(1, x1 - x0 + mx * 2);
+      const boxH = Math.max(1, y1 - y0 + my * 2);
+      return Math.min((w - MAP_PAD * 2) / boxW, (h - MAP_PAD * 2) / boxH);
+    };
+    const wholeScale = fit(fullMinX, fullMaxX, fullMinY, fullMaxY, FRAME_MARGIN_WHOLE);
 
-    // Now the lift. The full rise gets LIFT_SHARE of the canvas, in pixels,
-    // converted back into view units at THIS scale — so the hill is the same
-    // visible height zoomed in as it is zoomed out, rather than growing nine
-    // times taller with the road. Capped in world terms too, so a two-metre
-    // bump in a tall box is not stretched into a mountain.
-    const gain = rise > 0.5 ? Math.min(ELEV_MAX_GAIN, liftPx / (rise * scale)) : 0;
-    let liftMin = Infinity;
-    let liftMax = -Infinity;
-    for (let i = 0; i < n; i++) {
-      const r = rails[i];
-      const lift = (r.e - minY) * gain;
-      r.lift = lift;
-      r.lx = r.lu;
-      r.ly = r.fly - lift;
-      r.rx = r.ru;
-      r.ry = r.fry - lift;
-      // Higher ground sorts as nearer: where a circuit crosses itself the two
-      // roads share a footprint, so `v` alone is a coin flip between the
-      // bridge and the road under it.
-      r.depth = (r.lv + r.rv) / 2 + lift * TILT;
-      liftMin = Math.min(liftMin, r.ly, r.ry);
-      liftMax = Math.max(liftMax, r.fly, r.fry);
+    // Zoomed, the fit comes from the stations INSIDE the window — which is
+    // what makes clicking a corner arrive at that corner, rather than at a
+    // larger picture of the whole circuit with the corner somewhere in it.
+    let minX = fullMinX;
+    let maxX = fullMaxX;
+    let minY = fullMinY;
+    let maxY = fullMaxY;
+    if (!whole) {
+      minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
+      const lo = Math.floor(from01 * n);
+      const hi = Math.ceil(to01 * n);
+      for (let i = lo; i <= hi; i++) {
+        const r = rails[((i % n) + n) % n];
+        minX = Math.min(minX, r.lu, r.ru);
+        maxX = Math.max(maxX, r.lu, r.ru);
+        minY = Math.min(minY, r.lv, r.rv);
+        maxY = Math.max(maxY, r.lv, r.rv);
+      }
     }
-    bMinY = liftMin;
-    bMaxY = liftMax;
-    // Centred on the whole circuit at 1×, and on the focus point once zoomed —
-    // so zooming in walks toward the corner rather than toward the middle of
-    // the map with the corner sliding off an edge.
-    let cu = (bMinX + bMaxX) / 2;
-    let cy = (bMinY + bMaxY) / 2;
-    if (z > 1 && focus) {
-      cu = focus.u;
-      // The focus arrives flat and is lifted HERE, at this build's own gain:
-      // the 1x fit that found it used a different one.
-      cy = focus.v * TILT - (focus.e - minY) * gain;
-    }
-    const offX = w / 2 - cu * scale;
-    const offY = (h - WALL_PX) / 2 - cy * scale;
+    const scale = whole ? wholeScale : fit(minX, maxX, minY, maxY, FRAME_MARGIN);
+    const offX = w / 2 - ((minX + maxX) / 2) * scale;
+    const offY = h / 2 - ((minY + maxY) / 2) * scale;
 
     const screen = new Array(n);
     for (let i = 0; i < n; i++) {
       const r = rails[i];
       screen[i] = {
-        lx: r.lx * scale + offX, ly: r.ly * scale + offY,
-        rx: r.rx * scale + offX, ry: r.ry * scale + offY,
-        fly: r.fly * scale + offY, fry: r.fry * scale + offY,
-        depth: r.depth, lu: r.lu, lv: r.lv, ru: r.ru, rv: r.rv, lift: r.lift,
+        lx: r.lu * scale + offX, ly: r.lv * scale + offY,
+        rx: r.ru * scale + offX, ry: r.rv * scale + offY,
+        e: r.e,
+        // Higher ground sorts as nearer. Looking straight down, that is simply
+        // true, and it is what puts a bridge over the road it crosses.
+        depth: r.e,
       };
     }
 
-    // How wide the road actually lands. A whole circuit in a 380 px box runs at
-    // a fraction of a pixel per metre, where a real 12 m road is a hairline —
-    // every printed circuit map exaggerates the road for the same reason. The
-    // exaggeration only ever ADDS width and never moves the centreline.
+    // How wide the road actually lands. A whole circuit in a 380 px box runs
+    // at a fraction of a pixel per metre, where a real 12 m road is a hairline
+    // — every printed circuit map exaggerates the road for the same reason.
+    // Zoomed in, where the width is being read against a driven line, the
+    // scale is already large and this does nothing at all.
     let roadPx = 0;
     for (const sc of screen) roadPx += Math.hypot(sc.lx - sc.rx, sc.ly - sc.ry);
     roadPx /= n;
@@ -874,69 +859,40 @@
         sc.rx = mx + (sc.rx - mx) * widen;
         sc.ry = my + (sc.ry - my) * widen;
       }
+      roadPx *= widen;
     }
 
     return {
-      screen, n, scale, offX, offY, ca, sa, minY, gain, zoom: z,
-      minEl: minY, maxEl: maxY, rise, points: all,
+      screen, n, scale, wholeScale, offX, offY, ca, sa,
+      zoom: wholeScale > 0 ? scale / wholeScale : 1,
+      minEl, maxEl, rise, points: all,
+      /** Half the road, in px — how near a click has to land to count. */
+      hitPx: Math.max(30, roadPx * 0.75),
       /** World position -> canvas position, through the same transform. */
-      project(x, zz, e) {
-        const lift = ((typeof e === 'number' && Number.isFinite(e) ? e : minY) - minY) * gain;
-        const u = viewU(x, zz, ca, sa);
-        const v = viewV(x, zz, ca, sa);
-        return { x: u * scale + offX, y: (v * TILT - lift) * scale + offY, depth: v };
-      },
-      /** …and the flat view-space point a focus is expressed in. */
-      viewOf(x, zz, e) {
+      project(x, zz) {
         return {
-          u: viewU(x, zz, ca, sa),
-          v: viewV(x, zz, ca, sa),
-          e: typeof e === 'number' && Number.isFinite(e) ? e : minY,
+          x: viewU(x, zz, ca, sa) * scale + offX,
+          y: viewV(x, zz, ca, sa) * scale + offY,
         };
       },
     };
   }
 
-  /**
-   * The plane the circuit stands on: a pool of light under the map, fading to
-   * nothing well before it reaches an edge.
-   *
-   * A pool rather than a slab. This projection has no perspective, so any
-   * rectangle on the ground lands screen-axis-aligned and a plate with a rim
-   * would read as a card behind the map rather than a surface under it. Light
-   * rather than dark, because the panel is already near-black and the feature
-   * is not the plane — it is the CONTRAST between the curtain's dark foot and
-   * the plane it lands on.
-   */
-  function drawPlane(ctx, g) {
-    if (!(g.gain > 0)) return;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const sc of g.screen) {
-      minX = Math.min(minX, sc.lx, sc.rx);
-      maxX = Math.max(maxX, sc.lx, sc.rx);
-      minY = Math.min(minY, sc.fly, sc.fry);
-      maxY = Math.max(maxY, sc.fly, sc.fry);
+  /** The road's colour at a station: pale for high ground, dark for low. */
+  function roadShade(g, e) {
+    if (!(g.rise > 0.5)) {
+      return `rgb(${ROAD_FLAT[0]},${ROAD_FLAT[1]},${ROAD_FLAT[2]})`;
     }
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2 + WALL_PX;
-    const r = Math.max(maxX - minX, maxY - minY) * 0.62;
-    if (!(r > 0)) return;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, `rgba(${PLANE_TINT},0.075)`);
-    grad.addColorStop(0.55, `rgba(${PLANE_TINT},0.054)`);
-    grad.addColorStop(1, `rgba(${PLANE_TINT},0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
+    const k = clamp((e - g.minEl) / g.rise, 0, 1);
+    const c = (i) => Math.round(ROAD_LOW[i] + (ROAD_HIGH[i] - ROAD_LOW[i]) * k);
+    return `rgb(${c(0)},${c(1)},${c(2)})`;
   }
 
-  /** One quad, filled. */
+  /** One quad, filled — and stroked in its own colour to close the seam. */
   function quad(ctx, ax, ay, bx, by, cx, cy, dx, dy, style) {
     ctx.fillStyle = style;
+    ctx.strokeStyle = style;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(ax, ay);
     ctx.lineTo(bx, by);
@@ -944,115 +900,76 @@
     ctx.lineTo(dx, dy);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   }
 
   /**
-   * Draw the circuit as a solid standing on its own ground.
+   * Paint the road: one quad per segment, shaded by the ground it runs over,
+   * then both edges drawn round the outside.
    *
-   * Back to front, because canvas 2-D has no depth buffer and every circuit
-   * crosses over itself somewhere. Each segment is a far wall, the road, the
-   * near wall, and — where there is elevation — a curtain hanging from the
-   * road's underside down to the flat plane it would sit on. That curtain is
-   * the whole elevation cue: the gap between the road and its own base IS the
-   * height of the place, so a climb reads as the road pulling away from its
-   * foot rather than as a shading trick you have to be told about.
+   * Low ground first, so where a circuit crosses itself the bridge is laid
+   * over the road beneath it. The edges go on afterwards in one pass, because
+   * they are what a driven line is measured against and a line broken into
+   * three hundred segments reads as texture rather than as a kerb.
    */
-  function paintRibbon(ctx, g, dim) {
+  function paintPlan(ctx, g) {
     const s = g.screen;
     const n = g.n;
-    drawPlane(ctx, g);
     const order = new Array(n);
     for (let i = 0; i < n; i++) order[i] = i;
-    order.sort((a, b) => (s[a].depth + s[(a + 1) % n].depth) - (s[b].depth + s[(b + 1) % n].depth));
-
-    const extrude = g.gain > 0;
-    const alpha = dim === undefined ? 1 : dim;
+    if (g.rise > 0.5) order.sort((a, b) => s[a].e - s[b].e);
 
     for (let k = 0; k < n; k++) {
       const i = order[k];
       const j = (i + 1) % n;
       const a = s[i];
       const b = s[j];
+      quad(ctx, a.lx, a.ly, b.lx, b.ly, b.rx, b.ry, a.rx, a.ry,
+        roadShade(g, (a.e + b.e) / 2));
+    }
 
-      // The segment's frame, in view space: du/dv is where the road is going,
-      // dh how much it climbs doing it, and `out` the horizontal normal of the
-      // left rail — the right rail's is its negation.
-      const du = (b.lu + b.ru) / 2 - (a.lu + a.ru) / 2;
-      const dv = (b.lv + b.rv) / 2 - (a.lv + a.rv) / 2;
-      const dh = b.lift - a.lift;
-      const run = Math.hypot(du, dv) || 1;
-      const outL = norm3(a.lu - (a.lu + a.ru) / 2, a.lv - (a.lv + a.rv) / 2, 0);
-      const outR = [-outL[0], -outL[1], 0];
-      const nTop = norm3(-(dh * du) / (run * run), -(dh * dv) / (run * run), 1);
-      const leftNearer = (a.ly + b.ly) > (a.ry + b.ry);
-
-      const wallSide = (side, normal) => {
-        const ax = side === 'l' ? a.lx : a.rx;
-        const ay = side === 'l' ? a.ly : a.ry;
-        const bx = side === 'l' ? b.lx : b.rx;
-        const by = side === 'l' ? b.ly : b.ry;
-        quad(ctx, ax, ay, bx, by, bx, by + WALL_PX, ax, ay + WALL_PX,
-          shade(lambert(normal) * 0.78, alpha));
-      };
-      const curtain = (side, normal) => {
-        const ax = side === 'l' ? a.lx : a.rx;
-        const ay = (side === 'l' ? a.ly : a.ry) + WALL_PX;
-        const bx = side === 'l' ? b.lx : b.rx;
-        const by = (side === 'l' ? b.ly : b.ry) + WALL_PX;
-        const aFoot = side === 'l' ? a.fly : a.fry;
-        const bFoot = side === 'l' ? b.fly : b.fry;
-        if (aFoot - ay < 1 && bFoot - by < 1) return;
-        const k2 = lambert(normal);
-        const grad = ctx.createLinearGradient(0, Math.min(ay, by), 0, Math.max(aFoot, bFoot));
-        grad.addColorStop(0, shade(k2 * CURTAIN_TOP_MUL, alpha));
-        grad.addColorStop(1, shade(k2 * CURTAIN_FOOT_MUL, alpha));
-        quad(ctx, ax, ay, bx, by, bx, Math.max(by, bFoot), ax, Math.max(ay, aFoot), grad);
-      };
-
-      if (extrude) curtain(leftNearer ? 'r' : 'l', leftNearer ? outL : outR);
-      wallSide(leftNearer ? 'r' : 'l', leftNearer ? outR : outL);
-      quad(ctx, a.lx, a.ly, b.lx, b.ly, b.rx, b.ry, a.rx, a.ry, shade(lambert(nTop), alpha));
-      wallSide(leftNearer ? 'l' : 'r', leftNearer ? outL : outR);
-      if (extrude) curtain(leftNearer ? 'l' : 'r', leftNearer ? outR : outL);
+    ctx.strokeStyle = ROAD_EDGE;
+    ctx.lineWidth = 1;
+    for (const side of ['l', 'r']) {
+      ctx.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const sc = s[i % n];
+        const x = side === 'l' ? sc.lx : sc.rx;
+        const y = side === 'l' ? sc.ly : sc.ry;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
     }
   }
 
   /**
-   * The last ribbon painted, kept as a bitmap.
+   * The last road painted, kept as a bitmap.
    *
-   * The solid is two thousand fills — five per segment — and the scrub cursor
-   * repaints this canvas on every mouse move. Rendering it once and blitting it
-   * after is the same trick the in-car map plays for the same reason, and it is
-   * what makes moving across the charts feel like moving a cursor rather than
-   * re-rendering a circuit. One entry, because only one map is ever on screen.
+   * The surface is a few hundred fills and the scrub cursor repaints this
+   * canvas on every mouse move. Rendering it once and blitting it after is the
+   * same trick the in-car map plays for the same reason, and it is what makes
+   * moving across the charts feel like moving a cursor rather than re-drawing
+   * a circuit. One entry, because only one map is ever on screen.
    *
    * The key includes the window, so zooming rebuilds and scrubbing does not.
    */
-  let ribbonCache = null;
+  let planCache = null;
 
-  function ribbonFor(map, w, h, wFrom, wTo, span) {
+  function planFor(map, w, h, wFrom, wTo) {
     const key = `${w}x${h}|${wFrom.toFixed(4)}|${wTo.toFixed(4)}`;
     // Identity as well as the key: two circuits can agree on every field in a
     // key and still be different shapes, and the renderer holds one map object
     // for as long as it is looking at one circuit — so this is both cheaper
     // and stricter than hashing the points would be.
-    if (ribbonCache && ribbonCache.map === map && ribbonCache.key === key) return ribbonCache;
+    if (planCache && planCache.map === map && planCache.key === key) return planCache;
 
-    // Zoom follows the window: a tenth of the lap on screen is ten times the
-    // scale, capped so a two-sample window does not project the road into a
-    // pair of walls filling the box. Past about three times a corner fills the
-    // box and there is nothing left in it to say WHERE the corner is — which
-    // is what the locator inset is for, rather than a reason not to zoom.
-    const zoom = span >= 0.999 ? 1 : Math.min(9, 1 / Math.max(0.06, span));
-    const probe = buildRibbon(map, w, h, 1, null);
-    if (!probe) return null;
-    let g = probe;
-    if (zoom > 1) {
-      const pts = map.points;
-      const mid = pts[Math.min(pts.length - 1, Math.floor(((wFrom + wTo) / 2) * pts.length))];
-      g = buildRibbon(map, w, h, zoom, probe.viewOf(mid[0], mid[1], mid[2]));
-      if (!g) return null;
-    }
+    const g = buildPlan(map, w, h, wFrom, wTo);
+    if (!g) return null;
+    // The whole-lap fit is kept alongside the framed one: it is what the
+    // locator inset is drawn from, and rebuilding it per repaint would be the
+    // whole projection run twice for a thumbnail.
+    const probe = g.zoom > 1.02 ? buildPlan(map, w, h, 0, 1) : g;
 
     let bitmap = null;
     // Guarded because this module is require()d by its test in plain Node,
@@ -1068,33 +985,93 @@
         ox.setTransform(dpr, 0, 0, dpr, 0, 0);
         ox.lineJoin = 'round';
         ox.lineCap = 'round';
-        paintRibbon(ox, g);
+        paintPlan(ox, g);
         bitmap = off;
       }
     }
-    // The 1x fit is kept alongside the zoomed one: it is what the locator
-    // inset is drawn from, and rebuilding it per repaint would be the whole
-    // projection run twice for a thumbnail.
-    ribbonCache = { key, map, g, bitmap, probe, zoom };
-    return ribbonCache;
+    planCache = { key, map, g, bitmap, probe, zoom: g.zoom };
+    return planCache;
+  }
+
+  /**
+   * How far is that, then.
+   *
+   * A plan view has a scale, so it can say so — and once it does, "the two
+   * lines are a car's width apart here" stops being a guess. It is the one
+   * thing the raised map could never carry, because nothing on it was to a
+   * single scale.
+   */
+  function drawScaleBar(ctx, g, w, h) {
+    const metres = (w * 0.22) / g.scale;
+    let pick = null;
+    for (const m of NICE_M) { if (m >= metres) { pick = m; break; } }
+    if (pick === null) return;
+    const px = pick * g.scale;
+    if (!(px > 16) || px > w * 0.55) return;
+    const x = MAP_PAD;
+    const y = h - MAP_PAD;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(154,164,184,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 4);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + px, y);
+    ctx.lineTo(x + px, y - 4);
+    ctx.stroke();
+    ctx.fillStyle = CSS.text3;
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${pick} m`, x, y - 6);
+    ctx.restore();
+  }
+
+  /** The sample of a trace nearest a lap distance, or -1. */
+  function sampleAtDistance(tr, dd) {
+    if (!tr || !Array.isArray(tr.d) || tr.d.length < 2) return -1;
+    let lo = 0;
+    let hi = tr.d.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (tr.d[mid] < dd) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0 && Math.abs(tr.d[lo - 1] - dd) < Math.abs(tr.d[lo] - dd)) return lo - 1;
+    return lo;
+  }
+
+  /** A car on the map: a filled disc with a ring, so it reads on any surface. */
+  function marker(ctx, x, y, colour, r, ring) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, ring, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   /**
    * The circuit, with the lap on it.
    *
-   * The road is a solid, not a stroke — see {@link paintRibbon} — which is what
-   * puts the elevation of the place on the screen the way the in-car overlay
-   * does. Over it go the driven lines and the cursor.
+   * The road is drawn in plan and to scale — see {@link buildPlan} — and the
+   * two driven lines go on top of it in the colours the charts already use:
+   * cyan for the lap being studied, violet for the one it is being compared
+   * with. Both solid. The charts dash the reference because a dashed line
+   * reads as "underneath"; on a map a dash breaks the SHAPE of a line, which
+   * here is the whole information.
    *
    * A v1 trace has no line. The cursor is then placed on the CENTRELINE at the
    * right distance, which is true and useful ("this is the corner you are
    * looking at") — the same fallback the pit wall's map has always used for a
-   * car it has no position for. What is never done is inventing a line from the
-   * centreline and showing it as the driver's.
+   * car it has no position for. What is never done is inventing a line from
+   * the centreline and showing it as the driver's.
    *
-   * `opts.window` zooms: the view scales up and centres on the middle of the
-   * window, so clicking a corner walks the map toward that corner instead of
-   * just making the whole circuit bigger.
+   * `opts.window` frames: the box is fitted to the stretch of road the window
+   * names, so clicking a corner takes the map to that corner.
    */
   function drawLapMap(canvas, map, trace, opts) {
     const { ctx, w, h } = surface(canvas);
@@ -1102,17 +1079,17 @@
     if (pts.length < 8) return null;
     const o = opts || {};
     const [wFrom, wTo] = windowOf(o);
-    const span = wTo - wFrom;
 
-    const cached = ribbonFor(map, w, h, wFrom, wTo, span);
+    const cached = planFor(map, w, h, wFrom, wTo);
     if (!cached) return null;
     const g = cached.g;
 
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     if (cached.bitmap) ctx.drawImage(cached.bitmap, 0, 0, w, h);
-    else paintRibbon(ctx, g);
-    if (cached.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
+    else paintPlan(ctx, g);
+    if (g.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
+    drawScaleBar(ctx, g, w, h);
 
     // Sector lines, as bars across the road at the right distance.
     for (const dd of [0, o.sectors ? o.sectors.s1 : null, o.sectors ? o.sectors.s2 : null]) {
@@ -1127,64 +1104,61 @@
       ctx.stroke();
     }
 
-    /** Elevation for a trace sample, borrowed from the nearest centreline point. */
-    const elevAt = (dd) => {
-      const k = Math.min(pts.length - 1, Math.max(0, Math.round(dd * pts.length)));
-      const e = pts[k][2];
-      return typeof e === 'number' && Number.isFinite(e) ? e : g.minEl;
-    };
+    // Wider lines the closer the look. Whole, they are threads laid on a
+    // circuit and the road has to stay visible under them; zoomed, they are
+    // the two things on the screen and everything else is context.
+    const lineW = clamp(1.1 + g.zoom * 0.3, 1.4, 3.2);
 
-    /** One driven line, lifted onto the road it was driven on. */
-    const line = (tr, style, width, dash) => {
+    /** One driven line. */
+    const line = (tr, style, width) => {
       if (!tr || !Array.isArray(tr.x) || !Array.isArray(tr.z)) return false;
       if (tr.x.length < 2 || tr.x.length !== tr.z.length) return false;
       ctx.strokeStyle = style;
       ctx.lineWidth = width;
-      ctx.setLineDash(dash || []);
       ctx.beginPath();
       for (let i = 0; i < tr.x.length; i++) {
-        const p = g.project(tr.x[i], tr.z[i], elevAt(tr.d ? tr.d[i] : i / tr.x.length) + 0.35);
+        const p = g.project(tr.x[i], tr.z[i]);
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
-      ctx.setLineDash([]);
       return true;
     };
 
-    // The comparison lap first and dashed, for the same reason it goes under on
-    // the charts: it is the reference, not the subject.
-    line(o.vs, CSS.compare, 1.6, [5, 4]);
-    const placed = line(trace, CSS.cyan, 2);
+    // The comparison lap first, so the studied lap is the one on top wherever
+    // they touch — it is the subject, not the reference.
+    const vsPlaced = line(o.vs, CSS.compare, lineW * 0.85);
+    const placed = line(trace, CSS.cyan, lineW);
 
-    // The cursor: the real position when the lap was placed, otherwise the
-    // point on the centreline at that distance.
+    // The cars: where each lap was at this point of the road. The real
+    // position when the lap was placed, otherwise the point on the centreline
+    // at that distance.
     if (typeof o.cursorD === 'number' && o.cursorD >= 0) {
+      if (vsPlaced) {
+        const j = sampleAtDistance(o.vs, o.cursorD);
+        if (j >= 0 && j < o.vs.x.length) {
+          const q = g.project(o.vs.x[j], o.vs.z[j]);
+          marker(ctx, q.x, q.y, CSS.compare, 3.2, 6);
+        }
+      }
       let p;
       const i = o.cursorIndex;
       if (placed && typeof i === 'number' && i >= 0 && i < trace.x.length) {
-        p = g.project(trace.x[i], trace.z[i], elevAt(trace.d[i]) + 0.35);
+        p = g.project(trace.x[i], trace.z[i]);
       } else {
         const k = Math.min(pts.length - 1, Math.max(0, Math.floor(o.cursorD * pts.length)));
-        p = g.project(pts[k][0], pts[k][1], pts[k][2]);
+        p = g.project(pts[k][0], pts[k][1]);
       }
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = CSS.cyan;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 7.5, 0, Math.PI * 2);
-      ctx.stroke();
+      marker(ctx, p.x, p.y, CSS.cyan, 4, 7.5);
     }
 
     return {
       minY: g.minEl,
       maxY: g.maxEl,
-      shaded: g.gain > 0,
+      shaded: g.rise > 0.5,
       placed,
       zoom: g.zoom,
+      metresPerPx: g.scale > 0 ? 1 / g.scale : null,
       geom: g,
     };
   }
@@ -1199,9 +1173,9 @@
    * it costs one thin outline: the shape a driver already recognises, with
    * their own position on it.
    *
-   * Drawn from the 1x projection rather than from the plan, so the outline is
-   * the same shape as the map above it and not a second, differently-rotated
-   * view of the same circuit.
+   * Drawn from the whole-lap projection rather than from the plan, so the
+   * outline is the same shape as the map above it and not a second,
+   * differently-rotated view of the same circuit.
    */
   function drawLocator(ctx, probe, w, h, wFrom, wTo, cursorD) {
     if (!probe || !probe.screen) return;
@@ -1261,7 +1235,11 @@
    * The projection is not invertible — two points of road can share a pixel
    * where a circuit crosses itself — so this asks the honest question instead:
    * of the stations actually drawn, which one is closest to the pointer. The
-   * nearer of two crossing roads wins, which is the one the eye was on.
+   * higher of two crossing roads wins, which is the one the eye was on.
+   *
+   * How near counts scales with the road: zoomed into a corner, the edge of a
+   * twelve-metre road can be a hundred pixels from its own centreline, and a
+   * fixed threshold would ignore a click on the outside of the kerb.
    */
   function distanceAtPoint(geom, x, y) {
     if (!geom || !geom.screen) return null;
@@ -1275,7 +1253,7 @@
         best = { dist, i, depth: sc.depth };
       }
     }
-    if (!best || best.dist > 42) return null;
+    if (!best || best.dist > (geom.hitPx || 42)) return null;
     return best.i / geom.n;
   }
 

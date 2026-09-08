@@ -375,8 +375,8 @@ from the centreline and presenting it as theirs.
 - **The readout sits above the charts, not over them.** A tooltip that follows
   the mouse covers the trace it is describing, and with four stacked bands there
   is always something underneath worth seeing.
-- **The road is shaded by elevation**, cold at the circuit's lowest point and
-  warm at its highest, which puts Eau Rouge on the screen without a word. From
+- **The road is shaded by elevation**, dark at the circuit's lowest point and
+  pale at its highest, which puts Eau Rouge on the screen without a word. From
   the map's `y`, per the phase 0 decision not to store elevation per lap.
 - **V-max** finally appears — the one figure on the reference screens that no
   `LapRecord` field could answer, and which a trace answers trivially.
@@ -420,29 +420,48 @@ An **auto-ranged band re-measures its axis over the window**. That is what makes
 zooming worth doing rather than just bigger: a 40 km/h swing through a corner is
 a flat line on an axis scaled to a 300 km/h straight.
 
-### The map is a solid now, not a plan
+### The map is a plan, and that is a reversal
 
-The flat shaded ribbon of phase 2 is gone. The circuit is drawn the way the
-in-car overlay draws it (`overlay/js/widgets/trackmap.js`): rotated onto its own
-principal axis, tilted to a view, lifted by its elevation, and extruded down to
-a ground plane so the gap between the road and its own foot IS the height of the
-place. Same projection constants, deliberately — a driver who has been staring
-at the in-car map all session should recognise the shape instantly rather than
-learn a second projection of the same circuit.
+Phase 3 drew the circuit the way the in-car overlay draws it
+(`overlay/js/widgets/trackmap.js`): rotated onto its principal axis, tilted to a
+view, lifted by its elevation and extruded down to a ground plane. **That was
+wrong for this screen and was undone on 2026-09-08.** Carl's words: *"it's not
+gonna show the two racing lines very good when you compare two laps"*, and then
+*"maybe 3d map isn't the way forward"*.
 
-Two numbers differ from the overlay's, and only two: the elevation share (0.22
-against 0.16) and its cap (8× against 5×). That map is glanced at mid-corner and
-must not turn a circuit into a sculpture; this one is studied afterwards, where
-seeing the road fall away is the whole point.
+He is right, and the reason is worth writing down so nobody rebuilds it. A tilt
+squashes one axis — 0.55 here — so a metre across the screen and a metre up it
+are different lengths. Two driven lines a metre apart were therefore drawn a
+metre apart where the road ran left-to-right and half that where it ran away
+from the viewer, which is precisely the measurement the comparison exists to
+make. Worse, zoomed into a corner the solid *was* the view: the road filled the
+box and both lines rode along its top edge.
 
-The ribbon is ~1 400 fills, and the scrub cursor repaints on every mouse move,
-so it is **rendered once to an offscreen canvas and blitted** — cached against
-the map object's identity and the window, so scrubbing costs a blit and only
-zooming rebuilds.
+So: **drawn from directly above, to scale, both axes equal.** The elevation did
+not go anywhere — it shades the road surface, pale for the high ground, dark for
+the low, which is how relief has been drawn on a plan for two centuries and
+costs the lines nothing because it is underneath them. The in-car map keeps its
+solid; that one is glanced at mid-corner and this one is measured with.
 
-Zoomed past about three times, a corner fills the box and the map can no longer
-say *where* that corner is. So a **locator inset** appears bottom-right: the
-whole circuit as a thin outline, the visible stretch picked out in cyan, the
+The other half of the reversal is the framing. **Zoom is no longer a multiplier**
+— the bounding box of the stations inside the window is measured and the canvas
+is fitted to it, so clicking a corner gets that corner filling the panel rather
+than a larger picture of the circuit with the corner somewhere in it. Because
+the view has one scale in both directions it can carry a **scale bar**, which
+makes "how far apart were those two lines" a question the map answers.
+
+Clicking the road opens **260 metres**, not a tenth of the lap: a tenth is 550 m
+at COTA and 1 360 m at the Sarthe, and at neither can two lines be told apart.
+A corner is a corner whatever circuit it is on.
+
+The surface is a few hundred fills, and the scrub cursor repaints on every mouse
+move, so it is **rendered once to an offscreen canvas and blitted** — cached
+against the map object's identity and the window, so scrubbing costs a blit and
+only zooming rebuilds.
+
+Zoomed in far enough to read a braking zone, the map can no longer say *where*
+that braking zone is. So a **locator inset** appears bottom-right: the whole
+circuit as a thin outline, the visible stretch picked out in cyan, the
 cursor a dot on it. Drawn from the 1× fit that was built anyway, so it is the
 same shape as the map above it rather than a second, differently-rotated view.
 
@@ -541,7 +560,7 @@ in `src/telemetry/lapDetail.ts`, `careerStats` / `listSessionsWithCareer` in
 `src/telemetry/stintReview.ts`, the ribbon and the delta/wear/locator painters
 in `review-charts.js`, the window and the comparison picker in
 `review-panel.js`. Tests: `test:lapdetail` (82), `test:stintreview` (92),
-`test:reviewcharts` (90). The harness reads two REAL laps off this machine and
+`test:reviewcharts` (104). The harness reads two REAL laps off this machine and
 compares them: `?tab=review&lap=1&vs=1&sq=5&scrub=0.42`.
 
 ---
@@ -564,10 +583,10 @@ map with elevation shading, a scrub cursor tying the two together.
 
 **Phase 3 — Lap comparison. Done 2026-09-07.** See the section below. As
 planned: two laps overlaid, the delta trace between them, micro-sector chips,
-and click-a-chip-to-zoom on both the charts and the map. Carl added four things
-to it on the day — a click-anywhere-on-the-road zoom, the overlay's raised
-elevation ribbon instead of the flat shaded plan, a career strip across the top
-of the tab, and tyre wear lap by lap.
+and click-a-chip-to-zoom on both the charts and the map. Carl added three things
+to it on the day — a click-anywhere-on-the-road zoom, a career strip across the
+top of the tab, and tyre wear lap by lap — and sent the raised map back on
+2026-09-08 (see "The map is a plan, and that is a reversal").
 
 **Phase 4 — Cloud + web.** Migration 0018, Storage upload, and the same
 components running on the pit wall. The reference lap stays **your own**

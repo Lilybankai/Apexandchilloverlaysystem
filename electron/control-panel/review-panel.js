@@ -662,8 +662,23 @@
 
   /** The tightest window allowed, as a lap fraction — about 20 m at Spa. */
   const MIN_SPAN = 0.004;
-  /** What a click on the map opens up to, when nothing was zoomed yet. */
-  const CLICK_SPAN = 0.1;
+  /**
+   * What a click on the map opens up to, when nothing was zoomed yet — in
+   * METRES, not in lap fractions.
+   *
+   * A corner is a corner whatever circuit it is on. A tenth of the lap is
+   * 550 m at COTA and 1 360 m at Le Mans, and at either of those the two
+   * driven lines are still a couple of pixels apart, which is the state the
+   * map was rebuilt to get out of. 260 m is a braking zone, a turn-in and the
+   * exit of it, at Brands Hatch and at the Mulsanne alike.
+   */
+  const CLICK_METRES = 260;
+
+  /** That, as a fraction of THIS lap — bounded, for circuits at both extremes. */
+  function clickSpan() {
+    const m = lapView && lapView.lengthM > 0 ? lapView.lengthM : 5000;
+    return Math.max(0.012, Math.min(0.12, CLICK_METRES / m));
+  }
 
   function setWindow(from, to) {
     if (!lapView) return;
@@ -700,7 +715,7 @@
   function focusOn(dd, span) {
     if (!lapView || !known(dd)) return;
     const [a, b] = lapView.window;
-    const width = span || (b - a >= 0.999 ? CLICK_SPAN : b - a);
+    const width = span || (b - a >= 0.999 ? clickSpan() : b - a);
     setWindow(dd - width / 2, dd + width / 2);
   }
 
@@ -932,10 +947,13 @@
               </div>`}</div>
             <p class="rv-lap__note">${
               d.hasLine
-                ? 'The cyan line is the line you drove, standing on the circuit’s own elevation. '
-                  + 'Click any part of the road to zoom in on it, and Big map for a closer look.'
+                ? `Seen from directly above, to scale. Cyan is the line you drove${
+                  view.vs ? ', violet the lap you are comparing with' : ''
+                }; the road is shaded by its elevation, pale for the high ground. `
+                  + 'Click any part of it to zoom in, and Big map for a closer look.'
                 : 'This lap was recorded before Apex captured the driven line, so the marker follows the centreline. '
-                  + 'Click any part of the road to zoom in on it, and Big map for a closer look.'
+                  + 'The road is shaded by its elevation, pale for the high ground. '
+                  + 'Click any part of it to zoom in, and Big map for a closer look.'
             }</p>
             <div class="rv-rows">
               <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>

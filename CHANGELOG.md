@@ -4,6 +4,43 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.2-beta.6 — 2026-09-08
+
+### Changed
+
+- **The circuit is drawn from directly above now, not tilted.** The lap map was
+  the in-car overlay's raised ribbon — rotated, tipped over and stood on its own
+  elevation. That is a good map to glance at mid-corner and the wrong one to
+  measure with, and this screen measures: the tilt squashed one axis to just
+  over half, so two driven lines a metre apart were drawn a metre apart where
+  the road ran across the screen and half that where it ran away from you.
+  Zoomed into a corner, the slab filled the box and both lines rode its top
+  edge. It is now a plan — straight down, to scale, both axes equal — so the
+  line you drove and the line you are comparing with are two separate lines
+  wherever they go, in cyan and violet, each with its own car on it at the
+  point of the road you are reading. The elevation did not go anywhere: it
+  shades the road surface instead, pale for the high ground.
+
+- **Zoom frames the corner rather than multiplying the map.** The window's own
+  stretch of road is measured and the box is fitted to it, so a click lands on
+  that corner filling the panel instead of a bigger picture of the whole
+  circuit with the corner somewhere in it. Clicking the road opens 260 m — a
+  braking zone, a turn-in and the exit — at Brands Hatch and at Le Mans alike,
+  rather than a tenth of the lap, which was 550 m at COTA and 1 360 m at the
+  Sarthe. There is a scale bar in the corner, so "how far apart were those two
+  lines" is now a question the map answers.
+
+### Fixed
+
+- **The lap's header was wedged against the top of its card.** The four small
+  buttons in the Review tab are the only ones in the app with an icon inside
+  them, and the shared icon rule stacked each glyph on top of its own label —
+  two 40 px buttons setting the height of two rows of 13 px text, with the
+  compare bar pulled up into them by a negative margin. The buttons are laid
+  out inline, the negative margin is gone, and the header, the compare bar and
+  the rule under them are evenly spaced. The session's own header strip got the
+  same air under it that every other card's heading has.
+
 ## 0.99.2-beta.5 — 2026-09-08
 
 ### Fixed

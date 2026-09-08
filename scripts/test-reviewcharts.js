@@ -47,7 +47,10 @@ function fakeCanvas(w = 640, h = 160) {
     moveTo(x, y) { calls.push(['moveTo', x, y]); },
     lineTo(x, y) { calls.push(['lineTo', x, y]); },
     arc(x, y, r) { calls.push(['arc', x, y, r]); },
-    stroke() { calls.push(['stroke']); }, fill() { calls.push(['fill']); },
+    stroke() { calls.push(['stroke']); },
+    // The style goes in with the fill: the map's elevation cue IS a colour,
+    // so a test that only counted fills could not see it at all.
+    fill() { calls.push(['fill', this.fillStyle]); },
     fillText(t, x, y) { calls.push(['fillText', t, x, y]); },
     setLineDash(d) { calls.push(['setLineDash', (d || []).length]); },
     strokeStyle: '', fillStyle: '', lineWidth: 1, font: '',
@@ -368,6 +371,56 @@ function squareMap(rise) {
 }
 
 {
+  // The surface says where the hills are: the high ground is painted lighter
+  // than the dip. This is the elevation cue that replaced the raised solid,
+  // and on a plan view it is the only one there is.
+  const { canvas, calls } = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(canvas, squareMap(20), chans(160), {});
+  const reds = calls
+    .filter(([op, style]) => op === 'fill' && /^rgb\(/.test(String(style)))
+    .map(([, style]) => Number(String(style).match(/\d+/)[0]));
+  check('the road is shaded by its own elevation',
+    reds.length > 20 && Math.max(...reds) - Math.min(...reds) > 30,
+    `${Math.min(...reds)}..${Math.max(...reds)} over ${reds.length} fills`);
+
+  const flat = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(flat.canvas, squareMap(0), chans(160), {});
+  const one = new Set(flat.calls
+    .filter(([op, style]) => op === 'fill' && /^rgb\(/.test(String(style)))
+    .map(([, style]) => String(style)));
+  check('and a circuit with no rise is painted one colour', one.size === 1,
+    [...one].join(' '));
+}
+
+{
+  // Both cars, at the same point of the ROAD. Where the lap you are comparing
+  // with was when you were here is the question this map is being asked, and
+  // one dot cannot answer it.
+  const mineTr = chans(160);
+  mineTr.x = mineTr.d.map((v) => v * 100);
+  mineTr.z = mineTr.d.map(() => 50);
+  const theirsTr = chans(160);
+  theirsTr.x = theirsTr.d.map((v) => v * 100);
+  theirsTr.z = theirsTr.d.map(() => 70);
+
+  const { canvas, calls } = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(canvas, squareMap(0), mineTr, {
+    cursorD: 0.5, cursorIndex: 80, vs: theirsTr,
+  });
+  const mine = calls.filter(([op, , , r]) => op === 'arc' && r === 4)[0];
+  const theirs = calls.filter(([op, , , r]) => op === 'arc' && r === 3.2)[0];
+  check('the comparison lap gets a car of its own', !!theirs);
+  check('…placed on its own line, not on yours',
+    !!mine && !!theirs && Math.abs(mine[2] - theirs[2]) > 12,
+    mine && theirs ? `${Math.round(mine[2])} vs ${Math.round(theirs[2])}` : 'missing');
+  check('and a lap with no comparison draws one car', (() => {
+    const solo = fakeCanvas(300, 300);
+    CHARTS.drawLapMap(solo.canvas, squareMap(0), mineTr, { cursorD: 0.5, cursorIndex: 80 });
+    return solo.calls.filter(([op, , , r]) => op === 'arc' && r === 3.2).length === 0;
+  })());
+}
+
+{
   check('a circuit with no shape paints nothing',
     CHARTS.drawLapMap(fakeCanvas().canvas, { points: [] }, chans(10), {}) === null);
   check('no map at all is safe',
@@ -537,9 +590,43 @@ function squareMap(rise) {
   const near = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, map, chans(160), {
     window: [0.4, 0.5],
   });
-  check('a tenth of the lap zooms in', near.zoom > 4, `${near.zoom}`);
+  check('a tenth of the lap zooms in', near.zoom > 2, `${near.zoom}`);
   check('the elevation is unchanged by zooming',
     near.minY === wide.minY && near.maxY === wide.maxY);
+
+  // Zoom is not a multiplier any more — the box is FITTED to the stretch of
+  // road the window names. So the test is not "how many times bigger" but the
+  // thing that actually matters: that stretch, and no more of it, fills the
+  // panel. A tenth of this square lap is 40 m of one straight side.
+  {
+    const g = near.geom;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (let i = Math.floor(0.4 * g.n); i <= Math.ceil(0.5 * g.n); i++) {
+      const sc = g.screen[i % g.n];
+      top = Math.min(top, sc.ly, sc.ry);
+      bottom = Math.max(bottom, sc.ly, sc.ry);
+    }
+    check('and the window\'s own stretch of road is what fills the box',
+      bottom - top > 240 * 0.6 && top > -1 && bottom < 241,
+      `${Math.round(top)}..${Math.round(bottom)} of 240`);
+  }
+
+  // Both axes carry the same scale — the whole reason the tilt went. Ten
+  // metres north and ten metres east have to land ten metres apart on screen,
+  // or two driven lines are drawn further apart on one heading than another.
+  {
+    const g = near.geom;
+    const o = g.project(0, 0);
+    const east = g.project(10, 0);
+    const north = g.project(0, 10);
+    const dEast = Math.hypot(east.x - o.x, east.y - o.y);
+    const dNorth = Math.hypot(north.x - o.x, north.y - o.y);
+    check('a metre is a metre whichever way the road points',
+      Math.abs(dEast - dNorth) < 0.01 && Math.abs(dEast - 10 * g.scale) < 0.01,
+      `${dEast.toFixed(2)} vs ${dNorth.toFixed(2)}`);
+    check('and the map says how big a metre is', near.metresPerPx > 0);
+  }
 
   // The locator only appears once there is something to be lost.
   const zoomedCalls = fakeCanvas(300, 240);
