@@ -70,6 +70,12 @@ build script, and this is the fact itself.
    flagged, its `latest.yml` is correct, and it is invisible. This is what
    happened to `v0.97.2-beta.3` on 2026-09-04.
 
+   This tag goes on the **source** repo, which is where the commit is and what
+   gives the mirror something to attach to. The releases repo needs a tag of
+   its own for the same reason, and gets one automatically —
+   `tag-release-repo.js` runs inside `npm run release`. See
+   [Moving the release feed](#moving-the-release-feed).
+
 5. Publish:
 
    ```bash
@@ -119,7 +125,7 @@ hand-uploading with `gh release upload` does not (it turns spaces into dots and
 the manifest stops matching). Verify with:
 
 ```bash
-gh release view v0.57.1 --json assets --jq '.assets[].name'
+gh release view v0.57.1 --repo Lilybankai/apex-aio-releases --json assets --jq '.assets[].name'
 ```
 
 Note that a beta publishes `latest.yml`, not `beta.yml` — for the GitHub
@@ -141,6 +147,85 @@ Then check what `/releases/latest` actually resolves to:
 ```bash
 gh release view --json tagName,isPrerelease
 ```
+
+---
+
+## Moving the release feed
+
+**The source repo is private. Installers go to a public repo of their own:
+[`Lilybankai/apex-aio-releases`](https://github.com/Lilybankai/apex-aio-releases).**
+GitHub release assets on a private repo are not publicly downloadable, so the
+two cannot be the same repository.
+
+One file decides this — `scripts/lib/release-target.js` — and three things read
+it: `electron-builder.js` (which bakes it into every package), `publish-notes.js`
+(which edits the release it names), and `mirror-release.js`. Nothing else should
+ever name a repo.
+
+### The thing that makes this dangerous
+
+`electron-builder.js`'s `publish` block is written into
+`resources/app-update.yml` **inside the package**, and electron-updater reads
+that file rather than anything on GitHub. So **an installed app checks the repo
+its own build was told to check** — forever, until it installs a build that says
+otherwise.
+
+Which means the old repo cannot simply be switched off. Every copy already on a
+driver's PC is looking at `Apexandchilloverlaysystem`, and it can only learn
+about the new address from a build it downloads *from the old repo*. Take the
+old repo private first and every one of those installs stops updating — no
+error, no message, no way back except downloading an installer by hand. Nobody
+is told, including us: the check just quietly answers "up to date".
+
+### So: every release goes to both, for now
+
+`npm run release` does this on its own. `MIRROR_TO_LEGACY` in
+`scripts/lib/release-target.js` is true, so `postrelease` runs
+`mirror-release.js` after `publish-notes.js` and copies the same three assets to
+a release of the same tag on the old repo. The output line to look for:
+
+```
+  mirror-release: v1.2.3 mirrored to Lilybankai/Apexandchilloverlaysystem (3 assets, stable) — existing installs will find it.
+```
+
+If it fails, the release itself is fine — anyone on a recent build gets it — but
+**everyone on an older build is not being offered it**, and the script prints the
+exact `gh release create` to run by hand.
+
+### Closing the window
+
+In this order, and not before you are satisfied the stragglers are gone:
+
+1. Check the old repo's release download counts have stopped climbing
+   (`gh api repos/Lilybankai/Apexandchilloverlaysystem/releases --jq '.[] | "\(.tag_name) \(.assets[0].download_count)"'`).
+   A driver's own `%APPDATA%\apex-overlay-system\updater.log` names the version
+   it decided was latest, which is the other way to tell.
+2. Set `MIRROR_TO_LEGACY = false` in `scripts/lib/release-target.js`.
+3. **Then** make the source repo private.
+
+Anyone who never opened the app during the window is stranded on the version
+they have and has to install by hand from the releases repo. The length of the
+window is the whole mitigation — there is no clever way to reach an app that has
+stopped being able to hear us.
+
+### What the releases repo gets per release
+
+A commit and a tag, made by `tag-release-repo.js` before the publish step. Not
+decoration: with no commits of its own, GitHub would create every tag at the
+same static README commit, every release would share a tag date, and the beta
+channel — which walks `releases.atom` in tag-date order — would order them
+arbitrarily. The commit is this version's `CHANGELOG.md`, so the repo's history
+is the release history.
+
+### Things that still name the old repo on purpose
+
+- `scripts/lib/release-target.js`, as `LEGACY_REPO`. That is the point of it.
+- Git remotes. `origin` is the source repo and stays that way; tags are pushed
+  there as normal, which is also what gives the mirror a tag to attach to.
+- GitHub Pages for the web pit wall (`aio.apexandchillracing.co.uk`) is served
+  from the source repo and keeps working while it is private — that needs a
+  paid GitHub plan, and this account has one. On a free plan, taking the repo
+  private takes the pit wall down with it.
 
 ## Code signing
 

@@ -4,6 +4,22 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.4-beta.1 — 2026-09-08
+
+### Changed
+
+- **Apex now updates itself from its own downloads page.** Installers have moved
+  to a repository of their own —
+  [apex-aio-releases](https://github.com/Lilybankai/apex-aio-releases) — and
+  this build is the one that knows to look there. The Releases link in What's
+  new and the download link you send team-mates both point at it now.
+
+  Nothing to do, and nothing changes about how updates arrive: the app still
+  checks on its own, still tells you when there is something new, and still
+  installs it when you say so. Updates will keep being published to the old
+  address as well for a while, so a copy that has not been opened in a month
+  still finds its way across.
+
 ## 0.99.3 — 2026-09-08
 
 ### Changed

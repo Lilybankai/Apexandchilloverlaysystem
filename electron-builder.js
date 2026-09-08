@@ -1,6 +1,8 @@
 'use strict';
 
 const { execFileSync } = require('node:child_process');
+// Which repo the installers go to — see the file for why there are two.
+const TARGET = require('./scripts/lib/release-target.js');
 
 /**
  * electron-builder configuration.
@@ -258,10 +260,23 @@ module.exports = {
   // give every existing user a second, parallel install.
   appId: 'com.apexandchill.overlaysystem',
   productName: 'Apex AIO System',
+  /**
+   * Where the installers go, and — the half that is easy to miss — where every
+   * installed copy will look for them forever after.
+   *
+   * electron-builder writes this block into `resources/app-update.yml` inside
+   * the package, and electron-updater reads THAT file, not this one. So an
+   * installed app checks the repo named by the build it is running, which is
+   * why moving this is a two-step migration rather than an edit: a build has
+   * to reach a driver before the repo it used to look at can go away. See
+   * docs/RELEASING.md, "Moving the release feed".
+   *
+   * The source repo is private. This one holds nothing but installers.
+   */
   publish: {
     provider: 'github',
-    owner: 'Lilybankai',
-    repo: 'Apexandchilloverlaysystem',
+    owner: TARGET.OWNER,
+    repo: TARGET.REPO,
     releaseType: 'release',
   },
   directories: {

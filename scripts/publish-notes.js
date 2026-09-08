@@ -37,8 +37,22 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 const version = (wanted || pkg.version).replace(/^v/, '');
 const tag = `v${version}`;
 
+const TARGET = require('./lib/release-target.js');
+
+/**
+ * `gh`, always against the RELEASES repo.
+ *
+ * `--repo` is not optional politeness. Without it `gh` resolves the repo from
+ * the git remote of the directory it runs in — which is the SOURCE repo, a
+ * different repository that has no release by this tag. The edit would either
+ * fail or, worse, succeed against something else.
+ */
 function gh(args) {
-  return execFileSync('gh', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('gh', [...args, '--repo', TARGET.SLUG], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 // The notes are cheap to rebuild and must match the version being published,
@@ -61,7 +75,7 @@ try {
   console.error(
     `\n  publish-notes: could not set the body of ${tag}.\n  ${detail}\n\n` +
       `  The release itself is fine — only its notes are missing. Fix with:\n` +
-      `    gh release edit ${tag} --notes-file build/release-notes.md\n`,
+      `    gh release edit ${tag} --repo ${TARGET.SLUG} --notes-file build/release-notes.md\n`,
   );
   process.exit(1);
 }
@@ -104,7 +118,7 @@ try {
 } catch (err) {
   console.error(
     `  publish-notes: could not read the prerelease flag on ${tag}. Check by hand:\n` +
-      `    gh release view ${tag} --json isPrerelease`,
+      `    gh release view ${tag} --repo ${TARGET.SLUG} --json isPrerelease`,
   );
   process.exit(1);
 }
@@ -128,9 +142,9 @@ if (flagged !== shouldBePrerelease) {
       `\n  publish-notes: COULD NOT FIX THE CHANNEL OF ${tag}.\n  ${detail}\n\n` +
         (shouldBePrerelease
           ? `  This release is visible to EVERY driver on the stable channel. Fix it now:\n` +
-            `    gh release edit ${tag} --prerelease=true --latest=false\n`
+            `    gh release edit ${tag} --repo ${TARGET.SLUG} --prerelease=true --latest=false\n`
           : `  This release is hidden from the stable channel. Fix it with:\n` +
-            `    gh release edit ${tag} --prerelease=false --latest=true\n`),
+            `    gh release edit ${tag} --repo ${TARGET.SLUG} --prerelease=false --latest=true\n`),
     );
     process.exit(1);
   }

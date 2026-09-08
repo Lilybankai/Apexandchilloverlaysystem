@@ -136,6 +136,13 @@ if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
   process.exit(1);
 }
 
+// The releases repo gets a commit and the tag BEFORE the publish step, for the
+// same reason the source repo does: if the tag does not already exist, GitHub
+// invents it at the default branch's HEAD — which in a repo holding one static
+// README is the same commit every time, so every release would share a tag
+// date and the beta channel's ordering would be arbitrary. See the script.
+run('tagging the releases repo', path.join(__dirname, 'tag-release-repo.js'), [version]);
+
 // EP_PRE_RELEASE is what actually flags the GitHub release as a prerelease, and
 // it is set here rather than in package.json because `build.publish.releaseType`
 // is a constant and the channel is not. The env var wins over `releaseType`

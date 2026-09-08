@@ -1,5 +1,10 @@
 # Apex AIO System
 
+> **Downloads live in [Lilybankai/apex-aio-releases](https://github.com/Lilybankai/apex-aio-releases/releases/latest).**
+> This repository is the source. Installers are published to the releases repo,
+> which is where the app's own updater looks — see
+> [docs/RELEASING.md](docs/RELEASING.md#moving-the-release-feed).
+
 Lightweight **rFactor 2 / Le Mans Ultimate** telemetry overlay system for the
 **Apex & Chill Racing League** live streams.
 

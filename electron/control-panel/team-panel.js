@@ -897,7 +897,7 @@
   }
 
   // ── Crew card (Phase 2) ──────────────────────────────────────────────────
-  const DOWNLOAD_URL = 'https://github.com/Lilybankai/Apexandchilloverlaysystem/releases/latest';
+  const DOWNLOAD_URL = 'https://github.com/Lilybankai/apex-aio-releases/releases/latest';
   let crewMsg = null; // {kind: 'ok'|'err', text} — one-shot feedback line
   let crewBusy = false;
   let showJoinForm = false; // "Join another" toggles the code form back in

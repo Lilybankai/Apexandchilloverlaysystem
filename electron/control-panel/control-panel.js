@@ -6082,7 +6082,7 @@
    * here may be able to inject markup into the panel.
    */
 
-  const RELEASES_URL = 'https://github.com/Lilybankai/Apexandchilloverlaysystem/releases';
+  const RELEASES_URL = 'https://github.com/Lilybankai/apex-aio-releases/releases';
 
   const sheet = $('#whatsnew');
   const sheetBody = $('#whatsnew-body');

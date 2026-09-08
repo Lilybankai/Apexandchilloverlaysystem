@@ -20,7 +20,7 @@
     "prerelease": "node scripts/check-changelog.js",
     "release": "node scripts/release.js",
     "release:dry": "node scripts/release.js --dry-run",
-    "postrelease": "node scripts/publish-notes.js",
+    "postrelease": "node scripts/publish-notes.js && node scripts/mirror-release.js",
     "release:notes": "node scripts/release-notes.js",
     "release:body": "node scripts/publish-notes.js",
     "changelog:check": "node scripts/check-changelog.js",
@@ -110,7 +110,8 @@
     "test:stallprofile": "node scripts/test-stallprofile.js",
     "test:gamepad": "node scripts/test-gamepad-rescan.js",
     "reference-times": "node scripts/fetch-reference-times.js",
-    "reference-times:check": "node scripts/fetch-reference-times.js --check"
+    "reference-times:check": "node scripts/fetch-reference-times.js --check",
+    "release:mirror": "node scripts/mirror-release.js"
   },
   "engines": {
     "node": ">=18"
