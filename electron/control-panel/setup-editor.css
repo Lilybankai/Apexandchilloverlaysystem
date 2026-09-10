@@ -1147,6 +1147,12 @@
   padding: 12px 18px;
   border-top: 1px solid var(--line);
   background: var(--panel-2);
+  /* On a phone the step's text is taller than the panel and the body scrolls.
+     A line cut clean by an opaque bar reads as text that is MISSING; the same
+     line sliding under a soft edge reads as text that is below. */
+  box-shadow: 0 -12px 16px -12px rgba(0, 0, 0, 0.75);
+  position: relative;
+  z-index: 1;
 }
 
 .su-guide__dots {

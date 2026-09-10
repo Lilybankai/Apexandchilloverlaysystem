@@ -322,13 +322,20 @@
     // not been panned away from it.
     const me = standings.find((r) => r.isPlayer) || null;
 
+    // Every cell carries the name of its column. Fourteen columns is a
+    // pit-wall monitor's sheet; on a phone it is 767px of table in a 340px
+    // widget, and the half a driver actually reads — position, gap, last lap —
+    // is the half that ends up off the screen. The names are the hook the
+    // container queries in team-panel.css fold by, so the sheet SHEDS columns
+    // as its box narrows instead of being cropped by one.
     const head = `
       <tr>
-        <th>P</th><th>Ovr</th><th>#</th><th class="team-t__driver">Driver</th>
-        <th>Pit</th><th>Stops</th>
-        <th>Last</th><th>Best</th><th>Avg 5</th>
-        <th>Gap</th><th>Int</th>${me ? '<th>vs Me</th>' : ''}
-        ${anyVe ? '<th>VE</th>' : ''}<th>Tyre</th>
+        <th data-col="p">P</th><th data-col="ovr">Ovr</th><th data-col="num">#</th>
+        <th class="team-t__driver" data-col="driver">Driver</th>
+        <th data-col="pit">Pit</th><th data-col="stops">Stops</th>
+        <th data-col="last">Last</th><th data-col="best">Best</th><th data-col="avg">Avg 5</th>
+        <th data-col="gap">Gap</th><th data-col="int">Int</th>${me ? '<th data-col="vsme">vs Me</th>' : ''}
+        ${anyVe ? '<th data-col="ve">VE</th>' : ''}<th data-col="tyre">Tyre</th>
       </tr>`;
     const cols = (anyVe ? 13 : 12) + (me ? 1 : 0);
 
@@ -371,20 +378,20 @@
           : fmtLap(r.avg5Sec);
         return `
         <tr class="${r.isPlayer ? 'team-t__me' : ''}">
-          <td>${fmt0(r.classPosition)}</td>
-          <td class="team-t__dim">${fmt0(r.position)}</td>
-          <td class="team-t__num">${r.carNumber != null ? esc(String(r.carNumber)) : ''}</td>
-          <td class="team-t__driver">${esc(r.driverName || '')}</td>
-          <td>${pitCell(r)}</td>
-          <td>${fmt0(r.pitStops)}</td>
-          <td>${fmtLap(r.lastLapSec)}</td>
-          <td>${fmtLap(r.bestLapSec)}</td>
-          <td>${avg}</td>
-          <td>${gap}</td>
-          <td class="team-t__dim">${intervals[i]}</td>
-          ${me ? `<td class="team-t__vsme">${fmtVsMe(r, me)}</td>` : ''}
-          ${anyVe ? `<td>${known(r.virtualEnergy) ? `${Math.round(r.virtualEnergy)}%` : dash}</td>` : ''}
-          <td>${r.tyreCompound ? esc(String(r.tyreCompound)).slice(0, 6) : dash}</td>
+          <td data-col="p">${fmt0(r.classPosition)}</td>
+          <td class="team-t__dim" data-col="ovr">${fmt0(r.position)}</td>
+          <td class="team-t__num" data-col="num">${r.carNumber != null ? esc(String(r.carNumber)) : ''}</td>
+          <td class="team-t__driver" data-col="driver">${esc(r.driverName || '')}</td>
+          <td data-col="pit">${pitCell(r)}</td>
+          <td data-col="stops">${fmt0(r.pitStops)}</td>
+          <td data-col="last">${fmtLap(r.lastLapSec)}</td>
+          <td data-col="best">${fmtLap(r.bestLapSec)}</td>
+          <td data-col="avg">${avg}</td>
+          <td data-col="gap">${gap}</td>
+          <td class="team-t__dim" data-col="int">${intervals[i]}</td>
+          ${me ? `<td class="team-t__vsme" data-col="vsme">${fmtVsMe(r, me)}</td>` : ''}
+          ${anyVe ? `<td data-col="ve">${known(r.virtualEnergy) ? `${Math.round(r.virtualEnergy)}%` : dash}</td>` : ''}
+          <td data-col="tyre">${r.tyreCompound ? esc(String(r.tyreCompound)).slice(0, 6) : dash}</td>
         </tr>`;
       }).join('');
       return `
@@ -400,8 +407,8 @@
       <p class="team-note">Gap is to the class leader, Int to the car ahead in class,
       vs&nbsp;Me to your own car (− ahead of you, + behind). Lap gaps carry a decimal
       so they can be compared row to row — a whole-lap figure is floored per row and
-      two of them cannot be subtracted. A superscript on Avg&nbsp;5 means it is the
-      mean of fewer than five laps.</p>`);
+      two of them cannot be subtracted. <span data-note="avg">A superscript on
+      Avg&nbsp;5 means it is the mean of fewer than five laps.</span></p>`);
   }
 
   // ── Positions chart ──────────────────────────────────────────────────────
@@ -1233,6 +1240,9 @@
 
   /** The Board menu: which preset is in force, and which widgets are on. */
   function renderBoardMenu() {
+    // Toggling a widget changes the menu's height, which can push it off the
+    // bottom of a phone; re-place it whenever its contents change.
+    if (els.boardMenu && !els.boardMenu.hidden) requestAnimationFrame(placeBoardMenu);
     if (!els.widgetList || !board) return;
     const name = board.presetName();
     for (const btn of els.presets.querySelectorAll('[data-preset]')) {
@@ -1245,11 +1255,47 @@
       </button>`).join(''));
   }
 
+  /**
+   * Keep the open Board menu inside the window.
+   *
+   * The menu hangs off the RIGHT edge of its button, which is right while the
+   * button is where it was designed to be — the right end of the header strip.
+   * On a phone the strip wraps and the button lands near the LEFT edge, and a
+   * 330px panel hung off it then sits 170px off the side of the screen: the
+   * whole menu, invisible, with no scrollbar to reach it. Nothing about that
+   * depends on a width a media query could name — a long circuit name wraps
+   * the strip on a tablet too — so the menu is measured after it is shown and
+   * pushed back inside by however much it missed by.
+   */
+  function placeBoardMenu() {
+    const m = els.boardMenu;
+    if (!m || m.hidden) return;
+    m.style.right = '';
+    m.style.maxHeight = '';
+    const pad = 10;
+    const doc = document.documentElement;
+    const vw = doc.clientWidth;
+    const box = m.getBoundingClientRect();
+    // `right: 0` is relative to the button, so a negative right shifts the
+    // menu towards the right of the screen and a positive one towards the left.
+    if (box.left < pad) m.style.right = `${Math.round(box.left - pad)}px`;
+    else if (box.right > vw - pad) m.style.right = `${Math.round(box.right - vw + pad)}px`;
+    // And it may only be as tall as the room under the button it opened from:
+    // a phone held sideways has 390px of screen and the widget list is longer
+    // than that, so the list scrolls inside the menu rather than the last few
+    // widgets falling off the bottom of the world.
+    const room = doc.clientHeight - box.top - pad;
+    if (room > 160 && box.height > room) m.style.maxHeight = `${Math.round(room)}px`;
+  }
+
   function setBoardMenu(open) {
     if (!els.boardMenu) return;
     els.boardMenu.hidden = !open;
     els.boardToggle.setAttribute('aria-expanded', String(!!open));
-    if (open) renderBoardMenu();
+    if (open) {
+      renderBoardMenu();
+      placeBoardMenu();
+    }
   }
 
   function setCrewOpen(open) {
@@ -1360,6 +1406,8 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && els.boardMenu && !els.boardMenu.hidden) setBoardMenu(false);
   });
+  // Rotating a phone re-wraps the strip under an open menu.
+  window.addEventListener('resize', placeBoardMenu);
 
   if (els.crewToggle) {
     els.crewToggle.addEventListener('click', () => setCrewOpen(!prefs.crewOpen));

@@ -4,6 +4,43 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## Unreleased
+
+### Fixed
+
+- **The pit wall fits a phone.** Crew watching the board on
+  aio.apexandchillracing.co.uk were losing the right-hand half of it, and the
+  Board button opened a menu that landed off the side of the screen entirely.
+  Three things were wrong and all three are fixed.
+
+  The timing sheet is fourteen columns and needs about 770 pixels. In a phone's
+  340 it was simply cropped — and what fell off the right was Gap, Int and
+  vs Me, the three columns the sheet exists to show. It now *sheds* columns as
+  its box narrows, least-read first: the overall position goes before the
+  reference lap times, and those go before the pit detail; class position, car
+  number, driver, last lap and the gap to the class leader never go. Every
+  window from a 320px phone to a 4K monitor now shows a sheet that fits, and a
+  full-width sheet on a desktop keeps all fourteen — it tightens the columns
+  before it drops any.
+
+  The Board menu is measured when it opens and pushed back inside the window,
+  so it no longer matters where the header strip has wrapped its button to, and
+  it can never be taller than the room under it.
+
+  And the page scrolls the way a web page should. The desktop panel locks
+  itself to the window and scrolls one panel inside it, which in a browser
+  parks the bottom of the board underneath the phone's own toolbar with no way
+  to reach it. Below tablet width the web build scrolls the document instead,
+  so the URL bar collapses out of the way and the last widget is reachable.
+
+  Smaller things in the same sweep: the circuit name and race state keep a
+  readable width instead of being squeezed to nothing by the buttons beside
+  them, the forecast wraps onto a second line rather than hiding half of itself
+  behind a sideways scroll, lap times stay inside their tiles in a narrow
+  widget, the invite code wraps instead of running off the edge, and the
+  walkthrough's text now visibly continues under its footer instead of looking
+  like it stops mid-sentence.
+
 ## 0.99.4 — 2026-09-08
 
 ### Changed

@@ -30,6 +30,41 @@
 .topbar { padding-top: env(safe-area-inset-top, 0); box-sizing: content-box; }
 .content { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0)); }
 
+/* ── Phones and tablets scroll the PAGE, not a box inside it ──────────────
+   The desktop panel is an application frame: html and body are locked to the
+   window with `overflow: hidden` and one inner div does the scrolling, so
+   switching tabs can never shift the nav. In a browser that same frame is a
+   trap. A phone's "window" is not a fixed thing — the URL bar and the toolbar
+   slide in and out and the viewport changes height under the page — and a
+   layout pinned to 100% of it puts its last rows underneath the browser's own
+   chrome, where no amount of scrolling inside the box will reach them. It also
+   stops the URL bar from ever collapsing, so the screen is permanently ~110px
+   shorter than the phone.
+
+   Below the width where the board stacks anyway, the frame is unlocked: the
+   document scrolls the way every other page on the phone does, the strip stays
+   put at the top because it is sticky rather than fixed-height, and the bottom
+   of the board can always be reached. */
+@media (max-width: 900px) {
+  html, body { height: auto; overflow: visible; }
+  .app { height: auto; min-height: 100vh; min-height: 100dvh; }
+  .body { display: block; min-height: 0; }
+  .content {
+    overflow: visible;
+    min-height: 0;
+    /* Room under the last widget for the home-bar and for a toolbar that
+       slides back in over the page. */
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0));
+  }
+  /* Identity and the way out stay reachable while the board scrolls past. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--bg);
+  }
+}
+
 /* Phones: the strip is 46px of identity — drop the email and the subtitle so
    the sign-out button always has room, and tighten the content margin so the
    board gets the pixels. */
