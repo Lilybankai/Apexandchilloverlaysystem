@@ -277,6 +277,34 @@ five fuel-only race stops (≥ 5 L added, no tyres, ≥ 5 s stationary) for
 `refuelLPerSec`, and at least thirty clean laps with a measured burn for
 `burnBaseLPerLap`; below that a median is a guess with a decimal point.
 
+> **Status 2026-09-11**, after a week of live uploads — 2,908 laps and 803 stops
+> from 24 drivers across 16 circuits and 42 class/track pairs. Migration `0019`
+> scores all four fittable coefficients on the Admin card, not the two above,
+> and changes one rule in this section:
+>
+> **`refuelLPerSec` is keyed by CLASS, not by (class, track).** Litres per second
+> is the car's fuel rig; LMU does not vary it by circuit. Measured: LMP2_ELMS
+> reads p25 1.58 / median 1.58 / p75 1.61 across four tracks and three drivers.
+> The distinction is not academic — fuel-only race stops are the scarcest row in
+> the corpus by two orders of magnitude (27 of 803 stops survive the filters).
+> Split per pair, exactly one pair reached five; pooled per class, GT3 (16) and
+> LMP2_ELMS (7) clear it and **nine pairs become fittable on all four**.
+>
+> Two capture faults the fit must work around, both found in that week's data:
+>
+> - **`booked_sec` is not usable.** LMU reports `2.0` on stops that took 60 L
+>   aboard, so §5's "prefer the sim's own booked stop length" cannot be done
+>   until that read is fixed — it looks sampled before the service is booked.
+> - **`tyres_changed = false` does not mean fuel-only.** A driver swap or a
+>   repair sits inside the filter (a GT3 stop added 23.3 L across 102 s
+>   stationary at Le Mans). Every figure must stay a percentile, never a mean,
+>   and `fit-strategy.js` must drop stops whose implied L/s falls well below the
+>   class median rather than trust the flag. `supabase/queries/corpus-readiness.sql`
+>   query 3 lists them.
+>
+> `kLift` remains unfittable and is deliberately unscored: drivers in the corpus
+> do not lift on purpose, so `save` refuses on principle, as §7 requires.
+
 ```json
 {
   "carClass": "LMP2",

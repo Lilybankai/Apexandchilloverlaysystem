@@ -1051,15 +1051,61 @@ html, body {
   grid-template-columns: 1fr 60px 96px 160px;
 }
 
-/* The strategy corpus is a numbers table — six narrow figures after the
-   class/track cell. Figures are right-aligned and monospaced so a column of
-   medians can be read down; a zero or a missing median is dimmed rather than
-   hidden, because "no fuel stops yet at Spa" is the information. */
+/* The strategy corpus is a numbers table — five narrow figures after the
+   class/track cell, then the readiness chips. Figures are right-aligned and
+   monospaced so a column of medians can be read down; a zero or a missing
+   median is dimmed rather than hidden, because "no fuel stops yet at Spa" is
+   the information. The wear-laps column was dropped when the chips arrived: it
+   was only ever read to answer "can we fit tyre deg here?", which the T chip
+   now answers properly (a wear count alone never could — the cliff term needs
+   a stint that ran past lap 15, and 200 laps of five-lap runs cannot fit one). */
 .admin-table__head--corpus,
 .admin-table--corpus .admin-row {
-  grid-template-columns: 1fr 76px 56px 72px 56px 72px 56px;
+  grid-template-columns: 1fr 76px 56px 72px 56px 56px 104px;
 }
 .admin-table__head--corpus span:not(:first-child) { text-align: right; }
+
+/* Readiness chips: one letter per coefficient, lit when the pair clears that
+   coefficient's bar. Four shapes in a fixed order (B K T R) rather than a count
+   or a percentage, so the same letter sits in the same place on every row and
+   the eye reads DOWN a column to find "everything is ready except refuel" —
+   which is exactly the corpus's shape while race stops stay scarce. Grey is a
+   real state here, not an absence, so an unlit chip keeps its shape and its
+   letter and only loses contrast. */
+.corpus-fits {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.corpus-fit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-3);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+.corpus-fit[data-ready="true"] {
+  background: rgba(53, 208, 127, 0.14);
+  border-color: rgba(53, 208, 127, 0.35);
+  color: var(--ok);
+}
+/* A rate borrowed from the class pool rather than measured at this circuit.
+   The row still counts as ready — a fuel rig does not change by track — but a
+   reader deserves to see which number is this pair's own. */
+.admin-row__num[data-pooled="true"]::after {
+  content: "·";
+  margin-left: 2px;
+  color: var(--text-3);
+}
 .admin-row__num {
   font-family: var(--font-mono);
   font-size: 12px;

@@ -3560,12 +3560,33 @@
     if (empty) empty.hidden = true;
     for (const row of rows) list.append(buildCorpusRow(row));
     if (foot) {
-      // The bar a fit needs, stated once, so nobody has to remember it: a
-      // refuel rate wants a handful of fuel-only race stops; a burn wants a
-      // few dozen clean laps. Below that a median is a guess with a decimal.
-      const ready = rows.filter((r) => Number(r.fuelStops) >= 5 && Number(r.burnLaps) >= 30).length;
-      foot.textContent =
-        `${plural(rows.length, 'class/track pair')} · ${ready} ready to fit (≥5 fuel stops and ≥30 burn laps)`;
+      // "Ready" means all four coefficients, not the two this card used to
+      // score. A pair that can fit a burn and nothing else is not ready to
+      // produce a coefficient row, and saying so was the old foot's mistake.
+      //
+      // The per-coefficient tallies matter more than the total: they say which
+      // ONE thing is holding the corpus back, which is the only actionable
+      // number here. Older databases (pre-0019) send no fit* flags at all, so
+      // fall back to the two bars this card has always been able to compute.
+      const has = rows.some((r) => r.fitBurn !== undefined);
+      const score = (r) =>
+        has
+          ? { b: !!r.fitBurn, k: !!r.fitKFuel, t: !!r.fitTyre, r: !!r.fitRefuel }
+          : { b: Number(r.burnLaps) >= 30, k: false, t: false, r: Number(r.fuelStops) >= 5 };
+      const tally = { b: 0, k: 0, t: 0, r: 0, all: 0 };
+      for (const row of rows) {
+        const s = score(row);
+        if (s.b) tally.b++;
+        if (s.k) tally.k++;
+        if (s.t) tally.t++;
+        if (s.r) tally.r++;
+        if (s.b && s.k && s.t && s.r) tally.all++;
+      }
+      foot.textContent = has
+        ? `${plural(rows.length, 'class/track pair')} · ${tally.all} ready to fit all four`
+          + ` — burn ${tally.b}, fuel load ${tally.k}, tyre ${tally.t}, refuel ${tally.r}`
+        : `${plural(rows.length, 'class/track pair')} · ${tally.b} with a fittable burn,`
+          + ` ${tally.r} with a fittable refuel rate (this database predates the full score)`;
       foot.hidden = false;
     }
   }
@@ -3594,17 +3615,109 @@
     };
     const fuelStops = Number(row.fuelStops) || 0;
     const burnLaps = Number(row.burnLaps) || 0;
+
+    // The refuel rate a fit would actually take here. When this pair has fewer
+    // than five stops of its own the class median stands in — litres per second
+    // is the car's fuel rig and LMU does not vary it by circuit — and the cell
+    // is marked so the borrowed number is never mistaken for a measured one.
+    const pooled = row.refuelSource === 'class';
+    const shownRate = row.refuelUsedLPerSec != null ? row.refuelUsedLPerSec : row.refuelLPerSec;
+    const rate = cell(fixed(shownRate, 2), shownRate == null);
+    if (pooled) {
+      rate.setAttribute('data-pooled', 'true');
+      rate.title =
+        `Class median for ${row.carClass || 'this class'} — ${numberOr(row.refuelClassStops)} stops`
+        + ` across ${numberOr(row.refuelClassTracks)} circuits`
+        + (row.refuelClassP25 != null && row.refuelClassP75 != null
+            ? ` (p25 ${fixed(row.refuelClassP25, 2)} – p75 ${fixed(row.refuelClassP75, 2)})`
+            : '')
+        + `. This pair has ${fuelStops} of its own.`;
+    }
+
     li.append(
       who,
       cell(`${fuelStops} / ${numberOr(row.raceStops)}`, fuelStops === 0),
-      cell(fixed(row.refuelLPerSec, 2), row.refuelLPerSec == null),
+      rate,
       cell(String(burnLaps), burnLaps === 0),
       cell(fixed(row.burnLPerLap, 2), row.burnLPerLap == null),
-      cell(numberOr(row.wearLaps), !Number(row.wearLaps)),
       cell(numberOr(row.drivers)),
+      buildCorpusFits(row),
     );
     li.title = `${numberOr(row.stops)} stops and ${numberOr(row.laps)} laps uploaded in total for this pair`;
     return li;
+  }
+
+  /*
+   * The four readiness chips, in a fixed order so a column can be read down.
+   *
+   * Each chip carries the bar it is judged against AND the pair's current
+   * figures, because "why is K grey when there are 200 laps here?" is the
+   * question this card exists to answer — and the answer is usually the second
+   * half of the bar, not the first. kFuel needs the fuel load to have MOVED
+   * across the stint (a regression with a flat x-axis fits nothing), tyre deg
+   * needs a stint that ran past the cliff. Counts alone never showed either.
+   *
+   * A database older than 0019 sends no fit* flags; the chips then read from
+   * the two bars this card has always been able to compute and the other two
+   * stay grey rather than claiming a verdict nobody measured.
+   */
+  function buildCorpusFits(row) {
+    const wrap = document.createElement('span');
+    wrap.className = 'corpus-fits';
+    const known = row.fitBurn !== undefined;
+
+    const spread = Number(row.loadSpreadL);
+    const capacity = Number(row.capacityL);
+    const needSpread = Number.isFinite(capacity) && capacity > 0 ? Math.round(0.4 * capacity) : null;
+
+    const chips = [
+      {
+        letter: 'B',
+        ready: known ? !!row.fitBurn : Number(row.burnLaps) >= 30,
+        what: 'Burn — litres per lap',
+        why: `${numberOr(row.burnLaps)} clean laps with a measured burn, needs 30`,
+      },
+      {
+        letter: 'K',
+        ready: known ? !!row.fitKFuel : false,
+        what: 'Fuel load — seconds per litre carried',
+        why: known
+          ? `${numberOr(row.kFuelLaps)} timed clean laps (needs 30) across a ${
+              Number.isFinite(spread) ? spread : '—'
+            } L load spread (needs ${needSpread != null ? needSpread : '—'} L, 40% of the tank)`
+          : 'not scored by this database',
+      },
+      {
+        letter: 'T',
+        ready: known ? !!row.fitTyre : false,
+        what: 'Tyre degradation — linear term and cliff',
+        why: known
+          ? `${numberOr(row.wearLaps)} laps with wear and a stint position (needs 30), longest stint ${
+              numberOr(row.stintMax)
+            } laps (needs 15 to see a cliff)`
+          : 'not scored by this database',
+      },
+      {
+        letter: 'R',
+        ready: known ? !!row.fitRefuel : Number(row.fuelStops) >= 5,
+        what: 'Refuel rate — litres per second',
+        why: known && row.refuelSource === 'class'
+          ? `from the ${row.carClass || 'class'} pool: ${numberOr(row.refuelClassStops)} stops across ${
+              numberOr(row.refuelClassTracks)
+            } circuits (needs 5)`
+          : `${numberOr(row.fuelStops)} fuel-only race stops here, needs 5`,
+      },
+    ];
+
+    for (const c of chips) {
+      const el = document.createElement('span');
+      el.className = 'corpus-fit';
+      el.textContent = c.letter;
+      el.setAttribute('data-ready', c.ready ? 'true' : 'false');
+      el.title = `${c.what} — ${c.ready ? 'ready' : 'not yet'}\n${c.why}`;
+      wrap.append(el);
+    }
+    return wrap;
   }
 
   /** The 14-day active-users chart — the week card's bars, keyed on users. */
