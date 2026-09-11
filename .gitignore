@@ -87,3 +87,7 @@ web/dist/
 
 # Supabase CLI scratch (version-check cache), not project state.
 supabase/.temp/
+
+# A LOCAL strategy fit (scripts/fit-strategy.js --source local) is one
+# machine's laps, never the shipped table. data/**/* is packaged, so keep it out.
+data/strategy-coefficients.local.json

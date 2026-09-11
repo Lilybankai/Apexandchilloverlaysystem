@@ -65,6 +65,15 @@
  *                    only source that works on a plane, and it is what the
  *                    local-override half of §6 will eventually run against.
  *
+ * A local fit is a DEVELOPMENT artefact and never the shipped table: one PC
+ * cannot produce five fuel-only race stops in a class, and its laps are one
+ * driver's habits. So `--source local` writes `strategy-coefficients.local.json`
+ * (git-ignored) and the shipping filename is reachable from a local fit only by
+ * naming it with `--out`. There is no silent fallback either: without a key and
+ * without `--source`, the script stops and says so rather than quietly fitting
+ * from whatever happens to be on the machine — the output of the two sources
+ * looks identical at a glance, and only one of them is worth shipping.
+ *
  * Usage:
  *   node scripts/fit-strategy.js [--source cloud|local] [--out <path>]
  *                                [--min-laps N] [--json] [--quiet]
@@ -109,8 +118,16 @@ const REFUEL_LO = 0.70;
 const REFUEL_HI = 1.60;
 
 const SUPABASE_URL = process.env.APEX_SUPABASE_URL || 'https://svtyxuhbsbbodsecbnsc.supabase.co';
-const SERVICE_KEY = process.env.APEX_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+// Read at call time, not at import time: a caller that sets the variable after
+// requiring this module (a wrapper script, a test) must still be seen, and a
+// const captured at load would silently ignore it.
+const serviceKey = () => process.env.APEX_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const OUT_DEFAULT = path.join(__dirname, '..', 'data', 'strategy-coefficients.json');
+// Where a local fit goes unless told otherwise. A different NAME rather than a
+// different folder, because electron-builder ships `data/**/*` wholesale: a
+// local table sitting under the shipping name would be packaged into a build
+// without anyone deciding to.
+const OUT_LOCAL = path.join(__dirname, '..', 'data', 'strategy-coefficients.local.json');
 
 // ===========================================================================
 // Small statistics. No dependency: this is three functions and a solver, and a
@@ -233,7 +250,8 @@ const round = (v, d) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
 
 /** @returns {{laps:object[], stops:object[], source:string}} */
 async function readCloud() {
-  if (!SERVICE_KEY) {
+  const key = serviceKey();
+  if (!key) {
     throw new Error(
       'cloud source needs APEX_SUPABASE_SERVICE_KEY (pit_stops and lap_consumption '
       + 'are select-own, so an admin session cannot read the raw rows). '
@@ -281,7 +299,7 @@ async function readCloud() {
       const url = `${SUPABASE_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`
         + `&limit=${size}&offset=${offset}`;
       const res = await fetch(url, {
-        headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
       });
       if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`);
       const rows = await res.json();
@@ -625,7 +643,7 @@ function buildTable({ laps, stops, source }, opts = {}) {
 // ===========================================================================
 
 function parseArgs(argv) {
-  const args = { source: SERVICE_KEY ? 'cloud' : 'local', out: OUT_DEFAULT, minLaps: 1, json: false, quiet: false };
+  const args = { source: null, out: null, minLaps: 1, json: false, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--source') args.source = argv[++i];
@@ -634,12 +652,41 @@ function parseArgs(argv) {
     else if (a === '--json') args.json = true;
     else if (a === '--quiet') args.quiet = true;
   }
+  // No source and no key: stop. The alternative — quietly fitting this one
+  // machine — produces a table that looks exactly like the real one in every
+  // report and every file, and differs only in being worthless.
+  if (!args.source) {
+    if (!serviceKey()) {
+      throw new Error(
+        'no APEX_SUPABASE_SERVICE_KEY, so the cloud corpus cannot be read '
+        + '(pit_stops and lap_consumption are select-own).\n'
+        + '  Set the key to fit the real table, or pass --source local to fit '
+        + 'from THIS MACHINE only — a development artefact, never the shipped table.',
+      );
+    }
+    args.source = 'cloud';
+  }
+  if (!args.out) args.out = args.source === 'local' ? OUT_LOCAL : OUT_DEFAULT;
+  // Reachable, but only by asking for it by name.
+  if (args.source === 'local' && path.resolve(args.out) === path.resolve(OUT_DEFAULT)) {
+    console.warn(
+      `\n!! writing a LOCAL fit to the shipping filename (${path.basename(OUT_DEFAULT)}).\n`
+      + '   data/**/* is packaged by electron-builder, so this will go out in a build.\n',
+    );
+  }
   return args;
 }
 
 function report(table) {
   const mark = (c) => (c === 'measured' ? 'Y' : c === 'partial' ? '~' : '-');
   console.log(`\nStrategy coefficients — ${table.source}, ${table.corpus.laps} laps / ${table.corpus.stops} stops`);
+  if (table.source === 'local') {
+    console.log(
+      'THIS MACHINE ONLY — not a shippable table. One PC cannot reach five fuel-only\n'
+      + 'race stops in a class, so every refuel rate below will refuse, and the pace\n'
+      + 'coefficients are one driver\'s habits. Fit from the cloud corpus to ship.',
+    );
+  }
   console.log(`${table.corpus.pairs} class/track pairs · ${table.ready.length} fittable on burn+kFuel+tyre+refuel\n`);
   console.log('  B K T R  class @ track                                    base    L/lap   s/L      deg     refuel');
   for (const r of table.rows.slice(0, 30)) {
@@ -688,6 +735,9 @@ module.exports = {
   median, mad, corr, solve, ols, robustOls, percentile,
   isFuelStop, fitRefuelByClass, fitGroup, fitCliff, buildTable, readLocal, groupKey,
   BURN_MIN, REFUEL_MIN, PACE_MIN, SPREAD_FRAC, CLIFF_MIN_STINT, COLLIN_REFUSE,
+  // Argument handling is behaviour too — it decides which corpus gets fitted
+  // and where the answer lands — so the test can reach it.
+  __cli: { parseArgs, OUT_DEFAULT, OUT_LOCAL },
 };
 
 if (require.main === module) {

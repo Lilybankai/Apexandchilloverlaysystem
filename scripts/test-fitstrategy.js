@@ -350,5 +350,47 @@ console.log('\nreading this machine\'s logs');
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+// ===========================================================================
+console.log('\nthe CLI will not quietly fit the wrong corpus');
+// ===========================================================================
+{
+  // The bug this is for, which shipped for about an hour: `npm run fit:strategy`
+  // with no service key silently fell back to this machine's logs and wrote a
+  // one-driver table to the SHIPPING filename — and data/**/* is packaged by
+  // electron-builder, so the next build would have carried it. The report gave
+  // no hint: a local fit and a cloud fit print the same shape.
+  const { parseArgs, OUT_DEFAULT, OUT_LOCAL } = F.__cli;
+  const withKey = (key, fn) => {
+    const had = process.env.APEX_SUPABASE_SERVICE_KEY;
+    if (key) process.env.APEX_SUPABASE_SERVICE_KEY = key;
+    else delete process.env.APEX_SUPABASE_SERVICE_KEY;
+    try { return fn(); } finally {
+      if (had === undefined) delete process.env.APEX_SUPABASE_SERVICE_KEY;
+      else process.env.APEX_SUPABASE_SERVICE_KEY = had;
+    }
+  };
+
+  let threw = null;
+  withKey('', () => { try { parseArgs([]); } catch (e) { threw = e; } });
+  check('no key and no --source is an error, not a local fit',
+    threw !== null && /--source local/.test(threw.message),
+    threw && threw.message.split('\n')[0]);
+
+  const local = parseArgs(['--source', 'local']);
+  check('a local fit does not land on the shipping filename',
+    path.resolve(local.out) === path.resolve(OUT_LOCAL)
+    && path.resolve(local.out) !== path.resolve(OUT_DEFAULT),
+    path.basename(local.out));
+
+  const cloud = withKey('fake-key', () => parseArgs([]));
+  check('a key means cloud, at the shipping filename',
+    cloud.source === 'cloud' && path.resolve(cloud.out) === path.resolve(OUT_DEFAULT),
+    `${cloud.source} -> ${path.basename(cloud.out)}`);
+
+  const forced = parseArgs(['--source', 'local', '--out', OUT_DEFAULT]);
+  check('…but the shipping filename stays reachable when asked for by name',
+    path.resolve(forced.out) === path.resolve(OUT_DEFAULT));
+}
+
 console.log(`\ntest-fitstrategy: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
