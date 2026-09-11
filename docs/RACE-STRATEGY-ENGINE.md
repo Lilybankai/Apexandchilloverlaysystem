@@ -354,6 +354,38 @@ figure from the 2026-08-30 probe (2.94 L over 5.67 km).
 - **`refuelLPerSec`** — `fuelAddedL / stationarySec` across our own stops.
 - Refuse any coefficient with `n` below a floor, rather than fitting noise.
 
+> **Built 2026-09-11**, with `scripts/test-fitstrategy.js` checking it against
+> races synthesised from known coefficients — there is no ground truth in real
+> laps, and a regression always returns a number. Four things it does
+> differently from the sketch above, each because the sketch would have been
+> wrong:
+>
+> - **`kFuel` and the tyre linear term are ONE regression**, not two. "Control
+>   for `stintLap`" and "at matched fuel load" describe a single multiple
+>   regression, done once and without binning.
+> - **The fuel spread is NOT free.** Inside one stint the fuel falls as the
+>   stint lap rises, so the two predictors are one column and neither is
+>   identifiable — however many laps the stint has. Separating them needs
+>   stints that *began* at different loads. The fitter measures |r| between the
+>   columns and refuses both terms above 0.95. This is the failure that would
+>   otherwise ship a confident, precise, wrong number behind a healthy lap
+>   count, and it is invisible to the Admin card's bars.
+> - **Pit loss is measured from in-lap and out-lap excess** over the group's
+>   normal clean lap, not from `lane_sec`. Entry-to-exit is not the time lost
+>   against staying out, and LMU publishes no pit lane length. The sum of the
+>   two excesses is the whole pit cycle including service — exactly `pitLoss`
+>   in §5 — and `referenceStationarySec` rides along for the load adjustment.
+> - **A negative degradation term is refused**, not shipped. Real GT3 practice
+>   data at Imola fits one: that is track evolution, not tyres that improve
+>   with age.
+>
+> Run `npm run fit:strategy` (`--source cloud` needs `APEX_SUPABASE_SERVICE_KEY`,
+> since both tables are select-own; `--source local` reads this machine's logs).
+> It writes `data/strategy-coefficients.json`, which ships via electron-builder's
+> `data/**/*`. Independent check: fitted blind from one machine's Daytona LMP2
+> laps it returns base 100.51 s, burn 2.90 L/lap, kFuel 0.0306 s/L against the
+> 100.31 / 2.97 / 0.0312 this document already carried from the 2026-08-30 probe.
+
 ---
 
 ## 7. Three modes, one curve
@@ -402,7 +434,7 @@ conversational delivery. The strategy engine becomes another fact source for
 |---|---|---|
 | **0** | `LapRecord` v5 + stop log. Capture only, no UI. | Everything |
 | **1** | `raceStrategy.ts` with pit-loss + fuel-load terms only. Two options: push / balanced. Fuel tab card. | Phase 0 shipped, a few races driven |
-| **2** | Fit `kFuel` and `tyre` from the corpus; `scripts/fit-strategy.js`; ship the table. | Phase 1 |
+| **2** | Fit `kFuel` and `tyre` from the corpus; `scripts/fit-strategy.js`; ship the table. | ~~Phase 1~~ — **fitter built 2026-09-11** (`npm run fit:strategy`, `test:fitstrategy`). Does not depend on Phase 1 after all: the fit reads the corpus, not the engine. Ship the table whenever a cloud run has a service key. |
 | **3** | `kLift` and the `save` option, once enough deliberate variation exists. | Phase 2 |
 | **4** | Engineer triggers and the spoken call. | Phase 3 |
 | **5** | Virtual energy as an alternative binding constraint for Hypercar. | Phase 2 |
