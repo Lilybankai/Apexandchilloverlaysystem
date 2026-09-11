@@ -100,8 +100,18 @@ const SPREAD_FRAC_PARTIAL = 0.25;
 const CLIFF_MIN_STINT = 15;     // longest stint before a cliff can be sought
 const CLIFF_MIN_BEYOND = 8;     // laps that must sit past a candidate cliff
 const CLIFF_MIN_GAIN = 0.02;    // fraction of RSS a cliff must remove to count
-const PIT_MIN = 8;              // in-laps AND out-laps for 'measured'
-const PIT_MIN_PARTIAL = 3;
+const PIT_MIN = 10;             // race in-laps AND out-laps for 'measured'
+const PIT_MIN_PARTIAL = 5;     // three medians nothing; five is the floor
+// A real pit cycle — lane in, service, lane out — lives in this band at every
+// circuit LMU ships. Outside it the measurement is of something else.
+const PIT_MIN_SEC = 20;
+const PIT_MAX_SEC = 180;
+// Laps a (driver x session) cell needs before its mean is stable enough to
+// subtract. Below this the cell is dropped, not demeaned.
+const FE_MIN_CELL = 5;
+// |t| a coefficient must reach to be reported at all: the ordinary 95% rule.
+// Below it the honest reading is "no effect measured", not "a small effect".
+const T_MIN = 2;
 // Above this |r| between the fuel and stint columns the two terms are the same
 // column wearing two hats and neither can be trusted. 0.95 is strict on
 // purpose: at r = 0.95 the variance inflation is already ~10x.
@@ -189,9 +199,10 @@ function solve(A, b) {
  * Ordinary least squares with an implicit intercept.
  * @param {number[][]} X rows of predictors (no intercept column)
  * @param {number[]} y
+ * @param {number} dfUsed degrees of freedom already spent (e.g. absorbed fixed effects)
  * @returns {{coef:number[], intercept:number, rss:number, r2:number, n:number}|null}
  */
-function ols(X, y) {
+function ols(X, y, dfUsed = 0) {
   const n = y.length;
   const k = X[0] ? X[0].length : 0;
   if (n <= k + 1) return null;
@@ -215,9 +226,34 @@ function ols(X, y) {
     rss += (y[i] - fit) ** 2;
     tss += (y[i] - my) ** 2;
   }
+
+  // Standard errors: se(b_j) = sqrt(s² · (X'X)⁻¹_jj). Without these a
+  // coefficient is just a number, and this corpus produces plenty of numbers
+  // that are pure noise — a GT3 group with 649 laps fits the fuel term to an
+  // r² of 0.011, which is not a small effect measured well, it is nothing
+  // measured at all. The t statistic is what tells the two apart.
+  //
+  // `dfUsed` is for the fixed effects absorbed before the fit: demeaning
+  // within C cells costs C degrees of freedom that this function cannot see,
+  // and ignoring them makes every error bar too narrow.
+  const dof = n - p - Math.max(0, dfUsed);
+  const se = new Array(p).fill(null);
+  if (dof > 0) {
+    const sigma2 = rss / dof;
+    for (let j = 0; j < p; j++) {
+      const e = new Array(p).fill(0);
+      e[j] = 1;
+      const col = solve(A.map((r) => [...r]), e);
+      if (col && Number.isFinite(col[j]) && col[j] >= 0) se[j] = Math.sqrt(sigma2 * col[j]);
+    }
+  }
+
   return {
     intercept: beta[0],
     coef: beta.slice(1),
+    se: se.slice(1),
+    seIntercept: se[0],
+    dof,
     rss,
     r2: tss > 0 ? 1 - rss / tss : 0,
     n,
@@ -225,8 +261,8 @@ function ols(X, y) {
 }
 
 /** OLS, then drop residual outliers beyond ROBUST_MAD and fit once more. */
-function robustOls(X, y) {
-  const first = ols(X, y);
+function robustOls(X, y, dfUsed = 0) {
+  const first = ols(X, y, dfUsed);
   if (!first) return null;
   const resid = y.map((v, i) => {
     const row = [1, ...X[i]];
@@ -237,7 +273,7 @@ function robustOls(X, y) {
   const keep = resid.map((r) => Math.abs(r) <= ROBUST_MAD * 1.4826 * spread);
   const kept = keep.filter(Boolean).length;
   if (kept === y.length || kept <= X[0].length + 2) return { ...first, dropped: 0 };
-  const second = ols(X.filter((_, i) => keep[i]), y.filter((_, i) => keep[i]));
+  const second = ols(X.filter((_, i) => keep[i]), y.filter((_, i) => keep[i]), dfUsed);
   return second ? { ...second, dropped: y.length - kept } : { ...first, dropped: 0 };
 }
 
@@ -264,7 +300,7 @@ async function readCloud() {
   }
   const lapRows = await page(
     'lap_consumption',
-    'id,track_id,car_class,car,session_type,lap_ms,clean,fuel_start_l,fuel_end_l,fuel_used_l,'
+    'id,driver_id,track_id,car_class,car,session_type,lap_ms,clean,fuel_start_l,fuel_end_l,fuel_used_l,'
     + 'capacity_l,wear_at_line,compound,stint_lap,is_out_lap,is_in_lap,wet,set_at',
   );
   const stopRows = await page(
@@ -276,7 +312,7 @@ async function readCloud() {
   return {
     source: 'cloud',
     laps: lapRows.map((r) => ({
-      carClass: r.car_class, car: r.car,
+      driverId: r.driver_id, carClass: r.car_class, car: r.car,
       trackKey: t(r.track_id).key, track: t(r.track_id).name, trackLengthM: t(r.track_id).lengthM,
       sessionType: r.session_type, lapMs: r.lap_ms, clean: r.clean,
       fuelStartL: r.fuel_start_l, fuelUsedL: r.fuel_used_l, capacityL: r.capacity_l,
@@ -325,7 +361,8 @@ function readLocal(dirs) {
   // Only v5+ laps carry the consumption block; earlier ones are invisible here
   // and that is not a bug, it is the schema they were written under.
   const laps = read('laps').filter((l) => Number(l.v || 0) >= 5).map((l) => ({
-    carClass: l.carClass, car: l.car, trackKey: l.trackKey, track: l.track,
+    // One machine is one driver; the fixed-effect cells collapse to sessions.
+    driverId: 'local', carClass: l.carClass, car: l.car, trackKey: l.trackKey, track: l.track,
     trackLengthM: l.trackLengthM, sessionType: l.sessionType, lapMs: l.lapMs, clean: !!l.clean,
     fuelStartL: l.fuelStartL, fuelUsedL: l.fuelUsedL, capacityL: l.capacityL,
     compound: l.compound, stintLap: l.stintLap,
@@ -437,16 +474,68 @@ function fitGroup(laps, stops, refuel) {
   let tyre = null;
   let collinearity = null;
   let fitQuality = null;
+  let tStats = null;
 
   const spreadL = paceRows.length
     ? Math.max(...paceRows.map((l) => Number(l.fuelStartL))) - Math.min(...paceRows.map((l) => Number(l.fuelStartL)))
     : 0;
   const stintMax = paceRows.length ? Math.max(...paceRows.map((l) => Number(l.stintLap))) : 0;
 
-  if (paceRows.length >= PACE_MIN_PARTIAL) {
-    const fuelCol = paceRows.map((l) => Number(l.fuelStartL));
-    const stintCol = paceRows.map((l) => Number(l.stintLap));
-    const y = paceRows.map((l) => Number(l.lapMs) / 1000);
+  // ---- driver fixed effects ---------------------------------------------
+  // A pooled regression over several drivers does not measure the fuel effect,
+  // it measures whoever happened to run light. Real case, GT3 at Barcelona:
+  // the slowest driver averaged 109.2 s carrying 10.8 L while the quickest
+  // averaged 105.1 s carrying 65.4 L, so ACROSS drivers low fuel looks slow and
+  // the pooled coefficient comes out NEGATIVE — a heavier car lapping faster.
+  //
+  // The fix is the standard panel one: subtract each cell's own mean from
+  // every column and fit the deviations, so a driver is only ever compared
+  // with himself. Cells are (driver × session type), not driver alone —
+  // qualifying pace, practice pace and race pace are different animals for the
+  // same person, and a session's track state moves with it.
+  //
+  // A cell too small to have a stable mean contributes nothing but noise, so
+  // it is dropped rather than demeaned. That is also what makes the refusals
+  // downstream honest: after this, "not enough laps" means not enough laps
+  // that can actually speak to the question.
+  const cells = new Map();
+  for (const l of paceRows) {
+    const k = `${l.driverId || '?'}|${String(l.sessionType || '').toLowerCase()}`;
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(l);
+  }
+  const usableCells = [...cells.values()].filter((c) => c.length >= FE_MIN_CELL);
+  const feRows = usableCells.flat();
+  const driversSeen = new Set(paceRows.map((l) => l.driverId || '?')).size;
+
+  if (paceRows.length >= PACE_MIN_PARTIAL && feRows.length >= PACE_MIN_PARTIAL) {
+    // Deviations from each cell's mean.
+    // `cellOf` keeps the panel structure available after flattening, so any
+    // column DERIVED from a raw one — the cliff hinge below — can be demeaned
+    // the same way. A hinge built from demeaned stint laps would be a hinge on
+    // "laps either side of this cell's average stint position", which is not a
+    // cliff and not anything.
+    const cellOf = [];
+    const fuelRaw = [], stintRaw = [], yRaw = [];
+    usableCells.forEach((cell, ci) => {
+      for (const l of cell) {
+        cellOf.push(ci);
+        fuelRaw.push(Number(l.fuelStartL));
+        stintRaw.push(Number(l.stintLap));
+        yRaw.push(Number(l.lapMs) / 1000);
+      }
+    });
+    const demean = (col) => {
+      const sums = new Array(usableCells.length).fill(0);
+      const counts = new Array(usableCells.length).fill(0);
+      col.forEach((v, i) => { sums[cellOf[i]] += v; counts[cellOf[i]]++; });
+      return col.map((v, i) => v - sums[cellOf[i]] / counts[cellOf[i]]);
+    };
+    const fuelCol = demean(fuelRaw);
+    const stintCol = demean(stintRaw);
+    const y = demean(yRaw);
+    // Measured on the DEMEANED columns: identification lives in the within-cell
+    // variation, so that is where collinearity has to be judged.
     collinearity = round(Math.abs(corr(fuelCol, stintCol)), 3);
 
     if (collinearity >= COLLIN_REFUSE) {
@@ -457,21 +546,58 @@ function fitGroup(laps, stops, refuel) {
         + '— every stint started at the same fuel load, so the fuel and tyre terms cannot be separated',
       );
     } else {
-      const fit = robustOls(paceRows.map((_, i) => [fuelCol[i], stintCol[i]]), y);
+      const fit = robustOls(fuelCol.map((_, i) => [fuelCol[i], stintCol[i]]), y,
+        Math.max(0, usableCells.length - 1));
       if (fit) {
-        basePaceSec = round(fit.intercept, 3);
-        kFuelSecPerL = round(fit.coef[0], 5);
-        const lin = round(fit.coef[1], 5);
-        fitQuality = { r2: round(fit.r2, 3), n: fit.n, droppedOutliers: fit.dropped };
+        // Demeaning removes the intercept, so base pace is recovered by taking
+        // the slopes back off the ORIGINAL lap times. The median across drivers
+        // is a field-average reference, not any one person's pace — the engine
+        // should prefer the driver's own live pace and use this as a fallback.
+        const kF = fit.coef[0];
+        const lin0 = fit.coef[1];
+        basePaceSec = round(median(feRows.map((l) =>
+          Number(l.lapMs) / 1000 - kF * Number(l.fuelStartL) - lin0 * Number(l.stintLap))), 3);
+        kFuelSecPerL = round(kF, 5);
+        const lin = round(lin0, 5);
+        fitQuality = { r2: round(fit.r2, 3), n: fit.n, droppedOutliers: fit.dropped, cells: usableCells.length, drivers: driversSeen };
 
-        const enough = paceRows.length >= PACE_MIN;
+        // Is the coefficient distinguishable from zero at all? |t| >= 2 is the
+        // usual 95% rule. This is the guard that separates a small effect
+        // measured well from nothing measured at all, and in this corpus that
+        // distinction is the whole ball game: a GT3 group with 649 laps fits
+        // the fuel term to an r² of 0.011 — lap-to-lap scatter from traffic,
+        // setup changes and track state swamps the ~2 s a full tank is worth.
+        // A lap COUNT cannot see this; only the error bar can.
+        const tOf = (i) => (fit.se && fit.se[i] ? fit.coef[i] / fit.se[i] : null);
+        const tFuel = tOf(0);
+        const tTyre = tOf(1);
+        tStats = { fuel: round(tFuel, 2), tyre: round(tTyre, 2) };
+
+        if (kFuelSecPerL != null && tFuel != null && Math.abs(tFuel) < T_MIN) {
+          whyNot.push(
+            `fuel term is not distinguishable from zero (${kFuelSecPerL} ± ${round(1.96 * fit.se[0], 5)} s/L, `
+            + `t=${round(tFuel, 2)}, r²=${round(fit.r2, 3)}) — lap-time scatter swamps the effect`,
+          );
+          kFuelSecPerL = null;
+        }
+        // A negative fuel term says a heavier car laps faster. It does not.
+        // Refuse it for the same reason the negative tyre term below is
+        // refused: the number is a symptom of a confound still in the data,
+        // and shipping it would be worse than shipping nothing.
+        if (kFuelSecPerL != null && kFuelSecPerL < 0) {
+          whyNot.push(`fuel term came out negative (${kFuelSecPerL} s/L) — a heavier car does not lap faster; something is still confounded`);
+          kFuelSecPerL = null;
+        }
+
+        const enough = feRows.length >= PACE_MIN;
         const spreadOk = capacityL ? spreadL >= SPREAD_FRAC * capacityL : false;
         const spreadPartial = capacityL ? spreadL >= SPREAD_FRAC_PARTIAL * capacityL : false;
-        if (enough && spreadOk && collinearity < COLLIN_WARN) confidence.kFuel = 'measured';
+        if (kFuelSecPerL == null) confidence.kFuel = 'none';
+        else if (enough && spreadOk && collinearity < COLLIN_WARN) confidence.kFuel = 'measured';
         else if (spreadPartial) confidence.kFuel = 'partial';
         if (confidence.kFuel !== 'measured') {
           whyNot.push(
-            `kFuel from ${paceRows.length} laps over a ${spreadL.toFixed(0)} L spread`
+            `kFuel from ${feRows.length} within-driver laps over a ${spreadL.toFixed(0)} L spread`
             + (capacityL ? ` (wants ${Math.round(SPREAD_FRAC * capacityL)} L of a ${capacityL} L tank)` : '')
             + (collinearity >= COLLIN_WARN ? `, and ${(collinearity * 100).toFixed(0)}% collinear with stint lap` : ''),
           );
@@ -480,18 +606,20 @@ function fitGroup(laps, stops, refuel) {
         // A negative linear term means the tyres got faster with age, which
         // they do not: it is track evolution or fuel burn-off leaking into the
         // column. Report the fit and refuse the coefficient.
-        if (lin != null && lin < 0) {
+        if (lin != null && tTyre != null && Math.abs(tTyre) < T_MIN) {
+          whyNot.push(`tyre term is not distinguishable from zero (t=${round(tTyre, 2)}) — degradation is inside the lap-to-lap noise here`);
+        } else if (lin != null && lin < 0) {
           whyNot.push(`tyre term came out negative (${lin} s/lap) — track evolution, not degradation`);
         } else {
           tyre = { linSecPerLap: lin, cliffLap: null, cliffSecPerLap: null };
-          if (paceRows.length >= PACE_MIN && stintMax >= CLIFF_MIN_STINT) confidence.tyre = 'measured';
+          if (feRows.length >= PACE_MIN && stintMax >= CLIFF_MIN_STINT) confidence.tyre = 'measured';
           else {
             confidence.tyre = 'partial';
-            whyNot.push(`tyre from ${paceRows.length} laps, longest stint ${stintMax}`);
+            whyNot.push(`tyre from ${feRows.length} within-driver laps, longest stint ${stintMax}`);
           }
 
           // ---- the cliff -------------------------------------------------
-          const cliff = fitCliff(fuelCol, stintCol, y, fit.rss);
+          const cliff = fitCliff(fuelCol, stintCol, y, fit.rss, stintRaw, demean);
           if (cliff) {
             tyre.cliffLap = cliff.cliffLap;
             tyre.cliffSecPerLap = cliff.cliffSecPerLap;
@@ -507,21 +635,35 @@ function fitGroup(laps, stops, refuel) {
   }
 
   // ---- the pit cycle ----------------------------------------------------
-  const normal = median(timed.map((l) => Number(l.lapMs) / 1000));
-  const inLaps = laps.filter((l) => l.isInLap && Number(l.lapMs) > 5000).map((l) => Number(l.lapMs) / 1000);
-  const outLaps = laps.filter((l) => l.isOutLap && Number(l.lapMs) > 5000).map((l) => Number(l.lapMs) / 1000);
+  // RACE sessions only. In practice an "out-lap" is usually a garage exit and
+  // an "in-lap" a decision to stop running — neither is a pit cycle, and mixing
+  // them in produced 7 s at one circuit and 103 s at another when the true
+  // figure is the same 40-60 s everywhere. In a race an in-lap and an out-lap
+  // really are the two halves of a stop.
+  const raceOnly = (l) => String(l.sessionType || '').toLowerCase() === 'race';
+  const racing = timed.filter(raceOnly);
+  const normal = median((racing.length >= PIT_MIN_PARTIAL ? racing : timed).map((l) => Number(l.lapMs) / 1000));
+  const inLaps = laps.filter((l) => raceOnly(l) && l.isInLap && Number(l.lapMs) > 5000).map((l) => Number(l.lapMs) / 1000);
+  const outLaps = laps.filter((l) => raceOnly(l) && l.isOutLap && Number(l.lapMs) > 5000).map((l) => Number(l.lapMs) / 1000);
   let pitCycleLossSec = null;
   let referenceStationarySec = null;
   if (normal != null && inLaps.length >= PIT_MIN_PARTIAL && outLaps.length >= PIT_MIN_PARTIAL) {
     const inExcess = median(inLaps) - normal;
     const outExcess = median(outLaps) - normal;
-    if (inExcess > 0 && outExcess > 0) {
-      pitCycleLossSec = round(inExcess + outExcess, 2);
+    const total = inExcess + outExcess;
+    // A pit cycle that reads under PIT_MIN_SEC or over PIT_MAX_SEC is not a
+    // pit cycle: it is a safety-car lap, a stop-go, a spin on the out-lap, or
+    // a median taken over too few laps to mean anything. Refuse it — a wrong
+    // pit loss does not degrade a strategy call, it inverts it.
+    if (inExcess > 0 && outExcess > 0 && total >= PIT_MIN_SEC && total <= PIT_MAX_SEC) {
+      pitCycleLossSec = round(total, 2);
       confidence.pit = (inLaps.length >= PIT_MIN && outLaps.length >= PIT_MIN) ? 'measured' : 'partial';
+    } else if (inExcess > 0 && outExcess > 0) {
+      whyNot.push(`pit cycle came out at ${round(total, 1)} s from ${inLaps.length} in / ${outLaps.length} out — outside the ${PIT_MIN_SEC}-${PIT_MAX_SEC} s a real stop takes`);
     }
   }
   if (confidence.pit === 'none') {
-    whyNot.push(`pit cycle wants ${PIT_MIN_PARTIAL} in-laps and ${PIT_MIN_PARTIAL} out-laps, has ${inLaps.length} and ${outLaps.length}`);
+    whyNot.push(`pit cycle wants ${PIT_MIN_PARTIAL} race in-laps and ${PIT_MIN_PARTIAL} race out-laps, has ${inLaps.length} and ${outLaps.length}`);
   }
   const groupStops = stops.filter(isFuelStop);
   if (groupStops.length) referenceStationarySec = round(median(groupStops.map((s) => Number(s.stationarySec))), 2);
@@ -546,8 +688,8 @@ function fitGroup(laps, stops, refuel) {
     pitCycleLossSec, referenceStationarySec,
     kLiftSecPerLPerLap: null, saveFractionMax: null,
     confidence,
-    n: { burnLaps: burnLaps.length, paceLaps: paceRows.length, inLaps: inLaps.length, outLaps: outLaps.length, stops: groupStops.length },
-    diagnostics: { loadSpreadL: round(spreadL, 1), stintMax, collinearity, fit: fitQuality },
+    n: { burnLaps: burnLaps.length, paceLaps: feRows.length, paceLapsPooled: paceRows.length, inLaps: inLaps.length, outLaps: outLaps.length, stops: groupStops.length },
+    diagnostics: { loadSpreadL: round(spreadL, 1), stintMax, collinearity, drivers: driversSeen, feLaps: feRows.length, t: tStats, fit: fitQuality },
     whyNot,
   };
 }
@@ -559,14 +701,19 @@ function fitGroup(laps, stops, refuel) {
  * and it removes a real share of the residual. Anything less is a fourth
  * parameter fitting noise, which a least-squares fit will always let you do.
  */
-function fitCliff(fuelCol, stintCol, y, baseRss) {
-  const stintMax = Math.max(...stintCol);
+function fitCliff(fuelCol, stintCol, y, baseRss, stintRaw, demean) {
+  // Candidates are real stint laps, so the hinge is built from `stintRaw` and
+  // then put through the same within-cell demeaning as every other column.
+  const raw = stintRaw || stintCol;
+  const within = demean || ((col) => col);
+  const stintMax = Math.max(...raw);
   if (stintMax < CLIFF_MIN_STINT) return null;
   let bestFit = null;
   for (let c = 5; c <= stintMax - 3; c++) {
-    const beyond = stintCol.filter((s) => s > c).length;
+    const beyond = raw.filter((s) => s > c).length;
     if (beyond < CLIFF_MIN_BEYOND) continue;
-    const X = stintCol.map((s, i) => [fuelCol[i], s, Math.max(0, s - c)]);
+    const hinge = within(raw.map((s) => Math.max(0, s - c)));
+    const X = stintCol.map((s, i) => [fuelCol[i], s, hinge[i]]);
     const fit = ols(X, y);
     if (!fit) continue;
     const extra = fit.coef[2];
@@ -737,6 +884,7 @@ module.exports = {
   BURN_MIN, REFUEL_MIN, PACE_MIN, SPREAD_FRAC, CLIFF_MIN_STINT, COLLIN_REFUSE,
   // Argument handling is behaviour too — it decides which corpus gets fitted
   // and where the answer lands — so the test can reach it.
+  readCloud,
   __cli: { parseArgs, OUT_DEFAULT, OUT_LOCAL },
 };
 

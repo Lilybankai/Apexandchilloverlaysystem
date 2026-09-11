@@ -178,6 +178,88 @@ console.log('\nthe collinearity refusal — the one that would lie');
 }
 
 // ===========================================================================
+console.log('\ndriver confounding, and noise that swamps the signal');
+// ===========================================================================
+{
+  // The real GT3-at-Barcelona shape: several drivers of different pace, and
+  // the SLOW one happens to run light. Pooled, low fuel looks slow and the
+  // coefficient inverts. Within each driver the truth is still there.
+  const rand = rng(71);
+  const TRUTH = { kFuel: 0.03, lin: 0.02 };
+  const laps = [
+    // Quick driver, heavy running.
+    ...stint({ ...TRUTH, base: 90, startFuel: 120, laps: 20, rand }),
+    ...stint({ ...TRUTH, base: 90, startFuel: 100, laps: 18, rand }),
+    // Slow driver (+4 s), light running.
+    ...stint({ ...TRUTH, base: 94, startFuel: 40, laps: 16, rand }),
+    ...stint({ ...TRUTH, base: 94, startFuel: 25, laps: 14, rand }),
+  ];
+  laps.forEach((l, i) => { l.driverId = l.fuelStartL > 60 || i < 38 ? 'quick' : 'slow'; });
+  // Relabel properly: the first 38 laps are the quick driver's.
+  laps.forEach((l, i) => { l.driverId = i < 38 ? 'quick' : 'slow'; });
+
+  const pooled = F.ols(
+    laps.map((l) => [l.fuelStartL, l.stintLap]),
+    laps.map((l) => l.lapMs / 1000),
+  );
+  check('pooling drivers inverts the fuel term (the bug this guards)',
+    pooled.coef[0] < 0, `pooled kFuel ${pooled.coef[0].toFixed(4)}`);
+
+  const row = F.buildTable({ laps, stops: [], source: 'test' }).rows[0];
+  check('…and driver fixed effects recover it',
+    near(row.kFuelSecPerL, TRUTH.kFuel, 0.006), `${row.kFuelSecPerL} vs ${TRUTH.kFuel}`);
+  check('…from two drivers', row.diagnostics.drivers === 2, `${row.diagnostics.drivers}`);
+
+  // The error bars themselves, on a case whose answer is known: y = 5 + 2a
+  // with ±0.1 of noise is a tight fit and must produce a large t; the same
+  // slope under ±20 must not.
+  const seRand = rng(79);
+  const mkSe = (noise) => {
+    const X = [], yy = [];
+    for (let i = 0; i < 60; i++) {
+      const a = seRand() * 10;
+      X.push([a, seRand() * 3]);
+      yy.push(5 + 2 * a + (seRand() - 0.5) * 2 * noise);
+    }
+    return F.ols(X, yy);
+  };
+  const tight = mkSe(0.1);
+  const loose = mkSe(400);
+  check('ols() reports a standard error per coefficient',
+    Array.isArray(tight.se) && tight.se[0] > 0, `se=${tight.se[0].toExponential(2)}`);
+  check('…large t when the slope is real and the scatter small',
+    Math.abs(tight.coef[0] / tight.se[0]) > 20, `t=${(tight.coef[0] / tight.se[0]).toFixed(1)}`);
+  check('…and |t| below the bar when the scatter swamps it',
+    Math.abs(loose.coef[0] / loose.se[0]) < 2, `t=${(loose.coef[0] / loose.se[0]).toFixed(2)}`);
+  check('…with the absorbed fixed effects charged to the degrees of freedom',
+    F.ols([[1, 1], [2, 3], [3, 2], [4, 5], [5, 4], [6, 6]], [1, 2, 3, 4, 5, 6], 2).dof === 1,
+    `dof=${F.ols([[1, 1], [2, 3], [3, 2], [4, 5], [5, 4], [6, 6]], [1, 2, 3, 4, 5, 6], 2).dof}`);
+
+  // End to end: the same true fuel effect under scatter far larger than it.
+  // The noise here is exaggerated — a real session is not ±12 s — because the
+  // point is to force |t| under the bar and watch the fitter refuse. Real
+  // corpora get there by a subtler route (disturbances correlated WITH fuel:
+  // setup changes, track evolution, traffic), which no amount of lap count
+  // fixes either. GT3 at Barcelona reaches t = 0.62 across 649 laps.
+  const rand2 = rng(73);
+  const noisy = [
+    ...stint({ ...TRUTH, base: 90, startFuel: 120, laps: 30, noise: 12, rand: rand2 }),
+    ...stint({ ...TRUTH, base: 90, startFuel: 70, laps: 30, noise: 12, rand: rand2 }),
+    ...stint({ ...TRUTH, base: 90, startFuel: 40, laps: 30, noise: 12, rand: rand2 }),
+  ];
+  const nrow = F.buildTable({ laps: noisy, stops: [], source: 'test' }).rows[0];
+  check('a real effect the data cannot resolve is refused, not reported',
+    nrow.kFuelSecPerL === null && nrow.confidence.kFuel === 'none',
+    `kFuel=${nrow.kFuelSecPerL}, t=${nrow.diagnostics.t && nrow.diagnostics.t.fuel}`);
+  check('…and says so with the t statistic, not a vague shrug',
+    nrow.whyNot.some((w) => /not distinguishable from zero/.test(w)),
+    nrow.whyNot.find((w) => /not distinguishable/.test(w)));
+  check('…and the refusal is statistical, not for want of laps — the fit RAN',
+    nrow.diagnostics.t != null && Number.isFinite(nrow.diagnostics.t.fuel),
+    `fit ran over ${nrow.n.paceLaps} laps, t=${nrow.diagnostics.t && nrow.diagnostics.t.fuel}`);
+}
+
+// ===========================================================================
 console.log('\nthe tyre cliff');
 // ===========================================================================
 {
