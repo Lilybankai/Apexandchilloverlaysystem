@@ -852,3 +852,50 @@ export function listSessionsWithCareer(
     .map(summaryOf);
   return { sessions, career: careerStats(records, traces) };
 }
+
+/** Where the driver's quickest studiable lap on a circuit lives. */
+export interface BestTracedLap {
+  sessionId: string;
+  id: string;
+  at: string;
+  lapNo: number;
+  lapMs: number;
+}
+
+/**
+ * The driver's quickest clean, traced lap on a circuit in a class — the lap the
+ * Leaderboard tab opens when a board row is compared against.
+ *
+ * `trackKeys` is plural because the league may know one circuit under several
+ * of the log's keys (an admin merged two sightings); laps under any of them
+ * are laps here. Clean and timed only, and the lap has to have a trace on this
+ * machine: the comparison is drawn from two traces, and a personal best with
+ * no trace is a number, not a lap that can be studied. The same three tests
+ * the sheet applies, through the same grouping, so the lap this answers with
+ * is one the sheet marks as openable.
+ */
+export function bestTracedLap(
+  trackKeys: readonly string[],
+  carClass: string,
+  dir = lapDir(),
+): BestTracedLap | null {
+  const keys = new Set(trackKeys.map((k) => String(k || '').toLowerCase()).filter(Boolean));
+  const cls = String(carClass || '').trim().toUpperCase();
+  if (!keys.size || !cls) return null;
+  const records = readAllLaps(dir).filter(
+    (r) => keys.has(String(r.trackKey || '').toLowerCase())
+      && String(r.carClass || '').trim().toUpperCase() === cls,
+  );
+  if (!records.length) return null;
+  let best: BestTracedLap | null = null;
+  for (const session of groupSessions(records, tracesBeside(dir))) {
+    for (const stint of session.stints) {
+      for (const lap of stint.laps) {
+        if (!lap.id || !lap.hasTrace || !lap.clean || !lap.timed || !(lap.lapMs > 0)) continue;
+        if (best && lap.lapMs >= best.lapMs) continue;
+        best = { sessionId: session.id, id: lap.id, at: lap.at, lapNo: lap.lapNo, lapMs: lap.lapMs };
+      }
+    }
+  }
+  return best;
+}

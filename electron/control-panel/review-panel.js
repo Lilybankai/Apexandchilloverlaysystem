@@ -87,10 +87,22 @@
    * have just read the column of times. Picking it inside the lap view meant
    * opening a lap before you could say what to compare it with, which is the
    * wrong way round.
+   *
+   * Either one of the session's own laps (a ReviewLap from the sheet) or,
+   * since 2026-09-12, a lap on the league leaderboard — a `boardRef`, see
+   * `isBoardRef()`. Everything that prints the reference asks which.
    */
   let refLap = null;
   /** Whether the circuit is drawn full width under the charts. Per machine. */
   let bigMap = false;
+  /**
+   * The league board for the open session's circuit and class, fetched once
+   * per session and kept: `{ key, state, rows, error }`. `state` is `idle`,
+   * `loading`, `ok`, `signed-out` or `error`. Rows carry `track_id`,
+   * `has_trace` and `has_line`, which is what decides whether a row can be
+   * offered as a comparison at all.
+   */
+  let board = { key: '', state: 'idle', rows: [], error: '' };
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -842,21 +854,135 @@
       }));
   }
 
+  /* ---- The leaderboard as a comparison ---------------------------------- */
+
+  /** A reference that is a lap on the league board rather than one of ours. */
+  const isBoardRef = (ref) => !!ref && ref.board === true;
+
+  /** The `value` a board row takes in the picker. */
+  const boardValue = (ref) => `board:${ref.driverId}`;
+
+  /**
+   * A leaderboard row as a reference the rest of this file can hold in
+   * `refLap`: what `review:lap` needs to fetch it, and what the captions need
+   * to name it. `track_id` comes from the board lookup, which is what makes
+   * the row addressable at all — the lap files know the circuit by key.
+   */
+  function boardRefOf(row) {
+    return {
+      board: true,
+      driverId: row.driver_id,
+      trackId: row.track_id,
+      carClass: row.car_class || (current ? current.carClass : ''),
+      rank: row.rank,
+      name: row.is_you ? 'You' : row.display_name || 'Driver',
+      isYou: !!row.is_you,
+      car: row.car || '',
+      lapMs: row.lap_ms,
+      hasLine: !!row.has_line,
+    };
+  }
+
+  /** `P3 Name` — how a board reference is named everywhere it is printed. */
+  function refName(ref) {
+    if (!ref) return '';
+    if (isBoardRef(ref)) return `P${ref.rank} ${ref.name}`;
+    return `Lap ${ref.lapNo}`;
+  }
+
+  /** The board rows that can be laid under a lap: has a trace, and is not you. */
+  function boardOptions() {
+    if (board.state !== 'ok') return [];
+    return board.rows
+      .filter((row) => row.has_trace && !row.is_you)
+      .map((row) => {
+        const ref = boardRefOf(row);
+        const gap = typeof row.gap_ms === 'number' ? ` · +${(row.gap_ms / 1000).toFixed(3)}` : '';
+        return {
+          ref,
+          label: `${refName(ref)} · ${fmtLap(row.lap_ms)}${gap}${row.has_line ? '' : ' · no line'}`,
+        };
+      });
+  }
+
+  /** One line for the board group when it has no rows to offer, or null. */
+  function boardNote() {
+    switch (board.state) {
+      case 'loading': return 'Reading the leaderboard…';
+      case 'signed-out': return 'Sign in to compare with the leaderboard';
+      case 'error': return 'The leaderboard could not be reached';
+      case 'ok': {
+        if (!board.rows.length) return 'Nobody on the leaderboard here yet';
+        if (!boardOptions().length) return 'No leaderboard lap here has telemetry yet';
+        return null;
+      }
+      default: return null;
+    }
+  }
+
+  /**
+   * Fetch the board for the open session's circuit and class, once. The
+   * picker is re-rendered in place when it lands rather than through
+   * renderDetail(): a driver may already be scrubbing the lap, and repainting
+   * the whole view to add options to a dropdown would drop their cursor.
+   */
+  async function ensureBoard(session) {
+    if (!session || !session.trackKey || !session.carClass) return;
+    const key = `${session.trackKey}|${session.carClass}`;
+    if (board.key === key && board.state !== 'idle' && board.state !== 'error') return;
+    board = { key, state: 'loading', rows: [], error: '' };
+    let res = null;
+    try {
+      res = await window.apex.reviewBoard({ trackKey: session.trackKey, carClass: session.carClass });
+    } catch {
+      res = null;
+    }
+    if (board.key !== key) return;
+    if (res && res.ok) {
+      board = { key, state: 'ok', rows: Array.isArray(res.rows) ? res.rows : [], error: '' };
+    } else if (res && res.signedOut) {
+      board = { key, state: 'signed-out', rows: [], error: res.error || '' };
+    } else {
+      board = { key, state: 'error', rows: [], error: (res && res.error) || '' };
+    }
+    refreshComparePicker();
+  }
+
+  /** Swap the picker's options for the current ones without touching the rest. */
+  function refreshComparePicker() {
+    if (!els.detail || !lapView || !lapView.detail) return;
+    const host = els.detail.querySelector('[data-cmphost]');
+    if (host) host.outerHTML = compareHtml(lapView);
+  }
+
   /** The comparison picker, and what it is currently showing. */
   function compareHtml(view) {
     const opts = compareOptions(view);
-    if (!opts.length) {
-      return '<span class="rv-cmp rv-cmp--none">No other lap here has telemetry</span>';
+    const boardOpts = boardOptions();
+    const note = boardNote();
+    if (!opts.length && !boardOpts.length) {
+      const why = note ? ` — ${note.toLowerCase()}` : '';
+      return `<span class="rv-cmp rv-cmp--none" data-cmphost>No other lap here has telemetry${esc(why)}</span>`;
     }
-    const chosen = view.vsLap ? view.vsLap.id : '';
+    const chosen = view.vsLap
+      ? (isBoardRef(view.vsLap) ? boardValue(view.vsLap) : view.vsLap.id)
+      : '';
+    const where = current ? `${current.carClass || ''} at ${current.track || ''}`.trim() : '';
     return `
-      <label class="rv-cmp">
+      <label class="rv-cmp" data-cmphost>
         <span>Compare with</span>
         <select data-cmp aria-label="Lay another lap under this one">
           <option value=""${chosen ? '' : ' selected'}>Nothing</option>
-          ${opts.map((o) => `<option value="${esc(o.lap.id || '')}"${
+          ${opts.length ? `<optgroup label="This session">${opts.map((o) => `<option value="${esc(o.lap.id || '')}"${
             chosen === o.lap.id ? ' selected' : ''
-          }>${esc(o.label)}</option>`).join('')}
+          }>${esc(o.label)}</option>`).join('')}</optgroup>` : ''}
+          <optgroup label="${esc(`Leaderboard · ${where}`)}">
+            ${boardOpts.length
+              ? boardOpts.map((o) => `<option value="${esc(boardValue(o.ref))}"${
+                chosen === boardValue(o.ref) ? ' selected' : ''
+              }>${esc(o.label)}</option>`).join('')
+              : `<option value="" disabled>${esc(note || '')}</option>`}
+          </optgroup>
         </select>
       </label>`;
   }
@@ -939,7 +1065,9 @@
         view.vs ? ', violet the lap you are comparing with — the two set the same time, so neither is the quicker' : ''
       }. ${shaded} ${moving}`;
     }
-    const theirs = `lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}`;
+    const theirs = isBoardRef(view.vsLap)
+      ? `${esc(refName(view.vsLap))}'s`
+      : `lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}`;
     const green = faster === 'mine' ? 'yours' : theirs;
     const red = faster === 'mine' ? theirs : 'yours';
     return `Seen from directly above, to scale. <b>Green is the quicker lap</b> — here that is ${green} — `
@@ -984,7 +1112,8 @@
           ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
                 title="Dashed on the charts, in each channel's own colour. On the map the quicker of the two laps is green and the slower red.">
             <i class="rv-cmp__swatch" aria-hidden="true"></i>
-            <b>Lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}</b>
+            <b>${esc(refName(view.vsLap))}</b>
+            ${isBoardRef(view.vsLap) && view.vs.car ? `<em>${esc(view.vs.car)}</em>` : ''}
             <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
             ${vsGap === null ? '' : `<i>${esc(yourGapWords(vsGap))}</i>`}
           </span>` : ''}
@@ -1381,13 +1510,21 @@
     };
     const mine = lapView;
     renderDetail();
+    // The league board for this circuit, so the picker can offer it. Fetched
+    // beside the lap rather than before it: the lap is on disk and the board
+    // is a round trip, and nobody should wait for a dropdown to read a lap.
+    void ensureBoard(current);
     let res = null;
     try {
       res = await window.apex.reviewLap({
         id: lap.id,
         at: lap.at,
         haveMapKey: heldMapKey,
-        vs: vsLap ? { id: vsLap.id, at: vsLap.at } : null,
+        // One of ours by id, or a board lap by the league's own key for it.
+        vs: !vsLap ? null
+          : isBoardRef(vsLap)
+            ? { board: { driverId: vsLap.driverId, trackId: vsLap.trackId, carClass: vsLap.carClass } }
+            : { id: vsLap.id, at: vsLap.at },
       });
     } catch {
       res = null;
@@ -1408,9 +1545,20 @@
     lapView.micro = Array.isArray(res.micro) ? res.micro : [];
     if (vsLap && !res.vs) {
       lapView.vsLap = null;
-      lapView.vsError = res.vsReason === 'no-trace'
-        ? `Lap ${vsLap.lapNo} has no telemetry to compare against.`
-        : `Lap ${vsLap.lapNo} could not be read.`;
+      const who = refName(vsLap);
+      if (isBoardRef(vsLap)) {
+        // A board lap can fail in ways one of ours cannot: it lives in the
+        // league, and the league needs an account and a connection.
+        lapView.vsError = res.vsReason === 'signed-out'
+          ? 'Sign in to compare with the leaderboard.'
+          : res.vsReason === 'no-trace'
+            ? `${who}'s lap has no telemetry to compare against.`
+            : `${who}'s lap could not be fetched from the league.`;
+      } else {
+        lapView.vsError = res.vsReason === 'no-trace'
+          ? `${who} has no telemetry to compare against.`
+          : `${who} could not be read.`;
+      }
     }
     if (res.map) {
       heldMap = res.map;
@@ -1586,8 +1734,11 @@
       ${refLap ? `
       <div class="rv-refbar">
         <span class="rv-refbar__tag">Comparing against</span>
-        <b>Lap ${refLap.lapNo}</b>
-        <span class="rv-refbar__time">${refLap.timed ? fmtLap(refLap.lapMs) : dash}</span>
+        <b>${esc(refName(refLap))}</b>
+        ${isBoardRef(refLap) ? `<span class="rv-refbar__where">leaderboard${refLap.car ? ` · ${esc(refLap.car)}` : ''}</span>` : ''}
+        <span class="rv-refbar__time">${isBoardRef(refLap)
+          ? fmtLap(refLap.lapMs)
+          : (refLap.timed ? fmtLap(refLap.lapMs) : dash)}</span>
         <span class="rv-refbar__note">Open any lap and it opens against this one.</span>
         <button type="button" class="btn btn--ghost btn--sm" data-refclear>
           <svg class="icon"><use href="#i-x" /></svg><span>Clear</span>
@@ -1714,12 +1865,20 @@
   /*  Loading                                                               */
   /* ---------------------------------------------------------------------- */
 
+  /** The read in flight, so an arrival from another tab can wait for it. */
+  let listRead = null;
+
   async function loadList(force) {
     // Already reading. Two arrivals can overlap — the router's shown() and
     // init()'s own catch-up on a panel that reopened on this tab — and the
     // second must join the first rather than start a second read.
-    if (loading) return;
+    if (loading) return listRead;
     if (loadedOnce && !force) return;
+    listRead = readList();
+    try { await listRead; } finally { listRead = null; }
+  }
+
+  async function readList() {
     loading = true;
     renderDetail();
     const keep = currentId;
@@ -1913,6 +2072,14 @@
         if (!sel || !lapView || !lapView.lap || !current) return;
         const id = sel.value;
         if (!id) { refLap = null; void openLap(lapView.lap, null); return; }
+        // A lap off the league board. Held the same way as one of ours, so
+        // going back to the sheet and opening a third lap keeps comparing
+        // against the rival you picked.
+        if (id.startsWith('board:')) {
+          const opt = boardOptions().find((o) => boardValue(o.ref) === id);
+          if (opt) { refLap = opt.ref; void openLap(lapView.lap, opt.ref); }
+          return;
+        }
         for (const stint of current.stints) {
           const lap = stint.laps.find((l) => l.id === id);
           // Changing it here changes it for the session too: going back to the
@@ -1978,6 +2145,34 @@
       // they are looking at this window, so arriving IS the refresh event — and
       // the whole lap log is a few hundred kilobytes, read in one pass.
       void loadList(true);
+    },
+    /**
+     * Open one of the driver's laps against a leaderboard row — the
+     * Leaderboard tab's "Compare" button lands here. `lap` is what
+     * `reviewBestLap` answered (`sessionId`, `id`, `at`); `row` is the board
+     * row with its `track_id`. Switches to this tab through the router so the
+     * usual arrival work happens, waits for the list that arrival starts,
+     * then opens the session and the lap in it.
+     */
+    async compareWithBoard(lap, row) {
+      if (!lap || !lap.sessionId || !lap.id || !row) return false;
+      window.apexNav?.showView('review');
+      init();
+      if (!ready) return false;
+      // Arrival started a read; join it rather than race it.
+      await (loadList(true) || Promise.resolve());
+      if (currentId !== lap.sessionId || !current) await openSession(lap.sessionId);
+      if (!current) return false;
+      let found = null;
+      for (const stint of current.stints) {
+        found = stint.laps.find((l) => l.id === lap.id) || null;
+        if (found) break;
+      }
+      if (!found) return false;
+      const ref = boardRefOf({ ...row, car_class: row.car_class || current.carClass });
+      refLap = ref;
+      await openLap(found, ref);
+      return true;
     },
     /** …and this on the way out. Nothing here runs while the tab is hidden. */
     hidden() {

@@ -3390,7 +3390,7 @@ function registerIpc() {
    * Mans is two thousand points — so the map crosses the bridge once and the
    * renderer keeps it. See `lapDetail.loadLapDetail`.
    */
-  ipcMain.handle('review:lap', (_evt, req) => {
+  ipcMain.handle('review:lap', async (_evt, req) => {
     const id = req && typeof req.id === 'string' ? req.id : '';
     const at = req && typeof req.at === 'string' ? req.at : '';
     if (!id || !at) return { ok: false, detail: null, map: null, error: 'no lap' };
@@ -3401,13 +3401,100 @@ function registerIpc() {
       // micro-sector splits are computed HERE rather than in the renderer:
       // they are arithmetic over two full traces, they are the phase's whole
       // claim to correctness, and main is where a test can reach them.
-      const vs = req && req.vs && typeof req.vs.id === 'string' && typeof req.vs.at === 'string'
-        ? { id: req.vs.id, at: req.vs.at }
+      //
+      // Two kinds of comparison lap. `{ id, at }` is one of the driver's own,
+      // read off this machine. `{ board: { driverId, trackId, carClass } }` is
+      // a lap on the league leaderboard — anyone's — whose trace is fetched
+      // from the league and shaped by `lapDetail.detailFromCloudTrace`; from
+      // there the two paths are the same maths (`compareWith`).
+      const board = req && req.vs && req.vs.board && typeof req.vs.board === 'object'
+        ? req.vs.board
         : null;
-      return { ok: true, ...detail.loadLapCompare(id, at, vs, have) };
+      if (!board) {
+        const vs = req && req.vs && typeof req.vs.id === 'string' && typeof req.vs.at === 'string'
+          ? { id: req.vs.id, at: req.vs.at }
+          : null;
+        return { ok: true, ...detail.loadLapCompare(id, at, vs, have) };
+      }
+
+      const alone = detail.loadLapAlone(id, at, have);
+      if (!alone.detail) return { ok: true, ...alone };
+      const ref = {
+        p_driver_id: typeof board.driverId === 'string' ? board.driverId : '',
+        p_track_id: typeof board.trackId === 'string' ? board.trackId : '',
+        p_car_class: typeof board.carClass === 'string' ? board.carClass : '',
+      };
+      if (!ref.p_driver_id || !ref.p_track_id || !ref.p_car_class) {
+        return { ok: true, ...alone, vsReason: 'no-lap' };
+      }
+      const res = await authService.rpc('get_lap_trace', ref);
+      if (!res.ok) {
+        return { ok: true, ...alone, vsReason: res.signedOut ? 'signed-out' : 'unavailable' };
+      }
+      const other = detail.detailFromCloudTrace(res.body, alone.detail);
+      if (!other) return { ok: true, ...alone, vsReason: 'no-trace' };
+      return { ok: true, ...detail.compareWith(alone, other) };
     } catch (err) {
       console.error('[app] lap detail unavailable:', err.message);
       return { ok: false, detail: null, map: null, error: err.message };
+    }
+  });
+
+  /**
+   * The league board a local lap belongs on — every driver's best in that
+   * class at that circuit, each row saying whether its trace is there to
+   * compare against. Resolved from the lap's own `trackKey` through the
+   * league's alias table (read-only; an unknown circuit is an empty board, not
+   * a new one), so the Review tab never has to know a board's UUID.
+   */
+  ipcMain.handle('review:board', async (_evt, req) => {
+    const trackKey = req && typeof req.trackKey === 'string' ? req.trackKey : '';
+    const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
+    if (!trackKey || !carClass) return { ok: false, rows: [], error: 'no lap' };
+    const res = await authService.rpc('board_for_lap', {
+      p_sim: 'lmu',
+      p_track_key: trackKey,
+      p_car_class: carClass,
+      p_limit: 200,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in to compare with the leaderboard.' : res.error || 'Board unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /**
+   * The driver's own quickest studiable lap for a board row — the lap the
+   * Leaderboard tab opens when a row is compared against. The board names its
+   * track by UUID and the lap files by key, so the league is asked which keys
+   * mean this track (an admin may have merged two) and the log is searched
+   * under all of them.
+   */
+  ipcMain.handle('review:bestLap', async (_evt, req) => {
+    const trackId = req && typeof req.trackId === 'string' ? req.trackId : '';
+    const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
+    if (!trackId || !carClass) return { ok: false, lap: null, error: 'no board row' };
+    const res = await authService.rpc('track_keys', { p_sim: 'lmu', p_track_id: trackId });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        lap: null,
+        error: res.signedOut ? 'Sign in to compare with the leaderboard.' : res.error || 'Board unavailable.',
+      };
+    }
+    const keys = Array.isArray(res.body) ? res.body.filter((k) => typeof k === 'string') : [];
+    try {
+      const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+      return { ok: true, lap: review.bestTracedLap(keys, carClass) };
+    } catch (err) {
+      console.error('[app] best lap lookup unavailable:', err.message);
+      return { ok: false, lap: null, error: err.message };
     }
   });
 

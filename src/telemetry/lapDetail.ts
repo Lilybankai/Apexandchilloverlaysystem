@@ -439,8 +439,15 @@ export interface LapCompareResult extends LapDetailResult {
   vs: LapDetail | null;
   delta: DeltaTrace | null;
   micro: MicroSector[];
-  /** Why there is no comparison, when one was asked for and could not be made. */
-  vsReason?: 'no-lap' | 'no-trace';
+  /**
+   * Why there is no comparison, when one was asked for and could not be made.
+   * The first two are a local lap's; the rest belong to a board lap fetched
+   * from the league (`signed-out`, the board lap has gone or never had a
+   * trace, the league could not be reached).
+   */
+  vsReason?: 'no-lap' | 'no-trace' | 'signed-out' | 'unavailable';
+  /** The circuit's length as the studied lap recorded it, metres. */
+  lengthM: number;
 }
 
 /** The circuit's length as the lap itself recorded it, metres. */
@@ -450,7 +457,45 @@ function trackLengthOf(lapId: string, atIso: string, dir: string): number {
 }
 
 /**
- * One lap, optionally with a second laid over it.
+ * The studied lap on its own, with the comparison slots empty — the shape both
+ * comparison paths start from and fall back to.
+ */
+export function loadLapAlone(
+  lapId: string,
+  atIso: string,
+  haveMapKey = '',
+  dirs: { laps?: string; traces?: string } = {},
+): LapCompareResult {
+  const base = loadLapDetail(lapId, atIso, haveMapKey, dirs);
+  const lengthM = base.detail ? trackLengthOf(lapId, atIso, dirs.laps ?? lapDir()) : 0;
+  const out: LapCompareResult = { ...base, vs: null, delta: null, micro: [], lengthM };
+  if (base.detail) out.micro = microSectors(base.detail.channels, null, lengthM);
+  return out;
+}
+
+/**
+ * Lay a second lap under an already-loaded one.
+ *
+ * Where the second lap came from — this machine's trace files or the league's
+ * `lap_traces` — is settled before this is called; here the two are just two
+ * traces, and the delta and the micro-sector splits are the same arithmetic
+ * either way. That is the point of keeping it in one place: a driver reading
+ * "0.3 s lost in SQ7" against a rival must be reading the same measurement
+ * they would read against their own earlier lap.
+ */
+export function compareWith(base: LapCompareResult, other: LapDetail): LapCompareResult {
+  if (!base.detail) return base;
+  return {
+    ...base,
+    vs: other,
+    vsReason: undefined,
+    delta: deltaTrace(base.detail.channels, other.channels),
+    micro: microSectors(base.detail.channels, other.channels, base.lengthM),
+  };
+}
+
+/**
+ * One lap, optionally with a second of the driver's own laid over it.
  *
  * The comparison lap comes back in full rather than as a delta alone: the
  * charts draw its speed and pedals under the studied lap's, and the map draws
@@ -464,27 +509,97 @@ export function loadLapCompare(
   haveMapKey = '',
   dirs: { laps?: string; traces?: string } = {},
 ): LapCompareResult {
-  const base = loadLapDetail(lapId, atIso, haveMapKey, dirs);
-  const out: LapCompareResult = { ...base, vs: null, delta: null, micro: [] };
-  if (!base.detail) return out;
-
-  const lengthM = trackLengthOf(lapId, atIso, dirs.laps ?? lapDir());
-  if (!vs || !vs.id || !vs.at) {
-    out.micro = microSectors(base.detail.channels, null, lengthM);
-    return out;
-  }
+  const out = loadLapAlone(lapId, atIso, haveMapKey, dirs);
+  if (!out.detail) return out;
+  if (!vs || !vs.id || !vs.at) return out;
 
   // The circuit is never sent twice: both laps come out of one session, so the
   // comparison lap is on the same track by construction and the caller is
   // already holding it.
-  const other = loadLapDetail(vs.id, vs.at, base.detail.mapKey, dirs);
+  const other = loadLapDetail(vs.id, vs.at, out.detail.mapKey, dirs);
   if (!other.detail) {
     out.vsReason = other.reason;
-    out.micro = microSectors(base.detail.channels, null, lengthM);
     return out;
   }
-  out.vs = other.detail;
-  out.delta = deltaTrace(base.detail.channels, other.detail.channels);
-  out.micro = microSectors(base.detail.channels, other.detail.channels, lengthM);
-  return out;
+  return compareWith(out, other.detail);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  A lap from the league                                                     */
+/*                                                                            */
+/*  2026-09-12: the comparison lap may be anyone's board lap (Carl widened    */
+/*  plan decision 2). The league keeps one trace per (driver, track, class) — */
+/*  the trace of the lap on the board — and `get_lap_trace` hands it back     */
+/*  whole. Shaping it into a LapDetail is the only new work; everything       */
+/*  downstream is the same two-trace maths as above.                          */
+/* -------------------------------------------------------------------------- */
+
+/** Which board lap: the `lap_traces` primary key, as the leaderboard row names it. */
+export interface BoardLapRef {
+  driverId: string;
+  trackId: string;
+  carClass: string;
+}
+
+/** What `get_lap_trace` answers with, as far as this module reads it. */
+export interface CloudTracePayload {
+  found?: boolean;
+  driverId?: string;
+  car?: string;
+  carClass?: string;
+  lapMs?: number;
+  s1Ms?: number | null;
+  s2Ms?: number | null;
+  s3Ms?: number | null;
+  setAt?: string;
+  data?: unknown;
+}
+
+/**
+ * A board lap's trace, shaped for study beside a local lap.
+ *
+ * `studied` lends the circuit: a board lap is on the studied lap's track by
+ * construction — the board was looked up from that lap's own key — and the
+ * league row carries no track name of its own. The trace payload is checked
+ * for the columns the maths needs before anything is built on it; a row
+ * written by a future build, or a hand-edited one, answers `null` rather than
+ * a lap that draws nothing and compares against nothing.
+ *
+ * `lapId` is the driver's id under a `board:` prefix, so a renderer holding
+ * both kinds of comparison lap can tell them apart without a second field.
+ */
+export function detailFromCloudTrace(
+  payload: CloudTracePayload | null | undefined,
+  studied: Pick<LapDetail, 'track' | 'mapKey'>,
+): LapDetail | null {
+  if (!payload || payload.found === false) return null;
+  const data = payload.data as Partial<CompletedTrace> | null | undefined;
+  if (!data || typeof data !== 'object') return null;
+  const d = data.d;
+  const t = data.t;
+  // Distance and time are what the delta and the micro-sectors are built on;
+  // without them there is nothing to compare. The other channels are checked
+  // no harder than a local trace's are — the charts already draw a missing
+  // column as nothing rather than refusing the lap.
+  if (!Array.isArray(d) || !Array.isArray(t) || d.length < 2 || d.length !== t.length) return null;
+  const trace = data as CompletedTrace;
+  const lapMs = Number(payload.lapMs) || 0;
+  const s1 = typeof payload.s1Ms === 'number' && payload.s1Ms > 0 ? payload.s1Ms : undefined;
+  const s2 = typeof payload.s2Ms === 'number' && payload.s2Ms > 0 ? payload.s2Ms : undefined;
+  return {
+    lapId: `board:${String(payload.driverId || '')}`,
+    at: typeof payload.setAt === 'string' ? payload.setAt : '',
+    track: studied.track,
+    car: typeof payload.car === 'string' ? payload.car : '',
+    carClass: typeof payload.carClass === 'string' ? payload.carClass : '',
+    lapMs,
+    lapSec: Number(trace.lapSec) || 0,
+    count: Number(trace.count) || d.length,
+    truncated: trace.truncated === true,
+    hasLine: hasDrivenLine(trace),
+    vMaxKph: vMaxOf(trace),
+    sectors: sectorMarks(trace, lapMs, s1, s2),
+    channels: trace,
+    mapKey: studied.mapKey,
+  };
 }

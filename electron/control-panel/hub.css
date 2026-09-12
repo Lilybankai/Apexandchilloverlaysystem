@@ -1403,6 +1403,34 @@ html, body { height: 100%; overflow: hidden; }
 .lbhead--board > :nth-child(4) { flex: 0 0 92px; text-align: right; }
 .lbhead--board > :nth-child(5) { flex: 0 0 76px; text-align: right; }
 .lbhead--board > :nth-child(6) { flex: 0 0 62px; text-align: right; }
+.lbhead--board > :nth-child(7) { flex: 0 0 84px; }
+
+/* Compare — your best lap here laid over this row's, in Review. A column so
+   the buttons line up down the board, and a small ghost button so a board of
+   twenty rows is not twenty coloured pills. A row with no telemetry to compare
+   with keeps the column's width and shows nothing, which is the honest gap. */
+.lbrow--board .lbrow__cmp {
+  flex: 0 0 84px;
+  display: flex;
+  justify-content: flex-end;
+}
+.lbrow__cmpbtn {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.lbrow__cmpbtn:hover { color: var(--text); border-color: var(--cyan); }
+.lbrow__cmpbtn:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+.lbrow__cmpbtn:disabled { opacity: 0.5; cursor: default; }
+/* Set before the driven line was captured: the comparison is the charts and
+   the delta, and the map shows only your line. Dashed says "partial". */
+.lbrow__cmpbtn[data-line="false"] { border-style: dashed; }
 
 .lbrow--board .lbrow__pos {
   flex: 0 0 34px;

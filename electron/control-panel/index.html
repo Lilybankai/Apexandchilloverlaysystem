@@ -921,14 +921,22 @@
               Click any lap for the full breakdown against the reference times.
             </p>
 
+            <!-- The last column is the Compare button: your best lap here laid
+                 over that driver's in Review. Headed by nothing, because a
+                 heading over a column of identical buttons says less than the
+                 buttons do. -->
             <div class="lbhead lbhead--board">
-              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span><span>Pace</span>
+              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span><span>Pace</span><span></span>
             </div>
 
             <ul class="lblist" id="board-list"></ul>
 
             <!-- Why none of the rows are clickable, when none of them are. -->
             <p class="lbnote" id="board-refnote" hidden></p>
+
+            <!-- Why Compare went nowhere: no lap of yours here yet, or the
+                 league could not be asked. Said once, under the board. -->
+            <p class="lbnote" id="board-cmpnote" hidden></p>
 
             <p class="weekempty" id="board-empty">Loading the league boards…</p>
           </section>

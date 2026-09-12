@@ -1871,10 +1871,58 @@
       .catch(() => {});
   }
 
+  /**
+   * Open the Review tab with your best lap here laid over this board row's.
+   *
+   * Your lap is found first, before leaving this tab: a comparison needs two
+   * traces, and a driver with no clean traced lap at this circuit in this
+   * class has nothing to lay theirs under. That case is said here, under the
+   * board, rather than on an empty Review screen the driver did not ask for.
+   */
+  async function compareBoardRow(row, btn) {
+    const note = $('#board-cmpnote');
+    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
+    const trackId = row.track_id || boardPick.trackId;
+    const carClass = boardPick.carClass;
+    if (!trackId || !carClass) return;
+    const say = (text) => {
+      if (!note) return;
+      note.hidden = !text;
+      note.textContent = text || '';
+    };
+    say('');
+    if (btn) btn.disabled = true;
+    let res = null;
+    try {
+      res = await window.apex.reviewBestLap({ trackId, carClass });
+    } catch {
+      res = null;
+    }
+    if (btn) btn.disabled = false;
+    if (!res || !res.ok) {
+      say((res && res.error) || 'The league could not be reached.');
+      return;
+    }
+    if (!res.lap) {
+      const where = track ? `${track.track_name} in ${carClass}` : `this circuit in ${carClass}`;
+      say(`No clean lap of yours with telemetry at ${where} yet — drive one with Apex running and it can be compared with ${row.display_name || 'this driver'}'s.`);
+      return;
+    }
+    if (!window.apexReview || typeof window.apexReview.compareWithBoard !== 'function') return;
+    const opened = await window.apexReview.compareWithBoard(res.lap, {
+      ...row,
+      track_id: trackId,
+      car_class: carClass,
+    });
+    if (!opened) say('That lap could not be opened in Review.');
+  }
+
   function renderBoardList() {
     const list = $('#board-list');
     if (!list) return;
     list.textContent = '';
+    const cmpNote = $('#board-cmpnote');
+    if (cmpNote) { cmpNote.hidden = true; cmpNote.textContent = ''; }
 
     const focusKey = boardFocus ? boardFocus.key : '';
     for (const entry of boardEntries) {
@@ -1946,7 +1994,36 @@
         score.textContent = scored ? '—' : '';
       }
 
-      li.append(pos, driver, car, lap, gap, score);
+      // Compare, on the rows that can be compared with. A board lap carries its
+      // driving trace (has_trace) when it was set on a build that recorded one,
+      // and opens in Review laid under YOUR best lap here — so it is offered on
+      // everyone's row but yours (your board lap IS your best lap). A lap set
+      // before the driven line was captured still compares on every channel
+      // and the delta; only the map is one line, and the title says so.
+      const cmp = document.createElement('span');
+      cmp.className = 'lbrow__cmp';
+      if (row.has_trace && !row.is_you) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'lbrow__cmpbtn';
+        btn.textContent = 'Compare';
+        btn.setAttribute('data-line', String(!!row.has_line));
+        btn.title = row.has_line
+          ? `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review`
+          : `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review — set before Apex recorded the driven line, so the map shows only yours`;
+        btn.addEventListener('click', (e) => {
+          // The button sits inside a row that is itself a button (the score
+          // card). "Compare" must not also mean "select".
+          e.stopPropagation();
+          void compareBoardRow(row, btn);
+        });
+        btn.addEventListener('keydown', (e) => e.stopPropagation());
+        cmp.append(btn);
+      } else if (!row.is_you) {
+        cmp.title = 'No telemetry on the board for this lap';
+      }
+
+      li.append(pos, driver, car, lap, gap, score, cmp);
       list.append(li);
     }
 

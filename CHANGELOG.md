@@ -4,6 +4,32 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **Compare your lap with anyone on the leaderboard.** The Review tab could
+  lay one of your own laps under another and show where the time went. Now the
+  lap underneath can be anyone's on the league board. Open a lap, and the
+  *Compare with* picker lists the leaderboard for that circuit and class beside
+  your own session — pick a driver and their board lap is fetched from the
+  league and drawn under yours: their speed, throttle and brake dashed under
+  your own, the running delta between the two, the micro-sector chips saying
+  which stretch of road cost you, and on the map both driven lines, green for
+  the quicker. The car they set it in is named next to the time, because
+  between two drivers that matters in a way it never did between two of your
+  own laps.
+
+  The Leaderboard tab gets there from the other side: a **Compare** button on
+  every row that has telemetry opens Review with your best clean lap at that
+  circuit laid over theirs. If you have no clean traced lap there yet, it says
+  so under the board instead of opening an empty page.
+
+  Board laps set before Apex recorded the driven line (builds before 0.99.2)
+  are still offered — the charts, delta and micro-sectors are all real — but
+  marked *no line*, and the map shows only your own. A board lap that was
+  never uploaded with telemetry is not offered at all. Nothing new is
+  collected: every board lap's trace has been uploaded since August, and
+  anyone signed in could already read them.
+
 ## 0.99.6 — 2026-09-12
 
 ### Fixed

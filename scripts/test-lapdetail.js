@@ -393,5 +393,137 @@ function evenTrace(points, lapSec) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+/* -------------------------------------------------------------------------- */
+/*  A lap from the league (2026-09-12: compare with anyone on the board)      */
+/*                                                                            */
+/*  The comparison lap may now be a board lap fetched from `lap_traces`.      */
+/*  `detailFromCloudTrace` is the only new shaping; the maths after it is     */
+/*  the same `compareWith` both paths share — pinned here so a board          */
+/*  comparison can never read differently from one against your own lap.     */
+/* -------------------------------------------------------------------------- */
+
+{
+  const studied = { track: 'Circuit of the Americas', mapKey: 'circuit-of-the-americas-5500' };
+  const trace = evenTrace(301, 102);
+  trace.x = trace.d.map((f) => f * 1000);
+  trace.z = trace.d.map((f) => f * 500);
+  const payload = {
+    found: true, driverId: 'a1b2', car: 'Porsche 992 GT3 R', carClass: 'GT3',
+    lapMs: 102_000, s1Ms: 30_000, s2Ms: 42_000, s3Ms: 30_000,
+    setAt: '2026-09-11T19:00:00.000Z', data: trace,
+  };
+
+  const lap = D.detailFromCloudTrace(payload, studied);
+  check('a board trace shapes into a lap', lap !== null);
+  check('named by the driver under a board: prefix', lap && lap.lapId === 'board:a1b2', lap && lap.lapId);
+  check('the board time is the lap time', lap && lap.lapMs === 102_000);
+  check('the car travels with it', lap && lap.car === 'Porsche 992 GT3 R');
+  check('it borrows the studied lap\'s circuit', lap && lap.mapKey === studied.mapKey && lap.track === studied.track);
+  check('a v2 payload has its line', lap && lap.hasLine === true);
+  check('the sector lines are found on it',
+    lap && lap.sectors.s1 !== null && lap.sectors.s2 !== null && lap.sectors.s1 < lap.sectors.s2);
+  check('and the columns are the payload\'s own, not a copy', lap && lap.channels === trace);
+
+  const v1 = D.detailFromCloudTrace({ ...payload, data: evenTrace(301, 102) }, studied);
+  check('a pre-line board lap still shapes, and says it has no line', v1 !== null && v1.hasLine === false);
+
+  const halfLine = evenTrace(301, 102);
+  halfLine.x = halfLine.d.map((f) => f);
+  check('a line with only one column is not a line',
+    D.detailFromCloudTrace({ ...payload, data: halfLine }, studied).hasLine === false);
+
+  const noSplits = D.detailFromCloudTrace({ ...payload, s1Ms: null, s2Ms: null, s3Ms: null }, studied);
+  check('missing splits mean no sector lines, not a crash',
+    noSplits !== null && noSplits.sectors.s1 === null && noSplits.sectors.s2 === null);
+
+  // What the league can answer with that is NOT a lap.
+  check('found:false is no lap', D.detailFromCloudTrace({ found: false }, studied) === null);
+  check('nothing is no lap', D.detailFromCloudTrace(null, studied) === null);
+  check('data that is not a trace is no lap',
+    D.detailFromCloudTrace({ ...payload, data: { hello: 'world' } }, studied) === null);
+  check('a trace with columns of different lengths is no lap',
+    D.detailFromCloudTrace({ ...payload, data: { ...trace, t: trace.t.slice(0, 10) } }, studied) === null);
+  check('distance and time alone are enough to compare — the charts cope with a missing column',
+    D.detailFromCloudTrace({ ...payload, data: { d: trace.d, t: trace.t } }, studied) !== null);
+  check('…but distance without time is not',
+    D.detailFromCloudTrace({ ...payload, data: { d: trace.d } }, studied) === null);
+}
+
+{
+  // The two comparison paths meet in compareWith(): a board lap and one of
+  // your own that carry the same trace must produce the same measurement.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-boardcmp-'));
+  const laps = path.join(root, 'laps');
+  const traces = path.join(root, 'traces');
+  fs.mkdirSync(laps, { recursive: true });
+  const at = '2026-09-06T20:14:31.000Z';
+  const at2 = '2026-09-06T20:16:31.000Z';
+  const base = {
+    v: 6, at, sim: 'lmu', track: 'Circuit of the Americas',
+    trackKey: 'circuit-of-the-americas_5497', trackLengthM: 5497,
+    car: 'Ferrari 296 GT3', carClass: 'GT3', distanceM: 5497,
+    sessionType: 'practice', clean: true, dirty: [],
+    s1Ms: 30_000, s2Ms: 40_000, s3Ms: 30_000,
+  };
+  fs.writeFileSync(path.join(laps, '2026-09-06.jsonl'),
+    `${JSON.stringify({ ...base, id: 'one', lapMs: 100_000 })}\n`
+    + `${JSON.stringify({ ...base, id: 'two', at: at2, lapMs: 104_000 })}\n`);
+  const write = (id, when, lapSec) => {
+    const dir = path.join(traces, '2026-09-06');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
+      v: 1, lapId: id, at: when, sim: 'lmu', trackKey: base.trackKey,
+      track: base.track, trackLengthM: 5497, car: base.car, carClass: base.carClass,
+      lapMs: lapSec * 1000, trace: evenTrace(201, lapSec),
+    }));
+  };
+  write('one', at, 100);
+  write('two', at2, 104);
+
+  const alone = D.loadLapAlone('one', at, '', { laps, traces });
+  check('a lap alone knows its circuit\'s length', alone.lengthM === 5497, `${alone.lengthM}`);
+  check('and has its micro-sectors cut with nothing to compare', alone.micro.length === 11 && alone.vs === null);
+
+  const own = D.loadLapCompare('one', at, { id: 'two', at: at2 }, '', { laps, traces });
+  const rival = D.detailFromCloudTrace({
+    found: true, driverId: 'r1', car: 'BMW M4 GT3', carClass: 'GT3', lapMs: 104_000,
+    s1Ms: 30_000, s2Ms: 40_000, s3Ms: 30_000, setAt: at2, data: evenTrace(201, 104),
+  }, alone.detail);
+  const board = D.compareWith(alone, rival);
+  check('a board lap compares', board.vs !== null && board.delta !== null);
+  check('the board lap is the one handed in', board.vs === rival);
+  check('the same trace measures the same against a rival as against yourself',
+    Math.abs(board.delta.dt[board.delta.dt.length - 1] - own.delta.dt[own.delta.dt.length - 1]) < 1e-9
+      && board.micro.length === own.micro.length
+      && board.micro.every((s, i) => Math.abs(s.deltaSec - own.micro[i].deltaSec) < 1e-9));
+  check('positive is still losing', board.delta.dt[board.delta.dt.length - 1] < 0);
+  check('the studied lap is untouched', board.detail === alone.detail && board.lengthM === 5497);
+  check('a comparison cannot be laid under a lap that did not load',
+    D.compareWith({ detail: null, map: null, vs: null, delta: null, micro: [], lengthM: 0 }, rival).vs === null);
+
+  // The Leaderboard tab's other half: which of YOUR laps to open against a row.
+  const SR = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+  fs.appendFileSync(path.join(laps, '2026-09-06.jsonl'),
+    `${JSON.stringify({ ...base, id: 'dirty', at: '2026-09-06T20:18:31.000Z', lapMs: 98_000, clean: false, dirty: ['limits'] })}\n`
+    + `${JSON.stringify({ ...base, id: 'untraced', at: '2026-09-06T20:20:31.000Z', lapMs: 99_000 })}\n`
+    + `${JSON.stringify({ ...base, id: 'lmp2', at: '2026-09-06T20:22:31.000Z', lapMs: 90_000, carClass: 'LMP2' })}\n`);
+  write('dirty', '2026-09-06T20:18:31.000Z', 98);
+  write('lmp2', '2026-09-06T20:22:31.000Z', 90);
+
+  const best = SR.bestTracedLap(['circuit-of-the-americas_5497'], 'GT3', laps);
+  check('your best studiable lap here is found', best !== null && best.id === 'one', best && best.id);
+  check('it knows which session to open', best !== null && typeof best.sessionId === 'string' && best.sessionId.length > 0);
+  check('a quicker dirty lap is not it', best !== null && best.lapMs === 100_000);
+  check('nor a quicker lap with no trace', best === null || best.id !== 'untraced');
+  check('the class is respected', SR.bestTracedLap(['circuit-of-the-americas_5497'], 'LMP2', laps).id === 'lmp2');
+  check('…case-insensitively', SR.bestTracedLap(['circuit-of-the-americas_5497'], 'gt3', laps).id === 'one');
+  check('any of the league\'s keys for the circuit will do',
+    SR.bestTracedLap(['some-merged-alias', 'CIRCUIT-OF-THE-AMERICAS_5497'], 'GT3', laps).id === 'one');
+  check('an unknown circuit is null, not a lap elsewhere', SR.bestTracedLap(['spa_6980'], 'GT3', laps) === null);
+  check('no keys is null', SR.bestTracedLap([], 'GT3', laps) === null);
+
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log(`\ntest-lapdetail: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

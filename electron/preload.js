@@ -302,11 +302,29 @@ contextBridge.exposeInMainWorld('apex', {
    *
    * `{ id, at, haveMapKey, vs }` — pass the map key already held and the
    * circuit is omitted from the answer rather than resent. `vs` is a second
-   * lap `{ id, at }` to lay underneath this one; with it come the running
-   * delta between the two and the per-micro-sector splits, both computed in
-   * main from the two traces together.
+   * lap to lay underneath this one — one of your own, `{ id, at }`, or a lap
+   * on the league leaderboard, `{ board: { driverId, trackId, carClass } }`,
+   * fetched from the league; with it come the running delta between the two
+   * and the per-micro-sector splits, both computed in main from the two
+   * traces together. A board lap that could not be fetched answers with
+   * `vsReason` (`signed-out`, `no-trace`, `unavailable`) and no `vs`.
    */
   reviewLap: (req) => ipcRenderer.invoke('review:lap', req),
+
+  /**
+   * The league board a lap belongs on: `{ trackKey, carClass }` →
+   * `{ ok, rows[], signedOut?, error? }`. Rows are the leaderboard's, plus
+   * `track_id`, `has_trace` and `has_line`. Empty when the league has never
+   * seen the circuit.
+   */
+  reviewBoard: (req) => ipcRenderer.invoke('review:board', req),
+
+  /**
+   * Your own quickest clean, traced lap for a board row: `{ trackId, carClass }`
+   * → `{ ok, lap: { sessionId, id, at, lapNo, lapMs } | null }`. What the
+   * Leaderboard tab opens in Review when a row is compared against.
+   */
+  reviewBestLap: (req) => ipcRenderer.invoke('review:bestLap', req),
 
   /** Subscribe to uploader state changes. Returns an unsubscribe function. */
   onLapSync: (callback) => {

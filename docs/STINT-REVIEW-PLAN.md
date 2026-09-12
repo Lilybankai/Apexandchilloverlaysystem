@@ -607,6 +607,24 @@ deposit on it.
    the leaderboard is a later decision; the schema below does not preclude it
    (traces are per-driver objects, so widening is an RLS policy change, not a
    migration).
+
+   **Widened 2026-09-12 (Carl): the comparison lap may be anyone's board lap.**
+   It turned out to need no RLS change at all — `lap_traces` (0004) was
+   readable by every signed-in driver from the start, and `get_lap_trace`
+   (0009) already handed a trace back whole. What was missing was the two
+   lookups either side of it (migration `0020_board_compare.sql`): the board
+   row saying whether it *has* a trace (`has_trace`/`has_line`), and a
+   read-only walk of `track_aliases` in both directions, because a local lap
+   knows its `trackKey` and a board row knows its `track_id` and neither knows
+   the other. The Review tab's picker gained a *Leaderboard* group, and the
+   Leaderboard tab a *Compare* button that opens Review with your best clean
+   traced lap at that circuit under theirs. Two things decided on the day:
+   board laps recorded before the driven line (pre-0.99.2) ARE offered, marked
+   "no line" — the charts and delta are real and only the map is one line —
+   and the two comparison paths share one function (`lapDetail.compareWith`)
+   so a delta against a rival can never read differently from one against
+   your own earlier lap. The archive half of phase 4 (Storage upload of every
+   session) is untouched by this.
 3. **Micro-sector count scales with track length.** ~500 m per micro-sector,
    clamped to a sane 8-20, so Silverstone National gets ~6-8 and Le Mans ~20
    rather than both getting Delta's fixed 13.

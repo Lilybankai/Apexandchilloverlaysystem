@@ -1393,6 +1393,10 @@
 .rv-refbar__time { font-family: var(--font-mono); color: var(--text-2); }
 .rv-refbar__note { font-size: 11.5px; color: var(--text-3); }
 .rv-refbar [data-refclear] { margin-left: auto; }
+/* A reference off the league board: where it came from, and the car — which
+   matters here in a way it never does between two of your own laps. */
+.rv-refbar__where { font-size: 11.5px; color: var(--text-3); }
+.rv-cmp__read em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
 
 /* ---- the gestures on the charts ---------------------------------------- */
 
