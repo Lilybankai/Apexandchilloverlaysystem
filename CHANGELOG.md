@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.6 — 2026-09-12
+
 ### Fixed
 
 - **The standings tower fits its OBS source.** Added to OBS as its own Browser
