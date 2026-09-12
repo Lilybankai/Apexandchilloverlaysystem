@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.7-beta.1 — 2026-09-12
+
 ### Added
 
 - **Compare your lap with anyone on the leaderboard.** The Review tab could
