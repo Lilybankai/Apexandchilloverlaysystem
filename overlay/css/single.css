@@ -109,3 +109,28 @@ body {
   max-width: calc(100vw - 14px);
   max-height: calc(100vh - 14px);
 }
+
+/* The standings tower is the other widget that states a width. overlay.css
+   gives it 474px, where it is the left column of a fixed 1920x1080 stage, and
+   the rule above only cancels the stage's *positioning* — so on this page the
+   tower stayed 474 wide however big the Browser Source was, and a source drawn
+   900 wide just showed 426px of nothing beside it. 474 is also too narrow for
+   the row it draws: the class tag, brand badge and DR/SR rating pair hold
+   ~82px of the driver cell before the name starts, and with table-layout:
+   fixed the name is the one column with no width of its own, so it was the
+   NAME that got ellipsised down to nothing (the in-game layer found the same
+   and defaults to 560 — see defaultsFor in js/ingame.js).
+
+   Here the Browser Source width IS the tower's width, exactly as the side
+   handle is in the in-game editor: the numeric columns keep their fixed widths
+   and every extra pixel lands on the driver name. 12px is the chrome around
+   the panel — `.single-page`'s 6px padding each side (the panel's 1px border
+   is inside its width: everything is border-box). The floor keeps a source
+   NARROWER than the old fixed width looking exactly as it did — cropped at the
+   right edge, not with the names squeezed out — so an existing source changes
+   only to gain room. The recommended size is on the tower's card in the
+   control panel (OVERLAY_CATALOG in electron/main.js). */
+.single-page #widget-standings {
+  width: calc(100vw - 12px);
+  min-width: 474px;
+}

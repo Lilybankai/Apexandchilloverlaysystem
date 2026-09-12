@@ -4,6 +4,25 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Fixed
+
+- **The standings tower fits its OBS source.** Added to OBS as its own Browser
+  Source, the tower ignored the size you gave the source and drew 474 pixels
+  wide no matter what — the same width it has on the all-in-one page, where it
+  is one column of a fixed 1920×1080 layout. A 900-wide source just showed
+  empty space beside it. And 474 was never enough for the row it draws: the
+  class tag, brand badge and rating pair take about 82 of those pixels before
+  the name starts, so with a full set of columns the driver names were the
+  thing that got cut down to "…".
+
+  The tower now fills whatever width the Browser Source is set to, exactly as
+  dragging its side edge does in game: the numeric columns keep their widths
+  and every extra pixel goes to the driver names. A source narrower than the
+  old fixed width looks the same as before, so nothing already on a stream
+  changes except to gain room. The Standings card in the control panel now
+  shows a recommended source size (580 × 800) next to its URL, as the Speedo
+  Cluster's already did.
+
 ## 0.99.5 — 2026-09-10
 
 ### Fixed
