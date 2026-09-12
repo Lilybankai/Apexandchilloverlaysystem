@@ -4,6 +4,21 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Changed
+
+- **The lap view is a cockpit.** Open a lap and it takes the whole window and
+  nothing in it scrolls: the channels stacked tall on the left, the circuit
+  large on the right with the cursor readout under it — the delta leading,
+  in figures you can read from the chair — and one command row across the
+  top with the lap, its sectors, who it is against and the zoom. The
+  micro-sectors are now a ribbon fused to the charts' distance axis, one
+  block per stretch of road all the way round, tinted by where the time went;
+  zoomed in, the ribbon is the minimap. *Change* slides the leaderboard in over
+  the map and the charts stay exactly where they are. The tab also uses the
+  width it is given instead of stopping at 1520 px, and on a wide screen the
+  session page puts the leaderboard beside the lap-time charts rather than
+  above them. The Big map toggle is gone because the map is always big now.
+
 ## 0.99.7-beta.2 — 2026-09-12
 
 ### Changed

@@ -102,7 +102,7 @@
         'With a lap to compare against, the two lines are coloured by PACE rather than by whose they are: green is the quicker of the two and red the slower. The line under the map says which one is yours, and so does the colour of the pill at the top naming the other lap. On its own, with nothing to compare against, your line is cyan.',
         'Each line carries its own car at the point of road you are reading. Move the cursor across the traces and both cars move with it, so you can see where the other lap was when you were here.',
         'The road is shaded by its elevation, pale for the high ground — so a climb is on the screen without a slab tilted at you.',
-        'Click any part of the road and the map frames that corner, filling the panel, with the charts following. Once you are zoomed in you can drag the map to move along the lap, and the charts come with you. Big map draws it full width under the charts instead, which is the view to lean into.',
+        'Click any part of the road and the map frames that corner, filling the panel, with the charts following. Once you are zoomed in you can drag the map to move along the lap, and the charts come with you. The ribbon under the charts is the whole lap, one block per stretch of road, so when you are zoomed in it shows which piece you are looking at.',
         'A scale bar sits in the corner and the whole circuit appears as a small outline once you are zoomed in, so you never lose where you are.',
         'The driven line only exists on laps recorded by a build that captures it. An older lap still opens — the car simply follows the centreline. "How it works" beside Refresh reopens this any time.',
       ],

@@ -93,8 +93,6 @@
    * `isBoardRef()`. Everything that prints the reference asks which.
    */
   let refLap = null;
-  /** Whether the circuit is drawn full width under the charts. Per machine. */
-  let bigMap = false;
   /**
    * The league board for the open session's circuit and class, fetched once
    * per session and kept: `{ key, state, rows, error }`. `state` is `idle`,
@@ -771,17 +769,26 @@
     const d = view.detail;
     const ch = d.channels;
     const i = view.cursor;
-    const cell = (label, value, band) =>
-      `<span class="rv-read__cell"${band ? ` data-band="${band}"` : ''}><b>${esc(label)}</b><i>${value}</i></span>`;
+    const cell = (key, label, value, band) =>
+      `<span class="rv-read__cell" data-key="${key}"${band ? ` data-band="${band}"` : ''}><b>${esc(label)}</b><i>${value}</i></span>`;
 
+    // Nothing under the pointer: the cells stand empty rather than vanishing,
+    // so the panel does not change shape every time the mouse leaves the
+    // charts. The delta slot says where the time went over the WHOLE lap.
     if (i === null || i === undefined || !ch.d || i >= ch.d.length) {
+      const total = view.delta && view.delta.dt.length ? view.delta.dt[view.delta.dt.length - 1] : null;
       return `
         <div class="rv-read" data-idle="true">
-          ${cell('V-max', `${speedOf(d.vMaxKph)} <u>${speedUnitLabel()}</u>`)}
-          ${cell('Samples', String(d.count))}
-          ${cell('Measured', `${fix(d.lapSec, 3)}<u>s</u>`)}
-          <span class="rv-read__hint">Move to read · click to hold a point on the map ·
-            drag across a section to zoom it · scroll to zoom</span>
+          ${view.vs ? cell('delta', 'Delta, whole lap', total === null ? dash : `${fmtSec(total)}<u>s</u>`, deltaBand(total))
+            : cell('delta', 'Delta', '<u>no comparison</u>')}
+          ${cell('speed', 'Speed', dash)}
+          ${cell('gear', 'Gear', dash)}
+          ${cell('throttle', 'Throttle', dash)}
+          ${cell('brake', 'Brake', dash)}
+          ${cell('steer', 'Steering', dash)}
+          ${cell('where', 'Distance', dash)}
+          ${cell('time', 'Time', dash)}
+          ${cell('g', 'G lat / lon', dash)}
         </div>`;
     }
 
@@ -791,21 +798,22 @@
     // The gap at the cursor comes off the delta trace by index, because the
     // delta was built on this lap's own grid — see lapDetail.deltaTrace.
     const gapSec = view.delta && known(view.delta.dt[i]) ? view.delta.dt[i] : null;
+    const held = view.pin !== null && view.pin !== undefined;
     return `
-      <div class="rv-read"${view.pin !== null && view.pin !== undefined ? ' data-pinned="true"' : ''}>
-        ${gapSec === null ? '' : cell('Delta', `${fmtSec(gapSec)}<u>s</u>`, deltaBand(gapSec))}
-        ${cell('Distance', `${Math.round(metres)}<u>m</u>`)}
-        ${cell('Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
-        ${cell('Speed', `${speedOf(ch.speedKph[i])}<u>${speedUnitLabel()}</u>`)}
-        ${cell('Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
-        ${cell('Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
-        ${cell('Gear', String(ch.gear[i]))}
-        ${cell('Steering', steer === null ? dash
+      <div class="rv-read"${held ? ' data-pinned="true"' : ''}>
+        ${cell('delta', held ? 'Delta · held' : 'Delta', gapSec === null ? '<u>no comparison</u>' : `${fmtSec(gapSec)}<u>s</u>`, deltaBand(gapSec))}
+        ${cell('speed', 'Speed', `${speedOf(ch.speedKph[i])}<u>${speedUnitLabel()}</u>`)}
+        ${cell('gear', 'Gear', String(ch.gear[i]))}
+        ${cell('throttle', 'Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
+        ${cell('brake', 'Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
+        ${cell('steer', 'Steering', steer === null ? dash
           : `${Math.abs(Math.round(steer * 100))}<u>${steer > 0.005 ? 'R' : steer < -0.005 ? 'L' : ''}</u>`)}
-        ${cell('G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
-        ${view.pin === null || view.pin === undefined ? '' : `
+        ${cell('where', 'Distance', `${Math.round(metres)}<u>m</u>`)}
+        ${cell('time', 'Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
+        ${cell('g', 'G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
+        ${held ? `
         <button type="button" class="rv-read__pin" data-unpin
-                title="Stop holding this point">held · release</button>`}
+                title="Stop holding this point">release</button>` : ''}
       </div>`;
   }
 
@@ -1117,10 +1125,13 @@
       <div class="rv-card rv-board" data-boardcard="${inLap ? 'lap' : 'session'}" data-folded="${String(folded)}">
         <div class="rv-card__head">
           <span class="rv-card__title">${title}</span>
-          <span class="rv-legend"><span>${inLap ? 'vs pins a rival to this circuit' : 'vs pins a rival to this circuit — every lap you open here is laid over theirs'}</span></span>
-          ${inLap ? '' : `<button type="button" class="btn btn--ghost btn--sm" data-boardtoggle aria-expanded="${String(!folded)}">
-            <span>${folded ? 'Show' : 'Hide'}</span>
-          </button>`}
+          ${inLap
+            ? `<button type="button" class="btn btn--ghost btn--sm" data-lapboard title="Close">
+                <svg class="icon"><use href="#i-x" /></svg><span>Close</span>
+              </button>`
+            : `<button type="button" class="btn btn--ghost btn--sm" data-boardtoggle aria-expanded="${String(!folded)}">
+                <span>${folded ? 'Show' : 'Hide'}</span>
+              </button>`}
         </div>
         ${folded ? '' : own + body}
       </div>`;
@@ -1136,12 +1147,6 @@
       : `${Math.round(a * m)}–${Math.round(b * m)} m`;
     return `
       <div class="rv-zoom">
-        <button type="button" class="btn btn--ghost btn--sm" data-mapsize
-                title="${bigMap ? 'Put the circuit back beside the charts'
-                  : 'Draw the circuit full width, under the charts'}">
-          <svg class="icon"><use href="#i-${bigMap ? 'orbit' : 'circuit'}" /></svg>
-          <span>${bigMap ? 'Small map' : 'Big map'}</span>
-        </button>
         <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
         <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
                 title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
@@ -1163,24 +1168,35 @@
    * Without a comparison lap they still divide the lap up and still zoom, they
    * just have no number on them yet.
    */
+  /**
+   * How much of a micro-sector the window is showing: all of it, some of it,
+   * or none. The ribbon always spans the WHOLE lap — it is the lap's own axis
+   * — so when the charts are zoomed the ribbon says which piece of the lap
+   * they are looking at, the way a minimap does.
+   */
+  function microState(seg, window) {
+    const [a, b] = window;
+    if (b - a >= 0.999) return 'false';
+    if (seg.from >= a - 1e-6 && seg.to <= b + 1e-6) return 'true';
+    if (seg.to > a + 1e-6 && seg.from < b - 1e-6) return 'part';
+    return 'false';
+  }
+
   function microHtml(view) {
     if (!view.micro || !view.micro.length) return '';
-    const [a, b] = view.window;
     return `
-      <div class="rv-micro" role="group" aria-label="Micro-sectors">
-        ${view.micro.map((seg) => {
-          const inside = seg.from >= a - 1e-6 && seg.to <= b + 1e-6 && b - a < 0.999;
-          return `
+      <div class="rv-micro" role="group" aria-label="Micro-sectors, the whole lap"
+           title="One block per ~500 m of road, all the way round. What each stretch cost or gained against the other lap; click one and the charts and the map go there.">
+        ${view.micro.map((seg) => `
           <button type="button" class="rv-micro__chip" data-micro="${seg.no}"
-                  data-band="${deltaBand(seg.deltaSec)}" data-on="${String(inside)}"
+                  data-band="${deltaBand(seg.deltaSec)}" data-on="${microState(seg, view.window)}"
                   title="${esc(`SQ${seg.no} · ${Math.round(seg.from * (view.lengthM || 0))}–${
                     Math.round(seg.to * (view.lengthM || 0))
                   } m${seg.deltaSec === null ? '' : ` · ${gapWords(seg.deltaSec * 1000)}`}`)}">
-            <b>SQ${seg.no}</b>
+            <b>${seg.no}</b>
             <i>${seg.deltaSec === null ? (known(seg.aSec) ? `${seg.aSec.toFixed(1)}s` : dash)
               : fmtSec(seg.deltaSec)}</i>
-          </button>`;
-        }).join('')}
+          </button>`).join('')}
       </div>`;
   }
 
@@ -1192,26 +1208,34 @@
    * It is one line of prose against a legend nobody reads, and it is only ever
    * one of three cases.
    */
-  function mapNote(view) {
-    const shaded = 'The road is shaded by its elevation, pale for the high ground.';
-    const moving = 'Click any part of it to zoom in, drag it to move along the lap, and Big map for a closer look.';
+  function mapLegendHtml(view) {
+    const how = 'Seen from directly above, to scale; the road is shaded by its elevation, pale for the high ground. Click a corner to frame it, drag the road to move along the lap, scroll to zoom.';
     if (!view.detail.hasLine) {
-      return `This lap was recorded before Apex captured the driven line, so the marker follows the centreline. ${shaded} ${moving}`;
+      return `<p class="rv-map__legend" title="${esc(how)}">
+        <i class="rv-swatch" data-line="you"></i>
+        <span>Recorded before Apex captured the driven line — the marker follows the centreline.</span>
+      </p>`;
     }
+    if (!view.vs) {
+      return `<p class="rv-map__legend" title="${esc(how)}">
+        <i class="rv-swatch" data-line="you"></i><span>Your line</span>
+      </p>`;
+    }
+    const theirs = refName(view.vsLap);
     const faster = fasterOf(view);
     if (!faster) {
-      return `Seen from directly above, to scale. Cyan is the line you drove${
-        view.vs ? ', violet the lap you are comparing with — the two set the same time, so neither is the quicker' : ''
-      }. ${shaded} ${moving}`;
+      return `<p class="rv-map__legend" title="${esc(how)}">
+        <i class="rv-swatch" data-line="you"></i><span>You</span>
+        <i class="rv-swatch" data-line="vs"></i><span>${esc(theirs)}</span>
+        <em>same time — neither is the quicker</em>
+      </p>`;
     }
-    const theirs = isBoardRef(view.vsLap)
-      ? `${esc(refName(view.vsLap))}'s`
-      : `lap ${esc(String(view.vsLap ? view.vsLap.lapNo : ''))}`;
-    const green = faster === 'mine' ? 'yours' : theirs;
-    const red = faster === 'mine' ? theirs : 'yours';
-    return `Seen from directly above, to scale. <b>Green is the quicker lap</b> — here that is ${green} — `
-      + `and red the slower, which is ${red}. Each carries its own car at the point of road you are reading. `
-      + `${shaded} ${moving}`;
+    const mine = faster === 'mine';
+    return `<p class="rv-map__legend" title="${esc(how)}">
+      <i class="rv-swatch" data-line="quicker"></i><span>${mine ? 'You' : esc(theirs)}</span>
+      <i class="rv-swatch" data-line="slower"></i><span>${mine ? esc(theirs) : 'You'}</span>
+      <em>green is the quicker lap; each line carries its own car at the point you are reading</em>
+    </p>`;
   }
 
   function lapViewHtml(view) {
@@ -1225,50 +1249,54 @@
     const sectorChip = (n, ms) => `
       <span class="rv-chip"><b>S${n}</b>${known(ms) ? fmtSector(ms) : dash}</span>`;
 
+    // The cockpit (2026-09-13). One command row, then two columns that fill
+    // the window: the channels on the left with the micro-sector ribbon fused
+    // to their distance axis, the circuit on the right with the cursor readout
+    // under it. Nothing on this screen scrolls; a driver studying a braking
+    // zone should not be scrolling to find the map that shows it. The
+    // leaderboard slides in over the map when asked for — the charts never
+    // move for it.
+    const where = [d.track, d.car].filter(Boolean).join(' · ');
     return `
-      <div class="rv-card rv-lap">
-        <div class="rv-lap__head">
-          <button type="button" class="btn btn--ghost btn--sm" data-lapback>
+      <div class="rv-lap">
+        <div class="rv-lap__bar">
+          <button type="button" class="btn btn--ghost btn--sm" data-lapback title="Back to the session">
             <svg class="icon"><use href="#i-arrow-left" /></svg><span>Session</span>
           </button>
-          <span class="rv-lap__name">Lap ${lap.lapNo}<i> · stint ${lap.stintNo}</i></span>
+          <span class="rv-lap__name" title="${esc(where)}">Lap ${lap.lapNo}<i> · stint ${lap.stintNo}</i></span>
           <span class="rv-lap__time"${lap.clean && best !== null && lap.lapMs === best ? ' data-best="true"' : ''}>${
             lap.timed ? fmtLap(lap.lapMs) : dash
           }</span>
-          ${gap === null ? '' : `<span class="rv-lap__gap">${fmtDelta(gap)}</span>`}
+          ${gap === null ? '' : `<span class="rv-lap__gap" title="Against the session best">${fmtDelta(gap)}</span>`}
           ${lap.clean ? '' : lap.dirty.map((why) =>
             `<span class="rv-flag" data-why="${esc(why)}">${esc(why)}</span>`).join('')}
-          <span class="rv-lap__where">${esc(d.track || '')}${
-            d.car ? ` · ${esc(d.car)}` : ''
-          }</span>
           <span class="rv-lap__chips">
             ${sectorChip(1, lap.s1Ms)}${sectorChip(2, lap.s2Ms)}${sectorChip(3, lap.s3Ms)}
           </span>
-        </div>
 
-        <div class="rv-lap__bar2">
-          ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
-                title="Dashed on the charts, in each channel's own colour. On the map the quicker of the two laps is green and the slower red.">
-            <i class="rv-cmp__swatch" aria-hidden="true"></i>
-            <span class="rv-cmp__tag">vs</span>
-            <b>${esc(refName(view.vsLap))}</b>
-            ${isBoardRef(view.vsLap) && view.vs.car ? `<em>${esc(view.vs.car)}</em>` : ''}
-            <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
-            ${vsGap === null ? '' : `<i>${esc(yourGapWords(vsGap))}</i>`}
-          </span>` : `<span class="rv-cmp rv-cmp--none">${view.vsLap && !view.vsError ? 'Reading the other lap…' : 'Nothing to compare against'}</span>`}
-          ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
-          <button type="button" class="btn btn--ghost btn--sm" data-lapboard aria-expanded="${String(lapBoardOpen)}"
-                  title="Choose who to compare against — the leaderboard for this circuit, or another lap of this session">
-            <svg class="icon"><use href="#i-list-ordered" /></svg><span>${view.vs ? 'Change' : 'Compare with…'}</span>
-          </button>
+          <span class="rv-lap__vs">
+            ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
+                  title="Dashed on the charts, in each channel's own colour. On the map the quicker of the two laps is green and the slower red.">
+              <i class="rv-cmp__swatch" aria-hidden="true"></i>
+              <span class="rv-cmp__tag">vs</span>
+              <b>${esc(refName(view.vsLap))}</b>
+              ${isBoardRef(view.vsLap) && view.vs.car ? `<em>${esc(view.vs.car)}</em>` : ''}
+              <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
+              ${vsGap === null ? '' : `<i>${esc(yourGapWords(vsGap))}</i>`}
+            </span>` : `<span class="rv-cmp rv-cmp--none">${view.vsLap && !view.vsError ? 'Reading the other lap…' : 'Nothing to compare against'}</span>`}
+            ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
+            <button type="button" class="btn btn--ghost btn--sm" data-lapboard aria-expanded="${String(lapBoardOpen)}"
+                    title="Choose who to compare against — the leaderboard for this circuit, or another lap of this session">
+              <svg class="icon"><use href="#i-list-ordered" /></svg><span>${view.vs ? 'Change' : 'Compare with…'}</span>
+            </button>
+          </span>
+
           ${zoomHtml(view)}
         </div>
-        ${lapBoardOpen ? boardCardHtml(true) : ''}
 
-        <div class="rv-lap__body" data-map="${bigMap ? 'big' : 'side'}">
+        <div class="rv-lap__body">
           <div class="rv-lap__charts">
-            <div class="rv-readwrap">${readoutHtml(view)}</div>
-            <div class="rv-chan"><canvas></canvas></div>
+            <div class="rv-chan" title="Move to read · click to hold a point on the map · drag across a stretch to zoom it · scroll to zoom · shift-drag to pan"><canvas></canvas></div>
             ${microHtml(view)}
           </div>
           <aside class="rv-lap__side">
@@ -1277,16 +1305,17 @@
                 <svg class="icon"><use href="#i-circuit" /></svg>
                 <span>No circuit shape for ${esc(d.track || 'this track')} yet.</span>
               </div>`}</div>
-            <p class="rv-lap__note">${mapNote(view)}</p>
-            <div class="rv-rows">
-              <div class="rv-row"><b>V-max</b><span>${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span></div>
-              <div class="rv-row"><b>Samples</b><span>${d.count}${d.truncated ? ' (capped)' : ''}</span></div>
-              <div class="rv-row"><b>Circuit</b><span data-none="${String(!view.map)}">${
+            ${mapLegendHtml(view)}
+            <div class="rv-readwrap">${readoutHtml(view)}</div>
+            <div class="rv-vitals">
+              <span title="Highest speed anywhere on the lap"><b>V-max</b> ${speedOf(d.vMaxKph)} ${speedUnitLabel()}</span>
+              <span title="Points the trace holds"><b>Samples</b> ${d.count}${d.truncated ? ' (capped)' : ''}</span>
+              <span title="Where the circuit shape came from"><b>Circuit</b> ${
                 view.map ? `${view.map.points.length} pts${view.map.builtin ? ', bundled' : ', learned'}` : dash
-              }</span></div>
-              ${view.elevation ? `<div class="rv-row"><b>Elevation</b><span>${
-                Math.round(view.elevation)} m rise</span></div>` : ''}
+              }</span>
+              ${view.elevation ? `<span><b>Elevation</b> ${Math.round(view.elevation)} m rise</span>` : ''}
             </div>
+            ${lapBoardOpen ? `<div class="rv-drawer">${boardCardHtml(true)}</div>` : ''}
           </aside>
         </div>
       </div>`;
@@ -1364,8 +1393,7 @@
       for (const chip of els.detail.querySelectorAll('.rv-micro__chip')) {
         const seg = view.micro[Number(chip.dataset.micro) - 1];
         if (!seg) continue;
-        chip.setAttribute('data-on',
-          String(!whole && seg.from >= a - 1e-6 && seg.to <= b + 1e-6));
+        chip.setAttribute('data-on', microState(seg, view.window));
       }
     };
     view.repaint = repaint;
@@ -1777,6 +1805,10 @@
   function renderDetail() {
     if (!els.detail) return;
     if (chartOff) { chartOff(); chartOff = null; }
+    // The lap view is a cockpit that fills the window; the session view is a
+    // page that scrolls. The CSS keys off this, hiding the tab's heading and
+    // the career strip while a lap is open so the charts get the height.
+    if (els.view) els.view.setAttribute('data-mode', lapView ? 'lap' : 'session');
 
     // Only when there is nothing already on screen: re-reading the list on
     // every visit must not blank a session the driver is still looking at.
@@ -1838,8 +1870,9 @@
       </div>
 
       ${refBarHtml()}
-      ${boardCardHtml(false)}
 
+      <div class="rv-cols">
+      <div class="rv-cols__main">
       <div class="rv-card">
         <div class="rv-card__head">
           <span class="rv-card__title">Lap times</span>
@@ -1877,8 +1910,13 @@
         <p class="rv-card__note">Percentage of the tyre used, so it climbs as the stint
           goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
       </div>` : ''}
+      </div>
+      <div class="rv-cols__side">
+        ${boardCardHtml(false)}
+      </div>
+      </div>
 
-      <div>${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
+      <div class="rv-stints">${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
     `;
 
     paintCharts();
@@ -2097,9 +2135,6 @@
     els.list = $('#rv-sessions');
     els.detail = $('#rv-detail');
     els.career = $('#rv-career');
-    try { bigMap = window.localStorage.getItem('apex.review.bigMap') === '1'; } catch {
-      /* storage off: the circuit starts beside the charts */
-    }
     loadPrefs();
 
     if (els.search) els.search.addEventListener('input', renderList);
@@ -2181,16 +2216,6 @@
             /* storage off: the fold lasts the run */
           }
           refreshBoardCards();
-          return;
-        }
-
-        // The circuit, beside the charts or full width under them.
-        if (evt.target.closest('[data-mapsize]')) {
-          bigMap = !bigMap;
-          try { window.localStorage.setItem('apex.review.bigMap', bigMap ? '1' : '0'); } catch {
-            /* storage off: the choice lasts the session */
-          }
-          renderDetail();
           return;
         }
 

@@ -1423,8 +1423,16 @@
    is pinned to the CIRCUIT, so the same button says "pinned" on every session
    there until it is pressed again. */
 .rv-board__scroll { max-height: 320px; overflow: auto; }
-.rv-board__table td.who { text-align: left; font-family: var(--font-ui); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-.rv-board__table td.car { text-align: left; font-family: var(--font-ui); color: var(--text-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+/* Fixed layout, so the driver and car columns give way (with an ellipsis)
+   when the card is narrow — beside the charts on a wide screen it is a third
+   of the page — instead of the numbers on the right being pushed out of it. */
+.rv-board__table { table-layout: fixed; width: 100%; }
+.rv-board__table th:nth-child(1) { width: 40px; }
+.rv-board__table th:nth-child(4) { width: 80px; }
+.rv-board__table th:nth-child(5) { width: 64px; }
+.rv-board__table th:nth-child(6) { width: 68px; }
+.rv-board__table td.who { text-align: left; font-family: var(--font-ui); overflow: hidden; text-overflow: ellipsis; }
+.rv-board__table td.car { text-align: left; font-family: var(--font-ui); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
 .rv-board__table th:nth-child(2), .rv-board__table th:nth-child(3) { text-align: left; }
 .rv-board__table td.gapc { color: var(--text-3); }
 .rv-board__table tr[data-you='true'] td { color: var(--cyan); }
@@ -1464,6 +1472,247 @@
 }
 .rv-refbtn--chip { opacity: 0.8; text-transform: none; letter-spacing: 0; font-size: 11px; }
 .rv-refbtn--chip i { font-style: normal; font-family: var(--font-mono); color: var(--text-2); margin-left: 4px; }
+
+/* ============================== THE COCKPIT ==============================
+ *
+ * 2026-09-13. Carl's screen is 2000 CSS pixels wide and the tab stopped at
+ * 1520; the lap view was a document — two toolbars, a board that pushed the
+ * charts down when it opened, five charts, a row of chips, and only then the
+ * map, below the fold. A driver studying a braking zone was scrolling to find
+ * the corner it was in.
+ *
+ * So the lap view is now a cockpit: it takes the whole window and nothing in
+ * it scrolls. One command row; the channels on the left, tall enough to read;
+ * the circuit on the right, large, with the cursor readout under it. The
+ * micro-sectors are a ribbon fused to the charts' distance axis — the one
+ * bold element on the screen, because it is the one that says WHERE the time
+ * went. The leaderboard slides in over the map when asked for; the charts
+ * never move for it. The session screen stays a page, but a wide one, with
+ * the board beside the charts rather than above them.
+ *
+ * Everything below overrides an earlier rule of the same name on purpose:
+ * same or greater specificity, later in the file, so it wins.
+ */
+
+/* The tab uses the width it is given. */
+.view[data-view='review'] .wrap--wide { max-width: none; }
+
+/* ---- lap mode fills the window ------------------------------------------
+   `.content` is the panel's scroller and a flex item with a definite height,
+   so a percentage height resolves all the way down this chain. The tab's own
+   heading and the career strip step aside while a lap is open — they are
+   context for the session list, and the charts want the height. */
+.view[data-view='review'][data-mode='lap'] { height: 100%; }
+.view[data-view='review'][data-mode='lap'] .wrap--wide { height: 100%; min-height: 0; }
+.view[data-view='review'][data-mode='lap'] .view__head,
+.view[data-view='review'][data-mode='lap'] #rv-career { display: none; }
+.view[data-view='review'][data-mode='lap'] .rv {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  align-items: stretch;
+  grid-template-rows: minmax(0, 1fr);
+}
+.view[data-view='review'][data-mode='lap'] .rv__rail { max-height: 100%; }
+.view[data-view='review'][data-mode='lap'] .rv__detail { height: 100%; min-height: 0; }
+
+.rv-lap {
+  height: 100%;
+  /* Below this the charts are too short to read; the page scrolls instead. */
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px 14px;
+}
+
+/* ---- the command row ------------------------------------------------------
+   Lap, time, sectors; who it is against; where on it we are looking. One row
+   on a wide screen, and it wraps in that order when it has to. */
+.rv-lap__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.rv-lap__chips { margin-left: 0; }
+/* Two rows by design, not by overflow: the lap and the zoom on the first, the
+   comparison on the second. A pill naming a rival and their car is the one
+   thing on this row whose length nobody controls, so it gets a row of its own
+   rather than deciding where everything else wraps. */
+.rv-lap__vs { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; order: 3; }
+.rv-zoom { margin-left: auto; order: 2; }
+
+/* In the cockpit the session list is not in use — the Session button is the
+   way back — so the lap takes the whole width. */
+.view[data-view='review'][data-mode='lap'] .rv { grid-template-columns: minmax(0, 1fr); }
+.view[data-view='review'][data-mode='lap'] .rv__rail { display: none; }
+
+/* ---- the two columns ----------------------------------------------------- */
+.rv-lap__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+  gap: 14px;
+  min-height: 0;
+  align-items: stretch;
+}
+@media (max-width: 1240px) {
+  .rv-lap__body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+}
+
+.rv-lap__charts { display: flex; flex-direction: column; gap: 0; min-height: 0; min-width: 0; }
+.rv-chan { flex: 1 1 auto; height: auto; min-height: 240px; }
+
+/* ---- the ribbon ------------------------------------------------------------
+   One block per micro-sector, edge to edge under the charts and inset by the
+   painter's own axis padding (46px left, 8px right — drawChannels), so the
+   blocks sit under the road they describe. Always the WHOLE lap: when the
+   charts are zoomed the ribbon is the minimap, and the blocks on the charts
+   are outlined. The tint is the whole information — a row of these reads as
+   a shape before it reads as numbers, and the shape is where the time went. */
+.rv-micro {
+  display: flex;
+  gap: 2px;
+  overflow: visible;
+  padding: 6px 8px 0 46px;
+}
+.rv-micro__chip {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px 5px;
+  border: 1px solid transparent;
+  border-top: 2px solid var(--line-2);
+  border-radius: 0 0 4px 4px;
+  background: var(--panel-2);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+.rv-micro__chip:first-child { border-bottom-left-radius: 6px; }
+.rv-micro__chip:last-child { border-bottom-right-radius: 6px; }
+.rv-micro__chip b { font-size: 9px; letter-spacing: 0.04em; color: var(--text-3); }
+.rv-micro__chip i { font-size: 11.5px; }
+.rv-micro__chip:hover { background: var(--panel-3); border-color: transparent; }
+.rv-micro__chip[data-band='loss'] { border-top-color: var(--bad); background: rgba(255, 84, 112, 0.10); }
+.rv-micro__chip[data-band='loss']:hover { background: rgba(255, 84, 112, 0.18); }
+.rv-micro__chip[data-band='gain'] { border-top-color: var(--ok); background: rgba(53, 208, 127, 0.10); }
+.rv-micro__chip[data-band='gain']:hover { background: rgba(53, 208, 127, 0.18); }
+.rv-micro__chip[data-on='true'] {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--cyan);
+}
+.rv-micro__chip[data-on='part'] { box-shadow: inset 0 0 0 1px rgba(38, 187, 244, 0.4); }
+.rv-micro__chip[data-on='true'] b, .rv-micro__chip[data-on='part'] b { color: var(--cyan); }
+
+/* ---- the right column: circuit, then the numbers --------------------------- */
+.rv-lap__side {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+}
+.rv-map { aspect-ratio: auto; height: 100%; min-height: 0; }
+
+.rv-map__legend {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.rv-map__legend span { color: var(--text-2); margin-right: 6px; }
+.rv-map__legend em { font-style: normal; flex-basis: 100%; }
+.rv-swatch { display: inline-block; width: 16px; border-top: 2px solid var(--cyan); }
+.rv-swatch[data-line='vs'] { border-top-color: #8b7dff; border-top-style: dashed; }
+.rv-swatch[data-line='quicker'] { border-top-color: var(--ok); }
+.rv-swatch[data-line='slower'] { border-top-color: var(--bad); }
+
+/* The readout: a grid of figures, the delta leading. Label over value, so a
+   column of these is read the way a dash is read — glance, not parse. The
+   cells are always there; with nothing under the pointer they hold a dash
+   rather than vanishing, so the panel never changes shape. */
+.rv-read {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 10px;
+  align-items: start;
+  padding: 10px 12px 11px;
+  min-height: 0;
+}
+.rv-read__cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; white-space: nowrap; }
+.rv-read__cell i { font-size: 15px; line-height: 1.15; }
+.rv-read__cell[data-key='delta'] { grid-column: 1 / -1; }
+.rv-read__cell[data-key='delta'] i { font-size: 27px; line-height: 1.05; }
+.rv-read__cell[data-key='delta'] i u { font-size: 11px; }
+.rv-read__cell[data-key='g'] i { font-size: 13px; }
+.rv-read[data-idle='true'] .rv-read__cell i { color: var(--text-3); }
+.rv-read[data-idle='true'] .rv-read__cell[data-key='delta'] i { color: var(--text); }
+.rv-read[data-idle='true'] .rv-read__cell[data-key='delta'][data-band='gain'] i { color: var(--ok); }
+.rv-read[data-idle='true'] .rv-read__cell[data-key='delta'][data-band='loss'] i { color: var(--bad); }
+.rv-read__pin { grid-column: 1 / -1; justify-self: start; }
+
+.rv-vitals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.rv-vitals b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+/* ---- the drawer ------------------------------------------------------------
+   The leaderboard, over the right column, when Change is pressed. Over the
+   map and not under the charts, because the charts are what the driver is
+   holding a cursor on. Closes from its own header or from the same button. */
+.rv-drawer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.rv-drawer .rv-board {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+.rv-drawer .rv-board__scroll { max-height: none; flex: 1 1 auto; min-height: 0; }
+
+/* ---- the session screen, wide ------------------------------------------------
+   The charts and the board side by side once there is room for both; the
+   report above them and the stints below stay full width. */
+.rv-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.rv-cols__main, .rv-cols__side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (min-width: 1560px) {
+  .rv-cols { grid-template-columns: minmax(0, 1fr) minmax(380px, 36%); align-items: start; }
+  .rv-cols__side { position: sticky; top: 60px; }
+}
 
 /* ---- the gestures on the charts ---------------------------------------- */
 
