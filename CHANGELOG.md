@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.7-beta.3 — 2026-09-13
+
 ### Changed
 
 - **The lap view is a cockpit.** Open a lap and it takes the whole window and
