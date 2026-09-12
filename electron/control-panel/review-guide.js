@@ -87,7 +87,7 @@
       title: 'One lap, and the lap you are chasing',
       lead: 'Open a lap and you get speed, throttle and brake, gear and steering, all drawn against DISTANCE round the circuit rather than against time — so two laps line up at the same corner instead of drifting apart.',
       points: [
-        'Compare with lays a second lap of the same session underneath, dashed, in each channel’s own colour. The delta band above them reads slower above the line, faster below.',
+        'The leaderboard card on the session screen lists everyone’s best here. Press vs on a driver and they are pinned to this circuit: every lap you open at this track is laid over theirs, dashed, in each channel’s own colour, until you unpin them. The vs on your own sheet does the same with one of your laps. The delta band above them reads slower above the line, faster below.',
         'Move the mouse across the traces to read every value at that point of the road. Click to hold a point; drag across a section to zoom into it; scroll to zoom.',
         'The chips under the charts split the lap into stretches of about 500 m and say what each one cost or gained against the other lap. Red is where the time went. Click one and the charts and the map both go there.',
         'This is the point of the tab: getting from "I was 0.7 s slower" to "I was 0.18 s slower into turn 11".',

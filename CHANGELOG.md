@@ -4,6 +4,24 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Changed
+
+- **A rival is pinned to the circuit, and the leaderboard is a card, not a
+  dropdown.** The first cut of comparing with the leaderboard (beta.1) held
+  the rival the same way as one of your own laps — so clicking another session
+  in the list lost them — and offered the board as a dropdown you had to
+  scroll. Both are replaced. The leaderboard for the session's circuit and
+  class now sits on the session screen under the report, every driver's best
+  with a *vs* button on each row that has telemetry; press it and that driver
+  is **pinned to the circuit**: every session and every lap you open at that
+  track is laid over theirs, across sessions and across restarts, until you
+  unpin them or pin someone else. A sticky strip at the top of the session says
+  who you are comparing against, from wherever you are on the sheet. In the
+  lap view the dropdown is gone; the pill names the rival and *Change* folds
+  the same board out under the bar, with this session's other laps as chips
+  beside it. The Leaderboard tab's *Compare* button now pins the driver the
+  same way before opening your best lap over theirs.
+
 ## 0.99.7-beta.1 — 2026-09-12
 
 ### Added

@@ -529,8 +529,9 @@
           title: 'Two laps, one window',
           body:
             'Speed, throttle and brake, gear and steering, drawn against DISTANCE round the circuit ' +
-            'so two laps line up at the same corner. Compare with lays a second lap underneath and a ' +
-            'delta band runs above them: slower above the line, faster below.',
+            'so two laps line up at the same corner. Pin a driver from the leaderboard card, or press ' +
+            'vs on one of your own laps, and it is laid underneath with a delta band above: slower ' +
+            'above the line, faster below.',
           note:
             'The chips under the charts split the lap into stretches of about 500 m and say what ' +
             'each cost or gained. Click one and the charts and the map both go there.',

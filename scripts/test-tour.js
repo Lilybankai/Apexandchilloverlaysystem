@@ -279,7 +279,8 @@ check('the data-age pill is explained', /stale/.test(inTour('team')));
 check('a tour covers the reviewer', !!tour.tourById('review'));
 check('reading a session back is explained', /session/.test(inTour('review')));
 check('the optimal lap is explained', /optimal/.test(inTour('review')));
-check('two laps at once is explained', /compare with/.test(inTour('review')));
+check('two laps at once is explained', /laid (underneath|over)/.test(inTour('review')));
+check('pinning a leaderboard rival is explained', /pin a driver/i.test(inTour('review')));
 check('which way the delta goes is stated', /slower above/.test(inTour('review')));
 check('the map being to scale is stated', /to scale/.test(inTour('review')));
 check('the map colours are said to mean pace',
@@ -306,7 +307,8 @@ check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
   check('every guide step says something', reviewGuide.STEPS.every((s) => s.lead && s.points.length));
   check('the guide states nothing is uploaded', /uploaded/.test(guide));
   check('the guide explains the optimal lap', /optimal/.test(guide));
-  check('the guide explains comparing two laps', /compare with/.test(guide));
+  check('the guide explains comparing two laps', /laid (underneath|over)/.test(guide));
+  check('the guide explains pinning a rival to the circuit', /pinned to this circuit/.test(guide));
   check('the guide explains the micro-sector chips', /cost or gained/.test(guide));
   check('the guide explains the map is a plan', /to scale/.test(guide));
   // The map's two lines are coloured by PACE, not by whose they are — which is

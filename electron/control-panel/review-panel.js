@@ -855,18 +855,87 @@
   }
 
   /* ---- The leaderboard as a comparison ---------------------------------- */
+  /*
+   * Reworked 2026-09-12 after Carl tried the first cut. A rival off the
+   * league board belongs to the CIRCUIT, not to a session: pin Mark at Monza
+   * and every session and every lap you open at Monza is laid over his, until
+   * you unpin him or pin someone else. The first cut held the rival in the
+   * same slot as a session lap (cleared on every session change) and offered
+   * the board as a dropdown — so the pin was lost by clicking the session
+   * list, and finding a driver meant scrolling a <select>. Both gone.
+   *
+   * Two kinds of reference now, resolved by `activeRef()`:
+   *   - `refLap`   one of THIS session's laps, chosen on the sheet. Lasts the
+   *                session; going to another session drops it (it belongs to
+   *                this one). While set, it shadows the pin.
+   *   - `pins`     one board lap per circuit+class, kept per machine. Chosen
+   *                from the leaderboard card, which sits on the session screen
+   *                where the times are, and folds out under the lap view's bar.
+   */
 
   /** A reference that is a lap on the league board rather than one of ours. */
   const isBoardRef = (ref) => !!ref && ref.board === true;
 
-  /** The `value` a board row takes in the picker. */
-  const boardValue = (ref) => `board:${ref.driverId}`;
+  /** `trackKey|CLASS` — what a pin is filed under. */
+  const circuitKey = (s) => (s && s.trackKey && s.carClass
+    ? `${s.trackKey}|${String(s.carClass).toUpperCase()}` : '');
+
+  /** Board pins by circuit, restored on init. */
+  let pins = {};
+  /** Whether the session screen's leaderboard card is folded. Per machine. */
+  let boardFolded = false;
+  /** Whether the lap view's fold-out board is open. Lasts the lap. */
+  let lapBoardOpen = false;
+
+  function loadPrefs() {
+    try {
+      const raw = window.localStorage.getItem('apex.review.pins');
+      const parsed = raw ? JSON.parse(raw) : null;
+      pins = parsed && typeof parsed === 'object' ? parsed : {};
+      boardFolded = window.localStorage.getItem('apex.review.boardFolded') === '1';
+    } catch {
+      pins = {};
+    }
+  }
+
+  function savePins() {
+    try { window.localStorage.setItem('apex.review.pins', JSON.stringify(pins)); } catch {
+      /* storage off: the pin lasts the run */
+    }
+  }
+
+  /** The pinned rival for a session's circuit, or null. */
+  const pinFor = (s) => pins[circuitKey(s)] || null;
 
   /**
-   * A leaderboard row as a reference the rest of this file can hold in
-   * `refLap`: what `review:lap` needs to fetch it, and what the captions need
-   * to name it. `track_id` comes from the board lookup, which is what makes
-   * the row addressable at all — the lap files know the circuit by key.
+   * What a lap opened now is laid over: the sheet's own-lap choice if there
+   * is one, else the circuit's pin. `lap` is the lap about to be opened, so a
+   * reference that IS that lap yields nothing rather than a lap over itself.
+   */
+  function activeRef(lap) {
+    if (refLap && !(lap && refLap.id === lap.id)) return refLap;
+    return pinFor(current);
+  }
+
+  /** Pin (or, if already pinned, unpin) a board row for the open circuit. */
+  function togglePin(ref) {
+    const key = circuitKey(current);
+    if (!key || !ref) return null;
+    const had = pins[key];
+    if (had && had.driverId === ref.driverId) delete pins[key];
+    else pins[key] = ref;
+    savePins();
+    // A pin is the circuit's reference; choosing one is choosing to compare
+    // against it, so a session lap chosen earlier stops shadowing it.
+    refLap = null;
+    return pins[key] || null;
+  }
+
+  /**
+   * A leaderboard row as a reference the rest of this file can hold: what
+   * `review:lap` needs to fetch it, and what the captions need to name it.
+   * `track_id` comes from the board lookup, which is what makes the row
+   * addressable at all — the lap files know the circuit by key.
    */
   function boardRefOf(row) {
     return {
@@ -890,41 +959,30 @@
     return `Lap ${ref.lapNo}`;
   }
 
-  /** The board rows that can be laid under a lap: has a trace, and is not you. */
-  function boardOptions() {
-    if (board.state !== 'ok') return [];
-    return board.rows
-      .filter((row) => row.has_trace && !row.is_you)
-      .map((row) => {
-        const ref = boardRefOf(row);
-        const gap = typeof row.gap_ms === 'number' ? ` · +${(row.gap_ms / 1000).toFixed(3)}` : '';
-        return {
-          ref,
-          label: `${refName(ref)} · ${fmtLap(row.lap_ms)}${gap}${row.has_line ? '' : ' · no line'}`,
-        };
-      });
+  /** Where a reference came from, for the strip. */
+  function refWhere(ref) {
+    if (!ref) return '';
+    if (isBoardRef(ref)) return `leaderboard${ref.car ? ` · ${ref.car}` : ''}`;
+    return `this session · stint ${ref.stintNo}`;
   }
 
-  /** One line for the board group when it has no rows to offer, or null. */
+  /** One line for the board card when it has no rows to show, or null. */
   function boardNote() {
     switch (board.state) {
+      case 'idle':
       case 'loading': return 'Reading the leaderboard…';
-      case 'signed-out': return 'Sign in to compare with the leaderboard';
-      case 'error': return 'The leaderboard could not be reached';
-      case 'ok': {
-        if (!board.rows.length) return 'Nobody on the leaderboard here yet';
-        if (!boardOptions().length) return 'No leaderboard lap here has telemetry yet';
-        return null;
-      }
+      case 'signed-out': return 'Sign in to see the leaderboard and compare against it.';
+      case 'error': return 'The leaderboard could not be reached.';
+      case 'ok': return board.rows.length ? null : 'Nobody on the leaderboard here yet — yours could be the first.';
       default: return null;
     }
   }
 
   /**
-   * Fetch the board for the open session's circuit and class, once. The
-   * picker is re-rendered in place when it lands rather than through
-   * renderDetail(): a driver may already be scrubbing the lap, and repainting
-   * the whole view to add options to a dropdown would drop their cursor.
+   * Fetch the board for the open session's circuit and class, once. The card
+   * is re-rendered in place when it lands rather than through renderDetail():
+   * a driver may already be scrubbing a lap, and repainting the whole view to
+   * fill a table would drop their cursor.
    */
   async function ensureBoard(session) {
     if (!session || !session.trackKey || !session.carClass) return;
@@ -945,46 +1003,127 @@
     } else {
       board = { key, state: 'error', rows: [], error: (res && res.error) || '' };
     }
-    refreshComparePicker();
+    refreshBoardCards();
   }
 
-  /** Swap the picker's options for the current ones without touching the rest. */
-  function refreshComparePicker() {
-    if (!els.detail || !lapView || !lapView.detail) return;
-    const host = els.detail.querySelector('[data-cmphost]');
-    if (host) host.outerHTML = compareHtml(lapView);
-  }
-
-  /** The comparison picker, and what it is currently showing. */
-  function compareHtml(view) {
-    const opts = compareOptions(view);
-    const boardOpts = boardOptions();
-    const note = boardNote();
-    if (!opts.length && !boardOpts.length) {
-      const why = note ? ` — ${note.toLowerCase()}` : '';
-      return `<span class="rv-cmp rv-cmp--none" data-cmphost>No other lap here has telemetry${esc(why)}</span>`;
+  /** Swap every board card on screen for the current one, touching nothing else. */
+  function refreshBoardCards() {
+    if (!els.detail) return;
+    for (const host of els.detail.querySelectorAll('[data-boardcard]')) {
+      host.outerHTML = boardCardHtml(host.getAttribute('data-boardcard') === 'lap');
     }
-    const chosen = view.vsLap
-      ? (isBoardRef(view.vsLap) ? boardValue(view.vsLap) : view.vsLap.id)
-      : '';
-    const where = current ? `${current.carClass || ''} at ${current.track || ''}`.trim() : '';
+  }
+
+  /**
+   * The strip that says what every lap opens against. On the session screen
+   * it is sticky, so it is readable however far down the sheet you are; on
+   * the lap view it is the bar's first item. Its Clear button clears whichever
+   * reference is active — a session lap, or the circuit's pin.
+   */
+  function refBarHtml() {
+    const ref = activeRef(null);
+    if (!ref) return '';
+    const pinned = isBoardRef(ref);
     return `
-      <label class="rv-cmp" data-cmphost>
-        <span>Compare with</span>
-        <select data-cmp aria-label="Lay another lap under this one">
-          <option value=""${chosen ? '' : ' selected'}>Nothing</option>
-          ${opts.length ? `<optgroup label="This session">${opts.map((o) => `<option value="${esc(o.lap.id || '')}"${
-            chosen === o.lap.id ? ' selected' : ''
-          }>${esc(o.label)}</option>`).join('')}</optgroup>` : ''}
-          <optgroup label="${esc(`Leaderboard · ${where}`)}">
-            ${boardOpts.length
-              ? boardOpts.map((o) => `<option value="${esc(boardValue(o.ref))}"${
-                chosen === boardValue(o.ref) ? ' selected' : ''
-              }>${esc(o.label)}</option>`).join('')
-              : `<option value="" disabled>${esc(note || '')}</option>`}
-          </optgroup>
-        </select>
-      </label>`;
+      <div class="rv-refbar" data-kind="${pinned ? 'board' : 'own'}">
+        <span class="rv-refbar__tag">Comparing against</span>
+        <b>${esc(refName(ref))}</b>
+        <span class="rv-refbar__where">${esc(refWhere(ref))}</span>
+        <span class="rv-refbar__time">${pinned
+          ? fmtLap(ref.lapMs)
+          : (ref.timed ? fmtLap(ref.lapMs) : dash)}</span>
+        <span class="rv-refbar__note">${pinned
+          ? 'Pinned to this circuit — every lap you open here is laid over it.'
+          : 'Open any lap and it opens against this one.'}</span>
+        <button type="button" class="btn btn--ghost btn--sm" data-refclear>
+          <svg class="icon"><use href="#i-x" /></svg><span>${pinned ? 'Unpin' : 'Clear'}</span>
+        </button>
+      </div>`;
+  }
+
+  /**
+   * The leaderboard for this circuit and class, as a card: every driver's
+   * best, with a vs button on each row whose trace is there to compare with.
+   * The same button the sheet puts on your own laps, doing the same thing.
+   *
+   * `inLap` renders the fold-out under the lap view's bar, which also carries
+   * this session's other laps as chips — the sheet is not on screen there,
+   * and switching to one of your own laps should not cost a trip back to it.
+   */
+  function boardCardHtml(inLap) {
+    const s = current;
+    const pin = pinFor(s);
+    const note = boardNote();
+    const title = `Leaderboard · ${esc([s && s.carClass, s && s.track].filter(Boolean).join(' at '))}`;
+    const folded = !inLap && boardFolded;
+
+    let body = '';
+    if (note) {
+      body = `<p class="rv-board__note">${esc(note)}</p>`;
+    } else {
+      const rows = board.rows.map((row) => {
+        const ref = boardRefOf(row);
+        const on = !!pin && pin.driverId === row.driver_id;
+        const gap = typeof row.gap_ms === 'number' ? `+${(row.gap_ms / 1000).toFixed(3)}` : dash;
+        let action = '';
+        if (row.is_you) {
+          action = '<span class="rv-board__you">you</span>';
+        } else if (row.has_trace) {
+          action = `<button type="button" class="rv-refbtn" data-pin="${esc(row.driver_id)}"
+              data-on="${String(on)}" data-line="${String(!!row.has_line)}"
+              title="${on
+                ? 'Unpin — stop comparing against this lap'
+                : (row.has_line
+                  ? 'Compare every lap you open here against this one'
+                  : 'Compare against this lap — set before Apex recorded the driven line, so the map shows only yours')}">${
+                on ? 'pinned' : 'vs'}</button>`;
+        } else {
+          action = '<span class="rv-board__none" title="No telemetry on the board for this lap">—</span>';
+        }
+        return `
+          <tr data-you="${String(!!row.is_you)}" data-on="${String(on)}">
+            <td class="num">P${row.rank}</td>
+            <td class="who">${esc(row.is_you ? 'You' : row.display_name || 'Driver')}</td>
+            <td class="car">${esc(row.car || '')}</td>
+            <td class="lap">${fmtLap(row.lap_ms)}</td>
+            <td class="gapc">${gap}</td>
+            <td class="ref">${action}</td>
+          </tr>`;
+      }).join('');
+      body = `
+        <div class="rv-sheet__scroll rv-board__scroll">
+          <table class="rv-sheet rv-board__table">
+            <thead><tr><th>Pos</th><th>Driver</th><th>Car</th><th>Lap</th><th>Gap</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    // The lap view's fold-out also carries this session's laps, as chips.
+    let own = '';
+    if (inLap && lapView && lapView.lap) {
+      const opts = compareOptions(lapView);
+      own = `
+        <div class="rv-board__own">
+          <span class="rv-board__owntag">This session</span>
+          ${opts.length ? opts.map((o) => `<button type="button" class="rv-refbtn rv-refbtn--chip"
+              data-ref="${esc(o.lap.id || '')}" data-on="${String(!!refLap && refLap.id === o.lap.id)}"
+              title="${esc(o.label)}">L${o.lap.lapNo} <i>${o.lap.timed ? fmtLap(o.lap.lapMs) : dash}</i></button>`).join('')
+            : '<span class="rv-board__note">No other lap in this session has telemetry.</span>'}
+        </div>`;
+    }
+
+    return `
+      <div class="rv-card rv-board" data-boardcard="${inLap ? 'lap' : 'session'}" data-folded="${String(folded)}">
+        <div class="rv-card__head">
+          <span class="rv-card__title">${title}</span>
+          <span class="rv-legend"><span>${inLap ? 'vs pins a rival to this circuit' : 'vs pins a rival to this circuit — every lap you open here is laid over theirs'}</span></span>
+          ${inLap ? '' : `<button type="button" class="btn btn--ghost btn--sm" data-boardtoggle aria-expanded="${String(!folded)}">
+            <span>${folded ? 'Show' : 'Hide'}</span>
+          </button>`}
+        </div>
+        ${folded ? '' : own + body}
+      </div>`;
   }
 
   /** The zoom controls, and the stretch of road they have arrived at. */
@@ -1108,18 +1247,23 @@
         </div>
 
         <div class="rv-lap__bar2">
-          ${compareHtml(view)}
           ${view.vs ? `<span class="rv-cmp__read" data-band="${deltaBand(vsGap === null ? null : vsGap / 1000)}"
                 title="Dashed on the charts, in each channel's own colour. On the map the quicker of the two laps is green and the slower red.">
             <i class="rv-cmp__swatch" aria-hidden="true"></i>
+            <span class="rv-cmp__tag">vs</span>
             <b>${esc(refName(view.vsLap))}</b>
             ${isBoardRef(view.vsLap) && view.vs.car ? `<em>${esc(view.vs.car)}</em>` : ''}
             <span>${view.vs.lapMs > 0 ? fmtLap(view.vs.lapMs) : dash}</span>
             ${vsGap === null ? '' : `<i>${esc(yourGapWords(vsGap))}</i>`}
-          </span>` : ''}
+          </span>` : `<span class="rv-cmp rv-cmp--none">${view.vsLap && !view.vsError ? 'Reading the other lap…' : 'Nothing to compare against'}</span>`}
           ${view.vsError ? `<span class="rv-cmp--none">${esc(view.vsError)}</span>` : ''}
+          <button type="button" class="btn btn--ghost btn--sm" data-lapboard aria-expanded="${String(lapBoardOpen)}"
+                  title="Choose who to compare against — the leaderboard for this circuit, or another lap of this session">
+            <svg class="icon"><use href="#i-list-ordered" /></svg><span>${view.vs ? 'Change' : 'Compare with…'}</span>
+          </button>
           ${zoomHtml(view)}
         </div>
+        ${lapBoardOpen ? boardCardHtml(true) : ''}
 
         <div class="rv-lap__body" data-map="${bigMap ? 'big' : 'side'}">
           <div class="rv-lap__charts">
@@ -1478,7 +1622,7 @@
     if (!lap || !lap.id) return;
     // The reference chosen on the sheet follows you into every lap you open,
     // which is the whole point of choosing it there.
-    if (vsLap === undefined) vsLap = refLap && refLap.id !== lap.id ? refLap : null;
+    if (vsLap === undefined) vsLap = activeRef(lap);
     if (chartOff) { chartOff(); chartOff = null; }
     if (lapOff) { lapOff(); lapOff = null; }
     // A window survives a change of comparison lap: the driver is still looking
@@ -1693,6 +1837,9 @@
         ${reportHtml(s)}
       </div>
 
+      ${refBarHtml()}
+      ${boardCardHtml(false)}
+
       <div class="rv-card">
         <div class="rv-card__head">
           <span class="rv-card__title">Lap times</span>
@@ -1729,20 +1876,6 @@
         <div class="rv-chart rv-chart--wear"><canvas></canvas></div>
         <p class="rv-card__note">Percentage of the tyre used, so it climbs as the stint
           goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
-      </div>` : ''}
-
-      ${refLap ? `
-      <div class="rv-refbar">
-        <span class="rv-refbar__tag">Comparing against</span>
-        <b>${esc(refName(refLap))}</b>
-        ${isBoardRef(refLap) ? `<span class="rv-refbar__where">leaderboard${refLap.car ? ` · ${esc(refLap.car)}` : ''}</span>` : ''}
-        <span class="rv-refbar__time">${isBoardRef(refLap)
-          ? fmtLap(refLap.lapMs)
-          : (refLap.timed ? fmtLap(refLap.lapMs) : dash)}</span>
-        <span class="rv-refbar__note">Open any lap and it opens against this one.</span>
-        <button type="button" class="btn btn--ghost btn--sm" data-refclear>
-          <svg class="icon"><use href="#i-x" /></svg><span>Clear</span>
-        </button>
       </div>` : ''}
 
       <div>${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
@@ -1912,7 +2045,10 @@
     lapView = null;
     currentId = id;
     current = null;
+    // The session's own reference goes with the session; the circuit's pin
+    // does not — that is the whole point of pinning.
     refLap = null;
+    lapBoardOpen = false;
     collapsed.clear();
     loading = true;
     renderList();
@@ -1931,6 +2067,9 @@
       collapsed.delete(current.stints[current.stints.length - 1].no);
     }
     renderDetail();
+    // The leaderboard card fills in when the board arrives; it is a round
+    // trip and the session is on disk, so the session is never made to wait.
+    void ensureBoard(current);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1961,6 +2100,7 @@
     try { bigMap = window.localStorage.getItem('apex.review.bigMap') === '1'; } catch {
       /* storage off: the circuit starts beside the charts */
     }
+    loadPrefs();
 
     if (els.search) els.search.addEventListener('input', renderList);
     if (els.filter) els.filter.addEventListener('change', renderList);
@@ -1998,12 +2138,49 @@
               if (found) { refLap = found; break; }
             }
           }
-          renderDetail();
+          // From the lap view's fold-out the comparison has to be re-read,
+          // not just re-labelled: the delta is computed in main from both
+          // traces together (see openLap).
+          if (lapView && lapView.lap) void openLap(lapView.lap, activeRef(lapView.lap));
+          else renderDetail();
           return;
         }
         if (evt.target.closest('[data-refclear]')) {
-          refLap = null;
+          // Whichever reference is active: the session lap, or failing that
+          // the circuit's pin.
+          if (refLap) refLap = null;
+          else {
+            delete pins[circuitKey(current)];
+            savePins();
+          }
+          if (lapView && lapView.lap) void openLap(lapView.lap, null);
+          else renderDetail();
+          return;
+        }
+
+        // Pin a leaderboard row to this circuit (or unpin it), from either
+        // board card. Checked before the fold-out toggle so the click inside
+        // the card is not also read as closing it.
+        const pinBtn = evt.target.closest('[data-pin]');
+        if (pinBtn && current && board.state === 'ok') {
+          const row = board.rows.find((r) => r.driver_id === pinBtn.dataset.pin);
+          if (!row) return;
+          const now = togglePin(boardRefOf(row));
+          if (lapView && lapView.lap) void openLap(lapView.lap, now);
+          else renderDetail();
+          return;
+        }
+        if (evt.target.closest('[data-lapboard]') && lapView) {
+          lapBoardOpen = !lapBoardOpen;
           renderDetail();
+          return;
+        }
+        if (evt.target.closest('[data-boardtoggle]')) {
+          boardFolded = !boardFolded;
+          try { window.localStorage.setItem('apex.review.boardFolded', boardFolded ? '1' : '0'); } catch {
+            /* storage off: the fold lasts the run */
+          }
+          refreshBoardCards();
           return;
         }
 
@@ -2061,32 +2238,6 @@
         else collapsed.add(no);
         if (card) card.setAttribute('data-open', String(open));
         head.setAttribute('aria-expanded', String(open));
-      });
-    }
-
-    // The comparison picker. Changing it re-reads both laps rather than
-    // patching a second trace onto what is on screen — see openLap().
-    if (els.detail) {
-      els.detail.addEventListener('change', (evt) => {
-        const sel = evt.target.closest('[data-cmp]');
-        if (!sel || !lapView || !lapView.lap || !current) return;
-        const id = sel.value;
-        if (!id) { refLap = null; void openLap(lapView.lap, null); return; }
-        // A lap off the league board. Held the same way as one of ours, so
-        // going back to the sheet and opening a third lap keeps comparing
-        // against the rival you picked.
-        if (id.startsWith('board:')) {
-          const opt = boardOptions().find((o) => boardValue(o.ref) === id);
-          if (opt) { refLap = opt.ref; void openLap(lapView.lap, opt.ref); }
-          return;
-        }
-        for (const stint of current.stints) {
-          const lap = stint.laps.find((l) => l.id === id);
-          // Changing it here changes it for the session too: going back to the
-          // sheet and opening a third lap should keep comparing against the
-          // reference you just picked, not the one you picked before it.
-          if (lap) { refLap = lap; void openLap(lapView.lap, lap); return; }
-        }
       });
     }
 
@@ -2169,8 +2320,12 @@
         if (found) break;
       }
       if (!found) return false;
+      // Pin them to this circuit — the same thing the card's vs button does —
+      // so the comparison outlives this lap, this session and this run.
       const ref = boardRefOf({ ...row, car_class: row.car_class || current.carClass });
-      refLap = ref;
+      pins[circuitKey(current)] = ref;
+      savePins();
+      refLap = null;
       await openLap(found, ref);
       return true;
     },

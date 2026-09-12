@@ -1397,6 +1397,73 @@
    matters here in a way it never does between two of your own laps. */
 .rv-refbar__where { font-size: 11.5px; color: var(--text-3); }
 .rv-cmp__read em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
+.rv-cmp__tag {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* The strip is sticky on the session screen: it says what every lap opens
+   against, and that has to be readable from the bottom of a forty-row sheet
+   as much as from the top. A solid background, because it rides over cards. */
+.rv-refbar {
+  position: sticky;
+  top: 6px;
+  z-index: 4;
+  background: #1a1830;
+}
+.rv-refbar[data-kind='board'] { border-color: rgba(139, 125, 255, 0.5); }
+
+/* ---- The leaderboard card ------------------------------------------------
+   The league board for the open session's circuit and class, on the session
+   screen where the times are — and folded out under the lap view's bar. The
+   table is the sheet's table; the vs button is the sheet's vs button. A rival
+   is pinned to the CIRCUIT, so the same button says "pinned" on every session
+   there until it is pressed again. */
+.rv-board__scroll { max-height: 320px; overflow: auto; }
+.rv-board__table td.who { text-align: left; font-family: var(--font-ui); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.rv-board__table td.car { text-align: left; font-family: var(--font-ui); color: var(--text-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.rv-board__table th:nth-child(2), .rv-board__table th:nth-child(3) { text-align: left; }
+.rv-board__table td.gapc { color: var(--text-3); }
+.rv-board__table tr[data-you='true'] td { color: var(--cyan); }
+.rv-board__table tr[data-you='true'] td.car { color: var(--cyan); opacity: 0.8; }
+.rv-board__table tr[data-on='true'] td { background: rgba(139, 125, 255, 0.08); }
+.rv-board__table .rv-refbtn { opacity: 0.8; }
+.rv-board__table tr:hover .rv-refbtn { opacity: 1; }
+.rv-board__you {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.rv-board__none { color: var(--text-3); }
+.rv-board__note { margin: 0; padding: 12px 14px; font-size: 12px; color: var(--text-3); }
+.rv-board[data-folded='true'] .rv-card__head { margin-bottom: 0; }
+/* Set before the driven line was captured: the comparison is the charts and
+   the delta, and the map shows only your line. Dashed says "partial". */
+.rv-refbtn[data-line='false'] { border-style: dashed; }
+
+/* The lap view's fold-out also offers this session's other laps, as chips. */
+.rv-board__own {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 0 14px 12px;
+}
+.rv-board__owntag {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-right: 4px;
+}
+.rv-refbtn--chip { opacity: 0.8; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.rv-refbtn--chip i { font-style: normal; font-family: var(--font-mono); color: var(--text-2); margin-left: 4px; }
 
 /* ---- the gestures on the charts ---------------------------------------- */
 
