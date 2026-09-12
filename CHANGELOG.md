@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.7-beta.2 — 2026-09-12
+
 ### Changed
 
 - **A rival is pinned to the circuit, and the leaderboard is a card, not a
