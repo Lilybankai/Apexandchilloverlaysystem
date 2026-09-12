@@ -67,7 +67,29 @@ const {
  * data-widget attribute.
  */
 const OVERLAY_CATALOG = [
-  { id: 'standings', label: 'Standings', description: 'Full field, gaps, pit status' },
+  {
+    id: 'standings',
+    label: 'Standings',
+    description: 'Full field, gaps, pit status',
+    // The tower fills whatever width the Browser Source is given (single.css),
+    // the way the side handle sets its width in game, and every pixel past the
+    // fixed numeric columns lands on the driver names. So the width here is a
+    // starting point, not a limit: 560 is the in-game default (see defaultsFor
+    // in overlay/js/ingame.js), which fits "#23 M.Haskins" beside the class
+    // tag, brand badge and rating pair, plus the page's 12px of chrome. The
+    // height clears the tower at its 700px body cap with the header and the
+    // sponsor strip under it — OBS's 800 x 600 default is wide enough but cuts
+    // a full field off at about the twentieth car.
+    obs: {
+      w: 580,
+      h: 800,
+      note:
+        'Set this Browser Source to 580 × 800 in OBS. The tower fills the width you give it and ' +
+        'the extra room goes to the driver names, so make the source wider for long names; a ' +
+        "source shorter than a full field crops the bottom of the tower. OBS's own default " +
+        '(800 × 600) is wide enough but not tall enough for a full grid.',
+    },
+  },
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },

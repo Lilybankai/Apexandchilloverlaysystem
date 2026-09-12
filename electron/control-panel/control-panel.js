@@ -823,10 +823,14 @@
         dims.textContent = `${o.obs.w} × ${o.obs.h}`;
         sizeEl.appendChild(document.createTextNode('Source size '));
         sizeEl.appendChild(dims);
+        // A widget can say in its own words why the size matters (`obs.note` in
+        // the catalog); the fallback describes the fixed-size case the field
+        // was added for.
         sizeEl.title =
+          o.obs.note ||
           `Set this Browser Source to ${o.obs.w} × ${o.obs.h} in OBS. This widget draws at a ` +
-          'fixed size rather than growing to its text, so a smaller source scales it down ' +
-          "— OBS's own default (800 × 600) is not big enough for it.";
+            'fixed size rather than growing to its text, so a smaller source scales it down ' +
+            "— OBS's own default (800 × 600) is not big enough for it.";
       }
 
       /* -- footer: the two destinations, each labelled --
