@@ -490,40 +490,78 @@ function squareMap(rise) {
     ...over,
   });
   const CYAN = '#26bbf4';
+  const VS = '#8b7dff';
   const road = squareMap(0);
-  const edges = (o) => {
+  // The identity EDGE is a stroke WIDER than the line it sits under; style
+  // D's thread is a hairline in the same colour, so the two are told apart
+  // here by width rather than by colour.
+  const wideCyan = (o) => {
     const { canvas, calls } = fakeCanvas(300, 300);
     CHARTS.drawLapMap(canvas, road, line({}), {
       mode: 'inputs', vs: line({}), lengthM: 400, ...o,
     });
-    return calls.filter(([op, style]) => op === 'stroke' && style === CYAN).length;
+    return calls.filter(([op, style, w]) => op === 'stroke' && style === CYAN && w >= 3).length;
   };
-  check('whole-lap, two lines take no identity edge', edges({}) === 0);
+  check('whole-lap, two lines take no identity edge', wideCyan({}) === 0);
   check('zoomed into a corner, the edge says whose line it is',
-    edges({ window: [0.02, 0.06] }) > 0);
+    wideCyan({ window: [0.02, 0.06] }) > 0);
 
-  // The other lap is dashed — in ITS OWN pedal colours, which is the whole
-  // difference from the dark dashes laid over the top in beta.6.
-  const dashes = (o) => {
+  // The three line styles, up as a switcher until Carl has picked one on a
+  // real lap. Which line was drawn FIRST is the whole of E and F, and it is
+  // readable here as the order of the pedal-coloured strokes.
+  const PEDAL = new Set(['#ff5470', '#d8405c', '#a3324a', '#35d07f', '#28a063', '#1f7a4d', '#6b7690']);
+  const drawn = (o) => {
     const { canvas, calls } = fakeCanvas(300, 300);
-    CHARTS.drawLapMap(canvas, road, line({}), { mode: 'inputs', lengthM: 400, ...o });
-    return calls.filter(([op, len]) => op === 'setLineDash' && len === 2).length;
+    // Zoomed in, because a thread — like the edge — waits for the zoom.
+    CHARTS.drawLapMap(canvas, road, line({}), {
+      mode: 'inputs', vs: line({}), lengthM: 400, window: [0.02, 0.06], ...o,
+    });
+    return {
+      fills: calls.filter(([op, st]) => op === 'stroke' && PEDAL.has(st)).map(([, , w]) => w),
+      threads: calls.filter(([op, st, w]) => op === 'stroke' && (st === CYAN || st === VS) && w < 2)
+        .map(([, st]) => (st === CYAN ? 'mine' : 'theirs')),
+      dashes: calls.filter(([op, len]) => op === 'setLineDash' && len > 0).length,
+    };
   };
-  check('the comparison line is dashed', dashes({ vs: line({}) }) > 0);
-  check('a lone line is not', dashes({}) === 0);
-  check('and neither is a pace-coloured one',
-    (() => {
-      const { canvas, calls } = fakeCanvas(300, 300);
-      CHARTS.drawLapMap(canvas, road, line({}), { vs: line({}), faster: 'mine', lengthM: 400 });
-      return calls.filter(([op, len]) => op === 'setLineDash' && len === 2).length === 0;
-    })());
 
-  // On its own there is nothing to braid with, so the edge is there at any
-  // zoom: it is the only thing saying the line is yours.
+  const dStyle = drawn({ lines: 'd' });
+  check('D draws the other lap first, and finer than yours',
+    dStyle.fills.length === 2 && dStyle.fills[0] < dStyle.fills[1], JSON.stringify(dStyle.fills));
+  check('D threads both lines with their own colour',
+    dStyle.threads.join() === 'theirs,mine', dStyle.threads.join());
+  check('and D is what an unset style gets',
+    JSON.stringify(drawn({}).fills) === JSON.stringify(dStyle.fills));
+
+  const eStyle = drawn({ lines: 'e' });
+  check('E puts the thin line ON TOP of the wide one',
+    eStyle.fills.length === 2 && eStyle.fills[0] > eStyle.fills[1], JSON.stringify(eStyle.fills));
+  check('E threads neither', eStyle.threads.length === 0, eStyle.threads.join());
+
+  const fStyle = drawn({ lines: 'f' });
+  check('F is E with a thread in the other lap alone',
+    fStyle.fills[0] > fStyle.fills[1] && fStyle.threads.join() === 'theirs', fStyle.threads.join());
+
+  check('and no style dashes a line any more',
+    dStyle.dashes === 0 && eStyle.dashes === 0 && fStyle.dashes === 0);
+
+  // On its own there is nothing to be told apart from: the edge is there at
+  // any zoom, because it is the only thing saying the line is yours, and
+  // there is no thread, because a lone line is not "the other one".
   const { canvas, calls } = fakeCanvas(300, 300);
-  CHARTS.drawLapMap(canvas, road, line({}), { mode: 'inputs', lengthM: 400 });
+  CHARTS.drawLapMap(canvas, road, line({}), { mode: 'inputs', lengthM: 400, lines: 'd' });
   check('one line keeps its edge whole-lap',
-    calls.some(([op, style]) => op === 'stroke' && style === CYAN));
+    calls.some(([op, style, w]) => op === 'stroke' && style === CYAN && w >= 3));
+  check('and takes no thread',
+    !calls.some(([op, style, w]) => op === 'stroke' && style === CYAN && w < 2));
+
+  // Whole-lap the threads wait with the edge: at a pixel apart there are not
+  // two lines to tell apart, and a thread there is just lost colour.
+  const wide = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(wide.canvas, road, line({}), {
+    mode: 'inputs', vs: line({}), lengthM: 400, lines: 'd',
+  });
+  check('no thread whole-lap either',
+    !wide.calls.some(([op, style, w]) => op === 'stroke' && (style === CYAN || style === VS) && w < 2));
 }
 
 {

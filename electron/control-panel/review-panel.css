@@ -1672,6 +1672,29 @@
 .rv-mapmode button[data-on='true'] { background: var(--panel-3); color: var(--text); }
 .rv-mapmode button:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
 
+/* D | E | F — the temporary line-weight switcher. Same segmented pill as
+   Pace | Inputs, a size down: it is a question, not a control. */
+.rv-linestyle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  margin-right: 6px;
+}
+.rv-linestyle button {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.rv-linestyle button[data-on='true'] { background: var(--panel-3); color: var(--text); }
+.rv-linestyle button:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+
 /* Whose line is on the map. The box is the line's own colour, so the control
    says which line is which as well as whether it is showing. */
 .rv-mapshow {

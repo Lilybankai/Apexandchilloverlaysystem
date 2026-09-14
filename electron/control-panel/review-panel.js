@@ -921,6 +921,19 @@
    */
   let mapLines = { mine: true, vs: true };
 
+  /**
+   * How the two lines are weighted against each other — D, E or F.
+   *
+   * A switcher on purpose and for a while only: the three came out of a
+   * mockup Carl picked D from, and two of them come out again once he has
+   * chosen on a real lap. Per machine, like the colouring.
+   *
+   *   D  both finer, each threaded with its own colour
+   *   E  yours full width, theirs thin and drawn on top of it
+   *   F  E, and theirs threaded too
+   */
+  let lineStyle = 'd';
+
   function loadPrefs() {
     try {
       const raw = window.localStorage.getItem('apex.review.pins');
@@ -930,6 +943,8 @@
       // Inputs is the default (Carl, 2026-09-14): the map is there to show
       // where the time went, and the pedals are where it goes.
       mapMode = window.localStorage.getItem('apex.review.mapMode') === 'pace' ? 'pace' : 'inputs';
+      const st = window.localStorage.getItem('apex.review.lineStyle');
+      lineStyle = st === 'e' || st === 'f' ? st : 'd';
       const lines = window.localStorage.getItem('apex.review.mapLines');
       mapLines = {
         mine: lines !== 'vs',
@@ -1194,6 +1209,26 @@
     </span>`;
   }
 
+  /**
+   * D | E | F — the line-weight switcher.
+   *
+   * Temporary, and only where it means anything: inputs mode, with two lines
+   * actually on the map. When one of the three wins, this goes and so do the
+   * other two.
+   */
+  function lineStyleHtml(view) {
+    if (mapMode !== 'inputs' || !view.vs || !view.vsLap) return '';
+    if (!mapLines.mine || !mapLines.vs) return '';
+    const opt = (key, label, title) =>
+      `<button type="button" data-linestyle="${key}" data-on="${String(lineStyle === key)}"
+        title="${esc(title)}">${label}</button>`;
+    return `<span class="rv-linestyle" role="group" aria-label="How the two lines are weighted">
+      ${opt('d', 'D', 'Both lines finer, each with a thread of its own colour down the middle')}
+      ${opt('e', 'E', 'Yours full width, theirs thin and drawn on top of it')}
+      ${opt('f', 'F', 'Theirs thin and on top, with a violet thread through it')}
+    </span>`;
+  }
+
   /** The zoom controls, and the stretch of road they have arrived at. */
   function zoomHtml(view) {
     const [a, b] = view.window;
@@ -1211,6 +1246,7 @@
                   title="The pedals along the road — red braking, green on the throttle — with a bar where each lap's braking begins">Inputs</button>
         </span>
         ${linesToggleHtml(view)}
+        ${lineStyleHtml(view)}
         <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
         <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
                 title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
@@ -1354,9 +1390,9 @@
     const theirs = view.vsLap ? refName(view.vsLap) : '';
     let who = '';
     if (on.mine && on.theirs) {
-      who = `<i class="rv-swatch" data-halo="you"></i><span>You — solid</span>
-        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — dashed</span>
-        <em>the dashes carry the pedal colours too; the bar across a line is where that lap first braked, and zoomed in each bar says whose it is</em>`;
+      who = `<i class="rv-swatch" data-halo="you"></i><span>You — the wider line</span>
+        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — the finer one</span>
+        <em>both carry the pedal colours; the bar across a line is where that lap first braked, and zoomed in each bar says whose it is</em>`;
     } else if (on.theirs) {
       who = `<i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — the only line here</span>
         <em>your lap was recorded before Apex captured the driven line, so your marker follows the centreline and your braking shows only in the readout</em>`;
@@ -1541,6 +1577,7 @@
           window: view.window,
           pan: view.mapPan || null,
           show: mapLines,
+          lines: lineStyle,
           vs: view.vs ? view.vs.channels : null,
           faster: fasterOf(view),
           mode: mapMode,
@@ -2462,6 +2499,23 @@
               /* storage off: the choice lasts the run */
             }
             renderDetail();
+          }
+          return;
+        }
+        // D | E | F. A repaint is enough — the legend says the same thing
+        // whichever weighting is on.
+        const styleBtn = evt.target.closest('[data-linestyle]');
+        if (styleBtn && lapView) {
+          const next = styleBtn.dataset.linestyle;
+          if (next !== lineStyle && (next === 'd' || next === 'e' || next === 'f')) {
+            lineStyle = next;
+            try { window.localStorage.setItem('apex.review.lineStyle', lineStyle); } catch {
+              /* storage off: the choice lasts the run */
+            }
+            for (const b of els.detail.querySelectorAll('[data-linestyle]')) {
+              b.setAttribute('data-on', String(b.dataset.linestyle === lineStyle));
+            }
+            if (lapView.repaint) lapView.repaint();
           }
           return;
         }

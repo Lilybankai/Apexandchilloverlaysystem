@@ -1383,6 +1383,41 @@
     const twoLines = hasLine(trace) && showMine && hasLine(o.vs) && showVs;
     const identity = inputs && (!twoLines || g.zoom >= 2);
 
+    /**
+     * Three ways to weight the two lines, up as a switcher for Carl to
+     * choose between on a real lap (2026-09-14). Two of the three come out
+     * once he has.
+     *
+     *   D — both lines finer, each with a thread of its identity colour down
+     *       the middle. His pick from the mockup: "the fact the lines are
+     *       thinner seems to work".
+     *   E — yours full width, theirs thin and drawn ON TOP of it. The only
+     *       arrangement that survives two laps a half-metre apart: underneath,
+     *       a wider line covers a thinner one whatever colour its middle is.
+     *   F — E, with a violet hairline inside theirs as well.
+     *
+     * Inputs only. In pace mode the line's colour already IS the identity and
+     * the draw order carries the pace, so nothing here applies.
+     */
+    const STYLES = {
+      d: {
+        over: false,
+        mine: (b) => ({ w: b * 0.85, core: Math.max(0.8, b * 0.26) }),
+        theirs: (b) => ({ w: b * 0.6, core: Math.max(0.7, b * 0.22) }),
+      },
+      e: {
+        over: true,
+        mine: (b) => ({ w: b * 1.05, core: 0 }),
+        theirs: (b) => ({ w: b * 0.55, core: 0 }),
+      },
+      f: {
+        over: true,
+        mine: (b) => ({ w: b * 1.05, core: 0 }),
+        theirs: (b) => ({ w: b * 0.62, core: Math.max(0.7, b * 0.24) }),
+      },
+    };
+    const style = STYLES[o.lines] || STYLES.d;
+
     /** The whole path, as one subpath. */
     const path = (pts) => {
       ctx.beginPath();
@@ -1442,7 +1477,7 @@
     const casing = (L) => {
       path(L.pts);
       ctx.strokeStyle = HALO;
-      ctx.lineWidth = L.w + (inputs ? (identity ? 3.4 : 2) : 2.4);
+      ctx.lineWidth = L.w + (inputs ? (identity ? 3.2 : 1.8) : 2.4);
       ctx.stroke();
     };
 
@@ -1457,27 +1492,18 @@
     /**
      * Pass 3: the colour — one per lap in pace, the pedals in inputs.
      *
-     * The other lap is dashed, and the DASHES CARRY THE COLOUR (Carl, once he
-     * had seen both): beta.6 drew it solid and laid a dark dashed stroke over
-     * the top, which told the two lines apart by eating the pedal colours the
-     * line was there to show. A dashed stroke in the pedal colour says the
-     * same thing and costs nothing — and the gaps fall through to the casing,
-     * or to the identity edge when the zoom has brought it out.
-     *
-     * The dash rhythm is kept even along the whole road with `lineDashOffset`:
-     * the colours are stroked as runs, and without the running offset every
-     * run would restart the pattern and the line would stutter at each change
-     * of pedal.
+     * No dashes. Both lines were dashed at one point and then dashed in their
+     * own pedal colours, which was better; what beat both of them in the
+     * mockup was weight — a finer line for one driver than the other, with
+     * the identity carried by {@link thread} rather than by a pattern. A dash
+     * always costs a line some of the colour it was drawn to show.
      */
-    const DASH = [7, 5];
     const fill = (L) => {
       ctx.lineWidth = L.w + (inputs ? 0.4 : 0);
-      if (L.dash) ctx.setLineDash(DASH);
       if (!inputs) {
         path(L.pts);
         ctx.strokeStyle = L.style;
         ctx.stroke();
-        ctx.setLineDash([]);
         return;
       }
       // Runs of samples the same colour, each stroked as one path. A lap is
@@ -1486,50 +1512,60 @@
       const cols = runColours(L.tr, L.pts);
       const pts = L.pts;
       let run = cols[0];
-      let travelled = 0;
       ctx.strokeStyle = run;
-      if (L.dash) ctx.lineDashOffset = 0;
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       for (let i = 1; i < pts.length; i++) {
         ctx.lineTo(pts[i].x, pts[i].y);
-        travelled += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (cols[i] === run) continue;
         ctx.stroke();
         run = cols[i];
         ctx.strokeStyle = run;
-        if (L.dash) ctx.lineDashOffset = -travelled;
         ctx.beginPath();
         ctx.moveTo(pts[i].x, pts[i].y);
       }
       ctx.stroke();
-      if (L.dash) {
-        ctx.setLineDash([]);
-        ctx.lineDashOffset = 0;
-      }
+    };
+
+    /**
+     * Pass 4: the thread of identity colour down the middle of a line.
+     *
+     * What lets two lines that are ON each other still be two: the thin line
+     * goes over the wide one and its own colour runs through the middle of
+     * it, so the overlap reads as a line inside a line rather than as one
+     * line that happens to be there.
+     */
+    const thread = (L) => {
+      // Only once the lines are far enough apart to BE two lines — the same
+      // gate the identity edge takes. Whole-lap a thread is a third of the
+      // width of the line it runs through, so it turns the pedal colours to a
+      // violet-and-cyan wash to answer a question nobody can ask at that
+      // scale: at a pixel apart there are not two lines to tell apart.
+      if (!L.core || !identity) return;
+      path(L.pts);
+      ctx.strokeStyle = L.isMine ? CSS.cyan : CSS.compare;
+      ctx.lineWidth = L.core;
+      ctx.stroke();
     };
 
     // The SLOWER lap first, so the quicker one is on top wherever they touch:
     // once the colours mean pace, the quick line is the subject and the slow
     // one is what it is being read against. With no pace to go on, the studied
     // lap goes on top and the reference is drawn a shade thinner.
+    const mineW = inputs ? style.mine(lineW) : { w: lineW, core: 0 };
+    const theirW = inputs ? style.theirs(lineW) : { w: faster ? lineW : lineW * 0.85, core: 0 };
     const mine = hasLine(trace) && showMine
-      ? { tr: trace, pts: screenOf(trace), style: mineStyle, w: lineW, isMine: true }
+      ? { tr: trace, pts: screenOf(trace), style: mineStyle, w: mineW.w, core: twoLines ? mineW.core : 0, isMine: true }
       : null;
     const theirs = hasLine(o.vs) && showVs
-      ? {
-        tr: o.vs,
-        pts: screenOf(o.vs),
-        style: vsStyle,
-        w: faster ? lineW : lineW * 0.85,
-        isMine: false,
-        // Dashed only when there is another line to be told apart from. The
-        // only line on the map is not "the other one", and a lone dashed line
-        // is just a line drawn worse.
-        dash: inputs && twoLines,
-      }
+      ? { tr: o.vs, pts: screenOf(o.vs), style: vsStyle, w: theirW.w, core: twoLines ? theirW.core : 0, isMine: false }
       : null;
-    const lines = (faster === 'theirs' ? [mine, theirs] : [theirs, mine]).filter(Boolean);
+    // Who goes on top. In inputs that is the style's business — the thin line
+    // over the wide one is the whole of E and F. In pace it is the pace: the
+    // quicker lap is the subject and the slower one is what it is read
+    // against, so the slower goes down first.
+    const topIsTheirs = inputs ? style.over : faster === 'theirs';
+    const lines = (topIsTheirs ? [mine, theirs] : [theirs, mine]).filter(Boolean);
     // Round joins, because a 4 px mitred line through a chicane grows spikes
     // at every kink in the sampled position.
     ctx.lineJoin = 'round';
@@ -1537,6 +1573,7 @@
     for (const L of lines) casing(L);
     if (identity) for (const L of lines) edge(L);
     for (const L of lines) fill(L);
+    for (const L of lines) thread(L);
     // "Has a line", not "is on the map": the cursor's car still belongs at the
     // real position when the line under it is switched off.
     const placed = hasLine(trace);
