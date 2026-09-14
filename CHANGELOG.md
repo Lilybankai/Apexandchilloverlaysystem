@@ -30,6 +30,11 @@
 - Fuel-save and push targets are not offered. They depend on how much lap time a
   deliberate lift costs, and nobody in the shared data lifts on purpose, so there
   is nothing to measure it against. The app says that instead of inventing it.
+-->
+
+## 0.99.9 — 2026-09-14
+
+### Changed
 
 - **The two lines on the map are weighted, not patterned.** Yours is the wider
   of the two and the other driver's is finer, and once you are zoomed into a
@@ -39,7 +44,6 @@
   pedal colour it is drawn to show, and weight does the same job for nothing.
   **D | E | F** beside the tick boxes tries three ways of splitting the two
   weights; say which reads best on a real lap and the other two come out.
--->
 
 ## 0.99.8 — 2026-09-14
 
