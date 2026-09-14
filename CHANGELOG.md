@@ -30,6 +30,19 @@
 - Fuel-save and push targets are not offered. They depend on how much lap time a
   deliberate lift costs, and nobody in the shared data lifts on purpose, so there
   is nothing to measure it against. The app says that instead of inventing it.
+-->
+
+## 0.99.8 — 2026-09-14
+
+### Added
+
+- **Tick boxes for whose line is on the map.** Beside *Pace | Inputs*, a box
+  each for your line and theirs, in their own colours: take either off when
+  the two run together and you want to read one of them. Nothing is unloaded
+  — the charts, the delta, the readout and the braking strip still have both
+  laps — and the last box on stays on.
+
+### Changed
 
 - **The two lines on the Review map read as two lines.** The comparison lap
   was drawn dashed to tell it from yours — but the dashes were a dark stroke
@@ -43,12 +56,6 @@
   the road, so what you see at a glance is zones: braking here, back on it
   there.
 
-- **Tick boxes for whose line is on the map.** Beside *Pace | Inputs*, a box
-  each for your line and theirs, in their own colours: take either off when
-  the two run together and you want to read one of them. Nothing is unloaded
-  — the charts, the delta, the readout and the braking strip still have both
-  laps — and the last box on stays on.
-
 - **The map is dragged, not re-framed.** Grabbing the road used to re-fit the
   view to a new stretch of it on every mouse move: the picture rescaled and
   re-centred continuously, only movement along the road's direction did
@@ -58,7 +65,7 @@
   refresh — and the map re-frames once, when you let go. The wheel zooms
   about the road under the pointer too, by as much as the notch you turned,
   instead of always about the middle of the window.
--->
+
 
 ## 0.99.7 — 2026-09-14
 
