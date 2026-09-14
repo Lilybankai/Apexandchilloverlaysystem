@@ -4,6 +4,19 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Changed
+
+- **Inputs is the map's default, and the two lines are told apart.** The
+  map opens coloured by the pedals now; *Pace* is the one you switch to. In
+  Inputs the other driver's line is drawn dashed — the way the charts already
+  draw it — with a wider cyan or violet edge under each line, and once you
+  are zoomed into a corner every braking bar is labelled: *YOU* on one side
+  of the road, *P3* (or *L7*) on the other. The legend under the map now says
+  plainly when only one line is there — a lap driven before Apex captured the
+  driven line draws no line of its own, so what you see is the other
+  driver's, and it says so rather than showing a *You* pill for a line that
+  is not on the map.
+
 ## 0.99.7-beta.5 — 2026-09-14
 
 ### Added

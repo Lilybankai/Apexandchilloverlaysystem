@@ -907,7 +907,7 @@
    * quicker green) or `inputs` (the pedals along the road, with braking
    * points marked). Per machine.
    */
-  let mapMode = 'pace';
+  let mapMode = 'inputs';
 
   function loadPrefs() {
     try {
@@ -915,7 +915,9 @@
       const parsed = raw ? JSON.parse(raw) : null;
       pins = parsed && typeof parsed === 'object' ? parsed : {};
       boardFolded = window.localStorage.getItem('apex.review.boardFolded') === '1';
-      mapMode = window.localStorage.getItem('apex.review.mapMode') === 'inputs' ? 'inputs' : 'pace';
+      // Inputs is the default (Carl, 2026-09-14): the map is there to show
+      // where the time went, and the pedals are where it goes.
+      mapMode = window.localStorage.getItem('apex.review.mapMode') === 'pace' ? 'pace' : 'inputs';
     } catch {
       pins = {};
     }
@@ -1289,17 +1291,42 @@
       </div>`;
   }
 
+  /**
+   * Which lines are actually on the map. A lap recorded before the driven
+   * line was captured draws nothing — and when that lap is YOURS, the one
+   * line on the map is the other driver's, which has to be said in so many
+   * words: Carl read a lone rival's line as two lines he could not tell apart.
+   */
+  function linesOn(view) {
+    return {
+      mine: !!view.detail.hasLine,
+      theirs: !!(view.vs && view.vs.hasLine),
+    };
+  }
+
   function inputsLegendHtml(view) {
-    const how = 'The line is coloured by the pedals at that point of the road; the bar across a line is where that lap first braked for the corner. The outline says whose line it is.';
+    const how = 'The line is coloured by the pedals at that point of the road; the bar across a line is where that lap first braked for the corner. The outline says whose line it is, and zoomed in the bars are labelled.';
+    const on = linesOn(view);
+    const theirs = view.vsLap ? refName(view.vsLap) : '';
+    let who = '';
+    if (on.mine && on.theirs) {
+      who = `<i class="rv-swatch" data-halo="you"></i><span>You — solid</span>
+        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — dashed</span>
+        <em>the bar across a line is where that lap first braked; zoom in and each bar says whose it is</em>`;
+    } else if (on.theirs) {
+      who = `<i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — the only line here</span>
+        <em>your lap was recorded before Apex captured the driven line, so your marker follows the centreline and your braking shows only in the readout</em>`;
+    } else if (on.mine) {
+      who = `<i class="rv-swatch" data-halo="you"></i><span>You — the only line here</span>
+        <em>${view.vs ? `${esc(theirs)}'s lap was recorded before the driven line was captured, so their braking shows only in the readout` : 'the bar across the line is where you first braked for the corner'}</em>`;
+    } else {
+      who = '<em>recorded before Apex captured the driven line — the marker follows the centreline and the pedals show on the charts</em>';
+    }
     return `<p class="rv-map__legend" title="${esc(how)}">
       <i class="rv-swatch" data-line="brake"></i><span>Braking</span>
       <i class="rv-swatch" data-line="throttle"></i><span>Throttle</span>
       <i class="rv-swatch" data-line="coast"></i><span>Coasting</span>
-      ${view.vs ? `<i class="rv-swatch" data-halo="you"></i><span>You</span>
-      <i class="rv-swatch" data-halo="vs"></i><span>${esc(refName(view.vsLap))}</span>` : ''}
-      ${view.detail.hasLine
-        ? `<em>the bar across a line is where that lap first braked for the corner</em>`
-        : '<em>recorded before Apex captured the driven line — the marker follows the centreline</em>'}
+      ${who}
     </p>`;
   }
 
@@ -1307,9 +1334,13 @@
     if (mapMode === 'inputs') return inputsLegendHtml(view);
     const how = 'Seen from directly above, to scale; the road is shaded by its elevation, pale for the high ground. Click a corner to frame it, drag the road to move along the lap, scroll to zoom.';
     if (!view.detail.hasLine) {
+      const on = linesOn(view);
       return `<p class="rv-map__legend" title="${esc(how)}">
-        <i class="rv-swatch" data-line="you"></i>
-        <span>Recorded before Apex captured the driven line — the marker follows the centreline.</span>
+        ${on.theirs
+          ? `<i class="rv-swatch" data-line="vs"></i><span>${esc(refName(view.vsLap))} — the only line here</span>
+             <em>your lap was recorded before Apex captured the driven line, so your marker follows the centreline</em>`
+          : `<i class="rv-swatch" data-line="you"></i>
+             <span>Recorded before Apex captured the driven line — the marker follows the centreline.</span>`}
       </p>`;
     }
     if (!view.vs) {
@@ -1468,6 +1499,9 @@
           faster: fasterOf(view),
           mode: mapMode,
           lengthM: view.lengthM,
+          // What to write on the other lap's braking bars when zoomed: the
+          // same short name the readout and the strip use for it.
+          vsLabel: view.vsLap ? (isBoardRef(view.vsLap) ? `P${view.vsLap.rank}` : `L${view.vsLap.lapNo}`) : '',
         });
         view.mapGeom = out ? out.geom : null;
         // The cursor is the only thing that says a zoomed map can be dragged,

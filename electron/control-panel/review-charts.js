@@ -1275,7 +1275,7 @@
       // In inputs mode the halo is an outline, not a colour: thinner, so the
       // pedal colour inside it is what a zoomed corner shows.
       ctx.strokeStyle = haloOf(isMine);
-      ctx.lineWidth = width + (inputs ? 1.6 : 2.4);
+      ctx.lineWidth = width + (inputs ? 2.2 : 2.4);
       ctx.stroke();
       ctx.lineWidth = width + (inputs ? 0.4 : 0);
       if (!inputs) {
@@ -1302,6 +1302,23 @@
         }
       }
       ctx.stroke();
+      // The other lap is dashed, the way the charts already draw it: a dark
+      // dashed stroke laid over the coloured runs, in one path, so the dash
+      // rhythm is even along the road rather than restarting at every change
+      // of pedal colour.
+      if (!isMine) {
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+          else ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.setLineDash([7, 6]);
+        ctx.lineDashOffset = 0;
+        ctx.strokeStyle = HALO;
+        ctx.lineWidth = ctx.lineWidth + 0.2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       return true;
     };
 
@@ -1325,7 +1342,12 @@
     // in inputs mode — in pace mode they would be two more things in red and
     // green on a map already using both — and only for laps with a line.
     if (inputs) {
-      const tick = (tr, colour) => {
+      // Zoomed in, each bar is labelled with whose it is — YOU, P3, L7 — the
+      // same short name the readout and the strip use. At whole-lap the bars
+      // are a few pixels apart and the words would pile up, so the outline
+      // colour carries it there.
+      const labelled = g.zoom > 2.5;
+      const tick = (tr, colour, label) => {
         if (!Array.isArray(tr.x) || !Array.isArray(tr.z)) return;
         const half = lineW * 1.6 + 3;
         for (const bp of brakePoints(tr, o.lengthM || 0)) {
@@ -1351,10 +1373,26 @@
           ctx.moveTo(p.x - nx, p.y - ny);
           ctx.lineTo(p.x + nx, p.y + ny);
           ctx.stroke();
+          if (labelled && label) {
+            // Off the end of the bar on the outside of the road, so the two
+            // labels for one corner sit on opposite sides and never overlap.
+            const side = label === 'YOU' ? 1 : -1;
+            const lx = p.x + nx * side * 1.45;
+            const ly = p.y + ny * side * 1.45;
+            ctx.font = '600 9px "Bahnschrift", "Segoe UI Semibold", system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = HALO;
+            ctx.lineWidth = 3;
+            ctx.strokeText(label, lx, ly);
+            ctx.fillStyle = colour;
+            ctx.fillText(label, lx, ly);
+          }
         }
       };
-      if (vsPlaced) tick(o.vs, CSS.compare);
-      if (placed) tick(trace, CSS.cyan);
+      if (vsPlaced) tick(o.vs, CSS.compare, String(o.vsLabel || 'VS').toUpperCase());
+      if (placed) tick(trace, CSS.cyan, 'YOU');
     }
 
     // The cars: where each lap was at this point of the road. The real
