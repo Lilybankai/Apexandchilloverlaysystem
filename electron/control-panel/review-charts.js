@@ -1086,7 +1086,16 @@
 
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    if (cached.bitmap) ctx.drawImage(cached.bitmap, 0, 0, w, h);
+    // With two laps on it the road is the backdrop and the lines are the
+    // subject, so it steps back. On its own the road IS the picture (a lap
+    // with no line has only the road to place its marker on) and stays full.
+    const comparing = !!(o.vs && Array.isArray(o.vs.x) && Array.isArray(trace.x));
+    if (cached.bitmap) {
+      ctx.save();
+      ctx.globalAlpha = comparing ? 0.62 : 1;
+      ctx.drawImage(cached.bitmap, 0, 0, w, h);
+      ctx.restore();
+    }
     else paintPlan(ctx, g);
     if (g.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
     drawScaleBar(ctx, g, w, h);
@@ -1107,7 +1116,16 @@
     // Wider lines the closer the look. Whole, they are threads laid on a
     // circuit and the road has to stay visible under them; zoomed, they are
     // the two things on the screen and everything else is context.
-    const lineW = clamp(1.1 + g.zoom * 0.3, 1.4, 3.2);
+    //
+    // 2026-09-14: heavier, and with a dark halo under each line. Carl's read
+    // of the first cockpit build was that the line was too narrow to follow —
+    // and it was the ink, not the geometry: a 1.4 px thread with no outline on
+    // a road shaded in mid-greys. The halo is the cartographer's fix (a road
+    // on any printed map has one) and it is what lets a line read on a pale
+    // stretch of road as well as a dark one. The road keeps its true width;
+    // where the line sits inside it is the information.
+    const lineW = clamp(1.8 + g.zoom * 0.45, 2.2, 4.6);
+    const HALO = 'rgba(6, 10, 18, 0.85)';
 
     // Which lap was actually QUICKER decides the colours, not which one you
     // happen to be studying. Cyan against violet is two cool colours a few
@@ -1129,14 +1147,22 @@
     const line = (tr, style, width) => {
       if (!tr || !Array.isArray(tr.x) || !Array.isArray(tr.z)) return false;
       if (tr.x.length < 2 || tr.x.length !== tr.z.length) return false;
-      ctx.strokeStyle = style;
-      ctx.lineWidth = width;
       ctx.beginPath();
       for (let i = 0; i < tr.x.length; i++) {
         const p = g.project(tr.x[i], tr.z[i]);
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       }
+      // The path is built once and stroked twice: the halo under, the colour
+      // over. Round joins, because a 4 px mitred line through a chicane grows
+      // spikes at every kink in the sampled position.
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = HALO;
+      ctx.lineWidth = width + 2.4;
+      ctx.stroke();
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
       ctx.stroke();
       return true;
     };

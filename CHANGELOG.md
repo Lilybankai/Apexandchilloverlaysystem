@@ -4,6 +4,16 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Changed
+
+- **The driven line is drawn to be followed.** On the Review map the line
+  you drove — and the one you are comparing against — is heavier, with a
+  dark outline under it, so it reads on a pale stretch of road as well as a
+  dark one and at every zoom. With two laps on the map the road itself steps
+  back a little; the lines are what you are there to see. The road is still
+  drawn at its real width, so where the line sits inside it — on the kerb, in
+  the middle, a car's width off the apex — still means what it says.
+
 ## 0.99.7-beta.3 — 2026-09-13
 
 ### Changed
