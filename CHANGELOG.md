@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.7-beta.4 — 2026-09-14
+
 ### Changed
 
 - **The driven line is drawn to be followed.** On the Review map the line
