@@ -811,6 +811,14 @@
         ${cell('where', 'Distance', `${Math.round(metres)}<u>m</u>`)}
         ${cell('time', 'Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
         ${cell('g', 'G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
+        ${(() => {
+          // In a braking zone with a lap to compare against: who braked later.
+          const pair = view.vs ? brakePairAt(view, ch.d[i]) : null;
+          // Uncoloured on purpose: later is not better. Braking later and
+          // running wide is the commonest way to lose a corner, and the delta
+          // cell above already says which of you was quicker through it.
+          return pair ? cell('brake-point', 'Brake point', esc(laterWords(pair))) : '';
+        })()}
         ${held ? `
         <button type="button" class="rv-read__pin" data-unpin
                 title="Stop holding this point">release</button>` : ''}
@@ -894,6 +902,12 @@
   let boardFolded = false;
   /** Whether the lap view's fold-out board is open. Lasts the lap. */
   let lapBoardOpen = false;
+  /**
+   * How the map colours the driven line: `pace` (one colour per lap, the
+   * quicker green) or `inputs` (the pedals along the road, with braking
+   * points marked). Per machine.
+   */
+  let mapMode = 'pace';
 
   function loadPrefs() {
     try {
@@ -901,6 +915,7 @@
       const parsed = raw ? JSON.parse(raw) : null;
       pins = parsed && typeof parsed === 'object' ? parsed : {};
       boardFolded = window.localStorage.getItem('apex.review.boardFolded') === '1';
+      mapMode = window.localStorage.getItem('apex.review.mapMode') === 'inputs' ? 'inputs' : 'pace';
     } catch {
       pins = {};
     }
@@ -1147,6 +1162,12 @@
       : `${Math.round(a * m)}–${Math.round(b * m)} m`;
     return `
       <div class="rv-zoom">
+        <span class="rv-mapmode" role="group" aria-label="How the map colours the line">
+          <button type="button" data-mapmode="pace" data-on="${String(mapMode !== 'inputs')}"
+                  title="One colour per lap — the quicker lap green, the slower red">Pace</button>
+          <button type="button" data-mapmode="inputs" data-on="${String(mapMode === 'inputs')}"
+                  title="The pedals along the road — red braking, green on the throttle — with a bar where each lap's braking begins">Inputs</button>
+        </span>
         <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
         <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
                 title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
@@ -1208,7 +1229,82 @@
    * It is one line of prose against a legend nobody reads, and it is only ever
    * one of three cases.
    */
+  /**
+   * The braking zones of the studied lap paired with the comparison lap's,
+   * memoised on the view — they are a fold over two traces and every repaint
+   * and readout would otherwise redo it.
+   */
+  function brakePairsOf(view) {
+    if (!view.brakes) {
+      view.brakes = view.detail && view.vs
+        ? CHARTS.brakePointPairs(view.detail.channels, view.vs.channels, view.lengthM || 0)
+        : [];
+    }
+    return view.brakes;
+  }
+
+  /** `you 6 m later` / `you 4 m earlier` / `you braked, they did not`. */
+  function laterWords(pair) {
+    if (!pair) return '';
+    if (pair.laterM === null) return 'you braked here; they did not';
+    const m = Math.round(Math.abs(pair.laterM));
+    if (m === 0) return 'same point';
+    return `you ${m} m ${pair.laterM > 0 ? 'later' : 'earlier'}`;
+  }
+
+  /**
+   * The braking zone the cursor is in, if any: from a little before the
+   * earlier of the two braking points to well past the later one.
+   */
+  function brakePairAt(view, dd) {
+    if (!(view.lengthM > 0)) return null;
+    for (const pair of brakePairsOf(view)) {
+      const from = pair.theirs ? Math.min(pair.mine.d, pair.theirs.d) : pair.mine.d;
+      const to = pair.theirs ? Math.max(pair.mine.d, pair.theirs.d) : pair.mine.d;
+      if (dd >= from - 15 / view.lengthM && dd <= to + 90 / view.lengthM) return pair;
+    }
+    return null;
+  }
+
+  /**
+   * Every braking zone on the lap, as a strip under the map in inputs mode:
+   * where on the road, and who braked later by how much. Clicking a row
+   * takes the charts and the map there.
+   */
+  function brakeTableHtml(view) {
+    if (!view.vs || !view.detail.hasLine || !view.vs.hasLine) return '';
+    const pairs = brakePairsOf(view);
+    if (!pairs.length) return '';
+    const L = view.lengthM || 0;
+    return `
+      <div class="rv-brakes" title="Where each lap first touched the brake for a corner, and who did it later. Click a row to go there.">
+        <span class="rv-brakes__tag">Braking points</span>
+        ${pairs.map((pair, k) => {
+          const band = pair.laterM === null ? 'none' : pair.laterM > 1 ? 'later' : pair.laterM < -1 ? 'earlier' : 'same';
+          return `<button type="button" class="rv-brakes__row" data-brake="${k}" data-band="${band}">
+            <b>${Math.round(pair.mine.d * L)} m</b>
+            <i>${esc(laterWords(pair))}</i>
+          </button>`;
+        }).join('')}
+      </div>`;
+  }
+
+  function inputsLegendHtml(view) {
+    const how = 'The line is coloured by the pedals at that point of the road; the bar across a line is where that lap first braked for the corner. The outline says whose line it is.';
+    return `<p class="rv-map__legend" title="${esc(how)}">
+      <i class="rv-swatch" data-line="brake"></i><span>Braking</span>
+      <i class="rv-swatch" data-line="throttle"></i><span>Throttle</span>
+      <i class="rv-swatch" data-line="coast"></i><span>Coasting</span>
+      ${view.vs ? `<i class="rv-swatch" data-halo="you"></i><span>You</span>
+      <i class="rv-swatch" data-halo="vs"></i><span>${esc(refName(view.vsLap))}</span>` : ''}
+      ${view.detail.hasLine
+        ? `<em>the bar across a line is where that lap first braked for the corner</em>`
+        : '<em>recorded before Apex captured the driven line — the marker follows the centreline</em>'}
+    </p>`;
+  }
+
   function mapLegendHtml(view) {
+    if (mapMode === 'inputs') return inputsLegendHtml(view);
     const how = 'Seen from directly above, to scale; the road is shaded by its elevation, pale for the high ground. Click a corner to frame it, drag the road to move along the lap, scroll to zoom.';
     if (!view.detail.hasLine) {
       return `<p class="rv-map__legend" title="${esc(how)}">
@@ -1315,6 +1411,7 @@
               }</span>
               ${view.elevation ? `<span><b>Elevation</b> ${Math.round(view.elevation)} m rise</span>` : ''}
             </div>
+            ${mapMode === 'inputs' ? brakeTableHtml(view) : ''}
             ${lapBoardOpen ? `<div class="rv-drawer">${boardCardHtml(true)}</div>` : ''}
           </aside>
         </div>
@@ -1369,6 +1466,8 @@
           window: view.window,
           vs: view.vs ? view.vs.channels : null,
           faster: fasterOf(view),
+          mode: mapMode,
+          lengthM: view.lengthM,
         });
         view.mapGeom = out ? out.geom : null;
         // The cursor is the only thing that says a zoomed map can be dragged,
@@ -2208,6 +2307,33 @@
         if (evt.target.closest('[data-lapboard]') && lapView) {
           lapBoardOpen = !lapBoardOpen;
           renderDetail();
+          return;
+        }
+        // Pace or inputs on the map. Re-rendered rather than repainted: the
+        // legend and the braking strip under the map change with it.
+        const modeBtn = evt.target.closest('[data-mapmode]');
+        if (modeBtn && lapView) {
+          const next = modeBtn.dataset.mapmode === 'inputs' ? 'inputs' : 'pace';
+          if (next !== mapMode) {
+            mapMode = next;
+            try { window.localStorage.setItem('apex.review.mapMode', mapMode); } catch {
+              /* storage off: the choice lasts the run */
+            }
+            renderDetail();
+          }
+          return;
+        }
+        // A braking zone in the strip: frame it, with a little road either
+        // side of both braking points so the bars sit inside the box.
+        const brakeRow = evt.target.closest('[data-brake]');
+        if (brakeRow && lapView && lapView.detail) {
+          const pair = brakePairsOf(lapView)[Number(brakeRow.dataset.brake)];
+          if (pair && lapView.lengthM > 0) {
+            const from = pair.theirs ? Math.min(pair.mine.d, pair.theirs.d) : pair.mine.d;
+            const to = pair.theirs ? Math.max(pair.mine.d, pair.theirs.d) : pair.mine.d;
+            const pad = CLICK_METRES / 2 / lapView.lengthM;
+            setWindow(from - pad, to + pad);
+          }
           return;
         }
         if (evt.target.closest('[data-boardtoggle]')) {

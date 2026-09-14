@@ -754,5 +754,73 @@ function squareMap(rise) {
     CHARTS.drawWear(fakeCanvas(600, 150).canvas, twoStints).laps === 12);
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Braking points (2026-09-14): where each lap first braked for a corner,    */
+/*  and who did it later. Silent failures again: a zone counted twice for a   */
+/*  double-dab, a point quantised to the trace's spacing, a pair matched to   */
+/*  the wrong corner — none of them throw, all of them lie.                   */
+/* -------------------------------------------------------------------------- */
+
+{
+  // A 1000 m lap sampled every 5 m, braking twice: 200–260 m and 600–640 m,
+  // with a stab at 610 m inside the second zone that must NOT count again.
+  const L = 1000;
+  const n = 201;
+  const mk = (onsets) => {
+    const d = []; const brake = []; const x = []; const z = [];
+    for (let i = 0; i < n; i++) {
+      const m = i * 5;
+      d.push(m / L); x.push(m); z.push(0);
+      let b = 0;
+      for (const [from, to] of onsets) if (m >= from && m <= to) b = 0.8;
+      brake.push(b);
+    }
+    return { d, brake, x, z };
+  };
+  const a = mk([[200, 260], [600, 640]]);
+  // Brake ramps up from 0 at 195 to 0.8 at 200 — the crossing of 0.12 lies
+  // between the two samples, three quarters of the way to 200 m.
+  a.brake[39] = 0;
+  const pts = CHARTS.brakePoints(a, L);
+  check('two zones, not three', pts.length === 2, `${pts.length}`);
+  // 0 at 195 m, 0.8 at 200 m: the 0.12 crossing is 15% of the way — 195.75 m.
+  check('the first onset is where the brake crossed the threshold', Math.abs(pts[0].d * L - 195.75) < 0.5, `${pts[0].d * L}`);
+  check('the onset carries a position when the lap has a line', pts[0].x !== null && Math.abs(pts[0].x - 195.75) < 0.5);
+  check('the second onset is the second corner', Math.abs(pts[1].d * L - 595.75) < 0.5, `${pts[1].d * L}`);
+
+  // The onset is interpolated between samples, not snapped to one.
+  const ramp = mk([[600, 640]]);
+  ramp.brake[40] = 0.06; // 200 m: a touch, under the ON threshold
+  ramp.brake[41] = 0.30; // 205 m: on — the 0.12 crossing is a quarter of the way
+  ramp.brake[42] = 0.8;
+  const rp = CHARTS.brakePoints(ramp, L);
+  check('the onset is interpolated between the straddling samples',
+    rp.length === 2 && Math.abs(rp[0].d * L - 201.25) < 0.5, rp.length ? `${rp[0].d * L}` : 'none');
+
+  // A brake that comes off for under the zone gap is the same zone.
+  const dab = mk([[200, 230], [245, 260]]);
+  check('a lift of 15 m inside a zone does not start a new one', CHARTS.brakePoints(dab, L).length === 1);
+
+  check('no brake channel, no points', CHARTS.brakePoints({ d: a.d, x: a.x, z: a.z }, L).length === 0);
+  check('no line, still points — just no position',
+    CHARTS.brakePoints({ d: a.d, brake: a.brake }, L)[0].x === null);
+
+  // Pairing: the other lap brakes 10 m earlier for corner one, and not at all
+  // for corner two.
+  const b = mk([[190, 260]]);
+  const pairs = CHARTS.brakePointPairs(a, b, L);
+  check('one pair per zone of the studied lap', pairs.length === 2);
+  check('the first is matched to the same corner', pairs[0].theirs !== null && Math.abs(pairs[0].theirs.d * L - 185.75) < 0.5,
+    pairs[0].theirs ? `${pairs[0].theirs.d * L}` : 'unmatched');
+  check('and says the studied lap braked LATER, by ten metres',
+    Math.abs(pairs[0].laterM - 10) < 2, `${pairs[0].laterM}`);
+  check('a zone the other lap never braked for is kept, unmatched',
+    pairs[1].theirs === null && pairs[1].laterM === null);
+  check('a zone 200 m away is not the same corner',
+    CHARTS.brakePointPairs(a, mk([[400, 440]]), L)[0].theirs === null);
+  check('the sign flips the other way round',
+    CHARTS.brakePointPairs(b, a, L)[0].laterM < -8);
+}
+
 console.log(`\ntest-reviewcharts: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

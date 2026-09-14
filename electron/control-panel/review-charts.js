@@ -1041,6 +1041,97 @@
     return lo;
   }
 
+  /* ------------------------------------------------------------------------ */
+  /*  Braking points                                                          */
+  /*                                                                          */
+  /*  2026-09-14, Carl: "so and so's braking five metres before me". The      */
+  /*  trace has brake pressure and (v2) a position per sample, index-aligned, */
+  /*  so where a driver first touched the brake for a corner is a point on    */
+  /*  the road, and the gap between two drivers' points is a distance.        */
+  /* ------------------------------------------------------------------------ */
+
+  /** Brake pressure at or above this is "on"; below the other, "off". */
+  const BRAKE_ON = 0.12;
+  const BRAKE_OFF = 0.05;
+  /**
+   * How far the brake must have been off before a press counts as a NEW
+   * braking zone. A stab mid-corner, a double-dab into a chicane — those are
+   * the same zone, and a tick for each would litter the road.
+   */
+  const ZONE_GAP_M = 60;
+
+  /**
+   * Where each braking zone begins on a lap: lap distance (0..1, interpolated
+   * between the two straddling samples so it is not quantised to the trace's
+   * spacing), the index it happened at, and the position on the road when
+   * the lap carries one. Empty for a trace without a brake channel.
+   */
+  function brakePoints(tr, lengthM) {
+    const out = [];
+    if (!tr || !Array.isArray(tr.d) || !Array.isArray(tr.brake)) return out;
+    const n = Math.min(tr.d.length, tr.brake.length);
+    if (n < 3) return out;
+    const L = lengthM > 0 ? lengthM : 1;
+    const placed = Array.isArray(tr.x) && Array.isArray(tr.z) && tr.x.length === tr.d.length;
+    let offSinceD = -Infinity; // lap distance at which the brake last went off
+    let on = (tr.brake[0] || 0) >= BRAKE_ON;
+    if (!on) offSinceD = tr.d[0];
+    for (let i = 1; i < n; i++) {
+      const b = tr.brake[i] || 0;
+      if (!on && b >= BRAKE_ON) {
+        on = true;
+        if ((tr.d[i] - offSinceD) * L >= ZONE_GAP_M) {
+          // Interpolate the crossing between i-1 and i.
+          const b0 = tr.brake[i - 1] || 0;
+          const f = b > b0 ? Math.min(1, Math.max(0, (BRAKE_ON - b0) / (b - b0))) : 1;
+          const d = tr.d[i - 1] + (tr.d[i] - tr.d[i - 1]) * f;
+          const pt = { d, i, x: null, z: null };
+          if (placed) {
+            pt.x = tr.x[i - 1] + (tr.x[i] - tr.x[i - 1]) * f;
+            pt.z = tr.z[i - 1] + (tr.z[i] - tr.z[i - 1]) * f;
+          }
+          out.push(pt);
+        }
+      } else if (on && b < BRAKE_OFF) {
+        on = false;
+        offSinceD = tr.d[i];
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Pair the braking zones of two laps by road, and say who braked later.
+   *
+   * Each of the studied lap's zones is matched to the comparison lap's
+   * nearest zone within a window of road; a zone with no partner (one driver
+   * lifted where the other braked) is kept with `theirs` null, because "you
+   * braked here and they did not" is itself worth seeing. `laterM` is
+   * positive when the studied lap braked LATER — deeper into the corner —
+   * which is the figure a driver wants to read, in metres.
+   */
+  function brakePointPairs(a, b, lengthM, windowM = 120) {
+    const L = lengthM > 0 ? lengthM : 1;
+    const mine = brakePoints(a, lengthM);
+    const theirs = brakePoints(b, lengthM);
+    const used = new Set();
+    return mine.map((m) => {
+      let best = null;
+      let bestGap = Infinity;
+      for (let k = 0; k < theirs.length; k++) {
+        if (used.has(k)) continue;
+        const gap = Math.abs(theirs[k].d - m.d) * L;
+        if (gap < bestGap) { bestGap = gap; best = k; }
+      }
+      if (best !== null && bestGap <= windowM) {
+        used.add(best);
+        const t = theirs[best];
+        return { mine: m, theirs: t, laterM: (m.d - t.d) * L };
+      }
+      return { mine: m, theirs: null, laterM: null };
+    });
+  }
+
   /** A car on the map: a filled disc with a ring, so it reads on any surface. */
   function marker(ctx, x, y, colour, r, ring) {
     ctx.fillStyle = '#ffffff';
@@ -1143,26 +1234,73 @@
     const mineStyle = faster === 'mine' ? CSS.ok : faster === 'theirs' ? CSS.bad : CSS.cyan;
     const vsStyle = faster === 'mine' ? CSS.bad : faster === 'theirs' ? CSS.ok : CSS.compare;
 
+    // Two ways to colour a line. PACE (the default): one colour per lap, the
+    // quicker green and the slower red. INPUTS: the colour follows the pedals
+    // along the road — red where the brake is on, deepening with pressure,
+    // green on the throttle, grey coasting — and the HALO carries whose line
+    // it is, cyan under yours and violet under theirs, because red and green
+    // now mean something else.
+    const inputs = o.mode === 'inputs';
+    const haloOf = (isMine) => (inputs ? (isMine ? CSS.cyan : CSS.compare) : HALO);
+
+    /** The pedal colour at a sample. */
+    // Solid colours, in three steps of pressure. Translucent fills washed out
+    // against the pale high ground and let the identity halo take over; a
+    // driver reading "where did I brake" needs the red to be red.
+    const inputStyle = (tr, i) => {
+      const b = Array.isArray(tr.brake) ? tr.brake[i] || 0 : 0;
+      const t = Array.isArray(tr.throttle) ? tr.throttle[i] || 0 : 0;
+      if (b >= BRAKE_OFF) return b >= 0.6 ? '#ff5470' : b >= 0.25 ? '#d8405c' : '#a3324a';
+      if (t >= 0.1) return t >= 0.85 ? '#35d07f' : t >= 0.45 ? '#28a063' : '#1f7a4d';
+      return '#6b7690';
+    };
+
     /** One driven line. */
-    const line = (tr, style, width) => {
+    const line = (tr, style, width, isMine) => {
       if (!tr || !Array.isArray(tr.x) || !Array.isArray(tr.z)) return false;
       if (tr.x.length < 2 || tr.x.length !== tr.z.length) return false;
-      ctx.beginPath();
-      for (let i = 0; i < tr.x.length; i++) {
-        const p = g.project(tr.x[i], tr.z[i]);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      }
-      // The path is built once and stroked twice: the halo under, the colour
-      // over. Round joins, because a 4 px mitred line through a chicane grows
+      const n = tr.x.length;
+      const pts = new Array(n);
+      for (let i = 0; i < n; i++) pts[i] = g.project(tr.x[i], tr.z[i]);
+      // Round joins, because a 4 px mitred line through a chicane grows
       // spikes at every kink in the sampled position.
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      ctx.strokeStyle = HALO;
-      ctx.lineWidth = width + 2.4;
+      // The halo first, as one path under everything.
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+        else ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      // In inputs mode the halo is an outline, not a colour: thinner, so the
+      // pedal colour inside it is what a zoomed corner shows.
+      ctx.strokeStyle = haloOf(isMine);
+      ctx.lineWidth = width + (inputs ? 1.6 : 2.4);
       ctx.stroke();
-      ctx.strokeStyle = style;
-      ctx.lineWidth = width;
+      ctx.lineWidth = width + (inputs ? 0.4 : 0);
+      if (!inputs) {
+        ctx.strokeStyle = style;
+        ctx.stroke();
+        return true;
+      }
+      // Inputs: runs of samples with the same colour, each stroked as one
+      // path. A lap is ~900 samples and a pedal changes state a few hundred
+      // times, so this is a few hundred short strokes, not nine hundred.
+      let run = inputStyle(tr, 0);
+      ctx.strokeStyle = run;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < n; i++) {
+        const s = inputStyle(tr, i);
+        ctx.lineTo(pts[i].x, pts[i].y);
+        if (s !== run) {
+          ctx.stroke();
+          run = s;
+          ctx.strokeStyle = run;
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+        }
+      }
       ctx.stroke();
       return true;
     };
@@ -1174,11 +1312,49 @@
     let vsPlaced;
     let placed;
     if (faster === 'theirs') {
-      placed = line(trace, mineStyle, lineW);
-      vsPlaced = line(o.vs, vsStyle, lineW);
+      placed = line(trace, mineStyle, lineW, true);
+      vsPlaced = line(o.vs, vsStyle, lineW, false);
     } else {
-      vsPlaced = line(o.vs, vsStyle, faster ? lineW : lineW * 0.85);
-      placed = line(trace, mineStyle, lineW);
+      vsPlaced = line(o.vs, vsStyle, faster ? lineW : lineW * 0.85, false);
+      placed = line(trace, mineStyle, lineW, true);
+    }
+
+    // Braking points: a bar across each line where the brake first came on
+    // for a corner, in that lap's identity colour. Two bars a few metres
+    // apart on the road is the whole answer to "who brakes later here". Only
+    // in inputs mode — in pace mode they would be two more things in red and
+    // green on a map already using both — and only for laps with a line.
+    if (inputs) {
+      const tick = (tr, colour) => {
+        if (!Array.isArray(tr.x) || !Array.isArray(tr.z)) return;
+        const half = lineW * 1.6 + 3;
+        for (const bp of brakePoints(tr, o.lengthM || 0)) {
+          if (bp.x === null || bp.i < 1) continue;
+          const p = g.project(bp.x, bp.z);
+          const q = g.project(tr.x[bp.i], tr.z[bp.i]);
+          const r = g.project(tr.x[bp.i - 1], tr.z[bp.i - 1]);
+          const tx = q.x - r.x;
+          const ty = q.y - r.y;
+          const len = Math.hypot(tx, ty) || 1;
+          const nx = (-ty / len) * half;
+          const ny = (tx / len) * half;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = HALO;
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - nx, p.y - ny);
+          ctx.lineTo(p.x + nx, p.y + ny);
+          ctx.stroke();
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - nx, p.y - ny);
+          ctx.lineTo(p.x + nx, p.y + ny);
+          ctx.stroke();
+        }
+      };
+      if (vsPlaced) tick(o.vs, CSS.compare);
+      if (placed) tick(trace, CSS.cyan);
     }
 
     // The cars: where each lap was at this point of the road. The real
@@ -1189,7 +1365,7 @@
         const j = sampleAtDistance(o.vs, o.cursorD);
         if (j >= 0 && j < o.vs.x.length) {
           const q = g.project(o.vs.x[j], o.vs.z[j]);
-          marker(ctx, q.x, q.y, vsStyle, 3.2, 6);
+          marker(ctx, q.x, q.y, inputs ? CSS.compare : vsStyle, 3.2, 6);
         }
       }
       let p;
@@ -1200,7 +1376,7 @@
         const k = Math.min(pts.length - 1, Math.max(0, Math.floor(o.cursorD * pts.length)));
         p = g.project(pts[k][0], pts[k][1]);
       }
-      marker(ctx, p.x, p.y, mineStyle, 4, 7.5);
+      marker(ctx, p.x, p.y, inputs ? CSS.cyan : mineStyle, 4, 7.5);
     }
 
     return {
@@ -1555,5 +1731,6 @@
   return {
     drawLapChart, drawTrend, drawChannels, drawLapMap, drawWear,
     channelBands, distanceAtPoint, tangentAtPoint,
+    brakePoints, brakePointPairs,
   };
 });

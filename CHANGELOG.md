@@ -4,6 +4,20 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+### Added
+
+- **Where each of you braked, on the map.** The Review map has a second way
+  to colour the line, *Inputs*, beside *Pace*: the line follows the pedals
+  along the road — red where the brake is on, deepening with pressure, green
+  on the throttle, grey coasting — for both laps, with a cyan outline under
+  yours and a violet one under theirs so you can still tell them apart. A bar
+  across each line marks where that lap first touched the brake for a corner,
+  so two bars a few metres apart on the road is the answer to "who brakes
+  later here". The readout says it in numbers when you are in a braking zone
+  — *you 6 m later* — and a strip under the map lists every braking zone on
+  the lap with the same figure; click one and the charts and map go there.
+  Needs a lap with the driven line, so anything driven on 0.99.2 or later.
+
 ## 0.99.7-beta.4 — 2026-09-14
 
 ### Changed

@@ -1641,6 +1641,75 @@
 .rv-swatch[data-line='vs'] { border-top-color: #8b7dff; border-top-style: dashed; }
 .rv-swatch[data-line='quicker'] { border-top-color: var(--ok); }
 .rv-swatch[data-line='slower'] { border-top-color: var(--bad); }
+/* Inputs mode: the line's colour is the pedal, the outline is whose it is. */
+.rv-swatch[data-line='brake'] { border-top-color: var(--bad); }
+.rv-swatch[data-line='throttle'] { border-top-color: var(--ok); }
+.rv-swatch[data-line='coast'] { border-top-color: var(--text-2); }
+.rv-swatch[data-halo] { border-top: 0; height: 6px; border-radius: 3px; background: var(--text-3); }
+.rv-swatch[data-halo='you'] { box-shadow: 0 0 0 2px var(--cyan); }
+.rv-swatch[data-halo='vs'] { box-shadow: 0 0 0 2px #8b7dff; }
+
+/* Pace | Inputs — how the map colours the line. */
+.rv-mapmode {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  margin-right: 6px;
+}
+.rv-mapmode button {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.rv-mapmode button[data-on='true'] { background: var(--panel-3); color: var(--text); }
+.rv-mapmode button:focus-visible { outline: 1px solid var(--cyan); outline-offset: 1px; }
+
+/* The braking strip: one row per zone, where and who braked later. Sits
+   under the vitals in inputs mode, so the right column has one more row. */
+.rv-lap__side { grid-template-rows: minmax(0, 1fr) repeat(4, auto); }
+.rv-brakes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-height: 84px;
+  overflow-y: auto;
+}
+.rv-brakes__tag {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-right: 4px;
+}
+.rv-brakes__row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.rv-brakes__row:hover { border-color: var(--cyan); }
+.rv-brakes__row b { font-family: var(--font-mono); font-weight: 400; color: var(--text-3); }
+.rv-brakes__row i { font-style: normal; }
+.rv-brakes__row[data-band='later'] i { color: var(--text); }
+.rv-brakes__row[data-band='earlier'] i { color: var(--text); }
+.rv-brakes__row[data-band='none'] i { color: var(--text-3); }
 
 /* The readout: a grid of figures, the delta leading. Label over value, so a
    column of these is read the way a dash is read — glance, not parse. The
