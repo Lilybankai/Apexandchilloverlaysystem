@@ -1302,23 +1302,10 @@
         }
       }
       ctx.stroke();
-      // The other lap is dashed, the way the charts already draw it: a dark
-      // dashed stroke laid over the coloured runs, in one path, so the dash
-      // rhythm is even along the road rather than restarting at every change
-      // of pedal colour.
-      if (!isMine) {
-        ctx.beginPath();
-        for (let i = 0; i < n; i++) {
-          if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
-          else ctx.lineTo(pts[i].x, pts[i].y);
-        }
-        ctx.setLineDash([7, 6]);
-        ctx.lineDashOffset = 0;
-        ctx.strokeStyle = HALO;
-        ctx.lineWidth = ctx.lineWidth + 0.2;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      // Both lines stay solid. A dark dashed stroke laid over the other lap
+      // told the two apart, but it ate the pedal colours it was drawn over
+      // and broke the shape of the line — the cyan/violet edge carries the
+      // identity instead (Carl, 2026-09-14).
       return true;
     };
 

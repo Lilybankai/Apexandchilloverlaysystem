@@ -30,6 +30,12 @@
 - Fuel-save and push targets are not offered. They depend on how much lap time a
   deliberate lift costs, and nobody in the shared data lifts on purpose, so there
   is nothing to measure it against. The app says that instead of inventing it.
+
+- **Both driven lines are solid again.** The comparison lap on the Review map
+  was drawn dashed to tell it from yours; the dashes sat on top of the pedal
+  colours and broke up the shape of the line, which on a map is the whole
+  point of it. Both lines are solid and fully coloured, and the cyan or violet
+  edge under each still says whose it is.
 -->
 
 ## 0.99.7 — 2026-09-14

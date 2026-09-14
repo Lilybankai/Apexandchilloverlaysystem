@@ -1310,8 +1310,8 @@
     const theirs = view.vsLap ? refName(view.vsLap) : '';
     let who = '';
     if (on.mine && on.theirs) {
-      who = `<i class="rv-swatch" data-halo="you"></i><span>You — solid</span>
-        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — dashed</span>
+      who = `<i class="rv-swatch" data-halo="you"></i><span>You — cyan edge</span>
+        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — violet edge</span>
         <em>the bar across a line is where that lap first braked; zoom in and each bar says whose it is</em>`;
     } else if (on.theirs) {
       who = `<i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — the only line here</span>
