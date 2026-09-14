@@ -2152,14 +2152,17 @@
                 <label class="field">
                   <span class="field__label">Pit lane loss (s)</span>
                   <input class="field__input" type="number" id="fuel-pit-loss" min="5" max="120" step="1" />
+                  <span class="field__hint fuel-src" id="fuel-pit-loss-src"></span>
                 </label>
                 <label class="field">
                   <span class="field__label" id="fuel-pit-rate-label">Refuel rate (L/s)</span>
-                  <input class="field__input" type="number" id="fuel-pit-rate" min="0.1" max="10" step="0.1" />
+                  <input class="field__input" type="number" id="fuel-pit-rate" min="0.1" max="10" step="0.01" />
+                  <span class="field__hint fuel-src" id="fuel-pit-rate-src"></span>
                 </label>
                 <label class="field">
                   <span class="field__label">Tyre change (s)</span>
                   <input class="field__input" type="number" id="fuel-pit-tyres" min="0" max="120" step="1" />
+                  <span class="field__hint fuel-src" id="fuel-pit-tyres-src"></span>
                 </label>
                 <label class="field">
                   <span class="field__label">Tyres every N stops</span>
@@ -3372,6 +3375,7 @@
      require()d by scripts/test-fuelcalc.js), then the panel itself. -->
 <script src="fuel-data.js"></script>
 <script src="fuel-strategy.js"></script>
+<script src="fuel-coefficients.js"></script>
 <script src="fuel-panel.js"></script>
 <!-- Team tab: pure remaining-race planner (also require()d by
      scripts/test-teamfuel.js), the canvas chart painters, then the

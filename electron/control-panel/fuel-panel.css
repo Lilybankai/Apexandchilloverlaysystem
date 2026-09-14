@@ -214,3 +214,16 @@
   gap: 6px;
 }
 .fuel-section .icon { width: 14px; height: 14px; color: var(--cyan); }
+
+/* ── Where a pit number came from ──────────────────────────────────────────
+   Three of the pit parameters used to be invented constants wearing the same
+   face as a measured one. These hints make the difference visible at a glance:
+   green when the shared corpus measured it, brand cyan when the driver typed it,
+   and muted — deliberately quiet, not alarming — when it is still an estimate.
+   An estimate is not a fault; it is just not a measurement. */
+.fuel-src { display: block; margin-top: 3px; line-height: 1.35; }
+.fuel-src[data-src='measured'] { color: var(--ok); }
+.fuel-src[data-src='you'] { color: var(--cyan); }
+.fuel-src[data-src='estimate'] { color: var(--text-3); }
+/* The long reason lives in a title attribute; hint that it is worth hovering. */
+.fuel-src[title] { cursor: help; text-decoration: underline dotted currentColor 1px; text-underline-offset: 2px; }

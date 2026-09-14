@@ -47,7 +47,38 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
     }
+    // ?fuel=<classId>[,<layoutId>] seeds the Fuel tab's saved calculator so a
+    // screenshot lands on a real selection. Without it the tab opens empty and
+    // the pit box has no class to resolve coefficients for, which is precisely
+    // the part worth looking at.
+    const fuel = q.get('fuel');
+    if (fuel) {
+      const [classId, layoutId] = fuel.split(',');
+      const CARS = { lmgt3: 'ferrari_296_lmgt3', lmp2: 'oreca_07', hypercar: 'ferrari_499p' };
+      const CIRCUITS = { monza_gp: 'monza', spa_gp: 'spa', barcelona_gp: 'barcelona' };
+      const lay = layoutId || 'monza_gp';
+      localStorage.setItem('apex.panel.fuelcalc', JSON.stringify({
+        circuitId: CIRCUITS[lay] || 'monza', layoutId: lay,
+        classId: classId || 'lmgt3', carId: CARS[classId] || CARS.lmgt3,
+        raceMode: 'time', raceMinutes: 240, raceLaps: 30,
+        customConsumption: null, customLapTime: null, customTankCapacity: null,
+        safetyLaps: 2, formationLap: false, pitOverrides: {}, stintMode: 'maxFirst',
+      }));
+    }
   } catch (e) { /* storage disabled: the harness still loads, on the default tab */ }
+
+  // The Fuel tab is hidden until the panel learns it is following beta, which
+  // happens asynchronously — so ?tab=fuel alone lands on Dashboard. Click the
+  // nav button once it un-hides. Gives up after two seconds rather than
+  // spinning on a run that never passed ?beta=1.
+  if (new URLSearchParams(location.search).get('tab') === 'fuel') {
+    let tries = 0;
+    const open = setInterval(() => {
+      const btn = document.querySelector('.tab[data-tab="fuel"]');
+      if (btn && !btn.hidden) { btn.click(); clearInterval(open); return; }
+      if ((tries += 1) > 40) clearInterval(open);
+    }, 50);
+  }
 
   // ?lap=1 opens the first studiable lap once the Review tab has painted, so the
   // lap-detail view can be screenshotted: the harness cannot click, and that
@@ -321,7 +352,17 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     lapsSyncState: P({ status: 'idle', pending: 0 }), onLapSync: noopUnsub,
     onStatus: noopUnsub, onSettings: noopUnsub,
     getUpdateState: P({ state: 'none', current: 'dev', channel: 'stable', statusText: 'Up to date on the stable channel.' }),
-    checkForUpdate: P({}), setUpdateChannel: P({}), downloadUpdate: P({}), installUpdate: P({}), onUpdate: noopUnsub,
+    checkForUpdate: P({}), setUpdateChannel: P({}), downloadUpdate: P({}), installUpdate: P({}),
+    // ?beta=1 pushes one update payload on the beta channel. Without it the
+    // panel never learns which channel it is on, followingBeta stays false,
+    // and the Fuel tab stays hidden — so this flag is the only way the harness
+    // can reach that tab at all.
+    onUpdate: (cb) => {
+      if (q.get('beta')) {
+        setTimeout(() => cb({ channel: 'beta', status: 'idle', current: 'dev', version: '' }), 0);
+      }
+      return () => {};
+    },
     changelog: { pending: P({ show: false, entries: [] }), history: P({ entries: [] }), markSeen: P({}) },
     // The Review tab. The fixture below is real output from the compiled
     // stintReview module fed a synthetic lap log, rather than hand-written

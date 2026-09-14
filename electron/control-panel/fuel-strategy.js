@@ -7,6 +7,15 @@
  * buildStrategy(inputs)     -> full plan (laps, stints, stops, pit times,
  *                              warnings) or null when infeasible.
  * compareStopOptions(inputs)-> fewer/more-stop alternatives with per-lap targets.
+ * pitParamsFor(input)       -> the pit parameters for one class at one layout,
+ *                              resolved driver > measured > estimate, with a
+ *                              `provenance` record of which won and why.
+ * measuredBurnFor(input)    -> what the class actually burned there, or null.
+ *
+ * The last two are the only additions to the ported file. They exist because
+ * DEFAULT_PIT_PARAMS below are guesses, the shared corpus can now measure some
+ * of them (fuel-coefficients.js), and the difference is not cosmetic: a
+ * measured 1.28 %/s against a guessed 2.0 %/s costs a lap over four hours.
  *
  * LMU pit rule encoded here: refuelling and tyre changes are SEQUENTIAL, so a
  * stop costs pit-lane loss + refuel + tyres. Timed races solve lap count and
@@ -45,6 +54,157 @@
 
   function round1(n) {
     return Math.round(n * 10) / 10;
+  }
+
+  // ── Where a pit parameter came from ──────────────────────────────────────
+  //
+  // Every number above is a GUESS: a plausible rig rate and a plausible lane
+  // loss, carried over from the standalone app. The shared corpus can now
+  // measure some of them (fuel-coefficients.js, projected from the fitted
+  // table), and a measured 1.5 L/s against a guessed 2.5 L/s is fifteen
+  // seconds a stop — the kind of error that plans the wrong number of stops.
+  //
+  // So resolve, in this order, and say which one won:
+  //   you       — the driver typed it into the pit box; nothing overrides that
+  //   measured  — the corpus resolved it for this class (or class and track)
+  //   estimate  — nothing measured it yet, and here is the reason why
+  //
+  // §11 of docs/RACE-STRATEGY-ENGINE.md is the rule being applied: a plan that
+  // always has an answer is worse than one that admits what it is guessing.
+  // Nothing here silently substitutes a `partial` fit for a measured one —
+  // build-coefficients.js drops those before they reach the panel.
+
+  // `short` is what fits under a field; `why` is the whole reason, for a title
+  // attribute. Both are written to be read by a driver, not by whoever wrote
+  // the fitter — "the corpus does not have them" beats "n < 5".
+  const ESTIMATE_REASONS = {
+    pitLaneLossSec: {
+      short: 'no pit cycle measured yet',
+      why: 'Measuring a pit lane needs five timed in-laps and five out-laps at the same '
+        + 'circuit, so the lost time can be read against normal laps. The shared corpus '
+        + 'does not have that anywhere yet.',
+    },
+    tyreChangeSec: {
+      short: 'tyre time is not fitted yet',
+      why: 'Almost every recorded stop changed tyres AND took fuel at the same time, so '
+        + 'there is no way to tell the two apart. Until fuel-only and tyre-only stops '
+        + 'both exist, this stays an estimate.',
+    },
+    refuelRatePerSec: {
+      short: 'no measurement for this class yet',
+      why: 'The refuelling rate is read from clean fuel-only race stops. This class does '
+        + 'not have enough of them yet.',
+    },
+  };
+
+  /**
+   * Resolve the pit parameters for one car class at one circuit layout.
+   *
+   * @param {object} input
+   * @param {object} [input.coeffs]    window.APEX_STRATEGY_COEFFS, or nothing.
+   * @param {string} [input.classId]   Fuel tab class id ('lmgt3', 'lmp2', …).
+   * @param {string} [input.layoutId]  Fuel tab layout id ('spa_gp', …).
+   * @param {boolean} [input.useVirtualEnergy]  Picks the rate's unit.
+   * @param {object} [input.overrides] The driver's own pit-box values.
+   * @returns {{pitLaneLossSec:number, refuelRatePerSec:number, tyreChangeSec:number,
+   *           tyresEveryStints:number, provenance:object}}
+   */
+  function pitParamsFor({
+    coeffs = null,
+    classId = '',
+    layoutId = '',
+    useVirtualEnergy = false,
+    overrides = {},
+  } = {}) {
+    const provenance = {};
+    const byClass = (coeffs && coeffs.byClass && coeffs.byClass[classId]) || null;
+    const byPair = (coeffs && coeffs.byPair && coeffs.byPair[`${layoutId}|${classId}`]) || null;
+
+    // One field, three ways. `measured` carries the sample size with it so the
+    // panel can show what the number is standing on, not just that it exists.
+    const resolve = (field, overrideValue, measured, fallback) => {
+      if (overrideValue != null && Number.isFinite(overrideValue)) {
+        provenance[field] = { source: 'you' };
+        return overrideValue;
+      }
+      if (measured && Number.isFinite(measured.value)) {
+        provenance[field] = { source: 'measured', ...measured.detail };
+        return measured.value;
+      }
+      const base = ESTIMATE_REASONS[field] || { short: 'not measured yet', why: '' };
+      provenance[field] = {
+        source: 'estimate',
+        short: (fallback && fallback.reason) || base.short,
+        why: base.why,
+      };
+      return fallback.value;
+    };
+
+    // Refuelling: per class, because litres per second is a property of the
+    // rig and not of the circuit (fit-strategy.js pools it that way on purpose).
+    // The unit is already converted — a VE class holds percent per second.
+    const rateUnitMatches = byClass && byClass.unit === (useVirtualEnergy ? 'pct' : 'l');
+    const refuelRatePerSec = resolve(
+      'refuelRatePerSec',
+      overrides.refuelRatePerSec,
+      rateUnitMatches
+        ? {
+          value: byClass.refuelPerSec,
+          detail: {
+            stops: byClass.stops,
+            tracks: byClass.tracks,
+            spread: byClass.spread,
+            litresPerSec: byClass.refuelLPerSec,
+            capacityL: byClass.capacityL,
+          },
+        }
+        : null,
+      {
+        value: useVirtualEnergy
+          ? DEFAULT_PIT_PARAMS.energyRefuelRate
+          : DEFAULT_PIT_PARAMS.fuelRefuelRate,
+        // The fitter's own words when it has them — it knows whether the class
+        // had two stops or none, and that difference matters to the driver.
+        reason: (coeffs && coeffs.unresolved && coeffs.unresolved[classId]
+          && coeffs.unresolved[classId].reason)
+          || ESTIMATE_REASONS.refuelRatePerSec.short,
+      },
+    );
+
+    // Pit lane loss: per class AND track, because it is the circuit's pit lane.
+    // build-coefficients.js has already subtracted the stationary time, so this
+    // is the lane alone and the engine may add service to it as it always has.
+    const pitLaneLossSec = resolve(
+      'pitLaneLossSec',
+      overrides.pitLaneLossSec,
+      byPair && byPair.pitLaneLossSec != null
+        ? { value: byPair.pitLaneLossSec, detail: { stops: byPair.pitStops } }
+        : null,
+      { value: DEFAULT_PIT_PARAMS.pitLaneLossSec },
+    );
+
+    // Tyres: never fitted. Always the driver's number or the estimate.
+    const tyreChangeSec = resolve(
+      'tyreChangeSec',
+      overrides.tyreChangeSec,
+      null,
+      { value: DEFAULT_PIT_PARAMS.tyreChangeSec },
+    );
+
+    return {
+      pitLaneLossSec,
+      refuelRatePerSec,
+      tyreChangeSec,
+      tyresEveryStints: overrides.tyresEveryStints ?? DEFAULT_PIT_PARAMS.tyresEveryStints,
+      provenance,
+    };
+  }
+
+  /** The measured per-lap burn for a class at a layout, or null. */
+  function measuredBurnFor({ coeffs = null, classId = '', layoutId = '' } = {}) {
+    const pair = (coeffs && coeffs.byPair && coeffs.byPair[`${layoutId}|${classId}`]) || null;
+    if (!pair || pair.burnLPerLap == null) return null;
+    return { litresPerLap: pair.burnLPerLap, laps: pair.burnLaps || null };
   }
 
   // Build the stint/stop structure for a fixed number of racing laps.
@@ -319,6 +479,9 @@
 
   return {
     DEFAULT_PIT_PARAMS,
+    ESTIMATE_REASONS,
+    pitParamsFor,
+    measuredBurnFor,
     buildStrategy,
     compareStopOptions,
     formatDuration,

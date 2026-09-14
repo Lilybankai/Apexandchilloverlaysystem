@@ -8,6 +8,12 @@
  * there is no shown()/hidden() lifecycle to run: the tab costs nothing while
  * another view is active.
  *
+ * Pit parameters are the one thing NOT purely local: fuel-coefficients.js
+ * carries measured refuelling rates and per-lap burn from the shared corpus,
+ * and every pit field says whether it is showing the driver's own number, a
+ * measurement, or still an estimate. That file is optional — without it the tab
+ * behaves exactly as it did before, on the engine's estimates.
+ *
  * Unit rule carried over from the source app: Hypercar and LMGT3 plan in
  * Virtual Energy (tank fixed at 100, consumption in %/lap, no tank override);
  * LMP2/LMP3/GTE plan in litres. Empty consumption / lap-time / tank inputs
@@ -19,6 +25,10 @@
 
   const DATA = window.APEX_FUEL_DATA;
   const ENGINE = window.APEX_FUEL_STRATEGY;
+  // Measured coefficients are OPTIONAL on purpose: an old install, a stripped
+  // build or a failed load leaves the tab working exactly as it did before,
+  // on the engine's estimates. Never let a missing table break the calculator.
+  const COEFFS = window.APEX_STRATEGY_COEFFS || null;
   if (!DATA || !ENGINE) return;
 
   const $ = (sel) => document.querySelector(sel);
@@ -81,6 +91,9 @@
     pitRate: $('#fuel-pit-rate'),
     pitRateLabel: $('#fuel-pit-rate-label'),
     pitTyres: $('#fuel-pit-tyres'),
+    pitLossSrc: $('#fuel-pit-loss-src'),
+    pitRateSrc: $('#fuel-pit-rate-src'),
+    pitTyresSrc: $('#fuel-pit-tyres-src'),
     pitEvery: $('#fuel-pit-every'),
     pitReset: $('#fuel-pit-reset'),
     reset: $('#fuel-reset'),
@@ -119,13 +132,20 @@
     const defaultTank = state.classId && state.carId
       ? DATA.getDefaultTankCapacity(state.classId, state.carId, state.layoutId) : null;
 
-    const pit = {
-      pitLaneLossSec: state.pitOverrides.pitLaneLossSec ?? ENGINE.DEFAULT_PIT_PARAMS.pitLaneLossSec,
-      refuelRatePerSec: state.pitOverrides.refuelRatePerSec
-        ?? (isVE ? ENGINE.DEFAULT_PIT_PARAMS.energyRefuelRate : ENGINE.DEFAULT_PIT_PARAMS.fuelRefuelRate),
-      tyreChangeSec: state.pitOverrides.tyreChangeSec ?? ENGINE.DEFAULT_PIT_PARAMS.tyreChangeSec,
-      tyresEveryStints: state.pitOverrides.tyresEveryStints ?? ENGINE.DEFAULT_PIT_PARAMS.tyresEveryStints,
-    };
+    // Pit parameters are resolved, not assumed: the driver's own box wins, then
+    // anything the shared corpus has actually measured for this class and
+    // circuit, then the engine's estimate — and `pit.provenance` records which,
+    // so the pit box can show it rather than presenting a guess as a fact.
+    const pit = ENGINE.pitParamsFor({
+      coeffs: COEFFS,
+      classId: state.classId,
+      layoutId: state.layoutId,
+      useVirtualEnergy: isVE,
+      overrides: state.pitOverrides,
+    });
+    const measuredBurn = state.classId && state.layoutId
+      ? ENGINE.measuredBurnFor({ coeffs: COEFFS, classId: state.classId, layoutId: state.layoutId })
+      : null;
 
     const consumptionPerLap = state.customConsumption ?? defaultConsumption;
     const lapTimeSec = state.customLapTime ?? defaultLapTime;
@@ -148,7 +168,11 @@
       };
     }
 
-    return { isVE, circuit, layout, car, defaultLapTime, defaultConsumption, defaultTank, pit, inputs };
+    return {
+      isVE, circuit, layout, car,
+      defaultLapTime, defaultConsumption, defaultTank,
+      pit, measuredBurn, inputs,
+    };
   }
 
   // ── Controls sync ───────────────────────────────────────────────────────
@@ -158,6 +182,63 @@
       parts.push(`<option value="${esc(o.value)}"${o.value === value ? ' selected' : ''}>${esc(o.label)}</option>`);
     }
     select.innerHTML = parts.join('');
+  }
+
+  /**
+   * Say where a pit number came from, under the field it fills.
+   *
+   * The point is not decoration. Three of these numbers used to be invented
+   * constants presented with the same authority as a measured one, and a
+   * driver had no way to tell which was which. `data-src` drives the colour;
+   * the title carries the long reason a value is still an estimate.
+   */
+  function showSource(el, p, unit) {
+    if (!el) return;
+    if (!p) { el.textContent = ''; el.removeAttribute('data-src'); el.removeAttribute('title'); return; }
+    el.setAttribute('data-src', p.source);
+    el.removeAttribute('title');
+
+    if (p.source === 'you') {
+      el.textContent = 'Your number.';
+      return;
+    }
+    if (p.source === 'measured') {
+      const where = p.tracks ? ` across ${p.tracks} track${p.tracks === 1 ? '' : 's'}` : '';
+      const stops = p.stops ? `${p.stops} stop${p.stops === 1 ? '' : 's'}` : 'the shared corpus';
+      el.textContent = `Measured — ${stops}${where}.`;
+      // Virtual Energy rates are converted from litres; show the sum so the
+      // number can be checked rather than taken on faith.
+      const conv = (unit === '%/s' && p.litresPerSec && p.capacityL)
+        ? ` Converted from ${p.litresPerSec} L/s on a ${p.capacityL} L tank.` : '';
+      const spread = (p.spread && p.spread[0] != null)
+        ? ` Middle half of those stops fell between ${p.spread[0]} and ${p.spread[1]} L/s.` : '';
+      const t = `Measured from the shared corpus.${spread}${conv}`;
+      if (spread || conv) el.title = t;
+      return;
+    }
+    el.textContent = `Estimate — ${p.short}.`;
+    if (p.why) el.title = p.why;
+  }
+
+  /**
+   * What the class actually burned here, when the corpus knows.
+   *
+   * Converted into the field's own unit for a Virtual Energy class, using this
+   * car's tank — the same arithmetic fuel-data.js uses for its VE default, so
+   * the two numbers stay comparable.
+   */
+  function measuredBurnHint(d) {
+    if (!d.measuredBurn || !d.car) return '';
+    const { litresPerLap, laps } = d.measuredBurn;
+    let value = litresPerLap;
+    let unit = 'L';
+    if (d.isVE) {
+      if (!d.car.fuelCapacity) return '';
+      value = Math.round((litresPerLap / d.car.fuelCapacity) * 100 * 10) / 10;
+      unit = '%';
+    }
+    const over = laps ? ` over ${laps} recorded lap${laps === 1 ? '' : 's'}` : '';
+    return ` The class averages ${value}${unit}/lap here${over}.`;
   }
 
   function syncControls(d) {
@@ -229,11 +310,16 @@
     els.consumptionLabel.textContent = d.isVE ? 'Energy per lap (%)' : 'Fuel per lap (L)';
     els.consumption.value = state.customConsumption ?? '';
     els.consumption.placeholder = d.defaultConsumption ?? '';
+    // The baked default is per CAR; the corpus measures per CLASS. That makes
+    // the measured figure a sanity check rather than a replacement — it is
+    // shown alongside, never substituted, because swapping a car-specific
+    // number for a class-wide one would lose precision to gain realism.
+    const burn = measuredBurnHint(d);
     els.consumptionHint.textContent = state.customConsumption == null
       ? (d.defaultConsumption
-        ? `Auto — ${d.defaultConsumption}${unit}/lap default for this car${d.isVE ? ' (derived; the in-game HUD value is better)' : ''}.`
+        ? `Auto — ${d.defaultConsumption}${unit}/lap default for this car${d.isVE ? ' (derived; the in-game HUD value is better)' : ''}.${burn}`
         : 'Auto — pick a car and track first.')
-      : 'Manual override — clear the field to go back to auto.';
+      : `Manual override — clear the field to go back to auto.${burn}`;
 
     els.safety.value = state.safetyLaps;
     els.formation.checked = state.formationLap;
@@ -259,6 +345,10 @@
     els.pitTyres.value = d.pit.tyreChangeSec;
     els.pitEvery.value = d.pit.tyresEveryStints;
     els.pitReset.hidden = Object.keys(state.pitOverrides).length === 0;
+
+    showSource(els.pitLossSrc, d.pit.provenance.pitLaneLossSec);
+    showSource(els.pitRateSrc, d.pit.provenance.refuelRatePerSec, d.isVE ? '%/s' : 'L/s');
+    showSource(els.pitTyresSrc, d.pit.provenance.tyreChangeSec);
   }
 
   // ── Result rendering ────────────────────────────────────────────────────

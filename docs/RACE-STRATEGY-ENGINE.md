@@ -443,6 +443,48 @@ Phase 1 is genuinely useful on its own: "you are on a 3-stop, the last one is
 lap 148, you have 4 L in hand" is a real pit wall, and it needs no fitted
 coefficients at all.
 
+### Where this actually got to — 14 Sept 2026
+
+The phases were not walked in order, so read the table above against this:
+
+| Phase | State |
+|---|---|
+| 0 | **Shipped** — corpus upload, stable v0.98.0. 3,282 laps / 980 stops / 41 class-track pairs / 24 drivers, still growing daily. |
+| 1 | **Not built.** There is no `raceStrategy.ts`. The pit wall this document is about does not exist yet. |
+| 2 | **Half shipped.** The fitter and the fitted table exist; `scripts/build-coefficients.js` projects them into `electron/control-panel/fuel-coefficients.js`, and the Fuel tab now plans on a MEASURED refuelling rate for LMGT3 and LMP2 rather than a guessed one. |
+| 3 | Blocked, and not on volume: there is still no deliberate lift-and-coast anywhere in the corpus. |
+
+What the fit can and cannot resolve, from the 2026-09-11 cloud run
+(2,908 laps / 810 stops / 39 pairs):
+
+| Coefficient | Resolved |
+|---|---|
+| `burn` | 19 of 39 pairs measured |
+| `refuel` (per class) | LMGT3 (14 stops, 6 tracks) and LMP2 (7 stops, 4 tracks); Hypercar none |
+| `kFuel` | 3 pairs |
+| `tyre` / `cliff` | 1 pair / none |
+| `pitCycleLoss` | none — one pair reaches `partial`, and `partial` does not ship |
+| `kLift` | none, by design |
+
+The refuelling rate was worth shipping on its own. The guessed 2.5 L/s and
+2.0 %/s were both around 60% too fast; over a four-hour LMGT3 race the measured
+rate adds **99 seconds of pit time and costs a lap** — exactly the size of error
+that plans the wrong number of stops, from a number nobody would think to check.
+
+Two things are now blocked on data collection rather than on code, and both
+concern the pit lane. A pit cycle needs five timed in-laps AND five out-laps at
+one circuit before it can be read against normal laps. Tyre time cannot be
+separated from the refuelling it happened alongside until fuel-only and
+tyre-only stops both exist in quantity — `tyres_changed` does not decide this,
+because it lies (see the corpus notes in `fit-strategy.js`).
+
+**§11 in the wire format.** `build-coefficients.js` carries across `measured`
+values only. A `partial` or `none` coefficient crosses as a *reason* instead, so
+the Fuel tab's pit box labels every number `Measured — 14 stops across 6 tracks`,
+`Your number`, or `Estimate — no pit cycle measured yet`. Three of those numbers
+were invented constants wearing the same face as a measurement, and a driver had
+no way to tell which was which.
+
 ---
 
 ## 10. Virtual energy
