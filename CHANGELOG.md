@@ -4,111 +4,74 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
-### Changed
-
-- **Inputs is the map's default, and the two lines are told apart.** The
-  map opens coloured by the pedals now; *Pace* is the one you switch to. In
-  Inputs the other driver's line is drawn dashed — the way the charts already
-  draw it — with a wider cyan or violet edge under each line, and once you
-  are zoomed into a corner every braking bar is labelled: *YOU* on one side
-  of the road, *P3* (or *L7*) on the other. The legend under the map now says
-  plainly when only one line is there — a lap driven before Apex captured the
-  driven line draws no line of its own, so what you see is the other
-  driver's, and it says so rather than showing a *You* pill for a line that
-  is not on the map.
-
-## 0.99.7-beta.5 — 2026-09-14
-
-### Added
-
-- **Where each of you braked, on the map.** The Review map has a second way
-  to colour the line, *Inputs*, beside *Pace*: the line follows the pedals
-  along the road — red where the brake is on, deepening with pressure, green
-  on the throttle, grey coasting — for both laps, with a cyan outline under
-  yours and a violet one under theirs so you can still tell them apart. A bar
-  across each line marks where that lap first touched the brake for a corner,
-  so two bars a few metres apart on the road is the answer to "who brakes
-  later here". The readout says it in numbers when you are in a braking zone
-  — *you 6 m later* — and a strip under the map lists every braking zone on
-  the lap with the same figure; click one and the charts and map go there.
-  Needs a lap with the driven line, so anything driven on 0.99.2 or later.
-
-## 0.99.7-beta.4 — 2026-09-14
-
-### Changed
-
-- **The driven line is drawn to be followed.** On the Review map the line
-  you drove — and the one you are comparing against — is heavier, with a
-  dark outline under it, so it reads on a pale stretch of road as well as a
-  dark one and at every zoom. With two laps on the map the road itself steps
-  back a little; the lines are what you are there to see. The road is still
-  drawn at its real width, so where the line sits inside it — on the kerb, in
-  the middle, a car's width off the apex — still means what it says.
-
-## 0.99.7-beta.3 — 2026-09-13
-
-### Changed
-
-- **The lap view is a cockpit.** Open a lap and it takes the whole window and
-  nothing in it scrolls: the channels stacked tall on the left, the circuit
-  large on the right with the cursor readout under it — the delta leading,
-  in figures you can read from the chair — and one command row across the
-  top with the lap, its sectors, who it is against and the zoom. The
-  micro-sectors are now a ribbon fused to the charts' distance axis, one
-  block per stretch of road all the way round, tinted by where the time went;
-  zoomed in, the ribbon is the minimap. *Change* slides the leaderboard in over
-  the map and the charts stay exactly where they are. The tab also uses the
-  width it is given instead of stopping at 1520 px, and on a wide screen the
-  session page puts the leaderboard beside the lap-time charts rather than
-  above them. The Big map toggle is gone because the map is always big now.
-
-## 0.99.7-beta.2 — 2026-09-12
-
-### Changed
-
-- **A rival is pinned to the circuit, and the leaderboard is a card, not a
-  dropdown.** The first cut of comparing with the leaderboard (beta.1) held
-  the rival the same way as one of your own laps — so clicking another session
-  in the list lost them — and offered the board as a dropdown you had to
-  scroll. Both are replaced. The leaderboard for the session's circuit and
-  class now sits on the session screen under the report, every driver's best
-  with a *vs* button on each row that has telemetry; press it and that driver
-  is **pinned to the circuit**: every session and every lap you open at that
-  track is laid over theirs, across sessions and across restarts, until you
-  unpin them or pin someone else. A sticky strip at the top of the session says
-  who you are comparing against, from wherever you are on the sheet. In the
-  lap view the dropdown is gone; the pill names the rival and *Change* folds
-  the same board out under the bar, with this session's other laps as chips
-  beside it. The Leaderboard tab's *Compare* button now pins the driver the
-  same way before opening your best lap over theirs.
-
-## 0.99.7-beta.1 — 2026-09-12
+## 0.99.7 — 2026-09-14
 
 ### Added
 
 - **Compare your lap with anyone on the leaderboard.** The Review tab could
-  lay one of your own laps under another and show where the time went. Now the
-  lap underneath can be anyone's on the league board. Open a lap, and the
-  *Compare with* picker lists the leaderboard for that circuit and class beside
-  your own session — pick a driver and their board lap is fetched from the
-  league and drawn under yours: their speed, throttle and brake dashed under
-  your own, the running delta between the two, the micro-sector chips saying
-  which stretch of road cost you, and on the map both driven lines, green for
-  the quicker. The car they set it in is named next to the time, because
+  lay one of your own laps under another and show where the time went. Now
+  the lap underneath can be anyone's on the league board. The leaderboard for
+  the session's circuit and class sits on the session screen under the
+  report — every driver's best, with a *vs* button on each row that has
+  telemetry. Press it and that driver is **pinned to the circuit**: every
+  session and every lap you open at that track is laid over theirs, across
+  sessions and across restarts, until you unpin them or pin someone else. A
+  strip at the top of the session says who you are comparing against from
+  wherever you are on the sheet. Open a lap and their speed, throttle and
+  brake run dashed under yours, with the running delta between the two, the
+  micro-sectors saying which stretch of road cost you, and both driven lines
+  on the map. The car they set it in is named beside the time, because
   between two drivers that matters in a way it never did between two of your
   own laps.
 
   The Leaderboard tab gets there from the other side: a **Compare** button on
   every row that has telemetry opens Review with your best clean lap at that
-  circuit laid over theirs. If you have no clean traced lap there yet, it says
-  so under the board instead of opening an empty page.
+  circuit laid over theirs, and pins them. If you have no clean traced lap
+  there yet, it says so under the board instead of opening an empty page.
 
-  Board laps set before Apex recorded the driven line (builds before 0.99.2)
-  are still offered — the charts, delta and micro-sectors are all real — but
-  marked *no line*, and the map shows only your own. A board lap that was
-  never uploaded with telemetry is not offered at all. Nothing new is
-  collected: every board lap's trace has been uploaded since August, and
-  anyone signed in could already read them.
+  Board laps set before Apex recorded the driven line are still offered — the
+  charts, delta and micro-sectors are all real — but marked *no line*, and the
+  map shows only the line it has. Nothing new is collected: every board lap's
+  trace has been uploaded since August, and anyone signed in could already
+  read them.
+
+- **Where each of you braked, on the map.** The map's line is coloured by the
+  pedals along the road — red where the brake is on, deepening with pressure,
+  green on the throttle, grey coasting — for both laps. Yours is solid with a
+  cyan edge; theirs is dashed with a violet edge, the way the charts already
+  draw the comparison lap. A bar across each line marks where that lap first
+  touched the brake for a corner, and zoomed in each bar says whose it is —
+  so two bars a few metres apart on the road is the answer to "who brakes
+  later here". The readout puts a number on it when you are in a braking zone
+  (*you 6 m later*), and a strip under the map lists every braking zone on the
+  lap with the same figure; click one and the charts and map go there. *Pace*
+  colouring — one colour per lap, the quicker green — is a switch beside the
+  zoom. Both need a lap with the driven line, which is anything driven on
+  0.99.2 or later; the legend under the map says plainly when only one line is
+  there.
+
+### Changed
+
+- **The lap view is a cockpit.** Open a lap and it takes the whole window and
+  nothing in it scrolls: the channels stacked tall on the left, the circuit
+  large on the right with the cursor readout under it — the delta leading, in
+  figures you can read from the chair — and one command row across the top
+  with the lap, its sectors, who it is against and the zoom. The
+  micro-sectors are a ribbon fused to the charts' distance axis, one block
+  per stretch of road all the way round, tinted by where the time went;
+  zoomed in, the ribbon is the minimap. *Change* slides the leaderboard in
+  over the map and the charts stay exactly where they are. The map is always
+  large now, so the Big map switch is gone. The tab uses the width it is given
+  instead of stopping at 1520 px, and on a wide screen the session page puts
+  the leaderboard beside the lap-time charts rather than above them.
+
+- **The driven line is drawn to be followed.** On the map the line you drove
+  — and the one you are comparing against — is heavier, with a dark outline
+  under it, so it reads on a pale stretch of road as well as a dark one and at
+  every zoom. With two laps on the map the road itself steps back a little;
+  the lines are what you are there to see. The road is still drawn at its real
+  width, so where the line sits inside it — on the kerb, in the middle, a
+  car's width off the apex — still means what it says.
 
 ## 0.99.6 — 2026-09-12
 
