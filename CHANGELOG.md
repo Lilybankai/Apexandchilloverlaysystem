@@ -4,6 +4,8 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed. -->
 
+## 0.99.7-beta.5 — 2026-09-14
+
 ### Added
 
 - **Where each of you braked, on the map.** The Review map has a second way
