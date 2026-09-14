@@ -40,14 +40,14 @@ function fakeCanvas(w = 640, h = 160) {
     setTransform() {}, clearRect() {}, fillRect() {}, closePath() {},
     // Phase 3's additions: the bands clip to their own box, the delta is
     // filled, and the ribbon's curtain is a gradient.
-    save() {}, restore() {}, clip() {}, rect() {}, drawImage() {},
+    save() {}, restore() {}, clip() {}, rect() {}, drawImage() {}, translate() {},
     createLinearGradient() { return { addColorStop() {} }; },
     createRadialGradient() { return { addColorStop() {} }; },
     beginPath() { calls.push(['beginPath']); },
     moveTo(x, y) { calls.push(['moveTo', x, y]); },
     lineTo(x, y) { calls.push(['lineTo', x, y]); },
     arc(x, y, r) { calls.push(['arc', x, y, r]); },
-    stroke() { calls.push(['stroke']); },
+    stroke() { calls.push(['stroke', this.strokeStyle, this.lineWidth]); },
     // The style goes in with the fill: the map's elevation cue IS a colour,
     // so a test that only counted fills could not see it at all.
     fill() { calls.push(['fill', this.fillStyle]); },
@@ -460,20 +460,116 @@ function squareMap(rise) {
 }
 
 {
-  // A drag on the map slides the WINDOW along the lap, and the direction to
-  // slide it in is the direction the road under the pointer runs. A unit
-  // vector, or nothing at all when the pointer is off the road.
+  // A drag on the map asks "which stretch of road is in the middle of the
+  // canvas now" — so unlike a click it always has an answer, however far from
+  // the road the point is, and the hint keeps it from crossing the circuit.
   const out = CHARTS.drawLapMap(fakeCanvas(300, 240).canvas, squareMap(0), chans(160), {});
   const g = out.geom;
-  const sc = g.screen[Math.floor(g.n / 8)];
-  const t = CHARTS.tangentAtPoint(g, (sc.lx + sc.rx) / 2, (sc.ly + sc.ry) / 2);
-  check('the road has a direction under the pointer', Array.isArray(t) && t.length === 2);
-  check('and it is a unit vector', Math.abs(Math.hypot(t[0], t[1]) - 1) < 1e-6, `${t}`);
-  check('the first side of the square runs along one axis',
-    Math.abs(t[1]) < 0.05, `${t}`);
-  check('a pointer miles from the road has no direction',
-    CHARTS.tangentAtPoint(g, -900, -900) === null);
-  check('and no geometry is safe', CHARTS.tangentAtPoint(null, 10, 10) === null);
+  const at = Math.floor(g.n / 8);
+  const sc = g.screen[at];
+  const near = CHARTS.stationNear(g, (sc.lx + sc.rx) / 2, (sc.ly + sc.ry) / 2, null);
+  check('the station under a point is found',
+    Math.abs(near - at / g.n) < 0.02, `${near} vs ${at / g.n}`);
+  check('a point miles off the road still names one',
+    typeof CHARTS.stationNear(g, -900, -900, null) === 'number');
+  const far = g.screen[Math.floor(g.n * 0.6)];
+  const hinted = CHARTS.stationNear(g, (far.lx + far.rx) / 2, (far.ly + far.ry) / 2, 0.05);
+  const apart = Math.min(Math.abs(hinted - 0.05), 1 - Math.abs(hinted - 0.05));
+  check('but a hint keeps it near where it already was, the long way round too',
+    apart <= 0.21, `${hinted}`);
+  check('and no geometry is safe', CHARTS.stationNear(null, 10, 10, null) === null);
+}
+
+{
+  // Two lines on the same road. Whole-lap they are a pixel apart, so the
+  // identity edge is left off and one dark casing carries both — the braid
+  // fix. Zoomed in they are properly two lines and the edge comes back.
+  const line = (over) => chans(200, {
+    x: Array.from({ length: 200 }, (_, i) => (i / 200) * 100),
+    z: Array.from({ length: 200 }, () => 0),
+    ...over,
+  });
+  const CYAN = '#26bbf4';
+  const road = squareMap(0);
+  const edges = (o) => {
+    const { canvas, calls } = fakeCanvas(300, 300);
+    CHARTS.drawLapMap(canvas, road, line({}), {
+      mode: 'inputs', vs: line({}), lengthM: 400, ...o,
+    });
+    return calls.filter(([op, style]) => op === 'stroke' && style === CYAN).length;
+  };
+  check('whole-lap, two lines take no identity edge', edges({}) === 0);
+  check('zoomed into a corner, the edge says whose line it is',
+    edges({ window: [0.02, 0.06] }) > 0);
+
+  // The other lap is dashed — in ITS OWN pedal colours, which is the whole
+  // difference from the dark dashes laid over the top in beta.6.
+  const dashes = (o) => {
+    const { canvas, calls } = fakeCanvas(300, 300);
+    CHARTS.drawLapMap(canvas, road, line({}), { mode: 'inputs', lengthM: 400, ...o });
+    return calls.filter(([op, len]) => op === 'setLineDash' && len === 2).length;
+  };
+  check('the comparison line is dashed', dashes({ vs: line({}) }) > 0);
+  check('a lone line is not', dashes({}) === 0);
+  check('and neither is a pace-coloured one',
+    (() => {
+      const { canvas, calls } = fakeCanvas(300, 300);
+      CHARTS.drawLapMap(canvas, road, line({}), { vs: line({}), faster: 'mine', lengthM: 400 });
+      return calls.filter(([op, len]) => op === 'setLineDash' && len === 2).length === 0;
+    })());
+
+  // On its own there is nothing to braid with, so the edge is there at any
+  // zoom: it is the only thing saying the line is yours.
+  const { canvas, calls } = fakeCanvas(300, 300);
+  CHARTS.drawLapMap(canvas, road, line({}), { mode: 'inputs', lengthM: 400 });
+  check('one line keeps its edge whole-lap',
+    calls.some(([op, style]) => op === 'stroke' && style === CYAN));
+}
+
+{
+  // The confetti: a pedal that flickers sample to sample is five metres of
+  // road, which whole-lap is a pixel and a half. Runs that short are merged
+  // into the run before them, so the line reads as zones.
+  const flat = chans(200, {
+    x: Array.from({ length: 200 }, (_, i) => (i / 200) * 100),
+    z: Array.from({ length: 200 }, () => 0),
+  });
+  const flicker = chans(200, {
+    x: flat.x, z: flat.z,
+    brake: Array.from({ length: 200 }, (_, i) => (i % 2 ? 0.8 : 0)),
+    throttle: Array.from({ length: 200 }, (_, i) => (i % 2 ? 0 : 1)),
+  });
+  const road = squareMap(0);
+  const strokes = (tr, o) => {
+    const { canvas, calls } = fakeCanvas(300, 300);
+    CHARTS.drawLapMap(canvas, road, tr, { mode: 'inputs', lengthM: 400, ...o });
+    return calls.filter(([op]) => op === 'stroke').length;
+  };
+  const whole = strokes(flicker, {}) - strokes(flat, {});
+  check('whole-lap, a flickering pedal is not painted as 200 specks',
+    whole < 20, `${whole} extra strokes`);
+  const win = { window: [0, 0.02] };
+  const zoomed = strokes(flicker, win) - strokes(flat, win);
+  check('zoomed in, every change of pedal is drawn',
+    zoomed > whole * 2, `${zoomed} vs ${whole}`);
+}
+
+{
+  // Dragging the map holds the plan still and slides it. The held plan is
+  // what makes the pan cheap AND what stops the picture rescaling under the
+  // hand; without a drag in progress the offset is ignored.
+  const { canvas } = fakeCanvas(300, 300);
+  const road = squareMap(0);
+  const first = CHARTS.drawLapMap(canvas, road, chans(160), { window: [0.1, 0.3] });
+  check('a plan can be held', CHARTS.holdPlan(true) === true);
+  const held = CHARTS.drawLapMap(canvas, road, chans(160), {
+    window: [0.4, 0.6], pan: { dx: 40, dy: -25 },
+  });
+  check('the held plan is the one that was on screen when the drag began',
+    held.geom === first.geom);
+  CHARTS.holdPlan(false);
+  const after = CHARTS.drawLapMap(canvas, road, chans(160), { window: [0.4, 0.6] });
+  check('letting go re-fits to where the drag arrived', after.geom !== first.geom);
 }
 
 {

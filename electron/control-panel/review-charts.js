@@ -989,8 +989,93 @@
         bitmap = off;
       }
     }
-    planCache = { key, map, g, bitmap, probe, zoom: g.zoom };
+    planCache = { key, map, g, bitmap, probe, zoom: g.zoom, w, h, wide: null };
     return planCache;
+  }
+
+  /**
+   * Hold the plan still while the map is being dragged.
+   *
+   * A pan used to move the WINDOW: every mouse move fitted a new stretch of
+   * road to the canvas, which meant the whole projection twice, the road
+   * re-rendered, and — worse than the cost — a picture that rescaled and
+   * re-centred under the hand thirty times a second. Grabbing a map and
+   * having it swim is the "clunky" Carl reported.
+   *
+   * So a drag holds the plan it started with and TRANSLATES it. The road
+   * under the pointer stays under the pointer, because it is the same
+   * projection moved by the same pixels. The window still follows along for
+   * the charts; the map re-fits once, on release.
+   *
+   * The held plan gets its own road bitmap with a wide margin around the
+   * canvas: the cached one is exactly canvas-sized, so sliding it would
+   * bring blank space in at the leading edge instead of the road that is
+   * really there.
+   */
+  const PAN_MARGIN = 0.6;
+  let heldPlan = null;
+
+  function wideRoad(plan) {
+    if (typeof document === 'undefined' || !document.createElement) return null;
+    const padX = Math.round(plan.w * PAN_MARGIN);
+    const padY = Math.round(plan.h * PAN_MARGIN);
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const off = document.createElement('canvas');
+    const cw = plan.w + padX * 2;
+    const ch = plan.h + padY * 2;
+    off.width = Math.max(1, Math.round(cw * dpr));
+    off.height = Math.max(1, Math.round(ch * dpr));
+    const ox = off.getContext('2d');
+    if (!ox) return null;
+    ox.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ox.translate(padX, padY);
+    ox.lineJoin = 'round';
+    ox.lineCap = 'round';
+    paintPlan(ox, plan.g);
+    return { canvas: off, padX, padY, w: cw, h: ch };
+  }
+
+  function holdPlan(on) {
+    if (!on || !planCache) {
+      heldPlan = null;
+      return false;
+    }
+    heldPlan = planCache;
+    if (!heldPlan.wide) heldPlan.wide = wideRoad(heldPlan);
+    return true;
+  }
+
+  /**
+   * The lap fraction nearest a point on the plan — no hit radius, no jumping.
+   *
+   * {@link distanceAtPoint} answers "did they click the road", so it gives up
+   * when the pointer is not on it. A pan asks a different question: whatever
+   * is in the middle of the canvas now, which stretch of road is that? It
+   * always has an answer, and `hint` keeps it from teleporting to the far
+   * side of the circuit when a hairpin brings two straights close together.
+   */
+  function stationNear(geom, x, y, hint) {
+    if (!geom || !geom.screen) return null;
+    const n = geom.n;
+    let lo = 0;
+    let hi = n - 1;
+    const near = isNum(hint);
+    if (near) {
+      const c = Math.round(hint * n);
+      const r = Math.max(8, Math.round(n * 0.2));
+      lo = c - r;
+      hi = c + r;
+    }
+    let best = null;
+    for (let k = lo; k <= hi; k++) {
+      const i = near ? ((k % n) + n) % n : k;
+      const sc = geom.screen[i];
+      const mx = (sc.lx + sc.rx) / 2;
+      const my = (sc.ly + sc.ry) / 2;
+      const dist = Math.hypot(mx - x, my - y);
+      if (!best || dist < best.dist) best = { dist, i };
+    }
+    return best ? best.i / n : null;
   }
 
   /**
@@ -1171,9 +1256,16 @@
     const o = opts || {};
     const [wFrom, wTo] = windowOf(o);
 
-    const cached = planFor(map, w, h, wFrom, wTo);
+    // A drag holds the plan it started with (see {@link holdPlan}) and slides
+    // it; everything below is drawn through that one translation.
+    const held = heldPlan && heldPlan.map === map && heldPlan.w === w && heldPlan.h === h
+      ? heldPlan
+      : null;
+    const cached = held || planFor(map, w, h, wFrom, wTo);
     if (!cached) return null;
     const g = cached.g;
+    const panX = held && o.pan && isNum(o.pan.dx) ? o.pan.dx : 0;
+    const panY = held && o.pan && isNum(o.pan.dy) ? o.pan.dy : 0;
 
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -1181,15 +1273,18 @@
     // subject, so it steps back. On its own the road IS the picture (a lap
     // with no line has only the road to place its marker on) and stays full.
     const comparing = !!(o.vs && Array.isArray(o.vs.x) && Array.isArray(trace.x));
-    if (cached.bitmap) {
-      ctx.save();
-      ctx.globalAlpha = comparing ? 0.62 : 1;
-      ctx.drawImage(cached.bitmap, 0, 0, w, h);
-      ctx.restore();
-    }
+    ctx.save();
+    if (panX || panY) ctx.translate(panX, panY);
+    // The wide bitmap has the road the pan is about to reveal on it; past the
+    // margin it runs out and the road is painted live for that frame, which is
+    // slower and still correct.
+    const wide = cached.wide;
+    const inMargin = wide && Math.abs(panX) <= wide.padX && Math.abs(panY) <= wide.padY;
+    ctx.globalAlpha = comparing ? 0.62 : 1;
+    if (inMargin) ctx.drawImage(wide.canvas, -wide.padX, -wide.padY, wide.w, wide.h);
+    else if (cached.bitmap && !panX && !panY) ctx.drawImage(cached.bitmap, 0, 0, w, h);
     else paintPlan(ctx, g);
-    if (g.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
-    drawScaleBar(ctx, g, w, h);
+    ctx.globalAlpha = 1;
 
     // Sector lines, as bars across the road at the right distance.
     for (const dd of [0, o.sectors ? o.sectors.s1 : null, o.sectors ? o.sectors.s2 : null]) {
@@ -1255,73 +1350,197 @@
       return '#6b7690';
     };
 
-    /** One driven line. */
-    const line = (tr, style, width, isMine) => {
-      if (!tr || !Array.isArray(tr.x) || !Array.isArray(tr.z)) return false;
-      if (tr.x.length < 2 || tr.x.length !== tr.z.length) return false;
-      const n = tr.x.length;
-      const pts = new Array(n);
-      for (let i = 0; i < n; i++) pts[i] = g.project(tr.x[i], tr.z[i]);
-      // Round joins, because a 4 px mitred line through a chicane grows
-      // spikes at every kink in the sampled position.
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      // The halo first, as one path under everything.
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
-        else ctx.lineTo(pts[i].x, pts[i].y);
-      }
-      // In inputs mode the halo is an outline, not a colour: thinner, so the
-      // pedal colour inside it is what a zoomed corner shows.
-      ctx.strokeStyle = haloOf(isMine);
-      ctx.lineWidth = width + (inputs ? 2.2 : 2.4);
-      ctx.stroke();
-      ctx.lineWidth = width + (inputs ? 0.4 : 0);
-      if (!inputs) {
-        ctx.strokeStyle = style;
-        ctx.stroke();
-        return true;
-      }
-      // Inputs: runs of samples with the same colour, each stroked as one
-      // path. A lap is ~900 samples and a pedal changes state a few hundred
-      // times, so this is a few hundred short strokes, not nine hundred.
-      let run = inputStyle(tr, 0);
-      ctx.strokeStyle = run;
+    /** Has this lap a driven line to draw at all? */
+    const hasLine = (tr) =>
+      !!tr && Array.isArray(tr.x) && Array.isArray(tr.z)
+      && tr.x.length >= 2 && tr.x.length === tr.z.length;
+
+    /** Projected once, and shared by all three passes over the line. */
+    const screenOf = (tr) => {
+      const out = new Array(tr.x.length);
+      for (let i = 0; i < tr.x.length; i++) out[i] = g.project(tr.x[i], tr.z[i]);
+      return out;
+    };
+
+    /**
+     * Whether the two lines can be told apart by looking at them.
+     *
+     * Whole-lap, a metre of road is a third of a pixel: two lines a car's
+     * width apart ARE the same line on the screen. Giving each of them its
+     * own cyan or violet edge there painted the braid Carl photographed —
+     * two outlines and two sets of pedal colours fighting inside nine pixels
+     * of road, and no colour readable. So whole-lap both lines take one dark
+     * casing and the pedal colours are the only thing said; the identity edge
+     * arrives with the zoom, at the point where the lines are genuinely two.
+     */
+    // Either line can be switched off from the map's tick boxes. A hidden
+    // lap keeps everything it says in the charts, the readout and the braking
+    // strip — it is only taken off the picture, which is the quickest way
+    // there is to read one line where two of them run together.
+    const show = o.show || null;
+    const showMine = !show || show.mine !== false;
+    const showVs = !show || show.vs !== false;
+    const twoLines = hasLine(trace) && showMine && hasLine(o.vs) && showVs;
+    const identity = inputs && (!twoLines || g.zoom >= 2);
+
+    /** The whole path, as one subpath. */
+    const path = (pts) => {
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < n; i++) {
-        const s = inputStyle(tr, i);
-        ctx.lineTo(pts[i].x, pts[i].y);
-        if (s !== run) {
-          ctx.stroke();
-          run = s;
-          ctx.strokeStyle = run;
-          ctx.beginPath();
-          ctx.moveTo(pts[i].x, pts[i].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    };
+
+    /**
+     * The pedal colour per sample, with the confetti taken out.
+     *
+     * The trace samples about every five metres, which whole-lap is a pixel
+     * and a half: a pedal that flickers for three samples paints three specks
+     * nobody can read, and a lap of them is the speckled rope. A run shorter
+     * than MIN_RUN_PX on the screen is absorbed into the run before it, so
+     * what is left is zones — braking here, back on it there. Zoomed in a run
+     * is dozens of pixels long and nothing is merged at all.
+     */
+    const MIN_RUN_PX = 6;
+    const runColours = (tr, pts) => {
+      const n = pts.length;
+      const cols = new Array(n);
+      for (let i = 0; i < n; i++) cols[i] = inputStyle(tr, i);
+      const runs = [];
+      let s0 = 0;
+      for (let i = 1; i <= n; i++) {
+        if (i < n && cols[i] === cols[s0]) continue;
+        // Measured to the START of the next run, so a run of one sample is
+        // the five metres of road it covers rather than nothing at all.
+        let px = 0;
+        for (let k = s0 + 1; k <= i && k < n; k++) px += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+        runs.push({ s: s0, e: i, px, c: cols[s0] });
+        s0 = i;
+      }
+      let cur = runs[0];
+      for (let r = 1; r < runs.length; r++) {
+        const run = runs[r];
+        if (run.px >= MIN_RUN_PX) {
+          cur = run;
+          continue;
         }
+        for (let k = run.s; k < run.e; k++) cols[k] = cur.c;
+        cur.px += run.px;
+      }
+      return cols;
+    };
+
+    /**
+     * Pass 1: the dark casing under every line, before any colour is laid.
+     *
+     * Drawn for BOTH laps first, which is the whole fix for two lines that
+     * lie on top of each other: each line used to be outlined and filled in
+     * turn, so the second line's outline was painted straight over the first
+     * line's colours wherever they ran within a few pixels of each other —
+     * which whole-lap is everywhere. An outline can only ever sit under a
+     * colour now, never on one.
+     */
+    const casing = (L) => {
+      path(L.pts);
+      ctx.strokeStyle = HALO;
+      ctx.lineWidth = L.w + (inputs ? (identity ? 3.4 : 2) : 2.4);
+      ctx.stroke();
+    };
+
+    /** Pass 2: whose line it is, once the two are far enough apart to say. */
+    const edge = (L) => {
+      path(L.pts);
+      ctx.strokeStyle = haloOf(L.isMine);
+      ctx.lineWidth = L.w + 2.2;
+      ctx.stroke();
+    };
+
+    /**
+     * Pass 3: the colour — one per lap in pace, the pedals in inputs.
+     *
+     * The other lap is dashed, and the DASHES CARRY THE COLOUR (Carl, once he
+     * had seen both): beta.6 drew it solid and laid a dark dashed stroke over
+     * the top, which told the two lines apart by eating the pedal colours the
+     * line was there to show. A dashed stroke in the pedal colour says the
+     * same thing and costs nothing — and the gaps fall through to the casing,
+     * or to the identity edge when the zoom has brought it out.
+     *
+     * The dash rhythm is kept even along the whole road with `lineDashOffset`:
+     * the colours are stroked as runs, and without the running offset every
+     * run would restart the pattern and the line would stutter at each change
+     * of pedal.
+     */
+    const DASH = [7, 5];
+    const fill = (L) => {
+      ctx.lineWidth = L.w + (inputs ? 0.4 : 0);
+      if (L.dash) ctx.setLineDash(DASH);
+      if (!inputs) {
+        path(L.pts);
+        ctx.strokeStyle = L.style;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+      // Runs of samples the same colour, each stroked as one path. A lap is
+      // ~900 samples and a pedal changes state a few hundred times, so this
+      // is a few hundred short strokes, not nine hundred.
+      const cols = runColours(L.tr, L.pts);
+      const pts = L.pts;
+      let run = cols[0];
+      let travelled = 0;
+      ctx.strokeStyle = run;
+      if (L.dash) ctx.lineDashOffset = 0;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+        travelled += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (cols[i] === run) continue;
+        ctx.stroke();
+        run = cols[i];
+        ctx.strokeStyle = run;
+        if (L.dash) ctx.lineDashOffset = -travelled;
+        ctx.beginPath();
+        ctx.moveTo(pts[i].x, pts[i].y);
       }
       ctx.stroke();
-      // Both lines stay solid. A dark dashed stroke laid over the other lap
-      // told the two apart, but it ate the pedal colours it was drawn over
-      // and broke the shape of the line — the cyan/violet edge carries the
-      // identity instead (Carl, 2026-09-14).
-      return true;
+      if (L.dash) {
+        ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
+      }
     };
 
     // The SLOWER lap first, so the quicker one is on top wherever they touch:
     // once the colours mean pace, the quick line is the subject and the slow
     // one is what it is being read against. With no pace to go on, the studied
     // lap goes on top and the reference is drawn a shade thinner.
-    let vsPlaced;
-    let placed;
-    if (faster === 'theirs') {
-      placed = line(trace, mineStyle, lineW, true);
-      vsPlaced = line(o.vs, vsStyle, lineW, false);
-    } else {
-      vsPlaced = line(o.vs, vsStyle, faster ? lineW : lineW * 0.85, false);
-      placed = line(trace, mineStyle, lineW, true);
-    }
+    const mine = hasLine(trace) && showMine
+      ? { tr: trace, pts: screenOf(trace), style: mineStyle, w: lineW, isMine: true }
+      : null;
+    const theirs = hasLine(o.vs) && showVs
+      ? {
+        tr: o.vs,
+        pts: screenOf(o.vs),
+        style: vsStyle,
+        w: faster ? lineW : lineW * 0.85,
+        isMine: false,
+        // Dashed only when there is another line to be told apart from. The
+        // only line on the map is not "the other one", and a lone dashed line
+        // is just a line drawn worse.
+        dash: inputs && twoLines,
+      }
+      : null;
+    const lines = (faster === 'theirs' ? [mine, theirs] : [theirs, mine]).filter(Boolean);
+    // Round joins, because a 4 px mitred line through a chicane grows spikes
+    // at every kink in the sampled position.
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const L of lines) casing(L);
+    if (identity) for (const L of lines) edge(L);
+    for (const L of lines) fill(L);
+    // "Has a line", not "is on the map": the cursor's car still belongs at the
+    // real position when the line under it is switched off.
+    const placed = hasLine(trace);
+    const vsPlaced = hasLine(o.vs);
 
     // Braking points: a bar across each line where the brake first came on
     // for a corner, in that lap's identity colour. Two bars a few metres
@@ -1378,8 +1597,8 @@
           }
         }
       };
-      if (vsPlaced) tick(o.vs, CSS.compare, String(o.vsLabel || 'VS').toUpperCase());
-      if (placed) tick(trace, CSS.cyan, 'YOU');
+      if (theirs) tick(o.vs, CSS.compare, String(o.vsLabel || 'VS').toUpperCase());
+      if (mine) tick(trace, CSS.cyan, 'YOU');
     }
 
     // The cars: where each lap was at this point of the road. The real
@@ -1403,6 +1622,13 @@
       }
       marker(ctx, p.x, p.y, inputs ? CSS.cyan : mineStyle, 4, 7.5);
     }
+
+    // The furniture sits on the CANVAS, not on the circuit, so it comes out
+    // from under the pan: a scale bar that slid away with the road would be
+    // measuring a picture that is no longer there.
+    ctx.restore();
+    if (g.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
+    drawScaleBar(ctx, g, w, h);
 
     return {
       minY: g.minEl,
@@ -1511,37 +1737,6 @@
     }
     if (!best || best.dist > (geom.hitPx || 42)) return null;
     return best.i / geom.n;
-  }
-
-  /**
-   * Which way the road is pointing, on screen, under a pixel.
-   *
-   * A unit vector along the centreline at the nearest station, or null if the
-   * pointer is nowhere near the road. It is what lets a drag on the map pan
-   * ALONG the lap: the window this view is framed on is a stretch of road, not
-   * a rectangle, so "drag the map" can only mean "slide the window up or down
-   * the circuit" — and the direction to slide it in is the direction the road
-   * under your finger happens to be running.
-   */
-  function tangentAtPoint(geom, x, y) {
-    if (!geom || !geom.screen) return null;
-    let best = null;
-    for (let i = 0; i < geom.n; i++) {
-      const sc = geom.screen[i];
-      const mx = (sc.lx + sc.rx) / 2;
-      const my = (sc.ly + sc.ry) / 2;
-      const dist = Math.hypot(mx - x, my - y);
-      if (!best || dist < best.dist) best = { dist, i };
-    }
-    if (!best || best.dist > (geom.hitPx || 42) * 3) return null;
-    const n = geom.n;
-    const a = geom.screen[(best.i - 1 + n) % n];
-    const b = geom.screen[(best.i + 1) % n];
-    const tx = (b.lx + b.rx) / 2 - (a.lx + a.rx) / 2;
-    const ty = (b.ly + b.ry) / 2 - (a.ly + a.ry) / 2;
-    const len = Math.hypot(tx, ty);
-    if (!(len > 0)) return null;
-    return [tx / len, ty / len];
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1755,7 +1950,7 @@
 
   return {
     drawLapChart, drawTrend, drawChannels, drawLapMap, drawWear,
-    channelBands, distanceAtPoint, tangentAtPoint,
+    channelBands, distanceAtPoint, stationNear, holdPlan,
     brakePoints, brakePointPairs,
   };
 });

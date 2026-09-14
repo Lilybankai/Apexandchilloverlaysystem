@@ -31,11 +31,33 @@
   deliberate lift costs, and nobody in the shared data lifts on purpose, so there
   is nothing to measure it against. The app says that instead of inventing it.
 
-- **Both driven lines are solid again.** The comparison lap on the Review map
-  was drawn dashed to tell it from yours; the dashes sat on top of the pedal
-  colours and broke up the shape of the line, which on a map is the whole
-  point of it. Both lines are solid and fully coloured, and the cyan or violet
-  edge under each still says whose it is.
+- **The two lines on the Review map read as two lines.** The comparison lap
+  was drawn dashed to tell it from yours — but the dashes were a dark stroke
+  laid *over* the pedal colours, and each line's outline was painted over the
+  other line's colours wherever they ran together, which whole-lap is
+  everywhere. Now the dashes carry the pedal colours themselves, every
+  outline goes down before any colour does, and whole-lap — where two lines a
+  car's width apart are the same line on the screen — they share one dark
+  casing instead of fighting each other with a cyan and a violet one. A pedal
+  that flickers for a few metres is no longer painted as specks the width of
+  the road, so what you see at a glance is zones: braking here, back on it
+  there.
+
+- **Tick boxes for whose line is on the map.** Beside *Pace | Inputs*, a box
+  each for your line and theirs, in their own colours: take either off when
+  the two run together and you want to read one of them. Nothing is unloaded
+  — the charts, the delta, the readout and the braking strip still have both
+  laps — and the last box on stays on.
+
+- **The map is dragged, not re-framed.** Grabbing the road used to re-fit the
+  view to a new stretch of it on every mouse move: the picture rescaled and
+  re-centred continuously, only movement along the road's direction did
+  anything, and each frame re-projected the whole circuit. Now the plan is
+  held still and the picture slides — the piece of road under the pointer
+  stays under the pointer, in both directions, at one frame per screen
+  refresh — and the map re-frames once, when you let go. The wheel zooms
+  about the road under the pointer too, by as much as the notch you turned,
+  instead of always about the middle of the window.
 -->
 
 ## 0.99.7 — 2026-09-14

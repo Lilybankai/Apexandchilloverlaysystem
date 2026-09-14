@@ -909,6 +909,18 @@
    */
   let mapMode = 'inputs';
 
+  /**
+   * Which lines are on the map.
+   *
+   * Two laps through the same corner are two lines a metre apart, and the
+   * fastest way to read one of them is to take the other off — Carl asked for
+   * the tick boxes the moment he saw them overlap. The lap is not unloaded:
+   * the charts, the delta, the readout and the braking strip are all
+   * untouched, because they lay the two laps side by side rather than on top
+   * of each other. Per machine, like the colouring.
+   */
+  let mapLines = { mine: true, vs: true };
+
   function loadPrefs() {
     try {
       const raw = window.localStorage.getItem('apex.review.pins');
@@ -918,6 +930,11 @@
       // Inputs is the default (Carl, 2026-09-14): the map is there to show
       // where the time went, and the pedals are where it goes.
       mapMode = window.localStorage.getItem('apex.review.mapMode') === 'pace' ? 'pace' : 'inputs';
+      const lines = window.localStorage.getItem('apex.review.mapLines');
+      mapLines = {
+        mine: lines !== 'vs',
+        vs: lines !== 'mine',
+      };
     } catch {
       pins = {};
     }
@@ -1154,6 +1171,29 @@
       </div>`;
   }
 
+  /**
+   * The tick boxes: whose line is on the map.
+   *
+   * Only with a comparison loaded — with one lap there is nothing to take off
+   * — and each box is the colour of the line it switches, so the control says
+   * which line is which as well as whether it is there. The last box on
+   * cannot be switched off: an empty map answers nothing.
+   */
+  function linesToggleHtml(view) {
+    if (!view.vs || !view.vsLap) return '';
+    const theirs = isBoardRef(view.vsLap) ? `P${view.vsLap.rank}` : `L${view.vsLap.lapNo}`;
+    const box = (key, label, on, full) => {
+      const only = on && !(key === 'mine' ? mapLines.vs : mapLines.mine);
+      return `<button type="button" data-mapline="${key}" data-on="${String(on)}"
+        aria-pressed="${String(on)}"${only ? ' data-only="true"' : ''}
+        title="${esc(only ? `${full} is the only line on the map` : `${on ? 'Take' : 'Put'} ${full} ${on ? 'off' : 'on'} the map`)}"><span>${esc(label)}</span></button>`;
+    };
+    return `<span class="rv-mapshow" role="group" aria-label="Which lines are on the map">
+      ${box('mine', 'You', mapLines.mine, 'your line')}
+      ${box('vs', theirs, mapLines.vs, refName(view.vsLap))}
+    </span>`;
+  }
+
   /** The zoom controls, and the stretch of road they have arrived at. */
   function zoomHtml(view) {
     const [a, b] = view.window;
@@ -1170,6 +1210,7 @@
           <button type="button" data-mapmode="inputs" data-on="${String(mapMode === 'inputs')}"
                   title="The pedals along the road — red braking, green on the throttle — with a bar where each lap's braking begins">Inputs</button>
         </span>
+        ${linesToggleHtml(view)}
         <span class="rv-zoom__label" data-zoomlabel>${esc(label)}</span>
         <button type="button" class="btn btn--ghost btn--sm rv-zoom__step" data-zoom="out"
                 title="Zoom out" aria-label="Zoom out"><span>&minus;</span></button>
@@ -1298,9 +1339,12 @@
    * words: Carl read a lone rival's line as two lines he could not tell apart.
    */
   function linesOn(view) {
+    // What is actually ON THE MAP: a lap with no driven line draws none, and
+    // so does one whose tick box is off.
+    const both = !!(view.vs && view.vsLap);
     return {
-      mine: !!view.detail.hasLine,
-      theirs: !!(view.vs && view.vs.hasLine),
+      mine: !!view.detail.hasLine && (!both || mapLines.mine),
+      theirs: !!(view.vs && view.vs.hasLine) && (!both || mapLines.vs),
     };
   }
 
@@ -1310,9 +1354,9 @@
     const theirs = view.vsLap ? refName(view.vsLap) : '';
     let who = '';
     if (on.mine && on.theirs) {
-      who = `<i class="rv-swatch" data-halo="you"></i><span>You — cyan edge</span>
-        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — violet edge</span>
-        <em>the bar across a line is where that lap first braked; zoom in and each bar says whose it is</em>`;
+      who = `<i class="rv-swatch" data-halo="you"></i><span>You — solid</span>
+        <i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — dashed</span>
+        <em>the dashes carry the pedal colours too; the bar across a line is where that lap first braked, and zoomed in each bar says whose it is</em>`;
     } else if (on.theirs) {
       who = `<i class="rv-swatch" data-halo="vs"></i><span>${esc(theirs)} — the only line here</span>
         <em>your lap was recorded before Apex captured the driven line, so your marker follows the centreline and your braking shows only in the readout</em>`;
@@ -1495,6 +1539,8 @@
           cursorD,
           cursorIndex: view.cursor === null ? -1 : view.cursor,
           window: view.window,
+          pan: view.mapPan || null,
+          show: mapLines,
           vs: view.vs ? view.vs.channels : null,
           faster: fasterOf(view),
           mode: mapMode,
@@ -1679,67 +1725,129 @@
     const onMapWheel = (evt) => {
       evt.preventDefault();
       const [a, b] = view.window;
-      zoomAbout(evt.deltaY > 0 ? 1.25 : 0.8, (a + b) / 2);
+      // Zoom about the piece of road under the pointer, the way the charts
+      // already do about the pixel under it — put the pointer on the hairpin,
+      // scroll, and arrive at the hairpin rather than at the middle of
+      // whatever was framed. Off the road entirely, the middle is honest.
+      const box = mapCanvas.getBoundingClientRect();
+      const at = view.mapGeom
+        ? CHARTS.stationNear(view.mapGeom, evt.clientX - box.left, evt.clientY - box.top, null)
+        : null;
+      // Stepped with the size of the notch, so a trackpad glides where a
+      // fixed 1.25 per event lurched.
+      const k = Math.min(1.5, Math.max(0.67, Math.exp(evt.deltaY * 0.0016)));
+      zoomAbout(k, at === null ? (a + b) / 2 : at);
     };
 
     /**
-     * Drag the map to move along the lap.
+     * Drag the map.
      *
-     * The view is framed on the WINDOW — a stretch of road, not a rectangle —
-     * so there is no free two-axis pan to give: dragging sideways off the road
-     * would take the charts somewhere the map is not, and the one window
-     * shared by both is what makes every part of this screen talk about the
-     * same corner. What a drag can honestly do is slide that window up and
-     * down the circuit, which is what someone reaching for it wants anyway:
-     * grab the road, pull it, arrive at the next corner with the charts.
+     * The road follows the hand: the point of track under the pointer when
+     * the button went down stays under it, in both axes, for as long as the
+     * drag lasts. That is only possible because the plan is HELD — see
+     * `holdPlan` in review-charts — and the picture translated. The first cut
+     * re-framed the window on every mouse move, which re-fitted the camera to
+     * a new stretch of road thirty times a second: the map rescaled and
+     * re-centred continuously, only motion along the frozen tangent did
+     * anything at all, and each frame cost the whole projection twice over.
+     * Carl: "very clunky".
      *
-     * Everything the drag needs is frozen at mousedown — the scale, the
-     * direction the road runs in under the pointer, and the window it started
-     * from. A pan that re-read the geometry it was moving would be measuring
-     * against a picture its own last frame had already shifted.
+     * The window still follows, so the charts walk along the lap with the
+     * map; it is the map's FRAMING that is left alone until the button comes
+     * up, and the one re-fit happens there.
      */
+
+    /** How far the camera may wander before the circuit would leave the box. */
+    const centreBounds = (g, w, h) => {
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (let i = 0; i < g.n; i++) {
+        const sc = g.screen[i];
+        const mx = (sc.lx + sc.rx) / 2;
+        const my = (sc.ly + sc.ry) / 2;
+        if (mx < x0) x0 = mx;
+        if (mx > x1) x1 = mx;
+        if (my < y0) y0 = my;
+        if (my > y1) y1 = my;
+      }
+      const m = Math.min(w, h) * 0.3;
+      return [x0 - m, x1 + m, y0 - m, y1 + m];
+    };
+
     const onMapDown = (evt) => {
       const g = view.mapGeom;
       if (!g || !(g.zoom > 1.05)) return;
+      if (!CHARTS.holdPlan(true)) return;
       const box = mapCanvas.getBoundingClientRect();
-      const tangent = CHARTS.tangentAtPoint(g, evt.clientX - box.left, evt.clientY - box.top);
-      if (!tangent) return;
+      const [a, b] = view.window;
       mapDrag = {
         x: evt.clientX,
         y: evt.clientY,
-        from: view.window[0],
-        to: view.window[1],
-        scale: g.scale,
-        tangent,
+        dx: 0,
+        dy: 0,
+        w: box.width,
+        h: box.height,
+        span: b - a,
+        at: (a + b) / 2,
+        geom: g,
+        bounds: centreBounds(g, box.width, box.height),
         moved: false,
+        raf: 0,
       };
       mapCanvas.setAttribute('data-drag', 'pan');
       evt.preventDefault();
     };
 
     const onMapMove = (evt) => {
-      if (!mapDrag) return;
-      const dx = evt.clientX - mapDrag.x;
-      const dy = evt.clientY - mapDrag.y;
-      if (!mapDrag.moved && Math.hypot(dx, dy) <= DRAG_PX) return;
-      mapDrag.moved = true;
-      // How far along the road the pointer has come, in pixels, then in metres,
-      // then as a fraction of the lap. Negative because the road follows the
-      // hand: drag right and the window walks backwards, the way dragging a
-      // map has always worked.
-      const along = dx * mapDrag.tangent[0] + dy * mapDrag.tangent[1];
-      const metres = along / Math.max(1e-6, mapDrag.scale);
-      const span = mapDrag.to - mapDrag.from;
-      const delta = -metres / Math.max(1, view.lengthM || 1);
-      const from = Math.max(0, Math.min(1 - span, mapDrag.from + delta));
-      setWindow(from, from + span);
+      const d = mapDrag;
+      if (!d) return;
+      const rawX = evt.clientX - d.x;
+      const rawY = evt.clientY - d.y;
+      if (!d.moved && Math.hypot(rawX, rawY) <= DRAG_PX) return;
+      d.moved = true;
+      // Where the middle of the canvas now falls on the held plan, clamped so
+      // the circuit can never be flung off the edge and lost.
+      const [bx0, bx1, by0, by1] = d.bounds;
+      const cx = Math.min(bx1, Math.max(bx0, d.w / 2 - rawX));
+      const cy = Math.min(by1, Math.max(by0, d.h / 2 - rawY));
+      d.dx = d.w / 2 - cx;
+      d.dy = d.h / 2 - cy;
+      // One repaint per frame. A mouse reports faster than the screen draws,
+      // and a map that tried to keep up with the mouse was drawing frames
+      // nobody would ever see.
+      if (d.raf) return;
+      d.raf = window.requestAnimationFrame(() => {
+        if (mapDrag !== d) return;
+        d.raf = 0;
+        view.mapPan = { dx: d.dx, dy: d.dy };
+        // Which stretch of road is in the middle of the canvas now — that is
+        // the window the charts should be showing. The hint keeps it from
+        // jumping to the other side of a hairpin.
+        const at = CHARTS.stationNear(d.geom, d.w / 2 - d.dx, d.h / 2 - d.dy, d.at);
+        if (at === null) {
+          if (view.repaint) view.repaint();
+          return;
+        }
+        d.at = Math.min(1 - d.span / 2, Math.max(d.span / 2, at));
+        setWindow(d.at - d.span / 2, d.at + d.span / 2);
+      });
     };
 
     const onMapUp = () => {
-      if (!mapDrag) return;
-      mapDragged = mapDrag.moved;
+      const d = mapDrag;
+      if (!d) return;
       mapDrag = null;
+      if (d.raf) window.cancelAnimationFrame(d.raf);
+      mapDragged = d.moved;
+      view.mapPan = null;
+      CHARTS.holdPlan(false);
       mapCanvas.removeAttribute('data-drag');
+      // The one re-fit: the stretch the pan arrived at, framed the way every
+      // other way of getting there frames it.
+      if (d.moved) setWindow(d.at - d.span / 2, d.at + d.span / 2);
+      else if (view.repaint) view.repaint();
     };
 
     if (mapCanvas) {
@@ -2355,6 +2463,26 @@
             }
             renderDetail();
           }
+          return;
+        }
+        // A line's tick box. Re-rendered, not repainted: the legend under the
+        // map names the lines that are on it.
+        const lineBtn = evt.target.closest('[data-mapline]');
+        if (lineBtn && lapView) {
+          const key = lineBtn.dataset.mapline === 'vs' ? 'vs' : 'mine';
+          const other = key === 'mine' ? 'vs' : 'mine';
+          // Never both off. The last one lit simply stays lit.
+          if (mapLines[key] && !mapLines[other]) return;
+          mapLines[key] = !mapLines[key];
+          try {
+            window.localStorage.setItem(
+              'apex.review.mapLines',
+              mapLines.mine && mapLines.vs ? 'both' : (mapLines.mine ? 'mine' : 'vs'),
+            );
+          } catch {
+            /* storage off: the choice lasts the run */
+          }
+          renderDetail();
           return;
         }
         // A braking zone in the strip: frame it, with a little road either
