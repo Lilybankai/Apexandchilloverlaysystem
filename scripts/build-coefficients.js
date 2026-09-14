@@ -199,7 +199,22 @@ function projectClasses(table, DATA, warn) {
 
   // A class that resolved does not also carry a refusal.
   for (const classId of Object.keys(byClass)) delete unresolved[classId];
-  return { byClass, unresolved };
+
+  // The same rates, keyed by the CORPUS class name instead.
+  //
+  // Live telemetry speaks canonical classes (carClass.ts: HYPERCAR, LMP2,
+  // LMP2_ELMS, GT3 …) — the same vocabulary the corpus uses and a different one
+  // from the Fuel tab's own ids. The Team tab is fed by the sim, so it needs
+  // this door rather than the one above. Note LMP2 and LMP2_ELMS both point at
+  // whichever of them won: they are different homologations sharing a refuelling
+  // rig, and `from` on the entry says which one was actually measured.
+  const byCorpusClass = {};
+  for (const [corpusClass, classId] of Object.entries(CLASS_ALIASES)) {
+    const entry = byClass[classId];
+    if (entry) byCorpusClass[corpusClass] = entry;
+  }
+
+  return { byClass, byCorpusClass, unresolved };
 }
 
 /**
@@ -301,7 +316,7 @@ function build(warn) {
   const DATA = loadFuelData();
   const layouts = layoutIndex(DATA);
 
-  const { byClass, unresolved } = projectClasses(table, DATA, warn);
+  const { byClass, byCorpusClass, unresolved } = projectClasses(table, DATA, warn);
   const byPair = projectPairs(table, layouts, warn);
 
   return {
@@ -310,6 +325,7 @@ function build(warn) {
     source: table.source,
     corpus: table.corpus,
     byClass,
+    byCorpusClass,
     byPair,
     unresolved,
   };

@@ -36,6 +36,11 @@
 
   const PLANNER = window.APEX_TEAM_FUEL;
   const CHARTS = window.APEX_TEAM_CHARTS;
+  // Borrowed from the Fuel tab: the same resolver, so the two tabs can never
+  // disagree about what a stop costs. Both are optional — the Team tab predates
+  // them and must keep working without either.
+  const ENGINE = window.APEX_FUEL_STRATEGY || null;
+  const COEFFS = window.APEX_STRATEGY_COEFFS || null;
   if (!PLANNER || !CHARTS) return;
 
   const $ = (sel) => document.querySelector(sel);
@@ -472,8 +477,37 @@
       </div>`);
   }
 
+  /**
+   * The pit parameters for OUR car, resolved the same way the Fuel tab does.
+   *
+   * The only identity needed is the car class, because a refuelling rate is a
+   * property of the rig and is fitted per class, never per track — which is
+   * fortunate, since a live session names its circuit nothing like the lap log
+   * does. Live telemetry speaks the corpus's own canonical class names
+   * (carClass.ts), so `byCorpusClass` is the right door.
+   *
+   * Everything is optional. No coefficients, no standings or a class nobody has
+   * measured leaves the plan exactly as it was before: correct on fuel, and
+   * simply unpriced.
+   */
+  function pitParamsForCar(standings, isVE) {
+    if (!ENGINE) return null;
+    const me = Array.isArray(standings) ? standings.find((r) => r.isPlayer) : null;
+    const entry = me && me.carClass && COEFFS && COEFFS.byCorpusClass
+      ? COEFFS.byCorpusClass[me.carClass]
+      : null;
+    const unitMatches = entry && entry.unit === (isVE ? 'pct' : 'l');
+    return ENGINE.pitParamsFor({
+      // Hand the resolver only what it can honour: a class whose measured rate
+      // is in the wrong unit must fall through to the estimate, not be reshaped.
+      coeffs: unitMatches ? { byClass: { live: entry }, unresolved: {} } : null,
+      classId: 'live',
+      useVirtualEnergy: !!isVE,
+    });
+  }
+
   // ── Strategy: remaining-race plan ────────────────────────────────────────
-  function renderStrategy(fuel) {
+  function renderStrategy(fuel, standings) {
     const li = liveFuelInputs(fuel);
     if (!li) {
       setCard(els.strategy, `<p class="team-note">No fuel data in this session.</p>`);
@@ -486,6 +520,7 @@
     const plan = PLANNER.planRemaining({
       level: li.level, tank: li.tank, perLap: li.perLap,
       lapsToGo: li.lapsToGo, safetyLaps: prefs.safetyLaps,
+      pit: pitParamsForCar(standings, li.ve),
     });
     if (!plan) {
       setCard(els.strategy, `<p class="team-note">Waiting for a usable consumption figure.</p>`);
@@ -510,23 +545,34 @@
         <span class="fuel-stint__spacer"></span>
         <span class="fuel-stint__fill">${fillText(st.fill)}</span>
         <span class="fuel-stint__laps">${st.laps} laps</span>
+        ${st.stop ? `<span class="fuel-stint__cost" title="Lane ${st.stop.laneSec}s + fuel ${st.stop.refuelSec}s${st.stop.tyreSec ? ` + tyres ${st.stop.tyreSec}s` : ''}">+${st.stop.totalSec}s</span>` : ''}
       </div>`).join('');
+
+    // The time still to be spent stationary. Worth its own line: it is the part
+    // of the race nobody is driving, and it is now measured rather than guessed.
+    const pitTime = plan.totalStopSec
+      ? `<p class="team-note">Still to spend in the pits: ${fmtClock(plan.totalStopSec)}${
+        plan.pitProvenance && plan.pitProvenance.refuelRatePerSec
+        && plan.pitProvenance.refuelRatePerSec.source === 'measured'
+          ? ' · refuelling rate measured from the shared corpus'
+          : ' · refuelling rate is an estimate'}.</p>`
+      : '';
 
     const save = plan.saveTarget
       ? `<div class="fuel-alt fuel-alt--save" data-feasible="${plan.saveTarget.feasible}">
           ${icon('trending-up')}
           <div>
             <div class="fuel-alt__title">Save target <span class="fuel-alt__target">${plan.saveTarget.perLap}${u}/lap</span></div>
-            <div class="fuel-alt__sub">Hit it and it's ${plan.saveTarget.stops === 0 ? 'no more stops' : `${plan.saveTarget.stops} stop${plan.saveTarget.stops === 1 ? '' : 's'}`} — a ${plan.saveTarget.savingPct}% save vs the current ${plan.perLap}${u}/lap${plan.saveTarget.feasible ? '' : ' · unrealistic by lift-and-coast alone'}.</div>
+            <div class="fuel-alt__sub">Hit it and it's ${plan.saveTarget.stops === 0 ? 'no more stops' : `${plan.saveTarget.stops} stop${plan.saveTarget.stops === 1 ? '' : 's'}`} — a ${plan.saveTarget.savingPct}% save vs the current ${plan.perLap}${u}/lap${plan.saveTarget.savesSec ? `, worth ${plan.saveTarget.savesSec}s` : ''}${plan.saveTarget.feasible ? '' : ' · unrealistic by lift-and-coast alone'}.</div>
           </div>
         </div>`
       : '';
 
     const push = known(plan.pushCeiling) && plan.pushCeiling > plan.perLap
-      ? `<p class="team-note">Room to push: up to ${plan.pushCeiling}${u}/lap costs one extra stop.</p>`
+      ? `<p class="team-note">Room to push: up to ${plan.pushCeiling}${u}/lap costs one extra stop${plan.pushCostSec ? ` — about ${plan.pushCostSec}s` : ''}.</p>`
       : '';
 
-    setCard(els.strategy, `${headline}${window_}<div class="fuel-stints">${stints}</div>${save}${push}`);
+    setCard(els.strategy, `${headline}${window_}<div class="fuel-stints">${stints}</div>${pitTime}${save}${push}`);
   }
 
   // ── Strategy: tyre plan ──────────────────────────────────────────────────
@@ -1150,7 +1196,7 @@
     { id: 'fuel', title: 'Fuel & energy', icon: 'fuel', min: { w: 3, h: 6 },
       render: (s) => renderFuel(s.fuel) },
     { id: 'strategy', title: 'Strategy to the flag', icon: 'target', min: { w: 3, h: 5 },
-      render: (s) => renderStrategy(s.fuel) },
+      render: (s) => renderStrategy(s.fuel, s && s.standings) },
     { id: 'tyreplan', title: 'Tyre plan', icon: 'timer', min: { w: 3, h: 5 },
       render: (s) => renderTyrePlan(s.tyrePlan, s.fuel) },
     { id: 'tyres', title: 'Tyres & brakes', icon: 'tyre', min: { w: 3, h: 7 },
@@ -1341,7 +1387,7 @@
       els.safety.value = prefs.safetyLaps;
       savePrefs();
       const s = viewSnap();
-      if (s) { renderStrategy(s.fuel); renderTyrePlan(s.tyrePlan, s.fuel); }
+      if (s) { renderStrategy(s.fuel, s.standings); renderTyrePlan(s.tyrePlan, s.fuel); }
     });
   }
 

@@ -98,5 +98,80 @@ function check(name, cond, detail) {
   check('fractional lapsToGo ceils', p.lapsToGo === 10, `laps=${p.lapsToGo}`);
 }
 
+// ── Pricing the stops ────────────────────────────────────────────────────────
+// The mid-race plan answers "will I make it". With pit parameters it also
+// answers "what does making it cost" — and the two must stay separable: a wrong
+// rig rate may change the seconds, never the fuel.
+{
+  const PIT = { pitLaneLossSec: 25, refuelRatePerSec: 2.5, tyreChangeSec: 30, tyresEveryStints: 1 };
+  const inputs = { level: 20, tank: 100, perLap: 5, lapsToGo: 40, safetyLaps: 1 };
+
+  const bare = ENGINE.planRemaining(inputs);
+  const priced = ENGINE.planRemaining({ ...inputs, pit: PIT });
+
+  check('pricing does not change the fuel plan at all',
+    JSON.stringify(bare.stints.map((s) => [s.laps, s.fill]))
+    === JSON.stringify(priced.stints.map((s) => [s.laps, s.fill])));
+  check('nor the stop count', bare.stops === priced.stops, `${bare.stops} vs ${priced.stops}`);
+  check('nor the pit window',
+    bare.windowEarliest === priced.windowEarliest && bare.windowLatest === priced.windowLatest);
+
+  check('without pit parameters a stop carries no price', bare.stints.every((s) => !s.stop));
+  check('…and the total is null, not zero — unpriced is not free',
+    bare.totalStopSec === null, `${bare.totalStopSec}`);
+  check('with them, every stop after the current stint is priced',
+    priced.stints.filter((s) => !s.current).every((s) => s.stop && s.stop.totalSec > 0));
+  check('the current stint has no stop of its own', !priced.stints[0].stop);
+
+  const first = priced.stints[1].stop;
+  check('a stop is lane + fuel + tyres, added not maxed',
+    Math.abs(first.totalSec - (first.laneSec + first.refuelSec + first.tyreSec)) < 0.05,
+    JSON.stringify(first));
+  check('the lane loss is what was passed in', first.laneSec === 25, `${first.laneSec}`);
+  check('the refuel time is the fill over the rate',
+    Math.abs(first.refuelSec - priced.stints[1].fill / 2.5) < 0.1,
+    `${first.refuelSec} vs ${priced.stints[1].fill / 2.5}`);
+
+  const total = priced.stints.filter((s) => s.stop).reduce((a, s) => a + s.stop.totalSec, 0);
+  check('the total is the sum of the stops', Math.abs(priced.totalStopSec - total) < 0.05,
+    `${priced.totalStopSec} vs ${total}`);
+
+  const slow = ENGINE.planRemaining({ ...inputs, pit: { ...PIT, refuelRatePerSec: 1.28 } });
+  check('a slower rig costs more time', slow.totalStopSec > priced.totalStopSec,
+    `${slow.totalStopSec} vs ${priced.totalStopSec}`);
+  check('…and exactly the same fuel',
+    JSON.stringify(slow.stints.map((s) => s.fill)) === JSON.stringify(priced.stints.map((s) => s.fill)));
+
+  const noTyres = ENGINE.planRemaining({ ...inputs, pit: { ...PIT, tyresEveryStints: 0 } });
+  check('no tyre stops means no tyre time',
+    noTyres.stints.filter((s) => s.stop).every((s) => s.stop.tyreSec === 0));
+  check('…and a cheaper plan overall', noTyres.totalStopSec < priced.totalStopSec);
+
+  const home = ENGINE.planRemaining({ level: 95, tank: 100, perLap: 5, lapsToGo: 10, safetyLaps: 1, pit: PIT });
+  check('no stops left is priced zero, not null', home.stops === 0 && home.totalStopSec === 0,
+    `${home.stops} / ${home.totalStopSec}`);
+}
+
+// ── Targets become decisions ─────────────────────────────────────────────────
+{
+  const PIT = { pitLaneLossSec: 25, refuelRatePerSec: 1.28, tyreChangeSec: 30, tyresEveryStints: 1 };
+  const p = ENGINE.planRemaining({ level: 20, tank: 100, perLap: 5, lapsToGo: 40, safetyLaps: 1, pit: PIT });
+
+  check('a save target says what the saving is worth in seconds',
+    p.saveTarget && p.saveTarget.savesSec > 0, JSON.stringify(p.saveTarget));
+  check('…which is the price of the stop it removes',
+    Math.abs(p.saveTarget.savesSec - p.stints[p.stints.length - 1].stop.totalSec) < 0.05);
+  check('the push ceiling says what the extra stop costs', p.pushCostSec > 0, `${p.pushCostSec}`);
+  check('…priced as a brimming stop, the honest worst case',
+    Math.abs(p.pushCostSec - (25 + 100 / 1.28 + 30)) < 0.2, `${p.pushCostSec}`);
+
+  const bare = ENGINE.planRemaining({ level: 20, tank: 100, perLap: 5, lapsToGo: 40, safetyLaps: 1 });
+  check('unpriced, a save target still exists but is worth an unknown',
+    !!bare.saveTarget && bare.saveTarget.savesSec === null, JSON.stringify(bare.saveTarget));
+  check('and the push cost is unknown too', bare.pushCostSec === null);
+  check('the fuel targets themselves are identical either way',
+    bare.saveTarget.perLap === p.saveTarget.perLap && bare.pushCeiling === p.pushCeiling);
+}
+
 console.log(`\ntest-teamfuel: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

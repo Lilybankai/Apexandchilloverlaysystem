@@ -162,6 +162,15 @@
 .fuel-stint__spacer { flex: 1; }
 .fuel-stint__fill { font: 600 13px var(--font-mono); }
 .fuel-stint__laps { color: var(--text-3); font-size: 12px; }
+/* What the stop that STARTS this stint costs, on the Team tab's remaining-race
+   plan. Warm rather than red: time in the pits is a fact of the plan, not a
+   fault. The breakdown sits in a title so the row stays one line wide. */
+.fuel-stint__cost {
+  color: var(--warn);
+  font: 600 12px var(--font-mono);
+  margin-left: 8px;
+  cursor: help;
+}
 
 .fuel-stop {
   display: flex;

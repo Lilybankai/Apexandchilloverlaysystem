@@ -58,6 +58,60 @@
         ]
       }
     },
+    "byCorpusClass": {
+      "GT3": {
+        "refuelPerSec": 1.28,
+        "unit": "pct",
+        "refuelLPerSec": 1.538,
+        "capacityL": 120,
+        "from": "GT3",
+        "stops": 14,
+        "tracks": 6,
+        "spread": [
+          1.339,
+          1.868
+        ]
+      },
+      "LMGT3": {
+        "refuelPerSec": 1.28,
+        "unit": "pct",
+        "refuelLPerSec": 1.538,
+        "capacityL": 120,
+        "from": "GT3",
+        "stops": 14,
+        "tracks": 6,
+        "spread": [
+          1.339,
+          1.868
+        ]
+      },
+      "LMP2": {
+        "refuelPerSec": 1.59,
+        "unit": "l",
+        "refuelLPerSec": 1.585,
+        "capacityL": null,
+        "from": "LMP2_ELMS",
+        "stops": 7,
+        "tracks": 4,
+        "spread": [
+          1.579,
+          1.61
+        ]
+      },
+      "LMP2_ELMS": {
+        "refuelPerSec": 1.59,
+        "unit": "l",
+        "refuelLPerSec": 1.585,
+        "capacityL": null,
+        "from": "LMP2_ELMS",
+        "stops": 7,
+        "tracks": 4,
+        "spread": [
+          1.579,
+          1.61
+        ]
+      }
+    },
     "byPair": {
       "barcelona_gp|lmgt3": {
         "burnLPerLap": 2.8,

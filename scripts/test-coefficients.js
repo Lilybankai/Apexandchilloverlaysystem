@@ -251,5 +251,65 @@ section('measuredBurnFor');
     { lemans: lemans.litresPerLap, monza: monza.litresPerLap });
 }
 
+// ── The live door ──────────────────────────────────────────────────────────
+// The Team tab is fed by the sim, which names classes the way the CORPUS does
+// (carClass.ts canonical labels) and not the way the Fuel tab does. It looks
+// rates up through byCorpusClass, so that index has to hold the same numbers
+// and honour the same unit rule — a wrong unit here would price every stop in
+// a live race against the wrong scale.
+section('byCorpusClass: the door live telemetry comes through');
+{
+  const CANONICAL = ['HYPERCAR', 'LMP2', 'LMP2_ELMS', 'LMP3', 'GTE', 'GT3', 'GT4'];
+  const keys = Object.keys(SHIPPED.byCorpusClass);
+  check('every key is a canonical class carClass.ts can produce',
+    keys.every((k) => CANONICAL.includes(k) || k === 'LMGT3'), keys);
+
+  // GT3 is what the sim calls the LMGT3 field, and it is the best-populated
+  // class in the corpus — if any lookup works, this one must.
+  const gt3 = SHIPPED.byCorpusClass.GT3;
+  check('GT3 resolves', !!gt3, keys);
+  // Deep equality, not identity: the table is serialised as JSON, so the two
+  // indexes hold equal objects rather than one shared one. Equal is the whole
+  // contract — the two doors must never drift to different numbers.
+  check('…to the same numbers the Fuel tab gets for lmgt3',
+    JSON.stringify(gt3) === JSON.stringify(SHIPPED.byClass.lmgt3),
+    { corpus: gt3, fuelTab: SHIPPED.byClass.lmgt3 });
+  check('…in percent per second, because LMGT3 runs Virtual Energy',
+    gt3.unit === 'pct', gt3.unit);
+
+  // The pooling decision, pinned: LMP2 and LMP2_ELMS are different
+  // homologations sharing a refuelling rig, and `from` must admit which one
+  // was actually measured rather than implying both were.
+  const p2 = SHIPPED.byCorpusClass.LMP2;
+  check('LMP2 resolves through the pooled rig rate', !!p2 && p2.unit === 'l', p2);
+  check('…and says which class the measurement actually came from',
+    !!p2.from && p2.stops > 0, p2 && { from: p2.from, stops: p2.stops });
+
+  // Hypercar has no measured stop, so the door must be shut, not ajar.
+  check('an unmeasured class is absent rather than present-and-empty',
+    SHIPPED.byCorpusClass.HYPERCAR === undefined, SHIPPED.byCorpusClass.HYPERCAR);
+
+  // And the shape team-panel.js hands to pitParamsFor must actually resolve.
+  const live = ENGINE.pitParamsFor({
+    coeffs: { byClass: { live: gt3 }, unresolved: {} },
+    classId: 'live',
+    useVirtualEnergy: true,
+  });
+  check('the Team tab’s one-entry lookup resolves to the measured rate',
+    live.refuelRatePerSec === gt3.refuelPerSec, live.refuelRatePerSec);
+  check('…and is labelled measured, so the page can say so',
+    live.provenance.refuelRatePerSec.source === 'measured');
+
+  // The unit guard again, from the live side: a VE class must never be priced
+  // in litres per second just because the session was read wrong.
+  const wrong = ENGINE.pitParamsFor({
+    coeffs: { byClass: { live: gt3 }, unresolved: {} },
+    classId: 'live',
+    useVirtualEnergy: false,
+  });
+  check('asked for litres, the percent rate is refused',
+    wrong.refuelRatePerSec === ENGINE.DEFAULT_PIT_PARAMS.fuelRefuelRate, wrong.refuelRatePerSec);
+}
+
 console.log(`\ntest-coefficients: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
