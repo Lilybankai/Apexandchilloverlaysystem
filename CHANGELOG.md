@@ -3,6 +3,9 @@
 <!-- Unreleased — move under the next version heading when it is cut. The
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed.
+-->
+
+## 0.99.10 — 2026-09-15
 
 ### Added
 
@@ -61,7 +64,6 @@
 - Fuel-save and push targets are not offered. They depend on how much lap time a
   deliberate lift costs, and nobody in the shared data lifts on purpose, so there
   is nothing to measure it against. The app says that instead of inventing it.
--->
 
 ## 0.99.9 — 2026-09-14
 
