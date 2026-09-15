@@ -1030,7 +1030,7 @@
       case 'loading': return 'Reading the leaderboard…';
       case 'signed-out': return 'Sign in to see the leaderboard and compare against it.';
       case 'error': return 'The leaderboard could not be reached.';
-      case 'ok': return board.rows.length ? null : 'Nobody on the leaderboard here yet — yours could be the first.';
+      case 'ok': return board.rows.length ? null : 'Nobody on the dry leaderboard here yet — yours could be the first.';
       default: return null;
     }
   }
@@ -1102,6 +1102,11 @@
    * The leaderboard for this circuit and class, as a card: every driver's
    * best, with a vs button on each row whose trace is there to compare with.
    * The same button the sheet puts on your own laps, doing the same thing.
+   *
+   * The DRY board specifically. The boards split by track surface in 0021, and
+   * this card exists to be compared against — which needs a trace, and the app
+   * keeps one trace per driver per circuit and class, behind the dry board's
+   * lap. The wet boards are on the Leaderboard tab, where a time is enough.
    *
    * `inLap` renders the fold-out under the lap view's bar, which also carries
    * this session's other laps as chips — the sheet is not on screen there,

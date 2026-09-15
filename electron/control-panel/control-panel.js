@@ -1127,7 +1127,19 @@
         // the rows stay unscored and inert rather than pairing up out of step.
         if (!Array.isArray(scored) || scored.length !== weekBests.length) return;
         weekBests.forEach((entry, i) => {
-          entry.row = scored[i];
+          // A lap set in the rain is not scored against the reference times,
+          // which are all dry laps: the percentage would come out five or ten
+          // points down and read as a driver who had a bad week rather than as
+          // a wet one. The row says which it was, in the place the other
+          // unscorable rows already explain themselves.
+          const condition = (entry.best && entry.best.condition) || 'dry';
+          entry.row =
+            condition === 'dry'
+              ? scored[i]
+              : {
+                  ok: false,
+                  detail: `Set on a ${condition} track — the reference times are dry laps.`,
+                };
         });
         renderWeekBests();
       })
@@ -1664,10 +1676,61 @@
    * make a working feature look broken.
    */
 
-  /** Every (track, class, car) combination with laps, as returned by the RPC. */
+  /** Every (track, class, car, condition) combination with laps, from the RPC. */
   let boardFilters = [];
   /** The current selection. `car` empty means "All cars". */
-  let boardPick = { trackId: '', carClass: '', car: '' };
+  let boardPick = { trackId: '', carClass: '', car: '', condition: 'dry' };
+
+  /*
+   * The three surfaces, in the order they are offered — driest first, because
+   * that is the board anyone opening this tab is looking for, and because the
+   * order then matches the way the times themselves run.
+   *
+   * Dry is always offered even when it holds no laps: a circuit with only wet
+   * times on it is a circuit whose dry board is genuinely empty, and an empty
+   * dry board says that plainly. The other two appear only when they hold
+   * something — see the note in index.html.
+   */
+  const BOARD_CONDITIONS = [
+    { id: 'dry', label: 'Dry', hint: 'A dry circuit, start to finish.' },
+    { id: 'damp', label: 'Damp', hint: 'A dry line, and standing water off it.' },
+    { id: 'wet', label: 'Wet', hint: 'The dry line has gone.' },
+  ];
+
+  function conditionLabel(id) {
+    const found = BOARD_CONDITIONS.find((c) => c.id === id);
+    return found ? found.label : 'Dry';
+  }
+
+  /**
+   * The wetness marker for one board row, or null when the row needs none.
+   *
+   * Two different things wear the same chip, and the difference is the `?`:
+   *
+   *  - On a damp or wet board it is the MEASURED peak wetness, so two laps on
+   *    the same board can be told apart — 22% and 71% are both "wet" and are
+   *    not the same afternoon.
+   *  - On the dry board it can only be a lap from before this build, which
+   *    recorded that it was wet and not how wet. Those sit on the dry board
+   *    because their band is unknowable (see migration 0021), and the chip is
+   *    there so a time nobody can beat is at least explained rather than
+   *    silently ranked as a dry lap.
+   */
+  function boardWetChip(row) {
+    if (row.legacy_wet) {
+      return {
+        text: 'WET?',
+        title:
+          'Set in the wet. This lap is from a build that recorded only THAT it was wet, not how wet, so it cannot be placed on the wet board and is ranked here.',
+      };
+    }
+    if (boardPick.condition === 'dry') return null;
+    if (typeof row.wetness !== 'number' || !Number.isFinite(row.wetness)) return null;
+    return {
+      text: `${Math.round(row.wetness * 100)}%`,
+      title: 'The wettest point on the circuit at any time during this lap.',
+    };
+  }
   /** Guards against an older request overwriting a newer one. */
   let boardRequest = 0;
 
@@ -1722,9 +1785,47 @@
       clsWrap.append(btn);
     }
 
-    // --- Car: only cars that have laps in the chosen track AND class ---
+    // --- Conditions: the surfaces this track and class hold laps on ---
+    //
+    // A filter row rather than a fourth column, because these are separate
+    // boards and not a sort: P1 in the wet and P1 in the dry are two different
+    // laps by two possibly different drivers, and a single ranked list would
+    // put every wet time below every dry one and call that an order.
+    const atClass = atTrack.filter((f) => f.car_class === boardPick.carClass);
+    const held = new Set(atClass.map((f) => f.condition || 'dry'));
+    const conditions = BOARD_CONDITIONS.filter((c) => c.id === 'dry' || held.has(c.id));
+    if (!conditions.some((c) => c.id === boardPick.condition)) boardPick.condition = 'dry';
+    const condField = $('#board-cond-field');
+    const condWrap = $('#board-conditions');
+    if (condWrap) {
+      condWrap.textContent = '';
+      for (const cond of conditions) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'clschip';
+        btn.textContent = cond.label;
+        btn.title = cond.hint;
+        btn.setAttribute('data-active', String(cond.id === boardPick.condition));
+        btn.addEventListener('click', () => {
+          boardPick.condition = cond.id;
+          renderBoardFilters();
+          refreshBoard();
+        });
+        condWrap.append(btn);
+      }
+    }
+    // One surface and no alternative is not a choice — and on most circuits,
+    // most of the time, that surface is dry. Hiding the row keeps the sidebar
+    // the length it has always been until the league actually races in the rain.
+    if (condField) condField.hidden = conditions.length < 2;
+
+    // --- Car: only cars that have laps in the chosen track, class AND surface ---
     const cars = [
-      ...new Set(atTrack.filter((f) => f.car_class === boardPick.carClass).map((f) => f.car)),
+      ...new Set(
+        atClass
+          .filter((f) => (f.condition || 'dry') === boardPick.condition)
+          .map((f) => f.car),
+      ),
     ]
       .filter(Boolean)
       .sort();
@@ -1797,10 +1898,17 @@
   function renderBoard(result) {
     const rows = (result && result.rows) || [];
     const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
+    // The surface is named in the title only when it is not the dry board. Dry
+    // is the one everyone means by "the leaderboard", and a "· Dry" on every
+    // title all season would be a word that only ever says "normal".
+    const surface =
+      boardPick.condition && boardPick.condition !== 'dry'
+        ? ` · ${conditionLabel(boardPick.condition)}`
+        : '';
     setText(
       '#board-title',
       boardPick.carClass && track
-        ? `${classLabel(boardPick.carClass)} · ${track.track_name}`
+        ? `${classLabel(boardPick.carClass)} · ${track.track_name}${surface}`
         : 'Leaderboard',
     );
     setText(
@@ -1816,8 +1924,12 @@
           (result && result.error) || 'The league boards could not be reached.';
       } else if (!rows.length) {
         empty.hidden = false;
-        empty.textContent =
-          'No laps on this board yet. Drive a clean lap here and it will appear.';
+        // Which board is empty, not just that one is. On a circuit whose damp
+        // chip is showing, "no laps yet" without the surface reads as the whole
+        // leaderboard having lost its times.
+        empty.textContent = surface
+          ? `No ${conditionLabel(boardPick.condition).toLowerCase()} laps here yet. Drive a clean one in these conditions and it will appear.`
+          : 'No laps on this board yet. Drive a clean lap here and it will appear.';
       } else {
         empty.hidden = true;
       }
@@ -1841,6 +1953,23 @@
     if (!boardEntries.length) return;
     const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
     if (!track) return;
+    // The reference times are DRY laps — Ohne Speed's, set on a dry circuit
+    // (see referencePace.ts). Dividing a wet lap by one of them produces a
+    // number, and the number is meaningless: it grades a driver's rain pace
+    // against a benchmark nobody set in the rain. A percentage that looks
+    // authoritative and measures nothing is worse than no percentage, so the
+    // wet boards say so instead — the same refusal the scorer already makes
+    // when it cannot tell two layouts of a circuit apart.
+    if (boardPick.condition && boardPick.condition !== 'dry') {
+      boardEntries.forEach((entry) => {
+        entry.scored = {
+          ok: false,
+          detail: `they were set on a ${boardPick.condition} track, and every reference time is a dry lap.`,
+        };
+      });
+      renderBoardList();
+      return;
+    }
     const ticket = ++boardScoreRequest;
     // The sim's measured lap distance, from the filter row. It is the only thing
     // that can tell one layout of a circuit from another here — a board row
@@ -1968,6 +2097,18 @@
       car.textContent = row.car || '';
       car.title = row.car || '';
 
+      // The surface marker rides in the car cell rather than in a column of its
+      // own: the row is already seven columns wide, and a column that is empty
+      // on every dry board would be six characters of permanent whitespace.
+      const chip = boardWetChip(row);
+      if (chip) {
+        const tag = document.createElement('span');
+        tag.className = 'lbrow__wet';
+        tag.textContent = chip.text;
+        tag.title = chip.title;
+        car.append(' ', tag);
+      }
+
       const lap = document.createElement('span');
       lap.className = 'lbrow__time';
       // P1 gets the kit's purple: it is the quickest in a genuinely comparable
@@ -2020,7 +2161,13 @@
         btn.addEventListener('keydown', (e) => e.stopPropagation());
         cmp.append(btn);
       } else if (!row.is_you) {
-        cmp.title = 'No telemetry on the board for this lap';
+        // On a wet board there is never telemetry, and the reason is structural
+        // rather than this lap's bad luck — worth saying differently, so nobody
+        // waits for a Compare button that is never coming.
+        cmp.title =
+          boardPick.condition && boardPick.condition !== 'dry'
+            ? 'Telemetry is kept for the dry board only, so these laps compare on time alone'
+            : 'No telemetry on the board for this lap';
       }
 
       li.append(pos, driver, car, lap, gap, score, cmp);

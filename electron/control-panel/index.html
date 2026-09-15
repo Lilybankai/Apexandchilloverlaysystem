@@ -868,15 +868,21 @@
 
         <!-- ==================== LEAGUE BOARD ====================
              Leaderboard.jsx's sidebar + table. The kit's sidebar filters on
-             Track / Session / Car class / Weather; session and weather are not
-             stored on a best lap (a PB is a PB), so the two that ARE stored —
-             track and class — get the space, plus the car, which the kit shows
-             as a heading and which is asked for here as a filter.
+             Track / Session / Car class / Weather; session is not stored on a
+             best lap (a PB is a PB), so the three that ARE — track, class and
+             the weather the lap was set in — get the space, plus the car, which
+             the kit shows as a heading and which is asked for here as a filter.
+
+             Weather is a real axis and not a label, because a wet lap is slower
+             than a dry one and would never have reached the board at all: the
+             driver's stored best only moves when a lap BEATS it. Three boards
+             per track and class, and a driver holds one time on each.
 
              The car narrows the set; it does not split the board. A board is
-             keyed (track, class) the way `submit_lap` stores it, so a driver's
-             entry is their best in that class whichever car set it. Splitting
-             per car in a league this size would put one name on each board. -->
+             keyed (track, class, surface) the way `submit_lap` stores it, so a
+             driver's entry is their best in that class whichever car set it.
+             Splitting per car in a league this size would put one name on each
+             board. -->
         <div class="lbgrid">
           <aside class="card lbside">
             <label class="field">
@@ -887,6 +893,18 @@
             <div class="field">
               <span class="field__label">Car class</span>
               <div class="clschips" id="board-classes"></div>
+            </div>
+
+            <!-- Only the surfaces this track and class actually hold laps on:
+                 a Damp chip on a circuit nobody has driven in the damp is an
+                 empty board with an invitation to open it. -->
+            <div class="field" id="board-cond-field" hidden>
+              <span class="field__label">Conditions</span>
+              <div class="clschips" id="board-conditions"></div>
+              <span class="field__hint">
+                Each surface is its own board — a wet lap is never ranked
+                against a dry one.
+              </span>
             </div>
 
             <label class="field">

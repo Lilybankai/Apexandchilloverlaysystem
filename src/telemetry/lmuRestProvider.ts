@@ -3733,6 +3733,15 @@ export class LmuRestProvider implements TelemetryProvider {
         ...(typeof si.trackTemp === 'number' ? { trackTempC: si.trackTemp } : {}),
         ...(typeof si.ambientTemp === 'number' ? { ambientTempC: si.ambientTemp } : {}),
         wet: (si.raining ?? 0) > 0 || (si.maxPathWetness ?? 0) > 0,
+        // The number behind that boolean, for the board split. `maxPathWetness`
+        // — the WETTEST point on the circuit — because that is the corner
+        // setting the lap's pace; see `conditionOf` in lapLog.ts. The boolean
+        // above stays as it is: it is `> 0`, which calls a circuit with one
+        // damp kerb wet, and the stint reviewer has been reading it that way
+        // since it shipped.
+        ...(typeof si.maxPathWetness === 'number'
+          ? { wetness: clamp01(si.maxPathWetness) }
+          : {}),
         // The completed lap's cumulative sector boundaries, read on the same
         // poll `lapsCompleted` moved on. LMU withholds them (`-1`) for a lap it
         // invalidated; `lapLog.sectorSplits` filters those out.

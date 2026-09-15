@@ -210,7 +210,51 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       libDelete: P({ ok: true }), libExport: P({ ok: false }), libClip: P({ ok: false }), libImport: P({ ok: false }),
       cloudList: P({ ok: true, rows: [] }), cloudPublish: P({ ok: false }), cloudUnpublish: P({ ok: true }),
       cloudDownload: P({ ok: false }), cloudRate: P({ ok: false }) },
-    leaderboardFilters: P({ ok: true, rows: [] }), leaderboardRows: P({ ok: true, rows: [] }),
+    // ?board=1 seeds a league board with laps on all three surfaces, which is
+    // the only way to see the condition chips without a signed-in account and
+    // a wet session in the database. The rows answer whichever surface the
+    // panel asks for, so clicking Dry/Damp/Wet actually changes the board.
+    leaderboardFilters: P(q.get('board') === null ? { ok: true, rows: [] } : { ok: true, rows: [
+      { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'dry', laps: 6 },
+      { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Porsche 911 GT3 R', condition: 'dry', laps: 3 },
+      { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'damp', laps: 2 },
+      { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'wet', laps: 4 },
+    ] }),
+    leaderboardRows: (query) => Promise.resolve(q.get('board') === null ? { ok: true, rows: [] } : (function () {
+      const cond = (query && query.condition) || 'dry';
+      const sets = {
+        dry: [
+          ['Ohne Speed', 138100, 'Ferrari 296 GT3', null],
+          ['Carl', 138940, 'Porsche 911 GT3 R', null],
+          ['Rain Man', 141220, 'Ferrari 296 GT3', 'legacy'],
+        ],
+        damp: [
+          ['Carl', 143880, 'Ferrari 296 GT3', 0.11],
+          ['Ohne Speed', 144510, 'Ferrari 296 GT3', 0.07],
+        ],
+        wet: [
+          ['Rain Man', 149900, 'Ferrari 296 GT3', 0.71],
+          ['Carl', 152400, 'Ferrari 296 GT3', 0.62],
+          ['Ohne Speed', 153010, 'Porsche 911 GT3 R', 0.44],
+        ],
+      };
+      const rows = (sets[cond] || []).map(([name, ms, car, wet], i) => ({
+        rank: i + 1,
+        driver_id: 'd' + i,
+        display_name: name,
+        car,
+        lap_ms: ms,
+        gap_ms: i === 0 ? null : ms - sets[cond][0][1],
+        set_at: new Date().toISOString(),
+        is_you: name === 'Carl',
+        has_trace: cond === 'dry' && name !== 'Carl',
+        has_line: cond === 'dry',
+        condition: cond,
+        wetness: typeof wet === 'number' ? wet : null,
+        legacy_wet: wet === 'legacy',
+      }));
+      return { ok: true, rows };
+    })()),
     lapsSyncState: P({ status: 'idle', pending: 0, sent: 0 }), lapsSync: P({}), onLapSync: noopUnsub,
     auth: { getState: P({ signedIn: true, configured: true, user: { id: 'x', email: 'driver@example.com', displayName: 'Driver', initials: 'D', emailConfirmed: true }, primarySims: [], lastEmail: '' }),
       signIn: P({ ok: true }), register: P({ ok: true }), resendConfirmation: P({ ok: true }),
@@ -379,6 +423,25 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // only exist when a second lap was asked for.
     reviewLap: (req) => Promise.resolve(req && req.vs ? REVIEW.lapVs : REVIEW.lap),
   };
+
+  // ?board=damp|wet lands the screenshot on that surface's board. The stub
+  // seeds state rather than clicking anywhere ELSE, for the reason in this
+  // file's header — a click races the renderer's init — so this one waits for
+  // the chip to exist instead of assuming it does, and gives up rather than
+  // spinning if the board never renders.
+  const wantBoard = q.get('board');
+  if (wantBoard === 'damp' || wantBoard === 'wet') {
+    const label = wantBoard === 'damp' ? 'Damp' : 'Wet';
+    let tries = 0;
+    const clickWhenReady = () => {
+      const chips = document.querySelectorAll('#board-conditions .clschip');
+      for (const chip of chips) {
+        if (chip.textContent === label) { chip.click(); return; }
+      }
+      if (++tries < 40) setTimeout(clickWhenReady, 50);
+    };
+    window.addEventListener('DOMContentLoaded', () => setTimeout(clickWhenReady, 50));
+  }
 })();
 `;
 

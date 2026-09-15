@@ -79,6 +79,48 @@ import { trackKeyOf } from './paceDelta';
  */
 export type DirtyReason = 'pit' | 'limits' | 'penalty' | 'partial' | 'implausible';
 
+/**
+ * The surface a lap was set on — the axis the league boards are split along.
+ *
+ * Three values, not two, because the middle one is where the argument is. A
+ * DAMP track has a dry racing line and wet everywhere else: the times are
+ * within a few seconds of dry pace, and letting them onto the dry board would
+ * quietly put an unbeatable lap on it, while calling them WET would put an
+ * unbeatable lap on that one instead. It is its own condition because it is its
+ * own driving problem.
+ *
+ * The bands are the ones the weather card already names (`wetnessBand` in
+ * `lmuRestProvider.ts`) with its top three collapsed into one: once the dry
+ * line has gone, WET / VERY WET / SATURATED are degrees of the same lap, and a
+ * board split three more ways would have one name on each.
+ */
+export type TrackCondition = 'dry' | 'damp' | 'wet';
+
+/** Below this the circuit is dry — the feed's own floor, not a round number. */
+const DAMP_FROM = 0.02;
+/** At or above this the dry line has gone; see {@link TrackCondition}. */
+const WET_FROM = 0.2;
+
+/**
+ * Name the surface from a wetness fraction (0…1), matching the weather card.
+ *
+ * Takes the WETTEST point on the circuit rather than the average, because that
+ * is what decides the lap: one soaked corner sets the pace of the whole thing,
+ * and an average over a track that is dry for four fifths of its length reads
+ * as damp when the driver is aquaplaning at the one place it matters.
+ */
+export function conditionOf(wetness: number | undefined): TrackCondition {
+  if (typeof wetness !== 'number' || !Number.isFinite(wetness) || wetness < DAMP_FROM) {
+    return 'dry';
+  }
+  return wetness < WET_FROM ? 'damp' : 'wet';
+}
+
+/** Board-facing label for a condition. */
+export function conditionLabel(c: TrackCondition): string {
+  return c === 'dry' ? 'Dry' : c === 'damp' ? 'Damp' : 'Wet';
+}
+
 /** One completed lap, as written to disk. One JSON object per line. */
 export interface LapRecord {
   /**
@@ -109,8 +151,16 @@ export interface LapRecord {
    * the stint reviewer (`docs/STINT-REVIEW-PLAN.md`). A pre-v6 lap shows no
    * temperatures, which is the honest outcome: the reading existed only while
    * the lap was being driven and cannot be reconstructed after it.
+   *
+   * `7` added {@link wetness} and {@link condition} — the surface the lap was
+   * set on, which is the axis the league boards are now split along. A pre-v7
+   * lap reads as `dry`, and that is a judgement call worth naming: it is right
+   * for almost every lap ever recorded (1 board row in 280 was wet when this
+   * was built), and the alternative — a fourth "unknown" board — would put a
+   * bucket on screen that nobody ever drives a lap into. {@link wet} is still
+   * written alongside, because the stint reviewer reads it.
    */
-  v: 1 | 2 | 3 | 4 | 5 | 6;
+  v: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   /**
    * Unique id for this lap (UUID), minted when the record is built. This is the
    * join key between the lap database and everything recorded ABOUT the lap —
@@ -164,6 +214,25 @@ export interface LapRecord {
   ambientTempC?: number;
   /** `true` when there was standing water / rain during the lap. */
   wet?: boolean;
+  /**
+   * The WETTEST the circuit got at any point during this lap, 0…1.
+   *
+   * The peak rather than the reading at the line, because a lap is one object:
+   * a driver who starts on a dry track, has the rain arrive at half distance
+   * and crosses the line on a soaked surface did not set a dry lap, and the
+   * reading at the line is the only one that would have said so. Taken across
+   * the whole lap the answer cannot depend on which end of it we sampled.
+   *
+   * Absent on a pre-v7 lap and on a provider that publishes no wetness.
+   */
+  wetness?: number;
+  /**
+   * {@link wetness} banded — the board this lap belongs on. Stored rather than
+   * derived, for the same reason {@link clean} is: moving a threshold later
+   * must not silently re-file times that are already on a board and already
+   * have someone's name against them.
+   */
+  condition?: TrackCondition;
   /**
    * Sector **split** times in whole milliseconds, when the sim published them —
    * S1, S2 and S3 as the durations a timing screen shows, not the cumulative
@@ -390,6 +459,12 @@ export interface LapInput {
   /** `true` when it is raining or the surface is wet. */
   wet?: boolean;
   /**
+   * Wetness of the wettest point on the circuit right now, 0…1, when the
+   * provider publishes one. The recorder keeps the highest reading it sees
+   * during a lap — see {@link LapRecord.wetness}.
+   */
+  wetness?: number;
+  /**
    * The just-completed lap's sector boundary times, seconds, **cumulative from
    * the lap's start** — LMU's `lastSectorTime1/2` convention: `sector1Sec` is
    * the clock at the S1 line, `sector2Sec` at the S2 line, and the lap time
@@ -467,6 +542,13 @@ export class LapRecorder {
   private fuelDirty = false;
   /** Which lap of the stint this is, or UNKNOWN before a stint is established. */
   private stintLap: number = UNKNOWN_VALUE;
+  /**
+   * The wettest the circuit has been since this lap began, or UNKNOWN when the
+   * provider publishes no wetness at all. A high-water mark, never lowered
+   * within a lap: see {@link LapRecord.wetness} for why the peak is the honest
+   * summary of a lap that changed underneath the driver.
+   */
+  private wetMax: number = UNKNOWN_VALUE;
   /** The lap began in the pits (an out-lap). */
   private startedInPit = false;
   /** The car entered the pits during a lap that began on track (an in-lap). */
@@ -577,6 +659,12 @@ export class LapRecorder {
   /** Fold this poll's state into the current lap's fault set. */
   private observe(input: LapInput): void {
     if (input.inPit) this.dirty.add('pit');
+    // Every poll, so a shower that arrives and passes inside one lap is still
+    // on the record after it has gone.
+    if (typeof input.wetness === 'number' && Number.isFinite(input.wetness)) {
+      const w = Math.min(1, Math.max(0, input.wetness));
+      if (this.wetMax === UNKNOWN_VALUE || w > this.wetMax) this.wetMax = w;
+    }
     // An in-lap is one that began on track and reached the pits. Latched, so a
     // car that crosses the line inside the lane still records the lap it was
     // actually driving when it turned in.
@@ -631,8 +719,13 @@ export class LapRecorder {
     if (lapMs < MIN_LAP_MS || lapMs > MAX_LAP_MS) dirty.add('implausible');
 
     const reasons = [...dirty];
+    // The surface, judged once and written down. A lap with no wetness channel
+    // at all records neither field and reads as dry downstream — see the v7
+    // note on LapRecord.
+    const wetness = this.wetMax === UNKNOWN_VALUE ? undefined : round3(this.wetMax);
+
     return {
-      v: 6,
+      v: 7,
       id: crypto.randomUUID(),
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
@@ -651,6 +744,7 @@ export class LapRecorder {
       ...(typeof input.trackTempC === 'number' ? { trackTempC: input.trackTempC } : {}),
       ...(typeof input.ambientTempC === 'number' ? { ambientTempC: input.ambientTempC } : {}),
       ...(input.wet !== undefined ? { wet: !!input.wet } : {}),
+      ...(wetness !== undefined ? { wetness, condition: conditionOf(wetness) } : {}),
       ...sectorSplits(input.sector1Sec, input.sector2Sec, lapMs),
       ...(input.setupFp ? { setupFp: input.setupFp } : {}),
       ...this.consumption(input),
@@ -740,6 +834,12 @@ export class LapRecorder {
     this.veAtStart = num(input.vePct) && input.vePct > 0 ? input.vePct : UNKNOWN_VALUE;
     this.lastFuelSeen = this.fuelAtStart;
     this.fuelDirty = false;
+    // Re-baselined per lap, and seeded with the reading at the line so a lap
+    // driven entirely in the wet is never called dry by its first sample.
+    this.wetMax =
+      typeof input.wetness === 'number' && Number.isFinite(input.wetness)
+        ? Math.min(1, Math.max(0, input.wetness))
+        : UNKNOWN_VALUE;
     this.startedInPit = input.inPit === true;
     this.enteredPit = false;
     // A stint is the run between pit visits, and the out-lap is lap 1 of it —
@@ -888,6 +988,16 @@ export interface LapBest {
   trackLengthM: number;
   trackConfig?: string;
   simTrackName?: string;
+  /**
+   * The surface it was set on. The week's list is NOT split by surface the way
+   * the league boards are — it is one line per track and class, "your week",
+   * and three lines for one afternoon in changing weather would bury the week
+   * it is summarising. It is carried so the row can be marked and, more
+   * importantly, so the reference score can be withheld: grading a lap set in
+   * the rain against a dry benchmark produces a percentage that is wrong in a
+   * way nobody can see.
+   */
+  condition?: TrackCondition;
 }
 
 /**
@@ -948,6 +1058,7 @@ export function summarize(nowMs: number, days = 7, dir = lapDir()): LapSummary {
           trackLengthM: rec.trackLengthM || 0,
           ...(rec.trackConfig ? { trackConfig: rec.trackConfig } : {}),
           ...(rec.simTrackName ? { simTrackName: rec.simTrackName } : {}),
+          condition: rec.condition || 'dry',
         });
       }
     }
@@ -1000,7 +1111,16 @@ export interface PendingActivity {
   drivingMs: number;
 }
 
-/** An all-time best clean lap for one track and class — a `submit_lap` call. */
+/**
+ * An all-time best clean lap for one track, class **and surface** — a
+ * `submit_lap` call.
+ *
+ * The surface is part of the key, not a label on the row. Keying on (track,
+ * class) alone and tagging the result would have been the smaller change and
+ * would not have worked: a wet lap is slower, so it loses to the dry one here
+ * and at the server's `lap_ms >` guard, and the tag would have been a chip that
+ * never appeared. A driver now holds up to three bests per board.
+ */
 export interface PendingBest {
   sim: string;
   trackKey: string;
@@ -1019,6 +1139,8 @@ export interface PendingBest {
   car: string;
   lapMs: number;
   setAt: string;
+  /** Which board this time belongs on — see {@link TrackCondition}. */
+  condition: TrackCondition;
   conditions: Record<string, unknown>;
   /**
    * The best lap's {@link LapRecord.id}, when it has one — the key to its local
@@ -1145,7 +1267,13 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
       if (rec.lapMs < MIN_LAP_MS || rec.lapMs > MAX_LAP_MS) continue;
       if (!carClass) continue;
 
-      const bKey = `${sim}|${trackKey}|${carClass}`;
+      // The surface is part of the key: three boards, three bests, and a wet
+      // lap that would have lost to the dry one is kept instead of discarded.
+      // A pre-v7 lap has no condition recorded and counts as dry — see the v7
+      // note on LapRecord for why that is the right default rather than a
+      // fourth bucket.
+      const condition: TrackCondition = rec.condition || 'dry';
+      const bKey = `${sim}|${trackKey}|${carClass}|${condition}`;
       const held = bests.get(bKey);
       if (!held || rec.lapMs < held.lapMs) {
         bests.set(bKey, {
@@ -1159,6 +1287,7 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
           car: rec.car || '',
           lapMs: rec.lapMs,
           setAt: rec.at,
+          condition,
           ...(rec.id ? { lapId: rec.id } : {}),
           ...(rec.setupFp ? { setupFp: rec.setupFp } : {}),
           conditions: {
@@ -1166,6 +1295,10 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
             ...(typeof rec.trackTempC === 'number' ? { trackTempC: rec.trackTempC } : {}),
             ...(typeof rec.ambientTempC === 'number' ? { ambientTempC: rec.ambientTempC } : {}),
             ...(rec.wet !== undefined ? { wet: !!rec.wet } : {}),
+            // The number behind the band, so a board row can say "Wet · 34%"
+            // and a later threshold change can be argued about with evidence.
+            ...(typeof rec.wetness === 'number' ? { wetness: rec.wetness } : {}),
+            condition,
           },
         });
       }
@@ -1224,9 +1357,18 @@ export function activityKey(row: PendingActivity): string {
   return `${row.day}|${row.sim}|${row.trackKey}|${row.carClass}`;
 }
 
-/** Stable identity for a best-lap row. */
+/**
+ * Stable identity for a best-lap row.
+ *
+ * A dry row keeps the key it has always had, deliberately: every cache on every
+ * installed copy is keyed that way, and appending `|dry` would make all of them
+ * miss at once and re-upload every board lap in the league on the next run. The
+ * two new boards get suffixed keys, which have never been in a cache and so
+ * correctly read as "not sent yet".
+ */
 export function bestKey(row: PendingBest): string {
-  return `${row.sim}|${row.trackKey}|${row.carClass}`;
+  const base = `${row.sim}|${row.trackKey}|${row.carClass}`;
+  return row.condition && row.condition !== 'dry' ? `${base}|${row.condition}` : base;
 }
 
 /** The counter tuple, as remembered in the cache. */
@@ -1291,9 +1433,17 @@ export function markRejected(cache: SyncCache, key: string, reason: string): voi
  * lap id, deliberately: the server only keeps the trace of the CURRENT board
  * lap, so what matters is whether the trace for *this time* was dealt with —
  * and a re-driven identical time changes nothing worth re-sending.
+ *
+ * **Dry rows only.** `lap_traces` is keyed (driver, track, class) with no room
+ * for a surface, so sending a wet lap's trace would evict the dry board lap's
+ * and break the Compare button on the board everyone actually reads. The wet
+ * and damp boards therefore show no Compare — the honest outcome until the
+ * trace table gains the same fourth key, which is its own migration and not
+ * one to smuggle in here.
  */
 export function traceNeedsSend(row: PendingBest, cache: SyncCache): boolean {
   if (!row.lapId) return false;
+  if (row.condition && row.condition !== 'dry') return false;
   return (cache.traces || {})[bestKey(row)] !== row.lapMs;
 }
 

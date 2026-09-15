@@ -31,6 +31,11 @@ const {
   readDay,
   summarize,
   dayStamp,
+  conditionOf,
+  buildUploadPlan,
+  bestKey,
+  traceNeedsSend,
+  emptySyncCache,
 } = require('../dist/telemetry/lapLog');
 
 let passed = 0;
@@ -367,6 +372,141 @@ console.log('\nstorage + rolling summary\n');
   const lmp2 = s.bests.find((b) => b.carClass === 'LMP2');
   check('a second class gets its own entry', lmp2 && lmp2.lapMs === 210_000, lmp2 && lmp2.lapMs);
 
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('\ntrack conditions\n');
+
+{
+  // The bands, at their edges. These decide which board a time lands on, so the
+  // boundaries are asserted rather than assumed: 0.02 and 0.2 are the weather
+  // card's own, and moving one silently re-files everybody's laps.
+  check('bone dry is dry', conditionOf(0) === 'dry');
+  check('…and a trace of moisture still is', conditionOf(0.019) === 'dry', conditionOf(0.019));
+  check('the damp band opens at 0.02', conditionOf(0.02) === 'damp');
+  check('…and runs to just under 0.2', conditionOf(0.199) === 'damp');
+  check('wet starts where the dry line goes', conditionOf(0.2) === 'wet');
+  check('…and a soaked circuit is the same board', conditionOf(1) === 'wet');
+  // No channel at all must not become a fourth answer: it reads as dry, which
+  // is what every lap recorded before v7 was.
+  check('no reading reads as dry', conditionOf(undefined) === 'dry');
+  check('…and so does a broken one', conditionOf(NaN) === 'dry');
+}
+
+{
+  // The lap is judged on the WETTEST it got, not on the reading at the line.
+  // A shower that arrives at half distance and has passed by the time the
+  // driver crosses the line still made the lap what it was.
+  const t = rig({ wetness: 0 });
+  t.lap(); // the partial first lap
+  t.poll(2);
+  t.state.wetness = 0.55;
+  t.poll(2);
+  t.state.wetness = 0.0; // dry again before the line
+  const rec = t.lap();
+  check('a lap takes the wettest point it saw', rec && rec.condition === 'wet', rec && rec.condition);
+  check('…and records the number behind it', rec && rec.wetness === 0.55, rec && rec.wetness);
+  check('…and is written as a v7 record', rec && rec.v === 7, rec && rec.v);
+
+  // The high-water mark is per lap, not per stint: the next lap on a dry
+  // circuit is a dry lap, whatever happened during the one before it.
+  const after = t.lap();
+  check('the next lap starts its own reading', after && after.condition === 'dry', after && after.condition);
+}
+
+{
+  // A provider with no wetness channel at all (rF2, the simulator) records
+  // neither field rather than a fabricated zero.
+  const t = rig();
+  t.lap();
+  const rec = t.lap();
+  check('no channel means no wetness recorded', rec && rec.wetness === undefined);
+  check('…and no condition claimed', rec && rec.condition === undefined);
+}
+
+{
+  // The keying change, end to end: the same track and class in two conditions
+  // is two board entries, and the slower wet one is NOT discarded by the
+  // faster dry one — which is the whole reason the surface is part of the key.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-laps-cond-'));
+  const now = Date.now();
+  const base = {
+    v: 7,
+    sim: 'lmu',
+    track: 'Spa-Francorchamps',
+    trackKey: 'spa_francorchamps_7004',
+    trackLengthM: 7004,
+    car: 'Ferrari 296 GT3',
+    carClass: 'GT3',
+    distanceM: 7004,
+    sessionType: 'practice',
+    clean: true,
+    dirty: [],
+  };
+  appendLap({ ...base, id: 'a', at: new Date(now).toISOString(), lapMs: 138_100, wetness: 0, condition: 'dry' }, dir);
+  appendLap({ ...base, id: 'b', at: new Date(now).toISOString(), lapMs: 152_400, wetness: 0.62, condition: 'wet' }, dir);
+  appendLap({ ...base, id: 'c', at: new Date(now).toISOString(), lapMs: 149_900, wetness: 0.71, condition: 'wet' }, dir);
+  appendLap({ ...base, id: 'd', at: new Date(now).toISOString(), lapMs: 141_800, wetness: 0.09, condition: 'damp' }, dir);
+
+  const plan = buildUploadPlan(dir);
+  check('one best per surface', plan.bests.length === 3, plan.bests.length);
+  const dry = plan.bests.find((b) => b.condition === 'dry');
+  const wet = plan.bests.find((b) => b.condition === 'wet');
+  const damp = plan.bests.find((b) => b.condition === 'damp');
+  check('…the dry board keeps the quick lap', dry && dry.lapMs === 138_100, dry && dry.lapMs);
+  check('…the wet board keeps the best WET lap', wet && wet.lapMs === 149_900, wet && wet.lapMs);
+  check('…which the faster dry lap does not evict', wet !== undefined);
+  check('…and damp is its own board', damp && damp.lapMs === 141_800, damp && damp.lapMs);
+
+  // The cache key for a dry row is byte-for-byte what it has always been.
+  // Appending `|dry` would make every installed copy's cache miss at once and
+  // re-upload every board lap in the league on the next run.
+  check('a dry row keeps the historic cache key', bestKey(dry) === 'lmu|spa_francorchamps_7004|GT3', bestKey(dry));
+  check('…and a wet one is a different key', bestKey(wet) === 'lmu|spa_francorchamps_7004|GT3|wet', bestKey(wet));
+
+  // `lap_traces` has one row per (driver, track, class) with no room for a
+  // surface, so only the dry board's lap sends its trace up; a wet one would
+  // evict the dry board lap's trace and break Compare on the board everyone
+  // reads.
+  const cache = emptySyncCache();
+  check('the dry best offers its trace', traceNeedsSend(dry, cache) === true);
+  check('…and a wet best does not', traceNeedsSend(wet, cache) === false);
+
+  // The surface is on the row the uploader sends, and the number with it.
+  check('the row carries its condition to the server', dry.conditions.condition === 'dry');
+  check('…and the measured wetness beside it', wet.conditions.wetness === 0.71, wet.conditions.wetness);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+{
+  // A pre-v7 lap has no condition at all. It reads as dry — the narrow claim,
+  // and the one that keeps every board lap already uploaded exactly where it is.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-laps-legacy-'));
+  appendLap(
+    {
+      v: 6,
+      id: 'old',
+      at: new Date().toISOString(),
+      sim: 'lmu',
+      track: 'Spa-Francorchamps',
+      trackKey: 'spa_francorchamps_7004',
+      trackLengthM: 7004,
+      car: 'Ferrari 296 GT3',
+      carClass: 'GT3',
+      lapMs: 138_100,
+      distanceM: 7004,
+      sessionType: 'practice',
+      clean: true,
+      dirty: [],
+      wet: true,
+    },
+    dir,
+  );
+  const plan = buildUploadPlan(dir);
+  check('a pre-v7 lap lands on the dry board', plan.bests[0] && plan.bests[0].condition === 'dry');
+  check('…keeping its old wet flag for the row to explain', plan.bests[0] && plan.bests[0].conditions.wet === true);
+  check('…and claiming no wetness it never measured', plan.bests[0] && plan.bests[0].conditions.wetness === undefined);
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

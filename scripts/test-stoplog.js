@@ -182,7 +182,9 @@ check('a green lap records its burn', measured.length >= 1, `${measured.length} 
 check('…and the burn is the difference', measured[0] && Math.abs(measured[0].fuelUsedL - 3) < 0.01, measured[0] && measured[0].fuelUsedL);
 check('both ends of the lap are recorded', measured[0] && measured[0].fuelStartL === 57 && measured[0].fuelEndL === 54);
 check('capacity rides along', measured[0] && measured[0].capacityL === 75);
-check('the record is v6', laps[0] && laps[0].v === 6, laps[0] && laps[0].v);
+// v7 since the boards split by track surface (migration 0021). The consumption
+// block this file is about is unchanged by that; the version moved under it.
+check('the record is v7', laps[0] && laps[0].v === 7, laps[0] && laps[0].v);
 
 console.log('\nwhat is not a burn');
 const pitted = driveLaps([
@@ -254,7 +256,7 @@ const deadSensor = driveLaps([
 ]);
 check('a dead corner voids the set rather than reading as a cold tyre',
   deadSensor.every((l) => l.tempAtLine === undefined));
-check('a lap carrying temperatures is v6', withTemps[0] && withTemps[0].v === 6, withTemps[0] && withTemps[0].v);
+check('a lap carrying temperatures is v7', withTemps[0] && withTemps[0].v === 7, withTemps[0] && withTemps[0].v);
 const energy = driveLaps([
   ...rep(4, { lapsCompleted: 10, fuelL: 60, vePct: 80 }),
   ...rep(4, { lapsCompleted: 11, fuelL: 57, vePct: 76 }),

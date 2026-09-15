@@ -1465,6 +1465,22 @@ html, body { height: 100%; overflow: hidden; }
    app it is used, because it is the only place the comparison holds. */
 .lbrow__time[data-fastest="true"] { color: #b47cff; }
 
+/* The surface marker, inside the car cell. Cool rather than alarming: a wet lap
+   is a different lap, not a worse one, and the boards it sits on are its own. */
+.lbrow__wet {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 45%, transparent);
+  border-radius: 4px;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
 /* Your own row. The rail is on the left where the position is, so it reads as
    "this line is yours" rather than as a highlighted lap time. */
 .lbrow--board { border-left: 3px solid transparent; padding-left: 7px; }

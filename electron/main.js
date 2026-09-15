@@ -2917,17 +2917,24 @@ function registerIpc() {
       // All-time bests, not this week's: a personal best does not expire on
       // Sunday the way the rolling lap count does.
       const plan = lapLog.buildUploadPlan();
-      const rows = plan.bests.map((best) =>
-        paceRowFor(ref, {
-          track: best.trackName,
-          trackConfig: best.trackConfig,
-          simTrackName: best.simTrackName,
-          trackLengthM: best.trackLengthM,
-          carClass: best.carClass,
-          car: best.car,
-          lapMs: best.lapMs,
-        }),
-      );
+      // Dry laps only. The reference times this card grades against are dry
+      // laps, so a wet best would be scored — with a percentage, in a band,
+      // next to the others — against a benchmark nobody set in the rain. The
+      // wet bests are not lost; they are on their own boards, where the only
+      // thing they are compared with is other wet laps.
+      const rows = plan.bests
+        .filter((best) => (best.condition || 'dry') === 'dry')
+        .map((best) =>
+          paceRowFor(ref, {
+            track: best.trackName,
+            trackConfig: best.trackConfig,
+            simTrackName: best.simTrackName,
+            trackLengthM: best.trackLengthM,
+            carClass: best.carClass,
+            car: best.car,
+            lapMs: best.lapMs,
+          }),
+        );
       // Best first — the tile shows the single strongest result, and a driver
       // reading the list wants their high-water mark at the top.
       const scored = rows.filter((r) => r.ok).sort((a, b) => a.percent - b.percent);
@@ -3130,12 +3137,22 @@ function registerIpc() {
     return setupLibrary;
   };
 
-  /** Best clean lap per (trackName, carClass) from the local lap files. */
+  /**
+   * Best clean DRY lap per (trackName, carClass) from the local lap files.
+   *
+   * The dry filter is not a preference, it is what keeps this answer the same
+   * as it always was: since the boards split by surface (migration 0021) the
+   * plan holds up to three bests per track and class, and this lookup takes the
+   * first that matches. Without the filter, a setup's "verified best" could
+   * quietly become a lap set in the rain — a slower time against a setup, shown
+   * as evidence of what that setup does.
+   */
   const bestLapFor = (bests, entry) => {
     if (!Array.isArray(bests)) return null;
     const hit = bests.find(
       (b) =>
         b &&
+        (b.condition || 'dry') === 'dry' &&
         (b.trackName || '').toLowerCase() === (entry.trackName || '').toLowerCase() &&
         (b.carClass || '').toUpperCase() === (entry.carClass || '').toUpperCase(),
     );
@@ -3310,8 +3327,14 @@ function registerIpc() {
 
   /**
    * One board, ranked. `car` is a narrowing filter rather than a second axis:
-   * boards stay keyed on (track, class) the way `submit_lap` stores them, so a
-   * driver's entry is their best in the class whichever car set it.
+   * boards stay keyed on (track, class, surface) the way `submit_lap` stores
+   * them, so a driver's entry is their best in the class whichever car set it.
+   *
+   * The surface IS an axis, added 2026-09-15 (migration 0021): a wet lap is
+   * slower than a dry one at the same circuit, so ranking them together does
+   * not produce a longer board, it produces a dry board with the wet times
+   * unreachably beneath it — and, before the split, no wet times at all,
+   * because a slower lap never replaced the driver's stored best.
    */
   ipcMain.handle('leaderboard:rows', async (_evt, query) => {
     const q = query || {};
@@ -3321,6 +3344,11 @@ function registerIpc() {
       p_car_class: q.carClass || null,
       p_car: q.car || null,
       p_limit: 200,
+      // One surface per board (migration 0021). Defaulted here rather than left
+      // null: null means "every surface ranked together", which is the very
+      // thing the split exists to stop — a wet lap can never beat a dry one, so
+      // a mixed board is a dry board with slower times buried under it.
+      p_condition: q.condition || 'dry',
     });
     if (!res.ok) {
       return {
@@ -3446,6 +3474,12 @@ function registerIpc() {
    * compare against. Resolved from the lap's own `trackKey` through the
    * league's alias table (read-only; an unknown circuit is an empty board, not
    * a new one), so the Review tab never has to know a board's UUID.
+   *
+   * The DRY board specifically, and that is not a default waiting to be made
+   * configurable: this exists to fetch a lap's TRACE, and `lap_traces` has one
+   * row per (driver, track, class) with no room for a surface, so the dry board
+   * is the only one whose rows have traces behind them. See `traceNeedsSend`
+   * in lapLog.ts for the other half of that decision.
    */
   ipcMain.handle('review:board', async (_evt, req) => {
     const trackKey = req && typeof req.trackKey === 'string' ? req.trackKey : '';
@@ -3456,6 +3490,7 @@ function registerIpc() {
       p_track_key: trackKey,
       p_car_class: carClass,
       p_limit: 200,
+      p_condition: 'dry',
     });
     if (!res.ok) {
       return {

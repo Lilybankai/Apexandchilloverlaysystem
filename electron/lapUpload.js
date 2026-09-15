@@ -367,6 +367,10 @@ async function sendBest(row, cache) {
     p_set_at: row.setAt,
     p_conditions: row.conditions,
     p_app_version: appVersion,
+    // Which of the three boards this belongs on (migration 0021). A server from
+    // before that release ignores the extra named argument; a client from before
+    // it omits this one and the server defaults it to dry.
+    p_condition: row.condition || 'dry',
   });
   const out = classify(res, lapLog.bestKey(row), cache);
   if (out.sent) {
@@ -374,7 +378,10 @@ async function sendBest(row, cache) {
     // The server says whether this actually beat what was there and where it now
     // sits. Worth logging: it is the one moment the league becomes visible.
     if (out.body && out.body.improved) {
-      console.log(`[laps] new best ${row.trackName} ${row.carClass}: P${out.body.rank}`);
+      const surface = (out.body.condition || row.condition || 'dry').toUpperCase();
+      console.log(
+        `[laps] new best ${row.trackName} ${row.carClass} (${surface}): P${out.body.rank}`,
+      );
     }
   }
   return out;
