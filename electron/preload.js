@@ -445,6 +445,15 @@ contextBridge.exposeInMainWorld('apex', {
     /** Headline usage numbers: `{ ok, data, signedOut?, error? }`. */
     overview: () => ipcRenderer.invoke('admin:overview'),
     /**
+     * Feature + overlay analytics (migration 0022): `{ days? }` → `{ ok, data:
+     * { laps, lapsDaily[], features[], featuresDaily[], overlays[],
+     * overlayCounts[], cloud, activeMonth }, signedOut?, error? }`.
+     *
+     * Aggregates only — every row is a count of drivers or of uses, never a
+     * driver.
+     */
+    analytics: (query) => ipcRenderer.invoke('admin:analytics', query),
+    /**
      * The strategy corpus: `{ ok, data: { stops, raceStops, fuelStops, laps,
      * burnLaps, wearLaps, drivers, rows[] }, signedOut?, error? }`. Counts and
      * medians per class/track — never a driver's rows.
@@ -592,5 +601,29 @@ contextBridge.exposeInMainWorld('apex', {
     history: () => ipcRenderer.invoke('changelog:history'),
     /** Record that the notes for this version have been read. */
     markSeen: () => ipcRenderer.invoke('changelog:markSeen'),
+  },
+
+  /* ---- Usage counters ----
+   *
+   * How the panel says "this part of the app was used". One-way by design:
+   * `send`, not `invoke`, so a tab switch never waits on a disk write and the
+   * renderer has no answer to handle. Slugs come from feature-catalog.js.
+   *
+   * What lands in the cloud is a DAILY COUNT per feature and nothing else —
+   * no times, no order, no arguments. See electron/featureUsage.js.
+   */
+  usage: {
+    /**
+     * Count one use of a feature, and optionally the seconds it was on screen.
+     *
+     * @param {string} feature  a slug from APEX_FEATURE_CATALOG
+     * @param {object} [opts]   `{ uses = 1, seconds = 0 }`
+     */
+    feature: (feature, opts) =>
+      ipcRenderer.send('usage:feature', {
+        feature,
+        uses: opts && opts.uses != null ? opts.uses : 1,
+        seconds: opts && opts.seconds != null ? opts.seconds : 0,
+      }),
   },
 });

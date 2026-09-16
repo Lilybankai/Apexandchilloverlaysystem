@@ -43,6 +43,11 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     const pane = q.get('pane') || 'general';
     localStorage.setItem('apex.panel.tab', tab);
     localStorage.setItem('apex.panel.settingsPane', pane);
+    // Which Admin section to land on: ?tab=admin&adminpane=usage. The Admin tab
+    // is revealed asynchronously by admin:whoami, but showView() does not care
+    // whether the nav BUTTON is hidden yet, so seeding both keys is enough.
+    const adminpane = q.get('adminpane');
+    if (adminpane) localStorage.setItem('apex.panel.adminPane', adminpane);
     const skfilter = q.get('skfilter');
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
@@ -181,9 +186,31 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     speedUnit: 'mph', widgetBackground: 80, textScale: 105, radarIconScale: 50, audioCues: true,
     audioVolume: 60, changeGlow: true, enabledOverlays: {}, ingameOverlays: {}, shortcuts: {} };
 
+  /*
+   * The overlay catalog, as main hands it over. The Overlays GRID is not shot
+   * from this harness (it needs a live server for the OBS links), so this used
+   * to be an empty array — but the Admin Usage pane reads the same list to work
+   * out which widgets NOBODY has switched on, and with nothing here that table
+   * can only show the ones the fixture already mentions, which is exactly the
+   * half it is not meant to be checked on.
+   *
+   * Ids and labels mirror OVERLAY_CATALOG in electron/main.js.
+   */
+  const overlayCatalog = [
+    ['standings', 'Standings'], ['relative', 'Relative / Timing'], ['delta', 'Delta'],
+    ['pacedelta', 'Pace Delta'], ['refpace', 'Reference Pace'], ['weather', 'Weather'],
+    ['fuel', 'Fuel Calculator'], ['fuelplan', 'Fuel & Stint Plan'], ['tyres', 'Tyre Temps'],
+    ['speedo', 'Speedometer'], ['pedals', 'Pedal Inputs'], ['pedalsv', 'Pedal Inputs (Vertical)'],
+    ['motion', 'Motion (G / Rotation / Attitude)'], ['damage', 'Damage & Repair'],
+    ['radar', 'Proximity Radar'], ['trackmap', 'Track Map'], ['limits', 'Track Limits'],
+    ['racecontrol', 'Race Control'], ['mfd', 'MFD Control'],
+  ].map(([id, label]) => ({ id, label, enabled: true, url: '' }));
+  const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
+  const overlays = overlayCatalog.concat(streamingOverlays);
+
   window.apex = {
-    getState: P({ settings, overlays: [], status: { running: false, port: 8082, wsClients: 0, source: '—' } }),
-    updateSettings: (p) => Promise.resolve({ settings: Object.assign(settings, p), overlays: [], status: {} }),
+    getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—' } }),
+    updateSettings: (p) => Promise.resolve({ settings: Object.assign(settings, p), overlays, status: {} }),
     startServer: P({}), stopServer: P({}), copy: P(true), openInBrowser: P(true),
     sponsorsList: P([]), sponsorsAdd: P([]), sponsorsRemove: P([]),
     actionsList: P([]), actionBind: P({ ok: true }), actionRun: P({ ok: true }),
@@ -343,6 +370,92 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           locked_out: true },
       ] : [] }),
       users: P({ ok: true, rows: [] }), setFeedbackStatus: P({ ok: true }), freeAccess: P({ ok: false }),
+      /*
+       * The Usage pane (migration 0022). Numbers are plausible rather than
+       * real — the counters had reported nothing yet when this was written —
+       * but the SHAPE is the point: the fixture deliberately omits several
+       * catalog slugs and several overlays entirely, because a pane that only
+       * ever renders rows it was sent cannot be checked for the thing it
+       * exists to show, which is the feature reading zero.
+       *
+       * The daily lap series is deliberately sparse (gaps, not zeroes) — that
+       * is what the RPC returns, and fillDailyGaps() is what has to put the
+       * quiet days back. A fixture with every day present would never catch
+       * it going missing.
+       *
+       * No backticks anywhere in this block: the whole stub is emitted from a
+       * template literal, and one would end it early.
+       */
+      analytics: P({ ok: true, data: {
+        windowDays: 30,
+        activeMonth: 38,
+        laps: { total: 18695, clean: 10596, km: 106364, hours: 374, drivers: 33,
+          today: 31, week: 2222, month: 13343, driversToday: 3, driversWeek: 14 },
+        lapsDaily: (function () {
+          var out = [];
+          var pad = function (n) { return String(n).padStart(2, '0'); };
+          for (var i = 29; i >= 0; i -= 1) {
+            if (i % 7 === 3) continue; // a quiet day every week, with no row at all
+            var d = new Date();
+            d.setDate(d.getDate() - i);
+            out.push({
+              day: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+              laps: 40 + ((i * 37) % 260),
+              drivers: 2 + (i % 9),
+            });
+          }
+          return out;
+        })(),
+        features: [
+          { feature: 'tab:dashboard', usersToday: 6, users7d: 22, users30d: 34, uses7d: 180, uses30d: 690, minutes30d: 1420, lastDay: '2026-09-16' },
+          { feature: 'tab:overlays', usersToday: 4, users7d: 17, users30d: 29, uses7d: 61, uses30d: 233, minutes30d: 980, lastDay: '2026-09-16' },
+          { feature: 'tab:review', usersToday: 2, users7d: 9, users30d: 16, uses7d: 28, uses30d: 104, minutes30d: 2210, lastDay: '2026-09-16' },
+          { feature: 'tab:setups', usersToday: 1, users7d: 8, users30d: 15, uses7d: 22, uses30d: 88, minutes30d: 1640, lastDay: '2026-09-15' },
+          { feature: 'tab:leaderboard', usersToday: 1, users7d: 7, users30d: 13, uses7d: 19, uses30d: 71, minutes30d: 260, lastDay: '2026-09-16' },
+          { feature: 'tab:settings', usersToday: 2, users7d: 6, users30d: 12, uses7d: 14, uses30d: 55, minutes30d: 190, lastDay: '2026-09-16' },
+          { feature: 'tab:engineer', usersToday: 0, users7d: 3, users30d: 7, uses7d: 6, uses30d: 21, minutes30d: 140, lastDay: '2026-09-13' },
+          { feature: 'tab:team', usersToday: 0, users7d: 2, users30d: 5, uses7d: 4, uses30d: 12, minutes30d: 420, lastDay: '2026-09-12' },
+          { feature: 'tab:schedule', usersToday: 0, users7d: 2, users30d: 4, uses7d: 3, uses30d: 9, minutes30d: 20, lastDay: '2026-09-11' },
+          // tab:fuel, tab:streamers, tab:suggestions and tab:admin are absent
+          // on purpose — those are the "nobody opened it" rows.
+          { feature: 'action:overlay.toggle', usersToday: 2, users7d: 11, users30d: 19, uses7d: 74, uses30d: 288, minutes30d: 0, lastDay: '2026-09-16' },
+          { feature: 'action:overlay.copy', usersToday: 1, users7d: 5, users30d: 11, uses7d: 12, uses30d: 44, minutes30d: 0, lastDay: '2026-09-15' },
+          { feature: 'action:review.lap', usersToday: 2, users7d: 8, users30d: 14, uses7d: 63, uses30d: 241, minutes30d: 0, lastDay: '2026-09-16' },
+          { feature: 'action:setup.edit', usersToday: 1, users7d: 6, users30d: 12, uses7d: 210, uses30d: 903, minutes30d: 0, lastDay: '2026-09-15' },
+          { feature: 'action:setup.download', usersToday: 0, users7d: 3, users30d: 6, uses7d: 4, uses30d: 17, minutes30d: 0, lastDay: '2026-09-14' },
+          { feature: 'action:engineer.ask', usersToday: 0, users7d: 2, users30d: 4, uses7d: 9, uses30d: 33, minutes30d: 0, lastDay: '2026-09-13' },
+          { feature: 'action:app.guide', usersToday: 1, users7d: 4, users30d: 9, uses7d: 5, uses30d: 14, minutes30d: 0, lastDay: '2026-09-16' },
+          { feature: 'action:setup.publish', usersToday: 0, users7d: 1, users30d: 2, uses7d: 1, uses30d: 3, minutes30d: 0, lastDay: '2026-09-10' },
+        ],
+        featuresDaily: [],
+        overlays: [
+          { overlay: 'standings', usersToday: 5, users7d: 19, users30d: 31, obsUsers30d: 9, loads30d: 412, ingameHours30d: 288, ingameUsers30d: 24 },
+          { overlay: 'relative', usersToday: 5, users7d: 18, users30d: 30, obsUsers30d: 8, loads30d: 301, ingameHours30d: 276, ingameUsers30d: 23 },
+          { overlay: 'delta', usersToday: 4, users7d: 17, users30d: 29, obsUsers30d: 6, loads30d: 233, ingameHours30d: 261, ingameUsers30d: 22 },
+          { overlay: 'fuel', usersToday: 4, users7d: 15, users30d: 27, obsUsers30d: 5, loads30d: 168, ingameHours30d: 240, ingameUsers30d: 21 },
+          { overlay: 'tyres', usersToday: 3, users7d: 13, users30d: 24, obsUsers30d: 4, loads30d: 120, ingameHours30d: 198, ingameUsers30d: 18 },
+          { overlay: 'radar', usersToday: 3, users7d: 12, users30d: 22, obsUsers30d: 2, loads30d: 61, ingameHours30d: 205, ingameUsers30d: 19 },
+          { overlay: 'trackmap', usersToday: 2, users7d: 9, users30d: 17, obsUsers30d: 3, loads30d: 74, ingameHours30d: 141, ingameUsers30d: 14 },
+          { overlay: 'speedo', usersToday: 2, users7d: 8, users30d: 15, obsUsers30d: 4, loads30d: 96, ingameHours30d: 112, ingameUsers30d: 11 },
+          { overlay: 'weather', usersToday: 1, users7d: 6, users30d: 12, obsUsers30d: 2, loads30d: 38, ingameHours30d: 88, ingameUsers30d: 9 },
+          { overlay: 'pedals', usersToday: 1, users7d: 4, users30d: 9, obsUsers30d: 3, loads30d: 51, ingameHours30d: 44, ingameUsers30d: 6 },
+          { overlay: 'mfd', usersToday: 0, users7d: 2, users30d: 4, obsUsers30d: 1, loads30d: 9, ingameHours30d: 3, ingameUsers30d: 1 },
+          // Everything else in OVERLAY_CATALOG is absent: those are the rows
+          // that should render dimmed at zero rather than not render at all.
+        ],
+        overlayCounts: [
+          { n: 2, drivers: 1 }, { n: 4, drivers: 2 }, { n: 6, drivers: 4 },
+          { n: 8, drivers: 6 }, { n: 11, drivers: 5 }, { n: 14, drivers: 3 },
+          { n: 17, drivers: 2 }, { n: 20, drivers: 1 },
+        ],
+        cloud: {
+          engineerToday: 0, engineer7d: 0, engineerDrivers7d: 0, engineerDrivers30d: 2,
+          setupsLive: 34, setupDownloads7d: 3, setupDrivers30d: 6,
+          boardLaps: 291, boardDrivers30d: 19,
+          traces: 262, traceDrivers30d: 17,
+          relayDrivers7d: 2,
+        },
+      } }),
       issueCodes: P({ ok: false }), revokeFree: P({ ok: false }), grantFree: P({ ok: false }), billing: P({ ok: false }),
       // The Strategy corpus card. Shapes taken from the live corpus on
       // 2026-09-11 rather than invented, so the readiness chips here show the

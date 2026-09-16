@@ -5,6 +5,42 @@
      app until it is renamed.
 -->
 
+## 0.99.11 — 2026-09-16
+<!-- internal -->
+
+### Added
+
+- **Admin: a Usage pane that says what the app is actually used for.** The
+  panel could already show that someone opened the app and that they drove, and
+  nothing at all in between — "is anyone using the Review tab?" and "which
+  overlays are worth the maintenance?" had no answer, so every roadmap decision
+  was a guess. Admin → **Usage** answers them: laps driven all-time, this week
+  and per day; every section with distinct drivers today / 7d / 30d, minutes on
+  screen and a share of the active fleet; every action a driver can take; and
+  every overlay measured three ways — switched on, loaded by an OBS browser
+  source, and hours carried by the in-game layer.
+
+  Each table starts from what the app **can** do and then fills in what arrived,
+  so a section nobody opened, an action nobody performed and an overlay nobody
+  switched on all get a row reading zero, and each footer names how many there
+  are. A pane assembled the other way round can only ever show you the features
+  people found.
+
+  What the app sends is a **daily count per feature** and nothing else — no
+  times, no order, no arguments. Counters are monotonic and the whole day is
+  re-offered each heartbeat, so a dropped upload, a crash or a second PC can
+  never double-count and can never go backwards. No report shows one driver's
+  activity; there is no RPC that could. Both new tables cascade from the account,
+  so erasure is unchanged. Needs `supabase/migrations/0022_feature_analytics.sql`
+  applied.
+
+- **The changelog can mark a release internal.** An `<!-- internal -->` line
+  under a version heading keeps the entry in the repo and on the GitHub release
+  page — where the record belongs — while suppressing the What's New panel for
+  it. A release with nothing in it for drivers should not interrupt them, and
+  this release is the first one. (This entry is marked, which is why you are
+  reading it here and not in the app.)
+
 ## 0.99.10 — 2026-09-15
 
 ### Added

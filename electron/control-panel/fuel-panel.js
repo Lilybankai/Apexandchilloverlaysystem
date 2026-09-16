@@ -60,7 +60,18 @@
 
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { }
+    // A plan the driver actually TOUCHED, for the usage counters.
+    //
+    // The flag matters: this file's IIFE ends with an update() that paints the
+    // restored plan, and it runs on every panel launch whether or not anyone
+    // opens the Fuel tab. Counting that would have reported a stint plan per
+    // app start for the whole fleet — a feature that looked universally used
+    // and was measuring nothing.
+    if (booted) window.APEX_FEATURE_CATALOG?.note('action:fuel.plan');
   }
+
+  /** False until the first paint is done; see save(). */
+  let booted = false;
 
   // ── Element refs (all static ids live in scripts/test-panel-parity.js) ──
   const els = {
@@ -591,4 +602,6 @@
   });
 
   update();
+  // Everything from here on is the driver's doing — see save().
+  booted = true;
 })();

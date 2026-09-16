@@ -1931,6 +1931,10 @@
    */
   async function openLap(lap, vsLap) {
     if (!lap || !lap.id) return;
+    // The analytics slug for "someone actually analysed a lap", as opposed to
+    // arriving on the tab. Counted here rather than at the click sites because
+    // every route in — the sheet, a board comparison, the map — ends up here.
+    window.APEX_FEATURE_CATALOG?.note('action:review.lap');
     // The reference chosen on the sheet follows you into every lap you open,
     // which is the whole point of choosing it there.
     if (vsLap === undefined) vsLap = activeRef(lap);
@@ -2362,6 +2366,7 @@
 
   async function openSession(id) {
     if (!id) return;
+    window.APEX_FEATURE_CATALOG?.note('action:review.session');
     if (lapOff) { lapOff(); lapOff = null; }
     lapView = null;
     currentId = id;
@@ -2679,6 +2684,7 @@
      */
     async compareWithBoard(lap, row) {
       if (!lap || !lap.sessionId || !lap.id || !row) return false;
+      window.APEX_FEATURE_CATALOG?.note('action:review.compare');
       window.apexNav?.showView('review');
       init();
       if (!ready) return false;

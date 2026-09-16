@@ -888,6 +888,10 @@
   function start(id) {
     const e = lookup();
     if (!e) return;
+    // Every tour and every page guide comes through here, so one slug covers
+    // the lot. Whether the help is reached at all is the question; which tour
+    // is a level of detail the roadmap does not need.
+    window.APEX_FEATURE_CATALOG?.note('action:app.guide');
     if (id === 'all') {
       steps = usableSteps(allSteps());
       for (const t of TOURS) markSeen(t.id);

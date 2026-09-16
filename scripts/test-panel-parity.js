@@ -418,6 +418,37 @@ const PANEL_CONTRACT = {
   'adm-users-empty': 'p',
   'adm-users-note': 'p',
 
+  // Usage pane (v0.99.11, migration 0022) — what the app is used FOR. Every id
+  // here is a figure the roadmap is read off; a restyle that dropped one would
+  // leave a table that still looks complete and quietly stops answering.
+  'adm-laps-total': 'span',
+  'adm-laps-total-sub': 'span',
+  'adm-laps-km': 'span',
+  'adm-laps-km-sub': 'span',
+  'adm-laps-week': 'span',
+  'adm-laps-week-sub': 'span',
+  'adm-usage-active': 'span',
+  'adm-laps-chart': 'div',
+  'adm-laps-empty': 'p',
+  'adm-usage-note': 'span',
+  'adm-sections-list': 'ul',
+  'adm-sections-empty': 'p',
+  'adm-sections-foot': 'p',
+  'adm-actions-list': 'ul',
+  'adm-actions-foot': 'p',
+  'adm-ov-avg': 'span',
+  'adm-ov-avg-sub': 'span',
+  'adm-ov-loads': 'span',
+  'adm-ov-loads-sub': 'span',
+  'adm-ov-ingame': 'span',
+  'adm-ov-ingame-sub': 'span',
+  'adm-overlays-list': 'ul',
+  'adm-overlays-empty': 'p',
+  'adm-overlays-foot': 'p',
+  'adm-ov-hist': 'ul',
+  'adm-ov-hist-empty': 'p',
+  'adm-cloud-list': 'ul',
+
   // Setup editor (v0.65.0). Only the static frame is contracted — every
   // setting row is built at runtime from the sim's own key set, so rows have
   // no ids at all (kept references instead, per the opacityRow() pattern).

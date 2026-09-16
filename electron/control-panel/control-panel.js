@@ -104,6 +104,15 @@
   // Latest known status/settings — the in-game buttons depend on both.
   let lastStatus = { running: false };
   let lastIngameEnabled = false;
+  /*
+   * The overlay catalog as main last handed it over: `{ id, label, group, … }`.
+   * Held because the Admin pane's overlay table has to list every widget the
+   * app HAS, not just the ones the usage rows mention — a widget nobody has
+   * ever switched on is precisely the row worth reading, and it can only come
+   * from the catalog. Empty until the first render, which is fine: the table
+   * then falls back to the ids the server returned.
+   */
+  let lastOverlays = [];
 
   function syncIngameControls() {
     // Editing needs a live in-game layer: server running + display enabled.
@@ -738,6 +747,7 @@
    * changed here — the same five controls exist per widget.
    */
   function renderOverlays(overlays, combined) {
+    lastOverlays = Array.isArray(overlays) ? overlays : [];
     overlayList.innerHTML = '';
     if (streamersWidgetList) streamersWidgetList.innerHTML = '';
     for (const o of overlays) {
@@ -2009,6 +2019,7 @@
    * board, rather than on an empty Review screen the driver did not ask for.
    */
   async function compareBoardRow(row, btn) {
+    CATALOG?.note('action:board.compare');
     const note = $('#board-cmpnote');
     const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
     const trackId = row.track_id || boardPick.trackId;
@@ -2246,6 +2257,7 @@
     const trackSel = $('#board-track');
     if (trackSel) {
       trackSel.addEventListener('change', () => {
+        CATALOG?.note('action:board.filter');
         boardPick.trackId = trackSel.value;
         // Class and car both belong to the track; carrying them across would
         // ask for a board that has no laps on it.
@@ -2258,6 +2270,7 @@
     const carSel = $('#board-car');
     if (carSel) {
       carSel.addEventListener('change', () => {
+        CATALOG?.note('action:board.filter');
         boardPick.car = carSel.value;
         refreshBoard();
       });
@@ -2337,6 +2350,7 @@
 
   async function copyUrl(url, label) {
     await window.apex.copy(url);
+    CATALOG?.note('action:overlay.copy');
     showToast((label ? label + ' URL' : 'URL') + ' copied');
     // The Get started checklist's "on screen" row. OBS is another program —
     // there is no way to observe a Browser Source being added, and this copy
@@ -2346,6 +2360,7 @@
   }
 
   async function toggleOverlay(id, enabled) {
+    CATALOG?.note('action:overlay.toggle');
     const state = await window.apex.updateSettings({
       enabledOverlays: { [id]: enabled },
     });
@@ -2480,6 +2495,7 @@
   // startup switch: nothing on this screen changes when it moves.
   if (webRelayToggle) {
     webRelayToggle.addEventListener('change', async () => {
+      if (webRelayToggle.checked) CATALOG?.note('action:team.relay');
       await window.apex.updateSettings({ webRelay: webRelayToggle.checked });
       showToast(
         webRelayToggle.checked
@@ -2646,6 +2662,10 @@
   });
 
   ingameToggle.addEventListener('change', async () => {
+    // Only switching it ON is a use. Counting the off as well would make a
+    // driver who tried the layer once and rejected it look like two evenings
+    // of adoption.
+    if (ingameToggle.checked) CATALOG?.note('action:overlay.ingame');
     const state = await window.apex.updateSettings({ ingameEnabled: ingameToggle.checked });
     renderSettings(state.settings);
     renderStatus(state.status);
@@ -2674,6 +2694,7 @@
 
   igEditBtn.addEventListener('click', async () => {
     const editing = !!lastStatus.ingameEditing;
+    if (!editing) CATALOG?.note('action:overlay.layout');
     const status = editing
       ? await window.apex.ingameEditStop()
       : await window.apex.ingameEditStart();
@@ -3389,6 +3410,7 @@
         const res = await window.apex.feedback.submit({ kind: fbKind.value, message });
         if (res && res.ok) {
           fbMessage.value = '';
+          CATALOG?.note('action:app.feedback');
           setFbStatus('Thanks — sent to the league.', 'ok');
         } else {
           setFbStatus((res && res.error) || 'Could not send.', 'error');
@@ -4438,18 +4460,22 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free, billing, pastDue, corpus] = await Promise.all([
-        window.apex.admin.overview(),
-        window.apex.admin.feedback({ status: filter ? filter.value : '' }),
-        window.apex.admin.users(adminUsersQuery()),
-        window.apex.admin.freeAccess(),
-        window.apex.admin.billing(),
-        window.apex.admin.pastDue(),
-        // Absent on an older preload; the card then simply reads "—".
-        typeof window.apex.admin.strategyCorpus === 'function'
-          ? window.apex.admin.strategyCorpus()
-          : Promise.resolve(null),
-      ]);
+      const [overview, feedback, users, free, billing, pastDue, corpus, analytics] =
+        await Promise.all([
+          window.apex.admin.overview(),
+          window.apex.admin.feedback({ status: filter ? filter.value : '' }),
+          window.apex.admin.users(adminUsersQuery()),
+          window.apex.admin.freeAccess(),
+          window.apex.admin.billing(),
+          window.apex.admin.pastDue(),
+          // Absent on an older preload; the card then simply reads "—".
+          typeof window.apex.admin.strategyCorpus === 'function'
+            ? window.apex.admin.strategyCorpus()
+            : Promise.resolve(null),
+          typeof window.apex.admin.analytics === 'function'
+            ? window.apex.admin.analytics({ days: 30 })
+            : Promise.resolve(null),
+        ]);
       if (overview && overview.ok) {
         renderAdminOverview(overview.data);
       } else if (overview) {
@@ -4465,8 +4491,480 @@
       renderAdminBilling(billing && billing.ok ? billing.data : null);
       renderAdminPastDue(pastDue && pastDue.ok ? pastDue.rows : []);
       renderAdminCorpus(corpus && corpus.ok ? corpus.data : null);
+      renderAdminUsage(analytics && analytics.ok ? analytics.data : null);
     } catch {
       setAdminMsg('Could not reach the league.');
+    }
+  }
+
+  /* ---- Usage pane (migration 0022) ---------------------------------------
+   *
+   * The rule every table below follows: START FROM THE CATALOG, then fill in
+   * what arrived. A pane assembled the other way round — one row per slug the
+   * server returned — is structurally incapable of showing the feature nobody
+   * found, which is the only kind of row worth acting on.
+   *
+   * So a section with no rows in the database is still a row here, reading
+   * zero and dimmed. Slugs the catalog does not know (a newer build's) are
+   * appended after, so a fleet ahead of this panel is visible rather than
+   * silently dropped.
+   */
+
+  /** `1234567` → `1,234,567`. Long-form counts only; tiles are read, not parsed. */
+  function groupedNumber(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '—';
+    return Math.round(v).toLocaleString();
+  }
+
+  /** A right-aligned figure cell; zero is dimmed rather than blanked. */
+  function usageNum(value, dimAtZero = true) {
+    const span = document.createElement('span');
+    span.className = 'admin-row__num';
+    const v = Number(value) || 0;
+    span.textContent = v ? v.toLocaleString() : '0';
+    if (dimAtZero && !v) span.setAttribute('data-dim', 'true');
+    return span;
+  }
+
+  /**
+   * The share cell: a bar plus its percentage, measured against the drivers who
+   * opened the app at all in the window.
+   *
+   * `active` of zero means the denominator is unknown, not that the share is
+   * zero — a brand-new database, or a backend that predates the RPC. The cell
+   * then says so with a dash instead of drawing a confident 0%.
+   */
+  function usageShare(users, active) {
+    const cell = document.createElement('span');
+    cell.className = 'usage-share';
+    const track = document.createElement('span');
+    track.className = 'usage-share__track';
+    const fill = document.createElement('span');
+    fill.className = 'usage-share__fill';
+    const pct = document.createElement('span');
+    pct.className = 'usage-share__pct';
+
+    const total = Number(active) || 0;
+    const n = Number(users) || 0;
+    if (!total) {
+      pct.textContent = '—';
+      pct.setAttribute('data-cold', 'true');
+      fill.style.width = '0%';
+    } else {
+      const share = Math.max(0, Math.min(1, n / total));
+      fill.style.width = `${(share * 100).toFixed(1)}%`;
+      pct.textContent = `${Math.round(share * 100)}%`;
+      if (!n) pct.setAttribute('data-cold', 'true');
+    }
+    track.append(fill);
+    cell.append(track, pct);
+    return cell;
+  }
+
+  /**
+   * The name cell: a title, and a muted second line for the rows that have
+   * something to say there (which tab an action belongs to, or why a row is
+   * expected to read zero).
+   *
+   * `reserveLine` keeps the second line's space even when it is empty, and it
+   * matters more than it looks: without it a table where only two rows carry a
+   * subtitle comes out with two rows 16px taller than the rest, which reads as
+   * a rendering fault rather than as extra information. A table either reserves
+   * the line for every row or for none.
+   */
+  function usageName(title, where, reserveLine) {
+    const cell = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'usage-row__name';
+    name.textContent = title;
+    cell.append(name);
+    if (where || reserveLine) {
+      const sub = document.createElement('span');
+      sub.className = 'usage-row__where';
+      // A non-breaking space, not an empty string: an empty span collapses to
+      // no height and takes the alignment with it.
+      sub.textContent = where || ' ';
+      cell.append(sub);
+      cell.style.display = 'grid';
+    }
+    return cell;
+  }
+
+  /**
+   * Merge the catalog with what the server sent.
+   *
+   * @param known   catalog entries `{ slug, title, where }`, in display order
+   * @param rows    server rows carrying `feature`
+   * @returns       one entry per catalog slug (row possibly null), then any
+   *                unknown slugs the server returned
+   */
+  function mergeUsage(known, rows) {
+    const byslug = new Map();
+    for (const r of rows) if (r && r.feature) byslug.set(String(r.feature), r);
+    const out = known.map((k) => ({ ...k, row: byslug.get(k.slug) || null }));
+    const seen = new Set(known.map((k) => k.slug));
+    for (const [slug, row] of byslug) {
+      if (seen.has(slug)) continue;
+      out.push({ slug, title: slug.replace(/^(tab|action):/, ''), where: 'not in this build', row });
+    }
+    return out;
+  }
+
+  /** One row of the Sections or Actions table. */
+  function buildUsageRow(entry, active) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+    const r = entry.row;
+    const users30 = r ? Number(r.users30d) || 0 : 0;
+    if (!users30) li.setAttribute('data-cold', 'true');
+    li.append(
+      usageName(entry.title, entry.where, true),
+      usageNum(r ? r.usersToday : 0),
+      usageNum(r ? r.users7d : 0),
+      usageNum(users30),
+      usageNum(entry.metric === 'uses' ? (r ? r.uses30d : 0) : r ? r.minutes30d : 0),
+      usageShare(users30, active),
+    );
+    return li;
+  }
+
+  /** One row of the overlay table. */
+  function buildOverlayUsageRow(entry, active) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+    const r = entry.row;
+    const users30 = r ? Number(r.users30d) || 0 : 0;
+    if (!users30) li.setAttribute('data-cold', 'true');
+    // Single-line rows, unlike Sections and Actions: an overlay's label says
+    // everything there is to say about it, and reserving a second line on all
+    // twenty to carry nothing would be 300px of empty table.
+    li.append(
+      usageName(entry.title, ''),
+      usageNum(r ? r.usersToday : 0),
+      usageNum(r ? r.users7d : 0),
+      usageNum(users30),
+      usageNum(r ? r.obsUsers30d : 0),
+      usageNum(r ? r.ingameHours30d : 0),
+      usageShare(users30, active),
+    );
+    return li;
+  }
+
+  /**
+   * Pad a sparse daily series out to every day in the window.
+   *
+   * The RPC groups by day, so a day with no driving has no row at all. Drawing
+   * that series as-is closes the gap up and quietly redraws a quiet week as a
+   * busy one — the chart would show thirty bars whatever happened. A zero has
+   * to be drawn as a zero.
+   */
+  function fillDailyGaps(rows, windowDays) {
+    const byDay = new Map();
+    for (const r of rows) if (r && r.day) byDay.set(String(r.day), r);
+    const out = [];
+    const cursor = new Date();
+    cursor.setHours(12, 0, 0, 0); // midday, so a DST shift cannot skip a date
+    cursor.setDate(cursor.getDate() - (windowDays - 1));
+    for (let i = 0; i < windowDays; i += 1) {
+      const pad = (n) => String(n).padStart(2, '0');
+      const key = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`;
+      out.push(byDay.get(key) || { day: key, laps: 0, drivers: 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return out;
+  }
+
+  /** The laps-per-day chart. Same bars as the 14-day active-users chart. */
+  function renderAdminLapsChart(days) {
+    const chart = $('#adm-laps-chart');
+    const empty = $('#adm-laps-empty');
+    if (!chart) return;
+    chart.textContent = '';
+    if (!days.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const peak = days.reduce((m, d) => Math.max(m, d.laps || 0), 0);
+    days.forEach((entry, i) => {
+      const laps = entry.laps || 0;
+      const isPeak = peak > 0 && laps === peak;
+      const col = document.createElement('div');
+      col.className = 'weekbar';
+      col.setAttribute('data-peak', String(isPeak));
+      col.title = `${entry.day} — ${laps} lap${laps === 1 ? '' : 's'} from ${
+        entry.drivers || 0
+      } driver${entry.drivers === 1 ? '' : 's'}`;
+      const track = document.createElement('div');
+      track.className = 'weekbar__track';
+      const fill = document.createElement('div');
+      fill.className = 'weekbar__fill';
+      fill.style.height = peak > 0 ? `${Math.max(4, (laps / peak) * 100)}%` : '4%';
+      if (isPeak) {
+        const cap = document.createElement('span');
+        cap.className = 'weekbar__count';
+        cap.textContent = String(laps);
+        fill.append(cap);
+      }
+      track.append(fill);
+      const label = document.createElement('span');
+      label.className = 'weekbar__day';
+      // One label every five days, and the day of the MONTH rather than the
+      // weekday: thirty bars means four repeats of MON..SUN, which reads as
+      // decoration instead of as an axis. Every bar still names its own date
+      // in the tooltip.
+      label.textContent = i % 5 === 0 ? String(entry.day || '').slice(-2) : '';
+      col.append(track, label);
+      chart.append(col);
+    });
+  }
+
+  /**
+   * The whole Usage pane. `data` is null when the backend predates migration
+   * 0022 or the call failed, in which case every figure reads "—" and the
+   * tables stay empty — the same quiet degradation the corpus card takes.
+   */
+  function renderAdminUsage(data) {
+    const d = data || {};
+    const active = Number(d.activeMonth) || 0;
+    const laps = d.laps || {};
+    const catalog = window.APEX_FEATURE_CATALOG;
+
+    // ---- Laps ----
+    setText('#adm-laps-total', laps.total != null ? groupedNumber(laps.total) : '—');
+    setText(
+      '#adm-laps-total-sub',
+      laps.total != null
+        ? `${groupedNumber(laps.clean)} clean · ${groupedNumber(laps.drivers)} drivers all time`
+        : '',
+    );
+    setText('#adm-laps-km', laps.km != null ? `${groupedNumber(laps.km)} km` : '—');
+    setText(
+      '#adm-laps-km-sub',
+      laps.hours != null ? `${groupedNumber(laps.hours)} hours at the wheel` : '',
+    );
+    setText('#adm-laps-week', laps.week != null ? groupedNumber(laps.week) : '—');
+    setText(
+      '#adm-laps-week-sub',
+      laps.week != null
+        ? `${groupedNumber(laps.today)} today · ${groupedNumber(laps.driversWeek)} driver${
+            Number(laps.driversWeek) === 1 ? '' : 's'
+          } this week`
+        : '',
+    );
+    setText('#adm-usage-active', active ? groupedNumber(active) : '—');
+    const lapsDaily = Array.isArray(d.lapsDaily) ? d.lapsDaily : [];
+    renderAdminLapsChart(
+      lapsDaily.length ? fillDailyGaps(lapsDaily, Number(d.windowDays) || 30) : [],
+    );
+
+    const features = Array.isArray(d.features) ? d.features : [];
+    const overlays = Array.isArray(d.overlays) ? d.overlays : [];
+
+    // ---- Sections ----
+    const sectionsList = $('#adm-sections-list');
+    const sectionsEmpty = $('#adm-sections-empty');
+    if (sectionsList) {
+      sectionsList.textContent = '';
+      const tabs = catalog
+        ? catalog.TABS.map((t) => ({
+            slug: catalog.tabSlug(t.id),
+            title: t.label,
+            // A gated tab reads a low share for a reason that has nothing to do
+            // with the tab, so it says so rather than being quietly compared
+            // against a population that cannot see it.
+            where:
+              t.gated === 'beta'
+                ? 'beta channel only'
+                : t.gated === 'admin'
+                  ? 'league staff only'
+                  : '',
+            metric: 'minutes',
+          }))
+        : [];
+      const merged = mergeUsage(
+        tabs,
+        features.filter((f) => String(f.feature || '').startsWith('tab:')),
+      );
+      // Busiest first — but only among the ones with any use. The untouched
+      // sections keep their catalog order at the bottom, which reads as a list
+      // of candidates rather than an arbitrary shuffle of zeroes.
+      merged.sort((a, b) => (b.row ? b.row.users30d : -1) - (a.row ? a.row.users30d : -1));
+      for (const entry of merged) sectionsList.append(buildUsageRow(entry, active));
+      if (sectionsEmpty) sectionsEmpty.hidden = merged.some((m) => m.row);
+    }
+    setText(
+      '#adm-usage-note',
+      active ? `out of ${groupedNumber(active)} active drivers` : '',
+    );
+    const coldTabs = catalog
+      ? catalog.TABS.filter(
+          (t) => !features.some((f) => f.feature === catalog.tabSlug(t.id) && f.users30d > 0),
+        ).length
+      : 0;
+    const sectionsFoot = $('#adm-sections-foot');
+    if (sectionsFoot) {
+      sectionsFoot.hidden = !features.length;
+      sectionsFoot.textContent = coldTabs
+        ? `${coldTabs} section${coldTabs === 1 ? '' : 's'} nobody opened in 30 days.`
+        : 'Every section was opened by somebody in the last 30 days.';
+    }
+
+    // ---- Actions ----
+    const actionsList = $('#adm-actions-list');
+    if (actionsList) {
+      actionsList.textContent = '';
+      const acts = catalog
+        ? catalog.ACTIONS.map((a) => ({
+            slug: a.slug,
+            title: a.label,
+            where: a.tab ? catalog.labelFor(catalog.tabSlug(a.tab)) : 'Anywhere',
+            metric: 'uses',
+          }))
+        : [];
+      const merged = mergeUsage(
+        acts,
+        features.filter((f) => String(f.feature || '').startsWith('action:')),
+      );
+      merged.sort((a, b) => (b.row ? b.row.users30d : -1) - (a.row ? a.row.users30d : -1));
+      for (const entry of merged) actionsList.append(buildUsageRow(entry, active));
+    }
+    const coldActions = catalog
+      ? catalog.ACTIONS.filter(
+          (a) => !features.some((f) => f.feature === a.slug && f.users30d > 0),
+        ).length
+      : 0;
+    const actionsFoot = $('#adm-actions-foot');
+    if (actionsFoot) {
+      actionsFoot.hidden = !features.length;
+      actionsFoot.textContent = coldActions
+        ? `${coldActions} action${coldActions === 1 ? '' : 's'} nobody performed in 30 days — the shortlist worth asking about.`
+        : 'Every action was performed by somebody in the last 30 days.';
+    }
+
+    // ---- Overlays ----
+    const loads = overlays.reduce((n, o) => n + (Number(o.loads30d) || 0), 0);
+    const obsUsers = overlays.reduce((n, o) => Math.max(n, Number(o.obsUsers30d) || 0), 0);
+    const ingameHours = overlays.reduce((n, o) => n + (Number(o.ingameHours30d) || 0), 0);
+    const ingameUsers = overlays.reduce((n, o) => Math.max(n, Number(o.ingameUsers30d) || 0), 0);
+
+    const hist = Array.isArray(d.overlayCounts) ? d.overlayCounts : [];
+    const histDrivers = hist.reduce((n, h) => n + (Number(h.drivers) || 0), 0);
+    const histTotal = hist.reduce((n, h) => n + (Number(h.n) || 0) * (Number(h.drivers) || 0), 0);
+    setText('#adm-ov-avg', histDrivers ? (histTotal / histDrivers).toFixed(1) : '—');
+    setText(
+      '#adm-ov-avg-sub',
+      histDrivers
+        ? `on average, across ${groupedNumber(histDrivers)} driver${histDrivers === 1 ? '' : 's'} · 7d`
+        : '',
+    );
+    setText('#adm-ov-loads', overlays.length ? groupedNumber(loads) : '—');
+    setText(
+      '#adm-ov-loads-sub',
+      overlays.length
+        ? `${groupedNumber(obsUsers)} driver${obsUsers === 1 ? '' : 's'} running OBS sources`
+        : '',
+    );
+    setText('#adm-ov-ingame', overlays.length ? groupedNumber(ingameHours) : '—');
+    setText(
+      '#adm-ov-ingame-sub',
+      overlays.length
+        ? `${groupedNumber(ingameUsers)} driver${ingameUsers === 1 ? '' : 's'} on the in-game layer`
+        : '',
+    );
+
+    const ovList = $('#adm-overlays-list');
+    const ovEmpty = $('#adm-overlays-empty');
+    if (ovList) {
+      ovList.textContent = '';
+      // The overlay catalog is main's, not this file's: the labels, and the
+      // fact that a widget EXISTS at all, live with OVERLAY_CATALOG. Falling
+      // back to the ids keeps the table honest if the state has not arrived.
+      const known = (lastOverlays || []).map((o) => ({ slug: o.id, title: o.label || o.id }));
+      const byId = new Map();
+      for (const r of overlays) if (r && r.overlay) byId.set(String(r.overlay), r);
+      const merged = known.map((k) => ({ ...k, row: byId.get(k.slug) || null }));
+      // An id this build has no widget for — a fleet running something newer.
+      // It shows under its raw id, which is its own explanation.
+      for (const [id, row] of byId) {
+        if (known.some((k) => k.slug === id)) continue;
+        merged.push({ slug: id, title: id, row });
+      }
+      merged.sort((a, b) => (b.row ? b.row.users30d : -1) - (a.row ? a.row.users30d : -1));
+      for (const entry of merged) ovList.append(buildOverlayUsageRow(entry, active));
+      if (ovEmpty) ovEmpty.hidden = merged.some((m) => m.row);
+      const cold = merged.filter((m) => !m.row || !m.row.users30d).length;
+      const foot = $('#adm-overlays-foot');
+      if (foot) {
+        foot.hidden = !overlays.length;
+        foot.textContent = cold
+          ? `${cold} overlay${cold === 1 ? '' : 's'} nobody had switched on in 30 days.`
+          : 'Every overlay was switched on by somebody in the last 30 days.';
+      }
+    }
+
+    // ---- Overlays-per-driver histogram ----
+    const histList = $('#adm-ov-hist');
+    const histEmpty = $('#adm-ov-hist-empty');
+    if (histList) {
+      histList.textContent = '';
+      const peak = hist.reduce((m, h) => Math.max(m, Number(h.drivers) || 0), 0);
+      for (const h of hist) {
+        const li = document.createElement('li');
+        li.className = 'admin-bars__row';
+        const label = document.createElement('span');
+        label.className = 'admin-bars__label';
+        const n = Number(h.n) || 0;
+        label.textContent = `${n} overlay${n === 1 ? '' : 's'}`;
+        const track = document.createElement('span');
+        track.className = 'admin-bars__track';
+        const fill = document.createElement('span');
+        fill.className = 'admin-bars__fill';
+        const drivers = Number(h.drivers) || 0;
+        fill.style.width = peak ? `${Math.max(2, (drivers / peak) * 100)}%` : '0%';
+        track.append(fill);
+        const count = document.createElement('span');
+        count.className = 'admin-bars__count';
+        count.textContent = `${drivers} driver${drivers === 1 ? '' : 's'}`;
+        li.append(label, track, count);
+        histList.append(li);
+      }
+      if (histEmpty) histEmpty.hidden = hist.length > 0;
+    }
+
+    // ---- Straight from the database ----
+    const cloud = d.cloud || {};
+    const cloudList = $('#adm-cloud-list');
+    if (cloudList) {
+      cloudList.textContent = '';
+      // [label, today, 7d, drivers30d, allTime] — a null cell renders as "—",
+      // which is the honest answer for "all time" on a table that only keeps
+      // recent rows.
+      const rows = [
+        ['Race engineer questions', cloud.engineerToday, cloud.engineer7d, cloud.engineerDrivers30d, null],
+        ['Shared setups downloaded', null, cloud.setupDownloads7d, cloud.setupDrivers30d, null],
+        ['Setups on the board', null, null, null, cloud.setupsLive],
+        ['Leaderboard laps', null, null, cloud.boardDrivers30d, cloud.boardLaps],
+        ['Lap traces (Review)', null, null, cloud.traceDrivers30d, cloud.traces],
+        ['Web pit wall publishers', null, cloud.relayDrivers7d, null, null],
+      ];
+      for (const [label, today, week, drivers, all] of rows) {
+        const li = document.createElement('li');
+        li.className = 'admin-row';
+        const dash = (v) => {
+          if (v == null) {
+            const s = document.createElement('span');
+            s.className = 'admin-row__num';
+            s.setAttribute('data-dim', 'true');
+            s.textContent = '—';
+            return s;
+          }
+          return usageNum(v);
+        };
+        li.append(usageName(label, ''), dash(today), dash(week), dash(drivers), dash(all));
+        cloudList.append(li);
+      }
     }
   }
 
@@ -5157,7 +5655,12 @@
       const btn = ev.target.closest && ev.target.closest('[data-sk-url]');
       if (!btn) return;
       const url = btn.getAttribute('data-sk-url');
-      if (url) window.apex.openInBrowser(url);
+      if (!url) return;
+      // Leaving for SimGrid is the last thing this app sees of a signup, so it
+      // is the honest place to count one — the same bargain copyUrl() takes
+      // with an OBS Browser Source.
+      CATALOG?.note('action:schedule.signup');
+      window.apex.openInBrowser(url);
     });
   }
 
@@ -5209,9 +5712,83 @@
    * markup no longer carries `hidden`. Fuel deliberately stays gated.
    */
 
+  /* ---- Usage counters ----------------------------------------------------
+   *
+   * The panel's half of the analytics in migration 0022. Two rules:
+   *
+   *   1. it is one line at the call site, because instrumentation that takes
+   *      more than that stops being added;
+   *   2. it can never throw. `window.apex.usage` is absent in the screenshot
+   *      harness (__shot-stub.js) and in any browser the panel is opened in
+   *      for design work, and a missing counter must not take the tab router
+   *      down with it.
+   *
+   * Slugs come from feature-catalog.js — see the note there about never
+   * renaming one.
+   */
+  const CATALOG = window.APEX_FEATURE_CATALOG || null;
+
+  function noteUsage(slug, opts) {
+    try {
+      window.apex?.usage?.feature(slug, opts);
+    } catch {
+      /* counters are never load-bearing */
+    }
+  }
+
+  /** The tab currently on screen, and when it arrived, for the dwell count. */
+  let usageTab = null;
+  let usageTabAt = 0;
+  /** The last tab showView() settled on — re-armed when the window comes back. */
+  let lastShownView = null;
+
+  /** Start the clock on a tab, counting the arrival. */
+  function startUsageTab(name) {
+    usageTab = name;
+    usageTabAt = Date.now();
+  }
+
+  /**
+   * Credit the tab being left with the seconds it was on screen.
+   *
+   * Dwell is what separates a tab someone LIVES in from one they land on by
+   * accident, and arrivals alone cannot tell those apart — Dashboard wins on
+   * arrivals simply by being where the app opens.
+   *
+   * Anything over an hour is dropped rather than clamped: a panel left open
+   * overnight is not an hour of use, and one such row would dominate the
+   * average for every honest one.
+   */
+  function closeUsageTab() {
+    if (!usageTab || !usageTabAt) return;
+    const seconds = Math.round((Date.now() - usageTabAt) / 1000);
+    if (seconds > 0 && seconds <= 3600) {
+      noteUsage(CATALOG ? CATALOG.tabSlug(usageTab) : `tab:${usageTab}`, {
+        uses: 0,
+        seconds,
+      });
+    }
+    usageTab = null;
+    usageTabAt = 0;
+  }
+
+  // A panel that is closed, minimised or simply left is the same thing to the
+  // dwell count: stop the clock. Without this, quitting on the Review tab
+  // credits it with every second until the process dies.
+  window.addEventListener('pagehide', closeUsageTab);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') closeUsageTab();
+    else if (usageTab === null && lastShownView) startUsageTab(lastShownView);
+  });
+
   function showView(name) {
     const known = views.some((v) => v.dataset.view === name);
     const target = known ? name : 'dashboard';
+    // Before anything moves: the tab being left is owed its seconds.
+    closeUsageTab();
+    noteUsage(CATALOG ? CATALOG.tabSlug(target) : `tab:${target}`);
+    startUsageTab(target);
+    lastShownView = target;
     for (const view of views) {
       view.setAttribute('data-active', String(view.dataset.view === target));
     }
@@ -5822,7 +6399,10 @@
       chatYtStatus.textContent = 'Opening browser… complete sign-in there.';
       try {
         const res = await window.apex.chatLink.linkYouTube();
-        if (res && res.ok) renderChatState(res.state);
+        if (res && res.ok) {
+          CATALOG?.note('action:stream.link');
+          renderChatState(res.state);
+        }
         else chatYtStatus.textContent = (res && res.error) || 'Linking failed.';
       } finally {
         chatYtLink.disabled = false;
@@ -5848,8 +6428,10 @@
       chatTwStatus.textContent = 'Opening browser… enter the code shown below.';
       try {
         const res = await window.apex.chatLink.linkTwitch();
-        if (res && res.ok) renderChatState(res.state);
-        else chatTwStatus.textContent = (res && res.error) || 'Linking failed.';
+        if (res && res.ok) {
+          CATALOG?.note('action:stream.link');
+          renderChatState(res.state);
+        } else chatTwStatus.textContent = (res && res.error) || 'Linking failed.';
       } finally {
         chatTwLink.disabled = false;
       }
@@ -6325,6 +6907,8 @@
   if (sbEnabled) {
     sbEnabled.addEventListener('change', () => {
       if (!bot) return;
+      // On only, same reasoning as the in-game layer's toggle.
+      if (sbEnabled.checked) CATALOG?.note('action:stream.bot');
       bot.enabled = sbEnabled.checked;
       renderBotStatus();
       void window.apex.streamBot.setEnabled(sbEnabled.checked);
@@ -6705,7 +7289,12 @@
         updateAction.hidden = false;
         updateAction.disabled = false;
         updateAction.textContent = 'Restart & update';
-        updateAction.onclick = () => window.apex.installUpdate();
+        updateAction.onclick = () => {
+          // Counted before the quit, obviously — and it lands on disk with the
+          // rest of the day either way, because will-quit flushes the store.
+          CATALOG?.note('action:app.update');
+          window.apex.installUpdate();
+        };
         break;
       case 'error':
         // Stay quiet on background errors (offline, no releases yet).

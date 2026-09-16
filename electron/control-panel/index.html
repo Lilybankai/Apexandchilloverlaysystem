@@ -2277,6 +2277,9 @@
           <button type="button" data-adminpane="overview" data-active="true">
             <svg class="icon"><use href="#i-activity" /></svg><span>Overview</span>
           </button>
+          <button type="button" data-adminpane="usage">
+            <svg class="icon"><use href="#i-gauge" /></svg><span>Usage</span>
+          </button>
           <button type="button" data-adminpane="members">
             <svg class="icon"><use href="#i-users" /></svg><span>Members</span>
           </button>
@@ -2455,6 +2458,209 @@
         </section>
 
         </div><!-- /overview -->
+
+        <!-- -------------------------- USAGE --------------------------- -->
+        <!-- What the app is actually USED for (migration 0022).
+             Overview answers "is the system healthy?"; this answers "which of
+             the things we built is anyone touching?" — the question a roadmap
+             is drawn from, and the one the panel could not answer at all until
+             the feature counters shipped.
+
+             Every table here lists what the app CAN do and then fills in what
+             arrived, rather than listing what arrived. A pane built the other
+             way round can never show you the feature nobody found. -->
+        <div class="admin-pane" data-adminpane="usage">
+
+        <!-- Laps: the one number that is about the product working rather than
+             about the panel being clicked. Sourced from driver_activity_days,
+             so it is complete back to the first release — no client version
+             gates any of these four. -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-circuit" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Laps driven · all time</span>
+                <span class="stat__value" id="adm-laps-total">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-laps-total-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-gauge" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Distance covered</span>
+                <span class="stat__value" id="adm-laps-km">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-laps-km-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-activity" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Laps this week</span>
+                <span class="stat__value" id="adm-laps-week">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-laps-week-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-users" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Drivers · 30 days</span>
+                <span class="stat__value" id="adm-usage-active">—</span>
+              </span>
+            </span>
+            <span class="stat__sub">every percentage below is out of this</span>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-circuit" /></svg>Laps driven · 30 days</h2>
+          </div>
+          <div class="weekchart weekchart--dense" id="adm-laps-chart"></div>
+          <p class="weekempty" id="adm-laps-empty" hidden>No laps recorded yet.</p>
+        </section>
+
+        <!-- Sections. One row per TAB in the app, whether or not anyone has
+             opened it. `Share` is the bar a roadmap actually reads: what
+             fraction of the drivers who opened the app at all went here. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-layout-grid" /></svg>Sections · who goes where</h2>
+            <span class="admin-count" id="adm-usage-note"></span>
+          </div>
+          <div class="admin-table__head admin-table__head--usage">
+            <span>Section</span>
+            <span title="Distinct drivers who opened it today">Today</span>
+            <span title="Distinct drivers who opened it in the last 7 days">7d</span>
+            <span title="Distinct drivers who opened it in the last 30 days">30d</span>
+            <span title="Total minutes it was the section on screen, across every driver, over 30 days">Minutes</span>
+            <span title="Share of the drivers who opened the app at all in 30 days">Share</span>
+          </div>
+          <ul class="admin-table admin-table--usage" id="adm-sections-list"></ul>
+          <p class="weekempty" id="adm-sections-empty" hidden>
+            Nothing reported yet. Rows arrive as drivers update to a build that carries the counters.
+          </p>
+          <p class="admin-foot" id="adm-sections-foot" hidden></p>
+        </section>
+
+        <!-- Actions. The same table for the things a driver DOES, because
+             arriving on Setups says nothing about whether anyone published
+             one — and that gap is the whole reason this pane exists. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-target" /></svg>Actions · what they actually do</h2>
+          </div>
+          <div class="admin-table__head admin-table__head--usage">
+            <span>Action</span>
+            <span title="Distinct drivers who did it today">Today</span>
+            <span title="Distinct drivers in the last 7 days">7d</span>
+            <span title="Distinct drivers in the last 30 days">30d</span>
+            <span title="How many times, in total, over 30 days">Times</span>
+            <span title="Share of the drivers who opened the app at all in 30 days">Share</span>
+          </div>
+          <ul class="admin-table admin-table--usage" id="adm-actions-list"></ul>
+          <p class="admin-foot" id="adm-actions-foot" hidden></p>
+        </section>
+
+        <!-- Overlays. Three different facts per widget, deliberately: switched
+             on (intent), loaded by an OBS source (on a stream), and carried by
+             the in-game layer (on a sim rig). Ranking on any one alone gives
+             the wrong answer — see the table comment in migration 0022. -->
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-layout-grid" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Overlays per driver</span>
+                <span class="stat__value" id="adm-ov-avg">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ov-avg-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-video" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">OBS source loads · 30d</span>
+                <span class="stat__value" id="adm-ov-loads">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ov-loads-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-monitor" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">In-game hours · 30d</span>
+                <span class="stat__value" id="adm-ov-ingame">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ov-ingame-sub"></span>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-monitor" /></svg>Overlays · most and least used</h2>
+          </div>
+          <div class="admin-table__head admin-table__head--overlay">
+            <span>Overlay</span>
+            <span title="Drivers with it switched on today">Today</span>
+            <span title="Drivers with it switched on in the last 7 days">7d</span>
+            <span title="Drivers with it switched on in the last 30 days">On</span>
+            <span title="Drivers whose OBS browser source loaded it — this is the one that means it is on a stream">OBS</span>
+            <span title="Total hours the in-game layer carried it, across every driver">In-game</span>
+            <span title="Share of the drivers who opened the app at all in 30 days">Share</span>
+          </div>
+          <ul class="admin-table admin-table--overlay" id="adm-overlays-list"></ul>
+          <p class="weekempty" id="adm-overlays-empty" hidden>
+            Nothing reported yet. Rows arrive as drivers update to a build that carries the counters.
+          </p>
+          <p class="admin-foot" id="adm-overlays-foot" hidden></p>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-list-ordered" /></svg>How many overlays at once · 7 days</h2>
+          </div>
+          <ul class="admin-bars admin-bars--wide" id="adm-ov-hist"></ul>
+          <p class="weekempty" id="adm-ov-hist-empty" hidden>No overlay data yet.</p>
+          <p class="admin-foot">
+            One bar per "this many overlays switched on", counting each driver once.
+            A tall bar on the far right is a fleet running the lot; a tall bar on the
+            left is a fleet that picked two and ignored the rest.
+          </p>
+        </section>
+
+        <!-- Counted from the tables the features themselves write, so these
+             need no app update to be true — they were already there, just
+             never shown anywhere. -->
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-database" /></svg>Straight from the database</h2>
+          </div>
+          <div class="admin-table__head admin-table__head--cloud">
+            <span>Feature</span>
+            <span>Today</span>
+            <span>7 days</span>
+            <span>Drivers · 30d</span>
+            <span>All time</span>
+          </div>
+          <ul class="admin-table admin-table--cloud" id="adm-cloud-list"></ul>
+          <p class="admin-foot">
+            These come from what each feature stores, not from the usage counters,
+            so they are complete back to the first release rather than starting the
+            day the fleet updates.
+          </p>
+        </section>
+
+        </div><!-- /usage -->
 
         <!-- ------------------------- MEMBERS -------------------------- -->
         <div class="admin-pane" data-adminpane="members">
@@ -3377,6 +3583,11 @@
 <!-- Toast for copy confirmation -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<!-- Feature catalog: the slug list every panel reports usage under, and the
+     `note()` one-liner they report through. Before control-panel.js, which
+     reads it as its tab router is wired. Pure data + one guarded call; see
+     migration 0022 for what the counters become. -->
+<script src="feature-catalog.js"></script>
 <script src="control-panel.js"></script>
 <!-- Setup editor: three data files (pure lookup tables), then the editor.
      After control-panel.js so the tab router exists before apexSetup does —

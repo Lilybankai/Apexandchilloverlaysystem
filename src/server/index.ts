@@ -467,6 +467,84 @@ export function setChatTwitchAuthErrorHandler(cb: (() => void) | null): void {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Overlay page loads — "is this widget actually on a stream?"                */
+/* -------------------------------------------------------------------------- */
+
+/** Which overlay page a request was for, and which widgets it carries. */
+export interface OverlayLoad {
+  /**
+   * `combined` — the all-in-one page at `/`, which renders every ENABLED
+   *              widget, so the server cannot name them: the desktop app
+   *              resolves this against its own settings.
+   * `widget`   — `/widget.html?w=<id>`, one widget, named in `widgets`.
+   * `ingame`   — `/ingame.html?widgets=a,b,c`. This is OUR OWN window, not an
+   *              OBS source, and the desktop app counts it as time on screen
+   *              rather than as a browser-source load.
+   */
+  page: 'combined' | 'widget' | 'ingame';
+  /** Widget ids the URL names. Empty for `combined`. */
+  widgets: string[];
+}
+
+/** Handler run when an overlay page is fetched — set by the desktop app. */
+let overlayLoadHandler: ((load: OverlayLoad) => void) | null = null;
+
+/**
+ * Register a callback for "something loaded an overlay page".
+ *
+ * This is the only honest measure of whether a widget is USED rather than
+ * merely switched on: a fresh install enables all twenty, and the ones that
+ * matter are the ones an OBS browser source actually fetches. It lives here
+ * because the HTTP server is the only thing that sees those fetches, and it
+ * reports rather than counts because the server has no idea who is signed in.
+ *
+ * Deliberately fire-and-forget and wrapped at the call site: a counter must
+ * never be able to fail a request for an overlay that is about to go live.
+ */
+export function setOverlayLoadHandler(cb: ((load: OverlayLoad) => void) | null): void {
+  overlayLoadHandler = cb;
+}
+
+/**
+ * Classify one request URL as an overlay page load, or `null` if it is an
+ * asset, an API call or anything else.
+ *
+ * Exported for scripts/test-usage.js — the parsing is the part with the edge
+ * cases (a missing query, an unknown widget name, a path with a query glued to
+ * it), and it is far easier to prove against a table of URLs than through a
+ * live server.
+ */
+export function classifyOverlayLoad(rawUrl: string): OverlayLoad | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl || '/', 'http://localhost');
+  } catch {
+    return null;
+  }
+  const p = url.pathname;
+  if (p === '/' || p === '/index.html') return { page: 'combined', widgets: [] };
+  if (p === '/ingame.html') {
+    return { page: 'ingame', widgets: splitWidgetList(url.searchParams.get('widgets')) };
+  }
+  if (p === '/widget.html') {
+    const w = (url.searchParams.get('w') || '').trim().toLowerCase();
+    // A `?w=` that names nothing renders the page's own "valid names" help,
+    // which is not a widget being used.
+    return w ? { page: 'widget', widgets: [w] } : null;
+  }
+  return null;
+}
+
+/** `a,b,,c` → `['a','b','c']`, lower-cased and bounded. */
+function splitWidgetList(value: string | null): string[] {
+  return (value || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 64);
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Stream bot — commands / timers / alerts / goals on the merged chat feed    */
 /* -------------------------------------------------------------------------- */
 
@@ -799,6 +877,18 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       }
       void serveCarBadge(res, rawPath, config.lmuApiPort);
       return;
+    }
+    // Report overlay page loads before serving, so a widget that is on a
+    // stream can be told apart from one that is merely switched on. Guarded
+    // and ignored on failure: this is a counter, and nothing about it may cost
+    // an overlay its frame.
+    if (overlayLoadHandler) {
+      try {
+        const load = classifyOverlayLoad(req.url ?? '/');
+        if (load) overlayLoadHandler(load);
+      } catch {
+        /* a usage counter must never break a request */
+      }
     }
     void serveStatic(req, res, overlayRoot, sponsorRoot, config.sponsorIntervalSec);
   });

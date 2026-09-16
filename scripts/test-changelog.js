@@ -197,6 +197,74 @@ console.log('\nentriesSince — what a driver missed');
 }
 
 /* -------------------------------------------------------------------------- */
+console.log('\nInternal releases — in the record, out of the popup');
+/* -------------------------------------------------------------------------- */
+
+/*
+ * An `<!-- internal -->` line marks a release with nothing in it for drivers
+ * (admin-only work, a migration, tooling). It still gets a full entry, because
+ * the repo and the GitHub release page are the record and check-changelog.js
+ * enforces that; what it loses is the What's New panel.
+ *
+ * Both halves of that are silent when they break. A marker that stops being
+ * recognised shows every driver a popup about a tab they cannot open; one that
+ * matches too eagerly hides a release people needed to read about. Neither
+ * raises anything.
+ */
+{
+  const marked = cl.parseChangelog(
+    ['## 1.2.3 — 2026-01-01', '<!-- internal -->', '', '### Added', '', '- A thing.', ''].join('\n'),
+  )[0];
+  check('an entry carrying the marker is internal', marked.internal === true);
+  check('and keeps its content', marked.blocks.length === 2, marked.blocks.length);
+  check(
+    'the marker itself never becomes a block',
+    !/<!--/.test(JSON.stringify(marked.blocks)),
+    JSON.stringify(marked.blocks).slice(0, 60),
+  );
+
+  const plain = cl.parseChangelog(
+    ['## 1.2.4 — 2026-01-02', '', '### Added', '', '- A thing.', ''].join('\n'),
+  )[0];
+  check('an ordinary entry is not internal', plain.internal === false);
+
+  // Spacing and case are the kind of thing a human gets wrong in a file they
+  // hand-edit once every few months.
+  for (const line of ['<!--internal-->', '<!--   internal   -->', '<!-- INTERNAL -->']) {
+    const e = cl.parseChangelog(['## 1.2.5 — 2026-01-03', line, '', '- x.'].join('\n'))[0];
+    check(`marker tolerated: ${line}`, e.internal === true);
+  }
+  // But it has to be the whole line: a bullet that merely TALKS about the
+  // marker (this release's own notes do exactly that) must not be swallowed.
+  const quoting = cl.parseChangelog(
+    ['## 1.2.6 — 2026-01-04', '', '- An `<!-- internal -->` line hides the popup.', ''].join('\n'),
+  )[0];
+  check('prose quoting the marker is not internal', quoting.internal === false);
+  check('and that bullet survives', quoting.blocks.length === 1, quoting.blocks.length);
+
+  // The filter changelog:pending applies. An upgrade that spans an internal
+  // release AND a real one must still show the real one — silently swallowing
+  // both would be the worse bug of the two.
+  const list = [
+    { version: '0.9.3', internal: false, blocks: [] },
+    { version: '0.9.2', internal: true, blocks: [] },
+    { version: '0.9.1', internal: false, blocks: [] },
+  ];
+  const onlyInternal = cl.entriesSince(list, '0.9.1', '0.9.2').filter((e) => !e.internal);
+  check('an internal-only update shows no panel', onlyInternal.length === 0, onlyInternal.length);
+  const spanning = cl.entriesSince(list, '0.9.1', '0.9.3').filter((e) => !e.internal);
+  check(
+    'a span containing one still shows the rest',
+    spanning.map((e) => e.version).join(',') === '0.9.3',
+    spanning.map((e) => e.version).join(','),
+  );
+  check(
+    'the full history keeps internal entries (the footer shows everything)',
+    cl.entriesSince(list, '', '0.9.3').length === 3,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 console.log('\nThe real CHANGELOG.md');
 /* -------------------------------------------------------------------------- */
 

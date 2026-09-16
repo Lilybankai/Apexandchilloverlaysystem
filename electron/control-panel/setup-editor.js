@@ -627,6 +627,10 @@
 
   async function writeKey(key, value) {
     if (writesFrozen) return;
+    // "Someone edited a setup in the garage" — the one signal that says the
+    // editor is doing its job, as opposed to being opened and looked at. Every
+    // control funnels through here, so once is enough.
+    window.APEX_FEATURE_CATALOG?.note('action:setup.edit');
     markDirtyLocal(key);
     let res = null;
     try {
@@ -1725,6 +1729,7 @@
         res = null;
       }
       if (res && res.ok) {
+        window.APEX_FEATURE_CATALOG?.note('action:setup.download');
         if (!row.downloaded && !row.mine) row.downloads += 1;
         row.downloaded = true;
         getBtn.textContent = res.inGame ? 'In the game ✓' : 'In library ✓';
@@ -1913,11 +1918,22 @@
     }
   }
 
-  elComTrack.addEventListener('change', renderCommunityList);
-  elComCar.addEventListener('change', renderCommunityList);
-  elComClass.addEventListener('change', renderCommunityList);
-  elComSort.addEventListener('change', renderCommunityList);
-  elComRefresh.addEventListener('click', () => void refreshCommunity());
+  /*
+   * `action:setup.browse` hangs off the FILTERS, not off the list being loaded.
+   *
+   * refreshCommunity() runs once on every arrival at the tab (shown()), so
+   * counting there would have made "browsed shared setups" an exact copy of
+   * "opened the Setups tab" — two rows in the admin pane saying one thing.
+   * Touching a filter or asking for a refresh is someone actually looking for
+   * a setup, which is the thing worth knowing.
+   */
+  const browsed = () => window.APEX_FEATURE_CATALOG?.note('action:setup.browse');
+
+  elComTrack.addEventListener('change', () => { browsed(); renderCommunityList(); });
+  elComCar.addEventListener('change', () => { browsed(); renderCommunityList(); });
+  elComClass.addEventListener('change', () => { browsed(); renderCommunityList(); });
+  elComSort.addEventListener('change', () => { browsed(); renderCommunityList(); });
+  elComRefresh.addEventListener('click', () => { browsed(); void refreshCommunity(); });
   elComFollow.addEventListener('change', () => {
     try {
       localStorage.setItem(COM_FOLLOW_KEY, elComFollow.checked ? 'on' : 'off');
@@ -2085,6 +2101,7 @@
       res = null;
     }
     if (res && res.ok) {
+      window.APEX_FEATURE_CATALOG?.note('action:setup.publish');
       elPubPop.hidden = true;
       void refreshCommunity();
     } else {

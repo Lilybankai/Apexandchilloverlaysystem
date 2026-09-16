@@ -41,6 +41,7 @@ const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
+const featureUsage = require('./featureUsage');
 const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
@@ -858,6 +859,33 @@ function saveSettings(settings) {
     console.error('[app] failed to save settings:', err.message);
   }
   publishLmuRoot(settings);
+  // Every path that changes an overlay's on/off state ends here, so this is
+  // the one place the day's enabled set has to be restated.
+  reportEnabledOverlays(settings);
+}
+
+/**
+ * Tell the usage counters which overlays are switched on today.
+ *
+ * "Switched on" is the union of the two surfaces, because they are the same
+ * decision to a driver: an overlay in the OBS set OR in the in-game set is one
+ * the driver wants. Counting them separately would report the in-game-only
+ * majority as having nothing enabled at all.
+ *
+ * ORed into the day by the store, so calling this on every settings save is
+ * correct rather than merely cheap — a card toggled off at 9pm still counts
+ * for the evening it was used.
+ */
+function reportEnabledOverlays(settings) {
+  try {
+    const s = settings || loadSettings();
+    const ids = OVERLAY_CATALOG.filter(
+      (o) => s.enabledOverlays[o.id] !== false || (s.ingameEnabled && isIngame(s, o)),
+    ).map((o) => o.id);
+    featureUsage.overlaysEnabled(ids);
+  } catch {
+    /* a counter must never be the thing that fails a settings save */
+  }
 }
 
 /**
@@ -1702,7 +1730,14 @@ function getActions() {
     actions = createActions({
       loadSettings,
       applySettings,
-      engineerAsk: () => getEngineer().ask(),
+      // Counted here rather than inside engineer.js so the engineer module
+      // stays a self-contained unit with no analytics dependency — and because
+      // this is the one place BOTH routes in (a wheel button and the panel's
+      // IPC) already meet.
+      engineerAsk: () => {
+        featureUsage.feature('action:engineer.ask');
+        return getEngineer().ask();
+      },
       engineerSpeak: (intent) => getEngineer().speakIntent(intent),
       cycleIngame,
       toggleIngameInteract,
@@ -2377,6 +2412,53 @@ function applyIngameVisibility(settings) {
   // input from the game even for the moment it appears.
   if (want) overlayWin.showInactive();
   else overlayWin.hide();
+}
+
+/* -------------------------------------------------------------------------- */
+/*  In-game layer: time on screen, per widget                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How often the in-game layer's time on screen is credited to its widgets.
+ *
+ * A minute, deliberately. The number this feeds is "hours on screen over the
+ * last 30 days", which a second's resolution would not improve, and the tick
+ * runs on the same main thread that composites every overlay frame — the one
+ * place in this app where a needless timer has already cost real stalls (see
+ * electron/stall-watch.js). One cheap visibility check a minute is the whole
+ * cost.
+ *
+ * It also means the worst rounding error is 60 seconds per layer session,
+ * always in the direction of under-reporting.
+ */
+const INGAME_USAGE_TICK_MS = 60 * 1000;
+
+let ingameUsageTimer = null;
+
+/**
+ * Credit a minute of screen time to every widget in the in-game set, whenever
+ * the layer is genuinely up.
+ *
+ * "Genuinely up" means the window exists AND is visible — not merely that the
+ * driver armed the layer. With auto show/hide on (the default) the layer is
+ * hidden on every one of the sim's own screens, and counting armed time would
+ * report a widget as having been watched through an eight-hour garage session
+ * it was never once drawn in.
+ */
+function startIngameUsageTicker() {
+  if (ingameUsageTimer) return;
+  ingameUsageTimer = setInterval(() => {
+    try {
+      if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+      const settings = loadSettings();
+      if (!settings.ingameEnabled) return;
+      const ids = OVERLAY_CATALOG.filter((o) => isIngame(settings, o)).map((o) => o.id);
+      featureUsage.overlaysOnScreen(ids, INGAME_USAGE_TICK_MS / 1000);
+    } catch {
+      /* a counter must never be the thing that stops the layer */
+    }
+  }, INGAME_USAGE_TICK_MS);
+  if (ingameUsageTimer.unref) ingameUsageTimer.unref();
 }
 
 /**
@@ -3810,6 +3892,44 @@ function registerIpc() {
   });
 
   /**
+   * Feature + overlay analytics (migration 0022): what the app is used FOR.
+   *
+   * `days` sizes the daily series only; the headline windows are fixed at
+   * today / 7d / 30d server-side. Aggregates only, like every other admin read
+   * here — there is no RPC that returns one driver's usage.
+   */
+  ipcMain.handle('admin:analytics', async (_evt, query) => {
+    const days = Number((query || {}).days);
+    const res = await authService.rpc('admin_feature_analytics', {
+      p_days: Number.isFinite(days) ? Math.min(90, Math.max(7, Math.round(days))) : 30,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || {} };
+  });
+
+  /**
+   * One feature counter from the panel. Fire-and-forget (`ipcMain.on`, not
+   * `handle`) because the renderer has nothing to do with the answer and a tab
+   * switch must not wait on a disk write. The store clamps and validates; this
+   * only has to keep an obviously malformed payload out of it.
+   */
+  ipcMain.on('usage:feature', (_evt, payload) => {
+    try {
+      const p = payload || {};
+      if (typeof p.feature !== 'string' || !p.feature) return;
+      featureUsage.feature(p.feature, { uses: p.uses, seconds: p.seconds });
+    } catch {
+      /* a counter must never be the thing that breaks a click */
+    }
+  });
+
+  /**
    * The strategy corpus (migration 0015): how many pit stops and consumption
    * laps have landed from every driver, and per class/track where it is deep
    * enough to fit. Aggregates only — the RPC never returns a row.
@@ -4082,7 +4202,10 @@ function registerIpc() {
   });
   ipcMain.handle('engineer:preview', (_evt, voiceId) => getEngineer().preview(String(voiceId)));
   ipcMain.handle('engineer:test', () => getEngineer().test());
-  ipcMain.handle('engineer:ask', () => getEngineer().ask());
+  ipcMain.handle('engineer:ask', () => {
+    featureUsage.feature('action:engineer.ask');
+    return getEngineer().ask();
+  });
   ipcMain.handle('engineer:downloadStt', async () => {
     try {
       await getEngineer().downloadStt();
@@ -4666,10 +4789,19 @@ function setupChangelogIpc() {
       return { show: false, current, from: seen, entries: [] };
     }
 
-    const missed = changelog.entriesSince(entries(), seen, current);
-    // An update whose notes we cannot read (older CHANGELOG, hand-edited file)
-    // shows nothing rather than an empty box; the version is recorded anyway so
-    // it does not ask again on every launch.
+    // Entries marked `<!-- internal -->` are dropped here, and only here: an
+    // admin-only or backend-only release is still a real release with a real
+    // section in CHANGELOG.md and real notes on its GitHub page — it just has
+    // nothing to say to a driver, and a What's New popup about a tab they
+    // cannot open is a notification with nothing in it for them.
+    //
+    // Filtered AFTER entriesSince rather than inside it, because "what did I
+    // miss" is also asked by the full history in the footer, which shows
+    // everything. See INTERNAL_MARK in electron/changelog.js.
+    const missed = changelog.entriesSince(entries(), seen, current).filter((e) => !e.internal);
+    // An update whose notes we cannot read (older CHANGELOG, hand-edited file),
+    // or one that was internal-only, shows nothing rather than an empty box;
+    // the version is recorded anyway so it does not ask again on every launch.
     if (!missed.length) {
       saveSettings({ ...settings, lastSeenVersion: current });
       return { show: false, current, from: seen, entries: [] };
@@ -5228,6 +5360,26 @@ app.whenReady().then(async () => {
   // Before createWindow(): whether a session is remembered decides which page
   // the window opens on.
   authService.init(app.getPath('userData'));
+  /*
+   * The feature counters start here rather than inside the auth chain below,
+   * unlike the session heartbeat beside them. init() LOADS the store, so
+   * anything counted before it ran would be wiped by that load — and the panel
+   * starts reporting tab arrivals the moment the window opens, which is well
+   * before a remembered token has been refreshed.
+   *
+   * Starting early costs nothing: the first flush is five minutes away, by
+   * which time the token has landed, and a flush that finds no session simply
+   * leaves the day on disk for the next one.
+   */
+  featureUsage.init({
+    userDataDir: app.getPath('userData'),
+    auth: authService,
+    appVersion: app.getVersion(),
+  });
+  // State, not an event: a driver who changes nothing all week still has a set
+  // of overlays switched on, and a launch is the only moment that is certain
+  // to observe it. saveSettings() restates it on every change after this.
+  reportEnabledOverlays();
   // Before createWindow() too: initialPage() reads the cached entitlement.
   billingService.init({
     userDataDir: app.getPath('userData'),
@@ -5347,9 +5499,24 @@ app.whenReady().then(async () => {
       onQuotaUsed: (n) => streamBot.noteQuotaUsed(n),
       onGoalChanged: (goalId, current) => streamBot.noteGoalChanged(goalId, current),
     });
+    // Which overlays an OBS browser source actually fetched. The server sees
+    // the request and nothing else; resolving the combined page at `/` into a
+    // widget list needs this side's settings, and skipping our own in-game
+    // window needs to know that it is ours.
+    requireServer().setOverlayLoadHandler((load) => {
+      if (!load || load.page === 'ingame') return; // ours, counted by the ticker
+      const settings = loadSettings();
+      const ids =
+        load.page === 'combined'
+          ? OVERLAY_CATALOG.filter((o) => settings.enabledOverlays[o.id] !== false).map((o) => o.id)
+          : load.widgets;
+      featureUsage.overlaysLoaded(ids);
+    });
   } catch (err) {
     /* server not built — the standalone path doesn't use chatLink anyway */
   }
+
+  startIngameUsageTicker();
 
   if (process.env.APEX_SHOT) {
     setTimeout(() => void captureWindowsAndQuit(process.env.APEX_SHOT), 3500);
@@ -5369,6 +5536,9 @@ app.on('window-all-closed', async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Flush the day's counters to disk. Not to the cloud: quit is no place for a
+  // network round trip, and the next launch offers the same day again for free.
+  featureUsage.shutdown();
   // Release the DirectInput devices; leaving them acquired holds COM objects
   // alive past process teardown.
   if (gamepad) gamepad.close();

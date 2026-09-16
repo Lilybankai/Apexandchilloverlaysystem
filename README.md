@@ -360,20 +360,71 @@ what is on screen. The write is idempotent on a per-run session id (the server
 keeps the later `last_seen`), like the lap uploader, so a dropped or repeated beat
 costs nothing. It is signed-in only, by design.
 
+**Usage** (the pane, v0.99.11) answers the question the heartbeat above cannot:
+not *whether* the app was open, but **what it was used for**. Three tables, and
+each one starts from what the app CAN do and then fills in what arrived — a pane
+assembled the other way round, one row per thing that was reported, is
+structurally incapable of showing you the feature nobody found, which is the
+only kind of row worth acting on. So a section nobody opened, an action nobody
+performed and an overlay nobody switched on all still get a row, reading zero
+and dimmed, and each table footer names how many of those there are.
+
+- **Sections** — one row per tab: distinct drivers today / 7d / 30d, total
+  minutes on screen, and a share bar measured against everyone who opened the
+  app at all in 30 days. Dwell matters as much as arrivals: Dashboard wins on
+  arrivals simply by being where the app opens.
+- **Actions** — the things a driver *does*, because arriving on Setups says
+  nothing about whether anyone published one.
+- **Overlays** — three separate facts per widget, deliberately: switched **on**
+  (intent), loaded by an **OBS** browser source (it is on a stream), and hours
+  carried by the **in-game** layer (it is on a sim rig). Ranking on any one
+  alone gives the wrong answer — a fresh install enables all twenty, and the
+  majority never open OBS at all. Plus a histogram of how many overlays a driver
+  runs at once.
+
+Above them, **laps driven** — all time, this week, distance and hours at the
+wheel — from `driver_activity_days`, which needs no client version and is
+therefore complete back to the first release. The same is true of the
+*Straight from the database* card at the bottom: engineer questions, setups,
+board laps, traces and pit-wall publishers are counted from the tables those
+features already write, so the pane says something real on day one instead of
+waiting for the fleet to update.
+
+The client half is `electron/featureUsage.js` plus the slug list in
+`electron/control-panel/feature-catalog.js`. It keeps **daily counters**, never
+an event log: the panel reports a slug, the store adds to that day's running
+total, and the uploader offers the whole day every five minutes. The server keeps
+the *greater* of what it has and what it was sent (`greatest()`), so a dropped
+upload, a crash, a second PC or a clock that jumped can never double-count and
+can never go backwards — the worst case is under-reporting, which is the right
+way round for a number a roadmap gets built on. What reaches the cloud is a count
+per feature per day and nothing else: no times, no order, no arguments, and no
+RPC that returns one driver's rows. `supabase/migrations/0022_feature_analytics.sql`
+has the tables and the reasoning; both cascade from `auth.users`, so account
+deletion keeps working unchanged.
+
+Which overlays an OBS source actually loaded comes from the HTTP server itself —
+`setOverlayLoadHandler` in `src/server/index.ts` reports `/widget.html?w=…` and
+`/` fetches, and the desktop app resolves the combined page against its own
+settings and ignores its own in-game window. `scripts/test-usage.js` covers the
+counters, the idempotence, and that URL classification.
+
 **Feedback** is the [Suggestions](#desktop-app) tab: an idea/bug/other form that
 files one row via `submit_feedback` with the app version attached. Admins triage
 each item's status (new → planned → in progress → done / declined) from the inbox.
 
 The Supabase side lives in the repo as re-runnable migrations:
 `supabase/migrations/0001_admin_panel.sql` — the two tables, the `is_admin` flag,
-and the six RPCs the app calls — and `0002_admin_users.sql`, which adds the driver
-list's `admin_users_list` (one function, no schema changes). The schema is versioned
+and the six RPCs the app calls — `0002_admin_users.sql`, which adds the driver
+list's `admin_users_list` (one function, no schema changes), and
+`0022_feature_analytics.sql`, which adds the Usage pane's two counter tables and
+`admin_feature_analytics`. The schema is versioned
 here even though the project it applies to is not, the same way the leaderboard's
 RPCs are: the app only ever *calls* these functions. To turn it on:
 
 ```sql
 -- 1. apply supabase/migrations/0001_admin_panel.sql, then 0002_admin_users.sql,
---    in the Supabase SQL editor
+--    then 0022_feature_analytics.sql, in the Supabase SQL editor
 -- 2. make yourself an admin:
 update public.profiles set is_admin = true where id = (
   select id from auth.users where email = 'you@example.com'
@@ -1036,6 +1087,7 @@ electron/                # desktop control-panel app (Electron)
   simgrid.js             #   Schedule tab: Thursday + Saturday championships from SimGrid
   lapUpload.js           #   background lap/activity uploader (idempotent aggregates)
   usageReporter.js       #   usage heartbeat → app_sessions (admin panel)
+  featureUsage.js        #   daily feature/overlay counters → the Admin Usage pane
   control-panel/         #   the window UI (choose overlays, copy URLs, status)
     auth.html/.css/.js   #     sign in / register / reset password screens
 supabase/

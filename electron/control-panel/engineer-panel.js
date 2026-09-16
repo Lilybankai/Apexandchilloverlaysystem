@@ -214,7 +214,10 @@
         use.type = 'button';
         use.className = 'btn btn--sm';
         use.textContent = 'Use this voice';
-        use.addEventListener('click', () => void api.updateSettings({ engineerVoice: v.id }));
+        use.addEventListener('click', () => {
+          window.APEX_FEATURE_CATALOG?.note('action:engineer.voice');
+          void api.updateSettings({ engineerVoice: v.id });
+        });
         actions.appendChild(use);
       }
 

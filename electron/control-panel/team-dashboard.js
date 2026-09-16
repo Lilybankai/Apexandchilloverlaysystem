@@ -188,7 +188,14 @@
       save();
     }
 
-    const save = () => onSave(items.map((i) => ({ ...i })), preset);
+    const save = () => {
+      // Every move, resize, add, remove and preset change funnels through here,
+      // so this is the one place "the driver arranged their own board" is
+      // observable — the thing Phase 3 was built for, and the thing a tab-visit
+      // count cannot tell from someone who left the default alone.
+      window.APEX_FEATURE_CATALOG?.note('action:team.board');
+      return onSave(items.map((i) => ({ ...i })), preset);
+    };
 
     // ── Painting ───────────────────────────────────────────────────────────
     function cellW() {

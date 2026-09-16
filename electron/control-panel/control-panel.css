@@ -1065,6 +1065,71 @@ html, body {
 }
 .admin-table__head--corpus span:not(:first-child) { text-align: right; }
 
+/* A month of bars in the space the week chart was drawn for. Four times the
+   columns, so the 12px gutter that separates seven bars would eat most of the
+   width and leave slivers: the gap shrinks and the day labels thin out to one
+   every five (see renderAdminLapsChart), because thirty repeated weekday names
+   are noise, not an axis. */
+.weekchart--dense { gap: 3px; }
+.weekchart--dense .weekbar { gap: 6px; }
+.weekchart--dense .weekbar__fill { border-radius: 3px; }
+.weekchart--dense .weekbar__day { font-size: 9px; letter-spacing: 0.02em; }
+
+/* Usage pane (migration 0022) -------------------------------------------------
+   Three tables, one grid idea: a name, some right-aligned figures, and a share
+   bar last. The bar is the column the pane is read for — "what fraction of our
+   drivers touched this" is a comparison, and a comparison is read as a shape
+   far faster than as a column of percentages.
+
+   A row for something NOBODY used is the most valuable row here, so it is drawn
+   dimmer but at full size rather than being hidden or collapsed: the point is
+   that it is visibly there and visibly empty. */
+.admin-table__head--usage,
+.admin-table--usage .admin-row {
+  grid-template-columns: 1fr 56px 56px 56px 72px 132px;
+}
+.admin-table__head--overlay,
+.admin-table--overlay .admin-row {
+  grid-template-columns: 1fr 52px 52px 52px 52px 72px 120px;
+}
+.admin-table__head--cloud,
+.admin-table--cloud .admin-row {
+  grid-template-columns: 1fr 72px 80px 104px 88px;
+}
+.admin-table__head--usage span:not(:first-child),
+.admin-table__head--overlay span:not(:first-child),
+.admin-table__head--cloud span:not(:first-child) { text-align: right; }
+
+/* The name cell carries a second line — which tab an action belongs to, or the
+   reason a row is expected to read zero (a gated tab). */
+.usage-row__name { font-size: 13px; color: var(--text); }
+.usage-row__where { font-size: 11px; color: var(--text-3); }
+
+/* Nobody at all. Dimmed, never hidden. */
+.admin-table--usage .admin-row[data-cold="true"] .usage-row__name,
+.admin-table--overlay .admin-row[data-cold="true"] .usage-row__name { color: var(--text-3); }
+
+/* The share bar: same track and fill as .admin-bars, inline in a table cell.
+   The percentage sits beside it rather than inside, so a 2% bar still has a
+   readable number. */
+.usage-share { display: grid; grid-template-columns: 1fr 34px; align-items: center; gap: 8px; }
+.usage-share__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+.usage-share__fill { display: block; height: 100%; border-radius: 999px; background: var(--grad); }
+/* Zero keeps the track and loses the fill — an empty rail reads as "measured,
+   and the answer was none", which a missing bar does not. */
+.usage-share__pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+  color: var(--text-2);
+}
+.usage-share__pct[data-cold="true"] { color: var(--text-3); }
+
 /* Readiness chips: one letter per coefficient, lit when the pair clears that
    coefficient's bar. Four shapes in a fixed order (B K T R) rather than a count
    or a percentage, so the same letter sits in the same place on every row and

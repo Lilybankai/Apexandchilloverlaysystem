@@ -204,9 +204,30 @@ function parseBlocks(lines) {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Parse CHANGELOG.md into `[{ version, date, blocks }]`, newest first (the
- * order the file is written in is preserved, not re-sorted — the file is the
- * record). Anything above the first version heading is ignored.
+ * The marker that makes a release INTERNAL: an HTML comment on its own line,
+ * anywhere in the entry's body.
+ *
+ *     ## 0.99.11 — 2026-09-16
+ *     <!-- internal -->
+ *
+ * An internal release is one whose changes no driver can see — admin-only work,
+ * a backend migration, tooling. It still gets a full entry, because the repo and
+ * the GitHub release page are the record of what shipped and a version with no
+ * section is a hole in that record (and would fail check-changelog.js, which is
+ * the point of that gate). What it does NOT get is the What's New panel: showing
+ * every driver a popup about a tab they cannot open is a notification with
+ * nothing in it for them.
+ *
+ * An HTML comment rather than a field in the heading, because the heading is
+ * matched by three release scripts and by this parser, and widening that shape
+ * is how those four quietly stop agreeing.
+ */
+const INTERNAL_MARK = /^<!--\s*internal\s*-->$/i;
+
+/**
+ * Parse CHANGELOG.md into `[{ version, date, internal, blocks }]`, newest first
+ * (the order the file is written in is preserved, not re-sorted — the file is
+ * the record). Anything above the first version heading is ignored.
  */
 function parseChangelog(text) {
   const lines = String(text || '').split(/\r?\n/);
@@ -216,7 +237,11 @@ function parseChangelog(text) {
 
   const flush = () => {
     if (current) {
-      current.blocks = parseBlocks(buffer);
+      // The marker is consumed here rather than left in the body: it is
+      // metadata about the entry, and a renderer that met it as a block would
+      // have to know to drop it.
+      current.internal = buffer.some((l) => INTERNAL_MARK.test(l.trim()));
+      current.blocks = parseBlocks(buffer.filter((l) => !INTERNAL_MARK.test(l.trim())));
       entries.push(current);
     }
     buffer = [];
@@ -226,7 +251,7 @@ function parseChangelog(text) {
     const m = VERSION_HEADING.exec(line.trim());
     if (m) {
       flush();
-      current = { version: m[1], date: (m[2] || '').trim(), blocks: [] };
+      current = { version: m[1], date: (m[2] || '').trim(), internal: false, blocks: [] };
       continue;
     }
     if (current) buffer.push(line);

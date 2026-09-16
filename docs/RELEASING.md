@@ -103,6 +103,38 @@ anything, if you want to check the pipeline.
 Everyone on stable is offered it at their next check; everyone on beta is too,
 since it is newer than the last beta.
 
+## Releases with nothing in them for drivers
+
+Some releases change nothing a driver can see: admin-only work, a backend
+migration, tooling. They still need a `CHANGELOG.md` section — the repo and the
+GitHub release page are the record of what shipped, `check-changelog.js` will
+refuse the release without one, and so will `release-notes.js` before
+electron-builder even starts. What they do not need is the **What's New** panel:
+showing every driver a popup about a tab they cannot open is a notification with
+nothing in it for them.
+
+Mark the entry instead. An HTML comment on its own line, directly under the
+version heading:
+
+```markdown
+## 0.99.11 — 2026-09-16
+<!-- internal -->
+
+### Added
+
+- **Admin: a Usage pane that says what the app is actually used for.** …
+```
+
+The release then behaves exactly like any other — same gate, same notes on
+GitHub, same auto-update — except that `changelog:pending` skips it, so nobody
+is interrupted. An upgrade that spans a marked release **and** an ordinary one
+still shows the ordinary one; only the marked entries drop out. The full history
+opened from the footer version still lists everything.
+
+Write the entry properly even so. It is what you will be reading in a year when
+you want to know when something changed, and "internal" is about the audience,
+not about the standard.
+
 ## Switching channels in the app
 
 **Settings → Updates**, visible only to league staff — the same `admin:whoami`
