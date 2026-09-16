@@ -5,6 +5,30 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.2 — 2026-09-16
+
+### Added
+
+- **Your referral code, on your stream.** If you have been given a code, your
+  Settings → Account now carries a second link: an overlay you add to OBS as a
+  Browser Source, showing the Apex mark, the 10% and your code on a transparent
+  background. Four styles — a lower third or a corner badge, either one larger,
+  plus a version for bright scenes — and a Preview button that opens the exact
+  thing OBS will draw. It is served from the website rather than by the app, so
+  it keeps working on a day you are streaming something else with Apex closed.
+
+### Fixed
+
+- **Referral links went to the wrong address.** A partner link resolved to
+  `localhost` instead of the site for everyone who clicked it, and the discount
+  banner never appeared on the page it landed on. Both are fixed on the website;
+  nothing needs updating for it.
+
+- **A code can now be attached to the account that owns it.** Until now that was
+  a database edit, which meant nobody's link, overlay or numbers ever appeared
+  in their own Settings. League staff can do it from Admin → Referrals, when the
+  code is issued or afterwards.
+
 ## 0.99.12-beta.1 — 2026-09-16
 
 ### Added
