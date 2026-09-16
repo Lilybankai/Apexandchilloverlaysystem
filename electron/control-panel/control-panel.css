@@ -1075,6 +1075,61 @@ html, body {
 .weekchart--dense .weekbar__fill { border-radius: 3px; }
 .weekchart--dense .weekbar__day { font-size: 9px; letter-spacing: 0.02em; }
 
+/* Referrals (migration 0023) --------------------------------------------------
+   Two surfaces: the partner's own link in Settings → Account, and the league's
+   Referrals pane in Admin.
+
+   The link field is READONLY rather than disabled: a driver should be able to
+   select it, read it, and drag it into a stream description, all of which a
+   disabled input refuses. Copy is still the path everyone will take. */
+.ref-link { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.ref-link__url {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  /* Not var(--text-3): this is the whole point of the card, not a hint. */
+  color: var(--text);
+}
+/* Three small figures under the link, tighter than a normal stat row — they
+   are a footnote to the link, not the subject of the card. */
+.stats--tight { margin-top: 14px; gap: 8px; }
+.stats--tight .stat { padding: 10px 12px; }
+.stats--tight .stat__value { font-size: 20px; }
+
+/* Issue form: three fields and a button on one line at full width, stacking on
+   a narrow panel. The button aligns to the bottom of the row so it sits level
+   with the inputs rather than with their labels. */
+.ref-issue {
+  display: grid;
+  grid-template-columns: 140px 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+@media (max-width: 720px) {
+  .ref-issue { grid-template-columns: 1fr; align-items: stretch; }
+}
+
+.admin-table__head--ref,
+.admin-table--ref .admin-row {
+  grid-template-columns: 1fr 72px 88px 72px 150px;
+}
+.admin-table__head--ref span:nth-child(n + 2):nth-child(-n + 4) { text-align: right; }
+.admin-table--ref .admin-row[data-off="true"] { opacity: 0.55; }
+
+/* The row's controls: copy the link, and turn the code off or on. */
+.ref-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* A revoked code keeps its row and its numbers — the history is the point —
+   and says so rather than just fading out. */
+.ref-off {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--text-3);
+  color: var(--text-3);
+}
+
 /* Usage pane (migration 0022) -------------------------------------------------
    Three tables, one grid idea: a name, some right-aligned figures, and a share
    bar last. The bar is the column the pane is read for — "what fraction of our

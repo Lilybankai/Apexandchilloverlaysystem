@@ -100,6 +100,13 @@
 
       <div class="msg" data-msg="subscribe" role="alert" hidden></div>
 
+      <!-- A partner's referral discount, once one is attached. Shown HERE,
+           above the button, because the discount was promised on a landing page
+           days ago and the moment of paying is when it has to be visible — a
+           driver should never have to take it on trust and find out on Stripe's
+           page. Hidden entirely when there is none, which is the usual case. -->
+      <p class="sub-ref" id="sub-ref" hidden></p>
+
       <button class="btn btn--accent btn--block" type="button" id="sub-start-btn"
               data-label="Start 7-day free trial">Start 7-day free trial</button>
       <p class="form__foot" style="margin-top: 10px">
@@ -107,23 +114,27 @@
         by the app.
       </p>
 
-      <div class="divider"><span>racing with us?</span></div>
+      <div class="divider"><span>got a code?</span></div>
 
+      <!-- One box, two kinds of code. A driver was handed "a code" and has no
+           idea whether it is league access or a partner's referral — so they
+           type it and the server works out which it was (redeem_code, migration
+           0023). Two boxes would only ask them to guess. -->
       <form id="sub-code-form" novalidate>
         <div class="field">
-          <label class="lbl" for="sub-code-input">League access code</label>
+          <label class="lbl" for="sub-code-input">Referral or league code</label>
           <div class="field__wrap field__wrap--icon">
             <span class="field__icon"><svg class="icon"><use href="#i-key" /></svg></span>
             <input class="inp inp--code" id="sub-code-input" name="code" type="text"
-                   placeholder="APEX-XXXX-XXXX" spellcheck="false" autocomplete="off" />
+                   placeholder="CRAIG or APEX-XXXX-XXXX" spellcheck="false" autocomplete="off" />
           </div>
           <span class="field__hint">
-            Apex &amp; Chill league racers ride free — ask a league admin for
-            your code.
+            Sent here by someone? Their code takes 10% off. Apex &amp; Chill
+            league racers ride free — ask a league admin for yours.
           </span>
         </div>
         <button class="btn btn--ghost btn--block" type="submit" id="sub-code-btn"
-                data-label="Redeem code">Redeem code</button>
+                data-label="Apply code">Apply code</button>
       </form>
 
       <p class="form__foot">

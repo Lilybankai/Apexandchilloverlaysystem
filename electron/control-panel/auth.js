@@ -57,6 +57,10 @@ function show(screen) {
   }
   $('#pitch-lede').textContent = LEDE[screen] || LEDE.signin;
   clearMessage(screen);
+  // Arriving at the paywall is the moment a promised discount has to be
+  // visible. Fire-and-forget: the line appears a beat later if there is one,
+  // and the screen is fully usable meanwhile.
+  if (screen === 'subscribe') void renderReferral();
 
   const focus = FOCUS[screen] && $(FOCUS[screen]);
   if (focus) {
@@ -295,12 +299,41 @@ $('#sub-start-btn').addEventListener('click', () => {
   });
 });
 
+/**
+ * Show the referral discount attached to this account, if any.
+ *
+ * Called on arriving at the subscribe screen and again after a code is applied.
+ * Silent and harmless when the bridge predates referrals (an older main
+ * process) or when there is nothing attached — the line simply stays hidden.
+ */
+async function renderReferral() {
+  const el = $('#sub-ref');
+  if (!el || !billing || typeof billing.referral !== 'function') return;
+  let r = null;
+  try {
+    r = await billing.referral();
+  } catch {
+    r = null;
+  }
+  if (!r || !r.ok || !r.active) {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  const who = r.ownerName ? `${r.ownerName}’s code` : `Code ${r.code}`;
+  const pct = Number(r.percentOff) || 10;
+  // textContent, never innerHTML: ownerName is text an admin typed and this
+  // page must never be able to render markup from the database.
+  el.textContent = `${who} applied — ${pct}% off for as long as you subscribe.`;
+  el.hidden = false;
+}
+
 $('#sub-code-form').addEventListener('submit', (evt) => {
   evt.preventDefault();
   const button = $('#sub-code-btn');
   const code = $('#sub-code-input').value.trim();
   if (!code) {
-    setMessage('subscribe', 'error', 'Type your league code first.');
+    setMessage('subscribe', 'error', 'Type your code first.');
     return;
   }
   void submit('subscribe', button, async () => {
@@ -308,6 +341,24 @@ $('#sub-code-form').addEventListener('submit', (evt) => {
     if (!res.ok) {
       setMessage('subscribe', 'error', res.error || 'That code was not accepted.');
       markField('subscribe', 'code');
+      return;
+    }
+    // A REFERRAL does not let anyone in — it makes the subscription cheaper,
+    // and they still have to start it. So stay on this screen, say what the
+    // code did, and let them press the button. Only a LEAGUE code grants
+    // access, and only that one continues into the app.
+    if (res.kind === 'referral') {
+      const who = res.ownerName ? `${res.ownerName}’s code` : 'That code';
+      const pct = Number(res.percentOff) || 10;
+      setMessage(
+        'subscribe',
+        'ok',
+        res.alreadyApplied
+          ? `${who} is already applied — ${pct}% off when you start.`
+          : `${who} applied. Start your trial and it comes off every month.`,
+      );
+      $('#sub-code-input').value = '';
+      await renderReferral();
       return;
     }
     await auth.enterApp();

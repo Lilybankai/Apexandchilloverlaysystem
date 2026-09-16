@@ -409,6 +409,30 @@ Which overlays an OBS source actually loaded comes from the HTTP server itself �
 settings and ignores its own in-game window. `scripts/test-usage.js` covers the
 counters, the idempotence, and that URL classification.
 
+**Referrals** (v0.99.12) are partner codes. Someone with an audience is issued a
+code from this pane and promotes `apexandchillracing.co.uk/r/THEIRCODE`; anyone
+who uses it gets **10% off for as long as they stay subscribed**. The partner is
+paid nothing — it is a promotion tool, not an affiliate scheme — but the
+attribution is recorded from day one, because a payout decided in six months
+cannot be backdated onto data nobody kept.
+
+The thing worth understanding before changing any of it: **a link cannot carry
+the discount.** The click happens in a browser; the payment happens a week later
+inside a signed desktop app, after a 285 MB download, an install and a sign-up.
+No cookie, session or UTM survives that. So the link carries a **code**, the code
+is typed once on the subscribe screen (the same box that has always taken league
+access codes — `redeem_code` routes it), and `create-checkout-session` attaches
+one shared Stripe coupon server-side. That also means the code works when there
+was never a link at all: read out on a stream, posted in Discord, on a sticker.
+
+The pane shows a four-step funnel per partner — opens → redeemed → paying — and
+the gaps mean different things: clicks without redemptions is a landing-page
+problem, redemptions without paying is a product one. Aggregates only; nobody,
+including the partner, ever sees who used a code. Full operator guide, including
+the one-time Stripe coupon that must exist before anything discounts anybody, is
+in **[docs/REFERRALS.md](docs/REFERRALS.md)**; the schema and reasoning are in
+`supabase/migrations/0023_referrals.sql`.
+
 **Feedback** is the [Suggestions](#desktop-app) tab: an idea/bug/other form that
 files one row via `submit_feedback` with the app version attached. Admins triage
 each item's status (new → planned → in progress → done / declined) from the inbox.

@@ -478,6 +478,21 @@ button { font-family: inherit; }
 /* ------------------------------ MESSAGES --------------------------------- */
 
 /* One banner per form, reused for errors, notices and success. */
+/* The partner discount attached to this account, shown directly above the
+   subscribe button. Quieter than .msg — it is a standing fact about the price,
+   not something that just happened, and it sits on screen for the whole visit
+   rather than being dismissed. Green because it is good news about money. */
+.sub-ref {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(53, 208, 127, 0.35);
+  background: rgba(53, 208, 127, 0.08);
+  color: #b6efd0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .msg {
   display: flex;
   align-items: flex-start;

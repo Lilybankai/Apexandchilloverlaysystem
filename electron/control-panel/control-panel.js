@@ -4460,7 +4460,7 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free, billing, pastDue, corpus, analytics] =
+      const [overview, feedback, users, free, billing, pastDue, corpus, analytics, referrals] =
         await Promise.all([
           window.apex.admin.overview(),
           window.apex.admin.feedback({ status: filter ? filter.value : '' }),
@@ -4474,6 +4474,9 @@
             : Promise.resolve(null),
           typeof window.apex.admin.analytics === 'function'
             ? window.apex.admin.analytics({ days: 30 })
+            : Promise.resolve(null),
+          typeof window.apex.admin.referrals === 'function'
+            ? window.apex.admin.referrals()
             : Promise.resolve(null),
         ]);
       if (overview && overview.ok) {
@@ -4492,6 +4495,7 @@
       renderAdminPastDue(pastDue && pastDue.ok ? pastDue.rows : []);
       renderAdminCorpus(corpus && corpus.ok ? corpus.data : null);
       renderAdminUsage(analytics && analytics.ok ? analytics.data : null);
+      renderAdminReferrals(referrals && referrals.ok ? referrals.data : null);
     } catch {
       setAdminMsg('Could not reach the league.');
     }
@@ -4965,6 +4969,219 @@
         li.append(usageName(label, ''), dash(today), dash(week), dash(drivers), dash(all));
         cloudList.append(li);
       }
+    }
+  }
+
+  /* ---- Referrals (migration 0023) ----------------------------------------
+   *
+   * Partner codes. Someone with an audience is issued a code, promotes
+   * `apexandchillracing.co.uk/r/THEIRCODE`, and anyone who redeems it gets 10%
+   * off for as long as they subscribe. The partner is paid nothing today; the
+   * attribution is recorded anyway, because a payout decided in six months
+   * cannot be backdated onto data nobody kept.
+   *
+   * Two surfaces, both here: the league's Referrals pane, and the partner's own
+   * link in Settings → Account.
+   */
+
+  /** The Admin Referrals pane. `data` null when the backend predates 0023. */
+  function renderAdminReferrals(data) {
+    const d = data || {};
+    const totals = d.totals || {};
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    const pct = Number(d.percentOff) || 10;
+
+    setText('#adm-ref-codes', totals.codes != null ? groupedNumber(totals.codes) : '—');
+    setText(
+      '#adm-ref-codes-sub',
+      totals.codes != null ? `${pct}% off for whoever uses them` : '',
+    );
+    setText('#adm-ref-clicks', totals.clicks != null ? groupedNumber(totals.clicks) : '—');
+    setText('#adm-ref-signups', totals.signups != null ? groupedNumber(totals.signups) : '—');
+    setText(
+      '#adm-ref-signups-sub',
+      totals.clicks
+        ? `${Math.round(((Number(totals.signups) || 0) / Number(totals.clicks)) * 100)}% of link opens`
+        : '',
+    );
+    setText('#adm-ref-paying', totals.paying != null ? groupedNumber(totals.paying) : '—');
+    setText(
+      '#adm-ref-paying-sub',
+      totals.signups
+        ? `${Math.round(((Number(totals.paying) || 0) / Number(totals.signups)) * 100)}% of those who redeemed`
+        : '',
+    );
+
+    const list = $('#adm-ref-list');
+    const empty = $('#adm-ref-empty');
+    if (!list) return;
+    list.textContent = '';
+    for (const row of rows) list.append(buildReferralRow(row));
+    if (empty) empty.hidden = rows.length > 0;
+  }
+
+  /** One partner row: who they are, their funnel, and the two controls. */
+  function buildReferralRow(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-row';
+    li.setAttribute('data-off', String(!row.active));
+
+    const who = document.createElement('span');
+    who.className = 'admin-row__who';
+    const name = document.createElement('span');
+    name.className = 'admin-row__name';
+    // textContent throughout: the code and the owner name are text an admin
+    // typed and must never reach the DOM as markup.
+    name.textContent = row.code || '';
+    who.append(name);
+    if (!row.active) {
+      const off = document.createElement('span');
+      off.className = 'ref-off';
+      off.textContent = 'off';
+      who.append(off);
+    }
+    const sub = document.createElement('span');
+    sub.className = 'admin-row__email';
+    sub.textContent = row.ownerName
+      ? row.note
+        ? `${row.ownerName} · ${row.note}`
+        : row.ownerName
+      : row.note || 'unnamed';
+    who.append(sub);
+
+    const actions = document.createElement('span');
+    actions.className = 'ref-actions';
+
+    const copy = document.createElement('button');
+    copy.className = 'btn btn--ghost btn--sm';
+    copy.type = 'button';
+    copy.textContent = 'Copy link';
+    copy.addEventListener('click', async () => {
+      await window.apex.copy(row.url || '');
+      showToast('Referral link copied');
+    });
+
+    const toggle = document.createElement('button');
+    toggle.className = 'btn btn--ghost btn--sm';
+    toggle.type = 'button';
+    toggle.textContent = row.active ? 'Turn off' : 'Turn on';
+    toggle.addEventListener('click', async () => {
+      toggle.disabled = true;
+      const res = await window.apex.admin.setReferralActive({
+        code: row.code,
+        active: !row.active,
+      });
+      toggle.disabled = false;
+      if (!res || !res.ok) {
+        setAdminMsg((res && res.error) || 'Could not update that code.');
+        return;
+      }
+      // Turning a code off stops NEW redemptions and deliberately leaves
+      // everyone already on it discounted — ending a partnership is not a
+      // reason to put someone's bill up. Say so, once, where it is decided.
+      showToast(
+        row.active
+          ? 'Code off — nobody new can use it. Existing subscribers keep their discount.'
+          : 'Code back on.',
+      );
+      await refreshReferrals();
+    });
+
+    actions.append(copy, toggle);
+    li.append(
+      who,
+      usageNum(row.clicks),
+      usageNum(row.signups),
+      usageNum(row.paying),
+      actions,
+    );
+    return li;
+  }
+
+  /** Re-read just the Referrals pane, after issuing or toggling. */
+  async function refreshReferrals() {
+    if (typeof window.apex.admin.referrals !== 'function') return;
+    const res = await window.apex.admin.referrals();
+    renderAdminReferrals(res && res.ok ? res.data : null);
+  }
+
+  {
+    const issue = $('#adm-ref-issue');
+    if (issue) {
+      issue.addEventListener('click', async () => {
+        const out = $('#adm-ref-issue-out');
+        const say = (text) => {
+          if (!out) return;
+          out.textContent = text || '';
+          out.hidden = !text;
+        };
+        const code = ($('#adm-ref-code').value || '').trim();
+        if (!code) {
+          say('Type a code first.');
+          return;
+        }
+        issue.disabled = true;
+        const res = await window.apex.admin.issueReferral({
+          code,
+          ownerName: ($('#adm-ref-owner').value || '').trim(),
+          note: ($('#adm-ref-note').value || '').trim(),
+        });
+        issue.disabled = false;
+        if (!res || !res.ok) {
+          say((res && res.error) || 'Could not issue that code.');
+          return;
+        }
+        // The link is the thing the admin actually needs next — it has to be
+        // sent to the partner — so it goes straight to the clipboard rather
+        // than making them find and click Copy on the row that just appeared.
+        await window.apex.copy(res.url || '');
+        say(`${res.code} issued — link copied: ${res.url}`);
+        $('#adm-ref-code').value = '';
+        $('#adm-ref-owner').value = '';
+        $('#adm-ref-note').value = '';
+        await refreshReferrals();
+      });
+    }
+  }
+
+  /**
+   * The partner's own link, in Settings → Account.
+   *
+   * Hidden entirely unless this driver owns a code. Re-read whenever Settings
+   * comes into view, so a code issued while the app was open turns up without
+   * a restart.
+   */
+  async function refreshMyReferral() {
+    const card = $('#ref-card');
+    if (!card || typeof window.apex.referralMine !== 'function') return;
+    let r = null;
+    try {
+      r = await window.apex.referralMine();
+    } catch {
+      r = null;
+    }
+    if (!r || !r.ok) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    const url = $('#ref-url');
+    if (url) url.value = r.url || '';
+    setText('#ref-pct', `${Number(r.percentOff) || 10}%`);
+    setText('#ref-code-note', r.code ? `They can also just type ${r.code} in the app.` : '');
+    setText('#ref-clicks', groupedNumber(r.clicks));
+    setText('#ref-signups', groupedNumber(r.signups));
+    setText('#ref-paying', groupedNumber(r.paying));
+  }
+
+  {
+    const copy = $('#ref-copy');
+    if (copy) {
+      copy.addEventListener('click', async () => {
+        const url = $('#ref-url');
+        await window.apex.copy((url && url.value) || '');
+        showToast('Your referral link is copied');
+      });
     }
   }
 
@@ -5830,8 +6047,13 @@
       window.APEX_STREAMER_GUIDE?.cancelAutoOpen();
     }
     // Plan state changes out-of-app (in the browser, on Stripe's pages), so
-    // the card re-asks whenever Settings comes back into view.
-    if (target === 'settings') void refreshBilling();
+    // the card re-asks whenever Settings comes back into view. The partner
+    // referral card rides along for the same reason: a code issued while the
+    // app was open should turn up without a restart.
+    if (target === 'settings') {
+      void refreshBilling();
+      void refreshMyReferral();
+    }
     // The setup editor is the one tab with a poll loop (and an animation
     // frame), and this is where its zero-cost-when-hidden rule is enforced:
     // shown() starts everything, hidden() stops everything, and the router is

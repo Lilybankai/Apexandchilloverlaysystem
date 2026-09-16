@@ -184,11 +184,27 @@ async function portalUrl() {
   return { ok: true, url: body.url };
 }
 
-/** Redeem a league voucher code, then re-check entitlement on success. */
+/**
+ * Redeem whatever kind of code the driver was handed.
+ *
+ * The subscribe screen has one box, because a driver does not know — and should
+ * not have to know — whether the thing someone gave them is a league access
+ * code (free access) or a partner referral code (10% off). `redeem_code` in the
+ * database routes it and says which it turned out to be, so this stays one
+ * round trip and there is one place that decides precedence.
+ *
+ * Returns `{ ok, kind }` where `kind` is `'league'` or `'referral'`; the
+ * referral case also carries `code`, `ownerName` and `percentOff` so the screen
+ * can say "Craig's code applied — 10% off" rather than something generic.
+ *
+ * Entitlement is only re-checked for a league code: that is the one that
+ * changes whether the app may be used at all. A referral changes the PRICE of a
+ * subscription that has not been bought yet, so there is nothing to re-read.
+ */
 async function redeemCode(code) {
   const text = typeof code === 'string' ? code.trim() : '';
   if (!text) return { ok: false, error: 'Type the code first.' };
-  const res = await auth.rpc('redeem_league_code', { p_code: text.slice(0, 40) });
+  const res = await auth.rpc('redeem_code', { p_code: text.slice(0, 40) });
   if (!res.ok) {
     return {
       ok: false,
@@ -198,8 +214,41 @@ async function redeemCode(code) {
   }
   const body = res.body || {};
   if (!body.ok) return { ok: false, error: body.error || 'That code was not accepted.' };
+
+  if (body.kind === 'referral') {
+    return {
+      ok: true,
+      kind: 'referral',
+      code: body.code || '',
+      ownerName: body.ownerName || '',
+      percentOff: Number(body.percentOff) || 10,
+      alreadyApplied: !!body.alreadyApplied,
+    };
+  }
+
+  // League access: this one does change entitlement, so re-read it before the
+  // screen decides what to show next.
   await refresh({ maxAgeMs: 0 });
-  return { ok: true };
+  return { ok: true, kind: 'league' };
+}
+
+/**
+ * The referral discount attached to this account, if any.
+ *
+ * Read by the subscribe screen so it can show the discount BEFORE the driver
+ * commits — a promise made on a landing page should be visible at the moment
+ * of paying, not just on the Stripe page after it. Never throws; a driver with
+ * none (the common case) gets `{ ok: false }`.
+ */
+async function referral() {
+  try {
+    const res = await auth.rpc('my_referral', {});
+    if (!res.ok) return { ok: false, signedOut: !!res.signedOut };
+    const body = res.body || {};
+    return body && body.ok ? body : { ok: false };
+  } catch {
+    return { ok: false };
+  }
 }
 
 module.exports = {
@@ -211,5 +260,6 @@ module.exports = {
   checkoutUrl,
   portalUrl,
   redeemCode,
+  referral,
   GRACE_MS,
 };

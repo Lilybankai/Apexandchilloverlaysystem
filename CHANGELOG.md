@@ -5,6 +5,27 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.1 — 2026-09-16
+
+### Added
+
+- **Someone's code takes 10% off, for as long as you subscribe.** If a streamer
+  or a league admin sent you here, they were given a code — type it on the
+  subscribe screen and every month costs 10% less, for as long as you keep the
+  subscription. It goes in the same box that has always taken league access
+  codes, because you were handed "a code" and shouldn't have to know which kind
+  it is. The screen says whose code it was and what it saved you before you
+  commit to anything, rather than leaving you to find out on Stripe's page.
+
+  If you were issued a code of your own, your link and how it is doing now live
+  in **Settings → Account**, ready to copy. You see how many people opened it,
+  how many used it and how many subscribed — never who they were.
+
+### Changed
+
+- **The subscribe screen's code box now says "Referral or league code".** It
+  takes both, and works out which you typed.
+
 ## 0.99.11 — 2026-09-16
 <!-- internal -->
 

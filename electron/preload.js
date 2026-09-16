@@ -396,8 +396,21 @@ contextBridge.exposeInMainWorld('apex', {
     checkout: () => ipcRenderer.invoke('billing:checkout'),
     /** Open the Stripe Customer Portal (manage / cancel / card) in the browser. */
     portal: () => ipcRenderer.invoke('billing:portal'),
-    /** Redeem a league voucher code: → { ok, error? }. */
+    /**
+     * Redeem a code — league access OR a partner referral. One box, because a
+     * driver was handed "a code" and should not have to know which kind it is.
+     *
+     * → `{ ok, kind: 'league' }` (free access granted) or
+     *   `{ ok, kind: 'referral', code, ownerName, percentOff, alreadyApplied }`
+     *   or `{ ok: false, error }`.
+     */
     redeemCode: (code) => ipcRenderer.invoke('billing:redeemCode', code),
+    /**
+     * The referral discount already attached to this account:
+     * `{ ok, code, ownerName, percentOff, active }` or `{ ok: false }`.
+     * Lets the subscribe screen show the discount before the driver commits.
+     */
+    referral: () => ipcRenderer.invoke('billing:referral'),
     /** Subscribe to entitlement pushes. Returns an unsubscribe function. */
     onChange: (callback) => {
       const listener = (_evt, payload) => callback(payload);
@@ -444,6 +457,16 @@ contextBridge.exposeInMainWorld('apex', {
     whoami: () => ipcRenderer.invoke('admin:whoami'),
     /** Headline usage numbers: `{ ok, data, signedOut?, error? }`. */
     overview: () => ipcRenderer.invoke('admin:overview'),
+    /**
+     * Partner referrals (migration 0023): `{ ok, data: { percentOff, totals,
+     * rows[] } }`. One row per code with clicks / signups / paying — aggregates,
+     * never the people behind them.
+     */
+    referrals: () => ipcRenderer.invoke('admin:referrals'),
+    /** Mint a partner code: `{ code, ownerName?, ownerUserId?, note? }` → `{ ok, code, url, error? }`. */
+    issueReferral: (payload) => ipcRenderer.invoke('admin:issueReferral', payload),
+    /** Turn one off or back on: `{ code, active }` → `{ ok, error? }`. */
+    setReferralActive: (payload) => ipcRenderer.invoke('admin:setReferralActive', payload),
     /**
      * Feature + overlay analytics (migration 0022): `{ days? }` → `{ ok, data:
      * { laps, lapsDaily[], features[], featuresDaily[], overlays[],
@@ -602,6 +625,15 @@ contextBridge.exposeInMainWorld('apex', {
     /** Record that the notes for this version have been read. */
     markSeen: () => ipcRenderer.invoke('changelog:markSeen'),
   },
+
+  /**
+   * The signed-in driver's OWN partner referral code, if they have been issued
+   * one: `{ ok, code, url, percentOff, clicks, signups, paying }`.
+   *
+   * `{ ok: false }` for everyone else, which is almost everyone — codes are
+   * admin-issued, so the card in Settings → Account only exists for partners.
+   */
+  referralMine: () => ipcRenderer.invoke('referral:mine'),
 
   /* ---- Usage counters ----
    *

@@ -4646,6 +4646,70 @@ function registerIpc() {
 
   ipcMain.handle('billing:redeemCode', (_evt, code) => billingService.redeemCode(code));
 
+  /** The referral discount attached to this account, for the subscribe screen. */
+  ipcMain.handle('billing:referral', () => billingService.referral());
+
+  /**
+   * The signed-in driver's OWN partner code, if they have been issued one —
+   * their link and how it is doing. `{ ok:false }` for everyone else, which is
+   * almost everyone: referral codes are admin-issued, so the card in Settings
+   * only exists for partners.
+   */
+  ipcMain.handle('referral:mine', async () => {
+    const res = await authService.rpc('my_referral_code', {});
+    if (!res.ok) return { ok: false, signedOut: !!res.signedOut };
+    return res.body && res.body.ok ? { ...res.body } : { ok: false };
+  });
+
+  /** The Referrals pane: every code, with clicks / signups / paying. */
+  ipcMain.handle('admin:referrals', async () => {
+    const res = await authService.rpc('admin_referral_list', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || {} };
+  });
+
+  /** Mint a partner code. `{ code, ownerName?, ownerUserId?, note? }`. */
+  ipcMain.handle('admin:issueReferral', async (_evt, payload) => {
+    const p = payload || {};
+    const code = typeof p.code === 'string' ? p.code.trim().slice(0, 24) : '';
+    if (!code) return { ok: false, error: 'Type a code first.' };
+    const res = await authService.rpc('admin_issue_referral_code', {
+      p_code: code,
+      p_owner_name: typeof p.ownerName === 'string' ? p.ownerName.slice(0, 80) : '',
+      p_owner_user_id: typeof p.ownerUserId === 'string' && p.ownerUserId ? p.ownerUserId : null,
+      p_note: typeof p.note === 'string' ? p.note.slice(0, 200) : '',
+    });
+    if (!res.ok) {
+      return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not issue it.' };
+    }
+    return res.body && res.body.ok
+      ? { ok: true, code: res.body.code, url: res.body.url }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not issue it.' };
+  });
+
+  /** Turn a partner code off (or back on). `{ code, active }`. */
+  ipcMain.handle('admin:setReferralActive', async (_evt, payload) => {
+    const p = payload || {};
+    const code = typeof p.code === 'string' ? p.code.trim().slice(0, 24) : '';
+    if (!code) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_set_referral_active', {
+      p_code: code,
+      p_active: !!p.active,
+    });
+    if (!res.ok) {
+      return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not update it.' };
+    }
+    return res.body && res.body.ok
+      ? { ok: true }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not update it.' };
+  });
+
   /* ---- Streaming chat linking (see electron/chatLink.js) ----
    *
    * Twitch is read anonymously, so "linking" it is just remembering a channel

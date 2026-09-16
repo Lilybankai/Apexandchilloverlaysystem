@@ -12,7 +12,7 @@
 //      public_drivers, setups (+ ratings/downloads on them), lap_traces,
 //      driver_best_laps, driver_activity_days, pit_stops, lap_consumption,
 //      engineer_calls, app_sessions, feature_usage, overlay_usage,
-//      billing_subscriptions — hangs off it with
+//      referral_attributions, billing_subscriptions — hangs off it with
 //      ON DELETE CASCADE, so this
 //      one delete empties the lot. league_codes keeps its rows but SET NULLs
 //      the user references (a redeemed code stays burned).

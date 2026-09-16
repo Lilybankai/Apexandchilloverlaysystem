@@ -2286,6 +2286,9 @@
           <button type="button" data-adminpane="billing">
             <svg class="icon"><use href="#i-credit-card" /></svg><span>Billing</span>
           </button>
+          <button type="button" data-adminpane="referrals">
+            <svg class="icon"><use href="#i-link" /></svg><span>Referrals</span>
+          </button>
           <button type="button" data-adminpane="feedback">
             <svg class="icon"><use href="#i-inbox" /></svg><span>Feedback</span>
           </button>
@@ -2829,6 +2832,109 @@
 
         </div><!-- /billing -->
 
+        <!-- ------------------------ REFERRALS ------------------------- -->
+        <!-- Partner codes (migration 0023). A partner promotes
+             apexandchillracing.co.uk/r/THEIRCODE; anyone who uses the code gets
+             10% off for as long as they subscribe, and the partner is paid
+             nothing today. Everything needed to pay one later is recorded, so
+             the decision can be made on real numbers rather than backfilled.
+
+             The funnel is four columns wide on purpose: clicks without signups
+             means the landing page is not converting; signups without paying
+             means the app is not. They are different problems. -->
+        <div class="admin-pane" data-adminpane="referrals">
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-link" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Active codes</span>
+                <span class="stat__value" id="adm-ref-codes">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ref-codes-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-external-link" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Link opens</span>
+                <span class="stat__value" id="adm-ref-clicks">—</span>
+              </span>
+            </span>
+            <span class="stat__sub">across every partner link</span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon"><svg class="icon"><use href="#i-users" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Codes redeemed</span>
+                <span class="stat__value" id="adm-ref-signups">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ref-signups-sub"></span>
+          </div>
+          <div class="stat">
+            <span class="stat__row">
+              <span class="stat__icon" data-accent="true"><svg class="icon"><use href="#i-credit-card" /></svg></span>
+              <span class="stat__body">
+                <span class="stat__label">Paying on a code</span>
+                <span class="stat__value" id="adm-ref-paying">—</span>
+              </span>
+            </span>
+            <span class="stat__sub" id="adm-ref-paying-sub"></span>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-link" /></svg>Issue a partner code</h2>
+          </div>
+          <div class="ref-issue">
+            <div class="field">
+              <label class="field__label" for="adm-ref-code">Code</label>
+              <input class="field__input" id="adm-ref-code" type="text" maxlength="24"
+                     placeholder="CRAIG" spellcheck="false" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="field__label" for="adm-ref-owner">Who it is for</label>
+              <input class="field__input" id="adm-ref-owner" type="text" maxlength="80"
+                     placeholder="Craig M." autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="field__label" for="adm-ref-note">Note (staff only)</label>
+              <input class="field__input" id="adm-ref-note" type="text" maxlength="200"
+                     placeholder="Twitch, ~400 viewers" autocomplete="off" />
+            </div>
+            <button class="btn btn--accent btn--sm" id="adm-ref-issue" type="button">Issue</button>
+          </div>
+          <p class="admin-foot" id="adm-ref-issue-out" hidden></p>
+          <p class="admin-foot">
+            3–24 letters or digits. The name is shown to whoever uses the link
+            (“Craig sent you”), so write it the way they would want to be seen.
+          </p>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-users" /></svg>Partners</h2>
+          </div>
+          <div class="admin-table__head admin-table__head--ref">
+            <span>Code · who</span>
+            <span title="How many times the link was opened">Opens</span>
+            <span title="How many accounts redeemed the code">Redeemed</span>
+            <span title="How many of those are paying right now">Paying</span>
+            <span title="Copy the link, or turn the code off">&nbsp;</span>
+          </div>
+          <ul class="admin-table admin-table--ref" id="adm-ref-list"></ul>
+          <p class="weekempty" id="adm-ref-empty" hidden>
+            No partner codes yet. Issue one above and send them the link.
+          </p>
+        </section>
+
+        </div><!-- /referrals -->
+
         <!-- ------------------------- FEEDBACK ------------------------- -->
         <div class="admin-pane" data-adminpane="feedback">
 
@@ -3318,6 +3424,57 @@
 
         <!-- ==================== ACCOUNT ==================== -->
         <div class="settings-pane" data-settingspane="account">
+
+        <!-- ------------------ PARTNER REFERRAL LINK ------------------ -->
+        <!-- Only exists for drivers who have been issued a code (they are
+             admin-issued, so this is a handful of people). Hidden entirely for
+             everyone else rather than shown empty with a "you don't have one" —
+             a card that is permanently disabled is worse than no card.
+
+             The three numbers are the partner's own funnel and nobody else's;
+             they never see who used it, only how many did. -->
+        <section class="card" id="ref-card" hidden>
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-link" /></svg>Your referral link</h2>
+            <p class="card__desc">
+              Share this anywhere — a stream, a description, Discord. Anyone who
+              uses it gets <strong id="ref-pct">10%</strong> off Apex AIO for as
+              long as they stay subscribed.
+            </p>
+          </div>
+          <div class="ref-link">
+            <input class="field__input ref-link__url" id="ref-url" type="text" readonly spellcheck="false" />
+            <button class="btn btn--accent btn--sm" id="ref-copy" type="button">Copy</button>
+          </div>
+          <p class="admin-foot" id="ref-code-note"></p>
+          <div class="stats stats--tight">
+            <div class="stat">
+              <span class="stat__row">
+                <span class="stat__body">
+                  <span class="stat__label">Link opens</span>
+                  <span class="stat__value" id="ref-clicks">—</span>
+                </span>
+              </span>
+            </div>
+            <div class="stat">
+              <span class="stat__row">
+                <span class="stat__body">
+                  <span class="stat__label">Used the code</span>
+                  <span class="stat__value" id="ref-signups">—</span>
+                </span>
+              </span>
+            </div>
+            <div class="stat">
+              <span class="stat__row">
+                <span class="stat__body">
+                  <span class="stat__label">Subscribed</span>
+                  <span class="stat__value" id="ref-paying">—</span>
+                </span>
+              </span>
+            </div>
+          </div>
+        </section>
+
         <div class="two-col">
           <!-- ------------------- SUBSCRIPTION ------------------- -->
           <!-- Hidden while signed out (there is no plan to show); everyone

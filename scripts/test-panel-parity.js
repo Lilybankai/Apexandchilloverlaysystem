@@ -449,6 +449,33 @@ const PANEL_CONTRACT = {
   'adm-ov-hist-empty': 'p',
   'adm-cloud-list': 'ul',
 
+  // Referrals pane (v0.99.12, migration 0023). The issue form is the only way
+  // to mint a partner code from inside the app; losing a field here would make
+  // it silently issue codes with no owner against them.
+  'adm-ref-codes': 'span',
+  'adm-ref-codes-sub': 'span',
+  'adm-ref-clicks': 'span',
+  'adm-ref-signups': 'span',
+  'adm-ref-signups-sub': 'span',
+  'adm-ref-paying': 'span',
+  'adm-ref-paying-sub': 'span',
+  'adm-ref-code': 'input:text',
+  'adm-ref-owner': 'input:text',
+  'adm-ref-note': 'input:text',
+  'adm-ref-issue': 'button',
+  'adm-ref-issue-out': 'p',
+  'adm-ref-list': 'ul',
+  'adm-ref-empty': 'p',
+  // The partner's own link, in Settings → Account.
+  'ref-card': 'section',
+  'ref-url': 'input:text',
+  'ref-copy': 'button',
+  'ref-pct': 'strong',
+  'ref-code-note': 'p',
+  'ref-clicks': 'span',
+  'ref-signups': 'span',
+  'ref-paying': 'span',
+
   // Setup editor (v0.65.0). Only the static frame is contracted — every
   // setting row is built at runtime from the sim's own key set, so rows have
   // no ids at all (kept references instead, per the opacityRow() pattern).
@@ -609,6 +636,9 @@ const AUTH_CONTRACT = {
   // gate to open, and a dead control at that moment reads as theft.
   'sub-lede': 'p',
   'sub-start-btn': 'button',
+  // The partner discount line (migration 0023). Losing it would silently
+  // charge someone full price after a landing page promised them 10% off.
+  'sub-ref': 'p',
   'sub-code-form': 'form',
   'sub-code-input': 'input:text',
   'sub-code-btn': 'button',
