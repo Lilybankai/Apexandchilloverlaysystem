@@ -117,6 +117,36 @@ overcharged relative to what the landing page promised.
 
 ---
 
+## The website is a different Supabase project
+
+Worth knowing before touching anything on the site, because getting it wrong
+fails **silently**:
+
+| | Supabase project |
+|---|---|
+| apexandchillracing.co.uk | `yfgvsiqrrxuucrkkqmqy` — join submissions, merch orders |
+| Apex AIO (app, accounts, billing, **referrals**) | `svtyxuhbsbbodsecbnsc` |
+
+`lib/supabase.ts` on the website returns clients for the **first** one. The
+referral tables live in the second, so `lib/referral.ts` builds its own client
+against the AIO project (hardcoded, with a `NEXT_PUBLIC_APEX_AIO_SUPABASE_*`
+override; the anon key is public by construction — it ships inside every
+installer).
+
+This is what "unknown code" and "wrong database" look like from the landing
+page: identical. The banner just never appears.
+
+The click counter has the same constraint and no way round it — the website's
+service-role key belongs to the other project, and handing a marketing site the
+AIO project's service key (which bypasses RLS on accounts, billing and lap data)
+to increment a counter would be a bad trade. So `referral_record_click` is
+granted to `anon` and capped at 5000/code/day (migration 0025). What that
+concedes is a wrong number in a column nobody is paid on; `redeemed` and
+`paying` both need a real account and a real Stripe subscription and cannot be
+faked from outside.
+
+---
+
 ## Issuing a code
 
 **Admin → Referrals → Issue a partner code.**
@@ -133,15 +163,54 @@ to the partner is the only thing you want to do next.
 ### Linking a code to their account
 
 A code can be issued to someone who has never opened the app — that is usually
-the point. If they *do* have an account and you set `owner_user_id`, their link
-and its numbers appear in their own **Settings → Account**, so they can copy it
-without asking you. There is no UI for setting that yet; do it in SQL:
+the point, and it works perfectly for whoever uses it either way.
 
-```sql
-update public.referral_codes
-   set owner_user_id = (select id from auth.users where email = 'them@example.com')
- where code = 'CRAIG';
-```
+Linking is what the **partner** gets: their link, their stream overlay and their
+three numbers appear in their own **Settings → Account**, so they can fetch them
+without asking you.
+
+Two ways, both by email — an email is what you have in front of you:
+
+- **Their account email** on the issue form, when you already know it.
+- **Link** on the partner's row afterwards, once they have signed up. The row
+  says `not linked to an account` until then, so it is visible rather than
+  something you have to remember to check. **Unlink** moves it or detaches it;
+  the code and all its numbers stay exactly where they are.
+
+One account can own one active code. A second would be invisible to them —
+Settings shows the oldest — so it is refused rather than silently ignored.
+
+### The stream overlay
+
+Every code has one, at `…/r/<CODE>/overlay`. A partner adds it in OBS as a
+**Browser Source** and their code sits on screen with the Apex mark, the 10%,
+and the short link, on a transparent background.
+
+It is hosted on the website, not served by the desktop app like every other
+Apex overlay — those need live telemetry, this needs a string. A browser source
+pointing at `localhost` would break on any day the partner streams something
+else with Apex closed.
+
+Options, on the URL:
+
+| | |
+|---|---|
+| `?layout=badge` | stacked block for a corner (default is a horizontal bar) |
+| `?theme=light` | for a bright scene |
+| `?scale=1.5` | multiplies everything, for a 4K canvas |
+
+The **Style** dropdown in Settings → Account builds these, and **Preview** opens
+the result in a browser so they can see it before it goes live.
+
+An unknown or revoked code renders an **empty transparent page** — never an
+error. This is in front of an audience; the failure mode has to be an invisible
+source, not a red box over somebody's race. Which also means a partner whose
+code you turn off sees their overlay quietly disappear within five minutes
+(the page's cache window) rather than break.
+
+Loading the overlay does **not** count a click. An OBS source reloads on every
+scene change, and counting those would fill a partner's funnel with their own
+stream.
 
 ---
 

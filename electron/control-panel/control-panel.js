@@ -5042,11 +5042,16 @@
     }
     const sub = document.createElement('span');
     sub.className = 'admin-row__email';
-    sub.textContent = row.ownerName
-      ? row.note
-        ? `${row.ownerName} · ${row.note}`
-        : row.ownerName
-      : row.note || 'unnamed';
+    // Whether the code is LINKED is the thing an admin is checking for here:
+    // an unlinked code works perfectly for the person using it and is invisible
+    // to the partner, who cannot see their own numbers or get their overlay.
+    // So it is said on the row rather than left to be discovered.
+    const bits = [];
+    if (row.ownerName) bits.push(row.ownerName);
+    if (row.ownerEmail) bits.push(row.ownerEmail);
+    else bits.push('not linked to an account');
+    if (row.note) bits.push(row.note);
+    sub.textContent = bits.join(' · ');
     who.append(sub);
 
     const actions = document.createElement('span');
@@ -5059,6 +5064,46 @@
     copy.addEventListener('click', async () => {
       await window.apex.copy(row.url || '');
       showToast('Referral link copied');
+    });
+
+    /*
+     * Link the code to an account, by email.
+     *
+     * A prompt rather than an inline field: this is done once per partner, at
+     * the moment they sign up, and a permanent input on every row would be
+     * clutter the other 99% of the time. The email is what an admin has in
+     * front of them — the uuid never is.
+     */
+    const link = document.createElement('button');
+    link.className = 'btn btn--ghost btn--sm';
+    link.type = 'button';
+    link.textContent = row.ownerEmail ? 'Unlink' : 'Link';
+    link.title = row.ownerEmail
+      ? `Linked to ${row.ownerEmail} — they see this code in their own Settings`
+      : 'Link this code to a driver’s account so they can see it in Settings';
+    link.addEventListener('click', async () => {
+      let email = '';
+      if (!row.ownerEmail) {
+        email = (window.prompt(`Link ${row.code} to which account email?`, '') || '').trim();
+        if (!email) return;
+      } else if (
+        !window.confirm(
+          `Unlink ${row.code} from ${row.ownerEmail}?\n\n` +
+            'The code keeps working and keeps its numbers — they just stop ' +
+            'seeing it in their own Settings.',
+        )
+      ) {
+        return;
+      }
+      link.disabled = true;
+      const res = await window.apex.admin.setReferralOwner({ code: row.code, email });
+      link.disabled = false;
+      if (!res || !res.ok) {
+        setAdminMsg((res && res.error) || 'Could not change that.');
+        return;
+      }
+      showToast(email ? `${row.code} linked to ${email}` : `${row.code} unlinked`);
+      await refreshReferrals();
     });
 
     const toggle = document.createElement('button');
@@ -5087,7 +5132,7 @@
       await refreshReferrals();
     });
 
-    actions.append(copy, toggle);
+    actions.append(copy, link, toggle);
     li.append(
       who,
       usageNum(row.clicks),
@@ -5124,6 +5169,7 @@
         const res = await window.apex.admin.issueReferral({
           code,
           ownerName: ($('#adm-ref-owner').value || '').trim(),
+          ownerEmail: ($('#adm-ref-email').value || '').trim(),
           note: ($('#adm-ref-note').value || '').trim(),
         });
         issue.disabled = false;
@@ -5135,9 +5181,17 @@
         // sent to the partner — so it goes straight to the clipboard rather
         // than making them find and click Copy on the row that just appeared.
         await window.apex.copy(res.url || '');
-        say(`${res.code} issued — link copied: ${res.url}`);
+        // A warning means the code WAS created but the email did not link, and
+        // that has to be said: silence would look like it worked, and the
+        // partner would never see their own numbers.
+        say(
+          res.warning
+            ? `${res.code} issued — link copied. ${res.warning}`
+            : `${res.code} issued — link copied: ${res.url}`,
+        );
         $('#adm-ref-code').value = '';
         $('#adm-ref-owner').value = '';
+        $('#adm-ref-email').value = '';
         $('#adm-ref-note').value = '';
         await refreshReferrals();
       });
@@ -5172,6 +5226,33 @@
     setText('#ref-clicks', groupedNumber(r.clicks));
     setText('#ref-signups', groupedNumber(r.signups));
     setText('#ref-paying', groupedNumber(r.paying));
+
+    // The overlay URL arrives from the server (migration 0024) rather than
+    // being assembled here, so the address can change without an app release.
+    // An older backend returns nothing for it, in which case the whole card
+    // simply has no stream section rather than an empty box.
+    myOverlayUrl = typeof r.overlayUrl === 'string' ? r.overlayUrl : '';
+    const overlaySection = $('.ref-overlay');
+    if (overlaySection) overlaySection.hidden = !myOverlayUrl;
+    renderOverlayUrl();
+  }
+
+  /** The partner's stream-overlay URL, before any style options are added. */
+  let myOverlayUrl = '';
+
+  /**
+   * Rebuild the overlay URL from the chosen style.
+   *
+   * The style is a raw query string from the dropdown's values, appended
+   * whole. Keeping the option strings as the actual query means the list can
+   * grow without this function learning anything about what the options mean.
+   */
+  function renderOverlayUrl() {
+    const field = $('#ref-overlay-url');
+    if (!field) return;
+    const style = $('#ref-overlay-style');
+    const q = (style && style.value) || '';
+    field.value = myOverlayUrl ? (q ? `${myOverlayUrl}?${q}` : myOverlayUrl) : '';
   }
 
   {
@@ -5181,6 +5262,28 @@
         const url = $('#ref-url');
         await window.apex.copy((url && url.value) || '');
         showToast('Your referral link is copied');
+      });
+    }
+    const style = $('#ref-overlay-style');
+    if (style) style.addEventListener('change', renderOverlayUrl);
+
+    const overlayCopy = $('#ref-overlay-copy');
+    if (overlayCopy) {
+      overlayCopy.addEventListener('click', async () => {
+        const field = $('#ref-overlay-url');
+        await window.apex.copy((field && field.value) || '');
+        showToast('Overlay link copied — add it in OBS as a Browser Source');
+      });
+    }
+
+    // Opens in the real browser, not a panel window: the point is to see it
+    // rendered the way OBS will, and OBS is a browser.
+    const preview = $('#ref-overlay-preview');
+    if (preview) {
+      preview.addEventListener('click', () => {
+        const field = $('#ref-overlay-url');
+        const value = (field && field.value) || '';
+        if (value) window.apex.openInBrowser(value);
       });
     }
   }

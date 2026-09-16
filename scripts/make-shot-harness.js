@@ -347,6 +347,22 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
             track: { name: 'Bahrain (WEC)', photo: null } }
         ] }
     ] }) },
+    /*
+     * The signed-in driver's own partner code (migration 0024). Present here so
+     * the card in Settings → Account can be shot at all — it is hidden for
+     * everyone without a code, which is almost everyone, so an empty stub would
+     * mean the card could never be reviewed.
+     */
+    referralMine: P({
+      ok: true,
+      code: 'APEX10',
+      url: 'https://apexandchillracing.co.uk/r/APEX10',
+      overlayUrl: 'https://apexandchillracing.co.uk/r/APEX10/overlay',
+      percentOff: 10,
+      clicks: 412,
+      signups: 28,
+      paying: 11,
+    }),
     admin: { whoami: P({ ok: true, isAdmin: true }), overview: P({ ok: false }),
       feedback: P({ ok: true, rows: [
         { id: 1, kind: 'idea', status: 'planned', driver: 'Mark Slater', app_version: '0.87.0',

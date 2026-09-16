@@ -1084,6 +1084,11 @@ html, body {
    disabled input refuses. Copy is still the path everyone will take. */
 .ref-link { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
 .ref-link__url {
+  /* `.field__input` is `width: 130px` — a fixed width meant for a port number,
+     which silently wins over the grid's `1fr` and clipped the URL to a stub.
+     Every referral field below overrides it for the same reason: these hold
+     addresses and email, not three digits. */
+  width: 100%;
   font-family: var(--font-mono);
   font-size: 13px;
   /* Not var(--text-3): this is the whole point of the card, not a hint. */
@@ -1104,8 +1109,51 @@ html, body {
   gap: 10px;
   align-items: end;
 }
-@media (max-width: 720px) {
-  .ref-issue { grid-template-columns: 1fr; align-items: stretch; }
+/* With the owner email as well: code, name, email, note, button. */
+.ref-issue--wide { grid-template-columns: 130px 1fr 1.2fr 1fr auto; }
+/* Same 130px override as .ref-link__url — these are names and emails. */
+.ref-issue .field__input { width: 100%; font-family: var(--font-ui); }
+.ref-issue #adm-ref-code { font-family: var(--font-mono); text-transform: uppercase; }
+@media (max-width: 900px) {
+  .ref-issue,
+  .ref-issue--wide { grid-template-columns: 1fr 1fr; align-items: end; }
+}
+@media (max-width: 560px) {
+  .ref-issue,
+  .ref-issue--wide { grid-template-columns: 1fr; align-items: stretch; }
+}
+
+/* The partner's stream overlay, under their link in Settings → Account.
+   Set apart with a rule rather than its own card: it is the same subject as
+   the link above it, just a different place to put it. */
+.ref-overlay {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+}
+.ref-overlay__title {
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ref-overlay__desc { margin: 0 0 10px; font-size: 12px; color: var(--text-3); }
+.ref-overlay__opts {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.ref-overlay__opts .field__label { margin: 0; white-space: nowrap; }
+/* Sentences, not numbers — see .ref-link__url for why the width is restated. */
+.ref-overlay__opts .field__input {
+  width: 100%;
+  max-width: 300px;
+  font-family: var(--font-ui);
 }
 
 .admin-table__head--ref,

@@ -463,8 +463,23 @@ contextBridge.exposeInMainWorld('apex', {
      * never the people behind them.
      */
     referrals: () => ipcRenderer.invoke('admin:referrals'),
-    /** Mint a partner code: `{ code, ownerName?, ownerUserId?, note? }` → `{ ok, code, url, error? }`. */
+    /**
+     * Mint a partner code: `{ code, ownerName?, ownerEmail?, note? }` →
+     * `{ ok, code, url, overlayUrl, linked, warning? }`.
+     *
+     * `warning` is a PARTIAL success: the code exists but the email did not
+     * link (no such account, or that account already owns one). The pane must
+     * show it — silence would read as fully done and the partner would never
+     * see their own numbers.
+     */
     issueReferral: (payload) => ipcRenderer.invoke('admin:issueReferral', payload),
+    /**
+     * Link a code to a driver's account by email, or unlink with an empty one:
+     * `{ code, email }` → `{ ok, linked, driver?, error? }`. Linking is what
+     * puts the code, its stream overlay and its numbers in that driver's own
+     * Settings → Account.
+     */
+    setReferralOwner: (payload) => ipcRenderer.invoke('admin:setReferralOwner', payload),
     /** Turn one off or back on: `{ code, active }` → `{ ok, error? }`. */
     setReferralActive: (payload) => ipcRenderer.invoke('admin:setReferralActive', payload),
     /**

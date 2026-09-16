@@ -461,6 +461,7 @@ const PANEL_CONTRACT = {
   'adm-ref-paying-sub': 'span',
   'adm-ref-code': 'input:text',
   'adm-ref-owner': 'input:text',
+  'adm-ref-email': 'input:email',
   'adm-ref-note': 'input:text',
   'adm-ref-issue': 'button',
   'adm-ref-issue-out': 'p',
@@ -475,6 +476,12 @@ const PANEL_CONTRACT = {
   'ref-clicks': 'span',
   'ref-signups': 'span',
   'ref-paying': 'span',
+  // The stream overlay a partner adds to OBS (migration 0024). Losing the
+  // field or the style picker leaves them with no way to get the URL.
+  'ref-overlay-url': 'input:text',
+  'ref-overlay-copy': 'button',
+  'ref-overlay-style': 'select',
+  'ref-overlay-preview': 'button',
 
   // Setup editor (v0.65.0). Only the static frame is contracted — every
   // setting row is built at runtime from the sim's own key set, so rows have

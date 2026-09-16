@@ -4684,13 +4684,44 @@ function registerIpc() {
       p_owner_name: typeof p.ownerName === 'string' ? p.ownerName.slice(0, 80) : '',
       p_owner_user_id: typeof p.ownerUserId === 'string' && p.ownerUserId ? p.ownerUserId : null,
       p_note: typeof p.note === 'string' ? p.note.slice(0, 200) : '',
+      p_owner_email: typeof p.ownerEmail === 'string' ? p.ownerEmail.slice(0, 120) : '',
     });
     if (!res.ok) {
       return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not issue it.' };
     }
     return res.body && res.body.ok
-      ? { ok: true, code: res.body.code, url: res.body.url }
+      ? {
+          ok: true,
+          code: res.body.code,
+          url: res.body.url,
+          overlayUrl: res.body.overlayUrl,
+          linked: !!res.body.linked,
+          // Set when the code was created but the email could not be linked —
+          // a partial success the pane has to report rather than swallow.
+          warning: res.body.warning || null,
+        }
       : { ok: false, error: (res.body && res.body.error) || 'Could not issue it.' };
+  });
+
+  /**
+   * Link a partner code to a driver's account, by email — or unlink it with an
+   * empty email. Linking is what makes the code (and its stream overlay, and
+   * its numbers) appear in that driver's own Settings → Account.
+   */
+  ipcMain.handle('admin:setReferralOwner', async (_evt, payload) => {
+    const p = payload || {};
+    const code = typeof p.code === 'string' ? p.code.trim().slice(0, 24) : '';
+    if (!code) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_set_referral_owner', {
+      p_code: code,
+      p_email: typeof p.email === 'string' ? p.email.trim().slice(0, 120) : '',
+    });
+    if (!res.ok) {
+      return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not change it.' };
+    }
+    return res.body && res.body.ok
+      ? { ok: true, linked: !!res.body.linked, driver: res.body.driver || '' }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not change it.' };
   });
 
   /** Turn a partner code off (or back on). `{ code, active }`. */
