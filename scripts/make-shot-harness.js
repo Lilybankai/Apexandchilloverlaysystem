@@ -55,6 +55,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // Which zone its times are drawn in: ?zone=utc.
     const zone = q.get('zone');
     if (zone) localStorage.setItem('apex.panel.scheduleZone', zone);
+    // Next up, or the day-by-day calendar: ?mode=calendar.
+    const mode = q.get('mode');
+    if (mode) localStorage.setItem('apex.panel.scheduleMode', mode);
     const skfilter = q.get('skfilter');
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
@@ -310,6 +313,12 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           message: 'Could the fuel tab show laps remaining as well as litres?',
           reply: 'Good shout — it is going in the next build. Thanks for sending it.' },
       ] : [] }) },
+    reminders: {
+      list: P({ ok: true, reminders: [], settings: { toast: true, voice: false, entriesOpen: false }, leads: [5, 2] }),
+      toggle: P({ ok: true, on: true }),
+      settings: P({ ok: true, settings: { toast: true, voice: false, entriesOpen: false } }),
+      onChange: function () { return function () {}; },
+    },
     schedule: {
       /*
        * The game's own calendar. Times are computed FROM NOW rather than frozen,
@@ -319,9 +328,22 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
        */
       dailies: (function () {
         var at = function (min) { return new Date(Date.now() + min * 60000).toISOString(); };
-        var occ = function (title, track, classes, min, over) {
+        /* Real outlines, lifted from a live extraction, so the harness shows
+           what the tab actually draws rather than a placeholder rectangle. */
+        var MAPS = {
+          bahrain: { d: 'M17.6 59.9L19.7 4.3L20 1.3L20.8 0.3L22.8 0.2L25.9 3L28.7 4.1L31.7 4L37.3 2.5L41.9 2.5L80.5 9.6L83.1 11.1L84.1 14L82.7 17.7L73.4 24.8L67.3 33.2L64 35L57 35.3L53.3 36.9L49.5 40.9L45.1 48.2L42.9 49.6L40.9 48.9L39.9 46.4L43.9 27.8L44 21L42.2 16.8L39.6 14.6L37.7 15.2L36.4 18.4L35.3 31.5L33.5 68.1L33.7 71.5L34.7 73.7L36.5 75.2L39.4 76L42 75.7L44.4 74.6L47.6 71.2L50.8 63.9L53 60.7L56.6 58.1L61.3 56.9L64.6 57.2L67.9 58.3L73.8 61.4L76.2 63.4L77 65.4L76.9 67.7L75.7 69.9L73.4 71.9L25.1 98.8L22.4 99.9L20.3 99.9L18.8 99.2L17.4 97.5L15.9 93L17.5 60.5Z', view: 100, points: 58 },
+          spa: { d: 'M46.2 47.6L42 37.6L40.4 29.6L40.3 25.9L40.9 25.2L42.7 24.7L42.8 23L29.6 3L28.9 0.5L29.9 0L32.1 0.5L40.8 5.6L44.5 8.9L52.1 17.2L57.8 21.9L61.6 30.5L67.4 38.8L70 43.8L80.6 75.3L81.1 78.9L78.7 83.3L79.8 87.8L79 90.8L67.7 99.5L65.6 100L64 99.1L63.5 97.8L63.9 96.2L65.1 94.9L69.4 92.4L70.3 90.8L70.3 88.9L67.5 81L64.4 68.1L61.8 65.3L58.3 64.3L54.2 65.3L50.8 68.4L49.5 71.1L45.7 82.8L43.7 85.5L41.2 86.1L37.3 84.8L34.8 85.5L32.8 87.7L29.4 94.2L27.2 95.6L25 95.2L21.5 93L19.1 89.6L18.8 86.9L19.5 84.3L23.3 77.9L28.7 72.9L39.2 66.5L42.8 62.5L46.5 54.2L46.8 51L46.3 47.9Z', view: 100, points: 59 },
+          monza: { d: 'M35.5 60.1L31.7 97.5L30.7 99L29.1 99.8L27.1 100L25.1 99.3L22.5 96.6L21.1 91.9L21.7 76.4L25 36.6L25.3 35.5L26.9 34.8L27.3 34L26 27.7L26.2 21L27.4 16.6L30.1 12.7L33.5 9.9L37.7 8.1L42.5 7.3L58.2 6.3L61.3 3.8L74.1 0L76.5 0.8L78 2.7L79 13.5L78.5 15L77.4 16.2L61.5 25.4L40.7 43.4L39.7 45.1L39.3 49.1L36.2 54.1L35.5 59.9Z', view: 100, points: 34 },
+          daytona: { d: 'M38.6 52.8L30.4 63.7L27.9 68.7L27.2 74.9L28.8 85.4L27.8 88.5L26.4 89.4L24.8 89.4L23 88.3L21.9 86.6L21 83.2L19.3 68.2L18.3 66L16.6 65L14.5 65.1L12.2 66.2L10.2 68.3L8.8 70.7L7.7 78L8.9 85.6L12 91.4L16.4 95.9L21.9 98.8L28.1 100L34.3 99.4L39.8 97.1L44.4 93.5L50 87.1L70.6 59.1L72.1 55.9L72.6 51L73.8 48.4L82.7 41.5L88.6 33.3L90.9 28.5L92.1 24.2L92.2 19.3L91.4 14.9L88.2 8.7L83.3 3.8L76.7 0.7L69.8 0.1L64 1.2L57.2 4.2L34 18.9L25.5 26.1L19.6 34.2L15.3 44.2L14.3 50.1L14.4 54.6L15.2 57.4L16.7 59.2L19.3 59.9L21.7 59.3L32.3 50.8L39 41.3L41.4 39.7L43 40L44 40.8L44.4 43.6L42.9 47.2L39 52.3Z', view: 100, points: 62 },
+          lemans: { d: 'M29.7 41.7L29.4 35.8L28.1 30.5L26.2 26.5L26.8 17.6L27.8 13.7L29 12.2L31.4 10.6L32.1 8.8L36.1 5.7L40.5 4.6L41.4 2.4L42.5 1.3L45.9 0L48.1 0.7L51.3 4.4L54.6 10.9L61.2 34.1L61 36.6L62.8 39.3L70.9 68.4L72.5 70.6L72.2 73L73.5 79.3L73.8 95.1L73.5 98.5L72.8 100L59.9 96L52.2 91.9L43.2 85L40.9 80.7L35.4 82.2L32.8 71.1L27.3 59.6L27.5 57.8L30 54.2L29.7 51.8L27.6 48L28 46.7L29.7 44.4L29.8 41.9Z', view: 100, points: 41 },
+          portimao: { d: 'M37.2 68.9L20.6 11.9L20.9 8.5L22.4 5.6L26.1 2.5L30.1 0.6L34.2 0L39 0.6L42.8 1.9L44.3 3.6L43.6 5.5L39 8.1L37.2 10L36 13.3L35.8 16.8L48 58.2L50 59.1L51.9 57.2L53.1 43.7L52 38.3L46.3 26.6L45.4 21.6L46.1 18.7L47.7 16L50 13.5L52.1 12.7L54.5 13.5L56.2 16.5L57.9 34.7L58.8 38.5L60.3 41.6L64.6 46.2L75.6 52.3L78 54.6L79.3 56.9L79.3 59.4L77.7 61.6L74.9 63L65.7 65.5L62.9 67.8L60.5 71.7L59.3 75.5L58.5 81.6L59 83.7L60.4 84.9L62.5 85.1L64.4 84.1L69 77.1L72.2 74.8L74.2 74.6L76.3 75.7L77.6 77.4L78.3 79.9L77.9 82.8L76.6 85.7L70.1 93.9L66.5 97.1L61.3 99.3L57.2 100L53 99.5L49.1 97.6L45.8 94.6L42.9 89.1L37.3 69.4Z', view: 100, points: 64 },
+          silverstone: { d: 'M55.3 0.9L64 0L66.9 0.2L70.4 1.9L72.9 5.1L74.5 11.9L75.5 26.8L78.3 35.5L77.1 44.7L79.3 49.6L79.6 51.7L78 55.2L73.2 58.9L70.6 62L53.3 95.4L50.5 98.7L47.4 100L44.4 99.5L42.1 97.9L37 89.8L30.4 82L28.4 81.4L24.9 82.7L22.6 81.6L20.8 78.8L20.4 75.6L21 73.2L22.4 70.6L35.2 53.6L38.2 50.9L42 49.7L48.6 50.3L52.5 49.6L55.8 47.7L60.8 42.9L62.7 42.1L64.1 42.3L65.1 43.2L66 47.3L66.9 48.5L68.8 48.4L70.3 46.6L71.2 40.8L70.6 38.3L69.2 36.1L43.6 13.5L40.4 12.3L37.6 13.1L36.1 15.2L35.5 19.2L34.1 20.7L31.9 20.5L30.4 18.8L30.2 16L31.7 12.5L34.7 8.2L38.3 4.9L44 2.3L55 0.9Z', view: 100, points: 59 },
+          barcelona: { d: 'M82 33.5L44.5 92.1L41.1 95.4L38.4 95.9L34 94.4L30.8 94.4L27.7 95.7L22.7 99.1L18.7 100L14.3 98.9L10.6 95.8L8.4 90.3L8.2 87.2L8.8 83.8L11.3 78.1L19.4 65.4L22.7 61.4L26.1 60.2L28 60.6L29.8 61.7L31.8 65.3L31.8 68.8L30.6 72.5L23.9 81.6L22.1 85L22.2 87.5L24 89.3L27.4 89.4L35.6 85.6L41.1 82L45.3 77.7L48.5 72.5L48.9 69.3L47.5 66.7L43.1 62.3L40.5 57.8L36.9 48.5L37 43.5L39.3 39.7L43 36.7L75.5 21.5L78.7 19.2L79.5 17.5L79.2 15.7L77.9 14.2L75.6 13.2L71.1 13.5L63.2 17.2L60.7 16.9L58.7 15L58 11.9L59.1 8.8L62.3 5.8L68.6 1.2L73.4 0L78.3 1.1L87.4 6.8L90.9 11.1L91.8 15.1L91.1 19.3L82.2 33.1Z', view: 100, points: 61 },
+          paulricard: { d: 'M51.6 59L35.5 47.7L33.3 47.3L29.4 49.2L26.6 48.9L17.3 42.3L7.7 37.7L6.3 36.1L5.1 32.3L3.9 31.8L1.1 31.9L0.1 30.9L0.9 27.7L3.5 26.6L6.3 27.9L9.6 33.1L13.3 35.5L92 61.4L96.1 63.3L98.2 65.4L99.5 68.2L100 71.9L99 73.4L97.5 72.8L96.1 69.2L94.9 68.3L93.2 68.3L88.2 70.3L84.7 70.4L81.5 69.5L76.8 66.4L74.9 65.7L73.3 66.1L72.1 67.2L71.6 68.6L71.7 71.2L70.4 72.2L68.4 71.3L51.8 59.1Z', view: 100, points: 39 },
+        };
+        var occ = function (title, track, classes, min, map, over) {
           var o = { seriesId: 's', title: title, track: track, classes: classes,
-            startsAt: at(min), registrationOpens: at(min - 30),
+            startsAt: at(min), registrationOpens: at(min - 30), map: map,
             raceMin: 20, eventMin: 31.5, tyreSets: 8, tyreWarmers: true,
             fixedSetup: true, maxPlayers: 20 };
           for (var k in (over || {})) o[k] = over[k];
@@ -331,43 +353,72 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           return { id: 'e' + min, startsAt: at(min), registrationOpens: at(min - 1440),
             registrations: regs, isRegistered: !!mine };
         };
-        var tier = function (key, label, badge, cadence, list) {
+        /* minutesUtc is what the Calendar view draws any future day from, so
+           the harness has to carry it or that pane is empty. The interval below
+           is the one ONE event comes round at (the tier cadence times the
+           number of events rotating), which is why it divides 1440.
+           NB: no backticks anywhere in this stub -- it is a template literal. */
+        var pattern = function (startMin, every) {
+          var mins = [];
+          for (var m = startMin; m < 1440; m += every) mins.push(m);
+          return mins;
+        };
+        var ev = function (title, track, classes, map, startMin, every, over) {
+          var o = { seriesId: 's', title: title, track: track, classes: classes, map: map,
+            raceMin: 20, eventMin: 31.5, tyreSets: 8, tyreWarmers: true,
+            fixedSetup: true, maxPlayers: 20, minutesUtc: pattern(startMin, every) };
+          for (var k in (over || {})) o[k] = over[k];
+          return o;
+        };
+        var tier = function (key, label, badge, cadence, list, events) {
           return { key: key, label: label, badge: badge, cadenceMin: cadence,
-            events: [], next: list[0], upcoming: list };
+            events: events, next: list[0], upcoming: list };
         };
         var sprint = { raceMin: 30, eventMin: 41.5, tyreWarmers: false, fixedSetup: false, maxPlayers: 44 };
         var long = { raceMin: 60, eventMin: 72.5, tyreWarmers: false, fixedSetup: false, maxPlayers: 44 };
         return P({ ok: true, fetchedAt: new Date().toISOString(), reason: null, error: null,
           tiers: [
             tier('beginner', 'Beginner', 'Bronze', 15, [
-              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 8),
-              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 23),
-              occ('LMP3 Fixed', '6 Hours of Monza', ['LMP3'], 38),
-              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 53),
-              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 68),
+              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 8, MAPS.bahrain),
+              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 23, MAPS.spa),
+              occ('LMP3 Fixed', '6 Hours of Monza', ['LMP3'], 38, MAPS.monza),
+              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 53, MAPS.bahrain),
+              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 68, MAPS.spa),
+            ], [
+              ev('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], MAPS.bahrain, 15, 45),
+              ev('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], MAPS.spa, 30, 45),
+              ev('LMP3 Fixed', '6 Hours of Monza', ['LMP3'], MAPS.monza, 0, 45),
             ]),
             tier('intermediate', 'Intermediate', 'Silver', 20, [
-              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 13, sprint),
-              occ('LMGT3 Sprint Cup', '24 Heures du Mans', ['LMGT3'], 33, sprint),
-              occ('Prototype Fixed', '4 Hours of Portimao', ['LMP2', 'LMP3'], 53, sprint),
-              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 73, sprint),
+              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 13, MAPS.daytona, sprint),
+              occ('LMGT3 Sprint Cup', '24 Heures du Mans', ['LMGT3'], 33, MAPS.lemans, sprint),
+              occ('Prototype Fixed', '4 Hours of Portimao', ['LMP2', 'LMP3'], 53, MAPS.portimao, sprint),
+              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 73, MAPS.daytona, sprint),
+            ], [
+              ev('LMGT3 Sprint Cup', '24 Heures du Mans', ['LMGT3'], MAPS.lemans, 10, 60, sprint),
+              ev('Prototype Fixed', '4 Hours of Portimao', ['LMP2', 'LMP3'], MAPS.portimao, 30, 60, sprint),
+              ev('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], MAPS.daytona, 50, 60, sprint),
             ]),
             tier('advanced', 'Advanced', 'Gold', 30, [
-              occ('ELMS Super 60', '4 Hours of Silverstone', ['LMP2', 'LMP3', 'LMGT3'], 18, long),
-              occ('WEC-Xperience', '4 Hours of Barcelona', ['Hypercar', 'LMGT3'], 48, long),
-              occ('One Stint Sprint', 'Paul Ricard - 1A-V2-Short', ['Hypercar', 'LMGT3'], 78, long),
+              occ('ELMS Super 60', '4 Hours of Silverstone', ['LMP2', 'LMP3', 'LMGT3'], 18, MAPS.silverstone, long),
+              occ('WEC-Xperience', '4 Hours of Barcelona', ['Hypercar', 'LMGT3'], 48, MAPS.barcelona, long),
+              occ('One Stint Sprint', 'Paul Ricard - 1A-V2-Short', ['Hypercar', 'LMGT3'], 78, MAPS.paulricard, long),
+            ], [
+              ev('ELMS Super 60', '4 Hours of Silverstone', ['LMP2', 'LMP3', 'LMGT3'], MAPS.silverstone, 25, 90, long),
+              ev('WEC-Xperience', '4 Hours of Barcelona', ['Hypercar', 'LMGT3'], MAPS.barcelona, 55, 90, long),
+              ev('One Stint Sprint', 'Paul Ricard - 1A-V2-Short', ['Hypercar', 'LMGT3'], MAPS.paulricard, 85, 90, long),
             ]),
           ],
           series: [
             { type: 'weekly', typeLabel: 'Weekly', seriesId: 'w', title: 'WEC Weekly Community Tests',
               teamEvent: false, rank: 'Silver', rankTier: 2, track: '24 Heures du Mans',
-              classes: ['Hypercar', 'LMP2', 'LMGT3'], raceMin: 90, tyreSets: 10, tyreWarmers: false,
+              classes: ['Hypercar', 'LMP2', 'LMGT3'], raceMin: 90, tyreSets: 10, tyreWarmers: false, map: MAPS.lemans,
               fixedSetup: false, maxPlayers: 62, registered: false,
               next: slot(105, 61, false),
               slots: [slot(105, 61, false), slot(225, 7, false), slot(345, 8, false), slot(465, 13, false)] },
             { type: 'special', typeLabel: 'Special event', seriesId: 's', title: 'ELMS 4 Hours of Silverstone',
               teamEvent: true, rank: 'Bronze', rankTier: 0, track: '4 Hours of Silverstone',
-              classes: ['LMP2', 'LMP3', 'LMGT3'], raceMin: 240, tyreSets: 14, tyreWarmers: false,
+              classes: ['LMP2', 'LMP3', 'LMGT3'], raceMin: 240, tyreSets: 14, tyreWarmers: false, map: MAPS.silverstone,
               fixedSetup: false, maxPlayers: 44, registered: true,
               next: slot(2820, 41, true),
               slots: [slot(2820, 41, true), slot(3120, 7, false), slot(3420, 0, false)] },
@@ -832,4 +883,4 @@ fs.writeFileSync(
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
 console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');
-console.log('  the schedule: ?tab=schedule[&source=daily|league][&zone=utc]');
+console.log('  the schedule: ?tab=schedule[&source=daily|league][&mode=next|calendar][&zone=utc]');

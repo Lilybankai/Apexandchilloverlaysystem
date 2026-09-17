@@ -239,6 +239,31 @@ console.log('\nOccurrences');
   check('raw time arrays are not shipped to the renderer', !('times' in beginner.events[0]));
 }
 
+console.log('\nThe repeating pattern the calendar is built from');
+{
+  check('minutes past UTC midnight', dailies.minutesOfDay(['2026-09-17T00:15:00Z', '2026-09-17T13:45:00Z']).join() === '15,825');
+  check('sorted, whatever order they arrive in', dailies.minutesOfDay(['2026-09-17T23:45:00Z', '2026-09-17T00:00:00Z']).join() === '0,1425');
+  check('duplicates collapse', dailies.minutesOfDay(['2026-09-17T10:00:00Z', '2026-09-18T10:00:00Z']).join() === '600');
+  check('a start off the minute is dropped, never rounded', dailies.minutesOfDay(['2026-09-17T10:00:30Z']).length === 0);
+  check('junk is not a crash', dailies.minutesOfDay(['soon', null, undefined]).length === 0);
+
+  const p = dailies.buildPayload({ schedule: SCHEDULE, lists: { beginner: BEGINNER_LIST }, specials: {} }, NOW);
+  const beginner = p.tiers.find((t) => t.key === 'beginner');
+  const byTitle = new Map(beginner.events.map((e) => [e.title, e]));
+  check('every event carries its pattern', beginner.events.every((e) => Array.isArray(e.minutesUtc)));
+  check(
+    'and it is the whole day, including starts already past',
+    byTitle.get('LMGT3 Fixed').minutesUtc.join() === '555,645',
+    byTitle.get('LMGT3 Fixed').minutesUtc.join(),
+  );
+  /* The calendar leans on this: 45, 60 and 90 all divide 1440, so one day's
+     pattern is every day's pattern and any date can be drawn without another
+     fetch. If LMU ever ships a cadence that does not divide a day, projecting
+     it forward would drift — and this is where that shows up. */
+  const REAL_CADENCES = [45, 60, 90];
+  check('every real cadence divides a day exactly', REAL_CADENCES.every((c) => 1440 % c === 0), REAL_CADENCES.join('/'));
+}
+
 console.log('\nSpecial events');
 {
   const p = dailies.buildPayload({ schedule: SCHEDULE, lists: {}, specials: { weekly: WEEKLY } }, NOW);

@@ -455,6 +455,27 @@ contextBridge.exposeInMainWorld('apex', {
     dailies: (query) => ipcRenderer.invoke('schedule:dailies', query || {}),
   },
 
+  /* ---- Race reminders ----
+   *
+   * A bell on a start. The scheduler is main-side so it keeps its promise with
+   * the panel closed; this is only the way to add, remove and list them.
+   * `onChange` fires when the set moves on its own — a reminder firing, or a
+   * stale one being cleared out. */
+  reminders: {
+    /** `{ ok, reminders[], settings, leads[] }`. */
+    list: () => ipcRenderer.invoke('reminders:list'),
+    /** `{ kind, key, title, track, startsAt, registrationOpens? }` → `{ ok, on }`. */
+    toggle: (entry) => ipcRenderer.invoke('reminders:toggle', entry || {}),
+    /** `{ toast?, voice?, entriesOpen? }` → `{ ok, settings }`. */
+    settings: (partial) => ipcRenderer.invoke('reminders:settings', partial || {}),
+    /** Told when a reminder fires or expires. Returns an unsubscribe. */
+    onChange: (fn) => {
+      const listener = () => fn();
+      ipcRenderer.on('reminders:changed', listener);
+      return () => ipcRenderer.removeListener('reminders:changed', listener);
+    },
+  },
+
   /* ---- Admin panel ----
    *
    * League-staff only. Every call is authorised server-side (the RPCs check

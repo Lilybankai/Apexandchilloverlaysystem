@@ -395,9 +395,16 @@ const PANEL_CONTRACT = {
   'sk-daily-pane': 'div',
   'dl-zone': 'span',
   'dl-zone-toggle': 'button',
+  'dl-voice': 'input:checkbox',
+  'dl-entries': 'input:checkbox',
   'dl-msg': 'p',
+  'dl-mode': 'nav',
+  'dl-next-pane': 'div',
   'dl-tiers': 'div',
   'dl-series': 'div',
+  'dl-cal-pane': 'div',
+  'dl-days': 'nav',
+  'dl-day': 'div',
   'dl-empty': 'p',
 
   // Admin panel (v0.49.0) — league-staff usage + feedback inbox. The tab starts

@@ -1095,7 +1095,7 @@
          restyle that drops an id here is caught by the panel parity contract
          the same way as every other tab. -->
     <section class="view" data-view="schedule">
-      <div class="wrap">
+      <div class="wrap wrap--wide">
         <div class="view__head">
           <div>
             <h1 class="view__title">Schedule</h1>
@@ -1131,12 +1131,42 @@
              time can never be read as UTC by mistake. -->
         <div class="sk-pane" id="sk-daily-pane">
           <div class="sk-zone">
+            <nav class="seg" id="dl-mode" aria-label="How to show the calendar">
+              <button type="button" data-dlmode="next" data-active="true">Next up</button>
+              <button type="button" data-dlmode="calendar">Calendar</button>
+            </nav>
             <span class="sk-zone__label" id="dl-zone">Times shown in your local time</span>
             <button class="btn btn--ghost btn--sm" id="dl-zone-toggle" type="button">Show UTC</button>
+            <!-- How a reminder reaches you. The bell itself is per race; these
+                 are the channels, and they apply to every bell. A Windows toast
+                 is always on — it is the baseline and turning it off would
+                 leave a bell that does nothing. -->
+            <span class="sk-remind">
+              <label class="sk-remind__opt" title="Also say it out loud through the race engineer — the only channel that reaches you with the game in focus">
+                <input type="checkbox" id="dl-voice" /> Announce out loud
+              </label>
+              <label class="sk-remind__opt" title="Also tell me when the lobby opens, 30 minutes before the start">
+                <input type="checkbox" id="dl-entries" /> Entries opening
+              </label>
+            </span>
           </div>
           <p class="sk-msg" id="dl-msg" hidden></p>
-          <div class="sk-tiers" id="dl-tiers"></div>
-          <div class="sk-series" id="dl-series"></div>
+
+          <!-- What is on next, per tier. -->
+          <div id="dl-next-pane">
+            <div class="sk-tiers" id="dl-tiers"></div>
+            <div class="sk-serieslist" id="dl-series"></div>
+          </div>
+
+          <!-- A day at a time. The daily rotation repeats exactly every UTC day
+               (45/60/90-minute cycles all divide 1440), so any date is drawn
+               from the pattern the service published for today — no second
+               request, and nothing invented. -->
+          <div id="dl-cal-pane" hidden>
+            <nav class="sk-days" id="dl-days" aria-label="Which day to show"></nav>
+            <div class="sk-day" id="dl-day"></div>
+          </div>
+
           <p class="weekempty" id="dl-empty">Loading the race calendar&hellip;</p>
         </div>
       </div>

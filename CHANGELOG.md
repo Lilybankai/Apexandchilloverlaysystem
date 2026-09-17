@@ -5,6 +5,33 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.4 — 2026-09-17
+
+### Added
+
+- **Reminders for a race you mean to enter.** Every race on the Schedule tab now
+  has a bell. Turn one on and the app tells you five minutes before the start,
+  and again at two — with the panel closed, because the reminder lives in the
+  app rather than in the window. Two switches at the top of the tab decide how
+  it reaches you: "Announce out loud" has the race engineer say it, which is the
+  only channel that gets through with Le Mans Ultimate in the foreground and
+  Windows holding its notifications back, and "Entries opening" adds a third
+  reminder half an hour out, when the lobby actually opens.
+- **A calendar, a day at a time.** The Schedule tab's new Calendar view answers
+  "what is on Saturday?": pick a day and see the whole timetable, three tiers
+  side by side, with the weekly and special events for that day underneath.
+  Today opens on the next race rather than at midnight, and the races that have
+  already run stay visible but recede.
+- **The circuits are drawn on the cards.** Each race now shows the shape of its
+  track, taken from Le Mans Ultimate's own geometry rather than downloaded, so
+  it costs nothing and keeps working once you have seen a circuit even with the
+  game shut.
+
+### Changed
+
+- **The Schedule tab uses the whole window.** It was laid out to a reading
+  width, which left a calendar squeezed into the middle of a wide monitor.
+
 ## 0.99.12-beta.3 — 2026-09-17
 
 ### Added

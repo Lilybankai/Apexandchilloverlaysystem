@@ -3,6 +3,14 @@
    Loaded after hub.css so the shell's frame rules stay in charge; everything
    here is scoped under .sk- and leans on the tokens in control-panel.css. */
 
+/* A calendar is a wall chart, not a reading column. The 1120px measure that
+   suits Settings left three tier cards squeezed into the middle of a 2560px
+   monitor with a third of the screen empty on either side — the same complaint
+   the Team pit wall answered with `wrap--wide`. Same answer here. */
+.view[data-view="schedule"] .wrap--wide {
+  max-width: none;
+}
+
 .sk-toolbar {
   display: flex;
   align-items: center;
@@ -285,12 +293,53 @@
 .sk-sr[data-sr="Gold"]   { color: #e0b544; }
 .sk-sr[data-sr="Platinum"] { color: var(--cyan); }
 
-/* What is on next. */
+/* What is on next. Text column first, circuit beside it when we have one. */
 .sk-now {
   padding: 14px 0 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.sk-now[data-has-map="true"] {
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  align-items: start;
+}
+.sk-now__text {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+/* The circuit, drawn from the game's own geometry. `overflow: visible` matters:
+   the viewBox is bled by 4 units precisely so a round stroke cap is not sliced
+   off, and a clip here would undo that. */
+.sk-map {
+  grid-column: 2;
+  grid-row: 1;
+  width: 86px;
+  height: 86px;
+  overflow: visible;
+  flex: none;
+}
+.sk-map path {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+/* Le Mans is 13.6 km of mostly straight road and Monza is barely wider than it
+   is tall, so the stroke is set in the viewBox's own units and left to scale —
+   `non-scaling-stroke` above keeps it one weight whatever the box does. */
+.sk-tier:hover .sk-map path { stroke: var(--cyan); }
+.sk-map--series { width: 74px; height: 74px; }
+
+/* Above 1440px there is room to let the shape carry the card. */
+@media (min-width: 1440px) {
+  .sk-map { width: 104px; height: 104px; }
 }
 .sk-now__when {
   display: flex;
@@ -397,15 +446,51 @@
   font-size: 11px;
 }
 
-/* Weekly and special events. One card each, full width — these are the ones
-   worth planning a weekend around, and they carry entry counts. */
-.sk-series {
+/* Weekly and special events — the ones worth planning a weekend around, and
+   the only ones that carry entry counts.
+   ---------------------------------------------------------------------------
+   The LIST and the CARDS are named apart on purpose. They were both `.sk-series`
+   at first, which is a collision that does not error: every rule written for a
+   card silently also applied to the box holding them. */
+.sk-serieslist {
   margin-top: 16px;
+  display: grid;
+  /* auto-FIT, not auto-fill: on a 2560px monitor auto-fill leaves empty tracks
+     and the two cards huddle on the left. */
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.sk-serieslist:empty { display: none; }
+
+.sk-series {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.sk-series:empty { display: none; }
+
+/* The series card puts its circuit on the LEFT: these are full-width cards and
+   a shape floated far right of a short title reads as unrelated to it. */
+.sk-series__top {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.sk-series__top[data-has-map="true"] {
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  align-items: start;
+}
+.sk-series__top[data-has-map="true"] .sk-map--series {
+  grid-column: 1;
+  grid-row: 1;
+}
+.sk-series__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 
 .sk-series__head {
   display: flex;
@@ -432,7 +517,7 @@
   margin: 6px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 8px;
 }
 .sk-slot {
@@ -481,4 +566,130 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--cyan);
+}
+
+/* ── The calendar: a day at a time ─────────────────────────────────────────── */
+
+.sk-days {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.sk-day__btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sk-day__btn:hover { border-color: var(--line-2); color: var(--text); }
+.sk-day__btn[data-active="true"] {
+  color: var(--bg);
+  background: var(--cyan);
+  border-color: var(--cyan);
+  font-weight: 700;
+}
+
+/* A day's list is long — 32 Beginner races — so the rows tighten and a race
+   already run stays visible but recedes. Hiding them would make a day that
+   starts at 14:00 look broken. */
+.sk-then--day {
+  /* A full Beginner day is 32 races. Scroll the column, not the page, so the
+     three tiers stay side by side and can be compared hour for hour. */
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sk-then--day .sk-then__row { padding: 4px 0; }
+.sk-then--day .sk-then__row[data-past="true"] { opacity: 0.4; }
+/* The race the column opens on. A rule, rather than a scroll position alone:
+   scrolling can be undone by a flick of the wheel, and then nothing on screen
+   says where "now" is. */
+.sk-then--day .sk-then__row[data-next="true"] {
+  box-shadow: inset 2px 0 0 var(--cyan);
+  padding-left: 8px;
+}
+.sk-then--day .sk-then__row[data-next="true"] .sk-then__time { color: var(--cyan); }
+
+.sk-dayspecials { margin-top: 16px; }
+.sk-slot--wide {
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.sk-slot__name {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 13px;
+  color: var(--text);
+}
+.sk-slot--wide .sk-slot__day {
+  grid-column: 2;
+  grid-row: 2;
+}
+.sk-slot--wide .sk-slot__regs {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.sk-calnote {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ── Reminders ─────────────────────────────────────────────────────────────── */
+
+.sk-remind {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.sk-remind__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.sk-remind__opt:hover { color: var(--text-2); }
+
+/* The bell. Off, it is quiet enough to ignore on a card full of numbers; on,
+   it is the only amber thing on the pane, because "I am expecting to be told
+   about this" is a state worth spotting from across the room. */
+.sk-bell {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  line-height: 0;
+  cursor: pointer;
+}
+.sk-bell:hover { color: var(--text); border-color: var(--line-2); }
+.sk-bell .icon { width: 14px; height: 14px; }
+.sk-bell[data-on="true"] {
+  color: var(--warn);
+  border-color: rgba(255, 176, 32, 0.45);
+  background: rgba(255, 176, 32, 0.1);
+}
+
+/* On the hero the bell sits at the end of the clock line; on a slot it tucks
+   into the corner, where there is already a spare grid cell. */
+.sk-now__when .sk-bell { margin-left: auto; }
+.sk-slot { position: relative; }
+.sk-slot .sk-bell {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
 }

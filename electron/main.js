@@ -28,6 +28,7 @@ const {
   screen,
   globalShortcut,
   dialog,
+  Notification,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -46,6 +47,8 @@ const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const lmuDailies = require('./lmu-dailies');
+const lmuTrackmaps = require('./lmu-trackmaps');
+const raceReminders = require('./race-reminders');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
 // Before anything schedules a timer. The census can only name callbacks that
@@ -3875,9 +3878,24 @@ function registerIpc() {
    * game, and because the access token must never cross the preload bridge —
    * the renderer only ever sees names, tracks and UTC times.
    */
-  ipcMain.handle('schedule:dailies', (_evt, query) =>
-    lmuDailies.getDailies({ force: !!(query && query.force) }),
-  );
+  ipcMain.handle('schedule:dailies', async (_evt, query) => {
+    const payload = await lmuDailies.getDailies({ force: !!(query && query.force) });
+    /* Circuit outlines are drawn from the running game's own geometry and
+       cached on disk, so they keep working with the game shut. Decoration: it
+       can never fail the calendar, which is why it is awaited separately and
+       swallows its own errors. */
+    lmuTrackmaps.init(path.join(app.getPath('userData'), 'trackoutlines'));
+    return lmuTrackmaps.decorate(payload);
+  });
+
+  /* ---- Race reminders ----
+   *
+   * A bell on a start, announced at five minutes and at two. The scheduler
+   * lives in electron/race-reminders.js and keeps running with the panel shut.
+   */
+  ipcMain.handle('reminders:list', () => raceReminders.list());
+  ipcMain.handle('reminders:toggle', (_evt, entry) => raceReminders.toggle(entry || {}));
+  ipcMain.handle('reminders:settings', (_evt, partial) => raceReminders.setSettings(partial || {}));
 
   /**
    * Whether the signed-in driver is a league admin — decides whether the panel
@@ -5435,6 +5453,39 @@ if (!hasSingleInstanceLock) {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return; // a copy is already running; this one is on its way out
+
+  /* Windows shows a toast under an Application User Model ID, and an Electron
+     app that never sets one is not reliably allowed to raise them at all — the
+     notification is simply dropped, with no error anywhere. This must match
+     `appId` in electron-builder.js, which is what the installed shortcut
+     carries; they are the same string on purpose. */
+  app.setAppUserModelId('com.apexandchill.overlaysystem');
+
+  /* Race reminders. Main-side because the control panel is a window someone
+     closes, and a reminder that dies with the panel is a reminder that fails
+     exactly when it is needed. The voice channel goes through the race
+     engineer, which is the only one that reaches a driver sitting in the
+     game's menus with Focus Assist suppressing toasts. */
+  raceReminders.init({
+    storePath: path.join(app.getPath('userData'), 'race-reminders.json'),
+    toast: ({ title, body }) => {
+      if (!Notification.isSupported()) return;
+      new Notification({ title, body, silent: false }).show();
+    },
+    speak: (text) => {
+      try {
+        getEngineer().speak(text);
+      } catch (err) {
+        console.error('[reminders] voice unavailable:', err.message);
+      }
+    },
+    changed: () => {
+      // The panel shows a bell per race; tell any open window the set moved.
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('reminders:changed');
+      }
+    },
+  });
   // Before anything can look for the game: a hand-picked folder is only known
   // to the path finder through the environment, and both the setup library and
   // the binder read it the moment the panel opens.

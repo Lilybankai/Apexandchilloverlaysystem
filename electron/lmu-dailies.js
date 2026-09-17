@@ -199,6 +199,26 @@ function titleKey(title) {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Each start as whole minutes past UTC midnight, de-duplicated and sorted.
+ *
+ * The service hands back one day of ISO instants; this is the repeating shape
+ * underneath them. Anything that does not land on a whole minute is dropped
+ * rather than rounded — a rounded start time would be a lie about when a race
+ * begins, and every start the service has ever published is on the minute.
+ */
+function minutesOfDay(isoTimes) {
+  const mins = new Set();
+  for (const iso of Array.isArray(isoTimes) ? isoTimes : []) {
+    const ms = Date.parse(iso);
+    if (Number.isNaN(ms)) continue;
+    const d = new Date(ms);
+    if (d.getUTCSeconds() || d.getUTCMilliseconds()) continue;
+    mins.add(d.getUTCHours() * 60 + d.getUTCMinutes());
+  }
+  return [...mins].sort((a, b) => a - b);
+}
+
+/**
  * The settings a driver actually decides on, lifted out of one `daily/list`
  * instance. These belong to the SERIES, not the instance, which is why three
  * instances per tier are enough to describe every event in it.
@@ -230,7 +250,7 @@ function detailOf(raw) {
     registrationLeadMin:
       starts && opens ? Math.round((Date.parse(starts) - Date.parse(opens)) / 60000) : null,
     track: str(layout.name) || str(track.friendly) || str(track.name),
-    trackScene: str(track.name),
+    scene: str(track.name),
     classes: classesOf((Array.isArray(content.cars) ? content.cars : []).map((c) => c && c.friendly)),
     raceMin: race ? durationMin(race.duration) : null,
     qualiMin: quali ? durationMin(quali.duration) : null,
@@ -270,7 +290,10 @@ function tierOf(spec, scheduleTier, frequency, details, now) {
       seriesId,
       title: title || (detail && detail.title) || 'Daily race',
       track: (detail && detail.track) || str(raw && raw.track),
-      trackScene: str(raw && raw.scene),
+      /* The game's own name for the circuit, e.g. "BahrainWEC". It is how
+         electron/lmu-trackmaps.js finds the geometry to draw, so it travels
+         with every occurrence and not just the event it came from. */
+      scene: str(raw && raw.scene),
       classes: (detail && detail.classes.length ? detail.classes : classesOf(cars)),
       eventMin: durationMin(raw && raw.duration),
       raceMin: detail ? detail.raceMin : null,
@@ -296,6 +319,7 @@ function tierOf(spec, scheduleTier, frequency, details, now) {
         seriesId: ev.seriesId,
         title: ev.title,
         track: ev.track,
+        scene: ev.scene,
         classes: ev.classes,
         startsAt: t,
         registrationOpens:
@@ -325,9 +349,17 @@ function tierOf(spec, scheduleTier, frequency, details, now) {
     label: spec.label,
     badge: spec.badge,
     cadenceMin: cadenceMin(frequency && frequency[spec.key]),
-    /* The times are already spread across `upcoming`; carrying the raw arrays
-       as well would triple the payload for nothing. */
-    events: events.map(({ times, ...rest }) => rest),
+    /* The ISO times are already spread across `upcoming`, so the raw arrays are
+       replaced by `minutesUtc` — each start as minutes past UTC midnight.
+       That is a third of the size AND it is what the calendar needs: the
+       service publishes one day, but every event's cycle closes exactly on
+       midnight UTC (45, 60 and 90 minutes divide 1440 evenly, verified against
+       all nine events on 2026-09-17), so the same pattern is every day's
+       pattern and any date can be generated from it without another fetch. */
+    events: events.map(({ times, ...rest }) => ({
+      ...rest,
+      minutesUtc: minutesOfDay(times),
+    })),
     next: upcoming[0] || null,
     upcoming: upcoming.slice(0, UPCOMING_PER_TIER),
   };
@@ -373,6 +405,7 @@ function seriesOf(raw, typeSpec, now) {
     rank: str(entry.rank),
     rankTier: Number.isFinite(entry.tier) ? entry.tier : null,
     track: str(layout.name) || str(track.friendly) || str(track.name),
+    scene: str(track.name),
     classes: classesOf((Array.isArray(content.cars) ? content.cars : []).map((c) => c && c.friendly)),
     raceMin: race ? durationMin(race.duration) : null,
     tyreSets:
@@ -664,6 +697,7 @@ module.exports = {
   SERIES_TYPES,
   CACHE_MS,
   UPCOMING_PER_TIER,
+  minutesOfDay,
   classesOf,
   durationMin,
   cadenceMin,

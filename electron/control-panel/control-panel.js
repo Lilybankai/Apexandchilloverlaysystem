@@ -6013,7 +6013,12 @@
    * on a number without doing the arithmetic themselves.
    */
   const DL_ZONE_KEY = 'apex.panel.scheduleZone';
+  const DL_MODE_KEY = 'apex.panel.scheduleMode';
+  /** How many days forward the calendar offers. */
+  const DL_CAL_DAYS = 7;
   let dlZone = 'local'; // 'local' | 'utc'
+  let dlMode = 'next'; // 'next' | 'calendar'
+  let dlDayPick = null; // the chosen day, as a display-zone YYYY-MM-DD
   let dlPayload = null;
   let dlLoaded = false;
   let dlRequest = 0;
@@ -6022,6 +6027,8 @@
   try {
     const saved = localStorage.getItem(DL_ZONE_KEY);
     if (saved === 'utc' || saved === 'local') dlZone = saved;
+    const mode = localStorage.getItem(DL_MODE_KEY);
+    if (mode === 'calendar' || mode === 'next') dlMode = mode;
   } catch {
     /* storage disabled */
   }
@@ -6044,25 +6051,38 @@
   }
 
   /**
-   * "Today" / "Tomorrow" / "Fri 19 Sep" — and the comparison is made in the
-   * DISPLAY zone, because 23:30 UTC on Thursday is Friday for half of Europe
-   * and calling it "today" there would simply be wrong.
+   * The calendar day an instant falls on, as YYYY-MM-DD, IN THE DISPLAY ZONE.
+   *
+   * 'en-CA' is not a language choice — it is the one widely-supported locale
+   * that formats a date as YYYY-MM-DD, which sorts and compares as a string.
+   * And the zone matters: 23:30 UTC on Thursday is Friday for half of Europe,
+   * so a day computed in UTC would file races under the wrong heading for
+   * anyone east of us.
    */
+  function dlDayKey(when) {
+    const d = when instanceof Date ? when : new Date(when);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-CA', { timeZone: dlTimeZone() });
+  }
+
+  /** "Today" / "Tomorrow" / "Fri 19 Sep" for an instant. */
   function dlDay(iso) {
     const d = iso ? new Date(iso) : null;
     if (!d || Number.isNaN(d.getTime())) return '';
-    const key = (x) =>
-      x.toLocaleDateString('en-CA', { timeZone: dlTimeZone() }); // YYYY-MM-DD, sortable
-    const today = key(new Date());
-    const that = key(d);
-    if (that === today) return 'Today';
-    const tomorrow = key(new Date(Date.now() + 86400000));
-    if (that === tomorrow) return 'Tomorrow';
+    return dlDayName(dlDayKey(d), d);
+  }
+
+  /** The same, from a day key. `sample` saves re-parsing when we have one. */
+  function dlDayName(key, sample) {
+    if (!key) return '';
+    if (key === dlDayKey(new Date())) return 'Today';
+    if (key === dlDayKey(new Date(Date.now() + 86400000))) return 'Tomorrow';
+    const d = sample || new Date(`${key}T12:00:00Z`);
     return d.toLocaleDateString(undefined, {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
-      timeZone: dlTimeZone(),
+      timeZone: sample ? dlTimeZone() : 'UTC',
     });
   }
 
@@ -6090,6 +6110,38 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  /** id → true for every start currently belled. Filled by refreshReminders. */
+  let dlBells = new Set();
+
+  /**
+   * The bell on a race. Its id is derived from the start rather than stored, so
+   * the button knows its own state without the renderer keeping a parallel
+   * copy that can drift from the main process's.
+   */
+  function dlBellId(kind, key, startsAt) {
+    return `${kind}:${key}:${startsAt}`;
+  }
+
+  function dlBell(entry) {
+    if (!entry || !entry.startsAt) return null;
+    const id = dlBellId(entry.kind, entry.key, entry.startsAt);
+    const on = dlBells.has(id);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sk-bell';
+    btn.setAttribute('data-on', String(on));
+    btn.title = on ? 'Reminder on — click to cancel' : 'Remind me 5 and 2 minutes before';
+    btn.setAttribute('aria-label', btn.title);
+    btn.dataset.bell = JSON.stringify(entry);
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('class', 'icon');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', on ? '#i-bell-ring' : '#i-bell');
+    icon.append(use);
+    btn.append(icon);
+    return btn;
+  }
+
   function dlEl(tag, cls, text) {
     const el = document.createElement(tag);
     if (cls) el.className = cls;
@@ -6102,6 +6154,33 @@
     const el = dlEl('span', cls || 'sk-clock', dlCountdown(iso));
     if (iso) el.dataset.dlAt = iso;
     return el;
+  }
+
+  /**
+   * The circuit outline, as inline SVG.
+   *
+   * Inline rather than an <img>: the path comes from the running game's own
+   * geometry (electron/lmu-trackmaps.js), and drawing it here needs no network
+   * request and no change to the panel's CSP — which allows images from itself,
+   * data: and SimGrid's CDN only, and would otherwise have had to be widened to
+   * reach RaceOS's artwork on S3.
+   *
+   * Returns null when there is no outline, so the layout collapses to the
+   * text-only card rather than leaving a hole.
+   */
+  function dlMap(map, cls) {
+    if (!map || typeof map.d !== 'string' || !map.d) return null;
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', cls || 'sk-map');
+    // A little bleed around the box so a round stroke is never clipped.
+    const view = Number(map.view) || 100;
+    svg.setAttribute('viewBox', `-4 -4 ${view + 8} ${view + 8}`);
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', map.d);
+    svg.append(path);
+    return svg;
   }
 
   function dlChips(classes) {
@@ -6151,14 +6230,35 @@
 
     const next = tier.next;
     const hero = dlEl('div', 'sk-now');
+
+    /* The circuit sits beside the name, not behind it: at card width an outline
+       under text is a smudge, and the shape is half of how a driver recognises
+       an event they have run before. */
+    const outline = dlMap(next.map);
+    if (outline) {
+      hero.dataset.hasMap = 'true';
+      hero.append(outline);
+    }
+
+    const text = dlEl('div', 'sk-now__text');
     const when = dlEl('div', 'sk-now__when');
     when.append(dlClock(next.startsAt, 'sk-now__clock'));
     when.append(dlEl('span', 'sk-now__at', `${dlDay(next.startsAt)} ${dlTime(next.startsAt)}`));
-    hero.append(when);
-    hero.append(dlEl('h3', 'sk-now__title', next.title));
-    hero.append(dlEl('p', 'sk-now__track', next.track));
-    hero.append(dlChips(next.classes));
-    hero.append(dlFacts(next));
+    const bell = dlBell({
+      kind: 'daily',
+      key: next.title,
+      title: next.title,
+      track: next.track,
+      startsAt: next.startsAt,
+      registrationOpens: next.registrationOpens,
+    });
+    if (bell) when.append(bell);
+    text.append(when);
+    text.append(dlEl('h3', 'sk-now__title', next.title));
+    text.append(dlEl('p', 'sk-now__track', next.track));
+    text.append(dlChips(next.classes));
+    text.append(dlFacts(next));
+    hero.append(text);
 
     /* Registration is the thing a driver can miss without noticing: the lobby
        opens half an hour out and you cannot enter before it does. */
@@ -6170,7 +6270,7 @@
       reg.textContent = open
         ? 'Entries open now'
         : `Entries open ${dlTime(next.registrationOpens)}`;
-      hero.append(reg);
+      text.append(reg);
     }
     card.append(hero);
 
@@ -6197,6 +6297,14 @@
   function dlSeriesCard(series) {
     const card = dlEl('div', 'card sk-series');
 
+    const top = dlEl('div', 'sk-series__top');
+    const outline = dlMap(series.map, 'sk-map sk-map--series');
+    if (outline) {
+      top.dataset.hasMap = 'true';
+      top.append(outline);
+    }
+    const body = dlEl('div', 'sk-series__body');
+
     const head = dlEl('div', 'sk-series__head');
     head.append(dlEl('h2', 'sk-series__name', series.title));
     const type = dlEl('span', 'chip', series.teamEvent ? 'Team event' : series.typeLabel);
@@ -6217,11 +6325,12 @@
          added for one chip here would have to be justified over there too. */
       head.append(dlEl('span', 'chip sk-mine', 'You are entered'));
     }
-    card.append(head);
-
-    card.append(dlEl('p', 'sk-series__track', series.track));
-    card.append(dlChips(series.classes));
-    card.append(dlFacts(series));
+    body.append(head);
+    body.append(dlEl('p', 'sk-series__track', series.track));
+    body.append(dlChips(series.classes));
+    body.append(dlFacts(series));
+    top.append(body);
+    card.append(top);
 
     const list = dlEl('ul', 'sk-slots');
     for (const slot of series.slots) {
@@ -6235,6 +6344,15 @@
       if (slot.registrations !== null) {
         li.append(dlEl('span', 'sk-slot__regs', `${slot.registrations} entered`));
       }
+      const bell = dlBell({
+        kind: 'special',
+        key: slot.id || series.title,
+        title: series.title,
+        track: series.track,
+        startsAt: slot.startsAt,
+        registrationOpens: slot.registrationOpens,
+      });
+      if (bell) li.append(bell);
       list.append(li);
     }
     card.append(list);
@@ -6256,6 +6374,11 @@
     seriesEl.textContent = '';
     for (const tier of tiers) tiersEl.append(dlTierCard(tier));
     for (const s of series) seriesEl.append(dlSeriesCard(s));
+
+    /* The strip is rebuilt every render rather than once, so "Today" is still
+       today on a panel left open past midnight. */
+    renderDayStrip();
+    renderDay(ok ? result : null);
 
     if (msg) {
       const note = result && result.error;
@@ -6324,7 +6447,10 @@
       }
     }
     try {
-      const res = await window.apex.schedule.dailies({ force: !!force });
+      const [res] = await Promise.all([
+        window.apex.schedule.dailies({ force: !!force }),
+        refreshReminders(false),
+      ]);
       if (n !== dlRequest) return;
       dlPayload = res;
       dlLoaded = true;
@@ -6362,6 +6488,315 @@
   }
 
   document.addEventListener('visibilitychange', dlSyncTimer);
+
+  /* ---- Bells ------------------------------------------------------------
+   *
+   * The set of belled starts lives in the main process, because that is where
+   * the scheduler lives and where it keeps running with this window shut. The
+   * renderer holds a copy only to draw the buttons, and re-reads it whenever
+   * main says the set moved — a reminder firing clears itself.
+   */
+  async function refreshReminders(redraw) {
+    try {
+      const res = await window.apex.reminders.list();
+      dlBells = new Set((res && res.reminders ? res.reminders : []).map((r) => r.id));
+      const s = (res && res.settings) || {};
+      const voice = $('#dl-voice');
+      if (voice) voice.checked = !!s.voice;
+      const entries = $('#dl-entries');
+      if (entries) entries.checked = !!s.entriesOpen;
+      if (redraw && dlPayload) renderDailies(dlPayload);
+    } catch {
+      /* no bridge (the screenshot harness) — the bells simply read as off */
+    }
+  }
+
+  const dlPane = $('#sk-daily-pane');
+  if (dlPane) {
+    dlPane.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest && ev.target.closest('[data-bell]');
+      if (!btn) return;
+      let entry;
+      try {
+        entry = JSON.parse(btn.dataset.bell);
+      } catch {
+        return;
+      }
+      // Drawn immediately, corrected by the reload below if main disagrees:
+      // a bell that waits for a round trip feels broken.
+      const wasOn = btn.getAttribute('data-on') === 'true';
+      btn.setAttribute('data-on', String(!wasOn));
+      try {
+        const res = await window.apex.reminders.toggle(entry);
+        if (res && res.ok === false && res.error) {
+          const msg = $('#dl-msg');
+          if (msg) {
+            msg.hidden = false;
+            msg.textContent = res.error;
+          }
+        }
+        CATALOG?.note('action:schedule.remind');
+      } catch {
+        /* fall through to the reload, which settles the true state */
+      }
+      void refreshReminders(true);
+    });
+  }
+
+  const dlVoice = $('#dl-voice');
+  if (dlVoice) {
+    dlVoice.addEventListener('change', () => {
+      void window.apex.reminders.settings({ voice: dlVoice.checked });
+    });
+  }
+  const dlEntries = $('#dl-entries');
+  if (dlEntries) {
+    dlEntries.addEventListener('change', async () => {
+      await window.apex.reminders.settings({ entriesOpen: dlEntries.checked });
+    });
+  }
+
+  try {
+    window.apex.reminders.onChange(() => void refreshReminders(true));
+  } catch {
+    /* no bridge */
+  }
+
+  // --- The calendar: a day at a time ---------------------------------------
+  /*
+   * "What is on Saturday?" cannot be answered by asking the service — RaceOS
+   * publishes ONE day of daily races (today, 00:00–23:55 UTC) and nothing
+   * beyond it. It can be answered anyway, because of something the payload
+   * proves about itself: every event's starts are evenly spaced, and every one
+   * of those spacings divides a day exactly.
+   *
+   *   Beginner     15-minute cadence over 3 events → each runs every 45 min
+   *   Intermediate 20 over 3 → every 60 min
+   *   Advanced     30 over 3 → every 90 min
+   *
+   * 45, 60 and 90 all divide 1440, so the last start of a UTC day is followed
+   * by the first start of the next at exactly one interval — the pattern closes
+   * on midnight and repeats verbatim. Checked against all nine events live, and
+   * held by scripts/test-dailies.js so a future cadence that does NOT divide a
+   * day fails loudly instead of quietly drifting an hour a week.
+   *
+   * So each event ships `minutesUtc` — its starts as minutes past UTC midnight
+   * — and any date is generated from that. What this does NOT do is pretend to
+   * know next week: LMU rotates the circuits weekly, so the strip stops at
+   * seven days and the note under it says the week's tracks are this week's.
+   *
+   * Special events are not projected at all. Those come dated from the service,
+   * with their real entry counts, and are simply filed under the right day.
+   */
+
+  /** The day keys the strip offers, starting today, in the display zone. */
+  function dlDayKeys() {
+    const keys = [];
+    for (let i = 0; i < DL_CAL_DAYS; i += 1) keys.push(dlDayKey(new Date(Date.now() + i * 86400000)));
+    return keys;
+  }
+
+  /**
+   * Every daily occurrence that falls on `dayKey`, per tier.
+   *
+   * The three UTC days scanned are not belt-and-braces: a day in the display
+   * zone overlaps two UTC days at any offset other than zero, and at +13 the
+   * local day's last race is already on the UTC day after next. Generating the
+   * neighbours and filtering by day key is cheaper to get right than reasoning
+   * about the offset, and it stays right across a DST boundary.
+   */
+  function dlDailyOn(dayKey, tier) {
+    if (!dayKey || !tier) return [];
+    const noon = Date.parse(`${dayKey}T12:00:00Z`);
+    const out = [];
+    for (const ev of tier.events || []) {
+      for (const min of ev.minutesUtc || []) {
+        for (let k = -1; k <= 1; k += 1) {
+          const d = new Date(noon + k * 86400000);
+          const utcMidnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+          const at = utcMidnight + min * 60000;
+          if (dlDayKey(new Date(at)) !== dayKey) continue;
+          out.push({
+            startsAt: new Date(at).toISOString(),
+            title: ev.title,
+            track: ev.track,
+            classes: ev.classes,
+            raceMin: ev.raceMin,
+          });
+        }
+      }
+    }
+    out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+    return out;
+  }
+
+  /** The special-event slots on a day, each carrying its series for context. */
+  function dlSpecialsOn(dayKey, payload) {
+    const out = [];
+    for (const series of (payload && payload.series) || []) {
+      for (const slot of series.slots || []) {
+        if (dlDayKey(new Date(slot.startsAt)) === dayKey) out.push({ series, slot });
+      }
+    }
+    out.sort((a, b) => Date.parse(a.slot.startsAt) - Date.parse(b.slot.startsAt));
+    return out;
+  }
+
+  /** One tier's column for the chosen day. */
+  function dlDayColumn(tier, dayKey) {
+    const card = dlEl('div', 'card sk-tier');
+    const head = dlEl('div', 'sk-tier__head');
+    head.append(dlEl('h2', 'sk-tier__name', tier.label));
+    const badge = dlEl('span', 'sk-sr', tier.badge);
+    badge.dataset.sr = tier.badge;
+    head.append(badge);
+    if (tier.cadenceMin) head.append(dlEl('span', 'sk-tier__freq', `every ${tier.cadenceMin}m`));
+    card.append(head);
+
+    const rows = dlDailyOn(dayKey, tier);
+    if (!rows.length) {
+      card.append(dlEl('p', 'sk-none', 'Nothing scheduled.'));
+      return card;
+    }
+
+    const list = dlEl('ul', 'sk-then sk-then--day');
+    const now = Date.now();
+    let firstNext = null;
+    for (const occ of rows) {
+      const li = dlEl('li', 'sk-then__row');
+      // A race already run is kept, not hidden: "what have I missed today" is
+      // a real question, and a day that starts at 14:00 reads as broken.
+      if (Date.parse(occ.startsAt) < now) li.dataset.past = 'true';
+      else if (!firstNext) {
+        firstNext = li;
+        li.dataset.next = 'true';
+      }
+      li.append(dlEl('span', 'sk-then__time', dlTime(occ.startsAt)));
+      li.append(dlEl('span', 'sk-then__title', occ.title));
+      li.append(dlEl('span', 'sk-then__track', occ.track));
+      list.append(li);
+    }
+    card.append(list);
+
+    /* A whole Beginner day is 32 rows, so the column scrolls inside itself —
+       three tiers stay side by side and the page stays one screen. Today then
+       opens on the next race rather than on 00:00: the top of the list is the
+       part of the day that has already happened.
+       offsetTop is only correct once the element is laid out, which is why this
+       waits a frame rather than measuring here. */
+    if (firstNext) {
+      requestAnimationFrame(() => {
+        if (list.isConnected) list.scrollTop = Math.max(0, firstNext.offsetTop - 8);
+      });
+    }
+    return card;
+  }
+
+  /** The chosen day: three tier columns, then anything special on it. */
+  function renderDay(payload) {
+    const host = $('#dl-day');
+    if (!host) return;
+    host.textContent = '';
+
+    const dayKey = dlDayPick || dlDayKey(new Date());
+    const tiers = (payload && payload.tiers) || [];
+
+    const grid = dlEl('div', 'sk-tiers');
+    for (const tier of tiers) grid.append(dlDayColumn(tier, dayKey));
+    host.append(grid);
+
+    const specials = dlSpecialsOn(dayKey, payload);
+    if (specials.length) {
+      const card = dlEl('div', 'card sk-series sk-dayspecials');
+      card.append(dlEl('h2', 'sk-series__name', 'Weekly and special events'));
+      const list = dlEl('ul', 'sk-slots');
+      for (const { series, slot } of specials) {
+        const li = dlEl('li', 'sk-slot sk-slot--wide');
+        if (slot.isRegistered) li.dataset.mine = 'true';
+        li.append(dlEl('span', 'sk-slot__time', dlTime(slot.startsAt)));
+        li.append(dlEl('span', 'sk-slot__name', series.title));
+        li.append(dlEl('span', 'sk-slot__day', series.track));
+        if (slot.registrations !== null) {
+          li.append(dlEl('span', 'sk-slot__regs', `${slot.registrations} entered`));
+        }
+        list.append(li);
+      }
+      card.append(list);
+      host.append(card);
+    }
+
+    /* Said once, under the day, rather than on every row: the daily races on a
+       future day are this week's rotation repeated, and LMU changes the
+       circuits weekly. */
+    const note = dlEl(
+      'p',
+      'sk-calnote',
+      dayKey === dlDayKey(new Date())
+        ? ''
+        : 'Daily races repeat the same rotation every day. The circuits change with Le Mans Ultimate’s weekly rotation.',
+    );
+    if (note.textContent) host.append(note);
+  }
+
+  /** The day strip. Rebuilt on render so "Today" is never yesterday's today. */
+  function renderDayStrip() {
+    const nav = $('#dl-days');
+    if (!nav) return;
+    const keys = dlDayKeys();
+    if (!dlDayPick || !keys.includes(dlDayPick)) dlDayPick = keys[0];
+    nav.textContent = '';
+    for (const key of keys) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sk-day__btn';
+      btn.dataset.dlday = key;
+      btn.setAttribute('data-active', String(key === dlDayPick));
+      btn.append(dlEl('span', 'sk-day__name', dlDayName(key)));
+      nav.append(btn);
+    }
+  }
+
+  function applyDailyMode() {
+    const nextPane = $('#dl-next-pane');
+    const calPane = $('#dl-cal-pane');
+    const calendar = dlMode === 'calendar';
+    if (nextPane) nextPane.hidden = calendar;
+    if (calPane) calPane.hidden = !calendar;
+    const nav = $('#dl-mode');
+    if (nav) {
+      for (const b of nav.querySelectorAll('[data-dlmode]')) {
+        b.setAttribute('data-active', String(b.dataset.dlmode === dlMode));
+      }
+    }
+  }
+
+  const dlModeNav = $('#dl-mode');
+  if (dlModeNav) {
+    for (const btn of dlModeNav.querySelectorAll('[data-dlmode]')) {
+      btn.addEventListener('click', () => {
+        dlMode = btn.dataset.dlmode === 'calendar' ? 'calendar' : 'next';
+        try {
+          localStorage.setItem(DL_MODE_KEY, dlMode);
+        } catch {
+          /* storage disabled */
+        }
+        applyDailyMode();
+        if (dlPayload) renderDailies(dlPayload);
+      });
+    }
+  }
+
+  const dlDaysNav = $('#dl-days');
+  if (dlDaysNav) {
+    dlDaysNav.addEventListener('click', (ev) => {
+      const btn = ev.target.closest && ev.target.closest('[data-dlday]');
+      if (!btn) return;
+      dlDayPick = btn.dataset.dlday;
+      if (dlPayload) renderDailies(dlPayload);
+    });
+  }
+
+  applyDailyMode();
 
   // --- Which calendar the Schedule tab is showing --------------------------
   /*
