@@ -332,8 +332,13 @@ const TEMPLATES: Record<string, Template> = {
     subject: 'Apex AIO 1.0 — it now knows when you are racing',
     kicker: 'Version 1.0 is out',
     headline: 'Three new things, and a new name.',
-    image: 'hero-day0.png',
-    imageAlt: 'The Apex AIO overlay layer running over Le Mans Ultimate',
+    /* No hero. hero-day0.png is a "manual" asset in the manifest — a shot only
+       a running sim can produce — and it does not exist yet, so referencing it
+       would put a broken image at the top of the one mail everybody reads. The
+       templates are written to read correctly with every image blocked, which
+       is how most people see them anyway. */
+    image: null,
+    imageAlt: '',
     body: [
       "Apex Overlay System is now <b>Apex AIO System</b>. Same app, same licence, same install — it updates itself and keeps everything you have set up. The Apex & Chill Racing League has not renamed; the product has.",
       "Version 1.0 adds three things the app could not do before. It knows what Le Mans Ultimate is running and when, it can tell your league when you take a record, and it can hand somebody a discount on your behalf. Here is each one, and how to actually use it.",
