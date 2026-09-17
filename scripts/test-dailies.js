@@ -27,7 +27,18 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const dailies = require('../electron/lmu-dailies');
+
+/** Printed once, by whichever async block finishes last. */
+function report() {
+  console.log(`
+${failed ? 'FAILED' : 'OK'} - ${passed} passed, ${failed} failed
+`);
+  process.exit(failed ? 1 : 0);
+}
 
 let passed = 0;
 let failed = 0;
@@ -264,6 +275,50 @@ console.log('\nThe repeating pattern the calendar is built from');
   check('every real cadence divides a day exactly', REAL_CADENCES.every((c) => 1440 % c === 0), REAL_CADENCES.join('/'));
 }
 
+console.log('\nThe rotation tiles a day exactly - what the calendar rests on');
+{
+  /* A tier's events must between them fill the day at the tier's cadence, with
+     no minute claimed twice. If they did not, the calendar would either invent
+     a race or lose one on every date it draws — and it draws dates the service
+     never published, so nothing downstream would catch it. */
+  const day = (startMin, everyMin) => {
+    const out = [];
+    for (let m = startMin; m < 1440; m += everyMin) out.push(m);
+    return out;
+  };
+  const tierOfPattern = (cadence, offsets) => {
+    const every = cadence * offsets.length;
+    return offsets.map((o) => day(o, every));
+  };
+
+  for (const [label, cadence, offsets] of [
+    ['beginner', 15, [0, 15, 30]],
+    ['intermediate', 20, [10, 30, 50]],
+    ['advanced', 30, [25, 55, 85]],
+  ]) {
+    const events = tierOfPattern(cadence, offsets);
+    const total = events.reduce((n, e) => n + e.length, 0);
+    check(
+      label + ': the three events fill the day at the tier cadence',
+      total === 1440 / cadence,
+      total + ' vs ' + 1440 / cadence,
+    );
+    const all = new Set();
+    let clash = 0;
+    for (const e of events) for (const m of e) { if (all.has(m)) clash++; all.add(m); }
+    check(label + ': no minute is claimed by two events', clash === 0, String(clash));
+    check(label + ': and the day closes on midnight', 1440 % (cadence * offsets.length) === 0);
+  }
+
+  /* Two TIERS may legitimately start at the same minute — Beginner's :30 and
+     Intermediate's :30 are different races. A count that de-duplicated on the
+     instant alone would under-report the day by 24. */
+  const b = new Set(day(30, 45));
+  const i = new Set(day(30, 60));
+  const shared = [...b].filter((m) => i.has(m));
+  check('tiers DO share start minutes, and that is not a duplicate', shared.length > 0, shared.length + ' shared');
+}
+
 console.log('\nSpecial events');
 {
   const p = dailies.buildPayload({ schedule: SCHEDULE, lists: {}, specials: { weekly: WEEKLY } }, NOW);
@@ -369,7 +424,135 @@ console.log('\nThe client, without a network');
     check('…and still returns the empty shape', dead.tiers.length === 0 && dead.series.length === 0);
 
     dailies.resetCache();
-    console.log(`\n${failed ? 'FAILED' : 'OK'} — ${passed} passed, ${failed} failed\n`);
-    process.exit(failed ? 1 : 0);
+    runStoreChecks();
   })();
+}
+
+/* The disk store, last: it is the only block that touches a real filesystem,
+   and it owns the final report so the async chain ends in one place. */
+function runStoreChecks() {
+console.log('\nThe saved calendar — what survives the app closing');
+{
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dailies-'));
+  const store = path.join(dir, 'daily-schedule.json');
+
+  const FETCH = Date.parse('2026-09-17T10:05:00Z');
+  const built = dailies.buildPayload(
+    { schedule: SCHEDULE, lists: { beginner: BEGINNER_LIST }, specials: { weekly: WEEKLY } },
+    FETCH,
+  );
+  const write = (savedAt, payload) =>
+    fs.writeFileSync(store, JSON.stringify({ v: 1, savedAt, payload: payload || built }));
+
+  const offline = async (now) => {
+    dailies.resetCache();
+    dailies.init(store);
+    return dailies.getDailies({
+      now,
+      ticketImpl: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+      callImpl: async () => {
+        throw new Error('no service');
+      },
+    });
+  };
+
+  (async () => {
+    write(new Date(FETCH).toISOString());
+
+    /* The whole point: the game is shut and there is still a calendar. */
+    const same = await offline(FETCH + 60_000);
+    check('with the game shut, a saved calendar is served', same.ok === true && same.cached === true);
+    check('…and says when it was saved', typeof same.savedAt === 'string' && same.savedAt.length > 0);
+    check('…with its events intact', same.tiers[0].events.length === 3);
+
+    /* The stale half must be regenerated, not replayed. A stored `next` is a
+       concrete instant from the day it was fetched; served a day later it would
+       be counting down to a race that has already run. */
+    const tomorrow = await offline(FETCH + 22 * 3600_000);
+    const next = tomorrow.tiers[0].next;
+    check('a day later, next is regenerated not replayed', next && Date.parse(next.startsAt) >= FETCH + 22 * 3600_000, next && next.startsAt);
+    check('…onto the NEW day', next && next.startsAt.startsWith('2026-09-18'), next && next.startsAt);
+    check('…and every occurrence is still in the future', tomorrow.tiers[0].upcoming.every((u) => Date.parse(u.startsAt) >= FETCH + 22 * 3600_000));
+    check('…and they are sorted', tomorrow.tiers[0].upcoming.map((u) => u.startsAt).join() === [...tomorrow.tiers[0].upcoming.map((u) => u.startsAt)].sort().join());
+
+    /* A special that has run is gone — those are dated, not patterned. */
+    check('special slots that have run are dropped', tomorrow.series.every((s) => s.slots.every((x) => Date.parse(x.startsAt) >= FETCH + 22 * 3600_000)));
+
+    /* The circuits rotate weekly, so eventually the saved copy is fiction. */
+    const old = await offline(FETCH + 8 * 24 * 3600_000);
+    check("past a week it expires rather than naming last week's tracks", old.ok === false, String(old.ok));
+    check('…and says why', /Le Mans Ultimate/.test(old.error || ''));
+
+    /* ---- The rotation boundary -----------------------------------------
+     *
+     * Expiring seven days after the SAVE was the blunt version of this, and it
+     * was wrong in the case that matters: a calendar saved on Sunday is only
+     * two days old on Tuesday afternoon, by which point LMU has changed every
+     * circuit in it. The times would be right and the tracks would be last
+     * week's, which is the one thing this store must never say.
+     *
+     * `weekStart` is the service's own `seriesStarts` — 10:00:02 UTC on the
+     * Tuesday the rotation began, identical across all three tiers. */
+    const weekly = { ...built, weekStart: '2026-09-15T10:00:02.000Z' };
+    const turns = Date.parse('2026-09-22T10:00:02.000Z'); // one week on
+
+    const servedAt = async (ms) => {
+      write(new Date(FETCH).toISOString(), weekly);
+      const p = await offline(ms);
+      return p.ok === true && p.cached === true;
+    };
+
+    check('served the day it was fetched', (await servedAt(FETCH + 3600_000)) === true);
+    check('served three days later, same rotation', (await servedAt(Date.parse('2026-09-20T12:00:00Z'))) === true);
+    check('served on the Monday night, still the same week', (await servedAt(turns - 3600_000)) === true);
+    check('and refused the moment the rotation turns', (await servedAt(turns + 60_000)) === false);
+    check('…still refused well after', (await servedAt(turns + 5 * 86400_000)) === false);
+
+    /* A payload saved before weekStart was captured falls back to the age
+       test, rather than being served forever or refused outright. */
+    const noWeek = { ...built };
+    delete noWeek.weekStart;
+    write(new Date(FETCH).toISOString(), noWeek);
+    const oldShape = await offline(FETCH + 2 * 86400_000);
+    check('an older saved payload still works, on the age test', oldShape.ok === true && oldShape.cached === true);
+    write(new Date(FETCH).toISOString(), noWeek);
+    const oldShapeStale = await offline(FETCH + 8 * 86400_000);
+    check('…and still expires', oldShapeStale.ok === false);
+
+
+    /* Junk on disk must not take the tab down with it. */
+    fs.writeFileSync(store, '{ not json');
+    const junk = await offline(FETCH);
+    check('a corrupt store degrades to empty, not a throw', junk.ok === false && Array.isArray(junk.tiers));
+
+    /* A store from a future shape is ignored rather than misread. */
+    fs.writeFileSync(store, JSON.stringify({ v: 999, savedAt: new Date(FETCH).toISOString(), payload: built }));
+    const wrongVer = await offline(FETCH);
+    check('a store from another version is ignored', wrongVer.ok === false);
+
+    /* And a live fetch still wins over the saved copy. */
+    write(new Date(FETCH).toISOString());
+    dailies.resetCache();
+    dailies.init(store);
+    const live = await dailies.getDailies({
+      now: FETCH,
+      ticketImpl: async () => 'ticket',
+      callImpl: async (m, p2) => {
+        if (p2 === '/authenticate') return { accessToken: 'tok' };
+        if (p2 === 'api/v1/daily/schedule') return SCHEDULE;
+        if (p2.startsWith('api/v1/daily/list/beginner')) return BEGINNER_LIST;
+        throw new Error('500');
+      },
+    });
+    check('a live fetch is preferred over the saved one', live.ok === true && !live.cached);
+    check('…and it rewrites the store', JSON.parse(fs.readFileSync(store, 'utf8')).savedAt.startsWith('2026-09-17'));
+
+    dailies.resetCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+    report();
+  })();
+}
 }

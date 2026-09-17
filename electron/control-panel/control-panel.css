@@ -1156,6 +1156,93 @@ html, body {
 /* The row's controls: copy the link, and turn the code off or on. */
 .ref-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
+/* Become a partner (migration 0029) -------------------------------------------
+   The application form, in Settings → Account, for anyone without a code. Two
+   columns so the four fields do not make a tall column of half-empty boxes in a
+   card that is mostly prose; the message spans both because it is the one field
+   with something to say. */
+.ref-apply {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+  align-items: start;
+  margin-top: 14px;
+}
+.ref-apply .field__input { width: 100%; font-family: var(--font-ui); }
+.ref-apply #ref-apply-code { font-family: var(--font-mono); text-transform: uppercase; }
+/* The last two fields — the message and the button — run the full width. */
+.ref-apply > .field:nth-last-child(2),
+.ref-apply > .field:last-child { grid-column: 1 / -1; }
+.ref-apply textarea.field__input { resize: vertical; }
+/* The button row is a row, not a field: left to itself the button inherits the
+   100% width every input in this grid needs, and a full-bleed gradient Apply
+   bar reads as a banner rather than as a thing you press. */
+/* `flex-direction: row` is not redundant: .field is a column flex (label over
+   control), and a column flex with align-items:center centres its children
+   HORIZONTALLY — which put the button in the middle of the card. */
+.ref-apply > .field:last-child {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.ref-apply > .field:last-child .btn { width: auto; flex: 0 0 auto; }
+@media (max-width: 620px) {
+  .ref-apply { grid-template-columns: 1fr; }
+}
+
+/* "No commission" has to be read BEFORE they apply, so it is set as a rule of
+   the scheme rather than as a hint under a field. */
+.ref-apply__terms {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  /* A size up from .admin-foot's 11px. This is the one paragraph on the card
+     that has to actually be read, not skimmed past as small print. */
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ref-apply__terms em { color: var(--text); font-style: normal; font-weight: 600; }
+
+/* What replaces the form: "it is with us", or "not this time" and why. A left
+   rule rather than a badge — this is a sentence to read, not a status to scan,
+   and the colour says which of the two it is. */
+.ref-apply__state {
+  margin: 14px 0 0;
+  padding: 10px 0 10px 12px;
+  border-left: 2px solid var(--cyan);
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.ref-apply__state[data-state="declined"] { border-left-color: var(--line-2); }
+
+/* The pending count beside "Applications". Only drawn when there are any, so
+   an empty queue is a heading with nothing shouting on it. */
+.ref-req__count {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--bg);
+  background: var(--cyan);
+}
+
+/* One application: who, what they said, and the two buttons. The decided ones
+   stay in the list as history and are dimmed rather than removed. */
+.ref-req__actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.admin-item[data-decided="true"] { opacity: 0.6; }
+/* The approval email is the part that can fail long after the click, so it is
+   drawn where the decision is, in the colour of what happened. */
+.ref-req__mail { font-weight: 600; }
+.ref-req__mail[data-mail="sent"] { color: var(--ok); }
+.ref-req__mail[data-mail="queued"] { color: var(--text-2); }
+.ref-req__mail[data-mail="failed"] { color: var(--bad); }
+
 /* A revoked code keeps its row and its numbers — the history is the point —
    and says so rather than just fading out. */
 .ref-off {

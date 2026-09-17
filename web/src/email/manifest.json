@@ -1,0 +1,53 @@
+{
+  "note": "Images for the lifecycle emails. Generated and verified by scripts/email-assets.js (npm run email:assets), published to GitHub Pages by scripts/build-web.js, and referenced by supabase/functions/_shared/emails.ts. Every file here is served publicly and forever — an email sent today is still asking for these URLs in a year.",
+  "width": 1056,
+  "displayWidth": 528,
+  "shots": {
+    "logo.png": {
+      "source": "svg",
+      "from": "electron/control-panel/assets/apex-aio-icon.svg",
+      "height": 40,
+      "alt": "Apex AIO System"
+    },
+    "hero-day0.png": {
+      "source": "manual",
+      "wanted": "The money shot: the overlay layer live over Le Mans Ultimate, delta and tyres and fuel visible. This is the first picture a new subscriber sees, so it should be the app at its best rather than a panel screenshot.",
+      "alt": "The Apex AIO overlay layer running over Le Mans Ultimate"
+    },
+    "hero-day1.png": {
+      "source": "manual",
+      "wanted": "Overlay edit mode in-game: widgets showing their drag handles, mid-arrangement.",
+      "alt": "Overlay edit mode, with widgets being dragged into place"
+    },
+    "hero-day2.png": {
+      "source": "manual",
+      "wanted": "The Engineer tab with a real exchange in the call log — a question and its spoken answer.",
+      "alt": "The race engineer panel mid-conversation during a stint"
+    },
+    "hero-day3.png": {
+      "source": "manual",
+      "wanted": "The Fuel tab after a few laps: consumption learned, stint length, and a pit window.",
+      "alt": "The Fuel tab showing consumption, stint length and a pit window"
+    },
+    "hero-day4.png": {
+      "source": "manual",
+      "wanted": "The Setups browser filtered to one car and track, with a few shared setups listed.",
+      "alt": "The setup browser, with shared setups listed by car and track"
+    },
+    "hero-day5.png": {
+      "source": "manual",
+      "wanted": "The web pit wall (aio.apexandchillracing.co.uk) on a tablet, tyre and fuel cards live.",
+      "alt": "The web pit wall open on a tablet, showing live tyre and fuel cards"
+    },
+    "hero-day6.png": {
+      "source": "harness",
+      "url": "__shot-harness.html?tab=review&lap=1&vs=1&scrub=0.42&hold=1",
+      "alt": "The Review tab comparing two laps on a flat track map with speed traces"
+    },
+    "hero-nudge-proof.png": {
+      "source": "manual",
+      "wanted": "One wide shot that shows the app is more than an overlay — the in-game layer with the panel or pit wall beside it.",
+      "alt": "The Apex AIO overlays, engineer and pit wall side by side"
+    }
+  }
+}

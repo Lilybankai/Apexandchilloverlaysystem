@@ -395,6 +395,7 @@ const PANEL_CONTRACT = {
   'sk-daily-pane': 'div',
   'dl-zone': 'span',
   'dl-zone-toggle': 'button',
+  'dl-overlay': 'input:checkbox',
   'dl-voice': 'input:checkbox',
   'dl-entries': 'input:checkbox',
   'dl-msg': 'p',
@@ -403,7 +404,12 @@ const PANEL_CONTRACT = {
   'dl-tiers': 'div',
   'dl-series': 'div',
   'dl-cal-pane': 'div',
-  'dl-days': 'nav',
+  'dl-cal-prev': 'button',
+  'dl-cal-next': 'button',
+  'dl-cal-today': 'button',
+  'dl-cal-month': 'h2',
+  'dl-cal-dows': 'div',
+  'dl-days': 'div',
   'dl-day': 'div',
   'dl-empty': 'p',
 
@@ -485,6 +491,12 @@ const PANEL_CONTRACT = {
   'adm-ref-issue-out': 'p',
   'adm-ref-list': 'ul',
   'adm-ref-empty': 'p',
+
+  // Partner applications (migration 0029) — the admin queue.
+  'adm-ref-req-card': 'section',
+  'adm-ref-req-count': 'span',
+  'adm-ref-req-list': 'ul',
+  'adm-ref-req-empty': 'p',
   // The partner's own link, in Settings → Account.
   'ref-card': 'section',
   'ref-url': 'input:text',
@@ -500,6 +512,17 @@ const PANEL_CONTRACT = {
   'ref-overlay-copy': 'button',
   'ref-overlay-style': 'select',
   'ref-overlay-preview': 'button',
+
+  // Become a partner (migration 0029) — the driver-side application form.
+  'ref-apply-card': 'section',
+  'ref-apply-form': 'div',
+  'ref-apply-name': 'input:text',
+  'ref-apply-code': 'input:text',
+  'ref-apply-audience': 'input:text',
+  'ref-apply-message': 'textarea',
+  'ref-apply-send': 'button',
+  'ref-apply-status': 'span',
+  'ref-apply-state': 'p',
 
   // Setup editor (v0.65.0). Only the static frame is contracted — every
   // setting row is built at runtime from the sim's own key set, so rows have

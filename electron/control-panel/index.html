@@ -252,7 +252,7 @@
             <span class="obhead__count" id="onboard-count">—</span>
           </div>
           <p class="card__desc">
-            Seven things to do once. Each one ticks itself when it is actually
+            A short list, done once. Each one ticks itself when it is actually
             done — click a row and it walks you through that part of the app,
             control by control, with the page still live so you can follow along.
           </p>
@@ -1142,6 +1142,9 @@
                  is always on — it is the baseline and turning it off would
                  leave a bell that does nothing. -->
             <span class="sk-remind">
+              <label class="sk-remind__opt" title="Also show it on the in-game overlay — where you are if you registered and then hopped into a practice server">
+                <input type="checkbox" id="dl-overlay" /> On the overlay
+              </label>
               <label class="sk-remind__opt" title="Also say it out loud through the race engineer — the only channel that reaches you with the game in focus">
                 <input type="checkbox" id="dl-voice" /> Announce out loud
               </label>
@@ -1163,7 +1166,20 @@
                from the pattern the service published for today — no second
                request, and nothing invented. -->
           <div id="dl-cal-pane" hidden>
-            <nav class="sk-days" id="dl-days" aria-label="Which day to show"></nav>
+            <div class="card sk-cal">
+              <div class="sk-cal__head">
+                <button class="sk-cal__nav" id="dl-cal-prev" type="button" aria-label="Previous month">
+                  <svg class="icon"><use href="#i-chevron-left" /></svg>
+                </button>
+                <h2 class="sk-cal__month" id="dl-cal-month">&nbsp;</h2>
+                <button class="sk-cal__nav" id="dl-cal-next" type="button" aria-label="Next month">
+                  <svg class="icon"><use href="#i-chevron-right" /></svg>
+                </button>
+                <button class="btn btn--ghost btn--sm" id="dl-cal-today" type="button">Today</button>
+              </div>
+              <div class="sk-cal__dows" id="dl-cal-dows"></div>
+              <div class="sk-cal__grid" id="dl-days"></div>
+            </div>
             <div class="sk-day" id="dl-day"></div>
           </div>
 
@@ -2940,6 +2956,37 @@
           </div>
         </div>
 
+        <!-- Applications (migration 0029). Above "Issue a partner code" on
+             purpose: this is the queue, and the form below it is the manual
+             route for someone who was asked in person. A pending application is
+             somebody waiting on a reply, so it should be the first thing in the
+             pane and not something you scroll past.
+
+             Hidden wholesale on a backend without 0029 rather than shown empty,
+             so an older database does not grow a card that can never fill. -->
+        <section class="card" id="adm-ref-req-card" hidden>
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-inbox" /></svg>Applications
+              <span class="ref-req__count" id="adm-ref-req-count" hidden></span>
+            </h2>
+            <p class="card__desc">
+              Sent from Settings&nbsp;→&nbsp;Account in the app. Approving issues
+              the code, links it to their account and emails them — all of it, in
+              one click. Declining emails nobody; the reason you type is shown to
+              them in the app instead.
+            </p>
+          </div>
+          <!-- The same .admin-inbox shape the feedback queue uses: an
+               application is a message from a person with a decision attached,
+               which is the feedback item's problem exactly. -->
+          <ul class="admin-inbox" id="adm-ref-req-list"></ul>
+          <p class="weekempty" id="adm-ref-req-empty" hidden>
+            No applications. The card that sends them is in
+            Settings&nbsp;→&nbsp;Account, for anyone without a code.
+          </p>
+        </section>
+
         <section class="card">
           <div class="card__head">
             <h2 class="card__title"><svg class="icon"><use href="#i-link" /></svg>Issue a partner code</h2>
@@ -3667,6 +3714,79 @@
               </span>
             </div>
           </div>
+        </section>
+
+        <!-- ------------------ BECOME A PARTNER ------------------ -->
+        <!-- The way IN (migration 0029). Codes are admin-issued, and until this
+             card existed the scheme was invisible to exactly the people it is
+             for: the card above is hidden without a code, so a streamer had no
+             way to know there was anything to ask for.
+
+             Four states, one card, because they are all answers to the same
+             question — "can I have one?": the form, "it is with us", "not this
+             time" with the reason, and nothing at all for someone who already
+             has a code (the card above is theirs instead).
+
+             Hidden by default. `canApply` and `status` come from the server,
+             not from what this file can see; hiding the form is a courtesy,
+             and referral_request_submit is the actual rule. -->
+        <section class="card" id="ref-apply-card" hidden>
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-sparkles" /></svg>Become a partner</h2>
+            <p class="card__desc">
+              Stream, run a league, or have an audience anywhere? We can issue
+              you a code. Everyone who uses it gets
+              <strong>10% off Apex AIO</strong> for as long as they stay
+              subscribed.
+            </p>
+          </div>
+
+          <!-- Said before they apply, not after they are approved. The scheme
+               pays the partner nothing today, and someone finding that out only
+               once they have promoted it for a month is the version of this
+               that costs a relationship. -->
+          <p class="admin-foot ref-apply__terms">
+            Straight up: the discount goes to <em>your</em> audience and there
+            is no commission or payout to you. It is something worth having to
+            put on a stream, not an earner. Every redemption is recorded against
+            your code, so if that ever changes it starts from real numbers.
+          </p>
+
+          <div class="ref-apply" id="ref-apply-form">
+            <label class="field">
+              <span class="field__label">Name to show</span>
+              <input class="field__input" id="ref-apply-name" type="text" maxlength="80"
+                     placeholder="Craig M." autocomplete="off" />
+              <span class="field__hint">Shown as “Craig sent you” to whoever uses your link.</span>
+            </label>
+            <label class="field">
+              <span class="field__label">Code you want</span>
+              <input class="field__input" id="ref-apply-code" type="text" maxlength="24"
+                     placeholder="CRAIG" spellcheck="false" autocomplete="off" />
+              <span class="field__hint">3–24 letters or digits. Short and sayable — people read it aloud.</span>
+            </label>
+            <label class="field">
+              <span class="field__label">Where you would use it</span>
+              <input class="field__input" id="ref-apply-audience" type="text" maxlength="200"
+                     placeholder="Twitch — twitch.tv/…, ~400 viewers" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field__label">Anything else</span>
+              <textarea class="field__input" id="ref-apply-message" rows="3" maxlength="1000"
+                        placeholder="Optional — what you race, who watches, anything we should know."></textarea>
+            </label>
+            <div class="field">
+              <button class="btn btn--accent" id="ref-apply-send" type="button">
+                <svg class="icon"><use href="#i-send" /></svg> Apply
+              </button>
+              <span class="field__hint" id="ref-apply-status" data-state="idle"></span>
+            </div>
+          </div>
+
+          <!-- Replaces the form once there is nothing to fill in: an application
+               already with us, or one that was turned down and when they can try
+               again. Never an empty disabled form. -->
+          <p class="ref-apply__state" id="ref-apply-state" hidden></p>
         </section>
 
         <div class="two-col">

@@ -314,9 +314,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           reply: 'Good shout — it is going in the next build. Thanks for sending it.' },
       ] : [] }) },
     reminders: {
-      list: P({ ok: true, reminders: [], settings: { toast: true, voice: false, entriesOpen: false }, leads: [5, 2] }),
+      list: P({ ok: true, reminders: [], settings: { toast: true, voice: false, overlay: true, entriesOpen: false }, leads: [5, 2] }),
       toggle: P({ ok: true, on: true }),
-      settings: P({ ok: true, settings: { toast: true, voice: false, entriesOpen: false } }),
+      settings: P({ ok: true, settings: { toast: true, voice: false, overlay: true, entriesOpen: false } }),
       onChange: function () { return function () {}; },
     },
     schedule: {
@@ -484,6 +484,23 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       signups: 28,
       paying: 11,
     }),
+    /*
+     * "Become a partner" (migration 0029). hasCode is false even though
+     * referralMine above returns a code, because the two cards are never both
+     * useful to LOOK at: the stub that shows the application form is the one
+     * worth having, since the partner's own card is already covered above.
+     * (No backticks in here — see the note further down.)
+     */
+    referralRequestMine: P({
+      ok: true,
+      hasCode: false,
+      canApply: true,
+      status: '',
+      retryAfter: null,
+      declineReason: '',
+      wantedCode: '',
+    }),
+    referralRequestSubmit: P({ ok: true }),
     admin: { whoami: P({ ok: true, isAdmin: true }), overview: P({ ok: false }),
       feedback: P({ ok: true, rows: [
         { id: 1, kind: 'idea', status: 'planned', driver: 'Mark Slater', app_version: '0.87.0',
@@ -507,6 +524,32 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           locked_out: true },
       ] : [] }),
       users: P({ ok: true, rows: [] }), setFeedbackStatus: P({ ok: true }), freeAccess: P({ ok: false }),
+      /*
+       * Partner applications (migration 0029). One waiting and one already
+       * decided, because the decided row is where the approval email's state
+       * is drawn and that is the part worth being able to look at: an approved
+       * partnership whose mail never left is the failure the card exists to
+       * surface.
+       */
+      referralRequests: P({ ok: true, data: { pending: 1, rows: [
+        { id: 7, status: 'pending', createdAt: '2026-09-15T18:20:00.000Z',
+          displayName: 'Craig M.', wantedCode: 'CRAIG', driver: 'Craig Morrow',
+          email: 'craig@example.com', isSubscriber: true,
+          audience: 'Twitch - twitch.tv/craigm, ~400 average viewers',
+          message: 'I run the Thursday GT3 endurance nights and stream every one of them.',
+          declineReason: '', code: null, decidedAt: null, emailStatus: null, emailError: null },
+        { id: 6, status: 'approved', createdAt: '2026-09-09T11:02:00.000Z',
+          displayName: 'Sam Rivers', wantedCode: 'SAM', driver: 'Sam Rivers',
+          email: 'sam@example.com', isSubscriber: false,
+          audience: 'YouTube, LMU setup guides', message: '',
+          declineReason: '', code: 'SAM', decidedAt: '2026-09-10',
+          emailStatus: 'sent', emailError: null },
+      ] } }),
+      approveReferralRequest: P({ ok: true, code: 'CRAIG',
+        url: 'https://apexandchillracing.co.uk/r/CRAIG',
+        overlayUrl: 'https://apexandchillracing.co.uk/r/CRAIG/overlay',
+        email: 'craig@example.com' }),
+      declineReferralRequest: P({ ok: true }),
       /*
        * The Usage pane (migration 0022). Numbers are plausible rather than
        * real — the counters had reported nothing yet when this was written —

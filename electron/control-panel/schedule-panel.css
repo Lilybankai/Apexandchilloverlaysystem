@@ -568,54 +568,171 @@
   color: var(--cyan);
 }
 
-/* ── The calendar: a day at a time ─────────────────────────────────────────── */
+/* ── The calendar ───────────────────────────────────────────────────────────
+   A month you can look at, not a feed you scroll. The first cut was three
+   columns of 96 rows each, scrolling inside themselves — every row true, and
+   collectively unreadable. The grid below carries only what DIFFERS between
+   days (the dated specials, and a count), and the day you pick opens
+   underneath as a timetable. */
 
-.sk-days {
+.sk-cal { padding-bottom: 6px; }
+
+.sk-cal__head {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
-.sk-day__btn {
+.sk-cal__month {
+  margin: 0;
+  min-width: 190px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.sk-cal__head .btn { margin-left: auto; }
+.sk-cal__nav {
   appearance: none;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: transparent;
   color: var(--text-2);
-  font-family: var(--font-display);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  padding: 7px 13px;
   border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  line-height: 0;
   cursor: pointer;
 }
-.sk-day__btn:hover { border-color: var(--line-2); color: var(--text); }
-.sk-day__btn[data-active="true"] {
-  color: var(--bg);
-  background: var(--cyan);
-  border-color: var(--cyan);
-  font-weight: 700;
+.sk-cal__nav:hover { color: var(--text); border-color: var(--line-2); }
+.sk-cal__nav .icon { width: 14px; height: 14px; }
+
+.sk-cal__dows,
+.sk-cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.sk-cal__dows { margin: 12px 0 6px; }
+.sk-cal__dow {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: center;
 }
 
-/* A day's list is long — 32 Beginner races — so the rows tighten and a race
-   already run stays visible but recedes. Hiding them would make a day that
-   starts at 14:00 look broken. */
-.sk-then--day {
-  /* A full Beginner day is 32 races. Scroll the column, not the page, so the
-     three tiers stay side by side and can be compared hour for hour. */
-  max-height: 60vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+/* A cell is a button: the whole square is the target, not the number in it. */
+.sk-cell {
+  appearance: none;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 86px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-2);
+  cursor: pointer;
+  overflow: hidden;
 }
-.sk-then--day .sk-then__row { padding: 4px 0; }
-.sk-then--day .sk-then__row[data-past="true"] { opacity: 0.4; }
-/* The race the column opens on. A rule, rather than a scroll position alone:
-   scrolling can be undone by a flick of the wheel, and then nothing on screen
-   says where "now" is. */
-.sk-then--day .sk-then__row[data-next="true"] {
-  box-shadow: inset 2px 0 0 var(--cyan);
-  padding-left: 8px;
+.sk-cell:hover { border-color: var(--line-2); }
+.sk-cell[data-out="true"] { opacity: 0.35; }
+.sk-cell[data-today="true"] .sk-cell__num { color: var(--cyan); font-weight: 700; }
+.sk-cell[data-active="true"] {
+  border-color: var(--cyan);
+  background: rgba(38, 187, 244, 0.08);
 }
-.sk-then--day .sk-then__row[data-next="true"] .sk-then__time { color: var(--cyan); }
+.sk-cell__num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+/* The dated events — the only thing that actually distinguishes one day from
+   another, since the daily rotation repeats verbatim. */
+.sk-cell__ev {
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--cyan);
+  background: rgba(38, 187, 244, 0.12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sk-cell__ev[data-team="true"] {
+  color: #b06bff;
+  background: rgba(176, 107, 255, 0.12);
+}
+.sk-cell__daily {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+@media (max-width: 900px) {
+  .sk-cell { min-height: 64px; }
+  .sk-cell__ev { display: none; }
+}
+
+/* ── The chosen day ─────────────────────────────────────────────────────── */
+
+.sk-day__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 18px 0 12px;
+}
+.sk-day__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+}
+.sk-day__date { font-size: 13px; color: var(--text-3); }
+
+/* An event stated once, with its start times under it. The same information as
+   the 96-row list, in a twelfth of the height. */
+.sk-slotgroup {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sk-slotgroup:last-child { border-bottom: 0; }
+.sk-slotgroup__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sk-slotgroup__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+}
+.sk-slotgroup__track { font-size: 12px; color: var(--text-2); }
+
+.sk-times { display: flex; flex-wrap: wrap; gap: 4px; }
+.sk-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-2);
+}
+.sk-time[data-past="true"] { opacity: 0.35; }
 
 .sk-dayspecials { margin-top: 16px; }
 .sk-slot--wide {

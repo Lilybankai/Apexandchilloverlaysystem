@@ -4460,8 +4460,18 @@
     setAdminMsg('');
     const filter = $('#adm-fb-filter');
     try {
-      const [overview, feedback, users, free, billing, pastDue, corpus, analytics, referrals] =
-        await Promise.all([
+      const [
+        overview,
+        feedback,
+        users,
+        free,
+        billing,
+        pastDue,
+        corpus,
+        analytics,
+        referrals,
+        referralRequests,
+      ] = await Promise.all([
           window.apex.admin.overview(),
           window.apex.admin.feedback({ status: filter ? filter.value : '' }),
           window.apex.admin.users(adminUsersQuery()),
@@ -4477,6 +4487,11 @@
             : Promise.resolve(null),
           typeof window.apex.admin.referrals === 'function'
             ? window.apex.admin.referrals()
+            : Promise.resolve(null),
+          // Migration 0029. Absent on an older preload OR an older database,
+          // and the Applications card hides itself in either case.
+          typeof window.apex.admin.referralRequests === 'function'
+            ? window.apex.admin.referralRequests()
             : Promise.resolve(null),
         ]);
       if (overview && overview.ok) {
@@ -4496,6 +4511,9 @@
       renderAdminCorpus(corpus && corpus.ok ? corpus.data : null);
       renderAdminUsage(analytics && analytics.ok ? analytics.data : null);
       renderAdminReferrals(referrals && referrals.ok ? referrals.data : null);
+      renderReferralRequests(
+        referralRequests && referralRequests.ok ? referralRequests.data : null,
+      );
     } catch {
       setAdminMsg('Could not reach the league.');
     }
@@ -5150,6 +5168,205 @@
     renderAdminReferrals(res && res.ok ? res.data : null);
   }
 
+  /* ---- Partner applications (migration 0029) -----------------------------
+   *
+   * The queue in front of the codes. Someone applies from Settings → Account,
+   * this is where it lands, and Approve does the whole job in one call:
+   * issues the code, links it to their account, closes the application and
+   * queues the email.
+   */
+
+  /** The Applications card. `data` null on a backend without 0029. */
+  function renderReferralRequests(data) {
+    const card = $('#adm-ref-req-card');
+    const list = $('#adm-ref-req-list');
+    const empty = $('#adm-ref-req-empty');
+    const count = $('#adm-ref-req-count');
+    if (!card || !list) return;
+
+    // No 0029 means the RPC does not exist — hide the whole card rather than
+    // leave an empty one that can never fill.
+    if (!data) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const pending = Number(data.pending) || 0;
+    if (count) {
+      count.hidden = pending === 0;
+      count.textContent = `${pending} waiting`;
+    }
+
+    list.textContent = '';
+    for (const row of rows) list.append(buildReferralRequest(row));
+    if (empty) empty.hidden = rows.length > 0;
+  }
+
+  /** One application: who, what they said, and the decision. */
+  function buildReferralRequest(row) {
+    const li = document.createElement('li');
+    li.className = 'admin-item';
+    const decided = row.status !== 'pending';
+    li.setAttribute('data-decided', String(decided));
+
+    const badge = document.createElement('span');
+    badge.className = 'admin-item__badge';
+    badge.textContent = row.status || 'pending';
+    // Someone who pays for the app themselves is a different proposition from
+    // someone who never started a trial, and it is the first thing you want to
+    // know. It rides on the badge because that is where the eye lands first.
+    if (row.isSubscriber) {
+      badge.setAttribute('data-kind', 'idea');
+      badge.title = 'Subscribed — they pay for the app themselves';
+    }
+
+    const msg = document.createElement('span');
+    msg.className = 'admin-item__msg';
+
+    const who = document.createElement('p');
+    who.className = 'admin-item__text';
+    // textContent everywhere: every field here was typed by the applicant.
+    who.textContent = row.displayName || row.driver || '(no name given)';
+    msg.append(who);
+
+    if (row.audience) {
+      const aud = document.createElement('p');
+      aud.className = 'admin-item__text';
+      aud.textContent = row.audience;
+      msg.append(aud);
+    }
+    if (row.message) {
+      const note = document.createElement('p');
+      note.className = 'admin-item__meta';
+      note.textContent = row.message;
+      msg.append(note);
+    }
+
+    const meta = document.createElement('p');
+    meta.className = 'admin-item__meta';
+    const bits = [];
+    if (row.email) bits.push(row.email);
+    else bits.push('no email address');
+    if (row.wantedCode) bits.push(`wants ${row.wantedCode}`);
+    if (row.createdAt) bits.push(new Date(row.createdAt).toLocaleDateString());
+    meta.textContent = bits.join(' · ');
+    msg.append(meta);
+
+    if (decided) {
+      const out = document.createElement('p');
+      out.className = 'admin-item__meta';
+      if (row.status === 'approved') {
+        out.append(document.createTextNode(`Approved ${row.decidedAt || ''} · ${row.code || ''} · `));
+        /*
+         * The state of the approval email, on the row.
+         *
+         * This is the part that can fail an hour after the click — the
+         * dispatcher not deployed, a Resend key missing, a hard bounce — and
+         * an approved partner who was never told is the failure this whole
+         * feature would otherwise hide. So it is shown where the decision is,
+         * not left in a log nobody greps. See migration 0029's header.
+         */
+        const mail = document.createElement('span');
+        mail.className = 'ref-req__mail';
+        const st = row.emailStatus || '';
+        mail.setAttribute('data-mail', st || 'none');
+        mail.textContent =
+          st === 'sent'
+            ? 'emailed'
+            : st === 'queued'
+              ? 'email queued'
+              : st === 'failed'
+                ? 'EMAIL FAILED'
+                : 'no email sent';
+        if (row.emailError) mail.title = row.emailError;
+        out.append(mail);
+      } else {
+        out.textContent = `Declined ${row.decidedAt || ''}${
+          row.declineReason ? ` — ${row.declineReason}` : ''
+        }`;
+      }
+      msg.append(out);
+    }
+
+    const actions = document.createElement('span');
+    actions.className = 'ref-req__actions';
+
+    if (!decided) {
+      const approve = document.createElement('button');
+      approve.className = 'btn btn--accent btn--sm';
+      approve.type = 'button';
+      approve.textContent = 'Approve';
+      approve.addEventListener('click', async () => {
+        /*
+         * The code is confirmed, not assumed. The applicant's suggestion is
+         * prefilled because it is usually right and usually their name, but it
+         * is also the one field an admin has a reason to overrule — a clash, a
+         * rude word, a code nobody could say out loud — and finding that out
+         * after the email has gone is too late.
+         */
+        const code = (
+          window.prompt(
+            `Approve ${row.displayName || row.email}?\n\n` +
+              'This issues the code, links it to their account and emails them.',
+            row.wantedCode || '',
+          ) || ''
+        ).trim();
+        if (!code) return;
+        approve.disabled = true;
+        const res = await window.apex.admin.approveReferralRequest({ id: row.id, code });
+        approve.disabled = false;
+        if (!res || !res.ok) {
+          setAdminMsg((res && res.error) || 'Could not approve that.');
+          return;
+        }
+        await window.apex.copy(res.url || '');
+        showToast(`${res.code} issued and emailed to ${res.email || 'them'} — link copied`);
+        await refreshReferralRequests();
+        // The code now exists, so the Partners table below is stale too.
+        await refreshReferrals();
+      });
+
+      const decline = document.createElement('button');
+      decline.className = 'btn btn--ghost btn--sm';
+      decline.type = 'button';
+      decline.textContent = 'Decline';
+      decline.addEventListener('click', async () => {
+        const reason = window.prompt(
+          `Decline ${row.displayName || row.email}?\n\n` +
+            'No email is sent. Whatever you write here is shown to them in the ' +
+            'app, word for word, so write it to be read.',
+          '',
+        );
+        // Cancel, not an empty reason: null is "I changed my mind", '' is "no
+        // reason given", and only the first should abandon the decision.
+        if (reason === null) return;
+        decline.disabled = true;
+        const res = await window.apex.admin.declineReferralRequest({ id: row.id, reason });
+        decline.disabled = false;
+        if (!res || !res.ok) {
+          setAdminMsg((res && res.error) || 'Could not decline that.');
+          return;
+        }
+        showToast('Declined. They can apply again in 30 days.');
+        await refreshReferralRequests();
+      });
+
+      actions.append(approve, decline);
+    }
+
+    li.append(badge, msg, actions);
+    return li;
+  }
+
+  /** Re-read just the Applications card. */
+  async function refreshReferralRequests() {
+    if (typeof window.apex.admin.referralRequests !== 'function') return;
+    const res = await window.apex.admin.referralRequests();
+    renderReferralRequests(res && res.ok ? res.data : null);
+  }
+
   {
     const issue = $('#adm-ref-issue');
     if (issue) {
@@ -5235,6 +5452,110 @@
     const overlaySection = $('.ref-overlay');
     if (overlaySection) overlaySection.hidden = !myOverlayUrl;
     renderOverlayUrl();
+  }
+
+  /**
+   * "Become a partner" — the way in (migration 0029).
+   *
+   * Four states out of one RPC, because they are four answers to the same
+   * question and the card has to pick between them without guessing:
+   *
+   *   hasCode          nothing here at all — the card above is theirs
+   *   canApply         the form
+   *   status pending   "it is with us", and what they sent
+   *   status declined  what was said, and when they can try again
+   *
+   * `canApply` is the server's answer. Hiding the form is a courtesy to the
+   * driver; referral_request_submit is what actually decides.
+   */
+  async function refreshMyReferralRequest() {
+    const card = $('#ref-apply-card');
+    if (!card || typeof window.apex.referralRequestMine !== 'function') return;
+    let r = null;
+    try {
+      r = await window.apex.referralRequestMine();
+    } catch {
+      r = null;
+    }
+
+    // Signed out, or a backend without 0029. Either way there is nothing to
+    // offer, and an empty card would be worse than no card.
+    if (!r || !r.ok || r.hasCode) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+
+    const form = $('#ref-apply-form');
+    const state = $('#ref-apply-state');
+    if (r.canApply) {
+      if (form) form.hidden = false;
+      if (state) state.hidden = true;
+      return;
+    }
+
+    if (form) form.hidden = true;
+    if (!state) return;
+    state.hidden = false;
+
+    if (r.status === 'pending') {
+      state.setAttribute('data-state', 'pending');
+      state.textContent =
+        `Your application is with us${
+          r.wantedCode ? ` — you asked for ${r.wantedCode}` : ''
+        }. We will email you the moment it is approved, and your link will appear on this page.`;
+      return;
+    }
+
+    // Declined. The reason is shown verbatim, because it was written to be
+    // read by them, and the cooldown is stated as a date rather than left as a
+    // button that silently refuses.
+    state.setAttribute('data-state', 'declined');
+    const when = r.retryAfter ? new Date(r.retryAfter) : null;
+    const again =
+      when && !Number.isNaN(when.getTime())
+        ? ` You can apply again from ${when.toLocaleDateString()}.`
+        : '';
+    state.textContent = r.declineReason
+      ? `Not this time — ${r.declineReason}${again}`
+      : `We did not take this one up.${again}`;
+  }
+
+  {
+    const send = $('#ref-apply-send');
+    if (send) {
+      send.addEventListener('click', async () => {
+        const status = $('#ref-apply-status');
+        const say = (text, stateName) => {
+          if (!status) return;
+          status.textContent = text || '';
+          status.setAttribute('data-state', stateName || 'idle');
+        };
+        const name = ($('#ref-apply-name').value || '').trim();
+        if (!name) {
+          say('Put the name you want people to see.', 'error');
+          return;
+        }
+        send.disabled = true;
+        say('Sending…', 'busy');
+        const res = await window.apex.referralRequestSubmit({
+          displayName: name,
+          wantedCode: ($('#ref-apply-code').value || '').trim(),
+          audience: ($('#ref-apply-audience').value || '').trim(),
+          message: ($('#ref-apply-message').value || '').trim(),
+        });
+        send.disabled = false;
+        if (!res || !res.ok) {
+          say((res && res.error) || 'Could not send that.', 'error');
+          return;
+        }
+        say('', 'idle');
+        showToast('Application sent — we will email you');
+        // Re-read rather than assuming: the card now has to show the pending
+        // state, and the server is the thing that knows it is pending.
+        await refreshMyReferralRequest();
+      });
+    }
   }
 
   /** The partner's stream-overlay URL, before any style options are added. */
@@ -6019,6 +6340,8 @@
   let dlZone = 'local'; // 'local' | 'utc'
   let dlMode = 'next'; // 'next' | 'calendar'
   let dlDayPick = null; // the chosen day, as a display-zone YYYY-MM-DD
+  /** The month on screen, as {y, m} with m zero-based. Set on first render. */
+  let dlMonth = null;
   let dlPayload = null;
   let dlLoaded = false;
   let dlRequest = 0;
@@ -6375,13 +6698,31 @@
     for (const tier of tiers) tiersEl.append(dlTierCard(tier));
     for (const s of series) seriesEl.append(dlSeriesCard(s));
 
-    /* The strip is rebuilt every render rather than once, so "Today" is still
-       today on a panel left open past midnight. */
-    renderDayStrip();
+    /* Seeded here rather than at load, so a panel left open past midnight opens
+       on the right month and the right day when it is next drawn. */
+    const todayKey = dlDayKey(new Date());
+    if (!dlDayPick) dlDayPick = todayKey;
+    if (!dlMonth) {
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      dlMonth = { y: yy, m: mm - 1 };
+    }
+    renderMonthGrid(ok ? result : null);
     renderDay(ok ? result : null);
 
     if (msg) {
-      const note = result && result.error;
+      /* A saved calendar is honest about being one. The times in it are still
+         right — the rotation repeats — but the circuits are whatever LMU was
+         running when it was fetched, so the driver gets to decide whether to
+         trust it rather than being shown it as live. */
+      let note = result && result.error;
+      if (ok && result && result.cached) {
+        const saved = result.savedAt ? new Date(result.savedAt) : null;
+        const when =
+          saved && !Number.isNaN(saved.getTime())
+            ? `${dlDayName(dlDayKey(saved)).toLowerCase()} at ${dlTime(saved.toISOString())}`
+            : 'earlier';
+        note = `Saved calendar, from ${when}. Start Le Mans Ultimate for the live one.`;
+      }
       msg.hidden = !note || !ok;
       msg.textContent = note && ok ? note : '';
     }
@@ -6503,6 +6844,9 @@
       const s = (res && res.settings) || {};
       const voice = $('#dl-voice');
       if (voice) voice.checked = !!s.voice;
+      const overlay = $('#dl-overlay');
+      // Default ON, so an absent field must not read as off.
+      if (overlay) overlay.checked = s.overlay !== false;
       const entries = $('#dl-entries');
       if (entries) entries.checked = !!s.entriesOpen;
       if (redraw && dlPayload) renderDailies(dlPayload);
@@ -6549,6 +6893,12 @@
       void window.apex.reminders.settings({ voice: dlVoice.checked });
     });
   }
+  const dlOverlay = $('#dl-overlay');
+  if (dlOverlay) {
+    dlOverlay.addEventListener('change', () => {
+      void window.apex.reminders.settings({ overlay: dlOverlay.checked });
+    });
+  }
   const dlEntries = $('#dl-entries');
   if (dlEntries) {
     dlEntries.addEventListener('change', async () => {
@@ -6589,11 +6939,24 @@
    * with their real entry counts, and are simply filed under the right day.
    */
 
-  /** The day keys the strip offers, starting today, in the display zone. */
-  function dlDayKeys() {
-    const keys = [];
-    for (let i = 0; i < DL_CAL_DAYS; i += 1) keys.push(dlDayKey(new Date(Date.now() + i * 86400000)));
-    return keys;
+  /** A calendar date as YYYY-MM-DD from its parts. Not an instant — a date. */
+  function dlKeyOf(y, m, d) {
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  /**
+   * How far ahead the daily rotation is known.
+   *
+   * The pattern repeats exactly every UTC day, so it COULD be drawn to the end
+   * of time — but LMU rotates the circuits weekly, so a fortnight out the times
+   * would be right and the tracks would be fiction. Seven days is the honest
+   * limit, and a day past it says nothing rather than something wrong.
+   */
+  function dlDailyKnown(dayKey) {
+    const today = dlDayKey(new Date());
+    if (dayKey < today) return false; // yesterday ran last week's rotation
+    const last = dlDayKey(new Date(Date.now() + (DL_CAL_DAYS - 1) * 86400000));
+    return dayKey <= last;
   }
 
   /**
@@ -6606,7 +6969,7 @@
    * about the offset, and it stays right across a DST boundary.
    */
   function dlDailyOn(dayKey, tier) {
-    if (!dayKey || !tier) return [];
+    if (!dayKey || !tier || !dlDailyKnown(dayKey)) return [];
     const noon = Date.parse(`${dayKey}T12:00:00Z`);
     const out = [];
     for (const ev of tier.events || []) {
@@ -6616,13 +6979,7 @@
           const utcMidnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
           const at = utcMidnight + min * 60000;
           if (dlDayKey(new Date(at)) !== dayKey) continue;
-          out.push({
-            startsAt: new Date(at).toISOString(),
-            title: ev.title,
-            track: ev.track,
-            classes: ev.classes,
-            raceMin: ev.raceMin,
-          });
+          out.push({ startsAt: new Date(at).toISOString(), event: ev });
         }
       }
     }
@@ -6642,8 +6999,112 @@
     return out;
   }
 
-  /** One tier's column for the chosen day. */
-  function dlDayColumn(tier, dayKey) {
+  /* ---- The month grid ---------------------------------------------------- */
+
+  /**
+   * A month of cells, Monday first.
+   *
+   * What a cell says is the whole design question here. Listing the races would
+   * repeat the same three names in all thirty cells, because the daily rotation
+   * is identical every day — which is a wall of text that tells a driver
+   * nothing about WHICH DAY to pick. So a cell carries only what actually
+   * varies: the specials by name, and the dailies as a count.
+   */
+  function renderMonthGrid(payload) {
+    const grid = $('#dl-days');
+    const dows = $('#dl-cal-dows');
+    const label = $('#dl-cal-month');
+    if (!grid) return;
+
+    const y = dlMonth.y;
+    const m = dlMonth.m;
+    const first = new Date(Date.UTC(y, m, 1));
+    if (label) {
+      label.textContent = first.toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    }
+
+    if (dows && !dows.childElementCount) {
+      // Monday-first, in the driver's own locale, taken from real dates rather
+      // than a hardcoded list so a non-English panel is not stuck with English.
+      for (let i = 0; i < 7; i += 1) {
+        const d = new Date(Date.UTC(2026, 8, 14 + i)); // 2026-09-14 is a Monday
+        dows.append(dlEl('span', 'sk-cal__dow', d.toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' })));
+      }
+    }
+
+    const today = dlDayKey(new Date());
+    const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const lead = (first.getUTCDay() + 6) % 7; // Monday = 0
+    const cells = Math.ceil((lead + daysInMonth) / 7) * 7;
+
+    grid.textContent = '';
+    for (let i = 0; i < cells; i += 1) {
+      const dayNo = i - lead + 1;
+      const inMonth = dayNo >= 1 && dayNo <= daysInMonth;
+      const date = new Date(Date.UTC(y, m, dayNo));
+      const key = inMonth
+        ? dlKeyOf(y, m, dayNo)
+        : dlKeyOf(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'sk-cell';
+      cell.dataset.dlday = key;
+      if (!inMonth) cell.dataset.out = 'true';
+      if (key === today) cell.dataset.today = 'true';
+      if (key === dlDayPick) cell.setAttribute('data-active', 'true');
+
+      cell.append(dlEl('span', 'sk-cell__num', String(date.getUTCDate())));
+
+      const specials = dlSpecialsOn(key, payload);
+      const known = dlDailyKnown(key);
+
+      if (specials.length) {
+        const seen = new Set();
+        for (const { series } of specials) {
+          if (seen.has(series.title)) continue;
+          seen.add(series.title);
+          const pill = dlEl('span', 'sk-cell__ev', series.title);
+          pill.dataset.team = String(!!series.teamEvent);
+          cell.append(pill);
+        }
+      }
+
+      if (known) {
+        const count = (payload && payload.tiers ? payload.tiers : []).reduce(
+          (n, t) => n + dlDailyOn(key, t).length,
+          0,
+        );
+        if (count) cell.append(dlEl('span', 'sk-cell__daily', `${count} races`));
+      }
+      /* Nothing is drawn for a day outside the published week. A marker on
+         every one of them is a month of shrugs, and on a day already gone it
+         would be wrong as well — those races ran, we simply cannot say what
+         they were any more. */
+
+      grid.append(cell);
+    }
+  }
+
+  /* ---- The chosen day ---------------------------------------------------- */
+
+  /**
+   * One tier on the chosen day: its three events, each with its start times as
+   * chips.
+   *
+   * This replaces a 96-row list. The rotation means an event's starts are the
+   * only thing that varies between them, so the event is stated once and its
+   * times run underneath it — the same information as the list in a twelfth of
+   * the height, and it reads as a timetable instead of a feed.
+   */
+  function dlDayTier(tier, dayKey) {
+    const rows = dlDailyOn(dayKey, tier);
+    if (!rows.length) return null;
+
     const card = dlEl('div', 'card sk-tier');
     const head = dlEl('div', 'sk-tier__head');
     head.append(dlEl('h2', 'sk-tier__name', tier.label));
@@ -6653,46 +7114,41 @@
     if (tier.cadenceMin) head.append(dlEl('span', 'sk-tier__freq', `every ${tier.cadenceMin}m`));
     card.append(head);
 
-    const rows = dlDailyOn(dayKey, tier);
-    if (!rows.length) {
-      card.append(dlEl('p', 'sk-none', 'Nothing scheduled.'));
-      return card;
+    /* Group the day's starts by the event they belong to, keeping the order the
+       events appear in the payload so two days never disagree on arrangement. */
+    const byTitle = new Map();
+    for (const row of rows) {
+      const list = byTitle.get(row.event.title) || [];
+      list.push(row.startsAt);
+      byTitle.set(row.event.title, list);
     }
 
-    const list = dlEl('ul', 'sk-then sk-then--day');
     const now = Date.now();
-    let firstNext = null;
-    for (const occ of rows) {
-      const li = dlEl('li', 'sk-then__row');
-      // A race already run is kept, not hidden: "what have I missed today" is
-      // a real question, and a day that starts at 14:00 reads as broken.
-      if (Date.parse(occ.startsAt) < now) li.dataset.past = 'true';
-      else if (!firstNext) {
-        firstNext = li;
-        li.dataset.next = 'true';
-      }
-      li.append(dlEl('span', 'sk-then__time', dlTime(occ.startsAt)));
-      li.append(dlEl('span', 'sk-then__title', occ.title));
-      li.append(dlEl('span', 'sk-then__track', occ.track));
-      list.append(li);
-    }
-    card.append(list);
+    for (const ev of tier.events || []) {
+      const times = byTitle.get(ev.title);
+      if (!times || !times.length) continue;
 
-    /* A whole Beginner day is 32 rows, so the column scrolls inside itself —
-       three tiers stay side by side and the page stays one screen. Today then
-       opens on the next race rather than on 00:00: the top of the list is the
-       part of the day that has already happened.
-       offsetTop is only correct once the element is laid out, which is why this
-       waits a frame rather than measuring here. */
-    if (firstNext) {
-      requestAnimationFrame(() => {
-        if (list.isConnected) list.scrollTop = Math.max(0, firstNext.offsetTop - 8);
-      });
+      const block = dlEl('div', 'sk-slotgroup');
+      const title = dlEl('div', 'sk-slotgroup__head');
+      title.append(dlEl('span', 'sk-slotgroup__name', ev.title));
+      title.append(dlEl('span', 'sk-slotgroup__track', ev.track));
+      block.append(title);
+      block.append(dlChips(ev.classes));
+      block.append(dlFacts(ev));
+
+      const chips = dlEl('div', 'sk-times');
+      for (const t of times) {
+        const chip = dlEl('span', 'sk-time', dlTime(t));
+        if (Date.parse(t) < now) chip.dataset.past = 'true';
+        chips.append(chip);
+      }
+      block.append(chips);
+      card.append(block);
     }
     return card;
   }
 
-  /** The chosen day: three tier columns, then anything special on it. */
+  /** The chosen day: the tiers as timetables, then anything special on it. */
   function renderDay(payload) {
     const host = $('#dl-day');
     if (!host) return;
@@ -6701,9 +7157,21 @@
     const dayKey = dlDayPick || dlDayKey(new Date());
     const tiers = (payload && payload.tiers) || [];
 
-    const grid = dlEl('div', 'sk-tiers');
-    for (const tier of tiers) grid.append(dlDayColumn(tier, dayKey));
-    host.append(grid);
+    const head = dlEl('div', 'sk-day__head');
+    head.append(dlEl('h2', 'sk-day__title', dlDayName(dayKey)));
+    head.append(
+      dlEl(
+        'span',
+        'sk-day__date',
+        new Date(`${dayKey}T12:00:00Z`).toLocaleDateString(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          timeZone: 'UTC',
+        }),
+      ),
+    );
+    host.append(head);
 
     const specials = dlSpecialsOn(dayKey, payload);
     if (specials.length) {
@@ -6719,41 +7187,59 @@
         if (slot.registrations !== null) {
           li.append(dlEl('span', 'sk-slot__regs', `${slot.registrations} entered`));
         }
+        const bell = dlBell({
+          kind: 'special',
+          key: slot.id || series.title,
+          title: series.title,
+          track: series.track,
+          startsAt: slot.startsAt,
+          registrationOpens: slot.registrationOpens,
+        });
+        if (bell) li.append(bell);
         list.append(li);
       }
       card.append(list);
       host.append(card);
     }
 
-    /* Said once, under the day, rather than on every row: the daily races on a
-       future day are this week's rotation repeated, and LMU changes the
-       circuits weekly. */
-    const note = dlEl(
-      'p',
-      'sk-calnote',
-      dayKey === dlDayKey(new Date())
-        ? ''
-        : 'Daily races repeat the same rotation every day. The circuits change with Le Mans Ultimate’s weekly rotation.',
-    );
-    if (note.textContent) host.append(note);
+    const grid = dlEl('div', 'sk-tiers');
+    let any = false;
+    for (const tier of tiers) {
+      const card = dlDayTier(tier, dayKey);
+      if (card) {
+        grid.append(card);
+        any = true;
+      }
+    }
+    if (any) host.append(grid);
+
+    if (!any && !specials.length) {
+      /* Beyond the known week the times would be right and the circuits would
+         be fiction, so the day says so rather than inventing a rotation. */
+      host.append(
+        dlEl(
+          'p',
+          'sk-calnote',
+          dlDailyKnown(dayKey)
+            ? 'Nothing scheduled on this day.'
+            : 'Le Mans Ultimate publishes one day of daily races at a time, and rotates the circuits weekly — so this far ahead only the dated events are known.',
+        ),
+      );
+    } else if (dayKey !== dlDayKey(new Date())) {
+      host.append(
+        dlEl(
+          'p',
+          'sk-calnote',
+          'Daily races repeat the same rotation every day. The circuits change with Le Mans Ultimate’s weekly rotation.',
+        ),
+      );
+    }
   }
 
-  /** The day strip. Rebuilt on render so "Today" is never yesterday's today. */
-  function renderDayStrip() {
-    const nav = $('#dl-days');
-    if (!nav) return;
-    const keys = dlDayKeys();
-    if (!dlDayPick || !keys.includes(dlDayPick)) dlDayPick = keys[0];
-    nav.textContent = '';
-    for (const key of keys) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'sk-day__btn';
-      btn.dataset.dlday = key;
-      btn.setAttribute('data-active', String(key === dlDayPick));
-      btn.append(dlEl('span', 'sk-day__name', dlDayName(key)));
-      nav.append(btn);
-    }
+  function dlShiftMonth(by) {
+    const d = new Date(Date.UTC(dlMonth.y, dlMonth.m + by, 1));
+    dlMonth = { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+    if (dlPayload) renderDailies(dlPayload);
   }
 
   function applyDailyMode() {
@@ -6792,6 +7278,24 @@
       const btn = ev.target.closest && ev.target.closest('[data-dlday]');
       if (!btn) return;
       dlDayPick = btn.dataset.dlday;
+      /* Clicking a day in a neighbouring month moves the grid to it, so the
+         selection is never on a cell the driver can no longer see. */
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      if (yy !== dlMonth.y || mm - 1 !== dlMonth.m) dlMonth = { y: yy, m: mm - 1 };
+      if (dlPayload) renderDailies(dlPayload);
+    });
+  }
+
+  for (const [id, by] of [['#dl-cal-prev', -1], ['#dl-cal-next', 1]]) {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', () => dlShiftMonth(by));
+  }
+  const dlToday = $('#dl-cal-today');
+  if (dlToday) {
+    dlToday.addEventListener('click', () => {
+      dlDayPick = dlDayKey(new Date());
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      dlMonth = { y: yy, m: mm - 1 };
       if (dlPayload) renderDailies(dlPayload);
     });
   }
@@ -7030,6 +7534,10 @@
     if (target === 'settings') {
       void refreshBilling();
       void refreshMyReferral();
+      // And the application card beside it, for the same reason in reverse: an
+      // approval decided while the app was open should replace the form with
+      // the link without a restart.
+      void refreshMyReferralRequest();
     }
     // The setup editor is the one tab with a poll loop (and an animation
     // frame), and this is where its zero-cost-when-hidden rule is enforced:

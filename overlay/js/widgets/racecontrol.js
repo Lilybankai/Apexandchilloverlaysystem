@@ -58,6 +58,25 @@
   var prevPhase = null;
   /** Wall-clock until which the green banner stays up, 0 when not flashing. */
   var greenUntil = 0;
+  /**
+   * A race reminder from the app: the text, and the wall-clock it stops being
+   * shown. Not telemetry — pushed in from the in-game layer (see the bottom of
+   * this file) — which is why it lives beside the flash timers rather than
+   * being read off the frame.
+   */
+  var noticeText = "";
+  var noticeUntil = 0;
+  /**
+   * Whether this notice outranks the banner's own messages.
+   *
+   * Set by main when the driver is NOT on track. It is the only side that can
+   * know: with LMU's REST quiet in the lobby the provider falls back to the
+   * demo simulator, and the frames arriving here are a synthetic race complete
+   * with flags and a start gantry. Every one of those legitimately outranks a
+   * reminder — but none of them is about the driver, who is sitting in a menu
+   * waiting for a race that has not started.
+   */
+  var noticeForce = false;
   /** How long the request-cancelled banner flashes, ms. */
   var CANCEL_FLASH_MS = 4000;
   /** The previous frame's pit phase, for the request -> none (cancel) edge. */
@@ -260,7 +279,13 @@
     var sub = null;
     var showLights = false;
 
-    if (player.finished === true) {
+    if (noticeForce && noticeUntil > now) {
+      // Off track: nothing else this banner could say is about this driver, so
+      // the reminder leads. See `noticeForce`. On track this branch is never
+      // taken and the reminder stays last, under every flag.
+      state = "notice";
+      msg = noticeText;
+    } else if (player.finished === true) {
       // We are done. This outranks every other banner: nothing about limiters,
       // pit entries or flags matters to a car that has taken the flag, and the
       // result is the one thing the driver is looking for.
@@ -348,6 +373,27 @@
       state = "yellow";
     }
 
+    /* A race reminder fills the banner whenever the banner has no message of
+     * its own — which is NOT the same as the chain reaching its end, and that
+     * difference is what made a reminder flash up and vanish on track.
+     *
+     * Two branches above set a state and no message, and both of them stop the
+     * chain dead: a sector yellow anywhere on the circuit (routine in a
+     * practice session), and being in the pit lane with the limiter correctly
+     * engaged. Ranked last, the reminder lost to both — it painted on arrival
+     * and the next frame cleared it.
+     *
+     * Neither of those is a message this is competing with. The sector rail is
+     * its own element and still shows the hazard; the pit branch had nothing to
+     * say in the first place. So the test is "did anything actually write a
+     * line?", not "did we fall off the end". The gantry is excluded because it
+     * speaks in lamps rather than words.
+     */
+    if (msg === null && !showLights && noticeUntil > now) {
+      state = "notice";
+      msg = noticeText;
+    }
+
     setLights(showLights && lights ? Math.min(lights.frame, lights.total) : 0, showLights && lights ? lights.total : 0);
     setMsg(msg);
     setSub(sub);
@@ -369,6 +415,41 @@
                 : "—",
     );
   }
+
+  /**
+   * Show a race reminder on this banner.
+   *
+   * Called by the in-game layer when the app pushes one. Returns false when
+   * this widget is not on the layer, so the caller can fall back to the
+   * floating notice strip rather than the reminder going nowhere — a driver
+   * who has not added race control to their layout still needs telling.
+   *
+   * It paints IMMEDIATELY as well as arming the state the next update() reads.
+   * Both, and the reason is the whole point of the feature: a reminder arrives
+   * while the driver is in the lobby waiting for the race, and off track the
+   * frames that drive update() may not be arriving at all. Setting state alone
+   * meant the banner waited for a frame that never came. Painting alone would
+   * be overwritten by the next frame that did — so it does both, and update()
+   * re-derives the same thing for as long as the notice is in date.
+   */
+  function showRaceNotice(text, dwellMs, force) {
+    if (!root || !text) return false;
+    noticeText = String(text).toUpperCase();
+    noticeUntil = Date.now() + (Number(dwellMs) || 8000);
+    noticeForce = !!force;
+    /* Only when the banner has nothing of its own to say. If the race director
+       is mid-sentence — a flag, the limiter, the pit lane — the next update()
+       will show this instead once it falls quiet, and never before. */
+    if (noticeForce || stateCache === 'idle' || stateCache === 'notice') {
+      setLights(0, 0);
+      setMsg(noticeText);
+      setSub(null);
+      setState('notice');
+    }
+    return true;
+  }
+
+  window.ApexRaceControl = { notice: showRaceNotice };
 
   window.ApexOverlay.registerWidget("racecontrol", {
     // The gantry animates a lamp a second and the entry countdown ticks every

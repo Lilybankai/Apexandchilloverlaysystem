@@ -1965,11 +1965,42 @@ async function runAction(id, dir) {
   return result;
 }
 
+/**
+ * Wall-clock until which the layer stays up for a notice, 0 when nothing is
+ * holding it. Only race reminders set it — bound-action feedback happens while
+ * the driver is already on track, so the layer is up for that by definition.
+ */
+let ingameNoticeHoldUntil = 0;
+let ingameNoticeTimer = null;
+
 /** Push a transient notice to the in-game layer, if it is up to show one. */
 function sendIngameNotice(notice) {
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.webContents.send('ingame:notice', notice);
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+
+  if (notice && notice.race) {
+    /* Off track, the race-control banner has nothing to say ABOUT THIS DRIVER:
+       with LMU's REST quiet in the lobby the provider falls back to the demo
+       simulator, whose synthetic race keeps producing flags, a gantry and a
+       green — and every one of those outranks a reminder, which is why the
+       banner flashed up and vanished within the frame. So main, which is the
+       only side that knows whether the feed is real, says when the reminder
+       takes precedence. On track it stays last, under every flag. */
+    notice = { ...notice, force: !feedOnTrack };
+    // Match the banner's own dwell, plus a moment so the window does not go
+    // down on the same tick the text clears.
+    const dwell = Math.min(20000, Number(notice.dwellMs) || 8000) + 1500;
+    ingameNoticeHoldUntil = Math.max(ingameNoticeHoldUntil, Date.now() + dwell);
+    applyIngameVisibility();
+    if (ingameNoticeTimer) clearTimeout(ingameNoticeTimer);
+    ingameNoticeTimer = setTimeout(() => {
+      ingameNoticeTimer = null;
+      // Hand the decision straight back to auto-hide, whatever it now says.
+      applyIngameVisibility();
+    }, dwell + 100);
+    if (typeof ingameNoticeTimer.unref === 'function') ingameNoticeTimer.unref();
   }
+
+  overlayWin.webContents.send('ingame:notice', notice);
 }
 
 /**
@@ -2407,6 +2438,13 @@ function destroyOverlayWindow() {
  */
 function ingameShouldBeVisible(settings) {
   if (ingameEditing || ingameInteractive) return true;
+  /* A race reminder is the one thing the layer has to show while the driver is
+     NOT on track — five minutes out they are in the lobby or the garage, which
+     is precisely when auto-hide has the window down. Delivering the banner to
+     a hidden window was the first version of this and it reached nobody: the
+     voice landed, the visual did not. So a reminder lifts auto-hide for as long
+     as it is on screen, and not a second longer. */
+  if (Date.now() < ingameNoticeHoldUntil) return true;
   const s = settings || loadSettings();
   if (!s.ingameAutoHide) return true;
   if (s.forceSimulator || s.provider === 'simulator') return true;
@@ -3885,6 +3923,11 @@ function registerIpc() {
    * the renderer only ever sees names, tracks and UTC times.
    */
   ipcMain.handle('schedule:dailies', async (_evt, query) => {
+    /* Where the last good calendar is kept. Without it the schedule needed the
+       game running to exist at all, and closing the app threw it away — so
+       opening the panel to plan tomorrow, which is exactly when LMU is shut,
+       showed an empty tab. */
+    lmuDailies.init(path.join(app.getPath('userData'), 'daily-schedule.json'));
     const payload = await lmuDailies.getDailies({ force: !!(query && query.force) });
     /* Circuit outlines are drawn from the running game's own geometry and
        cached on disk, so they keep working with the game shut. Decoration: it
@@ -4721,6 +4764,107 @@ function registerIpc() {
     return res.body && res.body.ok ? { ...res.body } : { ok: false };
   });
 
+  /**
+   * Where this driver stands on becoming a partner (migration 0029): whether
+   * they may apply, whether one is pending, and what was said if it was turned
+   * down. One round trip, because the card in Settings → Account has to pick
+   * between four different things to say and guessing from absences was how
+   * the old card ended up invisible to the people it was for.
+   *
+   * `{ ok:false }` on an older backend, which the card reads as "no such
+   * feature" and stays hidden — the same way it behaves signed out.
+   */
+  ipcMain.handle('referral:requestMine', async () => {
+    const res = await authService.rpc('my_referral_request', {});
+    if (!res.ok) return { ok: false, signedOut: !!res.signedOut };
+    return res.body && res.body.ok ? { ...res.body } : { ok: false };
+  });
+
+  /** Apply to become a partner: `{ displayName, wantedCode?, audience?, message? }`. */
+  ipcMain.handle('referral:requestSubmit', async (_evt, payload) => {
+    const p = payload || {};
+    const name = typeof p.displayName === 'string' ? p.displayName.trim().slice(0, 80) : '';
+    if (!name) return { ok: false, error: 'Put the name you want people to see.' };
+    const res = await authService.rpc('referral_request_submit', {
+      p_display_name: name,
+      p_wanted_code: typeof p.wantedCode === 'string' ? p.wantedCode.trim().slice(0, 24) : '',
+      p_audience: typeof p.audience === 'string' ? p.audience.trim().slice(0, 200) : '',
+      p_message: typeof p.message === 'string' ? p.message.trim().slice(0, 1000) : '',
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in first.' : res.error || 'Could not send that.',
+      };
+    }
+    return res.body && res.body.ok
+      ? { ok: true }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not send that.' };
+  });
+
+  /** The partner applications inbox: `{ ok, data: { pending, rows[] } }`. */
+  ipcMain.handle('admin:referralRequests', async () => {
+    const res = await authService.rpc('admin_referral_requests', {});
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+      };
+    }
+    return { ok: true, data: res.body || {} };
+  });
+
+  /**
+   * Approve an application: `{ id, code?, note? }`.
+   *
+   * The code, the account link, the decision and the email are one server-side
+   * step — see admin_approve_referral_request. A refused code (taken, or it
+   * clashes with a league access code) leaves the application pending and comes
+   * back as an error, rather than approving someone into a code that does not
+   * exist.
+   */
+  ipcMain.handle('admin:approveReferralRequest', async (_evt, payload) => {
+    const p = payload || {};
+    const id = Number(p.id);
+    if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_approve_referral_request', {
+      p_id: id,
+      p_code: typeof p.code === 'string' ? p.code.trim().slice(0, 24) : '',
+      p_note: typeof p.note === 'string' ? p.note.slice(0, 200) : '',
+    });
+    if (!res.ok) {
+      return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not approve it.' };
+    }
+    return res.body && res.body.ok
+      ? {
+          ok: true,
+          code: res.body.code,
+          url: res.body.url,
+          overlayUrl: res.body.overlayUrl,
+          email: res.body.email || '',
+        }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not approve it.' };
+  });
+
+  /** Decline one: `{ id, reason? }`. No email; the reason shows in their Settings. */
+  ipcMain.handle('admin:declineReferralRequest', async (_evt, payload) => {
+    const p = payload || {};
+    const id = Number(p.id);
+    if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'bad arguments' };
+    const res = await authService.rpc('admin_decline_referral_request', {
+      p_id: id,
+      p_reason: typeof p.reason === 'string' ? p.reason.slice(0, 500) : '',
+    });
+    if (!res.ok) {
+      return { ok: false, signedOut: !!res.signedOut, error: res.error || 'Could not decline it.' };
+    }
+    return res.body && res.body.ok
+      ? { ok: true }
+      : { ok: false, error: (res.body && res.body.error) || 'Could not decline it.' };
+  });
+
   /** The Referrals pane: every code, with clicks / signups / paying. */
   ipcMain.handle('admin:referrals', async () => {
     const res = await authService.rpc('admin_referral_list', {});
@@ -5509,6 +5653,13 @@ app.whenReady().then(async () => {
         console.error('[reminders] voice unavailable:', err.message);
       }
     },
+    /* The in-game layer, through the notice channel the bound-action feedback
+       already uses. Nine times in ten a driver registers for a daily and then
+       drops straight into a practice server, which is exactly when the overlay
+       IS up — so this is the channel that reaches them where they actually
+       are. Silent otherwise: sendIngameNotice is a no-op with no layer open,
+       and nothing is queued for a window that was not there. */
+    overlay: (notice) => sendIngameNotice(notice),
     changed: () => {
       // The panel shows a bell per race; tell any open window the set moved.
       for (const win of BrowserWindow.getAllWindows()) {

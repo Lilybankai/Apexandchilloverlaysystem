@@ -239,6 +239,47 @@
           : null,
     },
     {
+      id: 'schedule',
+      icon: 'calendar',
+      title: 'Know when you are racing',
+      lead:
+        'Le Mans Ultimate’s own daily, weekly and special races in your own time zone — and '
+        + 'a bell that tells you five, two and one minute before the one you want starts.',
+      cta: 'Show me round',
+      view: 'schedule',
+      focus: '#sk-source',
+      tour: 'schedule',
+      // Nothing to switch on, so there is no state that could answer this. The
+      // same honest question as the Setups, Team and Review rows: a driver who
+      // has never opened the tab is exactly who the row is for.
+      check: (s) => s.scheduleToured,
+      note: (s) =>
+        !s.scheduleToured
+          ? 'Nothing to set up. The calendar needs Le Mans Ultimate to have run once, and is kept afterwards so it is there with the game shut.'
+          : null,
+    },
+    {
+      id: 'discord',
+      icon: 'message-circle',
+      title: 'Tell your league when you take a record',
+      lead:
+        'Post your records — and your race results — into a Discord channel: your league’s, '
+        + 'or your own server. Only laps that actually take a record are ever posted.',
+      cta: 'Show me round',
+      view: 'settings',
+      pane: 'discord',
+      focus: '#discord-join-code',
+      tour: 'discord',
+      // It posts as you, into somebody else's channel, so it needs an account —
+      // and a row pointing at a signed-out pane could not be acted on.
+      gate: (s) => s.signedIn !== false,
+      check: (s) => s.discordToured,
+      note: (s) =>
+        !s.discordToured
+          ? 'Optional, and quiet by design: a personal best that beats nobody is never posted, and one lap is one message however many records it earns.'
+          : null,
+    },
+    {
       id: 'review',
       icon: 'activity',
       title: 'Read a session back',
@@ -387,6 +428,8 @@
       setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
       teamToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('team')),
       reviewToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('review')),
+      scheduleToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('schedule')),
+      discordToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('discord')),
       // Whether this build HAS a Team tab. The nav button's `hidden` is the
       // one owner of that fact, so it is read rather than duplicated as a
       // second channel check. Nothing hides it as of v0.96.0; the read stays

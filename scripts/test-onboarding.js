@@ -59,6 +59,8 @@ const DONE = {
   engineerReady: true,
   setupsToured: true,
   reviewToured: true,
+  scheduleToured: true,
+  discordToured: true,
 };
 
 /** DONE with one field changed. */
@@ -84,16 +86,17 @@ check('no duplicate step ids', new Set(ob.STEPS.map((s) => s.id)).size === ob.ST
 // The plugin is the one that makes every other feature blank when it is wrong,
 // and the only one whose symptom gives no clue. It leads for that reason.
 check('the plugin comes first', ob.STEPS[0].id === 'plugin');
-// The order below it is "nothing works without this" first. The last four are
-// the ones nobody is blocked by: the voice, which is genuinely optional; the
-// setup screen, which is a thing to learn rather than a thing to switch on;
-// the pit wall, which only matters to someone racing as a team; and the
-// reviewer, which needs nothing set up at all and cannot even be reached until
-// there is a session behind you.
+// The order below it is "nothing works without this" first. The tail is the
+// ones nobody is blocked by: the voice, which is genuinely optional; the setup
+// screen, which is a thing to learn rather than a thing to switch on; the pit
+// wall, which only matters to someone racing as a team; the schedule, which
+// needs nothing set up; Discord, which posts into a channel you may not have;
+// and the reviewer, which cannot even be reached until there is a session
+// behind you.
 check(
   'the optional ones come last',
-  ob.STEPS.slice(-4).map((s) => s.id).join(',') === 'engineer,setups,team,review',
-  ob.STEPS.slice(-4).map((s) => s.id).join(','),
+  ob.STEPS.slice(-6).map((s) => s.id).join(',') === 'engineer,setups,team,schedule,discord,review',
+  ob.STEPS.slice(-6).map((s) => s.id).join(','),
 );
 // The Team row is the only one that is not on every build: the tab is
 // beta-gated, and a row nagging about a page this build does not have is

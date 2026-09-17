@@ -478,6 +478,137 @@
       ],
     },
     {
+      id: 'schedule',
+      title: 'Schedule',
+      icon: 'calendar',
+      blurb: 'What Le Mans Ultimate is running, in your own time zone, and a bell on the one you want.',
+      steps: [
+        {
+          id: 'sources',
+          view: 'schedule',
+          anchor: '#sk-source',
+          title: 'Two calendars, one tab',
+          body:
+            'Daily races is the game’s own: the three tiers, the solo weekly and the team ' +
+            'specials. Apex & Chill is the league’s Thursday and Saturday championships, which ' +
+            'you still sign up for on SimGrid. The switch remembers which you were last on.',
+          note:
+            'The daily calendar comes from Le Mans Ultimate’s own service, so the game has to '
+            + 'have been running at least once. After that it is kept, and the tab says when it was saved.',
+        },
+        {
+          id: 'next',
+          view: 'schedule',
+          anchor: '#dl-tiers',
+          title: 'What is on next, per tier',
+          body:
+            'A card each for Beginner, Intermediate and Advanced, counting down to the next race in ' +
+            'that tier with its circuit, classes, race length and tyre rules. Underneath, the rest ' +
+            'of the rotation — the three events in a tier take turns.',
+          note:
+            'Entries open thirty minutes before the start, and the card turns green and says so ' +
+            'when they do. You cannot join before that.',
+        },
+        {
+          id: 'zone',
+          view: 'schedule',
+          anchor: '#dl-zone',
+          title: 'Your time, or UTC',
+          body:
+            'Every time here is drawn in your own time zone, which is named so you can be sure of ' +
+            'it. Switch to UTC when you are comparing against what somebody posted in Discord — ' +
+            'the league and the game both talk in UTC.',
+        },
+        {
+          id: 'remind',
+          view: 'schedule',
+          anchor: '#dl-overlay',
+          title: 'A bell on the race you want',
+          body:
+            'The bell on any race reminds you five minutes before the start, then two, then one. It ' +
+            'keeps its promise with this window closed, because the reminder lives in the app rather ' +
+            'than in the panel.',
+          note:
+            'On the overlay puts it on the race control banner beside the flags — where you are ' +
+            'if you registered and then hopped into a practice server. Announce out loud has the race ' +
+            'engineer say it, which is the only one that gets through with the game in front of you.',
+        },
+        {
+          id: 'calendar',
+          view: 'schedule',
+          anchor: '#dl-mode',
+          title: 'A month at a time',
+          body:
+            'Calendar is a month you can look at. Each square shows the weekly and special events on ' +
+            'that day and how many races run; pick one and its timetable opens underneath, each event ' +
+            'once with its start times beneath it.',
+          note:
+            'It fills in the week the game has published. Further ahead the times would be right and ' +
+            'the circuits would be guesswork, so those days stay empty rather than making something up.',
+        },
+      ],
+    },
+    {
+      id: 'discord',
+      title: 'Discord',
+      icon: 'message-circle',
+      blurb: 'Put your records — and your races — in a channel, without becoming the person who spams it.',
+      steps: [
+        {
+          id: 'join',
+          view: 'settings',
+          pane: 'discord',
+          anchor: '#discord-join-code',
+          title: 'Join a league, or start one',
+          body:
+            'Paste the code your league shares and your records go to their channel. Creating one ' +
+            'gives you a code of your own to hand out. Neither is required — if you only want your ' +
+            'own channel, skip to the card below.',
+          note:
+            'A community is not a team. Teams cap at six because they model a car being shared; a ' +
+            'league Discord is forty people who never share one, so there is no limit here.',
+        },
+        {
+          id: 'share',
+          view: 'settings',
+          pane: 'discord',
+          anchor: '#discord-communities',
+          title: 'What you share is yours to decide',
+          body:
+            'Joining a channel puts your name in somebody else’s Discord, so what goes there is ' +
+            'your call and not the admin’s. Records only, everything, or nothing at all — the ' +
+            'channel’s own filters are the ceiling, and this is your floor.',
+        },
+        {
+          id: 'own',
+          view: 'settings',
+          pane: 'discord',
+          anchor: '#discord-personal',
+          title: 'Or just your own channel',
+          body:
+            'Paste a Discord webhook and your records post to your own server, with no community and ' +
+            'no roster anywhere. This is the whole feature for most people.',
+          note:
+            'The webhook never comes back out of Apex — anyone holding one can post to that ' +
+            'channel forever, so it is stored like a password and only ever shown masked.',
+        },
+        {
+          id: 'quiet',
+          view: 'settings',
+          pane: 'discord',
+          anchor: '#discord-personal',
+          title: 'Why it stays quiet',
+          body:
+            'Only a lap that actually takes a board leader is posted — a personal best that beats ' +
+            'nobody is not news. Beat your own record again in the same session and the message ' +
+            'already posted is updated rather than a second one appearing.',
+          note:
+            'Race results are posted as one message for the whole race rather than one per driver, ' +
+            'and a board nobody is on yet stays silent until a few people have set a time on it.',
+        },
+      ],
+    },
+    {
       id: 'review',
       title: 'Review',
       icon: 'activity',

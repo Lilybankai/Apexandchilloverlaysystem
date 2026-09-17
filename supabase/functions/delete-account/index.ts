@@ -12,10 +12,20 @@
 //      public_drivers, setups (+ ratings/downloads on them), lap_traces,
 //      driver_best_laps, driver_activity_days, pit_stops, lap_consumption,
 //      engineer_calls, app_sessions, feature_usage, overlay_usage,
-//      referral_attributions, billing_subscriptions — hangs off it with
+//      referral_attributions, billing_subscriptions, referral_requests,
+//      email_prefs, email_sends, email_outbox — hangs off it with
 //      ON DELETE CASCADE, so this
 //      one delete empties the lot. league_codes keeps its rows but SET NULLs
-//      the user references (a redeemed code stays burned).
+//      the user references (a redeemed code stays burned), and so does
+//      referral_codes.owner_user_id: a partner's code and its funnel survive
+//      them deleting their account, simply unlinked.
+//
+// OPEN QUESTION, from 0023 and not yet decided: that surviving row still holds
+// `owner_name`, which is a person's name, and the website still renders it as
+// "Craig sent you" on their old link. It is retained personal data after an
+// erasure request. Clearing it here is a two-line change; what stops it being
+// obvious is that it also decides whether the code itself should be turned off,
+// and codes are promised to keep discounting people who already redeemed them.
 //
 // Order matters: Stripe first, because after the auth user is gone we can no
 // longer look up which customer was theirs.

@@ -1,8 +1,10 @@
 # Partner referrals
 
 A partner — a streamer, a league admin, anyone with an audience — is issued a
-code. They promote `apexandchillracing.co.uk/r/THEIRCODE`. Anyone who uses it
-gets **10% off Apex AIO for as long as they stay subscribed**.
+code, either because we approached them or because they **applied from inside
+the app** (Settings → Account → Become a partner). They promote
+`apexandchillracing.co.uk/r/THEIRCODE`. Anyone who uses it gets **10% off Apex
+AIO for as long as they stay subscribed**.
 
 The partner is paid **nothing**. This is a promotion tool they can put on a
 stream, not an affiliate scheme. Everything needed to pay one later is recorded
@@ -147,7 +149,131 @@ faked from outside.
 
 ---
 
+## How someone asks for one
+
+**Settings → Account → Become a partner**, in the app (migration 0029). It is
+the only way in that does not involve knowing to ask in Discord, and it exists
+because the card above it — the partner's own link — is hidden for anyone
+without a code, which made the whole scheme invisible to exactly the people it
+is for.
+
+The card is one card with four states, because they are four answers to one
+question:
+
+| They | See |
+|---|---|
+| own an active code | nothing — the referral card above is theirs |
+| may apply | the form: name to show, code they want, where they would use it, anything else |
+| have one pending | “Your application is with us. We will email you…” |
+| were declined | the reason you typed, word for word, and the date they may re-apply |
+
+**The “no commission” line is on the form, not in the approval email.** Someone
+who applies to what sounds like an affiliate scheme and finds out a month later
+that it pays nothing is a relationship you have spent. It is also repeated in
+the approval mail, because it is the one thing about this that surprises people.
+
+Every rule is enforced in `referral_request_submit`, not in the app: one pending
+application at a time (a partial unique index, so a double click cannot make
+two), nobody who already owns an active code, and a **30-day cooldown** after a
+decline. Hiding the form is a courtesy; the function is the control.
+
+### Approving
+
+**Admin → Referrals → Applications.** Pending first and oldest first, then
+everything decided as history. Each row carries the applicant's name, email,
+what they wrote, and whether they are **subscribed themselves** — someone
+promoting a product they pay for is a different proposition from someone who
+never started a trial, and it is the first thing you want to know.
+
+**Approve** prompts for the code (prefilled with the one they asked for, which
+is the field you have a reason to overrule — a clash, a rude word, something
+nobody could say aloud) and then does the whole job in one server-side call:
+issues the code through the same `admin_issue_referral_code` the form below
+uses, links it to their account, closes the application and queues the email.
+The link lands on your clipboard.
+
+If the code is refused — taken, malformed, clashing with a league access code —
+**the application stays pending** and says why. An approved application with no
+code would tell somebody they are a partner with nothing to promote.
+
+**Decline** takes a reason and **sends no email**. A rejection email is worse
+than finding out quietly in the app the next time they look, and it is the kind
+of mail that gets replied to angrily rather than read. What you type is shown to
+them verbatim in Settings, so write it to be read.
+
+### The approval email, and how you know it went
+
+The approval writes a row into `email_outbox` and the existing
+`email-dispatch` function sends it — the same function, the same Resend key, the
+same send log. Postgres cannot send mail, and the alternative (the desktop app
+sending it) would mean a Resend key inside an installer anyone can unpack.
+
+It is **transactional**, so unlike the lifecycle sequences it ignores
+`email_settings.enabled`, ignores the lifecycle opt-out, has no unsubscribe link
+and no `List-Unsubscribe` header, and is not held for quiet hours. It still
+respects a hard bounce or a spam complaint.
+
+That kill-switch exemption matters more than it looks: the day somebody sets
+`enabled = false` to stop a sequence, every approved partner would otherwise
+stop being told they are a partner, and nobody would connect the two.
+
+Its state is on the application's row: `emailed`, `email queued`, `EMAIL FAILED`
+(hover for the error) or `no email sent`. This is deliberate — an approved
+partner who was never told is the failure this feature would otherwise hide,
+and it is the same trap as `REFERRAL_COUPON_ID` above, answered differently.
+
+**What it needs.** Verified on `svtyxuhbsbbodsecbnsc` on 17 Sept 2026: the
+`email-dispatch` function is deployed, the hourly `apex-email-dispatch` cron job
+is active, and the `email_dispatch_key` Vault secret is set. So the sending
+half already works — note that `docs/EMAIL-LIFECYCLE.md` still describes these
+as outstanding and is out of date.
+
+What is left is two things:
+
+1. **Redeploy `email-dispatch`.** The version running predates the outbox and
+   will not drain it. It bundles `_shared/emails.ts`, so it must go via the CLI:
+   `supabase functions deploy email-dispatch`.
+2. Optional, and worth doing: the **immediate poke**. Without it an approval
+   email lands on the next hourly run — up to an hour later, which reads as
+   broken to the person waiting for it.
+
+```sql
+-- Only these two; the secret it needs is the same Vault one the cron job uses.
+update public.email_settings
+   set dispatch_url  = 'https://svtyxuhbsbbodsecbnsc.supabase.co/functions/v1/email-dispatch',
+       dispatch_auth = 'sb_publishable_Q-0gsoTW_r-AzgKQ6NqNSQ_vGegMK8w'
+ where id = true;
+```
+
+Neither value is secret: the URL is a public endpoint and the key is the
+publishable one already inside every installer. `EMAIL_DISPATCH_KEY` stays in
+Vault and is what actually guards the function. Leave `dispatch_url` empty and
+nothing is poked — the hourly job still delivers.
+
+`email_outbox_poke()` gives up quietly on every failure (no pg_net, no Vault, no
+secret, an error) and returns false, because an approval must never fail over a
+courtesy. If mail is arriving on the hour rather than instantly, that is what to
+look at first.
+
+To read the queue directly:
+
+```sql
+select id, email, template, status, attempts, error, created_at, sent_at
+  from public.email_outbox order by created_at desc limit 20;
+```
+
+Read the mail itself before anyone else does — it renders in
+`npm run email:preview` with the rest, and sends to you with:
+
+```bash
+curl -X POST -H "x-dispatch-key: $EMAIL_DISPATCH_KEY" \
+  "https://svtyxuhbsbbodsecbnsc.supabase.co/functions/v1/email-dispatch?to=you@example.com&campaign=partner&step=approved&code=CRAIG"
+```
+
 ## Issuing a code
+
+Still here, and still the right route for a partner you approached rather than
+one who applied.
 
 **Admin → Referrals → Issue a partner code.**
 
@@ -271,6 +397,11 @@ the discount on their Stripe subscription by hand. Think hard first.
 | Piece | Where |
 |---|---|
 | Schema, RPCs, the whole rationale | `supabase/migrations/0023_referrals.sql` |
+| Applications, the outbox, the poke | `supabase/migrations/0029_partner_requests.sql` |
+| The approval email's words | `supabase/functions/_shared/emails.ts` → `TRANSACTIONAL` |
+| Sending it | `supabase/functions/email-dispatch/index.ts` → `drainOutbox` |
+| “Become a partner” card | `electron/control-panel/control-panel.js` → `refreshMyReferralRequest` |
+| The Applications pane | `electron/control-panel/control-panel.js` → `renderReferralRequests` |
 | Applying the coupon at Checkout | `supabase/functions/create-checkout-session/index.ts` |
 | Redeeming a code (app) | `electron/billing.js` → `redeem_code` |
 | Subscribe screen | `electron/control-panel/auth.{html,js}` |

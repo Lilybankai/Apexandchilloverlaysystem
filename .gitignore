@@ -91,3 +91,7 @@ supabase/.temp/
 # A LOCAL strategy fit (scripts/fit-strategy.js --source local) is one
 # machine's laps, never the shipped table. data/**/* is packaged, so keep it out.
 data/strategy-coefficients.local.json
+
+# Rendered lifecycle + transactional email (scripts/email-preview.js). A
+# rendering of committed source, not a source; regenerated on demand.
+.email-preview/

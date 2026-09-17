@@ -44,6 +44,24 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
 
 const RETURN_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/billing-return`;
 
+/**
+ * Read a secret, and strip what a dashboard paste tends to bring with it.
+ *
+ * `REFERRAL_COUPON_ID` was once set to `nFT2oPb9 ` — one trailing space, from
+ * copying the id out of the Stripe dashboard. Stripe rejected the id, the retry
+ * below caught it, and the customer was charged full price after a landing page
+ * had promised them 10%. Nothing was broken enough to notice; it just quietly
+ * did not work.
+ *
+ * An id is never legitimately surrounded by whitespace or quotes, so there is
+ * nothing to lose by removing them and a silent, self-inflicted failure to
+ * avoid. Applied to the price id too — same class of paste, and that one would
+ * break checkout for everybody rather than just costing a discount.
+ */
+function secret(name: string): string {
+  return (Deno.env.get(name) ?? '').trim().replace(/^['"]+|['"]+$/g, '');
+}
+
 // Alive subscription states; mirrors entitlement_status() in Postgres.
 const LIVE = new Set(['trialing', 'active', 'past_due']);
 
@@ -103,7 +121,7 @@ Deno.serve(async (req) => {
   // header note. `referral_for_checkout` is service-role only and answers with
   // the code, or `{ ok: false }` if there is none or the partner was revoked.
   const referral = await lookupReferral(db, user.id);
-  const couponId = Deno.env.get('REFERRAL_COUPON_ID') ?? '';
+  const couponId = secret('REFERRAL_COUPON_ID');
   const applyCoupon = Boolean(referral && couponId);
 
   /** The session, minus the discount. Built once and reused by the retry. */
@@ -111,7 +129,7 @@ Deno.serve(async (req) => {
     mode: 'subscription' as const,
     customer: customerId,
     client_reference_id: user.id,
-    line_items: [{ price: Deno.env.get('STRIPE_PRICE_ID') ?? '', quantity: 1 }],
+    line_items: [{ price: secret('STRIPE_PRICE_ID'), quantity: 1 }],
     subscription_data: {
       ...(firstTime ? { trial_period_days: 7 } : {}),
       metadata: {

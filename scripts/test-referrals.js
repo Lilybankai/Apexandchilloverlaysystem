@@ -250,6 +250,131 @@ async function main() {
       check(`${JSON.stringify(input)} → ${want || '(empty)'}`, got === want, got);
     }
   }
+
+  /* ====================================================================== */
+  console.log('\nApplying to become a partner (migration 0029)');
+  /* ====================================================================== */
+  {
+    /*
+     * These are read off the SQL rather than exercised, because every rule
+     * worth asserting lives in the database and the app is only a client of
+     * it. That is itself the property being protected: the card in Settings
+     * hides the form for someone who cannot apply, but hiding a form has never
+     * stopped anybody, and referral_request_submit is what actually decides.
+     */
+    const SQL = fs.readFileSync(
+      path.join(__dirname, '..', 'supabase', 'migrations', '0029_partner_requests.sql'),
+      'utf8',
+    );
+
+    const fn = (name) =>
+      (SQL.match(
+        new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\$fn\\$([\\s\\S]*?)\\$fn\\$`),
+      ) || [])[1] || '';
+
+    const submit = fn('referral_request_submit');
+    const approve = fn('admin_approve_referral_request');
+    const decline = fn('admin_decline_referral_request');
+
+    check('all three functions are there', !!submit && !!approve && !!decline);
+
+    // One application at a time, enforced by an index and not only by a check
+    // — two clicks a second apart would otherwise both pass the query.
+    check(
+      'a second pending application is impossible',
+      /create unique index[\s\S]{0,140}referral_requests \(user_id\) where status = 'pending'/.test(SQL),
+    );
+    check(
+      'someone who already owns a code cannot apply',
+      /owner_user_id = v_uid and active and revoked_at is null/.test(submit),
+    );
+    check('a decline starts a cooldown, not a ban', /interval '30 days'/.test(submit));
+
+    // Only an admin decides, and both answers say so before touching anything.
+    for (const [name, body] of [['approve', approve], ['decline', decline]]) {
+      check(`${name} is admin-only`, /if not public\.is_admin\(\) then/.test(body));
+      check(
+        `${name} refuses an application that was already decided`,
+        /v_row\.status <> 'pending'/.test(body),
+      );
+    }
+
+    /*
+     * The approval is four things at once — code, link, decision, email — and
+     * any subset of them is a broken state a person has to spot and repair by
+     * hand. An approved application with no code is the worst of them: the
+     * driver is told they are a partner and there is nothing to promote.
+     */
+    check('approving issues the code through the one validator',
+      /public\.admin_issue_referral_code\(/.test(approve));
+    check('…linked to the applicant', /p_owner_user_id => v_row\.user_id/.test(approve));
+    check('…and closes the application', /set status      = 'approved'/.test(approve));
+    check('…and queues exactly one email',
+      (approve.match(/email_outbox_enqueue/g) || []).length === 1);
+    check('…keyed per application, so a double click cannot send twice',
+      /'partner\/approved:' \|\| p_id::text/.test(approve));
+
+    // A code that cannot be minted must not leave an approved application
+    // behind it — the check is that the UPDATE comes after the issue.
+    check(
+      'a refused code leaves the application pending',
+      approve.indexOf('admin_issue_referral_code') <
+        approve.indexOf("set status      = 'approved'"),
+    );
+
+    // The deliberate absence. A rejection email is worse than finding out
+    // quietly in the app, and the reason is shown there instead.
+    check('declining emails nobody', !/email_outbox_enqueue|email_outbox_poke/.test(decline));
+    check('and the reason is kept to show them', /decline_reason = left\(/.test(decline));
+
+    // A driver reads their own application and no one else's.
+    check(
+      'applications are readable only by the person who sent one',
+      /create policy "own request readable"[\s\S]{0,120}user_id = auth\.uid\(\)/.test(SQL),
+    );
+  }
+
+  /* ====================================================================== */
+  console.log('\nThe wiring — a button with no handler is a dead button');
+  /* ====================================================================== */
+  {
+    /*
+     * The renderer calls window.apex.*, the preload turns that into an
+     * ipcRenderer.invoke of a named channel, and main.js answers it. Nothing
+     * type-checks the name in the middle: get it wrong and the promise simply
+     * never resolves, while the button still looks alive. Cheap to assert, and
+     * the only failure mode of this feature that a screenshot cannot catch.
+     */
+    const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+    const preload = read('electron', 'preload.js');
+    const main = read('electron', 'main.js');
+    const panel = read('electron', 'control-panel', 'control-panel.js');
+
+    for (const channel of [
+      'referral:requestMine',
+      'referral:requestSubmit',
+      'admin:referralRequests',
+      'admin:approveReferralRequest',
+      'admin:declineReferralRequest',
+    ]) {
+      check(
+        `${channel} is both invoked and handled`,
+        preload.includes(`invoke('${channel}'`) && main.includes(`handle('${channel}'`),
+      );
+    }
+
+    for (const api of [
+      'referralRequestMine',
+      'referralRequestSubmit',
+      'admin.referralRequests',
+      'admin.approveReferralRequest',
+      'admin.declineReferralRequest',
+    ]) {
+      const leaf = api.split('.').pop();
+      check(`window.apex.${api} is exposed and used`,
+        preload.includes(`${leaf}:`) && panel.includes(leaf));
+    }
+  }
 }
 
 main()

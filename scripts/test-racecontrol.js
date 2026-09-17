@@ -384,5 +384,237 @@ console.log('\nlimits lap-validity chip staging, against a DOM stub\n');
   check('losing the block entirely hides the chip too', lapEl.hidden === true && stage() === 'ok');
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Race reminders on the banner, and where they rank                          */
+/* -------------------------------------------------------------------------- */
+/*
+ * A race reminder is the one thing this widget shows that is not the race
+ * director or the car — it is pushed in from the app, not read off a frame. So
+ * the question is not whether it renders, it is whether it ever renders INSTEAD
+ * of something that matters. "Your daily starts in two minutes" sitting over
+ * LIMITER ON, or over a full course yellow, would be a safety message lost to a
+ * diary entry.
+ *
+ * The widget is driven here in a stub DOM: real file, real priority chain, no
+ * browser.
+ */
+console.log('\nRace reminders on the race-control banner');
+{
+  const stub = () => {
+    const made = [];
+    const el = (tag) => made[made.push({
+      tag,
+      children: [],
+      attrs: {},
+      _text: '',
+      className: '',
+      style: {},
+      setAttribute(k, v) { this.attrs[k] = String(v); },
+      getAttribute(k) { return this.attrs[k]; },
+      removeAttribute(k) { delete this.attrs[k]; },
+      appendChild(c) { this.children.push(c); return c; },
+      append(...c) { this.children.push(...c); },
+      querySelector() { return el('div'); },
+      querySelectorAll() { return []; },
+      classList: { add() {}, remove() {}, toggle() {} },
+      get textContent() { return this._text; },
+      set textContent(v) { this._text = String(v); },
+    }) - 1];
+    const root = el('div');
+    const sandbox = {
+      document: {
+        createElement: el,
+        createElementNS: () => el('svg'),
+        getElementById: () => root,
+        querySelector: () => root,
+        querySelectorAll: () => [],
+        addEventListener() {},
+        body: el('body'),
+      },
+      requestAnimationFrame: (fn) => setTimeout(fn, 0),
+      setTimeout,
+      clearTimeout,
+      Date,
+      Math,
+      Number,
+      String,
+      console,
+    };
+    sandbox.window = sandbox;
+    let widget = null;
+    sandbox.window.ApexOverlay = { registerWidget: (_n, def) => { widget = def; } };
+    vm.createContext(sandbox);
+    vm.runInContext(
+      fs.readFileSync(path.join(__dirname, '..', 'overlay', 'js', 'widgets', 'racecontrol.js'), 'utf8'),
+      sandbox,
+    );
+    widget.init(root, {});
+    return {
+      root,
+      widget,
+      api: sandbox.window.ApexRaceControl,
+      state: () => root.getAttribute('data-race'),
+      /* The widget builds its own nodes in init() and keeps the references, so
+         there is nothing to query for afterwards. The stub records every
+         element it hands out, and the message node is found by its class. */
+      msgText: () => {
+        const m = made.find((e) => e.className === 'racecontrol__msg');
+        return m ? m.textContent : '';
+      },
+    };
+  };
+
+  const frame = (over = {}) => ({
+    session: { phase: 'green', flag: 'green', startLights: null, sectorFlags: null, ...(over.session || {}) },
+    player: {
+      pit: { phase: 'none', limiterOn: false, entryDistM: null },
+      finished: false,
+      ...(over.player || {}),
+    },
+  });
+
+  const rc = stub();
+  check('the widget offers a notice hook', rc.api && typeof rc.api.notice === 'function');
+
+  rc.widget.update(frame(), {});
+  check('a quiet track is idle', rc.state() === 'idle', rc.state());
+
+  rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
+  rc.widget.update(frame(), {});
+  check('a reminder reaches the banner', rc.state() === 'notice', rc.state());
+
+  /* The case that actually failed in the wild. A reminder arrives five minutes
+     before the race, when the driver is in the lobby and NOT on track — so the
+     telemetry frames that drive update() may not be arriving at all. Setting
+     state and waiting for a frame meant the banner waited for one that never
+     came: the voice landed and nothing was drawn. It must paint on arrival. */
+  {
+    const cold = stub();
+    check('a fresh widget starts idle', cold.state() === 'idle', cold.state());
+    cold.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000);
+    check('it paints with NO frame having arrived', cold.state() === 'notice', cold.state());
+    check(
+      '…and the banner carries the words',
+      /ELMS SUPER 60/.test(cold.root.attrs.__msg || cold.msgText() || ''),
+      cold.msgText(),
+    );
+  }
+
+  /* The two that must always win. */
+  rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
+  rc.widget.update(frame({ player: { pit: { phase: 'none', limiterOn: true, entryDistM: null } } }), {});
+  check('LIMITER ON outranks a reminder', rc.state() === 'limiter', rc.state());
+
+  rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
+  rc.widget.update(frame({ session: { flag: 'yellow' } }), {});
+  check('a full course yellow outranks a reminder', rc.state() === 'fcy', rc.state());
+
+  rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
+  rc.widget.update(frame({ player: { finished: true } }), {});
+  check('the chequered flag outranks a reminder', rc.state() === 'checkered', rc.state());
+
+  /* On its own stub: dropping a booked stop makes the widget flash PIT REQUEST
+     CANCELLED for four seconds, which is correct and would otherwise sit on
+     top of the checks below. */
+  {
+    const pit = stub();
+    pit.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
+    pit.widget.update(frame({ player: { pit: { phase: 'request', limiterOn: false, entryDistM: null } } }), {});
+    check('a booked pit stop outranks a reminder', pit.state() === 'pitrequest', pit.state());
+  }
+
+  /* ---- The half-second flash -------------------------------------------
+   *
+   * Reported from a real lobby: "it appeared for half a second then
+   * disappeared". In the menus LMU's REST goes quiet, the provider falls back
+   * to the DEMO simulator, and the frames still arriving are a synthetic race
+   * with its own flags and gantry. Those outrank a reminder — correctly, on
+   * track — so the banner painted and the very next frame wiped it.
+   *
+   * Off track none of that is about this driver, so main marks the notice
+   * `force` and it leads instead. */
+  {
+    const lobby = stub();
+    lobby.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, true);
+    check('a forced notice paints on arrival', lobby.state() === 'notice', lobby.state());
+
+    // The demo's synthetic race, frame after frame. Each of these would have
+    // taken the banner before.
+    lobby.widget.update(frame({ session: { phase: 'green', flag: 'green' } }), {});
+    check('a demo green flag does not wipe it', lobby.state() === 'notice', lobby.state());
+    lobby.widget.update(frame({ session: { flag: 'yellow' } }), {});
+    check('nor a demo full course yellow', lobby.state() === 'notice', lobby.state());
+    lobby.widget.update(frame({ player: { finished: true } }), {});
+    check('nor a demo chequered flag', lobby.state() === 'notice', lobby.state());
+    check('and the words are still there', /LMGT3 FIXED/.test(lobby.msgText()), lobby.msgText());
+
+    // And it still lets go when the notice runs out.
+    lobby.api.notice('X', -1, true);
+    lobby.widget.update(frame({ session: { flag: 'yellow' } }), {});
+    check('once it expires the banner is the race again', lobby.state() === 'fcy', lobby.state());
+  }
+
+  /* ---- ON TRACK, the states that carry no message ------------------------
+   *
+   * Reported from a real session, not the menus: the banner appeared and went
+   * within half a second. Ranked last, the reminder lost to any branch that
+   * matched — including two that set a STATE and no message, and both of which
+   * stop the chain dead:
+   *
+   *   a sector yellow anywhere on the circuit, which is routine with traffic;
+   *   being in the pit lane with the limiter correctly engaged.
+   *
+   * Neither is a line the reminder is competing with, so neither should take
+   * the banner from it. */
+  {
+    const yellow = stub();
+    yellow.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    yellow.widget.update(frame({ session: { sectorFlags: ['yellow', 'none', 'none'] } }), {});
+    check('a sector yellow no longer swallows the reminder', yellow.state() === 'notice', yellow.state());
+    check('…and the words survive it', /LMGT3 FIXED/.test(yellow.msgText()), yellow.msgText());
+
+    const lane = stub();
+    lane.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000, false);
+    lane.widget.update(frame({ player: { pit: { phase: 'entering', limiterOn: true, entryDistM: null } } }), {});
+    check('nor does the pit lane with the limiter on', lane.state() === 'notice', lane.state());
+
+    /* But a branch that DOES have something to say still wins, which is the
+       whole safety property. */
+    const lane2 = stub();
+    lane2.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000, false);
+    lane2.widget.update(frame({ player: { pit: { phase: 'entering', limiterOn: false, entryDistM: null } } }), {});
+    check('the limiter warning in the lane still wins', lane2.state() === 'limiter', lane2.state());
+
+    /* The gantry speaks in lamps rather than words, so an empty message there
+       is not an invitation. */
+    const grid = stub();
+    grid.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    grid.widget.update(frame({ session: { phase: 'countdown', startLights: { total: 5, frame: 3 } } }), {});
+    check('the start gantry is not overwritten', grid.state() === 'countdown', grid.state());
+  }
+
+  /* ON TRACK the ranking is unchanged: a reminder that is not forced still
+     sits under everything, which is the safety property. */
+  {
+    const driving = stub();
+    driving.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    driving.widget.update(frame({ player: { pit: { phase: 'none', limiterOn: true, entryDistM: null } } }), {});
+    check('unforced, LIMITER ON still wins', driving.state() === 'limiter', driving.state());
+  }
+
+  /* And it comes back once the track has nothing louder to say. */
+  rc.widget.update(frame(), {});
+  check('it returns when the banner falls quiet', rc.state() === 'notice', rc.state());
+
+  /* It expires on its own dwell rather than sticking. */
+  rc.api.notice('GONE', -1);
+  rc.widget.update(frame(), {});
+  check('and it expires', rc.state() === 'idle', rc.state());
+
+  /* Refusing lets the caller fall back to the floating strip, which is what a
+     driver without this widget on their layout depends on. */
+  check('empty text is refused', rc.api.notice('', 1000) === false);
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

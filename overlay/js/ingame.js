@@ -1117,10 +1117,28 @@
     }, Math.min(12000, Number(n.dwellMs) || (n.kind === "error" ? 6000 : 2500)));
   }
 
+  /**
+   * Where a notice goes.
+   *
+   * A race reminder belongs in the race control banner, next to the flags —
+   * it is race information, and the floating strip is for confirming a button
+   * you just pressed. Everything else keeps the strip.
+   *
+   * The widget refuses when it is not on this layer, and then the strip is the
+   * fallback: a driver who never added race control to their layout still has
+   * to be told their race is starting.
+   */
+  function routeNotice(n) {
+    if (n && n.race && window.ApexRaceControl) {
+      if (window.ApexRaceControl.notice(n.text, n.dwellMs, n.force)) return;
+    }
+    showNotice(n);
+  }
+
   /* --------------------------------- boot -------------------------------- */
 
   if (bridge) {
-    if (bridge.onNotice) bridge.onNotice(showNotice);
+    if (bridge.onNotice) bridge.onNotice(routeNotice);
     bridge.onEdit(function (on) {
       setEditing(on);
     });

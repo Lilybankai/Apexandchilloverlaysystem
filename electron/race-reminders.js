@@ -49,8 +49,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-/** Lead times offered, in minutes before the start. */
-const LEADS = [5, 2];
+/**
+ * Lead times offered, in minutes before the start. Announced most-distant
+ * first, and the LAST one is the one that gets a driver out of the menus — so
+ * it sits at one minute, not two.
+ */
+const LEADS = [5, 2, 1];
 
 /** Longest a single timer is allowed to run before re-checking the clock. */
 const MAX_SLEEP_MS = 60_000;
@@ -63,6 +67,18 @@ const MAX_SLEEP_MS = 60_000;
  */
 const GRACE_MS = 90_000;
 
+/**
+ * The grace a single mark actually gets. Never longer than the mark's own lead,
+ * or a late wake-up announces a race that has already started — at the
+ * one-minute mark a flat 90 s grace would happily say "1 minute" thirty seconds
+ * AFTER the lights. Entries-open has no such ceiling: the lobby stays open, so
+ * being told late is still useful.
+ */
+function graceFor(lead) {
+  const mins = Number(lead);
+  return Number.isFinite(mins) ? Math.min(GRACE_MS, mins * 60_000) : GRACE_MS;
+}
+
 /** Reminders are dropped this long after their start — the race is gone. */
 const EXPIRY_MS = 30 * 60_000;
 
@@ -73,7 +89,7 @@ const EXPIRY_MS = 30 * 60_000;
 let storePath = null;
 /** id → reminder. `fired` records which leads have already gone out. */
 let reminders = new Map();
-let settings = { toast: true, voice: false, entriesOpen: false };
+let settings = { toast: true, voice: false, overlay: true, entriesOpen: false };
 
 /**
  * A reminder's identity. Two bells on the same start are the same bell, so the
@@ -92,6 +108,7 @@ function load() {
       settings = {
         toast: raw.settings?.toast !== false,
         voice: !!raw.settings?.voice,
+        overlay: raw.settings?.overlay !== false,
         entriesOpen: !!raw.settings?.entriesOpen,
       };
       reminders = new Map(
@@ -148,7 +165,7 @@ function due(list, cfg, now) {
       const tag = String(mark.lead);
       if (r.fired.includes(tag)) continue;
       if (now < mark.at) continue;
-      if (now - mark.at > GRACE_MS) {
+      if (now - mark.at > graceFor(mark.lead)) {
         // Missed it — mark it spent so it never fires late, but keep looking:
         // the two-minute mark may still be ahead.
         r.fired.push(tag);
@@ -218,12 +235,46 @@ function speechFor(reminder, lead) {
   return `${mins} minute${mins === 1 ? '' : 's'} to your ${reminder.title} race at ${reminder.track}.`;
 }
 
+/**
+ * What the in-game layer is given.
+ *
+ * `{ kind, text, dwellMs }` — the shape `showNotice` in overlay/js/ingame.js
+ * already renders for bound-action feedback, NOT a new one. That notice strip
+ * exists, is placed with the rest of the chrome, and caps itself at three
+ * stacked messages; inventing a second banner beside it would be two things
+ * doing one job.
+ *
+ * `kind` stays 'ok': 'error' is red and buys a 6 s dwell, and a race starting
+ * on schedule is not an error. The dwell is set long instead — this is a notice
+ * that asks the driver to go and DO something (leave the practice server and
+ * get into the lobby), which is the case the sender-set dwell was added for,
+ * and it grows as the start gets closer.
+ */
+function noticeFor(reminder, lead) {
+  const where = reminder.track ? ` — ${reminder.track}` : '';
+  /* `race: true` is how the layer tells a reminder from the bound-action
+     feedback that shares this channel. A reminder belongs IN the race control
+     banner, beside the flags, rather than in the floating strip; everything
+     else still goes to the strip. */
+  if (lead === 'entries') {
+    return { kind: 'ok', race: true, text: `Entries open: ${reminder.title}${where}`, dwellMs: 6000 };
+  }
+  const mins = Number(lead);
+  return {
+    kind: 'ok',
+    race: true,
+    text: `${reminder.title} starts in ${mins} minute${mins === 1 ? '' : 's'}${where}`,
+    // The last call is the one that has to be acted on, so it stays up longest.
+    dwellMs: mins <= 1 ? 12000 : mins <= 2 ? 9000 : 6000,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  The service                                                               */
 /* -------------------------------------------------------------------------- */
 
 let timer = null;
-let sinks = { toast: null, speak: null, changed: null };
+let sinks = { toast: null, speak: null, overlay: null, changed: null };
 
 function clearTimer() {
   if (timer) {
@@ -269,6 +320,13 @@ function tick() {
         /* as above */
       }
     }
+    if (settings.overlay && sinks.overlay) {
+      try {
+        sinks.overlay(noticeFor(reminder, lead));
+      } catch {
+        /* as above */
+      }
+    }
   }
 
   for (const gone of expired(list, now)) {
@@ -298,6 +356,7 @@ function init(opts = {}) {
   sinks = {
     toast: typeof opts.toast === 'function' ? opts.toast : null,
     speak: typeof opts.speak === 'function' ? opts.speak : null,
+    overlay: typeof opts.overlay === 'function' ? opts.overlay : null,
     changed: typeof opts.changed === 'function' ? opts.changed : null,
   };
   load();
@@ -349,6 +408,7 @@ function setSettings(partial) {
   if (partial && typeof partial === 'object') {
     if (typeof partial.toast === 'boolean') settings.toast = partial.toast;
     if (typeof partial.voice === 'boolean') settings.voice = partial.voice;
+    if (typeof partial.overlay === 'boolean') settings.overlay = partial.overlay;
     if (typeof partial.entriesOpen === 'boolean') settings.entriesOpen = partial.entriesOpen;
     save();
     arm();
@@ -360,9 +420,9 @@ function setSettings(partial) {
 function reset() {
   clearTimer();
   reminders = new Map();
-  settings = { toast: true, voice: false, entriesOpen: false };
+  settings = { toast: true, voice: false, overlay: true, entriesOpen: false };
   storePath = null;
-  sinks = { toast: null, speak: null, changed: null };
+  sinks = { toast: null, speak: null, overlay: null, changed: null };
 }
 
 module.exports = {
@@ -371,11 +431,13 @@ module.exports = {
   GRACE_MS,
   EXPIRY_MS,
   idOf,
+  graceFor,
   due,
   nextDueAt,
   expired,
   toastFor,
   speechFor,
+  noticeFor,
   init,
   toggle,
   list,

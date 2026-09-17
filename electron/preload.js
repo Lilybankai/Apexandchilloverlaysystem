@@ -537,6 +537,35 @@ contextBridge.exposeInMainWorld('apex', {
     /** Turn one off or back on: `{ code, active }` → `{ ok, error? }`. */
     setReferralActive: (payload) => ipcRenderer.invoke('admin:setReferralActive', payload),
     /**
+     * Partner applications (migration 0029): `{ ok, data: { pending, rows[] } }`.
+     * Pending oldest-first, then everything decided, newest-first.
+     *
+     * Each row carries `emailStatus` — the state of the approval email in the
+     * outbox. A partnership approved whose email never left is the one failure
+     * this feature could otherwise hide, so it is on the row rather than in a log.
+     */
+    referralRequests: () => ipcRenderer.invoke('admin:referralRequests'),
+    /**
+     * Approve one: `{ id, code?, note? }` → `{ ok, code, url, overlayUrl, email }`.
+     *
+     * One call issues the code, links it to the applicant's account, marks the
+     * application approved and queues the mail — they are one decision, and any
+     * subset of them is a state somebody has to notice and fix by hand.
+     *
+     * `code` overrides what the applicant asked for; leave it out to take their
+     * suggestion. A code that is taken, malformed or clashes with a league code
+     * leaves the application PENDING and comes back as an error.
+     */
+    approveReferralRequest: (payload) =>
+      ipcRenderer.invoke('admin:approveReferralRequest', payload),
+    /**
+     * Decline one: `{ id, reason? }` → `{ ok, error? }`. No email is sent — the
+     * reason is shown to them in Settings instead. Starts a 30-day cooldown
+     * before they can apply again.
+     */
+    declineReferralRequest: (payload) =>
+      ipcRenderer.invoke('admin:declineReferralRequest', payload),
+    /**
      * Feature + overlay analytics (migration 0022): `{ days? }` → `{ ok, data:
      * { laps, lapsDaily[], features[], featuresDaily[], overlays[],
      * overlayCounts[], cloud, activeMonth }, signedOut?, error? }`.
@@ -703,6 +732,21 @@ contextBridge.exposeInMainWorld('apex', {
    * admin-issued, so the card in Settings → Account only exists for partners.
    */
   referralMine: () => ipcRenderer.invoke('referral:mine'),
+
+  /**
+   * Becoming a partner (migration 0029). Codes are still admin-issued — this is
+   * how someone ASKS for one, which until now had no surface in the app at all.
+   *
+   * `mine` → `{ ok, hasCode, canApply, status, retryAfter?, declineReason?, … }`.
+   * `canApply` is the server's answer, not the card's guess: false for a
+   * partner, for an application already pending, and during the cooldown after
+   * a decline, each of which the card words differently.
+   *
+   * `submit` → `{ ok }` or `{ ok:false, error }`. Every rule is enforced in the
+   * database; hiding the form is a courtesy, not a control.
+   */
+  referralRequestMine: () => ipcRenderer.invoke('referral:requestMine'),
+  referralRequestSubmit: (payload) => ipcRenderer.invoke('referral:requestSubmit', payload),
 
   /* ---- Usage counters ----
    *
