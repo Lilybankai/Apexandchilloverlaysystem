@@ -5,6 +5,24 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.8 — 2026-09-17
+
+### Changed
+
+- **The race reminder appears in the race control widget**, with the flags,
+  instead of the floating notice strip. It is race information, and that strip
+  is for confirming a button you just pressed.
+
+  It sits at the bottom of that widget's order, under everything: the chequered
+  flag, a full course yellow, the start gantry, a booked pit stop, and every
+  limiter warning. "Your next daily starts in two minutes" must never be shown
+  in place of LIMITER ON, so it only gets the banner when the banner has nothing
+  else to say — and it steps aside the moment something does, returning
+  afterwards if it is still in date.
+
+  If race control is not one of your overlay widgets the reminder still arrives,
+  in the notice strip as before.
+
 ## 0.99.12-beta.7 — 2026-09-17
 
 ### Fixed

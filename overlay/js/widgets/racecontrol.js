@@ -58,6 +58,14 @@
   var prevPhase = null;
   /** Wall-clock until which the green banner stays up, 0 when not flashing. */
   var greenUntil = 0;
+  /**
+   * A race reminder from the app: the text, and the wall-clock it stops being
+   * shown. Not telemetry — pushed in from the in-game layer (see the bottom of
+   * this file) — which is why it lives beside the flash timers rather than
+   * being read off the frame.
+   */
+  var noticeText = "";
+  var noticeUntil = 0;
   /** How long the request-cancelled banner flashes, ms. */
   var CANCEL_FLASH_MS = 4000;
   /** The previous frame's pit phase, for the request -> none (cancel) edge. */
@@ -346,6 +354,14 @@
     } else if (anySectorYellow) {
       // Nothing louder to say: name the hazard the rail is showing.
       state = "yellow";
+    } else if (noticeUntil > now) {
+      // A race reminder, and LAST on purpose. Every branch above is the race
+      // director or the car: flags, the gantry, the limiter, the pit lane.
+      // "Your next daily starts in two minutes" must never sit over any of
+      // them — it is the least urgent thing this banner can say, and it only
+      // gets the banner when the banner had nothing to say at all.
+      state = "notice";
+      msg = noticeText;
     }
 
     setLights(showLights && lights ? Math.min(lights.frame, lights.total) : 0, showLights && lights ? lights.total : 0);
@@ -369,6 +385,27 @@
                 : "—",
     );
   }
+
+  /**
+   * Show a race reminder on this banner.
+   *
+   * Called by the in-game layer when the app pushes one. Returns false when
+   * this widget is not on the layer, so the caller can fall back to the
+   * floating notice strip rather than the reminder going nowhere — a driver
+   * who has not added race control to their layout still needs telling.
+   *
+   * It does not paint: it sets the state the next update() reads, and the
+   * widget repaints on its own 100 ms throttle. A reminder that drew itself
+   * here would be overwritten by the very next frame.
+   */
+  function showRaceNotice(text, dwellMs) {
+    if (!root || !text) return false;
+    noticeText = String(text).toUpperCase();
+    noticeUntil = Date.now() + (Number(dwellMs) || 8000);
+    return true;
+  }
+
+  window.ApexRaceControl = { notice: showRaceNotice };
 
   window.ApexOverlay.registerWidget("racecontrol", {
     // The gantry animates a lamp a second and the entry countdown ticks every

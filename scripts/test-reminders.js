@@ -189,6 +189,12 @@ console.log('\nThe in-game notice');
   const e = reminders.noticeFor(bell(), 'entries');
   check('entries-open reads as an opening', /^Entries open/.test(e.text), e.text);
 
+  /* `race: true` is what routes it into the race control banner rather than the
+     floating strip. Without the flag it lands in the strip — which is where it
+     was, and what Carl asked to have changed. */
+  check('it is flagged as race information', n.race === true);
+  check('…on every lead', [5, 2, 1, 'entries'].every((l) => reminders.noticeFor(bell(), l).race === true));
+
   /* A reminder with no track must not leave a dangling separator. */
   const bare = reminders.noticeFor(bell({ track: '' }), 2);
   check('no circuit means no trailing dash', !/[—-]\s*$/.test(bare.text), JSON.stringify(bare.text));

@@ -3684,6 +3684,16 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
    the red ones — they are the only messages here whose cost is measured in
    drive-throughs. FCY is the whole circuit under caution, so the panel itself
    breathes amber, same cadence as a limits charge. */
+/* A race reminder from the app — the least urgent thing this banner shows, and
+   the only one that is not the race director or the car. Deliberately the
+   accent colour rather than a flag colour: it must not be mistaken at a glance
+   for a green flag or a caution. */
+#widget-racecontrol[data-race="notice"] .racecontrol__msg {
+  color: var(--ac-cyan);
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+}
+
 #widget-racecontrol[data-race="green"] .racecontrol__msg { color: var(--pos-gain); }
 #widget-racecontrol[data-race="fcy"] .racecontrol__msg { color: var(--warn); }
 #widget-racecontrol[data-race="pitentry"] .racecontrol__msg { color: var(--text-secondary); }

@@ -252,12 +252,17 @@ function speechFor(reminder, lead) {
  */
 function noticeFor(reminder, lead) {
   const where = reminder.track ? ` — ${reminder.track}` : '';
+  /* `race: true` is how the layer tells a reminder from the bound-action
+     feedback that shares this channel. A reminder belongs IN the race control
+     banner, beside the flags, rather than in the floating strip; everything
+     else still goes to the strip. */
   if (lead === 'entries') {
-    return { kind: 'ok', text: `Entries open: ${reminder.title}${where}`, dwellMs: 6000 };
+    return { kind: 'ok', race: true, text: `Entries open: ${reminder.title}${where}`, dwellMs: 6000 };
   }
   const mins = Number(lead);
   return {
     kind: 'ok',
+    race: true,
     text: `${reminder.title} starts in ${mins} minute${mins === 1 ? '' : 's'}${where}`,
     // The last call is the one that has to be acted on, so it stays up longest.
     dwellMs: mins <= 1 ? 12000 : mins <= 2 ? 9000 : 6000,
