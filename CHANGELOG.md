@@ -5,6 +5,8 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.5 — 2026-09-17
+
 ### Added
 
 - **Records posted into Discord.** Settings → Discord connects a channel, and
