@@ -5,6 +5,29 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.9 — 2026-09-17
+
+### Added
+
+- **The Schedule tab and Discord are on the Get started list.** Both were
+  shipped without a way in: a driver who never opened the tab had no reason to,
+  and the checklist walked them past two features it did not mention.
+
+  *Know when you are racing* covers the two calendars, what is on next in each
+  tier, entries opening half an hour out, the time-zone switch, the bell and its
+  three channels, and the month view. *Tell your league when you take a record*
+  covers joining a community or starting one, deciding for yourself what gets
+  posted about you, pointing a channel at your own server instead, and why it
+  stays quiet — only a lap that actually takes a record is ever posted.
+
+  Both walk the real page with it live underneath, the same as the other
+  walkthroughs, and both tick once you have been round them.
+
+### Fixed
+
+- **The Get started card no longer claims to be seven things.** It said seven
+  when it was seven; the list has grown twice since.
+
 ## 0.99.12-beta.8 — 2026-09-17
 
 ### Changed
