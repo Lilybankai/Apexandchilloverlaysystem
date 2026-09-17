@@ -5,6 +5,23 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.11 — 2026-09-17
+
+### Fixed
+
+- **The race reminder actually appears on the overlay now.** It was being
+  delivered to a hidden window. The in-game layer hides itself whenever you are
+  not on track, and a reminder arrives five, two and one minute before the
+  start — when you are in the lobby or the garage, which is exactly when the
+  layer is down. The engineer said it and nothing was drawn.
+
+  A reminder now brings the layer up for as long as the banner is on screen and
+  puts it straight back afterwards. That is the whole point of the reminder: to
+  reach you when you are *not* driving.
+
+  It also paints the moment it arrives rather than waiting for the next
+  telemetry frame — off track there may not be one.
+
 ## 0.99.12-beta.10 — 2026-09-17
 
 ### Fixed

@@ -394,14 +394,27 @@
    * floating notice strip rather than the reminder going nowhere — a driver
    * who has not added race control to their layout still needs telling.
    *
-   * It does not paint: it sets the state the next update() reads, and the
-   * widget repaints on its own 100 ms throttle. A reminder that drew itself
-   * here would be overwritten by the very next frame.
+   * It paints IMMEDIATELY as well as arming the state the next update() reads.
+   * Both, and the reason is the whole point of the feature: a reminder arrives
+   * while the driver is in the lobby waiting for the race, and off track the
+   * frames that drive update() may not be arriving at all. Setting state alone
+   * meant the banner waited for a frame that never came. Painting alone would
+   * be overwritten by the next frame that did — so it does both, and update()
+   * re-derives the same thing for as long as the notice is in date.
    */
   function showRaceNotice(text, dwellMs) {
     if (!root || !text) return false;
     noticeText = String(text).toUpperCase();
     noticeUntil = Date.now() + (Number(dwellMs) || 8000);
+    /* Only when the banner has nothing of its own to say. If the race director
+       is mid-sentence — a flag, the limiter, the pit lane — the next update()
+       will show this instead once it falls quiet, and never before. */
+    if (stateCache === 'idle' || stateCache === 'notice') {
+      setLights(0, 0);
+      setMsg(noticeText);
+      setSub(null);
+      setState('notice');
+    }
     return true;
   }
 

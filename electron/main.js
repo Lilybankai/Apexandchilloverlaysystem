@@ -1965,11 +1965,34 @@ async function runAction(id, dir) {
   return result;
 }
 
+/**
+ * Wall-clock until which the layer stays up for a notice, 0 when nothing is
+ * holding it. Only race reminders set it — bound-action feedback happens while
+ * the driver is already on track, so the layer is up for that by definition.
+ */
+let ingameNoticeHoldUntil = 0;
+let ingameNoticeTimer = null;
+
 /** Push a transient notice to the in-game layer, if it is up to show one. */
 function sendIngameNotice(notice) {
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.webContents.send('ingame:notice', notice);
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+
+  if (notice && notice.race) {
+    // Match the banner's own dwell, plus a moment so the window does not go
+    // down on the same tick the text clears.
+    const dwell = Math.min(20000, Number(notice.dwellMs) || 8000) + 1500;
+    ingameNoticeHoldUntil = Math.max(ingameNoticeHoldUntil, Date.now() + dwell);
+    applyIngameVisibility();
+    if (ingameNoticeTimer) clearTimeout(ingameNoticeTimer);
+    ingameNoticeTimer = setTimeout(() => {
+      ingameNoticeTimer = null;
+      // Hand the decision straight back to auto-hide, whatever it now says.
+      applyIngameVisibility();
+    }, dwell + 100);
+    if (typeof ingameNoticeTimer.unref === 'function') ingameNoticeTimer.unref();
   }
+
+  overlayWin.webContents.send('ingame:notice', notice);
 }
 
 /**
@@ -2407,6 +2430,13 @@ function destroyOverlayWindow() {
  */
 function ingameShouldBeVisible(settings) {
   if (ingameEditing || ingameInteractive) return true;
+  /* A race reminder is the one thing the layer has to show while the driver is
+     NOT on track — five minutes out they are in the lobby or the garage, which
+     is precisely when auto-hide has the window down. Delivering the banner to
+     a hidden window was the first version of this and it reached nobody: the
+     voice landed, the visual did not. So a reminder lifts auto-hide for as long
+     as it is on screen, and not a second longer. */
+  if (Date.now() < ingameNoticeHoldUntil) return true;
   const s = settings || loadSettings();
   if (!s.ingameAutoHide) return true;
   if (s.forceSimulator || s.provider === 'simulator') return true;

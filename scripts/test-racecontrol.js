@@ -401,7 +401,8 @@ console.log('\nlimits lap-validity chip staging, against a DOM stub\n');
 console.log('\nRace reminders on the race-control banner');
 {
   const stub = () => {
-    const el = (tag) => ({
+    const made = [];
+    const el = (tag) => made[made.push({
       tag,
       children: [],
       attrs: {},
@@ -418,7 +419,7 @@ console.log('\nRace reminders on the race-control banner');
       classList: { add() {}, remove() {}, toggle() {} },
       get textContent() { return this._text; },
       set textContent(v) { this._text = String(v); },
-    });
+    }) - 1];
     const root = el('div');
     const sandbox = {
       document: {
@@ -453,6 +454,13 @@ console.log('\nRace reminders on the race-control banner');
       widget,
       api: sandbox.window.ApexRaceControl,
       state: () => root.getAttribute('data-race'),
+      /* The widget builds its own nodes in init() and keeps the references, so
+         there is nothing to query for afterwards. The stub records every
+         element it hands out, and the message node is found by its class. */
+      msgText: () => {
+        const m = made.find((e) => e.className === 'racecontrol__msg');
+        return m ? m.textContent : '';
+      },
     };
   };
 
@@ -474,6 +482,23 @@ console.log('\nRace reminders on the race-control banner');
   rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
   rc.widget.update(frame(), {});
   check('a reminder reaches the banner', rc.state() === 'notice', rc.state());
+
+  /* The case that actually failed in the wild. A reminder arrives five minutes
+     before the race, when the driver is in the lobby and NOT on track — so the
+     telemetry frames that drive update() may not be arriving at all. Setting
+     state and waiting for a frame meant the banner waited for one that never
+     came: the voice landed and nothing was drawn. It must paint on arrival. */
+  {
+    const cold = stub();
+    check('a fresh widget starts idle', cold.state() === 'idle', cold.state());
+    cold.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000);
+    check('it paints with NO frame having arrived', cold.state() === 'notice', cold.state());
+    check(
+      '…and the banner carries the words',
+      /ELMS SUPER 60/.test(cold.root.attrs.__msg || cold.msgText() || ''),
+      cold.msgText(),
+    );
+  }
 
   /* The two that must always win. */
   rc.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000);
