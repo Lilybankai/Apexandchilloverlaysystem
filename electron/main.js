@@ -5509,6 +5509,13 @@ app.whenReady().then(async () => {
         console.error('[reminders] voice unavailable:', err.message);
       }
     },
+    /* The in-game layer, through the notice channel the bound-action feedback
+       already uses. Nine times in ten a driver registers for a daily and then
+       drops straight into a practice server, which is exactly when the overlay
+       IS up — so this is the channel that reaches them where they actually
+       are. Silent otherwise: sendIngameNotice is a no-op with no layer open,
+       and nothing is queued for a window that was not there. */
+    overlay: (notice) => sendIngameNotice(notice),
     changed: () => {
       // The panel shows a bell per race; tell any open window the set moved.
       for (const win of BrowserWindow.getAllWindows()) {

@@ -5,7 +5,33 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.6 — 2026-09-17
+
+### Added
+
+- **A one-minute call, and the reminder reaches you in the game.** Race
+  reminders now come at five minutes, two, and one — and the last one is the
+  one that gets you out of the menus. They also appear on the in-game overlay,
+  which is where you actually are: nine times in ten a driver registers for a
+  daily and then drops straight into a practice server, and a Windows
+  notification never reaches them there. The banner stays up longer the closer
+  the start gets. There is a switch for it beside the other two on the Schedule
+  tab, on by default.
+- **The calendar is a calendar.** The Schedule tab's Calendar view is a month
+  you can look at — pick a day and its timetable opens underneath. Each square
+  carries what actually makes one day different from another: the weekly and
+  special events by name, with team events marked, and how many races run that
+  day. The day itself states each event once with its start times beneath it,
+  rather than the several-hundred-row list it was.
+
+  It only fills in the week Le Mans Ultimate has published. Further ahead the
+  times would be right and the circuits would be invented, so those days stay
+  empty and the panel says why.
+
 ### Changed
+
+- **Scrollbars match the rest of the app** wherever the panel scrolls, instead
+  of the bright grey Windows default on a near-black page.
 
 - **The new Apex AIO logo, everywhere the old one was.** The Apex & Chill mark
   and wordmark are gone from the product: the sign-in screen, the dashboard

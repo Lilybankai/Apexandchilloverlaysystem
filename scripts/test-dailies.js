@@ -264,6 +264,50 @@ console.log('\nThe repeating pattern the calendar is built from');
   check('every real cadence divides a day exactly', REAL_CADENCES.every((c) => 1440 % c === 0), REAL_CADENCES.join('/'));
 }
 
+console.log('\nThe rotation tiles a day exactly - what the calendar rests on');
+{
+  /* A tier's events must between them fill the day at the tier's cadence, with
+     no minute claimed twice. If they did not, the calendar would either invent
+     a race or lose one on every date it draws — and it draws dates the service
+     never published, so nothing downstream would catch it. */
+  const day = (startMin, everyMin) => {
+    const out = [];
+    for (let m = startMin; m < 1440; m += everyMin) out.push(m);
+    return out;
+  };
+  const tierOfPattern = (cadence, offsets) => {
+    const every = cadence * offsets.length;
+    return offsets.map((o) => day(o, every));
+  };
+
+  for (const [label, cadence, offsets] of [
+    ['beginner', 15, [0, 15, 30]],
+    ['intermediate', 20, [10, 30, 50]],
+    ['advanced', 30, [25, 55, 85]],
+  ]) {
+    const events = tierOfPattern(cadence, offsets);
+    const total = events.reduce((n, e) => n + e.length, 0);
+    check(
+      label + ': the three events fill the day at the tier cadence',
+      total === 1440 / cadence,
+      total + ' vs ' + 1440 / cadence,
+    );
+    const all = new Set();
+    let clash = 0;
+    for (const e of events) for (const m of e) { if (all.has(m)) clash++; all.add(m); }
+    check(label + ': no minute is claimed by two events', clash === 0, String(clash));
+    check(label + ': and the day closes on midnight', 1440 % (cadence * offsets.length) === 0);
+  }
+
+  /* Two TIERS may legitimately start at the same minute — Beginner's :30 and
+     Intermediate's :30 are different races. A count that de-duplicated on the
+     instant alone would under-report the day by 24. */
+  const b = new Set(day(30, 45));
+  const i = new Set(day(30, 60));
+  const shared = [...b].filter((m) => i.has(m));
+  check('tiers DO share start minutes, and that is not a duplicate', shared.length > 0, shared.length + ' shared');
+}
+
 console.log('\nSpecial events');
 {
   const p = dailies.buildPayload({ schedule: SCHEDULE, lists: {}, specials: { weekly: WEEKLY } }, NOW);

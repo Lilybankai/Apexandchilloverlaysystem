@@ -73,6 +73,13 @@ contextBridge.exposeInMainWorld('apexIngame', {
    * Pushed by main when an action fails (or confirms something invisible,
    * like a pit request), so the result lands on the layer the driver is
    * actually looking at rather than in a console nobody has open.
+   *
+   * Race reminders ride this too. They belong on THIS bridge rather than the
+   * telemetry socket for two reasons: every message on that socket is treated
+   * as a telemetry frame (latest-wins, coalesced to a rAF), so a notice sent
+   * down it would be mistaken for one and dropped by the next frame; and that
+   * socket also feeds the OBS browser sources, where "your race starts in 5
+   * minutes" is the streamer's business and not the audience's.
    */
   onNotice: (callback) => {
     ipcRenderer.on('ingame:notice', (_evt, notice) => callback(notice));

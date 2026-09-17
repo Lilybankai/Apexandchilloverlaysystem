@@ -75,8 +75,10 @@ console.log('\nWhen a reminder is due');
   check('the five-minute mark fires', five.length === 1 && five[0].lead === 5, five[0] && five[0].lead);
   const two = reminders.due([bell({ fired: ['5'] })], CFG, at(2));
   check('then the two-minute mark', two.length === 1 && two[0].lead === 2, two[0] && two[0].lead);
-  check('and nothing after both', reminders.due([bell({ fired: ['5', '2'] })], CFG, at(1)).length === 0);
-  check('one announcement per wake, not two', reminders.due([bell()], CFG, at(2)).length === 1);
+  const one = reminders.due([bell({ fired: ['5', '2'] })], CFG, at(1));
+  check('then the one-minute mark - the one that moves you', one.length === 1 && one[0].lead === 1, one[0] && one[0].lead);
+  check('and nothing after all three', reminders.due([bell({ fired: ['5', '2', '1'] })], CFG, at(0.5)).length === 0);
+  check('one announcement per wake, not three', reminders.due([bell()], CFG, at(1)).length === 1);
 }
 
 console.log('\nA machine that slept');
@@ -102,6 +104,21 @@ console.log('\nA machine that slept');
   check('thirty seconds late still counts as five minutes', justLate.length === 1 && justLate[0].lead === 5);
 }
 
+console.log('\nGrace never outlives the mark it belongs to');
+{
+  check('five minutes gets the full 90s', reminders.graceFor(5) === 90000, String(reminders.graceFor(5)));
+  check('two minutes gets the full 90s', reminders.graceFor(2) === 90000, String(reminders.graceFor(2)));
+  check('ONE minute is capped at 60s, not 90', reminders.graceFor(1) === 60000, String(reminders.graceFor(1)));
+  check('entries-open keeps the default', reminders.graceFor('entries') === 90000, String(reminders.graceFor('entries')));
+
+  /* The reason the cap exists: a flat 90 s grace on a 60 s lead would announce
+     "1 minute" thirty seconds AFTER the race had started. */
+  const late = reminders.due([bell({ fired: ['5', '2'] })], CFG, START + 30000);
+  check('a one-minute mark never fires after the start', late.length === 0, JSON.stringify(late.map((x) => x.lead)));
+  const justInTime = reminders.due([bell({ fired: ['5', '2'] })], CFG, at(1) + 30000);
+  check('...but thirty seconds late is still in time', justInTime.length === 1 && justInTime[0].lead === 1);
+}
+
 console.log('\nEntries-open, when it is switched on');
 {
   check('off by default, so nothing at the half hour', reminders.due([bell()], CFG, at(30)).length === 0);
@@ -121,7 +138,8 @@ console.log('\nWhen to wake up next');
 {
   check('the five-minute mark', reminders.nextDueAt([bell()], CFG, at(60)) === at(5));
   check('then the two', reminders.nextDueAt([bell({ fired: ['5'] })], CFG, at(4)) === at(2));
-  check('nothing left to wake for', reminders.nextDueAt([bell({ fired: ['5', '2'] })], CFG, at(1)) === null);
+  check('then the one', reminders.nextDueAt([bell({ fired: ['5', '2'] })], CFG, at(4)) === at(1));
+  check('nothing left to wake for', reminders.nextDueAt([bell({ fired: ['5', '2', '1'] })], CFG, at(0.5)) === null);
   check('entries-open comes first when it is on', reminders.nextDueAt([bell()], CFG_ENTRIES, at(60)) === at(30));
   check('an empty list never schedules a wake', reminders.nextDueAt([], CFG, at(60)) === null);
   const two = [bell(), bell({ id: 'b', startsAt: '2026-09-17T12:45:00.000Z', registrationOpens: null })];
@@ -146,6 +164,45 @@ console.log('\nWording');
   const s = reminders.speechFor(bell(), 2);
   check('speech leads with the number, not the name', /^2 minutes/.test(s), s);
   check('…and names the circuit, because it is heard once', /Bahrain/.test(s), s);
+}
+
+console.log('\nThe in-game notice');
+{
+  /* It must match the shape overlay/js/ingame.js showNotice() already renders:
+     it bails on anything without `text`, and reads `kind` and `dwellMs`. A
+     notice shaped any other way is silently dropped on the layer, which is the
+     failure this whole channel exists to avoid. */
+  const n = reminders.noticeFor(bell(), 5);
+  check('it has the text showNotice requires', typeof n.text === 'string' && n.text.length > 0, n.text);
+  check('kind is ok, not error — a race starting is not a fault', n.kind === 'ok', n.kind);
+  check('it names the race and the circuit', /LMGT3 Fixed/.test(n.text) && /Bahrain/.test(n.text));
+  check('one minute is not "1 minutes"', /in 1 minute\b/.test(reminders.noticeFor(bell(), 1).text), reminders.noticeFor(bell(), 1).text);
+
+  /* The last call is the one that has to be acted on, so it stays up longest —
+     and every dwell is inside the 12 s ceiling showNotice clamps to. */
+  const d5 = reminders.noticeFor(bell(), 5).dwellMs;
+  const d2 = reminders.noticeFor(bell(), 2).dwellMs;
+  const d1 = reminders.noticeFor(bell(), 1).dwellMs;
+  check('dwell grows as the start approaches', d5 < d2 && d2 < d1, [d5, d2, d1].join(' < '));
+  check('and never exceeds the overlay ceiling', d1 <= 12000, String(d1));
+
+  const e = reminders.noticeFor(bell(), 'entries');
+  check('entries-open reads as an opening', /^Entries open/.test(e.text), e.text);
+
+  /* A reminder with no track must not leave a dangling separator. */
+  const bare = reminders.noticeFor(bell({ track: '' }), 2);
+  check('no circuit means no trailing dash', !/[—-]\s*$/.test(bare.text), JSON.stringify(bare.text));
+
+  /* The overlay is a channel like the others, and off means silent. */
+  const seen = [];
+  reminders.reset();
+  reminders.init({ overlay: (x) => seen.push(x), toast: () => {} });
+  reminders.setSettings({ overlay: false });
+  check('the overlay channel can be switched off', reminders.list().settings.overlay === false);
+  reminders.setSettings({ overlay: true });
+  check('…and on again', reminders.list().settings.overlay === true);
+  check('it is on by default', (reminders.reset(), reminders.init({}), reminders.list().settings.overlay) === true);
+  reminders.reset();
 }
 
 console.log('\nThe store, on disk');

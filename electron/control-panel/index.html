@@ -1142,6 +1142,9 @@
                  is always on — it is the baseline and turning it off would
                  leave a bell that does nothing. -->
             <span class="sk-remind">
+              <label class="sk-remind__opt" title="Also show it on the in-game overlay — where you are if you registered and then hopped into a practice server">
+                <input type="checkbox" id="dl-overlay" /> On the overlay
+              </label>
               <label class="sk-remind__opt" title="Also say it out loud through the race engineer — the only channel that reaches you with the game in focus">
                 <input type="checkbox" id="dl-voice" /> Announce out loud
               </label>
@@ -1163,7 +1166,20 @@
                from the pattern the service published for today — no second
                request, and nothing invented. -->
           <div id="dl-cal-pane" hidden>
-            <nav class="sk-days" id="dl-days" aria-label="Which day to show"></nav>
+            <div class="card sk-cal">
+              <div class="sk-cal__head">
+                <button class="sk-cal__nav" id="dl-cal-prev" type="button" aria-label="Previous month">
+                  <svg class="icon"><use href="#i-chevron-left" /></svg>
+                </button>
+                <h2 class="sk-cal__month" id="dl-cal-month">&nbsp;</h2>
+                <button class="sk-cal__nav" id="dl-cal-next" type="button" aria-label="Next month">
+                  <svg class="icon"><use href="#i-chevron-right" /></svg>
+                </button>
+                <button class="btn btn--ghost btn--sm" id="dl-cal-today" type="button">Today</button>
+              </div>
+              <div class="sk-cal__dows" id="dl-cal-dows"></div>
+              <div class="sk-cal__grid" id="dl-days"></div>
+            </div>
             <div class="sk-day" id="dl-day"></div>
           </div>
 

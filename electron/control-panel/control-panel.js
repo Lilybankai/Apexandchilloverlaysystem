@@ -6019,6 +6019,8 @@
   let dlZone = 'local'; // 'local' | 'utc'
   let dlMode = 'next'; // 'next' | 'calendar'
   let dlDayPick = null; // the chosen day, as a display-zone YYYY-MM-DD
+  /** The month on screen, as {y, m} with m zero-based. Set on first render. */
+  let dlMonth = null;
   let dlPayload = null;
   let dlLoaded = false;
   let dlRequest = 0;
@@ -6375,9 +6377,15 @@
     for (const tier of tiers) tiersEl.append(dlTierCard(tier));
     for (const s of series) seriesEl.append(dlSeriesCard(s));
 
-    /* The strip is rebuilt every render rather than once, so "Today" is still
-       today on a panel left open past midnight. */
-    renderDayStrip();
+    /* Seeded here rather than at load, so a panel left open past midnight opens
+       on the right month and the right day when it is next drawn. */
+    const todayKey = dlDayKey(new Date());
+    if (!dlDayPick) dlDayPick = todayKey;
+    if (!dlMonth) {
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      dlMonth = { y: yy, m: mm - 1 };
+    }
+    renderMonthGrid(ok ? result : null);
     renderDay(ok ? result : null);
 
     if (msg) {
@@ -6503,6 +6511,9 @@
       const s = (res && res.settings) || {};
       const voice = $('#dl-voice');
       if (voice) voice.checked = !!s.voice;
+      const overlay = $('#dl-overlay');
+      // Default ON, so an absent field must not read as off.
+      if (overlay) overlay.checked = s.overlay !== false;
       const entries = $('#dl-entries');
       if (entries) entries.checked = !!s.entriesOpen;
       if (redraw && dlPayload) renderDailies(dlPayload);
@@ -6549,6 +6560,12 @@
       void window.apex.reminders.settings({ voice: dlVoice.checked });
     });
   }
+  const dlOverlay = $('#dl-overlay');
+  if (dlOverlay) {
+    dlOverlay.addEventListener('change', () => {
+      void window.apex.reminders.settings({ overlay: dlOverlay.checked });
+    });
+  }
   const dlEntries = $('#dl-entries');
   if (dlEntries) {
     dlEntries.addEventListener('change', async () => {
@@ -6589,11 +6606,24 @@
    * with their real entry counts, and are simply filed under the right day.
    */
 
-  /** The day keys the strip offers, starting today, in the display zone. */
-  function dlDayKeys() {
-    const keys = [];
-    for (let i = 0; i < DL_CAL_DAYS; i += 1) keys.push(dlDayKey(new Date(Date.now() + i * 86400000)));
-    return keys;
+  /** A calendar date as YYYY-MM-DD from its parts. Not an instant — a date. */
+  function dlKeyOf(y, m, d) {
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  /**
+   * How far ahead the daily rotation is known.
+   *
+   * The pattern repeats exactly every UTC day, so it COULD be drawn to the end
+   * of time — but LMU rotates the circuits weekly, so a fortnight out the times
+   * would be right and the tracks would be fiction. Seven days is the honest
+   * limit, and a day past it says nothing rather than something wrong.
+   */
+  function dlDailyKnown(dayKey) {
+    const today = dlDayKey(new Date());
+    if (dayKey < today) return false; // yesterday ran last week's rotation
+    const last = dlDayKey(new Date(Date.now() + (DL_CAL_DAYS - 1) * 86400000));
+    return dayKey <= last;
   }
 
   /**
@@ -6606,7 +6636,7 @@
    * about the offset, and it stays right across a DST boundary.
    */
   function dlDailyOn(dayKey, tier) {
-    if (!dayKey || !tier) return [];
+    if (!dayKey || !tier || !dlDailyKnown(dayKey)) return [];
     const noon = Date.parse(`${dayKey}T12:00:00Z`);
     const out = [];
     for (const ev of tier.events || []) {
@@ -6616,13 +6646,7 @@
           const utcMidnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
           const at = utcMidnight + min * 60000;
           if (dlDayKey(new Date(at)) !== dayKey) continue;
-          out.push({
-            startsAt: new Date(at).toISOString(),
-            title: ev.title,
-            track: ev.track,
-            classes: ev.classes,
-            raceMin: ev.raceMin,
-          });
+          out.push({ startsAt: new Date(at).toISOString(), event: ev });
         }
       }
     }
@@ -6642,8 +6666,112 @@
     return out;
   }
 
-  /** One tier's column for the chosen day. */
-  function dlDayColumn(tier, dayKey) {
+  /* ---- The month grid ---------------------------------------------------- */
+
+  /**
+   * A month of cells, Monday first.
+   *
+   * What a cell says is the whole design question here. Listing the races would
+   * repeat the same three names in all thirty cells, because the daily rotation
+   * is identical every day — which is a wall of text that tells a driver
+   * nothing about WHICH DAY to pick. So a cell carries only what actually
+   * varies: the specials by name, and the dailies as a count.
+   */
+  function renderMonthGrid(payload) {
+    const grid = $('#dl-days');
+    const dows = $('#dl-cal-dows');
+    const label = $('#dl-cal-month');
+    if (!grid) return;
+
+    const y = dlMonth.y;
+    const m = dlMonth.m;
+    const first = new Date(Date.UTC(y, m, 1));
+    if (label) {
+      label.textContent = first.toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    }
+
+    if (dows && !dows.childElementCount) {
+      // Monday-first, in the driver's own locale, taken from real dates rather
+      // than a hardcoded list so a non-English panel is not stuck with English.
+      for (let i = 0; i < 7; i += 1) {
+        const d = new Date(Date.UTC(2026, 8, 14 + i)); // 2026-09-14 is a Monday
+        dows.append(dlEl('span', 'sk-cal__dow', d.toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' })));
+      }
+    }
+
+    const today = dlDayKey(new Date());
+    const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const lead = (first.getUTCDay() + 6) % 7; // Monday = 0
+    const cells = Math.ceil((lead + daysInMonth) / 7) * 7;
+
+    grid.textContent = '';
+    for (let i = 0; i < cells; i += 1) {
+      const dayNo = i - lead + 1;
+      const inMonth = dayNo >= 1 && dayNo <= daysInMonth;
+      const date = new Date(Date.UTC(y, m, dayNo));
+      const key = inMonth
+        ? dlKeyOf(y, m, dayNo)
+        : dlKeyOf(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'sk-cell';
+      cell.dataset.dlday = key;
+      if (!inMonth) cell.dataset.out = 'true';
+      if (key === today) cell.dataset.today = 'true';
+      if (key === dlDayPick) cell.setAttribute('data-active', 'true');
+
+      cell.append(dlEl('span', 'sk-cell__num', String(date.getUTCDate())));
+
+      const specials = dlSpecialsOn(key, payload);
+      const known = dlDailyKnown(key);
+
+      if (specials.length) {
+        const seen = new Set();
+        for (const { series } of specials) {
+          if (seen.has(series.title)) continue;
+          seen.add(series.title);
+          const pill = dlEl('span', 'sk-cell__ev', series.title);
+          pill.dataset.team = String(!!series.teamEvent);
+          cell.append(pill);
+        }
+      }
+
+      if (known) {
+        const count = (payload && payload.tiers ? payload.tiers : []).reduce(
+          (n, t) => n + dlDailyOn(key, t).length,
+          0,
+        );
+        if (count) cell.append(dlEl('span', 'sk-cell__daily', `${count} races`));
+      }
+      /* Nothing is drawn for a day outside the published week. A marker on
+         every one of them is a month of shrugs, and on a day already gone it
+         would be wrong as well — those races ran, we simply cannot say what
+         they were any more. */
+
+      grid.append(cell);
+    }
+  }
+
+  /* ---- The chosen day ---------------------------------------------------- */
+
+  /**
+   * One tier on the chosen day: its three events, each with its start times as
+   * chips.
+   *
+   * This replaces a 96-row list. The rotation means an event's starts are the
+   * only thing that varies between them, so the event is stated once and its
+   * times run underneath it — the same information as the list in a twelfth of
+   * the height, and it reads as a timetable instead of a feed.
+   */
+  function dlDayTier(tier, dayKey) {
+    const rows = dlDailyOn(dayKey, tier);
+    if (!rows.length) return null;
+
     const card = dlEl('div', 'card sk-tier');
     const head = dlEl('div', 'sk-tier__head');
     head.append(dlEl('h2', 'sk-tier__name', tier.label));
@@ -6653,46 +6781,41 @@
     if (tier.cadenceMin) head.append(dlEl('span', 'sk-tier__freq', `every ${tier.cadenceMin}m`));
     card.append(head);
 
-    const rows = dlDailyOn(dayKey, tier);
-    if (!rows.length) {
-      card.append(dlEl('p', 'sk-none', 'Nothing scheduled.'));
-      return card;
+    /* Group the day's starts by the event they belong to, keeping the order the
+       events appear in the payload so two days never disagree on arrangement. */
+    const byTitle = new Map();
+    for (const row of rows) {
+      const list = byTitle.get(row.event.title) || [];
+      list.push(row.startsAt);
+      byTitle.set(row.event.title, list);
     }
 
-    const list = dlEl('ul', 'sk-then sk-then--day');
     const now = Date.now();
-    let firstNext = null;
-    for (const occ of rows) {
-      const li = dlEl('li', 'sk-then__row');
-      // A race already run is kept, not hidden: "what have I missed today" is
-      // a real question, and a day that starts at 14:00 reads as broken.
-      if (Date.parse(occ.startsAt) < now) li.dataset.past = 'true';
-      else if (!firstNext) {
-        firstNext = li;
-        li.dataset.next = 'true';
-      }
-      li.append(dlEl('span', 'sk-then__time', dlTime(occ.startsAt)));
-      li.append(dlEl('span', 'sk-then__title', occ.title));
-      li.append(dlEl('span', 'sk-then__track', occ.track));
-      list.append(li);
-    }
-    card.append(list);
+    for (const ev of tier.events || []) {
+      const times = byTitle.get(ev.title);
+      if (!times || !times.length) continue;
 
-    /* A whole Beginner day is 32 rows, so the column scrolls inside itself —
-       three tiers stay side by side and the page stays one screen. Today then
-       opens on the next race rather than on 00:00: the top of the list is the
-       part of the day that has already happened.
-       offsetTop is only correct once the element is laid out, which is why this
-       waits a frame rather than measuring here. */
-    if (firstNext) {
-      requestAnimationFrame(() => {
-        if (list.isConnected) list.scrollTop = Math.max(0, firstNext.offsetTop - 8);
-      });
+      const block = dlEl('div', 'sk-slotgroup');
+      const title = dlEl('div', 'sk-slotgroup__head');
+      title.append(dlEl('span', 'sk-slotgroup__name', ev.title));
+      title.append(dlEl('span', 'sk-slotgroup__track', ev.track));
+      block.append(title);
+      block.append(dlChips(ev.classes));
+      block.append(dlFacts(ev));
+
+      const chips = dlEl('div', 'sk-times');
+      for (const t of times) {
+        const chip = dlEl('span', 'sk-time', dlTime(t));
+        if (Date.parse(t) < now) chip.dataset.past = 'true';
+        chips.append(chip);
+      }
+      block.append(chips);
+      card.append(block);
     }
     return card;
   }
 
-  /** The chosen day: three tier columns, then anything special on it. */
+  /** The chosen day: the tiers as timetables, then anything special on it. */
   function renderDay(payload) {
     const host = $('#dl-day');
     if (!host) return;
@@ -6701,9 +6824,21 @@
     const dayKey = dlDayPick || dlDayKey(new Date());
     const tiers = (payload && payload.tiers) || [];
 
-    const grid = dlEl('div', 'sk-tiers');
-    for (const tier of tiers) grid.append(dlDayColumn(tier, dayKey));
-    host.append(grid);
+    const head = dlEl('div', 'sk-day__head');
+    head.append(dlEl('h2', 'sk-day__title', dlDayName(dayKey)));
+    head.append(
+      dlEl(
+        'span',
+        'sk-day__date',
+        new Date(`${dayKey}T12:00:00Z`).toLocaleDateString(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          timeZone: 'UTC',
+        }),
+      ),
+    );
+    host.append(head);
 
     const specials = dlSpecialsOn(dayKey, payload);
     if (specials.length) {
@@ -6719,41 +6854,59 @@
         if (slot.registrations !== null) {
           li.append(dlEl('span', 'sk-slot__regs', `${slot.registrations} entered`));
         }
+        const bell = dlBell({
+          kind: 'special',
+          key: slot.id || series.title,
+          title: series.title,
+          track: series.track,
+          startsAt: slot.startsAt,
+          registrationOpens: slot.registrationOpens,
+        });
+        if (bell) li.append(bell);
         list.append(li);
       }
       card.append(list);
       host.append(card);
     }
 
-    /* Said once, under the day, rather than on every row: the daily races on a
-       future day are this week's rotation repeated, and LMU changes the
-       circuits weekly. */
-    const note = dlEl(
-      'p',
-      'sk-calnote',
-      dayKey === dlDayKey(new Date())
-        ? ''
-        : 'Daily races repeat the same rotation every day. The circuits change with Le Mans Ultimate’s weekly rotation.',
-    );
-    if (note.textContent) host.append(note);
+    const grid = dlEl('div', 'sk-tiers');
+    let any = false;
+    for (const tier of tiers) {
+      const card = dlDayTier(tier, dayKey);
+      if (card) {
+        grid.append(card);
+        any = true;
+      }
+    }
+    if (any) host.append(grid);
+
+    if (!any && !specials.length) {
+      /* Beyond the known week the times would be right and the circuits would
+         be fiction, so the day says so rather than inventing a rotation. */
+      host.append(
+        dlEl(
+          'p',
+          'sk-calnote',
+          dlDailyKnown(dayKey)
+            ? 'Nothing scheduled on this day.'
+            : 'Le Mans Ultimate publishes one day of daily races at a time, and rotates the circuits weekly — so this far ahead only the dated events are known.',
+        ),
+      );
+    } else if (dayKey !== dlDayKey(new Date())) {
+      host.append(
+        dlEl(
+          'p',
+          'sk-calnote',
+          'Daily races repeat the same rotation every day. The circuits change with Le Mans Ultimate’s weekly rotation.',
+        ),
+      );
+    }
   }
 
-  /** The day strip. Rebuilt on render so "Today" is never yesterday's today. */
-  function renderDayStrip() {
-    const nav = $('#dl-days');
-    if (!nav) return;
-    const keys = dlDayKeys();
-    if (!dlDayPick || !keys.includes(dlDayPick)) dlDayPick = keys[0];
-    nav.textContent = '';
-    for (const key of keys) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'sk-day__btn';
-      btn.dataset.dlday = key;
-      btn.setAttribute('data-active', String(key === dlDayPick));
-      btn.append(dlEl('span', 'sk-day__name', dlDayName(key)));
-      nav.append(btn);
-    }
+  function dlShiftMonth(by) {
+    const d = new Date(Date.UTC(dlMonth.y, dlMonth.m + by, 1));
+    dlMonth = { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+    if (dlPayload) renderDailies(dlPayload);
   }
 
   function applyDailyMode() {
@@ -6792,6 +6945,24 @@
       const btn = ev.target.closest && ev.target.closest('[data-dlday]');
       if (!btn) return;
       dlDayPick = btn.dataset.dlday;
+      /* Clicking a day in a neighbouring month moves the grid to it, so the
+         selection is never on a cell the driver can no longer see. */
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      if (yy !== dlMonth.y || mm - 1 !== dlMonth.m) dlMonth = { y: yy, m: mm - 1 };
+      if (dlPayload) renderDailies(dlPayload);
+    });
+  }
+
+  for (const [id, by] of [['#dl-cal-prev', -1], ['#dl-cal-next', 1]]) {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', () => dlShiftMonth(by));
+  }
+  const dlToday = $('#dl-cal-today');
+  if (dlToday) {
+    dlToday.addEventListener('click', () => {
+      dlDayPick = dlDayKey(new Date());
+      const [yy, mm] = dlDayPick.split('-').map(Number);
+      dlMonth = { y: yy, m: mm - 1 };
       if (dlPayload) renderDailies(dlPayload);
     });
   }

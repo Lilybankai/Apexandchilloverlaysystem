@@ -314,9 +314,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           reply: 'Good shout — it is going in the next build. Thanks for sending it.' },
       ] : [] }) },
     reminders: {
-      list: P({ ok: true, reminders: [], settings: { toast: true, voice: false, entriesOpen: false }, leads: [5, 2] }),
+      list: P({ ok: true, reminders: [], settings: { toast: true, voice: false, overlay: true, entriesOpen: false }, leads: [5, 2] }),
       toggle: P({ ok: true, on: true }),
-      settings: P({ ok: true, settings: { toast: true, voice: false, entriesOpen: false } }),
+      settings: P({ ok: true, settings: { toast: true, voice: false, overlay: true, entriesOpen: false } }),
       onChange: function () { return function () {}; },
     },
     schedule: {
