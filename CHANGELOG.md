@@ -5,295 +5,174 @@
      app until it is renamed.
 -->
 
-## 0.99.12-beta.13 — 2026-09-17
-
-### Fixed
-
-- **The overlay reminder survives a yellow sector and the pit lane.** On track
-  it still flashed up and vanished. Two things the race control widget shows
-  set its state without writing a line — a yellow sector anywhere on the
-  circuit, which is routine with traffic, and being in the pit lane with the
-  limiter correctly on — and either of them silently took the banner back from
-  the reminder.
-
-  Neither is a message the reminder was competing with: the sector rail has its
-  own row and still shows the hazard. A reminder now fills the banner whenever
-  the banner has nothing of its own to say, rather than only when nothing at all
-  is happening. Anything that does have something to say — the flags, the
-  limiter warning, the start lights, a booked stop — still comes first.
-
-## 0.99.12-beta.12 — 2026-09-17
-
-### Fixed
-
-- **The overlay reminder no longer flashes up and vanishes.** It appeared for
-  about half a second and went. In the menus Le Mans Ultimate stops publishing,
-  the app falls back to its demo simulator to keep the widgets alive, and the
-  demo's own race — flags, a start gantry, a green — was taking the banner back
-  on the very next frame.
-
-  Off track none of that is about you: you are in a lobby waiting for a race
-  that has not started. So the reminder now leads while you are not driving, and
-  goes back to sitting under every flag, the limiter and the pit lane the moment
-  you are.
-
-## 0.99.12-beta.11 — 2026-09-17
-
-### Fixed
-
-- **The race reminder actually appears on the overlay now.** It was being
-  delivered to a hidden window. The in-game layer hides itself whenever you are
-  not on track, and a reminder arrives five, two and one minute before the
-  start — when you are in the lobby or the garage, which is exactly when the
-  layer is down. The engineer said it and nothing was drawn.
-
-  A reminder now brings the layer up for as long as the banner is on screen and
-  puts it straight back afterwards. That is the whole point of the reminder: to
-  reach you when you are *not* driving.
-
-  It also paints the moment it arrives rather than waiting for the next
-  telemetry frame — off track there may not be one.
-
-## 0.99.12-beta.10 — 2026-09-17
-
-### Fixed
-
-- **The saved race calendar now expires when the circuits actually rotate**,
-  rather than a week after it was saved. Those are not the same thing: a
-  calendar saved on Sunday is only two days old on Tuesday afternoon, and by
-  then Le Mans Ultimate has changed every circuit in it — so the times would
-  have been right and the tracks would have been last week's.
-
-  The game tells us when the current rotation began, and the saved copy is now
-  good until exactly one week after that and no longer. Inside the week it shows
-  as before; the moment the rotation turns it goes quiet and asks for the game,
-  which is the only way to get the new week's circuits.
-
-## 0.99.12-beta.9 — 2026-09-17
+<!-- Unreleased: partner applications. Written for a 0.99.12-beta.14 that
+     was never cut - main went to 1.0.0 first - so the heading is removed
+     and the notes wait here for whoever cuts the next release. -->
 
 ### Added
 
-- **The Schedule tab and Discord are on the Get started list.** Both were
-  shipped without a way in: a driver who never opened the tab had no reason to,
-  and the checklist walked them past two features it did not mention.
+- **Ask to become a partner, from inside the app.** Anyone without a partner
+  code now has a **Become a partner** card in Settings → Account: stream, run a
+  league or have an audience anywhere, and you can put your hand up for a code
+  of your own. Until now the only way to get one was to know to ask — the card
+  that shows a partner their link is hidden for everybody else, so the whole
+  thing was invisible to exactly the people it is for.
 
-  *Know when you are racing* covers the two calendars, what is on next in each
-  tier, entries opening half an hour out, the time-zone switch, the bell and its
-  three channels, and the month view. *Tell your league when you take a record*
-  covers joining a community or starting one, deciding for yourself what gets
-  posted about you, pointing a channel at your own server instead, and why it
-  stays quiet — only a lap that actually takes a record is ever posted.
+  The form says up front what this is: the 10% goes to *your* audience, and
+  there is no commission or payout to you. It is something worth having to put
+  on a stream, not an earner. Better said before you apply than discovered a
+  month after you have promoted it.
 
-  Both walk the real page with it live underneath, the same as the other
-  walkthroughs, and both tick once you have been round them.
+  You can have one application open at a time, and if we turn one down you will
+  see why, in our own words, and when you can try again.
 
-### Fixed
+- **Approving one is a single click, and it emails them.** League staff get an
+  **Applications** queue at the top of Admin → Referrals — who applied, where
+  they would use it, whether they subscribe themselves, and what they asked for.
+  Approve issues the code, links it to their account so their link and their
+  numbers appear in their own Settings, closes the application and emails them
+  their code and their stream overlay. Declining emails nobody; the reason you
+  type is shown to them in the app instead.
 
-- **The Get started card no longer claims to be seven things.** It said seven
-  when it was seven; the list has grown twice since.
+  The state of that email sits on the row — *emailed*, *email queued* or
+  *EMAIL FAILED* — because an approved partner who was never told is the one
+  failure this could otherwise hide.
 
-## 0.99.12-beta.8 — 2026-09-17
+## 1.0.0 — 2026-09-17
+
+Apex AIO System 1.0. The app has a new name, and three things it could not do
+before: it knows when you are racing, it can tell your league when you take a
+record, and it can hand someone a discount on your behalf.
+
+Everything below has been running on the beta channel this week. If you have
+been testing, you have seen most of it — this is the same software, with a
+version number that means we are happy for everybody to have it.
+
+### Added
+
+- **Schedule — what Le Mans Ultimate is running, and when.**
+
+  Open the **Schedule** tab and it now has two calendars behind one switch.
+  *Daily races* is the game's own: the three tiers, the solo weekly and the team
+  specials. *Apex & Chill* is the league's Thursday and Saturday championships,
+  which you still sign up for on SimGrid.
+
+  On **Next up** you get a card per tier — Beginner, Intermediate, Advanced —
+  counting down to the next race in each, with the circuit drawn beside it, the
+  classes running, the race length, tyre sets and whether the setup is fixed.
+  Underneath is the rest of the rotation, because the three events in a tier
+  take turns. Entries open thirty minutes before a start and the card turns
+  green and says so; you cannot join before that.
+
+  On **Calendar** you get a month. Each square shows the weekly and special
+  events on that day and how many races run; click one and its timetable opens
+  underneath, every event listed once with its start times beneath it. It fills
+  in the week the game has published — further ahead the times would be right
+  and the circuits would be guesswork, so those days are left empty and the tab
+  says why.
+
+  Every time is in **your** time zone, named at the top so you can be sure of
+  it, with a switch to UTC for when you are comparing against something posted
+  in Discord.
+
+  It reads the game's own service, so there is nothing to keep up to date each
+  week. Le Mans Ultimate has to have been running at least once; after that the
+  calendar is saved and is there with the game shut, marked as a saved copy.
+
+- **A bell on the race you actually want.**
+
+  Every race on that tab has a bell. Turn one on and you are told **five
+  minutes** before the start, then **two**, then **one** — and the last one is
+  the one that gets you out of the menus.
+
+  Three switches at the top of the tab decide how it reaches you, and they are
+  worth setting deliberately:
+
+  *On the overlay* puts it on the race control widget, beside the flags. This is
+  the one that matters, because it works when you are already in the sim. It
+  never covers a flag, a limiter warning or the start lights — it waits until
+  the banner has nothing of its own to say.
+
+  *Announce out loud* has the race engineer say it. With Le Mans Ultimate in
+  the foreground, Windows holds its own notifications back, so this is the only
+  channel that reliably gets through.
+
+  *Entries opening* adds a fourth reminder half an hour out, when the lobby
+  actually opens.
+
+  The reminder lives in the app rather than in the window, so you can close the
+  control panel and it still keeps its promise. The app itself does need to be
+  running.
+
+- **Records and race results, posted into Discord.**
+
+  **Settings → Discord.** Two ways in, and most people only need the second.
+
+  Join your league's community with the code they share, and your records go to
+  their channel. Or paste a Discord webhook of your own and post to your own
+  server, with no community and no roster anywhere.
+
+  What a community is allowed to say about you is **your** choice and not the
+  admin's — records only, everything, or nothing. Joining a channel puts your
+  name in somebody else's Discord, so that decision stays with you.
+
+  It is deliberately quiet. Only a lap that actually takes a board record is
+  ever posted — a personal best that beats nobody is not news. A lap that earns
+  two records is one message, not two, and improving your own record again in
+  the same session edits the message already there rather than posting another.
+  A league channel can also hear about records set by drivers outside it on the
+  boards that league races, which is how you find out someone has taken one of
+  yours.
+
+  Race results go the same way: finish an official daily, weekly or special
+  event and the classification appears in the channel — the podium, how many
+  were classified, and your own people picked out of it, including drivers who
+  have never used this app. One message per race, however many of you were in
+  it, held for ten minutes so everybody's app has had a chance to report the
+  same race.
+
+- **Someone's code takes 10% off, for as long as you subscribe.**
+
+  If a streamer or a league admin sent you here, they were given a code. Type it
+  on the subscribe screen and every month costs 10% less for as long as you keep
+  the subscription. It goes in the same box that has always taken league access
+  codes — you were handed "a code" and should not have to know which kind it is.
+  The screen tells you whose code it was and what it saved you before you commit
+  to anything.
+
+  If you were issued a code of your own, your link and how it is doing are in
+  **Settings → Account**: how many people opened it, how many used it, how many
+  subscribed. Never who they were. There is a stream overlay there too — a
+  Browser Source you can add to OBS showing your code on a transparent
+  background, in four styles, with a Preview button that opens exactly what OBS
+  will draw. It is served from the website, so it keeps working on a day you are
+  streaming something else with Apex closed.
+
+- **The Get started list covers the new tabs.** The checklist on the Dashboard
+  has a row each for the Schedule tab and for Discord, and a guided walkthrough
+  behind both. They walk the real page with it live underneath, and tick once
+  you have been round them.
 
 ### Changed
 
-- **The race reminder appears in the race control widget**, with the flags,
-  instead of the floating notice strip. It is race information, and that strip
-  is for confirming a button you just pressed.
+- **The app is called Apex AIO System.** The Apex & Chill mark is gone from the
+  product — sign-in, dashboard, the web pit wall, the corner mark on the
+  broadcast overlay, the in-game edit toolbar, the Windows icons and the
+  installer all carry the new lockup.
 
-  It sits at the bottom of that widget's order, under everything: the chequered
-  flag, a full course yellow, the start gantry, a booked pit stop, and every
-  limiter warning. "Your next daily starts in two minutes" must never be shown
-  in place of LIMITER ON, so it only gets the banner when the banner has nothing
-  else to say — and it steps aside the moment something does, returning
-  afterwards if it is still in date.
+  The **Apex & Chill Racing League keeps its own identity**: its website, and
+  every mention of the league inside the app, are untouched. The league did not
+  rename; the product did. Overlay colours are unchanged, so nothing a widget
+  draws has shifted.
 
-  If race control is not one of your overlay widgets the reminder still arrives,
-  in the notice strip as before.
+- **The Schedule tab uses the whole window**, instead of a reading-width column
+  with a third of a wide monitor empty either side.
 
-## 0.99.12-beta.7 — 2026-09-17
+- **Scrollbars match the rest of the app** wherever the panel scrolls, rather
+  than the bright grey Windows default sitting on a near-black page.
 
-### Fixed
-
-- **The race calendar is kept, instead of needing the game open to exist.** It
-  was held in memory only: closing the app threw it away, and opening the
-  Schedule tab with Le Mans Ultimate shut showed an empty tab — which is
-  precisely when someone sits down to plan tomorrow's racing. The last calendar
-  read is now saved, and the tab shows it whenever the live one cannot be
-  fetched, saying plainly that it is a saved copy and when it was taken.
-
-  It is brought up to date rather than replayed. The start times are a repeating
-  pattern rather than a list of moments, so tomorrow's are regenerated from it
-  and a session that has already run is dropped — without that, a saved calendar
-  would sit there counting down to a race that finished yesterday. Weekly and
-  special events are dated, so those simply fall away as they pass.
-
-  It expires after a week. Le Mans Ultimate rotates the circuits weekly, so past
-  that the times would still be right and the tracks would be fiction; the tab
-  goes quiet and asks for the game instead of inventing a schedule.
-
-## 0.99.12-beta.6 — 2026-09-17
-
-### Added
-
-- **A one-minute call, and the reminder reaches you in the game.** Race
-  reminders now come at five minutes, two, and one — and the last one is the
-  one that gets you out of the menus. They also appear on the in-game overlay,
-  which is where you actually are: nine times in ten a driver registers for a
-  daily and then drops straight into a practice server, and a Windows
-  notification never reaches them there. The banner stays up longer the closer
-  the start gets. There is a switch for it beside the other two on the Schedule
-  tab, on by default.
-- **The calendar is a calendar.** The Schedule tab's Calendar view is a month
-  you can look at — pick a day and its timetable opens underneath. Each square
-  carries what actually makes one day different from another: the weekly and
-  special events by name, with team events marked, and how many races run that
-  day. The day itself states each event once with its start times beneath it,
-  rather than the several-hundred-row list it was.
-
-  It only fills in the week Le Mans Ultimate has published. Further ahead the
-  times would be right and the circuits would be invented, so those days stay
-  empty and the panel says why.
-
-### Changed
-
-- **Scrollbars match the rest of the app** wherever the panel scrolls, instead
-  of the bright grey Windows default on a near-black page.
-
-- **The new Apex AIO logo, everywhere the old one was.** The Apex & Chill mark
-  and wordmark are gone from the product: the sign-in screen, the dashboard
-  strip, the web pit wall, the corner mark on the broadcast overlay, the
-  in-game edit toolbar, the Windows app and shortcut icons, the lifecycle email
-  masthead and a partner's stream overlay all carry the Apex AIO lockup now.
-  The installer is branded too, where it previously showed a stock sidebar.
-
-  Two things it is not. The Apex & Chill Racing League keeps its own identity —
-  its website, and every mention of the league inside the app, are untouched,
-  because the league did not rename; the product did. And the overlay colour
-  tokens are unchanged: the new palette runs cyan to violet like the old one,
-  so nothing a widget draws has shifted.
-
-  Where the strip is too narrow for the full lockup — a phone holding the pit
-  wall, or the panel at its minimum width — it falls back to the symbol alone,
-  which is what the old mark-plus-text pair did by hiding the text.
-
-## 0.99.12-beta.5 — 2026-09-17
-
-### Added
-
-- **Records posted into Discord.** Settings → Discord connects a channel, and
-  when a record falls it says so — who took it, from whom, by how much, and how
-  long the old one had stood. Join your league's community with the code they
-  share and your records go to their channel; or point a channel of your own at
-  your own server and keep it to yourself. What each community is allowed to
-  post about you is your choice, not the admin's.
-
-  It is deliberately quiet. Only a lap that actually changes a board leader is
-  ever posted — a personal best that beats nobody is not news — and a lap that
-  earns two records is one message, not two. Improve your own record again in
-  the same session and the message you already posted is updated rather than a
-  new one appearing. A league channel can also hear about records set by
-  drivers outside it, on the boards that league actually races, which is how
-  you find out someone has taken one of yours.
-
-- **Race results too, with the whole field.** Finish an official daily, weekly
-  or special event and the classification appears in your channel: the podium,
-  how many were classified, and your own people's finishes picked out of it —
-  including the drivers who have never used this app, because the result comes
-  from the game's own service rather than from us. One message per race, not
-  one per driver, however many of you were in it. It waits ten minutes before
-  posting so that everybody's app has had a chance to report the same race.
-  Le Mans Ultimate has to have been running for this; private league races on
-  someone's own server are not published anywhere we can read.
-
-
-
-
-
-## 0.99.12-beta.4 — 2026-09-17
-
-### Added
-
-- **Reminders for a race you mean to enter.** Every race on the Schedule tab now
-  has a bell. Turn one on and the app tells you five minutes before the start,
-  and again at two — with the panel closed, because the reminder lives in the
-  app rather than in the window. Two switches at the top of the tab decide how
-  it reaches you: "Announce out loud" has the race engineer say it, which is the
-  only channel that gets through with Le Mans Ultimate in the foreground and
-  Windows holding its notifications back, and "Entries opening" adds a third
-  reminder half an hour out, when the lobby actually opens.
-- **A calendar, a day at a time.** The Schedule tab's new Calendar view answers
-  "what is on Saturday?": pick a day and see the whole timetable, three tiers
-  side by side, with the weekly and special events for that day underneath.
-  Today opens on the next race rather than at midnight, and the races that have
-  already run stay visible but recede.
-- **The circuits are drawn on the cards.** Each race now shows the shape of its
-  track, taken from Le Mans Ultimate's own geometry rather than downloaded, so
-  it costs nothing and keeps working once you have seen a circuit even with the
-  game shut.
-
-### Changed
-
-- **The Schedule tab uses the whole window.** It was laid out to a reading
-  width, which left a calendar squeezed into the middle of a wide monitor.
-
-## 0.99.12-beta.3 — 2026-09-17
-
-### Added
-
-- **The game's own race calendar, in the Schedule tab.** A switch at the top of
-  Schedule now picks between the Apex & Chill championships and Le Mans
-  Ultimate's official races: the three daily tiers with what each one is running
-  next and a live countdown to it, then the solo weekly and the team specials
-  with how many drivers have already entered each slot — and a mark on the ones
-  you are entered for. Every time is shown in your own time zone, with a switch
-  to UTC for comparing against what gets posted in Discord. It reads the game's
-  own service, so there is nothing to keep up to date each week; Le Mans
-  Ultimate has to be running and signed in, and the tab says so when it is not.
-
-## 0.99.12-beta.2 — 2026-09-16
-
-### Added
-
-- **Your referral code, on your stream.** If you have been given a code, your
-  Settings → Account now carries a second link: an overlay you add to OBS as a
-  Browser Source, showing the Apex mark, the 10% and your code on a transparent
-  background. Four styles — a lower third or a corner badge, either one larger,
-  plus a version for bright scenes — and a Preview button that opens the exact
-  thing OBS will draw. It is served from the website rather than by the app, so
-  it keeps working on a day you are streaming something else with Apex closed.
-
-### Fixed
-
-- **Referral links went to the wrong address.** A partner link resolved to
-  `localhost` instead of the site for everyone who clicked it, and the discount
-  banner never appeared on the page it landed on. Both are fixed on the website;
-  nothing needs updating for it.
-
-- **A code can now be attached to the account that owns it.** Until now that was
-  a database edit, which meant nobody's link, overlay or numbers ever appeared
-  in their own Settings. League staff can do it from Admin → Referrals, when the
-  code is issued or afterwards.
-
-## 0.99.12-beta.1 — 2026-09-16
-
-### Added
-
-- **Someone's code takes 10% off, for as long as you subscribe.** If a streamer
-  or a league admin sent you here, they were given a code — type it on the
-  subscribe screen and every month costs 10% less, for as long as you keep the
-  subscription. It goes in the same box that has always taken league access
-  codes, because you were handed "a code" and shouldn't have to know which kind
-  it is. The screen says whose code it was and what it saved you before you
-  commit to anything, rather than leaving you to find out on Stripe's page.
-
-  If you were issued a code of your own, your link and how it is doing now live
-  in **Settings → Account**, ready to copy. You see how many people opened it,
-  how many used it and how many subscribed — never who they were.
-
-### Changed
-
-- **The subscribe screen's code box now says "Referral or league code".** It
-  takes both, and works out which you typed.
+- **The subscribe screen's code box** now says "Referral or league code". It
+  takes both and works out which you typed.
 
 ## 0.99.11 — 2026-09-16
 <!-- internal -->
