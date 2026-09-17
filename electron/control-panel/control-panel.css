@@ -75,27 +75,17 @@ html, body {
 
 .brand { display: flex; align-items: center; gap: 12px; }
 
-.brand__mark {
-  width: 38px;
-  height: 38px;
+.brand__lockup {
+  height: 30px;
+  width: auto;
   display: block;
 }
 
+/* The icon alone, for the narrow window where the lockup will not fit.
+   hub.css swaps them; here it is simply off. */
+.brand__icon { display: none; }
+
 .brand__text { display: flex; flex-direction: column; line-height: 1.15; }
-
-.brand__name {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.14em;
-}
-
-.brand__amp {
-  background: var(--grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
 
 .brand__sub {
   font-size: 11px;

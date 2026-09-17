@@ -283,10 +283,10 @@ body.ig-editing .ig-screens {
 }
 
 .ig-toolbar__brand {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, #26bbf4, #6a2fd6);
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex: 0 0 auto;
 }
 
 .ig-toolbar__text {

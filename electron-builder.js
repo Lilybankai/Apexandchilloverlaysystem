@@ -347,5 +347,12 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: 'Apex AIO System',
+    // The brand artwork, from scripts/make-installer-art.js (npm run
+    // installer:art). electron-builder would find these by filename in
+    // buildResources anyway; naming them means a missing file fails the
+    // build instead of silently restoring the stock blue sidebar.
+    installerSidebar: 'build/installerSidebar.bmp',
+    uninstallerSidebar: 'build/uninstallerSidebar.bmp',
+    installerHeader: 'build/installerHeader.bmp',
   },
 };

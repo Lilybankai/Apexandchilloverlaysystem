@@ -619,7 +619,7 @@ async function linkYouTube() {
           // A friendly page so the operator knows to switch back to the app.
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(
-            '<!doctype html><meta charset="utf-8"><title>Apex &amp; Chill</title>' +
+            '<!doctype html><meta charset="utf-8"><title>Apex AIO System</title>' +
               '<body style="font:16px system-ui;background:#0c0e18;color:#f4f6fb;' +
               'display:grid;place-items:center;height:100vh;margin:0">' +
               '<div style="text-align:center"><h2>YouTube ' +

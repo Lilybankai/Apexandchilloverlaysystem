@@ -25,6 +25,7 @@
     "release:body": "node scripts/publish-notes.js",
     "changelog:check": "node scripts/check-changelog.js",
     "icons": "node scripts/make-icons.js",
+    "installer:art": "node scripts/make-installer-art.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('release',{recursive:true,force:true})\"",
     "test:delta": "node scripts/test-pacedelta.js",
     "test:fuel": "node scripts/test-fuel.js",

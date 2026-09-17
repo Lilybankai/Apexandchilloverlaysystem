@@ -70,14 +70,18 @@
    board gets the pixels. */
 @media (max-width: 560px) {
   .topbar { padding-left: 10px; padding-right: 10px; gap: 8px; }
-  .brand__name { display: none; }
+  /* hub.css already swapped the lockup for the icon at 820px — do NOT
+     restate that default here, because this file loads after hub.css and
+     a media query adds no specificity, so it would win and leave the
+     strip with no brand at all. This only takes the height down. */
+  .brand__icon { height: 26px; }
   .web-brand__sub { margin-left: 0; }
   .account__email { display: none; }
   .account { max-width: 190px; }
   .content { padding: 12px; }
 }
 
-/* Very small phones: the strip keeps the mark, the unit switch and the
+/* Very small phones: the strip keeps the icon, the unit switch and the
    account; the subtitle goes. */
 @media (max-width: 420px) {
   .web-brand__sub { display: none; }

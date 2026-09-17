@@ -147,7 +147,7 @@
 .conn-status[data-state="closed"] .conn-status__dot { background: var(--pos-loss); }
 
 /* =========================================================================
- * BRAND WORDMARK (small, corner) — Apex & Chill lockup.
+ * BRAND WORDMARK (small, corner) — the Apex AIO lockup.
  * ========================================================================= */
 .brand {
   position: absolute;
@@ -155,22 +155,17 @@
   left: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-size: var(--fs-data);
 }
-.brand__mark {
-  width: 22px;
-  height: 22px;
-  /* Triangular apex mark rendered in pure CSS (no image asset). */
-  background: var(--ac-gradient-vertical);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+/* Sized by height only: the artwork is ~4:1 and this sits over live video,
+   where a squashed mark is the one thing an audience does notice. */
+.brand__lockup {
+  height: 26px;
+  width: auto;
+  display: block;
+  /* The stage is scaled to fit the OBS source, so the mark needs its own
+     separation from whatever the sim is drawing underneath it. */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.75));
 }
-/* "&" rendered in brand cyan to match the Apex & Chill wordmark. */
-.brand__amp { color: var(--ac-cyan); }
 
 /* =========================================================================
  * SESSION STRIP — how much of the session is left, across the top of a panel.

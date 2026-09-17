@@ -123,21 +123,11 @@ button { font-family: inherit; }
   gap: 12px;
 }
 
-.brand-lock__mark {
-  width: 40px;
-  height: 40px;
+.brand-lock__logo {
+  height: 38px;
+  width: auto;
   display: block;
 }
-
-.brand-lock__name {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 17px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.brand-lock__amp { color: var(--ac-cyan); }
 
 .pitch__title {
   margin: 0;

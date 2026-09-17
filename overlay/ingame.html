@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Apex &amp; Chill — In-game Overlays</title>
+  <title>Apex AIO — In-game Overlays</title>
 
   <!--
     In-game overlay layer.
@@ -50,7 +50,7 @@
 
   <!-- Edit-mode chrome (hidden while locked). -->
   <div class="ig-toolbar" id="ig-toolbar" hidden>
-    <span class="ig-toolbar__brand"></span>
+    <img class="ig-toolbar__brand" src="img/apex-aio-icon.svg" alt="" />
     <span class="ig-toolbar__text">
       Editing overlays — drag to move · side edge = width · top/bottom edge =
       height · corner = scale (double-click a handle to reset it)
@@ -61,7 +61,7 @@
 
   <!-- Interact-mode banner: shown when the layer is made clickable (F7). -->
   <div class="ig-interact-hint" id="ig-interact-hint" hidden>
-    <span class="ig-toolbar__brand"></span>
+    <img class="ig-toolbar__brand" src="img/apex-aio-icon.svg" alt="" />
     <span class="ig-toolbar__text">Overlay interactive — click widgets to use them</span>
     <button class="ig-btn" id="ig-interact-done" type="button">Done (F7)</button>
   </div>

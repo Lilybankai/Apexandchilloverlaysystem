@@ -54,7 +54,7 @@ const PANEL_FILES = [
   'legal.html',
 ];
 
-const ASSETS = ['mark.svg', 'logo.svg', 'icon.png'];
+const ASSETS = ['apex-aio-lockup.svg', 'apex-aio-icon.svg', 'icon.png'];
 
 /** Web-only sources, copied as they are. */
 const WEB_FILES = ['web-bridge.js', 'web-shell.js', 'web.css', 'manifest.webmanifest', 'CNAME'];

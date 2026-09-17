@@ -5,6 +5,25 @@
      app until it is renamed.
 -->
 
+### Changed
+
+- **The new Apex AIO logo, everywhere the old one was.** The Apex & Chill mark
+  and wordmark are gone from the product: the sign-in screen, the dashboard
+  strip, the web pit wall, the corner mark on the broadcast overlay, the
+  in-game edit toolbar, the Windows app and shortcut icons, the lifecycle email
+  masthead and a partner's stream overlay all carry the Apex AIO lockup now.
+  The installer is branded too, where it previously showed a stock sidebar.
+
+  Two things it is not. The Apex & Chill Racing League keeps its own identity —
+  its website, and every mention of the league inside the app, are untouched,
+  because the league did not rename; the product did. And the overlay colour
+  tokens are unchanged: the new palette runs cyan to violet like the old one,
+  so nothing a widget draws has shifted.
+
+  Where the strip is too narrow for the full lockup — a phone holding the pit
+  wall, or the panel at its minimum width — it falls back to the symbol alone,
+  which is what the old mark-plus-text pair did by hiding the text.
+
 ## 0.99.12-beta.5 — 2026-09-17
 
 ### Added

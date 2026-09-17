@@ -183,8 +183,13 @@ Settings shows the oldest — so it is refused rather than silently ignored.
 ### The stream overlay
 
 Every code has one, at `…/r/<CODE>/overlay`. A partner adds it in OBS as a
-**Browser Source** and their code sits on screen with the Apex mark, the 10%,
-and the short link, on a transparent background.
+**Browser Source** and their code sits on screen with the Apex AIO lockup, the
+10%, and the short link, on a transparent background.
+
+The lockup is inlined into the document (`app/r/[code]/overlay/lockup.ts` in
+the website repo) rather than fetched, because a logo that arrives late or not
+at all is a half-drawn mark on somebody's live stream. `?theme=light` flips
+only its lettering — the symbol keeps its gradient either way.
 
 It is hosted on the website, not served by the desktop app like every other
 Apex overlay — those need live telemetry, this needs a string. A browser source

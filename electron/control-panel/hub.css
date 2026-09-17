@@ -462,7 +462,8 @@ html, body { height: 100%; overflow: hidden; }
 @media (max-width: 820px) {
   .feed-pill__text { display: none; }
   .feed-pill { padding: 6px 8px; }
-  .brand__name { display: none; }
+  .brand__lockup { display: none; }
+  .brand__icon { display: block; height: 28px; width: auto; }
 }
 
 /* -------------------------------- stat tile ----------------------------- */
@@ -1847,3 +1848,36 @@ html, body { height: 100%; overflow: hidden; }
   cursor: pointer;
 }
 .foot__link:hover { color: var(--cyan); }
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────────
+ * A default Windows scrollbar is a light grey slab on a near-black page: the
+ * brightest thing on screen, sitting beside content it has nothing to do with.
+ * The Review tab has had a dark one since it was built — but scoped to itself,
+ * so every scroller added since (the Schedule tab's day columns, most visibly)
+ * got the stock one and looked like it belonged to a different application.
+ *
+ * So it lives here now, once, for the whole panel. Review keeps its own copy of
+ * these rules; they are identical and more specific, so nothing there moves.
+ *
+ * Both syntaxes on purpose: `scrollbar-color` is what modern Chromium and
+ * Firefox honour, and the ::-webkit- rules are what actually paint in the
+ * Electron build shipped today — they give the thumb its rounded cap and its
+ * hover state. The rail and the segmented controls opt OUT above (they hide
+ * their scrollbars entirely) and are unaffected, being more specific still.
+ */
+.app *::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.app *::-webkit-scrollbar-track { background: transparent; }
+.app *::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+.app *:hover::-webkit-scrollbar-thumb {
+  background: var(--text-3);
+  background-clip: content-box;
+}
+.app *::-webkit-scrollbar-corner { background: transparent; }
