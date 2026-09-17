@@ -5,6 +5,21 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.10 — 2026-09-17
+
+### Fixed
+
+- **The saved race calendar now expires when the circuits actually rotate**,
+  rather than a week after it was saved. Those are not the same thing: a
+  calendar saved on Sunday is only two days old on Tuesday afternoon, and by
+  then Le Mans Ultimate has changed every circuit in it — so the times would
+  have been right and the tracks would have been last week's.
+
+  The game tells us when the current rotation began, and the saved copy is now
+  good until exactly one week after that and no longer. Inside the week it shows
+  as before; the moment the rotation turns it goes quiet and asks for the game,
+  which is the only way to get the new week's circuits.
+
 ## 0.99.12-beta.9 — 2026-09-17
 
 ### Added

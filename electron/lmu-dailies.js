@@ -241,6 +241,12 @@ function minutesOfDay(isoTimes) {
  */
 function detailOf(raw) {
   const cfg = (raw && raw.configuration) || {};
+  /* When THIS week's rotation began. Identical on every event of every tier
+     (2026-09-15T10:00:02Z on the week this was written — a Tuesday, which is
+     the day the league says the rotation turns). It is the only field that
+     dates the circuits, and so the only honest way to know a saved calendar
+     has been overtaken. */
+  const seriesStarts = isoOf(raw && raw.seriesStarts);
   const settings = cfg.settings || {};
   const content = cfg.content || {};
   const track = content.track || {};
@@ -260,6 +266,7 @@ function detailOf(raw) {
        "every Beginner race is at Bahrain". The join key is the TITLE, within
        the tier. `scripts/test-dailies.js` holds this. */
     seriesId: str(cfg.seriesId) || str(raw && raw.seriesId),
+    seriesStarts,
     title: str(cfg.title),
     /* How far ahead of the start registration opens. Read, not assumed: it is
        30 minutes for every daily today, but that is the service's choice. */
@@ -483,9 +490,22 @@ function buildPayload(raw, now) {
   }
   series.sort((a, b) => Date.parse(a.next.startsAt) - Date.parse(b.next.startsAt));
 
+  /* The rotation this calendar describes. Any event of any tier carries it. */
+  let weekStart = null;
+  for (const map of detailsByTier.values()) {
+    for (const d of map.values()) {
+      if (d.seriesStarts) {
+        weekStart = d.seriesStarts;
+        break;
+      }
+    }
+    if (weekStart) break;
+  }
+
   return {
     ok: true,
     fetchedAt: new Date(at).toISOString(),
+    weekStart,
     reason: null,
     error: null,
     tiers,
@@ -722,7 +742,23 @@ function readStore(now) {
     const raw = JSON.parse(fs.readFileSync(storePath, 'utf8'));
     if (!raw || raw.v !== STORE_VERSION || !raw.payload || !raw.payload.ok) return null;
     const savedMs = Date.parse(raw.savedAt);
-    if (Number.isNaN(savedMs) || now - savedMs > STORE_TTL_MS) return null;
+    if (Number.isNaN(savedMs)) return null;
+
+    /* Expire on the ROTATION rather than on a rolling week from the save.
+       Seven-days-since-saved was the blunt version of this and it was wrong in
+       the case that matters: a calendar saved on Sunday is only two days old on
+       Tuesday afternoon, and by then LMU has changed every circuit in it. The
+       times would still be right and the tracks would be last week's — the
+       exact fiction this store is not allowed to tell.
+       `weekStart` is the service's own `seriesStarts`; the rotation turns one
+       week after it. Falls back to the age test for a payload saved before this
+       field was captured. */
+    const weekMs = Date.parse(raw.payload.weekStart || '');
+    if (!Number.isNaN(weekMs)) {
+      if (now >= weekMs + STORE_TTL_MS) return null;
+    } else if (now - savedMs > STORE_TTL_MS) {
+      return null;
+    }
     return { savedAt: raw.savedAt, savedMs, payload: raw.payload };
   } catch {
     return null;

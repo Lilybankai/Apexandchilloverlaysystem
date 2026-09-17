@@ -486,6 +486,43 @@ console.log('\nThe saved calendar — what survives the app closing');
     check("past a week it expires rather than naming last week's tracks", old.ok === false, String(old.ok));
     check('…and says why', /Le Mans Ultimate/.test(old.error || ''));
 
+    /* ---- The rotation boundary -----------------------------------------
+     *
+     * Expiring seven days after the SAVE was the blunt version of this, and it
+     * was wrong in the case that matters: a calendar saved on Sunday is only
+     * two days old on Tuesday afternoon, by which point LMU has changed every
+     * circuit in it. The times would be right and the tracks would be last
+     * week's, which is the one thing this store must never say.
+     *
+     * `weekStart` is the service's own `seriesStarts` — 10:00:02 UTC on the
+     * Tuesday the rotation began, identical across all three tiers. */
+    const weekly = { ...built, weekStart: '2026-09-15T10:00:02.000Z' };
+    const turns = Date.parse('2026-09-22T10:00:02.000Z'); // one week on
+
+    const servedAt = async (ms) => {
+      write(new Date(FETCH).toISOString(), weekly);
+      const p = await offline(ms);
+      return p.ok === true && p.cached === true;
+    };
+
+    check('served the day it was fetched', (await servedAt(FETCH + 3600_000)) === true);
+    check('served three days later, same rotation', (await servedAt(Date.parse('2026-09-20T12:00:00Z'))) === true);
+    check('served on the Monday night, still the same week', (await servedAt(turns - 3600_000)) === true);
+    check('and refused the moment the rotation turns', (await servedAt(turns + 60_000)) === false);
+    check('…still refused well after', (await servedAt(turns + 5 * 86400_000)) === false);
+
+    /* A payload saved before weekStart was captured falls back to the age
+       test, rather than being served forever or refused outright. */
+    const noWeek = { ...built };
+    delete noWeek.weekStart;
+    write(new Date(FETCH).toISOString(), noWeek);
+    const oldShape = await offline(FETCH + 2 * 86400_000);
+    check('an older saved payload still works, on the age test', oldShape.ok === true && oldShape.cached === true);
+    write(new Date(FETCH).toISOString(), noWeek);
+    const oldShapeStale = await offline(FETCH + 8 * 86400_000);
+    check('…and still expires', oldShapeStale.ok === false);
+
+
     /* Junk on disk must not take the tab down with it. */
     fs.writeFileSync(store, '{ not json');
     const junk = await offline(FETCH);
