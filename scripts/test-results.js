@@ -181,6 +181,64 @@ async function main() {
     const anon = projectResults(fixture(), []);
     check('an unidentifiable driver still yields the event', anon.length === 1 && anon[0].mine === null);
 
+    /* ---- The live shape, which the fixture above is NOT ------------------
+     *
+     * The fixture puts the rows at `race.results` and calls the car `carName`.
+     * The real service does neither: a session holds an ARRAY OF HEATS, so the
+     * rows are at `race.races[0].results`, and the car is `carType`. Both were
+     * wrong when this shipped, and both failed silently — `raceRowsOf` found no
+     * rows, `projectResults` skipped the event, and the harvest reported
+     * "0 events" forever rather than erroring. Taken from ten real events on
+     * 2026-09-17 (scripts/probe-raceos-results.js --out). */
+    const live = {
+      results: [
+        {
+          eventId: 'evt-live-1',
+          eventType: 'specialevent',
+          title: 'Lone Star Le Mans',
+          track: 'COTAWEC_NATIONAL',
+          date: '2026-09-13T08:00:00Z',
+          race: {
+            sessionNo: '1',
+            races: [
+              {
+                mostLapsCompleted: 185,
+                results: [
+                  {
+                    name: 'Erki Kasevali',
+                    position: '1',
+                    classPosition: '1',
+                    gridPos: '1',
+                    carType: 'BMW M Hybrid V8',
+                    vehName: 'BMWMH Custom Team 2026 #397',
+                    carClass: 'Hyper',
+                    Laps: 185,
+                    laps: null, // the lower-case one is null — order matters
+                    bestLapTime: '112.9902',
+                    finishTime: '21655.0175',
+                    finishStatus: 'Finished Normally',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const liveOut = projectResults(live, ['Erki Kasevali']);
+    check('a real event is projected at all', liveOut.length === 1, String(liveOut.length));
+    if (liveOut.length) {
+      const r = liveOut[0].classification[0];
+      check('rows are found one level down, in races[]', liveOut[0].classification.length === 1);
+      check('position survives', r.pos === 1, String(r.pos));
+      check('the car is the MODEL, not empty', r.car === 'BMW M Hybrid V8', JSON.stringify(r.car));
+      check('Laps wins over the null lower-case laps', r.laps === 185, String(r.laps));
+      check('a bare-seconds best lap becomes ms', r.bestLapMs === 112990, String(r.bestLapMs));
+      check('and so does the finish time', r.totalMs === 21655, String(r.totalMs));
+      check('the event id is the dedupe key', liveOut[0].eventKey === 'raceos:evt-live-1', liveOut[0].eventKey);
+      check('our own driver is tagged', liveOut[0].mine === 'Erki Kasevali', String(liveOut[0].mine));
+    }
+
     check('garbage in, empty out', projectResults(null).length === 0);
     check('an empty payload is not an error', projectResults({ results: [] }).length === 0);
   }

@@ -40,13 +40,18 @@
  * to "no results this time" — the harvester logs and tries again later, and
  * nothing else in the app notices.
  *
- * ⚠ **The field paths in {@link ROW_PATHS} are the one part of this file that
- * has never been checked against a live payload.** They come from the shape
- * `scripts/probe-raceos-results.js` printed (gridPos / position / classPos /
- * bestLapTime / finishTime / Laps / finishStatus) rather than from a saved
- * sample, and each is a LIST of candidates for that reason. Run the probe with
- * LMU up and `--out` once, and correct them against what it dumps; everything
- * else here is shape-independent.
+ * The field paths in {@link ROW_PATHS} were written from the shape
+ * `scripts/probe-raceos-results.js` PRINTED rather than from a saved sample,
+ * which is why each is a list of candidates. They were checked against ten real
+ * events on 2026-09-17 and two were wrong:
+ *
+ *   - the rows are at `race.races[0].results`, not `race.results` — a session
+ *     holds an array of heats — so every live event was silently skipped and
+ *     nothing was ever harvested;
+ *   - `car` resolved to nothing, because the service calls it `carType`.
+ *
+ * Every other path resolved first or second try. `scripts/test-results.js` now
+ * holds a fixture in the real nesting so neither can regress quietly.
  */
 
 import { get as httpGet } from 'node:http';
@@ -166,7 +171,9 @@ const ROW_PATHS = {
   classPos: ['classPosition', 'ClassPosition', 'classPos'],
   gridPos: ['gridPos', 'GridPos', 'gridPosition', 'startPosition'],
   name: ['driverName', 'name', 'DriverName', 'fullName', 'username', 'player.name'],
-  car: ['carName', 'car', 'vehicle', 'carModel'],
+  // `carType` is the model ("BMW M Hybrid V8"); `vehName` is the entry's own
+  // livery name and `category` the full tree, so type first.
+  car: ['carType', 'vehName', 'carName', 'car', 'vehicle', 'carModel'],
   carClass: ['carClass', 'class', 'category', 'carCategory'],
   laps: ['Laps', 'laps', 'lapsCompleted', 'LapsCompleted'],
   bestLap: ['bestLapTime', 'BestLapTime', 'bestLap', 'fastestLap'],
@@ -177,6 +184,12 @@ const ROW_PATHS = {
 /** The race session inside an event, whatever the service calls it. */
 function raceRowsOf(event: Record<string, unknown>): Record<string, unknown>[] {
   const candidates = [
+    // A session is `{ sessionNo, races: [ { results: [...] } ] }` — the rows are
+    // one level deeper than they look, because a session can hold more than one
+    // heat. Checked against ten real events on 2026-09-17: `race.results` is
+    // always undefined and `race.races[0].results` always has the field.
+    'race.races.0.results',
+    'race.races.0.entries',
     'race.results',
     'race.entries',
     'race.drivers',
