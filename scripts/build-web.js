@@ -176,6 +176,21 @@ function build() {
   for (const f of ASSETS) copy(path.join(PANEL, 'assets', f), path.join('assets', f));
   for (const f of WEB_FILES) copy(path.join(SRC, f), f);
 
+  /* The lifecycle emails' pictures. They are referenced absolutely, at
+     <this site>/email/<name>, because an email client will not load anything
+     relative — so if this directory is not published the logo and every hero in
+     every mail 404s, which is exactly what had been happening since the
+     sequences were switched on. scripts/email-assets.js generates into
+     web/src/email and says "publish them with build-web.js"; this is that half.
+     Copied as a directory rather than a list, because the manifest decides what
+     is in it and a second list here would only drift from it. */
+  const EMAIL_SRC = path.join(SRC, 'email');
+  if (fs.existsSync(EMAIL_SRC)) {
+    for (const f of fs.readdirSync(EMAIL_SRC)) {
+      copy(path.join(EMAIL_SRC, f), path.join('email', f));
+    }
+  }
+
   buildAuthPage();
   buildBoardPage();
 

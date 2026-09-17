@@ -453,7 +453,11 @@ if (!fs.existsSync(manifestPath)) {
     days_left: 1,
   };
 
-  check('the module exports the same 11 steps', mod.STEP_KEYS.length === 11, mod.STEP_KEYS.length);
+  // 11 lifecycle steps (8 trial + 3 nudge) plus the one-off 1.0 announcement.
+  // The count is pinned on purpose: a template added or lost by accident is a
+  // mail nobody meant to send, or a step in a sequence that silently goes quiet.
+  check('the module exports the same 12 steps', mod.STEP_KEYS.length === 12, mod.STEP_KEYS.length);
+  check('the 1.0 announcement is one of them', mod.STEP_KEYS.includes('announce/v1'), mod.STEP_KEYS.join(','));
 
   for (const key of mod.STEP_KEYS) {
     const [campaign, step] = key.split('/');

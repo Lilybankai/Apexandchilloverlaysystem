@@ -319,6 +319,66 @@ function shellText(b: Block, r: Recipient, o: ShellOpts = {}): string {
 type Template = (r: Recipient) => { subject: string } & Block;
 
 const TEMPLATES: Record<string, Template> = {
+  /* ------------------------------------------------- announce: the 1.0 mail */
+  /*
+   * A one-off, not a sequence. It goes to everyone with an account on the day
+   * it is switched on, and it is the only mail most of these people will have
+   * had from us since they signed up — so it is longer than a lifecycle step
+   * and does the job of a manual: where each new thing is, what it does, and
+   * the one setting on it that is worth a deliberate decision.
+   */
+
+  'announce/v1': () => ({
+    subject: 'Apex AIO 1.0 — it now knows when you are racing',
+    kicker: 'Version 1.0 is out',
+    headline: 'Three new things, and a new name.',
+    /* No hero. hero-day0.png is a "manual" asset in the manifest — a shot only
+       a running sim can produce — and it does not exist yet, so referencing it
+       would put a broken image at the top of the one mail everybody reads. The
+       templates are written to read correctly with every image blocked, which
+       is how most people see them anyway. */
+    image: null,
+    imageAlt: '',
+    body: [
+      "Apex Overlay System is now <b>Apex AIO System</b>. Same app, same licence, same install — it updates itself and keeps everything you have set up. The Apex & Chill Racing League has not renamed; the product has.",
+      "Version 1.0 adds three things the app could not do before. It knows what Le Mans Ultimate is running and when, it can tell your league when you take a record, and it can hand somebody a discount on your behalf. Here is each one, and how to actually use it.",
+      "<b>1 — The Schedule tab knows what is on.</b> Open <b>Schedule</b> and you will find two calendars behind one switch. <b>Daily races</b> is the game's own: the three tiers, the solo weekly and the team specials, read straight from Le Mans Ultimate's own service. <b>Apex & Chill</b> is the league's Thursday and Saturday championships, which you still sign up for on SimGrid.",
+      "<b>Next up</b> gives you a card per tier — Beginner, Intermediate, Advanced — counting down to the next race in each, with the circuit drawn beside it, the classes running, the race length, how many tyre sets you get and whether the setup is fixed. Under that is the rest of the rotation, because the three events in a tier take turns. Entries open thirty minutes before a start; the card turns green and tells you when they have.",
+      "<b>Calendar</b> gives you a month. Each square shows the weekly and special events on that day and how many races run. Click a day and its whole timetable opens underneath. It fills in the week the game has published and no further — beyond that the start times would still be right but the circuits would be guesswork, so we leave those days empty and say so rather than make something up.",
+      "Every time is in <b>your</b> time zone, named at the top so you can be sure of it, with a switch to UTC for when you are comparing against something posted in Discord. The game needs to have been running at least once; after that the calendar is saved and is still there with the game shut.",
+      "<b>2 — A bell on the race you actually want.</b> Every race on that tab has a bell beside it. Turn one on and you get told five minutes before the start, then two, then one. The reminder lives in the app rather than in the window, so you can close the control panel entirely and it still keeps its promise.",
+      "<b>3 — Records and results into Discord.</b> In <b>Settings → Discord</b> you can join your league's community with the code they share, or paste a webhook of your own and post to your own server with no community and no roster anywhere. Most people only need the second.",
+      "It is deliberately quiet, and that was the hardest part to get right. Only a lap that actually takes a board record is ever posted — a personal best that beats nobody is not news. A lap that earns two records is one message, not two. Beat your own record again in the same session and the message already in the channel is edited rather than a second one appearing. Race results go the same way: one message for the whole race with the podium and your own people picked out of it, however many of you were in it.",
+      "What a league channel is allowed to say about you is <b>your</b> choice and not the admin's — records only, everything, or nothing at all. Joining a channel puts your name in somebody else's Discord, so that decision stays with you.",
+      "<b>And if someone sent you here:</b> a streamer or league admin may have given you a code. Typed on the subscribe screen it takes 10% off every month for as long as you keep the subscription, and the screen tells you whose code it was and what it saved before you commit to anything. If you have a code of your own, your link, your numbers and a stream overlay for OBS are in <b>Settings → Account</b>.",
+    ],
+    steps: [
+      {
+        title: 'Update, then open Schedule',
+        detail:
+          'The app updates itself — if it has not already, Settings will offer 1.0 within the hour. Then open the Schedule tab with Le Mans Ultimate running once, so it can read the calendar for the first time.',
+      },
+      {
+        title: 'Put a bell on tonight’s race and set how it reaches you',
+        detail:
+          'Three switches at the top of the tab, and they are worth a deliberate decision. <b>On the overlay</b> puts the reminder on the race control widget beside the flags — this is the one that matters, because it reaches you while you are already in the sim, and it never covers a flag or a limiter warning. <b>Announce out loud</b> has the race engineer say it, which is the only channel that gets through with the game full-screen, because Windows holds its own notifications back. <b>Entries opening</b> adds a fourth reminder half an hour out, when the lobby actually opens.',
+      },
+      {
+        title: 'Point Discord at a channel — yours or your league’s',
+        detail:
+          'Settings → Discord. For your own server: create a webhook in Discord (Channel settings → Integrations → Webhooks), copy the URL, paste it in. For a league: ask them for their join code. Your webhook is stored like a password and is only ever shown back to you masked.',
+      },
+      {
+        title: 'Take the two new walkthroughs',
+        detail:
+          'The Get started list on the Dashboard has a row each for Schedule and Discord. Both walk the real page with it live underneath rather than showing you a video, and they take about two minutes each.',
+      },
+    ],
+    cta: { label: 'Get 1.0', url: LINKS.download },
+    outro:
+      'If something in here does not work the way it reads, reply to this email — it comes to me, not a helpdesk. This is the first release I have been happy to call finished, and I would rather hear about it than not.',
+  }),
+
   /* ---------------------------------------------------- trial: the 7 days */
 
   'trial/day0': () => ({
