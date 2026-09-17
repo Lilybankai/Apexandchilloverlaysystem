@@ -27,7 +27,18 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const dailies = require('../electron/lmu-dailies');
+
+/** Printed once, by whichever async block finishes last. */
+function report() {
+  console.log(`
+${failed ? 'FAILED' : 'OK'} - ${passed} passed, ${failed} failed
+`);
+  process.exit(failed ? 1 : 0);
+}
 
 let passed = 0;
 let failed = 0;
@@ -413,7 +424,98 @@ console.log('\nThe client, without a network');
     check('…and still returns the empty shape', dead.tiers.length === 0 && dead.series.length === 0);
 
     dailies.resetCache();
-    console.log(`\n${failed ? 'FAILED' : 'OK'} — ${passed} passed, ${failed} failed\n`);
-    process.exit(failed ? 1 : 0);
+    runStoreChecks();
   })();
+}
+
+/* The disk store, last: it is the only block that touches a real filesystem,
+   and it owns the final report so the async chain ends in one place. */
+function runStoreChecks() {
+console.log('\nThe saved calendar — what survives the app closing');
+{
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dailies-'));
+  const store = path.join(dir, 'daily-schedule.json');
+
+  const FETCH = Date.parse('2026-09-17T10:05:00Z');
+  const built = dailies.buildPayload(
+    { schedule: SCHEDULE, lists: { beginner: BEGINNER_LIST }, specials: { weekly: WEEKLY } },
+    FETCH,
+  );
+  const write = (savedAt, payload) =>
+    fs.writeFileSync(store, JSON.stringify({ v: 1, savedAt, payload: payload || built }));
+
+  const offline = async (now) => {
+    dailies.resetCache();
+    dailies.init(store);
+    return dailies.getDailies({
+      now,
+      ticketImpl: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+      callImpl: async () => {
+        throw new Error('no service');
+      },
+    });
+  };
+
+  (async () => {
+    write(new Date(FETCH).toISOString());
+
+    /* The whole point: the game is shut and there is still a calendar. */
+    const same = await offline(FETCH + 60_000);
+    check('with the game shut, a saved calendar is served', same.ok === true && same.cached === true);
+    check('…and says when it was saved', typeof same.savedAt === 'string' && same.savedAt.length > 0);
+    check('…with its events intact', same.tiers[0].events.length === 3);
+
+    /* The stale half must be regenerated, not replayed. A stored `next` is a
+       concrete instant from the day it was fetched; served a day later it would
+       be counting down to a race that has already run. */
+    const tomorrow = await offline(FETCH + 22 * 3600_000);
+    const next = tomorrow.tiers[0].next;
+    check('a day later, next is regenerated not replayed', next && Date.parse(next.startsAt) >= FETCH + 22 * 3600_000, next && next.startsAt);
+    check('…onto the NEW day', next && next.startsAt.startsWith('2026-09-18'), next && next.startsAt);
+    check('…and every occurrence is still in the future', tomorrow.tiers[0].upcoming.every((u) => Date.parse(u.startsAt) >= FETCH + 22 * 3600_000));
+    check('…and they are sorted', tomorrow.tiers[0].upcoming.map((u) => u.startsAt).join() === [...tomorrow.tiers[0].upcoming.map((u) => u.startsAt)].sort().join());
+
+    /* A special that has run is gone — those are dated, not patterned. */
+    check('special slots that have run are dropped', tomorrow.series.every((s) => s.slots.every((x) => Date.parse(x.startsAt) >= FETCH + 22 * 3600_000)));
+
+    /* The circuits rotate weekly, so eventually the saved copy is fiction. */
+    const old = await offline(FETCH + 8 * 24 * 3600_000);
+    check("past a week it expires rather than naming last week's tracks", old.ok === false, String(old.ok));
+    check('…and says why', /Le Mans Ultimate/.test(old.error || ''));
+
+    /* Junk on disk must not take the tab down with it. */
+    fs.writeFileSync(store, '{ not json');
+    const junk = await offline(FETCH);
+    check('a corrupt store degrades to empty, not a throw', junk.ok === false && Array.isArray(junk.tiers));
+
+    /* A store from a future shape is ignored rather than misread. */
+    fs.writeFileSync(store, JSON.stringify({ v: 999, savedAt: new Date(FETCH).toISOString(), payload: built }));
+    const wrongVer = await offline(FETCH);
+    check('a store from another version is ignored', wrongVer.ok === false);
+
+    /* And a live fetch still wins over the saved copy. */
+    write(new Date(FETCH).toISOString());
+    dailies.resetCache();
+    dailies.init(store);
+    const live = await dailies.getDailies({
+      now: FETCH,
+      ticketImpl: async () => 'ticket',
+      callImpl: async (m, p2) => {
+        if (p2 === '/authenticate') return { accessToken: 'tok' };
+        if (p2 === 'api/v1/daily/schedule') return SCHEDULE;
+        if (p2.startsWith('api/v1/daily/list/beginner')) return BEGINNER_LIST;
+        throw new Error('500');
+      },
+    });
+    check('a live fetch is preferred over the saved one', live.ok === true && !live.cached);
+    check('…and it rewrites the store', JSON.parse(fs.readFileSync(store, 'utf8')).savedAt.startsWith('2026-09-17'));
+
+    dailies.resetCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+    report();
+  })();
+}
 }

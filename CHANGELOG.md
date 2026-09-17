@@ -5,6 +5,27 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.7 — 2026-09-17
+
+### Fixed
+
+- **The race calendar is kept, instead of needing the game open to exist.** It
+  was held in memory only: closing the app threw it away, and opening the
+  Schedule tab with Le Mans Ultimate shut showed an empty tab — which is
+  precisely when someone sits down to plan tomorrow's racing. The last calendar
+  read is now saved, and the tab shows it whenever the live one cannot be
+  fetched, saying plainly that it is a saved copy and when it was taken.
+
+  It is brought up to date rather than replayed. The start times are a repeating
+  pattern rather than a list of moments, so tomorrow's are regenerated from it
+  and a session that has already run is dropped — without that, a saved calendar
+  would sit there counting down to a race that finished yesterday. Weekly and
+  special events are dated, so those simply fall away as they pass.
+
+  It expires after a week. Le Mans Ultimate rotates the circuits weekly, so past
+  that the times would still be right and the tracks would be fiction; the tab
+  goes quiet and asks for the game instead of inventing a schedule.
+
 ## 0.99.12-beta.6 — 2026-09-17
 
 ### Added

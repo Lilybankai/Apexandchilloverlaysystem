@@ -3885,6 +3885,11 @@ function registerIpc() {
    * the renderer only ever sees names, tracks and UTC times.
    */
   ipcMain.handle('schedule:dailies', async (_evt, query) => {
+    /* Where the last good calendar is kept. Without it the schedule needed the
+       game running to exist at all, and closing the app threw it away — so
+       opening the panel to plan tomorrow, which is exactly when LMU is shut,
+       showed an empty tab. */
+    lmuDailies.init(path.join(app.getPath('userData'), 'daily-schedule.json'));
     const payload = await lmuDailies.getDailies({ force: !!(query && query.force) });
     /* Circuit outlines are drawn from the running game's own geometry and
        cached on disk, so they keep working with the game shut. Decoration: it

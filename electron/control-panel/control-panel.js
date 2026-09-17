@@ -6389,7 +6389,19 @@
     renderDay(ok ? result : null);
 
     if (msg) {
-      const note = result && result.error;
+      /* A saved calendar is honest about being one. The times in it are still
+         right — the rotation repeats — but the circuits are whatever LMU was
+         running when it was fetched, so the driver gets to decide whether to
+         trust it rather than being shown it as live. */
+      let note = result && result.error;
+      if (ok && result && result.cached) {
+        const saved = result.savedAt ? new Date(result.savedAt) : null;
+        const when =
+          saved && !Number.isNaN(saved.getTime())
+            ? `${dlDayName(dlDayKey(saved)).toLowerCase()} at ${dlTime(saved.toISOString())}`
+            : 'earlier';
+        note = `Saved calendar, from ${when}. Start Le Mans Ultimate for the live one.`;
+      }
       msg.hidden = !note || !ok;
       msg.textContent = note && ok ? note : '';
     }

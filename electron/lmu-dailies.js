@@ -42,12 +42,28 @@
 
 const http = require('node:http');
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const RACEOS_HOST = 'raceos.gg';
 const HTTP_TIMEOUT_MS = 10_000;
 
 /** How long a built payload is served before the service is asked again. */
 const CACHE_MS = 10 * 60 * 1000;
+
+/** Bumped when the stored shape changes, so an old file is ignored not misread. */
+const STORE_VERSION = 1;
+
+/**
+ * How long a saved calendar is still worth showing with the game shut.
+ *
+ * The TIMES in it are certain for as long as it is valid at all — the cadence
+ * pattern divides the day, so it repeats exactly. What expires is the CIRCUITS:
+ * LMU rotates them weekly. Seven days is the outer bound at which a saved
+ * schedule is certainly describing a rotation that has been and gone, so past
+ * it the tab says nothing rather than naming last week's tracks.
+ */
+const STORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * How long an access token is trusted. The game's own client refreshes on a
@@ -477,6 +493,98 @@ function buildPayload(raw, now) {
   };
 }
 
+/**
+ * A saved calendar, brought up to date.
+ *
+ * What is durable in a stored payload and what is not:
+ *
+ *   durable  — the events, their circuits, classes, lengths and tyre rules, and
+ *              `minutesUtc`, which is a PATTERN rather than a set of instants
+ *              and so is as true tomorrow as it was yesterday.
+ *   stale    — `next` and `upcoming`, which are concrete instants generated for
+ *              the day it was fetched, and any special slot that has since run.
+ *
+ * So the stale half is thrown away and regenerated from the durable half. Serve
+ * a stored payload without this and the tab cheerfully counts down to a race
+ * that started yesterday, which is worse than showing nothing.
+ *
+ * Pure: `now` is passed in, so a test can stand a week later and check.
+ */
+function restore(payload, now) {
+  const at = Number.isFinite(now) ? now : Date.now();
+  const tiers = (payload.tiers || []).map((tier) => {
+    const upcoming = [];
+    for (const ev of tier.events || []) {
+      for (const min of ev.minutesUtc || []) {
+        /* Three UTC days, filtered — the same reasoning as the calendar: a
+           local day straddles two UTC days at any offset but zero. */
+        for (let k = 0; k <= 2; k += 1) {
+          const d = new Date(at + (k - 1) * 86400000);
+          const startOfDay = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+          const ms = startOfDay + min * 60000;
+          if (ms < at) continue;
+          upcoming.push({
+            seriesId: ev.seriesId,
+            title: ev.title,
+            track: ev.track,
+            scene: ev.scene,
+            classes: ev.classes,
+            startsAt: new Date(ms).toISOString(),
+            registrationOpens:
+              ev.registrationLeadMin === null || ev.registrationLeadMin === undefined
+                ? null
+                : new Date(ms - ev.registrationLeadMin * 60000).toISOString(),
+            raceMin: ev.raceMin,
+            eventMin: ev.eventMin,
+            tyreSets: ev.tyreSets,
+            tyreWarmers: ev.tyreWarmers,
+            fixedSetup: ev.fixedSetup,
+            maxPlayers: ev.maxPlayers,
+            map: ev.map,
+          });
+        }
+      }
+    }
+    upcoming.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+    const trimmed = upcoming.slice(0, UPCOMING_PER_TIER);
+    return { ...tier, next: trimmed[0] || null, upcoming: trimmed };
+  });
+
+  const series = [];
+  for (const s of payload.series || []) {
+    const slots = (s.slots || []).filter((slot) => Date.parse(slot.startsAt) >= at);
+    if (!slots.length) continue; // every slot has run; the series is over
+    series.push({ ...s, slots, next: slots[0], registered: slots.some((x) => x.isRegistered) });
+  }
+  series.sort((a, b) => Date.parse(a.next.startsAt) - Date.parse(b.next.startsAt));
+
+  return { ...payload, tiers, series };
+}
+
+/**
+ * What to answer when the service cannot be reached.
+ *
+ * A saved calendar first, brought up to date and flagged as saved, because the
+ * times in it are still right and planning tomorrow's racing is something
+ * people do with the game shut. Only when there is no usable saved copy does
+ * the tab go empty and explain why.
+ */
+function offlineAnswer(reason, error, now) {
+  const stored = readStore(now);
+  if (stored) {
+    const payload = restore(stored.payload, now);
+    return {
+      ...payload,
+      ok: true,
+      cached: true,
+      savedAt: stored.savedAt,
+      reason,
+      error: null,
+    };
+  }
+  return emptyPayload(reason, error, now);
+}
+
 /** The shape every failure returns, so the renderer has one code path. */
 function emptyPayload(reason, error, now) {
   return {
@@ -574,6 +682,52 @@ let cache = { at: 0, payload: null };
 let token = null;
 let tokenAt = 0;
 let lastAuthFailAt = 0;
+/** Where the last good calendar is kept, so it survives the app closing. */
+let storePath = null;
+
+/**
+ * Where to save the calendar. Called once by main with a path in userData.
+ *
+ * Without this the schedule lived in a module-level variable: it needed the
+ * game running to exist at all, and closing the app threw it away. Opening the
+ * panel to plan tomorrow — with LMU shut, which is when anyone plans anything —
+ * showed an empty tab.
+ */
+function init(file) {
+  storePath = file || null;
+  if (!storePath) return;
+  try {
+    fs.mkdirSync(path.dirname(storePath), { recursive: true });
+  } catch {
+    storePath = null; // a read-only profile is not a reason to fail the tab
+  }
+}
+
+function saveStore(payload, now) {
+  if (!storePath || !payload || !payload.ok) return;
+  try {
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify({ v: STORE_VERSION, savedAt: new Date(now).toISOString(), payload }),
+    );
+  } catch {
+    /* the calendar still works this run */
+  }
+}
+
+/** The saved calendar, or null when there is none, it is old, or it is junk. */
+function readStore(now) {
+  if (!storePath) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+    if (!raw || raw.v !== STORE_VERSION || !raw.payload || !raw.payload.ok) return null;
+    const savedMs = Date.parse(raw.savedAt);
+    if (Number.isNaN(savedMs) || now - savedMs > STORE_TTL_MS) return null;
+    return { savedAt: raw.savedAt, savedMs, payload: raw.payload };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Loads the calendar, cached for ten minutes.
@@ -598,7 +752,7 @@ async function getDailies(opts = {}) {
   /* ---- auth ---- */
   if (!token || now - tokenAt >= TOKEN_TTL_MS) {
     if (!force && now - lastAuthFailAt < AUTH_RETRY_MS) {
-      return emptyPayload('offline', 'Start Le Mans Ultimate and sign in to see the race calendar.', now);
+      return offlineAnswer('offline', 'Start Le Mans Ultimate and sign in to see the race calendar.', now);
     }
     let ticket;
     try {
@@ -606,7 +760,7 @@ async function getDailies(opts = {}) {
     } catch {
       lastAuthFailAt = now;
       token = null;
-      return emptyPayload('offline', 'Start Le Mans Ultimate and sign in to see the race calendar.', now);
+      return offlineAnswer('offline', 'Start Le Mans Ultimate and sign in to see the race calendar.', now);
     }
     try {
       const auth = await callImpl('POST', '/authenticate', {
@@ -622,7 +776,7 @@ async function getDailies(opts = {}) {
     } catch {
       lastAuthFailAt = now;
       token = null;
-      return emptyPayload('auth', 'Le Mans Ultimate’s online service would not sign us in.', now);
+      return offlineAnswer('auth', 'Le Mans Ultimate’s online service would not sign us in.', now);
     }
   }
 
@@ -658,7 +812,7 @@ async function getDailies(opts = {}) {
   }
 
   if (!got.schedule) {
-    return emptyPayload(
+    return offlineAnswer(
       unauthorised ? 'auth' : 'network',
       'Could not read the race calendar from Le Mans Ultimate’s online service.',
       now,
@@ -681,6 +835,9 @@ async function getDailies(opts = {}) {
   }
 
   cache = { at: now, payload };
+  /* Saved on every good fetch, so the next launch has a calendar whether or
+     not the game is running. Cheap: the payload is ~40 KB. */
+  saveStore(payload, now);
   return payload;
 }
 
@@ -698,6 +855,8 @@ module.exports = {
   CACHE_MS,
   UPCOMING_PER_TIER,
   minutesOfDay,
+  restore,
+  init,
   classesOf,
   durationMin,
   cadenceMin,
