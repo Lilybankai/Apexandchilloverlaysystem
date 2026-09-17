@@ -48,6 +48,13 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // whether the nav BUTTON is hidden yet, so seeding both keys is enough.
     const adminpane = q.get('adminpane');
     if (adminpane) localStorage.setItem('apex.panel.adminPane', adminpane);
+    // Which calendar the Schedule tab opens on: ?tab=schedule&source=league.
+    // Defaults to the game's daily races, the same as the app does.
+    const source = q.get('source');
+    if (source) localStorage.setItem('apex.panel.scheduleSource', source);
+    // Which zone its times are drawn in: ?zone=utc.
+    const zone = q.get('zone');
+    if (zone) localStorage.setItem('apex.panel.scheduleZone', zone);
     const skfilter = q.get('skfilter');
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
@@ -303,7 +310,70 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           message: 'Could the fuel tab show laps remaining as well as litres?',
           reply: 'Good shout — it is going in the next build. Thanks for sending it.' },
       ] : [] }) },
-    schedule: { get: P({ ok: true, fetchedAt: '2026-08-21T17:00:00.000Z', leagues: [
+    schedule: {
+      /*
+       * The game's own calendar. Times are computed FROM NOW rather than frozen,
+       * because the thing this pane exists to show is a countdown: a fixed date
+       * renders "26645d 03h" and tells a reviewer nothing about whether the
+       * clock, the ordering or the entries-open line are right.
+       */
+      dailies: (function () {
+        var at = function (min) { return new Date(Date.now() + min * 60000).toISOString(); };
+        var occ = function (title, track, classes, min, over) {
+          var o = { seriesId: 's', title: title, track: track, classes: classes,
+            startsAt: at(min), registrationOpens: at(min - 30),
+            raceMin: 20, eventMin: 31.5, tyreSets: 8, tyreWarmers: true,
+            fixedSetup: true, maxPlayers: 20 };
+          for (var k in (over || {})) o[k] = over[k];
+          return o;
+        };
+        var slot = function (min, regs, mine) {
+          return { id: 'e' + min, startsAt: at(min), registrationOpens: at(min - 1440),
+            registrations: regs, isRegistered: !!mine };
+        };
+        var tier = function (key, label, badge, cadence, list) {
+          return { key: key, label: label, badge: badge, cadenceMin: cadence,
+            events: [], next: list[0], upcoming: list };
+        };
+        var sprint = { raceMin: 30, eventMin: 41.5, tyreWarmers: false, fixedSetup: false, maxPlayers: 44 };
+        var long = { raceMin: 60, eventMin: 72.5, tyreWarmers: false, fixedSetup: false, maxPlayers: 44 };
+        return P({ ok: true, fetchedAt: new Date().toISOString(), reason: null, error: null,
+          tiers: [
+            tier('beginner', 'Beginner', 'Bronze', 15, [
+              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 8),
+              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 23),
+              occ('LMP3 Fixed', '6 Hours of Monza', ['LMP3'], 38),
+              occ('LMGT3 Fixed', '8 Hours of Bahrain', ['LMGT3'], 53),
+              occ('LMGTE Fixed', '6 Hours of Spa-Francorchamps', ['LMGTE'], 68),
+            ]),
+            tier('intermediate', 'Intermediate', 'Silver', 20, [
+              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 13, sprint),
+              occ('LMGT3 Sprint Cup', '24 Heures du Mans', ['LMGT3'], 33, sprint),
+              occ('Prototype Fixed', '4 Hours of Portimao', ['LMP2', 'LMP3'], 53, sprint),
+              occ('ELMS Sprint Trophy', 'Daytona International Speedway Road Course', ['LMP2', 'LMP3', 'LMGT3'], 73, sprint),
+            ]),
+            tier('advanced', 'Advanced', 'Gold', 30, [
+              occ('ELMS Super 60', '4 Hours of Silverstone', ['LMP2', 'LMP3', 'LMGT3'], 18, long),
+              occ('WEC-Xperience', '4 Hours of Barcelona', ['Hypercar', 'LMGT3'], 48, long),
+              occ('One Stint Sprint', 'Paul Ricard - 1A-V2-Short', ['Hypercar', 'LMGT3'], 78, long),
+            ]),
+          ],
+          series: [
+            { type: 'weekly', typeLabel: 'Weekly', seriesId: 'w', title: 'WEC Weekly Community Tests',
+              teamEvent: false, rank: 'Silver', rankTier: 2, track: '24 Heures du Mans',
+              classes: ['Hypercar', 'LMP2', 'LMGT3'], raceMin: 90, tyreSets: 10, tyreWarmers: false,
+              fixedSetup: false, maxPlayers: 62, registered: false,
+              next: slot(105, 61, false),
+              slots: [slot(105, 61, false), slot(225, 7, false), slot(345, 8, false), slot(465, 13, false)] },
+            { type: 'special', typeLabel: 'Special event', seriesId: 's', title: 'ELMS 4 Hours of Silverstone',
+              teamEvent: true, rank: 'Bronze', rankTier: 0, track: '4 Hours of Silverstone',
+              classes: ['LMP2', 'LMP3', 'LMGT3'], raceMin: 240, tyreSets: 14, tyreWarmers: false,
+              fixedSetup: false, maxPlayers: 44, registered: true,
+              next: slot(2820, 41, true),
+              slots: [slot(2820, 41, true), slot(3120, 7, false), slot(3420, 0, false)] },
+          ] });
+      })(),
+      get: P({ ok: true, fetchedAt: '2026-08-21T17:00:00.000Z', leagues: [
       { id: 25619, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3',
         name: 'LMU Apex And Chill Thursday League LMP2 & GT3', game: 'Le Mans Ultimate',
         url: 'https://www.thesimgrid.com/championships/25619',
@@ -762,3 +832,4 @@ fs.writeFileSync(
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
 console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');
+console.log('  the schedule: ?tab=schedule[&source=daily|league][&zone=utc]');

@@ -5690,6 +5690,11 @@
    * caches for five minutes, so switching away and back is free.
    */
   const SK_FILTER_KEY = 'apex.panel.scheduleFilter';
+  const SK_SOURCE_KEY = 'apex.panel.scheduleSource';
+  /* Which calendar the tab is showing: the game's dailies, or the league's own
+     championships. Daily is the default — it is the one with a race starting
+     in the next ten minutes. */
+  let skSource = 'daily';
   let skFilter = 'upcoming';
   let skLoaded = false;
   let skPayload = null;
@@ -5698,6 +5703,8 @@
   try {
     const saved = localStorage.getItem(SK_FILTER_KEY);
     if (saved === 'all' || saved === 'upcoming') skFilter = saved;
+    const source = localStorage.getItem(SK_SOURCE_KEY);
+    if (source === 'league' || source === 'daily') skSource = source;
   } catch {
     /* storage disabled */
   }
@@ -5965,7 +5972,7 @@
   const skRefresh = $('#sk-refresh');
   if (skRefresh) {
     skRefresh.addEventListener('click', () => {
-      void refreshSchedule(true);
+      void refreshScheduleActive(true);
     });
   }
 
@@ -5983,6 +5990,434 @@
       window.apex.openInBrowser(url);
     });
   }
+
+  // --- Daily races (the game's own calendar, via RaceOS) -------------------
+  /*
+   * The second half of the Schedule tab: LMU's official daily tiers, the solo
+   * weekly and the team specials, read through schedule:dailies. The access
+   * token never reaches here — main hands over names, tracks and UTC instants.
+   *
+   * Two rules shape everything below.
+   *
+   * 1. **Times arrive UTC and are formatted last.** Every `startsAt` in the
+   *    payload is a UTC ISO string; the only place a zone is applied is
+   *    dlTime()/dlDay(). That is what makes the tab DST-proof — a date built
+   *    in local time would drift twice a year, and drift SILENTLY.
+   * 2. **The countdown ticks only while this pane is on screen.** A one-second
+   *    timer left running behind a hidden tab is exactly the kind of idle cost
+   *    the panel's zero-when-closed rule exists to prevent.
+   *
+   * The zone switch is not decoration: the source message, the league's Discord
+   * and the game's own schedule screen all speak UTC, so a driver comparing
+   * what they see here against what someone posted needs to be able to agree
+   * on a number without doing the arithmetic themselves.
+   */
+  const DL_ZONE_KEY = 'apex.panel.scheduleZone';
+  let dlZone = 'local'; // 'local' | 'utc'
+  let dlPayload = null;
+  let dlLoaded = false;
+  let dlRequest = 0;
+  let dlTimer = null;
+
+  try {
+    const saved = localStorage.getItem(DL_ZONE_KEY);
+    if (saved === 'utc' || saved === 'local') dlZone = saved;
+  } catch {
+    /* storage disabled */
+  }
+
+  /** The zone every time on this pane is drawn in. */
+  function dlTimeZone() {
+    return dlZone === 'utc' ? 'UTC' : undefined;
+  }
+
+  /** "10:15" — the clock time of an instant, in the chosen zone. */
+  function dlTime(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return '--:--';
+    return d.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: dlTimeZone(),
+    });
+  }
+
+  /**
+   * "Today" / "Tomorrow" / "Fri 19 Sep" — and the comparison is made in the
+   * DISPLAY zone, because 23:30 UTC on Thursday is Friday for half of Europe
+   * and calling it "today" there would simply be wrong.
+   */
+  function dlDay(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    const key = (x) =>
+      x.toLocaleDateString('en-CA', { timeZone: dlTimeZone() }); // YYYY-MM-DD, sortable
+    const today = key(new Date());
+    const that = key(d);
+    if (that === today) return 'Today';
+    const tomorrow = key(new Date(Date.now() + 86400000));
+    if (that === tomorrow) return 'Tomorrow';
+    return d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: dlTimeZone(),
+    });
+  }
+
+  /**
+   * The countdown, in the game's own idiom: MM:SS inside the hour so the last
+   * minutes are readable at a glance, then H MM, then days.
+   *
+   * The days step is not cosmetic. Special events are booked three and four
+   * days out, and an hours-only countdown renders those as "76h 12m" — a number
+   * nobody converts in their head, and one that grows without limit if a date
+   * is ever wrong. Past instants read "started" rather than counting up: a race
+   * already gone is not news.
+   */
+  function dlCountdown(iso) {
+    const ms = iso ? Date.parse(iso) - Date.now() : NaN;
+    if (Number.isNaN(ms)) return '';
+    if (ms <= 0) return 'started';
+    const total = Math.floor(ms / 1000);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (d > 0) return `${d}d ${String(h).padStart(2, '0')}h`;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function dlEl(tag, cls, text) {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (text !== undefined && text !== null && text !== '') el.textContent = String(text);
+    return el;
+  }
+
+  /** A countdown element that the tick loop knows how to keep current. */
+  function dlClock(iso, cls) {
+    const el = dlEl('span', cls || 'sk-clock', dlCountdown(iso));
+    if (iso) el.dataset.dlAt = iso;
+    return el;
+  }
+
+  function dlChips(classes) {
+    const wrap = dlEl('span', 'sk-chips');
+    for (const c of classes || []) {
+      const chip = dlEl('span', 'sk-cls', c);
+      chip.dataset.cls = c;
+      wrap.append(chip);
+    }
+    return wrap;
+  }
+
+  /**
+   * The line of hard facts under an event: race length, tyres, setup, grid
+   * size. Anything the service did not tell us is left out rather than shown
+   * as a zero — see the null-not-0 rule in electron/lmu-dailies.js.
+   */
+  function dlFacts(ev) {
+    const facts = [];
+    if (ev.raceMin) facts.push(`${Math.round(ev.raceMin)}m race`);
+    if (ev.fixedSetup === true) facts.push('Fixed setup');
+    else if (ev.fixedSetup === false) facts.push('Open setup');
+    if (ev.tyreSets) facts.push(`${ev.tyreSets} tyre sets`);
+    if (ev.tyreWarmers === true) facts.push('Tyre warmers');
+    if (ev.maxPlayers) facts.push(`${ev.maxPlayers} car splits`);
+    const row = dlEl('p', 'sk-facts');
+    row.textContent = facts.join(' · ');
+    return row;
+  }
+
+  /** One tier: what is on next, then the rest of the rotation. */
+  function dlTierCard(tier) {
+    const card = dlEl('div', 'card sk-tier');
+
+    const head = dlEl('div', 'sk-tier__head');
+    head.append(dlEl('h2', 'sk-tier__name', tier.label));
+    const badge = dlEl('span', 'sk-sr', tier.badge);
+    badge.dataset.sr = tier.badge;
+    head.append(badge);
+    if (tier.cadenceMin) head.append(dlEl('span', 'sk-tier__freq', `every ${tier.cadenceMin}m`));
+    card.append(head);
+
+    if (!tier.next) {
+      card.append(dlEl('p', 'sk-none', 'Nothing more scheduled today.'));
+      return card;
+    }
+
+    const next = tier.next;
+    const hero = dlEl('div', 'sk-now');
+    const when = dlEl('div', 'sk-now__when');
+    when.append(dlClock(next.startsAt, 'sk-now__clock'));
+    when.append(dlEl('span', 'sk-now__at', `${dlDay(next.startsAt)} ${dlTime(next.startsAt)}`));
+    hero.append(when);
+    hero.append(dlEl('h3', 'sk-now__title', next.title));
+    hero.append(dlEl('p', 'sk-now__track', next.track));
+    hero.append(dlChips(next.classes));
+    hero.append(dlFacts(next));
+
+    /* Registration is the thing a driver can miss without noticing: the lobby
+       opens half an hour out and you cannot enter before it does. */
+    if (next.registrationOpens) {
+      const opensMs = Date.parse(next.registrationOpens);
+      const open = opensMs <= Date.now();
+      const reg = dlEl('p', 'sk-reg');
+      reg.dataset.state = open ? 'open' : 'soon';
+      reg.textContent = open
+        ? 'Entries open now'
+        : `Entries open ${dlTime(next.registrationOpens)}`;
+      hero.append(reg);
+    }
+    card.append(hero);
+
+    const rest = tier.upcoming.slice(1);
+    if (rest.length) {
+      const list = dlEl('ul', 'sk-then');
+      for (const occ of rest) {
+        const li = dlEl('li', 'sk-then__row');
+        li.append(dlEl('span', 'sk-then__time', dlTime(occ.startsAt)));
+        li.append(dlEl('span', 'sk-then__title', occ.title));
+        li.append(dlEl('span', 'sk-then__track', occ.track));
+        list.append(li);
+      }
+      card.append(list);
+    }
+    return card;
+  }
+
+  /**
+   * One special-event series. These are the ones worth planning around, so the
+   * slots carry the two things the dailies cannot: how many drivers have
+   * already entered, and whether we are one of them.
+   */
+  function dlSeriesCard(series) {
+    const card = dlEl('div', 'card sk-series');
+
+    const head = dlEl('div', 'sk-series__head');
+    head.append(dlEl('h2', 'sk-series__name', series.title));
+    const type = dlEl('span', 'chip', series.teamEvent ? 'Team event' : series.typeLabel);
+    type.setAttribute('data-tone', series.teamEvent ? 'purple' : 'cyan');
+    head.append(type);
+    /* Bronze 0 is the bottom of the ladder — every account clears it — so it is
+       not a requirement, it is the absence of one, and a chip saying so is
+       noise on a card that already has several. */
+    if (series.rank && !(series.rank === 'Bronze' && !series.rankTier)) {
+      const sr = dlEl('span', 'sk-sr', `${series.rank} ${series.rankTier ?? ''}`.trim());
+      sr.dataset.sr = series.rank;
+      sr.title = 'Minimum safety rating';
+      head.append(sr);
+    }
+    if (series.registered) {
+      /* Its own class rather than a `data-tone`: hub.css ships purple, cyan and
+         muted, and it is shared verbatim with the web build, so a fourth tone
+         added for one chip here would have to be justified over there too. */
+      head.append(dlEl('span', 'chip sk-mine', 'You are entered'));
+    }
+    card.append(head);
+
+    card.append(dlEl('p', 'sk-series__track', series.track));
+    card.append(dlChips(series.classes));
+    card.append(dlFacts(series));
+
+    const list = dlEl('ul', 'sk-slots');
+    for (const slot of series.slots) {
+      const li = dlEl('li', 'sk-slot');
+      if (slot.isRegistered) li.dataset.mine = 'true';
+      li.append(dlEl('span', 'sk-slot__day', dlDay(slot.startsAt)));
+      li.append(dlEl('span', 'sk-slot__time', dlTime(slot.startsAt)));
+      li.append(dlClock(slot.startsAt, 'sk-slot__in'));
+      /* A count of 0 is a real and useful answer — an empty slot is one a
+         driver may want to avoid — so it is shown, unlike a missing one. */
+      if (slot.registrations !== null) {
+        li.append(dlEl('span', 'sk-slot__regs', `${slot.registrations} entered`));
+      }
+      list.append(li);
+    }
+    card.append(list);
+    return card;
+  }
+
+  function renderDailies(result) {
+    const tiersEl = $('#dl-tiers');
+    const seriesEl = $('#dl-series');
+    const empty = $('#dl-empty');
+    const msg = $('#dl-msg');
+    if (!tiersEl || !seriesEl || !empty) return;
+
+    const ok = !!(result && result.ok);
+    const tiers = ok && Array.isArray(result.tiers) ? result.tiers : [];
+    const series = ok && Array.isArray(result.series) ? result.series : [];
+
+    tiersEl.textContent = '';
+    seriesEl.textContent = '';
+    for (const tier of tiers) tiersEl.append(dlTierCard(tier));
+    for (const s of series) seriesEl.append(dlSeriesCard(s));
+
+    if (msg) {
+      const note = result && result.error;
+      msg.hidden = !note || !ok;
+      msg.textContent = note && ok ? note : '';
+    }
+
+    if (!tiers.length && !series.length) {
+      empty.hidden = false;
+      /* The offline case is not a failure to apologise for — it is a state
+         with an action, so it reads as an instruction. */
+      empty.textContent =
+        (result && result.error) ||
+        'Start Le Mans Ultimate and sign in to see the race calendar.';
+    } else {
+      empty.hidden = true;
+    }
+
+    const zone = $('#dl-zone');
+    if (zone) {
+      zone.textContent =
+        dlZone === 'utc'
+          ? 'Times shown in UTC'
+          : `Times shown in ${Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time'}`;
+    }
+    const toggle = $('#dl-zone-toggle');
+    if (toggle) toggle.textContent = dlZone === 'utc' ? 'Show local time' : 'Show UTC';
+
+    dlTick();
+  }
+
+  /** Re-stamp every countdown on screen. Cheap: a handful of text nodes. */
+  function dlTick() {
+    for (const el of document.querySelectorAll('[data-dl-at]')) {
+      el.textContent = dlCountdown(el.dataset.dlAt);
+    }
+  }
+
+  /**
+   * The tick runs only while this pane is actually visible — the tab is open,
+   * the daily source is chosen, and the window is not hidden.
+   */
+  function dlSyncTimer() {
+    const view = document.querySelector('[data-view="schedule"]');
+    const visible =
+      !!view &&
+      view.getAttribute('data-active') === 'true' &&
+      skSource === 'daily' &&
+      document.visibilityState === 'visible';
+    if (visible && !dlTimer) {
+      dlTimer = setInterval(dlTick, 1000);
+      dlTick();
+    } else if (!visible && dlTimer) {
+      clearInterval(dlTimer);
+      dlTimer = null;
+    }
+  }
+
+  async function refreshDailies(force) {
+    const n = ++dlRequest;
+    if (!dlLoaded) {
+      const empty = $('#dl-empty');
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = 'Loading the race calendar…';
+      }
+    }
+    try {
+      const res = await window.apex.schedule.dailies({ force: !!force });
+      if (n !== dlRequest) return;
+      dlPayload = res;
+      dlLoaded = true;
+      renderDailies(res);
+      /* Counted on a load that actually produced a calendar, not on arriving at
+         the tab: a driver with the game shut sees the "start LMU" line, and
+         counting that as a read would make the feature look used by people it
+         has never worked for. */
+      if (res && res.ok) CATALOG?.note('action:schedule.dailies');
+    } catch {
+      if (n !== dlRequest) return;
+      dlLoaded = true;
+      renderDailies({
+        ok: false,
+        reason: 'network',
+        tiers: [],
+        series: [],
+        error: 'Could not read the race calendar.',
+      });
+    }
+  }
+
+  const dlZoneToggle = $('#dl-zone-toggle');
+  if (dlZoneToggle) {
+    dlZoneToggle.addEventListener('click', () => {
+      dlZone = dlZone === 'utc' ? 'local' : 'utc';
+      try {
+        localStorage.setItem(DL_ZONE_KEY, dlZone);
+      } catch {
+        /* storage disabled */
+      }
+      /* Re-render rather than patch: every time on the pane changes at once. */
+      if (dlPayload) renderDailies(dlPayload);
+    });
+  }
+
+  document.addEventListener('visibilitychange', dlSyncTimer);
+
+  // --- Which calendar the Schedule tab is showing --------------------------
+  /*
+   * Two sources behind one segmented control. The daily races lead, because
+   * they are the ones that start in the next ten minutes; the league's own
+   * championships are a fortnight apart and keep.
+   */
+  function applyScheduleSource() {
+    const leaguePane = $('#sk-league-pane');
+    const dailyPane = $('#sk-daily-pane');
+    const filter = $('#sk-filter');
+    const sub = $('#sk-sub');
+    const league = skSource === 'league';
+
+    if (leaguePane) leaguePane.hidden = !league;
+    if (dailyPane) dailyPane.hidden = league;
+    // The Upcoming/All rounds filter belongs to the league calendar alone.
+    if (filter) filter.hidden = !league;
+    if (sub) {
+      sub.textContent = league
+        ? 'Upcoming Apex & Chill races, live from SimGrid. Sign up there — the button opens the championship page in your browser.'
+        : 'Le Mans Ultimate’s own daily, weekly and special races. Times are in your own time zone; entries open 30 minutes before the start.';
+    }
+
+    const nav = $('#sk-source');
+    if (nav) {
+      for (const b of nav.querySelectorAll('[data-sksource]')) {
+        b.setAttribute('data-active', String(b.dataset.sksource === skSource));
+      }
+    }
+    dlSyncTimer();
+  }
+
+  /** Load whichever calendar is on screen. Each caches in main for itself. */
+  function refreshScheduleActive(force) {
+    if (skSource === 'league') return refreshSchedule(force);
+    return refreshDailies(force);
+  }
+
+  const skSourceNav = $('#sk-source');
+  if (skSourceNav) {
+    for (const btn of skSourceNav.querySelectorAll('[data-sksource]')) {
+      btn.addEventListener('click', () => {
+        skSource = btn.dataset.sksource === 'league' ? 'league' : 'daily';
+        try {
+          localStorage.setItem(SK_SOURCE_KEY, skSource);
+        } catch {
+          /* storage disabled */
+        }
+        applyScheduleSource();
+        void refreshScheduleActive(false);
+      });
+    }
+  }
+
+  applyScheduleSource();
 
   // --- Tab router ----------------------------------------------------------
   /*
@@ -6138,8 +6573,12 @@
       void loadAdmin();
     }
     if (target === 'schedule') {
-      void refreshSchedule(false);
+      void refreshScheduleActive(false);
     }
+    // The daily countdown ticks once a second, so it starts when the tab opens
+    // and stops the moment it does not — in both directions, which is why this
+    // is not inside the branch above.
+    dlSyncTimer();
     // The bot's lists live in main; re-ask on entry so another window's edits
     // (or a fresh install's defaults) are never stale here. First visit also
     // offers the walkthrough (same manners as the Setups guide).

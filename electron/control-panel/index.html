@@ -1088,22 +1088,28 @@
     </section>
 
     <!-- ======================== SCHEDULE ============================== -->
-    <!-- Thursday + Saturday Apex & Chill championships, pulled from SimGrid.
-         Cards and rows are built at runtime from schedule:get — only the frame
-         is static, so a restyle that drops an id here is caught by the panel
-         parity contract the same way as every other tab. -->
+    <!-- Two calendars behind one switch: the league's own Thursday + Saturday
+         championships from SimGrid, and the GAME's official daily/weekly/
+         special races from RaceOS (see electron/lmu-dailies.js).
+         Cards and rows are built at runtime — only the frame is static, so a
+         restyle that drops an id here is caught by the panel parity contract
+         the same way as every other tab. -->
     <section class="view" data-view="schedule">
       <div class="wrap">
         <div class="view__head">
           <div>
             <h1 class="view__title">Schedule</h1>
-            <p class="view__sub">
+            <p class="view__sub" id="sk-sub">
               Upcoming Apex &amp; Chill races, live from SimGrid. Sign up there —
               the button opens the championship page in your browser.
             </p>
           </div>
           <div class="sk-toolbar">
-            <nav class="seg" id="sk-filter" aria-label="Which rounds to show">
+            <nav class="seg" id="sk-source" aria-label="Which calendar to show">
+              <button type="button" data-sksource="daily" data-active="true">Daily races</button>
+              <button type="button" data-sksource="league">Apex &amp; Chill</button>
+            </nav>
+            <nav class="seg" id="sk-filter" aria-label="Which rounds to show" hidden>
               <button type="button" data-skfilter="upcoming" data-active="true">Upcoming</button>
               <button type="button" data-skfilter="all">All rounds</button>
             </nav>
@@ -1113,9 +1119,26 @@
           </div>
         </div>
 
-        <p class="sk-msg" id="sk-msg" hidden></p>
-        <div class="sk-grid" id="sk-grid"></div>
-        <p class="weekempty" id="sk-empty">Loading the league calendar…</p>
+        <!-- The league calendar (SimGrid). -->
+        <div class="sk-pane" id="sk-league-pane" hidden>
+          <p class="sk-msg" id="sk-msg" hidden></p>
+          <div class="sk-grid" id="sk-grid"></div>
+          <p class="weekempty" id="sk-empty">Loading the league calendar…</p>
+        </div>
+
+        <!-- The game's own calendar (RaceOS). Every time is rendered in the
+             driver's own zone; the strip below says which zone that is, so a
+             time can never be read as UTC by mistake. -->
+        <div class="sk-pane" id="sk-daily-pane">
+          <div class="sk-zone">
+            <span class="sk-zone__label" id="dl-zone">Times shown in your local time</span>
+            <button class="btn btn--ghost btn--sm" id="dl-zone-toggle" type="button">Show UTC</button>
+          </div>
+          <p class="sk-msg" id="dl-msg" hidden></p>
+          <div class="sk-tiers" id="dl-tiers"></div>
+          <div class="sk-series" id="dl-series"></div>
+          <p class="weekempty" id="dl-empty">Loading the race calendar&hellip;</p>
+        </div>
       </div>
     </section>
 

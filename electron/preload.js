@@ -445,6 +445,14 @@ contextBridge.exposeInMainWorld('apex', {
   schedule: {
     /** `{ force? }` → `{ ok, leagues[], fetchedAt, error? }`. */
     get: (query) => ipcRenderer.invoke('schedule:get', query || {}),
+    /**
+     * The game's own daily/weekly/special calendar, from RaceOS via the running
+     * game's Steam ticket. `{ force? }` → `{ ok, reason, tiers[], series[],
+     * fetchedAt, error? }`. Every time in it is a UTC ISO string — the panel
+     * formats in the driver's own zone, which is what keeps it DST-proof.
+     * `reason` is 'offline' | 'auth' | 'network' when `ok` is false.
+     */
+    dailies: (query) => ipcRenderer.invoke('schedule:dailies', query || {}),
   },
 
   /* ---- Admin panel ----

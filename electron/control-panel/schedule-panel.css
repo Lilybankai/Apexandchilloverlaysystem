@@ -202,3 +202,283 @@
   color: var(--text-3);
   font-size: 13px;
 }
+
+/* ===========================================================================
+   Daily races — the game's own calendar (RaceOS)
+   ---------------------------------------------------------------------------
+   The second source behind the tab's switch. No remote artwork: the panel's CSP
+   allows images from itself, data: and SimGrid's CDN only, and RaceOS serves its
+   card art from S3. Rather than widen the policy for decoration, these cards are
+   typographic — the countdown is the thing a driver actually reads.
+   =========================================================================== */
+
+.sk-pane[hidden] { display: none; }
+
+/* Which zone the times are in. Stated, never assumed: the league talks in UTC
+   and the panel talks local, and a time with no zone on it is a missed race. */
+.sk-zone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.sk-zone__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.sk-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .sk-tiers { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+  .sk-tiers { grid-template-columns: 1fr; }
+}
+
+.sk-tier { display: flex; flex-direction: column; }
+
+.sk-tier__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sk-tier__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.sk-tier__freq {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* The safety-rating band a tier runs in. Tinted by name rather than by tone so
+   Bronze/Silver/Gold read the same here as they do on the game's own cards. */
+.sk-sr {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  color: var(--text-2);
+}
+.sk-sr[data-sr="Bronze"] { color: #c98a5b; }
+.sk-sr[data-sr="Silver"] { color: #b9c2d4; }
+.sk-sr[data-sr="Gold"]   { color: #e0b544; }
+.sk-sr[data-sr="Platinum"] { color: var(--cyan); }
+
+/* What is on next. */
+.sk-now {
+  padding: 14px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sk-now__when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sk-now__clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cyan);
+}
+.sk-now__at {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.sk-now__title {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  line-height: 1.2;
+}
+.sk-now__track {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.sk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sk-cls {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  color: var(--text-2);
+}
+.sk-cls[data-cls="Hypercar"] { color: var(--bad); }
+.sk-cls[data-cls="LMP2"]     { color: var(--warn); }
+.sk-cls[data-cls="LMP3"]     { color: var(--purple); }
+.sk-cls[data-cls="LMGTE"]    { color: var(--blue); }
+.sk-cls[data-cls="LMGT3"]    { color: var(--ok); }
+
+.sk-facts {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.sk-facts:empty { display: none; }
+
+.sk-reg {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.sk-reg[data-state="open"] { color: var(--ok); }
+
+.sk-none {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* The rest of the rotation. Deliberately quiet — the hero above is the answer,
+   this is the "and then?" underneath it. */
+.sk-then {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.sk-then__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sk-then__row:last-child { border-bottom: 0; }
+.sk-then__time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.sk-then__title { color: var(--text); }
+.sk-then__track {
+  grid-column: 2;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* Weekly and special events. One card each, full width — these are the ones
+   worth planning a weekend around, and they carry entry counts. */
+.sk-series {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sk-series:empty { display: none; }
+
+.sk-series__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sk-series__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.sk-series__track {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.sk-slots {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+.sk-slot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.sk-slot[data-mine="true"] {
+  border-color: var(--ok);
+}
+
+/* "You are entered" — the one chip on this pane that is about YOU rather than
+   about the race, so it is the only green thing here. */
+.sk-mine {
+  color: var(--ok);
+  border-color: rgba(53, 208, 127, 0.45);
+  background: rgba(53, 208, 127, 0.1);
+}
+.sk-slot__day {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.sk-slot__in {
+  grid-column: 2;
+  grid-row: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.sk-slot__time {
+  grid-column: 1;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sk-slot__regs {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan);
+}

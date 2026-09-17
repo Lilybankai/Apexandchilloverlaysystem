@@ -383,11 +383,22 @@ const PANEL_CONTRACT = {
   // runtime; the frame (filter, refresh, empty/error) is static and contracted
   // because a dropped id here leaves a calendar that looks like it is loading
   // forever.
+  'sk-source': 'nav',
+  'sk-sub': 'p',
   'sk-filter': 'nav',
   'sk-refresh': 'button',
+  'sk-league-pane': 'div',
   'sk-msg': 'p',
   'sk-grid': 'div',
   'sk-empty': 'p',
+  // Daily races — the game's own calendar.
+  'sk-daily-pane': 'div',
+  'dl-zone': 'span',
+  'dl-zone-toggle': 'button',
+  'dl-msg': 'p',
+  'dl-tiers': 'div',
+  'dl-series': 'div',
+  'dl-empty': 'p',
 
   // Admin panel (v0.49.0) — league-staff usage + feedback inbox. The tab starts
   // hidden and is revealed by admin:whoami, so it is wired like any other

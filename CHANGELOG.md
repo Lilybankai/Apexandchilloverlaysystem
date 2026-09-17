@@ -5,6 +5,20 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.3 — 2026-09-17
+
+### Added
+
+- **The game's own race calendar, in the Schedule tab.** A switch at the top of
+  Schedule now picks between the Apex & Chill championships and Le Mans
+  Ultimate's official races: the three daily tiers with what each one is running
+  next and a live countdown to it, then the solo weekly and the team specials
+  with how many drivers have already entered each slot — and a mark on the ones
+  you are entered for. Every time is shown in your own time zone, with a switch
+  to UTC for comparing against what gets posted in Discord. It reads the game's
+  own service, so there is nothing to keep up to date each week; Le Mans
+  Ultimate has to be running and signed in, and the tab says so when it is not.
+
 ## 0.99.12-beta.2 — 2026-09-16
 
 ### Added

@@ -45,6 +45,7 @@ const featureUsage = require('./featureUsage');
 const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
+const lmuDailies = require('./lmu-dailies');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
 // Before anything schedules a timer. The census can only name callbacks that
@@ -3865,6 +3866,17 @@ function registerIpc() {
    */
   ipcMain.handle('schedule:get', (_evt, query) =>
     simgrid.getSchedule({ force: !!(query && query.force) }),
+  );
+
+  /**
+   * The game's OWN calendar for the Schedule tab: the three daily tiers, the
+   * solo weekly and the team specials, from RaceOS. Handled here rather than in
+   * the renderer because it needs a Steam session ticket out of the running
+   * game, and because the access token must never cross the preload bridge —
+   * the renderer only ever sees names, tracks and UTC times.
+   */
+  ipcMain.handle('schedule:dailies', (_evt, query) =>
+    lmuDailies.getDailies({ force: !!(query && query.force) }),
   );
 
   /**

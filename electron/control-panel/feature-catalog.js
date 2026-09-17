@@ -115,6 +115,7 @@
 
     // Schedule.
     { slug: 'action:schedule.signup', tab: 'schedule', label: 'Opened a race signup' },
+    { slug: 'action:schedule.dailies', tab: 'schedule', label: "Read the game's race calendar" },
 
     // App-wide — not owned by any one tab.
     { slug: 'action:app.guide', tab: null, label: 'Opened a guide or tour' },
