@@ -5,6 +5,23 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.13 — 2026-09-17
+
+### Fixed
+
+- **The overlay reminder survives a yellow sector and the pit lane.** On track
+  it still flashed up and vanished. Two things the race control widget shows
+  set its state without writing a line — a yellow sector anywhere on the
+  circuit, which is routine with traffic, and being in the pit lane with the
+  limiter correctly on — and either of them silently took the banner back from
+  the reminder.
+
+  Neither is a message the reminder was competing with: the sector rail has its
+  own row and still shows the hazard. A reminder now fills the banner whenever
+  the banner has nothing of its own to say, rather than only when nothing at all
+  is happening. Anything that does have something to say — the flags, the
+  limiter warning, the start lights, a booked stop — still comes first.
+
 ## 0.99.12-beta.12 — 2026-09-17
 
 ### Fixed

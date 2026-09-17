@@ -554,6 +554,45 @@ console.log('\nRace reminders on the race-control banner');
     check('once it expires the banner is the race again', lobby.state() === 'fcy', lobby.state());
   }
 
+  /* ---- ON TRACK, the states that carry no message ------------------------
+   *
+   * Reported from a real session, not the menus: the banner appeared and went
+   * within half a second. Ranked last, the reminder lost to any branch that
+   * matched — including two that set a STATE and no message, and both of which
+   * stop the chain dead:
+   *
+   *   a sector yellow anywhere on the circuit, which is routine with traffic;
+   *   being in the pit lane with the limiter correctly engaged.
+   *
+   * Neither is a line the reminder is competing with, so neither should take
+   * the banner from it. */
+  {
+    const yellow = stub();
+    yellow.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    yellow.widget.update(frame({ session: { sectorFlags: ['yellow', 'none', 'none'] } }), {});
+    check('a sector yellow no longer swallows the reminder', yellow.state() === 'notice', yellow.state());
+    check('…and the words survive it', /LMGT3 FIXED/.test(yellow.msgText()), yellow.msgText());
+
+    const lane = stub();
+    lane.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000, false);
+    lane.widget.update(frame({ player: { pit: { phase: 'entering', limiterOn: true, entryDistM: null } } }), {});
+    check('nor does the pit lane with the limiter on', lane.state() === 'notice', lane.state());
+
+    /* But a branch that DOES have something to say still wins, which is the
+       whole safety property. */
+    const lane2 = stub();
+    lane2.api.notice('ELMS SUPER 60 STARTS IN 1 MINUTE', 12000, false);
+    lane2.widget.update(frame({ player: { pit: { phase: 'entering', limiterOn: false, entryDistM: null } } }), {});
+    check('the limiter warning in the lane still wins', lane2.state() === 'limiter', lane2.state());
+
+    /* The gantry speaks in lamps rather than words, so an empty message there
+       is not an invitation. */
+    const grid = stub();
+    grid.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    grid.widget.update(frame({ session: { phase: 'countdown', startLights: { total: 5, frame: 3 } } }), {});
+    check('the start gantry is not overwritten', grid.state() === 'countdown', grid.state());
+  }
+
   /* ON TRACK the ranking is unchanged: a reminder that is not forced still
      sits under everything, which is the safety property. */
   {

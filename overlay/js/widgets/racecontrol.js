@@ -371,12 +371,25 @@
     } else if (anySectorYellow) {
       // Nothing louder to say: name the hazard the rail is showing.
       state = "yellow";
-    } else if (noticeUntil > now) {
-      // A race reminder, and LAST on purpose. Every branch above is the race
-      // director or the car: flags, the gantry, the limiter, the pit lane.
-      // "Your next daily starts in two minutes" must never sit over any of
-      // them — it is the least urgent thing this banner can say, and it only
-      // gets the banner when the banner had nothing to say at all.
+    }
+
+    /* A race reminder fills the banner whenever the banner has no message of
+     * its own — which is NOT the same as the chain reaching its end, and that
+     * difference is what made a reminder flash up and vanish on track.
+     *
+     * Two branches above set a state and no message, and both of them stop the
+     * chain dead: a sector yellow anywhere on the circuit (routine in a
+     * practice session), and being in the pit lane with the limiter correctly
+     * engaged. Ranked last, the reminder lost to both — it painted on arrival
+     * and the next frame cleared it.
+     *
+     * Neither of those is a message this is competing with. The sector rail is
+     * its own element and still shows the hazard; the pit branch had nothing to
+     * say in the first place. So the test is "did anything actually write a
+     * line?", not "did we fall off the end". The gantry is excluded because it
+     * speaks in lamps rather than words.
+     */
+    if (msg === null && !showLights && noticeUntil > now) {
       state = "notice";
       msg = noticeText;
     }
