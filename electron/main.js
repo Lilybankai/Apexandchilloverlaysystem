@@ -1978,6 +1978,14 @@ function sendIngameNotice(notice) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
 
   if (notice && notice.race) {
+    /* Off track, the race-control banner has nothing to say ABOUT THIS DRIVER:
+       with LMU's REST quiet in the lobby the provider falls back to the demo
+       simulator, whose synthetic race keeps producing flags, a gantry and a
+       green — and every one of those outranks a reminder, which is why the
+       banner flashed up and vanished within the frame. So main, which is the
+       only side that knows whether the feed is real, says when the reminder
+       takes precedence. On track it stays last, under every flag. */
+    notice = { ...notice, force: !feedOnTrack };
     // Match the banner's own dwell, plus a moment so the window does not go
     // down on the same tick the text clears.
     const dwell = Math.min(20000, Number(notice.dwellMs) || 8000) + 1500;

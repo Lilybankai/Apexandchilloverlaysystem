@@ -1130,7 +1130,7 @@
    */
   function routeNotice(n) {
     if (n && n.race && window.ApexRaceControl) {
-      if (window.ApexRaceControl.notice(n.text, n.dwellMs)) return;
+      if (window.ApexRaceControl.notice(n.text, n.dwellMs, n.force)) return;
     }
     showNotice(n);
   }

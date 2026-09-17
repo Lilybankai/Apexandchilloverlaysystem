@@ -66,6 +66,17 @@
    */
   var noticeText = "";
   var noticeUntil = 0;
+  /**
+   * Whether this notice outranks the banner's own messages.
+   *
+   * Set by main when the driver is NOT on track. It is the only side that can
+   * know: with LMU's REST quiet in the lobby the provider falls back to the
+   * demo simulator, and the frames arriving here are a synthetic race complete
+   * with flags and a start gantry. Every one of those legitimately outranks a
+   * reminder — but none of them is about the driver, who is sitting in a menu
+   * waiting for a race that has not started.
+   */
+  var noticeForce = false;
   /** How long the request-cancelled banner flashes, ms. */
   var CANCEL_FLASH_MS = 4000;
   /** The previous frame's pit phase, for the request -> none (cancel) edge. */
@@ -268,7 +279,13 @@
     var sub = null;
     var showLights = false;
 
-    if (player.finished === true) {
+    if (noticeForce && noticeUntil > now) {
+      // Off track: nothing else this banner could say is about this driver, so
+      // the reminder leads. See `noticeForce`. On track this branch is never
+      // taken and the reminder stays last, under every flag.
+      state = "notice";
+      msg = noticeText;
+    } else if (player.finished === true) {
       // We are done. This outranks every other banner: nothing about limiters,
       // pit entries or flags matters to a car that has taken the flag, and the
       // result is the one thing the driver is looking for.
@@ -402,14 +419,15 @@
    * be overwritten by the next frame that did — so it does both, and update()
    * re-derives the same thing for as long as the notice is in date.
    */
-  function showRaceNotice(text, dwellMs) {
+  function showRaceNotice(text, dwellMs, force) {
     if (!root || !text) return false;
     noticeText = String(text).toUpperCase();
     noticeUntil = Date.now() + (Number(dwellMs) || 8000);
+    noticeForce = !!force;
     /* Only when the banner has nothing of its own to say. If the race director
        is mid-sentence — a flag, the limiter, the pit lane — the next update()
        will show this instead once it falls quiet, and never before. */
-    if (stateCache === 'idle' || stateCache === 'notice') {
+    if (noticeForce || stateCache === 'idle' || stateCache === 'notice') {
       setLights(0, 0);
       setMsg(noticeText);
       setSub(null);

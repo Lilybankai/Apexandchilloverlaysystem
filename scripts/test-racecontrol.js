@@ -523,6 +523,46 @@ console.log('\nRace reminders on the race-control banner');
     check('a booked pit stop outranks a reminder', pit.state() === 'pitrequest', pit.state());
   }
 
+  /* ---- The half-second flash -------------------------------------------
+   *
+   * Reported from a real lobby: "it appeared for half a second then
+   * disappeared". In the menus LMU's REST goes quiet, the provider falls back
+   * to the DEMO simulator, and the frames still arriving are a synthetic race
+   * with its own flags and gantry. Those outrank a reminder — correctly, on
+   * track — so the banner painted and the very next frame wiped it.
+   *
+   * Off track none of that is about this driver, so main marks the notice
+   * `force` and it leads instead. */
+  {
+    const lobby = stub();
+    lobby.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, true);
+    check('a forced notice paints on arrival', lobby.state() === 'notice', lobby.state());
+
+    // The demo's synthetic race, frame after frame. Each of these would have
+    // taken the banner before.
+    lobby.widget.update(frame({ session: { phase: 'green', flag: 'green' } }), {});
+    check('a demo green flag does not wipe it', lobby.state() === 'notice', lobby.state());
+    lobby.widget.update(frame({ session: { flag: 'yellow' } }), {});
+    check('nor a demo full course yellow', lobby.state() === 'notice', lobby.state());
+    lobby.widget.update(frame({ player: { finished: true } }), {});
+    check('nor a demo chequered flag', lobby.state() === 'notice', lobby.state());
+    check('and the words are still there', /LMGT3 FIXED/.test(lobby.msgText()), lobby.msgText());
+
+    // And it still lets go when the notice runs out.
+    lobby.api.notice('X', -1, true);
+    lobby.widget.update(frame({ session: { flag: 'yellow' } }), {});
+    check('once it expires the banner is the race again', lobby.state() === 'fcy', lobby.state());
+  }
+
+  /* ON TRACK the ranking is unchanged: a reminder that is not forced still
+     sits under everything, which is the safety property. */
+  {
+    const driving = stub();
+    driving.api.notice('LMGT3 FIXED STARTS IN 2 MINUTES', 9000, false);
+    driving.widget.update(frame({ player: { pit: { phase: 'none', limiterOn: true, entryDistM: null } } }), {});
+    check('unforced, LIMITER ON still wins', driving.state() === 'limiter', driving.state());
+  }
+
   /* And it comes back once the track has nothing louder to say. */
   rc.widget.update(frame(), {});
   check('it returns when the banner falls quiet', rc.state() === 'notice', rc.state());

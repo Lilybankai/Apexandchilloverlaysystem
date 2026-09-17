@@ -5,6 +5,21 @@
      app until it is renamed.
 -->
 
+## 0.99.12-beta.12 — 2026-09-17
+
+### Fixed
+
+- **The overlay reminder no longer flashes up and vanishes.** It appeared for
+  about half a second and went. In the menus Le Mans Ultimate stops publishing,
+  the app falls back to its demo simulator to keep the widgets alive, and the
+  demo's own race — flags, a start gantry, a green — was taking the banner back
+  on the very next frame.
+
+  Off track none of that is about you: you are in a lobby waiting for a race
+  that has not started. So the reminder now leads while you are not driving, and
+  goes back to sitting under every flag, the limiter and the pit lane the moment
+  you are.
+
 ## 0.99.12-beta.11 — 2026-09-17
 
 ### Fixed
