@@ -1411,3 +1411,95 @@ html, body {
 .plugin-check--bad strong {
   color: var(--bad);
 }
+
+/* ---------------------------------------------------------------------------
+ * Settings ▸ Discord (discord-panel.js)
+ * ---------------------------------------------------------------------------
+ * Every row here is built by JS, so the styling has to work for a list of one
+ * and a list of ten. Borrowed wholesale from the cards above it: same panel
+ * tint, same hairline, same field spacing — a community is not a new kind of
+ * thing to look at, it is another card's worth of settings.
+ */
+
+.discord-row,
+.discord-channel,
+.discord-editor {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+/* Nested inside a community, so it steps back rather than stacking another
+   identical box on top of the first. */
+.discord-channels .discord-channel,
+.discord-channels .discord-editor {
+  background: var(--panel-3, var(--panel));
+  margin-bottom: 8px;
+}
+
+.discord-row__head,
+.discord-channel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.discord-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The join code is the one thing on this screen people read out loud and
+   retype, so it gets the mono face and room to breathe. */
+.discord-code code {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--cyan);
+}
+
+.discord-code .field__hint {
+  flex-basis: 100%;
+}
+
+/* Masked, and long enough to overflow a narrow panel either way. */
+.discord-channel__url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.discord-roster:empty {
+  display: none;
+}
+
+.discord-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.discord-member span:first-child {
+  min-width: 10ch;
+}
+
+/* The one status line for the whole pane. Red only when it is bad news —
+   "Saved." and "That is not a Discord webhook URL" must not look alike. */
+#discord-status[data-bad='true'],
+.discord-channel .field__hint[data-bad='true'] {
+  color: var(--bad);
+}

@@ -605,6 +605,23 @@ const PANEL_CONTRACT = {
   'fuel-empty': 'div',
   'fuel-result': 'div',
 
+  // Settings ▸ Discord (docs/DISCORD-NOTIFICATIONS.md). Only the containers
+  // and the two entry controls are contracted: every community row, channel
+  // row and editor field is built by discord-panel.js and reached through its
+  // container, never by id. Rename one of these and the pane renders empty
+  // with no error — the lists simply have nowhere to go.
+  'discord-signedout': 'p',
+  'discord-join-code': 'input:text',
+  'discord-join': 'button',
+  'discord-create-name': 'input:text',
+  'discord-create': 'button',
+  'discord-status': 'p',
+  'discord-communities': 'div',
+  'discord-communities-empty': 'p',
+  'discord-personal': 'div',
+  'discord-add-personal': 'button',
+  'discord-refresh': 'button',
+
   // Team tab (docs/TEAM-ENGINEER-PAGE.md Phase 1) — the pit-wall view.
   // Contracted because team-panel.js grabs every one of these at load; the
   // card bodies are re-rendered from live pushes, so a renamed id here is a
@@ -928,6 +945,10 @@ verifyPage({
     // The Engineer tab. Same split as Fuel and Team — engineer-panel.js is the
     // only one of the engineer files that touches the DOM.
     'engineer-panel.js',
+    // Settings ▸ Discord. Owns its own containers; everything inside them is
+    // built per community and per channel, so it is reached through the
+    // container rather than by id.
+    'discord-panel.js',
   ],
   contract: PANEL_CONTRACT,
 });

@@ -3049,6 +3049,9 @@
           <button type="button" data-settingspane="controls">
             <svg class="icon"><use href="#i-keyboard" /></svg><span>Controls</span>
           </button>
+          <button type="button" data-settingspane="discord">
+            <svg class="icon"><use href="#i-message-circle" /></svg><span>Discord</span>
+          </button>
           <button type="button" data-settingspane="account">
             <svg class="icon"><use href="#i-user" /></svg><span>Account</span>
           </button>
@@ -3484,6 +3487,105 @@
         </div>
         </div>
 
+        <!-- ==================== DISCORD ==================== -->
+        <!-- Records into a Discord channel (docs/DISCORD-NOTIFICATIONS.md).
+             Two ways in, and most drivers only ever use one of them: join a
+             league's community with a code from their Discord, or point a
+             channel of your own at your own server. The rows inside the two
+             list containers are built by discord-panel.js — they are per
+             community and per channel, so they cannot be static markup. -->
+        <div class="settings-pane" data-settingspane="discord">
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-message-circle" /></svg>Discord notifications
+            </h2>
+            <p class="card__desc">
+              When a record falls, post it in a Discord channel. Join your
+              league's community with the code they share, or point a channel at
+              your own server. Only records that actually change a board leader
+              are ever posted — a personal best that beats nobody is not news.
+            </p>
+          </div>
+
+          <p class="weekempty" id="discord-signedout" hidden>
+            Sign in under Settings → Account to use Discord notifications.
+          </p>
+
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field__label">Join a community</span>
+              <div class="chat-yt-row">
+                <input class="field__input" id="discord-join-code" type="text"
+                       placeholder="ABCD-1234" autocomplete="off" spellcheck="false"
+                       maxlength="12" />
+                <button class="btn btn--accent btn--sm" id="discord-join" type="button">Join</button>
+              </div>
+              <span class="field__hint">
+                The code your league posted in their own Discord. Case and the
+                dash do not matter.
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Start a community</span>
+              <div class="chat-yt-row">
+                <input class="field__input" id="discord-create-name" type="text"
+                       placeholder="My league" autocomplete="off" maxlength="60" />
+                <button class="btn btn--ghost btn--sm" id="discord-create" type="button">Create</button>
+              </div>
+              <span class="field__hint">
+                For running a league. You get a join code to share and a channel
+                to point at your Discord.
+              </span>
+            </label>
+          </div>
+
+          <p class="field__hint" id="discord-status"></p>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-users" /></svg>Your communities
+            </h2>
+            <p class="card__desc">
+              What you share with each one is yours to set. An admin decides
+              what the channel is allowed to post; this decides what of yours it
+              is allowed to post about.
+            </p>
+          </div>
+          <div id="discord-communities"></div>
+          <p class="weekempty" id="discord-communities-empty" hidden>
+            You are not in a community yet. Join one with a code, or start your own.
+          </p>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title">
+              <svg class="icon"><use href="#i-send" /></svg>Your own channel
+            </h2>
+            <p class="card__desc">
+              Nothing to do with a league: your records, in a server you pick.
+              In Discord, open Channel settings → Integrations → Webhooks → New
+              webhook, then copy the URL.
+            </p>
+          </div>
+          <div id="discord-personal"></div>
+          <div class="lmu-bind__actions">
+            <button class="btn btn--ghost btn--sm" id="discord-add-personal" type="button">
+              Add a channel
+            </button>
+            <button class="btn btn--ghost btn--sm" id="discord-refresh" type="button">
+              Refresh
+            </button>
+          </div>
+        </section>
+
+        </div><!-- /discord -->
+
         <!-- ==================== ACCOUNT ==================== -->
         <div class="settings-pane" data-settingspane="account">
 
@@ -3874,6 +3976,9 @@
      be clicked the moment they paint — so everything it reaches for has to
      already exist. control-panel.js calls its init() once settings have
      arrived; nothing here runs on its own. -->
+<!-- Settings ▸ Discord. Self-contained: it owns its own container ids and is
+     driven entirely by pushes from electron/discord-cloud.js. -->
+<script src="discord-panel.js"></script>
 <!-- The guided walkthrough. Before onboarding.js, which launches it: a
      checklist row can be clicked the moment it paints. -->
 <script src="tour.js"></script>

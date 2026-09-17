@@ -134,6 +134,31 @@ contextBridge.exposeInMainWorld('apex', {
   teamSetActive: (id) => ipcRenderer.invoke('team:setActive', id),
   /** Start/stop the 3 s relay poll (Team source on the pit wall). */
   teamWatch: (on) => ipcRenderer.invoke('team:watch', on),
+
+  /* ---- Communities + Discord channels (Settings ▸ Discord) ---- */
+
+  /** Communities I am in and my own channels (also pushed via onDiscordState). */
+  discordState: () => ipcRenderer.invoke('discord:state'),
+  discordRefresh: () => ipcRenderer.invoke('discord:refresh'),
+  discordCreateCommunity: (name) => ipcRenderer.invoke('discord:createCommunity', name),
+  discordJoinCommunity: (code) => ipcRenderer.invoke('discord:joinCommunity', code),
+  discordLeaveCommunity: (id) => ipcRenderer.invoke('discord:leaveCommunity', id),
+  discordRotateCode: (id) => ipcRenderer.invoke('discord:rotateCode', id),
+  discordRemoveMember: (id, userId) => ipcRenderer.invoke('discord:removeMember', id, userId),
+  discordSetShare: (id, share) => ipcRenderer.invoke('discord:setShare', id, share),
+  discordRoster: (id) => ipcRenderer.invoke('discord:roster', id),
+  /** Save a channel. An empty `webhook` keeps the stored one — the renderer
+   *  never holds it, because every read path returns it masked. */
+  discordSaveChannel: (input) => ipcRenderer.invoke('discord:saveChannel', input),
+  discordDeleteChannel: (id) => ipcRenderer.invoke('discord:deleteChannel', id),
+  /** Post a "connected" message straight to a webhook, before it is saved. */
+  discordTestWebhook: (url) => ipcRenderer.invoke('discord:testWebhook', url),
+  /** Community/channel list pushes. Returns unsubscribe. */
+  onDiscordState: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('discord:state', listener);
+    return () => ipcRenderer.removeListener('discord:state', listener);
+  },
   /** Roster/publish-status pushes. Returns unsubscribe. */
   onTeamCloud: (callback) => {
     const listener = (_evt, payload) => callback(payload);

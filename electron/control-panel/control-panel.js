@@ -7455,6 +7455,11 @@
     } catch {
       /* storage disabled — the pane just won't persist */
     }
+    // The Discord pane is the one section backed by the cloud rather than by
+    // local settings, so opening it is the moment to make sure the lists are
+    // not stale — a community joined on another PC, or a channel an admin
+    // paused, would otherwise sit wrong until the next sign-in.
+    if (target === 'discord') window.apexDiscord?.shown();
   }
 
   for (const btn of document.querySelectorAll('#settings-seg button[data-settingspane]')) {

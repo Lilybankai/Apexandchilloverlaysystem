@@ -5,6 +5,37 @@
      app until it is renamed.
 -->
 
+### Added
+
+- **Records posted into Discord.** Settings → Discord connects a channel, and
+  when a record falls it says so — who took it, from whom, by how much, and how
+  long the old one had stood. Join your league's community with the code they
+  share and your records go to their channel; or point a channel of your own at
+  your own server and keep it to yourself. What each community is allowed to
+  post about you is your choice, not the admin's.
+
+  It is deliberately quiet. Only a lap that actually changes a board leader is
+  ever posted — a personal best that beats nobody is not news — and a lap that
+  earns two records is one message, not two. Improve your own record again in
+  the same session and the message you already posted is updated rather than a
+  new one appearing. A league channel can also hear about records set by
+  drivers outside it, on the boards that league actually races, which is how
+  you find out someone has taken one of yours.
+
+- **Race results too, with the whole field.** Finish an official daily, weekly
+  or special event and the classification appears in your channel: the podium,
+  how many were classified, and your own people's finishes picked out of it —
+  including the drivers who have never used this app, because the result comes
+  from the game's own service rather than from us. One message per race, not
+  one per driver, however many of you were in it. It waits ten minutes before
+  posting so that everybody's app has had a chance to report the same race.
+  Le Mans Ultimate has to have been running for this; private league races on
+  someone's own server are not published anywhere we can read.
+
+
+
+
+
 ## 0.99.12-beta.4 — 2026-09-17
 
 ### Added

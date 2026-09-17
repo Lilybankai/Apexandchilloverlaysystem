@@ -1151,6 +1151,8 @@ const TEAM_PUSH_MS = 1000;
 const { buildTeamSnapshot } = require('./team-snapshot');
 const { TeamHistory, tyreProjection } = require('./team-history');
 const teamCloud = require('./team-cloud');
+const discordCloud = require('./discord-cloud');
+const resultsHarvest = require('./results-harvest');
 
 /**
  * The race memory behind the Positions/lap-time charts and the tyre
@@ -1413,6 +1415,10 @@ function dialStatusFeed() {
       }
       lastFeedFrame = frame;
       maybePushTeamSnapshot(frame);
+      // Costs a boolean and a name lookup. All it does is record that the game
+      // is up and being driven, so the results poll knows there is any point
+      // spending a request — see electron/results-harvest.js.
+      resultsHarvest.noteFrame(frame);
     } catch {
       /* ignore malformed frame */
     }
@@ -4288,6 +4294,24 @@ function registerIpc() {
   ipcMain.handle('team:setActive', (_evt, id) => teamCloud.setActiveTeam(id));
   ipcMain.handle('team:watch', (_evt, on) => teamCloud.setWatching(!!on));
 
+  /* Communities and their Discord channels — Settings ▸ Discord. Pushes
+   * 'discord:state' whenever either list changes. The webhook URL travels one
+   * way only: in on save, never back out. */
+  ipcMain.handle('discord:state', () => discordCloud.stateForUi());
+  ipcMain.handle('discord:refresh', () =>
+    discordCloud.refresh().then(() => discordCloud.stateForUi()));
+  ipcMain.handle('discord:createCommunity', (_evt, name) => discordCloud.createCommunity(name));
+  ipcMain.handle('discord:joinCommunity', (_evt, code) => discordCloud.joinCommunity(code));
+  ipcMain.handle('discord:leaveCommunity', (_evt, id) => discordCloud.leaveCommunity(id));
+  ipcMain.handle('discord:rotateCode', (_evt, id) => discordCloud.rotateCode(id));
+  ipcMain.handle('discord:removeMember', (_evt, id, userId) =>
+    discordCloud.removeMember(id, userId));
+  ipcMain.handle('discord:setShare', (_evt, id, share) => discordCloud.setShare(id, share));
+  ipcMain.handle('discord:roster', (_evt, id) => discordCloud.roster(id));
+  ipcMain.handle('discord:saveChannel', (_evt, input) => discordCloud.saveChannel(input));
+  ipcMain.handle('discord:deleteChannel', (_evt, id) => discordCloud.deleteChannel(id));
+  ipcMain.handle('discord:testWebhook', (_evt, url) => discordCloud.testWebhook(url));
+
   /** Bind (or clear, with an empty accelerator) one action. */
   ipcMain.handle('actions:bind', (_evt, actionId, accelerator) => {
     if (typeof actionId !== 'string' || typeof accelerator !== 'string') {
@@ -4533,6 +4557,8 @@ function registerIpc() {
       // for exactly this moment. Not awaited — signing in must not block on it.
       void lapUpload.sync({ reason: 'sign-in' });
       teamCloud.onAuthChanged();
+      discordCloud.onAuthChanged();
+      resultsHarvest.onAuthChanged();
     }
     return res;
   });
@@ -4563,6 +4589,8 @@ function registerIpc() {
     // sign-in may be someone else, and a comp must not carry across.
     billingService.clear();
     teamCloud.onAuthChanged();
+    discordCloud.onAuthChanged();
+    resultsHarvest.onAuthChanged();
     loadPage('auth');
     return res;
   });
@@ -4601,6 +4629,8 @@ function registerIpc() {
     }
     billingService.clear();
     teamCloud.onAuthChanged();
+    discordCloud.onAuthChanged();
+    resultsHarvest.onAuthChanged();
     // The upload ledger belonged to the deleted account. A future sign-in on
     // this PC must not believe these laps were already submitted.
     try {
@@ -5596,6 +5626,33 @@ app.whenReady().then(async () => {
             try { mainWindow.webContents.send('team:relay', update); } catch { /* teardown */ }
           }
         },
+      });
+      // Communities + Discord channels. Same chain and the same reason: its
+      // first read wants a live token. It costs two RPCs at sign-in and
+      // nothing at all after that — there is no polling here, only the reads
+      // the settings panel asks for.
+      discordCloud.init({
+        auth: authService,
+        onState: (state) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            try { mainWindow.webContents.send('discord:state', state); } catch { /* teardown */ }
+          }
+        },
+      });
+      // Official race results. Nothing happens unless LMU is running (the
+      // Steam ticket is bought from the game itself) and nothing has been
+      // driven, so on a machine sitting at the desktop this costs one failed
+      // loopback connection every quarter of an hour.
+      resultsHarvest.init({
+        auth: authService,
+        userDataDir: app.getPath('userData'),
+        lmuApiPort: (() => {
+          const n = loadSettings().lmuApiPort;
+          return Number.isFinite(n) ? n : 6397;
+        })(),
+        loadClient: () =>
+          require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceosResults.js'))
+            .RaceosResultsClient,
       });
       // Start the usage heartbeat from inside the same chain, for the same
       // reason: its first beat wants a live token, so firing it before the
