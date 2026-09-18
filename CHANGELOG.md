@@ -5,16 +5,64 @@
      app until it is renamed.
 -->
 
-<!-- Partner applications. These notes were briefly moved up here as
-     "unreleased, 0.99.12-beta.14 was never cut". It WAS cut — it is published
-     as a prerelease with its installer, at 13:53 on 2026-09-17 — so its entry
-     belongs in the history below and has been put back.
+## 1.0.1 — 2026-09-18
 
-     What is true is that 1.0.0 went out ten minutes later WITHOUT this
-     feature, and being the newer version it supersedes the beta for everyone,
-     including beta testers. So the feature is live in the database and in no
-     installer anybody will end up running. Whoever cuts the next release
-     should carry these notes forward into it. -->
+The first day of 1.0 with a league on it. The Discord side had been built but
+never switched on, and the race results it would have posted were not yours.
+Both fixed. And the partner application form, which was cut as a beta ten
+minutes before 1.0 and so never reached anybody, is in this one.
+
+### Added
+
+- **Ask to become a partner, from inside the app.** Anyone without a partner
+  code now has a **Become a partner** card in Settings → Account: stream, run a
+  league or have an audience anywhere, and you can put your hand up for a code
+  of your own. Until now the only way to get one was to know to ask — the card
+  that shows a partner their link is hidden for everybody else, so the whole
+  thing was invisible to exactly the people it is for.
+
+  The form says up front what this is: the 10% goes to *your* audience, and
+  there is no commission or payout to you. It is something worth having to put
+  on a stream, not an earner. Better said before you apply than discovered a
+  month after you have promoted it.
+
+  You can have one application open at a time, and if we turn one down you will
+  see why, in our own words, and when you can try again.
+
+- **Approving one is a single click, and it emails them.** League staff get an
+  **Applications** queue at the top of Admin → Referrals — who applied, where
+  they would use it, whether they subscribe themselves, and what they asked for.
+  Approve issues the code, links it to their account so their link and their
+  numbers appear in their own Settings, closes the application and emails them
+  their code and their stream overlay. Declining emails nobody; the reason you
+  type is shown to them in the app instead.
+
+  The state of that email sits on the row — *emailed*, *email queued* or
+  *EMAIL FAILED* — because an approved partner who was never told is the one
+  failure this could otherwise hide.
+
+### Fixed
+
+- **Your league's Discord channel now receives messages.** The part of the
+  system that posts them was never switched on for 1.0 — every record and race
+  result was recorded, and nothing went out. It runs every minute now. What to
+  expect: a lap posts only when it beats the board's leader **and** the board
+  already has three other drivers on it (a record on an empty board is not
+  news; the number is yours to change on the channel), and a race result
+  arrives about ten minutes after the first of your drivers' apps sees it, with
+  your drivers' positions listed.
+
+- **Race results are yours, not the platform's.** The app was uploading
+  whatever had finished last on the game's servers, whether you had been in it
+  or not — the first message in a league's channel would have been a podium of
+  strangers. A race is now recorded only when you are found in its
+  classification, and you are found even when the results service shows your
+  name with a `#1234` tag on the end. The app also used to go looking for
+  results a minute after launch, before it knew your name; it waits now.
+
+- **The pictures in our emails.** Every email sent since the sequences were
+  switched on had a broken logo. The file was never published to the site;
+  it is now.
 
 ## 1.0.0 — 2026-09-17
 
