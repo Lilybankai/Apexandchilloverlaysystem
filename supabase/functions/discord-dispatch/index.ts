@@ -37,7 +37,10 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const DISPATCH_KEY = Deno.env.get('DISCORD_DISPATCH_KEY') ?? '';
+// Trimmed: a secret pasted into the dashboard arrives with the newline it was
+// copied with, and 65 characters never equals 64. Found the hard way on
+// 2026-09-18 — every minute a 403, and the value looked right on screen.
+const DISPATCH_KEY = (Deno.env.get('DISCORD_DISPATCH_KEY') ?? '').trim();
 
 // Discord's per-webhook limit is 5 requests/second, and a burst of records is
 // at most a few dozen. Sequential with a gap beats racing the rate limiter.
@@ -62,7 +65,7 @@ Deno.serve(async (req) => {
 
   // The boundary. A missing key means the function was deployed before its
   // secret was set, and that fails closed, not open.
-  const given = req.headers.get('x-dispatch-key') ?? '';
+  const given = (req.headers.get('x-dispatch-key') ?? '').trim();
   if (!DISPATCH_KEY || given !== DISPATCH_KEY) {
     return json({ error: 'forbidden' }, 403);
   }
