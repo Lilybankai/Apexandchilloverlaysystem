@@ -117,12 +117,21 @@ of our API.
   problem and a lost ACL. This change adds no argument, so replacing in place
   keeps both the grants and every installed client working.
 
-## Setup (the cloud half is not deployed yet)
+## Setup
+
+Done on 2026-09-18, a day after the app half shipped — the tables filled for
+24 hours with nothing scheduled to drain them (61 events, empty outbox), which
+from inside a Discord looks like "it's broken". Step 4 lives in
+`0032_discord_dispatch_schedule.sql` because the MCP's SQL tool is read-only
+and a migration is its only write path; that file also skips the pre-launch
+backlog, since the fan-out has no age cutoff of its own.
 
 1. Apply `0026_discord_communities.sql`, then `0027_event_results.sql`.
-2. Set `DISCORD_DISPATCH_KEY` in the function secrets.
+2. Set `DISCORD_DISPATCH_KEY` in the function secrets (dashboard ▸ Edge
+   Functions ▸ Secrets). Same value as the vault row — the cron sends it, the
+   function compares it, and a mismatch is a silent 403 every minute.
 3. Deploy: `supabase functions deploy discord-dispatch`.
-4. Schedule it, in the SQL editor, once — same shape as the email dispatcher:
+4. Schedule it, once — same shape as the email dispatcher (0032 does this):
 
 ```sql
 select vault.create_secret('<the DISCORD_DISPATCH_KEY value>', 'discord_dispatch_key');
