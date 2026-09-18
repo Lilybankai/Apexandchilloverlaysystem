@@ -238,6 +238,17 @@ function projectRow(raw: Record<string, unknown>): ResultRow | null {
 }
 
 /**
+ * What two spellings of a driver have to agree on to be the same person: case
+ * folded, whitespace collapsed, and RaceOS's `#1234` discriminator dropped.
+ * The service shows some accounts as "Ryan Harris#5182" where the game's own
+ * standings row says "Ryan Harris", and a strict compare left those drivers
+ * absent from their own results on 2026-09-17.
+ */
+export function nameKey(name: string): string {
+  return name.replace(/#\d+$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
  * Raw `api/v1/results` response → the events worth uploading.
  *
  * `myNames` is what the app knows this driver is called locally (LMU's own
@@ -254,7 +265,7 @@ export function projectResults(raw: unknown, myNames: string[] = []): HarvestedE
     : (pick(raw, 'results', 'items', 'data', 'events') as unknown[]) || [];
   if (!Array.isArray(list)) return [];
 
-  const mineKeys = new Set(myNames.map((n) => str(n).toLowerCase()).filter(Boolean));
+  const mineKeys = new Set(myNames.map((n) => nameKey(str(n))).filter(Boolean));
   const out: HarvestedEvent[] = [];
 
   for (const entry of list) {
@@ -285,7 +296,7 @@ export function projectResults(raw: unknown, myNames: string[] = []): HarvestedE
       track,
       startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null,
       classification: rows,
-      mine: rows.find((r) => mineKeys.has(r.name.toLowerCase()))?.name ?? null,
+      mine: rows.find((r) => mineKeys.has(nameKey(r.name)))?.name ?? null,
     });
   }
 

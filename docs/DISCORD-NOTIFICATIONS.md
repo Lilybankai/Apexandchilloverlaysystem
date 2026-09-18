@@ -161,11 +161,21 @@ anything — safe against live data.
 
 ## How a race becomes a message
 
-1. The desktop polls — but only when the game is running and something has been
-   driven, and it asks for **one** event first (~230 KB). If that event is
-   already in the local ledger, nothing has finished since the last look and
-   the poll stops there. Only a genuinely new one triggers the wider `take=3`
-   fetch.
+1. The desktop polls — but only when the game is running, something has been
+   driven, **and it knows the driver's name** (from a standings frame). It asks
+   for **one** event first (~230 KB). If that event is already in the local
+   ledger, nothing has finished since the last look and the poll stops there.
+   Only a genuinely new one triggers the wider `take=3` fetch.
+
+   `api/v1/results` is RaceOS's **global** recent-results feed, not this
+   account's history — the first day proved it (24 of 39 uploads were races
+   nobody of ours was in). So an event whose classification does not contain
+   the driver is remembered in the ledger and never uploaded, and the server
+   refuses one anyway (`not_in_race`, 0033). Names are compared normalised:
+   case-folded, whitespace-collapsed, and with RaceOS's `#1234` discriminator
+   dropped, because the service shows "Ryan Harris#5182" where the game says
+   "Ryan Harris". The startup look used to fire 60 s after launch, before any
+   frame, and uploaded with no name at all; it now waits for the first name.
 2. `projectResults()` cuts the payload down to a whitelist of ten fields per
    driver. Nothing downstream ever sees the raw response, which carries team
    rosters, livery URLs and per-driver rating adjustments — and, from the

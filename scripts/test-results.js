@@ -176,10 +176,17 @@ async function main() {
     check('lap times are milliseconds', e.classification[0].bestLapMs === 120412, e.classification[0].bestLapMs);
     check('race time is milliseconds', e.classification[0].totalMs === 2589574, e.classification[0].totalMs);
 
-    // An event we were not in still projects — the podium is worth posting, and
-    // another member's upload can fill in who else was there.
+    // An event we were not in still projects; it is the HARVESTER that
+    // declines to upload it (below), so the projection stays a pure function.
     const anon = projectResults(fixture(), []);
     check('an unidentifiable driver still yields the event', anon.length === 1 && anon[0].mine === null);
+
+    // RaceOS shows some accounts as "Name#1234" where the game's standings row
+    // says "Name" — and the other way round. Neither spelling may lose the
+    // driver their own result.
+    const tagged = projectResults(fixture(), ['josh christie#4321']);
+    check('a #discriminator on our side still matches', tagged[0].mine === 'Josh Christie', String(tagged[0].mine));
+    check('so does case and spacing', projectResults(fixture(), ['  JOSH   Christie '])[0].mine === 'Josh Christie');
 
     /* ---- The live shape, which the fixture above is NOT ------------------
      *
@@ -270,6 +277,14 @@ async function main() {
     const auth = fakeAuth();
     harvest.init({ auth, userDataDir: tmpDir(), loadClient: () => client.Ctor });
 
+    // Until the driver has a name, even a forced pass must not ask: the feed
+    // is global, and a pass that cannot tell which row is ours would upload
+    // whoever finished last on the platform.
+    const nameless = await harvest.harvest({ force: true });
+    check('no name, no request', nameless.skipped === true && nameless.reason === 'no-name', JSON.stringify(nameless));
+    check('not even the probe', client.takes.length === 0);
+    harvest.noteFrame({ standings: [{ driverName: 'x', isPlayer: true }] });
+
     // First pass: nothing known yet, so the probe finds something new and the
     // catch-up fetch follows.
     const first = await harvest.harvest({ force: true });
@@ -300,13 +315,15 @@ async function main() {
   console.log('\nThe ledger, and refusals');
   {
     const dir = tmpDir();
-    const one = [{ eventKey: 'raceos:evt-2', eventType: '', name: '', track: '', startedAt: null, classification: [{ pos: 1, name: 'x' }], mine: '' }];
+    const one = [{ eventKey: 'raceos:evt-2', eventType: '', name: '', track: '', startedAt: null, classification: [{ pos: 1, name: 'x' }], mine: 'x' }];
+    const named = () => harvest.noteFrame({ standings: [{ driverName: 'x', isPlayer: true }] });
 
     // A refusal is about this event's shape and will never improve. It must be
     // remembered, or every pass pays for it again forever.
     const refusing = fakeClient([one, one]);
     const auth = fakeAuth(() => ({ ok: true, body: { ok: false, reason: 'implausible_field' } }));
     harvest.init({ auth, userDataDir: dir, loadClient: () => refusing.Ctor });
+    named();
     await harvest.harvest({ force: true });
     check('a refused event is remembered', harvest._state().seen.includes('raceos:evt-2'));
     harvest.stop();
@@ -317,8 +334,23 @@ async function main() {
     const failing = fakeClient([one, one]);
     const offline = fakeAuth(() => ({ ok: false, error: 'offline' }));
     harvest.init({ auth: offline, userDataDir: dir2, loadClient: () => failing.Ctor });
+    named();
     await harvest.harvest({ force: true });
     check('an upload failure is not remembered', !harvest._state().seen.includes('raceos:evt-2'));
+    harvest.stop();
+
+    // A race we were NOT in is the common case on a global feed. It is
+    // remembered — so the next pass does not pay to rediscover it — and it
+    // never reaches the server.
+    const dir3 = tmpDir();
+    const stranger = [{ ...one[0], eventKey: 'raceos:evt-stranger', mine: null }];
+    const strangers = fakeClient([stranger, stranger]);
+    const quiet = fakeAuth();
+    harvest.init({ auth: quiet, userDataDir: dir3, loadClient: () => strangers.Ctor });
+    named();
+    const skipped = await harvest.harvest({ force: true });
+    check("a stranger's race is not uploaded", skipped.events === 0 && quiet.calls.length === 0, JSON.stringify(skipped));
+    check('but is remembered', harvest._state().seen.includes('raceos:evt-stranger'));
     harvest.stop();
 
     // And the ledger survives a restart.

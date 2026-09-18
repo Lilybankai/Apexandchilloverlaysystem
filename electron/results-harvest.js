@@ -58,6 +58,8 @@ let ledgerPath = null;
 /** Event keys already uploaded, newest last. */
 let seen = [];
 let timer = null;
+/** The one-off look scheduled when the driver's name first becomes known. */
+let nameTimer = null;
 let running = false;
 /** Set by main whenever a frame arrives: the game is up and being driven. */
 let dirty = false;
@@ -109,6 +111,11 @@ function remember(key) {
 async function harvest({ reason = 'poll', force = false } = {}) {
   if (running || !signedIn() || !client) return { ok: false, skipped: true };
   if (!force && !dirty) return { ok: true, skipped: true };
+  // Nothing to do until the driver has a name. `api/v1/results` is the
+  // service's GLOBAL recent-results feed, not this account's history, so a
+  // pass that cannot tell which row is ours would upload whatever strangers
+  // finished last — which on 2026-09-17 was 24 of 39 uploads.
+  if (!lastNames.length) return { ok: true, skipped: true, reason: 'no-name' };
   running = true;
   try {
     // One event. If we already know it, nothing has been finished since the
@@ -130,6 +137,13 @@ async function harvest({ reason = 'poll', force = false } = {}) {
     let stored = 0;
 
     for (const event of fresh) {
+      // Not our race. Remembered so the next pass does not pay to rediscover
+      // it; a race we WERE in but could not be matched to is the same outcome,
+      // and the server refuses those anyway (see 0033).
+      if (!event.mine) {
+        remember(event.eventKey);
+        continue;
+      }
       const res = await auth.rpc('submit_event_results', {
         p_event_key: event.eventKey,
         p_event_type: event.eventType,
@@ -204,6 +218,8 @@ function init(opts) {
   stop();
   timer = setInterval(() => void harvest({ reason: 'poll' }), POLL_MS);
   timer.unref?.();
+  // The startup look stays for the case where a name is already known (a
+  // re-init mid-session); with none it returns 'no-name' and costs nothing.
   setTimeout(() => void harvest({ reason: 'startup', force: true }), FIRST_LOOK_MS).unref?.();
 }
 
@@ -211,6 +227,10 @@ function stop() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  if (nameTimer) {
+    clearTimeout(nameTimer);
+    nameTimer = null;
   }
 }
 
@@ -231,7 +251,16 @@ function noteFrame(frame) {
   if (name && !lastNames.includes(name)) {
     // Kept, not replaced: a driver who renames mid-season still matches the
     // results of races they ran under the old name.
+    const firstName = lastNames.length === 0;
     lastNames = [...lastNames.slice(-4), name];
+    // The first name of the session is what the startup look was waiting for:
+    // it fired 60 s after launch, usually before any frame, and uploaded with
+    // no idea which row was ours. Now it runs the moment it can be useful.
+    if (firstName) {
+      if (nameTimer) clearTimeout(nameTimer);
+      nameTimer = setTimeout(() => void harvest({ reason: 'first-name', force: true }), 5000);
+      nameTimer.unref?.();
+    }
   }
 }
 
