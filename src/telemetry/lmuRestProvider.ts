@@ -1686,7 +1686,8 @@ export class LmuRestProvider implements TelemetryProvider {
     // Same track+type identity every other per-session tracker keys on, from
     // the raw feed because `session` is built a few lines further down.
     const frameSessionKey = `${si.trackName ?? ''}|${si.session ?? ''}`;
-    const standings = this.buildStandings(cars, focusId, frameSessionKey, trackLen);
+    const ownId = playerCar ? playerCar.slotID : UNKNOWN_VALUE;
+    const standings = this.buildStandings(cars, focusId, ownId, frameSessionKey, trackLen);
     const relative = this.buildRelative(cars, focus, si);
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
@@ -2054,6 +2055,7 @@ export class LmuRestProvider implements TelemetryProvider {
   private buildStandings(
     cars: RestStanding[],
     focusId: number,
+    ownId: number,
     sessionKey: string,
     trackLen: number,
   ): StandingEntry[] {
@@ -2066,7 +2068,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // next one, which is sooner than any eye can ask for it.
     if (
       cars === this.standingsCacheCars &&
-      this.standingsCacheKey === `${focusId}|${sessionKey}|${trackLen}`
+      this.standingsCacheKey === `${focusId}|${ownId}|${sessionKey}|${trackLen}`
     ) {
       return this.standingsCache;
     }
@@ -2142,6 +2144,9 @@ export class LmuRestProvider implements TelemetryProvider {
         typeof c.veFraction === 'number' && c.veFraction > 0 ? clamp01(c.veFraction) : undefined,
       // Highlight the car currently in broadcast focus.
       isPlayer: c.slotID === focusId,
+      // The car we are IN — LMU's own player flag, which the camera cannot
+      // move. See StandingEntry.isOwn for who depends on the difference.
+      ...(ownId !== UNKNOWN_VALUE && c.slotID === ownId ? { isOwn: true } : {}),
       };
     });
     rows.sort((a, b) => a.position - b.position);
@@ -2157,7 +2162,7 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     assignClassPositions(rows, classHints);
     this.standingsCacheCars = cars;
-    this.standingsCacheKey = `${focusId}|${sessionKey}|${trackLen}`;
+    this.standingsCacheKey = `${focusId}|${ownId}|${sessionKey}|${trackLen}`;
     this.standingsCache = rows;
     return rows;
   }

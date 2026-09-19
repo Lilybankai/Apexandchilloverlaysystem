@@ -1241,8 +1241,22 @@ export interface StandingEntry {
   driverRank?: { rank: string; tier: number };
   /** The **Safety Rating** rank badge — as {@link driverRank}, `sr` artwork. */
   safetyRank?: { rank: string; tier: number };
-  /** `true` for the player's own row (for highlight). */
+  /**
+   * `true` for the row the overlays treat as the player — the car with
+   * broadcast FOCUS, which follows the camera: after the flag, in the monitor,
+   * or spectating, this is whoever is being watched. Highlight only.
+   */
   isPlayer: boolean;
+  /**
+   * `true` for the car this driver is actually in (LMU's own `player` flag),
+   * which never moves with the camera. Absent when no car is ours — spectating
+   * a race from outside it, or the other stint of a team event. Anything that
+   * has to answer "which of these people is ME" (the results upload naming its
+   * own row, and so the league's Discord) reads this, never {@link isPlayer}:
+   * on 2026-09-19 four members' apps uploaded the driver they happened to be
+   * WATCHING as themselves, and the channel announced strangers as ours.
+   */
+  isOwn?: boolean;
 }
 
 /**

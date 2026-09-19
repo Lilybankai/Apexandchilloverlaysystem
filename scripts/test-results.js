@@ -283,7 +283,7 @@ async function main() {
     const nameless = await harvest.harvest({ force: true });
     check('no name, no request', nameless.skipped === true && nameless.reason === 'no-name', JSON.stringify(nameless));
     check('not even the probe', client.takes.length === 0);
-    harvest.noteFrame({ standings: [{ driverName: 'x', isPlayer: true }] });
+    harvest.noteFrame({ standings: [{ driverName: 'x', isOwn: true, isPlayer: true }] });
 
     // First pass: nothing known yet, so the probe finds something new and the
     // catch-up fetch follows.
@@ -316,7 +316,7 @@ async function main() {
   {
     const dir = tmpDir();
     const one = [{ eventKey: 'raceos:evt-2', eventType: '', name: '', track: '', startedAt: null, classification: [{ pos: 1, name: 'x' }], mine: 'x' }];
-    const named = () => harvest.noteFrame({ standings: [{ driverName: 'x', isPlayer: true }] });
+    const named = () => harvest.noteFrame({ standings: [{ driverName: 'x', isOwn: true, isPlayer: true }] });
 
     // A refusal is about this event's shape and will never improve. It must be
     // remembered, or every pass pays for it again forever.
@@ -366,14 +366,27 @@ async function main() {
     harvest.init({ auth: fakeAuth(), userDataDir: tmpDir(), loadClient: () => fakeClient([]).Ctor });
     harvest.noteFrame({
       standings: [
-        { driverName: 'Someone Else', isPlayer: false },
-        { driverName: 'Josh Christie', isPlayer: true },
+        { driverName: 'Someone Else', isOwn: false, isPlayer: false },
+        { driverName: 'Josh Christie', isOwn: true, isPlayer: true },
       ],
     });
     check('the name comes from the row flagged as ours', harvest._state().names.includes('Josh Christie'));
     check('and not from the others', !harvest._state().names.includes('Someone Else'));
 
-    harvest.noteFrame({ standings: [{ driverName: 'Renamed Driver', isPlayer: true }] });
+    // isPlayer is broadcast focus: after the flag it is whoever the camera is
+    // on. On 2026-09-19 that put George Barr in a league's channel as "your
+    // driver" because a member was watching him. Focus must never name us.
+    harvest.noteFrame({
+      standings: [
+        { driverName: 'George Barr', isOwn: false, isPlayer: true },
+        { driverName: 'Josh Christie', isOwn: true, isPlayer: false },
+      ],
+    });
+    check('the car in broadcast focus is not us', !harvest._state().names.includes('George Barr'));
+    harvest.noteFrame({ standings: [{ driverName: 'Spectated Only', isPlayer: true }] });
+    check('a frame with no own car names nobody', !harvest._state().names.includes('Spectated Only'));
+
+    harvest.noteFrame({ standings: [{ driverName: 'Renamed Driver', isOwn: true, isPlayer: true }] });
     const names = harvest._state().names;
     check('a rename keeps the old name too', names.includes('Josh Christie') && names.includes('Renamed Driver'), names.join(','));
     check('a frame marks there is something to look for', harvest._state().dirty === true);

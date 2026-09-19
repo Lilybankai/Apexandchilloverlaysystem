@@ -5,6 +5,23 @@
      app until it is renamed.
 -->
 
+## 1.0.3 — 2026-09-19
+
+The league's Discord called strangers "your driver". Not any more.
+
+### Fixed
+
+- **Race results named the wrong driver as yours.** The app took the car the
+  camera was on as the one you were driving — fine on track, wrong the moment
+  you finished and sat watching someone else. Four of today's uploads named the
+  driver a member happened to be spectating, and the channel announced George
+  Barr and William Andre as ours. The results upload now reads the car you are
+  actually in, and if you are only watching it names nobody.
+
+- **"Finished Normally" is gone from the result card.** That is the service's
+  wording for an ordinary finish. A retirement or a disqualification still
+  says so.
+
 ## 1.0.2 — 2026-09-19
 
 The freeze is gone. It had been in every stall log for a month, and it was us,

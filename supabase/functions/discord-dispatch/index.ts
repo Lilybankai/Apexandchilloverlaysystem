@@ -298,7 +298,9 @@ function resultEmbed(p: Record<string, unknown>, style: { colour: number; title:
           const bits = [
             row.bestLapMs ? `best ${lapTime(row.bestLapMs)}` : '',
             Number.isFinite(Number(row.laps)) ? `${Number(row.laps)} laps` : '',
-            clean(row.status, '') && String(row.status).toLowerCase() !== 'finished'
+            // Only a status worth a word: RaceOS writes "Finished Normally" on
+            // every ordinary finish, which reads as a joke about the driver.
+            clean(row.status, '') && !/^finished/i.test(String(row.status))
               ? clean(row.status, '')
               : '',
           ].filter(Boolean);

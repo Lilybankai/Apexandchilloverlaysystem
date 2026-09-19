@@ -241,11 +241,16 @@ function stop() {
  */
 function noteFrame(frame) {
   dirty = true;
-  // The standings row flagged as ours carries the name the results service
-  // will have used, which the PlayerState block does not — same row
-  // team-snapshot.js reaches for, and for the same reason.
+  // The standings row for the car we are IN carries the name the results
+  // service will have used, which the PlayerState block does not. `isOwn`, not
+  // `isPlayer`: isPlayer is broadcast focus and follows the camera, so after
+  // the flag it is whoever we are watching — which is how, on 2026-09-19, four
+  // members uploaded George Barr, William Andre, Carlos Cp1 and Iliyas
+  // Boulfiham as themselves and the league's channel called them "your
+  // driver". A frame with no own row (spectating, the other stint of a team
+  // event) names nobody; the names already learned are kept.
   const mine = frame && Array.isArray(frame.standings)
-    ? frame.standings.find((row) => row && row.isPlayer)
+    ? frame.standings.find((row) => row && row.isOwn)
     : null;
   const name = mine && mine.driverName ? String(mine.driverName).trim() : '';
   if (name && !lastNames.includes(name)) {
