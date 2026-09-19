@@ -38,6 +38,7 @@ import { buildAidRows, noteLiveAids } from './aidRows';
 import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
 import { KeySender } from './keySender';
 import { ensureSharedMemoryPluginOnStartup } from './pluginInstaller';
+import { primeSteamRoots } from './lmuKeybinds';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -861,6 +862,10 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // that holds both the controller and the key sender they need.
   setRaceControlRows(() => buildRaceControlRows(mfdDeps.controller, mfdDeps.keys));
   setAidRows(() => buildAidRows(mfdDeps.keys));
+  // Those rows read LMU's keyboard.json, which is found via Steam's registry
+  // entry. Ask for it now, off the thread, so the first rebuild never spawns
+  // reg.exe on the main thread itself — see steamRootsFromRegistry.
+  void primeSteamRoots();
 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.

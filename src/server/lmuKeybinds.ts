@@ -32,7 +32,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 
 /** A resolved key press: a set-1 scancode plus whether it is an extended key. */
 export interface ScanKey {
@@ -363,26 +363,98 @@ export function normalizeLmuRoot(input: string): string | null {
  * whose setup saves all failed with "LMU install not found" while the REST
  * side worked fine (2026-08-12).
  */
+const STEAM_REGISTRY_KEYS: Array<[string, string]> = [
+  ['HKCU\\Software\\Valve\\Steam', 'SteamPath'],
+  ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'],
+];
+
+function parseRegQuery(text: string): string | null {
+  const m = /REG_SZ\s+(.+)/.exec(text);
+  const p = m?.[1]?.trim().replace(/\//g, '\\');
+  return p || null;
+}
+
+/*
+ * The registry answer is CACHED, and refreshed off the main thread.
+ *
+ * `reg.exe` is a child process, and `execFileSync` parks the caller until it
+ * exits. This function sits under readLmuKeybinds(), which the MFD cursor
+ * calls every time it rebuilds its rows — so for a month every rebuild spawned
+ * two processes on the Electron main thread, and on a machine where process
+ * creation is slow (0.3–2 s here, 2026-09-19, every stall profile of the day
+ * ending in `spawn <- execFileSync <- steamRootsFromRegistry`) the overlays,
+ * the WebSocket feed and every IPC call froze for exactly that long. That was
+ * the unexplained periodic stall of stalls.log since 2026-09-07.
+ *
+ * Where Steam is installed does not change while the app runs, so the value
+ * is read once — synchronously only if nothing has primed it — and thereafter
+ * served from memory while a background `execFile` refreshes it every
+ * STEAM_ROOTS_TTL_MS. The lookup that MUST stay live is the driver's own
+ * folder choice, and that never comes through here (see candidateLmuRoots).
+ */
+const STEAM_ROOTS_TTL_MS = 10 * 60_000;
+let steamRootsCache: { roots: string[]; at: number } | null = null;
+let steamRootsRefresh: Promise<string[]> | null = null;
+
+function queryRegistryValue(key: string, value: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'reg',
+      ['query', key, '/v', value],
+      { encoding: 'utf8', windowsHide: true, timeout: 3000 },
+      (err, stdout) => resolve(err ? null : parseRegQuery(String(stdout))),
+    );
+  });
+}
+
+/**
+ * Fills the Steam-root cache without blocking. Call once at start-up so the
+ * first read on the hot path never has to spawn anything itself; safe to call
+ * again at any time (a refresh already in flight is shared).
+ */
+export function primeSteamRoots(): Promise<string[]> {
+  if (steamRootsRefresh) return steamRootsRefresh;
+  steamRootsRefresh = Promise.all(STEAM_REGISTRY_KEYS.map(([k, v]) => queryRegistryValue(k, v)))
+    .then((values) => {
+      const roots = values.filter((p): p is string => !!p);
+      steamRootsCache = { roots, at: Date.now() };
+      return roots;
+    })
+    .catch(() => steamRootsCache?.roots ?? [])
+    .finally(() => {
+      steamRootsRefresh = null;
+    });
+  return steamRootsRefresh;
+}
+
+/** Test seam: forget the cached answer so the next call queries again. */
+export function forgetSteamRoots(): void {
+  steamRootsCache = null;
+}
+
 function steamRootsFromRegistry(): string[] {
+  const now = Date.now();
+  if (steamRootsCache) {
+    if (now - steamRootsCache.at > STEAM_ROOTS_TTL_MS) void primeSteamRoots();
+    return steamRootsCache.roots;
+  }
+  // Nothing cached and nobody asked ahead of time: the one blocking read.
   const out: string[] = [];
-  const keys: Array<[string, string]> = [
-    ['HKCU\\Software\\Valve\\Steam', 'SteamPath'],
-    ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'],
-  ];
-  for (const [key, value] of keys) {
+  for (const [key, value] of STEAM_REGISTRY_KEYS) {
     try {
-      const text = execFileSync('reg', ['query', key, '/v', value], {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 3000,
-      });
-      const m = /REG_SZ\s+(.+)/.exec(text);
-      const p = m?.[1]?.trim().replace(/\//g, '\\');
+      const p = parseRegQuery(
+        execFileSync('reg', ['query', key, '/v', value], {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 3000,
+        }),
+      );
       if (p) out.push(p);
     } catch {
       /* value absent (no Steam, or 32-bit hive missing) — fine */
     }
   }
+  steamRootsCache = { roots: out, at: now };
   return out;
 }
 

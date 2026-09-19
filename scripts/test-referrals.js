@@ -374,6 +374,20 @@ async function main() {
       check(`window.apex.${api} is exposed and used`,
         preload.includes(`${leaf}:`) && panel.includes(leaf));
     }
+
+    /*
+     * Electron THROWS on window.prompt ("prompt() is not supported"). Approve
+     * and Decline were first wired through it, and inside an async click
+     * handler the throw was an unhandled rejection nobody saw: the click did
+     * nothing, no request left the app, and the row sat pending (1.0.1). The
+     * app's own askText() sheet replaced it; nothing in the renderer may go
+     * back to the browser one.
+     */
+    check(
+      'the renderer never calls window.prompt (Electron throws on it)',
+      !/window\.prompt\s*\(/.test(panel),
+    );
+    check('Approve and Decline ask through askText()', (panel.match(/await askText\(/g) || []).length >= 3);
   }
 }
 

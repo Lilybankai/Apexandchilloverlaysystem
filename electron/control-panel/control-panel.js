@@ -99,6 +99,61 @@
     toastTimer = setTimeout(() => toast.removeAttribute('data-show'), 1400);
   }
 
+  /**
+   * Ask the operator for one line of text — the app's own `prompt()`.
+   *
+   * Electron does not implement window.prompt: it THROWS ("prompt() is not
+   * supported"), and inside an async click handler that throw is an unhandled
+   * rejection nobody sees. The Approve button on a partner application was
+   * wired through it, so the click did nothing at all — no dialog, no error,
+   * no request — and the only trace was a pending row that never moved.
+   * window.confirm works (Chromium's own dialog); prompt alone is missing.
+   *
+   * Resolves to the trimmed text on OK / Enter, and to null on Cancel, Escape,
+   * the close button or the scrim — the same contract as the browser's, so a
+   * caller distinguishes "cancelled" (null) from "left it blank" ('').
+   */
+  const ask = $('#ask');
+  const askInput = $('#ask-input');
+  let askResolve = null;
+  function askText({ title, message = '', value = '', placeholder = '', okLabel = 'OK' } = {}) {
+    if (!ask || !askInput) return Promise.resolve(null);
+    if (askResolve) askResolve(null); // a second question replaces the first
+    return new Promise((resolve) => {
+      askResolve = resolve;
+      $('#ask-title').textContent = title || 'Confirm';
+      $('#ask-msg').textContent = message;
+      $('#ask-ok').textContent = okLabel;
+      askInput.value = value;
+      askInput.placeholder = placeholder;
+      ask.hidden = false;
+      askInput.focus();
+      askInput.select();
+    });
+  }
+  function askDone(answer) {
+    if (!ask || ask.hidden) return;
+    ask.hidden = true;
+    const resolve = askResolve;
+    askResolve = null;
+    if (resolve) resolve(answer);
+  }
+  if (ask) {
+    $('#ask-ok').addEventListener('click', () => askDone(askInput.value.trim()));
+    for (const sel of ['#ask-cancel', '#ask-close', '#ask-scrim']) {
+      $(sel).addEventListener('click', () => askDone(null));
+    }
+    askInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        askDone(askInput.value.trim());
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') askDone(null);
+    });
+  }
+
   // --- Rendering -----------------------------------------------------------
 
   // Latest known status/settings — the in-game buttons depend on both.
@@ -5102,7 +5157,14 @@
     link.addEventListener('click', async () => {
       let email = '';
       if (!row.ownerEmail) {
-        email = (window.prompt(`Link ${row.code} to which account email?`, '') || '').trim();
+        email = (
+          (await askText({
+            title: `Link ${row.code}`,
+            message: 'Which account email? They will see this code, its link and its numbers in their own Settings.',
+            placeholder: 'driver@example.com',
+            okLabel: 'Link',
+          })) || ''
+        ).trim();
         if (!email) return;
       } else if (
         !window.confirm(
@@ -5307,11 +5369,13 @@
          * after the email has gone is too late.
          */
         const code = (
-          window.prompt(
-            `Approve ${row.displayName || row.email}?\n\n` +
-              'This issues the code, links it to their account and emails them.',
-            row.wantedCode || '',
-          ) || ''
+          (await askText({
+            title: `Approve ${row.displayName || row.email}?`,
+            message: 'This issues the code, links it to their account and emails them.',
+            value: row.wantedCode || '',
+            placeholder: 'THEIRCODE',
+            okLabel: 'Approve',
+          })) || ''
         ).trim();
         if (!code) return;
         approve.disabled = true;
@@ -5333,12 +5397,14 @@
       decline.type = 'button';
       decline.textContent = 'Decline';
       decline.addEventListener('click', async () => {
-        const reason = window.prompt(
-          `Decline ${row.displayName || row.email}?\n\n` +
+        const reason = await askText({
+          title: `Decline ${row.displayName || row.email}?`,
+          message:
             'No email is sent. Whatever you write here is shown to them in the ' +
             'app, word for word, so write it to be read.',
-          '',
-        );
+          placeholder: 'Why (optional)',
+          okLabel: 'Decline',
+        });
         // Cancel, not an empty reason: null is "I changed my mind", '' is "no
         // reason given", and only the first should abandon the decision.
         if (reason === null) return;

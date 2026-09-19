@@ -3945,6 +3945,33 @@
   </section>
 </div>
 
+<!-- ====================== ASK (one line of text) ======================
+     The app's own prompt(). Electron throws on window.prompt, so anything
+     that needs a typed answer — a partner code, a decline reason, an email
+     to link a code to — goes through this. askText() in control-panel.js
+     fills and answers it. -->
+<div class="sheet sheet--ask" id="ask" hidden role="dialog" aria-modal="true" aria-labelledby="ask-title">
+  <div class="sheet__scrim" id="ask-scrim"></div>
+  <section class="sheet__panel">
+    <header class="sheet__head">
+      <span class="sheet__titles">
+        <h2 class="sheet__title" id="ask-title">Confirm</h2>
+      </span>
+      <button class="iconbtn" id="ask-close" type="button" title="Cancel" aria-label="Cancel">
+        <svg class="icon"><use href="#i-x" /></svg>
+      </button>
+    </header>
+    <div class="sheet__body ask__body">
+      <p class="ask__msg" id="ask-msg"></p>
+      <input class="field__input ask__input" id="ask-input" type="text" autocomplete="off" spellcheck="false" />
+    </div>
+    <footer class="sheet__foot ask__foot">
+      <button class="btn btn--ghost" id="ask-cancel" type="button">Cancel</button>
+      <button class="btn btn--accent" id="ask-ok" type="button">OK</button>
+    </footer>
+  </section>
+</div>
+
 <!-- ====================== FEEDBACK REPLY =============================
      The league has answered something this driver sent from the Suggestions
      tab. Opens by itself when feedback_unread_replies returns anything, and

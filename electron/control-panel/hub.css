@@ -1716,6 +1716,21 @@ html, body { height: 100%; overflow: hidden; }
 .sheet__all:hover { color: var(--cyan); }
 .sheet__all .icon { width: 13px; height: 13px; }
 
+/* --------------------- ask: one line of text ---------------------------- */
+/* A question, not a document: narrow, and the input takes the full width —
+   `.field__input` is otherwise a fixed 130px meant for a port number. */
+.sheet--ask .sheet__panel { width: min(460px, 100%); }
+.ask__body { padding: 16px 22px 18px; }
+.ask__msg {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-line;
+}
+.ask__input { width: 100%; max-width: none; font-family: var(--font-ui); }
+.ask__foot { justify-content: flex-end; }
+
 /* ----------------------------- one release ------------------------------ */
 
 .release + .release {

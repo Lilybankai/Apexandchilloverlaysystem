@@ -47,6 +47,8 @@ const path = require('node:path');
 const {
   candidateLmuRoots,
   describeLmuPaths,
+  forgetSteamRoots,
+  primeSteamRoots,
   findLmuPlayerDir,
   findLmuSettingsDir,
   looksLikeLmuRoot,
@@ -187,11 +189,42 @@ withOverride(empty, () => {
   check('a stale chosen folder is reported invalid', r.chosen === empty && r.chosenValid === false);
 });
 
-/* ---- cleanup ------------------------------------------------------------- */
-if (savedRoot !== undefined) process.env.APEX_LMU_ROOT = savedRoot;
-if (savedUserData !== undefined) process.env.APEX_LMU_USERDATA = savedUserData;
-fs.rmSync(tmp, { recursive: true, force: true });
-fs.rmSync(empty, { recursive: true, force: true });
+/* ---- the registry is asked once, not on every call ----------------------- */
+/*
+ * candidateLmuRoots() runs under readLmuKeybinds(), which the MFD cursor calls
+ * on every row rebuild. The Steam root comes from `reg.exe`, and spawning it
+ * synchronously on every call froze the whole app for 0.3–2 s a time on a PC
+ * where process creation is slow (every stall profile of 2026-09-19). So: the
+ * first call may spawn; later ones must not, and a primed cache means even
+ * the first one does not.
+ */
+(async () => {
+  forgetSteamRoots();
+  const t0 = process.hrtime.bigint();
+  candidateLmuRoots();
+  const first = Number(process.hrtime.bigint() - t0) / 1e6;
+  const t1 = process.hrtime.bigint();
+  for (let i = 0; i < 50; i++) candidateLmuRoots();
+  const fifty = Number(process.hrtime.bigint() - t1) / 1e6;
+  check(
+    'fifty cached root walks cost less than one uncached one',
+    fifty < Math.max(first, 5),
+    `first ${first.toFixed(1)}ms, next fifty ${fifty.toFixed(1)}ms total`,
+  );
+  forgetSteamRoots();
+  const primed = await primeSteamRoots();
+  check('primeSteamRoots resolves to an array', Array.isArray(primed));
+  const t2 = process.hrtime.bigint();
+  candidateLmuRoots();
+  const afterPrime = Number(process.hrtime.bigint() - t2) / 1e6;
+  check('a primed cache makes the first call cheap too', afterPrime < 5, `${afterPrime.toFixed(2)}ms`);
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed ? 1 : 0);
+  /* ---- cleanup ----------------------------------------------------------- */
+  if (savedRoot !== undefined) process.env.APEX_LMU_ROOT = savedRoot;
+  if (savedUserData !== undefined) process.env.APEX_LMU_USERDATA = savedUserData;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(empty, { recursive: true, force: true });
+
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  process.exit(failed ? 1 : 0);
+})();

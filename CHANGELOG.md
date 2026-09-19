@@ -5,6 +5,32 @@
      app until it is renamed.
 -->
 
+## 1.0.2 — 2026-09-19
+
+The freeze is gone. It had been in every stall log for a month, and it was us,
+not the game. Also the partner Approve button, which did nothing at all.
+
+### Fixed
+
+- **The stall, found and fixed.** The freeze that has been in every stall log
+  since the start of the month — overlays, the pit wall feed and the app's own
+  buttons all stopping for anything from a quarter of a second to two seconds
+  at a time, in every race — was the app asking Windows where Steam is
+  installed. It did that by running the `reg` command, and it ran it every time
+  the MFD rebuilt its rows, waiting for the answer on the thread that draws
+  everything. Where Steam lives does not change while you are racing, so the
+  answer is now read once, in the background, and remembered. Thirteen stall
+  profiles from one race today all ended in the same place; none should now.
+
+- **Approving a partner application did nothing.** Admin → Referrals →
+  Approve (and Decline, and Link on a code) asked for the code through the
+  browser's own `prompt()` box, which Electron does not have: the click threw
+  under the surface, no dialog opened, nothing was sent, and the application
+  just sat there pending. All three now ask through the app's own dialog, with
+  the applicant's suggested code prefilled, and Enter or Escape do what you
+  would expect. The first real application had to be approved by hand because
+  of this.
+
 ## 1.0.1 — 2026-09-18
 
 The first day of 1.0 with a league on it. The Discord side had been built but

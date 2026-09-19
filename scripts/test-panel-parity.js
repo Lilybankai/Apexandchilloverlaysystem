@@ -154,6 +154,18 @@ const PANEL_CONTRACT = {
   'whatsnew-all': 'a',
   'whatsnew-open': 'button',
 
+  // The app's own prompt() (v1.0.2). Electron throws on window.prompt, so a
+  // typed answer — partner code, decline reason, link-to email — comes
+  // through this sheet. Must stay an <input>: askText() reads .value.
+  ask: 'div',
+  'ask-scrim': 'div',
+  'ask-title': 'h2',
+  'ask-msg': 'p',
+  'ask-input': 'input:text',
+  'ask-close': 'button',
+  'ask-cancel': 'button',
+  'ask-ok': 'button',
+
   // Dashboard stat tiles. v0.24.0 swapped these from SERVER stats (feed, port,
   // update rate) to the driver stats the design system's Dashboard specifies;
   // the server facts they replaced all live in the footer below.
