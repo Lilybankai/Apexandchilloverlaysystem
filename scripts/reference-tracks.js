@@ -320,6 +320,18 @@ const CIRCUITS = [
     ],
   },
   {
+    id: 'long_beach',
+    name: 'Grand Prix of Long Beach',
+    match: ['long beach'],
+    layouts: [
+      // US Track Pass 2 (2026-09-22). LMU's REST name is "Grand Prix of Long
+      // Beach"; 1.968 mi, the live lap measured 3187. The sheet carries the row
+      // with no times yet — it is listed here so the build does not refuse the
+      // sheet, and it scores the day the row fills in.
+      { id: 'long_beach', name: 'Full Circuit', sheet: 'Long Beach', lengthM: 3167, primary: true },
+    ],
+  },
+  {
     id: 'monza',
     name: 'Autodromo Nazionale Monza',
     match: ['monza'],
@@ -434,6 +446,17 @@ const CIRCUITS = [
         config: ['short'],
         sim: ['short'],
       },
+    ],
+  },
+  {
+    id: 'road_atlanta',
+    name: 'Michelin Raceway Road Atlanta',
+    match: ['road atlanta', 'atlanta'],
+    layouts: [
+      // US Track Pass 2 (2026-09-22). LMU's REST name is "Michelin Raceway Road
+      // Atlanta"; 2.54 mi, the live lap measured 4083. Sheet row present, no
+      // times yet.
+      { id: 'road_atlanta', name: 'Full Circuit', sheet: 'Road Atlanta', lengthM: 4088, primary: true },
     ],
   },
   {

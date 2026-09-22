@@ -81,8 +81,11 @@ check(
 console.log('\nScoring arithmetic');
 /* -------------------------------------------------------------------------- */
 
-/* Bahrain GP is single-length-resolvable and its GT3 reference is 1:59.09. */
-const BAHRAIN_GT3 = ms('1:59.09');
+/* Bahrain GP is single-length-resolvable. Its GT3 reference is read off the
+ * shipped table rather than written here: the sheet moves with every LMU patch
+ * (1:59.09 in August, quicker by September) and these checks are about the
+ * arithmetic around the reference, not about which vintage was baked. */
+const BAHRAIN_GT3 = require('../overlay/js/data/reference-times.json').times.bahrain_gp.LMGT3.raceMs;
 
 function bahrain(lapMs, extra) {
   return scoreLap({
@@ -467,7 +470,12 @@ console.log('\nCoverage of the shipped table');
 {
   const table = require('../overlay/js/data/reference-times.json');
   const layouts = Object.keys(table.times);
-  check('every mapped layout has times', layouts.length === 31, `${layouts.length} layouts`);
+  const mapped = table.circuits.reduce((n, c) => n + c.layouts.length, 0);
+  const pending = table.pending || [];
+  check('every mapped layout has times or is pending', layouts.length + pending.length === mapped,
+    `${layouts.length} timed + ${pending.length} pending of ${mapped} mapped`);
+  check('pending layouts carry no times', pending.every((id) => !table.times[id]), pending.join(','));
+  check('31 timed layouts as of the 2026-09 sheet', layouts.length === 31, `${layouts.length} layouts`);
 
   let entries = 0;
   let bad = [];

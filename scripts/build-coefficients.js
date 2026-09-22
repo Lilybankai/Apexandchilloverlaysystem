@@ -64,6 +64,8 @@ const TRACK_ALIASES = {
   'circuit-de-spa-francorchamps_6982': 'spa_gp',
   'circuit-of-the-americas_5497': 'cota_gp',
   'daytona-international-speedway-road-course_5734': 'daytona_road',
+  'grand-prix-of-long-beach_3187': 'long_beach',
+  'michelin-raceway-road-atlanta_4083': 'road_atlanta',
   'lusail-international-circuit_5405': 'qatar_gp',
   'monza-curva-grande-circuit_5745': 'monza_curva_grande',
   'paul-ricard-elms_5807': 'paul_ricard_gp',

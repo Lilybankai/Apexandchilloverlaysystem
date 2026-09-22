@@ -231,6 +231,11 @@ function build(csv) {
   const times = {};
   const unplaced = new Set();
   const skipped = [];
+  // Sheet labels that appeared at all, with or without a baseline. A mapped
+  // layout whose label is on the sheet but whose every row is "N/A" is a
+  // circuit the sheet knows and has not timed yet (Long Beach and Road Atlanta
+  // on the day US Track Pass 2 landed) — that is pending, not a rename.
+  const seen = new Set();
   let placed = 0;
 
   for (let i = cols.headerRow + 1; i < rows.length; i++) {
@@ -245,6 +250,7 @@ function build(csv) {
       unplaced.add(label);
       continue;
     }
+    seen.add(label);
 
     const raceMs = timeToMs(row[cols.race]);
     if (!raceMs) {
@@ -278,9 +284,12 @@ function build(csv) {
   }
 
   const empty = [];
+  const pending = [];
   for (const circuit of CIRCUITS) {
     for (const layout of circuit.layouts) {
-      if (!times[layout.id]) empty.push(`${layout.id} ("${layout.sheet}")`);
+      if (times[layout.id]) continue;
+      if (seen.has(layout.sheet)) pending.push(layout.id);
+      else empty.push(`${layout.id} ("${layout.sheet}")`);
     }
   }
   if (empty.length) {
@@ -307,8 +316,12 @@ function build(csv) {
     classes: CLASSES,
     circuits: CIRCUITS,
     times,
-    stats: { placed, skipped: skipped.length },
+    stats: { placed, skipped: skipped.length, pending: pending.length },
     skipped,
+    // Mapped layouts the sheet lists but has not timed yet. They resolve (the
+    // track is known) and then refuse with `no-reference`, which is the honest
+    // state until the row fills in.
+    pending,
   };
 }
 
@@ -336,6 +349,7 @@ async function main() {
       `${data.doc.sheetUpdated ? ` — sheet updated ${data.doc.sheetUpdated}` : ''}`,
   );
   for (const s of data.skipped) console.log(`  skipped: ${s}`);
+  for (const p of data.pending) console.log(`  pending: ${p} (on the sheet, no times yet)`);
 
   if (checkOnly) {
     let before = '';

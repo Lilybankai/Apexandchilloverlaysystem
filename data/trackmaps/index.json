@@ -180,6 +180,16 @@
       "builtAt": "2026-08-05T17:07:54.222Z"
     },
     {
+      "key": "grand-prix-of-long-beach-3190",
+      "name": "Grand Prix of Long Beach",
+      "config": "Grand Prix of Long Beach",
+      "lengthM": 3187.4,
+      "halfWidthM": 8.3,
+      "binM": 6,
+      "points": 531,
+      "builtAt": "2026-09-22T09:47:28.549Z"
+    },
+    {
       "key": "lusail-international-circuit-5410",
       "name": "Lusail International Circuit",
       "config": "Lusail International Circuit",
@@ -198,6 +208,16 @@
       "binM": 6,
       "points": 613,
       "builtAt": "2026-08-04T22:44:20.055Z"
+    },
+    {
+      "key": "michelin-raceway-road-atlanta-4080",
+      "name": "Michelin Raceway Road Atlanta",
+      "config": "Michelin Raceway Road Atlanta",
+      "lengthM": 4083.5,
+      "halfWidthM": 9.2,
+      "binM": 6,
+      "points": 681,
+      "builtAt": "2026-09-22T09:59:00.950Z"
     },
     {
       "key": "monza-curva-grande-circuit-5750",

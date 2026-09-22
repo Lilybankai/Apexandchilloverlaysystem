@@ -148,6 +148,36 @@
         { id: "silverstone_national", name: "National Circuit", length: 2.639 },
       ],
     },
+    // US Track Pass 1 + 2. Lap times are IMSA-derived estimates (see the panel's
+    // fuel-data.js); the live values from telemetry take over in AUTO.
+    {
+      id: "daytona",
+      name: "Daytona International Speedway",
+      location: "Daytona Beach, USA",
+      dlc: "US Track Pass 1",
+      layouts: [{ id: "daytona_road", name: "Road Course", length: 5.729 }],
+    },
+    {
+      id: "laguna_seca",
+      name: "WeatherTech Raceway Laguna Seca",
+      location: "Monterey, USA",
+      dlc: "US Track Pass 1",
+      layouts: [{ id: "laguna_seca", name: "Full Circuit", length: 3.602 }],
+    },
+    {
+      id: "long_beach",
+      name: "Grand Prix of Long Beach",
+      location: "Long Beach, USA",
+      dlc: "US Track Pass 2",
+      layouts: [{ id: "long_beach", name: "Full Circuit", length: 3.167 }],
+    },
+    {
+      id: "road_atlanta",
+      name: "Michelin Raceway Road Atlanta",
+      location: "Braselton, USA",
+      dlc: "US Track Pass 2",
+      layouts: [{ id: "road_atlanta", name: "Full Circuit", length: 4.088 }],
+    },
   ];
 
   var CAR_CLASSES = [
@@ -462,6 +492,10 @@
     silverstone_gp_wec: { hypercar: 106.89, lmp2: 110.94, lmp3: 115.99, gte: 126, lmgt3: 123.15 },
     silverstone_international: { hypercar: 59, lmp2: 64, lmp3: 60.21, gte: 68, lmgt3: 69 },
     silverstone_national: { hypercar: 52, lmp2: 56, lmp3: 52.45, gte: 60, lmgt3: 55.46 },
+    daytona_road: { hypercar: 95.5, lmp2: 99.8, lmp3: 101.5, gte: 104.5, lmgt3: 106.5 },
+    laguna_seca: { hypercar: 71.5, lmp2: 74.8, lmp3: 77.9, gte: 80.5, lmgt3: 81.8 },
+    long_beach: { hypercar: 72.5, lmp2: 75.5, lmp3: 78.5, gte: 80.5, lmgt3: 82.0 },
+    road_atlanta: { hypercar: 70.0, lmp2: 73.0, lmp3: 76.5, gte: 78.5, lmgt3: 80.0 },
   };
 
   /* --------------------------------- helpers ------------------------------ */

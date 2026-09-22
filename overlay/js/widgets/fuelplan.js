@@ -62,6 +62,10 @@
     paul_ricard: ["paul ricard", "ricard", "castellet"],
     sebring: ["sebring"],
     silverstone: ["silverstone"],
+    daytona: ["daytona"],
+    laguna_seca: ["laguna"],
+    long_beach: ["long beach"],
+    road_atlanta: ["road atlanta", "atlanta"],
   };
 
   // Persisted planning state (track/car identity + manual overrides + UI).

@@ -14,8 +14,8 @@
       "youtubeUrl": "https://www.youtube.com/@ohne_speed",
       "note": "Reference lap times and the Alien→Offline band labels are Ohne Speed's work, used with credit. Apex AIO System only reads them."
     },
-    "sheetUpdated": "2026.08.04. 08:28 CEST",
-    "generatedAt": "2026-08-04T22:21:59.137Z",
+    "sheetUpdated": "2026.09.22. 09:30 CEST",
+    "generatedAt": "2026-09-22T09:53:04.875Z",
     "generatedBy": "scripts/fetch-reference-times.js",
     "warning": "Generated file — edit reference-tracks.js and re-run, never this."
   },
@@ -376,6 +376,22 @@
       ]
     },
     {
+      "id": "long_beach",
+      "name": "Grand Prix of Long Beach",
+      "match": [
+        "long beach"
+      ],
+      "layouts": [
+        {
+          "id": "long_beach",
+          "name": "Full Circuit",
+          "sheet": "Long Beach",
+          "lengthM": 3167,
+          "primary": true
+        }
+      ]
+    },
+    {
       "id": "monza",
       "name": "Autodromo Nazionale Monza",
       "match": [
@@ -558,6 +574,23 @@
       ]
     },
     {
+      "id": "road_atlanta",
+      "name": "Michelin Raceway Road Atlanta",
+      "match": [
+        "road atlanta",
+        "atlanta"
+      ],
+      "layouts": [
+        {
+          "id": "road_atlanta",
+          "name": "Full Circuit",
+          "sheet": "Road Atlanta",
+          "lengthM": 4088,
+          "primary": true
+        }
+      ]
+    },
+    {
       "id": "sebring",
       "name": "Sebring International Raceway",
       "match": [
@@ -662,39 +695,39 @@
   "times": {
     "bahrain_gp": {
       "LMGT3": {
-        "raceMs": 119090,
-        "hotlapMs": 118500,
-        "fastestMs": 118220,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 118910,
+        "hotlapMs": 118310,
+        "fastestMs": 118100,
+        "fastestCar": "BMW M4 (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 105810,
-        "hotlapMs": 105280,
-        "fastestMs": 105190,
-        "fastestCar": "Alpine A424 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 105400,
+        "hotlapMs": 104880,
+        "fastestMs": 104700,
+        "fastestCar": "Lamborghini SC63 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 114020,
-        "hotlapMs": 113450,
-        "fastestMs": 113190,
-        "fastestCar": "Duqueine D09 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 113630,
+        "hotlapMs": 113070,
+        "fastestMs": 112730,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 106370,
+        "raceMs": 106380,
         "hotlapMs": 105850,
         "fastestMs": 105850,
-        "fastestCar": "Oreca ELMS (v1.24)",
-        "patch": "1.2+"
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 109990,
-        "hotlapMs": 109450,
-        "fastestMs": 109450,
-        "fastestCar": "Oreca WEC (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 110400,
+        "hotlapMs": 109850,
+        "fastestMs": 109850,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 118680,
@@ -713,32 +746,32 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 130630,
-        "hotlapMs": 129980,
-        "fastestMs": 129830,
-        "fastestCar": "Alpine A424 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 130670,
+        "hotlapMs": 130020,
+        "fastestMs": 129900,
+        "fastestCar": "Isotta Fraschini Tipo 6 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 139930,
-        "hotlapMs": 139240,
-        "fastestMs": 138850,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 139600,
+        "hotlapMs": 138900,
+        "fastestMs": 138760,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 132200,
-        "hotlapMs": 131540,
-        "fastestMs": 131540,
-        "fastestCar": "Oreca ELMS (v1.1)",
-        "patch": "1.1+"
+        "raceMs": 131130,
+        "hotlapMs": 130470,
+        "fastestMs": 130470,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 136410,
-        "hotlapMs": 135730,
-        "fastestMs": 135730,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 135630,
+        "hotlapMs": 134960,
+        "fastestMs": 134960,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 144260,
@@ -757,18 +790,18 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 64230,
-        "hotlapMs": 63910,
-        "fastestMs": 63820,
-        "fastestCar": "Cadillac V-Series.R (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 64250,
+        "hotlapMs": 63930,
+        "fastestMs": 63790,
+        "fastestCar": "Ferrari 499P (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 69770,
-        "hotlapMs": 69430,
-        "fastestMs": 69260,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 69550,
+        "hotlapMs": 69210,
+        "fastestMs": 69070,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
         "raceMs": 64850,
@@ -778,11 +811,11 @@
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 67140,
-        "hotlapMs": 66810,
-        "fastestMs": 66810,
-        "fastestCar": "Oreca WEC (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 67330,
+        "hotlapMs": 66990,
+        "fastestMs": 66990,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 71540,
@@ -801,32 +834,32 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 71800,
-        "hotlapMs": 71450,
-        "fastestMs": 71350,
-        "fastestCar": "Alpine A424 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 71720,
+        "hotlapMs": 71360,
+        "fastestMs": 71250,
+        "fastestCar": "Peugeot 9x8 (wingless) (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 77670,
-        "hotlapMs": 77280,
-        "fastestMs": 77090,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 77410,
+        "hotlapMs": 77030,
+        "fastestMs": 76870,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 73040,
-        "hotlapMs": 72680,
-        "fastestMs": 72680,
-        "fastestCar": "Oreca ELMS (v1.1)",
-        "patch": "1.1+"
+        "raceMs": 72340,
+        "hotlapMs": 71980,
+        "fastestMs": 71980,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 74740,
-        "hotlapMs": 74370,
-        "fastestMs": 74370,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 74630,
+        "hotlapMs": 74260,
+        "fastestMs": 74260,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 79680,
@@ -838,39 +871,39 @@
     },
     "barcelona_gp": {
       "LMGT3": {
-        "raceMs": 101050,
-        "hotlapMs": 100550,
-        "fastestMs": 100370,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 100860,
+        "hotlapMs": 100360,
+        "fastestMs": 100110,
+        "fastestCar": "Ferrari 296 (v1.4)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 88770,
-        "hotlapMs": 88330,
-        "fastestMs": 87980,
-        "fastestCar": "BMW M Hybrid V8 (v1.4)",
-        "patch": "1.3+"
+        "raceMs": 88520,
+        "hotlapMs": 88080,
+        "fastestMs": 87870,
+        "fastestCar": "Lamborghini SC63 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 95240,
-        "hotlapMs": 94770,
-        "fastestMs": 94500,
-        "fastestCar": "Duqueine D09 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 94390,
+        "hotlapMs": 93920,
+        "fastestMs": 93690,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 87960,
-        "hotlapMs": 87520,
-        "fastestMs": 87520,
-        "fastestCar": "Oreca ELMS (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 87940,
+        "hotlapMs": 87510,
+        "fastestMs": 87510,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 91850,
-        "hotlapMs": 91390,
-        "fastestMs": 91390,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 91710,
+        "hotlapMs": 91250,
+        "fastestMs": 91250,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 100210,
@@ -882,31 +915,31 @@
     },
     "lemans_full": {
       "LMGT3": {
-        "raceMs": 235730,
-        "hotlapMs": 234560,
-        "fastestMs": 233910,
-        "fastestCar": "Lexus RC F (v1.4)",
-        "patch": "1.3+"
+        "raceMs": 234850,
+        "hotlapMs": 233690,
+        "fastestMs": 233480,
+        "fastestCar": "BMW M4 (v1.4)",
+        "patch": "1.4+"
       },
       "LMH": {
         "raceMs": 203350,
         "hotlapMs": 202340,
-        "fastestMs": 201910,
-        "fastestCar": "Genesis GMR-001 (v1.4)",
+        "fastestMs": 201970,
+        "fastestCar": "Peugeot 9x8 EVO (v1.41)",
         "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 225200,
-        "hotlapMs": 224080,
-        "fastestMs": 223880,
-        "fastestCar": "Duqueine D09 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 223210,
+        "hotlapMs": 222090,
+        "fastestMs": 221940,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 204950,
-        "hotlapMs": 203930,
-        "fastestMs": 203930,
-        "fastestCar": "Oreca ELMS (v1.4)",
+        "raceMs": 204610,
+        "hotlapMs": 203590,
+        "fastestMs": 203590,
+        "fastestCar": "Oreca ELMS (v1.41)",
         "patch": "1.4+"
       },
       "LMP2wec": {
@@ -926,25 +959,25 @@
     },
     "lemans_straight": {
       "LMGT3": {
-        "raceMs": 220360,
-        "hotlapMs": 219270,
-        "fastestMs": 218990,
-        "fastestCar": "Corvette Z06 (v1.4)",
-        "patch": "1.3+"
+        "raceMs": 219070,
+        "hotlapMs": 217980,
+        "fastestMs": 217370,
+        "fastestCar": "McLaren 720s EVO (v1.4)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 189880,
-        "hotlapMs": 188940,
-        "fastestMs": 188510,
-        "fastestCar": "Genesis GMR-001 (v1.4)",
-        "patch": "1.3+"
+        "raceMs": 189800,
+        "hotlapMs": 188860,
+        "fastestMs": 188460,
+        "fastestCar": "Peugeot 9x8 EVO (v1.4)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 210740,
-        "hotlapMs": 209690,
-        "fastestMs": 209650,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 209480,
+        "hotlapMs": 208430,
+        "fastestMs": 208040,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
         "raceMs": 190810,
@@ -970,39 +1003,39 @@
     },
     "cota_gp": {
       "LMGT3": {
-        "raceMs": 125720,
-        "hotlapMs": 125090,
-        "fastestMs": 124890,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.4)",
+        "raceMs": 125910,
+        "hotlapMs": 125290,
+        "fastestMs": 125130,
+        "fastestCar": "Ford Mustang (v1.4)",
         "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 112380,
-        "hotlapMs": 111820,
-        "fastestMs": 111550,
-        "fastestCar": "Ferrari 499P (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 112030,
+        "hotlapMs": 111470,
+        "fastestMs": 111250,
+        "fastestCar": "Cadillac V-Series.R (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 120510,
-        "hotlapMs": 119910,
-        "fastestMs": 119660,
-        "fastestCar": "Duqueine D09 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 119760,
+        "hotlapMs": 119170,
+        "fastestMs": 118920,
+        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 112240,
-        "hotlapMs": 111690,
-        "fastestMs": 111690,
-        "fastestCar": "Oreca ELMS (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 112340,
+        "hotlapMs": 111780,
+        "fastestMs": 111780,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 116610,
-        "hotlapMs": 116030,
-        "fastestMs": 116030,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 116250,
+        "hotlapMs": 115670,
+        "fastestMs": 115670,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 123300,
@@ -1021,32 +1054,32 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 81270,
-        "hotlapMs": 80870,
-        "fastestMs": 80600,
-        "fastestCar": "Toyota GR010 (v1.32)",
-        "patch": "1.2+"
+        "raceMs": 80800,
+        "hotlapMs": 80390,
+        "fastestMs": 80210,
+        "fastestCar": "Lamborghini SC63 (v1.4)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 86280,
-        "hotlapMs": 85850,
-        "fastestMs": 85710,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.2+"
+        "raceMs": 85830,
+        "hotlapMs": 85400,
+        "fastestMs": 85140,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 81490,
-        "hotlapMs": 81090,
-        "fastestMs": 81090,
-        "fastestCar": "Oreca ELMS (v1.1)",
-        "patch": "1.1+"
+        "raceMs": 80780,
+        "hotlapMs": 80370,
+        "fastestMs": 80370,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 84030,
-        "hotlapMs": 83610,
-        "fastestMs": 83610,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 83800,
+        "hotlapMs": 83380,
+        "fastestMs": 83380,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 87990,
@@ -1058,17 +1091,17 @@
     },
     "daytona_road": {
       "LMGT3": {
-        "raceMs": 105100,
-        "hotlapMs": 104570,
-        "fastestMs": 104380,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.4)",
+        "raceMs": 105170,
+        "hotlapMs": 104650,
+        "fastestMs": 104540,
+        "fastestCar": "Ford Mustang (v1.4)",
         "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 92930,
-        "hotlapMs": 92470,
-        "fastestMs": 92260,
-        "fastestCar": "Porsche 963 (v1.4)",
+        "raceMs": 92880,
+        "hotlapMs": 92420,
+        "fastestMs": 92210,
+        "fastestCar": "Toyota TR010 (v1.4)",
         "patch": "1.4+"
       },
       "LMP3": {
@@ -1086,31 +1119,31 @@
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 97930,
-        "hotlapMs": 97440,
-        "fastestMs": 97440,
+        "raceMs": 97630,
+        "hotlapMs": 97140,
+        "fastestMs": 97140,
         "fastestCar": "Oreca WEC (v1.4)",
         "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 103500,
+        "raceMs": 103720,
         "patch": "N/A"
       }
     },
     "fuji_gp": {
       "LMGT3": {
-        "raceMs": 100310,
-        "hotlapMs": 99810,
-        "fastestMs": 99590,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 100080,
+        "hotlapMs": 99580,
+        "fastestMs": 99420,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 88760,
-        "hotlapMs": 88320,
-        "fastestMs": 88180,
-        "fastestCar": "Genesis GMR-001 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 88360,
+        "hotlapMs": 87920,
+        "fastestMs": 87790,
+        "fastestCar": "Lamborghini SC63 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
         "raceMs": 94940,
@@ -1120,18 +1153,18 @@
         "patch": "1.3+"
       },
       "LMP2elms": {
-        "raceMs": 89510,
-        "hotlapMs": 89060,
-        "fastestMs": 89060,
-        "fastestCar": "Oreca ELMS (v1.24)",
-        "patch": "1.2+"
+        "raceMs": 88820,
+        "hotlapMs": 88380,
+        "fastestMs": 88380,
+        "fastestCar": "Oreca ELMS (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 91820,
-        "hotlapMs": 91370,
-        "fastestMs": 91370,
-        "fastestCar": "Oreca WEC (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 91580,
+        "hotlapMs": 91120,
+        "fastestMs": 91120,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 99240,
@@ -1143,8 +1176,8 @@
     },
     "fuji_classic": {
       "LMGT3": {
-        "raceMs": 96460,
-        "hotlapMs": 95980,
+        "raceMs": 96420,
+        "hotlapMs": 95940,
         "fastestMs": 95750,
         "fastestCar": "Lamborghini Huracan EVO II (v1.32)",
         "patch": "1.3+"
@@ -1164,18 +1197,18 @@
         "patch": "1.3+"
       },
       "LMP2elms": {
-        "raceMs": 85350,
-        "hotlapMs": 84920,
-        "fastestMs": 84920,
-        "fastestCar": "Oreca ELMS (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 84840,
+        "hotlapMs": 84410,
+        "fastestMs": 84410,
+        "fastestCar": "Oreca ELMS (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 88020,
-        "hotlapMs": 87580,
-        "fastestMs": 87580,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 87510,
+        "hotlapMs": 87080,
+        "fastestMs": 87080,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 93150,
@@ -1187,39 +1220,39 @@
     },
     "imola_gp": {
       "LMGT3": {
-        "raceMs": 102310,
-        "hotlapMs": 101800,
-        "fastestMs": 101720,
-        "fastestCar": "Porsche 992 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 102280,
+        "hotlapMs": 101770,
+        "fastestMs": 101650,
+        "fastestCar": "Corvette Z06 (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 90030,
-        "hotlapMs": 89580,
-        "fastestMs": 89380,
-        "fastestCar": "Genesis GMR-001 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 89630,
+        "hotlapMs": 89180,
+        "fastestMs": 88960,
+        "fastestCar": "Lamborghini SC63 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 97790,
-        "hotlapMs": 97300,
-        "fastestMs": 97050,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 97380,
+        "hotlapMs": 96890,
+        "fastestMs": 96800,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 90730,
-        "hotlapMs": 90280,
-        "fastestMs": 90280,
-        "fastestCar": "Oreca ELMS (v1.4)",
+        "raceMs": 90610,
+        "hotlapMs": 90160,
+        "fastestMs": 90160,
+        "fastestCar": "Oreca ELMS (v1.41)",
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 94420,
-        "hotlapMs": 93950,
-        "fastestMs": 93950,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 94410,
+        "hotlapMs": 93940,
+        "fastestMs": 93940,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 100670,
@@ -1231,39 +1264,39 @@
     },
     "interlagos_gp": {
       "LMGT3": {
-        "raceMs": 93790,
-        "hotlapMs": 93320,
-        "fastestMs": 93140,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 93560,
+        "hotlapMs": 93100,
+        "fastestMs": 92950,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 82900,
-        "hotlapMs": 82490,
-        "fastestMs": 82380,
-        "fastestCar": "Lamborghini SC63 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 82460,
+        "hotlapMs": 82050,
+        "fastestMs": 81810,
+        "fastestCar": "Lamborghini SC63 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 89180,
-        "hotlapMs": 88740,
-        "fastestMs": 88620,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 88560,
+        "hotlapMs": 88120,
+        "fastestMs": 87970,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 83140,
-        "hotlapMs": 82730,
-        "fastestMs": 82730,
+        "raceMs": 83010,
+        "hotlapMs": 82600,
+        "fastestMs": 82600,
         "fastestCar": "Oreca ELMS (v1.4)",
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 86400,
-        "hotlapMs": 85970,
-        "fastestMs": 85970,
-        "fastestCar": "Oreca WEC (v1.24)",
-        "patch": "1.2+"
+        "raceMs": 86110,
+        "hotlapMs": 85680,
+        "fastestMs": 85680,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 92970,
@@ -1289,9 +1322,9 @@
         "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 77800,
-        "hotlapMs": 77410,
-        "fastestMs": 77260,
+        "raceMs": 77600,
+        "hotlapMs": 77210,
+        "fastestMs": 77000,
         "fastestCar": "Duqueine D09 (v1.4)",
         "patch": "1.4+"
       },
@@ -1310,45 +1343,45 @@
         "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 79970,
+        "raceMs": 80050,
         "patch": "N/A"
       }
     },
     "monza_gp": {
       "LMGT3": {
-        "raceMs": 109000,
-        "hotlapMs": 108460,
-        "fastestMs": 108240,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 108840,
+        "hotlapMs": 108300,
+        "fastestMs": 108110,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 95290,
-        "hotlapMs": 94810,
-        "fastestMs": 94720,
-        "fastestCar": "Lamborghini SC63 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 94710,
+        "hotlapMs": 94240,
+        "fastestMs": 94050,
+        "fastestCar": "Genesis GMR-001 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 103930,
-        "hotlapMs": 103420,
-        "fastestMs": 103300,
-        "fastestCar": "Duqueine D09 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 103450,
+        "hotlapMs": 102940,
+        "fastestMs": 102810,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 96210,
-        "hotlapMs": 95730,
-        "fastestMs": 95730,
+        "raceMs": 96140,
+        "hotlapMs": 95660,
+        "fastestMs": 95660,
         "fastestCar": "Oreca ELMS (v1.4)",
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 99660,
-        "hotlapMs": 99160,
-        "fastestMs": 99160,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 99740,
+        "hotlapMs": 99240,
+        "fastestMs": 99240,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 106790,
@@ -1360,25 +1393,25 @@
     },
     "monza_curva_grande": {
       "LMGT3": {
-        "raceMs": 99470,
-        "hotlapMs": 98980,
-        "fastestMs": 98740,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 99390,
+        "hotlapMs": 98900,
+        "fastestMs": 98790,
+        "fastestCar": "Mercedes-AMG (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
         "raceMs": 86340,
         "hotlapMs": 85910,
-        "fastestMs": 85730,
-        "fastestCar": "Ferrari 499P (v1.33)",
-        "patch": "1.3+"
+        "fastestMs": 85600,
+        "fastestCar": "Ferrari 499P (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 94510,
-        "hotlapMs": 94040,
-        "fastestMs": 94040,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 94150,
+        "hotlapMs": 93680,
+        "fastestMs": 93540,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
         "raceMs": 87500,
@@ -1404,39 +1437,39 @@
     },
     "paul_ricard_gp": {
       "LMGT3": {
-        "raceMs": 123800,
-        "hotlapMs": 123190,
-        "fastestMs": 122980,
-        "fastestCar": "Corvette Z06 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 123770,
+        "hotlapMs": 123160,
+        "fastestMs": 123000,
+        "fastestCar": "Ford Mustang (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 109060,
-        "hotlapMs": 108520,
-        "fastestMs": 108210,
-        "fastestCar": "Genesis GMR-001 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 109070,
+        "hotlapMs": 108530,
+        "fastestMs": 108420,
+        "fastestCar": "Alpine A424 (v1.4)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 117450,
-        "hotlapMs": 116870,
-        "fastestMs": 116630,
-        "fastestCar": "Duqueine D09 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 116890,
+        "hotlapMs": 116310,
+        "fastestMs": 116080,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 109790,
-        "hotlapMs": 109240,
-        "fastestMs": 109240,
-        "fastestCar": "Oreca ELMS (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 109390,
+        "hotlapMs": 108850,
+        "fastestMs": 108850,
+        "fastestCar": "Oreca ELMS (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 113220,
-        "hotlapMs": 112660,
-        "fastestMs": 112660,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 113400,
+        "hotlapMs": 112840,
+        "fastestMs": 112840,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 123700,
@@ -1455,59 +1488,59 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 96840,
-        "hotlapMs": 96360,
-        "fastestMs": 96190,
-        "fastestCar": "Toyota TR010 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 96670,
+        "hotlapMs": 96190,
+        "fastestMs": 96000,
+        "fastestCar": "BMW M Hybrid V8 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 105280,
-        "hotlapMs": 104760,
-        "fastestMs": 104580,
-        "fastestCar": "Duqueine D09 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 104720,
+        "hotlapMs": 104200,
+        "fastestMs": 103860,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 98020,
-        "hotlapMs": 97530,
-        "fastestMs": 97530,
-        "fastestCar": "Oreca ELMS (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 97820,
+        "hotlapMs": 97330,
+        "fastestMs": 97330,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 101270,
-        "hotlapMs": 100770,
-        "fastestMs": 100770,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 100650,
+        "hotlapMs": 100150,
+        "fastestMs": 100150,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 108290,
+        "raceMs": 108160,
         "patch": "N/A"
       }
     },
     "paul_ricard_1av2": {
       "LMGT3": {
-        "raceMs": 115850,
-        "hotlapMs": 115270,
-        "fastestMs": 115020,
-        "fastestCar": "Porsche 992 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 115530,
+        "hotlapMs": 114960,
+        "fastestMs": 114660,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 101760,
-        "hotlapMs": 101250,
-        "fastestMs": 101050,
-        "fastestCar": "Toyota GR010 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 101230,
+        "hotlapMs": 100730,
+        "fastestMs": 100580,
+        "fastestCar": "Porsche 963 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 109730,
-        "hotlapMs": 109190,
-        "fastestMs": 109190,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 109410,
+        "hotlapMs": 108870,
+        "fastestMs": 108530,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
         "raceMs": 102120,
@@ -1517,55 +1550,55 @@
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 105480,
-        "hotlapMs": 104950,
-        "fastestMs": 104950,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 105460,
+        "hotlapMs": 104930,
+        "fastestMs": 104930,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 113170,
+        "raceMs": 113040,
         "patch": "N/A"
       }
     },
     "paul_ricard_1av2_short": {
       "LMGT3": {
-        "raceMs": 106360,
-        "hotlapMs": 105830,
-        "fastestMs": 105580,
-        "fastestCar": "Corvette Z06 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 106240,
+        "hotlapMs": 105710,
+        "fastestMs": 105590,
+        "fastestCar": "Corvette Z06 (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 94170,
-        "hotlapMs": 93700,
-        "fastestMs": 93560,
-        "fastestCar": "Aston Martin Valkyrie (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 93810,
+        "hotlapMs": 93350,
+        "fastestMs": 93150,
+        "fastestCar": "Peugeot 9x8 (wingless) (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 101730,
-        "hotlapMs": 101230,
-        "fastestMs": 101230,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 101290,
+        "hotlapMs": 100790,
+        "fastestMs": 100540,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 95380,
-        "hotlapMs": 94900,
-        "fastestMs": 94900,
-        "fastestCar": "Oreca ELMS (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 95190,
+        "hotlapMs": 94710,
+        "fastestMs": 94710,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 98400,
-        "hotlapMs": 97910,
-        "fastestMs": 97910,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 98020,
+        "hotlapMs": 97530,
+        "fastestMs": 97530,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 104680,
+        "raceMs": 104590,
         "patch": "N/A"
       }
     },
@@ -1578,52 +1611,52 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 70120,
-        "hotlapMs": 69780,
-        "fastestMs": 69650,
-        "fastestCar": "Toyota TR010 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 70190,
+        "hotlapMs": 69840,
+        "fastestMs": 69730,
+        "fastestCar": "Peugeot 9x8 EVO (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 75900,
-        "hotlapMs": 75520,
-        "fastestMs": 75520,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 75570,
+        "hotlapMs": 75190,
+        "fastestMs": 74800,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 71320,
-        "hotlapMs": 70970,
-        "fastestMs": 70970,
-        "fastestCar": "Oreca ELMS (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 70550,
+        "hotlapMs": 70200,
+        "fastestMs": 70200,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 73580,
-        "hotlapMs": 73210,
-        "fastestMs": 73210,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 73180,
+        "hotlapMs": 72820,
+        "fastestMs": 72820,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 78360,
+        "raceMs": 78120,
         "patch": "N/A"
       }
     },
     "portimao_gp": {
       "LMGT3": {
-        "raceMs": 103640,
-        "hotlapMs": 103120,
-        "fastestMs": 102910,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 103410,
+        "hotlapMs": 102890,
+        "fastestMs": 102700,
+        "fastestCar": "Aston Martin V8 Vantage EVO (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 91580,
-        "hotlapMs": 91130,
-        "fastestMs": 90930,
-        "fastestCar": "Genesis GMR-001 (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 91110,
+        "hotlapMs": 90660,
+        "fastestMs": 90400,
+        "fastestCar": "Genesis GMR-001 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
         "raceMs": 98490,
@@ -1640,11 +1673,11 @@
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 95510,
-        "hotlapMs": 95040,
-        "fastestMs": 95040,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 95160,
+        "hotlapMs": 94690,
+        "fastestMs": 94690,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 102110,
@@ -1656,39 +1689,39 @@
     },
     "qatar_gp": {
       "LMGT3": {
-        "raceMs": 114290,
-        "hotlapMs": 113720,
-        "fastestMs": 113390,
-        "fastestCar": "Ferrari 296 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 114520,
+        "hotlapMs": 113950,
+        "fastestMs": 113640,
+        "fastestCar": "Aston Martin V8 Vantage EVO (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 99930,
-        "hotlapMs": 99430,
-        "fastestMs": 99290,
-        "fastestCar": "Toyota GR010 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 99610,
+        "hotlapMs": 99110,
+        "fastestMs": 98910,
+        "fastestCar": "BMW M Hybrid V8 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 107270,
-        "hotlapMs": 106730,
-        "fastestMs": 106380,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 106590,
+        "hotlapMs": 106060,
+        "fastestMs": 105760,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 99130,
-        "hotlapMs": 98640,
-        "fastestMs": 98640,
-        "fastestCar": "Oreca ELMS (v1.24)",
-        "patch": "1.2+"
+        "raceMs": 98690,
+        "hotlapMs": 98200,
+        "fastestMs": 98200,
+        "fastestCar": "Oreca ELMS (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 103270,
-        "hotlapMs": 102760,
-        "fastestMs": 102760,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 103120,
+        "hotlapMs": 102610,
+        "fastestMs": 102610,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 112400,
@@ -1707,32 +1740,32 @@
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 59770,
-        "hotlapMs": 59470,
-        "fastestMs": 59340,
-        "fastestCar": "Alpine A424 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 59840,
+        "hotlapMs": 59540,
+        "fastestMs": 59350,
+        "fastestCar": "Alpine A424 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 65010,
-        "hotlapMs": 64680,
-        "fastestMs": 64670,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 64830,
+        "hotlapMs": 64510,
+        "fastestMs": 64390,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 59350,
-        "hotlapMs": 59060,
-        "fastestMs": 59060,
-        "fastestCar": "Oreca ELMS (v1.24)",
-        "patch": "1.2+"
+        "raceMs": 59680,
+        "hotlapMs": 59380,
+        "fastestMs": 59380,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 61900,
-        "hotlapMs": 61590,
-        "fastestMs": 61590,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 62210,
+        "hotlapMs": 61900,
+        "fastestMs": 61900,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 67810,
@@ -1744,140 +1777,140 @@
     },
     "silverstone_gp_wec": {
       "LMGT3": {
-        "raceMs": 118440,
-        "hotlapMs": 117850,
-        "fastestMs": 117680,
-        "fastestCar": "Corvette Z06 (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 118120,
+        "hotlapMs": 117530,
+        "fastestMs": 117390,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 102880,
-        "hotlapMs": 102370,
-        "fastestMs": 102220,
-        "fastestCar": "Toyota GR010 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 102510,
+        "hotlapMs": 102000,
+        "fastestMs": 101790,
+        "fastestCar": "Isotta Fraschini Tipo 6 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 111290,
-        "hotlapMs": 110730,
-        "fastestMs": 110520,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 110500,
+        "hotlapMs": 109950,
+        "fastestMs": 109720,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 102650,
-        "hotlapMs": 102140,
-        "fastestMs": 102140,
-        "fastestCar": "Oreca ELMS (v1.24)",
-        "patch": "1.2+"
+        "raceMs": 102360,
+        "hotlapMs": 101860,
+        "fastestMs": 101860,
+        "fastestCar": "Oreca ELMS (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 106670,
-        "hotlapMs": 106140,
-        "fastestMs": 106140,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 106920,
+        "hotlapMs": 106390,
+        "fastestMs": 106390,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 114950,
+        "raceMs": 114800,
         "patch": "N/A"
       }
     },
     "silverstone_national": {
       "LMGT3": {
-        "raceMs": 53270,
-        "hotlapMs": 53000,
+        "raceMs": 53260,
+        "hotlapMs": 52990,
         "fastestMs": 52900,
         "fastestCar": "Porsche 992 (v1.32)",
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 46400,
-        "hotlapMs": 46170,
-        "fastestMs": 46060,
-        "fastestCar": "Genesis GMR-001 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 46460,
+        "hotlapMs": 46230,
+        "fastestMs": 46110,
+        "fastestCar": "Porsche 963 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 50110,
-        "hotlapMs": 49870,
-        "fastestMs": 49780,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 50030,
+        "hotlapMs": 49780,
+        "fastestMs": 49640,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 46630,
-        "hotlapMs": 46390,
-        "fastestMs": 46390,
-        "fastestCar": "Oreca ELMS (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 46460,
+        "hotlapMs": 46230,
+        "fastestMs": 46230,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 48750,
-        "hotlapMs": 48510,
-        "fastestMs": 48510,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 49330,
+        "hotlapMs": 49090,
+        "fastestMs": 49090,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 51900,
+        "raceMs": 52020,
         "patch": "N/A"
       }
     },
     "silverstone_international": {
       "LMGT3": {
-        "raceMs": 61280,
-        "hotlapMs": 60970,
+        "raceMs": 61300,
+        "hotlapMs": 60990,
         "fastestMs": 60850,
         "fastestCar": "Ferrari 296 (v1.32)",
         "patch": "1.3+"
       },
       "LMH": {
-        "raceMs": 53380,
-        "hotlapMs": 53110,
-        "fastestMs": 52940,
-        "fastestCar": "Toyota GR010 (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 53580,
+        "hotlapMs": 53320,
+        "fastestMs": 53220,
+        "fastestCar": "Cadillac V-Series.R (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 57690,
-        "hotlapMs": 57400,
-        "fastestMs": 57300,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 57470,
+        "hotlapMs": 57190,
+        "fastestMs": 57020,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
-        "raceMs": 53830,
-        "hotlapMs": 53560,
-        "fastestMs": 53560,
-        "fastestCar": "Oreca ELMS (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 53300,
+        "hotlapMs": 53030,
+        "fastestMs": 53030,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 56250,
-        "hotlapMs": 55970,
-        "fastestMs": 55970,
-        "fastestCar": "Oreca WEC (v1.32)",
-        "patch": "1.3+"
+        "raceMs": 55510,
+        "hotlapMs": 55230,
+        "fastestMs": 55230,
+        "fastestCar": "Oreca WEC (v1.4)",
+        "patch": "1.4+"
       },
       "GTE": {
-        "raceMs": 59760,
+        "raceMs": 59610,
         "patch": "N/A"
       }
     },
     "sebring_full": {
       "LMGT3": {
-        "raceMs": 120440,
-        "hotlapMs": 119840,
-        "fastestMs": 119540,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 120230,
+        "hotlapMs": 119630,
+        "fastestMs": 119470,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.41)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 106130,
-        "hotlapMs": 105600,
-        "fastestMs": 105370,
-        "fastestCar": "Peugeot 9x8 Evo (v1.31)",
+        "raceMs": 105950,
+        "hotlapMs": 105420,
+        "fastestMs": 105040,
+        "fastestCar": "Ferrari 499P (v1.41)",
         "patch": "1.3+"
       },
       "LMP3": {
@@ -1895,11 +1928,11 @@
         "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 110410,
-        "hotlapMs": 109860,
-        "fastestMs": 109860,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 110610,
+        "hotlapMs": 110060,
+        "fastestMs": 110060,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 118790,
@@ -1932,18 +1965,18 @@
         "patch": "1.3+"
       },
       "LMP2elms": {
-        "raceMs": 55400,
-        "hotlapMs": 55120,
-        "fastestMs": 55120,
-        "fastestCar": "Oreca ELMS (v1.1)",
-        "patch": "1.1+"
+        "raceMs": 55130,
+        "hotlapMs": 54860,
+        "fastestMs": 54860,
+        "fastestCar": "Oreca ELMS (v1.4)",
+        "patch": "1.4+"
       },
       "LMP2wec": {
-        "raceMs": 57360,
-        "hotlapMs": 57080,
-        "fastestMs": 57080,
-        "fastestCar": "Oreca WEC (v1.2)",
-        "patch": "1.2+"
+        "raceMs": 57560,
+        "hotlapMs": 57270,
+        "fastestMs": 57270,
+        "fastestCar": "Oreca WEC (v1.41)",
+        "patch": "1.4+"
       },
       "GTE": {
         "raceMs": 61670,
@@ -1955,25 +1988,25 @@
     },
     "spa_gp": {
       "LMGT3": {
-        "raceMs": 137770,
-        "hotlapMs": 137080,
-        "fastestMs": 136860,
-        "fastestCar": "Lamborghini Huracan EVO II (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 137590,
+        "hotlapMs": 136900,
+        "fastestMs": 136730,
+        "fastestCar": "Lamborghini Huracan EVO II (v1.4)",
+        "patch": "1.4+"
       },
       "LMH": {
-        "raceMs": 120420,
-        "hotlapMs": 119820,
-        "fastestMs": 119560,
-        "fastestCar": "Cadillac V-Series.R (v1.33)",
-        "patch": "1.3+"
+        "raceMs": 119970,
+        "hotlapMs": 119370,
+        "fastestMs": 119260,
+        "fastestCar": "Genesis GMR-001 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP3": {
-        "raceMs": 131030,
-        "hotlapMs": 130380,
-        "fastestMs": 130290,
-        "fastestCar": "Ginetta G61-LT-P3 EVO (v1.31)",
-        "patch": "1.3+"
+        "raceMs": 130350,
+        "hotlapMs": 129710,
+        "fastestMs": 129480,
+        "fastestCar": "Duqueine D09 (v1.41)",
+        "patch": "1.4+"
       },
       "LMP2elms": {
         "raceMs": 121300,
@@ -2000,7 +2033,25 @@
   },
   "stats": {
     "placed": 186,
-    "skipped": 0
+    "skipped": 12,
+    "pending": 2
   },
-  "skipped": []
+  "skipped": [
+    "Long Beach / LMGT3",
+    "Road Atlanta / LMGT3",
+    "Long Beach / LMH",
+    "Road Atlanta / LMH",
+    "Long Beach / LMP3",
+    "Road Atlanta / LMP3",
+    "Long Beach / LMP2elms",
+    "Road Atlanta / LMP2elms",
+    "Long Beach / LMP2wec",
+    "Road Atlanta / LMP2wec",
+    "Long Beach / GTE",
+    "Road Atlanta / GTE"
+  ],
+  "pending": [
+    "long_beach",
+    "road_atlanta"
+  ]
 }

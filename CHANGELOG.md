@@ -5,6 +5,22 @@
      app until it is renamed.
 -->
 
+## 1.1.0 — 2026-09-22
+
+Two new circuits: Long Beach and Road Atlanta (US Track Pass 2, 2026-09-22).
+
+### Added
+
+- **Long Beach and Road Atlanta are in the app.** Both ship with a bundled
+  track map (learned from real laps on patch day) so the map, radar lines and
+  the Review plan draw from your first session. Both circuits are in
+  the Fuel tab and the fuel planner widget with estimated lap times until the
+  first measured stints land, and both are wired to Ohne Speed's reference
+  sheet — which lists them but has no times yet, so pace scoring says so
+  rather than guessing. The leaderboard, setups and Discord records need no
+  wiring: they key off the track the game reports, and Long Beach already
+  resolved itself on the first upload.
+
 ## 1.0.3 — 2026-09-19
 
 The league's Discord called strangers "your driver". Not any more.

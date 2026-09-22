@@ -13,9 +13,10 @@
  *   - Default VE %/lap is derived (fuelPerLap / fuelCapacity) * 100 — an
  *     approximation the driver should override with the in-game HUD value.
  *   - LMP2 runs a 75L cap at Le Mans (getDefaultTankCapacity handles it).
- *   - Daytona / Laguna Seca numbers are estimates until US Track Pass matures;
- *     packs 2 (Sept 2026) and 3 (Dec 2026) add four more US tracks — extend
- *     CIRCUITS + DEFAULT_LAP_TIMES when they land.
+ *   - Daytona / Laguna Seca / Long Beach / Road Atlanta numbers are estimates
+ *     until US Track Pass matures; pack 2 (Long Beach + Road Atlanta) landed
+ *     2026-09-22, pack 3 (Dec 2026) adds two more — extend CIRCUITS +
+ *     DEFAULT_LAP_TIMES when they land.
  *
  * Loaded as a classic script by the panel (window.APEX_FUEL_DATA) and
  * require()d by scripts/test-fuelcalc.js — keep it dependency-free.
@@ -182,6 +183,25 @@
       dlc: "US Track Pass 1",
       layouts: [
         { id: "laguna_seca", name: "Full Circuit", length: 3.602 },
+      ],
+    },
+    {
+      id: "long_beach",
+      name: "Grand Prix of Long Beach",
+      location: "Long Beach, USA",
+      dlc: "US Track Pass 2",
+      layouts: [
+        // 1.968 mi street circuit; LMU measures 3187 m.
+        { id: "long_beach", name: "Full Circuit", length: 3.167 },
+      ],
+    },
+    {
+      id: "road_atlanta",
+      name: "Michelin Raceway Road Atlanta",
+      location: "Braselton, USA",
+      dlc: "US Track Pass 2",
+      layouts: [
+        { id: "road_atlanta", name: "Full Circuit", length: 4.088 },
       ],
     },
   ];
@@ -522,6 +542,10 @@
     daytona_road:             { hypercar: 95.5, lmp2: 99.8, lmp3: 101.5, gte: 104.5, lmgt3: 106.5 },
     // Laguna Seca (US Track Pass 1) — estimated from IMSA reference laps, override in-app
     laguna_seca:              { hypercar: 71.5, lmp2: 74.8, lmp3: 77.9, gte: 80.5, lmgt3: 81.8 },
+    // Long Beach / Road Atlanta (US Track Pass 2, 2026-09-22) — estimated from
+    // IMSA reference laps, override in-app until measured
+    long_beach:               { hypercar: 72.5, lmp2: 75.5, lmp3: 78.5, gte: 80.5, lmgt3: 82.0 },
+    road_atlanta:             { hypercar: 70.0, lmp2: 73.0, lmp3: 76.5, gte: 78.5, lmgt3: 80.0 },
   };
 
   // Layouts that share consumption data with another layout of the same circuit

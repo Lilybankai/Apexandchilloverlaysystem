@@ -584,7 +584,13 @@ export function referenceFor(
     return {
       ok: false,
       reason: 'no-reference',
-      detail: `No ${cls.sheetClass} reference for ${match.layout.name}.`,
+      // Name the circuit when the layout name would not ("Full Circuit" says
+      // nothing on its own): a track the sheet lists but has not timed yet —
+      // Long Beach and Road Atlanta on patch day — reads as exactly that.
+      detail:
+        circuit.layouts.length > 1
+          ? `No ${cls.sheetClass} reference for ${circuit.name} ${match.layout.name} yet.`
+          : `No ${cls.sheetClass} reference for ${circuit.name} yet.`,
     };
   }
 
