@@ -24,6 +24,7 @@
 
 const {
   createLayerWatch,
+  createLayerDiagnosis,
   QUIET_MS,
   ESCALATE_MS,
   MAX_RECOVERIES,
@@ -135,6 +136,67 @@ console.log('\nlayer-watch: a frozen layer is recovered, then escalated, then le
     'a freeze long after a successful reload starts again at reload',
     a.length === 1 && later.length === 0 && b.length === 1 && b[0].action === 'reload',
     b.map((x) => x.action).join(','),
+  );
+}
+
+console.log('\nlayer diagnosis: the log says which kind of freeze it was');
+{
+  const ON = { visible: true, feedLive: true };
+  const good = { received: 30, painted: 30, worstMs: 2, worstWidget: 'relative', longMs: 0, visibility: 'visible' };
+  const d = createLayerDiagnosis();
+  let quiet = [];
+  for (let t = 1000; t <= 60000; t += 1000) quiet = quiet.concat(d.report(t, good, ON));
+  check('a healthy layer writes nothing', quiet.length === 0, quiet.join(' | '));
+  check(
+    'a 120 Hz feed coalesced onto a 60 Hz screen is not "drawing slowly"',
+    d.report(61000, { ...good, received: 120, painted: 60 }, ON).length === 0,
+  );
+
+  const blocked = d.report(63400, { ...good, worstMs: 1380, worstWidget: 'trackmap', longMs: 1400 }, ON);
+  check(
+    'a late report is a blocked renderer, and names the widget',
+    blocked.length === 1 && /STALL 1400ms blocked worst=trackmap\/1380ms long=1400ms/.test(blocked[0]),
+    blocked.join(' | '),
+  );
+
+  const starts = d.report(64400, { ...good, painted: 0 }, ON);
+  check(
+    'frames arriving but none drawn → "not drawing", logged once',
+    starts.length === 1 && /LAYER not drawing \(received=30 painted=0/.test(starts[0]) &&
+      d.report(65400, { ...good, painted: 0 }, ON).length === 0,
+    starts.join(' | '),
+  );
+  const ends = d.report(66400, good, ON);
+  check(
+    'and its end is logged with how long it lasted',
+    ends.length === 1 && /not drawing ended after 3000ms/.test(ends[0]),
+    ends.join(' | '),
+  );
+
+  const slow = d.report(67400, { ...good, received: 60, painted: 5 }, ON);
+  check('most frames dropped → "drawing slowly"', slow.length === 1 && /drawing slowly/.test(slow[0]), slow.join(' | '));
+  d.report(68400, good, ON);
+
+  const starve = d.report(69400, { ...good, received: 0, painted: 0 }, ON);
+  check('no frames while main is fed → "no frames"', starve.length === 1 && /no frames/.test(starve[0]), starve.join(' | '));
+  d.report(70400, good, ON);
+
+  const hidden = d.report(71400, { ...good, received: 30, painted: 0, visibility: 'hidden' }, { ...ON, visible: false });
+  check('a hidden layer that is not drawing is not a fault', hidden.length === 0, hidden.join(' | '));
+  const idle = d.report(72400, { ...good, received: 0, painted: 0 }, { ...ON, feedLive: false });
+  check('no frames because there is no feed is not a fault', idle.length === 0, idle.join(' | '));
+
+  const m = createLayerDiagnosis();
+  m.report(100000, { ...good, at: 100000 }, ON);
+  check(
+    'a report delivered late because MAIN was busy is not blamed on the layer',
+    m.report(102500, { ...good, at: 101000 }, ON).length === 0,
+  );
+
+  d.reset();
+  check(
+    'after a reset the first report is not read as late',
+    d.report(999999, good, ON).length === 0,
   );
 }
 

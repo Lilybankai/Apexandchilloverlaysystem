@@ -47,6 +47,7 @@ function tryRequire(rel) {
  * @param {(partial: object) => void} deps.applySettings  persist + push a change
  * @param {() => void} [deps.cycleIngame]
  * @param {() => void} [deps.toggleIngameInteract]
+ * @param {() => boolean} [deps.refreshOverlays]
  * @param {() => void} [deps.resetLayout]
  * @param {(widgetId: string) => void} [deps.cycleWidgetMode]
  * @returns {{ list: () => object[], get: (id: string) => object|undefined,
@@ -159,6 +160,23 @@ function createActions(deps = {}) {
       kind: 'pulse',
       run: async () => {
         deps.toggleIngameInteract();
+        return { ok: true };
+      },
+    });
+  }
+
+  if (deps.refreshOverlays) {
+    define({
+      id: 'overlay.refresh',
+      // Stop/Start for the in-game layer alone: a new window and renderer, the
+      // server and feed untouched, layout and edit state kept. Most useful on a
+      // Stream Deck or a button box — it is the "kick it" for a frozen layer
+      // that the automatic recovery (electron/layer-watch.js) has not caught.
+      label: 'Refresh overlays',
+      group: 'Overlay',
+      kind: 'pulse',
+      run: async () => {
+        if (!deps.refreshOverlays()) return { ok: false, error: 'the in-game overlay is not running' };
         return { ok: true };
       },
     });

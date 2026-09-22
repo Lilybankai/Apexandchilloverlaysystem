@@ -197,6 +197,8 @@ contextBridge.exposeInMainWorld('apex', {
   ingameEditStart: () => ipcRenderer.invoke('ingame:editStart'),
   /** Re-lock the in-game layer (click-through again). */
   ingameEditStop: () => ipcRenderer.invoke('ingame:editStop'),
+  /** Rebuild the in-game layer's window (a frozen overlay), keeping the server up. */
+  ingameRefresh: () => ipcRenderer.invoke('ingame:refresh'),
   /** Reset every in-game widget to its default position. */
   ingameLayoutReset: () => ipcRenderer.invoke('ingame:layoutReset'),
 

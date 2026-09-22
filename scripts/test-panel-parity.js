@@ -255,6 +255,7 @@ const PANEL_CONTRACT = {
   'mfd-fade-toggle': 'input:checkbox',
   'ig-edit-btn': 'button',
   'ig-reset-btn': 'button',
+  'ig-refresh-btn': 'button',
   'ig-hotkey': 'button',
   'ig-hotkey-clear': 'button',
 

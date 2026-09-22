@@ -12,11 +12,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('apexIngame', {
   /**
-   * The page just painted a telemetry frame (sent at most once a second by
-   * overlay/js/client.js). Silence from a layer that should be painting is how
-   * main notices a frozen renderer — see electron/layer-watch.js.
+   * Once a second: what the page received, painted and how long its slowest
+   * work took (see overlay/js/client.js). How main notices a frozen layer and
+   * says why in stalls.log — see electron/layer-watch.js.
    */
-  painted: () => ipcRenderer.send('ingame:painted'),
+  health: (report) => ipcRenderer.send('ingame:health', report),
 
   /** Saved widget placement: { [id]: {x, y, scale} }. */
   getLayout: () => ipcRenderer.invoke('ingame:layoutGet'),
