@@ -1206,6 +1206,32 @@
     }
   }, 1000);
 
+  /**
+   * Tell the desktop app this page is still painting (in-game layer only).
+   *
+   * The stale-feed watchdog above proves frames ARRIVE; it cannot prove they
+   * are drawn. A renderer or compositor that wedges keeps the socket perfectly
+   * healthy while the screen stays frozen — and on the in-game layer that used
+   * to last until Stop/Start. Reporting from inside the rAF is the point: it
+   * only runs when Chromium is actually producing frames for this window.
+   * electron/layer-watch.js decides what silence means. Once a second at most;
+   * OBS sources have no bridge and skip this entirely.
+   */
+  var PAINT_REPORT_MS = 1000;
+  var lastPaintReport = 0;
+  function reportPainted() {
+    var bridge = window.apexIngame;
+    if (!bridge || typeof bridge.painted !== "function") return;
+    var now = Date.now();
+    if (now - lastPaintReport < PAINT_REPORT_MS) return;
+    lastPaintReport = now;
+    try {
+      bridge.painted();
+    } catch (e) {
+      /* a heartbeat must never be the thing that breaks the frame */
+    }
+  }
+
   /** Resolve the WS URL from the page location, allowing ?ws= / ?port= overrides. */
   function resolveWsUrl() {
     var params = new URLSearchParams(window.location.search);
@@ -1276,6 +1302,7 @@
           var f = pendingFrame;
           pendingFrame = null;
           if (f) dispatch(f);
+          reportPainted();
         });
       }
     };

@@ -5,6 +5,23 @@
      app until it is renamed.
 -->
 
+## Unreleased
+
+### Fixed
+
+- **Frozen overlays now bring themselves back — no more Stop/Start.** A
+  tester's overlays froze in a race on 1.1.0, some for good until Stop/Start
+  was pressed. The stall log they sent says the app itself was fine, so
+  the freeze was in the in-game overlay window's own drawing, which nothing was
+  watching. The overlay window now checks in once a second to say it is still
+  drawing. If it goes quiet for ten seconds while the game is sending data, the
+  app reloads it, and if that does not hold it rebuilds the window, which is
+  exactly what Stop/Start was doing. The same happens straight away if the
+  overlay's renderer crashes or the graphics process restarts. Windows can also
+  no longer decide the overlay is hidden behind the game and stop it drawing.
+  Every one of these is written to `stalls.log`, so the next log says which
+  one it was.
+
 ## 1.1.0 — 2026-09-22
 
 Two new circuits: Long Beach and Road Atlanta (US Track Pass 2, 2026-09-22).

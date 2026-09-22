@@ -57,6 +57,23 @@ const stallWatch = require('./stall-watch');
 // find. Nothing here starts one — they all wait for app-ready — but the
 // ordering is the guarantee, so it stays at the top rather than in whenReady.
 stallWatch.installCensus();
+const { createLayerWatch } = require('./layer-watch');
+/**
+ * Never let Windows' occlusion tracking decide the in-game layer is hidden.
+ *
+ * Chromium asks Windows which of its windows are covered and stops producing
+ * frames for those. The in-game layer is a transparent, click-through,
+ * always-on-top window spanning the whole desktop over a fullscreen game —
+ * the shape that calculation is least sure about — and a layer it wrongly
+ * calls covered stops painting while its socket, its page and main all stay
+ * perfectly healthy: a frozen overlay with nothing anywhere to say why, until
+ * the window is rebuilt. Not yet proven to be the 22 Sep freeze — it is one of
+ * the three things a rebuild cures (see electron/layer-watch.js), and the only
+ * one that can simply be switched off. The cost is that a window which really
+ * is covered keeps compositing; nothing in this app paints when it has nothing
+ * new to show. Must run before app-ready.
+ */
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 const {
   DEFAULT_ENGINEER_SETTINGS,
   sanitizeEngineer,
@@ -2320,6 +2337,8 @@ function syncOverlayWindow() {
     OVERLAY_CATALOG.some((o) => settings.ingameOverlays[o.id] !== false);
 
   if (!wanted) {
+    // A deliberate stop: the next layer starts with a clean recovery record.
+    layerWatch.forget();
     destroyOverlayWindow();
     return;
   }
@@ -2398,17 +2417,94 @@ function syncOverlayWindow() {
   // let a widget-list change reload the page out of edit mode while the app
   // still believed it was in one.
   overlayWin.webContents.on('did-finish-load', () => {
+    layerWatch.excuse(Date.now());
     applyAppearance();
     if (!overlayWin || overlayWin.isDestroyed()) return;
     overlayWin.webContents.send('ingame:edit', ingameEditing);
     overlayWin.webContents.send('ingame:interact', ingameInteractive);
   });
+  watchLayerRenderer(overlayWin);
+  layerWatch.excuse(Date.now());
   void overlayWin.loadURL(url);
+  // Only the window this handler was attached to may clear the slot: a
+  // recovery destroys one layer and builds the next in the same breath, and a
+  // late 'closed' from the old one must not null out its replacement.
+  const win = overlayWin;
   overlayWin.on('closed', () => {
+    if (overlayWin !== win && overlayWin !== null) return;
     overlayWin = null;
     ingameInteractive = false;
     if (ingameEditing) setIngameEdit(false);
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  In-game layer: frozen-renderer recovery (see electron/layer-watch.js)     */
+/* -------------------------------------------------------------------------- */
+
+const layerWatch = createLayerWatch();
+/** How often the layer's paint reports are checked. Two clock reads a tick. */
+const LAYER_WATCH_TICK_MS = 2000;
+let layerWatchTimer = null;
+
+/**
+ * Renderer-level failures of the layer, which until now went unanswered: a
+ * crashed or killed renderer left a dead transparent window on screen until
+ * Stop/Start. Each is written to stalls.log so the next log says which of
+ * these, if any, was the freeze.
+ */
+function watchLayerRenderer(win) {
+  const wc = win.webContents;
+  wc.on('render-process-gone', (_evt, details) => {
+    const reason = (details && details.reason) || 'unknown';
+    stallWatch.note(`LAYER renderer gone reason=${reason} exit=${details && details.exitCode}`);
+    if (reason === 'clean-exit' || win.isDestroyed()) return;
+    layerWatch.excuse(Date.now());
+    try {
+      wc.reload();
+    } catch {
+      recreateOverlayWindow('renderer gone, reload refused');
+    }
+  });
+  wc.on('unresponsive', () => stallWatch.note('LAYER renderer unresponsive'));
+  wc.on('responsive', () => stallWatch.note('LAYER renderer responsive again'));
+}
+
+/** What Stop/Start did by hand: a new window, a new renderer, a new surface. */
+function recreateOverlayWindow(why) {
+  stallWatch.note(`LAYER recreated (${why})`);
+  destroyOverlayWindow();
+  syncOverlayWindow();
+}
+
+function startLayerWatch() {
+  if (layerWatchTimer) return;
+  ipcMain.on('ingame:painted', (evt) => {
+    if (overlayWin && !overlayWin.isDestroyed() && evt.sender === overlayWin.webContents) {
+      layerWatch.painted(Date.now());
+    }
+  });
+  layerWatchTimer = setInterval(() => {
+    if (!overlayWin || overlayWin.isDestroyed()) return;
+    const now = Date.now();
+    const verdict = layerWatch.check({
+      now,
+      visible: overlayWin.isVisible(),
+      loading: overlayWin.webContents.isLoading(),
+      feedLive: status.running && lastFrameAt !== 0 && now - lastFrameAt < NO_DATA_MS,
+    });
+    if (verdict.action === 'ok') return;
+    const quiet = `no paint for ${verdict.quietMs}ms with the feed live`;
+    if (verdict.action === 'give-up') {
+      stallWatch.note(`LAYER still frozen after repeated recoveries (${quiet}) — leaving it`);
+    } else if (verdict.action === 'reload') {
+      stallWatch.note(`LAYER reloaded (${quiet})`);
+      overlayWin.webContents.reload();
+    } else {
+      recreateOverlayWindow(`${quiet}, again soon after a reload`);
+    }
+  }, LAYER_WATCH_TICK_MS);
+  if (layerWatchTimer.unref) layerWatchTimer.unref();
 }
 
 function destroyOverlayWindow() {
@@ -2458,8 +2554,10 @@ function applyIngameVisibility(settings) {
   if (want === overlayWin.isVisible()) return;
   // showInactive, never show: the window is non-focusable and must not take
   // input from the game even for the moment it appears.
-  if (want) overlayWin.showInactive();
-  else overlayWin.hide();
+  if (want) {
+    layerWatch.excuse(Date.now());
+    overlayWin.showInactive();
+  } else overlayWin.hide();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -5883,6 +5981,15 @@ app.whenReady().then(async () => {
   }
 
   startIngameUsageTicker();
+  startLayerWatch();
+  // A GPU process restart is survivable for an ordinary window and not
+  // reliably for a transparent one over a fullscreen game: it can come back
+  // showing its last frame forever. Rebuild the layer rather than trust it.
+  app.on('child-process-gone', (_evt, details) => {
+    if (!details || details.type !== 'GPU') return;
+    stallWatch.note(`GPU process gone reason=${details.reason} exit=${details.exitCode}`);
+    if (overlayWin && !overlayWin.isDestroyed()) recreateOverlayWindow('GPU process restarted');
+  });
 
   if (process.env.APEX_SHOT) {
     setTimeout(() => void captureWindowsAndQuit(process.env.APEX_SHOT), 3500);
