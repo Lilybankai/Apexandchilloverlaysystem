@@ -5,6 +5,40 @@
      app until it is renamed.
 -->
 
+## Unreleased
+
+### Fixed
+
+- **Frozen overlays now bring themselves back — no more Stop/Start.** A
+  tester's overlays froze in a race on 1.1.0, some for good until Stop/Start
+  was pressed. The stall log they sent says the app itself was fine, so
+  the freeze was in the in-game overlay window's own drawing, which nothing was
+  watching. The overlay window now checks in once a second to say it is still
+  drawing. If it goes quiet for ten seconds while the game is sending data, the
+  app reloads it, and if that does not hold it rebuilds the window, which is
+  exactly what Stop/Start was doing. The same happens straight away if the
+  overlay's renderer crashes or the graphics process restarts. Windows can also
+  no longer decide the overlay is hidden behind the game and stop it drawing.
+  Every one of these is written to `stalls.log`, so the next log says which
+  one it was.
+
+### Added
+
+- **A Refresh overlays button — and a binding for it.** Overlays → In-game has
+  a *Refresh overlays* button that rebuilds the in-game overlay without
+  stopping the server, so your feed, layout and everything else stay as they
+  were. It is also in the bindings list as *Refresh overlays*, for a key, a
+  Stream Deck or a button box. No key is set by default, so it can't clash
+  with one of the game's.
+
+- **The freeze log now covers the overlay window too.** Until now `stalls.log`
+  could only see the app itself, which is why a driver whose overlays froze
+  could send a clean log. It now also records, from the overlay window: when
+  one widget took too long and which one it was; when data kept arriving but
+  nothing was being drawn; and when data stopped arriving. It also writes down
+  which graphics card and driver the overlay ran on, and what the graphics
+  process was doing when anything went wrong.
+
 ## 1.1.0 — 2026-09-22
 
 Two new circuits: Long Beach and Road Atlanta (US Track Pass 2, 2026-09-22).

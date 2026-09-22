@@ -1115,11 +1115,19 @@
       var t = w.def.throttleMs || 0;
       if (t > 0 && now - w.last < t) continue;
       w.last = now;
+      var began = health ? nowMs() : 0;
       try {
         w.def.update(frame, ctx);
       } catch (err) {
         // No silent failures — one bad widget must not kill the feed.
         console.error("[Apex] widget '" + w.name + "' update failed:", err);
+      }
+      if (health) {
+        var took = nowMs() - began;
+        if (took > health.worstMs) {
+          health.worstMs = took;
+          health.worstWidget = w.name;
+        }
       }
     }
 
@@ -1206,6 +1214,66 @@
     }
   }, 1000);
 
+  /**
+   * Tell the desktop app how this page is doing (in-game layer only).
+   *
+   * The stale-feed watchdog above proves frames ARRIVE; it cannot prove they
+   * are drawn, and nothing at all used to record a freeze that happened in
+   * this renderer rather than in main — which is why the stall log of a driver
+   * whose overlays froze could come back clean. So once a second the page
+   * reports three counts and two worst cases for the second just gone:
+   *
+   *   - received  frames that came off the socket
+   *   - painted   frames the rAF actually drew (only runs while Chromium is
+   *               producing frames for this window)
+   *   - worst     the slowest single widget update, and which widget
+   *   - long      the longest task the renderer's own thread ran
+   *
+   * and the report's own timing is a fourth: it rides a timer, not the rAF, so
+   * a report that arrives late means this page's thread was blocked, and one
+   * that arrives with painted=0, received>0 means the thread is fine but the
+   * window has stopped being drawn. electron/main.js turns those into LAYER
+   * lines in stalls.log and electron/layer-watch.js decides when to step in.
+   * OBS sources have no bridge and pay nothing: `health` stays null.
+   */
+  var health =
+    window.apexIngame && typeof window.apexIngame.health === "function"
+      ? { received: 0, painted: 0, worstMs: 0, worstWidget: "", longMs: 0 }
+      : null;
+  function reportPainted() {
+    if (health) health.painted++;
+  }
+  if (health) {
+    try {
+      new PerformanceObserver(function (list) {
+        var entries = list.getEntries();
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].duration > health.longMs) health.longMs = entries[i].duration;
+        }
+      }).observe({ entryTypes: ["longtask"] });
+    } catch (e) {
+      /* no long-task timing in this runtime; the other counts still report */
+    }
+    setInterval(function () {
+      var h = health;
+      try {
+        window.apexIngame.health({
+          at: Date.now(),
+          received: h.received,
+          painted: h.painted,
+          worstMs: Math.round(h.worstMs),
+          worstWidget: h.worstWidget,
+          longMs: Math.round(h.longMs),
+          visibility: document.visibilityState,
+        });
+      } catch (e) {
+        /* a heartbeat must never be the thing that breaks the page */
+      }
+      h.received = h.painted = h.worstMs = h.longMs = 0;
+      h.worstWidget = "";
+    }, 1000);
+  }
+
   /** Resolve the WS URL from the page location, allowing ?ws= / ?port= overrides. */
   function resolveWsUrl() {
     var params = new URLSearchParams(window.location.search);
@@ -1253,6 +1321,7 @@
 
     ws.onmessage = function (event) {
       lastFrameAt = Date.now();
+      if (health) health.received++;
       var frame;
       try {
         frame = JSON.parse(event.data);
@@ -1276,6 +1345,7 @@
           var f = pendingFrame;
           pendingFrame = null;
           if (f) dispatch(f);
+          reportPainted();
         });
       }
     };

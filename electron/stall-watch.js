@@ -502,6 +502,20 @@ function stop() {
   }
 }
 
+/**
+ * Write a one-off event line into the same log, stamped like a stall.
+ *
+ * For the failures this watcher cannot time itself — the in-game layer's
+ * renderer dying, the GPU process restarting, the layer going quiet while
+ * main is perfectly healthy (see electron/layer-watch.js). They belong beside
+ * the stalls: one file is what a tester sends, and "main was fine, the layer
+ * was reloaded at 11:05:59" is only readable if both are in it.
+ */
+function note(line) {
+  if (!logPath) return;
+  write(`${new Date().toISOString()} ${line}`);
+}
+
 /** For the diagnostics panel / support bundle. */
 function summary() {
   return {
@@ -524,6 +538,7 @@ module.exports = {
   end,
   around,
   installCensus,
+  note,
   summary,
   TICK_MS,
   THRESHOLD_MS,

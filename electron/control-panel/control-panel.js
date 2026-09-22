@@ -44,6 +44,7 @@
   const ingameDockToggle = $('#ingame-dock-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
+  const igRefreshBtn = $('#ig-refresh-btn');
   const igHotkeyBtn = $('#ig-hotkey');
   const igHotkeyClear = $('#ig-hotkey-clear');
   const sponsorsToggle = $('#sponsors-toggle');
@@ -174,6 +175,7 @@
     const canEdit = !!lastStatus.running && lastIngameEnabled;
     const editing = !!lastStatus.ingameEditing;
     igEditBtn.disabled = !canEdit;
+    igRefreshBtn.disabled = !canEdit;
     igEditBtn.textContent = editing ? 'Finish editing' : 'Edit layout';
     igEditBtn.setAttribute('data-active', String(editing));
   }
@@ -2759,6 +2761,11 @@
   igResetBtn.addEventListener('click', async () => {
     await window.apex.ingameLayoutReset();
     showToast('In-game layout reset');
+  });
+
+  igRefreshBtn.addEventListener('click', async () => {
+    const done = await window.apex.ingameRefresh();
+    showToast(done ? 'In-game overlays refreshed' : 'The in-game overlay is not running');
   });
 
   // Click the hotkey chip, then press a combination to bind it.
