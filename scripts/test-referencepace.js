@@ -475,7 +475,7 @@ console.log('\nCoverage of the shipped table');
   check('every mapped layout has times or is pending', layouts.length + pending.length === mapped,
     `${layouts.length} timed + ${pending.length} pending of ${mapped} mapped`);
   check('pending layouts carry no times', pending.every((id) => !table.times[id]), pending.join(','));
-  check('31 timed layouts as of the 2026-09 sheet', layouts.length === 31, `${layouts.length} layouts`);
+  check('33 timed layouts as of the 2026-09-22 sheet (Long Beach, Road Atlanta)', layouts.length === 33, `${layouts.length} layouts`);
 
   let entries = 0;
   let bad = [];
@@ -488,7 +488,7 @@ console.log('\nCoverage of the shipped table');
     }
   }
   check('every reference time is plausible', bad.length === 0, bad.length ? bad.join(', ') : `${entries} entries`);
-  check('all six sheet classes are covered', entries === 186, `${entries} entries`);
+  check('all six sheet classes are covered', entries === 198, `${entries} entries`);
 }
 
 /* -------------------------------------------------------------------------- */

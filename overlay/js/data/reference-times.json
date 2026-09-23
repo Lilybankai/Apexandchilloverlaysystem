@@ -15,7 +15,7 @@
       "note": "Reference lap times and the Alien→Offline band labels are Ohne Speed's work, used with credit. Apex AIO System only reads them."
     },
     "sheetUpdated": "2026.09.22. 09:30 CEST",
-    "generatedAt": "2026-09-22T09:53:04.875Z",
+    "generatedAt": "2026-09-23T09:18:55.200Z",
     "generatedBy": "scripts/fetch-reference-times.js",
     "warning": "Generated file — edit reference-tracks.js and re-run, never this."
   },
@@ -1347,6 +1347,41 @@
         "patch": "N/A"
       }
     },
+    "long_beach": {
+      "LMGT3": {
+        "raceMs": 78630,
+        "hotlapMs": 78240,
+        "fastestMs": 77970,
+        "fastestCar": "Corvette Z06 (v1.42)",
+        "patch": "1.4+"
+      },
+      "LMH": {
+        "raceMs": 71080,
+        "hotlapMs": 70720,
+        "fastestMs": 70670,
+        "fastestCar": "Isotta Fraschini Tipo 6 (v1.42)",
+        "patch": "1.4+"
+      },
+      "LMP3": {
+        "raceMs": 75660,
+        "hotlapMs": 75290,
+        "fastestMs": 75160,
+        "fastestCar": "Duqueine D09 (v1.42)",
+        "patch": "1.4+"
+      },
+      "LMP2elms": {
+        "raceMs": 70280,
+        "patch": "N/A"
+      },
+      "LMP2wec": {
+        "raceMs": 72960,
+        "patch": "N/A"
+      },
+      "GTE": {
+        "raceMs": 77460,
+        "patch": "N/A"
+      }
+    },
     "monza_gp": {
       "LMGT3": {
         "raceMs": 108840,
@@ -1775,6 +1810,41 @@
         "patch": "1.0+"
       }
     },
+    "road_atlanta": {
+      "LMGT3": {
+        "raceMs": 78430,
+        "hotlapMs": 78040,
+        "fastestMs": 77890,
+        "fastestCar": "BMW M4 (v1.42)",
+        "patch": "1.4+"
+      },
+      "LMH": {
+        "raceMs": 69090,
+        "hotlapMs": 68750,
+        "fastestMs": 68600,
+        "fastestCar": "Lamborghini SC63 (v1.42)",
+        "patch": "1.4+"
+      },
+      "LMP3": {
+        "raceMs": 73570,
+        "patch": "N/A"
+      },
+      "LMP2elms": {
+        "raceMs": 68600,
+        "patch": "N/A"
+      },
+      "LMP2wec": {
+        "raceMs": 71200,
+        "hotlapMs": 70840,
+        "fastestMs": 70840,
+        "fastestCar": "Oreca WEC (v1.42)",
+        "patch": "1.4+"
+      },
+      "GTE": {
+        "raceMs": 76670,
+        "patch": "N/A"
+      }
+    },
     "silverstone_gp_wec": {
       "LMGT3": {
         "raceMs": 118120,
@@ -2032,26 +2102,10 @@
     }
   },
   "stats": {
-    "placed": 186,
-    "skipped": 12,
-    "pending": 2
+    "placed": 198,
+    "skipped": 0,
+    "pending": 0
   },
-  "skipped": [
-    "Long Beach / LMGT3",
-    "Road Atlanta / LMGT3",
-    "Long Beach / LMH",
-    "Road Atlanta / LMH",
-    "Long Beach / LMP3",
-    "Road Atlanta / LMP3",
-    "Long Beach / LMP2elms",
-    "Road Atlanta / LMP2elms",
-    "Long Beach / LMP2wec",
-    "Road Atlanta / LMP2wec",
-    "Long Beach / GTE",
-    "Road Atlanta / GTE"
-  ],
-  "pending": [
-    "long_beach",
-    "road_atlanta"
-  ]
+  "skipped": [],
+  "pending": []
 }
