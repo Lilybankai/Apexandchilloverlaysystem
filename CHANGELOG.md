@@ -7,7 +7,18 @@
 
 ## Unreleased
 
+## 1.1.1 — 2026-09-23
+
+Pace scoring at Long Beach and Road Atlanta, your session average against the
+reference, and overlays that recover from a freeze on their own.
+
 ### Fixed
+
+- **Long Beach and Road Atlanta now get a pace score.** 1.1.0 shipped both
+  circuits before Ohne Speed's sheet had times for them, so pace scoring
+  said so and stayed blank. The sheet has now been updated (2026-09-22) with
+  every class at both tracks, and this release carries those times. Laps you
+  have already driven there are scored too.
 
 - **Frozen overlays now bring themselves back — no more Stop/Start.** A
   tester's overlays froze in a race on 1.1.0, some for good until Stop/Start
@@ -23,6 +34,15 @@
   one it was.
 
 ### Added
+
+- **Your session average against the reference pace.** A driver asked for
+  this. Review now shows, under a session's report, your average clean lap as
+  a percentage of Ohne Speed's reference, with its band. It sits on the same
+  OK → Alien bar the Dashboard's Pace rank card uses, with your best lap on
+  the bar as a ringed dot. The gap between the two dots is how consistent your
+  pace was over the session. Each stint also shows its own average against the
+  reference (*vs ref*), so you can see whether the pace held or faded. Wet
+  sessions are not scored, because the reference times are dry laps.
 
 - **A Refresh overlays button — and a binding for it.** Overlays → In-game has
   a *Refresh overlays* button that rebuilds the in-game overlay without
