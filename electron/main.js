@@ -2818,6 +2818,45 @@ function paceRowFor(ref, input) {
   };
 }
 
+/**
+ * A reviewed session's pace against the reference: its average clean lap, its
+ * best, and each stint's average, all through {@link paceRowFor} so the Review
+ * tab's 102.4% is the same 102.4% the Dashboard would print for that lap.
+ *
+ * The AVERAGE is the point. A best lap says what you can do once; the average
+ * as a percentage of the reference says what you did all session, and the gap
+ * between the two dots on the bar is consistency measured in pace rather than
+ * in seconds. Stint averages show whether that held or faded.
+ *
+ * A wet session is not scored, for the reason `laps:pace` gives: the sheet's
+ * times are dry laps, and a percentage against them in the rain is a number
+ * with no meaning in a band that implies one.
+ */
+function sessionPaceFor(ref, session) {
+  if (!session || !session.stats) return null;
+  const wet = session.stints.some((st) => st.laps.some((l) => l.wet));
+  if (wet) return { wet: true, average: null, best: null, stints: [] };
+  const known = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  const score = (lapMs) =>
+    known(lapMs)
+      ? paceRowFor(ref, {
+          track: session.track,
+          trackConfig: session.trackConfig,
+          simTrackName: session.simTrackName,
+          trackLengthM: session.trackLengthM,
+          carClass: session.carClass,
+          car: session.car,
+          lapMs: Math.round(lapMs),
+        })
+      : null;
+  return {
+    wet: false,
+    average: score(session.stats.averageMs),
+    best: score(session.stats.bestMs),
+    stints: session.stints.map((st) => score(st.stats.averageMs)),
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  IPC — the safe API the control panel calls (see preload.js)               */
 /* -------------------------------------------------------------------------- */
@@ -3725,7 +3764,17 @@ function registerIpc() {
     if (typeof id !== 'string' || !id) return { ok: false, session: null, error: 'no session' };
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
-      return { ok: true, session: review.loadSession(id) };
+      const session = review.loadSession(id);
+      // Scored separately so a broken reference table costs the session its
+      // pace card, never the session itself.
+      let pace = null;
+      try {
+        const ref = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
+        pace = sessionPaceFor(ref, session);
+      } catch (err) {
+        console.error('[app] session pace unavailable:', err.message);
+      }
+      return { ok: true, session: session && { ...session, pace } };
     } catch (err) {
       console.error('[app] session unavailable:', err.message);
       return { ok: false, session: null, error: err.message };

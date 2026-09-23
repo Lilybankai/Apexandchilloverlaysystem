@@ -364,6 +364,86 @@
     return esc(`${n} lap${n === 1 ? '' : 's'} lost ${DIRTY_WORDS[why] || `to ${why}`}`);
   }
 
+  /**
+   * Percent-off-reference → a 0–100 position on the RankBar, faster to the
+   * right. A copy of `paceRankPct()` in control-panel.js (there is no import
+   * between the two files) — keep the pair in sync, or the same lap sits in two
+   * different places on two tabs.
+   */
+  function rankPos(percent) {
+    return Math.max(0, Math.min(100, ((107 - percent) / 7) * 100));
+  }
+
+  /**
+   * The session's average clean lap against Ohne Speed's reference, on the same
+   * OK → Alien bar the Dashboard's Pace rank card uses — with the best lap on
+   * it too, because the distance between the two dots is the question a
+   * driver asked for: not "how fast can I go" but "how fast did I go, all
+   * session". `s.pace` is scored in the main process; see `sessionPaceFor`.
+   */
+  function paceHtml(s) {
+    const p = s.pace;
+    if (!p) return '';
+    const head = `<div class="rv-pace__label">Reference pace · session average</div>`;
+    if (p.wet) {
+      return `<div class="rv-pace" data-band="none">${head}
+        <p class="rv-pace__why">Not scored: the reference times are dry laps, and this session was wet.</p>
+      </div>`;
+    }
+    const avg = p.average;
+    if (!avg) return '';
+    if (!avg.ok) {
+      return `<div class="rv-pace" data-band="none">${head}
+        <p class="rv-pace__why">${esc(avg.detail || 'No reference time for this track and class.')}</p>
+      </div>`;
+    }
+    const best = p.best && p.best.ok ? p.best : null;
+    const gap = (avg.lapMs - avg.refMs) / 1000;
+    // Same wording as the Dashboard card: the distance to the next rung, which
+    // is the one part of the card that says what to do next.
+    const target = avg.percent > 102 ? 102 : avg.percent > 100 ? 100 : null;
+    const toTarget = target === null
+      ? 'On the reference pace, on average.'
+      : `${fix((avg.lapMs - avg.refMs * (target / 100)) / 1000, 2)}s a lap from <strong>${target}%</strong> on average.`;
+    const spread = best ? avg.percent - best.percent : null;
+    return `
+      <div class="rv-pace" data-band="${esc(avg.bandId || 'none')}">
+        ${head}
+        <div class="rv-pace__row">
+          <div class="rv-pace__hero">
+            <span class="rv-pace__pct">${fix(avg.percent, 1)}%</span>
+            <span class="chip">${esc(avg.bandLabel || dash)}</span>
+          </div>
+          <div class="rv-pace__times">
+            <span>Average ${fmtLap(avg.lapMs)}</span>
+            <span data-state="${gap > 0 ? 'behind' : gap < 0 ? 'ahead' : 'flat'}">${
+              `${gap > 0 ? '+' : gap < 0 ? '−' : ''}${fix(Math.abs(gap), 2)}s`
+            } to ${fmtLap(avg.refMs)}${avg.assumed ? '*' : ''}</span>
+          </div>
+        </div>
+        <div class="rankbar">
+          <div class="rankbar__track">
+            ${best ? `<span class="rankbar__dot rv-pace__best" style="left:${rankPos(best.percent)}%"
+                 title="Best lap ${fix(best.percent, 1)}%"></span>` : ''}
+            <span class="rankbar__dot" style="left:${rankPos(avg.percent)}%"
+                  title="Average ${fix(avg.percent, 1)}%"></span>
+          </div>
+          <div class="rankbar__zones">
+            <span data-zone="ok">OK</span>
+            <span data-zone="good">GOOD</span>
+            <span data-zone="mid">102%</span>
+            <span data-zone="alien">ALIEN</span>
+          </div>
+        </div>
+        <p class="rv-pace__note">
+          ${toTarget}
+          ${best ? ` Best lap ${fix(best.percent, 1)}% (ringed): ${fix(spread, 1)} points between your best and your average.` : ''}
+        </p>
+        <p class="rv-pace__credit">${esc(avg.sheetClass)} race pace from Ohne Speed's LMU laptimes sheet${
+          avg.assumed ? ' · *LMP2 ruleset assumed' : ''}.</p>
+      </div>`;
+  }
+
   function reportHtml(s) {
     const st = s.stats;
     return `
@@ -416,6 +496,7 @@
             ? tile('Energy', `${fix(st.vePerLapPct, 2)}%`, { note: 'per lap' })
             : ''}
         </div>
+        ${paceHtml(s)}
       </div>`;
   }
 
@@ -596,7 +677,10 @@
   function stintHtml(stint, session) {
     const st = stint.stats;
     const open = !collapsed.has(stint.no);
-    const fact = (label, value, cls = '') => `
+    // This stint's average against the reference — whether the pace held.
+    const sp = session.pace && session.pace.stints && session.pace.stints[stint.no - 1];
+    const stintPace = sp && sp.ok ? sp : null;
+    const fact =(label, value, cls = '') => `
       <span class="rv-fact${cls}"><b>${esc(label)}</b>
         <span data-none="${String(value === dash)}">${value}</span></span>`;
 
@@ -610,6 +694,7 @@
             ${fact('Laps', String(st.laps))}
             ${fact('Best', known(st.bestMs) ? fmtLap(st.bestMs) : dash, ' rv-fact--best')}
             ${fact('Average', known(st.averageMs) ? fmtLap(st.averageMs) : dash)}
+            ${stintPace ? fact('vs ref', `${fix(stintPace.percent, 1)}%`) : ''}
             ${fact('Spread', known(st.spreadMs) ? `±${fix(st.spreadMs / 1000, 2)}s` : dash)}
             ${fact('Fuel', known(st.fuelPerLapL) ? `${fix(st.fuelPerLapL, 2)} L/lap` : dash)}
             ${fact('Time', fmtSpan(st.elapsedMs))}

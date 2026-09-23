@@ -422,6 +422,78 @@
   text-overflow: ellipsis;
 }
 
+/* Reference pace: the session's average against Ohne Speed's sheet, on the
+   Dashboard's RankBar (hub.css). Spans both report columns, and keeps the bar
+   to a column's measure for the reason `.card--rank` does — stretched across
+   the page its four zone labels stop reading as one scale. */
+.rv-pace {
+  grid-column: 1 / -1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--band);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px 12px;
+}
+.rv-pace > * { max-width: 560px; }
+
+.rv-pace__label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.rv-pace__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-top: 4px;
+}
+.rv-pace__hero { display: flex; align-items: baseline; gap: 10px; }
+.rv-pace__pct {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--band);
+}
+.rv-pace__times {
+  display: flex;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.rv-pace__times [data-state="behind"] { color: var(--bad); }
+.rv-pace__times [data-state="ahead"] { color: var(--ok); }
+
+.rv-pace .rankbar { margin-top: 10px; }
+/* The best lap is the ringed dot; the average — the headline — stays solid. */
+.rv-pace__best.rankbar__dot {
+  background: transparent;
+  border: 2px solid #fff;
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+.rv-pace__note,
+.rv-pace__why {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.rv-pace__note strong { color: var(--warn); font-weight: 600; }
+.rv-pace__credit {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
 /* The consistency bar. It fills a tile rather than standing alone, because it
    is a reading of the number above it and not a fact in its own right. */
 .rv-bar {
