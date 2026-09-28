@@ -108,9 +108,8 @@ reference pace they have according to the reference pace widget"*.
 - **⚠ Deploy the dispatcher BEFORE switching the kind on.** The v10
   dispatcher has no `personal_best` style and falls back to record_set's —
   a PB announced as "🏆 New record". 0034 was applied on 2026-09-28 without
-  the deploy, so 0035 took the kind off again. Owed, in order:
-  `supabase functions deploy discord-dispatch`, then the `update` in 0035's
-  header (as 0036). Also: saving a channel from an app older than this change
+  the deploy, so 0035 took the kind off again; v11 was deployed at 10:26Z and
+  0036 switched it back on. Also: saving a channel from an app older than this change
   drops `personal_best` from its kinds, because the old panel only sends the
   kinds it knows.
 
