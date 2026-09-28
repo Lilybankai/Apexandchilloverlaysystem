@@ -1648,8 +1648,26 @@ export class LmuRestProvider implements TelemetryProvider {
     // {@link readSpectatedCar}). It feeds ONLY the player-block build below;
     // fuel, radar, delta, MFD and track limits keep their driven-car sources,
     // so the driving path is untouched by construction.
+    //
+    // And the same fallback for a car of our own PARKED IN THE GARAGE while the
+    // camera is on someone else's — a teammate's practice stint watched from
+    // the pit box (2026-09-23, Carl watching Micky's LMP2 lap while his own sat
+    // in the stall). The sim still flags the parked car as the player's, so
+    // `local` reads its physics: a speedo at zero and flat pedal traces under a
+    // car that is plainly lapping. The camera car is the one being watched, so
+    // it is the one shown. Only while our car is IN THE STALL and the camera is
+    // elsewhere: the moment it rolls out the camera is on it, `focus` is
+    // `playerCar`, and this branch is dead — the driving path never sees it.
+    // A torn read here falls to null (REST speed), never to the parked car.
+    const watchingFromGarage =
+      playerCar !== undefined &&
+      playerCar.inGarageStall === true &&
+      focus !== undefined &&
+      focus.slotID !== playerCar.slotID;
     const displayLocal =
-      local ?? (playerCar === undefined && focus ? this.readSpectatedCar(focus.slotID) : null);
+      watchingFromGarage && focus
+        ? this.readSpectatedCar(focus.slotID)
+        : (local ?? (playerCar === undefined && focus ? this.readSpectatedCar(focus.slotID) : null));
 
     // One scoring read per poll, shared by everything that needs it. It used to
     // live inside buildTrackLimits, but the PB reference key (below) needs the
