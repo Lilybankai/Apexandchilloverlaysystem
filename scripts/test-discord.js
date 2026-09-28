@@ -164,6 +164,33 @@ async function main() {
     );
   }
 
+  console.log('\nPersonal bests (0034)');
+  {
+    const root = path.join(__dirname, '..', 'supabase');
+    const sql = fs.readFileSync(path.join(root, 'migrations', '0034_personal_best_notifications.sql'), 'utf8');
+    const dispatcher = fs.readFileSync(path.join(root, 'functions', 'discord-dispatch', 'index.ts'), 'utf8');
+
+    // Every kind the panel offers must have an embed style, or it posts as a
+    // generic "New record" — a PB announced as a record would be a lie.
+    const unstyled = discord.KINDS.map((k) => k.id).filter(
+      (id) => !new RegExp(`^\\s*${id}:\\s*\\{ colour`, 'm').test(dispatcher),
+    );
+    check('every kind the panel offers has its own embed', unstyled.length === 0, unstyled.join(', ') || 'all styled');
+    check('the panel offers personal bests', discord.KINDS.some((k) => k.id === 'personal_best'));
+    check('submit_lap emits personal_best', /then 'personal_best'/.test(sql));
+
+    // The routing rule that keeps a league channel from filling with
+    // strangers: a PB reaches a community only through a member sharing ALL.
+    // Line-ending blind: a Windows checkout of the migration is CRLF.
+    const from = sql.indexOf("when v_evt.kind = 'personal_best' then");
+    const to = sql.slice(from).search(/\n\s*else\r?\n/);
+    const pbBranch = from >= 0 && to > 0 ? sql.slice(from, from + to) : '';
+    check('a PB routes on the member axis only', !/watch_boards|subject_id/.test(pbBranch), pbBranch.length);
+    check("…and only for members who share 'all'", /m\.share = 'all'/.test(pbBranch) && !/share <> 'none'/.test(pbBranch));
+    check('the pace is stripped before conditions are stored', /- 'pace'/.test(sql));
+    check('a PB shares the record collapse key (edits, not repeats)', (sql.match(/'board:' \|\|/g) || []).length === 1);
+  }
+
   /* ------------------------------------------ 2. nothing pings by accident */
   console.log('\nThe test-channel button');
   {

@@ -7,6 +7,19 @@
 
 ## Unreleased
 
+### Added
+
+- **Discord: every personal best, not just the records.** When a member of
+  your community improves their time, the channel now says where it puts them
+  on the leaderboard ("climbs from P7 to P4 of 12"), how much they found, and
+  how far off the record they are. Five improvements in one session edit one
+  message rather than posting five. Turn it on per channel with **Personal
+  bests** in Settings ▸ Discord; members set to "Records only" are left out.
+- **Discord: reference pace on every lap message.** Records and personal bests
+  now show the same band and percentage as the Reference Pace widget, e.g.
+  "Good · 101.3% of reference (+1.810s)", credited to Ohne Speed's LMU
+  laptimes sheet. Dry laps at rated tracks only, as in the widget.
+
 ## 1.1.1 — 2026-09-23
 
 Pace scoring at Long Beach and Road Atlanta, your session average against the

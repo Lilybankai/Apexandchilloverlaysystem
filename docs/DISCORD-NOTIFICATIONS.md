@@ -79,6 +79,41 @@ of our API.
    improvement on the same board by the same driver **edits that message**
    instead of posting again.
 
+## Personal bests and reference pace (0034, 2026-09-28)
+
+Carl, once the record embeds had proved themselves: *"include anyone that
+improves their time and where that puts them on the [leaderboard] and what
+reference pace they have according to the reference pace widget"*.
+
+- **`personal_best`** — a driver beats their own board time without taking the
+  lead. The embed says where it puts them (*climbs from P7 to P4 of 12 on the
+  GT3 board*), what they gained on themselves, and how far the record still is.
+  A first lap on a board improved nothing and emits nothing.
+- **Member axis only, share = `all` only.** A stranger's PB is not news in a
+  league's channel, so there is no boards axis; nobody is displaced, so there
+  is no subject axis; and a member who chose "Records only" meant it.
+- **Same collapse key as the records** (board + driver): five PBs in one
+  practice edit one message, and a PB that becomes a record edits into it.
+- **Reference pace on every lap embed** (records too) — band, % of reference
+  and the gap, with the widget's "?" when the LMP2 ruleset was assumed, and
+  Ohne Speed credited in the footer whenever it shows. The **app** scores the
+  lap (`paceFor` in `lapUpload.js`, the widget's own `scoreLap`), because only
+  the app knows the layout; it rides in `p_conditions.pace` (no new argument),
+  and `submit_lap` **checks** it — the percent has to equal lap ÷ reference
+  within 0.2 or it is dropped — then strips it before storing the conditions.
+  Dry only. A lap from an older app simply has no pace line.
+- 0034 switched `personal_best` on for every channel that already took
+  `record_extended`. New community channels start without it (tick "Personal
+  bests" in the channel's settings); personal channels start with it.
+- **⚠ Deploy the dispatcher BEFORE switching the kind on.** The v10
+  dispatcher has no `personal_best` style and falls back to record_set's —
+  a PB announced as "🏆 New record". 0034 was applied on 2026-09-28 without
+  the deploy, so 0035 took the kind off again. Owed, in order:
+  `supabase functions deploy discord-dispatch`, then the `update` in 0035's
+  header (as 0036). Also: saving a channel from an app older than this change
+  drops `personal_best` from its kinds, because the old panel only sends the
+  kinds it knows.
+
 ## Traps, each of which cost something to find
 
 - **A record on an empty board is not news.** Boards key by track × class ×
