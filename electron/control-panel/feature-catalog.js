@@ -94,6 +94,7 @@
     { slug: 'action:overlay.ingame', tab: 'overlays', label: 'Turned the in-game layer on' },
     { slug: 'action:overlay.layout', tab: 'overlays', label: 'Laid out the in-game layer' },
     { slug: 'action:overlay.refresh', tab: 'overlays', label: 'Refreshed a frozen in-game layer' },
+    { slug: 'action:overlay.vr', tab: 'overlays', label: 'Turned the VR headset panel on' },
 
     // Race engineer.
     { slug: 'action:engineer.ask', tab: 'engineer', label: 'Asked the engineer a question' },

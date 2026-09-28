@@ -1896,3 +1896,24 @@ html, body { height: 100%; overflow: hidden; }
   background-clip: content-box;
 }
 .app *::-webkit-scrollbar-corner { background: transparent; }
+
+/* ------------------------------ VR headset card ----------------------------- */
+/* The placement sliders only mean something while VR is switched on, so they
+   collapse with it — the card then reads as one switch and a sentence. */
+
+.card--vr .card__title .chip { margin-left: 8px; }
+
+.card--vr #vr-status { margin: 8px 0 0; }
+
+.card--vr .vr-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 24px;
+  margin-top: 14px;
+}
+
+.card--vr .vr-fields[hidden] { display: none; }
+
+.card--vr .vr-fields .hero__buttons { align-self: end; }
+
+.card--vr .ingame-switch { margin-top: 12px; }

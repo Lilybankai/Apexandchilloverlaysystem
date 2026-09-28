@@ -7,6 +7,21 @@
 
 ## Unreleased
 
+### Added
+
+- **Overlays in your VR headset (beta).** Switch on *Show in VR headset* on
+  the home screen and the speedo and relative appear on a panel inside the
+  headset, fixed in place in front of you — they stay put when you look
+  around, like a gauge on the dash, rather than following your head. Move it
+  closer, lower, to one side or make it bigger with the sliders on the same
+  card; it moves live, so you can set it up with the headset on. It needs
+  SteamVR: start Le Mans Ultimate with the **SteamVR** launch option. The app
+  draws the panel from its own window the same way fpsVR does, so nothing
+  touches the game and anti-cheat has nothing to see. It waits quietly for
+  SteamVR and never starts it for you, and with the switch off none of it
+  runs at all. This first beta has the speedo and relative only; choosing the
+  widgets and adding more panels comes next.
+
 ## 1.1.1 — 2026-09-23
 
 Pace scoring at Long Beach and Road Atlanta, your session average against the

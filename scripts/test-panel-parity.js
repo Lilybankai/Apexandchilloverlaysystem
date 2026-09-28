@@ -259,6 +259,20 @@ const PANEL_CONTRACT = {
   'ig-hotkey': 'button',
   'ig-hotkey-clear': 'button',
 
+  // VR headset panel
+  'vr-toggle': 'input:checkbox',
+  'vr-status': 'p',
+  'vr-fields': 'div',
+  'vr-distance': 'input:range',
+  'vr-distance-echo': 'span',
+  'vr-height': 'input:range',
+  'vr-height-echo': 'span',
+  'vr-side': 'input:range',
+  'vr-side-echo': 'span',
+  'vr-width': 'input:range',
+  'vr-width-echo': 'span',
+  'vr-reset-btn': 'button',
+
   // Widgets
   'overlay-list': 'ul',
   'combined-url': 'input:text',

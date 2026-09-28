@@ -42,6 +42,18 @@
   const ingameToggle = $('#ingame-toggle');
   const ingameAutoToggle = $('#ingame-auto-toggle');
   const ingameDockToggle = $('#ingame-dock-toggle');
+  const vrToggle = $('#vr-toggle');
+  const vrStatus = $('#vr-status');
+  const vrFields = $('#vr-fields');
+  const vrResetBtn = $('#vr-reset-btn');
+  // Placement sliders, in cm on the page and metres in settings.
+  // Spelled out rather than built from the key, so test:panel-parity can see them.
+  const VR_SLIDERS = [
+    { key: 'distance', range: $('#vr-distance'), echo: $('#vr-distance-echo') },
+    { key: 'height', range: $('#vr-height'), echo: $('#vr-height-echo') },
+    { key: 'side', range: $('#vr-side'), echo: $('#vr-side-echo') },
+    { key: 'width', range: $('#vr-width'), echo: $('#vr-width-echo') },
+  ];
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
   const igRefreshBtn = $('#ig-refresh-btn');
@@ -196,7 +208,47 @@
       errorBanner.hidden = true;
     }
     syncIngameControls();
+    renderVrStatus(status);
     renderShellStatus(status, feed);
+  }
+
+  // --- VR headset panel ---------------------------------------------------
+
+  /** One sentence on where the headset panel is up to. */
+  let lastVr = null;
+
+  function renderVrStatus(status) {
+    const vr = (status && status.vr) || { state: 'off' };
+    let text;
+    if (!lastVr || !lastVr.enabled) {
+      text = 'Off.';
+    } else if (!status.running) {
+      text = 'Press Start and the panel goes up as soon as SteamVR is running.';
+    } else if (vr.state === 'connected') {
+      text = `In your headset${vr.runtime ? ` (SteamVR ${vr.runtime})` : ''}.`;
+      if (vr.fps > 0) text += ` Updating ${vr.fps} times a second, ${vr.uploadMs} ms each.`;
+    } else if (vr.state === 'unavailable') {
+      text = 'SteamVR is not installed on this PC — install it from Steam, it is free.';
+    } else if (vr.state === 'error') {
+      text = `SteamVR problem: ${vr.detail || 'unknown'}. Trying again shortly.`;
+    } else {
+      text = 'Waiting for SteamVR — start LMU with the SteamVR launch option and the panel appears.';
+    }
+    vrStatus.textContent = text;
+  }
+
+  function renderVrSettings(settings) {
+    const vr = settings.vr || {};
+    lastVr = vr;
+    vrToggle.checked = !!vr.enabled;
+    vrFields.hidden = !vr.enabled;
+    for (const { key, range, echo } of VR_SLIDERS) {
+      // Leave a slider alone while it is being dragged.
+      if (document.activeElement === range) continue;
+      const cm = Math.round((vr[key] ?? 0) * 100);
+      range.value = String(cm);
+      echo.textContent = String(cm);
+    }
   }
 
   /**
@@ -280,6 +332,7 @@
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
+    renderVrSettings(settings);
     renderShellSettings(settings);
   }
 
@@ -2729,6 +2782,40 @@
     if (ingameToggle.checked && !state.status.running) {
       showToast('Press Start to show the overlays');
     }
+  });
+
+  vrToggle.addEventListener('change', async () => {
+    if (vrToggle.checked) CATALOG?.note('action:overlay.vr');
+    const state = await window.apex.updateSettings({ vr: { enabled: vrToggle.checked } });
+    renderSettings(state.settings);
+    renderStatus(state.status);
+  });
+
+  // Placement goes live while dragging, so the driver can wear the headset and
+  // walk the panel into place. Debounced: SteamVR takes a transform instantly,
+  // but there is no point writing config.json sixty times a second.
+  // Patches accumulate between flushes, so nudging two sliders inside one
+  // debounce window sends both.
+  let vrPatch = {};
+  const flushVrPlacement = debounce(async () => {
+    const patch = vrPatch;
+    vrPatch = {};
+    await window.apex.updateSettings({ vr: patch });
+  }, 80);
+
+  for (const { key, range, echo } of VR_SLIDERS) {
+    range.addEventListener('input', () => {
+      echo.textContent = range.value;
+      vrPatch[key] = parseInt(range.value, 10) / 100;
+      flushVrPlacement();
+    });
+  }
+
+  vrResetBtn.addEventListener('click', async () => {
+    const state = await window.apex.updateSettings({
+      vr: { distance: 0.8, height: -0.25, side: 0, width: 0.8 },
+    });
+    renderSettings(state.settings);
   });
 
   ingameAutoToggle.addEventListener('change', async () => {

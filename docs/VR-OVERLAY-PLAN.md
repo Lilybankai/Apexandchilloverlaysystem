@@ -1,6 +1,8 @@
 # VR Overlay Plan — Apex & Chill in the headset
 
-**Status:** proposal, 2026-08-12. Nothing here is built yet.
+**Status:** Phase 1 built 2026-09-28 on branch `claude/vr-overlay` (see
+[Where it stands](#where-it-stands-2026-09-28) below). Phase 0 passed on a
+PSVR2. Plan first written 2026-08-12.
 **Goal:** a driver wearing a VR headset in Le Mans Ultimate sees the Apex & Chill
 in-game widgets inside the headset — without hurting frame rate, without adding
 any cost for non-VR users, and without ever touching the game process (EAC).
@@ -127,10 +129,12 @@ compression). Plan for a **condensed VR variant** — leader window + the cars
 around you in class — sized by what Phase 0 shows; full-field stays available
 if it proves readable.
 
-Head-locked (HMD-relative) transforms first — that's the mode SteamVR does
-rock-solid (RaceLab documents world-locked "floatiness" as a SteamVR-side
-limitation, not fixable from outside). Seat-fixed/world-locked is a later
-experiment, not the MVP.
+~~Head-locked (HMD-relative) transforms first.~~ **Reversed 2026-09-28 (Carl):
+panels are WORLD-LOCKED** — placed once in the seated tracking space and fixed
+there while the head moves, like a gauge on the dash. A panel that follows the
+head causes motion sickness. The "floaty" world-lock RaceLab describes has not
+shown up for the PSVR2 tester (they pinned a static window with Desktop+ and
+raced with it). See `electron/vr/placement.js`.
 
 ### Guardrails (non-negotiable constraints)
 
@@ -245,6 +249,81 @@ first milestone — never ship it quietly.
 | Native addon build/distribution pain (Phase 3) | Medium | Prebuilt for win-x64 only (all sim VR is win-x64); runtime-optional like koffi; electron-spout as the template |
 | VR legibility needs real design work | High (certain) | Budgeted in Phase 2; panels get their own type scale |
 
+## Where it stands (2026-09-28)
+
+### Phase 0 — passed, on a different headset
+
+The tester is on a **PSVR2** (PC adapter, DisplayPort, SteamVR-only — so the
+Quest "wrong OpenXR runtime" trap does not apply). With Desktop+ they pinned a
+window into the headset over LMU online: **EAC was fine**, the window stayed
+put, text "somewhat readable". Two limits of that route, which is why it is not
+a workaround we can hand out: Desktop+ **could not capture the transparent
+in-game layer at all** (only the control panel window, which came through as
+one big dark box), and it gives one window, not panels. Carl's steer: make it
+work like **fpsVR** — which is an IVROverlay app in its own process, i.e.
+exactly route A above.
+
+### Phase 1 — built
+
+| Piece | File |
+|---|---|
+| OpenVR binding (koffi, FnTables `IVROverlay_028` / `IVRSystem_026`, SteamVR's own `openvr_api.dll` via `openvrpaths.vrpath`) | `electron/vr/openvr.js` |
+| D3D11 texture path (koffi COM calls, no native addon) | `electron/vr/d3d11.js` |
+| Worker thread: SteamVR detection, connect, quit handling, uploads | `electron/vr/vrWorker.js` |
+| Main-process owner: offscreen page, frame hand-off, status | `electron/vr/index.js` |
+| World-locked placement + settings normalising | `electron/vr/placement.js` |
+| Panel page (speedo + relative) | `overlay/vr.html`, `overlay/css/vr.css` |
+| Control panel card: switch, status line, distance / height / side / size | `electron/control-panel/` |
+| Tests (facing maths, settings, FnTable layout) | `scripts/test-vr.js` |
+
+**The big finding — `SetOverlayRaw` is unusable, not just flaky.** On SteamVR
+2.17.10 every connection gets exactly **201** successful `SetOverlayRaw`
+calls, then `VROverlayError_RequestFailed` forever — any image size, with or
+without `ClearOverlayTexture`, even on a freshly created overlay. At 15 fps
+that is 13 seconds of panel. So Phase 3's texture path was pulled forward:
+the worker owns a D3D11 device **on the headset's adapter**
+(`GetDXGIOutputInfo`), copies each BGRA frame into one of two
+`MISC_SHARED` B8G8R8A8 textures (alternated, so the compositor never samples
+a half-written one) and calls `SetOverlayTexture`. It needed no native addon:
+koffi calls the COM vtable slots directly, as `gamepad.js` already does.
+What remains of Phase 3 is skipping the CPU bitmap (`useSharedTexture`).
+
+**Measured on the SteamVR null driver (headsetless), demo feed:**
+
+- connect in ~0.3 s after SteamVR is up; **15.0 fps** content, **0.3 ms** per
+  upload on the worker, **0 failures** over a 3-minute soak with hide/show
+  cycles (1000-upload micro-soak: 0.14 ms average);
+- painting stops while the panel is hidden (auto show/hide off track);
+- SteamVR closing while connected: quit acknowledged, SteamVR exits fully,
+  and the panel **reconnects by itself** when SteamVR comes back;
+- VR on with SteamVR NOT running: waits, and **never launches SteamVR**
+  (detection is a Toolhelp scan for `vrserver.exe`, not `VR_Init`).
+
+**Guardrails held:** nothing loads until the switch is on (no worker, no DLL,
+no window, no timer); every OpenVR and D3D call is on the worker thread, never
+main; nothing touches the game process.
+
+### Tester checklist for the Phase 1 build (PSVR2)
+
+1. LMU via the **SteamVR** launch option, online (EAC on). Switch on *Show in
+   VR headset*; the status line should read *In your headset*.
+2. Panel visible over the cockpit, fixed in place when you look around.
+3. Sliders move it live — find a spot you like; note the numbers.
+4. **Recentre in LMU** (its own key): does the panel stay put relative to the
+   cockpit? Unverified — if it drifts, Phase 2 needs our own recentre.
+5. Legibility of the relative at your chosen size/distance.
+6. fpsVR frame times with the panel on vs off, same session.
+7. Leave it running for a full race; note anything odd and send `stalls.log`.
+
+### Dev setup that made this testable without a headset
+
+SteamVR's null driver: in `Steam\config\steamvr.vrsettings` set
+`driver_null.enable`, `steamvr.forcedDriver: "null"`,
+`steamvr.activateMultipleDrivers`, `steamvr.requireHmd: false`, and — or the
+view goes black 5 s after every event — `power.pauseCompositorOnStandby:
+false`. The compositor's "Headset Window" can then be captured with
+`PrintWindow(..., PW_RENDERFULLCONTENT)`. Put the file back afterwards.
+
 ## Decisions from Carl (2026-08-12)
 
 - **Tester hardware: Meta Quest 2** — Phase 0 written around it above. The
@@ -258,4 +337,5 @@ first milestone — never ship it quietly.
   grouped onto the three panels above. Standings carries the condensed-variant
   caveat.
 
-No open questions — the plan is ready for Phase 0.
+Superseded 2026-09-28: the tester is on a **PSVR2**, not the Quest 2; panels
+are **world-locked**, not head-locked; and "work like fpsVR" confirmed route A.

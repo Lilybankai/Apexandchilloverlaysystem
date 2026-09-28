@@ -405,6 +405,68 @@
           </div>
         </section>
 
+        <!-- ===================== VR HEADSET =====================
+             The headset panel (electron/vr/). A SteamVR overlay drawn from this
+             app's own process, like fpsVR — nothing touches the game, so EAC
+             has nothing to see. World-locked: the driver places it once and it
+             stays put while their head moves (Carl, 2026-09-28: a panel that
+             follows the head makes people sick). Beta: speedo + relative on
+             one panel; picking widgets per panel is the next phase. -->
+        <section class="card card--vr">
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-eye" /></svg>VR headset <span class="chip" data-tone="cyan">Beta</span>
+          </h2>
+          <p class="card__desc">
+            Puts the <strong>speedo</strong> and <strong>relative</strong> on a
+            panel inside your headset, fixed in place in front of you. Needs
+            <strong>SteamVR</strong> — start LMU with the <strong>SteamVR</strong>
+            launch option. Positions are measured from where your head was at
+            the last recentre.
+          </p>
+          <label class="ingame-switch" for="vr-toggle">
+            <span class="switch">
+              <input type="checkbox" id="vr-toggle" />
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+            </span>
+            <span class="ingame-switch__label">Show in VR headset</span>
+          </label>
+          <p class="field__hint" id="vr-status" aria-live="polite">Off.</p>
+          <div class="vr-fields" id="vr-fields">
+            <label class="field">
+              <span class="field__label">Distance</span>
+              <div class="rate-row">
+                <input class="field__range" id="vr-distance" type="range" min="30" max="200" step="5" />
+                <span class="rate-value"><span id="vr-distance-echo">80</span> cm</span>
+              </div>
+            </label>
+            <label class="field">
+              <span class="field__label">Height</span>
+              <div class="rate-row">
+                <input class="field__range" id="vr-height" type="range" min="-100" max="60" step="5" />
+                <span class="rate-value"><span id="vr-height-echo">-25</span> cm</span>
+              </div>
+              <span class="field__hint">From your eye line — below zero is below it.</span>
+            </label>
+            <label class="field">
+              <span class="field__label">Left / right</span>
+              <div class="rate-row">
+                <input class="field__range" id="vr-side" type="range" min="-120" max="120" step="5" />
+                <span class="rate-value"><span id="vr-side-echo">0</span> cm</span>
+              </div>
+            </label>
+            <label class="field">
+              <span class="field__label">Size</span>
+              <div class="rate-row">
+                <input class="field__range" id="vr-width" type="range" min="15" max="150" step="5" />
+                <span class="rate-value"><span id="vr-width-echo">80</span> cm wide</span>
+              </div>
+            </label>
+            <div class="hero__buttons">
+              <button class="btn btn--ghost" id="vr-reset-btn" type="button">Reset position</button>
+            </div>
+          </div>
+        </section>
+
         <!-- ===================== YOUR WEEK =====================
              The lap database's first visible surface. Local-only: these come
              from ~/.apex-overlay/laps, not from the account, so the card works
