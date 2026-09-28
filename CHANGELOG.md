@@ -7,6 +7,10 @@
 
 ## Unreleased
 
+## 1.2.0-beta.2 — 2026-09-28
+
+Every VR widget on its own panel, placed and angled wherever you want it.
+
 ### Added
 
 - **VR: every widget is its own panel, placed where you want it.** The speedo
