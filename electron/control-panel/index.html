@@ -379,6 +379,18 @@
               </span>
               <span class="ingame-switch__label">Auto show &amp; hide</span>
             </label>
+            <!-- The same test, for OBS Browser Sources: each source fades itself
+                 out off track. Separate from the in-game switch and off by
+                 default, so a stream keeps its overlays over the menus unless
+                 the streamer asks otherwise. -->
+            <label class="ingame-switch ingame-switch--auto" for="obs-auto-toggle"
+                   title="OBS overlays fade out on the sim's menus, garage and setup screens and outside a session, and come back when you're driving. Works without “Show in game”. Add ?autohide=0 to a source's URL to keep that one always visible.">
+              <span class="switch">
+                <input type="checkbox" id="obs-auto-toggle" />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="ingame-switch__label">Auto hide in OBS too</span>
+            </label>
             <!-- Layout aid, so it sits with the layout controls rather than in
                  Settings: it does nothing at all outside edit layout. -->
             <label class="ingame-switch ingame-switch--auto" for="ingame-dock-toggle"

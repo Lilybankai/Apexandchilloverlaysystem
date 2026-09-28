@@ -41,6 +41,7 @@
   const audioTest = $('#audio-test');
   const ingameToggle = $('#ingame-toggle');
   const ingameAutoToggle = $('#ingame-auto-toggle');
+  const obsAutoToggle = $('#obs-auto-toggle');
   const ingameDockToggle = $('#ingame-dock-toggle');
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -275,6 +276,8 @@
     ingameToggle.checked = !!settings.ingameEnabled;
     // Missing (pre-update config) reads as ON — the setting ships enabled.
     ingameAutoToggle.checked = settings.ingameAutoHide !== false;
+    // Ships OFF: a stream must not start hiding its overlays on an update.
+    obsAutoToggle.checked = !!settings.obsAutoHide;
     // Ships OFF, so the plain truthiness test rather than `!== false`.
     ingameDockToggle.checked = !!settings.ingameMagneticDock;
     lastIngameEnabled = !!settings.ingameEnabled;
@@ -2735,6 +2738,18 @@
     const state = await window.apex.updateSettings({ ingameAutoHide: ingameAutoToggle.checked });
     renderSettings(state.settings);
     renderStatus(state.status);
+  });
+
+  // Nothing visible happens in this window — the effect is in OBS, within a
+  // second (sources poll /appearance.json) — so say so.
+  obsAutoToggle.addEventListener('change', async () => {
+    const state = await window.apex.updateSettings({ obsAutoHide: obsAutoToggle.checked });
+    renderSettings(state.settings);
+    showToast(
+      obsAutoToggle.checked
+        ? 'OBS overlays now hide when you are not driving'
+        : 'OBS overlays stay on screen all the time',
+    );
   });
 
   // The switch has no visible effect from this window — it changes what a drag

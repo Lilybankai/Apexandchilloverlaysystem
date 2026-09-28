@@ -648,6 +648,49 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /*  OBS auto show/hide                                                 */
+  /* ------------------------------------------------------------------ */
+
+  /*
+   * The OBS side of the in-game layer's "Auto show & hide": with the switch on
+   * (appearance.js carries it), the page fades out whenever the driver is not
+   * at the wheel. The test is the one main.js applies to the in-game window
+   * (setFeedOnTrack), so the two sides can never disagree about "on track":
+   *
+   *   at the wheel = a LIVE frame whose session does not say onTrack:false.
+   *
+   * So the sim's ESC/monitor, garage and setup screens hide it, and so does no
+   * session at all — LMU closed makes the server fall back to demo frames
+   * (connected:false), and a dead link sends no frames. An ABSENT onTrack counts
+   * as on track: a source without the channel must never hide the overlay.
+   *
+   * The in-game layer never gets the switch (it has the app bridge, and the app
+   * hides that whole window itself), so this only ever runs in OBS / a browser.
+   */
+  var autoHideOn = false;
+  /** False until a frame says otherwise: a fresh source starts hidden, not flashing. */
+  var atWheel = false;
+
+  function paintAutoHide() {
+    var root = document.documentElement;
+    if (autoHideOn && !atWheel) root.setAttribute("data-autohidden", "true");
+    else root.removeAttribute("data-autohidden");
+  }
+
+  function setAtWheel(next) {
+    if (next === atWheel) return;
+    atWheel = next;
+    paintAutoHide();
+  }
+
+  if (window.ApexAppearance && window.ApexAppearance.onAutoHide) {
+    window.ApexAppearance.onAutoHide(function (on) {
+      autoHideOn = !!on;
+      paintAutoHide();
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /*  Session header helpers (top-of-panel meta shared across widgets)   */
   /* ------------------------------------------------------------------ */
 
@@ -1107,6 +1150,9 @@
     glowEnabledCache =
       document.documentElement.getAttribute("data-glow-enabled") !== "false";
     setDemo(frame.connected === false);
+    setAtWheel(
+      frame.connected !== false && (!frame.session || frame.session.onTrack !== false),
+    );
     updateSessionMeta(frame);
 
     for (var i = 0; i < registry.length; i++) {
@@ -1190,6 +1236,7 @@
       }
     }
     if (glowing.length) sweepGlow(Infinity);
+    setAtWheel(false); // no feed is not "at the wheel" — same as the app's watchdog
     scheduleReconnect();
   }
 
@@ -1355,6 +1402,7 @@
       // The sweep only runs on a frame, so without this a bloom that was lit as
       // the link dropped would sit there glowing over the track indefinitely.
       if (glowing.length) sweepGlow(Infinity);
+      setAtWheel(false);
       scheduleReconnect();
     };
 

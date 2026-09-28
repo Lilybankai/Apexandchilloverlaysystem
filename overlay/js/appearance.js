@@ -441,6 +441,49 @@
     }
   }
 
+  /* ------------------------- OBS auto show/hide --------------------------- */
+
+  /*
+   * Whether this page hides itself while the driver is not at the wheel — the
+   * OBS side of the in-game layer's "Auto show & hide". Only ever arrives on
+   * the POLLED route: the in-game layer has the bridge, and the app hides that
+   * whole window itself, so the page must not also fade out underneath it.
+   * client.js owns the decision (it has the frames); this file only carries
+   * the switch. The app already sends `false` for deliberate demo mode, which
+   * is a preview with no session to key off — same rule as the in-game layer.
+   *
+   * `?autohide=1` / `?autohide=0` pins one source either way: a "starting
+   * soon" scene that should always show the standings, or one source that
+   * should vanish even though the operator left the switch off.
+   */
+  var autoHide = false;
+  var autoHidePinned = false;
+  var autoHideListeners = [];
+
+  function applyAutoHide(next) {
+    if (typeof next !== "boolean" || next === autoHide) return;
+    autoHide = next;
+    for (var i = 0; i < autoHideListeners.length; i++) {
+      try {
+        autoHideListeners[i](autoHide);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
+  (function () {
+    try {
+      var raw = new URLSearchParams(window.location.search).get("autohide");
+      if (raw === null) return;
+      var v = raw.trim().toLowerCase();
+      autoHide = !(v === "0" || v === "off" || v === "false" || v === "no");
+      autoHidePinned = true;
+    } catch (e) {
+      /* no URLSearchParams / no location — follow the app */
+    }
+  })();
+
   /**
    * The control surface other overlay code has over appearance.
    *
@@ -493,6 +536,11 @@
     onTempUnit: function (cb) {
       tempUnitListeners.push(cb);
       cb(tempUnit);
+    },
+    /** Whether this page auto-hides off track (OBS only), and a subscription. */
+    onAutoHide: function (cb) {
+      autoHideListeners.push(cb);
+      cb(autoHide);
     },
     /** Whether the MFD auto-fades when idle, and a subscription to it changing. */
     onMfdFade: function (cb) {
@@ -630,6 +678,7 @@
         if (!unitPinned) applySpeedUnit(cfg.speedUnit);
         if (!tempPinned) applyTempUnit(cfg.tempUnit);
         applyMfdFade(cfg.mfdAutoFade);
+        if (!autoHidePinned) applyAutoHide(cfg.obsAutoHide === true);
       })
       .catch(function () {
         // Served from somewhere without the route (or the server is down):

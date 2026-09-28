@@ -314,6 +314,13 @@ function defaultSettings() {
     // out. On by default: it is what every overlay tool does, and the driver
     // who wants the layer over their menus can switch it off.
     ingameAutoHide: true,
+    // The same, for OBS Browser Sources: each source fades itself out while the
+    // driver is off track, on the same session.onTrack test the in-game layer
+    // uses (overlay/js/client.js). OFF by default, unlike the in-game one: a
+    // stream that shows the standings over the monitor screen between sessions
+    // must not change behaviour under someone mid-broadcast on an update. A
+    // source can pin its own with ?autohide=0 / ?autohide=1.
+    obsAutoHide: false,
     // Magnetic docking: while laying out the in-game layer, a widget dragged or
     // resized near another one snaps flush against it and takes the neighbour's
     // measurement along the shared edge, so a row of panels comes out aligned
@@ -704,6 +711,8 @@ function loadSettings() {
       typeof stored.ingameEnabled === 'boolean' ? stored.ingameEnabled : defaults.ingameEnabled,
     ingameAutoHide:
       typeof stored.ingameAutoHide === 'boolean' ? stored.ingameAutoHide : defaults.ingameAutoHide,
+    obsAutoHide:
+      typeof stored.obsAutoHide === 'boolean' ? stored.obsAutoHide : defaults.obsAutoHide,
     ingameMagneticDock:
       typeof stored.ingameMagneticDock === 'boolean'
         ? stored.ingameMagneticDock
@@ -1694,6 +1703,11 @@ function applyAppearance(settings) {
     textScale: s.textScale,
     changeGlow: s.changeGlow,
     mfdAutoFade: !!s.mfdAutoFade,
+    // Deliberate demo mode is a preview with no session to key off, so it never
+    // hides — the rule ingameShouldBeVisible applies to the in-game layer. The
+    // FALLBACK to demo (LMU closed) is not exempt: the page sees connected:false
+    // and hides, exactly as the in-game window does.
+    obsAutoHide: !!s.obsAutoHide && !(s.forceSimulator || s.provider === 'simulator'),
     radarIconScale: s.radarIconScale,
     audioCues: s.audioCues,
     audioVolume: s.audioVolume,
@@ -2895,6 +2909,9 @@ function registerIpc() {
       if (typeof partial.ingameAutoHide === 'boolean') {
         next.ingameAutoHide = partial.ingameAutoHide;
       }
+      if (typeof partial.obsAutoHide === 'boolean') {
+        next.obsAutoHide = partial.obsAutoHide;
+      }
       if (typeof partial.ingameMagneticDock === 'boolean') {
         next.ingameMagneticDock = partial.ingameMagneticDock;
       }
@@ -3026,6 +3043,9 @@ function registerIpc() {
       next.textScale !== current.textScale ||
       next.changeGlow !== current.changeGlow ||
       next.mfdAutoFade !== current.mfdAutoFade ||
+      next.obsAutoHide !== current.obsAutoHide ||
+      next.forceSimulator !== current.forceSimulator ||
+      next.provider !== current.provider ||
       next.radarIconScale !== current.radarIconScale ||
       next.audioCues !== current.audioCues ||
       next.audioVolume !== current.audioVolume ||

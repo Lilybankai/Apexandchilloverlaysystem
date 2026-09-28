@@ -207,6 +207,17 @@ body {
   user-select: none;
 }
 
+/* OBS auto show/hide (client.js sets the attribute while the driver is not at
+   the wheel). A fade rather than a cut: the overlay leaving a stream mid-shot
+   should look deliberate. Opacity, not display — widgets keep their layout and
+   keep taking frames, so they come back already current. */
+body {
+  transition: opacity 0.35s ease;
+}
+html[data-autohidden="true"] body {
+  opacity: 0;
+}
+
 /* =========================================================================
  * PANEL PRIMITIVE
  * Every widget is a .panel whose background is solid by default, so it fully

@@ -110,6 +110,14 @@ export interface Appearance {
    */
   mfdAutoFade: boolean;
   /**
+   * Whether OBS Browser Sources hide themselves while the driver is not at the
+   * wheel — the OBS side of the in-game layer's auto show/hide. Only the polled
+   * route reads it (overlay/js/appearance.js): the in-game window is hidden by
+   * the app itself. The app sends `false` in deliberate demo mode, which has no
+   * session to key off. Optional so an older app's payload leaves it alone.
+   */
+  obsAutoHide?: boolean;
+  /**
    * Radar car-icon size, 30..150 (percent) — really the radar's ZOOM, since the
    * icons are drawn at the cars' real footprint and 100% is the classic 18 m
    * range (50% = 36 m, so half-size cars). On this channel rather than a URL
@@ -244,6 +252,7 @@ const appearance: Appearance = {
   textScale: 100,
   changeGlow: true,
   mfdAutoFade: false,
+  obsAutoHide: false,
   radarIconScale: 50,
   audioCues: true,
   audioVolume: 60,
@@ -292,6 +301,9 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
   }
   if (typeof next?.mfdAutoFade === 'boolean') {
     appearance.mfdAutoFade = next.mfdAutoFade;
+  }
+  if (typeof next?.obsAutoHide === 'boolean') {
+    appearance.obsAutoHide = next.obsAutoHide;
   }
   if (typeof next?.radarIconScale === 'number' && Number.isFinite(next.radarIconScale)) {
     appearance.radarIconScale = Math.min(150, Math.max(30, Math.round(next.radarIconScale)));

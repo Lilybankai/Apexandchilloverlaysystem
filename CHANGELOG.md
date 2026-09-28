@@ -7,6 +7,12 @@
 
 ## Unreleased
 
+## 1.1.2 — 2026-09-28
+
+Your league's Discord now hears about every personal best, with the reference
+pace beside it; OBS overlays can hide themselves when you are not driving; and
+the speedo follows the car you are watching from the garage.
+
 ### Added
 
 - **Discord: every personal best, not just the records.** When a member of
@@ -19,6 +25,23 @@
   now show the same band and percentage as the Reference Pace widget, e.g.
   "Good · 101.3% of reference (+1.810s)", credited to Ohne Speed's LMU
   laptimes sheet. Dry laps at rated tracks only, as in the widget.
+- **Auto hide for OBS overlays.** A new **Auto hide in OBS too** switch, next
+  to "Auto show & hide" on the Dashboard, makes your OBS Browser Sources fade
+  out on the sim's menus, garage and setup screens and between sessions, and
+  fade back in when you're driving — the same rule the in-game overlays
+  follow. It works without "Show in game", and sources already in OBS pick it
+  up within a second. Off by default. To keep one source always visible
+  (a standings board on a "starting soon" scene, say), add `?autohide=0` to
+  its URL; `?autohide=1` hides that one source even with the switch off.
+
+### Fixed
+
+- **Speedo and pedal traces followed your parked car instead of the one on
+  screen.** Watching a teammate's stint from the garage, with a car of your
+  own sitting in the stall, the overlays read that parked car: a speedo at
+  zero and flat traces under a car plainly lapping. They now follow the
+  camera car whenever your own is in the garage stall. The moment you roll
+  out, the camera is on you and nothing changes on the driving side.
 
 ## 1.1.1 — 2026-09-23
 
