@@ -324,6 +324,37 @@ view goes black 5 s after every event — `power.pauseCompositorOnStandby:
 false`. The compositor's "Headset Window" can then be captured with
 `PrintWindow(..., PW_RENDERFULLCONTENT)`. Put the file back afterwards.
 
+### Phase 1 in the headset — the PSVR2 tester's first session (2026-09-28)
+
+Working, and **LMU's own recentre keeps the panels lined up** (verified — no
+recentre of our own needed). Stutter: a little, judged not an issue. Asked for:
+finer placement steps (5 cm was too coarse), tilt/rotation in all directions,
+widgets placed independently, per-widget VR switches, and sharper text (the
+relative read softer than fpsVR). Also noted: panels draw over his hands on
+the wheel — inherent to every SteamVR overlay (the compositor has no depth
+from the game); only drawing inside LMU could avoid it, which EAC forbids.
+
+### Phase 2 — built (same branch)
+
+- **One overlay per widget from one texture.** The page draws every
+  switched-on widget into one image, skyline-packed with an 8 px transparent
+  gap (the compositor filters, and a flush neighbour bleeds a hairline);
+  each widget's overlay shows only its region via `SetOverlayTextureBounds`,
+  and the overlay's aspect follows the region (verified). One upload per
+  frame however many panels. Layout lives in `overlay/js/vr-layout.js`; the
+  app polls it once a second (heights are data-driven) and resizes the window.
+- **Per-widget settings** `vr.widgets.<id>`: on, distance/height/side/width,
+  tilt/turn/roll (±180°), opacity (10–100 %). Stored at 1 cm / 1° / 5 %.
+  Angles apply in the panel's own frame after it auto-faces the driver.
+- **2× render scale** (`zoomFactor` 2 on the offscreen page) for readability.
+- **Measured** (null driver, speedo+relative+standings+radar): 1836×2696
+  texture, 15 fps, **1.3 ms upload on the worker, 1.8 ms per frame on the
+  main thread** (bitmap copy + hand-off) — now shown in stats as `mainMs`.
+  Row packing had wasted 37 % more area. The main-thread copy is what the
+  remaining Phase 3 item (`useSharedTexture`, GPU-to-GPU) removes.
+- Still to do from the plan: in-headset edit mode on wheel buttons, a VR
+  text-size option, a show/hide hotkey.
+
 ## Decisions from Carl (2026-08-12)
 
 - **Tester hardware: Meta Quest 2** — Phase 0 written around it above. The

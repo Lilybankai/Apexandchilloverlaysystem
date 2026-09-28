@@ -61,7 +61,7 @@ const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
-const { VR_DEFAULTS, normalizeVr } = require('./vr/placement');
+const { normalizeVr, mergeVr } = require('./vr/placement');
 /**
  * Never let Windows' occlusion tracking decide the in-game layer is hidden.
  *
@@ -333,8 +333,9 @@ function defaultSettings() {
     ingameOverlays,
     // The VR headset panel: on/off plus where it sits in the seated space, in
     // metres. World-locked — see electron/vr/placement.js. Off by default and
-    // costs nothing until switched on.
-    vr: { ...VR_DEFAULTS },
+    // costs nothing until switched on. Each widget has its own switch and
+    // placement (Phase 2: one panel per widget).
+    vr: normalizeVr({}),
     // The voice race engineer (push-to-talk questions answered from telemetry).
     // Off until the operator downloads a voice and flips the switch — the
     // feature spawns three helper processes, so it must be a choice.
@@ -2338,9 +2339,6 @@ function watchDisplays() {
 /*  VR headset panel (see electron/vr/ and docs/VR-OVERLAY-PLAN.md)            */
 /* -------------------------------------------------------------------------- */
 
-/** Widgets on the headset panel. Fixed for Phase 1; picked per panel in Phase 2. */
-const VR_WIDGETS = ['speedo', 'relative'];
-
 const vrOverlay = new VrOverlay({
   BrowserWindow,
   onChange: () => pushStatus(),
@@ -2352,8 +2350,8 @@ function syncVr(settings) {
   const s = settings || loadSettings();
   vrOverlay.sync({
     enabled: status.running && s.vr.enabled,
-    url: `${baseUrl()}/vr.html?widgets=${VR_WIDGETS.join(',')}`,
-    placement: s.vr,
+    baseUrl: baseUrl(),
+    vr: s.vr,
   });
   // Same rule as the desktop layer, including auto show/hide on the sim's
   // menus: a panel floating in the garage is as unwanted in VR as on screen.
@@ -2941,9 +2939,10 @@ function registerIpc() {
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
       }
-      // Merged field by field so a slider can send just its own number.
+      // Merged widget by widget, field by field, so a slider can send just its
+      // own number (see mergeVr).
       if (partial.vr && typeof partial.vr === 'object') {
-        next.vr = normalizeVr({ ...current.vr, ...partial.vr });
+        next.vr = mergeVr(current.vr, partial.vr);
       }
       if (typeof partial.ingameToggleShortcut === 'string') {
         next.ingameToggleShortcut = normalizeShortcut(

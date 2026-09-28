@@ -272,6 +272,17 @@ const PANEL_CONTRACT = {
   'vr-width': 'input:range',
   'vr-width-echo': 'span',
   'vr-reset-btn': 'button',
+  'vr-widget-list': 'div',
+  'vr-adjust': 'select',
+  'vr-grid': 'div',
+  'vr-tilt': 'input:range',
+  'vr-tilt-echo': 'span',
+  'vr-turn': 'input:range',
+  'vr-turn-echo': 'span',
+  'vr-roll': 'input:range',
+  'vr-roll-echo': 'span',
+  'vr-opacity': 'input:range',
+  'vr-opacity-echo': 'span',
 
   // Widgets
   'overlay-list': 'ul',

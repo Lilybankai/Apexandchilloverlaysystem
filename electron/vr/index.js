@@ -29,16 +29,24 @@
 'use strict';
 
 const path = require('node:path');
+const { enabledWidgets } = require('./placement');
 
 /** Content fps. See the note above: head tracking does not depend on it. */
 const FRAME_RATE = 15;
 /**
- * The panel page's size in CSS px — and therefore the texture's. Fits the
- * speedo cluster (902×425 natural) and the relative (400 wide) side by side,
- * plus vr.css's 8px padding and 16px gap.
+ * Pixels drawn per CSS pixel. The PSVR2 tester found the relative softer than
+ * fpsVR at 1× (2026-09-28): a 400 px widget shown ~25 cm wide lands on about
+ * as many headset pixels as it has, and small text then goes soft through the
+ * lens correction. At 2× every glyph and canvas is drawn with twice the
+ * pixels and the compositor scales down — the way fpsVR draws its own panel.
+ * Four times the bytes per frame, still ~1 ms of upload, on the worker.
  */
-const PANEL_WIDTH = 1340;
-const PANEL_HEIGHT = 450;
+const RENDER_SCALE = 2;
+/** How often the page is asked where its widgets are (heights are data-driven). */
+const LAYOUT_POLL_MS = 1000;
+/** Size the window starts at, before the page has said how big it needs to be. */
+const START_WIDTH = 1024;
+const START_HEIGHT = 512;
 
 class VrOverlay {
   /**
@@ -54,11 +62,21 @@ class VrOverlay {
     this.worker = null;
     this.win = null;
     this.url = '';
-    this.placement = null;
+    this.vr = null;
+    /** Where the page last said each widget is: {width, height, rects} in CSS px. */
+    this.pageLayout = null;
+    this.lastLayoutSent = '';
+    this.layoutTimer = null;
     this.visible = false;
     this.inFlight = false;
     this.pending = null;
-    this.info = { state: 'off', detail: '', runtime: '', fps: 0, uploadMs: 0, failures: 0, lastError: '' };
+    this.info = { state: 'off', detail: '', runtime: '', fps: 0, uploadMs: 0, mainMs: 0, failures: 0, lastError: '' };
+    /**
+     * Main-thread time per frame (bitmap copy + hand-off), averaged over the
+     * worker's 10 s stats window. This is the thread that composites every
+     * overlay, so it is measured rather than assumed.
+     */
+    this.mainStats = { total: 0, count: 0 };
   }
 
   /** Current state for the control panel. */
@@ -69,21 +87,26 @@ class VrOverlay {
   /**
    * Bring everything in line with the settings. Cheap to call often — main.js
    * calls it wherever it re-syncs the desktop layer.
-   * @param {{enabled: boolean, url: string, placement: object}} want
+   * @param {{enabled: boolean, baseUrl: string, vr: object}} want — `vr` is
+   *   the normalised settings block (placement.normalizeVr).
    */
-  sync({ enabled, url, placement }) {
+  sync({ enabled, baseUrl, vr }) {
     if (!enabled) {
       this.stop();
       return;
     }
-    this.placement = placement;
+    this.vr = vr;
+    const url = `${baseUrl}/vr.html?widgets=${enabledWidgets(vr).join(',')}`;
     this.url = url;
     if (!this.worker && !this.startWorker()) return;
-    this.worker.postMessage({ cmd: 'placement', placement });
     if (this.win && !this.win.isDestroyed() && this.win.vrUrl !== url) {
+      // A different set of widgets: their rectangles are about to move, so
+      // forget the old ones rather than point new panels at stale regions.
       this.win.vrUrl = url;
+      this.pageLayout = null;
       void this.win.loadURL(url);
     }
+    this.sendLayout();
   }
 
   /** Follow the desktop layer's show/hide (auto show/hide, edit mode…). */
@@ -97,6 +120,7 @@ class VrOverlay {
 
   stop() {
     this.destroyWindow();
+    this.lastLayoutSent = '';
     if (this.worker) {
       const w = this.worker;
       this.worker = null;
@@ -109,7 +133,7 @@ class VrOverlay {
       // client leaves SteamVR waiting on a pipe), then make sure it is gone.
       setTimeout(() => void w.terminate(), 1500).unref();
     }
-    this.setInfo({ state: 'off', detail: '', runtime: '', fps: 0, uploadMs: 0, failures: 0, lastError: '' });
+    this.setInfo({ state: 'off', detail: '', runtime: '', fps: 0, uploadMs: 0, mainMs: 0, failures: 0, lastError: '' });
   }
 
   /* ------------------------------------------------------------------------ */
@@ -140,6 +164,7 @@ class VrOverlay {
       }
     });
     this.worker = worker;
+    this.lastLayoutSent = '';
     worker.postMessage({ cmd: 'visible', visible: this.visible });
     worker.postMessage({ cmd: 'start' });
     this.setInfo({ state: 'waiting', detail: '' });
@@ -165,14 +190,18 @@ class VrOverlay {
         detail: m.detail || '',
         runtime: m.runtime || this.info.runtime,
         // Rates describe a live connection; do not leave the last one showing.
-        ...(connected ? {} : { fps: 0, uploadMs: 0, failures: 0 }),
+        ...(connected ? {} : { fps: 0, uploadMs: 0, mainMs: 0, failures: 0 }),
       });
       if (m.state === 'connected') this.ensureWindow();
       else this.destroyWindow();
       return;
     }
     if (m.ev === 'stats') {
+      const ms = this.mainStats;
+      const mainMs = ms.count ? Math.round((ms.total / ms.count) * 10) / 10 : 0;
+      this.mainStats = { total: 0, count: 0 };
       this.setInfo({
+        mainMs,
         fps: Math.round((m.uploads / 10) * 10) / 10,
         uploadMs: Math.round(m.avgMs * 10) / 10,
         failures: m.failures || 0,
@@ -194,8 +223,8 @@ class VrOverlay {
     if ((this.win && !this.win.isDestroyed()) || !this.url) return;
     const win = new this.BrowserWindow({
       show: false,
-      width: PANEL_WIDTH,
-      height: PANEL_HEIGHT,
+      width: START_WIDTH,
+      height: START_HEIGHT,
       transparent: true,
       frame: false,
       skipTaskbar: true,
@@ -205,9 +234,15 @@ class VrOverlay {
         contextIsolation: true,
         nodeIntegration: false,
         backgroundThrottling: false,
+        zoomFactor: RENDER_SCALE,
       },
     });
     win.webContents.setFrameRate(FRAME_RATE);
+    // Every load re-measures; the poll after that follows data-driven heights.
+    win.webContents.on('did-finish-load', () => {
+      win.webContents.setZoomFactor(RENDER_SCALE);
+      void this.pollLayout();
+    });
     win.webContents.on('paint', (_evt, _dirty, image) => this.onPaint(image));
     win.webContents.on('render-process-gone', (_evt, details) => {
       this.log(`[vr] panel renderer gone (${details && details.reason}) — rebuilding`);
@@ -216,8 +251,11 @@ class VrOverlay {
     });
     win.vrUrl = this.url;
     this.win = win;
+    this.pageLayout = null;
     this.applyPainting();
     void win.loadURL(this.url);
+    this.layoutTimer = setInterval(() => void this.pollLayout(), LAYOUT_POLL_MS);
+    this.layoutTimer.unref();
   }
 
   destroyWindow() {
@@ -225,7 +263,62 @@ class VrOverlay {
     this.win = null;
     this.inFlight = false;
     this.pending = null;
+    this.pageLayout = null;
+    if (this.layoutTimer) clearInterval(this.layoutTimer);
+    this.layoutTimer = null;
     if (win && !win.isDestroyed()) win.destroy();
+  }
+
+  /**
+   * Ask the page where each widget is (overlay/js/vr-layout.js), size the
+   * window to hold them all, and pass any change on to the worker.
+   */
+  async pollLayout() {
+    const win = this.win;
+    if (!win || win.isDestroyed() || win.webContents.isLoading()) return;
+    let got;
+    try {
+      got = await win.webContents.executeJavaScript('window.__apexVrLayout ? window.__apexVrLayout() : null', true);
+    } catch {
+      return;
+    }
+    if (win !== this.win || win.isDestroyed() || !got || !got.rects) return;
+    // The window is in device pixels; the page lays out in CSS pixels, drawn
+    // RENDER_SCALE times over.
+    const w = Math.ceil(got.width * RENDER_SCALE);
+    const h = Math.ceil(got.height * RENDER_SCALE);
+    const [cw, ch] = win.getContentSize();
+    if (cw !== w || ch !== h) win.setContentSize(w, h);
+    this.pageLayout = got;
+    this.sendLayout();
+  }
+
+  /**
+   * Tell the worker which panels to show, where each sits and which region
+   * of the page texture it shows. Regions go as fractions of the page (CSS px
+   * over CSS px), so they hold whatever scale the page is drawn at. Sent only
+   * when something changed — the poll runs every second.
+   */
+  sendLayout() {
+    if (!this.worker || !this.vr) return;
+    const L = this.pageLayout;
+    const panels = [];
+    if (L) {
+      for (const id of enabledWidgets(this.vr)) {
+        const r = L.rects[id];
+        if (!r) continue;
+        panels.push({
+          id,
+          placement: this.vr.widgets[id],
+          uv: [r.x / L.width, r.y / L.height, (r.x + r.w) / L.width, (r.y + r.h) / L.height],
+        });
+      }
+    }
+    const msg = { cmd: 'layout', panels };
+    const key = JSON.stringify(msg);
+    if (key === this.lastLayoutSent) return;
+    this.lastLayoutSent = key;
+    this.worker.postMessage(msg);
   }
 
   /** Paint only while the panel is meant to be seen. */
@@ -238,14 +331,17 @@ class VrOverlay {
 
   onPaint(image) {
     if (!this.worker || this.info.state !== 'connected') return;
+    const t0 = performance.now();
     const { width, height } = image.getSize();
     if (!width || !height) return;
     const frame = { bitmap: image.toBitmap(), width, height };
     if (this.inFlight) {
       this.pending = frame; // newest wins; the stale one is simply dropped
-      return;
+    } else {
+      this.send(frame);
     }
-    this.send(frame);
+    this.mainStats.total += performance.now() - t0;
+    this.mainStats.count++;
   }
 
   send({ bitmap, width, height }) {
@@ -265,4 +361,4 @@ class VrOverlay {
   }
 }
 
-module.exports = { VrOverlay, FRAME_RATE, PANEL_WIDTH, PANEL_HEIGHT };
+module.exports = { VrOverlay, FRAME_RATE, RENDER_SCALE };

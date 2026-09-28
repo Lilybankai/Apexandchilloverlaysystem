@@ -1898,22 +1898,86 @@ html, body { height: 100%; overflow: hidden; }
 .app *::-webkit-scrollbar-corner { background: transparent; }
 
 /* ------------------------------ VR headset card ----------------------------- */
-/* The placement sliders only mean something while VR is switched on, so they
-   collapse with it — the card then reads as one switch and a sentence. */
+/* Everything under the master switch only means something while VR is on, so
+   it collapses with it — the card then reads as one switch and a sentence. */
 
 .card--vr .card__title .chip { margin-left: 8px; }
 
 .card--vr #vr-status { margin: 8px 0 0; }
 
+.card--vr .ingame-switch { margin-top: 12px; }
+
 .card--vr .vr-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px 24px;
-  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
 }
 
-.card--vr .vr-fields[hidden] { display: none; }
+.card--vr .vr-fields[hidden],
+.card--vr .vr-grid[hidden] { display: none; }
 
-.card--vr .vr-fields .hero__buttons { align-self: end; }
+/* The widget switches: a wrapping row of chips, on ones lit. */
+.card--vr .vr-widget-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
 
-.card--vr .ingame-switch { margin-top: 12px; }
+.card--vr .vr-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card--vr .vr-widget:has(input:checked) {
+  color: var(--text);
+  border-color: rgba(38, 187, 244, 0.55);
+  background: rgba(38, 187, 244, 0.1);
+}
+
+.card--vr .vr-widget input { accent-color: var(--cyan); margin: 0; }
+
+.card--vr .vr-adjust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.card--vr .vr-adjust .field__input { min-width: 180px; width: auto; }
+
+.card--vr .vr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 24px;
+}
+
+/* −/+ either side of a slider: one step per press, for the adjustments too
+   small to hit by dragging. */
+.card--vr .vr-nudge {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.card--vr .vr-nudge:hover { border-color: rgba(38, 187, 244, 0.55); }
+
+.card--vr .vr-field .rate-row { gap: 8px; }

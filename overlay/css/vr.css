@@ -1,10 +1,9 @@
 /* =========================================================================
- * vr.css — the headset panel (vr.html)
+ * vr.css — the headset page (vr.html)
  * -------------------------------------------------------------------------
- * The page IS the texture SteamVR draws, so it is exactly the offscreen
- * window's size, transparent, and never scrolls. Widgets sit in one row,
- * bottom-aligned, at their natural size; single.css has already undone the
- * stage's absolute positioning for a widget outside a stage.
+ * The page IS the texture SteamVR draws, so it is transparent and never
+ * scrolls. Each widget sits in an absolutely placed slot; js/vr-layout.js
+ * packs the slots and the app sizes the window to fit them.
  * ========================================================================= */
 
 html,
@@ -17,27 +16,17 @@ body.vr {
   background: transparent !important;
 }
 
-.vr-panel {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  padding: 8px;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 16px;
-}
-
-/* Each widget keeps its own width; the slot only anchors it. overlay.css
-   places widgets absolutely on a 1920x1080 stage, so — exactly as on the OBS
-   single-widget page (single.css) — that positioning is cancelled here, and
-   the slot is `relative` for the reason given at length there. */
+/* Shrink-to-fit around the widget, so the slot's box IS the widget's box —
+   that box is the texture region its panel shows. */
 .vr-slot {
-  position: relative;
-  flex: 0 0 auto;
+  position: absolute;
+  left: 0;
+  top: 0;
 }
 
+/* overlay.css places widgets absolutely on a 1920x1080 stage; cancelled here
+   exactly as on the OBS single-widget page (see the long note in single.css
+   on why the widget itself must stay `relative`). */
 .vr-slot .widget {
   position: relative !important;
   top: auto !important;
@@ -48,6 +37,20 @@ body.vr {
   margin: 0;
 }
 
-.vr-slot #widget-relative {
-  width: 400px;
-}
+/* Widths: the in-game layer's defaults (defaultsFor in js/ingame.js). The
+   speedo states its own 900 px, so it has no rule. Wider means sharper in the
+   headset — the panel's size there is set separately, in metres. */
+.vr-slot #widget-standings { width: 560px; }
+.vr-slot #widget-relative { width: 400px; }
+.vr-slot #widget-delta { width: 300px; }
+.vr-slot #widget-pacedelta { width: 340px; }
+.vr-slot #widget-refpace { width: 340px; }
+.vr-slot #widget-radar { width: 300px; }
+.vr-slot #widget-fuel { width: 400px; }
+.vr-slot #widget-tyres { width: 300px; }
+.vr-slot #widget-trackmap { width: 430px; }
+.vr-slot #widget-pedals { width: 360px; }
+.vr-slot #widget-weather { width: 440px; }
+.vr-slot #widget-racecontrol { width: 340px; }
+.vr-slot #widget-damage { width: 268px; }
+.vr-slot #widget-limits { width: 340px; }

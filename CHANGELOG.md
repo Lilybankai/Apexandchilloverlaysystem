@@ -7,6 +7,28 @@
 
 ## Unreleased
 
+### Added
+
+- **VR: every widget is its own panel, placed where you want it.** The speedo
+  and relative are no longer stuck side by side: each widget in the headset
+  has its own position, size and angle. Switch widgets in and out from the
+  list on the VR card — standings, delta, radar, fuel, tyres, track map,
+  pedals, weather and more — then pick one under **Adjust** to place it.
+- **VR: tilt, turn and roll.** Lean a panel back, swing it round or rotate it
+  in its own plane, a degree at a time, all the way round.
+- **VR: opacity per panel.** SteamVR always draws panels over the game —
+  your hands on the wheel included — so a panel that has to sit over the
+  wheel can now be faded until your hands show through.
+
+### Changed
+
+- **VR placement moves in centimetres and degrees, with − and + buttons.**
+  The sliders went in 5 cm steps, too coarse to line a panel up; every
+  control now has a button either side that moves it one step at a time.
+- **Sharper text in the headset.** Panels are drawn at twice the resolution
+  and scaled down in the headset, which is how fpsVR keeps its text crisp —
+  the relative in particular was softer than it should have been.
+
 ## 1.2.0-beta.1 — 2026-09-28
 
 Your overlays inside a VR headset, and Discord messages for every personal

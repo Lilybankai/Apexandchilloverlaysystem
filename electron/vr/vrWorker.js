@@ -12,15 +12,25 @@
  *   waiting    — SteamVR is not running. We do NOT call VR_Init to find out:
  *                an overlay app's init launches SteamVR, which must never
  *                happen to a driver racing on a monitor tonight.
- *   connected  — overlay created and world-locked; frames go straight to it.
+ *   connected  — one world-locked overlay per widget; frames go straight to them.
  *   quit       — SteamVR asked every app to leave. We acknowledge, disconnect
  *                and stay down until its server has actually exited, so we
  *                cannot restart the SteamVR that is shutting down.
  *   error      — init or the overlay failed; retried on a slower clock.
  *
+ * ## One texture, one overlay per widget
+ *
+ * The page draws every switched-on widget into one image (see vr-layout.js),
+ * uploaded once per frame. Each widget then gets its own SteamVR overlay that
+ * shows only its own rectangle of that texture (SetOverlayTextureBounds), with
+ * its own position, rotation, size and opacity. So independent panels cost
+ * one upload per frame however many there are; each extra panel is only one
+ * more compositor blend.
+ *
  * Protocol (main → worker):
- *   {cmd:'start'} · {cmd:'stop'} · {cmd:'placement', placement}
- *   {cmd:'visible', visible} · {cmd:'frame', buffer, width, height}
+ *   {cmd:'start'} · {cmd:'stop'} · {cmd:'visible', visible}
+ *   {cmd:'layout', panels:[{id, placement, uv:[uMin, vMin, uMax, vMax]}]}
+ *   {cmd:'frame', buffer, width, height}
  * Worker → main:
  *   {ev:'state', state, detail?, runtime?} · {ev:'ack'} (one per frame)
  *   {ev:'stats', uploads, failures, avgMs, maxMs, lastError} (every 10 s while connected)
@@ -30,7 +40,7 @@
 
 const { parentPort } = require('node:worker_threads');
 const { OpenVR, runtimeDllPath } = require('./openvr');
-const { normalizeVr, panelMatrix } = require('./placement');
+const { panelMatrix } = require('./placement');
 const { D3DPanelTextures } = require('./d3d11');
 
 if (!parentPort) throw new Error('vrWorker must run as a worker thread');
@@ -39,8 +49,7 @@ const POLL_MS = 3000;
 const RETRY_AFTER_ERROR_MS = 15000;
 const EVENT_POLL_MS = 250;
 const STATS_MS = 10000;
-const OVERLAY_KEY = 'apexaio.panel.main';
-const OVERLAY_NAME = 'Apex AIO';
+const OVERLAY_KEY_PREFIX = 'apexaio.widget.';
 
 const post = (msg) => {
   try {
@@ -99,9 +108,11 @@ function steamVrRunning() {
 let running = false;
 let state = 'idle';
 let vr = null;
-let handle = null;
 let gpu = null;
-let placement = normalizeVr({});
+/** Latest layout from main: the panels to show. */
+let layout = { panels: [] };
+/** Live overlays by widget id: { handle, applied (JSON of what was last set) }. */
+const overlays = new Map();
 let wantVisible = false;
 let shown = false;
 let haveFrame = false;
@@ -118,18 +129,51 @@ function setState(next, detail) {
   post({ ev: 'state', state: next, detail: detail || '', runtime: vr ? vr.runtimeVersion() : '' });
 }
 
-function applyPlacement() {
-  if (!vr || handle === null) return;
-  vr.setWidth(handle, placement.width);
-  vr.setSeatedTransform(handle, panelMatrix(placement));
+/**
+ * Make the live overlays match the layout: create the missing, destroy the
+ * dropped, and re-set placement/bounds only on the ones whose numbers moved —
+ * a slider drag touches one widget, not all of them.
+ */
+function applyLayout() {
+  if (!vr) return;
+  const wanted = new Set(layout.panels.map((p) => p.id));
+  for (const [id, o] of overlays) {
+    if (wanted.has(id)) continue;
+    try {
+      vr.destroyOverlay(o.handle);
+    } catch {
+      /* best effort */
+    }
+    overlays.delete(id);
+  }
+  for (const p of layout.panels) {
+    let o = overlays.get(p.id);
+    if (!o) {
+      o = { handle: vr.createOverlay(OVERLAY_KEY_PREFIX + p.id, `Apex AIO — ${p.id}`), applied: '', shown: false };
+      overlays.set(p.id, o);
+    }
+    const key = JSON.stringify([p.placement, p.uv]);
+    if (key === o.applied) continue;
+    o.applied = key;
+    if (Array.isArray(p.uv) && p.uv.length === 4) vr.setTextureBounds(o.handle, ...p.uv);
+    vr.setWidth(o.handle, p.placement.width);
+    vr.setAlpha(o.handle, p.placement.opacity);
+    vr.setSeatedTransform(o.handle, panelMatrix(p.placement));
+  }
+  applyVisibility(true);
 }
 
-function applyVisibility() {
-  if (!vr || handle === null) return;
+/** Show every overlay while wanted and a frame exists; `force` re-checks each. */
+function applyVisibility(force) {
+  if (!vr) return;
   const want = wantVisible && haveFrame;
-  if (want === shown) return;
-  if (want) vr.show(handle);
-  else vr.hide(handle);
+  if (want === shown && !force) return;
+  for (const o of overlays.values()) {
+    if (o.shown === want) continue;
+    if (want) vr.show(o.handle);
+    else vr.hide(o.handle);
+    o.shown = want;
+  }
   shown = want;
 }
 
@@ -142,10 +186,9 @@ function connect() {
   try {
     vr = OpenVR.connect(dll);
     gpu = new D3DPanelTextures(vr.adapterIndex());
-    handle = vr.createOverlay(OVERLAY_KEY, OVERLAY_NAME);
     shown = false;
     haveFrame = false;
-    applyPlacement();
+    applyLayout();
     setState('connected');
     eventTimer = setInterval(pollEvents, EVENT_POLL_MS);
   } catch (err) {
@@ -160,20 +203,20 @@ function disconnect() {
   if (eventTimer) clearInterval(eventTimer);
   eventTimer = null;
   if (vr) {
-    if (handle !== null) {
+    for (const o of overlays.values()) {
       try {
-        vr.destroyOverlay(handle);
+        vr.destroyOverlay(o.handle);
       } catch {
         /* SteamVR may already be gone */
       }
     }
     vr.shutdown();
   }
-  // After the overlay is gone, so SteamVR is no longer holding our texture.
+  overlays.clear();
+  // After the overlays are gone, so SteamVR is no longer holding our texture.
   if (gpu) gpu.release();
   gpu = null;
   vr = null;
-  handle = null;
   shown = false;
   haveFrame = false;
 }
@@ -222,11 +265,16 @@ function tick() {
  * down), then that texture handed to the overlay.
  */
 function uploadFrame(buffer, width, height) {
-  if (!vr || handle === null || !gpu) return;
+  if (!vr || !gpu || overlays.size === 0) return;
   const t0 = performance.now();
-  let code;
+  let code = 0;
   try {
-    code = vr.setTexture(handle, gpu.upload(Buffer.from(buffer), width, height));
+    const tex = gpu.upload(Buffer.from(buffer), width, height);
+    // Every panel samples its own region of the same texture.
+    for (const o of overlays.values()) {
+      const c = vr.setTexture(o.handle, tex);
+      if (c !== 0) code = c;
+    }
   } catch (err) {
     stats.failures++;
     stats.lastError = String((err && err.message) || err);
@@ -284,9 +332,9 @@ parentPort.on('message', (m) => {
         disconnect();
         setState('idle');
         break;
-      case 'placement':
-        placement = normalizeVr(m.placement);
-        applyPlacement();
+      case 'layout':
+        layout = { panels: Array.isArray(m.panels) ? m.panels : [] };
+        applyLayout();
         break;
       case 'visible':
         wantVisible = !!m.visible;

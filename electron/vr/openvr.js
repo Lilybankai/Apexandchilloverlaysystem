@@ -152,6 +152,7 @@ class OpenVR {
       HideOverlay: fn(overlayTable, OVERLAY_FNS, 'HideOverlay', P.HandleOnly),
       IsOverlayVisible: fn(overlayTable, OVERLAY_FNS, 'IsOverlayVisible', P.HandleBool),
       SetOverlayTexture: fn(overlayTable, OVERLAY_FNS, 'SetOverlayTexture', P.SetTexture),
+      SetOverlayTextureBounds: fn(overlayTable, OVERLAY_FNS, 'SetOverlayTextureBounds', P.SetBounds),
       GetOverlayErrorNameFromEnum: fn(overlayTable, OVERLAY_FNS, 'GetOverlayErrorNameFromEnum', P.ErrName),
     };
     this.s = {
@@ -176,6 +177,7 @@ class OpenVR {
         SetFlag: koffi.proto('int32 ApexVr_SetFlag(uint64 handle, int32 flag, bool enabled)'),
         SetAbsolute: koffi.proto('int32 ApexVr_SetAbsolute(uint64 handle, int32 origin, const void *matrix)'),
         SetTexture: koffi.proto('int32 ApexVr_SetTexture(uint64 handle, const void *texture)'),
+        SetBounds: koffi.proto('int32 ApexVr_SetBounds(uint64 handle, const void *bounds)'),
         OutputInfo: koffi.proto('void ApexVr_OutputInfo(_Out_ int32 *adapterIndex)'),
         ErrName: koffi.proto('const char *ApexVr_ErrName(int32 err)'),
         PollEvent: koffi.proto('bool ApexVr_PollEvent(void *event, uint32 size)'),
@@ -312,6 +314,21 @@ class OpenVR {
   setTexture(handle, texturePtr) {
     this.textureDesc.writeBigUInt64LE(BigInt(texturePtr), 0);
     return this.o.SetOverlayTexture(handle, this.textureDesc);
+  }
+
+  /**
+   * Show only part of the texture on this overlay — one widget's region of the
+   * shared panel image. VRTextureBounds_t is four floats { uMin, vMin, uMax,
+   * vMax } in 0..1, top-left origin. The overlay's aspect ratio follows the
+   * region, so a panel is exactly its widget's shape.
+   */
+  setTextureBounds(handle, uMin, vMin, uMax, vMax) {
+    const b = Buffer.alloc(16);
+    b.writeFloatLE(uMin, 0);
+    b.writeFloatLE(vMin, 4);
+    b.writeFloatLE(uMax, 8);
+    b.writeFloatLE(vMax, 12);
+    this.check(this.o.SetOverlayTextureBounds(handle, b), 'SetOverlayTextureBounds');
   }
 
   /** Drain pending events; returns true if SteamVR asked us to quit. */
