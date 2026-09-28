@@ -59,6 +59,8 @@ let lapLog = null;
 let lapTrace = null;
 /** Lazily required beside it — the strategy corpus plan (`buildCorpusPlan`). */
 let corpus = null;
+/** Lazily required beside it — the reference pace scorer (`scoreLap`). */
+let refPace = null;
 /**
  * Where the local logs live. Null means the logs' own defaults (the real
  * `~/.apex-overlay` folders); a test points them at temp directories so a
@@ -203,6 +205,55 @@ function requireCorpus() {
     return null;
   }
   return corpus;
+}
+
+/** Require the compiled reference pace scorer, or null. A lap without a
+ *  score is still a lap: the embed simply has no pace line. */
+function requireRefPace() {
+  if (refPace) return refPace;
+  try {
+    refPace = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
+  } catch {
+    return null;
+  }
+  return refPace;
+}
+
+/**
+ * The reference pace for a best lap, in the shape `submit_lap` reads out of
+ * `p_conditions.pace` (migration 0034) — or null when there is none to give.
+ *
+ * Scored HERE rather than on the server because only the app knows which
+ * layout the lap was driven on (trackConfig / scene name); the server just
+ * checks the percentage is what lap ÷ reference actually works out to. Same
+ * `scoreLap` the widget and the Leaderboard card use, so the number in Discord
+ * is the number the driver saw. Dry only: the sheet's times are dry laps, and
+ * `laps:pace` refuses to grade a wet one for the same reason.
+ */
+function paceFor(row) {
+  if ((row.condition || 'dry') !== 'dry') return null;
+  const ref = requireRefPace();
+  if (!ref) return null;
+  try {
+    const scored = ref.scoreLap({
+      track: row.trackName,
+      trackConfig: row.trackConfig,
+      simTrackName: row.simTrackName,
+      trackLengthM: row.trackLengthM,
+      carClass: row.carClass,
+      car: row.car,
+      lapMs: row.lapMs,
+    });
+    if (!scored.ok || !scored.score) return null;
+    return {
+      ref_ms: scored.score.refMs,
+      percent: scored.score.percent,
+      band: scored.score.bandLabel,
+      assumed: !!scored.score.assumed,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** The corpus rows still to send, or an empty plan when the module is absent. */
@@ -355,6 +406,11 @@ function classify(res, key, cache) {
   return { sent: false, cached: false, stop: true, signedOut: !!res.signedOut, error: res.error };
 }
 
+function withPace(row) {
+  const pace = paceFor(row);
+  return pace ? { ...(row.conditions || {}), pace } : row.conditions;
+}
+
 async function sendBest(row, cache) {
   const res = await auth.rpc('submit_lap', {
     p_sim: row.sim,
@@ -365,7 +421,10 @@ async function sendBest(row, cache) {
     p_car: row.car,
     p_lap_ms: row.lapMs,
     p_set_at: row.setAt,
-    p_conditions: row.conditions,
+    // The reference pace rides inside the conditions, not as a new argument
+    // (0026 on why a new argument costs an overload); 0034 checks it, puts it
+    // on the Discord embed, and strips it before storing the conditions.
+    p_conditions: withPace(row),
     p_app_version: appVersion,
     // Which of the three boards this belongs on (migration 0021). A server from
     // before that release ignores the extra named argument; a client from before
@@ -528,6 +587,7 @@ module.exports = {
   sync,
   stateForUi,
   // Exported for the offline test.
+  paceFor,
   SYNC_INTERVAL_MS,
   MAX_PER_RUN,
   MAX_CORPUS_PER_RUN,

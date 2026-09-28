@@ -237,5 +237,40 @@ console.log('\ndiffing against what was already sent\n');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('\nthe reference pace on the Discord embed (0034)\n');
+
+{
+  // The upload scores the best with the widget's own scoreLap, in the shape
+  // submit_lap checks: percent must equal lap / ref, or the server drops it.
+  const { paceFor } = require('../electron/lapUpload');
+  const best = {
+    trackName: 'Circuit de Spa-Francorchamps',
+    trackLengthM: 7004,
+    carClass: 'GT3',
+    car: 'Ferrari 296 GT3',
+    lapMs: 139_400,
+    condition: 'dry',
+  };
+  const pace = paceFor(best);
+  check('a dry best at a rated track carries a pace', !!pace, JSON.stringify(pace));
+  check(
+    '…with exactly the fields 0034 reads',
+    pace && JSON.stringify(Object.keys(pace).sort()) === JSON.stringify(['assumed', 'band', 'percent', 'ref_ms']),
+    pace && Object.keys(pace).join(','),
+  );
+  check(
+    "…whose percent is the server's own arithmetic",
+    pace && Math.abs(Math.round((best.lapMs * 1000) / pace.ref_ms) / 10 - pace.percent) <= 0.2,
+    pace && `${pace.percent} vs ${best.lapMs}/${pace.ref_ms}`,
+  );
+  check('…and a band label the server accepts', pace && /^[A-Za-z][A-Za-z -]{0,23}$/.test(pace.band), pace && pace.band);
+  check('a wet best is not graded against dry times', paceFor({ ...best, condition: 'wet' }) === null);
+  check('a damp one neither', paceFor({ ...best, condition: 'damp' }) === null);
+  check(
+    'an unrated track sends no pace, not a guess',
+    paceFor({ ...best, trackName: 'Nowhere Raceway', trackLengthM: 1234 }) === null,
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

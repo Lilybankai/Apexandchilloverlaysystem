@@ -7,6 +7,11 @@
 
 ## Unreleased
 
+## 1.2.0-beta.1 — 2026-09-28
+
+Your overlays inside a VR headset, and Discord messages for every personal
+best.
+
 ### Added
 
 - **Overlays in your VR headset (beta).** Switch on *Show in VR headset* on
@@ -21,6 +26,16 @@
   SteamVR and never starts it for you, and with the switch off none of it
   runs at all. This first beta has the speedo and relative only; choosing the
   widgets and adding more panels comes next.
+- **Discord: every personal best, not just the records.** When a member of
+  your community improves their time, the channel now says where it puts them
+  on the leaderboard ("climbs from P7 to P4 of 12"), how much they found, and
+  how far off the record they are. Five improvements in one session edit one
+  message rather than posting five. Turn it on per channel with **Personal
+  bests** in Settings ▸ Discord; members set to "Records only" are left out.
+- **Discord: reference pace on every lap message.** Records and personal bests
+  now show the same band and percentage as the Reference Pace widget, e.g.
+  "Good · 101.3% of reference (+1.810s)", credited to Ohne Speed's LMU
+  laptimes sheet. Dry laps at rated tracks only, as in the widget.
 
 ## 1.1.1 — 2026-09-23
 

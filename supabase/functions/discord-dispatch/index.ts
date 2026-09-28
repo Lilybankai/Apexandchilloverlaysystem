@@ -182,6 +182,7 @@ const STYLES: Record<string, { colour: number; title: string }> = {
   record_taken:    { colour: 0xe23c3c, title: '⚔️ Record taken' },
   record_set:      { colour: 0xf5b301, title: '🏆 New record' },
   record_extended: { colour: 0x4a9d5b, title: '⏱️ Record improved' },
+  personal_best:   { colour: 0x3b82c4, title: '📈 Personal best' },
   session_result:  { colour: 0x8a8f98, title: '🏁 Race result' },
 };
 
@@ -233,6 +234,35 @@ function embedFor(p: Record<string, unknown>) {
     });
   }
 
+  // A personal best is about the driver, not the record: what they gained on
+  // themselves, and how far the lead still is.
+  if (kind === 'personal_best') {
+    const gained = Number(p.own_previous_ms) - Number(p.lap_ms);
+    if (Number.isFinite(gained) && gained > 0) {
+      fields.push({
+        name: 'Improvement',
+        value: `**−${(gained / 1000).toFixed(3)}s** on ${lapTime(p.own_previous_ms)}`,
+        inline: true,
+      });
+    }
+    const behind = Number(p.lap_ms) - Number(p.leader_ms);
+    const leader = clean(p.leader, '');
+    if (Number.isFinite(behind) && behind >= 0 && Number(p.leader_ms) > 0) {
+      fields.push({
+        name: 'To the record',
+        value: behind === 0
+          ? `level with ${leader || 'the record'}`
+          : `+${(behind / 1000).toFixed(3)}s${leader ? ` — ${leader}` : ''}`,
+        inline: true,
+      });
+    }
+  }
+
+  // The reference pace, graded by the driver's own app with the same scoreLap
+  // the overlay widget uses (0034 checks the arithmetic on the way in).
+  const pace = paceLine(p.pace);
+  if (pace) fields.push({ name: 'Reference pace', value: pace, inline: false });
+
   // Session type is the honest label on a solo hotlap. A record set alone on a
   // clean track is still a record; hiding that it was is how a feed loses the
   // room.
@@ -249,9 +279,14 @@ function embedFor(p: Record<string, unknown>) {
         ? `**${driver}** takes the ${carClass || 'class'} record from **${holder || 'the board'}**.`
         : kind === 'record_extended'
           ? `**${driver}** improves their own ${carClass || 'class'} record.`
-          : `**${driver}** sets the ${carClass || 'class'} record.`,
+          : kind === 'personal_best'
+            ? pbSentence(driver, carClass, p)
+            : `**${driver}** sets the ${carClass || 'class'} record.`,
     fields,
-    footer: { text: 'Apex AIO System' },
+    // Ohne Speed's times must be credited wherever a score is shown.
+    footer: {
+      text: pace ? "Apex AIO System · reference pace: Ohne Speed's LMU laptimes sheet" : 'Apex AIO System',
+    },
     timestamp: isoOrNow(p.set_at),
   };
 }
@@ -332,6 +367,42 @@ function resultEmbed(p: Record<string, unknown>, style: { colour: number; title:
 /* -------------------------------------------------------------------------- */
 /*  Formatting                                                                */
 /* -------------------------------------------------------------------------- */
+
+/** "climbs from P7 to **P4** of 12" — where the improvement puts them. */
+function pbSentence(driver: string, carClass: string, p: Record<string, unknown>): string {
+  const rank = Number(p.rank);
+  const before = Number(p.previous_rank);
+  const size = Number(p.board_size);
+  const of = Number.isFinite(size) && size > 0 ? ` of ${size}` : '';
+  const board = `the ${carClass || 'class'} board`;
+  if (!Number.isFinite(rank) || rank <= 0) {
+    return `**${driver}** improves their ${carClass || 'class'} best.`;
+  }
+  if (Number.isFinite(before) && before > rank) {
+    return `**${driver}** climbs from P${before} to **P${rank}**${of} on ${board}.`;
+  }
+  return `**${driver}** improves their best and holds **P${rank}**${of} on ${board}.`;
+}
+
+/**
+ * "**Competitive** · 100.6% (+0.712s)" — the widget's band, percentage of the
+ * reference and the gap to it. A "?" when the app had to assume part of the
+ * match (the LMP2 ruleset), the same hedge the widget shows. Empty when the
+ * lap carried no pace: an old app, a wet lap, or a track the sheet has not
+ * timed.
+ */
+function paceLine(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const pace = raw as Record<string, unknown>;
+  const pct = Number(pace.percent);
+  const band = clean(pace.band, '');
+  if (!Number.isFinite(pct) || !band) return '';
+  const delta = Number(pace.delta_ms);
+  const gap = Number.isFinite(delta)
+    ? ` (${delta <= 0 ? '−' : '+'}${(Math.abs(delta) / 1000).toFixed(3)}s)`
+    : '';
+  return `**${band}${pace.assumed === true ? '?' : ''}** · ${pct.toFixed(1)}% of reference${gap}`;
+}
 
 function lapTime(ms: unknown): string {
   const n = Number(ms);

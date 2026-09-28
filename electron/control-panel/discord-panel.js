@@ -106,7 +106,7 @@ window.apexDiscord = (function () {
           <span class="field__label">What this community may post about me</span>
           <select class="field__input" data-share="${esc(c.id)}">
             <option value="all"${c.share === 'all' ? ' selected' : ''}>Everything</option>
-            <option value="records"${c.share === 'records' ? ' selected' : ''}>Records only</option>
+            <option value="records"${c.share === 'records' ? ' selected' : ''}>Records only (no personal bests or results)</option>
             <option value="none"${c.share === 'none' ? ' selected' : ''}>Nothing</option>
           </select>
         </label>
@@ -191,14 +191,14 @@ window.apexDiscord = (function () {
    * stored that this screen is not allowed to read.
    */
   function editor(ch, communityId) {
-    // Matches save_discord_target's own defaults: a channel of your own starts
-    // with "records improved" on, a community's starts without it. Beating your
-    // own record is news to you and to nobody else.
+    // Matches DEFAULT_KINDS in discord-cloud.js: a channel of your own starts
+    // with "records improved" and "personal bests" on, a community's starts
+    // without them. Beating your own time is news to you first; a league opts in.
     const kinds =
       (ch && ch.kinds) ||
       (communityId
         ? ['record_taken', 'record_set', 'session_result']
-        : ['record_taken', 'record_set', 'session_result', 'record_extended']);
+        : ['record_taken', 'record_set', 'session_result', 'record_extended', 'personal_best']);
     const checks = state.kinds
       .map(
         (k) => `

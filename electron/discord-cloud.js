@@ -52,6 +52,12 @@ const KINDS = [
     hint: 'A driver beats their own record. Off by default: it is news to them, not to forty people.',
   },
   {
+    id: 'personal_best',
+    label: 'Personal bests',
+    hint:
+      "A driver beats their own time without taking the record: where it puts them on the board, what they gained, and their reference pace. Only for members who share everything with the community — never a stranger's.",
+  },
+  {
     id: 'session_result',
     label: 'Race results',
     hint:
@@ -60,10 +66,12 @@ const KINDS = [
 ];
 
 /** What a NEW channel subscribes to, mirroring save_discord_target's own
- *  defaults: "records improved" is for a channel of your own, where the only
- *  reader is the person who set the lap. */
+ *  defaults: "records improved" and "personal bests" are for a channel of
+ *  your own, where the only reader is the person who set the lap. A league
+ *  switches them on in the channel's settings (0034 did for the ones that
+ *  already took improvements). */
 const DEFAULT_KINDS = ['record_taken', 'record_set', 'session_result'];
-const DEFAULT_KINDS_PERSONAL = [...DEFAULT_KINDS, 'record_extended'];
+const DEFAULT_KINDS_PERSONAL = [...DEFAULT_KINDS, 'record_extended', 'personal_best'];
 
 /* -------------------------------------------------------------------------- */
 /*  Pure helpers (tested offline, and mirrored in SQL)                        */
