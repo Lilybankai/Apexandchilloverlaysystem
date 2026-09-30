@@ -66,6 +66,7 @@
 
 import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
+import { findYellowCause } from './yellowCause';
 import {
   deltaToReferencePaceTarget,
   referencePaceTargets,
@@ -502,8 +503,12 @@ interface RaceStoryLevels {
   neighbourPit: Map<number, { inPit: boolean; name: string; where: 'ahead' | 'behind' }>;
   /** Whether any relative row carries the right of way. */
   yieldAny: boolean;
-  /** The closest such car, for the call. */
-  nearestYield: { name: string; gapSec: number } | null;
+  /**
+   * The closest such car, for the call. `lapping` = it has the place because it
+   * is a lap or more up, not because it is a faster class — a same-class car
+   * lapping you is not "faster class behind", and saying so was a live report.
+   */
+  nearestYield: { name: string; gapSec: number; lapping: boolean; sameClass: boolean } | null;
   /** Whether the strategy pit window reads as open. */
   windowOpen: boolean;
 }
@@ -540,14 +545,21 @@ function raceStoryLevels(frame: TelemetryFrame, me: StandingEntry | undefined): 
   }
 
   let yieldAny = false;
-  let nearestYield: { name: string; gapSec: number } | null = null;
+  let nearestYield: RaceStoryLevels['nearestYield'] = null;
   for (const r of frame.relative) {
     if (r.yieldTo !== true) continue;
     yieldAny = true;
     if (known(r.relativeGapSec)) {
       const abs = Math.abs(r.relativeGapSec);
       if (!nearestYield || abs < nearestYield.gapSec) {
-        nearestYield = { name: r.driverName, gapSec: abs };
+        nearestYield = {
+          name: r.driverName,
+          gapSec: abs,
+          // Faster class wins the label even when it is also a lap up: that is
+          // still a Hypercar through a GT3, and the wording that fits it.
+          lapping: r.isFasterClass !== true && known(r.lapsDifference) && r.lapsDifference > 0,
+          sameClass: !!me?.carClass && r.carClass === me.carClass,
+        };
       }
     }
   }
@@ -828,10 +840,23 @@ export class EngineerTriggers {
         const appeared = yellowNow.some((y, i) => y && !prev[i]);
         if (appeared) {
           const lit = yellowNow.flatMap((y, i) => (y ? [i + 1] : []));
-          this.offer('sectorYellow', now, `local yellow — S${lit.join(' S')}`, {
+          const fresh = yellowNow.flatMap((y, i) => (y && !prev[i] ? [i + 1] : []));
+          const facts: Record<string, string | number | boolean> = {
             sectors: lit.join(','),
             all: lit.length === 3,
-          });
+          };
+          // Who is stopped, and how far up the road — the NEW sector first, so
+          // a second yellow names its own car rather than the older one.
+          const cause =
+            findYellowCause(frame, lit.length === 3 ? [] : fresh) ??
+            (lit.length === 3 ? null : findYellowCause(frame, lit));
+          if (cause) {
+            facts.driver = cause.name;
+            if (cause.sector !== undefined) facts.causeSector = cause.sector;
+            if (cause.aheadM !== undefined) facts.aheadM = cause.aheadM;
+            if (frame.session.trackLengthM) facts.lapM = frame.session.trackLengthM;
+          }
+          this.offer('sectorYellow', now, `local yellow — S${lit.join(' S')}`, facts);
         } else if (prev.some(Boolean) && !yellowNow.some(Boolean)) {
           this.offer('sectorClear', now, 'local yellows cleared', {});
         }
@@ -1119,8 +1144,11 @@ export class EngineerTriggers {
       if (cur.nearestYield) {
         facts.name = cur.nearestYield.name;
         facts.gapSec = Math.round(cur.nearestYield.gapSec * 10) / 10;
+        facts.lapping = cur.nearestYield.lapping;
+        facts.sameClass = cur.nearestYield.sameClass;
       }
-      this.offer('yieldTo', now, 'blue flags — faster class closing', facts);
+      const why = cur.nearestYield?.lapping ? 'car a lap up closing' : 'faster class closing';
+      this.offer('yieldTo', now, `blue flags — ${why}`, facts);
     }
 
     this.storeRaceStory(cur);

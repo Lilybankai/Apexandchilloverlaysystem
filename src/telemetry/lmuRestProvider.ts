@@ -272,6 +272,8 @@ interface RestStanding {
   gamePhase?: string;
   flag?: string;
   underYellow?: boolean;
+  /** Timing sector the car is in: `"SECTOR1"` / `"SECTOR2"` / `"SECTOR3"`. */
+  sector?: string;
   /**
    * The sim's live lap-validity verdict: `COUNT_LAP_AND_TIME` while the lap
    * stands, `COUNT_LAP_ONLY` the instant a cut voids its time (and back, if
@@ -1711,6 +1713,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
     const session = this.buildSession(cars, si, focus, this.gameState);
+    if (trackLen > 0) session.trackLengthM = Math.round(trackLen);
     const weather = this.buildWeather(si, session.type);
     const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
     // Track limits ride on the DRIVEN car (like the radar) rather than the
@@ -2140,6 +2143,10 @@ export class LmuRestProvider implements TelemetryProvider {
       // class instead of differencing two cars' laps down to the overall leader
       // — see the note there.
       ...lapFractionOf(c.lapDistance as number, trackLen),
+      // Speed and sector name the car behind a local yellow: during every
+      // yellow in the 2026-08-26 sector-flag capture, the stopped car's
+      // `sector` string was the flagged sector.
+      ...speedAndSectorOf(c),
       bestLapSec: posOrUnknown(c.bestLapTime),
       lastLapSec: posOrUnknown(c.lastLapTime),
       ...(lastS1 !== UNKNOWN_VALUE ? { lastSector1Sec: lastS1 } : {}),
@@ -4069,6 +4076,20 @@ export function isOnPitLane(c: RestStanding): boolean {
  */
 export function isInPit(c: RestStanding): boolean {
   return isOnPitLane(c);
+}
+
+/**
+ * A standings row's road speed (m/s, rounded to 0.1) and timing sector, each
+ * omitted when LMU did not publish it. `carVelocity.velocity` is the same
+ * forward speed the relative's dead-reckoning reads.
+ */
+function speedAndSectorOf(c: RestStanding): { speedMps?: number; sector?: 1 | 2 | 3 } {
+  const out: { speedMps?: number; sector?: 1 | 2 | 3 } = {};
+  const v = c.carVelocity?.velocity;
+  if (typeof v === 'number' && Number.isFinite(v)) out.speedMps = Math.round(Math.abs(v) * 10) / 10;
+  const m = /^SECTOR([123])$/.exec(asUpper(c.sector));
+  if (m) out.sector = Number(m[1]) as 1 | 2 | 3;
+  return out;
 }
 
 function mapSessionType(session: string | undefined): SessionType {

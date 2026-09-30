@@ -38,6 +38,7 @@ import type { EngineerCue, EngineerTrigger } from './triggers';
 import type { TelemetryFrame } from './types';
 import { UNKNOWN_VALUE } from './types';
 import { speakableLapTime, speakableGap } from './engineerCommands';
+import { speakableWhere } from './yellowCause';
 
 /** Surname-ish token for radio brevity, mirroring engineerCommands' habit. */
 function surname(name: unknown): string {
@@ -117,6 +118,26 @@ function leadSentence(
         .split(',')
         .filter(Boolean)
         .map((s) => SECTOR_WORDS[s] ?? s);
+      // The car behind it, when one is stopped in a flagged sector: who, and
+      // how far up the road from us. Either half alone is still worth saying.
+      const who = typeof f.driver === 'string' && f.driver ? surname(f.driver) : null;
+      const where = speakableWhere(num(f.aheadM), num(f.lapM));
+      if (who) {
+        const causeSec = SECTOR_WORDS[String(f.causeSector ?? '')];
+        const sec =
+          causeSec && (f.all === true || secs.length !== 1)
+            ? `sector ${causeSec}`
+            : secs.length === 1
+              ? `sector ${secs[0]}`
+              : null;
+        const zone = sec ? `Yellow in ${sec}` : 'Yellow flags out';
+        const at = where ? `, ${where}` : '';
+        return pick(v, [
+          `${zone} — ${who} is stopped${at}. No passing in the zone.`,
+          `${zone}. ${who}'s off${at} — watch for the car.`,
+          `Caution — ${who} stopped${at}. ${sec ? `Yellow in ${sec}, ` : ''}keep it tidy through there.`,
+        ]);
+      }
       if (f.all === true || secs.length === 0) {
         return pick(v, [
           'Yellow flags out — expect a slow car, no overtaking under the yellow.',
@@ -308,6 +329,23 @@ function leadSentence(
     case 'yieldTo': {
       const gap = num(f.gapSec);
       const who = typeof f.name === 'string' && f.name ? surname(f.name) : null;
+      // A car a lap up in the player's OWN class (or a slower one) is lapping
+      // them, not "faster class behind" — the blanket wording was wrong for it.
+      if (f.lapping === true) {
+        const cls = f.sameClass === true ? ', same class,' : '';
+        if (who && gap !== undefined) {
+          const g = speakableGap(gap);
+          return pick(v, [
+            `Blue flags — ${who}${cls} is lapping you, ${g} back. Let them through cleanly.`,
+            `${who} coming up to lap you, ${g} behind. Hold your line, don't fight it.`,
+            `Car a lap up behind — ${who}, ${g}. Blue flags, make it easy for them.`,
+          ]);
+        }
+        return pick(v, [
+          'Blue flags — car behind is lapping you. Hold your line.',
+          "You're being lapped — car behind is a lap up. Let them through cleanly.",
+        ]);
+      }
       if (who && gap !== undefined) {
         const g = speakableGap(gap);
         return pick(v, [

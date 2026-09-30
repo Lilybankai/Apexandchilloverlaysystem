@@ -209,6 +209,11 @@ export interface SessionState {
    */
   sectorFlags?: [FlagState, FlagState, FlagState];
   /**
+   * The lap length in metres, when the sim publishes it. Turns two cars' lap
+   * fractions into a road distance — "the stopped car is 400 metres ahead".
+   */
+  trackLengthM?: number;
+  /**
    * The chequered flag is **showing**: whoever is still running is on their last
    * lap.
    *
@@ -1193,6 +1198,14 @@ export interface StandingEntry {
    * track position, and every consumer keeps a fallback for that.
    */
   lapFraction?: number;
+  /**
+   * Road speed in metres per second, when the sim publishes one per car. What
+   * names the car that brought a local yellow out — it is the one stopped (or
+   * crawling) in the flagged sector. Omitted when unknown.
+   */
+  speedMps?: number;
+  /** Which timing sector (1..3) the car is in, when the sim says. */
+  sector?: 1 | 2 | 3;
   /** Whether the car is currently in the pit lane / stall. */
   inPit: boolean;
   /**
