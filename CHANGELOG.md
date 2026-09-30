@@ -7,6 +7,20 @@
 
 ## Unreleased
 
+## 1.2.0-beta.4 — 2026-09-30
+
+The VR panels are back, and your teammate's tyres, damage and fuel come with
+them.
+
+### Changed
+
+- **VR panels return.** 1.2.0-beta.3 was built without the VR headset
+  panels from beta.1 and beta.2, so updating to it took them away. This beta
+  has both: every VR panel and its placement controls, and a teammate's
+  tyres, damage and fuel on your overlays while they drive your car. If you
+  ran beta.3, it may have reset your VR settings: if the panels do not
+  appear, switch **Show in VR headset** back on and place them again.
+
 ## 1.2.0-beta.3 — 2026-09-30
 
 A test build for team races: while a teammate drives your car, your overlays
