@@ -4100,6 +4100,11 @@
      reads it as its tab router is wired. Pure data + one guarded call; see
      migration 0022 for what the counters become. -->
 <script src="feature-catalog.js"></script>
+<!-- The Schedule tab. BEFORE control-panel.js: the router hands it the view
+     on a launch that opens straight onto Schedule, and a panel loaded after
+     the router would miss that first call. Shared verbatim with the web pit
+     wall (scripts/build-web.js). -->
+<script src="schedule-panel.js"></script>
 <script src="control-panel.js"></script>
 <!-- Setup editor: three data files (pure lookup tables), then the editor.
      After control-panel.js so the tab router exists before apexSetup does —

@@ -1,7 +1,7 @@
 /**
  * scripts/build-web.js — assemble the web pit wall (aio.apexandchillracing.co.uk).
  * -----------------------------------------------------------------------------
- * The web app is the desktop's Team tab and account screens, served over
+ * The web app is the desktop's Team and Schedule tabs and account screens, served over
  * https. "Looks the same" is not a goal here, it is a build rule: every file
  * that paints the board is COPIED from electron/control-panel/ untouched, so
  * the two cannot drift. The only web-specific sources live in web/src/ — the
@@ -14,8 +14,9 @@
  * Two pages come out:
  *   index.html — the account screens: auth.html with the web CSP, a viewport
  *                tag and the bridge script; auth.js runs against the bridge.
- *   board.html — web/src/board.html with the <section data-view="team"> block
- *                lifted out of index.html verbatim.
+ *   board.html — web/src/board.html with the <section data-view="team"> and
+ *                <section data-view="schedule"> blocks lifted out of
+ *                index.html verbatim.
  *
  * Plain Node, no dependencies, so the GitHub Pages workflow runs it without an
  * `npm install`. web/dist is gitignored — the workflow rebuilds it on deploy.
@@ -41,6 +42,7 @@ const PANEL_FILES = [
   'setup-editor.css', // .su-guide — the "How it works" dialog frame
   'fuel-panel.css',   // .fuel-* tiles the board reuses
   'team-panel.css',
+  'schedule-panel.css',
   'auth.css',
   // The board and the account screens.
   'icons.js',
@@ -49,6 +51,10 @@ const PANEL_FILES = [
   'team-dashboard.js',
   'team-panel.js',
   'team-guide.js',
+  // The Schedule tab: the renderer, and the calendar rules the bridge applies
+  // to the copy a desktop published (see web-bridge.js).
+  'schedule-core.js',
+  'schedule-panel.js',
   'auth.js',
   // Legal documents, opened from the register screen.
   'legal.html',
@@ -130,19 +136,29 @@ function buildAuthPage() {
 /*  board.html — the Team view                                                */
 /* -------------------------------------------------------------------------- */
 
-function extractTeamView() {
+/**
+ * One <section class="view"> block out of the desktop's index.html, verbatim:
+ * everything from its opening tag to the last </section> before the view
+ * that follows it.
+ */
+function extractView(name, nextName) {
   const html = read(path.join(PANEL, 'index.html'));
-  const startTag = '<section class="view" data-view="team">';
-  const nextTag = '<section class="view" data-view="fuel">';
+  const startTag = `<section class="view" data-view="${name}">`;
+  const nextTag = `<section class="view" data-view="${nextName}">`;
   const start = html.indexOf(startTag);
-  const next = html.indexOf(nextTag);
-  if (start < 0 || next < 0 || next < start) {
-    throw new Error('build-web: could not find the Team view in electron/control-panel/index.html');
+  const next = html.indexOf(nextTag, start);
+  if (start < 0 || next < 0) {
+    throw new Error(`build-web: could not find the ${name} view in electron/control-panel/index.html`);
   }
-  let block = html.slice(start, next);
+  const block = html.slice(start, next);
   const end = block.lastIndexOf('</section>');
-  if (end < 0) throw new Error('build-web: Team view has no closing </section>');
-  block = block.slice(0, end + '</section>'.length);
+  if (end < 0) throw new Error(`build-web: ${name} view has no closing </section>`);
+  return block.slice(0, end + '</section>'.length);
+}
+
+function extractTeamView() {
+  const startTag = '<section class="view" data-view="team">';
+  let block = extractView('team', 'fuel');
 
   // The only view on the page is active.
   block = replaceOnce(block, startTag, '<section class="view" data-view="team" data-active="true">', 'view tag');
@@ -158,9 +174,20 @@ function extractTeamView() {
   return block;
 }
 
+/**
+ * The Schedule tab. Only one thing in it is desktop-specific: the reminder
+ * options, which schedule-panel.js hides itself when the bridge has no
+ * reminders. So the block ships as it is — web-shell.js decides which of the
+ * two views is active.
+ */
+function extractScheduleView() {
+  return extractView('schedule', 'setups');
+}
+
 function buildBoardPage() {
   let html = read(path.join(SRC, 'board.html'));
   html = replaceOnce(html, '<!--TEAM_VIEW-->', extractTeamView(), 'TEAM_VIEW marker');
+  html = replaceOnce(html, '<!--SCHEDULE_VIEW-->', extractScheduleView(), 'SCHEDULE_VIEW marker');
   write('board.html', html);
 }
 

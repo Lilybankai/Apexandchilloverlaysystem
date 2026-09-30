@@ -44,6 +44,7 @@ const http = require('node:http');
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const scheduleCore = require('./control-panel/schedule-core.js');
 
 const RACEOS_HOST = 'raceos.gg';
 const HTTP_TIMEOUT_MS = 10_000;
@@ -75,7 +76,7 @@ const TOKEN_TTL_MS = 20 * 60_000;
 const AUTH_RETRY_MS = 60_000;
 
 /** How many occurrences of each tier the tab is given. */
-const UPCOMING_PER_TIER = 8;
+const UPCOMING_PER_TIER = scheduleCore.UPCOMING_PER_TIER;
 
 /**
  * The three daily tiers, in the order the game lists them. `badge` is the
@@ -514,72 +515,12 @@ function buildPayload(raw, now) {
 }
 
 /**
- * A saved calendar, brought up to date.
- *
- * What is durable in a stored payload and what is not:
- *
- *   durable  — the events, their circuits, classes, lengths and tyre rules, and
- *              `minutesUtc`, which is a PATTERN rather than a set of instants
- *              and so is as true tomorrow as it was yesterday.
- *   stale    — `next` and `upcoming`, which are concrete instants generated for
- *              the day it was fetched, and any special slot that has since run.
- *
- * So the stale half is thrown away and regenerated from the durable half. Serve
- * a stored payload without this and the tab cheerfully counts down to a race
- * that started yesterday, which is worse than showing nothing.
- *
- * Pure: `now` is passed in, so a test can stand a week later and check.
+ * A saved calendar, brought up to date — regenerates the stale `next` and
+ * `upcoming` instants from the durable rotation pattern. Lives in
+ * control-panel/schedule-core.js now, because the web pit wall has to apply
+ * the same rule to the calendar a desktop published hours ago.
  */
-function restore(payload, now) {
-  const at = Number.isFinite(now) ? now : Date.now();
-  const tiers = (payload.tiers || []).map((tier) => {
-    const upcoming = [];
-    for (const ev of tier.events || []) {
-      for (const min of ev.minutesUtc || []) {
-        /* Three UTC days, filtered — the same reasoning as the calendar: a
-           local day straddles two UTC days at any offset but zero. */
-        for (let k = 0; k <= 2; k += 1) {
-          const d = new Date(at + (k - 1) * 86400000);
-          const startOfDay = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-          const ms = startOfDay + min * 60000;
-          if (ms < at) continue;
-          upcoming.push({
-            seriesId: ev.seriesId,
-            title: ev.title,
-            track: ev.track,
-            scene: ev.scene,
-            classes: ev.classes,
-            startsAt: new Date(ms).toISOString(),
-            registrationOpens:
-              ev.registrationLeadMin === null || ev.registrationLeadMin === undefined
-                ? null
-                : new Date(ms - ev.registrationLeadMin * 60000).toISOString(),
-            raceMin: ev.raceMin,
-            eventMin: ev.eventMin,
-            tyreSets: ev.tyreSets,
-            tyreWarmers: ev.tyreWarmers,
-            fixedSetup: ev.fixedSetup,
-            maxPlayers: ev.maxPlayers,
-            map: ev.map,
-          });
-        }
-      }
-    }
-    upcoming.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-    const trimmed = upcoming.slice(0, UPCOMING_PER_TIER);
-    return { ...tier, next: trimmed[0] || null, upcoming: trimmed };
-  });
-
-  const series = [];
-  for (const s of payload.series || []) {
-    const slots = (s.slots || []).filter((slot) => Date.parse(slot.startsAt) >= at);
-    if (!slots.length) continue; // every slot has run; the series is over
-    series.push({ ...s, slots, next: slots[0], registered: slots.some((x) => x.isRegistered) });
-  }
-  series.sort((a, b) => Date.parse(a.next.startsAt) - Date.parse(b.next.startsAt));
-
-  return { ...payload, tiers, series };
-}
+const restore = scheduleCore.restoreDailies;
 
 /**
  * What to answer when the service cannot be reached.

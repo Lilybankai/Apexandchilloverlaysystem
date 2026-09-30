@@ -985,6 +985,9 @@ verifyPage({
     // built per community and per channel, so it is reached through the
     // container rather than by id.
     'discord-panel.js',
+    // The Schedule tab. Its own file since the web pit wall started running
+    // it too (scripts/build-web.js); every id it reads still lives here.
+    'schedule-panel.js',
   ],
   contract: PANEL_CONTRACT,
 });
@@ -1018,6 +1021,8 @@ console.log('\nIcon sprite — icons.js');
     // The Review tab writes its <use> refs from JS, so the sprite check has to
     // read it too or a typo'd glyph ships as a blank square.
     'review-panel.js',
+    // …and so does the Schedule tab (the reminder bells).
+    'schedule-panel.js',
   ].map((f) =>
     fs.readFileSync(path.join(PANEL, f), 'utf8'),
   );

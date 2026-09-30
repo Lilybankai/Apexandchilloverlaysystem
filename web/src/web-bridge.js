@@ -19,6 +19,9 @@
  *     "Team" polls team_relay_read exactly as electron/team-cloud.js does.
  *     Same 1 Hz cadence, same revision-gated shape/history, same
  *     pickActiveSource rule.
+ *   • `apex.schedule.*` — the Schedule tab (schedule-panel.js). Both calendars
+ *     are copies a desktop app published (schedule_feed_read), brought up to
+ *     date by schedule-core.js; see "The Schedule tab" below.
  *
  * Nothing here is a framework and nothing loads from a CDN: the page's CSP is
  * `script-src 'self'`, matching the desktop, and the Supabase publishable key
@@ -783,6 +786,104 @@
     stop(relayLoop);
   }
 
+  /* ------------------------------------------------------------------------ */
+  /*  The Schedule tab                                                        */
+  /* ------------------------------------------------------------------------ */
+  /*
+   * schedule-panel.js calls apex.schedule.get() (the league) and
+   * apex.schedule.dailies() (the game's own calendar). The desktop answers
+   * both live; a browser can reach neither source, so both come from
+   * schedule_feed_read — the copies desktop apps last published (migration
+   * 0037, electron/schedule-cloud.js) — one call for the pair.
+   *
+   * A shared copy can be hours old, so it is brought up to date with the same
+   * rules the desktop applies to its own saved calendar (schedule-core.js):
+   * a round that has started is done, and the daily "next up" is regenerated
+   * from the rotation rather than counting down to a race already gone.
+   */
+
+  /** One read serves both calendars; the tab's Refresh forces a new one. */
+  const FEED_TTL_MS = 60 * 1000;
+  /** A shared daily calendar older than this says so on the tab. */
+  const FEED_OLD_SEC = 6 * 3600;
+  let feedPromise = null;
+  let feedAt = 0;
+
+  function readFeed(force) {
+    if (!force && feedPromise && Date.now() - feedAt < FEED_TTL_MS) return feedPromise;
+    feedAt = Date.now();
+    feedPromise = (DEMO
+      ? fetch('dev/schedule.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null))
+      : rpc('schedule_feed_read', {}).then((res) => (res.ok ? res.body : null))
+    ).catch(() => null);
+    return feedPromise;
+  }
+
+  const NOT_SHARED =
+    'arrives from the Apex desktop app — it appears here once a member has opened Apex on their PC.';
+
+  async function scheduleLeague({ force } = {}) {
+    const core = window.APEX_SCHEDULE_CORE;
+    const feed = await readFeed(!!force);
+    const row = feed && feed.league;
+    if (!core || !row || !row.payload) {
+      return {
+        ok: false,
+        leagues: [],
+        fetchedAt: null,
+        error: feed ? `The league calendar ${NOT_SHARED}` : 'Could not load the league calendar.',
+      };
+    }
+    return { ...core.restoreLeague(row.payload, Date.now()), ok: true, error: null };
+  }
+
+  async function scheduleDailies({ force } = {}) {
+    const core = window.APEX_SCHEDULE_CORE;
+    const feed = await readFeed(!!force);
+    const row = feed && feed.dailies;
+    if (!core || !row || !row.payload) {
+      return {
+        ok: false,
+        reason: feed ? 'offline' : 'network',
+        tiers: [],
+        series: [],
+        error: feed ? `The race calendar ${NOT_SHARED}` : 'Could not load the race calendar.',
+      };
+    }
+    const now = Date.now();
+    const out = { ...core.restoreDailies(row.payload, now), ok: true, error: null };
+    /* LMU rotates the daily circuits once a week. Past that point the times are
+       still right (the rotation pattern is fixed) but the circuits are last
+       week's, and the tab says so rather than presenting them as current. */
+    const weekStart = Date.parse(out.weekStart);
+    const rotated = Number.isFinite(weekStart) && now > weekStart + 7 * 86400000;
+    if (rotated || Number(row.age_sec) > FEED_OLD_SEC) {
+      out.cached = true;
+      out.savedAt = row.fetched_at;
+      out.cachedHint = rotated
+        ? 'LMU has rotated the circuits since — they update the next time a member opens Apex with the game running.'
+        : 'Start times follow the daily rotation, so they stay right; entry counts update when a member next opens Apex.';
+    }
+    return out;
+  }
+
+  /**
+   * Links the Schedule tab opens. The feed is written by members' desktops, so
+   * a URL in it is only followed if it is somewhere the tab would send you
+   * anyway — SimGrid's pages or the league's Discord invite.
+   */
+  function allowedLink(url) {
+    try {
+      const u = new URL(String(url));
+      return (
+        u.protocol === 'https:' &&
+        ['www.thesimgrid.com', 'thesimgrid.com', 'discord.gg'].includes(u.hostname)
+      );
+    } catch {
+      return false;
+    }
+  }
+
   /* ---- demo ---------------------------------------------------------------- */
 
   let demoPromise = null;
@@ -829,8 +930,16 @@
     },
     onSettings: on('settings'),
     openInBrowser: (url) => {
+      if (!allowedLink(url)) return Promise.resolve(false);
       window.open(url, '_blank', 'noopener');
       return Promise.resolve(true);
+    },
+
+    // The Schedule tab. No `reminders`: the desktop's bells live in its main
+    // process, and schedule-panel.js draws none when this key is absent.
+    schedule: {
+      get: scheduleLeague,
+      dailies: scheduleDailies,
     },
     copy: (text) => navigator.clipboard.writeText(String(text)).then(() => true, () => false),
 

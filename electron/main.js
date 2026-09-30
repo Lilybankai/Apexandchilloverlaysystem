@@ -48,6 +48,7 @@ const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const lmuDailies = require('./lmu-dailies');
 const lmuTrackmaps = require('./lmu-trackmaps');
+const scheduleCloud = require('./schedule-cloud');
 const raceReminders = require('./race-reminders');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
@@ -4172,9 +4173,12 @@ function registerIpc() {
    * from SimGrid. The Bearer token stays in electron/simgrid.js; this handler
    * only ever returns names, times and https signup URLs.
    */
-  ipcMain.handle('schedule:get', (_evt, query) =>
-    simgrid.getSchedule({ force: !!(query && query.force) }),
-  );
+  ipcMain.handle('schedule:get', async (_evt, query) => {
+    const payload = await readLeagueSchedule({ force: !!(query && query.force) });
+    // A live read is also the web pit wall's copy (electron/schedule-cloud.js).
+    scheduleCloud.offer('league', payload);
+    return payload;
+  });
 
   /**
    * The game's OWN calendar for the Schedule tab: the three daily tiers, the
@@ -4184,18 +4188,11 @@ function registerIpc() {
    * the renderer only ever sees names, tracks and UTC times.
    */
   ipcMain.handle('schedule:dailies', async (_evt, query) => {
-    /* Where the last good calendar is kept. Without it the schedule needed the
-       game running to exist at all, and closing the app threw it away — so
-       opening the panel to plan tomorrow, which is exactly when LMU is shut,
-       showed an empty tab. */
-    lmuDailies.init(path.join(app.getPath('userData'), 'daily-schedule.json'));
-    const payload = await lmuDailies.getDailies({ force: !!(query && query.force) });
-    /* Circuit outlines are drawn from the running game's own geometry and
-       cached on disk, so they keep working with the game shut. Decoration: it
-       can never fail the calendar, which is why it is awaited separately and
-       swallows its own errors. */
-    lmuTrackmaps.init(path.join(app.getPath('userData'), 'trackoutlines'));
-    return lmuTrackmaps.decorate(payload);
+    const payload = await readDailySchedule({ force: !!(query && query.force) });
+    // Only a LIVE read is shared — schedule-core's forPublish drops a copy
+    // restored from disk, so the game being shut costs the web nothing.
+    scheduleCloud.offer('dailies', payload);
+    return payload;
   });
 
   /* ---- Race reminders ----
@@ -4863,6 +4860,7 @@ function registerIpc() {
       teamCloud.onAuthChanged();
       discordCloud.onAuthChanged();
       resultsHarvest.onAuthChanged();
+      scheduleCloud.onAuthChanged();
     }
     return res;
   });
@@ -6066,6 +6064,13 @@ app.whenReady().then(async () => {
           require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceosResults.js'))
             .RaceosResultsClient,
       });
+      // The Schedule tab's calendars, shared with the web pit wall. One RPC
+      // every half hour asks how old the shared copies are; only a stale one
+      // is re-read (the same reads the tab makes) and published.
+      scheduleCloud.init({
+        auth: authService,
+        readers: { league: readLeagueSchedule, dailies: readDailySchedule },
+      });
       // Start the usage heartbeat from inside the same chain, for the same
       // reason: its first beat wants a live token, so firing it before the
       // refresh lands would waste one signed-out attempt every launch.
@@ -6187,3 +6192,27 @@ app.on('before-quit', () => {
   // Best-effort synchronous-ish cleanup; the loop is unref'd so this is quick.
   void stopServer();
 });
+
+/*
+ * The Schedule tab's two reads, at module scope because two callers need them:
+ * the tab's IPC handlers, and electron/schedule-cloud.js, which re-reads a
+ * calendar whose shared web copy has gone stale.
+ */
+function readLeagueSchedule({ force = false } = {}) {
+  return simgrid.getSchedule({ force: !!force });
+}
+
+async function readDailySchedule({ force = false } = {}) {
+  /* Where the last good calendar is kept. Without it the schedule needed the
+     game running to exist at all, and closing the app threw it away — so
+     opening the panel to plan tomorrow, which is exactly when LMU is shut,
+     showed an empty tab. */
+  lmuDailies.init(path.join(app.getPath('userData'), 'daily-schedule.json'));
+  const payload = await lmuDailies.getDailies({ force: !!force });
+  /* Circuit outlines are drawn from the running game's own geometry and
+     cached on disk, so they keep working with the game shut. Decoration: it
+     can never fail the calendar, which is why it is awaited separately and
+     swallows its own errors. */
+  lmuTrackmaps.init(path.join(app.getPath('userData'), 'trackoutlines'));
+  return lmuTrackmaps.decorate(payload);
+}
