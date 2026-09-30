@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Apex AIO — VR panels</title>
+
+  <!--
+    The headset panels.
+    Loaded ONLY by the desktop app, into an OFFSCREEN window that is never
+    shown on the monitor: its painted frames are handed to SteamVR, and each
+    widget becomes its own world-locked panel in the headset showing only its
+    own rectangle of the frame (see electron/vr/). Same widget shells and
+    runtime as every other overlay page — nothing about a widget knows it is
+    in VR.
+
+    Widgets are passed as ?widgets=speedo,relative — only the ones the driver
+    has switched on for VR — and packed into the frame by js/vr-layout.js.
+    There is no edit mode here: placement happens in the headset's space,
+    from the control panel.
+
+    No audio.js on purpose: the desktop layer and the driver's speakers already
+    sound every cue, and two pages sounding one cue is an echo.
+  -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/overlay.css" />
+  <link rel="stylesheet" href="css/single.css" />
+  <link rel="stylesheet" href="css/vr.css" />
+
+  <script src="js/appearance.js"></script>
+  <script src="js/raster.js"></script>
+</head>
+<body class="vr">
+  <div id="vr-panels"></div>
+
+  <script src="js/shells.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      // An empty list means no widgets, not "the defaults": the driver can
+      // switch every widget off and keep VR itself on.
+      var params = new URLSearchParams(window.location.search);
+      var wanted = (params.get("widgets") || "")
+        .split(",")
+        .map(function (s) { return s.trim().toLowerCase(); })
+        .filter(function (s) { return !!window.ApexShells[s]; });
+      var html = "";
+      for (var i = 0; i < wanted.length; i++) {
+        html += '<div class="vr-slot" data-id="' + wanted[i] + '">' + window.ApexShells[wanted[i]] + "</div>";
+      }
+      document.getElementById("vr-panels").innerHTML = html;
+    })();
+  </script>
+
+  <!-- Every widget VR can show (electron/vr/placement.js → VR_WIDGETS).
+       client.js binds only the sections present, so the rest stay inert. -->
+  <script src="js/client.js" defer></script>
+  <script src="js/widgets/standings.js" defer></script>
+  <script src="js/widgets/delta.js" defer></script>
+  <script src="js/widgets/pacedelta.js" defer></script>
+  <script src="js/widgets/refpace.js" defer></script>
+  <script src="js/widgets/relative.js" defer></script>
+  <script src="js/widgets/weather.js" defer></script>
+  <script src="js/widgets/fuel.js" defer></script>
+  <script src="js/widgets/tyres.js" defer></script>
+  <!-- Designs register into ApexSpeedoDesigns before speedo.js dispatches. -->
+  <script src="js/widgets/speedo-lmp2.js" defer></script>
+  <script src="js/widgets/speedo-gt3.js" defer></script>
+  <script src="js/widgets/speedo-real.js" defer></script>
+  <script src="js/widgets/speedo.js" defer></script>
+  <script src="js/widgets/pedals.js" defer></script>
+  <script src="js/widgets/damage.js" defer></script>
+  <script src="js/widgets/radar.js" defer></script>
+  <script src="js/widgets/trackmap.js" defer></script>
+  <script src="js/widgets/limits.js" defer></script>
+  <script src="js/widgets/racecontrol.js" defer></script>
+  <script src="js/vr-layout.js" defer></script>
+</body>
+</html>

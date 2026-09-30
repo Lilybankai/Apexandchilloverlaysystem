@@ -417,6 +417,125 @@
           </div>
         </section>
 
+        <!-- ===================== VR HEADSET =====================
+             The headset panels (electron/vr/). SteamVR overlays drawn from this
+             app's own process, like fpsVR — nothing touches the game, so EAC
+             has nothing to see. World-locked: the driver places each panel and
+             it stays put while their head moves (Carl, 2026-09-28: a panel that
+             follows the head makes people sick). Phase 2, from the PSVR2
+             tester's first session: every widget is its own panel with its own
+             switch, and placement moves in centimetres and degrees. -->
+        <section class="card card--vr">
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-eye" /></svg>VR headset <span class="chip" data-tone="cyan">Beta</span>
+          </h2>
+          <p class="card__desc">
+            Puts your widgets on panels inside your headset, each fixed where you
+            put it. Needs <strong>SteamVR</strong> — start LMU with the
+            <strong>SteamVR</strong> launch option. Positions are measured from
+            your head at the last recentre, and recentring in LMU brings the
+            panels with you. Panels always draw over the game, hands included,
+            so keep them clear of the wheel or turn their opacity down.
+          </p>
+          <label class="ingame-switch" for="vr-toggle">
+            <span class="switch">
+              <input type="checkbox" id="vr-toggle" />
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+            </span>
+            <span class="ingame-switch__label">Show in VR headset</span>
+          </label>
+          <p class="field__hint" id="vr-status" aria-live="polite">Off.</p>
+          <div class="vr-fields" id="vr-fields">
+            <div class="vr-widgets">
+              <span class="field__label">Widgets in the headset</span>
+              <div class="vr-widget-list" id="vr-widget-list"></div>
+            </div>
+            <div class="vr-adjust">
+              <label class="field__label" for="vr-adjust">Adjust</label>
+              <select class="field__input" id="vr-adjust"></select>
+              <button class="btn btn--ghost" id="vr-reset-btn" type="button">Reset this widget</button>
+            </div>
+            <div class="vr-grid" id="vr-grid">
+            <div class="field vr-field">
+              <label class="field__label" for="vr-distance">Distance</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="distance" data-dir="-1" aria-label="Distance down">&minus;</button>
+                <input class="field__range" id="vr-distance" type="range" min="20" max="300" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="distance" data-dir="1" aria-label="Distance up">+</button>
+                <span class="rate-value"><span id="vr-distance-echo">0</span> cm</span>
+              </div>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-height">Height</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="height" data-dir="-1" aria-label="Height down">&minus;</button>
+                <input class="field__range" id="vr-height" type="range" min="-150" max="150" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="height" data-dir="1" aria-label="Height up">+</button>
+                <span class="rate-value"><span id="vr-height-echo">0</span> cm</span>
+              </div>
+              <span class="field__hint">From your eye line — below zero is below it.</span>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-side">Left / right</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="side" data-dir="-1" aria-label="Left / right down">&minus;</button>
+                <input class="field__range" id="vr-side" type="range" min="-200" max="200" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="side" data-dir="1" aria-label="Left / right up">+</button>
+                <span class="rate-value"><span id="vr-side-echo">0</span> cm</span>
+              </div>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-width">Size</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="width" data-dir="-1" aria-label="Size down">&minus;</button>
+                <input class="field__range" id="vr-width" type="range" min="5" max="200" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="width" data-dir="1" aria-label="Size up">+</button>
+                <span class="rate-value"><span id="vr-width-echo">0</span> cm wide</span>
+              </div>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-tilt">Tilt</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="tilt" data-dir="-1" aria-label="Tilt down">&minus;</button>
+                <input class="field__range" id="vr-tilt" type="range" min="-180" max="180" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="tilt" data-dir="1" aria-label="Tilt up">+</button>
+                <span class="rate-value"><span id="vr-tilt-echo">0</span> °</span>
+              </div>
+              <span class="field__hint">Leans the top edge away from you.</span>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-turn">Turn</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="turn" data-dir="-1" aria-label="Turn down">&minus;</button>
+                <input class="field__range" id="vr-turn" type="range" min="-180" max="180" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="turn" data-dir="1" aria-label="Turn up">+</button>
+                <span class="rate-value"><span id="vr-turn-echo">0</span> °</span>
+              </div>
+              <span class="field__hint">Swings the right edge away from you.</span>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-roll">Roll</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="roll" data-dir="-1" aria-label="Roll down">&minus;</button>
+                <input class="field__range" id="vr-roll" type="range" min="-180" max="180" step="1" />
+                <button class="vr-nudge" type="button" data-vr-nudge="roll" data-dir="1" aria-label="Roll up">+</button>
+                <span class="rate-value"><span id="vr-roll-echo">0</span> °</span>
+              </div>
+            </div>
+            <div class="field vr-field">
+              <label class="field__label" for="vr-opacity">Opacity</label>
+              <div class="rate-row">
+                <button class="vr-nudge" type="button" data-vr-nudge="opacity" data-dir="-1" aria-label="Opacity down">&minus;</button>
+                <input class="field__range" id="vr-opacity" type="range" min="10" max="100" step="5" />
+                <button class="vr-nudge" type="button" data-vr-nudge="opacity" data-dir="1" aria-label="Opacity up">+</button>
+                <span class="rate-value"><span id="vr-opacity-echo">0</span> %</span>
+              </div>
+              <span class="field__hint">Lower it for a panel that has to sit over the wheel.</span>
+            </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ===================== YOUR WEEK =====================
              The lap database's first visible surface. Local-only: these come
              from ~/.apex-overlay/laps, not from the account, so the card works

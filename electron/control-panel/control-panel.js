@@ -43,6 +43,46 @@
   const ingameAutoToggle = $('#ingame-auto-toggle');
   const obsAutoToggle = $('#obs-auto-toggle');
   const ingameDockToggle = $('#ingame-dock-toggle');
+  const vrToggle = $('#vr-toggle');
+  const vrStatus = $('#vr-status');
+  const vrFields = $('#vr-fields');
+  const vrResetBtn = $('#vr-reset-btn');
+  const vrWidgetList = $('#vr-widget-list');
+  const vrAdjust = $('#vr-adjust');
+  const vrGrid = $('#vr-grid');
+  // Placement controls for the widget picked in `vrAdjust`. `scale` turns the
+  // setting into the slider's unit: metres → cm, 0–1 opacity → %, degrees as
+  // they are. Spelled out rather than built from the key, so test:panel-parity
+  // can see every id.
+  const VR_SLIDERS = [
+    { key: 'distance', scale: 100, range: $('#vr-distance'), echo: $('#vr-distance-echo') },
+    { key: 'height', scale: 100, range: $('#vr-height'), echo: $('#vr-height-echo') },
+    { key: 'side', scale: 100, range: $('#vr-side'), echo: $('#vr-side-echo') },
+    { key: 'width', scale: 100, range: $('#vr-width'), echo: $('#vr-width-echo') },
+    { key: 'tilt', scale: 1, range: $('#vr-tilt'), echo: $('#vr-tilt-echo') },
+    { key: 'turn', scale: 1, range: $('#vr-turn'), echo: $('#vr-turn-echo') },
+    { key: 'roll', scale: 1, range: $('#vr-roll'), echo: $('#vr-roll-echo') },
+    { key: 'opacity', scale: 100, range: $('#vr-opacity'), echo: $('#vr-opacity-echo') },
+  ];
+  // Names in the headset list. The ids and their order come from settings
+  // (electron/vr/placement.js is the one list); these are only the words.
+  const VR_LABELS = {
+    speedo: 'Speedo',
+    relative: 'Relative',
+    standings: 'Standings',
+    delta: 'Delta',
+    pacedelta: 'Pace delta',
+    refpace: 'Reference pace',
+    radar: 'Radar',
+    fuel: 'Fuel',
+    tyres: 'Tyres',
+    trackmap: 'Track map',
+    pedals: 'Pedals',
+    weather: 'Weather',
+    racecontrol: 'Race control',
+    damage: 'Damage',
+    limits: 'Track limits',
+  };
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
   const igRefreshBtn = $('#ig-refresh-btn');
@@ -197,7 +237,93 @@
       errorBanner.hidden = true;
     }
     syncIngameControls();
+    renderVrStatus(status);
     renderShellStatus(status, feed);
+  }
+
+  // --- VR headset panel ---------------------------------------------------
+
+  /** One sentence on where the headset panel is up to. */
+  let lastVr = null;
+
+  function renderVrStatus(status) {
+    const vr = (status && status.vr) || { state: 'off' };
+    let text;
+    if (!lastVr || !lastVr.enabled) {
+      text = 'Off.';
+    } else if (!status.running) {
+      text = 'Press Start and the panel goes up as soon as SteamVR is running.';
+    } else if (vr.state === 'connected') {
+      text = `In your headset${vr.runtime ? ` (SteamVR ${vr.runtime})` : ''}.`;
+      if (vr.fps > 0) text += ` Updating ${vr.fps} times a second, ${vr.uploadMs} ms each.`;
+    } else if (vr.state === 'unavailable') {
+      text = 'SteamVR is not installed on this PC — install it from Steam, it is free.';
+    } else if (vr.state === 'error') {
+      text = `SteamVR problem: ${vr.detail || 'unknown'}. Trying again shortly.`;
+    } else {
+      text = 'Waiting for SteamVR — start LMU with the SteamVR launch option and the panel appears.';
+    }
+    vrStatus.textContent = text;
+  }
+
+  /** The widget the placement controls are editing (null = none switched on). */
+  let vrAdjustId = null;
+
+  const vrLabel = (id) => VR_LABELS[id] || id;
+
+  function renderVrSettings(settings) {
+    const vr = settings.vr || {};
+    lastVr = vr;
+    vrToggle.checked = !!vr.enabled;
+    vrFields.hidden = !vr.enabled;
+    const widgets = vr.widgets || {};
+    const ids = Object.keys(widgets);
+    const on = ids.filter((id) => widgets[id].on);
+
+    // One switch per widget. Rebuilt whole: fifteen checkboxes, and every
+    // change already comes back through here.
+    vrWidgetList.innerHTML = '';
+    for (const id of ids) {
+      const label = document.createElement('label');
+      label.className = 'vr-widget';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = !!widgets[id].on;
+      box.setAttribute('data-vr-widget', id);
+      const name = document.createElement('span');
+      name.textContent = vrLabel(id);
+      label.append(box, name);
+      vrWidgetList.append(label);
+    }
+
+    // The picker lists only what is in the headset — nothing else can be seen
+    // to be placed. Keep the current pick while it is still switched on.
+    if (!on.includes(vrAdjustId)) vrAdjustId = on[0] || null;
+    vrAdjust.innerHTML = '';
+    for (const id of on) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = vrLabel(id);
+      vrAdjust.append(opt);
+    }
+    vrAdjust.value = vrAdjustId || '';
+    vrAdjust.disabled = !vrAdjustId;
+    vrResetBtn.disabled = !vrAdjustId;
+    vrGrid.hidden = !vrAdjustId;
+    renderVrSliders();
+  }
+
+  /** Fill the placement controls from the picked widget's settings. */
+  function renderVrSliders() {
+    const w = vrAdjustId && lastVr && lastVr.widgets ? lastVr.widgets[vrAdjustId] : null;
+    if (!w) return;
+    for (const { key, scale, range, echo } of VR_SLIDERS) {
+      // Leave a slider alone while it is being dragged.
+      if (document.activeElement === range) continue;
+      const v = Math.round((w[key] ?? 0) * scale);
+      range.value = String(v);
+      echo.textContent = String(v);
+    }
   }
 
   /**
@@ -283,6 +409,7 @@
     lastIngameEnabled = !!settings.ingameEnabled;
     if (!capturingHotkey) renderHotkey(settings.ingameToggleShortcut);
     syncIngameControls();
+    renderVrSettings(settings);
     renderShellSettings(settings);
   }
 
@@ -2732,6 +2859,79 @@
     if (ingameToggle.checked && !state.status.running) {
       showToast('Press Start to show the overlays');
     }
+  });
+
+  vrToggle.addEventListener('change', async () => {
+    if (vrToggle.checked) CATALOG?.note('action:overlay.vr');
+    const state = await window.apex.updateSettings({ vr: { enabled: vrToggle.checked } });
+    renderSettings(state.settings);
+    renderStatus(state.status);
+  });
+
+  // A widget switched on or off in the headset list.
+  vrWidgetList.addEventListener('change', async (e) => {
+    const box = e.target.closest('[data-vr-widget]');
+    if (!box) return;
+    const id = box.getAttribute('data-vr-widget');
+    // Switching one on is almost always followed by placing it.
+    if (box.checked) vrAdjustId = id;
+    const state = await window.apex.updateSettings({ vr: { widgets: { [id]: { on: box.checked } } } });
+    renderSettings(state.settings);
+  });
+
+  vrAdjust.addEventListener('change', () => {
+    vrAdjustId = vrAdjust.value || null;
+    renderVrSliders();
+  });
+
+  // Placement goes live while dragging, so the driver can wear the headset and
+  // walk the panel into place. Debounced: SteamVR takes a transform instantly,
+  // but there is no point writing config.json sixty times a second. Patches
+  // accumulate per widget between flushes, so nudging two controls inside one
+  // debounce window sends both.
+  let vrPatch = {};
+  const flushVrPlacement = debounce(async () => {
+    const patch = vrPatch;
+    vrPatch = {};
+    await window.apex.updateSettings({ vr: { widgets: patch } });
+  }, 80);
+
+  /** Record one control's new value for the picked widget and send it. */
+  function commitVrField(slider) {
+    if (!vrAdjustId) return;
+    const value = parseInt(slider.range.value, 10) / slider.scale;
+    slider.echo.textContent = slider.range.value;
+    vrPatch[vrAdjustId] = { ...(vrPatch[vrAdjustId] || {}), [slider.key]: value };
+    // Keep the local copy current, so flipping the picker away and back shows
+    // the number just set rather than the one from the last full render.
+    if (lastVr && lastVr.widgets && lastVr.widgets[vrAdjustId]) {
+      lastVr.widgets[vrAdjustId] = { ...lastVr.widgets[vrAdjustId], [slider.key]: value };
+    }
+    flushVrPlacement();
+  }
+
+  for (const slider of VR_SLIDERS) {
+    slider.range.addEventListener('input', () => commitVrField(slider));
+  }
+
+  // −/+ beside every control: one step (1 cm, 1°, 5 %) per press, for the
+  // adjustments too fine to hit by dragging — the tester's first complaint.
+  vrGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-vr-nudge]');
+    if (!btn) return;
+    const slider = VR_SLIDERS.find((s) => s.key === btn.getAttribute('data-vr-nudge'));
+    if (!slider) return;
+    const r = slider.range;
+    const step = parseFloat(r.step) || 1;
+    const next = parseFloat(r.value) + step * (btn.getAttribute('data-dir') === '-1' ? -1 : 1);
+    r.value = String(Math.min(parseFloat(r.max), Math.max(parseFloat(r.min), next)));
+    commitVrField(slider);
+  });
+
+  vrResetBtn.addEventListener('click', async () => {
+    if (!vrAdjustId) return;
+    const state = await window.apex.updateSettings({ vr: { widgets: { [vrAdjustId]: null } } });
+    renderSettings(state.settings);
   });
 
   ingameAutoToggle.addEventListener('change', async () => {

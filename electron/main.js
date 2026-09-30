@@ -58,6 +58,10 @@ const stallWatch = require('./stall-watch');
 // ordering is the guarantee, so it stays at the top rather than in whenReady.
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
+// The headset panel. Requiring it is free — no koffi, no worker, no window —
+// until the driver switches VR on (see electron/vr/index.js).
+const { VrOverlay } = require('./vr');
+const { normalizeVr, mergeVr } = require('./vr/placement');
 /**
  * Never let Windows' occlusion tracking decide the in-game layer is hidden.
  *
@@ -334,6 +338,11 @@ function defaultSettings() {
     // mileage on it.
     ingameMagneticDock: false,
     ingameOverlays,
+    // The VR headset panel: on/off plus where it sits in the seated space, in
+    // metres. World-locked — see electron/vr/placement.js. Off by default and
+    // costs nothing until switched on. Each widget has its own switch and
+    // placement (Phase 2: one panel per widget).
+    vr: normalizeVr({}),
     // The voice race engineer (push-to-talk questions answered from telemetry).
     // Off until the operator downloads a voice and flips the switch — the
     // feature spawns three helper processes, so it must be a choice.
@@ -719,6 +728,7 @@ function loadSettings() {
         : defaults.ingameMagneticDock,
     ingameOverlays,
     ingameLayout,
+    vr: normalizeVr(stored.vr),
     engineerEnabled:
       typeof stored.engineerEnabled === 'boolean' ? stored.engineerEnabled : defaults.engineerEnabled,
     engineerVoice:
@@ -1131,6 +1141,8 @@ async function startServer() {
 /** Stop the telemetry server if running. */
 async function stopServer() {
   destroyOverlayWindow();
+  // The panel's page is served by this server; it goes with it.
+  vrOverlay.stop();
   disconnectStatusFeed();
   if (shutdownFn) {
     try {
@@ -1545,7 +1557,7 @@ function disconnectStatusFeed() {
 
 /** Status snapshot for the UI, including the in-game edit state. */
 function statusForUi() {
-  return { ...status, ingameEditing };
+  return { ...status, ingameEditing, vr: vrOverlay.status() };
 }
 
 /** Push the current status object to the renderer (if the window is open). */
@@ -2356,6 +2368,29 @@ function watchDisplays() {
   screen.on('display-metrics-changed', onChange);
 }
 
+/* -------------------------------------------------------------------------- */
+/*  VR headset panel (see electron/vr/ and docs/VR-OVERLAY-PLAN.md)            */
+/* -------------------------------------------------------------------------- */
+
+const vrOverlay = new VrOverlay({
+  BrowserWindow,
+  onChange: () => pushStatus(),
+  log: (line) => console.log(line),
+});
+
+/** Start, retarget or stop the headset panel to match settings + server. */
+function syncVr(settings) {
+  const s = settings || loadSettings();
+  vrOverlay.sync({
+    enabled: status.running && s.vr.enabled,
+    baseUrl: baseUrl(),
+    vr: s.vr,
+  });
+  // Same rule as the desktop layer, including auto show/hide on the sim's
+  // menus: a panel floating in the garage is as unwanted in VR as on screen.
+  vrOverlay.setVisible(ingameShouldBeVisible(s));
+}
+
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
   const ids = OVERLAY_CATALOG.filter((o) => isIngame(settings, o)).map((o) => o.id);
@@ -2365,6 +2400,8 @@ function ingameUrl(settings) {
 /** Creates/reloads/destroys the in-game window to match settings + status. */
 function syncOverlayWindow() {
   const settings = loadSettings();
+  // Everything that re-syncs the desktop layer re-syncs the headset panel.
+  syncVr(settings);
   const wanted =
     status.running &&
     settings.ingameEnabled &&
@@ -2674,6 +2711,7 @@ function ingameShouldBeVisible(settings) {
 
 /** Reflect ingameShouldBeVisible on the layer window, if there is one. */
 function applyIngameVisibility(settings) {
+  vrOverlay.setVisible(ingameShouldBeVisible(settings));
   if (!overlayWin || overlayWin.isDestroyed()) return;
   const want = ingameShouldBeVisible(settings);
   if (want === overlayWin.isVisible()) return;
@@ -2936,6 +2974,11 @@ function registerIpc() {
       }
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
+      }
+      // Merged widget by widget, field by field, so a slider can send just its
+      // own number (see mergeVr).
+      if (partial.vr && typeof partial.vr === 'object') {
+        next.vr = mergeVr(current.vr, partial.vr);
       }
       if (typeof partial.ingameToggleShortcut === 'string') {
         next.ingameToggleShortcut = normalizeShortcut(
@@ -6203,6 +6246,9 @@ app.on('will-quit', () => {
   // Release the DirectInput devices; leaving them acquired holds COM objects
   // alive past process teardown.
   if (gamepad) gamepad.close();
+  // Leave SteamVR cleanly: a client that vanishes without VR_Shutdown leaves
+  // the panel's slot held until SteamVR notices the broken pipe.
+  vrOverlay.stop();
   // Kill the engineer's sidecars (Piper, player, recognizer) — they are plain
   // child processes and would outlive the app as orphans otherwise.
   if (engineerService) engineerService.stop();
