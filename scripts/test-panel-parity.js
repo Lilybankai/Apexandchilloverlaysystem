@@ -995,6 +995,9 @@ verifyPage({
     // to this scanner, which is why the painters live in their own file.
     'review-panel.js',
     'review-guide.js',
+    // The VR tab's walkthrough; the tab's controls themselves live in
+    // control-panel.js with the rest of the settings.
+    'vr-guide.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
@@ -1061,6 +1064,9 @@ console.log('\nIcon sprite — icons.js');
     wanted.add(`i-${s.icon}`);
   }
   for (const s of require('../electron/control-panel/review-guide.js').STEPS) {
+    wanted.add(`i-${s.icon}`);
+  }
+  for (const s of require('../electron/control-panel/vr-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
   // Same for the checklist's rows — plus the tick, which is chosen at paint

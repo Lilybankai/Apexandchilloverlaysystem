@@ -194,7 +194,16 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     'Rear ARB +', 'Rear ARB -', 'Tyre compound'].map((l) => ({ label: l, status: 'already-bound' }));
   const settings = { port: 8082, updateRateHz: 70, forceSimulator: false, launchOnStartup: true,
     speedUnit: 'mph', widgetBackground: 80, textScale: 105, radarIconScale: 50, audioCues: true,
-    audioVolume: 60, changeGlow: true, enabledOverlays: {}, ingameOverlays: {}, shortcuts: {} };
+    audioVolume: 60, changeGlow: true, enabledOverlays: {}, ingameOverlays: {}, shortcuts: {},
+    // The VR tab, switched on with the two default panels up, so ?tab=vr shows
+    // the placement controls rather than one switch.
+    vr: { enabled: true, widgets: {
+      speedo: { on: true, distance: 0.8, height: -0.32, side: 0, width: 0.5, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      relative: { on: true, distance: 0.8, height: -0.12, side: 0.42, width: 0.26, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      standings: { on: false, distance: 0.9, height: 0.05, side: -0.55, width: 0.34, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      radar: { on: false, distance: 0.8, height: -0.12, side: -0.42, width: 0.2, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      fuel: { on: false, distance: 0.85, height: 0.1, side: 0.45, width: 0.24, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      tyres: { on: false, distance: 0.8, height: -0.32, side: 0.42, width: 0.18, tilt: 0, turn: 0, roll: 0, opacity: 1 } } } };
 
   /*
    * The overlay catalog, as main hands it over. The Overlays GRID is not shot

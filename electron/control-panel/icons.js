@@ -147,6 +147,10 @@
       '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.6"/><path d="M12 2.9v3.5M12 17.6v3.5M2.9 12h3.5M17.6 12h3.5M5.6 5.6l2.5 2.5M15.9 15.9l2.5 2.5M18.4 5.6l-2.5 2.5M8.1 15.9l-2.5 2.5"/>',
     gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     'move-vertical': '<path d="M12 2v20"/><path d="m8 18 4 4 4-4"/><path d="m8 6 4-4 4 4"/>',
+    // VR goggles: a visor with a nose cut-out and two lenses. Drawn here —
+    // nothing in this set reads as a headset at 15px.
+    'vr-headset':
+      '<path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4l-2-2.5h-4L8 17H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/><circle cx="8" cy="11.5" r="1.6"/><circle cx="16" cy="11.5" r="1.6"/>',
     orbit:
       '<circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-16.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 16.416"/>',
     'shield-alert':

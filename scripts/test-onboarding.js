@@ -445,8 +445,9 @@ check('it wraps the content in a row', /<div class="body">/.test(html));
   const orphans = tabs.filter((t) => !declared.has(t));
   check('every rail item has a view behind it', orphans.length === 0, orphans.join(', ') || 'all wired');
   // A frozen count, so a tab lost to a bad merge fails here rather than
-  // quietly disappearing. 12 through v0.99.1; 13 with Review (0.99.2).
-  check('nothing was dropped in the move', tabs.length === 13, `${tabs.length} items`);
+  // quietly disappearing. 12 through v0.99.1; 13 with Review (0.99.2); 14
+  // with VR, off the Dashboard (1.2.0-beta.5).
+  check('nothing was dropped in the move', tabs.length === 14, `${tabs.length} items`);
   check('settings is a destination of its own now', tabs.includes('settings'));
   check(
     'and the gear that used to toggle back to the last tab is gone',

@@ -33,6 +33,7 @@ const tour = require('../electron/control-panel/tour.js');
 const onboarding = require('../electron/control-panel/onboarding.js');
 const teamGuide = require('../electron/control-panel/team-guide.js');
 const reviewGuide = require('../electron/control-panel/review-guide.js');
+const vrGuide = require('../electron/control-panel/vr-guide.js');
 
 const PANEL = path.join(__dirname, '..', 'electron', 'control-panel');
 const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8');
@@ -325,6 +326,38 @@ check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
   check('"How it works" can reopen it', /id="review-guide-open"/.test(html));
   check('the router offers it on arrival', /APEX_REVIEW_GUIDE\?\.maybeAutoOpen/.test(panelJs));
   check('and cancels it on the way out', /APEX_REVIEW_GUIDE\?\.cancelAutoOpen/.test(panelJs));
+}
+
+{
+  // The VR tab's walkthrough. Nearly every reason VR "does not work" lives in
+  // Steam or the headset, where no tour step can anchor, so these checks pin
+  // the facts a driver cannot find anywhere on the page.
+  const guide = vrGuide.STEPS
+    .map((s) => `${s.title} ${s.lead} ${s.points.join(' ')}`)
+    .join('\n')
+    .toLowerCase();
+  check('the VR guide has steps', vrGuide.STEPS.length >= 4, vrGuide.STEPS.length);
+  check('no duplicate VR guide step ids',
+    new Set(vrGuide.STEPS.map((s) => s.id)).size === vrGuide.STEPS.length);
+  check('every VR guide step says something', vrGuide.STEPS.every((s) => s.lead && s.points.length));
+  check('the VR guide names the SteamVR launch option', /steamvr (launch )?option/.test(guide));
+  check('the VR guide says Apex never starts SteamVR itself', /never starts steamvr/.test(guide));
+  check('the VR guide says positions follow the recentre', /recentre/.test(guide));
+  check('the VR guide says what a minus number means',
+    /minus number means below/.test(guide) && /minus number means left/.test(guide));
+  check('the VR guide owns up to hands behind panels', /hands/.test(guide) && /opacity/.test(guide));
+  check('the VR guide does not promise untested headsets', !/\bindex\b|\bvive\b|pimax/.test(guide));
+  check('the VR tab is in the rail', /data-tab="vr"/.test(html));
+  check('the VR guide is in the page', /id="vr-guide"/.test(html));
+  check('and starts hidden', /id="vr-guide"[^>]*\shidden/.test(html));
+  check('its script is loaded', html.includes('src="vr-guide.js"'));
+  check('"How it works" can reopen it', /id="vr-guide-open"/.test(html));
+  check('the router offers it on arrival', /APEX_VR_GUIDE\?\.maybeAutoOpen/.test(panelJs));
+  check('and cancels it on the way out', /APEX_VR_GUIDE\?\.cancelAutoOpen/.test(panelJs));
+  // Moved, not copied: two #vr-toggle would bind the first and orphan the other.
+  const dash = html.slice(html.indexOf('data-view="dashboard"'), html.indexOf('data-view="overlays"'));
+  check('the VR card is off the Dashboard', !/card--vr|id="vr-toggle"/.test(dash));
+  check('and on the page exactly once', (html.match(/id="vr-toggle"/g) || []).length === 1);
 }
 
 console.log('\nThe checklist and the tours agree');

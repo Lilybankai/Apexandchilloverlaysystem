@@ -7,6 +7,24 @@
 
 ## Unreleased
 
+## 1.2.0-beta.5 — 2026-09-30
+
+VR gets its own tab, and a guide to setting it up.
+
+### Changed
+
+- **VR has its own tab.** The VR headset settings have moved off the
+  Dashboard to a new **VR** tab in the left-hand menu, under Overlays. All
+  your panels and their positions carry over unchanged.
+
+### Added
+
+- **A how-to guide for VR.** The first time you open the VR tab, a short
+  walkthrough covers what you need before you start (SteamVR, and launching
+  LMU with the SteamVR option), how to switch it on, how to place each
+  panel, and why your hands go behind the panels. **How it works** at the
+  top of the tab opens it again.
+
 ## 1.2.0-beta.4 — 2026-09-30
 
 The VR panels are back, and your teammate's tyres, damage and fuel come with

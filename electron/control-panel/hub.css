@@ -1897,11 +1897,11 @@ html, body { height: 100%; overflow: hidden; }
 }
 .app *::-webkit-scrollbar-corner { background: transparent; }
 
-/* ------------------------------ VR headset card ----------------------------- */
+/* ------------------------------ VR headset tab ------------------------------ */
 /* Everything under the master switch only means something while VR is on, so
    it collapses with it — the card then reads as one switch and a sentence. */
 
-.card--vr .card__title .chip { margin-left: 8px; }
+[data-view="vr"] .view__title .chip { margin-left: 8px; vertical-align: middle; }
 
 .card--vr #vr-status { margin: 8px 0 0; }
 

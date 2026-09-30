@@ -7864,6 +7864,14 @@
       window.apexReview?.hidden();
       window.APEX_REVIEW_GUIDE?.cancelAutoOpen();
     }
+    // The VR tab's walkthrough. Most of what makes VR "not work" happens in
+    // Steam and the headset, where nothing on the page can point, so the
+    // first visit gets the preconditions before anything else.
+    if (target === 'vr') {
+      window.APEX_VR_GUIDE?.maybeAutoOpen();
+    } else {
+      window.APEX_VR_GUIDE?.cancelAutoOpen();
+    }
     try {
       localStorage.setItem(TAB_STORAGE_KEY, target);
     } catch {
