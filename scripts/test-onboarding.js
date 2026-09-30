@@ -59,6 +59,7 @@ const DONE = {
   engineerReady: true,
   setupsToured: true,
   reviewToured: true,
+  raceLogToured: true,
   scheduleToured: true,
   discordToured: true,
 };
@@ -91,12 +92,12 @@ check('the plugin comes first', ob.STEPS[0].id === 'plugin');
 // screen, which is a thing to learn rather than a thing to switch on; the pit
 // wall, which only matters to someone racing as a team; the schedule, which
 // needs nothing set up; Discord, which posts into a channel you may not have;
-// and the reviewer, which cannot even be reached until there is a session
-// behind you.
+// the reviewer, which cannot even be reached until there is a session
+// behind you; and the race log, which needs a race.
 check(
   'the optional ones come last',
-  ob.STEPS.slice(-6).map((s) => s.id).join(',') === 'engineer,setups,team,schedule,discord,review',
-  ob.STEPS.slice(-6).map((s) => s.id).join(','),
+  ob.STEPS.slice(-7).map((s) => s.id).join(',') === 'engineer,setups,team,schedule,discord,review,racelog',
+  ob.STEPS.slice(-7).map((s) => s.id).join(','),
 );
 // The Team row is the only one that is not on every build: the tab is
 // beta-gated, and a row nagging about a page this build does not have is
@@ -150,6 +151,23 @@ check(
   'and says the laps are already there and stay on this PC',
   /lap files/i.test(note(but({ reviewToured: false }), 'review') || ''),
   note(but({ reviewToured: false }), 'review'),
+);
+
+/*
+ * The Race log row, on the same terms: nothing to switch on, so it ticks on
+ * the tour and nothing else, and it is on every build because the tab is.
+ */
+check('there is a Race log row', ob.STEPS.some((r) => r.id === 'racelog'));
+check('the Race log row is on every build',
+  typeof ob.STEPS.find((s) => s.id === 'racelog').gate !== 'function');
+check('it lands on the Race log tab', ob.STEPS.find((s) => s.id === 'racelog').view === 'racelog');
+check('it ticks once its tour is taken', done(but({ raceLogToured: true }), 'racelog') === true);
+check('and not before', done(but({ raceLogToured: false }), 'racelog') === false);
+check(
+  'and says the races are the game’s own, from before Apex too',
+  /results files/i.test(note(but({ raceLogToured: false }), 'racelog') || '')
+    && /before apex/i.test(note(but({ raceLogToured: false }), 'racelog') || ''),
+  note(but({ raceLogToured: false }), 'racelog'),
 );
 
 /* -------------------------------------------------------------------------- */
@@ -446,8 +464,12 @@ check('it wraps the content in a row', /<div class="body">/.test(html));
   check('every rail item has a view behind it', orphans.length === 0, orphans.join(', ') || 'all wired');
   // A frozen count, so a tab lost to a bad merge fails here rather than
   // quietly disappearing. 12 through v0.99.1; 13 with Review (0.99.2); 14
-  // with VR, off the Dashboard (1.2.0-beta.5).
-  check('nothing was dropped in the move', tabs.length === 14, `${tabs.length} items`);
+  // with VR, off the Dashboard (1.2.0-beta.5); 15 with the Race log, out of
+  // Review's rail (1.2.0-beta.7).
+  check('nothing was dropped in the move', tabs.length === 15, `${tabs.length} items`);
+  // Under Review, in the Driving group, where Carl put it.
+  check('the Race log sits directly under Review',
+    tabs.indexOf('racelog') === tabs.indexOf('review') + 1, tabs.join(','));
   check('settings is a destination of its own now', tabs.includes('settings'));
   check(
     'and the gear that used to toggle back to the last tab is gone',

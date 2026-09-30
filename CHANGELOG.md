@@ -5,6 +5,46 @@
      app until it is renamed.
 -->
 
+## 1.2.0-beta.7 — 2026-09-30
+
+The race log gets its own tab, and Replay now lands on your car at the
+moment, even in a long race's replay.
+
+### Fixed
+
+- **Replay went to the wrong car, or closed and got stuck.** On a long race
+  (a 3.5 GB replay) the game goes quiet for about 15 seconds as it finishes
+  loading, which Apex took for the game closing: it gave up just before the
+  replay appeared, so it opened at the start on the leader, and the next
+  click closed it and started again. Apex now waits it out, gives the replay
+  a moment to settle before the first jump, checks the camera is on your car,
+  and jumps within the same replay without reloading it.
+
+### Changed
+
+- **The race log has its own tab.** It has moved out of Review to a new
+  **Race log** tab in the left-hand menu, under Review, and opens straight
+  onto your races. Review goes back to sessions and laps. The **Race log**
+  button on a race session in Review still takes you to that race.
+
+### Added
+
+- **Step through a race's incidents.** Once a replay is in the game,
+  **Previous** and **Next** in the replay strip jump it to each contact,
+  limits call, damage and penalty in turn, following the filter you have on.
+  The row being replayed stays marked and on screen.
+- **Keys for the race log.** ↑ ↓ (or J K) move through the timeline, Enter
+  replays the row you are on, and [ and ] step to the previous and next
+  incident.
+- **Your place, lap by lap.** A line under the race's facts shows where you
+  ran from the grid to the flag, overall and in class.
+- **Replay says why it can't.** When the game has replaced a race's replay,
+  or isn't running, the Replay buttons are greyed rather than hidden, and
+  hovering one tells you why.
+- **A how-to guide for the race log.** The first time you open the tab, a
+  short walkthrough covers where the races come from, picking your car in a
+  team race, what Replay needs, and the keys. **How it works** opens it again.
+
 ## 1.2.0-beta.6 — 2026-09-30
 
 A race log for every race you have run, with a jump into the game's replay at

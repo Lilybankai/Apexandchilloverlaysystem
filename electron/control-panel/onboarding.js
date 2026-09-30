@@ -301,6 +301,25 @@
           ? 'Nothing to set up: it reads the lap files this PC has been writing since you installed Apex, and nothing leaves the machine.'
           : null,
     },
+    {
+      id: 'racelog',
+      icon: 'scroll-text',
+      title: 'Go through a race',
+      lead:
+        'Every race the game saved, as a timeline of laps, places, contacts, limits and penalties — '
+        + 'with a jump into the game’s own replay at each incident.',
+      cta: 'Show me round',
+      view: 'racelog',
+      focus: '#rl-races',
+      tour: 'racelog',
+      // The Review row's reasoning: nothing to switch on, so the honest tick
+      // is having been shown round, and nothing else.
+      check: (s) => s.raceLogToured,
+      note: (s) =>
+        !s.raceLogToured
+          ? 'Nothing to set up: it reads the results files Le Mans Ultimate saves after every race, including races from before Apex.'
+          : null,
+    },
   ];
 
   /* ---- pure: state -> ticks ---------------------------------------------- */
@@ -428,6 +447,7 @@
       setupsToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('setups')),
       teamToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('team')),
       reviewToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('review')),
+      raceLogToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('racelog')),
       scheduleToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('schedule')),
       discordToured: !!(typeof window !== 'undefined' && window.APEX_TOUR?.hasSeen('discord')),
       // Whether this build HAS a Team tab. The nav button's `hidden` is the

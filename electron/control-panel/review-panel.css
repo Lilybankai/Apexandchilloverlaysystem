@@ -40,7 +40,8 @@
    times. Capped rather than uncapped (the pit wall's answer for the Team tab)
    because the report and the charts above it are still prose-shaped and stop
    reading well much past this. */
-.view[data-view="review"] .wrap--wide { max-width: 1520px; }
+.view[data-view="review"] .wrap--wide,
+.view[data-view="racelog"] .wrap--wide { max-width: 1520px; }
 
 .rv {
   display: grid;
@@ -1045,27 +1046,35 @@
  */
 .view[data-view='review'] .rv__list,
 .view[data-view='review'] .rv-sheet__scroll,
-.view[data-view='review'] .rv-micro {
+.view[data-view='review'] .rv-micro,
+.view[data-view='racelog'] .rv__list,
+.view[data-view='racelog'] .rv-sheet__scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar,
+.view[data-view='racelog'] .rv__list::-webkit-scrollbar,
+.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar-track,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-track,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar-track {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-track,
+.view[data-view='racelog'] .rv__list::-webkit-scrollbar-track,
+.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar-thumb,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-thumb,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar-thumb {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-thumb,
+.view[data-view='racelog'] .rv__list::-webkit-scrollbar-thumb,
+.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar-thumb {
   background: var(--line-2);
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1074,12 +1083,15 @@
 
 .view[data-view='review'] .rv__list:hover::-webkit-scrollbar-thumb,
 .view[data-view='review'] .rv-sheet__scroll:hover::-webkit-scrollbar-thumb,
-.view[data-view='review'] .rv-micro:hover::-webkit-scrollbar-thumb {
+.view[data-view='review'] .rv-micro:hover::-webkit-scrollbar-thumb,
+.view[data-view='racelog'] .rv__list:hover::-webkit-scrollbar-thumb,
+.view[data-view='racelog'] .rv-sheet__scroll:hover::-webkit-scrollbar-thumb {
   background: var(--text-3);
   background-clip: content-box;
 }
 
-.view[data-view='review'] ::-webkit-scrollbar-corner { background: transparent; }
+.view[data-view='review'] ::-webkit-scrollbar-corner,
+.view[data-view='racelog'] ::-webkit-scrollbar-corner { background: transparent; }
 
 /* ============================== CAREER ==================================
  *
@@ -1567,7 +1579,8 @@
  */
 
 /* The tab uses the width it is given. */
-.view[data-view='review'] .wrap--wide { max-width: none; }
+.view[data-view='review'] .wrap--wide,
+.view[data-view='racelog'] .wrap--wide { max-width: none; }
 
 /* ---- lap mode fills the window ------------------------------------------
    `.content` is the panel's scroller and a flex item with a definite height,
@@ -1955,8 +1968,10 @@
 
 /* ============================== RACE LOG ================================
  *
- * docs/RACE-LOG-PLAN.md phase 3, painted by review-racelog.js. A race read
- * back as a timeline: race time · lap · kind · what happened.
+ * docs/RACE-LOG-PLAN.md phase 3, painted by review-racelog.js on the Race log
+ * tab (racelog-panel.js). A race read back as a timeline: race time · lap ·
+ * kind · what happened. The tab reuses Review's frame — the rail, the cards,
+ * the sheet — so everything above this heading applies to it too.
  *
  * It is the lap sheet, not a feed of cards. Two hundred lines of a four-hour
  * race are read down a column the way lap times are, so the table, the mono
@@ -1965,10 +1980,6 @@
  * limits and minor damage amber (the damage widget's grades), and a lap's
  * time purple or green when it was a best. Everything else is text-2/3.
  */
-
-/* Sessions | Races: the app's segmented pill, sized to its labels rather
-   than stretched across the rail. */
-.rv__mode { align-self: flex-start; }
 
 /* Grid, finish and the counts — the stint header's facts, left to right. */
 .rv-log__facts {
@@ -1979,6 +1990,10 @@
 .rv-log__moved { font-style: normal; font-size: 11.5px; margin-left: 2px; }
 .rv-log__moved[data-dir='gain'] { color: var(--ok); }
 .rv-log__moved[data-dir='loss'] { color: var(--bad); }
+
+/* Place by lap, under the facts: the lap chart's line, one band per row. */
+.rv-chart--pos { height: 70px; margin-top: 12px; }
+.rv-chart--pos[data-bands='2'] { height: 144px; }
 
 .rv-log__note {
   margin-top: 10px;
@@ -2031,6 +2046,11 @@
    reads at rest the way the leaderboard's does rather than the lap sheet's. */
 .rv-log__table .rv-refbtn { opacity: 0.8; }
 .rv-log__table tr:hover .rv-refbtn { opacity: 1; }
+/* Greyed, not gone: the tooltip says why (the replay was replaced, the game
+   is shut), so the feature stays findable on a race it cannot serve. */
+.rv-log__table .rv-refbtn:disabled,
+.rv-log__table tr:hover .rv-refbtn:disabled { opacity: 0.4; cursor: default; }
+.rv-log__table .rv-refbtn:disabled:hover { border-color: var(--line); color: var(--text-3); }
 
 .rv-log__table tr[data-tone='bad'] td.k { color: var(--bad); }
 .rv-log__table tr[data-tone='warn'] td.k { color: var(--warn); }
@@ -2058,6 +2078,8 @@
   color: var(--cyan);
   border-color: rgba(38, 187, 244, 0.45);
 }
+/* The keyboard's row: the picker's focus ring, so it reads as "you are here". */
+.rv-log__table tr[data-cursor='true'] { outline: 1px solid var(--cyan); outline-offset: -1px; }
 
 /* ---- the replay strip -----------------------------------------------------
    Sticky, like the reference-lap strip: the Replay button that started a
@@ -2085,6 +2107,8 @@
 .rv-replay__text { font-size: 12.5px; color: var(--text); }
 .rv-replay__sub { font-size: 11.5px; color: var(--text-3); }
 .rv-replay__bar { flex-basis: 100%; margin-top: 4px; }
+/* Previous / Next incident, at the strip's right end. */
+.rv-replay__step { margin-left: auto; display: inline-flex; gap: 6px; align-self: center; }
 .rv-replay[data-phase='ready'] { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 .rv-replay[data-phase='ready'] .rv-replay__text { color: var(--ok); }
 /* blocked: the driver is in a session. busy: a click turned away because

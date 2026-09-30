@@ -1,18 +1,27 @@
 /**
- * review-racelog.js — the Review tab's race logs.
+ * review-racelog.js — the race logs, painted.
  * -----------------------------------------------------------------------------
  * Phase 3 of docs/RACE-LOG-PLAN.md: every race LMU wrote a results file for,
- * as a list in the Review rail, and one race as a timeline — one line per
- * event, race time · lap · kind · what happened. Contacts, limits and
- * penalties carry a Replay button that loads the game's own replay of that
- * race five seconds before the moment (phase 4, `dist/server/lmuReplay.js`).
+ * as a list in a rail, and one race as a timeline — one line per event, race
+ * time · lap · kind · what happened. Contacts, limits and penalties carry a
+ * Replay button that loads the game's own replay of that race five seconds
+ * before the moment (phase 4, `dist/server/lmuReplay.js`).
  *
  * ## Why a list of its own, and not a view on a session
  * A race log is built from the game's results XML, not from our lap files.
  * Most of the 200-odd races on a driver's PC predate Apex, or were driven with
- * it closed, and so have no session in the rail to hang off. The rail
- * therefore switches between Sessions and Races; a race session that DOES have
- * a log gets a "Race log" button in its header as well (review-panel.js).
+ * it closed, and so have no session in Review to hang off. So the races are a
+ * tab of their own — the Race log tab, hosted by racelog-panel.js. (Until
+ * 2026-09-30 they sat behind a Sessions | Races switch in Review's rail, where
+ * drivers never found them.) A race session in Review that DOES have a log
+ * gets a "Race log" button in its header, which hands over to that tab.
+ *
+ * ## Going through a race's incidents
+ * The job after an official race is a steward's: every contact, limit and
+ * penalty, one after another. Once a replay is in the game the strip offers
+ * Previous and Next incident, and the keys do the same without the mouse —
+ * ↑ ↓ (or J K) move a row cursor, Enter replays that row, [ and ] step
+ * through the incidents. The row being replayed is kept on screen.
  *
  * ## Why rows and not cards
  * A four-hour race is two hundred lines. It is read the way the lap sheet is
@@ -21,13 +30,15 @@
  * steward's eye needs to land: contacts and penalties in red, limits and
  * minor damage in amber, a lap's time in purple or green when it was a best.
  *
- * review-panel.js owns the rail and the detail column and hands both to this
- * file while the rail is on Races. Nothing here polls: the replay status is a
- * push, subscribed while a log is open and dropped the moment it is not. And
- * nothing here reaches the game (replay status, availability, the push)
- * unless the tab is on screen — review-panel.js says when, through
- * `shown()` / `hidden()` — so a panel that reopens remembering Races costs
- * nothing until the Review tab is actually looked at.
+ * racelog-panel.js owns the rail and the detail column and hands both to this
+ * file. Nothing here polls: the replay status is a push, subscribed while a
+ * log is open and dropped the moment it is not. And nothing here reaches the
+ * game (replay status, availability, the push) unless the tab is on screen —
+ * racelog-panel.js says when, through `shown()` / `hidden()` — so a panel
+ * that reopens on the Race log tab costs nothing until it is looked at.
+ *
+ * The position-by-lap line is painted by review-charts.js
+ * (`drawPositions`), for the hex reason below.
  *
  * No hex colour literals in this file — test-panel-parity.js reads a quoted
  * hash-and-hex as an element id. Colours live in review-panel.css as tokens.
@@ -63,13 +74,26 @@
   let repick = false;
   let picking = false;
 
+  /**
+   * The timeline's filter, remembered per viewer: a steward who always reads
+   * Incidents lands on Incidents. The key keeps its `review.` name from when
+   * the log lived in Review, so nobody's choice is lost to the move.
+   */
+  const FILTER_KEY = 'apex.review.racelogFilter';
   let filter = 'all';
   try {
-    const saved = window.localStorage.getItem('apex.review.racelogFilter');
+    const saved = window.localStorage.getItem(FILTER_KEY);
     if (saved) filter = saved;
   } catch {
     /* storage off: All */
   }
+
+  /**
+   * The keyboard's row: an index into `log.events`, or -1 for none yet.
+   * Moved by ↑ ↓ / J K, and by the incident steps, so Enter after a step
+   * replays the row the driver can see is marked.
+   */
+  let cursor = -1;
 
   /**
    * Whether the game still has this race's replay: `{ state, reason, message }`,
@@ -96,8 +120,10 @@
   let unsub = null;
   let copiedTimer = null;
 
-  /** Set by review-panel.js: `{ detail, rerenderList }`. */
+  /** Set by racelog-panel.js: `{ detail, rerenderList }`. */
   let host = null;
+  /** The position line's painters, when review-charts.js is on the page. */
+  const CHARTS = window.APEX_REVIEW_CHARTS || null;
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -174,6 +200,9 @@
 
   /** The kinds a Replay button goes on: things that happened to the car at a moment. */
   const REPLAYABLE = new Set(['contact', 'damage', 'limits', 'penalty']);
+
+  /** A line with a moment the replay can be put at: what the steps walk. */
+  const isIncident = (e) => !!e && REPLAYABLE.has(e.kind) && known(e.et);
 
   /**
    * One question at a time, so a segmented control rather than tick boxes —
@@ -351,6 +380,62 @@
       </div>`;
   }
 
+  /**
+   * Where the car ran, lap by lap: `{ laps, rows: [{ label, pos[] }] }`, one
+   * row overall and — in a multiclass race — one in class. `pos[n]` is the
+   * place at the end of lap n (0 is the grid). The log only says so when it
+   * CHANGED, so a place is held forward until the next line moves it, and
+   * the finish is the classification, which a penalty can move after the
+   * flag. Null when there is nothing to draw: no grid, or under two laps.
+   */
+  function positionSeries(l) {
+    if (!l || !Array.isArray(l.events)) return null;
+    let last = 0;
+    for (const e of l.events) if (e.kind === 'lap' && e.lap > last) last = e.lap;
+    if (last < 2) return null;
+    const build = (key, finish) => {
+      const at = new Map();
+      for (const e of l.events) {
+        const d = e.detail || {};
+        if ((e.kind === 'start' || e.kind === 'position') && known(d[key])) {
+          at.set(e.kind === 'start' ? 0 : e.lap, d[key]);
+        }
+      }
+      if (!at.has(0)) return null;
+      const pos = [];
+      let held = at.get(0);
+      for (let n = 0; n <= last; n += 1) {
+        if (at.has(n)) held = at.get(n);
+        pos.push(held);
+      }
+      if (known(finish)) pos[last] = finish;
+      return pos;
+    };
+    const overall = build('position', l.finishPosition);
+    if (!overall) return null;
+    const rows = [{ label: l.multiclass ? 'Overall' : 'Position', pos: overall }];
+    if (l.multiclass) {
+      const cls = build('classPosition', l.finishClassPosition);
+      if (cls) rows.push({ label: className(l.carClass) || 'Class', pos: cls });
+    }
+    return { laps: last, rows };
+  }
+
+  function positionHtml(l) {
+    const s = CHARTS && typeof CHARTS.drawPositions === 'function' ? positionSeries(l) : null;
+    if (!s) return '';
+    return `<div class="rv-chart rv-chart--pos" data-bands="${s.rows.length}"
+                 role="img" aria-label="Position lap by lap"><canvas></canvas></div>`;
+  }
+
+  /** Paint the position line, if the log on screen has one. Cheap: a few dozen points. */
+  function paintPositions() {
+    if (!host || !host.detail || !CHARTS || !log) return;
+    const canvas = host.detail.querySelector('.rv-chart--pos canvas');
+    const s = canvas ? positionSeries(log) : null;
+    if (s) CHARTS.drawPositions(canvas, s);
+  }
+
   /** The quiet line under the facts: who drove, how we knew, and the replay. */
   function noteHtml(l) {
     const parts = [];
@@ -405,8 +490,17 @@
     let text = '';
     let sub = '';
     let bar = '';
+    let step = '';
     switch (st.phase) {
       case 'loading': {
+        // A step or a click while this race's replay is already in the game:
+        // a jump, a second or so, not a load — so no bar, and the steps stay
+        // where the hand is.
+        if (st.jump) {
+          text = at ? `Jumping to the ${at}…` : 'Jumping…';
+          step = stepHtml();
+          break;
+        }
         const p = known(st.progress) ? Math.round(st.progress * 100) : null;
         const closing = st.message && /^Closing/.test(st.message);
         text = closing ? st.message : `Loading the replay in the game${p !== null ? ` · ${p}%` : '…'}`;
@@ -414,10 +508,16 @@
         bar = `<div class="rv-bar rv-replay__bar"><span style="width:${Math.max(2, p || 0)}%"></span></div>`;
         break;
       }
-      case 'ready':
+      case 'ready': {
         text = at ? `In the game now: 5 s before the ${at}.` : 'In the game now.';
-        sub = 'Every other Replay in this race is a jump, not a reload.';
+        const list = incidentIndexes();
+        const k = asked && asked.raceId === log.id ? list.indexOf(asked.index) : -1;
+        sub = k >= 0
+          ? `Incident ${k + 1} of ${list.length}. Jumps within this race are instant.`
+          : 'Every other Replay in this race is a jump, not a reload.';
+        step = stepHtml();
         break;
+      }
       case 'blocked':
         text = st.message || 'Leave your session to watch the replay.';
         break;
@@ -435,12 +535,186 @@
         return '';
     }
     return `
-      <div class="rv-replay" data-phase="${esc(st.phase)}" role="status">
+      <div class="rv-replay" data-phase="${esc(st.phase)}"${st.jump ? ' data-jump="true"' : ''} role="status">
         <span class="rv-replay__tag">Replay</span>
         <span class="rv-replay__text">${esc(text)}</span>
         ${sub ? `<span class="rv-replay__sub">${esc(sub)}</span>` : ''}
+        ${step}
         ${bar}
       </div>`;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  Stepping through the incidents                                        */
+  /* ---------------------------------------------------------------------- */
+
+  /** Whether this log's Replay buttons can be pressed at all. */
+  function replayOk() {
+    return !!log && avail.state === 'yes' && log.slot !== null && !log.provisional;
+  }
+
+  /**
+   * The incidents under the filter on screen, as indexes into `log.events`,
+   * in race order. Under the filter because that is the steward's own
+   * question: on Contacts, Next means the next contact.
+   */
+  function incidentIndexes() {
+    if (!log) return [];
+    const all = log.events;
+    return visibleEvents().filter(isIncident).map((e) => all.indexOf(e));
+  }
+
+  /**
+   * The incident one step before or after (`dir` -1 or 1) the row the
+   * driver is on — the keyboard's row, else the one last replayed — or -1 at
+   * either end. From nothing, Next is the first and Previous the last.
+   */
+  function stepTarget(dir) {
+    const list = incidentIndexes();
+    if (!list.length) return -1;
+    const from = cursor >= 0 ? cursor : asked && log && asked.raceId === log.id ? asked.index : -1;
+    if (from < 0) return dir > 0 ? list[0] : list[list.length - 1];
+    if (dir > 0) {
+      const n = list.find((i) => i > from);
+      return n === undefined ? -1 : n;
+    }
+    for (let k = list.length - 1; k >= 0; k -= 1) if (list[k] < from) return list[k];
+    return -1;
+  }
+
+  function stepHtml() {
+    const prev = stepTarget(-1);
+    const next = stepTarget(1);
+    return `
+        <span class="rv-replay__step">
+          <button type="button" class="btn btn--ghost btn--sm" data-rlstep="-1"${prev < 0 ? ' disabled' : ''}
+                  title="Replay the incident before this one ( [ )">
+            <svg class="icon"><use href="#i-chevron-left" /></svg><span>Previous</span>
+          </button>
+          <button type="button" class="btn btn--ghost btn--sm" data-rlstep="1"${next < 0 ? ' disabled' : ''}
+                  title="Replay the next incident ( ] )">
+            <span>Next</span><svg class="icon"><use href="#i-chevron-right" /></svg>
+          </button>
+        </span>`;
+  }
+
+  /** Replay the incident a step away, and put the cursor on it. */
+  function stepIncident(dir) {
+    if (!replayOk()) return false;
+    const i = stepTarget(dir);
+    if (i < 0) return false;
+    cursor = i;
+    void replayAt(i);
+    return true;
+  }
+
+  /**
+   * Why a Replay button is greyed, or what it does. The same sentences the
+   * replay controller answers with, so the tooltip and the strip agree. A
+   * `blocked` race keeps its buttons live: nothing tells the panel when the
+   * driver leaves the session, and a greyed button would stay grey after.
+   */
+  function replayTitle() {
+    if (avail.state === 'checking') return 'Asking the game whether it still has this race’s replay…';
+    if (avail.state === 'no') {
+      if (avail.message) return avail.message;
+      return avail.reason === 'game-offline'
+        ? 'Le Mans Ultimate isn’t running, so its replays can’t be opened.'
+        : 'This race’s replay has been replaced by the game.';
+    }
+    if (log && status && status.phase === 'blocked' && status.raceId === log.id) {
+      return status.message || 'Leave your session to watch the replay.';
+    }
+    return 'Open the game’s replay 5 s before this';
+  }
+
+  /**
+   * Mark the row being replayed and the keyboard's row, in place — a status
+   * push or a key press must not rebuild two hundred rows.
+   */
+  function markRows() {
+    if (!host || !host.detail || !log) return;
+    const body = host.detail.querySelector('.rv-log__table tbody');
+    if (!body) return;
+    const on = asked && asked.raceId === log.id ? asked.index : -1;
+    for (const tr of body.children) {
+      const i = Number(tr.dataset.ev);
+      if (i === on) tr.setAttribute('data-asked', 'true');
+      else tr.removeAttribute('data-asked');
+      if (i === cursor) tr.setAttribute('data-cursor', 'true');
+      else tr.removeAttribute('data-cursor');
+    }
+  }
+
+  /**
+   * Bring a row into view below the sticky replay strip. `centre` for a step,
+   * which can land two hundred rows away; the least scroll that shows it for
+   * a cursor moving one row, so the page does not lurch on every key.
+   */
+  function reveal(i, centre) {
+    if (!host || !host.detail) return;
+    const tr = host.detail.querySelector(`.rv-log__table tr[data-ev="${i}"]`);
+    if (!tr) return;
+    const sc = tr.closest('.content');
+    if (!sc) {
+      tr.scrollIntoView({ block: centre ? 'center' : 'nearest' });
+      return;
+    }
+    const box = sc.getBoundingClientRect();
+    const strip = host.detail.querySelector('.rv-replay');
+    const top = Math.max(box.top, strip ? strip.getBoundingClientRect().bottom : box.top) + 8;
+    const bottom = box.bottom - 8;
+    const r = tr.getBoundingClientRect();
+    if (r.top >= top && r.bottom <= bottom) return;
+    if (centre) sc.scrollTop += r.top + r.height / 2 - (top + bottom) / 2;
+    else if (r.top < top) sc.scrollTop -= top - r.top;
+    else sc.scrollTop += r.bottom - bottom;
+  }
+
+  /** Move the keyboard's row through the rows on screen. */
+  function moveCursor(dir) {
+    if (!log) return false;
+    const all = log.events;
+    const rows = visibleEvents().map((e) => all.indexOf(e));
+    if (!rows.length) return false;
+    let k = rows.indexOf(cursor);
+    if (k < 0) {
+      // First press: start from the row being replayed, if it is showing.
+      const from = asked && asked.raceId === log.id ? rows.indexOf(asked.index) : -1;
+      k = from >= 0 ? from : dir > 0 ? -1 : rows.length;
+    }
+    k = Math.min(rows.length - 1, Math.max(0, k + dir));
+    cursor = rows[k];
+    markRows();
+    reveal(cursor, false);
+    return true;
+  }
+
+  /**
+   * The tab's keys, from racelog-panel.js's document listener (which has
+   * already made sure the tab is on screen and nothing is being typed in).
+   * Returns whether the key was taken.
+   */
+  function onDocKey(evt) {
+    if (!log || log.slot === null || repick || reading) return false;
+    if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+    const k = evt.key;
+    let took = false;
+    if (k === 'ArrowDown' || k === 'j' || k === 'J') took = moveCursor(1);
+    else if (k === 'ArrowUp' || k === 'k' || k === 'K') took = moveCursor(-1);
+    else if (k === ']') took = stepIncident(1);
+    else if (k === '[') took = stepIncident(-1);
+    else if (k === 'Enter') {
+      const t = evt.target;
+      // A focused button answers Enter itself.
+      if (t && t.closest && t.closest('button, a, [role="button"]')) return false;
+      if (cursor >= 0 && replayOk() && isIncident(log.events[cursor])) {
+        void replayAt(cursor);
+        took = true;
+      }
+    }
+    if (took) evt.preventDefault();
+    return took;
   }
 
   /** One width for the whole column: `h:mm:ss` once the race passes an hour. */
@@ -472,22 +746,29 @@
       rest ? ` <span class="rv-log__rest">${esc(rest)}</span>` : ''}`;
   }
 
-  function rowHtml(e, i, long, canReplay) {
+  /**
+   * One line. `replay` is `null` for a log that can never replay (no car,
+   * or a provisional log with no results file behind it), else
+   * `{ ok, title }`: a race whose replay is gone or whose game is shut keeps
+   * its buttons, greyed with the reason, so the feature stays findable.
+   */
+  function rowHtml(e, i, long, replay) {
     const tone = toneOf(e);
     const d = e.detail || {};
     const dir = e.kind === 'position' && known(d.gained) && d.gained
       ? ` data-dir="${d.gained > 0 ? 'gain' : 'loss'}"` : '';
-    const replay = canReplay && REPLAYABLE.has(e.kind) && known(e.et);
-    const on = !!asked && asked.raceId === log.id && asked.et === e.et;
+    const btn = replay && isIncident(e);
+    const on = !!asked && asked.raceId === log.id && asked.index === i;
     return `
-      <tr data-kind="${esc(e.kind)}"${tone ? ` data-tone="${tone}"` : ''}${dir}${on ? ' data-asked="true"' : ''}>
+      <tr data-ev="${i}" data-kind="${esc(e.kind)}"${tone ? ` data-tone="${tone}"` : ''}${dir}${
+        on ? ' data-asked="true"' : ''}${i === cursor ? ' data-cursor="true"' : ''}>
         <td class="t">${fmtRace(e.raceS, long)}</td>
         <td class="l">${e.lap > 0 ? `L${e.lap}` : dash}</td>
         <td class="k">${esc(KIND_WORD[e.kind] || e.kind)}</td>
         <td class="x">${e.kind === 'lap' ? lapText(e) : esc(e.text)}</td>
-        <td class="ref">${replay
-          ? `<button type="button" class="rv-refbtn" data-replay="${i}"
-                     title="Open the game’s replay 5 s before this">Replay</button>`
+        <td class="ref">${btn
+          ? `<button type="button" class="rv-refbtn" data-replay="${i}"${replay.ok ? '' : ' disabled'}
+                     title="${esc(replay.title)}">Replay</button>`
           : ''}</td>
       </tr>`;
   }
@@ -496,17 +777,21 @@
     const all = log.events;
     const shown = visibleEvents();
     const long = longClock();
-    const canReplay = avail.state === 'yes' && log.slot !== null && !log.provisional;
+    const replay = log.slot !== null && !log.provisional ? { ok: replayOk(), title: replayTitle() } : null;
+    const keys = replayOk() && shown.some(isIncident);
     const hasKind = (f) => !f.kinds || all.some((e) => f.kinds.has(e.kind));
     const segs = FILTERS.filter((f) => f.id === 'all' || f.id === 'incidents' || hasKind(f));
-    const rows = shown.map((e) => rowHtml(e, all.indexOf(e), long, canReplay)).join('');
+    const rows = shown.map((e) => rowHtml(e, all.indexOf(e), long, replay)).join('');
     return `
       <div class="rv-card rv-log">
         <div class="rv-card__head">
           <span class="rv-card__title">Timeline</span>
-          <span class="rv-legend">${shown.length === all.length
+          <span class="rv-legend">${keys
+            // The keys, said once and quietly, in the legend's own voice.
+            ? '<span class="rv-log__keys">↑ ↓ to move · Enter to replay · [ ] previous and next incident</span>'
+            : ''}<span>${shown.length === all.length
             ? `${all.length} event${all.length === 1 ? '' : 's'}`
-            : `${shown.length} of ${all.length} events`}</span>
+            : `${shown.length} of ${all.length} events`}</span></span>
         </div>
         <div class="rv-log__bar">
           <nav class="seg seg--sm" aria-label="Which events to show">
@@ -590,10 +875,12 @@
       <div class="rv-card">
         ${headHtml(log, summary)}
         ${factsHtml(log)}
+        ${positionHtml(log)}
         ${noteHtml(log)}
       </div>
       ${replayHtml()}
       ${timelineHtml()}`;
+    paintPositions();
   }
 
   /** Repaint only the status strip, so a progress push does not rebuild 200 rows. */
@@ -609,12 +896,10 @@
       const tl = host.detail.querySelector('.rv-log');
       if (tl) tl.insertAdjacentHTML('beforebegin', html);
     }
-    for (const tr of host.detail.querySelectorAll('tr[data-asked]')) tr.removeAttribute('data-asked');
-    if (asked && asked.raceId === log.id) {
-      const btn = host.detail.querySelector(`[data-replay="${asked.index}"]`);
-      const tr = btn && btn.closest('tr');
-      if (tr) tr.setAttribute('data-asked', 'true');
-    }
+    // A blocked answer changes what the buttons' tooltips should say.
+    const title = replayTitle();
+    for (const b of host.detail.querySelectorAll('[data-replay]')) b.title = title;
+    markRows();
   }
 
   /* ---------------------------------------------------------------------- */
@@ -736,6 +1021,7 @@
     log = null;
     readError = '';
     repick = false;
+    cursor = -1;
     // A pick still in flight belongs to the race being left (pick() drops
     // its reply), so the new race's picker is not "Saving…".
     picking = false;
@@ -814,11 +1100,15 @@
     const id = log.id;
     const wasAsked = asked;
     asked = { raceId: id, et: e.et, raceS: e.raceS, lap: e.lap, kind: e.kind, index };
+    cursor = index;
     busy = null;
     // Something on screen straight away: the answer can take a second, and a
-    // click that does nothing visible gets clicked again.
-    status = { phase: 'loading', raceId: id, progress: null, message: null };
+    // click that does nothing visible gets clicked again. With this race's
+    // replay already in the game it is a jump, not a load.
+    const jump = !!status && status.phase === 'ready' && status.raceId === id;
+    status = { phase: 'loading', raceId: id, progress: null, message: null, ...(jump ? { jump: true } : {}) };
     renderStatus();
+    reveal(index, true);
     try {
       const res = await window.apex.reviewReplayOpen({ raceId: id, slot: log.slot, et: e.et });
       if (res && res.status && res.status.busy) {
@@ -842,19 +1132,24 @@
   /*  Events                                                                */
   /* ---------------------------------------------------------------------- */
 
-  /** Clicks in the detail column while the rail is on Races. */
+  /** Clicks in the Race log tab's detail column. */
   function onClick(evt) {
     const t = evt.target;
     const seg = t.closest('[data-rlfilter]');
     if (seg) {
       filter = seg.dataset.rlfilter;
-      try { window.localStorage.setItem('apex.review.racelogFilter', filter); } catch { /* the choice lasts the run */ }
+      try { window.localStorage.setItem(FILTER_KEY, filter); } catch { /* the choice lasts the run */ }
       render();
       return;
     }
     const rep = t.closest('[data-replay]');
     if (rep) {
-      void replayAt(Number(rep.dataset.replay));
+      if (!rep.disabled) void replayAt(Number(rep.dataset.replay));
+      return;
+    }
+    const stepBtn = t.closest('[data-rlstep]');
+    if (stepBtn) {
+      if (!stepBtn.disabled) stepIncident(Number(stepBtn.dataset.rlstep));
       return;
     }
     const copy = t.closest('[data-rlcopy]');
@@ -917,7 +1212,7 @@
   }
 
   window.APEX_REVIEW_RACELOG = {
-    /** review-panel.js hands over its detail column and a way to redraw the rail. */
+    /** racelog-panel.js hands over its detail column and a way to redraw the rail. */
     mount(h) { host = h; },
     load,
     open,
@@ -925,14 +1220,18 @@
     listHtml,
     onClick,
     onKey,
+    onDocKey,
+    /** The position line re-fitted to its box, for a window resize. */
+    repaint: paintPositions,
+    /** Review asks this to put a "Race log" button on a race session. */
     forSession,
     races: () => races,
     openId: () => openId,
     loading: () => listState === 'loading',
     /**
-     * The tab is on screen with the rail on Races. The push feed resumes
-     * while a log is open, and the game is asked afresh: pushes stopped
-     * while hidden, and the game may have started or quit since.
+     * The Race log tab is on screen. The push feed resumes while a log is
+     * open, and the game is asked afresh: pushes stopped while hidden, and
+     * the game may have started or quit since.
      */
     shown() {
       active = true;
@@ -940,7 +1239,7 @@
       subscribe();
       if (log && !reading) void askGame(openId);
     },
-    /** Off the Races view or off the tab: nothing listens while nothing is shown. */
+    /** Off the tab: nothing listens while nothing is shown. */
     hidden() {
       active = false;
       unsubscribe();

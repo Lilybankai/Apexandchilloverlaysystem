@@ -41,7 +41,11 @@
 
   const CHARTS = window.APEX_REVIEW_CHARTS;
   if (!CHARTS) return;
-  /** The race logs (review-racelog.js). Absent, the rail simply has no Races. */
+  /**
+   * The race logs (review-racelog.js). They live on their own tab now
+   * (racelog-panel.js); this tab only asks them one thing — whether a race
+   * session has a log — to put the "Race log" button on its header.
+   */
   const RL = window.APEX_REVIEW_RACELOG || null;
 
   const $ = (sel) => document.querySelector(sel);
@@ -103,18 +107,10 @@
    * offered as a comparison at all.
    */
   let board = { key: '', state: 'idle', rows: [], error: '' };
-  /**
-   * What the rail lists: `sessions` (the lap log) or `races` (the game's own
-   * results files, review-racelog.js). Two lists rather than one because they
-   * are two sources — most races on a PC were driven before Apex, and have no
-   * session to hang a log off. Remembered, like the tab itself.
-   */
-  let railMode = 'sessions';
-  try {
-    if (RL && window.localStorage.getItem('apex.review.rail') === 'races') railMode = 'races';
-  } catch {
-    /* storage off: sessions */
-  }
+  // The rail used to switch between Sessions and Races and remembered which.
+  // Races are their own tab since 2026-09-30, so the remembered choice means
+  // nothing; drop it rather than leave it lying in every profile.
+  try { window.localStorage.removeItem('apex.review.rail'); } catch { /* storage off */ }
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -279,10 +275,6 @@
 
   function renderList() {
     if (!els.list) return;
-    if (railMode === 'races' && RL) {
-      els.list.innerHTML = RL.listHtml(els.search ? els.search.value : '');
-      return;
-    }
     const rows = summaries.filter(matchesFilter);
 
     if (!rows.length) {
@@ -2195,11 +2187,6 @@
   function renderDetail() {
     if (!els.detail) return;
     if (chartOff) { chartOff(); chartOff = null; }
-    if (railMode === 'races' && RL) {
-      if (els.view) els.view.setAttribute('data-mode', 'session');
-      RL.render();
-      return;
-    }
     // The lap view is a cockpit that fills the window; the session view is a
     // page that scrolls. The CSS keys off this, hiding the tab's heading and
     // the career strip while a lap is open so the charts get the height.
@@ -2319,8 +2306,9 @@
   }
 
   /**
-   * "Race log" on a race session the game saved results for. The same race
-   * is on the rail's Races list; this is the short way to it from here.
+   * "Race log" on a race session the game saved results for. The race lives
+   * on the Race log tab; this is the short way to it from here, and the
+   * click hands over to that tab with the race already open.
    */
   function raceLogLink(s) {
     const race = RL ? RL.forSession(s) : null;
@@ -2328,65 +2316,8 @@
     return `
       <button type="button" class="btn btn--ghost btn--sm" data-racelog="${esc(race.id)}"
               title="Every contact, limits verdict and penalty in this race, in order">
-        <svg class="icon"><use href="#i-list-ordered" /></svg><span>Race log</span>
+        <svg class="icon"><use href="#i-scroll-text" /></svg><span>Race log</span>
       </button>`;
-  }
-
-  /**
-   * The rail between Sessions and Races. The detail column follows it: a race
-   * log on screen under a list of sessions would be a page that disagrees
-   * with its own index.
-   */
-  function setRailMode(mode, raceId) {
-    const next = mode === 'races' && RL ? 'races' : 'sessions';
-    railMode = next;
-    try { window.localStorage.setItem('apex.review.rail', next); } catch { /* the choice lasts the run */ }
-    paintRail();
-    if (!RL) { renderList(); renderDetail(); return; }
-    // Off screen, only the controls change: the races list, a race's parse
-    // and the game calls behind the Replay buttons wait for shown().
-    if (!visible) {
-      if (next !== 'races') RL.hidden();
-      return;
-    }
-    if (next === 'races') {
-      if (lapOff) { lapOff(); lapOff = null; }
-      lapView = null;
-      RL.shown();
-      renderList();
-      if (raceId) { void RL.open(raceId); return; }
-      renderDetail();
-      if (!RL.openId()) void openNewestRace();
-    } else {
-      RL.hidden();
-      renderList();
-      renderDetail();
-    }
-  }
-
-  /** The rail's own controls for the current `railMode`. No reads, no renders. */
-  function paintRail() {
-    const seg = $('#rv-mode');
-    if (seg) {
-      for (const b of seg.querySelectorAll('[data-rail]')) {
-        b.setAttribute('data-active', String(b.dataset.rail === railMode));
-      }
-    }
-    // Every session has a type to narrow by; every race is a race.
-    if (els.filter) els.filter.hidden = railMode === 'races';
-    if (els.search) {
-      els.search.placeholder = railMode === 'races' ? 'Find a track or class' : 'Find a track or car';
-    }
-  }
-
-  /** Land on the newest race, as the sessions list lands on the newest session. */
-  async function openNewestRace() {
-    if (!RL) return;
-    if (!RL.races().length) await RL.load();
-    if (!visible || railMode !== 'races' || RL.openId()) return;
-    const first = RL.races()[0];
-    if (first) await RL.open(first.id);
-    else RL.render();
   }
 
   /**
@@ -2604,28 +2535,12 @@
     els.detail = $('#rv-detail');
     els.career = $('#rv-career');
     loadPrefs();
-    if (RL) {
-      RL.mount({
-        detail: els.detail,
-        rerenderList: () => { if (railMode === 'races') renderList(); },
-      });
-    }
-    const rail = $('#rv-mode');
-    if (rail) {
-      rail.hidden = !RL;
-      rail.addEventListener('click', (evt) => {
-        const b = evt.target.closest('[data-rail]');
-        if (b && b.dataset.rail !== railMode) setRailMode(b.dataset.rail);
-      });
-    }
 
     if (els.search) els.search.addEventListener('input', renderList);
     if (els.filter) els.filter.addEventListener('change', renderList);
 
     if (els.list) {
       els.list.addEventListener('click', (evt) => {
-        const race = evt.target.closest('[data-race]');
-        if (race && RL) { void RL.open(race.dataset.race); return; }
         const card = evt.target.closest('[data-session]');
         if (card) void openSession(card.dataset.session);
       });
@@ -2633,9 +2548,9 @@
 
     if (els.detail) {
       els.detail.addEventListener('click', (evt) => {
-        if (railMode === 'races' && RL) { RL.onClick(evt); return; }
+        // Over to the Race log tab, with this race open on arrival.
         const toRace = evt.target.closest('[data-racelog]');
-        if (toRace) { setRailMode('races', toRace.dataset.racelog); return; }
+        if (toRace) { window.apexRaceLog?.openRace(toRace.dataset.racelog); return; }
         if (evt.target.closest('[data-lapback]')) {
           closeLap();
           return;
@@ -2820,7 +2735,6 @@
     // A sheet row is a button, so it answers to Enter and Space like one.
     if (els.detail) {
       els.detail.addEventListener('keydown', (evt) => {
-        if (railMode === 'races' && RL) { RL.onKey(evt); return; }
         if (evt.key !== 'Enter' && evt.key !== ' ') return;
         const row = evt.target.closest && evt.target.closest('tr[data-open]');
         if (!row || !current) return;
@@ -2835,14 +2749,6 @@
     const refresh = $('#rv-refresh');
     if (refresh) {
       refresh.addEventListener('click', () => {
-        if (railMode === 'races' && RL) {
-          void RL.load().then(() => {
-            const id = RL.openId();
-            if (id && RL.races().some((r) => r.id === id)) void RL.open(id);
-            else void openNewestRace();
-          });
-          return;
-        }
         currentId = null;
         void loadList(true);
       });
@@ -2863,13 +2769,6 @@
       .catch(() => { /* Celsius stands */ });
     window.apex.onSettings(applyTempUnit);
     ready = true;
-    // A panel reopened on Races shows the rail's controls that way now, and
-    // nothing else: the races list, the newest race's parse and the game
-    // calls behind its Replay buttons are shown()'s to start, so a launch
-    // that never looks at this tab never makes them. On Sessions the markup
-    // is already right, and painting now would flash "No sessions yet"
-    // before the first read.
-    if (RL && railMode === 'races') paintRail();
 
     // The other half of the ordering problem in this function's note: the
     // router may have called shown() before this file was parsed at all, in
@@ -2890,25 +2789,13 @@
       void loadList(true);
       // The races too, in the background: main caches every results file by
       // mtime, so after the first visit this is a directory listing. It is
-      // what puts the Race log button on a race session's header.
+      // what puts the Race log button on a race session's header. No game
+      // call rides on it — those are the Race log tab's, and only while it
+      // is on screen.
       if (RL) {
-        // The read first, so the Races view below paints "Reading…" rather
-        // than "No races yet" while it runs.
-        const races = RL.load();
-        // On Races, this is where that view starts: the push feed and the
-        // open race's replay status (RL.shown), or — the first time, since
-        // setRailMode skipped it while the tab was hidden — the "Reading…"
-        // page until the read below lands on the newest race. A race already
-        // open is left as it is, scrolled where the driver left it.
-        if (railMode === 'races') {
-          RL.shown();
-          if (!RL.openId()) { renderList(); renderDetail(); }
-        }
-        void races.then(() => {
+        void RL.load().then(() => {
           if (!visible) return;
-          if (railMode === 'races') {
-            if (!RL.openId()) void openNewestRace();
-          } else if (!lapView && current && RL.forSession(current)
+          if (!lapView && current && RL.forSession(current)
               && els.detail && !els.detail.querySelector('[data-racelog]')) {
             renderDetail();
           }
@@ -2929,7 +2816,6 @@
       window.apexNav?.showView('review');
       init();
       if (!ready) return false;
-      if (railMode !== 'sessions') setRailMode('sessions');
       // Arrival started a read; join it rather than race it.
       await (loadList(true) || Promise.resolve());
       if (currentId !== lap.sessionId || !current) await openSession(lap.sessionId);
@@ -2954,7 +2840,6 @@
       visible = false;
       if (chartOff) { chartOff(); chartOff = null; }
       if (lapOff) { lapOff(); lapOff = null; }
-      if (RL) RL.hidden();
     },
   };
 

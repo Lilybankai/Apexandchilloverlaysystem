@@ -683,19 +683,6 @@
             'those two lines actually were.',
         },
         {
-          id: 'races',
-          view: 'review',
-          anchor: '#rv-mode',
-          title: 'Every race, as a timeline',
-          body:
-            'Races lists every race the game saved results for, even ones driven before Apex. Open ' +
-            'one for the start, every lap, contacts, damage, limits, penalties and pit stops in ' +
-            'order. Incidents narrows it to what a steward would read.',
-          note:
-            'Replay on a contact opens the game’s own replay 5 s before it, from the main menu. ' +
-            'The game only keeps five replays per track.',
-        },
-        {
           id: 'career',
           view: 'review',
           anchor: '#rv-career',
@@ -703,6 +690,57 @@
           body:
             'Laps, distance, hours at the wheel and the circuit you have driven most — the whole of ' +
             'what this PC has recorded, across every session on the list.',
+        },
+      ],
+    },
+    {
+      id: 'racelog',
+      title: 'Race log',
+      icon: 'scroll-text',
+      blurb: 'Every race the game saved, as a timeline — and a jump into its replay at each incident.',
+      steps: [
+        {
+          id: 'races',
+          view: 'racelog',
+          anchor: '#rl-races',
+          title: 'Every race the game saved',
+          body:
+            'Le Mans Ultimate writes a results file after every race, and this list reads them back — ' +
+            'including races driven before Apex was installed. Newest first; search by track or class.',
+          note:
+            'In a team race Apex may not know which car was yours. It asks once, and remembers.',
+        },
+        {
+          id: 'log',
+          view: 'racelog',
+          anchor: '#rl-detail',
+          title: 'One race, in order',
+          body:
+            'The start, every lap, places gained and lost, each contact naming the other car, damage, ' +
+            'limits, penalties and pit stops. Contacts and penalties are red, limits amber. The line ' +
+            'under the facts is your place lap by lap.',
+          note: 'Incidents narrows it to what a steward would read, and the filter you use is remembered.',
+        },
+        {
+          id: 'replay',
+          view: 'racelog',
+          anchor: '#rl-detail',
+          title: 'Replay, 5 s before the moment',
+          body:
+            'Replay loads the game’s own replay of the race with the camera on your car. The game has ' +
+            'to be at its main menu, and a big replay takes up to a minute. Then Previous and Next step ' +
+            'through the incidents, and the keys do the same: ↑ ↓ to move, Enter to replay, [ and ].',
+          note:
+            'The game keeps five replays per circuit. A greyed Replay button says why when you hover over it.',
+        },
+        {
+          id: 'copy',
+          view: 'racelog',
+          anchor: '#rl-detail',
+          title: 'Copy as text',
+          body:
+            'Copy as text puts the lines on screen on the clipboard, headed with the circuit, the date ' +
+            'and your car — ready for a protest or a league post.',
         },
       ],
     },

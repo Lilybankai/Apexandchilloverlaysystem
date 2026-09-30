@@ -956,5 +956,54 @@ function squareMap(rise) {
     CHARTS.brakePointPairs(b, a, L)[0].laterM < -8);
 }
 
+/* -------------------------------------------------------------------------- */
+/*  The Race log's place by lap                                               */
+/* -------------------------------------------------------------------------- */
+/*
+ * Two ways it can lie while still drawing: P1 at the bottom (every lap chart
+ * in the sport has it at the top), and a class line squashed flat because it
+ * shares an axis with a forty-car field. Each band is scaled to its own span.
+ */
+{
+  const series = {
+    laps: 4,
+    rows: [
+      { label: 'Overall', pos: [21, 18, 18, 14, 12] },
+      { label: 'LMP2', pos: [6, 5, 5, 3, 2] },
+    ],
+  };
+  const { canvas, calls } = fakeCanvas(600, 116);
+  const bands = CHARTS.drawPositions(canvas, series);
+  check('one band per row', bands.length === 2, `${bands.length}`);
+  check('each band scaled to its own places',
+    bands[0].lo === 12 && bands[0].hi === 21 && bands[1].lo === 2 && bands[1].hi === 6,
+    JSON.stringify(bands));
+  check('the bands are stacked, overall on top', bands[1].top > bands[0].top);
+  const texts = calls.filter(([op]) => op === 'fillText').map(([, t]) => t);
+  check('the axis says the places it spans',
+    ['P12', 'P21', 'P2', 'P6'].every((p) => texts.includes(p)), texts.join());
+  check('each band is named', texts.includes('OVERALL') && texts.includes('LMP2'));
+  check('the lap axis runs grid to flag', texts.includes('GRID') && texts.includes('LAP 4'));
+  // The overall line is the first path after its band's two rules.
+  const line = [];
+  let strokes = 0;
+  for (const c of calls) {
+    if (c[0] === 'stroke') strokes += 1;
+    if (strokes === 2 && (c[0] === 'moveTo' || c[0] === 'lineTo')) line.push(c);
+  }
+  check('the line has a point per lap, grid included', line.length === 5, `${line.length}`);
+  check('P1 is up: gaining places climbs', line[0][2] > line[4][2], `${line[0][2]} -> ${line[4][2]}`);
+
+  const flat = fakeCanvas(600, 64);
+  const one = CHARTS.drawPositions(flat.canvas, { laps: 3, rows: [{ label: 'Position', pos: [4, 4, 4, 4] }] });
+  check('a race run in one place still draws', one.length === 1 && flat.calls.some(([op]) => op === 'lineTo'));
+  check('without dividing by zero',
+    flat.calls.filter(([op]) => op === 'lineTo').every((c) => Number.isFinite(c[2])));
+
+  const none = fakeCanvas();
+  check('no rows, nothing painted', CHARTS.drawPositions(none.canvas, { laps: 5, rows: [] }).length === 0
+    && !none.calls.some(([op]) => op === 'arc'));
+}
+
 console.log(`\ntest-reviewcharts: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

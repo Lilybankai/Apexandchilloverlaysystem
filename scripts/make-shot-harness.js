@@ -62,13 +62,14 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
     }
-    // ?racelog=first|picker|<results file> lands the Review tab on its Races
-    // rail (the first-visit guide is marked read so it does not sit over the
-    // shot). ?rlfilter=incidents|contacts|penalties|positions|laps|pit seeds the
+    // ?racelog=first|picker|<results file> lands on the Race log tab (?tab=
+    // racelog is implied; the first-visit guide is marked read so it does not
+    // sit over the shot — ?tab=racelog on its own shows the guide).
+    // ?rlfilter=incidents|contacts|penalties|positions|laps|pit seeds the
     // timeline's filter the same way the panel remembers it.
     if (q.get('racelog')) {
-      localStorage.setItem('apex.review.rail', 'races');
-      localStorage.setItem('apex.review.guide.seen', '1');
+      if (!q.get('tab')) localStorage.setItem('apex.panel.tab', 'racelog');
+      localStorage.setItem('apex.racelog.guide.seen', '1');
       const rlf = q.get('rlfilter');
       if (rlf) localStorage.setItem('apex.review.racelogFilter', rlf);
       else localStorage.removeItem('apex.review.racelogFilter');
@@ -200,8 +201,11 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   // ?racelog=picker|<results file> clicks that race on the rail (first is the
   // panel's own default, the newest). Then ?rlpick=<slot> picks a car in the
   // picker, and ?replayclick=1 presses the first Replay button, so every
-  // replay status can be shot. Polls rather than clicking blind — the rail
-  // fills asynchronously — and gives up after five seconds.
+  // replay status can be shot. ?rlkeys=down,down,],enter then presses those
+  // keys on the page one by one — the row cursor, the incident steps — so the
+  // keyboard's marks and the stepping strip can be shot too. Polls rather
+  // than clicking blind — the rail fills asynchronously — and gives up after
+  // five seconds.
   if (q.get('racelog')) {
     const stopAt = Date.now() + 5000;
     const want = q.get('racelog');
@@ -210,7 +214,24 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       if (el) { el.click(); if (then) setTimeout(then, 250); return; }
       if (Date.now() < stopAt) setTimeout(() => step(sel, then), 100);
     };
-    const replay = () => { if (q.get('replayclick')) step('[data-replay]'); };
+    const KEYS = { down: 'ArrowDown', up: 'ArrowUp', enter: 'Enter' };
+    const keys = () => {
+      const list = (q.get('rlkeys') || '').split(',').filter(Boolean);
+      const press = (i) => {
+        if (i >= list.length) return;
+        const key = KEYS[list[i]] || list[i];
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true }));
+        setTimeout(() => press(i + 1), 250);
+      };
+      press(0);
+    };
+    const replay = () => {
+      if (q.get('replayclick')) {
+        const el = document.querySelector('[data-replay]:not([disabled])');
+        if (el) { el.click(); setTimeout(keys, 300); return; }
+      }
+      setTimeout(keys, 300);
+    };
     const pickCar = () => { if (q.get('rlpick')) step('[data-pick="' + q.get('rlpick') + '"]', replay); else replay(); };
     const openRace = () => {
       if (want === 'first') { setTimeout(pickCar, 400); return; }
@@ -1078,8 +1099,9 @@ fs.writeFileSync(
   html.replace(marker, `${marker}<script src="__shot-stub.js"></script>`),
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
-console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
+console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|racelog|schedule|settings>&pane=<general|display|controls|account>');
 console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');
 console.log('  the schedule: ?tab=schedule[&source=daily|league][&mode=next|calendar][&zone=utc]');
-console.log('  race logs: ?tab=review&racelog=first|picker|<file>[&rlfilter=incidents][&rlpick=9]' +
-  '[&replayclick=1&replay=loading|ready|blocked|error|closed|busy][&replay=unavailable|offline]');
+console.log('  race logs: ?racelog=first|picker|<file>[&rlfilter=incidents][&rlpick=9]' +
+  '[&replayclick=1&replay=loading|ready|blocked|error|closed|busy][&replay=unavailable|offline]' +
+  '[&rlkeys=down,down,],enter]   (?tab=racelog alone: the first-visit guide)');

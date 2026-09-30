@@ -10,6 +10,8 @@
  *     map (`[{lap, px, py}]`) the panel's tooltip and click handler use, so the
  *     geometry is stated once, by the code that laid it out.
  *   drawTrend(canvas, trend, markDay, fmt) — the 30 days behind the session.
+ *   drawPositions(canvas, series) — a race's place lap by lap, for the Race
+ *     log tab's header (review-racelog.js builds the series).
  *
  * Both are DPR-aware and re-measure their CSS box on every call. Neither
  * formats anything itself: `fmt` carries the panel's own `fmtLap` and
@@ -260,6 +262,110 @@
     ctx.fillText(fmt.dayLabel(trend[0].day).toUpperCase(), padL, h - 2);
     ctx.textAlign = 'right';
     ctx.fillText(fmt.dayLabel(trend[trend.length - 1].day).toUpperCase(), w - padR, h - 2);
+  }
+
+  /**
+   * A race's place, lap by lap — the Race log's header (review-racelog.js).
+   *
+   * `series` is `{ laps, rows: [{ label, pos[] }] }`, `pos[n]` the place at
+   * the end of lap n and `pos[0]` the grid. One band per row, stacked:
+   * overall above class in a multiclass race. Each band is scaled to its own
+   * best and worst place, because P3 in a class of eight and P21 in a field
+   * of forty drawn on one axis would squash the class line flat against the
+   * top. P1 is up, as on every lap chart in the sport, and the axis labels
+   * are the two places the band spans, so the scale is never guessed.
+   *
+   * Returns the bands' geometry (`[{ top, h, lo, hi }]`), for the test.
+   */
+  function drawPositions(canvas, series) {
+    const { ctx, w, h } = surface(canvas);
+    const rows = (series && Array.isArray(series.rows) ? series.rows : [])
+      .filter((r) => Array.isArray(r.pos) && r.pos.some(isNum));
+    const laps = series && isNum(series.laps) ? series.laps : 0;
+    if (!rows.length || laps < 1) return [];
+
+    const padL = 54;
+    const padR = 10;
+    const padB = 12;
+    // Room between two bands, so one band's worst place and the next band's
+    // best are never read as one pair of labels.
+    const GAP = 12;
+    const plotW = Math.max(1, w - padL - padR);
+    const bandH = (h - padB - GAP * (rows.length - 1)) / rows.length;
+    const x = (n) => padL + (n / laps) * plotW;
+    const out = [];
+
+    rows.forEach((row, b) => {
+      const top = b * (bandH + GAP);
+      // The band's name sits above its top rule, not on it.
+      const inT = top + 13;
+      const inH = Math.max(1, bandH - 18);
+      const known = row.pos.filter(isNum);
+      const lo = Math.min(...known);
+      const hi = Math.max(...known);
+      const span = Math.max(1, hi - lo);
+      // A race run in one place is a flat line through the middle.
+      const y = (p) => (hi === lo ? inT + inH / 2 : inT + ((p - lo) / span) * inH);
+      out.push({ top, h: bandH, lo, hi });
+
+      // The two places the band spans: a rule and a label each.
+      ctx.font = '10px "Cascadia Mono", Consolas, monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (const p of hi === lo ? [lo] : [lo, hi]) {
+        const py = Math.round(y(p)) + 0.5;
+        ctx.strokeStyle = CSS.line;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, py);
+        ctx.lineTo(w - padR, py);
+        ctx.stroke();
+        ctx.fillStyle = CSS.text3;
+        ctx.fillText(`P${p}`, padL - 8, py);
+      }
+
+      // Which band this is, the way the lap chart names its stints.
+      ctx.font = '9px Bahnschrift, "Segoe UI", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = CSS.text3;
+      ctx.fillText(String(row.label || '').toUpperCase(), padL + 3, top);
+
+      ctx.strokeStyle = 'rgba(38, 187, 244, 0.75)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let started = false;
+      row.pos.forEach((p, n) => {
+        if (!isNum(p)) return;
+        if (started) ctx.lineTo(x(n), y(p));
+        else { ctx.moveTo(x(n), y(p)); started = true; }
+      });
+      if (started) ctx.stroke();
+
+      // The grid slot hollow, the finish filled: where it began and ended.
+      const first = row.pos.findIndex(isNum);
+      let last = row.pos.length - 1;
+      while (last > 0 && !isNum(row.pos[last])) last -= 1;
+      ctx.beginPath();
+      ctx.arc(x(first), y(row.pos[first]), 3, 0, Math.PI * 2);
+      ctx.strokeStyle = CSS.text2;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x(last), y(row.pos[last]), 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = CSS.cyan;
+      ctx.fill();
+    });
+
+    // The lap axis, once, under the last band: grid and flag.
+    ctx.font = '9px Bahnschrift, "Segoe UI", sans-serif';
+    ctx.fillStyle = CSS.text3;
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+    ctx.fillText('GRID', padL, h);
+    ctx.textAlign = 'right';
+    ctx.fillText(`LAP ${laps}`, w - padR, h);
+    return out;
   }
 
   /* ======================================================================== */
@@ -1986,7 +2092,7 @@
   }
 
   return {
-    drawLapChart, drawTrend, drawChannels, drawLapMap, drawWear,
+    drawLapChart, drawTrend, drawPositions, drawChannels, drawLapMap, drawWear,
     channelBands, distanceAtPoint, stationNear, holdPlan,
     brakePoints, brakePointPairs,
   };
