@@ -314,6 +314,58 @@ console.log('\n2) Green, yellow, restart, white, chequered');
 }
 
 {
+  // Who brought the yellow out, and how far up the road. The capture that
+  // decoded the sector bytes (2026-08-26) had the stopped car's REST sector
+  // match the flagged sector every time — that car is the one named.
+  const { phraseForCue } = require('../dist/telemetry/engineerPhrases');
+  const grid = (stoppedSector, over) => ({
+    standings: [
+      playerRowOver({ lapFraction: 0.1, sector: 1, speedMps: 60 }),
+      rival(2, { driverName: 'Ada Crashed', lapFraction: 0.5, sector: stoppedSector, speedMps: 1.2 }),
+      rival(3, { driverName: 'Bo Cruising', lapFraction: 0.45, sector: 2, speedMps: 55 }),
+      rival(4, { driverName: 'Cy Boxed', lapFraction: 0.4, sector: 2, speedMps: 0, inPit: true }),
+      ...(over || []),
+    ],
+  });
+  const r = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000 }, ...grid(2) });
+  r.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  const f = r.last?.triggers[0]?.facts || {};
+  check('the stopped car in the flagged sector is named', f.driver === 'Ada Crashed', JSON.stringify(f));
+  check('…with its road distance ahead of the player', f.aheadM === 2000, String(f.aheadM));
+  check('…and the lap length the phrase needs', f.lapM === 5000, String(f.lapM));
+  const line = phraseForCue(r.last, null, 0);
+  check('the call says who and where', /Crashed is stopped, about 2 kilometres up the road/.test(line) && /sector two/.test(line), line);
+
+  // A car stopped in a sector that is NOT flagged is not this yellow's cause.
+  const r2 = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000 }, ...grid(3) });
+  r2.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  check('a stopped car in another sector is not named', r2.last?.triggers[0]?.facts.driver === undefined,
+    JSON.stringify(r2.last?.triggers[0]?.facts));
+  check('…and the call falls back to the sector alone',
+    /sector two/.test(phraseForCue(r2.last, null, 0)), phraseForCue(r2.last, null, 0));
+
+  // The REST-only collapse: every sector lit, so the car's own sector says which.
+  const r3 = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000 }, ...grid(3) });
+  r3.fire({ session: { sectorFlags: ['yellow', 'yellow', 'yellow'] } });
+  const l3 = phraseForCue(r3.last, null, 0);
+  check('all-three lit still names the car, by its own sector', /Yellow in sector three — Crashed is stopped/.test(l3), l3);
+
+  // The player's own car is never the one named.
+  const r4 = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000 },
+    standings: [playerRowOver({ lapFraction: 0.5, sector: 2, speedMps: 0 })] });
+  r4.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  check('the player stopped is not read back to them', r4.last?.triggers[0]?.facts.driver === undefined,
+    JSON.stringify(r4.last?.triggers[0]?.facts));
+
+  // A grid of stationary cars before the start is not a field of incidents.
+  const r5 = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000,
+    phase: 'countdown', notStarted: true }, ...grid(2) });
+  r5.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  check('no car is named while the grid is waiting', r5.last?.triggers[0]?.facts.driver === undefined,
+    JSON.stringify(r5.last?.triggers[0]?.facts));
+}
+
+{
   // Blanket yellows under FCY are not local news, and neither is their
   // withdrawal on the restart.
   const r = rig();
@@ -805,6 +857,36 @@ function playerRowOver(over) {
   check('a faster class closing speaks even in practice', cue && cue.kind === 'yieldTo', cue && cue.line);
   check('…with the name and gap', cue && cue.triggers[0].facts.name === 'Hyper Car' && cue.triggers[0].facts.gapSec === 2.1,
     cue && JSON.stringify(cue.triggers[0].facts));
+}
+
+{
+  // A same-class car a lap up is LAPPING the player — not "faster class
+  // behind", which is what the engineer said for every blue flag (live report
+  // 2026-09-30).
+  const { phraseForCue } = require('../dist/telemetry/engineerPhrases');
+  const r = rig({}, { standings: [playerRowOver({})] });
+  const cue = r.fire({
+    relative: [{ slotId: 9, position: 1, driverName: 'Lead Er', carClass: 'GT3', relativeGapSec: -1.8,
+      lapsDifference: 1, inPit: false, isPlayer: false, isFasterClass: false, yieldTo: true }],
+  });
+  const f = cue && cue.triggers[0].facts;
+  check('a same-class car a lap up is tagged as lapping', f && f.lapping === true && f.sameClass === true,
+    JSON.stringify(f));
+  const line = cue && phraseForCue(cue, null, 0);
+  check('…and is called as lapping, not faster class', /lapping you/.test(line) && !/[Ff]aster class/.test(line), line);
+  for (let v = 0; v < 6; v++) {
+    const alt = phraseForCue(cue, null, v);
+    if (/[Ff]aster class/.test(alt)) check(`lapping variant ${v} never says faster class`, false, alt);
+  }
+
+  // A faster class that is ALSO a lap up keeps the faster-class wording.
+  const r2 = rig({}, { standings: [playerRowOver({})] });
+  const cue2 = r2.fire({
+    relative: [{ slotId: 9, position: 1, driverName: 'Hyper Car', carClass: 'Hypercar', relativeGapSec: -1.8,
+      lapsDifference: 2, inPit: false, isPlayer: false, isFasterClass: true, yieldTo: true }],
+  });
+  check('a faster class a lap up is still a faster class', cue2 && cue2.triggers[0].facts.lapping === false,
+    cue2 && JSON.stringify(cue2.triggers[0].facts));
 }
 
 {

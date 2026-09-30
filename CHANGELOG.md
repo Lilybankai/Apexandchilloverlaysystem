@@ -7,6 +7,18 @@
 
 ## Unreleased
 
+### Added
+
+- **The race schedule on the web pit wall.** aio.apexandchillracing.co.uk now
+  has a **Schedule** screen beside the telemetry: the Thursday and Saturday
+  league rounds from SimGrid, and Le Mans Ultimate's daily, weekly and special
+  races with the countdowns, circuit maps and calendar view — the same tab as
+  the app, in your own time zone. A browser cannot read either source itself,
+  so the calendar is the one members' Apex apps last read: the app shares
+  what its Schedule tab reads, and checks in the background every half hour,
+  re-reading a calendar only when the shared copy is out of date. Your own
+  entries are never shared. Reminder bells stay in the app.
+
 ## 1.2.0-beta.5 — 2026-09-30
 
 VR gets its own tab, and a guide to setting it up.

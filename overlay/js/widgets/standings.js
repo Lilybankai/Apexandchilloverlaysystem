@@ -1363,6 +1363,24 @@
         "title",
         typeof n === "number" && n > 0 && n < 5 ? "mean of " + n + " lap" + (n === 1 ? "" : "s") : ""
       );
+      // Trend: green when the average came down (or held) on the lap just
+      // completed, red when it went up. It moves once a lap, so the colour
+      // holds until the next lap says otherwise. A window that shrank is a new
+      // one (a driver swap empties it) — the old mean belongs to someone else,
+      // so the first value after it is left uncoloured rather than compared.
+      var a = e.avg5Sec;
+      if (!fmt.has(a)) {
+        row.cache.avgPrev = undefined;
+        row.cache.avgPrevN = undefined;
+        setAvgTrend(row, "");
+      } else if (a !== row.cache.avgPrev) {
+        var prev = row.cache.avgPrev;
+        var prevN = row.cache.avgPrevN;
+        var restarted = typeof n === "number" && typeof prevN === "number" && n < prevN;
+        setAvgTrend(row, !fmt.has(prev) || restarted ? "" : a <= prev ? "better" : "worse");
+        row.cache.avgPrev = a;
+        row.cache.avgPrevN = n;
+      }
     }
 
     set(row, "last", row.lastTd, "textContent", fmt.lapTime(e.lastLapSec));
@@ -1380,6 +1398,14 @@
     // Reorder: keep the node in standings order — see placeNext for why this
     // must not be an unconditional appendChild.
     placeNext(row.tr);
+  }
+
+  /** Paint the AVG cell green ("better"), red ("worse") or neither (""). */
+  function setAvgTrend(row, trend) {
+    if (row.cache.avgTrend === trend) return;
+    row.cache.avgTrend = trend;
+    row.avgTd.classList.toggle("lap-green", trend === "better");
+    row.avgTd.classList.toggle("lap-red", trend === "worse");
   }
 
   /** Where the next group/row belongs in the tbody this update. */

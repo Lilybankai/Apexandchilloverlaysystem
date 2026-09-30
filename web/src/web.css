@@ -20,6 +20,13 @@
   white-space: nowrap;
 }
 
+/* Pit wall | Schedule. The strip's one navigation control, so it sits next to
+   the brand where the desktop's rail would be. */
+.web-views { margin-left: 10px; }
+
+/* The °C/°F switch only changes the pit wall's tyre figures. */
+body[data-webview="schedule"] #web-temp-unit { display: none; }
+
 /* The demo badge shares the age pill's look so it reads as a data state. */
 .web-demo { align-self: center; }
 
@@ -76,13 +83,28 @@
      strip with no brand at all. This only takes the height down. */
   .brand__icon { height: 26px; }
   .web-brand__sub { margin-left: 0; }
-  .account__email { display: none; }
+  /* The screen switch gets a row of its own under the strip, full width with
+     thumb-sized halves. On one line the strip needs ~400px with the °C/°F
+     switch showing, and the account's Sign out is what fell off the edge. */
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: calc(7px + env(safe-area-inset-top, 0));
+    padding-bottom: 8px;
+  }
+  /* `.topbar > .seg` in hub.css pins every strip pill to its content width. */
+  .topbar > .web-views { order: 10; flex: 1 0 100%; margin-left: 0; }
+  .web-views > button { flex: 1 1 0; justify-content: center; }
+  /* The screen switch needs the room more than the name does: the avatar's
+     initials still say who is signed in, and Sign out stays. */
+  .account__text { display: none; }
   .account { max-width: 190px; }
   .content { padding: 12px; }
 }
 
-/* Very small phones: the strip keeps the icon, the unit switch and the
-   account; the subtitle goes. */
+/* Very small phones: the strip keeps the icon, the screen and unit switches
+   and the account; the subtitle goes. */
 @media (max-width: 420px) {
   .web-brand__sub { display: none; }
   .topbar { gap: 6px; }

@@ -4,9 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <!-- Same lockdown as the desktop panel, plus the one origin a browser has to
-       talk to: the Supabase project. Nothing else loads from anywhere. -->
+       talk to: the Supabase project. Nothing else loads from anywhere — bar
+       SimGrid's image CDN, which the Schedule tab's league cards draw their
+       circuit photo from (the desktop panel allows the same host). -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self' https://svtyxuhbsbbodsecbnsc.supabase.co; manifest-src 'self'; base-uri 'self'; form-action 'self';" />
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.thesimgrid.com; connect-src 'self' https://svtyxuhbsbbodsecbnsc.supabase.co; manifest-src 'self'; base-uri 'self'; form-action 'self';" />
   <meta name="theme-color" content="#060a12" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -22,12 +24,15 @@
   <link rel="stylesheet" href="setup-editor.css" />
   <link rel="stylesheet" href="fuel-panel.css" />
   <link rel="stylesheet" href="team-panel.css" />
+  <link rel="stylesheet" href="schedule-panel.css" />
   <!-- The handful of rules the web frame needs on top. Last, so they win. -->
   <link rel="stylesheet" href="web.css" />
 </head>
 <body>
 <!-- The icon sprite must be in the DOM before any <use> below is parsed. -->
 <script src="icons.js"></script>
+<!-- The calendar rules the bridge applies to a shared Schedule copy. -->
+<script src="schedule-core.js"></script>
 <!-- The browser's window.apex — must exist before team-panel.js runs. -->
 <script src="web-bridge.js"></script>
 
@@ -44,6 +49,14 @@
       <img class="brand__icon" src="assets/apex-aio-icon.svg" alt="Apex AIO" />
       <span class="web-brand__sub">Pit wall</span>
     </div>
+
+    <!-- The two screens the web has: the desktop's Team tab and its Schedule
+         tab. The desktop reaches them from its rail; here there is no rail,
+         so they sit in the strip. #schedule in the URL opens the second. -->
+    <nav class="seg seg--sm web-views" id="web-view" aria-label="Screen">
+      <button type="button" data-webview="team" data-active="true">Telemetry</button>
+      <button type="button" data-webview="schedule">Schedule</button>
+    </nav>
 
     <span class="nav__spacer"></span>
 
@@ -69,6 +82,7 @@
   <div class="body">
     <div class="content" id="content">
 <!--TEAM_VIEW-->
+<!--SCHEDULE_VIEW-->
     </div>
   </div>
 </div>
@@ -80,6 +94,7 @@
 <script src="team-dashboard.js"></script>
 <script src="team-panel.js"></script>
 <script src="team-guide.js"></script>
+<script src="schedule-panel.js"></script>
 <script src="web-shell.js"></script>
 </body>
 </html>

@@ -43,6 +43,7 @@ import { UNKNOWN_VALUE } from './types';
 import type { StandingEntry, TelemetryFrame } from './types';
 import { sessionKeyOf } from './triggers';
 import { PitLossModel } from './pitExit';
+import { findYellowCause, speakableWhere } from './yellowCause';
 import type { PitExitProjection } from './pitExit';
 import {
   deltaToReferencePaceTarget,
@@ -1162,14 +1163,24 @@ export class EngineerCommands {
           .map((f, i) => (f === 'yellow' || f === 'doubleYellow' ? i + 1 : 0))
           .filter((n) => n > 0);
         if (!yellow.length) return yes('All clear — green all round.');
+        // Same reader as the proactive call, so both name the same car.
+        const cause = findYellowCause(frame, yellow.length === 3 ? [] : yellow);
+        let who = '';
+        if (cause) {
+          const name = cause.name.split(/\s+/).pop() || cause.name;
+          const where = speakableWhere(cause.aheadM, s.trackLengthM);
+          who = ` ${name} is stopped${cause.sector ? ` in sector ${cause.sector}` : ''}${where ? `, ${where}` : ''}.`;
+        }
         // All three lit is what a REST-only rig shows for ONE local yellow (the
         // endpoint copies a single flag into every slot), so it must not be
         // read out as three separate incidents.
-        if (yellow.length === 3) return yes('Yellow flags out — watch for a slow car.');
+        if (yellow.length === 3) {
+          return yes(cause ? `Yellow flags out.${who}` : 'Yellow flags out — watch for a slow car.');
+        }
         return yes(
-          yellow.length === 1
+          (yellow.length === 1
             ? `Yellow in sector ${yellow[0]}.`
-            : `Yellows in sectors ${yellow.join(' and ')}.`,
+            : `Yellows in sectors ${yellow.join(' and ')}.`) + who,
         );
       }
 

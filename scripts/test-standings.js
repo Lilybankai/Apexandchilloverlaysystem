@@ -111,7 +111,19 @@ function makeElement(tag) {
       };
       return walk(this);
     },
-    classList: { add() {}, remove() {}, contains() { return false; }, toggle() {} },
+    // Toggled classes are kept apart from className, so the assertions that
+    // match className exactly are not disturbed by a colour state.
+    toggled: new Set(),
+    classList: {
+      add(c) { el.toggled.add(c); },
+      remove(c) { el.toggled.delete(c); },
+      contains(c) { return el.toggled.has(c); },
+      toggle(c, force) {
+        const on = force === undefined ? !el.toggled.has(c) : !!force;
+        if (on) el.toggled.add(c); else el.toggled.delete(c);
+        return on;
+      },
+    },
   };
   return el;
 }
@@ -1025,6 +1037,43 @@ console.log('\nINTERVALS — a leader on the road between two cars is not a lap'
       body.replace(/\s+/g, ' ').trim());
     check('AVG off clips what is in it', /overflow\s*:\s*hidden/.test(body));
   }
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nAVG trend — green when the last-5 mean comes down, red when it goes up');
+/* -------------------------------------------------------------------------- */
+
+/* The mean moves once a lap. The cell shows which way it moved on the lap just
+   completed, and holds that colour until the next lap. A driver swap empties
+   the window, so a mean of FEWER laps than last time is a new stint and is
+   compared with nothing. */
+{
+  const avgField = (sec, laps) => [
+    { slotId: 1, position: 1, carNumber: '7', driverName: 'A B', carClass: 'GT3', gapToLeaderSec: 0,
+      avg5Sec: sec, avg5Laps: laps },
+  ];
+  const w = mount();
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', avg: 'on' });
+  const trend = () => {
+    const td = w.withClass('standings__cell standings__avg')[0];
+    if (!td) return 'no cell';
+    return td.toggled.has('lap-green') ? 'green' : td.toggled.has('lap-red') ? 'red' : 'plain';
+  };
+
+  w.update(avgField(101.5, 1));
+  check('the first mean has nothing to beat', trend() === 'plain', trend());
+  w.update(avgField(101.2, 2));
+  check('a lower mean is green', trend() === 'green', trend());
+  w.update(avgField(101.2, 2));
+  check('and stays green until the next lap', trend() === 'green', trend());
+  w.update(avgField(101.4, 3));
+  check('a higher mean is red', trend() === 'red', trend());
+  w.update(avgField(101.3, 5));
+  check('back to green when it comes down again', trend() === 'green', trend());
+  w.update(avgField(103.0, 1));
+  check('a window that restarted is not compared', trend() === 'plain', trend());
+  w.update(avgField(undefined, undefined));
+  check('no mean, no colour', trend() === 'plain', trend());
 }
 
 
