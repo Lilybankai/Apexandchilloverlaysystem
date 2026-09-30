@@ -7,6 +7,26 @@
 
 ## Unreleased
 
+## 1.2.0-beta.3 — 2026-09-30
+
+A test build for team races: while a teammate drives your car, your overlays
+show their tyres, damage and fuel. This beta is built from 1.1.2 and does not
+include the VR panels from 1.2.0-beta.1 and beta.2; they come back in a later
+beta.
+
+### Added
+
+- **Your teammate's tyres, damage and fuel on your overlays.** While a
+  teammate drives your car and you watch it, the Tyre Temps, Damage and Fuel
+  widgets now show their live numbers instead of dashes: temperatures, wear,
+  pressures, damage, the booked pit stop, and fuel in litres. It comes from
+  their app through the team relay, so both of you need to be signed in with
+  the app running and the same team selected. A small **RELAY · NAME** tag
+  shows on those widgets while the data is the teammate's. The numbers are
+  about a second behind; if the relay goes quiet for more than a few seconds
+  the widgets go back to dashes rather than showing old numbers. Speed, gear
+  and pedals still come from your own game, live.
+
 ## 1.1.2 — 2026-09-28
 
 Your league's Discord now hears about every personal best, with the reference

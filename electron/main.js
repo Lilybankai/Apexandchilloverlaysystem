@@ -1441,6 +1441,10 @@ function dialStatusFeed() {
       }
       lastFeedFrame = frame;
       maybePushTeamSnapshot(frame);
+      // Watching a car nobody here is driving — a teammate's stint, or the
+      // camera on someone else — so ask the relay for the driving PCs' own
+      // tyres and damage. A no-op on every frame where the answer is unchanged.
+      teamCloud.setOverlayWanted(watchingAnotherCar(frame));
       // Costs a boolean and a name lookup. All it does is record that the game
       // is up and being driven, so the results poll knows there is any point
       // spending a request — see electron/results-harvest.js.
@@ -1487,9 +1491,24 @@ function dialStatusFeed() {
   }
 }
 
+/**
+ * Is the car on the overlays one this PC is NOT driving? LMU only: it is the
+ * one source that marks the driven row (`isOwn`), and without that mark a
+ * spectated car cannot be told from our own. The relayed data itself is only
+ * ever applied to a matching teammate car — see telemetry/teammateRelay.ts.
+ */
+function watchingAnotherCar(frame) {
+  if (!frame || frame.connected === false || frame.source !== 'lmu') return false;
+  if (!Array.isArray(frame.standings)) return false;
+  const focus = frame.standings.find((row) => row && row.isPlayer);
+  return !!focus && focus.isOwn !== true;
+}
+
 function disconnectStatusFeed() {
   // A deliberate stop: drop the redial target first so no handler re-dials.
   statusFeedTarget = null;
+  // No feed, no watched car: stop reading for the overlays and clear the server.
+  teamCloud.setOverlayWanted(false);
   if (statusFeedRedialTimer) {
     clearTimeout(statusFeedRedialTimer);
     statusFeedRedialTimer = null;
@@ -6037,6 +6056,12 @@ app.whenReady().then(async () => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             try { mainWindow.webContents.send('team:relay', update); } catch { /* teardown */ }
           }
+        },
+        // The watched teammate's tyres/damage/fuel for the overlays. The server
+        // module outlives restarts, so this is safe whether or not it is up.
+        onOverlayRelay: (relay) => {
+          if (!serverModule || typeof serverModule.setTeammateRelay !== 'function') return;
+          try { serverModule.setTeammateRelay(relay); } catch { /* never the feed's problem */ }
         },
       });
       // Communities + Discord channels. Same chain and the same reason: its

@@ -39,6 +39,7 @@ import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
 import { KeySender } from './keySender';
 import { ensureSharedMemoryPluginOnStartup } from './pluginInstaller';
 import { primeSteamRoots } from './lmuKeybinds';
+import { applyTeammateRelay, type TeammateRelay } from '../telemetry/teammateRelay';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -591,6 +592,17 @@ export function setStreamBotHandlers(handlers: {
   streamBotHandlers = handlers || {};
 }
 
+/**
+ * The team relay's newest rows, pushed by the desktop app while this PC is
+ * watching a car it is not driving. The frame loop splices the matching
+ * teammate's tyres, damage and fuel into what the overlays receive — see
+ * telemetry/teammateRelay.ts. `null` switches it off. Safe before {@link start}.
+ */
+let teammateRelay: TeammateRelay | null = null;
+export function setTeammateRelay(next: TeammateRelay | null): void {
+  teammateRelay = next && Array.isArray(next.sources) ? next : null;
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -1057,7 +1069,8 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       // from different questions — "what is bound?" against "what does this car
       // have?" — and a prototype's missing ABS becomes an invisible stop.
       noteLiveAids(frame.mfd ? frame.mfd.aids : null);
-      wsServer.broadcast(frame);
+      // Last, so nothing above ever sees a teammate's data as this PC's own.
+      wsServer.broadcast(teammateRelay ? applyTeammateRelay(frame, teammateRelay, now) : frame);
       if (perfOn) {
         const ms = Number(process.hrtime.bigint() - t0) / 1e6;
         perfCount++;

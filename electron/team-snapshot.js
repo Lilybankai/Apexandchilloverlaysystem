@@ -32,6 +32,13 @@ function tyre(t) {
     brakeTempC: t.brakeTempC,
     optimalTempC: t.optimalTempC,
     compound: t.compound,
+    // Not read by the pit wall, but a teammate's overlays rebuild their tyre
+    // widget from this relayed copy (telemetry/teammateRelay.ts), and its
+    // surface view and tyre map need them.
+    surfaceTempC: t.surfaceTempC,
+    surfaceInnerC: t.surfaceInnerC,
+    surfaceMiddleC: t.surfaceMiddleC,
+    surfaceOuterC: t.surfaceOuterC,
   };
 }
 
@@ -119,6 +126,18 @@ function buildTeamSnapshot(frame, at) {
             hasDamage: p.damage.hasDamage,
             repairSeconds: p.damage.repairSeconds,
             partsDetached: p.damage.partsDetached,
+            // The rest of the repair screen, for a teammate's damage widget
+            // (telemetry/teammateRelay.ts) — the stop it prices is the one
+            // booked on the car, whoever is driving it.
+            brakeThicknessMm: Array.isArray(p.damage.brakeThicknessMm)
+              ? p.damage.brakeThicknessMm.slice(0, 4)
+              : undefined,
+            repairBodySeconds: p.damage.repairBodySeconds,
+            repairSelection: p.damage.repairSelection,
+            tyreChangeSeconds: p.damage.tyreChangeSeconds,
+            tyreCornersSelected: p.damage.tyreCornersSelected,
+            stopLengthSeconds: p.damage.stopLengthSeconds,
+            randomDelayMaxSeconds: p.damage.randomDelayMaxSeconds,
           }
         : null,
       hybrid: p.hybrid ? { chargeFraction: p.hybrid.chargeFraction } : null,

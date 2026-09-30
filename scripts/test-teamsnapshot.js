@@ -26,7 +26,9 @@ function check(name, cond, detail) {
 const tyre = (wear, temp) => ({
   wear, tempC: temp, coreC: temp + 1, innerC: temp + 2, middleC: temp, outerC: temp - 2,
   pressureKpa: 160, brakeTempC: temp * 4, optimalTempC: 90, compound: 'Soft',
-  surfaceTempC: temp + 5, // pruned — must NOT survive into the snapshot
+  surfaceTempC: temp + 5, // relayed for a teammate's overlays (teammateRelay.ts)
+  surfaceInnerC: temp + 4, surfaceMiddleC: temp + 5, surfaceOuterC: temp + 6,
+  surfaceBogus: 1, // not a field the snapshot knows — must NOT survive
 });
 
 /** A representative live frame — only the fields the builder reads plus noise. */
@@ -94,7 +96,9 @@ function liveFrame() {
   check('pit stops from standings', s.car.pitStops === 2);
   check('tyres survive per corner', s.car.tyres.rearRight.wear === 0.55);
   check('brake temps survive per corner', s.car.tyres.frontLeft.brakeTempC === 88 * 4);
-  check('tyre prune drops surface temps', !('surfaceTempC' in s.car.tyres.frontLeft));
+  check('tyre prune keeps surface temps for the relay',
+    s.car.tyres.frontLeft.surfaceTempC === 93 && s.car.tyres.frontLeft.surfaceOuterC === 94);
+  check('tyre prune drops unknown fields', !('surfaceBogus' in s.car.tyres.frontLeft));
   check('speed/rpm/gear carried for the telemetry card', s.car.speedKph === 231
     && s.car.rpm === 7420 && s.car.maxRpm === 8600 && s.car.gear === 5);
   check('lap delta carried', s.car.lap.delta === 0.4);

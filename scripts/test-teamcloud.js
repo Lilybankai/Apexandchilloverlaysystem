@@ -15,6 +15,7 @@
 const path = require('path');
 const {
   eligibleToPublish,
+  overlaySources,
   pickActiveSource,
   thinHistory,
   normalizeCode,
@@ -47,6 +48,23 @@ function check(name, cond, detail) {
     !eligibleToPublish(frame, { car: { tyres: { frontLeft: {} } } }));
   check('null frame/snapshot never publish',
     !eligibleToPublish(null, snap) && !eligibleToPublish(frame, null));
+  // A spectator's frame carrying a teammate's RELAYED tyres has tyre data, but
+  // it is theirs — publishing it would echo their car back as ours.
+  check('relayed teammate data never re-publishes',
+    !eligibleToPublish({ ...frame, player: { relayed: { driverName: 'Scott', ageSec: 1 } } }, snap));
+}
+
+// ── overlaySources: fresh driving rows only, reshaped for the server ───────
+{
+  const row = (age, wear) => ({
+    user_id: 'u' + age, name: 'N' + age, age_sec: age,
+    payload: { car: { tyres: { frontLeft: { wear } } } },
+  });
+  const out = overlaySources([row(1, 0.9), row(30, 0.9), row(2, undefined), { user_id: 'x', age_sec: 1, payload: null }]);
+  check('overlaySources keeps only fresh rows with tyre wear', out.length === 1 && out[0].name === 'N1');
+  check('overlaySources reshapes to {userId,name,ageSec,snapshot}',
+    out[0].userId === 'u1' && out[0].ageSec === 1 && !!out[0].snapshot.car);
+  check('overlaySources tolerates junk', overlaySources(null).length === 0);
 }
 
 // ── pickActiveSource: freshest driving row, else freshest row ──────────────

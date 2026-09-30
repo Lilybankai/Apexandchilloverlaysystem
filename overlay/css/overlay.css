@@ -1491,6 +1491,20 @@
    temp, a surface temp and a tread percentage are all two-or-three-digit numbers
    — indistinguishable without being told which is which. Tier 3: it labels the
    numbers, it is not one of them. */
+/* Teammate relay tag (overlay/js/client.js updateRelayTags): the tyres, damage
+   and fuel numbers are a teammate's, read from their app about a second ago,
+   because they are driving our car and this PC is only watching it. Tier 3 —
+   it qualifies the numbers, it is not one of them. */
+.panel__relay {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  color: var(--ac-cyan);
+  margin-right: auto; /* sits by the title, not centred between it and the meta */
+  white-space: nowrap;
+}
+.panel__relay[hidden] { display: none; }
 .tyres__mode {
   font-family: var(--font-display);
   font-weight: 700;

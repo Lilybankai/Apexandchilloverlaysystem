@@ -24,6 +24,10 @@
  *      freshest row full stop. The heavy blocks (learned circuit shape, race
  *      history) ride only when their revision moved — same contract as the
  *      local 1 Hz feed.
+ *      The same poll also runs while this PC is WATCHING a car it is not
+ *      driving (setOverlayWanted), whatever tab is open: every fresh driving
+ *      row goes to the overlay server, which puts the watched teammate's
+ *      tyres, damage and fuel on the overlays (telemetry/teammateRelay.ts).
  *
  * Pure decision helpers (eligibleToPublish, pickActiveSource, thinHistory,
  * normalizeCode) are exported for scripts/test-teamcloud.js.
@@ -44,6 +48,12 @@ const PUBLISH_MS = 1000;
 const RELAY_VERSION = 1;
 /** Read cadence while watching. Same rhythm; worst-case staleness ~2 s. */
 const READ_MS = 1000;
+/**
+ * Rows older than this are not handed to the overlays at all. The server
+ * applies its own, slightly tighter, gate on top (teammateRelay.ts), counting
+ * the time since this read as well.
+ */
+const OVERLAY_MAX_AGE_SEC = 6;
 /** Re-send the race history at most this often — it is the one heavy block. */
 const HISTORY_EVERY_MS = 60 * 1000;
 /** The server refuses history over 256 KB; stay clear of the line. */
@@ -64,6 +74,9 @@ const BACKOFF_TICKS = 5;
  */
 function eligibleToPublish(frame, snapshot) {
   if (!frame || frame.connected === false) return false;
+  // A frame carrying a TEAMMATE's relayed tyres is theirs, not ours: this PC
+  // is spectating. Re-publishing it would echo their data back as our own.
+  if (frame.player && frame.player.relayed) return false;
   if (frame.session && frame.session.onTrack === false) return false;
   if (!snapshot || !snapshot.car) return false;
   const t = snapshot.car.tyres;
@@ -134,6 +147,8 @@ let collect = null;
 let store = { getActiveTeam: () => null, setActiveTeam: () => {}, getWebRelay: () => true };
 let onTeams = () => {};
 let onRelay = () => {};
+/** Every fresh driving row, for the overlay server — or null to clear it. */
+let onOverlayRelay = () => {};
 
 const state = {
   teams: [],
@@ -147,6 +162,8 @@ const state = {
   lastPublishAt: null,
   publishError: null,
   watching: false,
+  /** This PC is watching a car it is not driving, so the overlays want the relay. */
+  overlayWanted: false,
 };
 
 let publishTimer = null;
@@ -398,6 +415,28 @@ function setWatching(on) {
   const want = !!on;
   if (want === state.watching) return stateForUi();
   state.watching = want;
+  syncReadTimer();
+  pushTeams();
+  return stateForUi();
+}
+
+/**
+ * The overlays' half of the reader: main turns it on while the watched car is
+ * not the one driven here. Off clears the overlay server at once, so nothing
+ * relayed outlives the reason for showing it.
+ */
+function setOverlayWanted(on) {
+  const want = !!on;
+  if (want === state.overlayWanted) return;
+  state.overlayWanted = want;
+  if (!want) overlayRelaySafe(null);
+  syncReadTimer();
+}
+
+/** One timer serves both readers; it runs while either wants it. */
+function syncReadTimer() {
+  const want = state.watching || state.overlayWanted;
+  if (want && readTimer) return;
   if (readTimer) {
     clearInterval(readTimer);
     readTimer = null;
@@ -407,12 +446,27 @@ function setWatching(on) {
     readTimer.unref?.();
     void readTick(); // paint now, not a tick from now
   }
-  pushTeams();
-  return stateForUi();
+}
+
+/**
+ * The rows worth handing the overlays: fresh, and carrying tyre data (a car
+ * actually being driven). Which of them is the WATCHED car is decided in the
+ * server against the live frame, not here.
+ */
+function overlaySources(sources) {
+  if (!Array.isArray(sources)) return [];
+  return sources
+    .filter((s) => {
+      const car = s && s.payload && s.payload.car;
+      return !!(car && car.tyres && car.tyres.frontLeft
+        && typeof car.tyres.frontLeft.wear === 'number'
+        && typeof s.age_sec === 'number' && s.age_sec <= OVERLAY_MAX_AGE_SEC);
+    })
+    .map((s) => ({ userId: s.user_id, name: s.name, ageSec: s.age_sec, snapshot: s.payload }));
 }
 
 async function readTick() {
-  if (reading || !state.watching) return;
+  if (reading || !(state.watching || state.overlayWanted)) return;
   // Say WHY the pit wall went quiet. A dropped session used to early-return
   // here without a word, so a relay that stopped mid-race looked identical to
   // a team that simply had nobody driving — see the refresh race fixed in
@@ -443,6 +497,11 @@ async function readTick() {
       if (s.map_shape) relayShape = s.map_shape;
       if (s.history) relayHistory = s.history;
     }
+    if (state.overlayWanted) {
+      const fresh = overlaySources(sources);
+      overlayRelaySafe(fresh.length ? { receivedAt: Date.now(), sources: fresh } : null);
+    }
+    if (!state.watching) return;
     onRelaySafe({
       at: Date.now(),
       sources: sources.map((s) => ({ userId: s.user_id, name: s.name, ageSec: s.age_sec })),
@@ -465,10 +524,23 @@ async function readTick() {
 }
 
 function onRelaySafe(update) {
+  // Error updates reach this from every failure path, so the overlay half is
+  // cleared here too: a failed read must not leave a relayed block standing.
+  // (The server's own age gate would drop it within seconds anyway.)
+  if (update && update.error && state.overlayWanted) overlayRelaySafe(null);
+  if (!state.watching) return;
   try {
     onRelay(update);
   } catch {
     /* window mid-teardown */
+  }
+}
+
+function overlayRelaySafe(relay) {
+  try {
+    onOverlayRelay(relay);
+  } catch {
+    /* server mid-restart */
   }
 }
 
@@ -483,6 +555,7 @@ function onAuthChanged() {
   } else {
     state.teams = [];
     setWatching(false);
+    overlayRelaySafe(null);
     setPublishStatus('off');
     pushTeams();
   }
@@ -494,6 +567,7 @@ function init(opts) {
   if (opts.store) store = opts.store;
   if (typeof opts.onTeams === 'function') onTeams = opts.onTeams;
   if (typeof opts.onRelay === 'function') onRelay = opts.onRelay;
+  if (typeof opts.onOverlayRelay === 'function') onOverlayRelay = opts.onOverlayRelay;
   state.activeTeamId = store.getActiveTeam() || null;
 
   stop();
@@ -527,10 +601,12 @@ module.exports = {
   renameTeam,
   setActiveTeam,
   setWatching,
+  setOverlayWanted,
   onAuthChanged,
   // Pure helpers, exported for scripts/test-teamcloud.js.
   eligibleToPublish,
   pickActiveSource,
+  overlaySources,
   thinHistory,
   normalizeCode,
   PUBLISH_MS,

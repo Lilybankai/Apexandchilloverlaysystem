@@ -861,6 +861,14 @@ export interface PlayerState {
    * confused with no data. See {@link TrackLimitsState}.
    */
   trackLimits?: TrackLimitsState;
+  /**
+   * Set when {@link tyres}, {@link damage} and the frame's fuel block came from
+   * a teammate's app over the team relay rather than from this PC — the car
+   * being watched is ours, and they are driving it. `ageSec` is how old the
+   * relayed reading is (~1–2 s in normal running). Absent whenever the data is
+   * local. See `telemetry/teammateRelay.ts`.
+   */
+  relayed?: { driverName: string; ageSec: number };
 }
 
 /* -------------------------------------------------------------------------- */

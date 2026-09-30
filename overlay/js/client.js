@@ -1144,6 +1144,43 @@
   /*  Frame dispatch                                                     */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * The widgets whose numbers can come from a TEAMMATE's app over the team
+   * relay while they drive our car (telemetry/teammateRelay.ts). Their header
+   * carries a small tag naming whose data it is, so a spectator never mistakes
+   * a relayed, second-old reading for this PC's own.
+   */
+  var RELAY_WIDGETS = { tyres: true, damage: true, fuel: true };
+  var relayTagText = null;
+
+  function relayLabel(frame) {
+    var r = frame.player && frame.player.relayed;
+    if (!r) return "";
+    var first = String(r.driverName || "").trim().split(/\s+/)[0] || "TEAMMATE";
+    return "RELAY · " + first.toUpperCase().slice(0, 14);
+  }
+
+  function updateRelayTags(frame) {
+    var text = relayLabel(frame);
+    if (text === relayTagText) return;
+    relayTagText = text;
+    for (var i = 0; i < registry.length; i++) {
+      var w = registry[i];
+      if (!w.root || !RELAY_WIDGETS[w.name]) continue;
+      var tag = w.root.querySelector(".panel__relay");
+      if (!tag) {
+        var header = w.root.querySelector(".panel__header");
+        var title = header && header.querySelector(".panel__title");
+        if (!title) continue;
+        tag = document.createElement("span");
+        tag.className = "panel__relay";
+        title.insertAdjacentElement("afterend", tag);
+      }
+      tag.textContent = text;
+      tag.hidden = !text;
+    }
+  }
+
   function dispatch(frame) {
     var now = nowMs();
 
@@ -1154,6 +1191,7 @@
       frame.connected !== false && (!frame.session || frame.session.onTrack !== false),
     );
     updateSessionMeta(frame);
+    updateRelayTags(frame);
 
     for (var i = 0; i < registry.length; i++) {
       var w = registry[i];
