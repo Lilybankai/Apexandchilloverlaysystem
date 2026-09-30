@@ -5,205 +5,81 @@
      app until it is renamed.
 -->
 
-## 1.2.0-beta.7 — 2026-09-30
+## 1.2.0 — 2026-09-30
 
-The race log gets its own tab, and Replay now lands on your car at the
-moment, even in a long race's replay.
+A race log for every race you have driven, with a button that takes the
+game's replay straight to each incident. Your teammate's tyres, damage and
+fuel on your overlays while they drive. And the engineer now tells you who
+brought out a yellow.
 
-### Fixed
+### Added
 
-- **Replay went to the wrong car, or closed and got stuck.** On a long race
-  (a 3.5 GB replay) the game goes quiet for about 15 seconds as it finishes
-  loading, which Apex took for the game closing: it gave up just before the
-  replay appeared, so it opened at the start on the leader, and the next
-  click closed it and started again. Apex now waits it out, gives the replay
-  a moment to settle before the first jump, checks the camera is on your car,
-  and jumps within the same replay without reloading it.
+- **Race log.** A new **Race log** tab in the left-hand menu, under Review,
+  lists every race Le Mans Ultimate has saved results for on this PC,
+  including races from before you installed Apex. Open one to read it as a
+  timeline, one line per event:
+  - the start, and every lap with its time (personal and class bests
+    marked, invalid laps greyed);
+  - places gained and lost, in class and overall in a multiclass race, plus
+    a small chart of your position lap by lap;
+  - every contact and who it was with, called **light** or **heavy**;
+  - damage, track-limits warnings, penalties, pit stops, driver swaps and
+    the finish.
+
+  Filter it to incidents only, or use **Copy as text** to paste it into
+  Discord or a protest. Apex finds your car from your own lap times, so it
+  follows the car through a team race's driver swaps. If it can't tell, it
+  asks which car was yours once and remembers.
+- **Replay any incident.** **Replay** on a contact opens the game's own
+  replay of that race with the camera on your car, five seconds before it
+  happened. Once a replay is open, **Previous** and **Next** step through the
+  race's incidents one by one, and the keyboard works too: ↑ ↓ to move, Enter
+  to replay, [ and ] for previous and next. Leave your session first; Apex
+  never pulls you out of one. A long race's replay can take up to a minute to
+  load, and every jump after that is instant. The game only keeps five
+  replays per circuit, so older races tell you when theirs has gone.
+- **A record even if the game crashes.** Apex also writes the race down
+  while you drive, so the log has the flags (yellows, full course yellow,
+  red) and your damage, and a race still has a log when the game crashes
+  before saving its results.
+- **Your teammate's tyres, damage and fuel.** While a teammate drives your
+  car and you watch it, the Tyre Temps, Damage and Fuel widgets show their
+  live numbers instead of dashes: temperatures, wear, pressures, damage, the
+  booked pit stop and fuel. It comes from their app through the team relay,
+  so you both need to be signed in, with the app running and the same team
+  selected. A **RELAY · NAME** tag shows while the numbers are theirs. They
+  run about a second behind, and if the relay goes quiet for more than a few
+  seconds the widgets go back to dashes rather than show old numbers.
+- **The engineer names the car behind a yellow.** "Yellow in sector two,
+  Smith is stopped, about 400 metres up the road." It only names a car while
+  the race is running under green, so a car sitting on the grid is never
+  blamed. If no stopped car can be found in that sector, you get the sector
+  on its own.
+- **Standings: your average, coloured by its trend.** The last-5 average
+  turns green when it came down (or held) on the lap just finished, and red
+  when it went up. After a driver swap it starts again uncoloured.
+- **The schedule on the web pit wall, and daily races without the game.**
+  aio.apexandchillracing.co.uk now has the **Schedule** screen too: the
+  league rounds and Le Mans Ultimate's daily races, with countdowns and the
+  calendar view, in your own time zone. The daily races also no longer need
+  the game running: the calendar refreshes itself every two hours, so the
+  app and the website always have today's races. With the game open you
+  still get the full detail (classes, race length, setup and tyre rules,
+  circuit maps, and the weekly and special events). Reminder bells stay in
+  the app.
 
 ### Changed
 
-- **The race log has its own tab.** It has moved out of Review to a new
-  **Race log** tab in the left-hand menu, under Review, and opens straight
-  onto your races. Review goes back to sessions and laps. The **Race log**
-  button on a race session in Review still takes you to that race.
-
-### Added
-
-- **Step through a race's incidents.** Once a replay is in the game,
-  **Previous** and **Next** in the replay strip jump it to each contact,
-  limits call, damage and penalty in turn, following the filter you have on.
-  The row being replayed stays marked and on screen.
-- **Keys for the race log.** ↑ ↓ (or J K) move through the timeline, Enter
-  replays the row you are on, and [ and ] step to the previous and next
-  incident.
-- **Your place, lap by lap.** A line under the race's facts shows where you
-  ran from the grid to the flag, overall and in class.
-- **Replay says why it can't.** When the game has replaced a race's replay,
-  or isn't running, the Replay buttons are greyed rather than hidden, and
-  hovering one tells you why.
-- **A how-to guide for the race log.** The first time you open the tab, a
-  short walkthrough covers where the races come from, picking your car in a
-  team race, what Replay needs, and the keys. **How it works** opens it again.
-
-## 1.2.0-beta.6 — 2026-09-30
-
-A race log for every race you have run, with a jump into the game's replay at
-each incident; and damage now graded on the HUD's own minor / major /
-critical scale.
-
-### Added
-
-- **The race schedule on the web pit wall.** aio.apexandchillracing.co.uk now
-  has a **Schedule** screen beside the telemetry: the Thursday and Saturday
-  league rounds from SimGrid, and Le Mans Ultimate's daily races with the
-  countdowns and the calendar view — the same tab as the app, in your own time
-  zone. Reminder bells stay in the app.
-- **The daily races load without the game.** The Schedule tab used to need Le
-  Mans Ultimate running to show the daily races, and came up empty a week after
-  you last had it open. The calendar now refreshes itself every two hours from
-  RaceControl's public schedule, so the app (and the website) always has
-  today's races. With the game running you still get the full detail — car
-  classes, race length, setup and tyre rules, circuit maps and the weekly and
-  special events — and the app shares that with everyone else's calendar too
-  (never your own entries).
-- **Race log.** Review ▸ **Races** lists every race Le Mans Ultimate saved
-  results for on this PC, including races from before Apex was installed.
-  Open one and read it as a timeline: the start, every lap with its time
-  (personal and class bests marked, invalid laps greyed), places gained and
-  lost (in class and overall in a multiclass race), each contact and who it
-  was with, damage, track-limits warnings and penalties, pit stops, driver
-  swaps and the finish. Filter it to incidents only, or **Copy as text** to
-  paste into Discord or a protest. Your car is found from your own lap times,
-  so it follows the car through a team race's driver swaps; if Apex can't
-  tell, it asks which car was yours once and remembers.
-  - **Replay** on a contact opens the game's own replay of that race and puts
-    the camera on your car five seconds before it. Leave your session first
-    (Apex never pulls you out of one); a long race's replay takes up to a
-    minute to load, and later jumps in the same race are instant. The game
-    keeps five replays per circuit, so older races say when theirs is gone.
-  - Contacts are called **light** or **heavy** using LMU's own words, but on
-    Apex's cut-off: the game makes that call on its servers and doesn't
-    record it on your PC.
-  - Apex also writes the race down while you drive, so flags (yellows, full
-    course yellow, red) and your damage are in the log, and a race still has
-    one when the game crashes before saving its results.
-
-### Changed
-
-- **Damage is graded minor / major / critical**, the in-car HUD's own scale,
-  and the damage widget, the race engineer and the race log now agree on it.
-  The engineer says "minor", "major" or "critical damage" where it said
-  "light", "moderate" or "heavy", and calls a hit major from 15% (was 20%),
-  where the widget already turned red. The cut-offs are provisional until
-  they are measured against the HUD.
-
-## 1.2.0-beta.5 — 2026-09-30
-
-VR gets its own tab, and a guide to setting it up.
-
-### Changed
-
-- **VR has its own tab.** The VR headset settings have moved off the
-  Dashboard to a new **VR** tab in the left-hand menu, under Overlays. All
-  your panels and their positions carry over unchanged.
-
-### Added
-
-- **A how-to guide for VR.** The first time you open the VR tab, a short
-  walkthrough covers what you need before you start (SteamVR, and launching
-  LMU with the SteamVR option), how to switch it on, how to place each
-  panel, and why your hands go behind the panels. **How it works** at the
-  top of the tab opens it again.
-
-## 1.2.0-beta.4 — 2026-09-30
-
-The VR panels are back, and your teammate's tyres, damage and fuel come with
-them.
-
-### Changed
-
-- **VR panels return.** 1.2.0-beta.3 was built without the VR headset
-  panels from beta.1 and beta.2, so updating to it took them away. This beta
-  has both: every VR panel and its placement controls, and a teammate's
-  tyres, damage and fuel on your overlays while they drive your car. If you
-  ran beta.3, it may have reset your VR settings: if the panels do not
-  appear, switch **Show in VR headset** back on and place them again.
-
-## 1.2.0-beta.3 — 2026-09-30
-
-A test build for team races: while a teammate drives your car, your overlays
-show their tyres, damage and fuel. This beta is built from 1.1.2 and does not
-include the VR panels from 1.2.0-beta.1 and beta.2; they come back in a later
-beta.
-
-### Added
-
-- **Your teammate's tyres, damage and fuel on your overlays.** While a
-  teammate drives your car and you watch it, the Tyre Temps, Damage and Fuel
-  widgets now show their live numbers instead of dashes: temperatures, wear,
-  pressures, damage, the booked pit stop, and fuel in litres. It comes from
-  their app through the team relay, so both of you need to be signed in with
-  the app running and the same team selected. A small **RELAY · NAME** tag
-  shows on those widgets while the data is the teammate's. The numbers are
-  about a second behind; if the relay goes quiet for more than a few seconds
-  the widgets go back to dashes rather than showing old numbers. Speed, gear
-  and pedals still come from your own game, live.
-
-## 1.2.0-beta.2 — 2026-09-28
-
-Every VR widget on its own panel, placed and angled wherever you want it.
-
-### Added
-
-- **VR: every widget is its own panel, placed where you want it.** The speedo
-  and relative are no longer stuck side by side: each widget in the headset
-  has its own position, size and angle. Switch widgets in and out from the
-  list on the VR card — standings, delta, radar, fuel, tyres, track map,
-  pedals, weather and more — then pick one under **Adjust** to place it.
-- **VR: tilt, turn and roll.** Lean a panel back, swing it round or rotate it
-  in its own plane, a degree at a time, all the way round.
-- **VR: opacity per panel.** SteamVR always draws panels over the game —
-  your hands on the wheel included — so a panel that has to sit over the
-  wheel can now be faded until your hands show through.
-
-### Changed
-
-- **VR placement moves in centimetres and degrees, with − and + buttons.**
-  The sliders went in 5 cm steps, too coarse to line a panel up; every
-  control now has a button either side that moves it one step at a time.
-- **Sharper text in the headset.** Panels are drawn at twice the resolution
-  and scaled down in the headset, which is how fpsVR keeps its text crisp —
-  the relative in particular was softer than it should have been.
-
-## 1.2.0-beta.1 — 2026-09-28
-
-Your overlays inside a VR headset, and Discord messages for every personal
-best.
-
-### Added
-
-- **Overlays in your VR headset (beta).** Switch on *Show in VR headset* on
-  the home screen and the speedo and relative appear on a panel inside the
-  headset, fixed in place in front of you — they stay put when you look
-  around, like a gauge on the dash, rather than following your head. Move it
-  closer, lower, to one side or make it bigger with the sliders on the same
-  card; it moves live, so you can set it up with the headset on. It needs
-  SteamVR: start Le Mans Ultimate with the **SteamVR** launch option. The app
-  draws the panel from its own window the same way fpsVR does, so nothing
-  touches the game and anti-cheat has nothing to see. It waits quietly for
-  SteamVR and never starts it for you, and with the switch off none of it
-  runs at all. This first beta has the speedo and relative only; choosing the
-  widgets and adding more panels comes next.
-- **Discord: every personal best, not just the records.** When a member of
-  your community improves their time, the channel now says where it puts them
-  on the leaderboard ("climbs from P7 to P4 of 12"), how much they found, and
-  how far off the record they are. Five improvements in one session edit one
-  message rather than posting five. Turn it on per channel with **Personal
-  bests** in Settings ▸ Discord; members set to "Records only" are left out.
-- **Discord: reference pace on every lap message.** Records and personal bests
-  now show the same band and percentage as the Reference Pace widget, e.g.
-  "Good · 101.3% of reference (+1.810s)", credited to Ohne Speed's LMU
-  laptimes sheet. Dry laps at rated tracks only, as in the widget.
+- **Damage is graded minor, major or critical,** the same scale as the
+  in-car HUD, and the damage widget, the engineer and the race log all use
+  it. The engineer now says "minor", "major" or "critical damage" instead of
+  "light", "moderate" or "heavy", and calls a hit major from 15% rather than
+  20%, which is where the widget already turned red.
+- **Blue flags: a car lapping you is called that,** not "faster class
+  behind". A faster class that is also a lap up still gets the faster-class
+  call.
+- **Laps you watch in a replay are no longer saved as laps you drove,** so
+  they stay out of your lap history and uploads.
 
 ## 1.1.2 — 2026-09-28
 

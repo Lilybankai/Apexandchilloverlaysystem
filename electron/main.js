@@ -2380,11 +2380,21 @@ const vrOverlay = new VrOverlay({
   log: (line) => console.log(line),
 });
 
+/**
+ * VR is a beta-channel feature: it stayed out of the 1.2.0 stable release by
+ * Carl's call. Same rule as the panel's `followingBeta` (Fuel's gate): the
+ * beta channel chosen, or a beta build running. Off that channel the headset
+ * panel never starts, whatever `vr.enabled` says.
+ */
+function vrOnThisChannel(settings) {
+  return settings.updateChannel === 'beta' || updateChannel.isPrereleaseVersion(app.getVersion());
+}
+
 /** Start, retarget or stop the headset panel to match settings + server. */
 function syncVr(settings) {
   const s = settings || loadSettings();
   vrOverlay.sync({
-    enabled: status.running && s.vr.enabled,
+    enabled: status.running && s.vr.enabled && vrOnThisChannel(s),
     baseUrl: baseUrl(),
     vr: s.vr,
   });
@@ -5670,6 +5680,8 @@ function setupAutoUpdate() {
       saveSettings({ ...settings, updateChannel: next });
     }
     applyUpdateChannel(next);
+    // VR follows the channel (vrOnThisChannel): start or stop it now.
+    syncVr();
     // Whatever was found on the old feed no longer applies to this one.
     updateState.status = 'idle';
     updateState.version = null;

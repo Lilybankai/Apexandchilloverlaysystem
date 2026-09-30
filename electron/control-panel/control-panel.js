@@ -6325,6 +6325,20 @@
     }
   }
 
+  /**
+   * VR is beta-channel only, on the same signal as Fuel: it was held out of
+   * the 1.2.0 stable release. main.js applies the same rule to the headset
+   * panel itself (vrOnThisChannel), so hiding the tab is not the only guard.
+   */
+  function applyVrTabVisibility() {
+    const tab = tabButtons.find((t) => t.dataset.tab === 'vr');
+    if (tab) tab.hidden = !followingBeta;
+    if (!followingBeta) {
+      const vrView = views.find((v) => v.dataset.view === 'vr');
+      if (vrView && vrView.getAttribute('data-active') === 'true') showView('dashboard');
+    }
+  }
+
   /*
    * The Team tab used to sit behind the same `followingBeta` gate as Fuel
    * above, because its endgame is multi-machine and none of those failure
@@ -7874,6 +7888,7 @@
     followingBeta = beta || !!u.runningIsBeta;
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
+    applyVrTabVisibility();
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';
