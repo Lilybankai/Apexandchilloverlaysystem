@@ -45,6 +45,10 @@ export interface YellowCause {
  * The player's own car is never named — they know they are in the gravel.
  */
 export function findYellowCause(frame: TelemetryFrame, sectors: number[]): YellowCause | null {
+  // Only under green. On the grid, in the cooldown or at the flag every car is
+  // stationary by design — the 2026-09-30 capture had 33, then 44, cars at
+  // 0 m/s through a race's pre-start — so "the slowest car" means nothing.
+  if (frame.session.phase !== 'green' || frame.session.notStarted) return null;
   const anySector = sectors.length === 0 || sectors.length === 3;
   const me = frame.standings.find((e) => e.isPlayer);
   let best: (typeof frame.standings)[number] | null = null;

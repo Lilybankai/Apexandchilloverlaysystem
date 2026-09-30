@@ -356,6 +356,13 @@ console.log('\n2) Green, yellow, restart, white, chequered');
   r4.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
   check('the player stopped is not read back to them', r4.last?.triggers[0]?.facts.driver === undefined,
     JSON.stringify(r4.last?.triggers[0]?.facts));
+
+  // A grid of stationary cars before the start is not a field of incidents.
+  const r5 = rig({}, { session: { sectorFlags: ['none', 'none', 'none'], trackLengthM: 5000,
+    phase: 'countdown', notStarted: true }, ...grid(2) });
+  r5.fire({ session: { sectorFlags: ['none', 'yellow', 'none'] } });
+  check('no car is named while the grid is waiting', r5.last?.triggers[0]?.facts.driver === undefined,
+    JSON.stringify(r5.last?.triggers[0]?.facts));
 }
 
 {
