@@ -563,8 +563,8 @@ function unit() {
     player: { damage: { ...dmgBase, hasDamage: true, worst: 0.3, aero: 0.3, repairSeconds: 12 } },
   }));
   a = engA.answer('damage');
-  check('damage: moderate aero + repair time',
-    a.ok && /Moderate damage — aero/.test(a.text) && /Repairs about 12 seconds/.test(a.text), a.text);
+  check('damage: major aero + repair time',
+    a.ok && /Major damage — aero/.test(a.text) && /Repairs about 12 seconds/.test(a.text), a.text);
 
   // pit window
   const engW = new EngineerCommands();

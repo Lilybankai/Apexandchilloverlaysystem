@@ -42,6 +42,8 @@ import {
   type TyreSet,
   type TyreState,
 } from './types';
+import type { DamageGrade } from './raceLogTypes';
+import { damageGrade } from './damage';
 
 /** Older than this and the relayed block is dropped rather than shown. */
 export const RELAY_MAX_AGE_SEC = 6;
@@ -129,6 +131,12 @@ function damageFrom(d: any): DamageState | null {
     partsDetached: n(d.partsDetached),
     worst: num(d.worst) ? d.worst : Math.max(d.aero, ...suspension),
     hasDamage: d.hasDamage === true,
+    // Graded here, not trusted off the wire: an older teammate app sends none,
+    // and the widget must colour a relayed car on this build's cut-offs.
+    grades: {
+      aero: damageGrade(d.aero),
+      suspension: suspension.map(damageGrade) as [DamageGrade, DamageGrade, DamageGrade, DamageGrade],
+    },
     repairSeconds: n(d.repairSeconds),
     repairBodySeconds: n(d.repairBodySeconds),
     repairSelection: SELECTIONS.includes(d.repairSelection) ? d.repairSelection : 'unavailable',

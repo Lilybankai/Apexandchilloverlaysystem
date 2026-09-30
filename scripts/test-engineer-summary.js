@@ -280,6 +280,30 @@ console.log('\n7) pit-this-lap is critical, yellows name the sector');
   check('S2 yellow', s.yellows === 'S2');
 }
 
+console.log('\n8) damage bands: the prompt\'s 0.04 floor, a lost part at least medium');
+{
+  const band = (worst, over = {}) => {
+    const d = {
+      aero: worst, suspension: [0, 0, 0, 0], brakeThicknessMm: [0, 0, 0, 0], partsDetached: 0, worst,
+      hasDamage: worst > 0.005, repairSeconds: 12, repairBodySeconds: 12, repairSelection: '', repairOptions: [],
+      tyreChangeSeconds: 0, tyreCornersSelected: 0, stopLengthSeconds: UNKNOWN_VALUE, ...over,
+    };
+    return engineerSummary(frame({
+      player: {
+        slotId: 1, position: 3, pedals: { throttle: 0, brake: 0, clutch: 0, steer: 0 },
+        gear: 3, speedKph: 100, rpm: 5000, maxRpm: 8000, lap: {}, tyres: {}, damage: d,
+      },
+    })).damage;
+  };
+  // The HUD's noise floor (0.005) calls these minor; the engineer is not told.
+  check('a 1% scuff is none', band(0.01) === 'none', band(0.01));
+  check('a 3.9% scuff is none', band(0.039) === 'none', band(0.039));
+  check('4% is light, as it always was', band(0.04) === 'light', band(0.04));
+  check('major on the HUD is medium', band(0.2) === 'medium', band(0.2));
+  check('critical on the HUD is heavy', band(0.6) === 'heavy', band(0.6));
+  check('a lost part under the floor is still medium', band(0.01, { partsDetached: 1 }) === 'medium', band(0.01, { partsDetached: 1 }));
+}
+
 if (fail) {
   console.log(`\n${fail} failed, ${pass} passed`);
   process.exit(1);

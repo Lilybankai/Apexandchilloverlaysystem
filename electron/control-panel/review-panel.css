@@ -1952,3 +1952,169 @@
   border-top: 2px dashed #bfe9fb;
   align-self: center;
 }
+
+/* ============================== RACE LOG ================================
+ *
+ * docs/RACE-LOG-PLAN.md phase 3, painted by review-racelog.js. A race read
+ * back as a timeline: race time · lap · kind · what happened.
+ *
+ * It is the lap sheet, not a feed of cards. Two hundred lines of a four-hour
+ * race are read down a column the way lap times are, so the table, the mono
+ * figures and the purple/green are the sheet's own. Colour is spent where a
+ * steward's eye has to land and nowhere else: contacts and penalties red,
+ * limits and minor damage amber (the damage widget's grades), and a lap's
+ * time purple or green when it was a best. Everything else is text-2/3.
+ */
+
+/* Sessions | Races: the app's segmented pill, sized to its labels rather
+   than stretched across the rail. */
+.rv__mode { align-self: flex-start; }
+
+/* Grid, finish and the counts — the stint header's facts, left to right. */
+.rv-log__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+}
+.rv-log__moved { font-style: normal; font-size: 11.5px; margin-left: 2px; }
+.rv-log__moved[data-dir='gain'] { color: var(--ok); }
+.rv-log__moved[data-dir='loss'] { color: var(--bad); }
+
+.rv-log__note {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.rv-log__replaynote[data-state='no'] { color: var(--text-2); }
+.rv-log__note .rv-refbtn { opacity: 0.8; }
+
+/* The filter pill and Copy on one line, above the table. */
+.rv-log__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.rv-log__bar [data-rlcopy] { margin-left: auto; }
+
+/* The table runs to the card's edges, as the lap sheet does in a stint. */
+.rv-log__scroll {
+  margin: 0 -16px -14px;
+  border-top: 1px solid var(--line);
+}
+
+.rv-log__table th,
+.rv-log__table td { text-align: left; }
+.rv-log__table th:nth-child(2),
+.rv-log__table td.l { text-align: right; }
+.rv-log__table td.t { width: 1%; color: var(--text-2); }
+.rv-log__table td.l { width: 1%; color: var(--text-3); }
+.rv-log__table td.k {
+  width: 1%;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rv-log__table td.x {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  white-space: normal;
+  min-width: 220px;
+}
+.rv-log__table td.ref { width: 1%; text-align: right; }
+/* Only incident rows carry one, and it is the reason to open the log, so it
+   reads at rest the way the leaderboard's does rather than the lap sheet's. */
+.rv-log__table .rv-refbtn { opacity: 0.8; }
+.rv-log__table tr:hover .rv-refbtn { opacity: 1; }
+
+.rv-log__table tr[data-tone='bad'] td.k { color: var(--bad); }
+.rv-log__table tr[data-tone='warn'] td.k { color: var(--warn); }
+.rv-log__table tr[data-tone='bad'] td:first-child { box-shadow: inset 2px 0 0 var(--bad); }
+.rv-log__table tr[data-tone='warn'] td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
+.rv-log__table tr[data-dir='gain'] td.k { color: var(--ok); }
+.rv-log__table tr[data-dir='loss'] td.k { color: var(--bad); }
+.rv-log__table tr[data-kind='start'] td.x,
+.rv-log__table tr[data-kind='finish'] td.x { font-weight: 600; }
+
+/* Laps are most of the log and the least of its story: the sentence is
+   quiet and the time carries the colour, as it does on the sheet. */
+.rv-log__table tr[data-kind='lap'] td.x { color: var(--text-2); }
+.rv-log__lap { font-family: var(--font-mono); font-size: 12.5px; color: var(--text); }
+.rv-log__lap[data-rank='pb'] { color: var(--rv-stint-best); }
+.rv-log__lap[data-rank='class'] { color: var(--rv-session-best); }
+.rv-log__lap[data-invalid='true'] { color: var(--text-3); }
+.rv-log__rest { font-size: 12px; color: var(--text-3); }
+.rv-log__lap[data-invalid='true'] + .rv-log__rest { color: var(--rv-dirty); }
+
+/* The row whose replay was last asked for. */
+.rv-log__table tr[data-asked='true'] td { background: rgba(38, 187, 244, 0.07); }
+.rv-log__table tr[data-asked='true'] .rv-refbtn {
+  opacity: 1;
+  color: var(--cyan);
+  border-color: rgba(38, 187, 244, 0.45);
+}
+
+/* ---- the replay strip -----------------------------------------------------
+   Sticky, like the reference-lap strip: the Replay button that started a
+   load may be two hundred rows down the page. */
+.rv-replay {
+  position: sticky;
+  top: 6px;
+  z-index: 4;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.rv-replay__tag {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rv-replay__text { font-size: 12.5px; color: var(--text); }
+.rv-replay__sub { font-size: 11.5px; color: var(--text-3); }
+.rv-replay__bar { flex-basis: 100%; margin-top: 4px; }
+.rv-replay[data-phase='ready'] { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.rv-replay[data-phase='ready'] .rv-replay__text { color: var(--ok); }
+/* blocked: the driver is in a session. busy: a click turned away because
+   another race's replay is loading. Both wait on the driver, so both amber. */
+.rv-replay[data-phase='blocked'],
+.rv-replay[data-phase='busy'] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.rv-replay[data-phase='blocked'] .rv-replay__text,
+.rv-replay[data-phase='busy'] .rv-replay__text { color: var(--warn); }
+.rv-replay[data-phase='error'] { border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.rv-replay[data-phase='error'] .rv-replay__text { color: var(--bad); }
+.rv-replay[data-phase='unavailable'] .rv-replay__text { color: var(--text-2); }
+
+/* ---- which car was yours ------------------------------------------------- */
+.rv-log__pickwhy { margin: -4px 0 12px; }
+.rv-log__pick th,
+.rv-log__pick td { text-align: left; }
+.rv-log__pick td.car,
+.rv-log__pick td.drv { font-family: var(--font-ui); }
+.rv-log__pick td.car { color: var(--text-2); }
+.rv-log__pick td.drv { white-space: normal; min-width: 200px; }
+.rv-log__pick td.ref { width: 1%; text-align: right; }
+.rv-log__pick tr[data-pick] { cursor: pointer; }
+.rv-log__pick tr[data-pick]:hover td { background: rgba(38, 187, 244, 0.07); }
+.rv-log__pick tr[data-pick]:focus-visible { outline: 1px solid var(--cyan); outline-offset: -1px; }
+.rv-log__pick tr[data-current='true'] td { color: var(--cyan); }
+
+/* One column: the rail stops being sticky. The rule for this near the top of
+   the file sits BEFORE the rail's own sticky rule and so has never applied —
+   a long rail (and the race list is long) then rode down the page over the
+   detail. Restated here, one step more specific, so it wins. */
+@media (max-width: 1180px) {
+  .rv .rv__rail { position: static; max-height: 340px; }
+}

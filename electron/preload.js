@@ -324,6 +324,15 @@ contextBridge.exposeInMainWorld('apex', {
   /** One session in full — stints, laps and its trend line: `{ ok, session }`. */
   reviewSession: (id) => ipcRenderer.invoke('review:session', id),
 
+  /** Every race LMU saved results for, newest first: `{ ok, races: RaceLogSummary[] }`. */
+  reviewRacelogs: () => ipcRenderer.invoke('review:racelogs'),
+
+  /** One race as a timeline: `{ ok, log }`; `log.slot` null means "Which car was yours?" (`log.cars`). */
+  reviewRacelog: (id) => ipcRenderer.invoke('review:racelog', id),
+
+  /** Remember our car for one race, `{ id, slot }` (`slot: null` forgets): `{ ok, log }`. */
+  reviewRacelogPick: (req) => ipcRenderer.invoke('review:racelogPick', req),
+
   /**
    * One lap's trace and circuit: `{ ok, detail, map, vs, delta, micro, reason? }`.
    *
@@ -352,6 +361,33 @@ contextBridge.exposeInMainWorld('apex', {
    * Leaderboard tab opens in Review when a row is compared against.
    */
   reviewBestLap: (req) => ipcRenderer.invoke('review:bestLap', req),
+
+  /**
+   * Show a race-log event in the game's replay: `{ raceId, slot, et }` →
+   * `{ ok, status }`, where `status` is a `ReplayStatus` (`phase` idle |
+   * unavailable | blocked | loading | ready | error, `raceId`, `progress`
+   * 0..1 while loading, `message`). Answers once a load is under way; the rest
+   * arrives through `onReviewReplay`.
+   */
+  reviewReplayOpen: (req) => ipcRenderer.invoke('review:replayOpen', req),
+
+  /** The replay jump's state, re-checked against the game: `{ ok, status }`. */
+  reviewReplayStatus: () => ipcRenderer.invoke('review:replayStatus'),
+
+  /**
+   * Whether a race still has a replay, before any click: `{ raceId }` →
+   * `{ ok, available, replayName?, sizeBytes?, reason?, message? }`, reason
+   * `no-replay` (the game kept five and moved on), `no-results` or
+   * `game-offline`.
+   */
+  reviewReplayAvailable: (req) => ipcRenderer.invoke('review:replayAvailable', req),
+
+  /** Subscribe to replay-jump status changes. Returns an unsubscribe function. */
+  onReviewReplay: (callback) => {
+    const listener = (_evt, status) => callback(status);
+    ipcRenderer.on('review:replayChanged', listener);
+    return () => ipcRenderer.removeListener('review:replayChanged', listener);
+  },
 
   /** Subscribe to uploader state changes. Returns an unsubscribe function. */
   onLapSync: (callback) => {

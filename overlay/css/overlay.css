@@ -2584,8 +2584,11 @@
   transition: width 220ms ease-out;
 }
 .damage__fill[data-state="none"]  { background: var(--text-muted); opacity: 0.35; }
-.damage__fill[data-state="light"] { background: var(--warn); }
-.damage__fill[data-state="heavy"] { background: var(--pos-loss); }
+/* The HUD's grades (damage.ts damageGrade). Critical shares major's red until
+   the HUD's own tints are measured. */
+.damage__fill[data-state="minor"] { background: var(--warn); }
+.damage__fill[data-state="major"],
+.damage__fill[data-state="critical"] { background: var(--pos-loss); }
 .damage__fill[data-state="wear"]  { background: var(--pos-gain); }
 .damage__val {
   font-family: var(--font-mono);

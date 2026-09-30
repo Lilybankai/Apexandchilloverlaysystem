@@ -45,6 +45,7 @@
 
 import { UNKNOWN_VALUE } from './types';
 import type { DamageState, RepairSelection } from './types';
+import type { DamageGrade } from './raceLogTypes';
 
 /**
  * Severity below which a component is called undamaged. The sim reports exact
@@ -53,13 +54,31 @@ import type { DamageState, RepairSelection } from './types';
  */
 const NOISE_FLOOR = 0.005;
 
-/**
- * Severity at which a component is called **heavy** rather than light. Set from
- * the measured hit: a contact that produced 19.5% at one corner and 9.5% aero
- * was a genuine "you need to think about pitting" event, and the split puts the
- * suspension corner in red and the aero in amber.
+/*
+ * ## One damage scale: the HUD's own
+ * LMU grades damage on exactly one scale, the in-car HUD tint
+ * (`damageColourNone/Minor/Major/Critical` in the exe). It has no
+ * "light / moderate / heavy" wording anywhere. So the widget, the engineer and
+ * the race log all grade through {@link damageGrade}, and a 0.19 hit can no
+ * longer be red on screen and "light" on the radio.
+ *
+ * PROVISIONAL: the HUD's cut-offs are compiled into the exe and unmeasured.
+ * These keep today's widget red at 0.15 and the engineer's old "heavy" at 0.5,
+ * until the on-track calibration in docs/RACE-LOG-PLAN.md phase 5 replaces them.
  */
-export const HEAVY_SEVERITY = 0.15;
+
+/** Above this a component is `minor`: anything past the noise floor. */
+export const MINOR_MIN = NOISE_FLOOR;
+
+/**
+ * At or above this a component is `major`. Set from the measured hit: a contact
+ * that produced 19.5% at one corner and 9.5% aero was a genuine "think about
+ * pitting" event, and the split puts the corner in red and the aero in amber.
+ */
+export const MAJOR_MIN = 0.15;
+
+/** At or above this a component is `critical`. */
+export const CRITICAL_MIN = 0.5;
 
 /** Metres → millimetres, for the brake discs. */
 const M_TO_MM = 1000;
@@ -253,6 +272,10 @@ export function decodeDamage(payload: RawRepairPayload | null | undefined): Dama
     partsDetached,
     worst,
     hasDamage: worst > NOISE_FLOOR,
+    grades: {
+      aero: damageGrade(aero),
+      suspension: suspension.map(damageGrade) as [DamageGrade, DamageGrade, DamageGrade, DamageGrade],
+    },
     repairSeconds: repairTime(times, 'FixAllDamage'),
     repairBodySeconds: repairTime(times, 'FixAeroDamage'),
     repairSelection: selection,
@@ -345,15 +368,53 @@ function stopLength(block: { timeInSeconds?: unknown } | undefined): number {
   return Math.round(v * 10) / 10;
 }
 
-/**
- * Whether a severity should read as heavy. Exported so the widget and the tests
- * share one threshold rather than each carrying their own copy of `0.15`.
- */
-export function isHeavy(sev: number): boolean {
-  return sev >= HEAVY_SEVERITY;
-}
-
 /** Whether a severity counts as damage at all (above the noise floor). */
 export function isDamaged(sev: number): boolean {
   return sev > NOISE_FLOOR;
+}
+
+/** One component's severity on the HUD's scale. Non-numbers read as `none`. */
+export function damageGrade(sev: number): DamageGrade {
+  if (!finite(sev) || sev <= MINOR_MIN) return 'none';
+  if (sev >= CRITICAL_MIN) return 'critical';
+  if (sev >= MAJOR_MIN) return 'major';
+  return 'minor';
+}
+
+const GRADE_RANK: Readonly<Record<DamageGrade, number>> = { none: 0, minor: 1, major: 2, critical: 3 };
+
+/** Whether `a` is a worse grade than `b`. */
+export function gradeWorse(a: DamageGrade, b: DamageGrade): boolean {
+  return GRADE_RANK[a] > GRADE_RANK[b];
+}
+
+/**
+ * The whole car's grade: its worst component, and at least `major` once a part
+ * has come off (a lost wheel or panel is never "minor", whatever the aero
+ * number says). `partsDetached` must be the provider's delta, not the raw count.
+ */
+export function overallGrade(d: Pick<DamageState, 'worst' | 'partsDetached'>): DamageGrade {
+  const g = damageGrade(d.worst);
+  if (finite(d.partsDetached) && d.partsDetached > 0 && !gradeWorse(g, 'major')) return 'major';
+  return g;
+}
+
+/** Corner names in the sim's [FL, FR, RL, RR] order. */
+const ZONE_CORNERS = ['front-left', 'front-right', 'rear-left', 'rear-right'] as const;
+
+/**
+ * The damaged zones in words, worst first within their kind: `front-left
+ * suspension`, then `bodywork`. REST has ONE aero number for all the bodywork,
+ * so it is never "rear bodywork" — that would be a zone the sim did not give us.
+ */
+export function damageZones(d: Pick<DamageState, 'aero' | 'suspension' | 'partsDetached'>): string[] {
+  const out: string[] = [];
+  const susp = Array.isArray(d.suspension) ? d.suspension : [];
+  for (let i = 0; i < 4; i++) {
+    const s = susp[i];
+    if (finite(s) && s > MINOR_MIN) out.push(`${ZONE_CORNERS[i]} suspension`);
+  }
+  const parts = finite(d.partsDetached) && d.partsDetached > 0;
+  if ((finite(d.aero) && d.aero > MINOR_MIN) || parts) out.push('bodywork');
+  return out;
 }

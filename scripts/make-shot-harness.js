@@ -62,6 +62,17 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
     }
+    // ?racelog=first|picker|<results file> lands the Review tab on its Races
+    // rail (the first-visit guide is marked read so it does not sit over the
+    // shot). ?rlfilter=incidents|contacts|penalties|positions|laps|pit seeds the
+    // timeline's filter the same way the panel remembers it.
+    if (q.get('racelog')) {
+      localStorage.setItem('apex.review.rail', 'races');
+      localStorage.setItem('apex.review.guide.seen', '1');
+      const rlf = q.get('rlfilter');
+      if (rlf) localStorage.setItem('apex.review.racelogFilter', rlf);
+      else localStorage.removeItem('apex.review.racelogFilter');
+    }
     // ?fuel=<classId>[,<layoutId>] seeds the Fuel tab's saved calculator so a
     // screenshot lands on a real selection. Without it the tab opens empty and
     // the pit box has no class to resolve coefficients for, which is precisely
@@ -184,6 +195,29 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   // Read again out here: the block above runs inside a try, so its \`q\` is not
   // in scope for the stub object below, which also wants query flags.
   const q = new URLSearchParams(location.search);
+  const RL_FIX = RACELOG_FIXTURE;
+
+  // ?racelog=picker|<results file> clicks that race on the rail (first is the
+  // panel's own default, the newest). Then ?rlpick=<slot> picks a car in the
+  // picker, and ?replayclick=1 presses the first Replay button, so every
+  // replay status can be shot. Polls rather than clicking blind — the rail
+  // fills asynchronously — and gives up after five seconds.
+  if (q.get('racelog')) {
+    const stopAt = Date.now() + 5000;
+    const want = q.get('racelog');
+    const step = (sel, then) => {
+      const el = document.querySelector(sel);
+      if (el) { el.click(); if (then) setTimeout(then, 250); return; }
+      if (Date.now() < stopAt) setTimeout(() => step(sel, then), 100);
+    };
+    const replay = () => { if (q.get('replayclick')) step('[data-replay]'); };
+    const pickCar = () => { if (q.get('rlpick')) step('[data-pick="' + q.get('rlpick') + '"]', replay); else replay(); };
+    const openRace = () => {
+      if (want === 'first') { setTimeout(pickCar, 400); return; }
+      step(want === 'picker' ? '[data-race][data-slot="none"]' : '[data-race="' + want + '"]', pickCar);
+    };
+    window.addEventListener('DOMContentLoaded', () => setTimeout(openRace, 300));
+  }
 
   const noopUnsub = () => () => {};
   const P = (v) => () => Promise.resolve(v);
@@ -697,6 +731,10 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // boot down with them — including anything added to the end of it later.
     lapsSyncState: P({ status: 'idle', pending: 0 }), onLapSync: noopUnsub,
     onStatus: noopUnsub, onSettings: noopUnsub,
+    // Push feeds team-panel.js and discord-panel.js wire at load. Missing, each
+    // was a page error in every shot: harmless to the tab being shot, but
+    // noise that hides a real one.
+    onTeamUpdate: noopUnsub, onTeamCloud: noopUnsub, onTeamRelay: noopUnsub, onDiscordState: noopUnsub,
     getUpdateState: P({ state: 'none', current: 'dev', channel: 'stable', statusText: 'Up to date on the stable channel.' }),
     checkForUpdate: P({}), setUpdateChannel: P({}), downloadUpdate: P({}), installUpdate: P({}),
     // ?beta=1 pushes one update payload on the beta channel. Without it the
@@ -715,6 +753,14 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // JSON — so the harness cannot drift from what the tab actually receives.
     reviewSessions: P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
+    // The race log: real output of the compiled raceLog module over the
+    // results files in scripts/fixtures/results (see raceLogFixture below).
+    // Silverstone has no car picked, so it opens on "Which car was yours?";
+    // picking any car there answers with that car's real log.
+    reviewRacelogs: P({ ok: true, races: RL_FIX.races }),
+    reviewRacelog: (id) => Promise.resolve({ ok: true, log: RL_FIX.logs[id] || null }),
+    reviewRacelogPick: (req) => Promise.resolve({ ok: true, log: (req && req.slot !== null
+      ? RL_FIX.picks[req.id + ':' + req.slot] : null) || RL_FIX.logs[req && req.id] || null }),
     // Every row opens the SAME lap, and deliberately: this is a screenshot
     // harness, the detail is a real trace and a real circuit read off this
     // machine, and matching it to a synthetic lap id would only make the
@@ -724,6 +770,30 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // decoration on the same one: the delta trace and the micro-sector splits
     // only exist when a second lap was asked for.
     reviewLap: (req) => Promise.resolve(req && req.vs ? REVIEW.lapVs : REVIEW.lap),
+    // The race log's replay jump. No game here, so every race has a replay and
+    // a click lands straight on 'ready'; ?replay=<phase> shows another state:
+    // loading | ready | blocked | error | closed answer the click (closed is
+    // the error when the game quits mid-load), unavailable and offline answer
+    // the question asked before any button is drawn, and busy turns the click
+    // away because ANOTHER race's replay is loading: the status it comes with
+    // is that race's, as the controller's is. The messages are lmuReplay.ts's
+    // own.
+    reviewReplayAvailable: P(q.get('replay') === 'unavailable'
+      ? { ok: true, available: false, reason: 'no-replay', message: "This race's replay has been replaced by the game." }
+      : q.get('replay') === 'offline'
+        ? { ok: true, available: false, reason: 'game-offline', message: "Le Mans Ultimate isn't running, so its replays can't be opened." }
+        : { ok: true, available: true, replayName: 'fixture', sizeBytes: 642000000 }),
+    reviewReplayOpen: (req) => Promise.resolve(q.get('replay') === 'busy'
+      ? { ok: true, status: { phase: 'loading', raceId: 'another-race-R1.xml', progress: 0.62,
+        message: 'Another replay is loading.', busy: true } }
+      : { ok: true, status: { phase: q.get('replay') === 'closed' ? 'error' : q.get('replay') || 'ready',
+        raceId: req && req.raceId, progress: q.get('replay') === 'loading' ? 0.4 : null,
+        message: ({ loading: 'Loading replay\u2026 (big replays take ~40 s)',
+          blocked: 'Leave your session to watch the replay.',
+          error: 'The game refused to load the replay.',
+          closed: 'The game closed while the replay was loading.' })[q.get('replay')] || null } }),
+    reviewReplayStatus: P({ ok: true, status: { phase: 'idle', raceId: null, progress: null, message: null } }),
+    onReviewReplay: () => () => {},
   };
 
   // ?board=damp|wet lands the screenshot on that surface's board. The stub
@@ -897,6 +967,76 @@ function reviewLapFixture() {
   return { lap: empty, lapVs: empty };
 }
 
+/**
+ * The race log's fixture: the real results files the race-log tests use,
+ * listed and built by the compiled raceLog module into a scratch state
+ * folder — so the list, the logs and the picker are exactly what the IPC
+ * would hand the panel, and nothing is written to ~/.apex-overlay.
+ *
+ *   - Long Beach, G Remi (slot 17): GT3 in a multiclass field, 32 contacts,
+ *     two penalties, limits and damage — the steward's case.
+ *   - Silverstone ELMS, 4 hours: no car picked, so it opens on "Which car was
+ *     yours?". Every car's log is pre-built, so a pick shows that car's
+ *     real two-hundred-line race.
+ *   - Le Mans (joined mid-race) is marked PROVISIONAL here, and only here, so
+ *     the marker can be looked at; the real flag needs a crash with no XML.
+ *   - Spa, February: single class, a localised penalty reason.
+ */
+function raceLogFixture() {
+  const none = { races: [], logs: {}, picks: {} };
+  let L;
+  let X;
+  try {
+    L = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+    X = require(path.join(__dirname, '..', 'dist', 'telemetry', 'resultsXml.js'));
+  } catch {
+    return none; // unbuilt dist: the Races rail shows its empty state
+  }
+  const zlib = require('node:zlib');
+  const os = require('node:os');
+  const FIX = path.join(__dirname, 'fixtures', 'results');
+  const LONG_BEACH = '2026_09_24_21_38_11-49R1.xml';
+  const SILVERSTONE = '2026_09_20_18_28_11-74R1.xml';
+  const MID_JOIN = '2026_09_25_12_42_51-05R1.xml';
+  const SPA = '2026_02_27_22_56_23-92R1.xml';
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-shot-racelog-'));
+  try {
+    const resultsDir = path.join(tmp, 'Results');
+    const stateDir = path.join(tmp, 'racelog');
+    fs.mkdirSync(resultsDir);
+    const text = {};
+    for (const id of [LONG_BEACH, SILVERSTONE, MID_JOIN, SPA]) {
+      text[id] = zlib.gunzipSync(fs.readFileSync(path.join(FIX, id + '.gz'))).toString('utf8');
+      fs.writeFileSync(path.join(resultsDir, id), text[id]);
+    }
+    L.setPickedSlot(LONG_BEACH, 17, stateDir);
+    L.setPickedSlot(MID_JOIN, 35, stateDir);
+    L.setPickedSlot(SPA, 6, stateDir);
+    const opts = { stateDir, laps: [] };
+    const races = L.listRaceLogs(resultsDir, opts);
+    const logs = {};
+    for (const r of races) logs[r.id] = L.loadRaceLog(r.id, resultsDir, opts);
+    for (const r of races) {
+      if (r.id === MID_JOIN) r.provisional = true;
+    }
+    if (logs[MID_JOIN]) logs[MID_JOIN].provisional = true;
+    const picks = {};
+    const silver = X.parseResultsXml(text[SILVERSTONE]);
+    for (const d of silver.drivers) {
+      if (d.slot === null) continue;
+      const log = L.buildRaceLog(silver, d.slot, 'picked', SILVERSTONE);
+      delete log.cars; // the picker's list is on the unpicked log already
+      picks[SILVERSTONE + ':' + d.slot] = log;
+    }
+    return { races, logs, picks };
+  } catch (err) {
+    console.error('  racelog fixture failed:', err.message);
+    return none;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const marker = '<script src="icons.js"></script>';
 if (!html.includes(marker)) {
@@ -912,9 +1052,14 @@ if (!html.includes(marker)) {
     for (const stint of session.stints) for (const lap of stint.laps) lap.hasTrace = true;
   }
   const { lap, lapVs } = reviewLapFixture();
+  const raceLogs = raceLogFixture();
+  console.log(`  racelog: ${raceLogs.races.length} races, ${Object.keys(raceLogs.picks).length} pickable cars`);
   fs.writeFileSync(
     path.join(DIR, '__shot-stub.js'),
-    STUB.replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
+    // A function replacement: JSON can hold a '$', which a string replacement
+    // would read as a pattern.
+    STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
+        .replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
         .replace('REVIEW.career', `${JSON.stringify(fixture.career)}`)
         .replace('REVIEW.lapVs', `${JSON.stringify(lapVs)}`)
@@ -936,3 +1081,5 @@ console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js')
 console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
 console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');
 console.log('  the schedule: ?tab=schedule[&source=daily|league][&mode=next|calendar][&zone=utc]');
+console.log('  race logs: ?tab=review&racelog=first|picker|<file>[&rlfilter=incidents][&rlpick=9]' +
+  '[&replayclick=1&replay=loading|ready|blocked|error|closed|busy][&replay=unavailable|offline]');

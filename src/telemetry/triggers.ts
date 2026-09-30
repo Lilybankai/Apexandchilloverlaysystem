@@ -67,6 +67,7 @@
 import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
 import { findYellowCause } from './yellowCause';
+import { overallGrade } from './damage';
 import {
   deltaToReferencePaceTarget,
   referencePaceTargets,
@@ -316,8 +317,8 @@ export interface EngineerTrigger {
   detail: string;
   /**
    * Machine-readable facts about this specific edge, deliberately small and
-   * already bucketed where a raw number would be noise (damage severity is
-   * `"light"`/`"moderate"`/`"heavy"`, not `0.37`).
+   * already bucketed where a raw number would be noise (damage severity is the
+   * HUD's `"minor"`/`"major"`/`"critical"`, not `0.37`).
    */
   facts: Readonly<Record<string, string | number | boolean>>;
 }
@@ -413,17 +414,169 @@ function known(n: number | undefined): n is number {
   return typeof n === 'number' && Number.isFinite(n) && n !== UNKNOWN_VALUE;
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Session-flag edges, shared with the race log                               */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Damage severity in the three words a driver would use. Bucketed here rather
- * than passed through as `0..1` because the difference between 0.31 and 0.34 is
- * not a thing anyone can act on, and a stable label is what stops a prompt (and
- * a log) churning while a number wobbles.
+ * Last tick's levels, which {@link flagEdges} compares a frame against. The
+ * engineer builds this from its own fields; the race log's recorder keeps one.
  */
-function damageBucket(worst: number): string {
-  if (worst >= 0.5) return 'heavy';
-  if (worst >= 0.2) return 'moderate';
-  return 'light';
+export interface FlagLevels {
+  phase: SessionPhase;
+  flag: string;
+  notStarted: boolean;
+  /** Gone green at least once this session, so the next green is a restart. */
+  seenGreen: boolean;
+  /** Which sectors read locally yellow; `null` re-primes silently (see {@link yellowSectorLevel}). */
+  yellowSectors: [boolean, boolean, boolean] | null;
+  finalLap: boolean;
+  finished: boolean;
 }
+
+/** One session-lifecycle edge, before anyone decides whether to say it. */
+export type FlagEdge =
+  | { kind: 'redFlag' }
+  | { kind: 'fullCourseYellow' }
+  /** `lit` = every yellow sector now, `fresh` = the ones that just went yellow; 1-based. */
+  | { kind: 'sectorYellow'; lit: number[]; fresh: number[] }
+  | { kind: 'sectorClear' }
+  | { kind: 'raceStart' }
+  | { kind: 'restart'; from: SessionPhase }
+  | { kind: 'finalLap' }
+  /** `byCar`: the frame's player car crossed; `false` = the phase fallback. */
+  | { kind: 'checkered'; byCar: boolean };
+
+/** Whether this frame's flags blanket the whole lap (FCY or red). */
+function blanketFlag(s: TelemetryFrame['session']): boolean {
+  return (
+    s.phase === 'fullCourseYellow' || s.flag === 'doubleYellow' || s.phase === 'redFlag' || s.flag === 'red'
+  );
+}
+
+/**
+ * The sector-yellow level to remember for the next tick. Parked at `null`
+ * while FCY/red blankets the rail (their withdrawal must not read as a local
+ * all-clear) and while the provider carries no rail at all; the next plain
+ * frame re-primes silently.
+ */
+export function yellowSectorLevel(frame: TelemetryFrame): [boolean, boolean, boolean] | null {
+  const s = frame.session;
+  if (!s.sectorFlags || blanketFlag(s)) return null;
+  const f = s.sectorFlags;
+  return [isYellow(f[0]), isYellow(f[1]), isYellow(f[2])];
+}
+
+function isYellow(f: string): boolean {
+  return f === 'yellow' || f === 'doubleYellow';
+}
+
+/**
+ * Every session-lifecycle edge between `prev` and this frame: green, yellow,
+ * red, white, chequered. Pure, and the one place these rules live — the
+ * engineer gates what it finds, the race log records all of it. Allocates only
+ * when something happened.
+ */
+export function flagEdges(prev: FlagLevels, frame: TelemetryFrame): readonly FlagEdge[] {
+  const { phase, flag } = frame.session;
+  let out: FlagEdge[] | null = null;
+  const push = (e: FlagEdge): void => {
+    (out ??= []).push(e);
+  };
+
+  // Red flag: phase or flag, whichever the provider expresses it through.
+  if ((phase === 'redFlag' && prev.phase !== 'redFlag') || (flag === 'red' && prev.flag !== 'red')) {
+    push({ kind: 'redFlag' });
+  }
+
+  // Full-course yellow. The flag alone is not enough — a local yellow shows as
+  // `yellow` too, and a driver does not need a radio call for a marshal post
+  // two corners away — so the phase is what is trusted, with the flag only
+  // corroborating when the provider does not move the phase.
+  const wasFcy = prev.phase === 'fullCourseYellow';
+  const isFcy = phase === 'fullCourseYellow' || flag === 'doubleYellow';
+  if (isFcy && !wasFcy && prev.flag !== 'doubleYellow') push({ kind: 'fullCourseYellow' });
+
+  // LOCAL yellows, per sector. Only meaningful outside FCY/red — under those
+  // every sector reads yellow and the calls above own the story — so the
+  // level is parked at null there and re-primes silently after, which also
+  // swallows the phantom "all clear" the blanket's withdrawal would fake.
+  //
+  // On an LMU rig with live shared memory the sectors are real (decoded
+  // 2026-08-26); with only REST the one published flag arrives copied into
+  // all three slots, so `lit.length === 3` is the phrase layer's cue to say
+  // "yellow flags out" rather than claim three separate incidents.
+  const sectors = frame.session.sectorFlags;
+  const p = prev.yellowSectors;
+  if (sectors && p && !isFcy && phase !== 'redFlag' && flag !== 'red') {
+    let appeared = false;
+    let any = false;
+    for (let i = 0; i < 3; i++) {
+      const y = isYellow(sectors[i]!);
+      if (y) any = true;
+      if (y && !p[i]) appeared = true;
+    }
+    if (appeared) {
+      const lit: number[] = [];
+      const fresh: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        if (!isYellow(sectors[i]!)) continue;
+        lit.push(i + 1);
+        if (!p[i]) fresh.push(i + 1);
+      }
+      push({ kind: 'sectorYellow', lit, fresh });
+    } else if (!any && (p[0] || p[1] || p[2])) {
+      push({ kind: 'sectorClear' });
+    }
+  }
+
+  // Green. The first one in a race is the start; a later one is a restart, and
+  // the driver needs to hear those differently — "lights out" versus "we go
+  // again, you're P7".
+  const goneGreen = phase === 'green' && prev.phase !== 'green';
+  const startedFromGrid = prev.notStarted && !frame.session.notStarted;
+  if (goneGreen || startedFromGrid) {
+    if (prev.seenGreen && isPreGreen(prev.phase) === false) push({ kind: 'restart', from: prev.phase });
+    else push({ kind: 'raceStart' });
+  }
+
+  // LAST LAP. Two ways in, because sims disagree about how they say it:
+  //
+  //   - a white flag, which is the convention this used to wait for alone —
+  //     and which Le Mans Ultimate never shows. Probed through a full race
+  //     finish 2026-08-22: the marshalling channel goes straight from clear to
+  //     CHEQUERED, so on LMU this branch had never once fired.
+  //   - `session.finalLap`: the chequered flag is OUT and the cars still
+  //     running are on their last lap. That is 23 s before the session reaches
+  //     its checkered phase and 46 s before the car being watched actually
+  //     crossed, which is the difference between a last-lap call and a
+  //     commiseration.
+  //
+  // Not fired once we are already finished: a driver who has taken the flag is
+  // not about to start a last lap. `finished` is absent on providers that
+  // cannot see it, and absent must not suppress the call.
+  const finished = frame.player?.finished === true;
+  const finalLap = frame.session.finalLap === true;
+  if (!finished && ((flag === 'white' && prev.flag !== 'white') || (finalLap && !prev.finalLap))) {
+    push({ kind: 'finalLap' });
+  }
+
+  // THE FLAG. Our own car crossing the line, not the session's phase changing
+  // — the phase moves when the LEADER finishes, and congratulating a driver on
+  // a result while they still have most of a lap to run is worse than saying
+  // nothing. The phase is kept only as the fallback for a provider with no
+  // per-car verdict, where it is the best statement available.
+  const canSeeFinish = frame.player?.finished !== undefined;
+  const crossedLine = finished && !prev.finished;
+  const phaseCheckered =
+    (flag === 'checkered' && prev.flag !== 'checkered') ||
+    (phase === 'checkered' && prev.phase !== 'checkered');
+  if (crossedLine || (!canSeeFinish && phaseCheckered)) push({ kind: 'checkered', byCar: crossedLine });
+
+  return out ?? NO_EDGES;
+}
+
+const NO_EDGES: readonly FlagEdge[] = Object.freeze([]);
 
 /**
  * Laps left on whichever budget is **tighter**. LMU cars run a fuel tank and a
@@ -804,43 +957,35 @@ export class EngineerTriggers {
     this.detectPracticePace(frame, now);
   }
 
-  /** Green, yellow, red, white, chequered — the session's own lifecycle. */
+  /**
+   * Green, yellow, red, white, chequered — the session's own lifecycle. The
+   * edges themselves are {@link flagEdges}, shared with the race log; this
+   * decides only what each one says and hands it to the gates.
+   */
   private detectSessionFlags(frame: TelemetryFrame, now: number): void {
     const { phase, flag } = frame.session;
-
-    // Red flag: phase or flag, whichever the provider expresses it through.
-    if ((phase === 'redFlag' && this.prevPhase !== 'redFlag') || (flag === 'red' && this.prevFlag !== 'red')) {
-      this.offer('redFlag', now, 'session red-flagged', { phase, flag });
-    }
-
-    // Full-course yellow. The flag alone is not enough — a local yellow shows as
-    // `yellow` too, and a driver does not need a radio call for a marshal post
-    // two corners away — so the phase is what is trusted, with the flag only
-    // corroborating when the provider does not move the phase.
-    const wasFcy = this.prevPhase === 'fullCourseYellow';
-    const isFcy = phase === 'fullCourseYellow' || flag === 'doubleYellow';
-    if (isFcy && !wasFcy && this.prevFlag !== 'doubleYellow') {
-      this.offer('fullCourseYellow', now, 'full-course yellow', { phase, flag });
-    }
-
-    // LOCAL yellows, per sector. Only meaningful outside FCY/red — under those
-    // every sector reads yellow and the calls above own the story — so the
-    // level is parked at null there and re-primes silently after, which also
-    // swallows the phantom "all clear" the blanket's withdrawal would fake.
-    //
-    // On an LMU rig with live shared memory the sectors are real (decoded
-    // 2026-08-26); with only REST the one published flag arrives copied into
-    // all three slots, so `all: true` is the phrase layer's cue to say
-    // "yellow flags out" rather than claim three separate incidents.
-    const sectors = frame.session.sectorFlags;
-    if (sectors && !isFcy && phase !== 'redFlag' && flag !== 'red') {
-      const yellowNow = sectors.map((f) => f === 'yellow' || f === 'doubleYellow');
-      const prev = this.prevYellowSectors; // maintained by record(), null re-primes
-      if (prev) {
-        const appeared = yellowNow.some((y, i) => y && !prev[i]);
-        if (appeared) {
-          const lit = yellowNow.flatMap((y, i) => (y ? [i + 1] : []));
-          const fresh = yellowNow.flatMap((y, i) => (y && !prev[i] ? [i + 1] : []));
+    const edges = flagEdges(
+      {
+        phase: this.prevPhase,
+        flag: this.prevFlag,
+        notStarted: this.prevNotStarted,
+        seenGreen: this.seenGreen,
+        yellowSectors: this.prevYellowSectors, // maintained by record(), null re-primes
+        finalLap: this.prevFinalLap,
+        finished: this.prevFinished,
+      },
+      frame,
+    );
+    for (const e of edges) {
+      switch (e.kind) {
+        case 'redFlag':
+          this.offer('redFlag', now, 'session red-flagged', { phase, flag });
+          break;
+        case 'fullCourseYellow':
+          this.offer('fullCourseYellow', now, 'full-course yellow', { phase, flag });
+          break;
+        case 'sectorYellow': {
+          const { lit, fresh } = e;
           const facts: Record<string, string | number | boolean> = {
             sectors: lit.join(','),
             all: lit.length === 3,
@@ -857,75 +1002,39 @@ export class EngineerTriggers {
             if (frame.session.trackLengthM) facts.lapM = frame.session.trackLengthM;
           }
           this.offer('sectorYellow', now, `local yellow — S${lit.join(' S')}`, facts);
-        } else if (prev.some(Boolean) && !yellowNow.some(Boolean)) {
-          this.offer('sectorClear', now, 'local yellows cleared', {});
+          break;
         }
+        case 'sectorClear':
+          this.offer('sectorClear', now, 'local yellows cleared', {});
+          break;
+        case 'restart':
+          this.offer('restart', now, 'racing resumes', { from: e.from });
+          this.seenGreen = true;
+          break;
+        case 'raceStart':
+          this.offer('raceStart', now, 'green flag', { numCars: frame.session.numCars });
+          this.seenGreen = true;
+          break;
+        case 'finalLap':
+          this.offer('finalLap', now, 'last lap', {
+            position: frame.player?.position ?? UNKNOWN_VALUE,
+          });
+          break;
+        case 'checkered':
+          this.offer('checkered', now, 'chequered flag', {
+            // The LATCHED result where the provider has one — a live position
+            // keeps moving while the rest of the field is still coming round.
+            position:
+              frame.player?.finishPosition ?? frame.player?.position ?? UNKNOWN_VALUE,
+            ...(frame.player?.finishClassPosition !== undefined
+              ? { classPosition: frame.player.finishClassPosition }
+              : {}),
+          });
+          break;
       }
     }
-
-    // Green. The first one in a race is the start; a later one is a restart, and
-    // the driver needs to hear those differently — "lights out" versus "we go
-    // again, you're P7".
-    const goneGreen = phase === 'green' && this.prevPhase !== 'green';
-    const startedFromGrid = this.prevNotStarted && !frame.session.notStarted;
-    if (goneGreen || startedFromGrid) {
-      if (this.seenGreen && isPreGreen(this.prevPhase) === false) {
-        this.offer('restart', now, 'racing resumes', { from: this.prevPhase });
-      } else {
-        this.offer('raceStart', now, 'green flag', { numCars: frame.session.numCars });
-      }
-      this.seenGreen = true;
-    }
-
-    // LAST LAP. Two ways in, because sims disagree about how they say it:
-    //
-    //   - a white flag, which is the convention this used to wait for alone —
-    //     and which Le Mans Ultimate never shows. Probed through a full race
-    //     finish 2026-08-22: the marshalling channel goes straight from clear to
-    //     CHEQUERED, so on LMU this branch had never once fired.
-    //   - `session.finalLap`: the chequered flag is OUT and the cars still
-    //     running are on their last lap. That is 23 s before the session reaches
-    //     its checkered phase and 46 s before the car being watched actually
-    //     crossed, which is the difference between a last-lap call and a
-    //     commiseration.
-    //
-    // Not fired once we are already finished: a driver who has taken the flag is
-    // not about to start a last lap. `finished` is absent on providers that
-    // cannot see it, and absent must not suppress the call.
-    const finished = frame.player?.finished === true;
-    const finalLap = frame.session.finalLap === true;
-    if (
-      !finished &&
-      ((flag === 'white' && this.prevFlag !== 'white') || (finalLap && !this.prevFinalLap))
-    ) {
-      this.offer('finalLap', now, 'last lap', {
-        position: frame.player?.position ?? UNKNOWN_VALUE,
-      });
-    }
-    this.prevFinalLap = finalLap;
-
-    // THE FLAG. Our own car crossing the line, not the session's phase changing
-    // — the phase moves when the LEADER finishes, and congratulating a driver on
-    // a result while they still have most of a lap to run is worse than saying
-    // nothing. The phase is kept only as the fallback for a provider with no
-    // per-car verdict, where it is the best statement available.
-    const canSeeFinish = frame.player?.finished !== undefined;
-    const crossedLine = finished && !this.prevFinished;
-    const phaseCheckered =
-      (flag === 'checkered' && this.prevFlag !== 'checkered') ||
-      (phase === 'checkered' && this.prevPhase !== 'checkered');
-    if (crossedLine || (!canSeeFinish && phaseCheckered)) {
-      this.offer('checkered', now, 'chequered flag', {
-        // The LATCHED result where the provider has one — a live position keeps
-        // moving while the rest of the field is still coming round.
-        position:
-          frame.player?.finishPosition ?? frame.player?.position ?? UNKNOWN_VALUE,
-        ...(frame.player?.finishClassPosition !== undefined
-          ? { classPosition: frame.player.finishClassPosition }
-          : {}),
-      });
-    }
-    this.prevFinished = finished;
+    this.prevFinalLap = frame.session.finalLap === true;
+    this.prevFinished = frame.player?.finished === true;
   }
 
   /**
@@ -948,7 +1057,11 @@ export class EngineerTriggers {
     const struckAgain = damage.hasDamage && worst - this.prevDamageWorst >= DAMAGE_WORSENED_STEP;
     if (!appeared && !struckAgain) return;
 
-    const severity = damageBucket(worst);
+    // The HUD's scale (damage.ts), bucketed rather than `0..1` because 0.31 vs
+    // 0.34 is not something anyone can act on. `minor` at the least: this edge
+    // only fires on real damage, and hasDamage is the same noise floor.
+    const grade = overallGrade({ worst, partsDetached: damage.partsDetached });
+    const severity = grade === 'none' ? 'minor' : grade;
     const facts: Record<string, string | number | boolean> = {
       severity,
       repeat: !appeared,
@@ -1317,21 +1430,8 @@ export class EngineerTriggers {
     this.prevNotStarted = frame.session.notStarted === true;
     if (frame.session.phase === 'green') this.seenGreen = true;
 
-    // The sector-yellow level. Parked at null while FCY/red blankets the rail
-    // (their withdrawal must not read as a local all-clear) and while the
-    // provider carries no rail at all; the next plain frame re-primes silently.
-    const s = frame.session;
-    const blanket =
-      s.phase === 'fullCourseYellow' || s.flag === 'doubleYellow' ||
-      s.phase === 'redFlag' || s.flag === 'red';
-    this.prevYellowSectors =
-      !s.sectorFlags || blanket
-        ? null
-        : (s.sectorFlags.map((f) => f === 'yellow' || f === 'doubleYellow') as [
-            boolean,
-            boolean,
-            boolean,
-          ]);
+    // The sector-yellow level (null while FCY/red blankets the rail).
+    this.prevYellowSectors = yellowSectorLevel(frame);
 
     const damage = frame.player?.damage;
     if (damage) {

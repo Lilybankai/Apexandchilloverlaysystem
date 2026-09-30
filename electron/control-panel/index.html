@@ -2235,8 +2235,8 @@
         <div class="view__head">
           <div>
             <h1>Review</h1>
-            <p>Every session you have driven, stint by stint. Read off this machine's own lap
-               files — no account needed, and nothing is ever thrown away.</p>
+            <p>Every session you have driven, stint by stint, and every race the game saved
+               results for. Read off this machine's own files — no account needed.</p>
           </div>
           <div class="view__head-actions">
             <!-- The walkthrough opens by itself the first time this tab is
@@ -2256,6 +2256,12 @@
 
         <div class="rv">
           <aside class="rv__rail">
+            <!-- Sessions are the lap log; Races are the game's own results
+                 files (review-racelog.js). Two sources, so two lists. -->
+            <nav class="seg seg--sm rv__mode" id="rv-mode" aria-label="What the list shows">
+              <button type="button" data-rail="sessions" data-active="true">Sessions</button>
+              <button type="button" data-rail="races">Races</button>
+            </nav>
             <div class="rv__find">
               <input id="rv-search" type="search" placeholder="Find a track or car"
                      aria-label="Filter sessions by track or car" />
@@ -4312,6 +4318,7 @@
 <!-- Review tab: the canvas painters first (pure, also require()d by
      scripts/test-reviewcharts.js), then the page itself. -->
 <script src="review-charts.js"></script>
+<script src="review-racelog.js"></script>
 <script src="review-panel.js"></script>
 <script src="review-guide.js"></script>
 <script src="vr-guide.js"></script>

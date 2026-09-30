@@ -5,7 +5,11 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.2.0-beta.6 — 2026-09-30
+
+A race log for every race you have run, with a jump into the game's replay at
+each incident; and damage now graded on the HUD's own minor / major /
+critical scale.
 
 ### Added
 
@@ -22,6 +26,36 @@
   classes, race length, setup and tyre rules, circuit maps and the weekly and
   special events — and the app shares that with everyone else's calendar too
   (never your own entries).
+- **Race log.** Review ▸ **Races** lists every race Le Mans Ultimate saved
+  results for on this PC, including races from before Apex was installed.
+  Open one and read it as a timeline: the start, every lap with its time
+  (personal and class bests marked, invalid laps greyed), places gained and
+  lost (in class and overall in a multiclass race), each contact and who it
+  was with, damage, track-limits warnings and penalties, pit stops, driver
+  swaps and the finish. Filter it to incidents only, or **Copy as text** to
+  paste into Discord or a protest. Your car is found from your own lap times,
+  so it follows the car through a team race's driver swaps; if Apex can't
+  tell, it asks which car was yours once and remembers.
+  - **Replay** on a contact opens the game's own replay of that race and puts
+    the camera on your car five seconds before it. Leave your session first
+    (Apex never pulls you out of one); a long race's replay takes up to a
+    minute to load, and later jumps in the same race are instant. The game
+    keeps five replays per circuit, so older races say when theirs is gone.
+  - Contacts are called **light** or **heavy** using LMU's own words, but on
+    Apex's cut-off: the game makes that call on its servers and doesn't
+    record it on your PC.
+  - Apex also writes the race down while you drive, so flags (yellows, full
+    course yellow, red) and your damage are in the log, and a race still has
+    one when the game crashes before saving its results.
+
+### Changed
+
+- **Damage is graded minor / major / critical**, the in-car HUD's own scale,
+  and the damage widget, the race engineer and the race log now agree on it.
+  The engineer says "minor", "major" or "critical damage" where it said
+  "light", "moderate" or "heavy", and calls a hit major from 15% (was 20%),
+  where the widget already turned red. The cut-offs are provisional until
+  they are measured against the HUD.
 
 ## 1.2.0-beta.5 — 2026-09-30
 

@@ -109,6 +109,18 @@
         'The driven line only exists on laps recorded by a build that captures it. An older lap still opens — the car simply follows the centreline. "How it works" beside Refresh reopens this any time.',
       ],
     },
+    {
+      id: 'races',
+      icon: 'flag',
+      title: 'Every race, read back as a timeline',
+      lead: 'Races, at the top of the rail, lists every race Le Mans Ultimate saved a results file for — including the ones driven before Apex was installed.',
+      points: [
+        'Open one and it reads down the page in order: the start, every lap, places gained and lost, each contact naming the other car, damage, track limits, penalties, pit stops and driver swaps.',
+        'Contacts and penalties are red, limits and minor damage amber. Incidents narrows it to those; Copy as text puts the lines on the clipboard for a protest or a league post.',
+        'Replay on a contact loads the game’s own replay of that race with the camera on your car, 5 s before it. It works from the game’s main menu, not from inside a session, and the game only keeps five replays per track.',
+        'If Apex cannot tell which car was yours, it asks once and remembers. A race session with a log has a Race log button in its header too.',
+      ],
+    },
   ];
 
   const SVG_NS = 'http://www.w3.org/2000/svg';

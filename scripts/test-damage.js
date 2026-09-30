@@ -21,7 +21,9 @@
 
 'use strict';
 
-const { decodeDamage, isHeavy, isDamaged, HEAVY_SEVERITY } = require('../dist/telemetry/damage');
+const {
+  decodeDamage, isDamaged, damageGrade, overallGrade, damageZones, MAJOR_MIN, CRITICAL_MIN,
+} = require('../dist/telemetry/damage');
 
 let passed = 0;
 let failed = 0;
@@ -113,9 +115,23 @@ console.log('\ndamage decode — after the measured impact\n');
 
 console.log('\nseverity thresholds\n');
 {
-  check('19.5% is heavy', isHeavy(0.195));
-  check('9.5% is not heavy', !isHeavy(0.095));
-  check('the boundary itself is heavy', isHeavy(HEAVY_SEVERITY));
+  // The HUD's scale. PROVISIONAL cut-offs (RACE-LOG-PLAN phase 5): major keeps
+  // the widget's old red at 15%, critical the engineer's old heavy at 50%.
+  check('19.5% is major', damageGrade(0.195) === 'major', damageGrade(0.195));
+  check('9.5% is minor', damageGrade(0.095) === 'minor', damageGrade(0.095));
+  check('the major boundary itself is major', damageGrade(MAJOR_MIN) === 'major');
+  check('the critical boundary itself is critical', damageGrade(CRITICAL_MIN) === 'critical');
+  check('zero is none', damageGrade(0) === 'none');
+  check('a scrape under the floor is none', damageGrade(0.002) === 'none');
+  check('NaN is none, never a crash', damageGrade(NaN) === 'none');
+  check('a lost part is at least major', overallGrade({ worst: 0.02, partsDetached: 1 }) === 'major');
+  check('…but never pulls critical down', overallGrade({ worst: 0.7, partsDetached: 1 }) === 'critical');
+  check('no parts off: the worst component decides',
+    overallGrade({ worst: 0.02, partsDetached: 0 }) === 'minor');
+  check('UNKNOWN parts do not count as off', overallGrade({ worst: 0.02, partsDetached: -1 }) === 'minor');
+  const z = damageZones({ aero: 0.03, suspension: [0.2, 0, 0, 0.001], partsDetached: 0 });
+  check('zones name the corner, then bodywork',
+    z.join('|') === 'front-left suspension|bodywork', z.join('|'));
   check('9.5% still counts as damage', isDamaged(0.095));
   check('exact zero is not damage', !isDamaged(0));
   // A hairline scrape should not send anyone to the pits.
@@ -183,7 +199,9 @@ console.log('\ntotal stop length — read from the sim, never derived\n');
     Math.abs(102.75341796875 + 4.5 - 107.25341796875) < 1e-9,
   );
   check('heavy FR corner reads through', Math.abs(d.suspension[1] - 0.5709) < 0.001, d.suspension[1].toFixed(4));
-  check('and is flagged heavy', isHeavy(d.suspension[1]));
+  check('and is graded critical', damageGrade(d.suspension[1]) === 'critical');
+  check('…on the frame too, for the widget', d.grades.suspension[1] === 'critical',
+    JSON.stringify(d.grades));
 }
 {
   // A total the sim does not publish must be UNKNOWN, so the widget can fall

@@ -56,9 +56,11 @@
 (function () {
   "use strict";
 
-  /** Severity at or above which a component reads as heavy (red, not amber). */
-  var HEAVY = 0.15;
-  /** Severity above which a component is damaged at all. Matches damage.ts. */
+  /**
+   * Severity above which a component is damaged at all. Matches damage.ts. The
+   * minor / major / critical split is NOT here: it comes graded on the frame
+   * (`damage.grades`), the one scale the engineer and the race log use too.
+   */
   var NOISE_FLOOR = 0.005;
 
   /**
@@ -471,17 +473,19 @@
     mount.appendChild(wrap);
   }
 
-  /** Bar colour for a damage severity. */
-  function stateFor(sev) {
-    if (sev >= HEAVY) return "heavy";
-    if (sev > NOISE_FLOOR) return "light";
-    return "none";
+  /**
+   * Bar colour: the server's grade for the component. A frame with no grades (a
+   * hand-written fixture) reads damaged-or-not only, never a guessed red.
+   */
+  function stateFor(sev, grade) {
+    if (grade === "none" || grade === "minor" || grade === "major" || grade === "critical") return grade;
+    return sev > NOISE_FLOOR ? "minor" : "none";
   }
 
   /** Renders one damage row: colour, width and the percentage beside it. */
-  function paintDamageRow(row, key, sev) {
+  function paintDamageRow(row, key, sev, grade) {
     if (!row) return;
-    var state = stateFor(sev);
+    var state = stateFor(sev, grade);
     setAttr(row.fill, key + ".s", "data-state", state);
     // Undamaged rows keep a 2% stub so the track reads as a gauge at zero
     // rather than as an empty box that might be a rendering failure.
@@ -749,9 +753,10 @@
     }
 
     if (modeDmg) {
-      paintDamageRow(rowsDmg[0], "d0", d.aero);
+      var g = d.grades || null;
+      paintDamageRow(rowsDmg[0], "d0", d.aero, g && g.aero);
       for (var i = 0; i < 4; i++) {
-        paintDamageRow(rowsDmg[i + 1], "d" + (i + 1), d.suspension[i]);
+        paintDamageRow(rowsDmg[i + 1], "d" + (i + 1), d.suspension[i], g && g.suspension && g.suspension[i]);
       }
     }
 

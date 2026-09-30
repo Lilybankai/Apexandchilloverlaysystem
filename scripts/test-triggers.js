@@ -487,7 +487,7 @@ console.log('\n3) One shunt is one call');
   r.fire({ player: { damage: { hasDamage: true, worst: 0.25, repairSeconds: 18 } } });
   check('contact fires', r.last?.kind === 'incident', r.last?.kind);
   check('…with a bucketed severity, not a number',
-    r.last?.triggers[0]?.facts.severity === 'moderate', r.last?.triggers[0]?.facts.severity);
+    r.last?.triggers[0]?.facts.severity === 'major', r.last?.triggers[0]?.facts.severity);
   check('…and the sim\'s own repair time', r.last?.triggers[0]?.facts.repairSeconds === 18,
     r.last?.triggers[0]?.facts.repairSeconds);
 

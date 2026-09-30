@@ -40,8 +40,9 @@
  */
 
 import { UNKNOWN_VALUE } from './types';
-import type { StandingEntry, TelemetryFrame } from './types';
+import type { DamageState, StandingEntry, TelemetryFrame } from './types';
 import { sessionKeyOf } from './triggers';
+import { damageGrade, gradeWorse, overallGrade } from './damage';
 import { PitLossModel } from './pitExit';
 import { findYellowCause, speakableWhere } from './yellowCause';
 import type { PitExitProjection } from './pitExit';
@@ -229,14 +230,14 @@ function lastLapSplits(
 const CORNER_NAMES = ['front left', 'front right', 'rear left', 'rear right'] as const;
 
 /**
- * Damage severity in the three words a driver would use — the same buckets the
- * trigger layer speaks in (`triggers.ts`), so the answer to "how bad is it" can
- * never disagree with the call that announced the contact.
+ * Damage severity on the HUD's scale (`damage.ts`), the same grade the trigger
+ * layer and the widget use, so the answer to "how bad is it" can never disagree
+ * with the call that announced the contact. `minor` at the least: only asked of
+ * a car that has damage.
  */
-function damageWord(worst: number): string {
-  if (worst >= 0.5) return 'heavy';
-  if (worst >= 0.2) return 'moderate';
-  return 'light';
+function damageWord(d: DamageState): string {
+  const g = overallGrade({ worst: known(d.worst) ? d.worst : 0, partsDetached: d.partsDetached });
+  return g === 'none' ? 'minor' : g;
 }
 
 /**
@@ -785,17 +786,18 @@ export class EngineerCommands {
         const d = frame.player?.damage;
         if (!d) return no('No damage data — not in the car.');
         if (!d.hasDamage) return yes(`Car's clean — no damage.`);
-        const worst = known(d.worst) ? d.worst : 0;
+        const word = damageWord(d);
         const parts: string[] = [];
         const suspWorst = Math.max(...d.suspension.filter((s) => known(s)));
-        if (suspWorst >= 0.2) {
+        // A component is worth naming once it is itself major or worse.
+        if (gradeWorse(damageGrade(suspWorst), 'minor')) {
           let i = d.suspension.findIndex((s) => s === suspWorst);
           if (i < 0) i = 0;
-          parts.push(`${damageWord(worst)} damage — suspension, ${CORNER_NAMES[i]}.`);
-        } else if (known(d.aero) && d.aero >= 0.2) {
-          parts.push(`${damageWord(worst)} damage — aero.`);
+          parts.push(`${word} damage — suspension, ${CORNER_NAMES[i]}.`);
+        } else if (known(d.aero) && gradeWorse(damageGrade(d.aero), 'minor')) {
+          parts.push(`${word} damage — aero.`);
         } else {
-          parts.push(`${damageWord(worst)} damage, bodywork.`);
+          parts.push(`${word} damage, bodywork.`);
         }
         // Capitalise the first word of the composed line.
         parts[0] = parts[0]!.charAt(0).toUpperCase() + parts[0]!.slice(1);

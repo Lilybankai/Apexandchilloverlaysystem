@@ -31,6 +31,8 @@
  */
 export const TELEMETRY_SCHEMA_VERSION = 1 as const;
 
+import type { DamageGrade } from './raceLogTypes';
+
 /** Sentinel used for unknown / not-yet-available numeric values. */
 export const UNKNOWN_VALUE = -1 as const;
 
@@ -242,6 +244,12 @@ export interface SessionState {
    * so nothing ever hides on a missing field.
    */
   onTrack?: boolean;
+  /**
+   * Session-elapsed seconds (LMU `currentEventTime`): the clock the results XML,
+   * `getIncidentsList` and the replay all stamp events in. Omitted when the
+   * source does not publish it.
+   */
+  elapsedSec?: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -631,6 +639,15 @@ export interface DamageState {
   worst: number;
   /** Whether anything is damaged beyond the noise floor. */
   hasDamage: boolean;
+  /**
+   * Each component on the HUD's none / minor / major / critical scale
+   * (`damage.ts` `damageGrade`), so the widget colours by the same cut-offs the
+   * engineer and the race log speak in.
+   */
+  grades: {
+    aero: DamageGrade;
+    suspension: [DamageGrade, DamageGrade, DamageGrade, DamageGrade];
+  };
   /**
    * Seconds to repair everything — the sim's own live figure
    * (`pitStopTimes.times.FixAllDamage`), which tracks actual damage rather than

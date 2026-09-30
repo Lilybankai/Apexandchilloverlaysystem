@@ -998,6 +998,10 @@ verifyPage({
     // The VR tab's walkthrough; the tab's controls themselves live in
     // control-panel.js with the rest of the settings.
     'vr-guide.js',
+    // The race logs inside it (review-racelog.js): the rail's Races list and
+    // one race as a timeline. Hands its markup to review-panel.js's columns,
+    // so it reaches for no id of its own — scanned so it never starts to.
+    'review-racelog.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
@@ -1049,6 +1053,7 @@ console.log('\nIcon sprite — icons.js');
     // The Review tab writes its <use> refs from JS, so the sprite check has to
     // read it too or a typo'd glyph ships as a blank square.
     'review-panel.js',
+    'review-racelog.js',
     // …and so does the Schedule tab (the reminder bells).
     'schedule-panel.js',
   ].map((f) =>

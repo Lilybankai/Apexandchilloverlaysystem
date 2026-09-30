@@ -171,7 +171,8 @@ answers. The division of labour is deliberate and unchanged:
   answers-pre-empt-readouts queue all live in the service, tested headless in
   `scripts/test-engineer-queue.js`.
 - **It still holds no opinions about strategy.** The facts on a cue are bucketed where a
-  raw number would be noise (damage severity is `light`/`moderate`/`heavy`, not `0.37`);
+  raw number would be noise (damage severity is the HUD's `minor`/`major`/`critical`, from
+  `damage.ts` `damageGrade`, not `0.37`);
   the engineer comments on what it can see.
 
 ## Next

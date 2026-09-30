@@ -109,6 +109,7 @@ import {
 } from './carClass';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 import { RaceosRanksClient, type DriverRanks } from './raceosRanks';
+import { rememberDriverName } from './raceLog';
 
 /** Config subset this provider needs. */
 export interface LmuRestConfig {
@@ -756,6 +757,13 @@ export class LmuRestProvider implements TelemetryProvider {
   private standings: RestStanding[] | null = null;
   private session: RestSession | null = null;
   private gameState: RestGameState | null = null;
+  /**
+   * Whether the game is playing a replay: `/navigation/state` `settingMode`
+   * `SETTING_REPLAY_PLAYBACK`. Nothing else tells one from a live race (live
+   * 2026-09-30: `sessionInfo` RACE1, `GSTATE_DYN`, the replay's cars in
+   * standings). `null` until first read, so the race log waits for the answer.
+   */
+  private replayPlayback: boolean | null = null;
   private lastOkAt = 0;
   private timer: NodeJS.Timeout | null = null;
   private live = false;
@@ -916,9 +924,12 @@ export class LmuRestProvider implements TelemetryProvider {
     this.timer.unref?.();
     void this.refreshGarage();
     void this.refreshGarageAids();
+    void this.refreshReplayMode();
     this.garageTimer = setInterval(() => {
       void stallAround('lmu:garage', () => this.refreshGarage());
       void stallAround('lmu:garageAids', () => this.refreshGarageAids());
+      // A replay takes 25 s+ to load after settingMode flips, so 3 s is early enough.
+      void stallAround('lmu:navState', () => this.refreshReplayMode());
     }, GARAGE_REFRESH_INTERVAL_MS);
     this.garageTimer.unref?.();
     void this.refreshPitMenu();
@@ -1289,6 +1300,9 @@ export class LmuRestProvider implements TelemetryProvider {
       if (name !== '') {
         this.localPlayerName = name;
         this.learnOurTeam(this.lastTeamsPayload);
+        // Once per run: the race log's fallback for naming our car in a
+        // results file the lap log cannot place (raceLog.ts).
+        void rememberDriverName(name);
       }
     }
     if (playerCar) this.lastDrivenSlot = playerCar.slotID;
@@ -1359,6 +1373,41 @@ export class LmuRestProvider implements TelemetryProvider {
     const slot = this.lastDrivenSlot;
     if (slot !== null) return cars.find((c) => c.slotID === slot);
     return undefined;
+  }
+
+  /**
+   * Our car for the race log: {@link findOurCar}'s slot, which survives a
+   * driver swap, and every name that may drive it (the team roster, the
+   * `mPlayerName` from shared memory, the current driver), normalised. No IO;
+   * the recorder asks about once a second.
+   */
+  public raceIdentity(): { slot: number | null; names: string[]; replay: boolean | null } {
+    const car = this.findOurCar(this.standings ?? []);
+    const names = new Set(this.teamDriverNames);
+    for (const n of [this.localPlayerName, this.playerDriverName]) {
+      const who = normalizeDriverName(n);
+      if (who !== '') names.add(who);
+    }
+    return { slot: car ? car.slotID : null, names: [...names], replay: this.replayPlayback };
+  }
+
+  /** Reads {@link replayPlayback}. A failure keeps the last answer; a first failure (an older build) means no. */
+  private async refreshReplayMode(): Promise<void> {
+    try {
+      const nav = await this.getJson<{ state?: { settingMode?: string } }>('/navigation/state');
+      this.replayPlayback = nav?.state?.settingMode === 'SETTING_REPLAY_PLAYBACK';
+    } catch {
+      if (this.replayPlayback === null) this.replayPlayback = false;
+    }
+  }
+
+  /**
+   * The whole field's contacts this session (`[{player, contactWith, et}]`),
+   * for the race log. Async like every other REST read here; the caller polls
+   * it every few seconds during a race only.
+   */
+  public fetchIncidents(): Promise<unknown> {
+    return this.getJson<unknown>('/rest/watch/getIncidentsList/0');
   }
 
   /** The DR/SR rank badges for a standings row's driver, if resolved. */
@@ -2635,6 +2684,9 @@ export class LmuRestProvider implements TelemetryProvider {
       ...(startLights ? { startLights } : {}),
       ...(sectorFlags ? { sectorFlags } : {}),
       ...(finalLap ? { finalLap: true } : {}),
+      // The race log stamps events in this clock (it is the XML's and the
+      // replay's); rounded at the wire, a 150 ms poll cannot use more.
+      ...(curET > 0 ? { elapsedSec: Math.round(curET * 10) / 10 } : {}),
     };
   }
 
@@ -3685,6 +3737,10 @@ export class LmuRestProvider implements TelemetryProvider {
     tyres: TyreCorners | undefined,
   ): void {
     if (!playerCar) return;
+    // A replay plays a past race back through the same REST feed, our car and
+    // all, so a lap watched would be logged, and uploaded, as a lap driven.
+    // The race log's Replay button makes watching one routine.
+    if (this.replayPlayback === true) return;
     // The consumption block (LapRecord v5) and the stop record are built from
     // the same reads, so they are gathered once here. All of it comes from
     // shared memory, so all of it is absent while spectating — which is right:

@@ -213,26 +213,27 @@ function leadSentence(
     }
 
     case 'incident': {
-      const severity = String(f.severity ?? 'light');
+      // The HUD's grades (damage.ts damageGrade), the game's own words.
+      const severity = String(f.severity ?? 'minor');
       const repair = num(f.repairSeconds);
       const again = f.repeat === true;
-      if (severity === 'heavy') {
+      if (severity === 'critical') {
         const fix = repair ? ` Repairs about ${Math.round(repair)} seconds — think about boxing.` : '';
         return pick(v, [
-          `${again ? 'More contact — ' : ''}Heavy damage.${fix}`,
-          `${again ? 'Again — ' : ''}That's a big one. Heavy damage.${fix}`,
+          `${again ? 'More contact — ' : ''}Critical damage.${fix}`,
+          `${again ? 'Again — ' : ''}That's a big one. Critical damage.${fix}`,
         ]);
       }
-      if (severity === 'moderate') {
+      if (severity === 'major') {
         const fix = repair ? ` About ${Math.round(repair)} seconds to fix if you box.` : '';
         return pick(v, [
-          `${again ? 'More contact' : 'Contact'} — moderate damage.${fix}`,
-          `${again ? 'Contact again' : 'Contact'} — you've picked up moderate damage.${fix}`,
+          `${again ? 'More contact' : 'Contact'} — major damage.${fix}`,
+          `${again ? 'Contact again' : 'Contact'} — you've picked up major damage.${fix}`,
         ]);
       }
       return pick(v, [
-        `${again ? 'More contact' : 'Contact'} — light damage, keep going.`,
-        `${again ? 'Contact again' : 'Contact'} — it's light, nothing to worry about.`,
+        `${again ? 'More contact' : 'Contact'} — minor damage, keep going.`,
+        `${again ? 'Contact again' : 'Contact'} — it's minor, nothing to worry about.`,
         `${again ? 'More contact' : 'Contact'} — cosmetic only. Push on.`,
       ]);
     }

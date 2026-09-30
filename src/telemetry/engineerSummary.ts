@@ -14,6 +14,8 @@
 
 import { UNKNOWN_VALUE } from './types';
 import type { StandingEntry, TelemetryFrame } from './types';
+import { overallGrade } from './damage';
+import type { DamageGrade } from './raceLogTypes';
 import {
   deltaToReferencePaceTarget,
   referencePaceTargets,
@@ -333,11 +335,36 @@ function tyreBand(frame: TelemetryFrame): string | undefined {
   return 'temps available';
 }
 
+const PROMPT_DAMAGE_WORD: Readonly<Record<DamageGrade, string>> = {
+  none: 'none',
+  minor: 'light',
+  major: 'medium',
+  critical: 'heavy',
+};
+
+/**
+ * Below this worst-component severity the summary says `none`, as it always
+ * has. It is the prompt's contract (`light` has meant 0.04+ since the band was
+ * written), and a 0.5–4% scuff that the HUD's 0.005 noise floor calls minor is
+ * not worth the engineer's words. The summary only: the widget and the race
+ * log keep the HUD's scale.
+ */
+const PROMPT_DAMAGE_FLOOR = 0.04;
+
 function damageBand(frame: TelemetryFrame): { band: string; repairSec?: number } | undefined {
   const d = frame.player?.damage;
   if (!d) return undefined;
   const worst = known(d.worst) ? d.worst : 0;
-  const band = !d.hasDamage || worst < 0.04 ? 'none' : worst < 0.25 ? 'light' : worst < 0.5 ? 'medium' : 'heavy';
+  // The HUD's scale (damage.ts), spelt in the words the deployed engineer
+  // prompt already documents (`none | light | medium | heavy`), so the cloud
+  // function needs no redeploy: minor → light, major → medium, critical → heavy.
+  // A lost part is at least major whatever the numbers say, so it skips the floor.
+  const partsOff = known(d.partsDetached) && d.partsDetached > 0;
+  const grade =
+    partsOff || (d.hasDamage && worst >= PROMPT_DAMAGE_FLOOR)
+      ? overallGrade({ worst, partsDetached: d.partsDetached })
+      : 'none';
+  const band = PROMPT_DAMAGE_WORD[grade];
   const repairSec = known(d.repairSeconds) && d.repairSeconds > 0 ? Math.round(d.repairSeconds) : undefined;
   return { band, repairSec };
 }

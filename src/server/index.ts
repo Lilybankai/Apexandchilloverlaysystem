@@ -40,6 +40,7 @@ import { KeySender } from './keySender';
 import { ensureSharedMemoryPluginOnStartup } from './pluginInstaller';
 import { primeSteamRoots } from './lmuKeybinds';
 import { applyTeammateRelay, type TeammateRelay } from '../telemetry/teammateRelay';
+import { LiveRaceLog } from '../telemetry/raceLogRecorder';
 
 /** Maps file extensions to Content-Type headers for the static server. */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -1032,6 +1033,16 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // LMU only reads its plugin list at launch and rewrites config on exit.
   const cancelPluginInstall = ensureSharedMemoryPluginOnStartup();
 
+  // The race log's live recorder (docs/RACE-LOG-PLAN.md phase 2). Here, beside
+  // the provider, so a race is written down whether or not the engineer or any
+  // panel is open. Races only; async appends; the incident poll only runs
+  // during one. Other providers get flags alone: no team identity, no list.
+  const lmu = provider instanceof LmuRestProvider ? provider : null;
+  const raceLog = new LiveRaceLog(
+    lmu ? { identity: () => lmu.raceIdentity(), fetchIncidents: () => lmu.fetchIncidents() } : {},
+  );
+  let raceLogFailed = false;
+
   const intervalMs = frameIntervalMs(config);
   // Windows coalesces JS timers to ~15.6 ms multiples, so a plain setInterval
   // at the target rate silently halves anything above ~32 Hz (a 17 ms request
@@ -1071,6 +1082,15 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       noteLiveAids(frame.mfd ? frame.mfd.aids : null);
       // Last, so nothing above ever sees a teammate's data as this PC's own.
       wsServer.broadcast(teammateRelay ? applyTeammateRelay(frame, teammateRelay, now) : frame);
+      // The race log records this PC's own frame, never the relayed one: a
+      // teammate's damage or position written down as ours is a false record.
+      try {
+        raceLog.onFrame(frame, now);
+      } catch (err) {
+        // The log is a record, not the overlay: never let it take a frame down.
+        if (!raceLogFailed) console.error('[racelog] recorder failed:', (err as Error).message);
+        raceLogFailed = true;
+      }
       if (perfOn) {
         const ms = Number(process.hrtime.bigint() - t0) / 1e6;
         perfCount++;
@@ -1107,6 +1127,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     stopped = true;
     clearInterval(loop);
     cancelPluginInstall();
+    await raceLog.stop();
     await provider.stop();
     await wsServer.close();
     clearInterval(botTick);

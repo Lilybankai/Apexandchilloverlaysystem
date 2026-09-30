@@ -683,6 +683,19 @@
             'those two lines actually were.',
         },
         {
+          id: 'races',
+          view: 'review',
+          anchor: '#rv-mode',
+          title: 'Every race, as a timeline',
+          body:
+            'Races lists every race the game saved results for, even ones driven before Apex. Open ' +
+            'one for the start, every lap, contacts, damage, limits, penalties and pit stops in ' +
+            'order. Incidents narrows it to what a steward would read.',
+          note:
+            'Replay on a contact opens the game’s own replay 5 s before it, from the main menu. ' +
+            'The game only keeps five replays per track.',
+        },
+        {
           id: 'career',
           view: 'review',
           anchor: '#rv-career',

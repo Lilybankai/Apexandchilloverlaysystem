@@ -3866,6 +3866,54 @@ function registerIpc() {
   });
 
   /**
+   * The race log (`docs/RACE-LOG-PLAN.md`): every race LMU wrote a results
+   * file for, newest first, then one race as a timeline. Read from the game's
+   * own `UserData\Log\Results`, parsed in `raceLog.ts`; the list is cached by
+   * file mtime in `~/.apex-overlay/racelog/index.json`, so only new races are
+   * parsed. Same lazy, never-throw shape as `review:sessions`.
+   */
+  ipcMain.handle('review:racelogs', async () => {
+    try {
+      const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+      // The async form: a first listing parses every file (~120 MB on Carl's
+      // PC) and must hand the main process back between files, not freeze it.
+      return { ok: true, races: await raceLog.listRaceLogsAsync() };
+    } catch (err) {
+      console.error('[app] race log list unavailable:', err.message);
+      return { ok: false, races: [], error: err.message };
+    }
+  });
+
+  /** One race's log: `{ ok, log }`. `log.slot` is null when our car was not found. */
+  ipcMain.handle('review:racelog', async (_evt, id) => {
+    if (typeof id !== 'string' || !id) return { ok: false, log: null, error: 'no race' };
+    try {
+      const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+      // Async and sliced: the sync load held main ~92 ms on a 5 MB race.
+      return { ok: true, log: await raceLog.loadRaceLogAsync(id) };
+    } catch (err) {
+      console.error('[app] race log unavailable:', err.message);
+      return { ok: false, log: null, error: err.message };
+    }
+  });
+
+  /** "Which car was yours?": `{ id, slot }` remembers it, `slot: null` forgets; answers the rebuilt log. */
+  ipcMain.handle('review:racelogPick', async (_evt, req) => {
+    const id = req && typeof req.id === 'string' ? req.id : '';
+    const slot = req && Number.isInteger(req.slot) ? req.slot : null;
+    if (!id) return { ok: false, log: null, error: 'no race' };
+    try {
+      const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+      // Also forgets a driver name that had placed this race on the wrong car.
+      if (!(await raceLog.pickSlotAsync(id, slot))) return { ok: false, log: null, error: 'not saved' };
+      return { ok: true, log: await raceLog.loadRaceLogAsync(id) };
+    } catch (err) {
+      console.error('[app] race log pick failed:', err.message);
+      return { ok: false, log: null, error: err.message };
+    }
+  });
+
+  /**
    * One lap in full: its driving trace and the circuit it was driven on.
    *
    * `haveMapKey` is the circuit the renderer is already holding. Clicking
@@ -3985,6 +4033,79 @@ function registerIpc() {
     } catch (err) {
       console.error('[app] best lap lookup unavailable:', err.message);
       return { ok: false, lap: null, error: err.message };
+    }
+  });
+
+  /* ---- Race log: jump into the game's replay ----
+   *
+   * The ▶ on a race-log row. `dist/server/lmuReplay.js` loads the game's own
+   * replay of that race and drops the camera on our car five seconds before
+   * the event (docs/RACE-LOG-PLAN.md, phase 4). One controller for the app's
+   * life, because it REMEMBERS which replay it loaded — the game cannot say —
+   * and that memory is what makes a second click a seek instead of a 40 s
+   * reload. Built here rather than in the overlay server because the Review
+   * tab must work whether or not the server is running. Rebuilt only if the
+   * LMU port setting changes.
+   *
+   * Status changes (loading progress, ready, the user leaving the replay) are
+   * pushed as `review:replayChanged`; a load takes up to a minute, so
+   * `review:replayOpen` answers as soon as the load is under way.
+   */
+  let replayController = null;
+  let replayControllerPort = 0;
+  const getReplayController = () => {
+    const settings = loadSettings();
+    const port = Number.isFinite(settings.lmuApiPort) ? settings.lmuApiPort : 6397;
+    if (!replayController || replayControllerPort !== port) {
+      if (replayController) replayController.dispose();
+      const mod = require(path.join(__dirname, '..', 'dist', 'server', 'lmuReplay.js'));
+      replayController = new mod.LmuReplayController({ port });
+      replayControllerPort = port;
+      replayController.onStatus((status) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('review:replayChanged', status);
+        }
+      });
+    }
+    return replayController;
+  };
+
+  ipcMain.handle('review:replayOpen', async (_evt, req) => {
+    const raceId = req && typeof req.raceId === 'string' ? req.raceId : '';
+    const slot = req ? Number(req.slot) : NaN;
+    const et = req ? Number(req.et) : NaN;
+    if (!raceId || !Number.isInteger(slot) || !Number.isFinite(et)) {
+      return { ok: false, status: null, error: 'no incident' };
+    }
+    try {
+      const status = await getReplayController().openAt({ raceId, slot, et, leadS: 5 });
+      return { ok: true, status };
+    } catch (err) {
+      console.error('[app] replay open failed:', err.message);
+      return { ok: false, status: null, error: err.message };
+    }
+  });
+
+  ipcMain.handle('review:replayStatus', async () => {
+    try {
+      // A fresh look, so a replay the user has since closed reads as idle.
+      return { ok: true, status: await getReplayController().refresh() };
+    } catch (err) {
+      return { ok: false, status: null, error: err.message };
+    }
+  });
+
+  ipcMain.handle('review:replayAvailable', async (_evt, req) => {
+    const raceId = req && typeof req.raceId === 'string' ? req.raceId : '';
+    if (!raceId) return { ok: false, available: false, reason: 'no-results', message: 'No race.' };
+    try {
+      const res = await getReplayController().findReplayFor(raceId);
+      return res.ok
+        ? { ok: true, available: true, replayName: res.replay.replayName, sizeBytes: res.replay.sizeBytes }
+        : { ok: true, available: false, reason: res.reason, message: res.message };
+    } catch (err) {
+      console.error('[app] replay lookup failed:', err.message);
+      return { ok: false, available: false, reason: 'error', message: err.message };
     }
   });
 

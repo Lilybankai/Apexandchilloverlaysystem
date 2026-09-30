@@ -82,6 +82,8 @@
     { slug: 'action:review.session', tab: 'review', label: 'Opened a session' },
     { slug: 'action:review.lap', tab: 'review', label: 'Opened a lap' },
     { slug: 'action:review.compare', tab: 'review', label: 'Compared against another lap' },
+    { slug: 'action:review.racelog', tab: 'review', label: 'Opened a race log' },
+    { slug: 'action:review.replay', tab: 'review', label: 'Jumped into a race replay' },
 
     // Setups.
     { slug: 'action:setup.edit', tab: 'setups', label: 'Edited a setup in the garage' },
