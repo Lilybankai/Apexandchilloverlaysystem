@@ -640,6 +640,7 @@
 
 .lap-purple { color: var(--purple-fastest) !important; font-weight: 700; }
 .lap-green { color: var(--pos-gain) !important; }
+.lap-red { color: var(--pos-loss) !important; }
 
 /* =========================================================================
  * ALARM BAR — a call the driver must act on this lap (see ApexOverlay.alarmBar).
