@@ -1981,3 +1981,10 @@ html, body { height: 100%; overflow: hidden; }
 .card--vr .vr-nudge:hover { border-color: rgba(38, 187, 244, 0.55); }
 
 .card--vr .vr-field .rate-row { gap: 8px; }
+
+/* The headset MFD's card: only while VR is on (the switch lives in the card
+   above), with the hide time and its five bindings. */
+.card--vr-mfd[hidden] { display: none; }
+.card--vr-mfd .vr-adjust { margin-top: 12px; }
+.card--vr-mfd #vr-mfd-off { margin: 8px 0 0; color: var(--warn); }
+.card--vr-mfd .binding-list { margin-top: 12px; }

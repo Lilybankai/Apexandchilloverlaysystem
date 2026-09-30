@@ -39,9 +39,12 @@
 /**
  * The widgets that can go in the headset, in the order the control panel lists
  * them, and where each first appears. The pixel width each is drawn at lives
- * in overlay/css/vr.css. Interactive widgets (MFD, fuel planner) and chat are
- * left out: nobody can click a panel in a headset. Every id here needs its
- * widget script in overlay/vr.html.
+ * in overlay/css/vr.css. The fuel planner and chat are left out: nobody can
+ * click a panel in a headset. The MFD is in because it never needed a click —
+ * the driver's bound wheel buttons walk and change it (the cursor lives on the
+ * server, see server/pitCursor), and in the headset it hides itself when idle
+ * and comes back on those buttons or its own hotkey (the `vr.mfd` action).
+ * Every id here needs its widget script in overlay/vr.html.
  */
 const VR_WIDGETS = Object.freeze({
   speedo: { on: true, distance: 0.8, height: -0.32, side: 0, width: 0.5 },
@@ -59,7 +62,19 @@ const VR_WIDGETS = Object.freeze({
   racecontrol: { on: false, distance: 0.85, height: 0.18, side: 0, width: 0.2 },
   damage: { on: false, distance: 0.8, height: -0.32, side: -0.42, width: 0.16 },
   limits: { on: false, distance: 0.85, height: 0.12, side: 0.2, width: 0.2 },
+  // Tall (pit menu + aids), so it goes low and off to the right, clear of the
+  // speedo and the relative.
+  mfd: { on: false, distance: 0.7, height: -0.15, side: 0.3, width: 0.22 },
 });
+
+/**
+ * Seconds the headset MFD stays up after the last press before it hides
+ * itself. The in-game layer's is 3 s (FADE_AFTER_MS in widgets/mfd.js), which
+ * is the default here too; the longer ones exist because reading a pit menu
+ * through a lens, at speed, can take longer than glancing at a monitor.
+ */
+const VR_MFD_HIDE_CHOICES = Object.freeze([3, 5, 10, 20]);
+const VR_MFD_HIDE_DEFAULT = 3;
 
 const VR_WIDGET_IDS = Object.freeze(Object.keys(VR_WIDGETS));
 
@@ -140,22 +155,29 @@ function normalizeVr(stored) {
   const widgets = {};
   const storedWidgets = s.widgets && typeof s.widgets === 'object' ? s.widgets : {};
   for (const id of VR_WIDGET_IDS) widgets[id] = normalizeWidget(id, storedWidgets[id]);
+  const hide = Number(s.mfdHideSec);
   return {
     enabled: typeof s.enabled === 'boolean' ? s.enabled : false,
+    mfdHideSec: VR_MFD_HIDE_CHOICES.includes(hide) ? hide : VR_MFD_HIDE_DEFAULT,
     widgets,
   };
 }
 
 /**
  * Merge a partial update from the control panel into the current block:
- * `{enabled}` and/or `{widgets: {id: {field: value}}}`, field by field, so a
- * slider sends only its own number. `{widgets: {id: null}}` puts that widget
- * back to its defaults.
+ * `{enabled}`, `{mfdHideSec}` and/or `{widgets: {id: {field: value}}}`, field
+ * by field, so a slider sends only its own number. `{widgets: {id: null}}`
+ * puts that widget back to its defaults.
  */
 function mergeVr(current, patch) {
   const cur = normalizeVr(current);
   if (!patch || typeof patch !== 'object') return cur;
-  const next = { enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled, widgets: {} };
+  const next = {
+    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled,
+    // A value off the list keeps the current one rather than resetting it.
+    mfdHideSec: VR_MFD_HIDE_CHOICES.includes(Number(patch.mfdHideSec)) ? Number(patch.mfdHideSec) : cur.mfdHideSec,
+    widgets: {},
+  };
   const pw = patch.widgets && typeof patch.widgets === 'object' ? patch.widgets : {};
   for (const id of VR_WIDGET_IDS) {
     if (pw[id] === null) next.widgets[id] = widgetDefaults(id);
@@ -218,6 +240,8 @@ module.exports = {
   VR_WIDGET_IDS,
   VR_LIMITS,
   VR_STEP,
+  VR_MFD_HIDE_CHOICES,
+  VR_MFD_HIDE_DEFAULT,
   widgetDefaults,
   normalizeVr,
   mergeVr,

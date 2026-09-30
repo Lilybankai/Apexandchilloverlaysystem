@@ -750,6 +750,38 @@
           </div>
         </section>
 
+        <!-- The MFD in the headset. Its own card because it is the one panel
+             that comes and goes: hidden when idle, summoned by the wheel's MFD
+             buttons or this hotkey. Shown only while VR is on. -->
+        <section class="card card--vr card--vr-mfd" id="vr-mfd-card" hidden>
+          <h2 class="card__title">
+            <svg class="icon"><use href="#i-sliders-horizontal" /></svg>MFD in the headset
+          </h2>
+          <p class="card__desc">
+            Switch <strong>MFD</strong> on in the list above and the pit menu
+            and driving aids get a panel of their own. It hides itself when you
+            are not using it, like the MFD on screen with auto-fade on. The
+            pit menu buttons you already use (▲ ▼ + −) bring it back and drive
+            it exactly as they do on screen, and the first row below is a
+            button of its own to show or hide it. These are the same bindings
+            as <strong>Settings → Controls</strong>: bind one here and it is
+            bound there.
+          </p>
+          <p class="field__hint" id="vr-mfd-off" hidden>
+            The MFD is not switched on in the list above yet.
+          </p>
+          <div class="vr-adjust">
+            <label class="field__label" for="vr-mfd-hide">Hide after</label>
+            <select class="field__input" id="vr-mfd-hide">
+              <option value="3">3 seconds (same as on screen)</option>
+              <option value="5">5 seconds</option>
+              <option value="10">10 seconds</option>
+              <option value="20">20 seconds</option>
+            </select>
+          </div>
+          <ul class="binding-list" id="vr-binding-list"><!-- rows injected by JS --></ul>
+        </section>
+
         <!-- ================== HOW IT WORKS ========================== -->
         <!-- First-run walkthrough. Steps are built by vr-guide.js — only the
              frame is static, same contract as the Setups, Streamers, Team and

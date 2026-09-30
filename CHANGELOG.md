@@ -5,6 +5,36 @@
      app until it is renamed.
 -->
 
+## 1.2.1-beta.1 — 2026-09-30
+
+The MFD comes to the VR headset. It stays hidden until you press one of your
+MFD buttons, and it works just as it does on screen.
+
+### Added
+
+- **The MFD in the headset.** The pit menu and driving aids are now a VR
+  widget: switch on the **MFD** chip in the VR tab, then place it like any
+  other panel. The pit menu buttons already bound on your wheel (▲ ▼ + −)
+  work in the headset exactly as they do on screen. Pressing any of them
+  brings the MFD up, the highlighted row shows what + and − will change, and
+  the new value appears as soon as the game takes it.
+- **It hides itself when you are not using it**, like the on-screen MFD with
+  auto-fade on. A new **MFD in the headset** card in the VR tab sets how long
+  it stays up after your last press: 3 seconds, as on screen, or 5, 10 or
+  20.
+- **A button to show or hide it.** Bind **Show / hide the MFD in the VR
+  headset** to a wheel button or a key in the same card to bring the MFD up
+  just to read it, and press it again to put it away. The card also lists
+  your four MFD buttons, so you can bind or check them without leaving the
+  tab. They are the same bindings as Settings → Controls.
+
+### Fixed
+
+- **The first MFD button press after starting Apex did not bring a faded MFD
+  back.** With auto-fade on, the first press moved the selection but left the
+  MFD hidden until the second press. It now comes back on the first press, on
+  screen and in the headset.
+
 ## 1.2.0 — 2026-09-30
 
 A race log for every race you have driven, with a button that takes the

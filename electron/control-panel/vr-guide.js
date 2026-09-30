@@ -96,6 +96,18 @@
       ],
     },
     {
+      id: 'mfd',
+      icon: 'sliders-horizontal',
+      title: 'The MFD in the headset',
+      lead: 'Switch on the MFD chip and the pit menu and driving aids get a panel of their own. It stays out of the way until you need it, then hides again.',
+      points: [
+        'The pit menu buttons you already use on your wheel (▲ ▼ + −) work in the headset exactly as they do on screen. Pressing any of them brings the MFD up, and the highlighted row shows what + and − will change.',
+        'It hides itself a few seconds after your last press, like the MFD on screen does with auto-fade on. “Hide after” in the MFD card sets how long it stays up: 3 to 20 seconds.',
+        'Bind a button to “Show / hide the MFD in the VR headset” in the MFD card to bring it up just to read it, and press it again to put it away.',
+        'Those bindings are the same ones as in Settings → Controls. Change one in either place and it changes in both.',
+      ],
+    },
+    {
       id: 'hands',
       icon: 'eye',
       title: 'Why your hands go behind the panels',

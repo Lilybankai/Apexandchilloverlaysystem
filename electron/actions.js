@@ -50,6 +50,7 @@ function tryRequire(rel) {
  * @param {() => boolean} [deps.refreshOverlays]
  * @param {() => void} [deps.resetLayout]
  * @param {(widgetId: string) => void} [deps.cycleWidgetMode]
+ * @param {() => Promise<object>} [deps.toggleVrMfd]
  * @returns {{ list: () => object[], get: (id: string) => object|undefined,
  *            run: (id: string, dir?: number) => Promise<object> }}
  */
@@ -208,6 +209,19 @@ function createActions(deps = {}) {
         if (next !== current) deps.applySettings({ panelOpacity: next });
         return { ok: true, value: next };
       },
+    });
+  }
+
+  if (deps.toggleVrMfd) {
+    define({
+      id: 'vr.mfd',
+      // Bound from the VR tab as well as the Bindings list. Only the summon
+      // needs a binding: once it is up, the MFD's own ▲ ▼ + − buttons drive
+      // it in the headset exactly as they do on screen.
+      label: 'Show / hide the MFD in the VR headset',
+      group: 'VR',
+      kind: 'pulse',
+      run: async () => deps.toggleVrMfd(),
     });
   }
 

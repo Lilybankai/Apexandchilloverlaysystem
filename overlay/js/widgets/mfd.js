@@ -34,6 +34,9 @@
  *   ?pit=off      hide the pit-strategy section.  Default on.
  *   ?aids=off     hide the driving-aids section.  Default on.
  *   ?opacity=0.4  panel opacity (same contract as the damage/motion widgets).
+ *   ?fade=on      pin the auto-fade on (or off) instead of following Settings.
+ *   ?fadems=5000  idle time before it fades, ms (the VR page sets both —
+ *                 electron/vr/index.js).
  */
 (function () {
   "use strict";
@@ -74,7 +77,10 @@
    *   - while the pointer is OVER the widget the clock is held: fading a menu
    *     out from under a mouse that is aiming at it is a misclick factory;
    *   - switching the feature off shows the widget and stops the clock, so a
-   *     faded widget can never be stranded invisible by the toggle.
+   *     faded widget can never be stranded invisible by the toggle;
+   *   - toggle() is the headset's show/hide hotkey: shown → hide now, hidden →
+   *     show and restart the clock. It only hides while the feature is on,
+   *     because with it off nothing would ever bring the widget back.
    */
   function createFadeController(opts) {
     var setFaded = opts.setFaded;
@@ -125,6 +131,18 @@
         } else {
           arm();
         }
+      },
+      /** Show if hidden, hide if shown. Answers what it is now: "shown" or "hidden". */
+      toggle: function () {
+        if (faded || !enabled) {
+          show();
+          arm();
+          return "shown";
+        }
+        stop();
+        faded = true;
+        setFaded(true);
+        return "hidden";
       },
       /** The operator's setting. Enabling arms the clock immediately. */
       setEnabled: function (on) {
@@ -401,6 +419,8 @@
    * to appear on PIT REQUEST and a pit row simultaneously.
    */
   var pitCursor = { key: null, name: null, updatedAt: 0 };
+  /** Whether a cursor poll has answered yet (the first one only catches up). */
+  var cursorSeen = false;
   /** Poll cadence, ms. The route answers from memory, so this is nearly free. */
   var CURSOR_POLL_MS = 120;
 
@@ -480,7 +500,14 @@
       .then(function (c) {
         if (!c || c.ok === false) return;
         var moved = c.key !== pitCursor.key || c.updatedAt !== pitCursor.updatedAt;
-        var first = pitCursor.updatedAt === 0;
+        // "First" is the first ANSWER, not "a cursor that has never moved":
+        // keyed on updatedAt === 0 it was both, so while nothing had moved the
+        // cursor since the app started, every poll looked like the first — and
+        // the first real press of the session was swallowed as catching up,
+        // leaving a faded MFD faded (seen in the headset, where it is always
+        // faded until summoned).
+        var first = !cursorSeen;
+        cursorSeen = true;
         pitCursor = { key: c.key, name: c.name, updatedAt: c.updatedAt };
         // The overlay-owned rows ride along on this poll, so both their ORDER and
         // their values come from the server rather than from a copy kept here —
@@ -1117,7 +1144,10 @@
     // drives it live. The data attribute only ever means "faded right now" —
     // the stylesheet owns what that looks like, including ignoring it entirely
     // while the layer is in edit mode.
+    var fadeMs = parseInt(params.get("fadems"), 10);
     fade = createFadeController({
+      // Bounded, so a hand-typed URL can neither flicker it nor keep it forever.
+      delayMs: isFinite(fadeMs) ? Math.min(60000, Math.max(1000, fadeMs)) : FADE_AFTER_MS,
       setFaded: function (on) {
         if (on) root.setAttribute("data-mfd-faded", "true");
         else root.removeAttribute("data-mfd-faded");
@@ -1196,6 +1226,13 @@
     LAYOUTS: LAYOUTS,
     createFadeController: createFadeController,
     applyLayout: applyLayout,
+    /**
+     * Show / hide the live widget — the headset's MFD hotkey, called by the app
+     * (electron/vr/index.js) on the offscreen VR page. Null before init.
+     */
+    toggleShown: function () {
+      return fade ? fade.toggle() : null;
+    },
   };
 
   window.ApexOverlay.registerWidget("mfd", {

@@ -50,6 +50,10 @@
   const vrWidgetList = $('#vr-widget-list');
   const vrAdjust = $('#vr-adjust');
   const vrGrid = $('#vr-grid');
+  const vrMfdCard = $('#vr-mfd-card');
+  const vrMfdOff = $('#vr-mfd-off');
+  const vrMfdHide = $('#vr-mfd-hide');
+  const vrBindingList = $('#vr-binding-list');
   // Placement controls for the widget picked in `vrAdjust`. `scale` turns the
   // setting into the slider's unit: metres → cm, 0–1 opacity → %, degrees as
   // they are. Spelled out rather than built from the key, so test:panel-parity
@@ -82,6 +86,7 @@
     racecontrol: 'Race control',
     damage: 'Damage',
     limits: 'Track limits',
+    mfd: 'MFD',
   };
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -311,6 +316,10 @@
     vrResetBtn.disabled = !vrAdjustId;
     vrGrid.hidden = !vrAdjustId;
     renderVrSliders();
+
+    vrMfdCard.hidden = !vr.enabled;
+    vrMfdOff.hidden = !!(widgets.mfd && widgets.mfd.on);
+    vrMfdHide.value = String(vr.mfdHideSec || 3);
   }
 
   /** Fill the placement controls from the picked widget's settings. */
@@ -2879,6 +2888,11 @@
     renderSettings(state.settings);
   });
 
+  vrMfdHide.addEventListener('change', async () => {
+    const state = await window.apex.updateSettings({ vr: { mfdHideSec: parseInt(vrMfdHide.value, 10) } });
+    renderSettings(state.settings);
+  });
+
   vrAdjust.addEventListener('change', () => {
     vrAdjustId = vrAdjust.value || null;
     renderVrSliders();
@@ -3202,8 +3216,24 @@
     return li;
   }
 
+  /**
+   * The VR tab's own short list: the headset MFD's show/hide, then the four
+   * pit-menu buttons that drive it. The same actions and the same bindings as
+   * the full list — a row here is only another view of one there.
+   */
+  const VR_BINDING_IDS = ['vr.mfd', 'pit.rowUp', 'pit.rowDown', 'pit.valueInc', 'pit.valueDec'];
+
+  function renderVrBindings(list) {
+    vrBindingList.innerHTML = '';
+    for (const id of VR_BINDING_IDS) {
+      const action = list.find((a) => a.id === id);
+      if (action) vrBindingList.appendChild(bindingRow(action));
+    }
+  }
+
   async function renderBindings() {
     const list = await window.apex.actionsList();
+    renderVrBindings(list);
     bindingList.innerHTML = '';
     let group = null;
     for (const action of list) {

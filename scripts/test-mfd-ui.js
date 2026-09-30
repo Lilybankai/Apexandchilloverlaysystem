@@ -209,6 +209,52 @@ console.log('\nauto-fade — the clock');
   );
 }
 
+console.log('\nthe headset hotkey — toggle()');
+
+{
+  // Hidden → the hotkey brings it up, and it hides again on its own.
+  const { clock, ctl } = makeController();
+  ctl.setEnabled(true);
+  clock.advance(3000);
+  check('setup: faded', ctl.isFaded());
+  check('toggle on a hidden MFD shows it', ctl.toggle() === 'shown' && !ctl.isFaded());
+  clock.advance(3000);
+  check('…and it hides itself again after the idle time', ctl.isFaded());
+}
+
+{
+  // Shown → the hotkey puts it away now, without waiting out the clock.
+  const { clock, log, ctl } = makeController();
+  ctl.setEnabled(true);
+  clock.advance(1000);
+  check('toggle on a shown MFD hides it at once', ctl.toggle() === 'hidden' && ctl.isFaded());
+  check('no timer is left to fire on a hidden MFD', clock.armed() === 0);
+  check('the hide was painted once', JSON.stringify(log) === JSON.stringify([true]), JSON.stringify(log));
+  ctl.activity();
+  check('a wheel press after the hotkey hid it brings it back', !ctl.isFaded());
+}
+
+{
+  // With the fade off there is nothing to bring it back, so toggle never hides.
+  const { ctl } = makeController();
+  check('fade off: toggle never hides it', ctl.toggle() === 'shown' && !ctl.isFaded());
+}
+
+{
+  // The first press of a session must wake it. "First poll" used to be read
+  // as `updatedAt === 0`, which is also "nothing has moved the cursor yet" —
+  // so the first real press was swallowed as catching up.
+  const mfdSrc = read('overlay', 'js', 'widgets', 'mfd.js');
+  check('the cursor poll knows its first answer by a flag, not by updatedAt', /var first = !cursorSeen;/.test(mfdSrc));
+  check('…and never by updatedAt === 0', !/first = pitCursor\.updatedAt === 0/.test(mfdSrc));
+}
+
+{
+  // The live widget answers the app before init with null, not a throw.
+  check('ApexMfd.toggleShown exists for the app to call', typeof api.toggleShown === 'function');
+  check('…and answers null before the widget has started', api.toggleShown() === null);
+}
+
 /* --------------------------- the settings chain -------------------------- */
 
 console.log('\nauto-fade + layout survive the settings chain');

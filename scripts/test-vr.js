@@ -26,6 +26,8 @@ const {
   VR_WIDGETS,
   VR_WIDGET_IDS,
   VR_LIMITS,
+  VR_MFD_HIDE_CHOICES,
+  VR_MFD_HIDE_DEFAULT,
   widgetDefaults,
   normalizeVr,
   mergeVr,
@@ -180,6 +182,43 @@ console.log('\nA partial update changes exactly what it sent');
   check('the master switch alone leaves placements alone', m4.enabled === false && m4.widgets.speedo.side === 0.1);
   const m5 = mergeVr(base, { widgets: { speedo: { on: false }, relative: { on: false } } });
   check('every widget can be off with VR still on', m5.enabled === true && enabledWidgets(m5).length === 0);
+}
+
+/* ------------------------------ the MFD -------------------------------- */
+console.log('\nThe headset MFD');
+{
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const d = normalizeVr(undefined);
+  check('the MFD is a VR widget', VR_WIDGET_IDS.includes('mfd'));
+  check('…switched off until the driver asks for it', d.widgets.mfd.on === false);
+  check('it hides after 3 s by default, as on screen', d.mfdHideSec === 3 && VR_MFD_HIDE_DEFAULT === 3);
+  check('a stored choice is kept', normalizeVr({ mfdHideSec: 10 }).mfdHideSec === 10);
+  check('a value off the list falls back to the default', normalizeVr({ mfdHideSec: 7 }).mfdHideSec === 3);
+  check('…and junk does too', normalizeVr({ mfdHideSec: 'soon' }).mfdHideSec === 3);
+  const base = normalizeVr({ enabled: true, mfdHideSec: 5 });
+  check('a merge can change it', mergeVr(base, { mfdHideSec: 20 }).mfdHideSec === 20);
+  check('a merge that does not send it keeps it', mergeVr(base, { widgets: { mfd: { on: true } } }).mfdHideSec === 5);
+  check('a merge with a bad value keeps the current one', mergeVr(base, { mfdHideSec: 4 }).mfdHideSec === 5);
+  check('every choice is whole seconds', VR_MFD_HIDE_CHOICES.every((n) => Number.isInteger(n) && n > 0));
+
+  // Every VR widget has to be loadable on the headset page, or its panel is
+  // an empty rectangle.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'vr.html'), 'utf8');
+  const shells = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'js', 'shells.js'), 'utf8');
+  for (const id of VR_WIDGET_IDS) {
+    const script = id === 'speedo' ? 'speedo.js' : `${id}.js`;
+    check(`vr.html loads the ${id} widget`, html.includes(`js/widgets/${script}`));
+  }
+  check('the MFD has a shell to draw into', /\bmfd:/.test(shells));
+
+  // The page URL pins the MFD's auto-hide on, at the driver's time.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'electron', 'vr', 'index.js'), 'utf8');
+  check('the VR page pins the MFD fade on', /&fade=on&fadems=\$\{hideMs\}/.test(src));
+  const hub = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
+  for (const n of VR_MFD_HIDE_CHOICES) {
+    check(`the Hide after list offers ${n} s`, new RegExp(`id="vr-mfd-hide"[\\s\\S]*?<option value="${n}"`).test(hub));
+  }
 }
 
 /* --------------------------- OpenVR layout ----------------------------- */

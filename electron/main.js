@@ -1816,6 +1816,11 @@ function getActions() {
       cycleIngame,
       toggleIngameInteract,
       refreshOverlays: () => refreshOverlays('a binding'),
+      toggleVrMfd: async () => {
+        if (!vrOnThisChannel(loadSettings())) return { ok: false, error: 'VR is on the beta channel only' };
+        featureUsage.feature('action:vr.mfd');
+        return vrOverlay.toggleMfd();
+      },
       resetLayout: () => {
         const settings = loadSettings();
         saveSettings({ ...settings, ingameLayout: {} });
@@ -4710,8 +4715,12 @@ function registerIpc() {
    */
   ipcMain.handle('actions:list', () => {
     const settings = loadSettings();
+    const vrHere = vrOnThisChannel(settings);
     return getActions()
       .list()
+      // VR's actions only where VR itself is (the beta channel): a binding row
+      // for a feature the driver cannot see is a question nobody can answer.
+      .filter((a) => vrHere || a.group !== 'VR')
       .map((a) => ({
         ...a,
         binding: settings.actionBindings[a.id] || '',

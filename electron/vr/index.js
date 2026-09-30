@@ -96,7 +96,10 @@ class VrOverlay {
       return;
     }
     this.vr = vr;
-    const url = `${baseUrl}/vr.html?widgets=${enabledWidgets(vr).join(',')}`;
+    // The MFD always hides itself when idle in the headset — it is summoned by
+    // the wheel's MFD buttons or its hotkey (toggleMfd), not left floating.
+    const hideMs = (vr.mfdHideSec || 3) * 1000;
+    const url = `${baseUrl}/vr.html?widgets=${enabledWidgets(vr).join(',')}&fade=on&fadems=${hideMs}`;
     this.url = url;
     if (!this.worker && !this.startWorker()) return;
     if (this.win && !this.win.isDestroyed() && this.win.vrUrl !== url) {
@@ -116,6 +119,32 @@ class VrOverlay {
     this.visible = visible;
     if (this.worker) this.worker.postMessage({ cmd: 'visible', visible });
     this.applyPainting();
+  }
+
+  /**
+   * The headset MFD's show/hide hotkey (the `vr.mfd` action). Shown → hidden
+   * now; hidden → up until it has been idle for the driver's hide time. The
+   * wheel's own MFD buttons need none of this: they move the server's cursor,
+   * which the page polls, and a moved cursor brings the widget back by itself.
+   */
+  async toggleMfd() {
+    if (!this.vr || !this.vr.widgets || !this.vr.widgets.mfd || !this.vr.widgets.mfd.on) {
+      return { ok: false, error: 'the MFD is not switched on in the VR tab' };
+    }
+    const win = this.win;
+    if (!win || win.isDestroyed() || this.info.state !== 'connected') {
+      return { ok: false, error: 'the headset panels are not running — is SteamVR up?' };
+    }
+    try {
+      const now = await win.webContents.executeJavaScript(
+        'window.ApexMfd && window.ApexMfd.toggleShown ? window.ApexMfd.toggleShown() : null',
+        true,
+      );
+      if (!now) return { ok: false, error: 'the headset MFD is still loading' };
+      return { ok: true, value: now };
+    } catch (err) {
+      return { ok: false, error: (err && err.message) || 'the headset page did not answer' };
+    }
   }
 
   stop() {

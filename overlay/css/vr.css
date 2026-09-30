@@ -54,3 +54,12 @@ body.vr {
 .vr-slot #widget-racecontrol { width: 340px; }
 .vr-slot #widget-damage { width: 268px; }
 .vr-slot #widget-limits { width: 340px; }
+.vr-slot #widget-mfd { width: 400px; }
+
+/* The MFD's click targets — the ± on each row and the hover opacity slider —
+   are for a mouse. Nothing can click a headset panel; the wheel buttons do the
+   work there, and the selected-row highlight is what they are aimed by. */
+.vr-slot #widget-mfd .mfd__ctrls,
+.vr-slot #widget-mfd .mfd__opacity-anchor {
+  display: none;
+}
