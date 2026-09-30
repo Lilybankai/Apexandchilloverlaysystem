@@ -145,6 +145,12 @@ function makeFakeLmu() {
     hook: null,
     /** focus / replayTime / play answer 400 even in DYN. */
     refuseJumps: false,
+    /** The slot the camera is on; -1 before a replay has one. */
+    focus: -1,
+    /** The next N focus reads answer slot 0: the camera settling on the leader. */
+    focusSlips: 0,
+    /** Requests go unanswered (the game busy opening a big file) while > 0. */
+    hang: 0,
   };
   const advance = () => {
     if (g.polls < 0) return;
@@ -190,6 +196,10 @@ function makeFakeLmu() {
       req.socket.destroy();
       return undefined;
     }
+    if (g.hang > 0) {
+      g.hang--;
+      return undefined; // no answer at all: the client times out
+    }
     if ((req.method === 'PUT' || req.method === 'POST') && req.headers['content-length'] === undefined) {
       g.missingLength++;
       return send(400);
@@ -211,7 +221,16 @@ function makeFakeLmu() {
       return send(200, g.playAnswer);
     }
     if (req.method === 'PUT' && /^\/rest\/watch\/(focus\/\d+|replayTime\/[\d.]+|replayCommand\/VCRCOMMAND_PLAY)$/.test(u)) {
-      return dyn() && !g.refuseJumps ? send(200, '') : send(400, 'Cannot check replay status when not in a session');
+      if (!dyn() || g.refuseJumps) return send(400, 'Cannot check replay status when not in a session');
+      if ((m = /^\/rest\/watch\/focus\/(\d+)$/.exec(u))) g.focus = Number(m[1]);
+      return send(200, '');
+    }
+    if (req.method === 'GET' && u === '/rest/watch/focus') {
+      if (g.focusSlips > 0) {
+        g.focusSlips--;
+        g.focus = 0;
+      }
+      return send(200, g.focus);
     }
     if (req.method === 'POST' && u === '/navigation/action/NAV_TO_MAIN_MENU') {
       // settingMode is left as it was: the menu check must not lean on it.
@@ -515,6 +534,57 @@ async function main() {
       g.hook = null;
       g.barPolls = 4;
       check('rides it out and ends ready', s.phase === 'ready', `${s.phase} ${s.message}`);
+    }
+
+    // Live, 2026-09-30, Le Mans R1 27 (3.5 GB): at 100% the game stopped
+    // ANSWERING for ~15 s while it opened the file. Read as "closed", the
+    // controller gave up just before the replay appeared, no jump went out,
+    // and the camera sat on slot 0: the driver's "wrong car".
+    console.log('\nthe game going quiet at 100% is busy, not closed');
+    {
+      const { c: fresh } = controllerFor(port, { httpTimeoutMs: 30 });
+      put(MENU);
+      g.barPolls = 6;
+      let since = -1;
+      g.hook = (m, u) => {
+        if (u.startsWith('/rest/watch/play/')) since = 0;
+        else if (u === '/navigation/state' && since >= 0 && ++since === 8) g.hang = 30; // ~15 s of polls
+      };
+      g.log.length = 0;
+      await fresh.openAt({ raceId: RACE, slot: 9, et: 200 });
+      const s = await fresh.settled();
+      g.hook = null;
+      g.hang = 0;
+      g.barPolls = 4;
+      check('waits it out and ends ready', s.phase === 'ready', `${s.phase} ${s.message}`);
+      check('and the jump went out', jumpsIn(g.log).some((l) => l === 'PUT /rest/watch/focus/9'), jumpsIn(g.log).join(' | '));
+
+      // Quiet again while it plays: the watcher keeps the replay ours, so the
+      // next click jumps instead of closing and reloading it.
+      g.hang = 3;
+      const r = await fresh.refresh();
+      g.hang = 0;
+      check('a quiet game keeps the replay ours', r.phase === 'ready', `${r.phase} ${r.message}`);
+      g.log.length = 0;
+      await fresh.openAt({ raceId: RACE, slot: 9, et: 400 });
+      await fresh.settled();
+      check('the next click jumps, no reload', !g.log.some((l) => l.startsWith('GET /rest/watch/play/') || l.includes('NAV_TO_MAIN_MENU')),
+        g.log.filter((l) => !l.startsWith('GET /navigation')).join(' | '));
+    }
+
+    console.log('\nthe camera slips to slot 0 after the jump');
+    {
+      const { c: fresh } = controllerFor(port);
+      put(MENU);
+      await fresh.openAt({ raceId: RACE, slot: 9, et: 200 });
+      await fresh.settled();
+      g.log.length = 0;
+      g.focusSlips = 1;
+      await fresh.openAt({ raceId: RACE, slot: 9, et: 300 });
+      await fresh.settled();
+      const focuses = g.log.filter((l) => l === 'PUT /rest/watch/focus/9').length;
+      check('reads the camera back and puts it on our car again', focuses === 2 && g.focus === 9, `${focuses} focus PUTs, camera on ${g.focus}`);
+      check('stops once it holds', g.log.filter((l) => l === 'GET /rest/watch/focus').length === 2);
     }
 
     console.log('\nthe driver leaves between jump retries');

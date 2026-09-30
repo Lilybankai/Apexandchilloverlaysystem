@@ -284,13 +284,30 @@ const SETTLE_TIMEOUT_MS = 10_000;
 /** Focus / seek / play attempts: the calls 400 for a moment around DYN. */
 const JUMP_ATTEMPTS = 6;
 /**
- * How long the game may go unanswered mid-load before it is taken as closed.
- * A load never makes `/navigation/state` fail (it answered every poll of the
- * 2026-09-30 runs, 3.5 GB included), so a few seconds of silence is the game
- * gone, not the game busy — and without this the button said "Loading…" for
- * the whole three-minute budget.
+ * How long the game may REFUSE connections mid-load before it is taken as
+ * closed. Refused, not silent: at 100% of a 3.5 GB replay the game stops
+ * answering for ~15 s while it opens the file (2026-09-30, Le Mans R1 27), and
+ * reading that silence as "closed" gave up seconds before the replay appeared,
+ * so the jump never went out and the camera sat on slot 0. A closed game
+ * refuses at once; a busy one just doesn't answer.
  */
 const GONE_MS = 5_000;
+/**
+ * A fresh replay's first jump waits this long after DYN. Sent at DYN, focus
+ * and seek both answer 200 and are then dropped as the replay initialises: it
+ * played from its start on slot 0 (2026-09-30, Le Mans R1 27). Sent 1.5 s
+ * after DYN they held (Silverstone, same day). Later jumps are immediate.
+ */
+const FRESH_SETTLE_MS = 2_500;
+/**
+ * Between the seek and the play. A play sent straight after a seek cancels
+ * it: the replay carried on from where it was (live, 2026-09-30: back to back
+ * it stayed at 34 s; with 1.5 s between, it landed at 9546 s as asked).
+ */
+const SEEK_SETTLE_MS = 1_200;
+/** Focus read-backs after a jump; the camera can land on slot 0 at DYN. */
+const FOCUS_CHECKS = 3;
+const FOCUS_CHECK_MS = 700;
 
 /**
  * Load-time budget for a replay of this size. Measured: 25 s for 642 MB and
@@ -329,6 +346,7 @@ const MSG = {
   seek: "The replay loaded but wouldn't jump there.",
   busy: 'Another replay is loading.',
   closed: 'The game closed while the replay was loading.',
+  busyGame: "The game isn't answering. Try again in a moment.",
 };
 
 /** Thrown out of every await once {@link LmuReplayController.dispose} ran. */
@@ -372,6 +390,8 @@ export class LmuReplayController {
   private watchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Set by {@link dispose}: every request refuses and every loop stops. */
   private disposed = false;
+  /** Why the last request failed: the game refused (closed) or did not answer (busy). */
+  private lastFail: 'refused' | 'timeout' | null = null;
   private readonly listeners = new Set<(s: ReplayStatus) => void>();
 
   constructor(opts: LmuReplayOptions = {}) {
@@ -510,6 +530,9 @@ export class LmuReplayController {
       return this.status(); // disposed while we asked
     }
     if (this.op) return this.status(); // a click arrived while we asked
+    // Not answering is the game busy (it goes quiet opening a big replay),
+    // not the user gone: keep the replay ours until it refuses or shows else.
+    if (!nav && this.lastFail !== 'refused') return this.status();
     if (!nav || !replayShowing(nav)) {
       this.loadedRaceId = null;
       if (this.st.phase === 'ready') {
@@ -524,8 +547,9 @@ export class LmuReplayController {
   private async run(raceId: string, accept: () => void): Promise<void> {
     const nav = await this.nav();
     if (!nav) {
-      this.loadedRaceId = null;
-      this.set({ phase: 'error', raceId, progress: null, message: MSG.offline });
+      const busy = this.lastFail !== 'refused';
+      if (!busy) this.loadedRaceId = null;
+      this.set({ phase: 'error', raceId, progress: null, message: busy ? MSG.busyGame : MSG.offline });
       return;
     }
 
@@ -618,6 +642,7 @@ export class LmuReplayController {
     if (!loaded) return;
 
     this.loadedRaceId = raceId;
+    await this.pause(FRESH_SETTLE_MS);
     this.set({ phase: 'ready', raceId, progress: 1, message: null });
     await this.jumpLoop(raceId);
   }
@@ -634,7 +659,9 @@ export class LmuReplayController {
     let silentSince: number | null = null;
     while (this.now() < deadline) {
       const n = await this.nav();
-      if (!n) {
+      if (!n && this.lastFail !== 'refused') {
+        silentSince = null; // busy opening the file: keep waiting
+      } else if (!n) {
         silentSince ??= this.now();
         if (this.now() - silentSince >= GONE_MS) {
           this.loadedRaceId = null;
@@ -697,15 +724,34 @@ export class LmuReplayController {
     for (let i = 0; i < JUMP_ATTEMPTS; i++) {
       if (i > 0) {
         const n = await this.nav();
-        if (!n || !replayShowing(n)) return 'gone';
+        if (n ? !replayShowing(n) : this.lastFail === 'refused') return 'gone';
       }
       const f = await this.send('PUT', `/rest/watch/focus/${t.slot}`);
       const s = f && f.status === 200 ? await this.send('PUT', `/rest/watch/replayTime/${seek}`) : null;
+      if (s && s.status === 200) await this.pause(SEEK_SETTLE_MS);
       const p = s && s.status === 200 ? await this.send('PUT', '/rest/watch/replayCommand/VCRCOMMAND_PLAY') : null;
-      if (p && p.status === 200) return 'ok';
+      if (p && p.status === 200) {
+        await this.holdFocus(t.slot);
+        return 'ok';
+      }
       await this.pause(POLL_MS);
     }
     return 'refused';
+  }
+
+  /**
+   * Read the camera back and put it on our car again if it slipped. A focus
+   * sent the moment a replay reaches DYN answers 200 and is then overridden:
+   * the camera settles on slot 0 (seen live 2026-09-30), which is the wrong
+   * car the driver was shown.
+   */
+  private async holdFocus(slot: number): Promise<void> {
+    for (let i = 0; i < FOCUS_CHECKS; i++) {
+      await this.pause(FOCUS_CHECK_MS);
+      const r = await this.send('GET', '/rest/watch/focus');
+      if (r && r.status === 200 && Number(parseJson(r.body)) === slot) return;
+      await this.send('PUT', `/rest/watch/focus/${slot}`);
+    }
   }
 
   private async waitFor(test: (n: NavState) => boolean, timeoutMs: number): Promise<boolean> {
@@ -799,11 +845,17 @@ export class LmuReplayController {
           res.on('error', () => resolve(null));
         },
       );
-      req.on('error', () => resolve(null));
+      req.on('error', (err: NodeJS.ErrnoException) => {
+        // Refused or dropped is a game that is not there; a timeout is one that
+        // is busy (see GONE_MS).
+        this.lastFail = err && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') ? 'refused' : 'timeout';
+        resolve(null);
+      });
       req.on('timeout', () => req.destroy(new Error('timeout')));
       req.end();
     }).then((r) => {
       if (this.disposed) throw new Disposed();
+      if (r) this.lastFail = null;
       return r;
     });
   }
