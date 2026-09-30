@@ -134,6 +134,88 @@ const later = core.restoreDailies(dailies, NOW + 120 * 60000);
 check('a special slot that has run is dropped', later.series[0].slots.length === 1 && later.series[0].next.id === 'b');
 
 /* -------------------------------------------------------------------------- */
+console.log('\ndailiesFromFeed — which daily copy is drawn');
+
+// This week's RaceOS copy (an app with the game running) …
+const appCopy = {
+  ok: true,
+  fetchedAt: iso(-60),
+  weekStart: '2026-09-29T10:00:00.000Z',
+  tiers: [{
+    key: 'beginner', label: 'Beginner', badge: 'Bronze', cadenceMin: 15,
+    events: [{
+      seriesId: 's1', title: 'LMP3 Fixed', track: '8 Hours of Bahrain', scene: 'BahrainWEC',
+      classes: ['LMP3'], raceMin: 20, fixedSetup: true, tyreSets: 8, tyreWarmers: true, maxPlayers: 20,
+      map: { d: 'M0 0L1 1Z', view: 100 }, minutesUtc: [0, 45, 90], registrationLeadMin: 30,
+    }],
+  }],
+  series: [{ title: 'ELMS 4 Hours', registered: false, slots: [{ id: 'x', startsAt: iso(600), isRegistered: false, registrations: 3 }] }],
+};
+// … and racecontrol.gg's plainer public copy, from the server.
+const pubCopy = {
+  ok: true, source: 'racecontrol', fetchedAt: iso(-10), weekStart: null, series: [],
+  tiers: [{
+    key: 'beginner', label: 'Beginner', badge: 'Bronze', cadenceMin: 15,
+    events: [
+      { title: 'LMP3 Fixed', track: 'Bahrain WEC', scene: null, classes: [], raceMin: null, fixedSetup: null, map: null, eventMin: 32, minutesUtc: [0, 45, 90], registrationLeadMin: 30 },
+      { title: 'LMGT3 Fixed', track: 'Spa Francorchamps', scene: null, classes: [], raceMin: null, fixedSetup: null, map: null, eventMin: 32, minutesUtc: [15, 60, 105], registrationLeadMin: 30 },
+    ],
+  }],
+};
+const feedRow = (payload, minAgo) => ({ payload, fetched_at: iso(-minAgo), age_sec: minAgo * 60 });
+
+check('nothing in the feed → null', core.dailiesFromFeed({ ok: true, dailies: null, dailies_public: null }, NOW) === null);
+check('a null feed → null', core.dailiesFromFeed(null, NOW) === null);
+
+let got = core.dailiesFromFeed({ dailies: feedRow(appCopy, 60), dailies_public: feedRow(pubCopy, 10) }, NOW);
+check('this week\'s RaceOS copy wins over the public one', got && got.origin === 'app');
+check('…with its circuit maps and classes', got && got.payload.tiers[0].events[0].map && got.payload.tiers[0].events[0].classes[0] === 'LMP3');
+check('…brought up to date (next up is in the future)', got && Date.parse(got.payload.tiers[0].next.startsAt) >= NOW);
+
+const lastWeek = { ...appCopy, weekStart: '2026-09-15T10:00:00.000Z' };
+got = core.dailiesFromFeed({ dailies: feedRow(lastWeek, 60 * 24 * 9), dailies_public: feedRow(pubCopy, 10) }, NOW);
+check('after LMU rotates, the public copy wins', got && got.origin === 'public');
+const lmp3Pub = got && got.payload.tiers[0].events.find((e) => e.title === 'LMP3 Fixed');
+const gt3Pub = got && got.payload.tiers[0].events.find((e) => e.title === 'LMGT3 Fixed');
+check('…the matching series gets its rules back (classes, race length, setup)',
+  lmp3Pub && lmp3Pub.classes[0] === 'LMP3' && lmp3Pub.raceMin === 20 && lmp3Pub.fixedSetup === true, lmp3Pub);
+check('…and, the track matching too, its proper name and outline',
+  lmp3Pub && lmp3Pub.track === '8 Hours of Bahrain' && lmp3Pub.map && lmp3Pub.scene === 'BahrainWEC', lmp3Pub);
+check('…an unknown series is left plain — nothing guessed', gt3Pub && gt3Pub.classes.length === 0 && gt3Pub.map === null && gt3Pub.track === 'Spa Francorchamps');
+check('…the dated special events still ride along', got && got.payload.series.length === 1);
+
+const moved = { ...pubCopy, tiers: [{ ...pubCopy.tiers[0], events: [{ ...pubCopy.tiers[0].events[0], track: 'Portimao WEC' }] }] };
+got = core.dailiesFromFeed({ dailies: feedRow(lastWeek, 60 * 24 * 9), dailies_public: feedRow(moved, 10) }, NOW);
+const movedEv = got && got.payload.tiers[0].events[0];
+check('a series that moved circuit keeps its rules but NOT last week\'s track or map',
+  movedEv && movedEv.classes[0] === 'LMP3' && movedEv.track === 'Portimao WEC' && movedEv.map === null, movedEv);
+
+// Seen live 2026-09-30: last week "One Stint Sprint" ran at Daytona; this week
+// racecontrol.gg says Road Atlanta. A first-word match ("road") put Daytona's
+// name and outline on it.
+const daytona = {
+  ...lastWeek,
+  tiers: [{ ...appCopy.tiers[0], key: 'advanced', events: [{ ...appCopy.tiers[0].events[0], title: 'One Stint Sprint', track: 'Daytona International Speedway Road Course', scene: 'DAYTONA_RC' }] }],
+};
+const atlanta = { ...pubCopy, tiers: [{ ...pubCopy.tiers[0], key: 'advanced', events: [{ ...pubCopy.tiers[0].events[0], title: 'One Stint Sprint', track: 'Road Atlanta' }] }] };
+got = core.dailiesFromFeed({ dailies: feedRow(daytona, 60 * 24 * 9), dailies_public: feedRow(atlanta, 10) }, NOW);
+const osEv = got && got.payload.tiers[0].events[0];
+check('"Road Atlanta" is not matched to "Daytona … Road Course"', osEv && osEv.track === 'Road Atlanta' && osEv.map === null, osEv);
+const atlantaApp = { ...daytona, tiers: [{ ...daytona.tiers[0], events: [{ ...daytona.tiers[0].events[0], track: 'Michelin Raceway Road Atlanta', scene: 'ATLANTA' }] }] };
+got = core.dailiesFromFeed({ dailies: feedRow(atlantaApp, 60 * 24 * 9), dailies_public: feedRow(atlanta, 10) }, NOW);
+check('…but is matched to "Michelin Raceway Road Atlanta"', got && got.payload.tiers[0].events[0].track === 'Michelin Raceway Road Atlanta');
+
+got = core.dailiesFromFeed({ dailies: feedRow(lastWeek, 60 * 24 * 9), dailies_public: null }, NOW);
+check('an old RaceOS copy alone is still drawn, marked stale', got && got.origin === 'stale');
+got = core.dailiesFromFeed({ dailies: null, dailies_public: feedRow(pubCopy, 10) }, NOW);
+check('the public copy alone is drawn', got && got.origin === 'public' && got.payload.tiers[0].events.length === 2);
+check('…with its age from the row', got && got.ageSec === 600 && got.fetchedAt === iso(-10));
+
+const lg = core.leagueFromFeed({ league: feedRow(league, 30) }, NOW);
+check('leagueFromFeed rolls the rounds over', lg && lg.payload.leagues[0].next.id === 12);
+check('leagueFromFeed with no row → null', core.leagueFromFeed({ league: null }, NOW) === null);
+
+/* -------------------------------------------------------------------------- */
 console.log('\nschedule-cloud');
 
 function fakeAuth({ signedIn = true, age = { ok: true, league: null, dailies: null }, ageOk = true } = {}) {

@@ -52,14 +52,20 @@ carry `v: 1`.
 
 **Schedule** — a browser can read neither of the desktop's sources (SimGrid
 sends no CORS headers; RaceOS needs a Steam ticket from a running LMU), so it
-reads `schedule_feed` (migration `0037_schedule_feed.sql`): one shared row per
-calendar, published by members' desktop apps (`electron/schedule-cloud.js`) —
-on every live read the Schedule tab makes, and by a half-hourly sweep that
-re-reads a calendar only when the shared copy has gone stale (league 3 h,
-dailies 2 h). Newest read wins; "you are entered" is cleared before
-publishing. The bridge brings an old copy up to date with
-`schedule-core.js` — the same `restore` the desktop applies to its own saved
-calendar — so a stale copy never counts down to a race already gone.
+reads `schedule_feed` (migrations `0037` and `0038`) — three shared rows:
+
+- `league` and `dailies_public` — written every two hours by the edge
+  function `schedule-refresh` (cron `apex-schedule-refresh`): SimGrid's API,
+  and the daily rotation parsed from racecontrol.gg's public home page
+  (`supabase/functions/_shared/schedule-sources.mjs`). No game, no app.
+- `dailies` — the richer RaceOS copy (classes, rules, circuit maps, weekly and
+  special events), published by members' apps with the game running
+  (`electron/schedule-cloud.js`); "you are entered" is cleared first.
+
+`schedule-core.js` picks the daily copy (this week's RaceOS copy, else the
+public one filled in from it event by event, never guessed) and brings it up to
+date. The desktop runs the same code when LMU is shut, so its Schedule tab
+never comes up empty either.
 
 ## Working on it
 

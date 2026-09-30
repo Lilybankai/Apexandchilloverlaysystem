@@ -11,13 +11,17 @@
 
 - **The race schedule on the web pit wall.** aio.apexandchillracing.co.uk now
   has a **Schedule** screen beside the telemetry: the Thursday and Saturday
-  league rounds from SimGrid, and Le Mans Ultimate's daily, weekly and special
-  races with the countdowns, circuit maps and calendar view — the same tab as
-  the app, in your own time zone. A browser cannot read either source itself,
-  so the calendar is the one members' Apex apps last read: the app shares
-  what its Schedule tab reads, and checks in the background every half hour,
-  re-reading a calendar only when the shared copy is out of date. Your own
-  entries are never shared. Reminder bells stay in the app.
+  league rounds from SimGrid, and Le Mans Ultimate's daily races with the
+  countdowns and the calendar view — the same tab as the app, in your own time
+  zone. Reminder bells stay in the app.
+- **The daily races load without the game.** The Schedule tab used to need Le
+  Mans Ultimate running to show the daily races, and came up empty a week after
+  you last had it open. The calendar now refreshes itself every two hours from
+  RaceControl's public schedule, so the app (and the website) always has
+  today's races. With the game running you still get the full detail — car
+  classes, race length, setup and tyre rules, circuit maps and the weekly and
+  special events — and the app shares that with everyone else's calendar too
+  (never your own entries).
 
 ## 1.2.0-beta.5 — 2026-09-30
 

@@ -49,6 +49,7 @@ const simgrid = require('./simgrid');
 const lmuDailies = require('./lmu-dailies');
 const lmuTrackmaps = require('./lmu-trackmaps');
 const scheduleCloud = require('./schedule-cloud');
+const scheduleCore = require('./control-panel/schedule-core.js');
 const raceReminders = require('./race-reminders');
 const { overlayGeometryFrom } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
@@ -6279,11 +6280,50 @@ async function readDailySchedule({ force = false } = {}) {
      opening the panel to plan tomorrow, which is exactly when LMU is shut,
      showed an empty tab. */
   lmuDailies.init(path.join(app.getPath('userData'), 'daily-schedule.json'));
-  const payload = await lmuDailies.getDailies({ force: !!force });
+  let payload = await lmuDailies.getDailies({ force: !!force });
+  if (!payload || !payload.ok || payload.cached) payload = await sharedDailySchedule(payload);
   /* Circuit outlines are drawn from the running game's own geometry and
      cached on disk, so they keep working with the game shut. Decoration: it
      can never fail the calendar, which is why it is awaited separately and
      swallows its own errors. */
   lmuTrackmaps.init(path.join(app.getPath('userData'), 'trackoutlines'));
   return lmuTrackmaps.decorate(payload);
+}
+
+/**
+ * The daily calendar with LMU shut. The game's own service needs the running
+ * game, and the copy this PC saved lasts a week at most — so on its own the tab
+ * was empty for anyone who had not opened the game lately. The shared calendar
+ * is filled every two hours by the server (supabase/functions/schedule-refresh,
+ * from racecontrol.gg — no game needed) and by members' apps.
+ *
+ * This PC's own saved copy is offered to the same chooser as the shared RaceOS
+ * copy, whichever is newer, so a calendar read here this week (with its classes
+ * and circuit maps) still beats the plainer public one. Never throws: any
+ * failure hands back what the game read gave.
+ */
+async function sharedDailySchedule(local) {
+  try {
+    const res = await authService.rpc('schedule_feed_read', {});
+    if (!res.ok || !res.body) return local;
+    const feed = { ...res.body };
+    if (local && local.ok && local.cached && local.savedAt) {
+      const shared = feed.dailies;
+      if (!shared || Date.parse(shared.fetched_at) < Date.parse(local.savedAt)) {
+        feed.dailies = { payload: local, fetched_at: local.savedAt, age_sec: 0 };
+      }
+    }
+    const got = scheduleCore.dailiesFromFeed(feed, Date.now());
+    if (!got) return local;
+    return {
+      ...got.payload,
+      ok: true,
+      cached: true,
+      savedAt: got.fetchedAt,
+      reason: (local && local.reason) || null,
+      error: null,
+    };
+  } catch {
+    return local;
+  }
 }

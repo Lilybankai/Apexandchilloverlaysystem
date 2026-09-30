@@ -20,8 +20,8 @@
  *     Same 1 Hz cadence, same revision-gated shape/history, same
  *     pickActiveSource rule.
  *   • `apex.schedule.*` — the Schedule tab (schedule-panel.js). Both calendars
- *     are copies a desktop app published (schedule_feed_read), brought up to
- *     date by schedule-core.js; see "The Schedule tab" below.
+ *     come from schedule_feed_read (the server job and members' apps), chosen
+ *     and brought up to date by schedule-core.js; see "The Schedule tab" below.
  *
  * Nothing here is a framework and nothing loads from a CDN: the page's CSP is
  * `script-src 'self'`, matching the desktop, and the Supabase publishable key
@@ -793,18 +793,23 @@
    * schedule-panel.js calls apex.schedule.get() (the league) and
    * apex.schedule.dailies() (the game's own calendar). The desktop answers
    * both live; a browser can reach neither source, so both come from
-   * schedule_feed_read — the copies desktop apps last published (migration
-   * 0037, electron/schedule-cloud.js) — one call for the pair.
+   * schedule_feed_read — one call for everything:
    *
-   * A shared copy can be hours old, so it is brought up to date with the same
-   * rules the desktop applies to its own saved calendar (schedule-core.js):
-   * a round that has started is done, and the daily "next up" is regenerated
-   * from the rotation rather than counting down to a race already gone.
+   *   league          SimGrid, refreshed by the server every two hours
+   *                   (schedule-refresh, migration 0038) and by members' apps
+   *   dailies_public  racecontrol.gg's daily rotation, from the same job —
+   *                   no game needed anywhere
+   *   dailies         the richer RaceOS copy a member's app publishes with LMU
+   *                   running (classes, rules, circuit maps, special events)
+   *
+   * schedule-core.js picks between the two daily copies, fills the public one
+   * in from the app's, and brings either up to date — the same code the
+   * desktop runs when LMU is shut.
    */
 
   /** One read serves both calendars; the tab's Refresh forces a new one. */
   const FEED_TTL_MS = 60 * 1000;
-  /** A shared daily calendar older than this says so on the tab. */
+  /** A shared calendar older than this says so on the tab. */
   const FEED_OLD_SEC = 6 * 3600;
   let feedPromise = null;
   let feedAt = 0;
@@ -819,50 +824,47 @@
     return feedPromise;
   }
 
-  const NOT_SHARED =
-    'arrives from the Apex desktop app — it appears here once a member has opened Apex on their PC.';
+  const NOT_YET = 'has not been loaded yet — try Refresh in a minute.';
 
   async function scheduleLeague({ force } = {}) {
     const core = window.APEX_SCHEDULE_CORE;
     const feed = await readFeed(!!force);
-    const row = feed && feed.league;
-    if (!core || !row || !row.payload) {
+    const got = core && feed ? core.leagueFromFeed(feed, Date.now()) : null;
+    if (!got) {
       return {
         ok: false,
         leagues: [],
         fetchedAt: null,
-        error: feed ? `The league calendar ${NOT_SHARED}` : 'Could not load the league calendar.',
+        error: feed ? `The league calendar ${NOT_YET}` : 'Could not load the league calendar.',
       };
     }
-    return { ...core.restoreLeague(row.payload, Date.now()), ok: true, error: null };
+    return { ...got.payload, ok: true, error: null };
   }
 
   async function scheduleDailies({ force } = {}) {
     const core = window.APEX_SCHEDULE_CORE;
     const feed = await readFeed(!!force);
-    const row = feed && feed.dailies;
-    if (!core || !row || !row.payload) {
+    const got = core && feed ? core.dailiesFromFeed(feed, Date.now()) : null;
+    if (!got) {
       return {
         ok: false,
         reason: feed ? 'offline' : 'network',
         tiers: [],
         series: [],
-        error: feed ? `The race calendar ${NOT_SHARED}` : 'Could not load the race calendar.',
+        error: feed ? `The race calendar ${NOT_YET}` : 'Could not load the race calendar.',
       };
     }
-    const now = Date.now();
-    const out = { ...core.restoreDailies(row.payload, now), ok: true, error: null };
-    /* LMU rotates the daily circuits once a week. Past that point the times are
-       still right (the rotation pattern is fixed) but the circuits are last
-       week's, and the tab says so rather than presenting them as current. */
-    const weekStart = Date.parse(out.weekStart);
-    const rotated = Number.isFinite(weekStart) && now > weekStart + 7 * 86400000;
-    if (rotated || Number(row.age_sec) > FEED_OLD_SEC) {
+    const out = { ...got.payload, ok: true, error: null };
+    /* 'stale' is a RaceOS copy from a past week with nothing fresher beside it:
+       the times are still right (the rotation pattern is fixed) but the
+       circuits are last week's, and the tab says so. */
+    if (got.origin === 'stale' || got.ageSec > FEED_OLD_SEC) {
       out.cached = true;
-      out.savedAt = row.fetched_at;
-      out.cachedHint = rotated
-        ? 'LMU has rotated the circuits since — they update the next time a member opens Apex with the game running.'
-        : 'Start times follow the daily rotation, so they stay right; entry counts update when a member next opens Apex.';
+      out.savedAt = got.fetchedAt;
+      out.cachedHint =
+        got.origin === 'stale'
+          ? 'LMU has rotated the circuits since — they update within two hours.'
+          : 'Start times follow the daily rotation, so they stay right.';
     }
     return out;
   }

@@ -162,5 +162,147 @@
     return null;
   }
 
-  return { UPCOMING_PER_TIER, restoreDailies, restoreLeague, forPublish };
+  /* ---- Reading the shared feed ---------------------------------------------
+   *
+   * schedule_feed_read returns up to three rows:
+   *
+   *   league          — SimGrid, written by the server job and by members' apps.
+   *   dailies         — RaceOS, written by a member's app with the game running.
+   *                     The rich copy: classes, race length, setup and tyre
+   *                     rules, circuit outlines, and the weekly/special events.
+   *   dailies_public  — racecontrol.gg, written by the server job every two
+   *                     hours with nobody's game running. The current rotation
+   *                     and start times, and little else.
+   *
+   * The web page and the desktop (with LMU shut) both draw from this, so the
+   * choice between the two daily copies lives here, once.
+   */
+
+  const WEEK_MS = 7 * 86400000;
+
+  /** Letters only, lower case — for matching names written two ways. */
+  function squash(text) {
+    return String(text || '').toLowerCase().replace(/[^a-z]/g, '');
+  }
+
+  /**
+   * Is a RaceOS copy still this week's rotation? LMU changes the circuits at
+   * `weekStart` + 7 days. A copy with no weekStart is trusted for a day.
+   */
+  function appCopyCurrent(payload, fetchedAt, now) {
+    const week = Date.parse(payload && payload.weekStart);
+    if (Number.isFinite(week)) return now < week + WEEK_MS;
+    const at = Date.parse(fetchedAt);
+    return Number.isFinite(at) && now - at < 86400000;
+  }
+
+  /**
+   * The public calendar, with the detail racecontrol.gg does not carry filled
+   * in from a RaceOS copy — event by event, never by guesswork:
+   *
+   *   - rules (classes, race length, setup, tyres, grid size) when the TITLE
+   *     matches within the tier: those belong to the series, whatever track it
+   *     is at this week;
+   *   - the track's proper name and its outline only when the TRACK matches as
+   *     well, because a series moves circuit every week.
+   */
+  function enrichPublic(pub, app) {
+    const known = new Map();
+    for (const tier of (app && app.tiers) || []) {
+      for (const ev of tier.events || []) known.set(`${tier.key}|${squash(ev.title)}`, ev);
+    }
+    const tiers = (pub.tiers || []).map((tier) => ({
+      ...tier,
+      events: (tier.events || []).map((ev) => {
+        const src = known.get(`${tier.key}|${squash(ev.title)}`);
+        if (!src) return ev;
+        const out = {
+          ...ev,
+          seriesId: src.seriesId ?? null,
+          classes: Array.isArray(src.classes) ? src.classes : [],
+          raceMin: src.raceMin ?? null,
+          qualiMin: src.qualiMin ?? null,
+          fixedSetup: src.fixedSetup ?? null,
+          maxPlayers: src.maxPlayers ?? null,
+          tyreSets: src.tyreSets ?? null,
+          tyreWarmers: src.tyreWarmers ?? null,
+        };
+        // The WHOLE public name, less its WEC/ELMS layout tag, must appear in
+        // the RaceOS name: "Bahrain WEC" → "bahrain" in "8 Hours of Bahrain",
+        // "Road Atlanta" in "Michelin Raceway Road Atlanta". A single word is
+        // not enough — "Road" is also in "Daytona … Road Course".
+        const key = squash(String(ev.track || '').replace(/\b(WEC|ELMS)\b/gi, ''));
+        const sameTrack =
+          key.length >= 4 && (squash(src.track).includes(key) || squash(src.scene).includes(key));
+        if (sameTrack) {
+          out.track = src.track || ev.track;
+          out.scene = src.scene ?? null;
+          out.map = src.map ?? null;
+        }
+        return out;
+      }),
+    }));
+    // The dated events only ever come from RaceOS; restoreDailies drops any
+    // slot that has already run.
+    return { ...pub, tiers, series: (app && app.series) || [] };
+  }
+
+  /**
+   * The daily calendar to draw from a schedule_feed_read answer, brought up to
+   * date — or null when the feed has none. `origin` says which copy won:
+   * 'app' (this week's RaceOS copy), 'public' (racecontrol.gg, enriched), or
+   * 'stale' (a RaceOS copy from a past week, and nothing fresher).
+   */
+  function dailiesFromFeed(feed, now) {
+    const at = Number.isFinite(now) ? now : Date.now();
+    const appRow = feed && feed.dailies && feed.dailies.payload ? feed.dailies : null;
+    const pubRow = feed && feed.dailies_public && feed.dailies_public.payload ? feed.dailies_public : null;
+    const appCurrent = !!appRow && appCopyCurrent(appRow.payload, appRow.fetched_at, at);
+
+    let row;
+    let payload;
+    let origin;
+    if (appRow && appCurrent) {
+      row = appRow;
+      payload = appRow.payload;
+      origin = 'app';
+    } else if (pubRow) {
+      row = pubRow;
+      payload = enrichPublic(pubRow.payload, appRow && appRow.payload);
+      origin = 'public';
+    } else if (appRow) {
+      row = appRow;
+      payload = appRow.payload;
+      origin = 'stale';
+    } else {
+      return null;
+    }
+    return {
+      payload: restoreDailies(payload, at),
+      origin,
+      fetchedAt: row.fetched_at,
+      ageSec: Number(row.age_sec),
+    };
+  }
+
+  /** The league calendar from a schedule_feed_read answer, or null. */
+  function leagueFromFeed(feed, now) {
+    const row = feed && feed.league && feed.league.payload ? feed.league : null;
+    if (!row) return null;
+    return {
+      payload: restoreLeague(row.payload, Number.isFinite(now) ? now : Date.now()),
+      fetchedAt: row.fetched_at,
+      ageSec: Number(row.age_sec),
+    };
+  }
+
+  return {
+    UPCOMING_PER_TIER,
+    restoreDailies,
+    restoreLeague,
+    forPublish,
+    enrichPublic,
+    dailiesFromFeed,
+    leagueFromFeed,
+  };
 });
