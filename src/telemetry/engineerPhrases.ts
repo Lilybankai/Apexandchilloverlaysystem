@@ -39,6 +39,7 @@ import type { TelemetryFrame } from './types';
 import { UNKNOWN_VALUE } from './types';
 import { speakableLapTime, speakableGap } from './engineerCommands';
 import { speakableWhere } from './yellowCause';
+import { sessionCallSentence } from './sessionPhrases';
 
 /** Surname-ish token for radio brevity, mirroring engineerCommands' habit. */
 function surname(name: unknown): string {
@@ -397,6 +398,17 @@ function leadSentence(
         `Current benchmark, ${time}. We're in the ${band} band, ${target}.`,
       ]);
     }
+
+    // Qualifying/practice hotlap calls: composed from every session trigger
+    // the cue carries (the lap, the clock and the grid land together).
+    case 'qualiLap':
+    case 'qualiPole':
+    case 'qualiBeaten':
+    case 'qualiTimeLeft':
+    case 'qualiGrid':
+    case 'practiceLap':
+    case 'sectorImproved':
+      return sessionCallSentence(cue, v);
   }
 }
 
