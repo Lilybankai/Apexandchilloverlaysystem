@@ -177,6 +177,13 @@ function trim(frame) {
     retired: s.retired,
     lastSector1Sec: s.lastSector1Sec,
     lastSector2Sec: s.lastSector2Sec,
+    // The traffic lap clock reads lapFraction (without it a replay only
+    // exercises the fallback gap); rival stops read speed (stopped in the
+    // box vs a drive-through), the unfloored lap gap and each car's energy.
+    lapFraction: s.lapFraction,
+    speedMps: s.speedMps,
+    classLapsBehindExact: s.classLapsBehindExact,
+    virtualEnergy: s.virtualEnergy,
   }));
   // …and the radar's "already alongside" veto.
   if (Array.isArray(frame.radar)) {
