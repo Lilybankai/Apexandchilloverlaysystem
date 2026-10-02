@@ -841,12 +841,229 @@ function unit() {
     check(intent + ': empty frame refuses honestly', a.ok === false, a.text);
   }
 
+  // -- clean averages (2026-10-02) --------------------------------------------
+  // The Fuji field report: own average 106.4 against a best of 103.1 and a last
+  // of 103.6 — pit laps were sitting in the window. A lap enters the average
+  // only off a lap-COUNT edge, with no pit lane, not the race's opening lap, not
+  // under FCY/red, and within 107% of the car's best.
+  {
+    const engAvg = new EngineerCommands();
+    let mine = { lapsCompleted: 0, lastLapSec: UNKNOWN, bestLapSec: UNKNOWN, inPit: false, pitStops: 0 };
+    let phase = 'green';
+    const push = () => engAvg.update(frame({ session: { phase }, standings: gt3Field([{}, mine, {}]) }));
+    const lap = (sec, over) => {
+      mine = { ...mine, ...over, lapsCompleted: mine.lapsCompleted + 1, lastLapSec: sec };
+      if (sec > 0 && (mine.bestLapSec === UNKNOWN || sec < mine.bestLapSec)) mine.bestLapSec = sec;
+      push();
+      push(); // a repeat frame must never count the lap twice
+    };
+    push(); // first sight on the grid, lap 0
+    lap(112.0); // race lap 1 — the start, excluded
+    let avg = engAvg.averageOf(2);
+    check('clean avg: the race opening lap is not pace', avg === null, JSON.stringify(avg));
+    lap(103.1);
+    lap(103.6);
+    lap(103.6); // identical consecutive times: the count edge keeps both
+    avg = engAvg.averageOf(2);
+    check('clean avg: identical consecutive laps both count (lap-count edge)',
+      avg && avg.count === 3, JSON.stringify(avg));
+    // In-lap: the car is in the lane when it crosses the line (pit entry before it).
+    mine = { ...mine, inPit: true };
+    push();
+    lap(131.0, { inPit: true, pitStops: 1 });
+    // Out-lap: starts in the lane, so it carries the mark too.
+    mine = { ...mine, inPit: false };
+    push();
+    lap(124.0);
+    avg = engAvg.averageOf(2);
+    check('clean avg: in-lap and out-lap left out', avg && avg.count === 3, JSON.stringify(avg));
+    // A stop the pit flag never showed (only the count moved) is still a pit lap.
+    mine = { ...mine, pitStops: 2 };
+    push();
+    lap(104.0);
+    avg = engAvg.averageOf(2);
+    check('clean avg: a lap whose pit count moved is left out', avg && avg.count === 3, JSON.stringify(avg));
+    // Full-course yellow for part of a lap.
+    phase = 'fullCourseYellow';
+    push();
+    phase = 'green';
+    lap(109.0);
+    avg = engAvg.averageOf(2);
+    check('clean avg: a lap run partly under FCY is left out', avg && avg.count === 3, JSON.stringify(avg));
+    // A spin: no pit, no flag, but 115 is past 107% of 103.1.
+    lap(115.0);
+    avg = engAvg.averageOf(2);
+    check('clean avg: a 107% outlier is left out', avg && avg.count === 3, JSON.stringify(avg));
+    lap(103.4);
+    avg = engAvg.averageOf(2);
+    check('clean avg: the Fuji window is pace, not pit stops',
+      avg && avg.count === 4 && Math.abs(avg.avg - (103.1 + 103.6 + 103.6 + 103.4) / 4) < 1e-9,
+      JSON.stringify(avg));
+    a = engAvg.answer('myAverage');
+    check('myAverage: own clean average with the lap count and best',
+      a.ok && /^Last 4 clean laps averaging 1 43\.4, best 1 43\.1\.$/.test(a.text), a.text);
+    // A driver swap (team race) starts the window again.
+    mine = { ...mine, driverName: 'New Driver' };
+    push();
+    a = engAvg.answer('myAverage');
+    check('clean avg: a driver change empties the window', a.ok === false, a.text);
+    lap(103.9);
+    a = engAvg.answer('myAverage');
+    check('myAverage: one lap says so', a.ok && /^One clean lap so far, 1 43\.9, best 1 43\.1\.$/.test(a.text), a.text);
+  }
+  {
+    // The outlier rule re-judges at read time: a lap kept while it was the only
+    // reference is dropped once a best 8% quicker exists.
+    const engOut = new EngineerCommands();
+    engOut.update(frame({ session: { type: 'practice' }, standings: gt3Field([{}, { lastLapSec: 112, lapsCompleted: 3 }, {}]) }));
+    engOut.update(frame({ session: { type: 'practice' }, standings: gt3Field([{}, { lastLapSec: 103.5, bestLapSec: 103.5, lapsCompleted: 4 }, {}]) }));
+    const avg = engOut.averageOf(2);
+    check('clean avg: a later best re-judges older laps', avg && avg.count === 1 && avg.avg === 103.5, JSON.stringify(avg));
+    // Practice: lap 1 is not a race start and is kept.
+    const engPr = new EngineerCommands();
+    engPr.update(frame({ session: { type: 'practice' }, standings: gt3Field([{}, { lapsCompleted: 0 }, {}]) }));
+    engPr.update(frame({ session: { type: 'practice' }, standings: gt3Field([{}, { lastLapSec: 104, lapsCompleted: 1 }, {}]) }));
+    check('clean avg: lap 1 of a practice session is kept', (engPr.averageOf(2) || {}).count === 1);
+  }
+  {
+    // avgAhead and carAhead read the same clean windows — a rival's stop no
+    // longer makes the driver look a second quicker than him.
+    const engRiv = new EngineerCommands();
+    const both = (lapN, smith, jones, smithOver) => engRiv.update(frame({
+      standings: gt3Field([
+        { lastLapSec: smith, lapsCompleted: lapN, ...smithOver },
+        { lastLapSec: jones, lapsCompleted: lapN },
+        {},
+      ]),
+    }));
+    both(4, 101, 102);
+    both(5, 101, 102);
+    both(5, 101, 102, { inPit: true });
+    both(6, 133, 102, { inPit: true, pitStops: 1 });
+    both(6, 133, 102, { inPit: false, pitStops: 1 });
+    both(7, 124, 102, { pitStops: 1 }); // the out-lap: started in the lane
+    both(8, 101.2, 102, { pitStops: 1 });
+    a = engRiv.answer('avgAhead');
+    check('avgAhead: the rival\'s pit laps stay out of his average',
+      a.ok && /Smith averaging 1 41\.1/.test(a.text) && /Smith is 0\.9 quicker/.test(a.text), a.text);
+  }
+  {
+    const engNone = new EngineerCommands();
+    engNone.update(frame({ standings: gt3Field() }));
+    a = engNone.answer('myAverage');
+    check('myAverage: no laps refuses honestly', a.ok === false && /No clean laps/.test(a.text), a.text);
+  }
+
+  // -- position-addressed answers (2026-10-02) ---------------------------------
+  // The cloud invented a pace for P5 and relabelled the gap ahead as "the gap
+  // to P10". The standings carry every car; the answers are local now.
+  {
+    const engPos = new EngineerCommands();
+    const ask = (q) => engPos.answerPosition(q);
+    a = ask({ intent: 'gapTo', positions: [5] });
+    check('position: no telemetry refuses', a.ok === false && /No telemetry/.test(a.text), a.text);
+
+    // A multiclass field: an LMP2 is P1 OVERALL, the GT3 class is Smith/Jones/Brown.
+    const field = () => [
+      car(7, { position: 1, driverName: 'Leo Proto', carClass: 'LMP2', classPosition: 1, gapToClassLeaderSec: 0, gapToLeaderSec: 0, lastLapSec: 95.2 }),
+      ...gt3Field([
+        { gapToLeaderSec: 40, lastLapSec: 103.0, bestLapSec: 102.4, carNumber: '23', lastSector1Sec: 32.2, lastSector2Sec: 70.1, classLapsBehindExact: 0 },
+        { gapToLeaderSec: 42.4, lastLapSec: 103.6, bestLapSec: 103.1, lastSector1Sec: 32.4, lastSector2Sec: 70.0, classLapsBehindExact: 0.02 },
+        { gapToLeaderSec: 47.9, lastLapSec: 104.1, bestLapSec: 103.9, classLapsBehindExact: 0.07 },
+      ]),
+    ];
+    for (let i = 0; i < 3; i++) engPos.update(frame({ session: { numCars: 4 }, standings: field() }));
+
+    a = ask({ intent: 'gapTo', positions: [3] });
+    check('position: gap to P3 (class) behind', a.ok && /^P3 in class, Brown, 5\.5 seconds behind you\.$/.test(a.text), a.text);
+    a = ask({ intent: 'gapTo', positions: [1] });
+    check('position: gap to P1 means the CLASS leader, not the LMP2',
+      a.ok && /^P1 in class, Smith, 2\.4 seconds ahead\.$/.test(a.text), a.text);
+    a = ask({ intent: 'gapTo', positions: [1], overall: true });
+    check('position: "P1 overall" reaches the LMP2',
+      a.ok && /P1 overall, Proto, 42\.4 seconds ahead/.test(a.text), a.text);
+    a = ask({ intent: 'gapTo', positions: [2] });
+    check('position: the player asking for their own position', a.ok && /That's you — P2 in class/.test(a.text), a.text);
+    a = ask({ intent: 'gapBetween', positions: [1, 3] });
+    check('position: gap between two other cars',
+      a.ok && /^P1 in class Smith leads P3 in class Brown by 7\.9 seconds\.$/.test(a.text), a.text);
+    a = ask({ intent: 'gapBetween', positions: [3, 2] });
+    check('position: a "between" that names the player speaks from the seat',
+      a.ok && /^P3 in class, Brown, 5\.5 seconds behind you\.$/.test(a.text), a.text);
+    a = ask({ intent: 'gapTo', positions: [9] });
+    check('position: past the end of the class refuses with the class size',
+      a.ok === false && /Only 3 cars in class/.test(a.text), a.text);
+    a = ask({ intent: 'whoIs', positions: [1] });
+    check('position: who is P1', a.ok && /^P1 in class is Smith, number 23, 2\.4 seconds ahead\.$/.test(a.text), a.text);
+    a = ask({ intent: 'paceOf', positions: [1] });
+    check('position: pace of the class leader — last, clean average, best, verdict',
+      a.ok && /P1 in class, Smith: last lap 1 43\.0/.test(a.text) && /best 1 42\.4/.test(a.text), a.text);
+    a = ask({ intent: 'paceOf', positions: [2] });
+    check('position: pace of my own position is my own average', a.ok && /^That's you\. /.test(a.text), a.text);
+    a = ask({ intent: 'sectorsVs', positions: [1], sectors: [1, 2] });
+    check('position: sector one and two against P1',
+      a.ok && /Last laps against Smith, P1 in class: sector one, 0\.2 down; sector two, 0\.3 up\./.test(a.text), a.text);
+    a = ask({ intent: 'mySector', positions: [], sectors: [1] });
+    check('mySector: one named split against the class best we have timed',
+      a.ok && /^Sector one, 32\.4, 0\.2 off the class best, Smith's 32\.2\.$/.test(a.text), a.text);
+    a = ask({ intent: 'mySector', positions: [], sectors: [2] });
+    check('mySector: the class best is mine', a.ok && /Sector two, 37\.6, the best in class we've timed/.test(a.text), a.text);
+    a = ask({ intent: 'sectorsVs', positions: [3] });
+    check('position: no splits on the target refuses honestly', a.ok === false && /No sector times on Brown/.test(a.text), a.text);
+  }
+  {
+    // Lapped cars: laps apart off the UNFLOORED exact deficit, never two
+    // floored classLapsBehind; a lapped car with no exact deficit is named as
+    // lapped and given no number.
+    const engLap = new EngineerCommands();
+    engLap.update(frame({
+      standings: gt3Field([
+        { classLapsBehindExact: 0 },
+        { classLapsBehindExact: 0.4 },
+        { gapToClassLeaderSec: UNKNOWN, classLapsBehind: 1, classLapsBehindExact: 1.6 },
+      ]),
+    }));
+    a = engLap.answerPosition({ intent: 'gapTo', positions: [3] });
+    check('position: a car a lap down is spoken in laps', a.ok && /Brown, 1 lap behind you/.test(a.text), a.text);
+    engLap.update(frame({
+      standings: gt3Field([
+        {},
+        { classLapsBehind: 0 },
+        { gapToClassLeaderSec: UNKNOWN, classLapsBehind: 1 },
+      ]),
+    }));
+    a = engLap.answerPosition({ intent: 'gapTo', positions: [3] });
+    check('position: lapped with no exact deficit refuses, says why',
+      a.ok === false && /no clean gap/i.test(a.text) && /Brown is off the lead lap/.test(a.text), a.text);
+    // 0.4 and 1.3 floored are 0 and 1 — but the cars are 0.9 of a lap apart.
+    engLap.update(frame({
+      standings: gt3Field([
+        { classLapsBehindExact: 0 },
+        { classLapsBehindExact: 0.4, classLapsBehind: 0 },
+        { gapToClassLeaderSec: 95, classLapsBehind: 1, classLapsBehindExact: 1.3 },
+      ]),
+    }));
+    a = engLap.answerPosition({ intent: 'gapTo', positions: [3] });
+    check('position: never subtracts floored lap counts',
+      a.ok && /92\.6 seconds|1 32\.6/.test(a.text) && !/lap behind/.test(a.text), a.text);
+    // Single-class field: no "in class" qualifier.
+    const engOne = new EngineerCommands();
+    engOne.update(frame({ standings: gt3Field() }));
+    a = engOne.answerPosition({ intent: 'gapTo', positions: [1] });
+    check('position: single-class field drops the "in class" qualifier', a.ok && /^P1, Smith/.test(a.text), a.text);
+    // No standings for the asked position at all.
+    const engEmptyPos = new EngineerCommands();
+    engEmptyPos.update(frame({}));
+    a = engEmptyPos.answerPosition({ intent: 'paceOf', positions: [5] });
+    check('position: empty standings refuse', a.ok === false && /No car at P5/.test(a.text), a.text);
+  }
+
   // -- the grammar and the answers can never drift ----------------------------
   // The recognizer's phrase table lives in electron/engineer.js; if an intent
   // exists on one side only, the button either can't reach an answer or hears
   // a phrase nothing will answer. Checked here so it fails in `npm test`, not
   // in a race.
-  const { GRAMMAR, ENGINEER_CALLOUTS, matchGrammarText, radioNoise } = require('../electron/engineer');
+  const { GRAMMAR, ENGINEER_CALLOUTS, matchGrammarText, matchPositionQuery, radioNoise } = require('../electron/engineer');
   const gIntents = new Set(GRAMMAR.map((g) => g.intent));
   check(
     'grammar covers every intent',
@@ -885,7 +1102,58 @@ function unit() {
   // matters: radioNoise runs FIRST, because a whisper repetition loop reliably
   // contains a grammar word and would otherwise earn a confident Tier 1 answer.
   const SPOKEN = ["I'd box this lap.", 'One minute remaining in session.'];
-  const route = (q) => radioNoise(q, SPOKEN) || (matchGrammarText(q) ? 'grammar' : 'cloud');
+  // Same order as ask(): noise, then a position query, then the phrase list.
+  const route = (q) =>
+    radioNoise(q, SPOKEN) || (matchPositionQuery(q) ? 'position' : matchGrammarText(q) ? 'grammar' : 'cloud');
+  // The exact destination, for the routing table below.
+  const routeTo = (q) => {
+    const noise = radioNoise(q, SPOKEN);
+    if (noise) return noise;
+    const pq = matchPositionQuery(q);
+    if (pq) return `position:${pq.intent}:${pq.positions.join(',')}${pq.sectors ? ':s' + pq.sectors.join(',') : ''}${pq.overall ? ':overall' : ''}`;
+    return matchGrammarText(q) || 'cloud';
+  };
+  // 2026-10-02 field transcripts, verbatim from the engineer_calls log. Each
+  // one either reached the cloud (which invented an answer) or hit the WRONG
+  // Tier-1 intent. Before → after is in the comment.
+  const ROUTING = [
+    ['average of the car ahead', 'carAhead'], // carAhead → carAhead (it worked; keep it)
+    ["what's my average?", 'myAverage'], // cloud → myAverage
+    ['what is my average', 'myAverage'], // cloud → myAverage
+    ['my average lap time', 'myAverage'], // lastLap (wrong) → myAverage
+    ["what's my five lap average", 'myAverage'], // avgAhead (wrong) → myAverage
+    ["what's my last five average", 'myAverage'], // avgAhead (wrong) → myAverage
+    ["what's my 5 lap average", 'myAverage'], // whisper digits
+    ['my pace average', 'myAverage'], // pace (wrong) → myAverage
+    ['what is the pace of P5?', 'position:paceOf:5'], // cloud (fabricated) → local
+    ['gap to P10.', 'position:gapTo:10'], // cloud (relabelled gap ahead) → local
+    ['what is the gap between P5 and P6?', 'position:gapBetween:5,6'], // cloud → local
+    ['update me on class leaders times', 'position:paceOf:1'], // cloud → local
+    ["what's my sector one?", 'position:mySector::s1'], // cloud → local
+    ['what is my time difference in sector 1 and 2 to P1 in class?', 'position:sectorsVs:1:s1,2'], // cloud → local
+    // Neighbours that must keep their old homes.
+    ['last five average', 'avgAhead'],
+    ['Top 5 average lap', 'avgAhead'],
+    ['five lap average front', 'avgAhead'],
+    ['last lap time', 'lastLap'],
+    ["how's my pace", 'pace'],
+    ['sectors', 'sectors'],
+    ['sector times', 'sectors'],
+    ['is there a yellow in sector two', 'flags'],
+    ['gap to the leader', 'leader'],
+    ["who's the class leader", 'leader'],
+    ['what position am i in', 'position'],
+    ['what is the gap to position five overall', 'position:gapTo:5:overall'],
+    ["who's in second place", 'position:whoIs:2'],
+    ["what's P3's pace", 'position:paceOf:3'],
+    ['the leader\'s last lap', 'position:paceOf:1'],
+    ['give me one second', 'cloud'],
+    ['what gear for turn five', 'cloud'],
+  ];
+  for (const [q, want] of ROUTING) {
+    const got = routeTo(q);
+    check(`routing: "${q}" -> ${want}`, got === want, got);
+  }
   const routes = (name, want, qs) =>
     check(
       `route/${name} -> ${want}`,

@@ -85,6 +85,7 @@
     fuelRatio: 'Fuel ratio',
     hybrid: 'Hybrid battery',
     pace: 'Pace score / predicted lap',
+    myAverage: 'Your clean-lap average vs your best',
     paceAlien: 'Alien race-pace target',
     paceCompetitive: 'Competitive race-pace target',
     paceMidpack: 'Midpack race-pace target',

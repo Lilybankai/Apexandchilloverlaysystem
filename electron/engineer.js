@@ -96,7 +96,10 @@ const GRAMMAR = [
       'compare pace',
     ],
   },
-  { intent: 'leader', group: 'Gaps & rivals', phrases: ["who's leading", 'the leader', 'gap to the leader'] },
+  // 'class leader' — "who's the class leader" / "gap to the class leader"
+  // never contained 'the leader'. The leader's PACE ("class leader's times")
+  // is a position query (matchPositionQuery), answered before this list.
+  { intent: 'leader', group: 'Gaps & rivals', phrases: ["who's leading", 'the leader', 'class leader', 'gap to the leader'] },
   // The trend pair (2026-08-23): per-lap gap history, so "am I catching him"
   // gets a rate and a when, not today's snapshot.
   {
@@ -119,11 +122,38 @@ const GRAMMAR = [
   {
     intent: 'sectors',
     group: 'Pace & laps',
-    phrases: ['sectors', 'sector times', 'sector splits', 'last sectors', 'last lap sectors'],
+    // The singular forms reached the cloud on 2026-10-01 ("what's my sector
+    // one?" — the list only had the plural). A NAMED sector gets the richer
+    // single-split answer via matchPositionQuery's `mySector`; SAPI and the
+    // fallback still land here. Bare "sector" stays out on purpose: "which
+    // sector is the yellow in" is a flags question.
+    phrases: [
+      'sectors', 'sector times', 'sector splits', 'last sectors', 'last lap sectors',
+      'sector time', 'my sector', 'sector one', 'sector two', 'sector three',
+    ],
   },
   { intent: 'bestLap', group: 'Pace & laps', phrases: ['best lap', 'my best lap', 'personal best'] },
   { intent: 'fieldFastest', group: 'Pace & laps', phrases: ['fastest lap', 'quickest lap', "who's got the fastest lap"] },
   { intent: 'pace', group: 'Pace & laps', phrases: ["how's my pace", 'my pace', 'pace check', 'what am i on for'] },
+  {
+    intent: 'myAverage',
+    group: 'Pace & laps',
+    // The driver's OWN clean average (2026-10-02 field report: "what's my
+    // average" kept failing while "average of the car ahead" worked). Every
+    // "my …" form here must out-length the stem it contains, or longest-
+    // needle-wins hands it to someone else: 'my five lap average' beats
+    // avgAhead's 'five lap average', 'my last five average' beats 'last five
+    // average', 'my pace average' beats pace's 'my pace', and 'my average'
+    // beats lastLap's 'lap time' in "my average lap time".
+    phrases: [
+      'my average',
+      'my lap average',
+      'my average pace',
+      'my pace average',
+      'my five lap average',
+      'my last five average',
+    ],
+  },
   {
     intent: 'paceAlien',
     group: 'Pace & laps',
@@ -261,7 +291,9 @@ const GRAMMAR = [
   {
     intent: 'flags',
     group: 'Race control',
-    phrases: ['any yellows', 'yellows', 'flags', 'any flags', 'yellow flag', 'yellow flags', 'where is the yellow', "where's the yellow"],
+    // 'yellow in sector' out-lengths sectors' new 'sector two' — "is there a
+    // yellow in sector two" is a flags question, not a split time.
+    phrases: ['any yellows', 'yellows', 'flags', 'any flags', 'yellow flag', 'yellow flags', 'where is the yellow', "where's the yellow", 'yellow in sector'],
   },
   // -- Conditions ----------------------------------------------------------------
   {
@@ -594,6 +626,127 @@ function fuzzyGrammarMatch(haystack) {
     }
   }
   return best ? best.intent : null;
+}
+
+/** Spoken numbers whisper sometimes writes as words, for "p five" / "position five". */
+const POSITION_NUMBER_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+  'nineteen', 'twenty',
+];
+const POSITION_ORDINALS = [
+  '', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+  'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth',
+  'eighteenth', 'nineteenth', 'twentieth',
+];
+
+/**
+ * Position-addressed questions, parsed off the transcript
+ * -----------------------------------------------------------------------------
+ * "What is the pace of P5?", "gap to P10.", "what is the gap between P5 and
+ * P6?", "update me on class leaders times", "what is my time difference in
+ * sector 1 and 2 to P1 in class?" — all from the engineer_calls log, all sent
+ * to the cloud, and the cloud was never given those cars: it invented a pace
+ * for P5 and relabelled the gap ahead as "the gap to P10". The standings carry
+ * every car, so `EngineerCommands.answerPosition` answers them locally.
+ *
+ * Returns `{ intent, positions, sectors?, overall? }` (see PositionQuery in
+ * engineerCommands.ts) or null. Positions are CLASS positions unless the
+ * driver says "overall". Recognised position forms: "P5", "p 5", "p five",
+ * "position 5/five", "5th", "fifth" (and "first/second/third" only where they
+ * cannot be a sector, a gear or a unit — "one second" is not P2), and
+ * "leader"/"class leader" for P1.
+ *
+ * Also answers one ask that names no position: a NAMED sector of the driver's
+ * own lap ("what's my sector one?") → `mySector`, but only when the phrase
+ * list itself would route the sentence to `sectors` — so "is there a yellow in
+ * sector two" stays a flags question.
+ *
+ * A bare "leader" with a who/gap ask returns null on purpose: the grammar's
+ * `leader` intent already answers "who's leading" and "gap to the leader".
+ */
+function matchPositionQuery(text) {
+  const t = ` ${String(text || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()} `;
+  if (!t.trim()) return null;
+  const words = t.trim().split(' ');
+  const numOf = (w) => {
+    if (/^\d{1,2}$/.test(w)) return Number(w);
+    const i = POSITION_NUMBER_WORDS.indexOf(w);
+    return i > 0 ? i : NaN;
+  };
+
+  // -- positions, in the order spoken -----------------------------------------
+  const found = []; // { n, at, leader }
+  const add = (n, at, leader) => {
+    if (Number.isInteger(n) && n >= 1 && n <= 60) found.push({ n, at, leader: !!leader });
+  };
+  const NUM = `\\d{1,2}|${POSITION_NUMBER_WORDS.slice(1).join('|')}`;
+  // A trailing s is the possessive with its apostrophe stripped: "P5's pace".
+  for (const m of t.matchAll(new RegExp(`\\b(?:p|position)\\s?(${NUM})s?\\b`, 'g'))) add(numOf(m[1]), m.index);
+  // Ordinals. first/second/third collide with sectors, gears, laps and the unit
+  // ("one second"), so they count only after a word that introduces a place
+  // ("to second", "who's third", "between second and third") or before
+  // "place"/"position"; the rest only need to not be a gear/lap/sector.
+  const NOT_AFTER = new Set(['sector', 'sectors', 'lap', 'laps', 'stint', 'time', 'stop', 'corner', 'turn', 'gear', 'half', 'row']);
+  const INTRO = new Set(['to', 'of', 'in', 'is', 'whos', 'for', 'and', 'between', 'from', 'on', 'behind', 'ahead']);
+  words.forEach((w, i) => {
+    let n = POSITION_ORDINALS.indexOf(w);
+    if (n <= 0) {
+      const m = /^(\d{1,2})(st|nd|rd|th)$/.exec(w);
+      n = m ? Number(m[1]) : -1;
+    }
+    if (n <= 0) return;
+    const next = words[i + 1] || '';
+    if (NOT_AFTER.has(next)) return;
+    if (n <= 3 && !/^\d/.test(w) && next !== 'place' && next !== 'position' && !INTRO.has(words[i - 1] || '')) return;
+    add(n, t.indexOf(` ${w} `));
+  });
+  for (const m of t.matchAll(/\b(?:class |overall )?leaders?\b/g)) add(1, m.index, true);
+  found.sort((a, b) => a.at - b.at);
+  const positions = [];
+  for (const f of found) if (!positions.includes(f.n)) positions.push(f.n);
+  const leaderOnly = found.length > 0 && found.every((f) => f.leader);
+
+  // -- sectors asked about ("sector 1 and 2", "sectors one and three") -------
+  const sectors = [];
+  const sIdx = words.findIndex((w) => w === 'sector' || w === 'sectors');
+  if (sIdx !== -1) {
+    for (let i = sIdx + 1; i < words.length; i++) {
+      const w = words[i];
+      if (w === 'and' || w === 'sector') continue;
+      const n = numOf(w);
+      if (!(n >= 1 && n <= 3)) break;
+      if (!sectors.includes(n)) sectors.push(n);
+    }
+  }
+
+  if (!positions.length) {
+    if (sectors.length && matchGrammarText(text) === 'sectors') {
+      return { intent: 'mySector', positions: [], sectors };
+    }
+    return null;
+  }
+
+  // -- what is being asked about that position --------------------------------
+  let intent = null;
+  if (sIdx !== -1) intent = 'sectorsVs';
+  else if (positions.length >= 2 && /\b(between|gap|gaps|difference|interval|apart|distance)\b/.test(t)) intent = 'gapBetween';
+  else if (/\b(pace|lap times?|laptimes?|lapping|average|averaging|avg|times|doing|running|best|fastest|quickest|last lap)\b/.test(t)) intent = 'paceOf';
+  else if (/\b(gap|gaps|how far|distance|interval|behind|ahead|difference|delta)\b/.test(t)) intent = 'gapTo';
+  else if (/\b(who|whos|name)\b/.test(t)) intent = 'whoIs';
+  else if (/\btime\b/.test(t)) intent = 'paceOf';
+  else if (words.length <= 4) intent = 'whoIs'; // "P5?", "what about P5"
+  if (!intent) return null;
+  if (leaderOnly && (intent === 'gapTo' || intent === 'whoIs')) return null;
+
+  const q = { intent, positions };
+  if (intent === 'sectorsVs' && sectors.length) q.sectors = sectors;
+  if (/\boverall\b/.test(t)) q.overall = true;
+  return q;
 }
 
 /**
@@ -1812,6 +1965,15 @@ class EngineerService {
           if (noise !== 'echo') this.speak('Say again?');
           return { ok: true, noise, outcome: this.noteOutcome('noise') };
         }
+        // "Gap to P10", "pace of P5", "my sector one": answered off the
+        // standings before the phrase list, never left to the cloud to invent.
+        const pq = matchPositionQuery(text);
+        if (pq && this.commands && typeof this.commands.answerPosition === 'function') {
+          const answer = this.commands.answerPosition(pq);
+          this.speak(answer.text);
+          this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
+          return { ok: true };
+        }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
         const intent =
@@ -2034,6 +2196,7 @@ module.exports = {
   OUTCOME_SLUG_PREFIX,
   sampleUrl,
   matchGrammarText,
+  matchPositionQuery,
   radioNoise,
   fetchStacks,
   describeFetchError,
