@@ -320,6 +320,22 @@ function leadSentence(
       ]);
     }
 
+    case 'rivalStop':
+      return rivalStopSentence(f, v);
+
+    case 'rivalRejoin': {
+      const g = num(f.gapSec);
+      if (g === undefined) return null;
+      const who = surname(f.name);
+      const gap = speakableGap(g);
+      return pick(
+        v,
+        f.where === 'ahead'
+          ? [`${who}'s out, ${gap} ahead.`, `${who}'s rejoined ${gap} up the road.`, `${who} is back out — ${gap} ahead of you.`]
+          : [`${who}'s out, ${gap} behind.`, `${who}'s rejoined ${gap} behind you.`, `${who} is back out — ${gap} behind.`],
+      );
+    }
+
     case 'pitWindowOpen':
       return pick(v, [
         "Pit window's open.",
@@ -397,6 +413,105 @@ function leadSentence(
         `Current benchmark, ${time}. We're in the ${band} band, ${target}.`,
       ]);
     }
+  }
+}
+
+/**
+ * A projection said as one: whole seconds, "about", never a false tenth — the
+ * rival keeps lapping while it is in the lane. Measured gaps keep their tenth
+ * via {@link speakableGap}; this is only for projections.
+ */
+function aboutGap(sec: number): string {
+  const s = Math.round(Math.abs(sec));
+  if (s <= 1) return 'about a second';
+  return `about ${speakableGap(s).replace(/\.0 /, ' ')}`;
+}
+
+/**
+ * The rival-stop line (`rivalStop.ts` decides whether there is one). Facts:
+ * `outcome`, `where`, `name`, `gapSec` (at pit entry), `rejoinSec` (projected,
+ * + = still ahead of you), optional `energyLapsInHand`, `alsoName`,
+ * `othersInPit`. Never a verdict on whether an undercut works — only where the
+ * car comes out and what that means for the place.
+ */
+function rivalStopSentence(
+  f: Readonly<Record<string, string | number | boolean>>,
+  v: number,
+): string | null {
+  const who = surname(f.name);
+  const also = typeof f.alsoName === 'string' && f.alsoName ? surname(f.alsoName) : null;
+  const others = num(f.othersInPit);
+  // "Brown's boxed" / "Brown's boxed, Smith too" / "…, with 3 others".
+  const boxed = also
+    ? `${who}'s boxed, ${also} too`
+    : others !== undefined && others >= 2
+      ? `${who}'s boxed with ${others} others`
+      : `${who}'s boxed`;
+  const gap = num(f.gapSec);
+  const g = gap !== undefined ? speakableGap(gap) : null;
+  const rejoin = signedNum(f.rejoinSec);
+  const r = rejoin !== undefined ? aboutGap(rejoin) : null;
+  const lapsInHand = num(f.energyLapsInHand);
+  const energy =
+    lapsInHand !== undefined && lapsInHand >= 1
+      ? ` You've ${lapsInHand} ${lapsInHand === 1 ? 'lap' : 'laps'} more energy.`
+      : '';
+  const two = f.where === 'ahead2';
+
+  switch (f.outcome) {
+    case 'dropsBehind':
+      if (!r) return null;
+      return (
+        pick(
+          v,
+          two
+            ? [`${who}, two ahead, has boxed — projected out ${r} behind you.`]
+            : [
+                `${boxed} — projected out ${r} behind you.`,
+                `Car ahead's in. ${who} should rejoin ${r} behind you.`,
+                `${who} pitted from ${g ?? 'just'} ahead — out ${r} behind you.`,
+              ],
+        ) + energy
+      );
+    case 'level':
+      return (
+        pick(v, [
+          `${boxed} — projected out right around you. Eyes up at the exit.`,
+          `Car ahead's in. ${who} should rejoin right alongside you.`,
+        ]) + energy
+      );
+    case 'closeAhead':
+      if (!r) return null;
+      return (
+        pick(v, [
+          `${boxed} — projected out ${r} ahead of you.`,
+          `Car ahead's in. ${who} should rejoin ${r} up the road.`,
+        ]) + energy
+      );
+    case 'closeBehind':
+      if (!r) return null;
+      return pick(v, [
+        `${boxed} — projected out ${r} behind you.`,
+        `Car behind's in. ${who} should rejoin ${r} back.`,
+      ]);
+    case 'undercut':
+      return (
+        pick(v, [
+          `${who}'s boxed from ${g ?? 'just'} behind — expect them close after your stop.`,
+          `Car behind's in — ${who}, from ${g ?? 'just'} back. Close after your stop.`,
+        ]) + energy
+      );
+    case 'fact': {
+      const side = f.where === 'behind' ? 'behind' : 'ahead';
+      return (
+        pick(v, [
+          `${who}, the car ${side}, has boxed${g ? ` from ${g}` : ''}.`,
+          `Car ${side}'s in the pits — ${who}${g ? `, ${g} ${side === 'ahead' ? 'up the road' : 'back'}` : ''}.`,
+        ]) + energy
+      );
+    }
+    default:
+      return null;
   }
 }
 

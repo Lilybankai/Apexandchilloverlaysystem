@@ -362,7 +362,12 @@ const TRIGGER_TIERS = {
   fastestLapSelf: 'standard',
   fastestLapField: 'standard',
   positionChange: 'standard',
-  rivalPitted: 'standard',
+  rivalPitted: 'standard', // superseded by rivalStop, no longer emitted
+  // A rival's stop is strategy, not safety or a rule change, so it stays out
+  // of the essential tier; rivalStop.ts already keeps it to the stops that
+  // move the driver's own race.
+  rivalStop: 'standard',
+  rivalRejoin: 'standard',
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
   practicePace: 'standard',

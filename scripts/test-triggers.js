@@ -827,13 +827,26 @@ function playerRowOver(over) {
 }
 
 {
-  // The class neighbour boxing.
+  // The class neighbour boxing. The bare lane entry no longer speaks: the
+  // car ahead is 16 s up the road and no pit loss has been measured, so the
+  // stop changes nothing the driver can act on (rivalStop.ts; the full rules
+  // are scripts/test-rivalstop.js).
   const grid = (aheadInPit) => ({
     standings: [playerRowOver({}), rival(2, { classPosition: 2, inPit: aheadInPit }), rival(4, { classPosition: 4 })],
   });
   const r = rig({}, grid(false));
-  const cue = r.fire(grid(true));
-  check('the car ahead pitting speaks', cue && cue.kind === 'rivalPitted', cue && cue.line);
+  r.fire(grid(true), 12_000);
+  check('a distant neighbour boxing, nothing measured, stays quiet',
+    !r.kinds().some((k) => k === 'rivalPitted' || k === 'rivalStop'), r.kinds().join());
+  // …but a car in a direct fight (3 s ahead) is named once its stop is real.
+  const close = (aheadInPit) => ({
+    standings: [playerRowOver({}), rival(2, { classPosition: 2, gapToLeaderSec: 18, inPit: aheadInPit }),
+      rival(4, { classPosition: 4 })],
+  });
+  const r2 = rig({}, close(false));
+  r2.fire(close(true), 12_000);
+  const cue = r2.cues.find((c) => c.kind === 'rivalStop');
+  check('the car ahead in a direct fight boxing speaks', !!cue, r2.kinds().join());
   check('…and says which side', cue && cue.triggers[0].facts.where === 'ahead',
     cue && JSON.stringify(cue.triggers[0].facts));
 }
@@ -1071,7 +1084,7 @@ console.log('\n11) The phrasebook turns cues into radio lines');
   const expected = [
     'raceStart', 'fullCourseYellow', 'sectorYellow', 'sectorClear', 'restart', 'finalLap', 'checkered',
     'incident', 'penalty', 'penaltyServed', 'fuelWindow', 'fuelCritical', 'redFlag',
-    'fastestLapSelf', 'fastestLapField', 'positionChange', 'rivalPitted', 'pitWindowOpen', 'yieldTo',
+    'fastestLapSelf', 'fastestLapField', 'positionChange', 'pitWindowOpen', 'yieldTo',
     'practicePace',
   ];
   for (const kind of expected) {
