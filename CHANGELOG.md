@@ -5,6 +5,18 @@
      app until it is renamed.
 -->
 
+## 1.3.1 — 2026-10-02
+
+### Fixed
+
+- **Signing in on a VPN or proxy.** If your connection goes through a VPN or
+  a proxy set up in Windows, or your antivirus checks secure connections,
+  Apex could tell you that you were offline and refuse to sign you in, even
+  though your browser worked fine. It now connects the same way your browser
+  does, so signing in and the online features that use your account work on
+  those connections too. If it still can't get through, the message now says
+  why.
+
 ## 1.3.0 — 2026-10-02
 
 A big update for the race engineer. It now talks you through qualifying and

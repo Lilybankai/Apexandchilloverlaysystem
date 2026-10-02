@@ -9,8 +9,8 @@
  *   - Refresh tokens never touch the renderer. The panel only ever sees the
  *     sanitised `user` object returned by the IPC handlers.
  *
- * We speak to GoTrue (Supabase Auth) over plain REST with `fetch`, which Node 18
- * has built in — no new dependency for one login screen.
+ * We speak to GoTrue (Supabase Auth) over plain REST with `fetch` — no new
+ * dependency for one login screen. Chromium's fetch, not Node's: see netFetch.js.
  *
  * Password reset is deliberately a THREE-step in-app flow (request code → enter
  * code + new password → done) rather than a link out to a website: this is a
@@ -22,6 +22,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const { fetchWithFallback, describeFetchError } = require('./netFetch');
 
 /* -------------------------------------------------------------------------- */
 /*  Project configuration                                                     */
@@ -161,13 +162,18 @@ function errorMessage(body, res) {
  * One REST call against the project. Resolves `{ ok, status, body }` and never
  * throws for an HTTP error; network failures become ok:false with a friendly
  * offline message, because "no internet" is the single most likely failure for
- * an app that lives next to a game.
+ * an app that lives next to a game. The message carries the real reason in
+ * brackets — "offline" was also what a driver whose VPN is a system proxy saw,
+ * back when this went out on Node's fetch, which ignores that proxy.
+ *
+ * Every Supabase request the app makes comes through here (rpc, functions,
+ * refresh), so this is the one place the network stack is chosen.
  */
 async function api(pathname, { method = 'POST', body, token, headers, timeoutMs } = {}) {
   const url = `${SUPABASE_URL}${pathname}`;
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchWithFallback(url, {
       method,
       headers: {
         apikey: SUPABASE_KEY,
@@ -180,12 +186,14 @@ async function api(pathname, { method = 'POST', body, token, headers, timeoutMs 
     });
   } catch (err) {
     const offline = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    console.warn(`[auth] ${pathname.split('?')[0]} failed: ${describeFetchError(err)}`);
     return {
       ok: false,
       status: 0,
       error: offline
         ? 'The account service didn’t respond. Check your connection and try again.'
-        : 'Can’t reach the account service — you appear to be offline. You can still use the overlays offline.',
+        : 'Can’t reach the account service — you appear to be offline. You can still use the overlays offline.' +
+          ` (${describeFetchError(err)})`,
     };
   }
 

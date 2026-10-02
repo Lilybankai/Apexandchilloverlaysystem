@@ -12,6 +12,8 @@
  *      leaked through here it would end up in the panel's DOM, so the shape is
  *      asserted field by field.
  *
+ * Plus the network-stack choice every Supabase call rides on (netFetch.js).
+ *
  * No network, no Electron: auth.js only touches `app` via the userData dir it is
  * handed, so these functions are importable as-is. Run: node scripts/test-auth.js
  */
@@ -145,5 +147,76 @@ console.log('\nContract with the UI');
 }
 
 /* -------------------------------------------------------------------------- */
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed ? 1 : 0);
+/*  The network stack. 2026-10-01: a driver whose VPN is a system proxy could  */
+/*  not sign in — auth.js used Node's fetch, which ignores that proxy, and     */
+/*  told them they were offline. Every Supabase call now goes Chromium-first.  */
+/* -------------------------------------------------------------------------- */
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { fetchWithFallback, describeFetchError } = require('../electron/netFetch');
+
+async function networkChecks() {
+  console.log('\nNetwork stack — Chromium first, Node as the fallback');
+
+  const authSrc = fs.readFileSync(path.join(__dirname, '../electron/auth.js'), 'utf8');
+  check('auth.js goes through netFetch', /require\('\.\/netFetch'\)/.test(authSrc));
+  check(
+    'auth.js has no bare fetch( left',
+    !/(^|[^\w.])fetch\(/m.test(authSrc.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')),
+  );
+
+  const netSrc = fs.readFileSync(path.join(__dirname, '../electron/netFetch.js'), 'utf8');
+  check(
+    "net.fetch is pushed before Node's fetch",
+    netSrc.indexOf('net.fetch.bind') > -1 &&
+      netSrc.indexOf('net.fetch.bind') < netSrc.indexOf('globalThis.fetch'),
+  );
+
+  const calls = [];
+  const stack = (name, impl) => ({ name, fetch: (...a) => (calls.push(name), impl(...a)) });
+  const connectFail = () => {
+    throw new TypeError('fetch failed', { cause: new Error('net::ERR_PROXY_CONNECTION_FAILED') });
+  };
+  const answer = (status) => async () => ({ status, ok: status < 400 });
+
+  calls.length = 0;
+  let res = await fetchWithFallback('u', {}, [stack('app', connectFail), stack('node', answer(200))]);
+  check('connect failure falls through to the next stack', res.status === 200 && calls.join() === 'app,node', calls.join());
+
+  calls.length = 0;
+  res = await fetchWithFallback('u', {}, [stack('app', answer(400)), stack('node', answer(200))]);
+  check('an HTTP error is final (no second request)', res.status === 400 && calls.join() === 'app', calls.join());
+
+  calls.length = 0;
+  const ac = new AbortController();
+  ac.abort();
+  let thrown = null;
+  try {
+    await fetchWithFallback('u', { signal: ac.signal }, [stack('app', connectFail), stack('node', answer(200))]);
+  } catch (err) {
+    thrown = err;
+  }
+  check('an abort/timeout is final (no doubled wait)', thrown && calls.join() === 'app', calls.join());
+
+  calls.length = 0;
+  thrown = null;
+  try {
+    await fetchWithFallback('u', {}, [stack('app', connectFail), stack('node', connectFail)]);
+  } catch (err) {
+    thrown = err;
+  }
+  check('every stack failing throws', thrown && calls.join() === 'app,node', calls.join());
+  check(
+    'the reason survives for the error line',
+    thrown && describeFetchError(thrown) === 'fetch failed — net::ERR_PROXY_CONNECTION_FAILED',
+    thrown && describeFetchError(thrown),
+  );
+}
+
+networkChecks()
+  .catch((err) => check('network checks ran', false, err && err.stack))
+  .finally(() => {
+    console.log(`\n${passed} passed, ${failed} failed\n`);
+    process.exit(failed ? 1 : 0);
+  });
