@@ -32,7 +32,7 @@ const { execFile, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { WhisperServer } = require('./whisperServer');
+const { WhisperServer, yieldToSim } = require('./whisperServer');
 
 const WHISPER_RELEASE = 'v1.9.1';
 const WHISPER_ZIP =
@@ -552,7 +552,7 @@ function runCli(cli, model, wav, audioCtx) {
   }
   const cliDir = path.dirname(cli);
   return new Promise((resolve, reject) => {
-    engine.execFile(
+    const child = engine.execFile(
       cli,
       cliArgs({ model, wav, prefix, threads: sttThreads(), audioCtx }),
       {
@@ -575,6 +575,7 @@ function runCli(cli, model, wav, audioCtx) {
         resolve(readCliJson(jsonPath));
       },
     );
+    yieldToSim(child);
   });
 }
 

@@ -25,7 +25,26 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
+
+/**
+ * Drop a whisper process to below-normal CPU priority. Transcription runs
+ * 7-8 threads for half a second while the driver is mid-lap; at normal
+ * priority that burst competes with LMU's own threads for the same cores and
+ * can cost a frame. Below normal, the sim always wins a contested core and
+ * whisper takes what is spare — if that makes small.en slow on a busy machine,
+ * the speed guard in engineerStt demotes to base.en. Best effort: a process
+ * that already exited, or a platform that refuses, just keeps its priority.
+ */
+function yieldToSim(child) {
+  try {
+    if (child && child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+  } catch {
+    /* best effort */
+  }
+  return child;
+}
 
 const READY_TIMEOUT_MS = 20000;
 
@@ -133,7 +152,7 @@ class WhisperServer {
       stdio: 'ignore',
       env: { ...process.env, PATH: `${path.dirname(this.exe)}${path.delimiter}${process.env.PATH || ''}` },
     });
-    this.child = child;
+    this.child = yieldToSim(child);
     live.add(this);
     hookExit();
     let exited = false;
@@ -222,4 +241,4 @@ class WhisperServer {
   }
 }
 
-module.exports = { WhisperServer, multipart, freePort };
+module.exports = { WhisperServer, multipart, freePort, yieldToSim };

@@ -421,6 +421,15 @@
       sttSmallStatus.className = 'eng-status';
       return;
     }
+    // The speed guard (engineerStt) drops to the standard model for the rest
+    // of the session when the sharper one is too slow on this PC — say so,
+    // rather than claim every question is heard by a model that is resting.
+    if (s.sttSmallInstalled && s.sttEars && s.sttEars.smallDemoted) {
+      sttSmallStatus.textContent =
+        'Installed, but resting this session — it was too slow on this PC, so the quicker standard model is answering. It is tried again next launch.';
+      sttSmallStatus.className = 'eng-status eng-status--warn';
+      return;
+    }
     if (s.sttSmallInstalled) {
       sttSmallStatus.textContent = 'Active — every question is heard by the sharper model.';
       sttSmallStatus.className = 'eng-status eng-status--live';
