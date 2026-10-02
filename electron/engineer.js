@@ -727,6 +727,55 @@ const LISTEN_WINDOW_SEC = 6;
 const MIN_CONFIDENCE = 0.82;
 
 /**
+ * How a push-to-talk press ENDED — one counter per outcome, through the app's
+ * feature-usage store as `action:engineer.outcome.<kind>` (slugs registered in
+ * control-panel/feature-catalog.js, so a zero still shows on the admin Usage
+ * pane). Counters only, never words: the transcript stays on the PC.
+ *
+ * Why: of 106 presses across 13 drivers (2026-09-06 →), 22 reached the
+ * engineer_calls log. The other 84 — Tier-1 answers, local "Say again?",
+ * signed-out, not-entitled — were invisible.
+ *
+ * Exactly ONE terminal outcome per press that reached the microphone:
+ *   tier1           answered from the phrase list (SAPI, or whisper → list)
+ *   position        a positional Tier-1 answer (the position hook calls
+ *                   noteOutcome('position') itself)
+ *   noise           whisper heard a loop / echo / stray word / too-short text
+ *   none            nothing usable heard → local "Say again?"
+ *   cloud-ok        the pit wall answered
+ *   cloud-sayagain  the pit wall answered "Say again?"
+ *   cloud-fail      no answer: offline, timeout, 5xx, empty reply
+ *   signed-out      Tier 2 needs an account
+ *   not-entitled    Tier 2 refused: no active subscription (HTTP 403)
+ *   budget          the month's free-form allotment is spent
+ *   no-telemetry    no live frame to put a question against
+ *   not-ready       pressed while the engineer or microphone was down
+ * Markers, counted alongside a terminal outcome:
+ *   rejected              SAPI rejected the utterance but kept its audio
+ *   rejected-transcribed  …and whisper made words of it
+ *   no-dictation          once per session: Windows dictation is missing,
+ *                         so free-form questions ride on rejected audio
+ */
+const ENGINEER_OUTCOMES = [
+  'tier1',
+  'position',
+  'noise',
+  'none',
+  'cloud-ok',
+  'cloud-sayagain',
+  'cloud-fail',
+  'signed-out',
+  'not-entitled',
+  'budget',
+  'no-telemetry',
+  'not-ready',
+  'rejected',
+  'rejected-transcribed',
+  'no-dictation',
+];
+const OUTCOME_SLUG_PREFIX = 'action:engineer.outcome.';
+
+/**
  * How long one of our own spoken lines stays a candidate for echo detection.
  * Piper takes a couple of seconds to speak a sentence and the listen window is
  * six, so a line the mic caught can only be this recent.
@@ -755,6 +804,8 @@ class EngineerService {
    * @param {(body: object) => Promise<object>} [opts.cloudAsk]
    * @param {() => Promise<object>} [opts.cloudBudget]
    * @param {(id: string, rating: string) => Promise<object>} [opts.cloudRate]
+   * @param {(slug: string) => void} [opts.noteUsage]  feature-usage counter
+   *        (main injects featureUsage.feature); see {@link ENGINEER_OUTCOMES}
    */
   constructor(opts) {
     this.dir = opts.dir;
@@ -767,6 +818,7 @@ class EngineerService {
     this.cloudAsk = opts.cloudAsk || null;
     this.cloudBudget = opts.cloudBudget || null;
     this.cloudRate = opts.cloudRate || null;
+    this.noteUsage = opts.noteUsage || null;
     this.radioFx = require('./radio-fx');
     this.commandsMod = tryRequire('telemetry/engineerCommands.js');
     this.triggersMod = tryRequire('telemetry/triggers.js');
@@ -811,6 +863,23 @@ class EngineerService {
     this.lastCall = null; // last Tier-2 reply, for the useful/wrong buttons
     this.budget = null; // { used, cap, remaining } from engineer_budget
     this.freeFormLive = false; // dictation grammar loaded in the recognizer
+    this.notedNoDictation = false; // the no-dictation marker, once per session
+    this.lastOutcome = null; // the last outcome counted — for tests and logs
+  }
+
+  /**
+   * Count one push-to-talk outcome (see {@link ENGINEER_OUTCOMES}). Never
+   * throws and never load-bearing: no injected counter (tests, dev harness)
+   * just records it on the instance.
+   */
+  noteOutcome(kind) {
+    this.lastOutcome = kind;
+    try {
+      if (this.noteUsage) this.noteUsage(OUTCOME_SLUG_PREFIX + kind);
+    } catch {
+      /* a counter must never break the radio */
+    }
+    return kind;
   }
 
   /* ---- assets ------------------------------------------------------------ */
@@ -1354,7 +1423,10 @@ class EngineerService {
       }
     });
 
-    // Ears: resident but deaf until a LISTEN command (push-to-talk).
+    // Ears: resident but deaf until a LISTEN command (push-to-talk). Dictation
+    // is re-learned from THIS sidecar's DICTOK line, never carried over.
+    this.freeFormLive = false;
+    this.notedNoDictation = false;
     this.recognizer = spawnPs(path.join(this.sidecarsDir, RECOGNIZER_SIDECAR), {
       APEX_ENGINEER_GRAMMAR: this.grammarPath,
       APEX_ENGINEER_WAVDIR: this.wavDir,
@@ -1488,9 +1560,13 @@ class EngineerService {
       // HEARD now carries the utterance wav too (4th field), so a
       // low-confidence grammar guess can be second-guessed by whisper instead
       // of dying — see ask().
+      //
+      // REJECTED (2026-10-02): speech no grammar would own — on a PC without
+      // Windows dictation, every free-form question. Same shape as FREE; the
+      // text is SAPI's near-worthless guess, so ask() trusts only whisper.
       if (kind === 'HEARD') {
         resolve({ kind, intent: a, confidence: Number(b), wav: c || null, text: d || '' });
-      } else if (kind === 'FREE') {
+      } else if (kind === 'FREE' || kind === 'REJECTED') {
         resolve({ kind, wav: a || null, confidence: Number(b), text: c || '' });
       } else resolve({ kind: 'NONE' });
     }
@@ -1649,11 +1725,24 @@ class EngineerService {
    * press while listening is ignored rather than queued.
    */
   async ask() {
-    if (!this.running) return { ok: false, error: 'Engineer is not running' };
-    if (!this.recognizerReady) return { ok: false, error: 'Microphone not ready' };
+    if (!this.running) {
+      this.noteOutcome('not-ready');
+      return { ok: false, error: 'Engineer is not running' };
+    }
+    if (!this.recognizerReady) {
+      this.noteOutcome('not-ready');
+      return { ok: false, error: 'Microphone not ready' };
+    }
     if (this.asking) return { ok: true };
     this.asking = true;
     this.heldReadout = null; // the driver's question always wins
+    // A PC without Windows dictation can still ask free-form (the rejected
+    // audio goes to whisper) — but how MANY such PCs there are is worth
+    // knowing, so it is counted once per session, on the first press.
+    if (!this.freeFormLive && !this.notedNoDictation) {
+      this.notedNoDictation = true;
+      this.noteOutcome('no-dictation');
+    }
     try {
       this.playChirp();
       const heard = await new Promise((resolve) => {
@@ -1681,7 +1770,7 @@ class EngineerService {
           answer: answer.text,
           atMs: Date.now(),
         };
-        return { ok: true };
+        return { ok: true, outcome: this.noteOutcome('tier1') };
       }
 
       // Whisper is the real ear from here on. SAPI's job above was capture and
@@ -1693,9 +1782,26 @@ class EngineerService {
       // against SAPI's dictation text while whisper's better transcript went
       // straight past it to the AI (the 2026-08-26 call log shows "what are my
       // tyre temperatures?" doing exactly that).
-      if (heard.kind === 'HEARD' || heard.kind === 'FREE') {
-        const sapiText = (heard.text || '').trim();
+      //
+      // REJECTED rides the same road (2026-10-02 field report: "car-ahead
+      // average" worked, "what's my average" was always "Say again?" and never
+      // reached the cloud log). With no dictation grammar to win it, SAPI
+      // rejected the sentence and the audio used to be thrown away; now it
+      // arrives here for whisper like any other clip. SAPI's text for a
+      // rejection is a confidence-0.01 guess ("banana" → "the leader"), so it
+      // is never a fallback — and never matched against the phrase list.
+      if (heard.kind === 'HEARD' || heard.kind === 'FREE' || heard.kind === 'REJECTED') {
+        const rejected = heard.kind === 'REJECTED';
+        if (rejected) this.noteOutcome('rejected');
+        const sapiText = rejected ? '' : (heard.text || '').trim();
         const { question, sttMs } = await this.transcribeClip(heard.wav);
+        if (rejected) {
+          if (!question) {
+            this.speak('Say again?');
+            return { ok: true, outcome: this.noteOutcome('none') };
+          }
+          this.noteOutcome('rejected-transcribed');
+        }
         const text = question || sapiText;
         // Noise is judged BEFORE the phrase list, not after. A whisper
         // repetition loop reliably contains a grammar word — the 2026-08-31
@@ -1704,7 +1810,7 @@ class EngineerService {
         const noise = radioNoise(text, this.recentlySpoken());
         if (noise) {
           if (noise !== 'echo') this.speak('Say again?');
-          return { ok: true, noise };
+          return { ok: true, noise, outcome: this.noteOutcome('noise') };
         }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
@@ -1714,14 +1820,14 @@ class EngineerService {
           const answer = this.commands.answer(intent);
           this.speak(answer.text);
           this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
-          return { ok: true };
+          return { ok: true, outcome: this.noteOutcome('tier1') };
         }
-        await this.askTier2(text, sttMs);
-        return { ok: true };
+        const outcome = await this.askTier2(text, sttMs);
+        return { ok: true, outcome };
       }
 
       this.speak('Say again?');
-      return { ok: true };
+      return { ok: true, outcome: this.noteOutcome('none') };
     } finally {
       this.asking = false;
     }
@@ -1755,6 +1861,9 @@ class EngineerService {
    * asked question that fails gets a short spoken failure — the readouts fail
    * to silence, but silence after a button press reads as a dead engineer
    * (beta.6 field report).
+   *
+   * Resolves to the outcome it counted (see {@link ENGINEER_OUTCOMES}), or
+   * null when no cloud hook is wired.
    */
   async askTier2(question, sttMs) {
     question = String(question || '').trim();
@@ -1763,12 +1872,12 @@ class EngineerService {
     // log). Fewer than four letters cannot be a question — say it locally.
     if (question.length < 3 || (question.match(/[a-z]/gi) || []).length < 4) {
       this.speak('Say again?');
-      return;
+      return this.noteOutcome('noise');
     }
-    if (!this.cloudAsk) return; // no cloud hook wired (dev harness) — silence
+    if (!this.cloudAsk) return null; // no cloud hook wired (dev harness) — silence
     if (!this.summaryMod || !this.lastFrame) {
       this.speak('No telemetry.');
-      return;
+      return this.noteOutcome('no-telemetry');
     }
     // Hand the summary Tier 1's lap-history read, so a pace question the
     // grammar missed still gets real averages instead of "no read" — and the
@@ -1779,7 +1888,7 @@ class EngineerService {
     const summary = this.summaryMod.engineerSummary(this.lastFrame, avgOf, extras);
     if (!summary || !summary.connected) {
       this.speak('No telemetry.');
-      return;
+      return this.noteOutcome('no-telemetry');
     }
     // A question hard on the heels of an answer is often a follow-up ("and on
     // energy?", "how many laps is that") — give the model the exchange it is
@@ -1798,17 +1907,26 @@ class EngineerService {
       res = await this.cloudAsk(previous ? { question, summary, sttMs, previous } : { question, summary, sttMs });
     } catch {
       this.speak('No answer from the pit wall.');
-      return;
+      return this.noteOutcome('cloud-fail');
     }
     if (!res) {
       this.speak('No answer from the pit wall.');
-      return;
+      return this.noteOutcome('cloud-fail');
     }
     if (res.signedOut) {
       this.speak('Sign in to ask free-form.');
-      return;
+      return this.noteOutcome('signed-out');
     }
     const body = res.body || {};
+    // No active subscription: the engineer function answers 403 with code
+    // 'entitled'. auth.api() drops the body of a non-2xx reply, so the STATUS
+    // is the signal (the code is honoured too, should the body ever survive).
+    // It used to fall through to "No answer from the pit wall." — which reads
+    // as an outage, not as something the driver can fix.
+    if (res.status === 403 || body.code === 'entitled' || res.code === 'entitled') {
+      this.speak('Free-form questions need an active subscription. The phrase list still works.');
+      return this.noteOutcome('not-entitled');
+    }
     if (body.code === 'budget') {
       this.budget = { remaining: 0, cap: body.cap || 300, used: body.cap || 300 };
       if (!this.saidBudgetLine) {
@@ -1816,11 +1934,11 @@ class EngineerService {
         this.speak("That's the free-form allotment for this month. Stick to the phrase list.");
       }
       this.pushStatus();
-      return;
+      return this.noteOutcome('budget');
     }
     if (!res.ok || body.ok === false || !body.answer) {
       this.speak('No answer from the pit wall.');
-      return;
+      return this.noteOutcome('cloud-fail');
     }
     this.speak(body.answer);
     this.lastExchange = { question, answer: body.answer, atMs: Date.now() };
@@ -1829,6 +1947,10 @@ class EngineerService {
       this.budget = { remaining: body.remaining, cap: body.cap || 300 };
     }
     this.pushStatus();
+    // The model's own "Say again?" — it could not make a question of the
+    // words. Counted apart from a real answer: a high share means whisper or
+    // the noise filter is letting junk through to a budgeted call.
+    return this.noteOutcome(/^\s*say again\W*$/i.test(String(body.answer)) ? 'cloud-sayagain' : 'cloud-ok');
   }
 
   async refreshBudget() {
@@ -1908,6 +2030,8 @@ module.exports = {
   VOICES,
   GRAMMAR,
   ENGINEER_CALLOUTS,
+  ENGINEER_OUTCOMES,
+  OUTCOME_SLUG_PREFIX,
   sampleUrl,
   matchGrammarText,
   radioNoise,
