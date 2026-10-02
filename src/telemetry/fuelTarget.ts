@@ -158,7 +158,10 @@ export function parseFuelTargetAsk(text: string): FuelTargetAsk | null {
   // -- read back -----------------------------------------------------------
   // "fuel target", "what's my target", "am I on target", "how's the saving".
   // Pace-target words belong to the reference-pace intents, not here.
+  // "target lap time" / "target time" are pace questions too, unless the
+  // driver says fuel or energy in the same breath.
   if (/\b(?:pace|alien|competitive|midpack|mid pack|sector|gap|position)\b/.test(t)) return null;
+  if (/\b(?:lap ?time|time|qualifying|quali)\b/.test(t) && !/\b(?:fuel|energy|saving)\b/.test(t)) return null;
   if (/\btarget\b/.test(t)) return { kind: 'read' };
   if (/\b(?:hows|how is|how am i doing|how are we doing)\b(?: \w+){0,3}? (?:saving|save)\b/.test(t)) {
     return { kind: 'read' };

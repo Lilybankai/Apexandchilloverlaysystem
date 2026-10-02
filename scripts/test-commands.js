@@ -1173,6 +1173,11 @@ function unit() {
   routes('stray single words', 'noword', ['prompt,', 'heads,', 'switch.', 'lows', 'mate', 'ladder', 'fire', 'hardship']);
   routes('nothing at all', 'empty', ['...', '']);
   // Real asks the guard must never swallow: racing questions the cloud answers.
+  // A target LAP TIME is a pace question — not the fuel target's "whats my
+  // target", not lastLap's "lap time" (merge review, 2026-10-02).
+  routes('target lap time is the competitive pace', 'paceCompetitive', [
+    "what's my target lap time", 'what is my target lap time', 'target time',
+  ]);
   routes('real questions survive', 'cloud', [
     'session update', 'retired a car', 'round of the pack', 'and the next lap.',
     'box to retire the car.', 'overall', 'status.', 'and the', 'car at',

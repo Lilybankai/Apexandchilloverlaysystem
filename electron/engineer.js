@@ -175,6 +175,11 @@ const GRAMMAR = [
       'what pace to be competitive',
       'what pace do i need to be competitive',
       'how far off competitive pace',
+      // "Target lap time" is a pace question. Without these it fell to the
+      // fuel target's "whats my target" or to lastLap's "lap time".
+      'target lap time',
+      'my target lap time',
+      'target time',
     ],
   },
   {
@@ -1976,7 +1981,7 @@ class EngineerService {
       // Only an EXACT phrase takes it. A wildcard-wrapped hit means the phrase
       // sat inside a longer sentence, and SAPI cannot say what the rest was:
       // "what's the gap to P10" confidently matches 'whats the gap' and would
-      // answer the car ahead — the very relabelling the position parser below
+      // answer the car ahead ï¿½ the very relabelling the position parser below
       // exists to stop. Those go through whisper like everything else.
       const fuelSet =
         heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.answerFuelTarget(heard.text);
