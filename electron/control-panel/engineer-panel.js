@@ -33,6 +33,7 @@
   const readouts = $('#eng-readouts');
   const readoutsHint = $('#eng-readouts-hint');
   const paceReminder = $('#eng-pace-reminder');
+  const straights = $('#eng-straights');
   const volume = $('#eng-volume');
   const volumeEcho = $('#eng-volume-echo');
   const sttStatus = $('#eng-stt-status');
@@ -53,7 +54,7 @@
       'penalties, damage. In qualifying: your lap and position, pole changes, ' +
       'time for another go and your grid slot; in practice, personal bests and ' +
       'deleted laps. Never reads out what your screen already shows, and ' +
-      'stays quiet while you are side by side or deep in the brakes.',
+      'holds a call while you are braking, cornering or side by side.',
     standard:
       'Essential plus the race story: your fastest laps, the field’s, places ' +
       'gained and lost, the rivals’ stops, blue flags, practice pace checks and ' +
@@ -108,6 +109,9 @@
     weather: 'Weather & rain risk',
     brakeBias: 'Brake bias',
     tractionControl: 'Traction control setting',
+    radioQuiet: 'Radio silence — urgent calls only',
+    radioTalk: 'Radio back on',
+    radioRepeat: 'Repeat the last line',
   };
 
   let last = null; // latest status payload
@@ -126,6 +130,9 @@
     if (!s.enabled) return ['Off. Flip the switch to put the engineer on the radio.', ''];
     if (!s.running) return ['Starting…', ''];
     if (s.micAvailable === false) return ['Running, but no microphone was found.', 'warn'];
+    if (s.radioQuiet) {
+      return ['Live, radio quiet — urgent calls only until you say "talk to me" or the session changes.', 'live'];
+    }
     return ['Live. Press the button and ask.', 'live'];
   }
 
@@ -323,6 +330,7 @@
     toggle.checked = !!s.enabled;
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
+    if (straights && typeof s.onlyStraights === 'boolean') straights.checked = s.onlyStraights;
     if (
       typeof s.practicePaceReminderLaps === 'number' &&
       paceReminder.value !== String(s.practicePaceReminderLaps)
@@ -562,6 +570,11 @@
     renderReadoutsHint();
     void api.updateSettings({ engineer: { readouts: readouts.value } });
   });
+  if (straights) {
+    straights.addEventListener('change', () => {
+      void api.updateSettings({ engineer: { onlyStraights: straights.checked } });
+    });
+  }
   paceReminder.addEventListener('change', () => {
     void api.updateSettings({
       engineer: { practicePaceReminderLaps: parseInt(paceReminder.value, 10) },

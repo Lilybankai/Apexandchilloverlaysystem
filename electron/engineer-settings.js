@@ -14,6 +14,9 @@ const DEFAULT_ENGINEER_SETTINGS = Object.freeze({
   readouts: 'essential',
   volume: 100,
   practicePaceReminderLaps: 4,
+  // Radio etiquette: proactive calls wait for a straight (urgent ones never
+  // wait). Off = the old rule, quiet only while braking hard or side by side.
+  onlyStraights: true,
 });
 
 function normalizePracticePaceReminderLaps(value, fallback = 4) {
@@ -44,6 +47,11 @@ function sanitizeEngineer(stored, defaults = DEFAULT_ENGINEER_SETTINGS) {
       s.practicePaceReminderLaps,
       base.practicePaceReminderLaps,
     ),
+    onlyStraights: typeof s.onlyStraights === 'boolean'
+      ? s.onlyStraights
+      : typeof base.onlyStraights === 'boolean'
+        ? base.onlyStraights
+        : DEFAULT_ENGINEER_SETTINGS.onlyStraights,
   };
 }
 

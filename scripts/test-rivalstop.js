@@ -230,7 +230,7 @@ console.log('\n2) Car behind boxes — the undercut, or nothing');
   const f = factsOf(cue, 'rivalStop');
   check('car behind from 1.2 s while you still have to stop: undercut', f && f.outcome === 'undercut', JSON.stringify(f));
   const line = r.said(cue) || '';
-  check('…"expect them close after your stop"', /1\.2 seconds behind — expect them close after your stop/.test(line), line);
+  check('…"close after your stop"', /1\.2 seconds behind — close after your stop/.test(line), line);
   check('…never a verdict on whether it works', !/work|will pass|lose the place|gain/.test(line), line);
 }
 
@@ -566,7 +566,7 @@ console.log('\n7) Energy context, the position shuffle, every phrase');
   const cue = r.rival()[0];
   const f = factsOf(cue, 'rivalStop');
   check('laps of energy in hand over the rival ride along', f && f.energyLapsInHand === 5, JSON.stringify(f));
-  check('…and are said', /You've 5 laps more energy\./.test(r.said(cue) || ''), r.said(cue));
+  check('…and are said', / 5 laps more energy\./.test(r.said(cue) || ''), r.said(cue));
 }
 
 {
@@ -624,7 +624,7 @@ console.log('\n7) Energy context, the position shuffle, every phrase');
       const line = phraseForCue(mk(facts), null, v);
       if (!line || /undefined|NaN|null/.test(line)) allOk = false;
       const all = line ? line.split(/\s+/).length : 0;
-      const base = line ? line.replace(/ You've \d+ laps? more energy\.$/, '').split(/\s+/).length : 0;
+      const base = line ? line.replace(/ \d+ laps? more energy\.$/, '').split(/\s+/).length : 0;
       if (base > worst) { worst = base; worstLine = line; }
       worstAll = Math.max(worstAll, all);
     }

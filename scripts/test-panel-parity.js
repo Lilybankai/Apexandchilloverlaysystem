@@ -139,6 +139,8 @@ const PANEL_CONTRACT = {
   'eng-voice-reclaim': 'p',
   'eng-voice-reclaim-text': 'span',
   'eng-voice-reclaim-btn': 'button',
+  // Radio etiquette (2026-10-02): the "Only talk on straights" switch.
+  'eng-straights': 'input:checkbox',
 
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop
