@@ -356,6 +356,7 @@ export class FuelCalculator {
       fuelToFinishLiters: fuelToFinish !== UNKNOWN_VALUE ? round1(fuelToFinish) : UNKNOWN_VALUE,
       fuelDeltaLiters: fuelDelta !== UNKNOWN_VALUE ? round1(fuelDelta) : UNKNOWN_VALUE,
       refuelToFinishLiters: refuel !== UNKNOWN_VALUE ? round1(refuel) : UNKNOWN_VALUE,
+      levelLitersExact: Math.round(fuel * 1000) / 1000,
     };
 
     // Pit window: earliest lap by which the tank runs dry — i.e. the last lap
