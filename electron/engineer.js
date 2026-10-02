@@ -1275,6 +1275,7 @@ class EngineerService {
       sttInstalled: stt.installed(this.sttRoots()),
       sttSmallInstalled: stt.smallInstalled(this.sttRoots()),
       sttSmallSizeMb: stt.SMALL_MODEL_MB,
+      sttEars: stt.sttState(),
       betterEars: { error: this.betterEars.error, retryAt: this.betterEars.nextTryAt || null },
       freeFormLive: this.freeFormLive,
       sttSizeMb: stt.MODEL_MB,
@@ -1607,6 +1608,8 @@ class EngineerService {
     this.running = true;
     this.pushStatus();
     void this.refreshBudget();
+    // Load the whisper model now, not on the first question (engineerStt.warm).
+    stt.warm(this.sttRoots());
   }
 
   stop() {
@@ -1637,6 +1640,7 @@ class EngineerService {
     this.heldReadout = null;
     this.lastFrame = null;
     this.saidBudgetLine = false;
+    stt.release();
     if (this.wavDir) fs.rmSync(this.wavDir, { recursive: true, force: true });
     this.wavDir = null;
   }
