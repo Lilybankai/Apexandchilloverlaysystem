@@ -57,8 +57,9 @@
       'holds a call while you are braking, cornering or side by side.',
     standard:
       'Essential plus the race story: your fastest laps, the field’s, places ' +
-      'gained and lost, the rivals’ stops, blue flags, practice pace checks and ' +
-      'sector improvements on a push lap. ' +
+      'gained and lost, what a rival’s stop means for you, blue flags, timed ' +
+      'traffic calls in multiclass, practice pace checks and sector improvements ' +
+      'on a push lap. ' +
       'Your question always cuts in front of a call.',
   };
 
