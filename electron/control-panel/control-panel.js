@@ -5161,7 +5161,9 @@
     }
     const coldActions = catalog
       ? catalog.ACTIONS.filter(
-          (a) => !features.some((f) => f.feature === a.slug && f.users30d > 0),
+          // Engineer outcome counters are diagnostics: a zero "budget" is good
+          // news, not a feature nobody found.
+          (a) => !a.outcome && !features.some((f) => f.feature === a.slug && f.users30d > 0),
         ).length
       : 0;
     const actionsFoot = $('#adm-actions-foot');

@@ -1890,6 +1890,10 @@ function getEngineer() {
       cloudAsk: (body) => authService.functionsInvoke('engineer', body, { timeoutMs: 8000 }),
       cloudBudget: () => authService.rpc('engineer_budget', {}),
       cloudRate: (id, rating) => authService.rpc('rate_engineer_call', { p_id: id, p_rating: rating }),
+      // How each push-to-talk press ended (action:engineer.outcome.*) —
+      // injected, like the press counter in getActions(), so engineer.js
+      // keeps no analytics dependency of its own.
+      noteUsage: (slug) => featureUsage.feature(slug),
     });
   }
   return engineerService;

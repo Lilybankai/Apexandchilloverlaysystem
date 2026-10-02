@@ -109,6 +109,27 @@
     { slug: 'action:engineer.ask', tab: 'engineer', label: 'Asked the engineer a question' },
     { slug: 'action:engineer.voice', tab: 'engineer', label: 'Changed the engineer voice' },
 
+    // How each push-to-talk press ENDED (electron/engineer.js
+    // ENGINEER_OUTCOMES — test:engineer-queue holds the two lists together).
+    // Counted by main, not the panel, and diagnostic rather than adoption:
+    // `outcome: true` keeps a zero here (no one hit the budget) off the admin
+    // pane's "nobody performed" shortlist, where it would read as a problem.
+    { slug: 'action:engineer.outcome.tier1', tab: 'engineer', outcome: true, label: 'Engineer: answered from the phrase list' },
+    { slug: 'action:engineer.outcome.position', tab: 'engineer', outcome: true, label: 'Engineer: answered a position question' },
+    { slug: 'action:engineer.outcome.noise', tab: 'engineer', outcome: true, label: 'Engineer: heard noise, said "Say again?"' },
+    { slug: 'action:engineer.outcome.none', tab: 'engineer', outcome: true, label: 'Engineer: heard nothing, said "Say again?"' },
+    { slug: 'action:engineer.outcome.cloud-ok', tab: 'engineer', outcome: true, label: 'Engineer: pit wall (AI) answered' },
+    { slug: 'action:engineer.outcome.cloud-sayagain', tab: 'engineer', outcome: true, label: 'Engineer: pit wall (AI) said "Say again?"' },
+    { slug: 'action:engineer.outcome.cloud-fail', tab: 'engineer', outcome: true, label: 'Engineer: pit wall (AI) failed to answer' },
+    { slug: 'action:engineer.outcome.signed-out', tab: 'engineer', outcome: true, label: 'Engineer: free-form asked while signed out' },
+    { slug: 'action:engineer.outcome.not-entitled', tab: 'engineer', outcome: true, label: 'Engineer: free-form refused, no subscription' },
+    { slug: 'action:engineer.outcome.budget', tab: 'engineer', outcome: true, label: 'Engineer: free-form allotment used up' },
+    { slug: 'action:engineer.outcome.no-telemetry', tab: 'engineer', outcome: true, label: 'Engineer: free-form asked with no telemetry' },
+    { slug: 'action:engineer.outcome.not-ready', tab: 'engineer', outcome: true, label: 'Engineer: pressed while engineer/mic was down' },
+    { slug: 'action:engineer.outcome.rejected', tab: 'engineer', outcome: true, label: 'Engineer: speech off the phrase list (rejected)' },
+    { slug: 'action:engineer.outcome.rejected-transcribed', tab: 'engineer', outcome: true, label: 'Engineer: rejected speech rescued by whisper' },
+    { slug: 'action:engineer.outcome.no-dictation', tab: 'engineer', outcome: true, label: 'Engineer: PC has no Windows dictation (per session)' },
+
     // Fuel & strategy.
     { slug: 'action:fuel.plan', tab: 'fuel', label: 'Built a stint plan' },
 
