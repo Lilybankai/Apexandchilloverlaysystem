@@ -426,5 +426,101 @@ console.log('\n12) Callout actions register and fire speakIntent');
   check('running the points action speaks that intent', fired[2] === 'trackLimits');
 }
 
-console.log('\n' + pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+console.log('\n13) Position questions and "my average" are answered locally from ask()');
+// The 2026-10-02 call log: "what is the pace of P5?" got an invented pace from
+// the cloud, "gap to P10." got the gap AHEAD relabelled, and "what's my
+// average" never reached an own-average answer. Drive the real ask() with the
+// microphone, whisper and the cloud stubbed: the routing decision is real.
+async function positionAsks() {
+  const { matchGrammarText, matchPositionQuery } = require('../electron/engineer');
+  const r = rig('off');
+  const svc = r.svc;
+  const cloud = [];
+  let heardText = '';
+  svc.recognizerReady = true;
+  svc.playChirp = () => {};
+  svc.recognizer = { stdin: { write: () => svc.pendingListen({ kind: 'FREE', text: '', wav: 'clip.wav' }) } };
+  svc.transcribeClip = async () => ({ question: heardText, sttMs: 5 });
+  svc.askTier2 = async (q) => { cloud.push(q); };
+  const standings = [];
+  for (let i = 1; i <= 10; i++) {
+    standings.push({
+      slotId: i, position: i, driverName: i === 4 ? 'Carl Jones' : `Rival Number${i}`, isPlayer: i === 4,
+      carClass: 'GT3', classPosition: i, gapToClassLeaderSec: (i - 1) * 1.5,
+      gapToLeaderSec: -1, gapToAheadSec: -1, lapsBehind: 0, lapsCompleted: 8, inPit: false,
+      lastLapSec: 103 + i / 10, bestLapSec: 102.5 + i / 10,
+      lastSector1Sec: 32 + i / 10, lastSector2Sec: 70 + i / 10,
+    });
+  }
+  const frame = {
+    schemaVersion: 1, source: 'test', timestamp: 0, connected: true,
+    session: { track: 'T', type: 'race', numCars: 10, phase: 'green', currentLap: 9 },
+    player: {}, standings, relative: [], fuel: {},
+  };
+  check('commands module loaded', !!svc.commands);
+  if (svc.commands) svc.commands.update(frame);
+
+  const askWith = async (q) => {
+    heardText = q;
+    r.spoken.length = 0;
+    cloud.length = 0;
+    await svc.ask();
+    return { said: r.spoken[0] || '', cloud: cloud.length };
+  };
+  let out = await askWith('gap to P10.');
+  check('"gap to P10." is answered locally, about P10',
+    out.cloud === 0 && /^P10, Number10, 9\.0 seconds behind you\.$/.test(out.said), out.said);
+  check('…and remembered for a follow-up', !!svc.lastExchange && svc.lastExchange.answer === out.said);
+  out = await askWith('what is the pace of P5?');
+  check('"what is the pace of P5?" reads P5\'s real laps',
+    out.cloud === 0 && /^P5, Number5: last lap 1 43\.5, best 1 43\.0\.$/.test(out.said), out.said);
+  out = await askWith('what is the gap between P5 and P6?');
+  check('"gap between P5 and P6" is local',
+    out.cloud === 0 && /P5 Number5 leads P6 Number6 by 1\.5 seconds/.test(out.said), out.said);
+  out = await askWith('update me on class leaders times');
+  check('"class leaders times" reads P1', out.cloud === 0 && /^P1, Number1: last lap 1 43\.1/.test(out.said), out.said);
+  out = await askWith("what's my sector one?");
+  check('"what\'s my sector one?" names that sector',
+    out.cloud === 0 && /^Sector one, 32\.4, 0\.3 off the class best, Number1's 32\.1\.$/.test(out.said), out.said);
+  out = await askWith('what is my time difference in sector 1 and 2 to P1 in class?');
+  check('sector one and two against P1, locally',
+    out.cloud === 0 && /sector one, 0\.3 down; sector two, level\./.test(out.said), out.said);
+  out = await askWith("what's my average?");
+  check('"what\'s my average?" is the OWN average',
+    out.cloud === 0 && /^One clean lap so far, 1 43\.4, best 1 42\.9\.$/.test(out.said), out.said);
+  out = await askWith('P30 gap');
+  check('a position nobody holds refuses honestly, still local',
+    out.cloud === 0 && /Only 10 cars/.test(out.said), out.said);
+  out = await askWith('safety car is out and I have half a tank what do we do');
+  check('a free-form question still reaches the cloud', out.cloud === 1 && out.said === '', out.said);
+
+  // Phrase level: the field wordings, before → after.
+  check('"what\'s my average?" -> myAverage (was: cloud)', matchGrammarText("what's my average?") === 'myAverage');
+  check('"my average lap time" -> myAverage (was: lastLap)', matchGrammarText('my average lap time') === 'myAverage');
+  check('"what\'s my five lap average" -> myAverage (was: avgAhead)',
+    matchGrammarText("what's my five lap average") === 'myAverage');
+  check('"what\'s my last five average" -> myAverage (was: avgAhead)',
+    matchGrammarText("what's my last five average") === 'myAverage');
+  check('"average of the car ahead" still reads the car ahead',
+    matchGrammarText('average of the car ahead') === 'carAhead');
+  check('"what\'s my sector one" reaches sectors on the phrase list too',
+    matchGrammarText("what's my sector one") === 'sectors');
+  check('"yellow in sector two" stays a flags question',
+    matchGrammarText('is there a yellow in sector two') === 'flags' &&
+      matchPositionQuery('is there a yellow in sector two') === null);
+  check('a bare leader ask stays with the leader intent',
+    matchPositionQuery('gap to the leader') === null && matchGrammarText('gap to the leader') === 'leader');
+  check('"one second" is not P2', matchPositionQuery('give me one second') === null);
+  check('"LMP2" is not P2', matchPositionQuery('is the LMP2 behind') === null);
+}
+
+positionAsks().then(
+  () => {
+    console.log('\n' + pass + ' passed, ' + fail + ' failed');
+    process.exit(fail ? 1 : 0);
+  },
+  (err) => {
+    console.error(err);
+    process.exit(1);
+  },
+);

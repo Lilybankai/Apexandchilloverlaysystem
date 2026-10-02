@@ -20,8 +20,9 @@
  * ## Why this layer is stateful at all
  * Almost every answer is a pure read of the latest frame. The exception is the
  * five-lap average: no frame carries lap *history*, only each car's
- * `lastLapSec`, so the class keeps a small rolling window per car, fed by
- * edge-detecting `lastLapSec` changes in {@link EngineerCommands.update}. That
+ * `lastLapSec`, so the class keeps a small rolling window of CLEAN laps per car
+ * (no pit laps, no race start, no FCY, no outliers — see `LapWindow`), fed by
+ * edge-detecting `lapsCompleted` ticks in {@link EngineerCommands.update}. That
  * update is the same shape as the trigger layer's tick — a handful of scalar
  * compares per standings row, no allocation when nothing changed — so it rides
  * the existing loop without moving the CPU needle.
@@ -91,6 +92,10 @@ export type CommandIntent =
   | 'paceAlien'
   | 'paceCompetitive'
   | 'paceMidpack'
+  // The driver's OWN clean average (2026-10-02): "what's my average" kept
+  // failing in the field while "average of the car ahead" worked — the only
+  // average Tier 1 could speak led with someone else.
+  | 'myAverage'
   // The trend set (2026-08-23): the questions drivers actually ask are about
   // CHANGE — is he catching me, will the tyres last — and a snapshot cannot
   // answer them. Fed by the per-lap history sampled in update().
@@ -134,6 +139,7 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'paceAlien',
   'paceCompetitive',
   'paceMidpack',
+  'myAverage',
   'catching',
   'defending',
   'tyreLife',
@@ -295,10 +301,107 @@ function referencePaceAnswer(
 /*  The engineer                                                              */
 /* -------------------------------------------------------------------------- */
 
-/** Rolling window of a car's most recent completed lap times, newest last. */
+/**
+ * A lap slower than this multiple of the car's reference (its session best, or
+ * the quickest lap in its window if the sim has published no best) is not
+ * pace — it is a spin, a slow zone, a cool-down or a stop the pit flags missed.
+ * 107% is the long-standing motorsport line between "slow lap" and "not a
+ * representative lap" (F1's qualifying cut), and it is generous: at a 1:43
+ * track it still keeps a 1:50. Applied when a lap is kept AND again when the
+ * average is read, so a best set later re-judges the laps already held.
+ */
+export const AVG_OUTLIER_RATIO = 1.07;
+
+/**
+ * One car's rolling pace history, fed by lap edges in
+ * {@link EngineerCommands.update}.
+ *
+ * ## What a "clean" lap is (2026-10-02)
+ * The field report: at Fuji the driver's own five-lap average read 106.4 s
+ * against a best of 103.1 and a last of 103.6 — two pit stops were sitting in
+ * the window. A lap is kept for the average only when ALL of these hold:
+ *
+ *  - **No pit lane.** The car was never seen `inPit`, and its `pitStops`
+ *    count did not move, at any frame of the lap — including the frame that
+ *    started it. That one condition removes the in-lap and the out-lap at a
+ *    circuit whose timing line runs through the pit lane (the car crosses it
+ *    in the lane on both), and the stop lap where the lane sits after the line.
+ *  - **Not the race's opening lap.** A standing or rolling start is not pace.
+ *  - **Not neutralised.** No full-course yellow or red flag during the lap.
+ *  - **Has a time.** An invalidated lap reads −1 and is skipped, as before.
+ *  - **Not an outlier.** Within {@link AVG_OUTLIER_RATIO} of the reference.
+ *
+ * ## Edges come off the lap COUNT
+ * A lap is collected on the frame `lapsCompleted` ticks up — the same edge
+ * `telemetry/paceAverage` uses for the standings' AVG column — so a car that
+ * sets two identical consecutive times still gets both counted (the old
+ * value-change edge silently dropped the second). A feed that never publishes
+ * a lap count (`lapsCompleted` stuck at 0, the unit-test frames) falls back to
+ * the value edge on `lastLapSec`.
+ *
+ * ## A driver change empties the window
+ * Same rule and reason as `paceAverage`: in a team race the slot outlives the
+ * driver, and the incoming driver's pace is not the outgoing one's.
+ */
 interface LapWindow {
+  /** `lastLapSec` at the last edge — the edge source on a feed with no lap count. */
   lastSeen: number;
+  /** `lapsCompleted` at the last edge. */
+  lapsDone: number;
+  /** `pitStops` at the last look. */
+  pitStops: number;
+  /** In the pit lane (or a stop was counted) at any point of the lap in progress. */
+  pitted: boolean;
+  /** Full-course yellow or red flag at any point of the lap in progress. */
+  neutralised: boolean;
+  /** Who was driving when the kept laps were set. */
+  driver: string;
+  /** The car's session best per the sim, refreshed every frame; −1 when none. */
+  bestSec: number;
+  /** Kept (clean) lap times, newest last, capped at {@link AVG_WINDOW_LAPS}. */
   laps: number[];
+  /** Quickest split per sector off this car's pit-free laps we have timed. */
+  bestSplits: [number, number, number] | null;
+}
+
+/** "one", "two", "three" — how an engineer names a sector on the radio. */
+const SECTOR_WORDS = ['one', 'two', 'three'] as const;
+
+/* -------------------------------------------------------------------------- */
+/*  Position-addressed questions ("gap to P5", "pace of P3")                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The kinds of position-addressed question Tier 1 answers. Parsed from the
+ * transcript by `matchPositionQuery` in electron/engineer.js — these never go
+ * through the closed SAPI grammar, because a phrase per position would be
+ * hundreds of entries.
+ *
+ *  - `gapTo`      — "gap to P10": the race gap from the player to that car.
+ *  - `gapBetween` — "gap between P5 and P6".
+ *  - `paceOf`     — "pace of P5", "class leader's times": last, clean average, best.
+ *  - `whoIs`      — "who's P5".
+ *  - `sectorsVs`  — "my sector one and two against P1": last-lap splits side by side.
+ *  - `mySector`   — "what's my sector one": one named split, against the class best.
+ */
+export type PositionIntent = 'gapTo' | 'gapBetween' | 'paceOf' | 'whoIs' | 'sectorsVs' | 'mySector';
+
+/** A parsed position-addressed question. Positions are CLASS positions unless `overall`. */
+export interface PositionQuery {
+  intent: PositionIntent;
+  /** 1-based positions, in the order the driver said them. */
+  positions: number[];
+  /** Sectors asked about, 1..3 (sectorsVs / mySector). Empty or absent = all three. */
+  sectors?: number[];
+  /** "P5 overall" — the driver asked outside their class. */
+  overall?: boolean;
+}
+
+/** What {@link EngineerCommands.answerPosition} says. */
+export interface PositionAnswer {
+  intent: PositionIntent;
+  text: string;
+  ok: boolean;
 }
 
 /** One per-lap sample of the gap to a class neighbour, tagged with who it was. */
@@ -392,22 +495,104 @@ export class EngineerCommands {
     this.frame = frame;
     this.pitModel.update(frame);
 
+    // See LapWindow for what makes a lap clean enough to average.
+    const isRace = frame.session?.type === 'race';
+    const phase = frame.session?.phase;
+    const neutral = phase === 'fullCourseYellow' || phase === 'redFlag';
     for (const entry of frame.standings) {
       const last = entry.lastLapSec;
-      if (!known(last) || last <= 0) continue;
+      const lastOk = known(last) && last > 0;
+      const laps = known(entry.lapsCompleted) && entry.lapsCompleted > 0 ? entry.lapsCompleted : 0;
+      const stops = known(entry.pitStops) ? entry.pitStops! : 0;
+      const driver = entry.driverName || '';
+      const best = known(entry.bestLapSec) && entry.bestLapSec > 0 ? entry.bestLapSec : UNKNOWN_VALUE;
       let win = this.windows.get(entry.slotId);
       if (!win) {
-        win = { lastSeen: last, laps: [last] };
+        win = {
+          lastSeen: lastOk ? last : UNKNOWN_VALUE,
+          lapsDone: laps,
+          pitStops: stops,
+          pitted: !!entry.inPit,
+          neutralised: neutral,
+          driver,
+          bestSec: best,
+          laps: [],
+          bestSplits: null,
+        };
         this.windows.set(entry.slotId, win);
+        // The lap already on the board when we first see the car: we did not
+        // watch it, so it is kept only if the car is on track now, it is not
+        // the race's opening lap, and it passes the pace check — what reaches
+        // the radio after a reconnect is one honest lap, not a stop.
+        if (lastOk && !entry.inPit && !(isRace && laps === 1)) {
+          this.noteSplits(win, entry);
+          this.keepLap(win, last);
+        }
         if (entry.isPlayer) this.sampleLap(frame, entry);
         continue;
       }
-      if (last !== win.lastSeen) {
-        win.lastSeen = last;
-        win.laps.push(last);
-        if (win.laps.length > AVG_WINDOW_LAPS) win.laps.shift();
-        if (entry.isPlayer) this.sampleLap(frame, entry);
+      win.bestSec = best;
+      if (driver !== win.driver) {
+        win.driver = driver;
+        win.laps = [];
       }
+      // Pit and flag state BEFORE the edge: a car crossing the line in the pit
+      // lane is finishing its in-lap, and that lap must carry the mark.
+      if (entry.inPit) win.pitted = true;
+      if (stops !== win.pitStops) {
+        if (stops > win.pitStops) win.pitted = true;
+        win.pitStops = stops;
+      }
+      if (neutral) win.neutralised = true;
+
+      let edge = false;
+      if (laps > 0) {
+        if (laps > win.lapsDone) edge = true;
+        else if (laps < win.lapsDone) win.lapsDone = laps; // a reset: re-anchor, no lap
+      } else if (lastOk && last !== win.lastSeen) {
+        edge = true; // no lap count on this feed — the old value edge
+      }
+      if (!edge) continue;
+
+      const openingLap = isRace && laps === 1;
+      if (lastOk && !win.pitted) {
+        this.noteSplits(win, entry);
+        if (!win.neutralised && !openingLap) this.keepLap(win, last);
+      }
+      if (lastOk) win.lastSeen = last;
+      if (laps > 0) win.lapsDone = laps;
+      // The new lap starts where the car is now: in the lane means an out-lap.
+      win.pitted = !!entry.inPit;
+      win.neutralised = neutral;
+      if (entry.isPlayer) this.sampleLap(frame, entry);
+    }
+  }
+
+  /** The pace reference a lap is judged against: session best, else the window's quickest. */
+  private paceRef(win: LapWindow): number {
+    const own = win.laps.length ? Math.min(...win.laps) : Infinity;
+    const ref = Math.min(known(win.bestSec) && win.bestSec > 0 ? win.bestSec : Infinity, own);
+    return Number.isFinite(ref) ? ref : 0;
+  }
+
+  /** Push one lap that passed the pit/flag checks, unless it fails the pace check. */
+  private keepLap(win: LapWindow, sec: number): void {
+    const ref = this.paceRef(win);
+    if (ref > 0 && sec > ref * AVG_OUTLIER_RATIO) return;
+    win.laps.push(sec);
+    if (win.laps.length > AVG_WINDOW_LAPS) win.laps.shift();
+  }
+
+  /** Fold a pit-free lap's splits into the car's best-per-sector. */
+  private noteSplits(win: LapWindow, entry: StandingEntry): void {
+    const sp = lastLapSplits(entry.lastSector1Sec, entry.lastSector2Sec, entry.lastLapSec);
+    if (!sp) return;
+    if (!win.bestSplits) {
+      win.bestSplits = [sp[0], sp[1], sp[2]];
+      return;
+    }
+    for (let i = 0; i < 3; i++) {
+      if (sp[i]! < win.bestSplits[i]!) win.bestSplits[i] = sp[i]!;
     }
   }
 
@@ -529,6 +714,20 @@ export class EngineerCommands {
         return yes(
           `${window}, ${radioName(ahead)} averaging ${speakableLapTime(theirs.avg)}, ` +
             `you ${speakableLapTime(mine.avg)}. ${verdict}`,
+        );
+      }
+
+      case 'myAverage': {
+        const me = frame.standings.find((e) => e.isPlayer);
+        if (!me) return no('No standings yet.');
+        const mine = this.averageOf(me.slotId);
+        if (!mine) return no('No clean laps recorded yet for an average.');
+        const best =
+          known(me.bestLapSec) && me.bestLapSec > 0 ? `, best ${speakableLapTime(me.bestLapSec)}` : '';
+        return yes(
+          mine.count === 1
+            ? `One clean lap so far, ${speakableLapTime(mine.avg)}${best}.`
+            : `Last ${mine.count} clean laps averaging ${speakableLapTime(mine.avg)}${best}.`,
         );
       }
 
@@ -1232,7 +1431,211 @@ export class EngineerCommands {
     }
   }
 
+  /**
+   * Answer a position-addressed question ("gap to P10", "pace of P5", "gap
+   * between P5 and P6", "class leader's times", "my sector one"). Every one of
+   * these went to the cloud before 2026-10-02 and the call log shows the model
+   * inventing a pace for P5 and relabelling the gap ahead as "the gap to P10" —
+   * it was never sent those cars, so it made them up. The standings carry every
+   * car, so the honest answer was local all along.
+   *
+   * Positions are CLASS positions unless the query says overall: in a
+   * multiclass LMU field "P5" means P5 in the driver's class, the same framing
+   * as every other Tier-1 answer. Gaps come off the same fields `classGap` reads
+   * (`gapToClassLeaderSec`, falling back to `gapToLeaderSec`), and laps apart off
+   * the UNFLOORED `classLapsBehindExact` — two floored `classLapsBehind` values
+   * can never be subtracted. A lapped car with no time gap is said to be lapped,
+   * not given a number. Never throws; never guesses.
+   */
+  answerPosition(query: PositionQuery): PositionAnswer {
+    const intent: PositionIntent = query && query.intent;
+    const no = (text: string): PositionAnswer => ({ intent, text, ok: false });
+    const yes = (text: string): PositionAnswer => ({ intent, text, ok: true });
+    const frame = this.frame;
+    if (!frame) return no('No telemetry yet.');
+    const me = frame.standings.find((e) => e.isPlayer) ?? null;
+    const askedSectors = (query.sectors || []).filter((s) => s >= 1 && s <= 3);
+    const sectors = askedSectors.length ? askedSectors : [1, 2, 3];
+
+    if (intent === 'mySector') {
+      if (!me || !known(me.lastLapSec) || me.lastLapSec <= 0) return no('No completed lap yet.');
+      const mine = lastLapSplits(me.lastSector1Sec, me.lastSector2Sec, me.lastLapSec);
+      if (!mine) return no('No sector times for that lap.');
+      const parts = sectors.map((s) => {
+        const t = mine[s - 1]!;
+        const best = this.classBestSplit(frame, me, s - 1);
+        const head = `Sector ${SECTOR_WORDS[s - 1]}, ${speakableSplit(t)}`;
+        if (!best) return head;
+        const d = t - best.sec;
+        if (d <= 0.05) return `${head}, the best in class we've timed`;
+        const holder = sectors.length === 1 && !best.entry.isPlayer ? `, ${radioName(best.entry)}'s ${speakableSplit(best.sec)}` : '';
+        return `${head}, ${d.toFixed(1)} off the class best${holder}`;
+      });
+      return yes(parts.join('. ') + '.');
+    }
+
+    const positions = (query.positions || []).filter((n) => Number.isInteger(n) && n >= 1);
+    if (!positions.length) return no('Which position?');
+    const byClass = !query.overall && !!me && !!me.carClass && known(me.classPosition);
+    const pool = byClass ? frame.standings.filter((e) => e.carClass === me!.carClass) : frame.standings;
+    const posOf = (e: StandingEntry): number | undefined =>
+      byClass ? (known(e.classPosition) ? e.classPosition : undefined) : e.position;
+    const multiclass = new Set(frame.standings.map((e) => e.carClass || '')).size > 1;
+    const label = (n: number): string =>
+      byClass && multiclass ? `P${n} in class` : query.overall ? `P${n} overall` : `P${n}`;
+    const at = (n: number): StandingEntry | null => pool.find((e) => posOf(e) === n) ?? null;
+    const missing = (n: number): PositionAnswer => {
+      const size = pool.filter((e) => posOf(e) !== undefined).length;
+      if (size && n > size) {
+        return no(`Only ${size} cars ${byClass && multiclass ? 'in class' : 'in the field'}.`);
+      }
+      return no(`No car at ${label(n)} in the standings.`);
+    };
+    const lappedNote = (a: StandingEntry, b: StandingEntry): string => {
+      const off = [a, b].find((e) => (known(e.classLapsBehind) && e.classLapsBehind! > 0) || e.lapsBehind > 0);
+      return off ? ` — ${off.isPlayer ? "you're" : `${radioName(off)} is`} off the lead lap` : '';
+    };
+    const gapWords = (g: { gapSec: number; lapsApart: number }): string =>
+      g.lapsApart ? `${g.lapsApart} ${g.lapsApart === 1 ? 'lap' : 'laps'}` : speakableGap(g.gapSec);
+
+    const n = positions[0]!;
+    const car = at(n);
+    if (!car) return missing(n);
+
+    switch (intent) {
+      case 'whoIs': {
+        if (car.isPlayer) return yes(`That's you — ${label(n)}.`);
+        const num = car.carNumber ? `, number ${car.carNumber}` : '';
+        let where = '';
+        if (me) {
+          const g = this.pairGap(me, car, byClass);
+          const ahead = (posOf(car) ?? 0) < (posOf(me) ?? 0);
+          if (g) where = `, ${gapWords(g)} ${ahead ? 'ahead' : 'behind you'}`;
+        }
+        const status = car.retired ? ' Retired.' : car.inPit ? ' In the pits.' : '';
+        return yes(`${label(n)} is ${radioName(car)}${num}${where}.${status}`);
+      }
+
+      case 'gapTo':
+      case 'gapBetween': {
+        if (intent === 'gapTo' && car.isPlayer) return yes(`That's you — ${label(n)}.`);
+        let a: StandingEntry | null = me;
+        let b: StandingEntry = car;
+        if (intent === 'gapBetween' && positions.length >= 2) {
+          const other = at(positions[1]!);
+          if (!other) return missing(positions[1]!);
+          a = car;
+          b = other;
+        }
+        if (!a) return no('No standings yet.');
+        if (a.slotId === b.slotId) return yes(`That's the same car — ${radioName(a)}.`);
+        // Either side being the player turns it into "gap to": spoken from the driver's seat.
+        if (b.isPlayer) [a, b] = [b, a];
+        const pa = posOf(a) ?? 0;
+        const pb = posOf(b) ?? 0;
+        const g = this.pairGap(a, b, byClass);
+        if (a.isPlayer) {
+          if (!g) return no(`No clean gap to ${label(pb)}, ${radioName(b)}${lappedNote(a, b)}.`);
+          return yes(
+            `${label(pb)}, ${radioName(b)}, ${gapWords(g)} ${pb < pa ? 'ahead' : 'behind you'}.`,
+          );
+        }
+        const [front, back] = pa < pb ? [a, b] : [b, a];
+        const pf = posOf(front)!;
+        const pk = posOf(back)!;
+        if (!g) {
+          return no(`No clean gap between ${label(pf)} and ${label(pk)}${lappedNote(front, back)}.`);
+        }
+        return yes(
+          `${label(pf)} ${radioName(front)} leads ${label(pk)} ${radioName(back)} by ${gapWords(g)}.`,
+        );
+      }
+
+      case 'paceOf': {
+        if (car.isPlayer) {
+          const own = this.answer('myAverage');
+          return { intent, text: `That's you. ${own.text}`, ok: own.ok };
+        }
+        const parts: string[] = [];
+        if (known(car.lastLapSec) && car.lastLapSec > 0) parts.push(`last lap ${speakableLapTime(car.lastLapSec)}`);
+        const avg = this.averageOf(car.slotId);
+        if (avg && avg.count >= 2) {
+          parts.push(`averaging ${speakableLapTime(avg.avg)} over ${avg.count} clean laps`);
+        }
+        if (known(car.bestLapSec) && car.bestLapSec > 0) parts.push(`best ${speakableLapTime(car.bestLapSec)}`);
+        if (!parts.length) return no(`No lap times on ${label(n)}, ${radioName(car)}, yet.`);
+        let verdict = '';
+        const mine = me ? this.averageOf(me.slotId) : null;
+        if (avg && avg.count >= 2 && mine && mine.count >= 2) {
+          const diff = mine.avg - avg.avg;
+          verdict =
+            Math.abs(diff) < 0.05
+              ? ' Dead even with you on average.'
+              : diff > 0
+                ? ` He's ${diff.toFixed(1)} quicker on average.`
+                : ` You're ${(-diff).toFixed(1)} quicker on average.`;
+        }
+        return yes(`${label(n)}, ${radioName(car)}: ${parts.join(', ')}.${verdict}`);
+      }
+
+      case 'sectorsVs': {
+        if (car.isPlayer) return yes(`That's you — ${label(n)}.`);
+        if (!me || !known(me.lastLapSec) || me.lastLapSec <= 0) return no('No completed lap yet.');
+        const mine = lastLapSplits(me.lastSector1Sec, me.lastSector2Sec, me.lastLapSec);
+        if (!mine) return no('No sector times on your last lap.');
+        const theirs = lastLapSplits(car.lastSector1Sec, car.lastSector2Sec, car.lastLapSec);
+        if (!theirs) return no(`No sector times on ${radioName(car)}'s last lap.`);
+        const parts = sectors.map((s) => {
+          const d = mine[s - 1]! - theirs[s - 1]!;
+          const how = Math.abs(d) < 0.05 ? 'level' : d > 0 ? `${d.toFixed(1)} down` : `${(-d).toFixed(1)} up`;
+          return `sector ${SECTOR_WORDS[s - 1]}, ${how}`;
+        });
+        return yes(`Last laps against ${radioName(car)}, ${label(n)}: ${parts.join('; ')}.`);
+      }
+    }
+    return no('Say again?');
+  }
+
   /* ---- internals --------------------------------------------------------- */
+
+  /**
+   * Race gap between two standings rows, from the same fields `classGap` uses.
+   * Laps apart come off `classLapsBehindExact` (unfloored, differenceable); a
+   * pair a lap or more apart is reported in laps only. Null when no honest
+   * time gap exists — typically a lapped car, whose gap fields read UNKNOWN.
+   */
+  private pairGap(
+    a: StandingEntry,
+    b: StandingEntry,
+    byClass: boolean,
+  ): { gapSec: number; lapsApart: number } | null {
+    if (byClass && known(a.classLapsBehindExact) && known(b.classLapsBehindExact)) {
+      const laps = Math.floor(Math.abs(a.classLapsBehindExact! - b.classLapsBehindExact!));
+      if (laps >= 1) return { gapSec: 0, lapsApart: laps };
+    }
+    const diff = (x: number | undefined, y: number | undefined): number | undefined =>
+      known(x) && known(y) ? Math.abs(x - y) : undefined;
+    const g =
+      (byClass ? diff(a.gapToClassLeaderSec, b.gapToClassLeaderSec) : undefined) ??
+      diff(a.gapToLeaderSec, b.gapToLeaderSec);
+    return g === undefined ? null : { gapSec: g, lapsApart: 0 };
+  }
+
+  /** Quickest split we have timed in sector `idx` (0-based) across the player's class. */
+  private classBestSplit(
+    frame: TelemetryFrame,
+    me: StandingEntry,
+    idx: number,
+  ): { sec: number; entry: StandingEntry } | null {
+    let best: { sec: number; entry: StandingEntry } | null = null;
+    for (const e of frame.standings) {
+      if (me.carClass && e.carClass !== me.carClass) continue;
+      const sp = this.windows.get(e.slotId)?.bestSplits;
+      if (!sp) continue;
+      if (!best || sp[idx]! < best.sec) best = { sec: sp[idx]!, entry: e };
+    }
+    return best;
+  }
 
   /** The car `dir` class positions away from the player (−1 ahead, +1 behind). */
   private neighbour(
@@ -1319,12 +1722,20 @@ export class EngineerCommands {
    * kept being asked "last five average" in wordings the closed grammar missed
    * (2026-08-19 engineer_calls log), and it can only answer with numbers we
    * send — so the same windows that feed `avgAhead` now feed the summary too.
+   *
+   * CLEAN laps only — pit laps, the race's opening lap, neutralised laps and
+   * outliers never enter (see {@link LapWindow}); the outlier check is re-run
+   * here against the car's CURRENT best, so a lap that looked fine before a
+   * best was set cannot keep dragging the mean.
    */
   averageOf(slotId: number): { avg: number; count: number } | null {
     const win = this.windows.get(slotId);
     if (!win || win.laps.length === 0) return null;
-    const sum = win.laps.reduce((a, b) => a + b, 0);
-    return { avg: sum / win.laps.length, count: win.laps.length };
+    const ref = this.paceRef(win);
+    const kept = ref > 0 ? win.laps.filter((t) => t <= ref * AVG_OUTLIER_RATIO) : win.laps;
+    if (!kept.length) return null;
+    const sum = kept.reduce((a, b) => a + b, 0);
+    return { avg: sum / kept.length, count: kept.length };
   }
 
   /**
