@@ -1,0 +1,149 @@
+{
+  "_note": "Real engineer_calls rows, 2026-09-27..10-01 (the ten failures in the v14 brief). Summaries verbatim except other drivers' names, which are replaced with placeholder surnames. `answer` is what the model actually said; `expect` is the guard's required verdict on it; `better` is a correct answer on the SAME summary that the guard must pass.",
+  "calls": [
+    {
+      "id": "F1a",
+      "failure": 1,
+      "question": "what is the pace of P5?",
+      "previous": null,
+      "answer": "P5 is doing 79.4 seconds.",
+      "expect": "catch",
+      "better": "No timing on P5 from here, I'm afraid.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Archer","class":"GT3","gapSec":3.4,"avgLaps":4,"pitStops":0,"avgLapSec":82.9,"bestLapSec":82.1,"lastLapSec":82.2},"class":"GT3","fuelL":14.6,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Baker","class":"GT3","gapSec":0,"avgLaps":4,"pitStops":0,"avgLapSec":83.2,"bestLapSec":82.6,"lastLapSec":82.6},"damage":"none","session":"qualifying","weather":"DRY","airTempC":27,"fuelLaps":7.3,"paceBand":"Midpack","position":11,"carsTotal":19,"connected":true,"energyPct":98,"myAvgLaps":2,"paceClass":"LMGT3","repairSec":30,"bestLapSec":82.3,"currentLap":6,"energyLaps":46.3,"fuelToFlag":"unknown","myPitStops":1,"paceLayout":"Full Circuit","trackTempC":26,"carsInClass":19,"fuelPerLapL":2,"myAvgLapSec":82.9,"pacePercent":104.7,"trackLimits":"1.75 points","fuelLastLapL":2,"lapsToFinish":2,"tyreWorstPct":97,"classPosition":11,"paceBestLapSec":82.3,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"energyLastLapPct":2,"paceAlienRaceSec":78.6,"timeRemainingMin":2.5,"carsAheadCompared":10,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.95,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":9,"paceDeltaToAlienSec":3.7,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":10,"paceDeltaToMidpackSec":-0.3,"paceDeltaToCompetitiveSec":2.9}
+    },
+    {
+      "id": "F1b",
+      "failure": 1,
+      "question": "give me that last information in the format of minutes and thousands",
+      "previous": {"question": "what is the pace of P5?", "answer": "P5 is doing 79.4 seconds."},
+      "answer": "P5 is doing one twenty-two point three.",
+      "expect": "catch",
+      "better": "Scratch that — I have no timing on P5 at all.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Archer","class":"GT3","gapSec":2.7,"avgLaps":4,"pitStops":0,"avgLapSec":82.9,"bestLapSec":82.1,"lastLapSec":82.2},"class":"GT3","fuelL":14,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Baker","class":"GT3","gapSec":0,"avgLaps":4,"pitStops":0,"avgLapSec":83.2,"bestLapSec":82.6,"lastLapSec":82.6},"damage":"none","session":"qualifying","weather":"DRY","airTempC":27,"fuelLaps":7,"paceBand":"Midpack","position":12,"carsTotal":19,"connected":true,"energyPct":97,"myAvgLaps":2,"paceClass":"LMGT3","repairSec":30,"bestLapSec":82.3,"currentLap":6,"energyLaps":46,"fuelToFlag":"unknown","myPitStops":1,"paceLayout":"Full Circuit","trackTempC":26,"carsInClass":19,"fuelPerLapL":2,"myAvgLapSec":82.9,"pacePercent":104.7,"trackLimits":"1.75 points","fuelLastLapL":2,"lapsToFinish":2,"tyreWorstPct":97,"classPosition":12,"paceBestLapSec":82.3,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"energyLastLapPct":2,"paceAlienRaceSec":78.6,"timeRemainingMin":2,"carsAheadCompared":11,"classAheadInPitNow":1,"fuelPerEnergyRatio":0.95,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":9,"paceDeltaToAlienSec":3.7,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":11,"paceDeltaToMidpackSec":-0.3,"paceDeltaToCompetitiveSec":2.9}
+    },
+    {
+      "id": "F1c",
+      "failure": 1,
+      "question": "that is incorrect",
+      "previous": {"question": "give me that last information in the format of minutes and thousands", "answer": "P5 is doing one twenty-two point three."},
+      "answer": "Say again?",
+      "expect": "pass",
+      "better": "Fair call — I've no timing on P5 at all, so scrub that.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Archer","class":"GT3","gapSec":2.5,"avgLaps":4,"pitStops":0,"avgLapSec":82.9,"bestLapSec":82.1,"lastLapSec":82.2},"class":"GT3","fuelL":13.4,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Baker","class":"GT3","gapSec":0,"avgLaps":4,"pitStops":0,"avgLapSec":83.2,"bestLapSec":82.6,"lastLapSec":82.6},"damage":"none","session":"qualifying","weather":"DRY","airTempC":27,"fuelLaps":6.7,"paceBand":"Midpack","position":12,"carsTotal":19,"connected":true,"energyPct":96,"myAvgLaps":2,"paceClass":"LMGT3","repairSec":30,"bestLapSec":82.3,"currentLap":6,"energyLaps":45.7,"fuelToFlag":"unknown","myPitStops":1,"paceLayout":"Full Circuit","trackTempC":26,"carsInClass":19,"fuelPerLapL":2,"myAvgLapSec":82.9,"pacePercent":104.7,"trackLimits":"1.75 points","fuelLastLapL":2,"lapsToFinish":2,"tyreWorstPct":97,"classPosition":12,"paceBestLapSec":82.3,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"energyLastLapPct":2,"paceAlienRaceSec":78.6,"timeRemainingMin":1.6,"carsAheadCompared":11,"classAheadInPitNow":1,"fuelPerEnergyRatio":0.95,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":9,"paceDeltaToAlienSec":3.7,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":11,"paceDeltaToMidpackSec":-0.3,"paceDeltaToCompetitiveSec":2.9}
+    },
+    {
+      "id": "F2",
+      "failure": 2,
+      "question": "gap to P10.",
+      "previous": {"question": "what is my time difference in sector 1 and 2 to P1 in class?", "answer": "I'm afraid I have no read on that."},
+      "answer": "Gap to P10 is twenty point nine seconds.",
+      "expect": "catch",
+      "better": "No timing on P10 from here, I'm afraid.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Carter","class":"GT3","gapSec":20.9,"avgLaps":3,"pitStops":0,"avgLapSec":82.7,"bestLapSec":81.4,"lastLapSec":81.4},"class":"GT3","fuelL":6.5,"phase":"green","tankL":117,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Dawson","class":"GT3","gapSec":0,"avgLaps":2,"pitStops":0,"avgLapSec":82.8,"bestLapSec":81.7,"lastLapSec":81.7},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"fuelLaps":3.1,"paceBand":"Midpack","position":26,"carsTotal":32,"connected":true,"energyPct":7,"myAvgLaps":3,"paceClass":"LMGT3","repairSec":30,"bestLapSec":81.5,"currentLap":5,"energyLaps":3.2,"fuelToFlag":"unknown","lastLapSec":81.5,"myPitStops":0,"paceLayout":"Full Circuit","trackTempC":48,"carsInClass":20,"fuelPerLapL":2.1,"myAvgLapSec":82.2,"pacePercent":103.6,"trackLimits":"0.5 points","fuelLastLapL":2.1,"lapsToFinish":2,"tyreLapsLeft":163,"tyreWorstPct":97,"classPosition":16,"paceBestLapSec":81.5,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"energyLastLapPct":2.1,"paceAlienRaceSec":78.6,"timeRemainingMin":2.4,"carsAheadCompared":15,"tyreWearPctPerLap":0.5,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.99,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":13,"paceDeltaToAlienSec":2.9,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":3,"paceDeltaToMidpackSec":-1.1,"paceDeltaToCompetitiveSec":2.1}
+    },
+    {
+      "id": "F3",
+      "failure": 3,
+      "question": "update me on class leaders times.",
+      "previous": null,
+      "answer": "You're currently 5th in class, 9.4 seconds behind the leader, who just did an 81.9.",
+      "expect": "catch",
+      "better": "No timing on the leader from here — you're P3 in class.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Ellis","class":"GT3","gapSec":9.4,"avgLaps":1,"pitStops":0,"avgLapSec":81.9,"bestLapSec":81.9,"lastLapSec":81.9},"class":"GT3","fuelL":13,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Fisher","class":"GT3","gapSec":0,"avgLaps":1,"pitStops":0,"avgLapSec":82.8,"bestLapSec":82.8,"lastLapSec":82.8},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"fuelLaps":6.5,"paceBand":"Midpack","position":5,"carsTotal":27,"connected":true,"energyPct":96,"myAvgLaps":1,"paceClass":"LMGT3","repairSec":30,"bestLapSec":82.1,"currentLap":3,"energyLaps":46,"fuelToFlag":"unknown","lastLapSec":82.1,"myPitStops":0,"paceLayout":"Full Circuit","trackTempC":48,"carsInClass":21,"fuelPerLapL":2,"myAvgLapSec":82.1,"pacePercent":104.4,"lapsToFinish":5,"tyreWorstPct":98,"classPosition":3,"paceBestLapSec":82.1,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"paceAlienRaceSec":78.6,"timeRemainingMin":5.9,"carsAheadCompared":2,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.96,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":2,"paceDeltaToAlienSec":3.5,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":2,"paceDeltaToMidpackSec":-0.5,"paceDeltaToCompetitiveSec":2.6}
+    },
+    {
+      "id": "F4",
+      "failure": 4,
+      "question": "so on.",
+      "previous": null,
+      "answer": "Position eleven, eight laps to go, fuel is short.",
+      "expect": "pass",
+      "why": "Every figure is real (position 11, lapsToFinish 8): this is a ROUTING failure (noise answered with a readout, overall position for class) that only the v14 prompt can fix. The guard is not a router.",
+      "better": "Say again?",
+      "summary": {"flag":"green","rain":"raining","ahead":{"name":"Grant","class":"GT3","gapSec":4.7,"avgLaps":5,"pitStops":2,"avgLapSec":256.3,"bestLapSec":241.7,"lastLapSec":271},"class":"GT3","fuelL":53.5,"phase":"green","tankL":120,"track":"Circuit de la Sarthe","tyres":"in the window","behind":{"name":"Hughes","class":"GT3","gapSec":1.9,"avgLaps":5,"pitStops":3,"avgLapSec":273.8,"bestLapSec":242,"lastLapSec":274.3},"damage":"none","session":"race","weather":"SATURATED","airTempC":16,"fuelLaps":7.2,"paceBand":"Midpack","position":11,"carsTotal":24,"connected":true,"energyPct":57,"myAvgLaps":5,"paceClass":"LMGT3","repairSec":30,"bestLapSec":244.8,"currentLap":10,"energyLaps":6.4,"fuelDeltaL":-5.7,"fuelToFlag":"short","lastLapSec":266.2,"myPitStops":3,"paceLayout":"Full Circuit","pitLossSec":26.1,"trackTempC":15,"carsInClass":15,"fuelPerLapL":7.4,"myAvgLapSec":275.8,"pacePercent":104.2,"trackLimits":"2.25 points","fuelLastLapL":7.2,"lapsToFinish":8,"tyreWorstPct":98,"classPosition":4,"fuelToFinishL":59.2,"pitExitBehind":"Irwin","energyDeltaPct":-14.8,"paceBestLapSec":244.8,"paceMidpackSec":246.6,"pitExitAheadOf":"Jones","pitLossSamples":8,"energyPerLapPct":9,"pitExitPosition":7,"refuelToFinishL":5.7,"energyLastLapPct":8.7,"lapsToCatchAhead":1,"paceAlienRaceSec":234.9,"timeRemainingMin":31.5,"carsAheadCompared":3,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.83,"paceAlienHotlapSec":233.7,"paceCompetitiveSec":237.2,"aheadTrendSecPerLap":47.8,"classAheadNoStopYet":0,"paceDeltaToAlienSec":9.9,"paceReferenceSource":"Ohne Speed","pitExitBehindGapSec":12.4,"pitExitAheadOfGapSec":22,"carsAheadPittingFirst":3,"paceDeltaToMidpackSec":-1.8,"paceDeltaToCompetitiveSec":7.6}
+    },
+    {
+      "id": "F5a",
+      "failure": 5,
+      "question": "turn off engineer.",
+      "previous": null,
+      "answer": "You're in the green.",
+      "expect": "pass",
+      "why": "No figures. A behaviour-change request: prompt work.",
+      "better": "Can't switch myself off from the radio — the Race engineer switch is in the Engineer tab.",
+      "summary": {"flag":"green","rain":"dry","class":"GT3","fuelL":17.5,"phase":"green","tankL":117,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Kemp","class":"GT3","gapSec":1.2,"pitStops":0},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"position":1,"carsTotal":34,"connected":true,"energyPct":18,"paceClass":"LMGT3","repairSec":30,"currentLap":3,"fuelToFlag":"unknown","myPitStops":1,"paceLayout":"Full Circuit","trackTempC":47,"carsInClass":20,"classPosition":1,"paceMidpackSec":82.6,"paceAlienRaceSec":78.6,"timeRemainingMin":6.5,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"paceReferenceSource":"Ohne Speed"}
+    },
+    {
+      "id": "F5b",
+      "failure": 5,
+      "question": "be quiet until end of session.",
+      "previous": {"question": "turn off engineer.", "answer": "You're in the green."},
+      "answer": "Understood, focusing on the session.",
+      "expect": "pass",
+      "why": "No figures. Promises a capability that does not exist: prompt work.",
+      "better": "I can't go quiet from the radio — set Radio calls to Quiet in the Engineer tab.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Kemp","class":"GT3","gapSec":0,"avgLaps":1,"pitStops":0,"avgLapSec":82.2,"bestLapSec":82.2,"lastLapSec":82.2},"class":"GT3","fuelL":17.4,"phase":"green","tankL":117,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Lowe","class":"GT3","gapSec":1.2,"pitStops":0},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"position":5,"carsTotal":34,"connected":true,"energyPct":18,"paceClass":"LMGT3","repairSec":30,"currentLap":3,"fuelToFlag":"unknown","myPitStops":1,"paceLayout":"Full Circuit","trackTempC":47,"carsInClass":20,"lapsToFinish":5,"classPosition":2,"paceMidpackSec":82.6,"paceAlienRaceSec":78.6,"timeRemainingMin":6.2,"classAheadInPitNow":0,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":1,"paceReferenceSource":"Ohne Speed"}
+    },
+    {
+      "id": "F6",
+      "failure": 6,
+      "question": "what's my average?",
+      "previous": {"question": "what's my pace?", "answer": "Your best is 1 43.1. Pace score 103 percent — Good. 3.0 off alien race pace."},
+      "answer": "Your average is one oh six point four.",
+      "expect": "pass",
+      "why": "The figure is right (myAvgLapSec 106.4); the FORMAT is wrong. Fixed by clockify (the model now sees \"1:46.4\") and speakable(), not the guard.",
+      "better": "Your average is 1:46.4 over 5 laps.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Mason","class":"GT3","gapSec":8.2,"avgLaps":5,"pitStops":4,"avgLapSec":103.4,"bestLapSec":102.5,"lastLapSec":102.7},"class":"GT3","fuelL":31.7,"phase":"green","tankL":120,"track":"Fuji Speedway","tyres":"fronts in the window, rears under","behind":{"name":"Nolan","class":"GT3","gapSec":5.5,"avgLaps":5,"pitStops":2,"avgLapSec":104.3,"bestLapSec":103.7,"lastLapSec":104.8},"damage":"none","session":"race","weather":"DRY","airTempC":22,"fuelLaps":12.5,"paceBand":"Good","position":19,"carsTotal":28,"connected":true,"energyPct":39,"myAvgLaps":5,"paceClass":"LMGT3","repairSec":30,"bestLapSec":103.1,"currentLap":10,"energyLaps":12.6,"fuelDeltaL":11.4,"fuelToFlag":"good","lastLapSec":103.6,"myPitStops":2,"paceLayout":"Grand Prix","pitLossSec":16.5,"trackTempC":40,"carsInClass":20,"fuelPerLapL":2.5,"myAvgLapSec":106.4,"pacePercent":103,"trackLimits":"1 points","fuelLastLapL":2.5,"lapsToFinish":8,"tyreLapsLeft":66,"tyreWorstPct":90,"classPosition":12,"fuelToFinishL":20.3,"pitExitBehind":"Owens","energyDeltaPct":14.3,"paceBestLapSec":103.1,"paceMidpackSec":105.1,"pitExitAheadOf":"Price","pitLossSamples":8,"energyPerLapPct":3.1,"pitExitPosition":14,"refuelToFinishL":0,"energyLastLapPct":3.1,"paceAlienRaceSec":100.1,"timeRemainingMin":12.4,"carsAheadCompared":11,"tyreWearPctPerLap":1.1,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.81,"paceAlienHotlapSec":99.6,"paceCompetitiveSec":101.1,"classAheadNoStopYet":0,"paceDeltaToAlienSec":3,"paceReferenceSource":"Ohne Speed","pitExitBehindGapSec":11.9,"pitExitAheadOfGapSec":7.2,"carsAheadPittingFirst":9,"paceDeltaToMidpackSec":-2,"paceDeltaToCompetitiveSec":2}
+    },
+    {
+      "id": "F7",
+      "failure": 7,
+      "question": "what's the last thing that I said?",
+      "previous": {"question": "comment qualifying.", "answer": "Copy that."},
+      "answer": "Say again?",
+      "expect": "pass",
+      "better": "You said \"comment qualifying\" — I took it as a heads-up.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Quinn","class":"GT3","gapSec":1.4,"pitStops":0},"class":"GT3","fuelL":16.4,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Reid","class":"GT3","gapSec":1.7,"pitStops":0},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"position":12,"carsTotal":27,"connected":true,"energyPct":100,"paceClass":"LMGT3","repairSec":30,"currentLap":1,"fuelToFlag":"unknown","myPitStops":0,"paceLayout":"Full Circuit","trackTempC":48,"carsInClass":21,"classPosition":10,"paceMidpackSec":82.6,"paceAlienRaceSec":78.6,"timeRemainingMin":8.4,"classAheadInPitNow":0,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":9,"paceReferenceSource":"Ohne Speed"}
+    },
+    {
+      "id": "F8",
+      "failure": 8,
+      "question": "what is the gap between P5 and P6?",
+      "previous": {"question": "where's the biggest gap ahead?", "answer": "Gap ahead, 0.9 seconds, to Baker."},
+      "answer": "Say again?",
+      "expect": "pass",
+      "better": "No timing on P5 or P6 from here, I'm afraid.",
+      "badDerived": "P5 and P6 are 0.9 seconds apart.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Baker","class":"GT3","gapSec":0.9,"avgLaps":2,"pitStops":0,"avgLapSec":87.2,"bestLapSec":82.4},"class":"GT3","fuelL":41,"phase":"green","tankL":120,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Stone","class":"GT3","gapSec":3.1,"avgLaps":3,"pitStops":2,"avgLapSec":86.8,"bestLapSec":82.7,"lastLapSec":82.7},"damage":"light","session":"race","weather":"DRY","airTempC":27,"fuelLaps":20.5,"paceBand":"Midpack","position":9,"carsTotal":19,"connected":true,"energyPct":43,"myAvgLaps":3,"paceClass":"LMGT3","repairSec":30,"bestLapSec":81.8,"currentLap":4,"energyLaps":20.1,"fuelDeltaL":3,"fuelToFlag":"good","lastLapSec":81.8,"myPitStops":1,"paceLayout":"Full Circuit","trackTempC":25,"carsInClass":19,"fuelPerLapL":2,"myAvgLapSec":85.8,"pacePercent":104.1,"fuelLastLapL":2,"lapsToFinish":19,"tyreLapsLeft":80,"tyreWorstPct":96,"classPosition":9,"fuelToFinishL":38,"energyDeltaPct":2.4,"paceBestLapSec":81.8,"paceMidpackSec":82.6,"energyPerLapPct":2.2,"refuelToFinishL":0,"energyLastLapPct":2.1,"paceAlienRaceSec":78.6,"timeRemainingMin":25.5,"carsAheadCompared":8,"tyreWearPctPerLap":1,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.93,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"aheadTrendSecPerLap":-0.2,"classAheadNoStopYet":7,"paceDeltaToAlienSec":3.2,"paceReferenceSource":"Ohne Speed","behindTrendSecPerLap":-0.9,"carsAheadPittingFirst":1,"paceDeltaToMidpackSec":-0.8,"paceDeltaToCompetitiveSec":2.4}
+    },
+    {
+      "id": "F9a",
+      "failure": 9,
+      "question": "what is my time difference in sector 1 and 2 to P1 in class?",
+      "previous": {"question": "where am I losing time, this is qualifying, give me each sector and how", "answer": "P12 in class, P21 overall."},
+      "answer": "I'm afraid I have no read on that.",
+      "expect": "pass",
+      "badDerived": "You're 2.9 down in sector 1 and 1.1 in sector 2.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Carter","class":"GT3","gapSec":20.5,"avgLaps":3,"pitStops":0,"avgLapSec":82.7,"bestLapSec":81.4,"lastLapSec":81.4},"class":"GT3","fuelL":7.1,"phase":"green","tankL":117,"track":"Grand Prix of Long Beach","tyres":"fronts under, rears under","behind":{"name":"Dawson","class":"GT3","gapSec":0,"avgLaps":2,"pitStops":0,"avgLapSec":82.8,"bestLapSec":81.7,"lastLapSec":81.7},"damage":"none","session":"qualifying","weather":"DRY","airTempC":29,"fuelLaps":3.4,"paceBand":"Midpack","position":25,"carsTotal":32,"connected":true,"energyPct":7,"myAvgLaps":3,"paceClass":"LMGT3","repairSec":30,"bestLapSec":81.5,"currentLap":5,"energyLaps":3.4,"fuelToFlag":"unknown","lastLapSec":81.5,"myPitStops":0,"paceLayout":"Full Circuit","trackTempC":48,"carsInClass":20,"fuelPerLapL":2.1,"myAvgLapSec":82.2,"pacePercent":103.6,"trackLimits":"0.5 points","fuelLastLapL":2.1,"lapsToFinish":3,"tyreLapsLeft":163,"tyreWorstPct":97,"classPosition":15,"paceBestLapSec":81.5,"paceMidpackSec":82.6,"energyPerLapPct":2.1,"energyLastLapPct":2.1,"paceAlienRaceSec":78.6,"timeRemainingMin":2.8,"carsAheadCompared":14,"tyreWearPctPerLap":0.5,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.99,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":13,"paceDeltaToAlienSec":2.9,"paceReferenceSource":"Ohne Speed","carsAheadPittingFirst":2,"paceDeltaToMidpackSec":-1.1,"paceDeltaToCompetitiveSec":2.1}
+    },
+    {
+      "id": "F9b",
+      "failure": 9,
+      "question": "what's my sector one?",
+      "previous": {"question": "what's my pace?", "answer": "Your best is 1 43.1. Pace score 103 percent — Good. 3.0 off alien race pace."},
+      "answer": "No read on sector times, I'm afraid.",
+      "expect": "pass",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Mason","class":"GT3","gapSec":2.8,"avgLaps":5,"pitStops":4,"avgLapSec":103.4,"bestLapSec":102.5,"lastLapSec":103.3},"class":"GT3","fuelL":33.4,"phase":"green","tankL":120,"track":"Fuji Speedway","tyres":"fronts in the window, rears under","behind":{"name":"Nolan","class":"GT3","gapSec":6.4,"avgLaps":5,"pitStops":2,"avgLapSec":104.3,"bestLapSec":103.7,"lastLapSec":104.8},"damage":"none","session":"race","weather":"DRY","yellows":"S3","airTempC":22,"fuelLaps":13.1,"paceBand":"Good","position":19,"carsTotal":28,"connected":true,"energyPct":41,"myAvgLaps":5,"paceClass":"LMGT3","repairSec":30,"bestLapSec":103.1,"currentLap":10,"energyLaps":13.3,"fuelDeltaL":13.1,"fuelToFlag":"good","lastLapSec":103.6,"myPitStops":2,"paceLayout":"Grand Prix","pitLossSec":16.5,"trackTempC":40,"carsInClass":20,"fuelPerLapL":2.5,"myAvgLapSec":106.4,"pacePercent":103,"trackLimits":"1 points","fuelLastLapL":2.5,"lapsToFinish":8,"tyreLapsLeft":66,"tyreWorstPct":90,"classPosition":12,"fuelToFinishL":20.3,"pitExitBehind":"Owens","energyDeltaPct":16.5,"paceBestLapSec":103.1,"paceMidpackSec":105.1,"pitExitAheadOf":"Shaw","pitLossSamples":8,"energyPerLapPct":3.1,"pitExitPosition":14,"refuelToFinishL":0,"energyLastLapPct":3.1,"paceAlienRaceSec":100.1,"timeRemainingMin":13.7,"carsAheadCompared":11,"tyreWearPctPerLap":1.1,"classAheadInPitNow":0,"fuelPerEnergyRatio":0.81,"paceAlienHotlapSec":99.6,"paceCompetitiveSec":101.1,"classAheadNoStopYet":0,"paceDeltaToAlienSec":3,"paceReferenceSource":"Ohne Speed","pitExitBehindGapSec":10.5,"pitExitAheadOfGapSec":4.1,"carsAheadPittingFirst":9,"paceDeltaToMidpackSec":-2,"paceDeltaToCompetitiveSec":2}
+    },
+    {
+      "id": "F10",
+      "failure": 10,
+      "question": "you were useless during pit, during qualifying there, you didn't give me any sector updates.",
+      "previous": null,
+      "answer": "Let's focus on the race now.",
+      "expect": "pass",
+      "better": "Fair point, noted — I don't call sectors on my own; ask me for them any time.",
+      "summary": {"flag":"green","rain":"dry","ahead":{"name":"Turner","class":"GT3","inPit":true,"gapSec":0,"pitStops":0},"class":"GT3","phase":"formation","track":"Grand Prix of Long Beach","behind":{"name":"Vance","class":"GT3","inPit":true,"gapSec":0,"pitStops":0},"damage":"none","session":"race","weather":"DRY","airTempC":29,"position":21,"carsTotal":32,"connected":true,"energyPct":100,"paceClass":"LMGT3","repairSec":30,"currentLap":1,"fuelToFlag":"unknown","myPitStops":0,"paceLayout":"Full Circuit","trackTempC":46,"carsInClass":20,"lapsToFinish":1,"classPosition":9,"paceMidpackSec":82.6,"paceAlienRaceSec":78.6,"timeRemainingMin":0.8,"classAheadInPitNow":6,"paceAlienHotlapSec":78.2,"paceCompetitiveSec":79.4,"classAheadNoStopYet":7,"paceReferenceSource":"Ohne Speed"}
+    }
+  ]
+}

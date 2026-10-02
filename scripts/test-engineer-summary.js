@@ -8,7 +8,7 @@
 
 'use strict';
 
-const { engineerSummary } = require('../dist/telemetry/engineerSummary');
+const { engineerSummary, CLASS_STANDINGS_BUDGET } = require('../dist/telemetry/engineerSummary');
 const { UNKNOWN_VALUE } = require('../dist/telemetry/types');
 
 let pass = 0;
@@ -302,6 +302,169 @@ console.log('\n8) damage bands: the prompt\'s 0.04 floor, a lost part at least m
   check('major on the HUD is medium', band(0.2) === 'medium', band(0.2));
   check('critical on the HUD is heavy', band(0.6) === 'heavy', band(0.6));
   check('a lost part under the floor is still medium', band(0.01, { partsDetached: 1 }) === 'medium', band(0.01, { partsDetached: 1 }));
+}
+
+/* ---- summary v5 (2026-10-02): the timing sheet, sectors, tyre numbers ---- */
+
+/** A class of `n` GT3s (plus `others` Hypercars mixed in), the player at class `me`. */
+function field(n, me, over = {}) {
+  const rows = [];
+  for (let p = 1; p <= n; p++) {
+    rows.push({
+      slotId: 100 + p, position: p * 2, classPosition: p, carClass: 'GT3',
+      driverName: `First Surname${p}`, carNumber: String(p + 10),
+      gapToLeaderSec: 30 + (p - 1) * 2.5, gapToClassLeaderSec: (p - 1) * 2.5, gapToAheadSec: 2.5,
+      lapsBehind: 0, classLapsBehind: 0, classLapsBehindExact: (p - 1) * 0.03,
+      bestLapSec: 100 + p * 0.21, lastLapSec: 101 + p * 0.33,
+      lastSector1Sec: 30 + p * 0.1, lastSector2Sec: 65 + p * 0.2,
+      lapsCompleted: 9, inPit: false, pitStops: 1, isPlayer: p === me,
+      ...(over[p] || {}),
+    });
+    rows.push({
+      slotId: 500 + p, position: p * 2 - 1, carClass: 'HYPERCAR', classPosition: p,
+      driverName: `Hyper Car${p}`, gapToLeaderSec: p, gapToClassLeaderSec: p, gapToAheadSec: 1,
+      lapsBehind: 0, bestLapSec: 90, lastLapSec: 91, lapsCompleted: 10, inPit: false, isPlayer: false,
+    });
+  }
+  return rows.sort((a, b) => a.position - b.position);
+}
+
+console.log('\n9) the class timing sheet: real rows, class-only, sorted, gaps from the class chain');
+{
+  const windows = { 104: { avg: 101.94, count: 4 } };
+  const s = engineerSummary(frame({ standings: field(8, 6, { 4: { tyreCompound: 'Medium', pitStops: 2 } }) }), (id) => windows[id] || null);
+  const sheet = s.classStandings;
+  check('one row per class car, Hypercars excluded', sheet.length === 8, sheet.length);
+  check('sorted by class position', sheet.map((r) => r.pos).join(',') === '1,2,3,4,5,6,7,8');
+  check('the leader reads a real 0', sheet[0].gap === 0 && sheet[0].interval === undefined);
+  const p4 = sheet[3];
+  check('gap to class leader', p4.gap === 7.5, p4.gap);
+  check('interval to the car in front', p4.interval === 2.5, p4.interval);
+  check('toMe = seconds to the driver (P4 vs P6)', p4.toMe === 5, p4.toMe);
+  check('last / best / avg / stops / tyre / car', p4.last === 102.3 && p4.best === 100.8 && p4.avg === 101.9 && p4.avgN === 4 &&
+    p4.stops === 2 && p4.tyre === 'Medium' && p4.car === '14', JSON.stringify(p4));
+  check('surname for the radio', p4.name === 'Surname4');
+  const mine = sheet.find((r) => r.me);
+  check('own row flagged, no toMe on it', mine && mine.pos === 6 && mine.toMe === undefined);
+  check('not partial when the whole class fits', s.classStandingsPartial === undefined);
+  check('no retirements → no classRetired', s.classRetired === undefined);
+}
+
+console.log('\n10) lapped cars: laps, never a wrapped seconds figure, never differenced floors');
+{
+  const UNK = UNKNOWN_VALUE;
+  const s = engineerSummary(frame({
+    standings: field(6, 2, {
+      // P5 is 1.7 laps down, P6 2.2 — floors 1 and 2, but only 0.5 apart.
+      5: { gapToClassLeaderSec: UNK, gapToLeaderSec: UNK, classLapsBehind: 1, classLapsBehindExact: 1.7 },
+      6: { gapToClassLeaderSec: UNK, gapToLeaderSec: UNK, classLapsBehind: 2, classLapsBehindExact: 2.2, retired: true, inPit: true },
+    }),
+  }));
+  const r5 = s.classStandings.find((r) => r.pos === 5);
+  const r6 = s.classStandings.find((r) => r.pos === 6);
+  check('lapped car carries lapsDown, no gap', r5.lapsDown === 1 && r5.gap === undefined, JSON.stringify(r5));
+  check('lapped car to the driver: whole laps from the exact deficit', r5.lapsToMe === 1 && r5.toMe === undefined, JSON.stringify(r5));
+  check('0.5 laps apart → no interval at all (floors 2−1 would say a lap)', r6.interval === undefined && r6.intervalLaps === undefined, JSON.stringify(r6));
+  check('retired car is "out", not "inPit"', r6.out === true && r6.inPit === undefined);
+  check('class retirements counted', s.classRetired === 1);
+  // The driver themselves lapped: the leader block speaks laps, not seconds.
+  const t = engineerSummary(frame({
+    standings: field(4, 4, { 4: { gapToClassLeaderSec: UNK, gapToLeaderSec: UNK, classLapsBehind: 1, classLapsBehindExact: 1.2 } }),
+  }));
+  check('lapped driver: classLeader.lapsDown, no gapSec', t.classLeader.lapsDown === 1 && t.classLeader.gapSec === undefined, JSON.stringify(t.classLeader));
+}
+
+console.log('\n11) the leader block, own sectors, sector deltas');
+{
+  const s = engineerSummary(frame({ standings: field(5, 3) }), (id) => (id === 101 ? { avg: 101.5, count: 5 } : null));
+  const L = s.classLeader;
+  check('leader named, driver\'s gap to them', L.name === 'Surname1' && L.gapSec === 5, JSON.stringify(L));
+  check('leader laps + average', L.lastLapSec === 101.3 && L.bestLapSec === 100.2 && L.avgLapSec === 101.5 && L.avgLaps === 5);
+  // Leader: S1 30.1, S2 64.2-30.1... boundaries 30.1 / 65.2, lap 101.33.
+  check('leader sectors from boundaries', JSON.stringify(L.sectorsSec) === JSON.stringify([30.1, 35.1, 36.13]), JSON.stringify(L.sectorsSec));
+  check('own sectors', JSON.stringify(s.lastSectorsSec) === JSON.stringify([30.3, 35.3, 36.39]), JSON.stringify(s.lastSectorsSec));
+  check('own minus leader, positive = slower', JSON.stringify(s.lastSectorsVsLeaderSec) === JSON.stringify([0.2, 0.2, 0.26]), JSON.stringify(s.lastSectorsVsLeaderSec));
+  check('class-best of last-lap splits', JSON.stringify(s.classBestLastSectorsSec) === JSON.stringify([30.1, 35.1, 36.13]));
+}
+
+console.log('\n12) the player leads: no leader block, no deltas; missing sectors are omitted');
+{
+  const s = engineerSummary(frame({ standings: field(4, 1) }));
+  check('no classLeader when the driver leads', s.classLeader === undefined);
+  check('no deltas to a leader who is the driver', s.lastSectorsVsLeaderSec === undefined);
+  check('own row is P1 with gap 0', s.classStandings[0].me === true && s.classStandings[0].gap === 0);
+  const torn = engineerSummary(frame({
+    standings: field(4, 2, {
+      1: { lastSector1Sec: undefined, lastSector2Sec: undefined },
+      2: { lastSector2Sec: UNKNOWN_VALUE },
+    }),
+  }));
+  check('withheld own sectors → no lastSectorsSec', torn.lastSectorsSec === undefined);
+  check('leader without sectors → no sectorsSec, no deltas',
+    torn.classLeader.sectorsSec === undefined && torn.lastSectorsVsLeaderSec === undefined);
+  const lone = engineerSummary(frame({ standings: [field(1, 1).find((e) => e.isPlayer)] }));
+  check('a class of one has no sheet', lone.classStandings === undefined && lone.classLeader === undefined);
+}
+
+console.log('\n13) per-corner tyre numbers ride beside the band');
+{
+  const corner = (coreC, optimalTempC, pressureKpa, wear) => ({ tempC: coreC - 2, coreC, optimalTempC, pressureKpa, wear, compound: 'Medium' });
+  const s = engineerSummary(frame({
+    player: {
+      tyres: {
+        frontLeft: corner(84.4, 90, 171.6, 0.93), frontRight: corner(86, 90, 172, 0.91),
+        rearLeft: corner(95.6, 90, 168, 0.97), rearRight: corner(97, 90, 169, 0.96),
+      },
+    },
+  }));
+  check('core temps per corner', JSON.stringify(s.tyreCoreC) === '[84,86,96,97]', JSON.stringify(s.tyreCoreC));
+  check('one optimal when all agree', s.tyreOptimalC === 90);
+  check('pressures, kPa', JSON.stringify(s.tyrePressureKpa) === '[172,172,168,169]');
+  check('tread percent', JSON.stringify(s.tyreTreadPct) === '[93,91,97,96]');
+  check('compound', s.tyreCompound === 'Medium');
+  check('band still there', s.tyres === 'fronts in the window, rears in the window' || typeof s.tyres === 'string', s.tyres);
+  const partial = engineerSummary(frame({}));
+  check('no tyre numbers from empty corners', partial.tyreCoreC === undefined && partial.tyrePressureKpa === undefined && partial.tyreOptimalC === undefined);
+}
+
+console.log('\n14) payload size: a 34-car class stays well inside the 8000-char limit');
+{
+  // A worst case: Le Mans-length names, every optional field present, a
+  // 34-car class plus 28 others, a race summary with every extra.
+  const windows = {};
+  const st = field(34, 28);
+  for (const e of st) {
+    if (e.carClass !== 'GT3') continue;
+    e.driverName = 'Maximilian Wolfeschlegelsteinhausen';
+    e.tyreCompound = 'Medium';
+    e.pitStops = 12;
+    windows[e.slotId] = { avg: 245.123, count: 5 };
+  }
+  const s = engineerSummary(frame({
+    standings: st,
+    player: { tyres: {
+      frontLeft: { coreC: 84, optimalTempC: 90, pressureKpa: 171, wear: 0.9, compound: 'Medium' },
+      frontRight: { coreC: 85, optimalTempC: 91, pressureKpa: 171, wear: 0.9, compound: 'Medium' },
+      rearLeft: { coreC: 86, optimalTempC: 92, pressureKpa: 171, wear: 0.9, compound: 'Medium' },
+      rearRight: { coreC: 87, optimalTempC: 93, pressureKpa: 171, wear: 0.9, compound: 'Medium' },
+    } },
+  }), (id) => windows[id] || null, {
+    aheadTrendSecPerLap: 0.6, lapsToCatchAhead: 6, behindTrendSecPerLap: -0.3, tyreWorstPct: 74,
+    tyreWearPctPerLap: 3, tyreLapsLeft: 19, fuelLastLapL: 7.2, energyLastLapPct: 8.7, pitLossSec: 32,
+    pitLossSamples: 8, pitExitPosition: 3, pitExitBehind: 'Wolfeschlegelsteinhausen', pitExitBehindGapSec: 10,
+    pitExitAheadOf: 'Wolfeschlegelsteinhausen', pitExitAheadOfGapSec: 4,
+  });
+  const sheetBytes = JSON.stringify(s.classStandings).length;
+  const total = JSON.stringify(s).length;
+  check('sheet within its byte budget', sheetBytes <= CLASS_STANDINGS_BUDGET, `${sheetBytes} <= ${CLASS_STANDINGS_BUDGET}`);
+  check('whole summary well under 8000 (≤ 6000)', total <= 6000, total);
+  check('trimmed sheet says so', s.classStandingsPartial === true);
+  const pos = s.classStandings.map((r) => r.pos);
+  check('leader, podium and the driver\'s window always kept',
+    [1, 2, 3, 25, 26, 27, 28, 29, 30, 31].every((p) => pos.includes(p)), pos.join(','));
+  check('still sorted by class position', pos.every((p, i) => i === 0 || p > pos[i - 1]));
+  check('fills outward from the driver (P20 before P5)', pos.includes(20) && !pos.includes(5), pos.join(','));
+  console.log(`        (worst case: ${pos.length} of 34 rows, sheet ${sheetBytes} B, summary ${total} B)`);
 }
 
 if (fail) {
