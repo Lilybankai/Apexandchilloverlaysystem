@@ -48,7 +48,9 @@ try {
     $wrapped.Append($choices)
     $wrapped.AppendWildcard()
     $g2 = New-Object System.Speech.Recognition.Grammar($wrapped)
-    $g2.Name = [string]$d.intent
+    # '~w' marks the wildcard-wrapped twin: a phrase found INSIDE a longer
+    # sentence. The app does not trust it on SAPI's word alone (see ask()).
+    $g2.Name = [string]$d.intent + '~w'
     $rec.LoadGrammar($g2)
   }
   $dict = $null

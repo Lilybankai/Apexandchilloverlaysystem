@@ -1693,10 +1693,16 @@ export class EngineerCommands {
     const gapSec = useClass
       ? Math.abs(me.gapToClassLeaderSec! - other.gapToClassLeaderSec!)
       : Math.abs(me.gapToLeaderSec - other.gapToLeaderSec);
+    // Off the UNFLOORED counts when the feed has them: two floored
+    // `classLapsBehind` values differ by 1 for cars well under a lap apart
+    // (5.95 → 5 vs 6.05 → 6), which spoke "1 lap and 2.0 seconds" for a car
+    // two seconds up the road. Floored counts remain the fallback.
     const lapsApart =
-      known(me.classLapsBehind) && known(other.classLapsBehind)
-        ? Math.abs(me.classLapsBehind! - other.classLapsBehind!)
-        : 0;
+      known(me.classLapsBehindExact) && known(other.classLapsBehindExact)
+        ? Math.floor(Math.abs(me.classLapsBehindExact! - other.classLapsBehindExact!))
+        : known(me.classLapsBehind) && known(other.classLapsBehind)
+          ? Math.abs(me.classLapsBehind! - other.classLapsBehind!)
+          : 0;
     return { gapSec, lapsApart, name: radioName(other) };
   }
 

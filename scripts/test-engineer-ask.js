@@ -79,6 +79,7 @@ function rig({ line = 'NONE', whisper = '', cloud, dictation = true, frame = {},
   };
   svc.commands = {
     answer: (intent) => ({ text: `answer:${intent}` }),
+    answerPosition: (q) => ({ text: `position:${q.intent}:${q.positions.join('-')}` }),
     averageOf: () => null,
     summaryExtras: () => undefined,
   };
@@ -105,6 +106,10 @@ async function main() {
     check('HEARD carries intent, confidence, wav and text',
       heard.kind === 'HEARD' && heard.intent === 'gapAhead' && heard.confidence === 0.95 &&
         heard.wav === 'C:\\w\\free-1.wav' && heard.text === 'gap ahead');
+    check('an exact phrase is not wrapped', heard.wrapped === false);
+    const wrappedHit = parse('HEARD\tgapAhead~w\t0.91\tC:\\w\\free-1b.wav\twhats the gap');
+    check('a wildcard-twin hit strips the marker and says it was wrapped',
+      wrappedHit.intent === 'gapAhead' && wrappedHit.wrapped === true);
     const free = parse('FREE\tC:\\w\\free-2.wav\t0.43\tshall we change strategy');
     check('FREE carries wav, confidence and text',
       free.kind === 'FREE' && free.wav === 'C:\\w\\free-2.wav' && free.confidence === 0.43 &&
@@ -177,6 +182,11 @@ async function main() {
     check('…and whisper was never run', r.clips.length === 0);
     check('the listen asked for the window', /^LISTEN \d+\n$/.test(r.listens[0] || ''));
 
+    r = rig({ line: 'HEARD\tgapAhead~w\t0.93\tC:\\w\\a2.wav\twhats the gap', whisper: "what's the gap to P10?" });
+    res = await r.svc.ask();
+    check('a CONFIDENT wrapped hit still goes through whisper', r.clips.length === 1, String(r.clips.length));
+    check('…so "gap to P10" is never answered as the gap ahead', r.spoken[0] !== 'answer:gapAhead', r.spoken.join('|'));
+
     r = rig({ line: 'HEARD\ttyres\t0.40\tC:\\w\\b.wav\ttemps', whisper: 'what are my tyre temperatures' });
     res = await r.svc.ask();
     check('low-confidence grammar → whisper → phrase list', r.spoken[0] === 'answer:tyres', r.spoken.join('|'));
@@ -211,24 +221,38 @@ async function main() {
   console.log('\n5) REJECTED: the free-form question that used to die');
   /* ======================================================================== */
   {
-    const okReply = { ok: true, status: 200, body: { ok: true, answer: 'Your average is 1:52.4.', callId: 'c1', remaining: 10 } };
+    const okReply = { ok: true, status: 200, body: { ok: true, answer: 'Morel is on a one-stop, so stay out.', callId: 'c1', remaining: 10 } };
     let r = rig({
       line: 'REJECTED\tC:\\w\\e.wav\t0.08\t... traction ...',
-      whisper: "what's my average",
+      whisper: 'should we change strategy now',
       cloud: okReply,
       dictation: false,
     });
     let res = await r.svc.ask();
     check('the rejected clip goes to whisper', r.clips[0] === 'C:\\w\\e.wav');
-    check('whisper\'s words reach the cloud', r.sent.length === 1 && r.sent[0].question === "what's my average",
+    check('whisper\'s words reach the cloud', r.sent.length === 1 && r.sent[0].question === 'should we change strategy now',
       r.sent[0] && r.sent[0].question);
-    check('the answer is spoken', r.spoken.join() === 'Your average is 1:52.4.');
+    check('the answer is spoken', r.spoken.join() === 'Morel is on a one-stop, so stay out.');
     check('counted no-dictation, rejected, rejected-transcribed, cloud-ok',
       r.outcomes().join() === 'no-dictation,rejected,rejected-transcribed,cloud-ok', r.outcomes().join());
     check('ask() reports the terminal outcome', res.outcome === 'cloud-ok');
     await r.svc.ask();
     check('no-dictation is counted once per session, not per press',
       r.outcomes().filter((o) => o === 'no-dictation').length === 1, r.outcomes().join());
+
+    // The 2026-10-01 field report end to end: no dictation, SAPI rejects
+    // "what's my average", whisper hears it, and the phrase list answers it —
+    // no cloud, no "Say again?".
+    r = rig({ line: 'REJECTED\tC:\\w\\avg.wav\t0.05\t... pace ...', whisper: "What's my average?", cloud: okReply, dictation: false });
+    res = await r.svc.ask();
+    check('the reported question is answered locally as myAverage', r.spoken.join() === 'answer:myAverage', r.spoken.join('|'));
+    check('…without a cloud call', r.sent.length === 0);
+    check('…counted tier1', res.outcome === 'tier1', res.outcome);
+
+    r = rig({ line: 'FREE\tC:\\w\\p5.wav\t0.4\tpace', whisper: 'What is the pace of P5?', cloud: okReply });
+    res = await r.svc.ask();
+    check('"pace of P5" is a positional answer, not a cloud guess', r.spoken.join() === 'position:paceOf:5', r.spoken.join('|'));
+    check('…counted position', res.outcome === 'position' && r.sent.length === 0, res.outcome);
 
     r = rig({ line: 'REJECTED\tC:\\w\\f.wav\t0.01\tthe leader', whisper: '', cloud: okReply });
     res = await r.svc.ask();

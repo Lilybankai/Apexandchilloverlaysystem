@@ -1717,8 +1717,13 @@ class EngineerService {
       // REJECTED (2026-10-02): speech no grammar would own — on a PC without
       // Windows dictation, every free-form question. Same shape as FREE; the
       // text is SAPI's near-worthless guess, so ask() trusts only whisper.
+      //
+      // A grammar name ending '~w' is the wildcard-wrapped twin of a phrase:
+      // the phrase was found inside a longer sentence (see the sidecar).
       if (kind === 'HEARD') {
-        resolve({ kind, intent: a, confidence: Number(b), wav: c || null, text: d || '' });
+        const wrapped = /~w$/.test(a || '');
+        const intent = wrapped ? a.slice(0, -2) : a;
+        resolve({ kind, intent, wrapped, confidence: Number(b), wav: c || null, text: d || '' });
       } else if (kind === 'FREE' || kind === 'REJECTED') {
         resolve({ kind, wav: a || null, confidence: Number(b), text: c || '' });
       } else resolve({ kind: 'NONE' });
@@ -1914,7 +1919,13 @@ class EngineerService {
       // the instant the phrase ends, and a month of field use shows its
       // failure mode is missing, not mis-matching. Everything it misses now
       // falls to whisper below instead of to "Say again?".
-      if (heard.kind === 'HEARD' && heard.confidence >= MIN_CONFIDENCE && this.commands) {
+      //
+      // Only an EXACT phrase takes it. A wildcard-wrapped hit means the phrase
+      // sat inside a longer sentence, and SAPI cannot say what the rest was:
+      // "what's the gap to P10" confidently matches 'whats the gap' and would
+      // answer the car ahead � the very relabelling the position parser below
+      // exists to stop. Those go through whisper like everything else.
+      if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
         const g = GRAMMAR.find((x) => x.intent === heard.intent);
@@ -1972,7 +1983,7 @@ class EngineerService {
           const answer = this.commands.answerPosition(pq);
           this.speak(answer.text);
           this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
-          return { ok: true };
+          return { ok: true, outcome: this.noteOutcome('position') };
         }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
