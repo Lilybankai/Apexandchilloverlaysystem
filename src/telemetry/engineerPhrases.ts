@@ -39,6 +39,7 @@ import type { TelemetryFrame } from './types';
 import { UNKNOWN_VALUE } from './types';
 import { speakableLapTime, speakableGap } from './engineerCommands';
 import { speakableWhere } from './yellowCause';
+import { trafficSentence, yieldWhereSuffix } from './trafficCalls';
 
 /** Surname-ish token for radio brevity, mirroring engineerCommands' habit. */
 function surname(name: unknown): string {
@@ -361,6 +362,12 @@ function leadSentence(
       ]);
     }
 
+    // Timed traffic: the words live beside the rules (trafficCalls.ts), and the
+    // countdown is recomputed against THIS cue's emit time — null if stale.
+    case 'trafficBehind':
+    case 'trafficAhead':
+      return trafficSentence(lead.kind, f, cue.atMs, v, frame?.radar);
+
     case 'practicePace': {
       const lap = num(f.lapSec);
       if (lap === undefined) return null;
@@ -442,8 +449,10 @@ export function phraseForCue(
   // low bits merely echo the input. Still a pure function of the cue, so a
   // replay reads the same radio every run.
   const v = variant ?? (Math.imul(Math.floor(cue.atMs / 200), 2654435761) >>> 13);
-  const sentence = leadSentence(cue, lead, frame, v);
-  if (!sentence) return null;
+  const said = leadSentence(cue, lead, frame, v);
+  if (!said) return null;
+  // A blue flag the traffic tracker could place gains where it lands.
+  const sentence = lead.kind === 'yieldTo' ? said + yieldWhereSuffix(lead.facts) : said;
   for (const extra of cue.triggers.slice(1)) {
     const addon = addonFor(extra.kind);
     if (addon) return `${sentence} ${addon}`;

@@ -171,7 +171,21 @@ function trim(frame) {
     inPit: s.inPit,
     pitStops: s.pitStops,
     isPlayer: s.isPlayer,
+    // Timed traffic (trafficCalls.ts): the pace cross-check, retired cars and
+    // the contact-sector clock.
+    avg5Sec: s.avg5Sec,
+    retired: s.retired,
+    lastSector1Sec: s.lastSector1Sec,
+    lastSector2Sec: s.lastSector2Sec,
   }));
+  // …and the radar's "already alongside" veto.
+  if (Array.isArray(frame.radar)) {
+    out.radar = frame.radar.map((b) => ({
+      slotId: b.slotId,
+      longitudinalM: b.longitudinalM,
+      alongside: b.alongside,
+    }));
+  }
   out.relative = (frame.relative || []).map((r) => ({
     slotId: r.slotId,
     position: r.position,

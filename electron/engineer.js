@@ -365,6 +365,12 @@ const TRIGGER_TIERS = {
   rivalPitted: 'standard',
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
+  // Timed traffic (trafficCalls.ts). Standard, not essential, for now: the
+  // faster class arriving IS a race-ending hazard, but its countdown has only
+  // been validated against noise replayed from a single-class recording —
+  // promote trafficBehind once a live multiclass recording confirms it.
+  trafficBehind: 'standard',
+  trafficAhead: 'standard',
   practicePace: 'standard',
 };
 
@@ -374,6 +380,12 @@ const TRIGGER_TIERS = {
  * never queue" stance as the trigger layer's own hold.
  */
 const READOUT_HOLD_MS = 4000;
+
+/**
+ * Kinds whose words go stale faster than that: a traffic countdown is frozen
+ * into the text when the cue is phrased, so every ms it waits is a ms wrong.
+ */
+const READOUT_HOLD_BY_KIND = { trafficBehind: 750, trafficAhead: 750 };
 
 /** Brake input above this reads as "driver is busy" — no readout right now. */
 const BUSY_BRAKE = 0.6;
@@ -1785,7 +1797,7 @@ class EngineerService {
     if (!tier) return; // unknown kind never speaks by accident
     if (tier === 'standard' && preset !== 'standard') return;
     const text = this.phrasesMod.phraseForCue(cue, frame);
-    if (text) this.sayReadout(text);
+    if (text) this.sayReadout(text, READOUT_HOLD_BY_KIND[cue.kind]);
   }
 
   /**
@@ -1795,12 +1807,12 @@ class EngineerService {
    * dropped: an engineer telling you about a rival's stop half a minute late
    * is worse than one who said nothing.
    */
-  sayReadout(text) {
+  sayReadout(text, holdMs = READOUT_HOLD_MS) {
     if (!this.asking && this.audioInFlight === 0 && !this.busyDriving()) {
       this.speak(text);
       return;
     }
-    this.heldReadout = { text, expiresAt: Date.now() + READOUT_HOLD_MS };
+    this.heldReadout = { text, expiresAt: Date.now() + holdMs };
   }
 
   /** Re-check the one held readout — rides the frame stream and PLAYED lines. */
