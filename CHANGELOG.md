@@ -5,35 +5,86 @@
      app until it is renamed.
 -->
 
-## 1.2.1-beta.1 — 2026-09-30
+## 1.3.0 — 2026-10-02
 
-The MFD comes to the VR headset. It stays hidden until you press one of your
-MFD buttons, and it works just as it does on screen.
+A big update for the race engineer. It now talks you through qualifying and
+practice, helps you save fuel, warns you about traffic and about rivals'
+pit stops, and holds its messages while you're braking or cornering. It also
+hears you faster and gets more of your questions right.
 
 ### Added
 
-- **The MFD in the headset.** The pit menu and driving aids are now a VR
-  widget: switch on the **MFD** chip in the VR tab, then place it like any
-  other panel. The pit menu buttons already bound on your wheel (▲ ▼ + −)
-  work in the headset exactly as they do on screen. Pressing any of them
-  brings the MFD up, the highlighted row shows what + and − will change, and
-  the new value appears as soon as the game takes it.
-- **It hides itself when you are not using it**, like the on-screen MFD with
-  auto-fade on. A new **MFD in the headset** card in the VR tab sets how long
-  it stays up after your last press: 3 seconds, as on screen, or 5, 10 or
-  20.
-- **A button to show or hide it.** Bind **Show / hide the MFD in the VR
-  headset** to a wheel button or a key in the same card to bring the MFD up
-  just to read it, and press it again to put it away. The card also lists
-  your four MFD buttons, so you can bind or check them without leaving the
-  tab. They are the same bindings as Settings → Controls.
+- **Qualifying calls.** After each flying lap the engineer gives you your
+  time and where it puts you in class, and tells you when it's a personal
+  best or provisional pole. It lets you know when someone takes pole or goes
+  quicker than you, whether there's time for another lap as the clock runs
+  down, and where you'll start when the session ends. Deleted laps are called
+  too. Out laps, in laps and cool-down laps stay quiet.
+- **Practice calls.** Personal bests and deleted laps.
+- **Sector improvements.** On a push lap in qualifying or practice, the
+  engineer can tell you when you've found time in a sector, or set the
+  quickest sector in your class. Turn it on by setting **Radio calls** to
+  Standard in the Engineer tab.
+- **Fuel and energy saving.** Say "save one lap" (or two laps, or half a
+  lap) and the engineer gives you a target per lap that makes your stint last
+  that much longer. It works on whichever runs out first, fuel or virtual
+  energy. After every lap it tells you what you used and how far off the
+  target you were, and lets you know once the lap is saved. Ask "what's my
+  target" to hear it again, or say "cancel target" to stop.
+- **What a rival's pit stop means for you.** When the car directly ahead or
+  behind you in class pits, the engineer tells you roughly where they'll come
+  out compared to you, using the pit stop times it has seen in that race. If
+  they come out somewhere unexpected, you'll hear that too. This replaces the
+  old "car ahead has pitted" call and is part of the Standard setting.
+- **Traffic calls in multiclass races.** A heads-up when a faster class is
+  about to catch you, or when you're about to come up on slower cars, with
+  roughly how many seconds away they are. It only calls a car when the gap is
+  closing steadily, and never one that's already alongside you. Part of the
+  Standard setting.
+- **Radio commands.** Say "keep quiet" and the engineer only speaks up for
+  urgent things like flags, penalties and when to box, until you say "talk to
+  me" or the session changes. Say "repeat that" to hear the last message
+  again.
+- **More questions you can ask.** "What's my average", "gap to P10", "pace of
+  P5", "gap between P5 and P6", "who's P3", "class leader's times", "what's
+  my sector one", and "where do I start" during qualifying. These come
+  straight from the timing, so the answer is instant and doesn't use one of
+  your advanced questions.
+
+### Changed
+
+- **The engineer waits for a straight.** Routine messages now hold until
+  you're on a straight instead of talking over a braking zone or a corner.
+  Flags, penalties, blue flags and box calls still come through straight
+  away. You can turn this off with **Only talk on straights** in the Engineer
+  tab.
+- **It hears you quicker.** Questions are now understood in about a second
+  or less on most PCs, down from two or three. Speech recognition also runs
+  at a lower priority, so it never takes processing power away from the
+  game. If the sharper Better ears model is too slow on your PC, the engineer
+  uses the standard one for that session and the Engineer tab tells you.
+- **Cleaner averages.** Lap averages for you and your rivals now leave out
+  pit laps, the opening lap and laps under caution, so a pit stop no longer
+  makes everyone look slow.
+- **Better answers to advanced questions.** The engineer now has the whole
+  class timing sheet, the class leader, sector times and tyre temperatures
+  for each corner to work from. It won't quote one car's numbers for another,
+  reads lap times as minutes and seconds, and tells you when it doesn't know
+  rather than guessing.
 
 ### Fixed
 
-- **The first MFD button press after starting Apex did not bring a faded MFD
-  back.** With auto-fade on, the first press moved the selection but left the
-  MFD hidden until the second press. It now comes back on the first press, on
-  screen and in the headset.
+- **Questions could get "Say again?" every time** on PCs without Windows
+  speech dictation. Anything that wasn't on the phrase list was thrown away
+  before it could be heard properly. Those questions now get through.
+- **"My average lap time" read out your last lap,** and "my five lap
+  average" gave you the car ahead's. Both now give your own average.
+- **"Gap ahead" could add a lap** for a car that was less than a lap in
+  front.
+- **Asking an advanced question without a subscription** now tells you so,
+  instead of "No answer from the pit wall".
+- **The first MFD button press after starting Apex didn't bring a faded MFD
+  back.** It now comes back on the first press.
 
 ## 1.2.0 — 2026-09-30
 
