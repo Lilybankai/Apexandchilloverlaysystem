@@ -310,18 +310,36 @@ console.log('\n7) Service: a normal call waits out the braking zone and the corn
   check('≥ 0.8 s flat → spoken', r.spoken.length === 1 && /P6/.test(r.spoken[0]), r.spoken.join('|'));
 }
 
-console.log('\n8) Service: urgent kinds bypass the driving check');
+console.log('\n8) Service: urgent kinds skip the straights rule, not the braking zone');
 {
+  // Carl 2026-10-02: "only on straights" and still talking in corners — every
+  // urgent kind (traffic countdowns, blue flags) bypassed the gate entirely.
   const r = service();
   r.feed(300, { brake: 0.9, throttle: 0 });
   r.svc.onCue(cueOf('fullCourseYellow'), r.svc.lastFrame);
-  check('safety car called mid-braking-zone, at once', r.spoken.length === 1 && /course yellow|Safety car/i.test(r.spoken[0]), r.spoken.join('|'));
-  r.svc.onCue(cueOf('fuelCritical', { reason: 'fuel' }), r.svc.lastFrame);
-  check('box this lap, at once', r.spoken.length === 2 && /[Bb]ox/.test(r.spoken[1]));
-  r.svc.onCue(cueOf('yieldTo', { name: 'A Smith', gapSec: 1.2 }), frame({ steer: 0.4 }));
-  check('blue flags, at once', r.spoken.length === 3);
+  check('safety car in a braking zone → held, not spoken', r.spoken.length === 0 && !!r.svc.heldReadout && r.svc.heldReadout.urgency === 'urgent');
+  r.feed(300, { throttle: 0.6 });
+  check('…and said the moment the car is off the brake, part throttle or not', r.spoken.length === 1 && /course yellow|Safety car/i.test(r.spoken[0]), r.spoken.join('|'));
 
-  // …but an urgent line still waits for the CHANNEL, on a 4 s budget.
+  // A safety call that finds no calm moment is said anyway after 1.5 s.
+  r.feed(100, { brake: 0.9, throttle: 0 });
+  r.svc.onCue(cueOf('fuelCritical', { reason: 'fuel' }), r.svc.lastFrame);
+  r.feed(1000, { throttle: 0.5, steer: 0.4, latG: 1.6 });
+  check('box this lap waits through the corner…', r.spoken.length === 1);
+  r.feed(700, { throttle: 0.5, steer: 0.4, latG: 1.6 });
+  check(`…but past ${GATE.urgentPatienceMs} ms it is said regardless`, r.spoken.length === 2 && /[Bb]ox/.test(r.spoken[1]), r.spoken.join('|'));
+
+  // A blue flag is useful, not vital: never mid-corner, dropped on its budget.
+  r.svc.onCue(cueOf('yieldTo', { name: 'A Smith', gapSec: 1.2 }), r.svc.lastFrame);
+  r.feed(3000, { throttle: 0.5, steer: 0.4, latG: 1.6 });
+  check('blue flags are not said mid-corner', r.spoken.length === 2, r.spoken.join('|'));
+  r.feed(1500, { throttle: 0.5, steer: 0.4, latG: 1.6 });
+  check('…and are dropped past 4 s rather than said late', r.spoken.length === 2 && !r.svc.heldReadout);
+  r.feed(100, { throttle: 0.7 });
+  r.svc.onCue(cueOf('yieldTo', { name: 'A Smith', gapSec: 1.2 }), r.svc.lastFrame);
+  check('…and said at once on a corner exit (calm, not a straight)', r.spoken.length === 3, r.spoken.join('|'));
+
+  // A red flag still waits for the CHANNEL, on a 4 s budget.
   r.svc.audioInFlight = 1;
   r.svc.onCue(cueOf('redFlag'), r.svc.lastFrame);
   check('urgent + answer still playing → held', r.spoken.length === 3 && r.svc.heldReadout.urgency === 'urgent');
@@ -334,7 +352,19 @@ console.log('\n8) Service: urgent kinds bypass the driving check');
   r.advance(1000);
   r.svc.audioInFlight = 0;
   r.svc.pumpHeldReadout(); // the PLAYED line
-  check('inside 4 s the PLAYED line releases it, braking or not', r.spoken.length === 4 && /Red flag/.test(r.spoken[3]));
+  check('inside 4 s the PLAYED line releases it', r.spoken.length === 4 && /Red flag/.test(r.spoken[3]));
+
+  // The gate on its own: urgent → the calm rule, never the dwell or runway.
+  const g = new RadioGate();
+  const d = drive(g, T0, 100, { throttle: 0.5 });
+  check('gate: urgent on part throttle, no dwell → clear', g.verdict(d.frame, { ...ON, kind: 'trafficBehind' }).clear === true);
+  check('gate: a normal line there → not clear', g.verdict(d.frame, { ...ON, kind: 'positionChange' }).clear === false);
+  const b = drive(g, d.t, 100, { brake: 0.4, throttle: 0 });
+  check('gate: urgent in the brakes → braking', g.verdict(b.frame, { ...ON, kind: 'trafficBehind' }).reason === 'braking');
+  check('gate: a safety kind past its patience → clear', g.verdict(b.frame, { ...ON, kind: 'sectorYellow', waitedMs: GATE.urgentPatienceMs }).clear === true);
+  check('gate: a traffic call has no such patience', g.verdict(b.frame, { ...ON, kind: 'trafficBehind', waitedMs: 3000 }).clear === false);
+  check('breaksQuiet: the safety kinds only', ['redFlag', 'sectorYellow', 'penalty', 'fuelCritical'].every(gateMod.breaksQuiet) &&
+    !['yieldTo', 'trafficBehind', 'trafficAhead', 'raceStart', 'restart', 'positionChange', null].some(gateMod.breaksQuiet));
 }
 
 console.log('\n9) Service: per-urgency expiry');
@@ -425,6 +455,13 @@ console.log('\n12) Radio controls: phrases route, and steal nothing');
   check('"keep quiet" → radioQuiet', route('keep quiet') === 'radioQuiet');
   check('"radio silence please" → radioQuiet', route('radio silence please') === 'radioQuiet');
   check('"quiet please" → radioQuiet', route('Quiet, please.') === 'radioQuiet');
+  // 2026-10-02 call log: "mute engineer," went to the cloud and got "Copy that."
+  check('"mute engineer" → radioQuiet', route('mute engineer,') === 'radioQuiet');
+  check('"shut up" / "stop the calls" / "quiet" → radioQuiet',
+    ['shut up', 'stop the calls please', 'Quiet.', 'mute the radio', 'no more calls'].every((t) => route(t) === 'radioQuiet'));
+  check('"unmute" → radioTalk, not radioQuiet', route('unmute engineer') === 'radioTalk' && route('unmute') === 'radioTalk');
+  check('whisper\'s "[Silence]" on an empty clip does not mute the radio', route('[Silence]') !== 'radioQuiet');
+  check('"stop saving" is still the fuel target, not quiet', route('stop saving') !== 'radioQuiet');
   check('"talk to me" → radioTalk', route('OK, talk to me') === 'radioTalk');
   check('"radio on" → radioTalk', route('radio on') === 'radioTalk');
   check('"you can talk" → radioTalk', route('you can talk now') === 'radioTalk');
@@ -498,8 +535,11 @@ async function radioControls() {
   a.svc.onCue(cueOf('positionChange', { to: 6, gained: true }), a.svc.lastFrame);
   a.svc.onCue(cueOf('incident', { severity: 'major' }), a.svc.lastFrame);
   check('quiet mutes normal and priority calls, even on a straight', a.spoken.length === 0 && !a.svc.heldReadout);
+  a.svc.onCue(cueOf('yieldTo', { name: 'A Smith', gapSec: 1.2 }), a.svc.lastFrame);
+  a.svc.onCue(cueOf('raceStart'), a.svc.lastFrame);
+  check('…and urgent-but-not-vital ones too (blue flags, green flag)', a.spoken.length === 0 && !a.svc.heldReadout, a.spoken.join('|'));
   a.svc.onCue(cueOf('fullCourseYellow'), a.svc.lastFrame);
-  check('…but an urgent call still speaks', a.spoken.length === 1 && /yellow|Safety/i.test(a.spoken[0]));
+  check('…but a safety call still speaks', a.spoken.length === 1 && /yellow|Safety/i.test(a.spoken[0]));
   out = await a.say('OK, you can talk');
   check('"you can talk" → "Copy, back on."', out.said === 'Copy, back on.' && a.svc.radioQuiet === false, out.said);
   a.spoken.length = 0;
@@ -564,7 +604,7 @@ function settingsAndPanel() {
   const html = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
   check('the Engineer tab has the switch', /<input type="checkbox" id="eng-straights"/.test(html));
-  check('…which says a new session lifts "keep quiet"', /new\s+session brings them back/.test(html));
+  check('…which says a new session lifts "keep quiet"', /so does a new\s+session/.test(html) && /"keep quiet"/.test(html));
   check('the panel persists it', /onlyStraights:\s*straights\.checked/.test(panel));
   check('the status line shows the quiet radio', /s\.radioQuiet/.test(panel));
   const labels = /const INTENT_LABELS = \{([\s\S]*?)\n  \};/.exec(panel);

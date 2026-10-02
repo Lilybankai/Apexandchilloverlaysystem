@@ -340,9 +340,21 @@ const GRAMMAR = [
   {
     intent: 'radioQuiet',
     group: 'Radio',
-    phrases: ['keep quiet', 'radio silence', 'quiet please', 'be quiet', 'stop talking'],
+    // "mute engineer" (2026-10-02 call log) missed the list, went to the
+    // cloud and got "Copy that." — a promise nothing kept. 'unmute' cannot
+    // trip 'mute': phrases match on whole words. No bare 'silence': whisper
+    // writes "[Silence]" for an empty clip, and that would mute the radio.
+    phrases: [
+      'keep quiet', 'radio silence', 'quiet please', 'be quiet', 'stop talking', 'quiet', 'shut up',
+      'mute', 'mute engineer', 'mute the engineer', 'mute the radio', 'no more calls',
+      'stop the calls', 'enough talking', 'stop calling',
+    ],
   },
-  { intent: 'radioTalk', group: 'Radio', phrases: ['talk to me', 'radio on', 'you can talk', 'radio back on'] },
+  {
+    intent: 'radioTalk',
+    group: 'Radio',
+    phrases: ['talk to me', 'radio on', 'you can talk', 'radio back on', 'unmute', 'unmute engineer', 'unmute the engineer', 'you can speak'],
+  },
   { intent: 'radioRepeat', group: 'Radio', phrases: ['repeat', 'repeat that', 'say again', 'say that again', 'come again'] },
 ];
 
@@ -1916,12 +1928,14 @@ class EngineerService {
    * @param {string} [text]  the line about to start — sizes the runway it needs
    * @param {number} [waitedMs]  how long it has been held — a line that has
    *        waited a few seconds takes any straight, not only a long one
+   * @param {string|null} [kind]  the line's kind — an urgent one needs only a
+   *        calm moment (off the brake, wheel near centre), not a straight
    */
-  busyDriving(text, waitedMs) {
+  busyDriving(text, waitedMs, kind) {
     const frame = this.lastFrame;
     if (!frame) return false;
     if (this.radioGate) {
-      return !this.radioGate.verdict(frame, { onlyStraights: this.onlyStraights(), text, waitedMs }).clear;
+      return !this.radioGate.verdict(frame, { onlyStraights: this.onlyStraights(), text, waitedMs, kind }).clear;
     }
     const pedals = frame.player && frame.player.pedals;
     if (pedals && typeof pedals.brake === 'number' && pedals.brake > BUSY_BRAKE) return true;
@@ -1952,16 +1966,22 @@ class EngineerService {
     return this.gateMod ? this.gateMod.urgencyOf(kind) : 'normal';
   }
 
+  /** Does this kind speak through "keep quiet"? (radioGate.SAFETY_KINDS); nothing without the gate. */
+  breaksQuiet(kind) {
+    return !!(this.gateMod && this.gateMod.breaksQuiet && this.gateMod.breaksQuiet(kind));
+  }
+
   /**
    * Speak a readout if the channel is free and the moment is right; otherwise
    * hold it — briefly, and only one. An URGENT kind (red flag, safety car, a
-   * yellow ahead, penalty, box this lap, green flag, blue flags) ignores the
-   * driving check and waits only for the channel; everything else waits for
-   * a straight. A held line expires on its urgency's budget rather than
-   * speaking late, a newer line replaces it unless the held one outranks it
-   * (urgent > priority > requested > normal — radioGate.ts KIND_URGENCY),
-   * the driver's question always wins (ask() clears the hold), and "keep
-   * quiet" drops everything that is not urgent.
+   * yellow ahead, penalty, box this lap, green flag, blue flags, traffic)
+   * skips the straights rule but still waits out a braking zone or an apex;
+   * everything else waits for a straight. A held line expires on its
+   * urgency's budget rather than speaking late, a newer line replaces it
+   * unless the held one outranks it (urgent > priority > requested > normal —
+   * radioGate.ts KIND_URGENCY), the driver's question always wins (ask()
+   * clears the hold), and "keep quiet" drops everything but the safety calls
+   * (radioGate.ts SAFETY_KINDS: red flag, yellows, penalty, box this lap).
    *
    * Every caller passes the KIND: a line without one is routine (`normal`),
    * so a driver-requested report (fuelTargetLap) must say what it is or it
@@ -1973,9 +1993,9 @@ class EngineerService {
   sayReadout(text, meta) {
     const kind = (meta && meta.kind) || null;
     const urgency = this.urgencyOf(kind);
-    if (this.radioQuiet && urgency !== 'urgent') return; // the driver asked for quiet
+    if (this.radioQuiet && !this.breaksQuiet(kind)) return; // the driver asked for quiet
     const channelFree = !this.asking && this.audioInFlight === 0;
-    if (channelFree && (urgency === 'urgent' || !this.busyDriving(text))) {
+    if (channelFree && !this.busyDriving(text, undefined, kind)) {
       this.speak(text);
       return;
     }
@@ -2035,13 +2055,12 @@ class EngineerService {
       this.heldReadout = null; // stale — dropped, never spoken late
       return;
     }
-    const urgent = held.urgency === 'urgent';
-    if (this.radioQuiet && !urgent) {
+    if (this.radioQuiet && !this.breaksQuiet(held.kind)) {
       this.heldReadout = null;
       return;
     }
     if (this.asking || this.audioInFlight > 0) return;
-    if (!urgent && this.busyDriving(held.text, this.clock() - held.heldAtMs)) return;
+    if (this.busyDriving(held.text, this.clock() - held.heldAtMs, held.kind)) return;
     this.heldReadout = null;
     this.speak(held.text);
   }
@@ -2055,7 +2074,7 @@ class EngineerService {
     if (intent === 'radioQuiet' || intent === 'radioTalk') {
       const quiet = intent === 'radioQuiet';
       this.radioQuiet = quiet;
-      if (quiet && this.heldReadout && this.heldReadout.urgency !== 'urgent') this.heldReadout = null;
+      if (quiet && this.heldReadout && !this.breaksQuiet(this.heldReadout.kind)) this.heldReadout = null;
       this.speak(RADIO_ACKS[intent]);
       this.pushStatus();
       return RADIO_ACKS[intent];

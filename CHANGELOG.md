@@ -5,6 +5,22 @@
      app until it is renamed.
 -->
 
+## 1.3.2 — 2026-10-02
+
+### Fixed
+
+- **"Keep quiet" now means quiet.** Telling the engineer to keep quiet
+  stopped the routine calls, but traffic warnings, blue flags and the green
+  flag kept coming. Now only flags, penalties and "box this lap" get
+  through until you say "talk to me". "Mute", "mute engineer", "shut up"
+  and "stop the calls" work too. Before, some of these went to the
+  free-form engineer, who said "copy" and then carried on talking.
+- **No more talking through corners.** With "Only talk on straights" on,
+  traffic warnings and blue flags still played mid-corner. They now wait
+  until you're off the brakes with the wheel straight, and are dropped if
+  that moment doesn't come in time. Flags and "box this lap" wait at most
+  a second and a half, so you never miss them.
+
 ## 1.3.1 — 2026-10-02
 
 ### Fixed

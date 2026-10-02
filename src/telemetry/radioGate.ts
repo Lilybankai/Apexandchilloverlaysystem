@@ -28,7 +28,10 @@
  * {@link KIND_URGENCY} sorts kinds into four tiers, highest first:
  *  - `urgent` — rule changes and things that cannot wait (red flag, safety car,
  *    a yellow ahead, a penalty, box this lap, the green flag, blue flags).
- *    These bypass the driving check entirely; only a busy channel holds them.
+ *    These skip the straights rule but still wait out a braking zone or an
+ *    apex ({@link calmReason}); a {@link SAFETY_KINDS} call waits at most
+ *    {@link GATE.urgentPatienceMs}, the rest are dropped on their budget.
+ *    Only the safety kinds speak through the driver's "keep quiet".
  *  - `priority` — must-hear, but can wait for the next straight (damage, last
  *    lap, the flag, fuel window). Long hold budget.
  *  - `requested` — reports the DRIVER asked for (the per-lap fuel-target
@@ -116,6 +119,22 @@ export const KIND_URGENCY: Readonly<Record<string, RadioUrgency>> = {
 /** The tier for a trigger kind; unknown and missing kinds are `normal`. */
 export function urgencyOf(kind: string | null | undefined): RadioUrgency {
   return (kind && Object.prototype.hasOwnProperty.call(KIND_URGENCY, kind) && KIND_URGENCY[kind]) || 'normal';
+}
+
+/**
+ * The race's rules changing under the driver — the only calls that speak
+ * through "keep quiet", and the only urgent calls that are said anyway (after
+ * {@link GATE.urgentPatienceMs}) when no calm moment comes. Everything else
+ * urgent — traffic countdowns, blue flags, the green flag — is useful, not
+ * vital: muted by "keep quiet", dropped rather than said mid-corner. Carl
+ * 2026-10-02: "keep quiet" got its "copy" and the traffic calls kept coming,
+ * through the corners, because every urgent kind bypassed both.
+ */
+export const SAFETY_KINDS: ReadonlySet<string> = new Set(['redFlag', 'fullCourseYellow', 'sectorYellow', 'penalty', 'fuelCritical']);
+
+/** Does this kind still speak after the driver said "keep quiet"? */
+export function breaksQuiet(kind: string | null | undefined): boolean {
+  return !!kind && SAFETY_KINDS.has(kind);
 }
 
 /**
@@ -222,6 +241,12 @@ export const GATE = {
    * call until it expired.
    */
   runwayPatienceMs: 3000,
+  /**
+   * How long a {@link SAFETY_KINDS} call waits for a calm moment (off the
+   * brake, wheel near centre) before it is said regardless, ms. Inside the
+   * urgent hold budget, so a yellow is never lost to a run of corners.
+   */
+  urgentPatienceMs: 1500,
 } as const;
 
 /** Why the gate said what it said — for tests, logs and the replay report. */
@@ -255,6 +280,13 @@ export interface GateOptions {
   text?: string;
   /** How long the line has already waited, ms — past {@link GATE.runwayPatienceMs} the runway is not required. */
   waitedMs?: number;
+  /**
+   * The line's kind. An `urgent` kind skips the straights rule (dwell, runway,
+   * start quiet, full throttle) but still waits for a calm moment — see
+   * {@link calmReason}; a {@link SAFETY_KINDS} one only for
+   * {@link GATE.urgentPatienceMs}.
+   */
+  kind?: string | null;
 }
 
 function finite(n: unknown): n is number {
@@ -282,6 +314,21 @@ export function instantReason(frame: TelemetryFrame): GateReason {
   if (!p) return 'clear';
   if (finite(p.brake) && p.brake > GATE.brakeMax) return 'braking';
   if (finite(p.throttle) && p.throttle < GATE.throttleMin) return 'throttle';
+  if (finite(p.steer) && Math.abs(p.steer) > GATE.steerMax) return 'steering';
+  const m = frame.player?.motion;
+  if (m && finite(m.latG) && Math.abs(m.latG) > GATE.latGMax) return 'cornering';
+  return 'clear';
+}
+
+/**
+ * The urgent lines' rule: not in the brakes and not turning — partial throttle
+ * and a corner exit are fine, a braking zone or the apex is not. No pedal
+ * block reads as clear, as in {@link instantReason}.
+ */
+export function calmReason(frame: TelemetryFrame): GateReason {
+  const p = frame.player?.pedals;
+  if (!p) return 'clear';
+  if (finite(p.brake) && p.brake > GATE.brakeMax) return 'braking';
   if (finite(p.steer) && Math.abs(p.steer) > GATE.steerMax) return 'steering';
   const m = frame.player?.motion;
   if (m && finite(m.latG) && Math.abs(m.latG) > GATE.latGMax) return 'cornering';
@@ -457,6 +504,15 @@ export class RadioGate {
       // The old rule: deep in the brakes, or side by side.
       if (p && finite(p.brake) && p.brake > GATE.busyBrake) return { clear: false, reason: 'braking' };
       return { clear: true, reason: 'clear' };
+    }
+    if (urgencyOf(opts.kind) === 'urgent') {
+      // Can't wait for a straight, but can wait out a braking zone. A car
+      // alongside is often the very car a blue flag or countdown is about.
+      if (breaksQuiet(opts.kind) && finite(opts.waitedMs) && opts.waitedMs >= GATE.urgentPatienceMs) {
+        return { clear: true, reason: 'clear' };
+      }
+      const calm = calmReason(frame);
+      return { clear: calm === 'clear', reason: calm };
     }
     const streamed = frame === this.lastObserved;
     const at = streamed ? this.lastAt : finite(frame.timestamp) ? frame.timestamp : 0;

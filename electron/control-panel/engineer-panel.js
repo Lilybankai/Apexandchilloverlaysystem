@@ -110,7 +110,7 @@
     weather: 'Weather & rain risk',
     brakeBias: 'Brake bias',
     tractionControl: 'Traction control setting',
-    radioQuiet: 'Radio silence — urgent calls only',
+    radioQuiet: 'Radio silence — flags, penalties and box calls only',
     radioTalk: 'Radio back on',
     radioRepeat: 'Repeat the last line',
   };
@@ -132,7 +132,7 @@
     if (!s.running) return ['Starting…', ''];
     if (s.micAvailable === false) return ['Running, but no microphone was found.', 'warn'];
     if (s.radioQuiet) {
-      return ['Live, radio quiet — urgent calls only until you say "talk to me" or the session changes.', 'live'];
+      return ['Live, radio quiet — flags, penalties and box calls only until you say "talk to me" or the session changes.', 'live'];
     }
     return ['Live. Press the button and ask.', 'live'];
   }
