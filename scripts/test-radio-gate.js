@@ -683,8 +683,26 @@ function lineDiscipline() {
   if (unswept.length) console.log(`  INFO  no line facts yet for: ${unswept.join(', ')} — add a row to LINE_FACTS`);
 }
 
+/* A traffic countdown is frozen into its words: urgent, and a 750 ms cap. */
+function trafficHold() {
+  console.log('\nT) Traffic countdowns never land late');
+  const gate = require('../dist/telemetry/radioGate.js');
+  check('trafficBehind / trafficAhead are urgent', gate.urgencyOf('trafficBehind') === 'urgent' && gate.urgencyOf('trafficAhead') === 'urgent');
+  const r = service();
+  r.svc.audioInFlight = 1; // the channel is busy: the line must be held
+  r.svc.sayReadout('Hypercar behind, with you in about 6 seconds.', { kind: 'trafficBehind', priority: 46 });
+  const h = r.svc.heldReadout;
+  check('held while the channel is busy', !!h && h.kind === 'trafficBehind');
+  check('…for 750 ms, not the urgent budget', !!h && h.expiresAt - h.heldAtMs === 750, h && String(h.expiresAt - h.heldAtMs));
+  r.advance(800);
+  r.svc.audioInFlight = 0;
+  r.svc.pumpHeldReadout();
+  check('…and dropped once stale, never spoken late', r.spoken.length === 0, r.spoken.join('|'));
+}
+
 radioControls()
   .then(() => {
+    trafficHold();
     settingsAndPanel();
     lineDiscipline();
     console.log('\n' + pass + ' passed, ' + fail + ' failed');

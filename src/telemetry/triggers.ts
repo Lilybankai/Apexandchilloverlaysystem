@@ -74,6 +74,7 @@ import {
   deltaToReferencePaceTarget,
   referencePaceTargets,
 } from './paceTargets';
+import { TrafficCallTracker } from './trafficCalls';
 
 /* -------------------------------------------------------------------------- */
 /*  What the engineer can be told about                                        */
@@ -140,6 +141,10 @@ export type EngineerTriggerKind =
   | 'pitWindowOpen'
   /** A faster-class car with the right of way is closing — blue flags coming. */
   | 'yieldTo'
+  /** A faster class arriving from behind, TIMED — "with you in about 6 s" (trafficCalls.ts). */
+  | 'trafficBehind'
+  /** Slower-class traffic ahead the player is about to catch, TIMED (trafficCalls.ts). */
+  | 'trafficAhead'
   /** Practice benchmark established, improved into a new band, or due for a check. */
   | 'practicePace'
   /** Qualifying/practice hotlap calls — see `sessionCalls.ts` for each kind. */
@@ -166,6 +171,8 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   restart: 50,
   sectorClear: 48, // worth saying promptly — the driver can push again
   yieldTo: 47, // timely: the faster car is arriving NOW
+  trafficBehind: 46, // timed: a countdown is worthless late
+  trafficAhead: 44,
   raceStart: 45,
   fuelWindow: 40,
   pitWindowOpen: 38,
@@ -289,6 +296,10 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   rivalRejoin: 20_000,
   pitWindowOpen: 60_000,
   yieldTo: 60_000,
+  // Timed traffic: once per CAR is trafficCalls.ts's job; this only stops a
+  // Hypercar train becoming a commentary stream.
+  trafficBehind: 20_000,
+  trafficAhead: 20_000,
   practicePace: 90_000,
   // Qualifying/practice (sessionCalls.ts): one lap summary per lap anyway; the
   // board calls get a longer gap so an end-of-session burst is one or two calls.
@@ -701,7 +712,7 @@ interface RaceStoryLevels {
    * is a lap or more up, not because it is a faster class — a same-class car
    * lapping you is not "faster class behind", and saying so was a live report.
    */
-  nearestYield: { name: string; gapSec: number; lapping: boolean; sameClass: boolean } | null;
+  nearestYield: { slotId: number; name: string; gapSec: number; lapping: boolean; sameClass: boolean } | null;
   /** Whether the strategy pit window reads as open. */
   windowOpen: boolean;
 }
@@ -746,6 +757,7 @@ function raceStoryLevels(frame: TelemetryFrame, me: StandingEntry | undefined): 
       const abs = Math.abs(r.relativeGapSec);
       if (!nearestYield || abs < nearestYield.gapSec) {
         nearestYield = {
+          slotId: r.slotId,
           name: r.driverName,
           gapSec: abs,
           // Faster class wins the label even when it is also a lap up: that is
@@ -854,6 +866,8 @@ export class EngineerTriggers {
   private firedOnce = new Set<EngineerTriggerKind>();
   private lastCueAt = 0;
   private pending: EngineerTrigger[] = [];
+  /** Timed traffic (trafficCalls.ts) — its own per-car memory. */
+  private readonly traffic = new TrafficCallTracker();
   private pendingSince = 0;
 
   private stats: TriggerStats = freshStats();
@@ -938,6 +952,7 @@ export class EngineerTriggers {
     this.prevPracticePaceBand = '';
     this.lastPracticePaceLap = UNKNOWN_VALUE;
     this.sessionCalls.reset();
+    this.traffic.reset();
     this.lastFiredAt.clear();
     this.firedOnce.clear();
     this.lastCueAt = 0;
@@ -1008,6 +1023,7 @@ export class EngineerTriggers {
     this.detectDamage(frame, now);
     this.detectPenalties(frame, now);
     this.detectFuel(frame, now);
+    this.detectTraffic(frame, now); // before the blue flag, which asks it who is called
     this.detectRaceStory(frame, now);
     this.detectPracticePace(frame, now);
     this.sessionCalls.detect(frame, now, this.sessionHost);
@@ -1305,8 +1321,12 @@ export class EngineerTriggers {
 
     // Blue flags: the relative feed's own yieldTo flag — one place owns the
     // faster-class rules (`yieldAlert.ts` / carClass.ts), and it is not here.
-    if (cur.yieldAny && !this.prevYieldAny) {
-      const facts: Record<string, string | number | boolean> = {};
+    // A car the timed traffic call has already named is not announced twice;
+    // one it can place gets where it will be with you (trafficCalls.ts).
+    if (cur.yieldAny && !this.prevYieldAny && !this.traffic.claims(cur.nearestYield?.slotId)) {
+      const facts: Record<string, string | number | boolean> = {
+        ...this.traffic.yieldFacts(cur.nearestYield?.slotId),
+      };
       if (cur.nearestYield) {
         facts.name = cur.nearestYield.name;
         facts.gapSec = Math.round(cur.nearestYield.gapSec * 10) / 10;
@@ -1314,10 +1334,29 @@ export class EngineerTriggers {
         facts.sameClass = cur.nearestYield.sameClass;
       }
       const why = cur.nearestYield?.lapping ? 'car a lap up closing' : 'faster class closing';
-      this.offer('yieldTo', now, `blue flags — ${why}`, facts);
+      if (this.offer('yieldTo', now, `blue flags — ${why}`, facts)) {
+        this.traffic.markCalled(cur.nearestYield?.slotId, now);
+      }
     }
 
     this.storeRaceStory(cur);
+  }
+
+  /**
+   * Timed traffic — the faster class arriving, the backmarkers ahead. Every
+   * accuracy rule lives in `trafficCalls.ts`; this only gates and records.
+   * A kind still cooling is not offered (the tracker re-offers while the car
+   * stays in its window, and the countdown is recomputed at speech time), and
+   * a car is marked as called only once its offer is accepted.
+   */
+  private detectTraffic(frame: TelemetryFrame, now: number): void {
+    const calls = this.traffic.update(frame, now);
+    for (const call of calls) {
+      if (this.cooling(call.kind, now)) continue;
+      if (this.offer(call.kind, now, call.detail, call.facts)) {
+        for (const slot of call.slots) this.traffic.markCalled(slot, now);
+      }
+    }
   }
 
   /**

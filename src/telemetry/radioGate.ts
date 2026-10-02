@@ -101,6 +101,11 @@ export const KIND_URGENCY: Readonly<Record<string, RadioUrgency>> = {
   rivalStop: 'normal',
   rivalRejoin: 'normal',
 
+  // Timed traffic (trafficCalls.ts): the blue flag's own family — a car
+  // arriving is a hazard, and the countdown is worthless on the next straight.
+  trafficBehind: 'urgent',
+  trafficAhead: 'urgent',
+
   fastestLapSelf: 'normal',
   fastestLapField: 'normal',
   positionChange: 'normal',
@@ -487,3 +492,14 @@ export class RadioGate {
     return { clear: true, reason: 'clear', ...(runway !== null ? { runwaySec: runway } : {}) };
   }
 }
+
+/**
+ * Per-kind hold caps that override the urgency budget. A traffic countdown
+ * ("with you in about 6 seconds") is frozen into its words when phrased, so
+ * every millisecond it waits for the channel is a millisecond wrong: it gets
+ * 750 ms or it is dropped (trafficCalls.ts re-times the next one).
+ */
+export const HOLD_BUDGET_BY_KIND: Readonly<Record<string, number>> = {
+  trafficBehind: 750,
+  trafficAhead: 750,
+};

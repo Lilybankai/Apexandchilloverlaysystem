@@ -420,6 +420,12 @@ const TRIGGER_TIERS = {
   rivalRejoin: 'standard',
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
+  // Timed traffic (trafficCalls.ts). Standard, not essential, for now: the
+  // faster class arriving IS a race-ending hazard, but its countdown has only
+  // been validated against noise replayed from a single-class recording —
+  // promote trafficBehind once a live multiclass recording confirms it.
+  trafficBehind: 'standard',
+  trafficAhead: 'standard',
   practicePace: 'standard',
   // Not a trigger-layer kind: the per-lap report of a saving target the
   // driver ASKED for (fuelTarget.ts, via pumpFuelTarget). Asked-for, so it
@@ -1974,7 +1980,11 @@ class EngineerService {
       return;
     }
     const now = this.clock();
-    const budget = this.gateMod ? this.gateMod.HOLD_BUDGET_MS[urgency] : READOUT_HOLD_MS;
+    // A traffic countdown is frozen into its words when phrased, so it may
+    // wait only a moment for the channel (HOLD_BUDGET_BY_KIND); every other
+    // line takes its urgency's budget.
+    const byKind = this.gateMod && this.gateMod.HOLD_BUDGET_BY_KIND && kind ? this.gateMod.HOLD_BUDGET_BY_KIND[kind] : undefined;
+    const budget = byKind !== undefined ? byKind : this.gateMod ? this.gateMod.HOLD_BUDGET_MS[urgency] : READOUT_HOLD_MS;
     const line = {
       text,
       kind,
