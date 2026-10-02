@@ -46,6 +46,7 @@ import { sessionKeyOf } from './triggers';
 import { damageGrade, gradeWorse, overallGrade } from './damage';
 import { PitLossModel } from './pitExit';
 import { findYellowCause, speakableWhere } from './yellowCause';
+import { qualifyingGridAnswer } from './sessionCalls';
 import type { PitExitProjection } from './pitExit';
 import {
   deltaToReferencePaceTarget,
@@ -1366,6 +1367,9 @@ export class EngineerCommands {
       }
 
       case 'gridStart': {
+        // In qualifying "where do I start" is the provisional grid slot NOW.
+        const quali = qualifyingGridAnswer(frame);
+        if (quali) return quali.ok ? yes(quali.text) : no(quali.text);
         const me = frame.standings.find((e) => e.isPlayer);
         if (!me || !known(me.gridPosition) || !known(me.position)) {
           return no('No grid data for this session.');

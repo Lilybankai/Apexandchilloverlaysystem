@@ -50,11 +50,14 @@
     off: 'Nothing unprompted — the engineer only speaks when you press a button.',
     essential:
       'Calls the things that change the rules or end races: flags, fuel, ' +
-      'penalties, damage. Never reads out what your screen already shows, and ' +
+      'penalties, damage. In qualifying: your lap and position, pole changes, ' +
+      'time for another go and your grid slot; in practice, personal bests and ' +
+      'deleted laps. Never reads out what your screen already shows, and ' +
       'stays quiet while you are side by side or deep in the brakes.',
     standard:
       'Essential plus the race story: your fastest laps, the field’s, places ' +
-      'gained and lost, the rivals’ stops, blue flags and practice pace checks. ' +
+      'gained and lost, the rivals’ stops, blue flags, practice pace checks and ' +
+      'sector improvements on a push lap. ' +
       'Your question always cuts in front of a call.',
   };
 

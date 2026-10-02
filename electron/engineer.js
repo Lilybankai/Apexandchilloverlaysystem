@@ -195,7 +195,7 @@ const GRAMMAR = [
     ],
   },
   { intent: 'position', group: 'Pace & laps', phrases: ['position', 'what position am i in', 'where am i'] },
-  { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places'] },
+  { intent: 'gridStart', group: 'Pace & laps', phrases: ['where did i start', 'places gained', 'how many places', 'where do i start', 'where will i start', 'grid position', 'grid slot'] },
   // -- Fuel & energy -----------------------------------------------------------
   {
     intent: 'fuel',
@@ -390,6 +390,18 @@ const TRIGGER_TIERS = {
   // driver ASKED for (fuelTarget.ts, via pumpFuelTarget). Asked-for, so it
   // speaks in every preset but Off — still through the busy/hold gate.
   fuelTargetLap: 'essential',
+  // Qualifying (sessionCalls.ts): the hotlap session's whole story - your lap
+  // and where it puts you, losing pole or places, whether there is time for
+  // another go, and where you'll start - is the Essential call there. Sector
+  // improvements are the opt-in layer. Practice PBs and deleted laps are Essential too: Carl
+  // asked for practice engineering by name, and they are rare (2026-10-02).
+  qualiLap: 'essential',
+  qualiPole: 'essential',
+  qualiBeaten: 'essential',
+  qualiTimeLeft: 'essential',
+  qualiGrid: 'essential',
+  practiceLap: 'essential',
+  sectorImproved: 'standard',
 };
 
 /**

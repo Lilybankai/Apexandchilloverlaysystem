@@ -175,6 +175,53 @@ answers. The division of labour is deliberate and unchanged:
   `damage.ts` `damageGrade`, not `0.37`);
   the engineer comments on what it can see.
 
+## Qualifying and practice (2026-10-02)
+
+`src/telemetry/sessionCalls.ts` (detection) and `sessionPhrases.ts` (words) give the
+hotlap sessions their own engineer. They plug into `EngineerTriggers` and use its gates
+unchanged; `scripts/test-sessioncalls.js` covers them.
+
+| kind | session | preset | example |
+|---|---|---|---|
+| `qualiLap` | qualifying | Essential | "Personal best, 1 51.8, P4 in class." / "1 52.3, two tenths off your best, still P4." / "Provisional pole! 1 51.2." / "Lap's deleted — track limits." |
+| `qualiPole` | qualifying | Essential | "New pole: Ferreira, 1 51.2." / "Ferreira takes pole off you — 1 51.2. You're P2." |
+| `qualiBeaten` | qualifying | Essential | "Moreau's gone quicker — you're P5 now." / "Four cars have gone quicker — you're P8 now." |
+| `qualiTimeLeft` | qualifying | Essential | "3 minutes left — time for one more after this." / "No time for another after this one." |
+| `qualiGrid` | qualifying | Essential | "That's the flag. You'll start P6 in class, P14 overall." (provisional while class cars still run) |
+| `practiceLap` | practice / test day / warm-up | Standard | "Personal best, 1 51.8." / "Lap's deleted — track limits." |
+| `sectorImproved` | both | Standard | "Purple sector one." / "Sector two, two tenths up." |
+
+Defaults, and why:
+
+- **Flying laps only.** A lap is summarised only if it was seen to start at the line,
+  never touched the pit lane (out-laps start there, in-laps end there), ran without
+  FCY/red, did not start after our flag, and — when valid — is within 1.5 % of the best
+  (slower is a cool-down or an abandoned run). One summary per lap, built 1.2 s after the
+  line (the board re-sorts first), and it waits up to 12 s for a free channel rather than
+  being clipped by the global gate.
+- **Deleted** = LMU's `countLapFlag` (`lapValid`) still false at the line, or false
+  during the lap and the sim withheld the time. A cut the sim forgave is a normal lap.
+- **Sector calls** (opt-in: Standard preset): only on a flying, still-valid lap; at most
+  one per lap; qualifying needs a tenth up on the best LAP through that sector, practice
+  three tenths; a purple estimate (best lap's split + the delta through the sector) must
+  beat every class car's best split by 0.05 s. Never within 18 s of the line, so the lap
+  summary keeps the gate. Needs `paceDeltas` (shared memory); none when spectating.
+- **Board news** (pole, beaten) waits until the class times have been still for 2.5 s,
+  so an end-of-session burst is one call naming the net position; pole speaks only on a
+  change of OWNER; only your class; held while your own lap is about to land.
+- **Time left** is pure timing at the line: the lap now starting ends after one best
+  lap; if the clock still shows time then, there is "one more after this". It is said
+  when exactly one more go remains and when none does — never a statement of what the
+  rules let you finish (unverified for LMU qualifying).
+- **The grid call** fires once: our car takes the flag (`finished`), or the flag is out
+  while we sit in the pit lane, or (no per-car finish channel) the chequered phase. It
+  rides with the final lap's summary as one call.
+- Push-to-talk "where do I start" / "grid position" answers the current provisional
+  slot in qualifying; in a race `gridStart` still answers "where did I start".
+
+Not verified on a real qualifying session (no recording exists): how LMU ends a
+qualifying session, and that `countLapFlag` behaves there as it does in a race.
+
 ## Next
 
 Tier 2 (the cloud proxy for free-form questions) consumes `EngineerCue` and the same

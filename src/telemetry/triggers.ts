@@ -67,6 +67,7 @@
 import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
 import { findYellowCause } from './yellowCause';
+import { SessionCalls, type SessionCallHost, type SessionCallKind } from './sessionCalls';
 import { overallGrade } from './damage';
 import {
   deltaToReferencePaceTarget,
@@ -128,7 +129,9 @@ export type EngineerTriggerKind =
   /** A faster-class car with the right of way is closing — blue flags coming. */
   | 'yieldTo'
   /** Practice benchmark established, improved into a new band, or due for a check. */
-  | 'practicePace';
+  | 'practicePace'
+  /** Qualifying/practice hotlap calls — see `sessionCalls.ts` for each kind. */
+  | SessionCallKind;
 
 /**
  * Relative importance, higher wins. Used to order a coalesced cue and to choose
@@ -159,6 +162,15 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   positionChange: 25,
   rivalPitted: 22,
   practicePace: 20,
+  // Qualifying/practice (sessionCalls.ts). The grid call is the session's last
+  // word; the lap summary leads the line-crossing bundle it rides with.
+  qualiGrid: 64,
+  qualiLap: 36,
+  qualiTimeLeft: 35,
+  qualiPole: 34,
+  qualiBeaten: 33,
+  practiceLap: 19, // below practicePace, whose line already carries the best time
+  sectorImproved: 18,
 };
 
 /**
@@ -258,6 +270,14 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   pitWindowOpen: 60_000,
   yieldTo: 60_000,
   practicePace: 90_000,
+  // Qualifying/practice (sessionCalls.ts): one lap summary per lap anyway; the
+  // board calls get a longer gap so an end-of-session burst is one or two calls.
+  qualiLap: 20_000,
+  practiceLap: 20_000,
+  qualiTimeLeft: 20_000,
+  sectorImproved: 20_000,
+  qualiPole: 30_000,
+  qualiBeaten: 30_000,
 };
 
 /**
@@ -816,6 +836,16 @@ export class EngineerTriggers {
 
   private stats: TriggerStats = freshStats();
 
+  /** Qualifying/practice hotlap calls, gated by this class's own gates. */
+  private readonly sessionCalls = new SessionCalls();
+  private readonly sessionHost: SessionCallHost = {
+    offer: (kind, atMs, detail, facts) => this.offer(kind, atMs, detail, facts),
+    cooling: (kind, atMs) => this.cooling(kind, atMs),
+    gateOpenSoon: (atMs) =>
+      this.lastCueAt === 0 || atMs - this.lastCueAt >= this.globalMinIntervalMs - this.coalesceMs,
+    busy: () => this.pending.length > 0,
+  };
+
   public constructor(config: EngineerTriggerConfig = {}) {
     this.coalesceMs = config.coalesceMs ?? DEFAULT_COALESCE_MS;
     this.cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
@@ -884,6 +914,7 @@ export class EngineerTriggers {
     this.prevPracticePacePercent = UNKNOWN_VALUE;
     this.prevPracticePaceBand = '';
     this.lastPracticePaceLap = UNKNOWN_VALUE;
+    this.sessionCalls.reset();
     this.lastFiredAt.clear();
     this.firedOnce.clear();
     this.lastCueAt = 0;
@@ -936,6 +967,7 @@ export class EngineerTriggers {
       // on the frame we arrive on — an edge needs a before, and this is it.
       this.observeRaceStory(frame);
       this.observePracticePace(frame);
+      this.sessionCalls.observe(frame, now);
       this.primed = true;
       return null;
     }
@@ -955,6 +987,7 @@ export class EngineerTriggers {
     this.detectFuel(frame, now);
     this.detectRaceStory(frame, now);
     this.detectPracticePace(frame, now);
+    this.sessionCalls.detect(frame, now, this.sessionHost);
   }
 
   /**
