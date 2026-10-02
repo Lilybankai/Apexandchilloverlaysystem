@@ -204,6 +204,21 @@ const GRAMMAR = [
   // Asked twice on day one (2026-08-19 log) and refused by the cloud — the
   // burn ratio is a local read now.
   { intent: 'fuelRatio', group: 'Fuel & energy', phrases: ['fuel ratio', 'fuel to energy ratio'] },
+  // The saving target (src/telemetry/fuelTarget.ts). The lap count is parsed
+  // off the words by askFuelTarget() BEFORE this list is consulted (see ask());
+  // these phrases are for SAPI and the panel card. Each out-lengths the
+  // 'fuel'/'energy' stems it contains, so longest-needle-wins keeps them here.
+  {
+    intent: 'fuelSave',
+    group: 'Fuel & energy',
+    phrases: [
+      'save one lap', 'save a lap', 'save half a lap', 'save two laps',
+      'save a lap of fuel', 'save one lap of fuel', 'save one lap of energy',
+      'i want to save one lap of fuel',
+    ],
+  },
+  { intent: 'fuelTarget', group: 'Fuel & energy', phrases: ['fuel target', "what's my target", 'energy target', 'saving target', 'am i on target'] },
+  { intent: 'fuelTargetOff', group: 'Fuel & energy', phrases: ['cancel fuel target', 'stop saving', 'target off', 'fuel target off', 'cancel target'] },
   { intent: 'hybrid', group: 'Fuel & energy', phrases: ['battery', 'hybrid', 'state of charge'] },
   // -- Pit ---------------------------------------------------------------------
   { intent: 'pitStop', group: 'Pit', phrases: ['pit stop', 'stop time', 'how long is the stop'] },
@@ -366,6 +381,10 @@ const TRIGGER_TIERS = {
   pitWindowOpen: 'standard',
   yieldTo: 'standard',
   practicePace: 'standard',
+  // Not a trigger-layer kind: the per-lap report of a saving target the
+  // driver ASKED for (fuelTarget.ts, via pumpFuelTarget). Asked-for, so it
+  // speaks in every preset but Off — still through the busy/hold gate.
+  fuelTargetLap: 'essential',
 };
 
 /**
@@ -1680,6 +1699,7 @@ class EngineerService {
           const cue = this.triggers.update(frame);
           if (cue) this.onCue(cue, frame);
         }
+        this.pumpFuelTarget();
         this.pumpHeldReadout();
       } catch {}
     });
@@ -1801,6 +1821,35 @@ class EngineerService {
       return;
     }
     this.heldReadout = { text, expiresAt: Date.now() + READOUT_HOLD_MS };
+  }
+
+  /**
+   * The fuel-saving target's per-lap line (fuelTarget.ts), if a lap just
+   * completed with one live. Same preset gate as {@link onCue} under the
+   * `fuelTargetLap` tier, then the same busy/hold path as every readout.
+   */
+  pumpFuelTarget() {
+    const c = this.commands;
+    const line = c && typeof c.takeFuelTargetReport === 'function' ? c.takeFuelTargetReport() : null;
+    if (!line || !this.running) return;
+    const preset = this.readoutsPreset();
+    const tier = TRIGGER_TIERS.fuelTargetLap;
+    if (preset === 'off' || !tier || (tier === 'standard' && preset !== 'standard')) return;
+    this.sayReadout(line);
+  }
+
+  /**
+   * "Save one lap" / "fuel target" / "stop saving" — parsed off the words
+   * (the lap count is a number, not a phrase). Speaks and returns the ask()
+   * result when the words were a fuel-target request, else null.
+   */
+  answerFuelTarget(text) {
+    const c = this.commands;
+    const answer = c && typeof c.askFuelTarget === 'function' ? c.askFuelTarget(text) : null;
+    if (!answer) return null;
+    this.speak(answer.text);
+    this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
+    return { ok: true, outcome: this.noteOutcome('tier1') };
   }
 
   /** Re-check the one held readout — rides the frame stream and PLAYED lines. */
@@ -1929,6 +1978,9 @@ class EngineerService {
       // "what's the gap to P10" confidently matches 'whats the gap' and would
       // answer the car ahead � the very relabelling the position parser below
       // exists to stop. Those go through whisper like everything else.
+      const fuelSet =
+        heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.answerFuelTarget(heard.text);
+      if (fuelSet) return fuelSet; // "save two laps": the number rides SAPI's text
       if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
@@ -1980,6 +2032,10 @@ class EngineerService {
           if (noise !== 'echo') this.speak('Say again?');
           return { ok: true, noise, outcome: this.noteOutcome('noise') };
         }
+        // "Save one lap of fuel": a number the phrase list can't carry, and
+        // its 'fuel' stem would otherwise be answered as the fuel state.
+        const fuelAsk = this.answerFuelTarget(text);
+        if (fuelAsk) return fuelAsk;
         // "Gap to P10", "pace of P5", "my sector one": answered off the
         // standings before the phrase list, never left to the cloud to invent.
         const pq = matchPositionQuery(text);

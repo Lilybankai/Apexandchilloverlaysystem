@@ -1610,6 +1610,13 @@ export interface WeatherState {
 export interface FuelState {
   /** Current fuel in the tank, litres. */
   levelLiters: number;
+  /**
+   * {@link levelLiters} to the millilitre, for per-lap DELTAS: two levels
+   * rounded to 0.1 L differ by up to ±0.1 L, which is the whole size of a
+   * saving being measured (the engineer's fuel target, fuelTarget.ts).
+   * Omitted by providers that don't run the fuel calculator.
+   */
+  levelLitersExact?: number;
   /** Tank capacity, litres; {@link UNKNOWN_VALUE} if unknown. */
   capacityLiters: number;
   /** Rolling-average consumption per lap, litres; {@link UNKNOWN_VALUE} until enough laps. */

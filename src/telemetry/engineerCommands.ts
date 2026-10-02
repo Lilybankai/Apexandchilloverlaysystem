@@ -52,6 +52,7 @@ import {
   referencePaceTarget,
 } from './paceTargets';
 import type { ReferencePaceTargetId } from './paceTargets';
+import { FuelTargetTracker, parseFuelTargetAsk } from './fuelTarget';
 
 /* -------------------------------------------------------------------------- */
 /*  What the driver can ask                                                   */
@@ -87,6 +88,12 @@ export type CommandIntent =
   | 'pitWindow'
   | 'energy'
   | 'fuelRatio'
+  // The fuel-saving target (2026-10-02, fuelTarget.ts): "save one lap" sets
+  // it (the number is parsed off the words by askFuelTarget), "fuel target"
+  // reads it back, "stop saving" clears it.
+  | 'fuelSave'
+  | 'fuelTarget'
+  | 'fuelTargetOff'
   | 'hybrid'
   | 'pace'
   | 'paceAlien'
@@ -134,6 +141,9 @@ export const COMMAND_INTENTS: readonly CommandIntent[] = [
   'pitWindow',
   'energy',
   'fuelRatio',
+  'fuelSave',
+  'fuelTarget',
+  'fuelTargetOff',
   'hybrid',
   'pace',
   'paceAlien',
@@ -461,6 +471,7 @@ export class EngineerCommands {
   private fuelHist: LapValue[] = [];
   private energyHist: LapValue[] = [];
   private pitModel = new PitLossModel();
+  private fuelTarget = new FuelTargetTracker();
 
   /** Drop all history — new session, or a caller that knows better. */
   reset(): void {
@@ -469,6 +480,7 @@ export class EngineerCommands {
     this.windows.clear();
     this.clearHistory();
     this.pitModel.reset();
+    this.fuelTarget.reset();
   }
 
   private clearHistory(): void {
@@ -494,6 +506,7 @@ export class EngineerCommands {
     }
     this.frame = frame;
     this.pitModel.update(frame);
+    this.fuelTarget.update(frame);
 
     // See LapWindow for what makes a lap clean enough to average.
     const isRace = frame.session?.type === 'race';
@@ -657,6 +670,27 @@ export class EngineerCommands {
     return { ...t, name: radioName(other) };
   }
 
+
+  /**
+   * "Save one lap", "save half a lap of energy", "fuel target", "stop
+   * saving": the fuel-saving target, parsed off the transcript (the lap count
+   * is a number, so it cannot be a phrase-list lookup). Null when the words
+   * are not a fuel-target request — the caller carries on down its list.
+   */
+  askFuelTarget(text: string): CommandAnswer | null {
+    const q = parseFuelTargetAsk(text);
+    if (!q) return null;
+    const intent: CommandIntent =
+      q.kind === 'set' ? 'fuelSave' : q.kind === 'cancel' ? 'fuelTargetOff' : 'fuelTarget';
+    if (!this.frame) return { intent, text: 'No telemetry yet.', ok: false };
+    const r = this.fuelTarget.ask(q);
+    return { intent, text: r.text, ok: r.ok };
+  }
+
+  /** The per-lap saving report waiting to be spoken (once), or null. */
+  takeFuelTargetReport(): string | null {
+    return this.fuelTarget.takeReport();
+  }
 
   /** Answer one question from the latest state. Never throws; never guesses. */
   answer(intent: CommandIntent): CommandAnswer {
@@ -1117,6 +1151,20 @@ export class EngineerCommands {
           return yes(`You're burning ${ratio.toFixed(2)} litres per percent of energy.`);
         }
         return no('No fuel-ratio read on this car.');
+      }
+
+      // The saving target (fuelTarget.ts). A bare 'fuelSave' carries no lap
+      // count — askFuelTarget() parses that off the words before the phrase
+      // list is ever consulted, so reaching it here means the number was lost.
+      case 'fuelSave':
+        return no('How many laps? Say save one lap, or save half a lap.');
+      case 'fuelTarget': {
+        const r = this.fuelTarget.readBack();
+        return r.ok ? yes(r.text) : no(r.text);
+      }
+      case 'fuelTargetOff': {
+        const r = this.fuelTarget.cancel();
+        return r.ok ? yes(r.text) : no(r.text);
       }
 
       case 'hybrid': {
