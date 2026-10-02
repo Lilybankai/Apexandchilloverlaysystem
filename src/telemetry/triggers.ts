@@ -68,6 +68,7 @@ import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { SessionPhase, StandingEntry, TelemetryFrame } from './types';
 import { findYellowCause } from './yellowCause';
 import { SessionCalls, type SessionCallHost, type SessionCallKind } from './sessionCalls';
+import { RivalStopWatch } from './rivalStop';
 import { overallGrade } from './damage';
 import {
   deltaToReferencePaceTarget,
@@ -122,8 +123,19 @@ export type EngineerTriggerKind =
   | 'fastestLapField'
   /** The player's overall position stepped, outside lap 1 and pit cycles. */
   | 'positionChange'
-  /** The class neighbour directly ahead or behind entered the pit lane. */
+  /**
+   * The class neighbour directly ahead or behind entered the pit lane.
+   * Superseded by `rivalStop` and no longer emitted (kept so stored cues and
+   * the phrasebook stay valid).
+   */
   | 'rivalPitted'
+  /**
+   * A class neighbour made a real stop that changes something for you — see
+   * `rivalStop.ts` for the criticality rules (measured pit loss only).
+   */
+  | 'rivalStop'
+  /** An announced rival came out somewhere other than projected, close to you. */
+  | 'rivalRejoin'
   /** The current lap reached the fuel calculator's pit-window-open lap. */
   | 'pitWindowOpen'
   /** A faster-class car with the right of way is closing — blue flags coming. */
@@ -159,8 +171,10 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   pitWindowOpen: 38,
   fastestLapSelf: 30,
   fastestLapField: 28,
+  rivalStop: 26, // above positionChange: it is the reason the order moved
   positionChange: 25,
   rivalPitted: 22,
+  rivalRejoin: 21,
   practicePace: 20,
   // Qualifying/practice (sessionCalls.ts). The grid call is the session's last
   // word; the lap summary leads the line-crossing bundle it rides with.
@@ -205,6 +219,8 @@ const RACE_ONLY: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>
   'fastestLapField',
   'positionChange',
   'rivalPitted',
+  'rivalStop',
+  'rivalRejoin',
   'pitWindowOpen',
 ]);
 
@@ -267,6 +283,10 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   fastestLapField: 30_000,
   positionChange: 45_000,
   rivalPitted: 30_000,
+  // Per-rival cooldowns and burst coalescing live in rivalStop.ts; these only
+  // stop two different rivals' lines landing back to back.
+  rivalStop: 20_000,
+  rivalRejoin: 20_000,
   pitWindowOpen: 60_000,
   yieldTo: 60_000,
   practicePace: 90_000,
@@ -819,6 +839,8 @@ export class EngineerTriggers {
   private prevNeighbourPit = new Map<number, boolean>();
   /** Whether any relative row carried `yieldTo` last tick. */
   private prevYieldAny = false;
+  /** The rival-stop call's own state (stops, pit loss, follow-ups) — rivalStop.ts. */
+  private rivalStops = new RivalStopWatch();
   /** Whether the strategy window read as open last tick. */
   private prevWindowOpen = false;
   /** Last resolved practice score, for detecting movement into a faster band. */
@@ -909,6 +931,7 @@ export class EngineerTriggers {
     this.posCandidate = null;
     this.prevPitPhase = 'none';
     this.prevNeighbourPit.clear();
+    this.rivalStops.reset();
     this.prevYieldAny = false;
     this.prevWindowOpen = false;
     this.prevPracticePacePercent = UNKNOWN_VALUE;
@@ -1235,6 +1258,7 @@ export class EngineerTriggers {
       const absorb =
         pitPhase !== 'none' ||
         this.prevPitPhase !== 'none' ||
+        this.rivalStops.neighbourPitActive(now) || // a neighbour's stop is rivalStop's story
         !known(lap) ||
         lap <= 1 ||
         !known(this.posAnnounced);
@@ -1262,16 +1286,12 @@ export class EngineerTriggers {
       }
     }
 
-    // The class neighbours' stops. Identity is re-derived every tick, so a
-    // neighbour changing (someone passed them) simply rotates the map — an id
-    // with no previous reading cannot fire.
-    for (const [slotId, entry] of cur.neighbourPit) {
-      if (this.prevNeighbourPit.get(slotId) === false && entry.inPit) {
-        this.offer('rivalPitted', now, 'rival pitted', {
-          name: entry.name,
-          where: entry.where,
-        });
-      }
+    // The class neighbours' stops — only the ones that change something for
+    // the driver (rivalStop.ts). Replaces the bare `rivalPitted` edge, which
+    // spoke on every lane entry; `neighbourPit` stays a level for now.
+    const stop = this.rivalStops.update(frame, now);
+    if (stop && !this.offer(stop.kind, now, stop.detail, stop.facts)) {
+      this.rivalStops.dropped(stop.slotId, stop.kind);
     }
 
     // The strategy window opening — the fuel calculator's own projection, not
@@ -1340,6 +1360,7 @@ export class EngineerTriggers {
   private observeRaceStory(frame: TelemetryFrame): void {
     const me = playerRow(frame);
     this.storeRaceStory(raceStoryLevels(frame, me));
+    this.rivalStops.update(frame, frame.timestamp); // first sightings are baselines, never edges
     this.posAnnounced = me && known(me.position) ? me.position : UNKNOWN_VALUE;
     this.posCandidate = null;
   }

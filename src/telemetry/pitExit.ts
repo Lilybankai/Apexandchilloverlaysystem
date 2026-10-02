@@ -92,13 +92,21 @@ interface Watch {
   /** Latest known pre-pit gap/laps while running. */
   gapSec?: number;
   lapsBehind?: number;
+  /** The same against the CLASS leader — the fallback reference (see update). */
+  classGapSec?: number;
+  classLapsBehind?: number;
   lapsCompleted?: number;
   /** Snapshot at pit entry. */
   entryGapSec?: number;
   entryLapsBehind?: number;
+  /** Which leader the entry snapshot was taken against; the sample uses the same one. */
+  entryRef?: 'overall' | 'class';
   /** Laps completed when the car left the lane; the sample is taken one full lap later. */
   exitLapsCompleted?: number;
   awaitingLap: boolean;
+  /** This lane visit: whether a per-car speed was published, and whether it ever read stopped. */
+  laneSpeedSeen?: boolean;
+  laneStill?: boolean;
 }
 
 export class PitLossModel {
@@ -134,16 +142,44 @@ export class PitLossModel {
         w = { inPit: !!e.inPit, awaitingLap: false };
         this.watch.set(e.slotId, w);
       }
-      const gap = known(e.gapToLeaderSec) ? e.gapToLeaderSec : undefined;
+      // A gap of 0 is the car BEING the reference leader: its stop cannot be
+      // measured against itself (it would read as loss minus its lead).
+      const gap = known(e.gapToLeaderSec) && e.gapToLeaderSec > 0 ? e.gapToLeaderSec : undefined;
+      const classGap =
+        known(e.gapToClassLeaderSec) && e.gapToClassLeaderSec! > 0 ? e.gapToClassLeaderSec : undefined;
       if (!w.inPit && e.inPit) {
-        // Entering the lane: freeze the last running read.
-        w.entryGapSec = w.gapSec;
-        w.entryLapsBehind = w.lapsBehind;
+        // Entering the lane: freeze the last running read. LMU zeroes the
+        // overall-leader gap for every LAPPED car, so in a multiclass race the
+        // slower classes would never yield a sample off it; the class-leader
+        // gap is the fallback reference, and whichever is used at entry is the
+        // one the sample is taken against.
+        if (w.gapSec !== undefined) {
+          w.entryRef = 'overall';
+          w.entryGapSec = w.gapSec;
+          w.entryLapsBehind = w.lapsBehind;
+        } else if (w.classGapSec !== undefined && w.classLapsBehind !== undefined) {
+          w.entryRef = 'class';
+          w.entryGapSec = w.classGapSec;
+          w.entryLapsBehind = w.classLapsBehind;
+        } else {
+          w.entryRef = undefined;
+          w.entryGapSec = undefined;
+          w.entryLapsBehind = undefined;
+        }
         w.awaitingLap = false;
+        w.laneSpeedSeen = false;
+        w.laneStill = false;
       } else if (w.inPit && !e.inPit) {
-        // Rejoined: sample one full lap later, when the gap is real again.
+        // Rejoined: sample one full lap later, when the gap is real again —
+        // unless the car never stopped. A drive-through costs only the lane
+        // transit, and one in the sample set dragged the median 20 s short of
+        // a real stop in the rival-stop replay (2026-10-02). Unknowable
+        // without a per-car speed, so only a car seen MOVING the whole visit
+        // is discarded.
+        const driveThrough = w.laneSpeedSeen === true && w.laneStill !== true;
         w.exitLapsCompleted = known(e.lapsCompleted) ? e.lapsCompleted : undefined;
-        w.awaitingLap = w.entryGapSec !== undefined && w.exitLapsCompleted !== undefined;
+        w.awaitingLap =
+          !driveThrough && w.entryGapSec !== undefined && w.exitLapsCompleted !== undefined;
       } else if (
         w.awaitingLap &&
         !e.inPit &&
@@ -152,23 +188,34 @@ export class PitLossModel {
         e.lapsCompleted >= w.exitLapsCompleted + 1
       ) {
         w.awaitingLap = false;
+        const byClass = w.entryRef === 'class';
+        const nowGap = byClass ? classGap : gap;
+        const nowLaps = byClass ? e.classLapsBehind : e.lapsBehind;
         if (
-          gap !== undefined &&
+          nowGap !== undefined &&
           w.entryGapSec !== undefined &&
           w.entryLapsBehind !== undefined &&
-          e.lapsBehind === w.entryLapsBehind // lost a lap → the seconds wrapped
+          nowLaps === w.entryLapsBehind // lost a lap → the seconds wrapped
         ) {
-          const loss = gap - w.entryGapSec;
+          const loss = nowGap - w.entryGapSec;
           if (loss >= MIN_LOSS_SEC && loss <= MAX_LOSS_SEC) {
             this.samples.push(loss);
             if (this.samples.length > MAX_SAMPLES) this.samples.shift();
           }
         }
       }
+      if (e.inPit && known(e.speedMps)) {
+        w.laneSpeedSeen = true;
+        if (e.speedMps <= 1) w.laneStill = true;
+      }
       w.inPit = !!e.inPit;
       if (!e.inPit) {
-        if (gap !== undefined) w.gapSec = gap;
+        // Kept CURRENT, unknown included: a stale overall gap from before the
+        // car was lapped must not be mistaken for a live one at pit entry.
+        w.gapSec = gap;
         w.lapsBehind = e.lapsBehind;
+        w.classGapSec = classGap;
+        w.classLapsBehind = known(e.classLapsBehind) ? e.classLapsBehind : undefined;
         w.lapsCompleted = known(e.lapsCompleted) ? e.lapsCompleted : w.lapsCompleted;
       }
     }
