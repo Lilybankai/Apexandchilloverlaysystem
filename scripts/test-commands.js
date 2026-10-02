@@ -1185,6 +1185,22 @@ function unit() {
     String(radioNoise('box this lap', SPOKEN)),
   );
 
+  // gapAhead's "laps apart" off the UNFLOORED class counts: 5.95 and 6.05
+  // floor to 5 and 6, which used to speak "1 lap and 2.0 seconds" for a car
+  // two seconds up the road.
+  {
+    const { EngineerCommands } = require('../dist/telemetry/engineerCommands.js');
+    const row = (o) => Object.assign({ slotId: 0, driverName: 'X', carClass: 'GT3', position: 1, classPosition: 1,
+      gapToLeaderSec: 0, gapToClassLeaderSec: 0, lastLapSec: 100, bestLapSec: 100, lapsCompleted: 5, pitStops: 0, inPit: false }, o);
+    const c = new EngineerCommands();
+    c.update({ session: { type: 'race', phase: 'green' }, relative: [], standings: [
+      row({ slotId: 1, driverName: 'Ann Lead', classPosition: 5, position: 5, gapToClassLeaderSec: 30, classLapsBehind: 5, classLapsBehindExact: 5.95 }),
+      row({ slotId: 2, driverName: 'Me Me', isPlayer: true, classPosition: 6, position: 6, gapToClassLeaderSec: 32, classLapsBehind: 6, classLapsBehindExact: 6.05 }),
+    ] });
+    const t = c.answer('gapAhead').text;
+    check('gap ahead never invents a lap from two floored counts', !/lap/.test(t) && /2\.0/.test(t), t);
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }
