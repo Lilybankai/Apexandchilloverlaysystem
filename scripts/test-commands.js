@@ -1063,8 +1063,10 @@ function unit() {
   // exists on one side only, the button either can't reach an answer or hears
   // a phrase nothing will answer. Checked here so it fails in `npm test`, not
   // in a race.
-  const { GRAMMAR, ENGINEER_CALLOUTS, matchGrammarText, matchPositionQuery, radioNoise } = require('../electron/engineer');
-  const gIntents = new Set(GRAMMAR.map((g) => g.intent));
+  const { GRAMMAR, ENGINEER_CALLOUTS, RADIO_CONTROL_INTENTS, matchGrammarText, matchPositionQuery, radioNoise } = require('../electron/engineer');
+  // Radio controls ("keep quiet", "repeat that") are grammar entries with no
+  // command answer — ask() handles them (test-radio-gate.js).
+  const gIntents = new Set(GRAMMAR.map((g) => g.intent).filter((i) => !RADIO_CONTROL_INTENTS.has(i)));
   check(
     'grammar covers every intent',
     COMMAND_INTENTS.every((i) => gIntents.has(i)),

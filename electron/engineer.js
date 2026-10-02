@@ -305,7 +305,37 @@ const GRAMMAR = [
     // wins), or "track temps" would read the tyres.
     phrases: ['weather', 'weather update', 'whats the weather', 'any rain', 'is it going to rain', 'rain coming', 'track temp', 'track temps', 'track temperature', 'air temperature'],
   },
+  // -- Radio -------------------------------------------------------------------
+  // The driver's controls over the radio itself (2026-10-02, radio etiquette).
+  // Not questions: ask() handles them before engineerCommands (radioControl),
+  // and RADIO_CONTROL_INTENTS tells the grammar/commands parity check they
+  // have no answer. Last in the table on purpose — on a length tie a question
+  // phrase wins, and ask() prefers ANY question phrase in the same sentence
+  // over a control ("talk to me about fuel" reads the fuel).
+  //
+  // "Say again" here is the DRIVER asking for a repeat. The engineer's own
+  // "Say again?" (nothing heard) is never what gets repeated (NOT_REPEATABLE),
+  // and a short ask sits below radioNoise's five-word echo floor, so the
+  // driver's "say that again" is never mistaken for our voice coming back.
+  {
+    intent: 'radioQuiet',
+    group: 'Radio',
+    phrases: ['keep quiet', 'radio silence', 'quiet please', 'be quiet', 'stop talking'],
+  },
+  { intent: 'radioTalk', group: 'Radio', phrases: ['talk to me', 'radio on', 'you can talk', 'radio back on'] },
+  { intent: 'radioRepeat', group: 'Radio', phrases: ['repeat', 'repeat that', 'say again', 'say that again', 'come again'] },
 ];
+
+/**
+ * GRAMMAR intents that control the radio rather than ask a question — handled
+ * by EngineerService.radioControl, never by engineerCommands, never the cloud.
+ */
+const RADIO_CONTROL_INTENTS = new Set(['radioQuiet', 'radioTalk', 'radioRepeat']);
+
+/** The engineer's two-word acknowledgements — never what "repeat that" repeats. */
+const RADIO_ACKS = { radioQuiet: 'Copy, quiet.', radioTalk: 'Copy, back on.' };
+const NOTHING_TO_REPEAT = 'Nothing to repeat.';
+const NOT_REPEATABLE = new Set(['Say again?', NOTHING_TO_REPEAT, ...Object.values(RADIO_ACKS)]);
 
 /**
  * The on-demand radio buttons. A wheel / Stream Deck / key press speaks the
@@ -371,11 +401,13 @@ const TRIGGER_TIERS = {
 /**
  * How long a readout may wait for the channel (an answer playing, the driver
  * mid-move) before it is dropped rather than spoken late — the same "expire,
- * never queue" stance as the trigger layer's own hold.
+ * never queue" stance as the trigger layer's own hold. The FALLBACK only: with
+ * the radio gate built (dist/telemetry/radioGate.js) the budget is per urgency,
+ * HOLD_BUDGET_MS there (4 s urgent, 15 s normal, 25 s priority).
  */
 const READOUT_HOLD_MS = 4000;
 
-/** Brake input above this reads as "driver is busy" — no readout right now. */
+/** Brake input above this reads as "driver is busy" — the fallback gate's rule. */
 const BUSY_BRAKE = 0.6;
 
 /* -------------------------------------------------------------------------- */
@@ -554,6 +586,35 @@ function matchGrammarText(text) {
   }
   if (best) return best.intent;
   return fuzzyGrammarMatch(haystack);
+}
+
+/**
+ * A radio control only wins a sentence that asks nothing else: "talk to me
+ * about fuel" is a fuel question, "say again the gap ahead" a gap question.
+ * Given the phrase-list winner, returns the best QUESTION intent in the text
+ * when the winner is a control and a question phrase is also present.
+ */
+function preferQuestion(text, intent) {
+  if (!intent || !RADIO_CONTROL_INTENTS.has(intent)) return intent;
+  const norm = (x) =>
+    ` ${String(x || '')
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\btires?\b/g, (w) => (w === 'tire' ? 'tyre' : 'tyres'))
+      .trim()} `;
+  const haystack = norm(text);
+  let best = null;
+  for (const g of GRAMMAR) {
+    if (RADIO_CONTROL_INTENTS.has(g.intent)) continue;
+    for (const p of g.phrases) {
+      const needle = norm(p);
+      if (needle.trim() && haystack.includes(needle) && (!best || needle.length > best.length)) {
+        best = { intent: g.intent, length: needle.length };
+      }
+    }
+  }
+  return best ? best.intent : intent;
 }
 
 /** Levenshtein distance capped at 2 — enough to test "within 1", cheaply. */
@@ -977,6 +1038,15 @@ class EngineerService {
     this.triggersMod = tryRequire('telemetry/triggers.js');
     this.phrasesMod = tryRequire('telemetry/engineerPhrases.js');
     this.summaryMod = tryRequire('telemetry/engineerSummary.js');
+    // The radio gate: when a proactive line may start (straights, urgency,
+    // the one held line). Missing dist → the old brake/alongside rule.
+    this.gateMod = tryRequire('telemetry/radioGate.js');
+    this.radioGate = this.gateMod ? new this.gateMod.RadioGate() : null;
+    // "Keep quiet" from the driver: non-urgent calls muted until "talk to me"
+    // or the next session. Survives stop()/start() (a voice change) on purpose.
+    this.radioQuiet = false;
+    this.lastLine = null; // the last substantive line spoken — "repeat that"
+    this.clock = () => Date.now(); // hold expiry; tests substitute it
 
     this.running = false;
     this.busy = null; // 'download:<id>' while a download runs
@@ -1218,6 +1288,12 @@ class EngineerService {
     return preset === 'off' || preset === 'standard' ? preset : 'essential';
   }
 
+  /** "Only talk on straights" — on unless the driver turned it off. */
+  onlyStraights() {
+    const settings = this.loadSettings();
+    return !(settings.engineer && settings.engineer.onlyStraights === false);
+  }
+
   /** Completed laps between unchanged practice-pace reminders. */
   practicePaceReminderLaps() {
     const settings = this.loadSettings();
@@ -1264,6 +1340,8 @@ class EngineerService {
       enabled: !!settings.engineerEnabled,
       readouts: this.readoutsPreset(),
       practicePaceReminderLaps: this.practicePaceReminderLaps(),
+      onlyStraights: this.onlyStraights(),
+      radioQuiet: this.radioQuiet,
       volume: this.volumePct(),
       running: this.running,
       engineInstalled: this.engineInstalled(),
@@ -1639,6 +1717,7 @@ class EngineerService {
     this.audioInFlight = 0;
     this.heldReadout = null;
     this.lastFrame = null;
+    if (this.radioGate) this.radioGate.reset();
     this.saidBudgetLine = false;
     stt.release();
     if (this.wavDir) fs.rmSync(this.wavDir, { recursive: true, force: true });
@@ -1671,7 +1750,7 @@ class EngineerService {
         const frame = JSON.parse(data);
         if (!frame || !frame.session) return;
         if (this.commands) this.commands.update(frame);
-        this.lastFrame = frame;
+        this.observeFrame(frame);
         // Track B: the proactive readouts. `triggers.update` is the 0.24 µs
         // edge detector — it returns null on essentially every frame, so this
         // adds nothing measurable to a message handler that already parsed the
@@ -1744,6 +1823,9 @@ class EngineerService {
     this.spokenLog = (this.spokenLog || []).filter((e) => Date.now() - e.atMs < ECHO_WINDOW_MS);
     this.spokenLog.push({ text: String(text || ''), atMs: Date.now() });
     if (this.spokenLog.length > 8) this.spokenLog.shift();
+    // What "repeat that" repeats: the last line with content in it — never a
+    // "Say again?" or a "Copy, quiet." acknowledgement.
+    if (text && !NOT_REPEATABLE.has(String(text).trim())) this.lastLine = String(text);
     if (this.piper && this.piper.stdin.writable) this.piper.stdin.write(text + '\n');
   }
 
@@ -1757,14 +1839,42 @@ class EngineerService {
   /* ---- proactive readouts (Track B) ---------------------------------------- */
 
   /**
-   * `true` while a proactive line would land at a bad moment: a car alongside,
-   * or the driver deep in the brakes. Both reads come from the same frame the
-   * widgets render, and both err quiet — no radar block means no alongside
-   * evidence, not a green light to talk over a battle we can't see.
+   * Every frame off the stream goes through here: the busy check reads the
+   * latest one, and the radio gate learns from all of them (how long the car
+   * has been on a straight, where the straights are). A new session lifts the
+   * driver's "keep quiet" — the panel says so.
    */
-  busyDriving() {
+  observeFrame(frame) {
+    this.lastFrame = frame;
+    if (!this.radioGate || !frame) return;
+    const { sessionChanged } = this.radioGate.observe(frame, Date.now());
+    if (sessionChanged) {
+      this.heldReadout = null; // last session's news
+      if (this.radioQuiet) {
+        this.radioQuiet = false;
+        this.pushStatus();
+      }
+    }
+  }
+
+  /**
+   * `true` while a proactive line would land at a bad moment. With "Only talk
+   * on straights" on (the default) that is anything but a straight — braking,
+   * turning, cornering load, a car alongside, the first seconds after a green
+   * flag, or a straight about to end (the learned map; see radioGate.ts). Off,
+   * it is the old rule: deep in the brakes or side by side. No radar block is
+   * no alongside evidence, and no pedal block reads as clear, as before.
+   *
+   * @param {string} [text]  the line about to start — sizes the runway it needs
+   * @param {number} [waitedMs]  how long it has been held — a line that has
+   *        waited a few seconds takes any straight, not only a long one
+   */
+  busyDriving(text, waitedMs) {
     const frame = this.lastFrame;
     if (!frame) return false;
+    if (this.radioGate) {
+      return !this.radioGate.verdict(frame, { onlyStraights: this.onlyStraights(), text, waitedMs }).clear;
+    }
     const pedals = frame.player && frame.player.pedals;
     if (pedals && typeof pedals.brake === 'number' && pedals.brake > BUSY_BRAKE) return true;
     const radar = frame.radar;
@@ -1785,35 +1895,91 @@ class EngineerService {
     if (!tier) return; // unknown kind never speaks by accident
     if (tier === 'standard' && preset !== 'standard') return;
     const text = this.phrasesMod.phraseForCue(cue, frame);
-    if (text) this.sayReadout(text);
+    const lead = cue.triggers && cue.triggers[0];
+    if (text) this.sayReadout(text, { kind: cue.kind, priority: lead ? lead.priority : 0 });
+  }
+
+  /** The urgency tier of a trigger kind (radioGate.urgencyOf); 'normal' without the gate. */
+  urgencyOf(kind) {
+    return this.gateMod ? this.gateMod.urgencyOf(kind) : 'normal';
   }
 
   /**
-   * Speak a readout if the channel is free and the driver isn't mid-move;
-   * otherwise hold it — briefly. The driver's question always wins (ask()
-   * clears the hold), and a line that waits past {@link READOUT_HOLD_MS} is
-   * dropped: an engineer telling you about a rival's stop half a minute late
-   * is worse than one who said nothing.
+   * Speak a readout if the channel is free and the moment is right; otherwise
+   * hold it — briefly, and only one. An URGENT kind (red flag, safety car, a
+   * yellow ahead, penalty, box this lap, green flag, blue flags) ignores the
+   * driving check and waits only for the channel; everything else waits for
+   * a straight. A held line expires on its urgency's budget rather than
+   * speaking late, a newer line replaces it unless the held one outranks it
+   * (urgent > priority > requested > normal — radioGate.ts KIND_URGENCY),
+   * the driver's question always wins (ask() clears the hold), and "keep
+   * quiet" drops everything that is not urgent.
+   *
+   * Every caller passes the KIND: a line without one is routine (`normal`),
+   * so a driver-requested report (fuelTargetLap) must say what it is or it
+   * can be pushed off the slot by a position change on the same lap edge.
+   *
+   * @param {string} text
+   * @param {{ kind?: string, priority?: number }} [meta]  the cue's lead trigger
    */
-  sayReadout(text) {
-    if (!this.asking && this.audioInFlight === 0 && !this.busyDriving()) {
+  sayReadout(text, meta) {
+    const kind = (meta && meta.kind) || null;
+    const urgency = this.urgencyOf(kind);
+    if (this.radioQuiet && urgency !== 'urgent') return; // the driver asked for quiet
+    const channelFree = !this.asking && this.audioInFlight === 0;
+    if (channelFree && (urgency === 'urgent' || !this.busyDriving(text))) {
       this.speak(text);
       return;
     }
-    this.heldReadout = { text, expiresAt: Date.now() + READOUT_HOLD_MS };
+    const now = this.clock();
+    const budget = this.gateMod ? this.gateMod.HOLD_BUDGET_MS[urgency] : READOUT_HOLD_MS;
+    const line = {
+      text,
+      kind,
+      urgency,
+      priority: (meta && Number(meta.priority)) || 0,
+      heldAtMs: now,
+      expiresAt: now + budget,
+    };
+    this.heldReadout = this.gateMod ? this.gateMod.keepHeld(this.heldReadout, line) : line;
   }
 
   /** Re-check the one held readout — rides the frame stream and PLAYED lines. */
   pumpHeldReadout() {
     const held = this.heldReadout;
     if (!held) return;
-    if (Date.now() > held.expiresAt) {
+    if (this.clock() > held.expiresAt) {
       this.heldReadout = null; // stale — dropped, never spoken late
       return;
     }
-    if (this.asking || this.audioInFlight > 0 || this.busyDriving()) return;
+    const urgent = held.urgency === 'urgent';
+    if (this.radioQuiet && !urgent) {
+      this.heldReadout = null;
+      return;
+    }
+    if (this.asking || this.audioInFlight > 0) return;
+    if (!urgent && this.busyDriving(held.text, this.clock() - held.heldAtMs)) return;
     this.heldReadout = null;
     this.speak(held.text);
+  }
+
+  /**
+   * The driver's radio controls (push-to-talk, Tier 1, local): "keep quiet",
+   * "talk to me", "repeat that". Each answers at once — the driver asked.
+   * Returns the line spoken.
+   */
+  radioControl(intent) {
+    if (intent === 'radioQuiet' || intent === 'radioTalk') {
+      const quiet = intent === 'radioQuiet';
+      this.radioQuiet = quiet;
+      if (quiet && this.heldReadout && this.heldReadout.urgency !== 'urgent') this.heldReadout = null;
+      this.speak(RADIO_ACKS[intent]);
+      this.pushStatus();
+      return RADIO_ACKS[intent];
+    }
+    const line = this.lastLine || NOTHING_TO_REPEAT;
+    this.speak(line);
+    return line;
   }
 
   /** Two rising beeps through the radio band — "channel open, go ahead". */
@@ -1929,6 +2095,10 @@ class EngineerService {
       // "what's the gap to P10" confidently matches 'whats the gap' and would
       // answer the car ahead � the very relabelling the position parser below
       // exists to stop. Those go through whisper like everything else.
+      if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && RADIO_CONTROL_INTENTS.has(heard.intent)) {
+        this.radioControl(heard.intent);
+        return { ok: true, outcome: this.noteOutcome('tier1') };
+      }
       if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.commands) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
@@ -1991,8 +2161,11 @@ class EngineerService {
         }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
-        const intent =
-          matchGrammarText(question) || matchGrammarText(sapiText);
+        const intent = preferQuestion(question, matchGrammarText(question)) || preferQuestion(sapiText, matchGrammarText(sapiText));
+        if (intent && RADIO_CONTROL_INTENTS.has(intent)) {
+          this.radioControl(intent);
+          return { ok: true, outcome: this.noteOutcome('tier1') };
+        }
         if (intent && this.commands) {
           const answer = this.commands.answer(intent);
           this.speak(answer.text);
@@ -2208,6 +2381,8 @@ module.exports = {
   GRAMMAR,
   ENGINEER_CALLOUTS,
   ENGINEER_OUTCOMES,
+  RADIO_CONTROL_INTENTS,
+  TRIGGER_TIERS,
   OUTCOME_SLUG_PREFIX,
   sampleUrl,
   matchGrammarText,

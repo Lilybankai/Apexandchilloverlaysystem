@@ -133,9 +133,11 @@ function leadSentence(
         const zone = sec ? `Yellow in ${sec}` : 'Yellow flags out';
         const at = where ? `, ${where}` : '';
         return pick(v, [
-          `${zone} — ${who} is stopped${at}. No passing in the zone.`,
-          `${zone}. ${who}'s off${at} — watch for the car.`,
-          `Caution — ${who} stopped${at}. ${sec ? `Yellow in ${sec}, ` : ''}keep it tidy through there.`,
+          // ≤ 14 words with the distance in (test-radio-gate): the rule
+          // reminder rides only when there is no distance to say.
+          `${zone} — ${who} is stopped${at}.${at ? '' : ' No passing in the zone.'}`,
+          `${zone}. ${who}'s off${at} — careful.`,
+          `Caution — ${who} stopped${at}. ${sec ? `Yellow, ${sec}.` : 'Keep it tidy.'}`,
         ]);
       }
       if (f.all === true || secs.length === 0) {
@@ -225,7 +227,7 @@ function leadSentence(
         ]);
       }
       if (severity === 'major') {
-        const fix = repair ? ` About ${Math.round(repair)} seconds to fix if you box.` : '';
+        const fix = repair ? ` ${Math.round(repair)} seconds to fix if you box.` : '';
         return pick(v, [
           `${again ? 'More contact' : 'Contact'} — major damage.${fix}`,
           `${again ? 'Contact again' : 'Contact'} — you've picked up major damage.${fix}`,
@@ -337,9 +339,9 @@ function leadSentence(
         if (who && gap !== undefined) {
           const g = speakableGap(gap);
           return pick(v, [
-            `Blue flags — ${who}${cls} is lapping you, ${g} back. Let them through cleanly.`,
-            `${who} coming up to lap you, ${g} behind. Hold your line, don't fight it.`,
-            `Car a lap up behind — ${who}, ${g}. Blue flags, make it easy for them.`,
+            `Blue flags — ${who}${cls} lapping you, ${g} back. Let them through.`,
+            `${who} coming to lap you, ${g} behind. Hold your line, don't fight it.`,
+            `Car a lap up — ${who}, ${g}. Blue flags, make it easy for them.`,
           ]);
         }
         return pick(v, [
@@ -352,7 +354,7 @@ function leadSentence(
         return pick(v, [
           `Blue flags — ${who} closing, ${g} back. Hold your line.`,
           `Faster class behind — ${who}, ${g}. Stay predictable, don't lose time.`,
-          `${who} coming through, ${g} back. Blue flags — hold your line, they'll find a way.`,
+          `${who} coming through, ${g} back. Blue flags — hold your line.`,
         ]);
       }
       return pick(v, [
@@ -380,14 +382,14 @@ function leadSentence(
       if (reason === 'first') {
         return pick(v, [
           `First benchmark, ${time}. ${band} pace — ${target}.`,
-          `Reference pace is live. Best lap ${time}, ${band} band — ${target}.`,
-          `We've got a benchmark: ${time}. That is ${band} pace, ${target}.`,
+          `Reference pace is live. Best ${time}, ${band} band — ${target}.`,
+          `We've got a benchmark: ${time}. ${band} pace, ${target}.`,
         ]);
       }
       if (reason === 'band-improved') {
         return pick(v, [
           `That moves us into ${band} pace — ${time}, ${target}.`,
-          `Good step. ${time} puts us in the ${band} band — ${target}.`,
+          `Good step. ${time} — ${band} band, ${target}.`,
           `New pace band: ${band}. Best is ${time}, ${target}.`,
         ]);
       }
@@ -449,4 +451,29 @@ export function phraseForCue(
     if (addon) return `${sentence} ${addon}`;
   }
   return sentence;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Line discipline                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The longest a proactive line may run, in spoken words. Real engineers are
+ * brief because the driver is busy: at Piper's ~2.8 words a second, fourteen
+ * words is five seconds of radio — most of a straight. Every bank above is
+ * held to it by scripts/test-radio-gate.js; a new kind gets the same check by
+ * adding its facts to that sweep.
+ */
+export const MAX_SPOKEN_WORDS = 14;
+
+/** Spoken words in a line — dashes and other bare punctuation are not words. */
+export function spokenWordCount(text: unknown): number {
+  return String(text ?? '')
+    .split(/\s+/)
+    .filter((w) => /[a-z0-9]/i.test(w)).length;
+}
+
+/** `true` when a line breaks {@link MAX_SPOKEN_WORDS}. */
+export function lineTooLong(text: unknown, max: number = MAX_SPOKEN_WORDS): boolean {
+  return spokenWordCount(text) > max;
 }

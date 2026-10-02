@@ -360,6 +360,8 @@ function defaultSettings() {
     // samples themselves — the player sidecar has no volume control.
     // `practicePaceReminderLaps` controls unchanged reference-pace reminders;
     // first benchmarks and faster-band moves are always called on Standard.
+    // `onlyStraights` (default true) holds non-urgent calls for a straight —
+    // see src/telemetry/radioGate.ts.
     engineer: { ...DEFAULT_ENGINEER_SETTINGS },
     // Saved widget placement in the in-game layer:
     // { [id]: {x, y, scale, w?, h?} } — w/h are the operator's edge-resized
