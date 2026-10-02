@@ -1175,9 +1175,10 @@ function unit() {
   // Real asks the guard must never swallow: racing questions the cloud answers.
   // A target LAP TIME is a pace question — not the fuel target's "whats my
   // target", not lastLap's "lap time" (merge review, 2026-10-02).
-  routes('target lap time is the competitive pace', 'paceCompetitive', [
-    "what's my target lap time", 'what is my target lap time', 'target time',
-  ]);
+  for (const q of ["what's my target lap time", 'what is my target lap time', 'target time']) {
+    check(`"${q}" is the competitive pace`, matchGrammarText(q) === 'paceCompetitive', String(matchGrammarText(q)));
+  }
+  check('"what\'s my target" is still the fuel target', matchGrammarText("what's my target") === 'fuelTarget');
   routes('real questions survive', 'cloud', [
     'session update', 'retired a car', 'round of the pack', 'and the next lap.',
     'box to retire the car.', 'overall', 'status.', 'and the', 'car at',
