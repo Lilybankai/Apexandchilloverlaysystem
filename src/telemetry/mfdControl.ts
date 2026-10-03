@@ -646,6 +646,124 @@ export function isServiceRow(name: string): boolean {
   return false;
 }
 
+/* --------------------------- the brake-change guard ----------------------- */
+
+/**
+ * Whether a pit row is the **brake change**: the row that, left on yes, has
+ * the crew swap the discs and adds about two minutes to the stop.
+ *
+ * Matched loosely (any row naming BRAKE that is not a duct) because no captured
+ * payload carries the row yet, and the guard below is worth nothing if it misses
+ * it. Over-matching costs nothing: the guard only ever restores a row's own
+ * steady value, and never touches the row a write is aimed at.
+ */
+export function isBrakeChangeRow(name: string | undefined | null): boolean {
+  const upper = String(name || '').toUpperCase();
+  return upper.includes('BRAKE') && !upper.includes('DUCT');
+}
+
+/**
+ * Polls a brake-change value must hold for before the guard trusts it. At the
+ * provider's 500 ms pit-menu poll, three is a second to a second and a half.
+ */
+const BRAKE_STEADY_POLLS = 3;
+/** A steady value older than this is from a menu we are no longer watching. */
+const BRAKE_SEEN_FRESH_MS = 5000;
+
+interface BrakeSeen {
+  /** The value in the latest poll. */
+  value: number;
+  /** How many polls in a row have read `value`. */
+  run: number;
+  /** The last value that held for {@link BRAKE_STEADY_POLLS}, or null. */
+  steady: number | null;
+  /** `Date.now()` of the latest poll that carried this row. */
+  at: number;
+}
+
+/**
+ * The brake-change rows as the provider's poll has seen them, by row id.
+ *
+ * Module-level on purpose: the provider polls the menu and the controller
+ * writes it, both in the one Electron main process, and neither owns the other.
+ */
+const brakeSeen = new Map<string, BrakeSeen>();
+
+function pitRowId(r: RawPitRow): string {
+  return typeof r['PMC Value'] === 'number' ? `pmc:${r['PMC Value']}` : `name:${r.name ?? ''}`;
+}
+
+/**
+ * Feeds one poll of the pit menu to the brake-change guard. Called by the
+ * provider on every `receivePitMenu` it reads.
+ */
+export function notePitMenuPoll(rows: RawPitRow[] | null | undefined, now = Date.now()): void {
+  if (!Array.isArray(rows)) return;
+  for (const r of rows) {
+    if (!r || !isBrakeChangeRow(r.name) || typeof r.currentSetting !== 'number') continue;
+    const id = pitRowId(r);
+    const seen = brakeSeen.get(id);
+    const next: BrakeSeen =
+      seen && seen.value === r.currentSetting
+        ? { ...seen, run: seen.run + 1, at: now }
+        : { value: r.currentSetting, run: 1, steady: seen ? seen.steady : null, at: now };
+    if (next.run >= BRAKE_STEADY_POLLS) next.steady = next.value;
+    brakeSeen.set(id, next);
+  }
+}
+
+/** A brake-change row the driver set through us is steady from that moment. */
+function noteBrakeWritten(r: RawPitRow, now = Date.now()): void {
+  if (!isBrakeChangeRow(r.name) || typeof r.currentSetting !== 'number') return;
+  brakeSeen.set(pitRowId(r), {
+    value: r.currentSetting,
+    run: BRAKE_STEADY_POLLS,
+    steady: r.currentSetting,
+    at: now,
+  });
+}
+
+/**
+ * Puts every brake-change row the write is NOT aimed at back to its steady
+ * value, in place, and returns what it changed.
+ *
+ * Every pit write posts the WHOLE menu back (`loadPitMenu` takes the array), so
+ * whatever the brake row read as in that one fetch is what gets saved. LMU is
+ * known to flick that row between yes and no while the pit menu refreshes —
+ * reading `RepairAndRefuel` triggers it (TinyPedal #116) — and a read that lands
+ * on the flicker would turn a harmless redraw into a real brake change and two
+ * minutes in the box, from a press that was about fuel. A value the poll has
+ * not seen hold is not one this app gets to commit.
+ *
+ * Left as read when the poll has no steady value to offer (not polling, or the
+ * row is new): there is nothing better to send, and the read is no worse than
+ * before the guard existed.
+ */
+export function holdBrakeRows(
+  menu: RawPitRow[],
+  targets: readonly RawPitRow[] = [],
+  now = Date.now(),
+): string[] {
+  const held: string[] = [];
+  for (const r of menu) {
+    if (!r || !isBrakeChangeRow(r.name) || targets.includes(r)) continue;
+    const seen = brakeSeen.get(pitRowId(r));
+    if (!seen || seen.steady == null || now - seen.at > BRAKE_SEEN_FRESH_MS) continue;
+    const count = Array.isArray(r.settings) ? r.settings.length : 0;
+    if (seen.steady < 0 || (count > 0 && seen.steady >= count)) continue;
+    if (r.currentSetting !== seen.steady) {
+      held.push(`${r.name} ${String(r.currentSetting)}→${seen.steady}`);
+      r.currentSetting = seen.steady;
+    }
+  }
+  return held;
+}
+
+/** Test seam: forget everything the guard has seen. */
+export function resetBrakeGuard(): void {
+  brakeSeen.clear();
+}
+
 /**
  * Collapses the four per-corner tyre rows into one compound control.
  *
@@ -810,7 +928,7 @@ export class MfdController {
       appliedText = set.options[applied]!;
       // A corner is subject to the same "the sim did not take it" behaviour as
       // the all-four row — see readTyreCompound.
-      const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+      const res = await this.postPitMenu(menu, [row]);
       if (!res.ok) return res;
       const after = await this.getJson<RawPitRow[]>('/rest/garage/PitMenu/receivePitMenu');
       const now = Array.isArray(after)
@@ -835,7 +953,7 @@ export class MfdController {
       appliedText = row.settings?.[applied]?.text?.trim() ?? '';
     }
 
-    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    const res = await this.postPitMenu(menu, [row]);
     return res.ok ? { ...res, applied, appliedText } : res;
   }
 
@@ -888,7 +1006,7 @@ export class MfdController {
       // change, and a "nothing to do" failure would read as a broken button.
       return { ok: true, status: 200, cleared };
     }
-    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    const res = await this.postPitMenu(menu, []);
     return res.ok ? { ...res, cleared } : res;
   }
 
@@ -933,7 +1051,7 @@ export class MfdController {
       // clearPitService: a state was asked for, and it holds.
       return { ok: true, status: 200, restored };
     }
-    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    const res = await this.postPitMenu(menu, []);
     return res.ok ? { ...res, restored } : res;
   }
 
@@ -1011,7 +1129,7 @@ export class MfdController {
       if (allSet.raw[wanted] != null) all.currentSetting = allSet.raw[wanted]!;
     }
 
-    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    const res = await this.postPitMenu(menu, all ? [...corners, all] : corners);
     if (!res.ok) return res;
     return { ...res, ...(await this.readTyreCompound(wanted, sets[0]!)) };
   }
@@ -1149,6 +1267,24 @@ export class MfdController {
       req.on('error', () => resolve(null));
       req.on('timeout', () => req.destroy());
     });
+  }
+
+  /**
+   * The one way a pit menu is written: the whole array, with every brake-change
+   * row the write is not aimed at held to its steady value first (see
+   * {@link holdBrakeRows}). `targets` are the rows this write means to change.
+   */
+  private async postPitMenu(
+    menu: RawPitRow[],
+    targets: readonly RawPitRow[],
+  ): Promise<MfdWriteResult> {
+    const held = holdBrakeRows(menu, targets);
+    // Always logged, not only when verbose: this is the evidence of whether
+    // LMU's flicker ever reaches a REST read, which nothing else records.
+    if (held.length > 0) console.warn(`[mfd] brake change held to steady value: ${held.join(', ')}`);
+    const res = await this.post('/rest/garage/PitMenu/loadPitMenu', menu);
+    if (res.ok) for (const t of targets) noteBrakeWritten(t);
+    return res;
   }
 
   private post(path: string, body: unknown): Promise<MfdWriteResult> {

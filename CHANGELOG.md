@@ -4,12 +4,21 @@
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed.
 
+-->
+
+## 1.3.3 — 2026-10-03
+
+<!-- internal -->
+
 ### Changed
 
 - **Thursday league Season 2.** The Schedule tab now shows the new Thursday
   championship on SimGrid, so its races and sign-up link are for Season 2
   instead of the finished Season 1.
--->
+
+### Fixed
+
+- **General stability and reliability fixes.**
 
 ## 1.3.2 — 2026-10-02
 

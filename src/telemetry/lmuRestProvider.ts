@@ -80,7 +80,7 @@ import {
   type TrackMapState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
-import { buildMfdState, type RawGarageVal, type RawPitRow } from './mfdControl';
+import { buildMfdState, notePitMenuPoll, type RawGarageVal, type RawPitRow } from './mfdControl';
 import {
   EMPTY_PACE_DELTAS,
   LocalPaceDeltaTracker,
@@ -1452,6 +1452,8 @@ export class LmuRestProvider implements TelemetryProvider {
       if (Array.isArray(pit)) {
         this.pitMenuRaw = pit;
         this.lastMfdOkAt = Date.now();
+        // What the brake-change guard learns the row's steady value from.
+        notePitMenuPoll(pit, this.lastMfdOkAt);
       }
     } finally {
       this.pitMenuInFlight = false;

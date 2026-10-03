@@ -31,7 +31,13 @@ const {
   projectPitMenu,
   projectTyreControl,
   tyreOptionSet,
+  isBrakeChangeRow,
+  notePitMenuPoll,
+  holdBrakeRows,
+  resetBrakeGuard,
+  MfdController,
 } = require('../dist/telemetry/mfdControl');
+const http = require('node:http');
 
 let passed = 0;
 let failed = 0;
@@ -715,5 +721,144 @@ console.log('\n7) What scrolling SERVE back to OFF refills');
     ['FUEL:', 'VIRTUAL ENERGY:'].every((n) => isFuelRow(n) && isServiceRow(n)));
 }
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed === 0 ? 0 : 1);
+/* ---------------------------- brake-change guard -------------------------- */
+// LMU flicks the brake-change row between yes and no while the pit menu
+// refreshes (TinyPedal #116). Every pit write posts the whole menu back, so a
+// read that lands on the flicker would commit a brake change — two minutes in
+// the box — from a press that was about fuel. Reported live 2026-10-03.
+
+/** The brake-change row, as the guard has to assume it looks. */
+const brakes = (current) => ({
+  'PMC Value': 40,
+  name: 'REPLACE BRAKES:',
+  currentSetting: current,
+  settings: [{ text: 'No' }, { text: 'Yes' }],
+});
+const ratio = (current) => ({
+  'PMC Value': 12,
+  name: 'FUEL RATIO:',
+  currentSetting: current,
+  settings: [{ text: '1.00' }, { text: '1.05' }, { text: '1.10' }],
+});
+const poll = (n, value, t0) => {
+  for (let i = 0; i < n; i++) notePitMenuPoll([ratio(0), brakes(value)], t0 + i * 500);
+};
+
+{
+  check('a brake-change row is recognised', isBrakeChangeRow('REPLACE BRAKES:'));
+  check('…however LMU words it', isBrakeChangeRow('Brakes:') && isBrakeChangeRow('CHANGE BRAKES'));
+  check('a brake DUCT is not a brake change', !isBrakeChangeRow('F BRAKE DUCT:'));
+  check('fuel is not a brake change', !isBrakeChangeRow('FUEL RATIO:'));
+  check('no name is not a brake change', !isBrakeChangeRow(undefined) && !isBrakeChangeRow(''));
+}
+
+{
+  resetBrakeGuard();
+  const t0 = 1_000_000;
+  poll(3, 0, t0); // steady on No
+  const menu = [ratio(1), brakes(1)]; // the write's read caught the flicker on Yes
+  const held = holdBrakeRows(menu, [menu[0]], t0 + 1500);
+  check('a flickered Yes is put back to the steady No', menu[1].currentSetting === 0);
+  check('…and reported', held.length === 1, held.join());
+  check('the row the write is FOR is untouched', menu[0].currentSetting === 1);
+}
+
+{
+  resetBrakeGuard();
+  const t0 = 2_000_000;
+  poll(3, 0, t0);
+  const menu = [ratio(0), brakes(1)];
+  holdBrakeRows(menu, [menu[1]], t0 + 1500);
+  check('a write AIMED at the brake row keeps its value', menu[1].currentSetting === 1);
+}
+
+{
+  resetBrakeGuard();
+  const t0 = 3_000_000;
+  poll(2, 1, t0); // never held long enough to trust
+  const menu = [ratio(0), brakes(0)];
+  holdBrakeRows(menu, [menu[0]], t0 + 1000);
+  check('a value seen for only two polls is not trusted', menu[1].currentSetting === 0);
+}
+
+{
+  resetBrakeGuard();
+  const t0 = 4_000_000;
+  poll(3, 0, t0);
+  poll(1, 1, t0 + 1500); // one flicker poll does not move the steady value
+  const menu = [ratio(0), brakes(1)];
+  holdBrakeRows(menu, [menu[0]], t0 + 2000);
+  check('one flickered poll does not become the steady value', menu[1].currentSetting === 0);
+  poll(3, 1, t0 + 2000); // the driver really set Yes in the game
+  const again = [ratio(0), brakes(1)];
+  holdBrakeRows(again, [again[0]], t0 + 3500);
+  check('a Yes the driver really set (held three polls) is kept', again[1].currentSetting === 1);
+}
+
+{
+  resetBrakeGuard();
+  const t0 = 5_000_000;
+  poll(3, 0, t0);
+  const menu = [ratio(0), brakes(1)];
+  holdBrakeRows(menu, [menu[0]], t0 + 60_000);
+  check('a steady value from a poll that stopped long ago is not used', menu[1].currentSetting === 1);
+}
+
+{
+  resetBrakeGuard();
+  const menu = [ratio(0), brakes(1)];
+  holdBrakeRows(menu, [menu[0]]);
+  check('no poll at all leaves the row as read', menu[1].currentSetting === 1);
+}
+
+/**
+ * The guard through the real controller, against a stand-in for LMU: a fuel
+ * press whose read catches the flicker must not post a brake change.
+ */
+async function controllerChecks() {
+  resetBrakeGuard();
+  poll(3, 0, Date.now() - 1500);
+  let posted = null;
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/rest/garage/PitMenu/receivePitMenu') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([ratio(0), brakes(1)])); // the read lands on the flicker
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/rest/garage/PitMenu/loadPitMenu') {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        posted = JSON.parse(body);
+        res.writeHead(200);
+        res.end();
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...a) => warned.push(a.join(' '));
+  try {
+    const c = new MfdController({ lmuApiPort: port });
+    const res = await c.setPitRow({ name: 'FUEL RATIO:' }, { delta: 1 });
+    check('the fuel press lands', res.ok && posted != null);
+    const pb = posted && posted.find((r) => r.name === 'REPLACE BRAKES:');
+    const pr = posted && posted.find((r) => r.name === 'FUEL RATIO:');
+    check('…with the fuel ratio stepped', !!pr && pr.currentSetting === 1);
+    check('…and the brake change posted as the steady No', !!pb && pb.currentSetting === 0);
+    check('…and the hold is logged', warned.some((w) => w.includes('brake change held')));
+  } finally {
+    console.warn = warn;
+    server.close();
+  }
+}
+
+controllerChecks().then(() => {
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  process.exit(failed === 0 ? 0 : 1);
+});

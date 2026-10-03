@@ -29,8 +29,12 @@
  *   aid  →  the driving aids LMU has bound to a key          DRIVING AIDS
  *
  * A control that cannot be reached by ▲ ▼ is a control a driver cannot use, so
- * "adjustable but not walked" is a bug, not a design choice — the one deliberate
- * exception is the PENALTIES readout, which is a reading and has nothing to set.
+ * "adjustable but not walked" is a bug, not a design choice — with two
+ * deliberate exceptions. The PENALTIES readout is a reading and has nothing to
+ * set. The BRAKE CHANGE row is left out because one stray + on it costs about
+ * two minutes in the box: a cursor left parked there turns any press of a
+ * wheel button the game also uses into a brake change nobody asked for. It
+ * stays settable with the mouse on the widget, and in the game's own MFD.
  * Keeping this order identical to the widget's is not cosmetic either: a cursor
  * that jumps from the bottom of one group to the middle of another reads as the
  * highlight teleporting, which is how the previous split list felt.
@@ -50,7 +54,12 @@
  * how the highlight ended up on PIT REQUEST and a pit row at the same time.
  */
 
-import { isAllFourTyreRow, projectTyreControl, type MfdController } from '../telemetry/mfdControl';
+import {
+  isAllFourTyreRow,
+  isBrakeChangeRow,
+  projectTyreControl,
+  type MfdController,
+} from '../telemetry/mfdControl';
 
 /** A pit row as LMU's `receivePitMenu` returns it. */
 export interface PitMenuRow {
@@ -248,7 +257,7 @@ export function composeRows(
   if (Array.isArray(simRows)) {
     const tyres = projectTyreControl(simRows);
     for (const r of simRows) {
-      if (r && typeof r.name === 'string' && r.name) {
+      if (r && typeof r.name === 'string' && r.name && !isBrakeChangeRow(r.name)) {
         rows.push(pitRow(r, controller, pitRowText(r, tyres)));
       }
     }

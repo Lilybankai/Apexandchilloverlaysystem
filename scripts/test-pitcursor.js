@@ -76,6 +76,17 @@ const pitOnly = (menu) => composeRows(menu, null);
 
 const keys = (rows) => rows.map((r) => r.key).join();
 
+console.log('\n0) The brake-change row is never walked');
+{
+  // One stray + on it is two minutes in the box, and a wheel button the game
+  // also uses fires on both — so the cursor must never be able to sit there.
+  const menu = [...FULL, row('REPLACE BRAKES:', 40, ['No', 'Yes']), row('F BRAKE DUCT:', 41)];
+  const walked = pitOnly(menu).map((r) => r.name);
+  check('REPLACE BRAKES is not in the walked list', !walked.includes('REPLACE BRAKES:'), walked.join());
+  check('a brake DUCT still is', walked.includes('F BRAKE DUCT:'));
+  check('nothing else is dropped', walked.length === FULL.length + 1);
+}
+
 console.log('\n1) The cursor follows its ROW, not its index');
 
 {
