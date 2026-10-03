@@ -66,7 +66,7 @@ launch 2026-08-14.
 - Local lap log v5 since 2026-07-27 (time, sectors, clean/dirty reasons, track,
   car, class, session type, fuel, wear, compound, temps). Cloud gets only
   per-day counts + best-per-class (`lapUpload.js`, idempotent, no queue).
-- SimGrid: desktop Schedule tab (`electron/simgrid.js`, 25619 Thu / 24215 Sat)
+- SimGrid: desktop Schedule tab (`electron/simgrid.js`, 28052 Thu / 24215 Sat)
   + the site's `ac-simgrid-lmu` WordPress plugin. Key is baked into the
   desktop client → browser needs an edge-function proxy.
 - **Session origin: partial.** LMU's local REST publishes NO server name
