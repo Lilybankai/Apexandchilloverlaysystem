@@ -3,6 +3,12 @@
 <!-- Unreleased — move under the next version heading when it is cut. The
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed.
+
+### Changed
+
+- **Thursday league Season 2.** The Schedule tab now shows the new Thursday
+  championship on SimGrid, so its races and sign-up link are for Season 2
+  instead of the finished Season 1.
 -->
 
 ## 1.3.2 — 2026-10-02

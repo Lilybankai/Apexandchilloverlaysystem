@@ -7,7 +7,7 @@
  * sign up through. The Bearer token never crosses the preload bridge — the
  * renderer only ever sees https://www.thesimgrid.com/… links.
  *
- * Championship ids are the league's own: Thursday 25619, Saturday 24215.
+ * Championship ids are the league's own: Thursday 28052, Saturday 24215.
  * Override the key with APEX_SIMGRID_KEY if a build needs a different one.
  *
  * No Electron imports — getSchedule is unit-tested headless.
@@ -21,7 +21,7 @@ const SITE = 'https://www.thesimgrid.com';
 
 /** League championships the Schedule tab shows, in display order. */
 const LEAGUES = [
-  { id: 25619, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3' },
+  { id: 28052, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3' },
   { id: 24215, day: 'saturday', label: 'Saturday league', hint: 'GT3' },
 ];
 

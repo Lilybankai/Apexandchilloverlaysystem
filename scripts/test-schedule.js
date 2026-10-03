@@ -28,16 +28,16 @@ function check(name, cond, detail) {
   }
 }
 
-const THURSDAY_SPEC = simgrid.LEAGUES.find((l) => l.id === 25619);
+const THURSDAY_SPEC = simgrid.LEAGUES.find((l) => l.id === 28052);
 const SATURDAY_SPEC = simgrid.LEAGUES.find((l) => l.id === 24215);
 
 /* A reduced GridOS championship: two finished rounds and two still to run. */
 const RAW = {
-  id: 25619,
+  id: 28052,
   name: 'LMU Apex And Chill Thursday League LMP2 & GT3',
   game_name: 'Le Mans Ultimate',
-  url: 'https://www.thesimgrid.com/championships/25619',
-  results_url: 'https://www.thesimgrid.com/championships/25619/results',
+  url: 'https://www.thesimgrid.com/championships/28052',
+  results_url: 'https://www.thesimgrid.com/championships/28052/results',
   discord_url: 'https://discord.gg/3sKF42Pk8e',
   accepting_registrations: true,
   spots_taken: 35,
@@ -90,7 +90,7 @@ const RAW = {
 const NOW = Date.parse('2026-08-21T17:00:00.000Z');
 
 console.log('\nleague ids');
-check('Thursday championship is 25619', THURSDAY_SPEC && THURSDAY_SPEC.id === 25619);
+check('Thursday championship is 28052', THURSDAY_SPEC && THURSDAY_SPEC.id === 28052);
 check('Saturday championship is 24215', SATURDAY_SPEC && SATURDAY_SPEC.id === 24215);
 check('Thursday labelled Thursday', THURSDAY_SPEC && THURSDAY_SPEC.day === 'thursday');
 check('Saturday labelled Saturday', SATURDAY_SPEC && SATURDAY_SPEC.day === 'saturday');
@@ -98,10 +98,10 @@ check('Saturday labelled Saturday', SATURDAY_SPEC && SATURDAY_SPEC.day === 'satu
 console.log('\nleagueOf — shape and order');
 {
   const league = simgrid.leagueOf(RAW, THURSDAY_SPEC, NOW);
-  check('keeps championship id', league.id === 25619);
+  check('keeps championship id', league.id === 28052);
   check('keeps the SimGrid name', league.name.includes('Thursday'));
-  check('signup url is the championship page', league.url === simgrid.championshipUrl(25619));
-  check('results url is the results page', league.url.endsWith('/25619') && league.resultsUrl.endsWith('/results'));
+  check('signup url is the championship page', league.url === simgrid.championshipUrl(28052));
+  check('results url is the results page', league.url.endsWith('/28052') && league.resultsUrl.endsWith('/results'));
   check('discord invite survives', league.discordUrl === 'https://discord.gg/3sKF42Pk8e');
   check('registration flag', league.accepting === true);
   check('spots 35/38', league.spotsTaken === 35 && league.capacity === 38);
@@ -129,7 +129,7 @@ console.log('\nleagueOf — hostile input');
 {
   const league = simgrid.leagueOf(
     {
-      id: 25619,
+      id: 28052,
       name: 'X',
       url: 'https://evil.example/phish',
       results_url: 'javascript:alert(1)',
@@ -155,8 +155,8 @@ console.log('\nleagueOf — hostile input');
     THURSDAY_SPEC,
     NOW,
   );
-  check('hostile championship url replaced', league.url === simgrid.championshipUrl(25619), league.url);
-  check('hostile results url replaced', league.resultsUrl === simgrid.resultsUrl(25619), league.resultsUrl);
+  check('hostile championship url replaced', league.url === simgrid.championshipUrl(28052), league.url);
+  check('hostile results url replaced', league.resultsUrl === simgrid.resultsUrl(28052), league.resultsUrl);
   check('hostile discord dropped', league.discordUrl === null);
   check('hostile image dropped', league.image === null);
   check('hostile track photo dropped', league.races[0].track.photo === null);
@@ -165,10 +165,10 @@ console.log('\nleagueOf — hostile input');
 }
 
 console.log('\nisSimGridUrl');
-check('championship page allowed', simgrid.isSimGridUrl('https://www.thesimgrid.com/championships/25619'));
-check('bare host allowed', simgrid.isSimGridUrl('https://thesimgrid.com/championships/25619'));
+check('championship page allowed', simgrid.isSimGridUrl('https://www.thesimgrid.com/championships/28052'));
+check('bare host allowed', simgrid.isSimGridUrl('https://thesimgrid.com/championships/28052'));
 check('cdn allowed', simgrid.isSimGridUrl('https://cdn.thesimgrid.com/foo'));
-check('http rejected', !simgrid.isSimGridUrl('http://www.thesimgrid.com/championships/25619'));
+check('http rejected', !simgrid.isSimGridUrl('http://www.thesimgrid.com/championships/28052'));
 check('subdomain rejected', !simgrid.isSimGridUrl('https://evil.thesimgrid.com/x'));
 check('lookalike rejected', !simgrid.isSimGridUrl('https://www.thesimgrid.com.evil.tld/x'));
 
@@ -231,7 +231,7 @@ async function liveFetch() {
   check('live ok', res.ok === true, res.error);
   if (!res.ok) return;
   check('live returned both leagues', res.leagues.length === 2, res.leagues.length);
-  const thu = res.leagues.find((l) => l.id === 25619);
+  const thu = res.leagues.find((l) => l.id === 28052);
   const sat = res.leagues.find((l) => l.id === 24215);
   check('live Thursday present', !!thu, thu && thu.name);
   check('live Saturday present', !!sat, sat && sat.name);

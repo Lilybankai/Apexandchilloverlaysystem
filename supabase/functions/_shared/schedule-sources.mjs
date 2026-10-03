@@ -208,7 +208,7 @@ const SITE = 'https://www.thesimgrid.com';
 const CDN_PREFIX = 'https://cdn.thesimgrid.com/';
 
 export const LEAGUES = [
-  { id: 25619, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3' },
+  { id: 28052, day: 'thursday', label: 'Thursday league', hint: 'LMP2 & GT3' },
   { id: 24215, day: 'saturday', label: 'Saturday league', hint: 'GT3' },
 ];
 

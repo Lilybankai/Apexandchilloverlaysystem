@@ -105,10 +105,10 @@ function check(name, cond, detail) {
   console.log('\nleague — the server\'s copy of electron/simgrid.js');
 
   const raw = {
-    id: 25619,
+    id: 28052,
     name: 'LMU Apex And Chill Thursday League LMP2 & GT3',
     game_name: 'Le Mans Ultimate',
-    url: 'https://www.thesimgrid.com/championships/25619',
+    url: 'https://www.thesimgrid.com/championships/28052',
     results_url: 'javascript:alert(1)',
     discord_url: 'https://discord.gg/3sKF42Pk8e',
     accepting_registrations: true,
