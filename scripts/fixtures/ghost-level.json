@@ -1,0 +1,9 @@
+{
+  "_note": "Ghost HUD: dead heat. The gate sits where the reference is; |gapSec| inside the level band so the colour is neutral.",
+  "player": {
+    "ghost": {
+      "active": true, "gapSec": 0.01, "gapM": 0.4,
+      "refLapSec": 73.73, "sourceLapId": "fixture-level", "sourceLabel": "your best · 1:13.730"
+    }
+  }
+}

@@ -69,6 +69,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    ghosthud:
+      '<section class="widget panel" id="widget-ghosthud" data-widget="ghosthud" aria-label="Ghost HUD — the gap to a chosen reference lap">' +
+      '<header class="panel__header"><span class="panel__title">Ghost HUD</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     trackmap:
       '<section class="widget panel" id="widget-trackmap" data-widget="trackmap" aria-label="Track map — the circuit and where every car is on it">' +
       '<header class="panel__header"><span class="panel__title">Track Map</span>' +

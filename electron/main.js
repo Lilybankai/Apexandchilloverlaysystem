@@ -121,6 +121,16 @@ const OVERLAY_CATALOG = [
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
+  // Training-mode widget: a perspective corridor with a gate where a chosen
+  // reference lap is on the road. Kept out of the click-through layer's
+  // defaults because it is a deliberate training tool, not race furniture.
+  {
+    id: 'ghosthud',
+    label: 'Ghost HUD',
+    description: 'Chase a captured fast lap — perspective gate + live delta (Powered by Alien-GT)',
+    ingameDefault: false,
+    obs: { w: 420, h: 247, note: 'Height follows width — the corridor, the gate room below it and the readout strip have to add up.' },
+  },
   {
     id: 'refpace',
     label: 'Reference Pace',

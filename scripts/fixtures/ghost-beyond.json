@@ -1,0 +1,9 @@
+{
+  "_note": "Ghost HUD: past the corridor's 28 m reach. The gate pins at the far end and the chevron says so, rather than pretending the pinned position IS the distance.",
+  "player": {
+    "ghost": {
+      "active": true, "gapSec": 1.82, "gapM": 94.6,
+      "refLapSec": 73.73, "sourceLapId": "fixture-beyond", "sourceLabel": "your best · 1:13.730"
+    }
+  }
+}
