@@ -3,25 +3,35 @@
 <!-- Unreleased — move under the next version heading when it is cut. The
      parser only reads "## x.y.z" headings, so nothing below is shown in the
      app until it is renamed.
-
-### Ghost HUD — Powered by Alien-GT (beta channel)
-
-Chase a captured fast lap. A corridor on screen with a datum line for your own
-car, and a gate that rises above it when the ghost is up the road and falls
-below when it is behind — so you read the gap as a picture, not a number, and
-see where the ghost got more drive out of a corner. Signed seconds alongside.
-
-It records nothing: every lap since August already has a trace on disk and
-none of them are ever pruned, so the fastest clean lap for your class, circuit
-and surface is a sort rather than a capture. Laps are grouped by the setup
-they were actually driven on, which is a better answer than fixed-versus-open
-— whether a session mandated a setup is written down nowhere, but what the car
-was running is on every lap.
-
-Beta only, and it is the first thing to land in the Training space the
-stint-review plan has been building toward.
-
 -->
+
+## 1.3.5-beta.1 — 2026-10-06
+
+### Added
+
+- **Ghost HUD — chase a lap you have already set.** A corridor on screen with
+  a line across the middle for your own car, and a gate that rises above it
+  when the ghost is up the road and drops below it when the ghost is behind.
+  You read the gap as a picture rather than a number, so where the ghost got
+  more drive out of a corner shows up as the gate pulling away while you are
+  still straightening the car. Signed seconds sit underneath.
+
+  It records nothing. Every lap you have driven since August already has a
+  trace saved beside it and none of them are ever deleted, so "chase my
+  fastest" is a search through what is already there — it works on laps you
+  drove weeks ago. It picks your fastest clean lap for the car class, circuit
+  and surface you are on, and it keeps laps driven on different setups apart,
+  so a reference set on another setup is never quietly offered against this
+  one.
+
+  Nothing shows until you cross the start/finish line: before that the lap
+  clock has no honest zero and the gate would sit metres from the truth.
+
+- **A Training mode that does something.** The Race / Training switch in the
+  top bar has been there, greyed out, since it was drawn. It now opens a
+  Training tab, and Ghost HUD is the first thing in it.
+
+Both are **beta channel only**.
 
 ## 1.3.4 — 2026-10-06
 
