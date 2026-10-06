@@ -6,79 +6,63 @@
 
 -->
 
-## 1.3.4-beta.2 — 2026-10-06
+## 1.3.4 — 2026-10-06
 
 ### Added
 
-- **Compare TC, ABS and steering against anyone's lap in Review.** When you
-  compare two laps, a new TC / ABS chart under the throttle and brake shows
-  where each of you had the aids working and how hard, with theirs dashed.
-  The steering chart now shows their lap too, in degrees of wheel angle. As
-  you move along the lap, the readout gives both drivers' TC, ABS and
-  steering, e.g. "R 42°" against their "R 38°". Two small steering wheels
-  turn to show your hands and theirs at that point of the track.
-- Only laps driven on 1.3.4-beta.1 or later have proper TC and ABS data.
-  Older laps show "not recorded" rather than the old readings, which were
-  really gear shifts. Steering shows as a percentage of lock when either lap
-  is older than this release.
-- **Reset position, on every overlay.** Each overlay on the Overlays screen
-  now has a Reset position button under its switches. If an overlay has gone
-  off your screen — you unplugged a monitor, changed your resolution or your
-  Windows display scaling — click it and that overlay jumps to the middle of
-  your main screen, ready to drag wherever you want it. Only that one overlay
-  moves; the rest of your layout stays put. It works with the overlay switched
-  off too: it will be in the middle the next time you turn it on.
+- **Steering wheel on the Inputs overlay.** The white steering line has gone
+  from the pedal trace. In its place there's a small GT wheel next to the
+  pedal bars that turns with yours, using your car's real steering lock. The
+  red ring shows how much lock you've got on, and the angle is written
+  underneath. The overlay is a bit wider by default to make room. If you
+  preferred the old line, add `?steer=trace` to the end of the Browser
+  Source URL.
+- **Compare TC, ABS and steering in Review.** When you compare two laps
+  there's a new TC/ABS chart under throttle and brake, so you can see where
+  each of you had the aids working and how much. The steering chart now
+  shows the other lap as well, in degrees. As you move along the lap, the
+  readout shows both drivers' TC, ABS and steering, with two small steering
+  wheels showing how much lock each of you had at that point. This only works
+  for laps driven on this version or newer. Older laps show "not recorded"
+  for TC and ABS.
+- **Reset position button for every overlay.** Each overlay on the Overlays
+  screen now has a Reset position button. If one has ended up off screen
+  after you unplugged a monitor or changed your resolution or display
+  scaling, click it and that overlay moves to the middle of your main screen.
+  Nothing else in your layout moves, and it works with the overlay switched
+  off too.
 
 ### Fixed
 
-- **GT3 pit stops are no longer priced at twice their length.** The Team
-  tab's strategy card and the Fuel tab worked out GT3 refuelling time from
-  litres per second spread over the 120 L fuel tank. A full Virtual Energy
-  tank is only about 82 L of fuel, so a 70% fill came out at about 55 s when
-  it really takes about 28 s. Refuels are now timed from the energy that
-  actually went in, measured across 48 stops by our drivers (2.5% a second,
-  plus under a second to start and stop the fuel).
-- **"Pit window open" for a lapped car.** In a multiclass race the
-  engineer was comparing your fuel window with the overall leader's lap.
-  If the Hypercars had lapped you, you could be told the window was open
-  laps early, or for the rest of the race. It now counts your own laps.
+- **TC and ABS on the Inputs overlay.** The yellow TC marks were actually
+  your gear shifts (and the pit limiter), and ABS never showed up at all.
+  Both now read the right data from the game. They show as lines rising from
+  the bottom of the trace, yellow for TC and blue for ABS, and the higher the
+  line, the harder the aid is working. The TC and ABS lights on the speedo
+  use the same fix.
+- **GT3 pit stops were coming out about twice as long as they should.** The
+  strategy on the Team tab timed GT3 refuels as if the whole 120 L tank was
+  being filled. A full Virtual Energy tank is only about 82 L, so a 70% fill
+  showed about 55 s when it really takes about 28 s. Refuel times now come
+  from real stops our drivers have made.
+- **"Pit window open" when you've been lapped.** In multiclass races the
+  engineer worked out your fuel window from the overall leader's laps. If the
+  Hypercars had lapped you, it could tell you the window was open far too
+  early. It now uses your own laps.
 
 ### Changed
 
-- **Pit lane time per circuit.** Where enough race stops have been
-  recorded, the Fuel tab and the Team tab now use that circuit's real pit
-  lane time instead of a flat 25 s. Measured so far: Silverstone 24 s, COTA and Monza 28 s,
-  Algarve 34 s, Road Atlanta and Le Mans 35 s, Long Beach 44 s, Daytona
-  50 s. Hover the source note to see the range. Other circuits keep the
-  25 s estimate until there are enough stops.
-- **GT3 tyre change time is measured: about 12 s, not the 30 s guess.**
-  It is used on the Fuel tab and the Team tab. Other classes keep 30 s
-  until there are enough tyre stops.
-- **The strategy figures are refreshed** from the latest data: 13,199 laps
-  and 3,629 stops. The Team tab now says which parts of the pit time are
+- **Real pit lane times.** The Team tab strategy now uses each track's actual
+  pit lane time where we have enough race stops recorded, instead of a flat
+  25 s. So far that's Silverstone (24 s), COTA and Monza (28 s), Algarve
+  (34 s), Road Atlanta and Le Mans (35 s), Long Beach (44 s) and Daytona
+  (50 s). Other tracks stay at 25 s for now.
+- **GT3 tyre changes take about 12 s, not 30 s.** That's measured from real
+  stops and used in the Team tab strategy. Other classes stay at 30 s until
+  we have enough data.
+- **Updated strategy data.** The numbers now come from 13,199 laps and 3,629
+  stops. The Team tab also tells you which parts of the pit time are
   measured and which are still estimates.
-
-## 1.3.4-beta.1 — 2026-10-06
-
-### Added
-
-- **A steering wheel on the Inputs overlay.** The white steering line through
-  the pedal trace is gone. In its place, a GT wheel beside the pedal bars
-  turns with your real wheel, matched to the car's own lock-to-lock (719° in a
-  GT3). A red arc shows how much lock is wound on, with the angle written
-  underneath. The overlay is a little wider by default to make room. To
-  bring the old line back, add `?steer=trace` to a Browser Source URL.
-
-### Fixed
-
-- **TC and ABS on the Inputs overlay now show what the car is actually doing.**
-  The yellow "TC" marks on the trace were really your gear shifts (and the pit
-  limiter). ABS never showed at all, because LMU doesn't apply it to the
-  brake pedal reading we were watching. TC now comes from the game's own
-  TC signal, and ABS from the pressure at each wheel. Each one draws a line
-  rising from the bottom of the trace, yellow for TC and blue for ABS, and
-  the height of the line is how hard the aid is working. The TC and ABS
-  lights on the speedo and the vertical Inputs overlay use the same fix.
 
 ## 1.3.3 — 2026-10-03
 
