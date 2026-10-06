@@ -650,6 +650,27 @@ function playerRow(frame: TelemetryFrame): StandingEntry | undefined {
   return frame.standings?.find((s) => s.isPlayer);
 }
 
+/**
+ * The lap the PLAYER is on (1-based), in the same counting the fuel
+ * calculator's `pitWindowOpenLap` uses: that figure is the player's own laps
+ * completed plus the whole laps left in the tank, so it can only be compared
+ * with the player's own lap. `session.currentLap` is the OVERALL leader's —
+ * in a multiclass race a Hypercar's — and a lapped GT3 compared against it
+ * hears "window open" laps early, or for the rest of the race. LMU has no
+ * mandated pit window; this one is the car's own fuel range, so neither the
+ * overall nor the class leader's lap means anything to it.
+ *
+ * Falls back to `session.currentLap` only when the frame has no player row
+ * with a lap count (a trimmed recording, a test frame): in a single-class
+ * field led by the player the two agree. {@link UNKNOWN_VALUE} when neither
+ * is known.
+ */
+export function playerLapForWindow(frame: TelemetryFrame): number {
+  const me = playerRow(frame);
+  if (me && known(me.lapsCompleted) && me.lapsCompleted >= 0) return me.lapsCompleted + 1;
+  return known(frame.session.currentLap) ? frame.session.currentLap : UNKNOWN_VALUE;
+}
+
 interface PracticePaceRead {
   lap: number;
   percent: number;
@@ -769,8 +790,9 @@ function raceStoryLevels(frame: TelemetryFrame, me: StandingEntry | undefined): 
     }
   }
 
+  // The player's own lap, never the overall leader's: see playerLapForWindow.
   const openLap = frame.fuel?.pitWindowOpenLap;
-  const lap = frame.session.currentLap;
+  const lap = playerLapForWindow(frame);
   const windowOpen = known(openLap) && known(lap) && lap > 0 && lap >= openLap!;
 
   return { holder, neighbourPit, yieldAny, nearestYield, windowOpen };

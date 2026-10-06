@@ -6,8 +6,10 @@
  *
  * Everything here was MEASURED from the shared corpus — a coefficient the fit
  * refused is absent, and its reason sits in `unresolved` so the panel can say
- * why it is still showing an estimate. Rates are already in the unit their
- * class plans in (litres/second, or Virtual Energy percent/second).
+ * why it is still showing an estimate. Rates are measured in the unit their
+ * class plans in (litres/second, or Virtual Energy percent/second), with
+ * `refuelFixedSec` paid once per stop that takes fuel. Pit lane loss is per
+ * circuit: `byLayout` (Fuel tab ids) and `byTrackKey` (lap-log keys).
  *
  * Loaded as a classic script by the panel (window.APEX_STRATEGY_COEFFS) and
  * require()d by scripts/test-coefficients.js — keep it dependency-free.
@@ -23,121 +25,176 @@
 
   return {
     "version": 1,
-    "fittedAt": "2026-09-11",
+    "fittedAt": "2026-10-06",
     "source": "cloud",
     "corpus": {
-      "laps": 2908,
-      "stops": 810,
-      "pairs": 39
+      "laps": 13199,
+      "stops": 3629,
+      "pairs": 71
     },
     "byClass": {
       "lmp2": {
         "refuelPerSec": 1.59,
         "unit": "l",
-        "refuelLPerSec": 1.585,
-        "capacityL": null,
+        "refuelFixedSec": 0,
         "from": "LMP2_ELMS",
-        "stops": 7,
-        "tracks": 4,
+        "stops": 11,
+        "tracks": 8,
         "spread": [
-          1.579,
-          1.61
+          1.57,
+          1.649
         ]
       },
       "lmgt3": {
-        "refuelPerSec": 1.28,
+        "refuelPerSec": 2.52,
         "unit": "pct",
-        "refuelLPerSec": 1.538,
-        "capacityL": 120,
+        "refuelFixedSec": 0.9,
         "from": "GT3",
-        "stops": 14,
-        "tracks": 6,
+        "stops": 48,
+        "tracks": 13,
         "spread": [
-          1.339,
-          1.868
+          2.448,
+          2.481
+        ],
+        "tyreChangeSec": 12.1,
+        "tyreStops": 19,
+        "tyreSpread": [
+          12,
+          12.9
         ]
       }
     },
     "byCorpusClass": {
       "GT3": {
-        "refuelPerSec": 1.28,
+        "refuelPerSec": 2.52,
         "unit": "pct",
-        "refuelLPerSec": 1.538,
-        "capacityL": 120,
+        "refuelFixedSec": 0.9,
         "from": "GT3",
-        "stops": 14,
-        "tracks": 6,
+        "stops": 48,
+        "tracks": 13,
         "spread": [
-          1.339,
-          1.868
+          2.448,
+          2.481
+        ],
+        "tyreChangeSec": 12.1,
+        "tyreStops": 19,
+        "tyreSpread": [
+          12,
+          12.9
         ]
       },
       "LMGT3": {
-        "refuelPerSec": 1.28,
+        "refuelPerSec": 2.52,
         "unit": "pct",
-        "refuelLPerSec": 1.538,
-        "capacityL": 120,
+        "refuelFixedSec": 0.9,
         "from": "GT3",
-        "stops": 14,
-        "tracks": 6,
+        "stops": 48,
+        "tracks": 13,
         "spread": [
-          1.339,
-          1.868
+          2.448,
+          2.481
+        ],
+        "tyreChangeSec": 12.1,
+        "tyreStops": 19,
+        "tyreSpread": [
+          12,
+          12.9
         ]
       },
       "LMP2": {
         "refuelPerSec": 1.59,
         "unit": "l",
-        "refuelLPerSec": 1.585,
-        "capacityL": null,
+        "refuelFixedSec": 0,
         "from": "LMP2_ELMS",
-        "stops": 7,
-        "tracks": 4,
+        "stops": 11,
+        "tracks": 8,
         "spread": [
-          1.579,
-          1.61
+          1.57,
+          1.649
         ]
       },
       "LMP2_ELMS": {
         "refuelPerSec": 1.59,
         "unit": "l",
-        "refuelLPerSec": 1.585,
-        "capacityL": null,
+        "refuelFixedSec": 0,
         "from": "LMP2_ELMS",
-        "stops": 7,
-        "tracks": 4,
+        "stops": 11,
+        "tracks": 8,
         "spread": [
-          1.579,
-          1.61
+          1.57,
+          1.649
         ]
       }
     },
     "byPair": {
-      "barcelona_gp|lmgt3": {
-        "burnLPerLap": 2.8,
-        "burnLaps": 670
-      },
-      "cota_gp|lmgt3": {
-        "burnLPerLap": 3.2,
-        "burnLaps": 285
-      },
-      "portimao_gp|lmgt3": {
-        "burnLPerLap": 2.9,
-        "burnLaps": 175
+      "long_beach|lmgt3": {
+        "burnLPerLap": 2.1,
+        "burnLaps": 1739,
+        "kFuelSecPerL": 0.00303
       },
       "monza_gp|lmgt3": {
         "burnLPerLap": 3.4,
-        "burnLaps": 151,
-        "kFuelSecPerL": 0.0114
+        "burnLaps": 1203,
+        "kFuelSecPerL": 0.01234
+      },
+      "road_atlanta|lmgt3": {
+        "burnLPerLap": 2.5,
+        "burnLaps": 893,
+        "kFuelSecPerL": 0.01096
+      },
+      "barcelona_gp|lmgt3": {
+        "burnLPerLap": 2.8,
+        "burnLaps": 702
+      },
+      "daytona_road|lmgt3": {
+        "burnLPerLap": 3.4,
+        "burnLaps": 625,
+        "kFuelSecPerL": 0.0119
+      },
+      "lemans_full|lmgt3": {
+        "burnLPerLap": 7.6,
+        "burnLaps": 636
+      },
+      "portimao_gp|lmgt3": {
+        "burnLPerLap": 2.8,
+        "burnLaps": 378
+      },
+      "cota_gp|lmgt3": {
+        "burnLPerLap": 3.2,
+        "burnLaps": 354
+      },
+      "fuji_gp|lmgt3": {
+        "burnLPerLap": 2.4,
+        "burnLaps": 871,
+        "kFuelSecPerL": 0.02281
+      },
+      "long_beach|hypercar": {
+        "burnLPerLap": 1.7,
+        "burnLaps": 284
+      },
+      "road_atlanta|lmp2": {
+        "burnLPerLap": 2.1,
+        "burnLaps": 290
+      },
+      "long_beach|lmp2": {
+        "burnLPerLap": 1.7,
+        "burnLaps": 271
+      },
+      "silverstone_gp_wec|lmgt3": {
+        "burnLPerLap": 3.4,
+        "burnLaps": 530
+      },
+      "laguna_seca|lmgt3": {
+        "burnLPerLap": 2.2,
+        "burnLaps": 177
+      },
+      "spa_endurance|lmp2": {
+        "burnLPerLap": 3.3,
+        "burnLaps": 149
       },
       "monza_curva_grande|lmgt3": {
         "burnLPerLap": 3.3,
         "burnLaps": 139
-      },
-      "silverstone_gp_wec|lmgt3": {
-        "burnLPerLap": 3.4,
-        "burnLaps": 134,
-        "kFuelSecPerL": 0.01435
       },
       "cota_gp|lmp2": {
         "burnLPerLap": 2.7,
@@ -151,6 +208,23 @@
         "burnLPerLap": 2.4,
         "burnLaps": 137
       },
+      "lemans_full|lmp2": {
+        "burnLPerLap": 6.4,
+        "burnLaps": 140,
+        "kFuelSecPerL": 0.03448
+      },
+      "daytona_road|hypercar": {
+        "burnLPerLap": 3.1,
+        "burnLaps": 147
+      },
+      "spa_gp|lmp3": {
+        "burnLPerLap": 3.3,
+        "burnLaps": 90
+      },
+      "silverstone_gp_wec|lmp2": {
+        "burnLPerLap": 2.9,
+        "burnLaps": 179
+      },
       "monza_curva_grande|lmp2": {
         "burnLPerLap": 2.8,
         "burnLaps": 79
@@ -160,40 +234,226 @@
         "burnLaps": 58,
         "kFuelSecPerL": 0.03046
       },
+      "bahrain_gp|lmgt3": {
+        "burnLPerLap": 3.3,
+        "burnLaps": 61
+      },
+      "fuji_gp|hypercar": {
+        "burnLPerLap": 1.9,
+        "burnLaps": 286
+      },
       "cota_gp|hypercar": {
         "burnLPerLap": 2.5,
-        "burnLaps": 64
+        "burnLaps": 69
       },
-      "lemans_full|lmgt3": {
-        "burnLPerLap": 7.5,
-        "burnLaps": 90
+      "monza_gp|lmp3": {
+        "burnLPerLap": 2.9,
+        "burnLaps": 52
+      },
+      "road_atlanta|hypercar": {
+        "burnLPerLap": 2,
+        "burnLaps": 60,
+        "kFuelSecPerL": 0.01659
+      },
+      "sebring_full|lmp2": {
+        "burnLPerLap": 2.7,
+        "burnLaps": 42,
+        "kFuelSecPerL": 0.09074
       },
       "imola_gp|lmgt3": {
         "burnLPerLap": 3.1,
         "burnLaps": 43
       },
+      "paul_ricard_1av2|lmgt3": {
+        "burnLPerLap": 3.2,
+        "burnLaps": 40
+      },
+      "qatar_gp|lmgt3": {
+        "burnLPerLap": 3.2,
+        "burnLaps": 55
+      },
+      "imola_gp|hypercar": {
+        "burnLPerLap": 2.7,
+        "burnLaps": 40
+      },
+      "lemans_full|hypercar": {
+        "burnLPerLap": 7.3,
+        "burnLaps": 49
+      },
       "silverstone_gp_wec|hypercar": {
         "burnLPerLap": 3.2,
         "burnLaps": 47
       },
-      "daytona_road|hypercar": {
-        "burnLPerLap": 3,
-        "burnLaps": 38
-      },
       "spa_gp|lmgt3": {
         "burnLPerLap": 3.9,
-        "burnLaps": 35
+        "burnLaps": 80
       },
-      "laguna_seca|lmgt3": {
-        "burnLPerLap": 2.2,
-        "burnLaps": 32
+      "spa_gp|lmp2": {
+        "burnLPerLap": 3.4,
+        "burnLaps": 41
+      },
+      "lemans_full|lmp3": {
+        "burnLPerLap": 6.6,
+        "burnLaps": 51
+      },
+      "monza_gp|lmp2": {
+        "burnLPerLap": 2.7,
+        "burnLaps": 109
+      }
+    },
+    "byLayout": {
+      "portimao_gp": {
+        "pitLaneLossSec": 33.9,
+        "spread": [
+          31.7,
+          42.6
+        ],
+        "stops": 9,
+        "drivers": 7
+      },
+      "monza_gp": {
+        "pitLaneLossSec": 28.4,
+        "spread": [
+          28,
+          29.3
+        ],
+        "stops": 17,
+        "drivers": 10
+      },
+      "lemans_full": {
+        "pitLaneLossSec": 34.9,
+        "spread": [
+          34.8,
+          35.3
+        ],
+        "stops": 43,
+        "drivers": 18
+      },
+      "cota_gp": {
+        "pitLaneLossSec": 28.4,
+        "spread": [
+          28.2,
+          28.7
+        ],
+        "stops": 8,
+        "drivers": 6
+      },
+      "daytona_road": {
+        "pitLaneLossSec": 49.9,
+        "spread": [
+          35.4,
+          50.5
+        ],
+        "stops": 15,
+        "drivers": 9
+      },
+      "long_beach": {
+        "pitLaneLossSec": 43.5,
+        "spread": [
+          43.2,
+          44
+        ],
+        "stops": 19,
+        "drivers": 8
+      },
+      "road_atlanta": {
+        "pitLaneLossSec": 34.7,
+        "spread": [
+          34.4,
+          35.2
+        ],
+        "stops": 13,
+        "drivers": 7
+      },
+      "silverstone_gp_wec": {
+        "pitLaneLossSec": 23.6,
+        "spread": [
+          23.3,
+          24.6
+        ],
+        "stops": 10,
+        "drivers": 6
+      }
+    },
+    "byTrackKey": {
+      "algarve-international-circuit_4635": {
+        "pitLaneLossSec": 33.9,
+        "spread": [
+          31.7,
+          42.6
+        ],
+        "stops": 9,
+        "drivers": 7
+      },
+      "autodromo-nazionale-monza_5781": {
+        "pitLaneLossSec": 28.4,
+        "spread": [
+          28,
+          29.3
+        ],
+        "stops": 17,
+        "drivers": 10
+      },
+      "circuit-de-la-sarthe_13624": {
+        "pitLaneLossSec": 34.9,
+        "spread": [
+          34.8,
+          35.3
+        ],
+        "stops": 43,
+        "drivers": 18
+      },
+      "circuit-of-the-americas_5497": {
+        "pitLaneLossSec": 28.4,
+        "spread": [
+          28.2,
+          28.7
+        ],
+        "stops": 8,
+        "drivers": 6
+      },
+      "daytona-international-speedway-road-course_5734": {
+        "pitLaneLossSec": 49.9,
+        "spread": [
+          35.4,
+          50.5
+        ],
+        "stops": 15,
+        "drivers": 9
+      },
+      "grand-prix-of-long-beach_3187": {
+        "pitLaneLossSec": 43.5,
+        "spread": [
+          43.2,
+          44
+        ],
+        "stops": 19,
+        "drivers": 8
+      },
+      "michelin-raceway-road-atlanta_4083": {
+        "pitLaneLossSec": 34.7,
+        "spread": [
+          34.4,
+          35.2
+        ],
+        "stops": 13,
+        "drivers": 7
+      },
+      "silverstone-grand-prix-circuit-elms_5869": {
+        "pitLaneLossSec": 23.6,
+        "spread": [
+          23.3,
+          24.6
+        ],
+        "stops": 10,
+        "drivers": 6
       }
     },
     "unresolved": {
       "hypercar": {
         "field": "refuel",
-        "reason": "no clean fuel-only race stop recorded for this class yet",
-        "stops": 0
+        "reason": "only 2 clean fuel-only race stops recorded — the fit wants 5",
+        "stops": 2
       }
     }
   };

@@ -13,8 +13,9 @@
  * Given an optional `pit` block it also prices every remaining stop, which is
  * what turns "will I make it" into "what does making it cost". A fuel target is
  * not a decision until it has a number of seconds next to it: dropping a stop
- * saves whatever that stop was going to cost, and the pit box's refuelling rate
- * is now measured rather than guessed, so that figure is worth trusting. The
+ * saves whatever that stop was going to cost, and the refuelling rate, tyre
+ * time and (where the circuit is known) pit lane are measured from the shared
+ * corpus rather than guessed, so that figure is worth trusting. The
  * costs stay OUT of the fuel arithmetic — a wrong rig rate must never change
  * how much fuel the car needs, only how long it takes to put in.
  *
@@ -64,7 +65,11 @@
     if (!pit || !Number.isFinite(pit.pitLaneLossSec) || !Number.isFinite(pit.refuelRatePerSec)) {
       return null;
     }
-    const refuelSec = pit.refuelRatePerSec > 0 ? fill / pit.refuelRatePerSec : 0;
+    // The fixed part (hose on, hose off) is paid once, and only when fuel goes
+    // in. Same arithmetic as fuel-strategy.js refuelSeconds(), inlined because
+    // the web pit wall loads this file without that one.
+    const fixed = Number.isFinite(pit.refuelFixedSec) && pit.refuelFixedSec > 0 ? pit.refuelFixedSec : 0;
+    const refuelSec = pit.refuelRatePerSec > 0 && fill > 0 ? fixed + fill / pit.refuelRatePerSec : 0;
     const every = pit.tyresEveryStints == null ? 1 : pit.tyresEveryStints;
     const tyreSec = every > 0 && stopNumber % every === 0 ? (pit.tyreChangeSec || 0) : 0;
     return {

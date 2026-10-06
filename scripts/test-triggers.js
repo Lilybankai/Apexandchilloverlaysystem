@@ -852,12 +852,48 @@ function playerRowOver(over) {
 }
 
 {
-  // The strategy window opening, off the fuel calculator's own lap.
+  // The strategy window opening, off the fuel calculator's own lap — which is
+  // counted in the PLAYER's laps, so it is compared with the player's lap.
+  const me = (lapsCompleted) => [{ ...baseFrame().standings[0], lapsCompleted }];
   const r = rig({}, { fuel: { pitWindowOpenLap: 6 } });
-  r.fire({ session: { currentLap: 5 } });
+  r.fire({ standings: me(4) });
   check('one lap short of the window stays quiet', !r.kinds().includes('pitWindowOpen'), r.kinds().join());
-  const cue = r.fire({ session: { currentLap: 6 } });
+  const cue = r.fire({ standings: me(5) });
   check('reaching it speaks', cue && cue.kind === 'pitWindowOpen', cue && cue.line);
+}
+
+{
+  // Multiclass: the overall leader (a Hypercar) is on lap 30 while our lapped
+  // GT3 has done 3. The window is counted in OUR laps, so it is not open.
+  const r = rig({}, { fuel: { pitWindowOpenLap: 6 }, session: { currentLap: 30, classLeaderLap: 5 } });
+  r.fire({ session: { currentLap: 31 } });
+  check('a lapped car is not told the window is open off the overall leader’s lap',
+    !r.kinds().includes('pitWindowOpen'), r.kinds().join());
+  const me = (lapsCompleted) => [{ ...baseFrame().standings[0], lapsCompleted }];
+  const cue = r.fire({ standings: me(5) });
+  check('…and is told when ITS lap reaches the window', cue && cue.kind === 'pitWindowOpen', cue && cue.line);
+}
+
+{
+  // No player row (a trimmed recording): fall back to the session lap, which
+  // is right in the single-class field such a frame comes from.
+  const r = rig({}, { fuel: { pitWindowOpenLap: 6 }, standings: [] });
+  r.fire({ session: { currentLap: 5 } });
+  check('without a player row, one lap short stays quiet', !r.kinds().includes('pitWindowOpen'), r.kinds().join());
+  const cue = r.fire({ session: { currentLap: 6 } });
+  check('…and the session lap opens it', cue && cue.kind === 'pitWindowOpen', cue && cue.line);
+}
+
+{
+  const { playerLapForWindow } = require('../dist/telemetry/triggers');
+  const f = baseFrame();
+  f.session.currentLap = 40;
+  check('playerLapForWindow is the player’s laps completed + 1, not the leader’s lap',
+    playerLapForWindow(f) === 4, playerLapForWindow(f));
+  f.standings = [];
+  check('…falling back to the session lap with no player row', playerLapForWindow(f) === 40, playerLapForWindow(f));
+  f.session.currentLap = UNKNOWN;
+  check('…and unknown when neither is known', playerLapForWindow(f) === UNKNOWN, playerLapForWindow(f));
 }
 
 {

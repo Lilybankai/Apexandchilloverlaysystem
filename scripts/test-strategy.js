@@ -223,39 +223,48 @@ section('A real LMGT3 race on the shipped coefficients');
   const cls = COEFFS.byClass.lmgt3;
   check('the fixture is the real shipped data', !!monza && !!cls);
 
-  // Virtual Energy: the tank is 100%, so burn converts at the class capacity.
-  const burnPct = (monza.burnLPerLap / cls.capacityL) * 100;
+  // Virtual Energy: the tank is 100 % of ENERGY, which on a GT3 is ~0.82 L of
+  // fuel per percent (2026-10-06 corpus median over 88 race stops) — not the
+  // 120 L fuel tank, which is the conversion that used to price these stops
+  // at twice their length. A fixture constant: the shipped table carries
+  // rates in energy already and has no litre figure to convert from.
+  const LITRES_PER_PCT = 0.82;
+  const burnPct = monza.burnLPerLap / LITRES_PER_PCT;
   const st = S.planRace({
     raceLaps: 124,
     basePaceSec: 113.6,
     burnPerLap: burnPct,
     capacity: 100,
-    kFuelSecPerUnit: monza.kFuelSecPerL ? monza.kFuelSecPerL * (cls.capacityL / 100) : null,
-    pitLaneLossSec: 25,
+    kFuelSecPerUnit: monza.kFuelSecPerL ? monza.kFuelSecPerL * LITRES_PER_PCT : null,
+    pitLaneLossSec: COEFFS.byLayout.monza_gp.pitLaneLossSec,
     refuelRatePerSec: cls.refuelPerSec,
-    tyreChangeSec: 30,
+    tyreChangeSec: cls.tyreChangeSec,
     tyresEveryStints: 1,
     safetyUnits: 2 * burnPct,
-    confidence: { burn: 'measured', refuel: 'measured', pit: 'none' },
+    confidence: { burn: 'measured', refuel: 'measured', pit: 'measured' },
   });
   const best = st.plans[st.recommended];
   check('a four-hour Monza plan builds', !!best, st.whyNot);
-  check('it is a three-stop, as the Fuel tab shows', best.stops === 3, best.stops);
+  const tanks = Math.ceil((124 * burnPct + 2 * burnPct) / 100);
+  check('it stops once per extra tank of energy the race needs', best.stops === tanks - 1,
+    { stops: best.stops, tanks });
   check('no stint exceeds the energy tank', best.stints.every((s) => s.fill <= 100));
   check('the stops are ordered and inside the race', best.stopLaps.every(
     (l, i) => l > 0 && l < 124 && (i === 0 || l > best.stopLaps[i - 1])), best.stopLaps);
-  check('the pit loss is unmeasured, so the answer says none',
-    st.confidence === 'none', st.confidence);
-  // The point of the whole exercise: the measured rig is slower, so the plan
-  // spends more time stationary than the old guess would have predicted.
+  check('everything it rests on is measured, and it says so',
+    st.confidence === 'measured', st.confidence);
+  // The point of the whole exercise: the measured rig and crew are QUICKER
+  // than the old guesses (2.0 %/s, 30 s tyres), so the plan spends less time
+  // stationary than the guessed one predicted.
   const guessed = S.planRace({
     raceLaps: 124, basePaceSec: 113.6, burnPerLap: burnPct, capacity: 100,
-    pitLaneLossSec: 25, refuelRatePerSec: 2.0, tyreChangeSec: 30, tyresEveryStints: 1,
+    pitLaneLossSec: COEFFS.byLayout.monza_gp.pitLaneLossSec, refuelRatePerSec: 2.0,
+    tyreChangeSec: 30, tyresEveryStints: 1,
     safetyUnits: 2 * burnPct,
   });
   const pitOf = (s) => s.plans[s.recommended].stopDetail.reduce((a, b) => a + b.totalSec, 0);
-  check('and it costs more pit time than the guessed rig did',
-    pitOf(st) > pitOf(guessed) + 30, { measured: pitOf(st), guessed: pitOf(guessed) });
+  check('and it costs less pit time than the guessed rig and crew did',
+    pitOf(st) < pitOf(guessed) - 30, { measured: pitOf(st), guessed: pitOf(guessed) });
 }
 
 console.log(`\ntest-strategy: ${passed} passed, ${failed} failed`);

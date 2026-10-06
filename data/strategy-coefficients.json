@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "fittedAt": "2026-09-11",
+  "fittedAt": "2026-10-06",
   "source": "cloud",
   "fitter": "scripts/fit-strategy.js",
   "bars": {
@@ -9,14 +9,49 @@
     "paceLaps": 30,
     "loadSpreadFraction": 0.4,
     "cliffMinStint": 15,
-    "collinearityRefuse": 0.95
+    "collinearityRefuse": 0.95,
+    "pitLaneStops": 8,
+    "tyreStops": 8
   },
   "corpus": {
-    "laps": 2908,
-    "stops": 810,
-    "pairs": 39
+    "laps": 13199,
+    "stops": 3629,
+    "pairs": 71
   },
   "refuelByClass": {
+    "LMP2_ELMS": {
+      "refuelLPerSec": 1.585,
+      "stops": 11,
+      "stopsBeforeFilter": 14,
+      "dropped": 3,
+      "tracks": 8,
+      "p25": 1.57,
+      "p75": 1.649,
+      "confidence": "measured",
+      "ve": {
+        "pctPerSec": null,
+        "fixedSec": 0,
+        "stopsBeforeFilter": 0,
+        "tracks": 0,
+        "p25": null,
+        "p75": null,
+        "r2": null,
+        "model": "none",
+        "confidence": "none",
+        "stops": 0,
+        "dropped": 0
+      },
+      "tyre": {
+        "tyreChangeSec": 14.96,
+        "stops": 4,
+        "stopsBeforeFilter": 9,
+        "dropped": 5,
+        "tracks": 3,
+        "p25": 14.28,
+        "p75": 15.48,
+        "confidence": "none"
+      }
+    },
     "LMP2": {
       "refuelLPerSec": 1.474,
       "stops": 2,
@@ -25,54 +60,489 @@
       "tracks": 1,
       "p25": 1.449,
       "p75": 1.499,
-      "confidence": "none"
-    },
-    "LMP2_ELMS": {
-      "refuelLPerSec": 1.585,
-      "stops": 7,
-      "stopsBeforeFilter": 7,
-      "dropped": 0,
-      "tracks": 4,
-      "p25": 1.579,
-      "p75": 1.61,
-      "confidence": "measured"
+      "confidence": "none",
+      "ve": {
+        "pctPerSec": null,
+        "fixedSec": 0,
+        "stopsBeforeFilter": 0,
+        "tracks": 0,
+        "p25": null,
+        "p75": null,
+        "r2": null,
+        "model": "none",
+        "confidence": "none",
+        "stops": 0,
+        "dropped": 0
+      }
     },
     "GT3": {
-      "refuelLPerSec": 1.538,
-      "stops": 14,
-      "stopsBeforeFilter": 16,
-      "dropped": 2,
-      "tracks": 6,
-      "p25": 1.339,
-      "p75": 1.868,
-      "confidence": "measured"
+      "refuelLPerSec": 1.785,
+      "stops": 68,
+      "stopsBeforeFilter": 88,
+      "dropped": 20,
+      "tracks": 14,
+      "p25": 1.425,
+      "p75": 2.061,
+      "confidence": "measured",
+      "ve": {
+        "stops": 48,
+        "stopsBeforeFilter": 88,
+        "dropped": 40,
+        "tracks": 13,
+        "p25": 2.448,
+        "p75": 2.481,
+        "pctPerSec": 2.524,
+        "fixedSec": 0.85,
+        "r2": 0.993,
+        "model": "line",
+        "confidence": "measured"
+      },
+      "tyre": {
+        "tyreChangeSec": 12.06,
+        "stops": 19,
+        "stopsBeforeFilter": 29,
+        "dropped": 10,
+        "tracks": 7,
+        "p25": 11.99,
+        "p75": 12.85,
+        "confidence": "measured"
+      }
     },
     "HYPERCAR": {
-      "refuelLPerSec": null,
-      "stops": 0,
-      "stopsBeforeFilter": 2,
+      "refuelLPerSec": 1.126,
+      "stops": 1,
+      "stopsBeforeFilter": 3,
       "dropped": 2,
-      "tracks": 0,
-      "p25": null,
-      "p75": null,
+      "tracks": 1,
+      "p25": 1.126,
+      "p75": 1.126,
+      "confidence": "none",
+      "ve": {
+        "pctPerSec": null,
+        "fixedSec": 0,
+        "stopsBeforeFilter": 3,
+        "tracks": 2,
+        "p25": 2.34,
+        "p75": 2.385,
+        "r2": null,
+        "model": "none",
+        "confidence": "none",
+        "stops": 2,
+        "dropped": 1
+      }
+    }
+  },
+  "pitLaneByTrack": {
+    "algarve-international-circuit_4635": {
+      "track": "Algarve International Circuit",
+      "laneSec": 33.92,
+      "p25": 31.72,
+      "p75": 42.58,
+      "stops": 9,
+      "stopsBeforeFilter": 11,
+      "dropped": 2,
+      "drivers": 7,
+      "confidence": "measured"
+    },
+    "autodromo-enzo-e-dino-ferrari_4901": {
+      "track": "Autodromo Enzo e Dino Ferrari",
+      "laneSec": 35.95,
+      "p25": 35.91,
+      "p75": 36.65,
+      "stops": 3,
+      "stopsBeforeFilter": 3,
+      "dropped": 0,
+      "drivers": 2,
+      "confidence": "none"
+    },
+    "autodromo-nazionale-monza_5781": {
+      "track": "Autodromo Nazionale Monza",
+      "laneSec": 28.37,
+      "p25": 27.95,
+      "p75": 29.29,
+      "stops": 17,
+      "stopsBeforeFilter": 26,
+      "dropped": 9,
+      "drivers": 10,
+      "confidence": "measured"
+    },
+    "bahrain-international-circuit_5387": {
+      "track": "Bahrain International Circuit",
+      "laneSec": 28.29,
+      "p25": 28.29,
+      "p75": 28.29,
+      "stops": 1,
+      "stopsBeforeFilter": 1,
+      "dropped": 0,
+      "drivers": 1,
+      "confidence": "none"
+    },
+    "circuit-de-barcelona_4655": {
+      "track": "Circuit de Barcelona",
+      "laneSec": 26.26,
+      "p25": 26.15,
+      "p75": 26.73,
+      "stops": 5,
+      "stopsBeforeFilter": 9,
+      "dropped": 4,
+      "drivers": 5,
+      "confidence": "none"
+    },
+    "circuit-de-la-sarthe_13624": {
+      "track": "Circuit de la Sarthe",
+      "laneSec": 34.93,
+      "p25": 34.75,
+      "p75": 35.3,
+      "stops": 43,
+      "stopsBeforeFilter": 63,
+      "dropped": 20,
+      "drivers": 18,
+      "confidence": "measured"
+    },
+    "circuit-de-spa-francorchamps_6982": {
+      "track": "Circuit de Spa-Francorchamps",
+      "laneSec": 55.58,
+      "p25": 22.79,
+      "p75": 87.1,
+      "stops": 4,
+      "stopsBeforeFilter": 4,
+      "dropped": 0,
+      "drivers": 2,
+      "confidence": "none"
+    },
+    "circuit-de-spa-francorchamps-endurance_6982": {
+      "track": "Circuit de Spa-Francorchamps Endurance",
+      "laneSec": 62.95,
+      "p25": 62.48,
+      "p75": 63.84,
+      "stops": 4,
+      "stopsBeforeFilter": 4,
+      "dropped": 0,
+      "drivers": 2,
+      "confidence": "none"
+    },
+    "circuit-of-the-americas_5497": {
+      "track": "Circuit of the Americas",
+      "laneSec": 28.41,
+      "p25": 28.17,
+      "p75": 28.73,
+      "stops": 8,
+      "stopsBeforeFilter": 9,
+      "dropped": 1,
+      "drivers": 6,
+      "confidence": "measured"
+    },
+    "daytona-international-speedway-road-course_5734": {
+      "track": "Daytona International Speedway Road Course",
+      "laneSec": 49.87,
+      "p25": 35.42,
+      "p75": 50.51,
+      "stops": 15,
+      "stopsBeforeFilter": 18,
+      "dropped": 3,
+      "drivers": 9,
+      "confidence": "measured"
+    },
+    "fuji-speedway_4536": {
+      "track": "Fuji Speedway",
+      "laneSec": 32.61,
+      "p25": 32.01,
+      "p75": 32.79,
+      "stops": 7,
+      "stopsBeforeFilter": 11,
+      "dropped": 4,
+      "drivers": 4,
+      "confidence": "none"
+    },
+    "grand-prix-of-long-beach_3187": {
+      "track": "Grand Prix of Long Beach",
+      "laneSec": 43.51,
+      "p25": 43.19,
+      "p75": 43.97,
+      "stops": 19,
+      "stopsBeforeFilter": 21,
+      "dropped": 2,
+      "drivers": 8,
+      "confidence": "measured"
+    },
+    "lusail-international-circuit_5405": {
+      "track": "Lusail International Circuit",
+      "laneSec": 91.43,
+      "p25": 91.43,
+      "p75": 91.43,
+      "stops": 1,
+      "stopsBeforeFilter": 1,
+      "dropped": 0,
+      "drivers": 1,
+      "confidence": "none"
+    },
+    "michelin-raceway-road-atlanta_4083": {
+      "track": "Michelin Raceway Road Atlanta",
+      "laneSec": 34.68,
+      "p25": 34.36,
+      "p75": 35.24,
+      "stops": 13,
+      "stopsBeforeFilter": 15,
+      "dropped": 2,
+      "drivers": 7,
+      "confidence": "measured"
+    },
+    "monza-curva-grande-circuit_5745": {
+      "track": "Monza Curva Grande Circuit",
+      "laneSec": 27.83,
+      "p25": 27.73,
+      "p75": 28.12,
+      "stops": 4,
+      "stopsBeforeFilter": 4,
+      "dropped": 0,
+      "drivers": 3,
+      "confidence": "none"
+    },
+    "paul-ricard-1a-v2_5758": {
+      "track": "Paul Ricard - 1A-V2",
+      "laneSec": 35.61,
+      "p25": 35.57,
+      "p75": 35.66,
+      "stops": 2,
+      "stopsBeforeFilter": 2,
+      "dropped": 0,
+      "drivers": 1,
+      "confidence": "none"
+    },
+    "sebring-international-raceway_5820": {
+      "track": "Sebring International Raceway",
+      "laneSec": 36.91,
+      "p25": 36.56,
+      "p75": 37.26,
+      "stops": 2,
+      "stopsBeforeFilter": 2,
+      "dropped": 0,
+      "drivers": 2,
+      "confidence": "none"
+    },
+    "silverstone-grand-prix-circuit-elms_5869": {
+      "track": "Silverstone Grand Prix Circuit - ELMS",
+      "laneSec": 23.63,
+      "p25": 23.3,
+      "p75": 24.57,
+      "stops": 10,
+      "stopsBeforeFilter": 15,
+      "dropped": 5,
+      "drivers": 6,
+      "confidence": "measured"
+    },
+    "silverstone-grand-prix-circuit-wec_5869": {
+      "track": "Silverstone Grand Prix Circuit - WEC",
+      "laneSec": 75.07,
+      "p25": 55.38,
+      "p75": 82.8,
+      "stops": 3,
+      "stopsBeforeFilter": 3,
+      "dropped": 0,
+      "drivers": 1,
+      "confidence": "none"
+    },
+    "weathertech-raceway-laguna-seca_3590": {
+      "track": "WeatherTech Raceway Laguna Seca",
+      "laneSec": 32.71,
+      "p25": 32.71,
+      "p75": 32.71,
+      "stops": 1,
+      "stopsBeforeFilter": 1,
+      "dropped": 0,
+      "drivers": 1,
       "confidence": "none"
     }
   },
-  "ready": [],
+  "ready": [
+    "GT3 @ Autodromo Nazionale Monza"
+  ],
   "rows": [
+    {
+      "carClass": "GT3",
+      "trackKey": "grand-prix-of-long-beach_3187",
+      "track": "Grand Prix of Long Beach",
+      "trackLengthM": 3187,
+      "basePaceSec": 81.657,
+      "burnBaseLPerLap": 2.1,
+      "capacityL": 120,
+      "kFuelSecPerL": 0.00303,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": 36.02,
+      "referenceStationarySec": 22.19,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "measured",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 1739,
+        "paceLaps": 1406,
+        "paceLapsPooled": 1442,
+        "inLaps": 14,
+        "outLaps": 52,
+        "stops": 5
+      },
+      "diagnostics": {
+        "loadSpreadL": 117.4,
+        "stintMax": 45,
+        "collinearity": 0.55,
+        "drivers": 23,
+        "feLaps": 1406,
+        "t": {
+          "fuel": 2.13,
+          "tyre": -2.72
+        },
+        "fit": {
+          "r2": 0.019,
+          "n": 1391,
+          "droppedOutliers": 15,
+          "cells": 35,
+          "drivers": 23
+        }
+      },
+      "whyNot": [
+        "tyre term came out negative (-0.01207 s/lap) — track evolution, not degradation",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "autodromo-nazionale-monza_5781",
+      "track": "Autodromo Nazionale Monza",
+      "trackLengthM": 5781,
+      "basePaceSec": 111.773,
+      "burnBaseLPerLap": 3.4,
+      "capacityL": 120,
+      "kFuelSecPerL": 0.01234,
+      "tyre": {
+        "linSecPerLap": 0.0245,
+        "cliffLap": null,
+        "cliffSecPerLap": null
+      },
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": 40.17,
+      "referenceStationarySec": 33.37,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "measured",
+        "cliff": "none",
+        "pit": "measured",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 1203,
+        "paceLaps": 797,
+        "paceLapsPooled": 837,
+        "inLaps": 24,
+        "outLaps": 56,
+        "stops": 15
+      },
+      "diagnostics": {
+        "loadSpreadL": 95.8,
+        "stintMax": 25,
+        "collinearity": 0.761,
+        "drivers": 16,
+        "feLaps": 797,
+        "t": {
+          "fuel": 6.01,
+          "tyre": 2.83
+        },
+        "fit": {
+          "r2": 0.055,
+          "n": 775,
+          "droppedOutliers": 22,
+          "cells": 25,
+          "drivers": 16
+        }
+      },
+      "whyNot": [
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "michelin-raceway-road-atlanta_4083",
+      "track": "Michelin Raceway Road Atlanta",
+      "trackLengthM": 4083,
+      "basePaceSec": 81.341,
+      "burnBaseLPerLap": 2.5,
+      "capacityL": 120,
+      "kFuelSecPerL": 0.01096,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 18.34,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 893,
+        "paceLaps": 744,
+        "paceLapsPooled": 777,
+        "inLaps": 1,
+        "outLaps": 28,
+        "stops": 2
+      },
+      "diagnostics": {
+        "loadSpreadL": 116.5,
+        "stintMax": 31,
+        "collinearity": 0.573,
+        "drivers": 21,
+        "feLaps": 744,
+        "t": {
+          "fuel": 5.92,
+          "tyre": -3.04
+        },
+        "fit": {
+          "r2": 0.12,
+          "n": 733,
+          "droppedOutliers": 11,
+          "cells": 23,
+          "drivers": 21
+        }
+      },
+      "whyNot": [
+        "tyre term came out negative (-0.02093 s/lap) — track evolution, not degradation",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 28",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
     {
       "carClass": "GT3",
       "trackKey": "circuit-de-barcelona_4655",
       "track": "Circuit de Barcelona",
       "trackLengthM": 4655,
-      "basePaceSec": 105.289,
+      "basePaceSec": 105.305,
       "burnBaseLPerLap": 2.8,
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
-      "pitCycleLossSec": 85.01,
+      "pitCycleLossSec": 69.02,
       "referenceStationarySec": 41.15,
       "kLiftSecPerLPerLap": null,
       "saveFractionMax": null,
@@ -86,52 +556,108 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 670,
-        "paceLaps": 649,
-        "paceLapsPooled": 652,
-        "inLaps": 5,
-        "outLaps": 10,
+        "burnLaps": 702,
+        "paceLaps": 667,
+        "paceLapsPooled": 678,
+        "inLaps": 6,
+        "outLaps": 13,
         "stops": 7
       },
       "diagnostics": {
         "loadSpreadL": 91.2,
         "stintMax": 32,
-        "collinearity": 0.731,
-        "drivers": 9,
-        "feLaps": 649,
+        "collinearity": 0.735,
+        "drivers": 11,
+        "feLaps": 667,
         "t": {
-          "fuel": 0.62,
-          "tyre": -1.24
+          "fuel": 0.74,
+          "tyre": -1.25
         },
         "fit": {
-          "r2": 0.011,
-          "n": 627,
+          "r2": 0.012,
+          "n": 645,
           "droppedOutliers": 22,
-          "cells": 14,
-          "drivers": 9
+          "cells": 16,
+          "drivers": 11
         }
       },
       "whyNot": [
-        "fuel term is not distinguishable from zero (0.00184 ± 0.00585 s/L, t=0.62, r²=0.011) — lap-time scatter swamps the effect",
-        "kFuel from 649 within-driver laps over a 91 L spread (wants 48 L of a 120 L tank)",
-        "tyre term is not distinguishable from zero (t=-1.24) — degradation is inside the lap-to-lap noise here",
+        "fuel term is not distinguishable from zero (0.0022 ± 0.00586 s/L, t=0.74, r²=0.012) — lap-time scatter swamps the effect",
+        "kFuel from 667 within-driver laps over a 91 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.25) — degradation is inside the lap-to-lap noise here",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
       "carClass": "GT3",
-      "trackKey": "circuit-of-the-americas_5497",
-      "track": "Circuit of the Americas",
-      "trackLengthM": 5497,
-      "basePaceSec": 132,
-      "burnBaseLPerLap": 3.2,
+      "trackKey": "daytona-international-speedway-road-course_5734",
+      "track": "Daytona International Speedway Road Course",
+      "trackLengthM": 5734,
+      "basePaceSec": 108.545,
+      "burnBaseLPerLap": 3.4,
+      "capacityL": 120,
+      "kFuelSecPerL": 0.0119,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": 85.51,
+      "referenceStationarySec": 29.09,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 625,
+        "paceLaps": 567,
+        "paceLapsPooled": 576,
+        "inLaps": 6,
+        "outLaps": 22,
+        "stops": 6
+      },
+      "diagnostics": {
+        "loadSpreadL": 105.4,
+        "stintMax": 28,
+        "collinearity": 0.774,
+        "drivers": 15,
+        "feLaps": 567,
+        "t": {
+          "fuel": 3.65,
+          "tyre": -0.62
+        },
+        "fit": {
+          "r2": 0.076,
+          "n": 555,
+          "droppedOutliers": 12,
+          "cells": 25,
+          "drivers": 15
+        }
+      },
+      "whyNot": [
+        "tyre term is not distinguishable from zero (t=-0.62) — degradation is inside the lap-to-lap noise here",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "circuit-de-la-sarthe_13624",
+      "track": "Circuit de la Sarthe",
+      "trackLengthM": 13624,
+      "basePaceSec": 244.726,
+      "burnBaseLPerLap": 7.6,
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
-      "pitCycleLossSec": null,
-      "referenceStationarySec": 17.24,
+      "pitCycleLossSec": 73.08,
+      "referenceStationarySec": 38.32,
       "kLiftSecPerLPerLap": null,
       "saveFractionMax": null,
       "confidence": {
@@ -139,41 +665,40 @@
         "kFuel": "none",
         "tyre": "none",
         "cliff": "none",
-        "pit": "none",
+        "pit": "measured",
         "refuel": "measured",
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 285,
-        "paceLaps": 245,
-        "paceLapsPooled": 257,
-        "inLaps": 3,
-        "outLaps": 6,
-        "stops": 2
+        "burnLaps": 636,
+        "paceLaps": 506,
+        "paceLapsPooled": 535,
+        "inLaps": 38,
+        "outLaps": 76,
+        "stops": 29
       },
       "diagnostics": {
-        "loadSpreadL": 95,
-        "stintMax": 25,
-        "collinearity": 0.547,
-        "drivers": 8,
-        "feLaps": 245,
+        "loadSpreadL": 94.8,
+        "stintMax": 12,
+        "collinearity": 0.848,
+        "drivers": 17,
+        "feLaps": 506,
         "t": {
-          "fuel": 0.24,
-          "tyre": -0.75
+          "fuel": 1.12,
+          "tyre": -1.71
         },
         "fit": {
-          "r2": 0.005,
-          "n": 242,
-          "droppedOutliers": 3,
-          "cells": 10,
-          "drivers": 8
+          "r2": 0.054,
+          "n": 497,
+          "droppedOutliers": 9,
+          "cells": 23,
+          "drivers": 17
         }
       },
       "whyNot": [
-        "fuel term is not distinguishable from zero (0.00131 ± 0.01055 s/L, t=0.24, r²=0.005) — lap-time scatter swamps the effect",
-        "kFuel from 245 within-driver laps over a 95 L spread (wants 48 L of a 120 L tank)",
-        "tyre term is not distinguishable from zero (t=-0.75) — degradation is inside the lap-to-lap noise here",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 3 and 6",
+        "fuel term is not distinguishable from zero (0.00859 ± 0.01505 s/L, t=1.12, r²=0.054) — lap-time scatter swamps the effect",
+        "kFuel from 506 within-driver laps over a 95 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.71) — degradation is inside the lap-to-lap noise here",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -182,12 +707,12 @@
       "trackKey": "algarve-international-circuit_4635",
       "track": "Algarve International Circuit",
       "trackLengthM": 4635,
-      "basePaceSec": 108.233,
-      "burnBaseLPerLap": 2.9,
+      "basePaceSec": 108.105,
+      "burnBaseLPerLap": 2.8,
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": 19.96,
@@ -203,58 +728,58 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 175,
-        "paceLaps": 157,
-        "paceLapsPooled": 157,
+        "burnLaps": 378,
+        "paceLaps": 300,
+        "paceLapsPooled": 337,
         "inLaps": 2,
-        "outLaps": 10,
+        "outLaps": 25,
         "stops": 1
       },
       "diagnostics": {
-        "loadSpreadL": 83.3,
+        "loadSpreadL": 83.5,
         "stintMax": 27,
-        "collinearity": 0.654,
-        "drivers": 3,
-        "feLaps": 157,
+        "collinearity": 0.513,
+        "drivers": 14,
+        "feLaps": 300,
         "t": {
-          "fuel": -0.84,
-          "tyre": -0.64
+          "fuel": -0.47,
+          "tyre": -0.05
         },
         "fit": {
-          "r2": 0.005,
-          "n": 153,
-          "droppedOutliers": 4,
-          "cells": 9,
-          "drivers": 3
+          "r2": 0.001,
+          "n": 295,
+          "droppedOutliers": 5,
+          "cells": 22,
+          "drivers": 14
         }
       },
       "whyNot": [
-        "fuel term is not distinguishable from zero (-0.00601 ± 0.01401 s/L, t=-0.84, r²=0.005) — lap-time scatter swamps the effect",
-        "kFuel from 157 within-driver laps over a 83 L spread (wants 48 L of a 120 L tank)",
-        "tyre term is not distinguishable from zero (t=-0.64) — degradation is inside the lap-to-lap noise here",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 2 and 10",
+        "fuel term is not distinguishable from zero (-0.00192 ± 0.008 s/L, t=-0.47, r²=0.001) — lap-time scatter swamps the effect",
+        "kFuel from 300 within-driver laps over a 84 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=-0.05) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 2 and 25",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
       "carClass": "GT3",
-      "trackKey": "autodromo-nazionale-monza_5781",
-      "track": "Autodromo Nazionale Monza",
-      "trackLengthM": 5781,
-      "basePaceSec": 112.06,
-      "burnBaseLPerLap": 3.4,
+      "trackKey": "circuit-of-the-americas_5497",
+      "track": "Circuit of the Americas",
+      "trackLengthM": 5497,
+      "basePaceSec": 131.378,
+      "burnBaseLPerLap": 3.2,
       "capacityL": 120,
-      "kFuelSecPerL": 0.0114,
+      "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
-      "referenceStationarySec": null,
+      "referenceStationarySec": 17.55,
       "kLiftSecPerLPerLap": null,
       "saveFractionMax": null,
       "confidence": {
         "burn": "measured",
-        "kFuel": "measured",
+        "kFuel": "none",
         "tyre": "none",
         "cliff": "none",
         "pit": "none",
@@ -262,34 +787,437 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 151,
-        "paceLaps": 144,
-        "paceLapsPooled": 149,
-        "inLaps": 1,
-        "outLaps": 9,
-        "stops": 0
+        "burnLaps": 354,
+        "paceLaps": 298,
+        "paceLapsPooled": 316,
+        "inLaps": 4,
+        "outLaps": 7,
+        "stops": 3
       },
       "diagnostics": {
-        "loadSpreadL": 89.4,
-        "stintMax": 11,
-        "collinearity": 0.309,
-        "drivers": 8,
-        "feLaps": 144,
+        "loadSpreadL": 101,
+        "stintMax": 25,
+        "collinearity": 0.574,
+        "drivers": 9,
+        "feLaps": 298,
         "t": {
-          "fuel": 2.74,
-          "tyre": -1.35
+          "fuel": 1.62,
+          "tyre": -0.93
         },
         "fit": {
-          "r2": 0.091,
-          "n": 138,
-          "droppedOutliers": 6,
-          "cells": 10,
+          "r2": 0.027,
+          "n": 293,
+          "droppedOutliers": 5,
+          "cells": 12,
+          "drivers": 9
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00724 ± 0.00877 s/L, t=1.62, r²=0.027) — lap-time scatter swamps the effect",
+        "kFuel from 298 within-driver laps over a 101 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=-0.93) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 7",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "fuji-speedway_4536",
+      "track": "Fuji Speedway",
+      "trackLengthM": 4536,
+      "basePaceSec": 102.845,
+      "burnBaseLPerLap": 2.4,
+      "capacityL": 120,
+      "kFuelSecPerL": 0.02281,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": 81.37,
+      "referenceStationarySec": 41.34,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "measured",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 871,
+        "paceLaps": 290,
+        "paceLapsPooled": 292,
+        "inLaps": 11,
+        "outLaps": 21,
+        "stops": 7
+      },
+      "diagnostics": {
+        "loadSpreadL": 84.7,
+        "stintMax": 32,
+        "collinearity": 0.522,
+        "drivers": 8,
+        "feLaps": 290,
+        "t": {
+          "fuel": 6.42,
+          "tyre": 1.34
+        },
+        "fit": {
+          "r2": 0.15,
+          "n": 281,
+          "droppedOutliers": 9,
+          "cells": 13,
           "drivers": 8
         }
       },
       "whyNot": [
-        "tyre term is not distinguishable from zero (t=-1.35) — degradation is inside the lap-to-lap noise here",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 9",
+        "tyre term is not distinguishable from zero (t=1.34) — degradation is inside the lap-to-lap noise here",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "grand-prix-of-long-beach_3187",
+      "track": "Grand Prix of Long Beach",
+      "trackLengthM": 3187,
+      "basePaceSec": 73.47,
+      "burnBaseLPerLap": 1.7,
+      "capacityL": 115,
+      "kFuelSecPerL": null,
+      "tyre": {
+        "linSecPerLap": 0.02128,
+        "cliffLap": null,
+        "cliffSecPerLap": null
+      },
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 20.6,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "measured",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 284,
+        "paceLaps": 254,
+        "paceLapsPooled": 257,
+        "inLaps": 4,
+        "outLaps": 7,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 83.6,
+        "stintMax": 45,
+        "collinearity": 0.443,
+        "drivers": 4,
+        "feLaps": 254,
+        "t": {
+          "fuel": 1.82,
+          "tyre": 2.75
+        },
+        "fit": {
+          "r2": 0.031,
+          "n": 253,
+          "droppedOutliers": 1,
+          "cells": 4,
+          "drivers": 4
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00606 ± 0.00654 s/L, t=1.82, r²=0.031) — lap-time scatter swamps the effect",
+        "kFuel from 254 within-driver laps over a 84 L spread (wants 46 L of a 115 L tank)",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 7",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "michelin-raceway-road-atlanta_4083",
+      "track": "Michelin Raceway Road Atlanta",
+      "trackLengthM": 4083,
+      "basePaceSec": 71.997,
+      "burnBaseLPerLap": 2.1,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 7.45,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 290,
+        "paceLaps": 214,
+        "paceLapsPooled": 217,
+        "inLaps": 4,
+        "outLaps": 19,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 70.3,
+        "stintMax": 24,
+        "collinearity": 0.396,
+        "drivers": 8,
+        "feLaps": 214,
+        "t": {
+          "fuel": 1.63,
+          "tyre": -2.08
+        },
+        "fit": {
+          "r2": 0.055,
+          "n": 214,
+          "droppedOutliers": 0,
+          "cells": 15,
+          "drivers": 8
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00629 ± 0.00756 s/L, t=1.63, r²=0.055) — lap-time scatter swamps the effect",
+        "kFuel from 214 within-driver laps over a 70 L spread (wants 30 L of a 75 L tank)",
+        "tyre term came out negative (-0.03525 s/lap) — track evolution, not degradation",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 19",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "grand-prix-of-long-beach_3187",
+      "track": "Grand Prix of Long Beach",
+      "trackLengthM": 3187,
+      "basePaceSec": 75.027,
+      "burnBaseLPerLap": 1.7,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 41.13,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 271,
+        "paceLaps": 204,
+        "paceLapsPooled": 212,
+        "inLaps": 4,
+        "outLaps": 10,
+        "stops": 2
+      },
+      "diagnostics": {
+        "loadSpreadL": 71.4,
+        "stintMax": 42,
+        "collinearity": 0.686,
+        "drivers": 5,
+        "feLaps": 204,
+        "t": {
+          "fuel": 1.2,
+          "tyre": -1.34
+        },
+        "fit": {
+          "r2": 0.052,
+          "n": 203,
+          "droppedOutliers": 1,
+          "cells": 12,
+          "drivers": 5
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00923 ± 0.01504 s/L, t=1.2, r²=0.052) — lap-time scatter swamps the effect",
+        "kFuel from 204 within-driver laps over a 71 L spread (wants 30 L of a 75 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.34) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 10",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "silverstone-grand-prix-circuit-elms_5869",
+      "track": "Silverstone Grand Prix Circuit - ELMS",
+      "trackLengthM": 5869,
+      "basePaceSec": 124.064,
+      "burnBaseLPerLap": 3.4,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": 77.44,
+      "referenceStationarySec": 39.69,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 530,
+        "paceLaps": 151,
+        "paceLapsPooled": 166,
+        "inLaps": 9,
+        "outLaps": 15,
+        "stops": 7
+      },
+      "diagnostics": {
+        "loadSpreadL": 85.2,
+        "stintMax": 24,
+        "collinearity": 0.781,
+        "drivers": 7,
+        "feLaps": 151,
+        "t": {
+          "fuel": 0.56,
+          "tyre": -0.84
+        },
+        "fit": {
+          "r2": 0.032,
+          "n": 150,
+          "droppedOutliers": 1,
+          "cells": 10,
+          "drivers": 7
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00464 ± 0.01623 s/L, t=0.56, r²=0.032) — lap-time scatter swamps the effect",
+        "kFuel from 151 within-driver laps over a 85 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=-0.84) — degradation is inside the lap-to-lap noise here",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "weathertech-raceway-laguna-seca_3590",
+      "track": "WeatherTech Raceway Laguna Seca",
+      "trackLengthM": 3590,
+      "basePaceSec": 84.658,
+      "burnBaseLPerLap": 2.2,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 16.69,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 177,
+        "paceLaps": 146,
+        "paceLapsPooled": 154,
+        "inLaps": 1,
+        "outLaps": 6,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 96.4,
+        "stintMax": 21,
+        "collinearity": 0.484,
+        "drivers": 8,
+        "feLaps": 146,
+        "t": {
+          "fuel": 1.22,
+          "tyre": 0.99
+        },
+        "fit": {
+          "r2": 0.012,
+          "n": 143,
+          "droppedOutliers": 3,
+          "cells": 7,
+          "drivers": 8
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00631 ± 0.01017 s/L, t=1.22, r²=0.012) — lap-time scatter swamps the effect",
+        "kFuel from 146 within-driver laps over a 96 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=0.99) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 6",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "circuit-de-spa-francorchamps-endurance_6982",
+      "track": "Circuit de Spa-Francorchamps Endurance",
+      "trackLengthM": 6982,
+      "basePaceSec": 123.544,
+      "burnBaseLPerLap": 3.3,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": 56.79,
+      "referenceStationarySec": 52.36,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 149,
+        "paceLaps": 135,
+        "paceLapsPooled": 138,
+        "inLaps": 5,
+        "outLaps": 6,
+        "stops": 2
+      },
+      "diagnostics": {
+        "loadSpreadL": 68.6,
+        "stintMax": 23,
+        "collinearity": 0.974,
+        "drivers": 3,
+        "feLaps": 135,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 97% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -303,7 +1231,7 @@
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": 39,
@@ -346,12 +1274,12 @@
       "trackKey": "silverstone-grand-prix-circuit-wec_5869",
       "track": "Silverstone Grand Prix Circuit - WEC",
       "trackLengthM": 5869,
-      "basePaceSec": 123.716,
+      "basePaceSec": 123.613,
       "burnBaseLPerLap": 3.4,
       "capacityL": 120,
-      "kFuelSecPerL": 0.01435,
+      "kFuelSecPerL": 0.01635,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": 7.42,
@@ -367,9 +1295,9 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 134,
-        "paceLaps": 126,
-        "paceLapsPooled": 130,
+        "burnLaps": 144,
+        "paceLaps": 132,
+        "paceLapsPooled": 138,
         "inLaps": 1,
         "outLaps": 7,
         "stops": 1
@@ -377,23 +1305,23 @@
       "diagnostics": {
         "loadSpreadL": 87.3,
         "stintMax": 20,
-        "collinearity": 0.65,
-        "drivers": 3,
-        "feLaps": 126,
+        "collinearity": 0.626,
+        "drivers": 4,
+        "feLaps": 132,
         "t": {
-          "fuel": 2.13,
-          "tyre": -0.06
+          "fuel": 2.51,
+          "tyre": 0.08
         },
         "fit": {
-          "r2": 0.065,
-          "n": 124,
+          "r2": 0.075,
+          "n": 130,
           "droppedOutliers": 2,
           "cells": 7,
-          "drivers": 3
+          "drivers": 4
         }
       },
       "whyNot": [
-        "tyre term is not distinguishable from zero (t=-0.06) — degradation is inside the lap-to-lap noise here",
+        "tyre term is not distinguishable from zero (t=0.08) — degradation is inside the lap-to-lap noise here",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 7",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
@@ -502,7 +1430,7 @@
       "whyNot": [
         "fuel load and stint lap are 97% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 5",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -562,6 +1490,231 @@
         "kFuel from 118 within-driver laps over a 70 L spread (wants 30 L of a 75 L tank)",
         "tyre term is not distinguishable from zero (t=-0.96) — degradation is inside the lap-to-lap noise here",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 3 and 5",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2",
+      "trackKey": "circuit-de-la-sarthe_13624",
+      "track": "Circuit de la Sarthe",
+      "trackLengthM": 13624,
+      "basePaceSec": 222.587,
+      "burnBaseLPerLap": 6.4,
+      "capacityL": 75,
+      "kFuelSecPerL": 0.03448,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 140,
+        "paceLaps": 117,
+        "paceLapsPooled": 123,
+        "inLaps": 0,
+        "outLaps": 4,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 70.1,
+        "stintMax": 11,
+        "collinearity": 0.741,
+        "drivers": 9,
+        "feLaps": 117,
+        "t": {
+          "fuel": 2.25,
+          "tyre": -1.6
+        },
+        "fit": {
+          "r2": 0.218,
+          "n": 114,
+          "droppedOutliers": 3,
+          "cells": 10,
+          "drivers": 9
+        }
+      },
+      "whyNot": [
+        "tyre term is not distinguishable from zero (t=-1.6) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 4",
+        "refuel rate wants 5 fuel-only race stops in the class, has 2",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "daytona-international-speedway-road-course_5734",
+      "track": "Daytona International Speedway Road Course",
+      "trackLengthM": 5734,
+      "basePaceSec": 98.097,
+      "burnBaseLPerLap": 3.1,
+      "capacityL": 112,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 147,
+        "paceLaps": 106,
+        "paceLapsPooled": 113,
+        "inLaps": 0,
+        "outLaps": 4,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 101.4,
+        "stintMax": 25,
+        "collinearity": 0.702,
+        "drivers": 5,
+        "feLaps": 106,
+        "t": {
+          "fuel": -0.4,
+          "tyre": -1.13
+        },
+        "fit": {
+          "r2": 0.016,
+          "n": 106,
+          "droppedOutliers": 0,
+          "cells": 7,
+          "drivers": 5
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (-0.00204 ± 0.01013 s/L, t=-0.4, r²=0.016) — lap-time scatter swamps the effect",
+        "kFuel from 106 within-driver laps over a 101 L spread (wants 45 L of a 112 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.13) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 4",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP3",
+      "trackKey": "circuit-de-spa-francorchamps_6982",
+      "track": "Circuit de Spa-Francorchamps",
+      "trackLengthM": 6982,
+      "basePaceSec": 134.992,
+      "burnBaseLPerLap": 3.3,
+      "capacityL": 100,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 90,
+        "paceLaps": 85,
+        "paceLapsPooled": 85,
+        "inLaps": 0,
+        "outLaps": 7,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 89.8,
+        "stintMax": 14,
+        "collinearity": 0.993,
+        "drivers": 1,
+        "feLaps": 85,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 99% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 7",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "silverstone-grand-prix-circuit-elms_5869",
+      "track": "Silverstone Grand Prix Circuit - ELMS",
+      "trackLengthM": 5869,
+      "basePaceSec": 106.519,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": 87.05,
+      "referenceStationarySec": 31.15,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 179,
+        "paceLaps": 77,
+        "paceLapsPooled": 77,
+        "inLaps": 6,
+        "outLaps": 10,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 68.6,
+        "stintMax": 24,
+        "collinearity": 0.549,
+        "drivers": 2,
+        "feLaps": 77,
+        "t": {
+          "fuel": 1.34,
+          "tyre": -0.44
+        },
+        "fit": {
+          "r2": 0.052,
+          "n": 77,
+          "droppedOutliers": 0,
+          "cells": 6,
+          "drivers": 2
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.01579 ± 0.02313 s/L, t=1.34, r²=0.052) — lap-time scatter swamps the effect",
+        "kFuel from 77 within-driver laps over a 69 L spread (wants 30 L of a 75 L tank)",
+        "tyre term is not distinguishable from zero (t=-0.44) — degradation is inside the lap-to-lap noise here",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -686,11 +1839,221 @@
       ]
     },
     {
+      "carClass": "GT3",
+      "trackKey": "bahrain-international-circuit_5387",
+      "track": "Bahrain International Circuit",
+      "trackLengthM": 5387,
+      "basePaceSec": 123.206,
+      "burnBaseLPerLap": 3.3,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 61,
+        "paceLaps": 47,
+        "paceLapsPooled": 57,
+        "inLaps": 0,
+        "outLaps": 4,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 80.8,
+        "stintMax": 9,
+        "collinearity": 0.975,
+        "drivers": 5,
+        "feLaps": 47,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 98% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 4",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "fuji-speedway_4536",
+      "track": "Fuji Speedway",
+      "trackLengthM": 4536,
+      "basePaceSec": 93.558,
+      "burnBaseLPerLap": 1.9,
+      "capacityL": 115,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": 84.8,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 286,
+        "paceLaps": 47,
+        "paceLapsPooled": 57,
+        "inLaps": 9,
+        "outLaps": 12,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 78,
+        "stintMax": 39,
+        "collinearity": 0.993,
+        "drivers": 3,
+        "feLaps": 47,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 99% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "circuit-de-la-sarthe_13624",
+      "track": "Circuit de la Sarthe",
+      "trackLengthM": 13624,
+      "basePaceSec": 211.657,
+      "burnBaseLPerLap": 6.5,
+      "capacityL": 75,
+      "kFuelSecPerL": 0.04605,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": 55.05,
+      "referenceStationarySec": 11.75,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "partial",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 109,
+        "paceLaps": 46,
+        "paceLapsPooled": 69,
+        "inLaps": 5,
+        "outLaps": 9,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 60.1,
+        "stintMax": 9,
+        "collinearity": 0.404,
+        "drivers": 8,
+        "feLaps": 46,
+        "t": {
+          "fuel": 2.26,
+          "tyre": -0.16
+        },
+        "fit": {
+          "r2": 0.14,
+          "n": 46,
+          "droppedOutliers": 0,
+          "cells": 4,
+          "drivers": 8
+        }
+      },
+      "whyNot": [
+        "tyre term is not distinguishable from zero (t=-0.16) — degradation is inside the lap-to-lap noise here",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2",
+      "trackKey": "michelin-raceway-road-atlanta_4083",
+      "track": "Michelin Raceway Road Atlanta",
+      "trackLengthM": 4083,
+      "basePaceSec": 71.903,
+      "burnBaseLPerLap": 2,
+      "capacityL": 75,
+      "kFuelSecPerL": 0.05933,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 91,
+        "paceLaps": 44,
+        "paceLapsPooled": 47,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 68.9,
+        "stintMax": 23,
+        "collinearity": 0.696,
+        "drivers": 5,
+        "feLaps": 44,
+        "t": {
+          "fuel": 4.97,
+          "tyre": -0.43
+        },
+        "fit": {
+          "r2": 0.587,
+          "n": 44,
+          "droppedOutliers": 0,
+          "cells": 4,
+          "drivers": 5
+        }
+      },
+      "whyNot": [
+        "tyre term is not distinguishable from zero (t=-0.43) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 2",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
       "carClass": "HYPERCAR",
       "trackKey": "circuit-of-the-americas_5497",
       "track": "Circuit of the Americas",
       "trackLengthM": 5497,
-      "basePaceSec": 120.727,
+      "basePaceSec": 120.42,
       "burnBaseLPerLap": 2.5,
       "capacityL": 115,
       "kFuelSecPerL": null,
@@ -711,9 +2074,9 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 64,
-        "paceLaps": 38,
-        "paceLapsPooled": 50,
+        "burnLaps": 69,
+        "paceLaps": 43,
+        "paceLapsPooled": 55,
         "inLaps": 1,
         "outLaps": 2,
         "stops": 1
@@ -721,44 +2084,44 @@
       "diagnostics": {
         "loadSpreadL": 83.7,
         "stintMax": 21,
-        "collinearity": 0.827,
+        "collinearity": 0.821,
         "drivers": 4,
-        "feLaps": 38,
+        "feLaps": 43,
         "t": {
-          "fuel": -1.95,
-          "tyre": -1.34
+          "fuel": -1.74,
+          "tyre": -1.16
         },
         "fit": {
-          "r2": 0.108,
-          "n": 38,
-          "droppedOutliers": 0,
+          "r2": 0.081,
+          "n": 42,
+          "droppedOutliers": 1,
           "cells": 3,
           "drivers": 4
         }
       },
       "whyNot": [
-        "fuel term is not distinguishable from zero (-0.03962 ± 0.03992 s/L, t=-1.95, r²=0.108) — lap-time scatter swamps the effect",
-        "kFuel from 38 within-driver laps over a 84 L spread (wants 46 L of a 115 L tank)",
-        "tyre term is not distinguishable from zero (t=-1.34) — degradation is inside the lap-to-lap noise here",
+        "fuel term is not distinguishable from zero (-0.03445 ± 0.0387 s/L, t=-1.74, r²=0.081) — lap-time scatter swamps the effect",
+        "kFuel from 43 within-driver laps over a 84 L spread (wants 46 L of a 115 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.16) — degradation is inside the lap-to-lap noise here",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 2",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
-      "carClass": "GT3",
-      "trackKey": "circuit-de-la-sarthe_13624",
-      "track": "Circuit de la Sarthe",
-      "trackLengthM": 13624,
-      "basePaceSec": 249.543,
-      "burnBaseLPerLap": 7.5,
-      "capacityL": 120,
+      "carClass": "LMP3",
+      "trackKey": "autodromo-nazionale-monza_5781",
+      "track": "Autodromo Nazionale Monza",
+      "trackLengthM": 5781,
+      "basePaceSec": 106.254,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 100,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
-      "refuelSource": "class",
+      "refuelLPerSec": null,
+      "refuelSource": null,
       "pitCycleLossSec": null,
-      "referenceStationarySec": 58.56,
+      "referenceStationarySec": null,
       "kLiftSecPerLPerLap": null,
       "saveFractionMax": null,
       "confidence": {
@@ -767,40 +2130,206 @@
         "tyre": "none",
         "cliff": "none",
         "pit": "none",
-        "refuel": "measured",
+        "refuel": "none",
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 90,
-        "paceLaps": 34,
-        "paceLapsPooled": 52,
-        "inLaps": 4,
-        "outLaps": 13,
-        "stops": 2
+        "burnLaps": 52,
+        "paceLaps": 43,
+        "paceLapsPooled": 47,
+        "inLaps": 0,
+        "outLaps": 4,
+        "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 65.8,
-        "stintMax": 8,
-        "collinearity": 0.499,
-        "drivers": 5,
-        "feLaps": 34,
+        "loadSpreadL": 92.9,
+        "stintMax": 12,
+        "collinearity": 0.979,
+        "drivers": 2,
+        "feLaps": 43,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 98% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 4",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2",
+      "trackKey": "circuit-of-the-americas_5497",
+      "track": "Circuit of the Americas",
+      "trackLengthM": 5497,
+      "basePaceSec": 127.454,
+      "burnBaseLPerLap": 2.5,
+      "capacityL": 63,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 49,
+        "paceLaps": 41,
+        "paceLapsPooled": 44,
+        "inLaps": 1,
+        "outLaps": 2,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 55.3,
+        "stintMax": 17,
+        "collinearity": 0.849,
+        "drivers": 2,
+        "feLaps": 41,
         "t": {
-          "fuel": -0.69,
-          "tyre": -1.68
+          "fuel": -1.94,
+          "tyre": -1.62
         },
         "fit": {
           "r2": 0.092,
-          "n": 34,
+          "n": 41,
           "droppedOutliers": 0,
+          "cells": 2,
+          "drivers": 2
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (-0.05809 ± 0.05875 s/L, t=-1.94, r²=0.092) — lap-time scatter swamps the effect",
+        "kFuel from 41 within-driver laps over a 55 L spread (wants 25 L of a 63 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.62) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 2",
+        "refuel rate wants 5 fuel-only race stops in the class, has 2",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "michelin-raceway-road-atlanta_4083",
+      "track": "Michelin Raceway Road Atlanta",
+      "trackLengthM": 4083,
+      "basePaceSec": 73.148,
+      "burnBaseLPerLap": 2,
+      "capacityL": 115,
+      "kFuelSecPerL": 0.01659,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 60,
+        "paceLaps": 40,
+        "paceLapsPooled": 41,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 96.4,
+        "stintMax": 8,
+        "collinearity": 0.267,
+        "drivers": 5,
+        "feLaps": 40,
+        "t": {
+          "fuel": 2.16,
+          "tyre": -2.52
+        },
+        "fit": {
+          "r2": 0.313,
+          "n": 39,
+          "droppedOutliers": 1,
           "cells": 4,
           "drivers": 5
         }
       },
       "whyNot": [
-        "fuel term is not distinguishable from zero (-0.01687 ± 0.04776 s/L, t=-0.69, r²=0.092) — lap-time scatter swamps the effect",
-        "kFuel from 34 within-driver laps over a 66 L spread (wants 48 L of a 120 L tank)",
-        "tyre term is not distinguishable from zero (t=-1.68) — degradation is inside the lap-to-lap noise here",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 13",
+        "tyre term came out negative (-0.23392 s/lap) — track evolution, not degradation",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2",
+      "trackKey": "sebring-international-raceway_5820",
+      "track": "Sebring International Raceway",
+      "trackLengthM": 5820,
+      "basePaceSec": 114.293,
+      "burnBaseLPerLap": 2.7,
+      "capacityL": 63,
+      "kFuelSecPerL": 0.09074,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "measured",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 42,
+        "paceLaps": 35,
+        "paceLapsPooled": 37,
+        "inLaps": 1,
+        "outLaps": 1,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 49.8,
+        "stintMax": 35,
+        "collinearity": 0.625,
+        "drivers": 1,
+        "feLaps": 35,
+        "t": {
+          "fuel": 2.71,
+          "tyre": 1.41
+        },
+        "fit": {
+          "r2": 0.195,
+          "n": 35,
+          "droppedOutliers": 0,
+          "cells": 2,
+          "drivers": 1
+        }
+      },
+      "whyNot": [
+        "tyre term is not distinguishable from zero (t=1.41) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 1",
+        "refuel rate wants 5 fuel-only race stops in the class, has 2",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -814,7 +2343,7 @@
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": 47.03,
@@ -849,6 +2378,233 @@
       "whyNot": [
         "fuel load and stint lap are 97% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 3",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "paul-ricard-1a-v2_5758",
+      "track": "Paul Ricard - 1A-V2",
+      "trackLengthM": 5758,
+      "basePaceSec": 120.159,
+      "burnBaseLPerLap": 3.2,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": 15.12,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 40,
+        "paceLaps": 34,
+        "paceLapsPooled": 38,
+        "inLaps": 2,
+        "outLaps": 3,
+        "stops": 1
+      },
+      "diagnostics": {
+        "loadSpreadL": 63.9,
+        "stintMax": 14,
+        "collinearity": 0.266,
+        "drivers": 1,
+        "feLaps": 34,
+        "t": {
+          "fuel": 0.51,
+          "tyre": 1.09
+        },
+        "fit": {
+          "r2": 0.041,
+          "n": 33,
+          "droppedOutliers": 1,
+          "cells": 2,
+          "drivers": 1
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00453 ± 0.01744 s/L, t=0.51, r²=0.041) — lap-time scatter swamps the effect",
+        "kFuel from 34 within-driver laps over a 64 L spread (wants 48 L of a 120 L tank)",
+        "tyre term is not distinguishable from zero (t=1.09) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 2 and 3",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "lusail-international-circuit_5405",
+      "track": "Lusail International Circuit",
+      "trackLengthM": 5405,
+      "basePaceSec": 120.57,
+      "burnBaseLPerLap": 3.2,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 55,
+        "paceLaps": 32,
+        "paceLapsPooled": 44,
+        "inLaps": 0,
+        "outLaps": 4,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 83.2,
+        "stintMax": 16,
+        "collinearity": 0.99,
+        "drivers": 4,
+        "feLaps": 32,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "fuel load and stint lap are 99% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 4",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "autodromo-enzo-e-dino-ferrari_4901",
+      "track": "Autodromo Enzo e Dino Ferrari",
+      "trackLengthM": 4901,
+      "basePaceSec": 92.423,
+      "burnBaseLPerLap": 2.7,
+      "capacityL": 110,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 40,
+        "paceLaps": 31,
+        "paceLapsPooled": 39,
+        "inLaps": 0,
+        "outLaps": 1,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 78.9,
+        "stintMax": 26,
+        "collinearity": 0.738,
+        "drivers": 2,
+        "feLaps": 31,
+        "t": {
+          "fuel": 0.67,
+          "tyre": 0.6
+        },
+        "fit": {
+          "r2": 0.018,
+          "n": 30,
+          "droppedOutliers": 1,
+          "cells": 2,
+          "drivers": 2
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.00836 ± 0.0246 s/L, t=0.67, r²=0.018) — lap-time scatter swamps the effect",
+        "kFuel from 31 within-driver laps over a 79 L spread (wants 44 L of a 110 L tank)",
+        "tyre term is not distinguishable from zero (t=0.6) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "circuit-de-la-sarthe_13624",
+      "track": "Circuit de la Sarthe",
+      "trackLengthM": 13624,
+      "basePaceSec": 217.451,
+      "burnBaseLPerLap": 7.3,
+      "capacityL": 112,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 49,
+        "paceLaps": 31,
+        "paceLapsPooled": 38,
+        "inLaps": 4,
+        "outLaps": 6,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 82.1,
+        "stintMax": 11,
+        "collinearity": 0.697,
+        "drivers": 6,
+        "feLaps": 31,
+        "t": {
+          "fuel": 1.58,
+          "tyre": 0.51
+        },
+        "fit": {
+          "r2": 0.121,
+          "n": 29,
+          "droppedOutliers": 2,
+          "cells": 3,
+          "drivers": 6
+        }
+      },
+      "whyNot": [
+        "fuel term is not distinguishable from zero (0.03256 ± 0.04042 s/L, t=1.58, r²=0.121) — lap-time scatter swamps the effect",
+        "kFuel from 31 within-driver laps over a 82 L spread (wants 45 L of a 112 L tank)",
+        "tyre term is not distinguishable from zero (t=0.51) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 4 and 6",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -908,115 +2664,7 @@
         "kFuel from 31 within-driver laps over a 80 L spread (wants 46 L of a 115 L tank)",
         "tyre term is not distinguishable from zero (t=-0.68) — degradation is inside the lap-to-lap noise here",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 2",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
-      "carClass": "GT3",
-      "trackKey": "silverstone-grand-prix-circuit-elms_5869",
-      "track": "Silverstone Grand Prix Circuit - ELMS",
-      "trackLengthM": 5869,
-      "basePaceSec": 124.689,
-      "burnBaseLPerLap": 3.4,
-      "capacityL": 120,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": 1.538,
-      "refuelSource": "class",
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "measured",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "measured",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 34,
-        "paceLaps": 30,
-        "paceLapsPooled": 32,
-        "inLaps": 0,
-        "outLaps": 1,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 44.4,
-        "stintMax": 15,
-        "collinearity": 1,
-        "drivers": 1,
-        "feLaps": 30,
-        "t": null,
-        "fit": null
-      },
-      "whyNot": [
-        "fuel load and stint lap are 100% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
-      "carClass": "HYPERCAR",
-      "trackKey": "daytona-international-speedway-road-course_5734",
-      "track": "Daytona International Speedway Road Course",
-      "trackLengthM": 5734,
-      "basePaceSec": 102.431,
-      "burnBaseLPerLap": 3,
-      "capacityL": 110,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": null,
-      "refuelSource": null,
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "measured",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "none",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 38,
-        "paceLaps": 29,
-        "paceLapsPooled": 29,
-        "inLaps": 0,
-        "outLaps": 1,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 83.4,
-        "stintMax": 6,
-        "collinearity": 0.325,
-        "drivers": 1,
-        "feLaps": 29,
-        "t": {
-          "fuel": 0.69,
-          "tyre": -2.48
-        },
-        "fit": {
-          "r2": 0.257,
-          "n": 29,
-          "droppedOutliers": 0,
-          "cells": 2,
-          "drivers": 1
-        }
-      },
-      "whyNot": [
-        "fuel term is not distinguishable from zero (0.00662 ± 0.01881 s/L, t=0.69, r²=0.257) — lap-time scatter swamps the effect",
-        "kFuel from 29 within-driver laps over a 83 L spread (wants 44 L of a 110 L tank)",
-        "tyre term came out negative (-0.68 s/lap) — track evolution, not degradation",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -1030,7 +2678,7 @@
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
@@ -1046,18 +2694,18 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 35,
+        "burnLaps": 80,
         "paceLaps": 28,
-        "paceLapsPooled": 32,
+        "paceLapsPooled": 33,
         "inLaps": 1,
-        "outLaps": 5,
+        "outLaps": 9,
         "stops": 0
       },
       "diagnostics": {
         "loadSpreadL": 64.2,
         "stintMax": 13,
         "collinearity": 0.855,
-        "drivers": 2,
+        "drivers": 3,
         "feLaps": 28,
         "t": {
           "fuel": -1.31,
@@ -1068,28 +2716,28 @@
           "n": 28,
           "droppedOutliers": 0,
           "cells": 1,
-          "drivers": 2
+          "drivers": 3
         }
       },
       "whyNot": [
         "fuel term is not distinguishable from zero (-0.03745 ± 0.0561 s/L, t=-1.31, r²=0.339) — lap-time scatter swamps the effect",
         "kFuel from 28 within-driver laps over a 64 L spread (wants 48 L of a 120 L tank), and 86% collinear with stint lap",
         "tyre term came out negative (-0.46247 s/lap) — track evolution, not degradation",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 5",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 9",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
-      "carClass": "GT3",
-      "trackKey": "weathertech-raceway-laguna-seca_3590",
-      "track": "WeatherTech Raceway Laguna Seca",
-      "trackLengthM": 3590,
-      "basePaceSec": 84.74,
-      "burnBaseLPerLap": 2.2,
-      "capacityL": 120,
+      "carClass": "LMP2_ELMS",
+      "trackKey": "circuit-de-spa-francorchamps_6982",
+      "track": "Circuit de Spa-Francorchamps",
+      "trackLengthM": 6982,
+      "basePaceSec": 129.522,
+      "burnBaseLPerLap": 3.4,
+      "capacityL": 75,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.585,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
@@ -1105,39 +2753,159 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 32,
-        "paceLaps": 28,
-        "paceLapsPooled": 31,
+        "burnLaps": 41,
+        "paceLaps": 25,
+        "paceLapsPooled": 36,
         "inLaps": 0,
-        "outLaps": 0,
+        "outLaps": 2,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 29.5,
-        "stintMax": 15,
-        "collinearity": 1,
-        "drivers": 3,
-        "feLaps": 28,
-        "t": null,
-        "fit": null
+        "loadSpreadL": 71.9,
+        "stintMax": 14,
+        "collinearity": 0.685,
+        "drivers": 4,
+        "feLaps": 25,
+        "t": {
+          "fuel": -0.67,
+          "tyre": -1.37
+        },
+        "fit": {
+          "r2": 0.095,
+          "n": 24,
+          "droppedOutliers": 1,
+          "cells": 3,
+          "drivers": 4
+        }
       },
       "whyNot": [
-        "fuel load and stint lap are 100% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "fuel term is not distinguishable from zero (-0.01802 ± 0.05244 s/L, t=-0.67, r²=0.095) — lap-time scatter swamps the effect",
+        "kFuel from 25 within-driver laps over a 72 L spread (wants 30 L of a 75 L tank)",
+        "tyre term is not distinguishable from zero (t=-1.37) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 2",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
-      "carClass": "GT3",
-      "trackKey": "lusail-international-circuit_5405",
-      "track": "Lusail International Circuit",
-      "trackLengthM": 5405,
-      "basePaceSec": 124.598,
-      "burnBaseLPerLap": 3.2,
-      "capacityL": 120,
+      "carClass": "LMP3",
+      "trackKey": "circuit-de-la-sarthe_13624",
+      "track": "Circuit de la Sarthe",
+      "trackLengthM": 13624,
+      "basePaceSec": 218.009,
+      "burnBaseLPerLap": 6.6,
+      "capacityL": 100,
+      "kFuelSecPerL": 0.18568,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "partial",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 51,
+        "paceLaps": 25,
+        "paceLapsPooled": 47,
+        "inLaps": 2,
+        "outLaps": 11,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 90.7,
+        "stintMax": 6,
+        "collinearity": 0.798,
+        "drivers": 7,
+        "feLaps": 25,
+        "t": {
+          "fuel": 4.09,
+          "tyre": 1.98
+        },
+        "fit": {
+          "r2": 0.515,
+          "n": 25,
+          "droppedOutliers": 0,
+          "cells": 3,
+          "drivers": 7
+        }
+      },
+      "whyNot": [
+        "kFuel from 25 within-driver laps over a 91 L spread (wants 40 L of a 100 L tank)",
+        "tyre term is not distinguishable from zero (t=1.98) — degradation is inside the lap-to-lap noise here",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 2 and 11",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP3",
+      "trackKey": "michelin-raceway-road-atlanta_4083",
+      "track": "Michelin Raceway Road Atlanta",
+      "trackLengthM": 4083,
+      "basePaceSec": 77.799,
+      "burnBaseLPerLap": 2,
+      "capacityL": 100,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 27,
+        "paceLaps": 22,
+        "paceLapsPooled": 23,
+        "inLaps": 1,
+        "outLaps": 2,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 62,
+        "stintMax": 9,
+        "collinearity": 0.999,
+        "drivers": 2,
+        "feLaps": 22,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 27 laps, wants 30",
+        "fuel load and stint lap are 100% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 2",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "bahrain-international-circuit_5387",
+      "track": "Bahrain International Circuit",
+      "trackLengthM": 5387,
+      "basePaceSec": 109.224,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
@@ -1153,26 +2921,26 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 29,
-        "paceLaps": 18,
+        "burnLaps": 23,
+        "paceLaps": 20,
         "paceLapsPooled": 23,
         "inLaps": 0,
-        "outLaps": 2,
+        "outLaps": 1,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 39.6,
-        "stintMax": 14,
+        "loadSpreadL": 42.8,
+        "stintMax": 17,
         "collinearity": 1,
-        "drivers": 3,
-        "feLaps": 18,
+        "drivers": 1,
+        "feLaps": 20,
         "t": null,
         "fit": null
       },
       "whyNot": [
-        "burn from 29 laps, wants 30",
+        "burn from 23 laps, wants 30",
         "fuel load and stint lap are 100% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 2",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -1227,62 +2995,60 @@
       ]
     },
     {
-      "carClass": "LMP2",
-      "trackKey": "circuit-of-the-americas_5497",
-      "track": "Circuit of the Americas",
-      "trackLengthM": 5497,
-      "basePaceSec": 121.466,
-      "burnBaseLPerLap": 2.6,
-      "capacityL": 63,
+      "carClass": "LMP2_ELMS",
+      "trackKey": "daytona-international-speedway-road-course_5734",
+      "track": "Daytona International Speedway Road Course",
+      "trackLengthM": 5734,
+      "basePaceSec": 98.366,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 75,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": null,
-      "refuelSource": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
       "kLiftSecPerLPerLap": null,
       "saveFractionMax": null,
       "confidence": {
-        "burn": "partial",
+        "burn": "measured",
         "kFuel": "none",
         "tyre": "none",
         "cliff": "none",
         "pit": "none",
-        "refuel": "none",
+        "refuel": "measured",
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 15,
-        "paceLaps": 14,
-        "paceLapsPooled": 14,
-        "inLaps": 0,
-        "outLaps": 0,
+        "burnLaps": 38,
+        "paceLaps": 17,
+        "paceLapsPooled": 20,
+        "inLaps": 1,
+        "outLaps": 5,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 28.9,
-        "stintMax": 13,
-        "collinearity": null,
-        "drivers": 1,
-        "feLaps": 14,
+        "loadSpreadL": 50,
+        "stintMax": 7,
+        "collinearity": 0.958,
+        "drivers": 2,
+        "feLaps": 17,
         "t": null,
         "fit": null
       },
       "whyNot": [
-        "burn from 15 laps, wants 30",
-        "only 14 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
-        "refuel rate wants 5 fuel-only race stops in the class, has 2",
+        "fuel load and stint lap are 96% collinear — every stint started at the same fuel load, so the fuel and tyre terms cannot be separated",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 5",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
       "carClass": "LMP2_ELMS",
-      "trackKey": "paul-ricard-elms_5807",
-      "track": "Paul Ricard - ELMS",
-      "trackLengthM": 5807,
-      "basePaceSec": 120.624,
-      "burnBaseLPerLap": 2.65,
+      "trackKey": "weathertech-raceway-laguna-seca_3590",
+      "track": "WeatherTech Raceway Laguna Seca",
+      "trackLengthM": 3590,
+      "basePaceSec": 76.455,
+      "burnBaseLPerLap": 1.8,
       "capacityL": 75,
       "kFuelSecPerL": null,
       "tyre": null,
@@ -1302,40 +3068,137 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 14,
-        "paceLaps": 13,
-        "paceLapsPooled": 13,
+        "burnLaps": 26,
+        "paceLaps": 14,
+        "paceLapsPooled": 19,
         "inLaps": 0,
         "outLaps": 1,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 34.6,
-        "stintMax": 15,
+        "loadSpreadL": 66.8,
+        "stintMax": 9,
         "collinearity": null,
-        "drivers": 1,
-        "feLaps": 13,
+        "drivers": 3,
+        "feLaps": 14,
         "t": null,
         "fit": null
       },
       "whyNot": [
-        "burn from 14 laps, wants 30",
-        "only 13 laps carry both a fuel load and a stint position",
+        "burn from 26 laps, wants 30",
+        "only 19 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "sebring-international-raceway_5820",
+      "track": "Sebring International Raceway",
+      "trackLengthM": 5820,
+      "basePaceSec": 124.996,
+      "burnBaseLPerLap": 3.6,
+      "capacityL": 117,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 19,
+        "paceLaps": 12,
+        "paceLapsPooled": 18,
+        "inLaps": 0,
+        "outLaps": 1,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 71.7,
+        "stintMax": 14,
+        "collinearity": null,
+        "drivers": 1,
+        "feLaps": 12,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 19 laps, wants 30",
+        "only 18 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
       "carClass": "LMP2_ELMS",
-      "trackKey": "circuit-de-la-sarthe_13624",
-      "track": "Circuit de la Sarthe",
-      "trackLengthM": 13624,
-      "basePaceSec": 215.78,
-      "burnBaseLPerLap": 6.4,
+      "trackKey": "autodromo-nazionale-monza_5781",
+      "track": "Autodromo Nazionale Monza",
+      "trackLengthM": 5781,
+      "basePaceSec": 101.626,
+      "burnBaseLPerLap": 2.7,
       "capacityL": 75,
       "kFuelSecPerL": null,
       "tyre": null,
       "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "measured",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 109,
+        "paceLaps": 12,
+        "paceLapsPooled": 16,
+        "inLaps": 1,
+        "outLaps": 3,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 63.3,
+        "stintMax": 8,
+        "collinearity": null,
+        "drivers": 2,
+        "feLaps": 12,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "only 16 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 3",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "paul-ricard-elms_5807",
+      "track": "Paul Ricard - ELMS",
+      "trackLengthM": 5807,
+      "basePaceSec": 133.577,
+      "burnBaseLPerLap": 3.3,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
@@ -1351,16 +3214,65 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 13,
-        "paceLaps": 10,
-        "paceLapsPooled": 13,
-        "inLaps": 1,
-        "outLaps": 4,
+        "burnLaps": 17,
+        "paceLaps": 11,
+        "paceLapsPooled": 15,
+        "inLaps": 0,
+        "outLaps": 1,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 54.6,
-        "stintMax": 9,
+        "loadSpreadL": 66.3,
+        "stintMax": 14,
+        "collinearity": null,
+        "drivers": 2,
+        "feLaps": 11,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 17 laps, wants 30",
+        "only 15 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "GT3",
+      "trackKey": "lusail-short-circuit_3676",
+      "track": "Lusail Short Circuit",
+      "trackLengthM": 3676,
+      "basePaceSec": 73.77,
+      "burnBaseLPerLap": 2.3,
+      "capacityL": 120,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.785,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 10,
+        "paceLaps": 10,
+        "paceLapsPooled": 10,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 6.8,
+        "stintMax": 5,
         "collinearity": null,
         "drivers": 1,
         "feLaps": 10,
@@ -1368,9 +3280,9 @@
         "fit": null
       },
       "whyNot": [
-        "burn from 13 laps, wants 30",
-        "only 13 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 4",
+        "burn from 10 laps, wants 30",
+        "only 10 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -1379,7 +3291,7 @@
       "trackKey": "bahrain-international-circuit_5387",
       "track": "Bahrain International Circuit",
       "trackLengthM": 5387,
-      "basePaceSec": 119.281,
+      "basePaceSec": 120.118,
       "burnBaseLPerLap": 2.8,
       "capacityL": 100,
       "kFuelSecPerL": null,
@@ -1400,7 +3312,7 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 17,
+        "burnLaps": 19,
         "paceLaps": 9,
         "paceLapsPooled": 13,
         "inLaps": 1,
@@ -1417,108 +3329,9 @@
         "fit": null
       },
       "whyNot": [
-        "burn from 17 laps, wants 30",
+        "burn from 19 laps, wants 30",
         "only 13 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 2",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
-      "carClass": "GT3",
-      "trackKey": "daytona-international-speedway-road-course_5734",
-      "track": "Daytona International Speedway Road Course",
-      "trackLengthM": 5734,
-      "basePaceSec": 110.451,
-      "burnBaseLPerLap": 3.3,
-      "capacityL": 120,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": 1.538,
-      "refuelSource": "class",
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "partial",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "measured",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 12,
-        "paceLaps": 8,
-        "paceLapsPooled": 10,
-        "inLaps": 0,
-        "outLaps": 0,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 30.6,
-        "stintMax": 4,
-        "collinearity": null,
-        "drivers": 2,
-        "feLaps": 8,
-        "t": null,
-        "fit": null
-      },
-      "whyNot": [
-        "burn from 12 laps, wants 30",
-        "only 10 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
-      "carClass": "HYPERCAR",
-      "trackKey": "autodromo-enzo-e-dino-ferrari_4901",
-      "track": "Autodromo Enzo e Dino Ferrari",
-      "trackLengthM": 4901,
-      "basePaceSec": 93.484,
-      "burnBaseLPerLap": 2.65,
-      "capacityL": 110,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": null,
-      "refuelSource": null,
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "partial",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "none",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 8,
-        "paceLaps": 8,
-        "paceLapsPooled": 8,
-        "inLaps": 0,
-        "outLaps": 0,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 66.9,
-        "stintMax": 6,
-        "collinearity": null,
-        "drivers": 1,
-        "feLaps": 8,
-        "t": null,
-        "fit": null
-      },
-      "whyNot": [
-        "burn from 8 laps, wants 30",
-        "only 8 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
         "refuel rate wants 5 fuel-only race stops in the class, has 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
@@ -1573,12 +3386,161 @@
       ]
     },
     {
+      "carClass": "GTE",
+      "trackKey": "circuit-de-spa-francorchamps_6982",
+      "track": "Circuit de Spa-Francorchamps",
+      "trackLengthM": 6982,
+      "basePaceSec": 141.089,
+      "burnBaseLPerLap": 3.6,
+      "capacityL": 119,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 17,
+        "paceLaps": 7,
+        "paceLapsPooled": 16,
+        "inLaps": 0,
+        "outLaps": 2,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 82.9,
+        "stintMax": 9,
+        "collinearity": null,
+        "drivers": 4,
+        "feLaps": 7,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 17 laps, wants 30",
+        "only 16 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 2",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "HYPERCAR",
+      "trackKey": "bahrain-international-circuit_5387",
+      "track": "Bahrain International Circuit",
+      "trackLengthM": 5387,
+      "basePaceSec": 112.796,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 112,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 13,
+        "paceLaps": 7,
+        "paceLapsPooled": 10,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 39.7,
+        "stintMax": 5,
+        "collinearity": null,
+        "drivers": 3,
+        "feLaps": 7,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 13 laps, wants 30",
+        "only 10 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "paul-ricard-elms_5807",
+      "track": "Paul Ricard - ELMS",
+      "trackLengthM": 5807,
+      "basePaceSec": 119.197,
+      "burnBaseLPerLap": 2.7,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 18,
+        "paceLaps": 7,
+        "paceLapsPooled": 11,
+        "inLaps": 0,
+        "outLaps": 1,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 32.2,
+        "stintMax": 15,
+        "collinearity": null,
+        "drivers": 2,
+        "feLaps": 7,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 18 laps, wants 30",
+        "only 11 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
       "carClass": "LMP3",
       "trackKey": "algarve-international-circuit_4635",
       "track": "Algarve International Circuit",
       "trackLengthM": 4635,
-      "basePaceSec": 107.852,
-      "burnBaseLPerLap": 2.25,
+      "basePaceSec": 107.678,
+      "burnBaseLPerLap": 2.3,
       "capacityL": 100,
       "kFuelSecPerL": null,
       "tyre": null,
@@ -1598,9 +3560,9 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 10,
-        "paceLaps": 8,
-        "paceLapsPooled": 8,
+        "burnLaps": 14,
+        "paceLaps": 7,
+        "paceLapsPooled": 10,
         "inLaps": 0,
         "outLaps": 1,
         "stops": 0
@@ -1609,65 +3571,15 @@
         "loadSpreadL": 15.6,
         "stintMax": 10,
         "collinearity": null,
-        "drivers": 1,
-        "feLaps": 8,
+        "drivers": 2,
+        "feLaps": 7,
         "t": null,
         "fit": null
       },
       "whyNot": [
-        "burn from 10 laps, wants 30",
-        "only 8 laps carry both a fuel load and a stint position",
+        "burn from 14 laps, wants 30",
+        "only 10 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
-      "carClass": "HYPERCAR",
-      "trackKey": "circuit-de-la-sarthe_13624",
-      "track": "Circuit de la Sarthe",
-      "trackLengthM": 13624,
-      "basePaceSec": 221.641,
-      "burnBaseLPerLap": 6.8,
-      "capacityL": 110,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": null,
-      "refuelSource": null,
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "partial",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "none",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 7,
-        "paceLaps": 6,
-        "paceLapsPooled": 6,
-        "inLaps": 0,
-        "outLaps": 0,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 58.4,
-        "stintMax": 3,
-        "collinearity": null,
-        "drivers": 1,
-        "feLaps": 6,
-        "t": null,
-        "fit": null
-      },
-      "whyNot": [
-        "burn from 7 laps, wants 30",
-        "only 6 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
         "refuel rate wants 5 fuel-only race stops in the class, has 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
@@ -1718,17 +3630,117 @@
         "burn from 7 laps, wants 30",
         "only 6 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP3",
+      "trackKey": "fuji-speedway-classic_4502",
+      "track": "Fuji Speedway Classic",
+      "trackLengthM": 4502,
+      "basePaceSec": 96.078,
+      "burnBaseLPerLap": 2.1,
+      "capacityL": 100,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 12,
+        "paceLaps": 6,
+        "paceLapsPooled": 9,
+        "inLaps": 0,
+        "outLaps": 1,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 17.8,
+        "stintMax": 10,
+        "collinearity": null,
+        "drivers": 1,
+        "feLaps": 6,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 12 laps, wants 30",
+        "only 9 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 1",
         "refuel rate wants 5 fuel-only race stops in the class, has 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
-      "carClass": "LMP2_ELMS",
-      "trackKey": "silverstone-grand-prix-circuit-elms_5869",
-      "track": "Silverstone Grand Prix Circuit - ELMS",
+      "carClass": "LMP2",
+      "trackKey": "silverstone-grand-prix-circuit-wec_5869",
+      "track": "Silverstone Grand Prix Circuit - WEC",
       "trackLengthM": 5869,
-      "basePaceSec": 105.943,
-      "burnBaseLPerLap": 3,
+      "basePaceSec": 112.907,
+      "burnBaseLPerLap": 2.9,
+      "capacityL": 63,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": null,
+      "refuelSource": null,
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "none",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 5,
+        "paceLaps": 5,
+        "paceLapsPooled": 5,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 11.8,
+        "stintMax": 7,
+        "collinearity": null,
+        "drivers": 1,
+        "feLaps": 5,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 5 laps, wants 30",
+        "only 5 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 2",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "fuji-speedway_4536",
+      "track": "Fuji Speedway",
+      "trackLengthM": 4536,
+      "basePaceSec": 93.01,
+      "burnBaseLPerLap": 2.15,
       "capacityL": 75,
       "kFuelSecPerL": null,
       "tyre": null,
@@ -1748,7 +3760,7 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 5,
+        "burnLaps": 6,
         "paceLaps": 5,
         "paceLapsPooled": 5,
         "inLaps": 0,
@@ -1756,8 +3768,8 @@
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 12,
-        "stintMax": 6,
+        "loadSpreadL": 10.8,
+        "stintMax": 8,
         "collinearity": null,
         "drivers": 1,
         "feLaps": 5,
@@ -1765,7 +3777,7 @@
         "fit": null
       },
       "whyNot": [
-        "burn from 5 laps, wants 30",
+        "burn from 6 laps, wants 30",
         "only 5 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
@@ -1872,66 +3884,16 @@
       ]
     },
     {
-      "carClass": "LMP3",
-      "trackKey": "circuit-de-la-sarthe_13624",
-      "track": "Circuit de la Sarthe",
-      "trackLengthM": 13624,
-      "basePaceSec": 231.214,
-      "burnBaseLPerLap": 6.6,
-      "capacityL": 100,
-      "kFuelSecPerL": null,
-      "tyre": null,
-      "refuelLPerSec": null,
-      "refuelSource": null,
-      "pitCycleLossSec": null,
-      "referenceStationarySec": null,
-      "kLiftSecPerLPerLap": null,
-      "saveFractionMax": null,
-      "confidence": {
-        "burn": "partial",
-        "kFuel": "none",
-        "tyre": "none",
-        "cliff": "none",
-        "pit": "none",
-        "refuel": "none",
-        "kLift": "none"
-      },
-      "n": {
-        "burnLaps": 13,
-        "paceLaps": 5,
-        "paceLapsPooled": 13,
-        "inLaps": 1,
-        "outLaps": 4,
-        "stops": 0
-      },
-      "diagnostics": {
-        "loadSpreadL": 31.8,
-        "stintMax": 6,
-        "collinearity": null,
-        "drivers": 3,
-        "feLaps": 5,
-        "t": null,
-        "fit": null
-      },
-      "whyNot": [
-        "burn from 13 laps, wants 30",
-        "only 13 laps carry both a fuel load and a stint position",
-        "pit cycle wants 5 race in-laps and 5 race out-laps, has 1 and 4",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
-        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
-      ]
-    },
-    {
       "carClass": "GT3",
-      "trackKey": "bahrain-international-circuit_5387",
-      "track": "Bahrain International Circuit",
-      "trackLengthM": 5387,
-      "basePaceSec": 124.129,
-      "burnBaseLPerLap": 3.45,
+      "trackKey": "paul-ricard-1a_5699",
+      "track": "Paul Ricard - 1A",
+      "trackLengthM": 5699,
+      "basePaceSec": 119.662,
+      "burnBaseLPerLap": 3.1,
       "capacityL": 120,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
+      "refuelLPerSec": 1.785,
       "refuelSource": "class",
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
@@ -1955,7 +3917,7 @@
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 3.4,
+        "loadSpreadL": 3.1,
         "stintMax": 3,
         "collinearity": null,
         "drivers": 1,
@@ -1971,17 +3933,17 @@
       ]
     },
     {
-      "carClass": "GT3",
-      "trackKey": "paul-ricard-elms_5807",
-      "track": "Paul Ricard - ELMS",
-      "trackLengthM": 5807,
-      "basePaceSec": 133.577,
-      "burnBaseLPerLap": 3.4,
-      "capacityL": 120,
+      "carClass": "GTE",
+      "trackKey": "fuji-speedway_4536",
+      "track": "Fuji Speedway",
+      "trackLengthM": 4536,
+      "basePaceSec": 102.803,
+      "burnBaseLPerLap": 2.4,
+      "capacityL": 119,
       "kFuelSecPerL": null,
       "tyre": null,
-      "refuelLPerSec": 1.538,
-      "refuelSource": "class",
+      "refuelLPerSec": null,
+      "refuelSource": null,
       "pitCycleLossSec": null,
       "referenceStationarySec": null,
       "kLiftSecPerLPerLap": null,
@@ -1992,20 +3954,20 @@
         "tyre": "none",
         "cliff": "none",
         "pit": "none",
-        "refuel": "measured",
+        "refuel": "none",
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 1,
+        "burnLaps": 5,
         "paceLaps": 0,
-        "paceLapsPooled": 1,
+        "paceLapsPooled": 4,
         "inLaps": 0,
         "outLaps": 0,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 0,
-        "stintMax": 2,
+        "loadSpreadL": 7.1,
+        "stintMax": 6,
         "collinearity": null,
         "drivers": 1,
         "feLaps": 0,
@@ -2013,9 +3975,10 @@
         "fit": null
       },
       "whyNot": [
-        "burn from 1 laps, wants 30",
-        "only 1 laps carry both a fuel load and a stint position",
+        "burn from 5 laps, wants 30",
+        "only 4 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
@@ -2065,18 +4028,116 @@
         "burn from 2 laps, wants 30",
         "only 2 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
-        "refuel rate wants 5 fuel-only race stops in the class, has 0",
+        "refuel rate wants 5 fuel-only race stops in the class, has 1",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
       ]
     },
     {
-      "carClass": "HYPERCAR",
-      "trackKey": "bahrain-international-circuit_5387",
-      "track": "Bahrain International Circuit",
-      "trackLengthM": 5387,
-      "basePaceSec": 117.302,
-      "burnBaseLPerLap": 2.4,
-      "capacityL": 110,
+      "carClass": "LMP2_ELMS",
+      "trackKey": "aut-dromo-jos-carlos-pace_4273",
+      "track": "Autódromo José Carlos Pace",
+      "trackLengthM": 4273,
+      "basePaceSec": null,
+      "burnBaseLPerLap": 1.85,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 2,
+        "paceLaps": 0,
+        "paceLapsPooled": 0,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 0,
+        "stintMax": 0,
+        "collinearity": null,
+        "drivers": 0,
+        "feLaps": 0,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 2 laps, wants 30",
+        "only 0 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP2_ELMS",
+      "trackKey": "paul-ricard-1a-v2_5758",
+      "track": "Paul Ricard - 1A-V2",
+      "trackLengthM": 5758,
+      "basePaceSec": 117.916,
+      "burnBaseLPerLap": 2.75,
+      "capacityL": 75,
+      "kFuelSecPerL": null,
+      "tyre": null,
+      "refuelLPerSec": 1.585,
+      "refuelSource": "class",
+      "pitCycleLossSec": null,
+      "referenceStationarySec": null,
+      "kLiftSecPerLPerLap": null,
+      "saveFractionMax": null,
+      "confidence": {
+        "burn": "partial",
+        "kFuel": "none",
+        "tyre": "none",
+        "cliff": "none",
+        "pit": "none",
+        "refuel": "measured",
+        "kLift": "none"
+      },
+      "n": {
+        "burnLaps": 2,
+        "paceLaps": 0,
+        "paceLapsPooled": 2,
+        "inLaps": 0,
+        "outLaps": 0,
+        "stops": 0
+      },
+      "diagnostics": {
+        "loadSpreadL": 2.7,
+        "stintMax": 3,
+        "collinearity": null,
+        "drivers": 1,
+        "feLaps": 0,
+        "t": null,
+        "fit": null
+      },
+      "whyNot": [
+        "burn from 2 laps, wants 30",
+        "only 2 laps carry both a fuel load and a stint position",
+        "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
+        "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"
+      ]
+    },
+    {
+      "carClass": "LMP3",
+      "trackKey": "silverstone-grand-prix-circuit-elms_5869",
+      "track": "Silverstone Grand Prix Circuit - ELMS",
+      "trackLengthM": 5869,
+      "basePaceSec": 115.678,
+      "burnBaseLPerLap": 2.8,
+      "capacityL": 100,
       "kFuelSecPerL": null,
       "tyre": null,
       "refuelLPerSec": null,
@@ -2095,16 +4156,16 @@
         "kLift": "none"
       },
       "n": {
-        "burnLaps": 4,
+        "burnLaps": 3,
         "paceLaps": 0,
-        "paceLapsPooled": 3,
+        "paceLapsPooled": 2,
         "inLaps": 0,
         "outLaps": 0,
         "stops": 0
       },
       "diagnostics": {
-        "loadSpreadL": 7.1,
-        "stintMax": 5,
+        "loadSpreadL": 5.5,
+        "stintMax": 4,
         "collinearity": null,
         "drivers": 1,
         "feLaps": 0,
@@ -2112,8 +4173,8 @@
         "fit": null
       },
       "whyNot": [
-        "burn from 4 laps, wants 30",
-        "only 3 laps carry both a fuel load and a stint position",
+        "burn from 3 laps, wants 30",
+        "only 2 laps carry both a fuel load and a stint position",
         "pit cycle wants 5 race in-laps and 5 race out-laps, has 0 and 0",
         "refuel rate wants 5 fuel-only race stops in the class, has 0",
         "no deliberate lift-and-coast in the corpus, so `save` cannot be offered"

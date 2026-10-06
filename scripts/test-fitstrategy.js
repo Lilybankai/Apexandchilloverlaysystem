@@ -333,6 +333,113 @@ console.log('\nrefuel rate: pooled per class, contamination dropped');
 }
 
 // ===========================================================================
+console.log('\nenergy refuel rate: measured in percent, not litres over the tank');
+// ===========================================================================
+{
+  // A rig that refills 2.5 %/s after 0.8 s of hose time. Two cars with
+  // DIFFERENT fuel ratios, so their litres per second disagree while their
+  // energy per second does not — the real GT3 field in miniature.
+  const mk = (ve, ratio, extra = {}) => ({
+    carClass: 'GT3', trackKey: `t${ve}`, track: `t${ve}`, sessionType: 'race',
+    laneSec: 60, stationarySec: 0.8 + ve / 2.5, veAddedPct: ve, fuelAddedL: ve * ratio,
+    tyresChanged: false, ...extra,
+  });
+  const stops = [
+    mk(40, 0.75), mk(55, 0.9), mk(70, 0.75), mk(85, 0.9), mk(62, 0.82), mk(30, 0.75),
+    // An unseen tyre change: 70 % but 12.7 s longer. Outside the ±15 % band.
+    mk(70, 0.8, { stationarySec: 0.8 + 70 / 2.5 + 12.7 }),
+  ];
+  const ve = F.fitRefuelByClass(stops).get('GT3').ve;
+  check('the energy rate is recovered from the line', near(ve.pctPerSec, 2.5, 0.01), `${ve.pctPerSec} %/s`);
+  check('…with the fixed hose time as its intercept', near(ve.fixedSec, 0.8, 0.05), `${ve.fixedSec} s`);
+  check('…the hidden tyre change dropped by the tight band', ve.dropped === 1, `dropped ${ve.dropped}`);
+  check('…and it is measured at the bar', ve.confidence === 'measured' && ve.model === 'line', ve);
+  const lps = F.fitRefuelByClass(stops).get('GT3').refuelLPerSec;
+  const viaTank = (lps / 120) * 100;
+  check('litres over a 120 L tank would have said half the rate', viaTank < ve.pctPerSec * 0.7,
+    `${viaTank.toFixed(2)} vs ${ve.pctPerSec}`);
+
+  // A line whose intercept is not a believable hose time falls back to the
+  // median rate with no fixed term — still measured, just simpler.
+  const odd = [40, 50, 60, 70, 80].map((v) => mk(v, 0.8, { stationarySec: v / 2.5 - 3 }));
+  const oddVe = F.fitEnergyRate(odd);
+  check('a negative intercept is refused as a fixed time', oddVe.model === 'median' && oddVe.fixedSec === 0, oddVe);
+
+  // Below the bar: refused, and a litre class has no energy fit at all.
+  check('four energy stops are refused', F.fitEnergyRate(stops.slice(0, 4)).confidence === 'none');
+  const litreOnly = F.fitRefuelByClass([1, 2, 3, 4, 5].map(() => ({
+    carClass: 'LMP2', trackKey: 'a', sessionType: 'race', laneSec: 60, stationarySec: 40, fuelAddedL: 60, tyresChanged: false,
+  }))).get('LMP2');
+  check('a litre class carries no energy rate', litreOnly.ve.confidence === 'none' && litreOnly.ve.pctPerSec === null);
+}
+
+// ===========================================================================
+console.log('\ntyre change time: the tyre stop beyond its fuel');
+// ===========================================================================
+{
+  const fuelOnly = (ve) => ({
+    carClass: 'GT3', trackKey: 'a', sessionType: 'race', laneSec: 60,
+    stationarySec: 0.8 + ve / 2.5, veAddedPct: ve, fuelAddedL: ve * 0.8, tyresChanged: false,
+  });
+  const tyreStop = (ve, tyreSec, extra = {}) => ({
+    carClass: 'GT3', trackKey: 'b', sessionType: 'race', laneSec: 70,
+    stationarySec: 0.8 + ve / 2.5 + tyreSec, veAddedPct: ve, fuelAddedL: ve * 0.8, tyresChanged: true, ...extra,
+  });
+  const base = [40, 50, 60, 70, 80].map(fuelOnly);
+  const tyres = [12.5, 12.7, 12.4, 12.9, 12.6, 12.8, 12.7, 12.5].map((t, i) => tyreStop(40 + i * 5, t));
+  const refuel = F.fitRefuelByClass([...base, ...tyres]);
+  const t = F.fitTyreChangeByClass([...base, ...tyres,
+    tyreStop(60, 75),                                  // a driver swap: held far longer
+    tyreStop(60, 12.6, { sessionType: 'practice' }),   // not a race stop
+  ], refuel).get('GT3');
+  check('tyre time is what the stop holds beyond its fuel', near(t.tyreChangeSec, 12.65, 0.1), `${t.tyreChangeSec} s`);
+  check('…the swap and the practice stop never count', t.stops === 8, `${t.stops} stops`);
+  check('…measured at the bar of eight', t.confidence === 'measured' && F.TYRE_MIN === 8, t.confidence);
+
+  const fewer = F.fitTyreChangeByClass([...base, ...tyres.slice(0, 5)], F.fitRefuelByClass([...base, ...tyres.slice(0, 5)]));
+  check('…and refused below it', fewer.get('GT3').confidence === 'none', fewer.get('GT3'));
+
+  // No measured rate, no tyre time: the subtraction would be against a guess.
+  const noRate = F.fitTyreChangeByClass(tyres.map((s) => ({ ...s, carClass: 'LMP3' })),
+    F.fitRefuelByClass(tyres.map((s) => ({ ...s, carClass: 'LMP3' }))));
+  check('a class with no measured refuel rate gets no tyre time', !noRate.has('LMP3'), [...noRate.keys()]);
+}
+
+// ===========================================================================
+console.log('\npit lane: per circuit, lane minus stationary, outliers out');
+// ===========================================================================
+{
+  const mk = (trackKey, transit, extra = {}) => ({
+    carClass: 'GT3', trackKey, track: trackKey, sessionType: 'race',
+    stationarySec: 30, laneSec: 30 + transit, driverId: `d${transit}`, ...extra,
+  });
+  const lemans = [34.6, 34.8, 34.9, 35.0, 35.1, 35.3, 34.7, 35.2].map((x) => mk('lemans', x));
+  const stops = [
+    ...lemans,
+    mk('lemans', 95),                               // held at pit exit — an outlier
+    mk('lemans', 35, { carClass: 'HYPERCAR' }),     // another class, same lane
+    mk('lemans', 35, { sessionType: 'practice' }),  // a garage exit, not a stop
+    mk('lemans', 35, { stationarySec: null }),      // no stationary read
+    mk('lemans', 14, { stationarySec: 2 }),         // a drive-through
+    ...[28.4, 28.1, 28.6].map((x) => mk('monza', x)), // three stops: under the bar
+  ];
+  const lanes = F.fitPitLaneByTrack(stops);
+  const lm = lanes.get('lemans');
+  check('the lane is the median transit', near(lm.laneSec, 35, 0.05), `${lm.laneSec} s`);
+  check('…pooling every class at the circuit', lm.stops === 9, `${lm.stops} stops`);
+  check('…the held car dropped as an outlier', lm.dropped === 1, `dropped ${lm.dropped}`);
+  check('…practice, no-stationary and drive-throughs never counted', lm.stopsBeforeFilter === 10, lm.stopsBeforeFilter);
+  check('…with its middle half as a spread', lm.p25 >= 34.7 && lm.p75 <= 35.2, [lm.p25, lm.p75]);
+  check('…measured at the bar of eight', lm.confidence === 'measured' && F.PIT_LANE_MIN === 8);
+  check('a circuit under the bar is refused', lanes.get('monza').confidence === 'none', lanes.get('monza'));
+
+  const table = F.buildTable({ laps: [], stops, source: 'test' });
+  check('the table carries the lanes keyed by track', table.pitLaneByTrack.lemans.laneSec === lm.laneSec);
+  check('…and states the lane bar it used', table.bars.pitLaneStops === 8 && table.bars.tyreStops === 8, table.bars);
+  check('…and no driver id reaches the written table', !/"d\d/.test(JSON.stringify(table)));
+}
+
+// ===========================================================================
 console.log('\nthe pit cycle, measured from in-laps and out-laps');
 // ===========================================================================
 {

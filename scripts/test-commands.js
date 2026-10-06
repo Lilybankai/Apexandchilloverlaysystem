@@ -575,6 +575,24 @@ function unit() {
   a = engW.answer('pitWindow');
   check('pitWindow: open now', a.ok && /window is open/i.test(a.text) && /4\.2 more laps/.test(a.text), a.text);
 
+  // Multiclass: the overall leader is on lap 30, our lapped GT3 has done 8.
+  // The window is counted in OUR laps (the fuel calculator's lapsCompleted),
+  // so lap 9 against an opening on lap 12 is three laps away — not "open".
+  const engMC = new EngineerCommands();
+  const lapped = [
+    car(1, { carClass: 'HYPERCAR', lapsCompleted: 29 }),
+    car(2, { carClass: 'GT3', isPlayer: true, lapsCompleted: 8 }),
+  ];
+  engMC.update(frame({ session: { currentLap: 30, classLeaderLap: 10 }, standings: lapped,
+    fuel: { pitWindowOpenLap: 12 } }));
+  a = engMC.answer('pitWindow');
+  check('pitWindow: a lapped car counts from its OWN lap, not the overall leader’s',
+    a.ok && /opens lap 12 — 3 laps away/.test(a.text), a.text);
+  engMC.update(frame({ session: { currentLap: 33, classLeaderLap: 13 },
+    standings: [lapped[0], { ...lapped[1], lapsCompleted: 11 }], fuel: { pitWindowOpenLap: 12, lapsRemaining: 1.4 } }));
+  a = engMC.answer('pitWindow');
+  check('pitWindow: …and opens when its own lap gets there', a.ok && /window is open/i.test(a.text), a.text);
+
   // energy & hybrid
   engW.update(frame({
     player: { hybrid: { chargeFraction: 0.84, motorTorqueNm: 0 } },
