@@ -22,7 +22,14 @@
 
 'use strict';
 
-const { cleanTrace, ghostFromTrace, ghostGap } = require('../dist/telemetry/ghostLap');
+const {
+  cleanTrace,
+  ghostFromTrace,
+  ghostGap,
+  ghostHasLine,
+  getPublishedGhost,
+  setPublishedGhost,
+} = require('../dist/telemetry/ghostLap');
 const { UNKNOWN_VALUE } = require('../dist/telemetry/types');
 
 let passed = 0;
@@ -57,7 +64,17 @@ function traceFile(over) {
     car: 'Test Car',
     carClass: 'GT3',
     lapMs: o.lapMs,
-    trace: { lapSec: o.lapSec, count: (o.d || []).length, truncated: false, d: o.d, t: o.t },
+    trace: {
+      lapSec: o.lapSec,
+      count: (o.d || []).length,
+      truncated: false,
+      d: o.d,
+      t: o.t,
+      ...(o.x ? { x: o.x } : {}),
+      ...(o.z ? { z: o.z } : {}),
+      ...(o.brake ? { brake: o.brake } : {}),
+      ...(o.throttle ? { throttle: o.throttle } : {}),
+    },
   };
 }
 
@@ -271,6 +288,58 @@ console.log('\n7) The time origin must NOT be rebased');
   const g = ghostGap(late, 50, 0.5);
   check('level stays level with a late first sample', g.active && near(g.gapSec, 0, 1e-6), g.gapSec);
   check('it did NOT rebase by t[0] (would read 2 s)', Math.abs(g.gapSec) < 0.001, g.gapSec);
+}
+
+console.log('');
+console.log("8) The driven line, and the column alignment that carries it");
+{
+  const { d, t } = flatLap();
+  // A line that simply counts, so a misalignment shows as an off-by-one rather
+  // than as a plausible-looking position.
+  const x = d.map((_, i) => i);
+  const z = d.map((_, i) => -i);
+
+  const g = ghostFromTrace(traceFile({ d, t, x, z }), 'x');
+  check('a v2 trace keeps its line', ghostHasLine(g) === true);
+  check('line length matches the cleaned curve', g.x.length === g.trace.length, g.x.length);
+
+  const bare = ghostFromTrace(traceFile({ d, t }), 'x');
+  check('a v1 trace has no line', ghostHasLine(bare) === false);
+  check('…but is still a usable ghost', bare !== null && bare.trace.length > 2);
+  check('a null ghost has no line', ghostHasLine(null) === false);
+
+  // THE case. Corrupt one sample of the distance curve and the line must lose
+  // the SAME index — not a different one, and not none. A line one sample out
+  // of step is drawn slightly in the wrong place, which is the hardest kind of
+  // wrong to notice on screen.
+  const bad = d.slice();
+  bad[5] = bad[4];                       // duplicate distance: cleanTrace drops it
+  const sk = ghostFromTrace(traceFile({ d: bad, t, x, z }), 'x');
+  check('the corrupt sample is dropped', sk.trace.length === d.length - 1, sk.trace.length);
+  check('the line is dropped in step', sk.x.length === sk.trace.length, sk.x.length);
+  check('…and it is index 5 that went', sk.x[4] === 4 && sk.x[5] === 6, sk.x[4] + ',' + sk.x[5]);
+  check('z went with it', sk.z[4] === -4 && sk.z[5] === -6, sk.z[4] + ',' + sk.z[5]);
+
+  // A short column cannot be trusted to align, so it is refused outright.
+  const short = ghostFromTrace(traceFile({ d, t, x: x.slice(0, 10), z }), 'x');
+  check('a truncated line is refused, not padded', ghostHasLine(short) === false);
+
+  const inputs = ghostFromTrace(traceFile({ d, t, x, z, brake: d.map(() => 0.5) }), 'x');
+  check('brake rides along when present', inputs.brake.length === inputs.trace.length);
+  check('throttle is absent when the trace has none', inputs.throttle === undefined);
+}
+
+console.log('');
+console.log("9) The slot /ghost.json serves from");
+{
+  const { d, t } = flatLap();
+  const g = ghostFromTrace(traceFile({ d, t, x: d.map(() => 1), z: d.map(() => 2) }), 'x');
+  setPublishedGhost(null);
+  check('nothing published to begin with', getPublishedGhost() === null);
+  setPublishedGhost(g);
+  check('publishing makes it readable', getPublishedGhost() === g);
+  setPublishedGhost(null);
+  check('and it can be withdrawn', getPublishedGhost() === null);
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

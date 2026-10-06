@@ -110,6 +110,33 @@ export interface GhostLap {
    * ghost over the part it covers; this exists so a surface can say so.
    */
   full: boolean;
+  /**
+   * The driven LINE and the inputs along it, index-aligned with {@link trace}.
+   *
+   * v1 of Ghost HUD dropped these on the floor: screen-space rails needed only
+   * the distance curve, and that economy is exactly why the result read as a
+   * delta bar turned on its side. A line drawn on the road needs where the car
+   * actually was, and `brake`/`throttle` are what colour it.
+   *
+   * Absent together when the lap was recorded with shared memory silent — a
+   * position has no honest neutral value, so it is omitted rather than zeroed
+   * (see `TraceChannels.x`). {@link ghostHasLine} is the guard.
+   */
+  x?: number[];
+  z?: number[];
+  brake?: number[];
+  throttle?: number[];
+}
+
+/** Whether this ghost can be drawn on the road, as opposed to only counted. */
+export function ghostHasLine(lap: GhostLap | null): boolean {
+  return !!(
+    lap &&
+    lap.x &&
+    lap.z &&
+    lap.x.length === lap.trace.length &&
+    lap.z.length === lap.trace.length
+  );
 }
 
 /**
@@ -124,8 +151,26 @@ export interface GhostLap {
  * treats as "no ghost" rather than as an error.
  */
 export function cleanTrace(d: readonly number[], t: readonly number[]): Sample[] {
+  return cleanTraceIndexed(d, t).samples;
+}
+
+/**
+ * {@link cleanTrace}, but also returning the source index of each surviving
+ * sample.
+ *
+ * The extra return exists so the other columns — the driven line, the inputs —
+ * can be filtered by the SAME pass. Filtering them independently would let the
+ * arrays drift apart by a sample, and a line one sample out of step with its
+ * own distance curve is a line drawn slightly in the wrong place, which is the
+ * hardest kind of wrong to see.
+ */
+export function cleanTraceIndexed(
+  d: readonly number[],
+  t: readonly number[],
+): { samples: Sample[]; keep: number[] } {
   const n = Math.min(d.length, t.length);
   const out: Sample[] = [];
+  const keep: number[] = [];
   for (let i = 0; i < n; i += 1) {
     const dd = d[i]!;
     const tt = t[i]!;
@@ -138,8 +183,9 @@ export function cleanTrace(d: readonly number[], t: readonly number[]): Sample[]
     // divide by.
     if (prev && (dd <= prev.d || tt < prev.t)) continue;
     out.push({ d: dd, t: tt });
+    keep.push(i);
   }
-  return out.length < 2 ? [] : out;
+  return out.length < 2 ? { samples: [], keep: [] } : { samples: out, keep };
 }
 
 /**
@@ -158,8 +204,19 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
   const tr = file?.trace;
   if (!tr || !Array.isArray(tr.d) || !Array.isArray(tr.t)) return null;
 
-  const trace = cleanTrace(tr.d, tr.t);
+  const { samples: trace, keep } = cleanTraceIndexed(tr.d, tr.t);
   if (trace.length < 2) return null;
+
+  // Every other column is filtered by `keep`, never independently — see
+  // cleanTraceIndexed for why a one-sample drift is the dangerous kind.
+  const pick = (col: readonly number[] | undefined): number[] | undefined => {
+    if (!col || col.length < tr.d.length) return undefined;
+    const out = new Array<number>(keep.length);
+    for (let i = 0; i < keep.length; i += 1) out[i] = col[keep[i]!]!;
+    return out;
+  };
+  const x = pick(tr.x);
+  const z = pick(tr.z);
 
   const measured = Number.isFinite(tr.lapSec) && tr.lapSec > 0 ? tr.lapSec : 0;
   const fromMs = Number.isFinite(file.lapMs) && file.lapMs > 0 ? file.lapMs / 1000 : 0;
@@ -178,6 +235,11 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
     lapId: String(file.lapId || ''),
     label,
     full: first.d <= FULL_LAP_EDGE && last.d >= 1 - FULL_LAP_EDGE,
+    // Position is all-or-nothing: half a line is worse than none, because the
+    // drawn half would look authoritative.
+    ...(x && z ? { x, z } : {}),
+    ...(pick(tr.brake) ? { brake: pick(tr.brake) } : {}),
+    ...(pick(tr.throttle) ? { throttle: pick(tr.throttle) } : {}),
   };
 }
 
@@ -242,6 +304,32 @@ export function ghostGap(lap: GhostLap | null, t: number, d: number): GhostState
     gapSec: round4(gapSec),
     gapM: round2(gapM),
   };
+}
+
+/* ----------------------------- what HTTP serves --------------------------- */
+
+/**
+ * The ghost currently being served at `/ghost.json`.
+ *
+ * Module-level and mutable for exactly the reason `trackMap.ts`'s `published`
+ * is: the provider chooses the ghost inside its poll loop, and the HTTP route
+ * holds no reference to the provider. One ghost is selected at a time, so one
+ * slot is the whole of the state.
+ *
+ * It rides HTTP rather than the frame for the same reason the circuit does —
+ * it is ~800 points that change only when the ghost changes, and repeating
+ * that thirty times a second would say something still true.
+ */
+let publishedGhost: GhostLap | null = null;
+
+/** Publish a ghost for `/ghost.json`. Called when the selection changes. */
+export function setPublishedGhost(lap: GhostLap | null): void {
+  publishedGhost = lap;
+}
+
+/** The ghost currently served, or `null` when none is selected. */
+export function getPublishedGhost(): GhostLap | null {
+  return publishedGhost;
 }
 
 function round2(v: number): number {

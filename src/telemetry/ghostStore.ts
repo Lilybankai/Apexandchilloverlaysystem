@@ -29,7 +29,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { ghostFromTrace, type GhostLap } from './ghostLap';
+import { ghostFromTrace, ghostHasLine, type GhostLap } from './ghostLap';
 import { lapDir, type LapRecord, type TrackCondition } from './lapLog';
 import { readTrace, traceDir, traceFilePath } from './lapTrace';
 import { formatLapTime } from './raceLog';
@@ -170,10 +170,39 @@ export function loadGhost(candidate: GhostCandidate, dirs: GhostDirs = {}): Ghos
   return ghostFromTrace(file, candidate.label);
 }
 
-/** The fastest chaseable lap for a combo, loaded and ready. */
+/**
+  * How many candidates to open looking for one with a driven line.
+  *
+  * Reading a trace is a file read and a JSON parse of ~40 KB, so this is not
+  * free, but in practice the first candidate has a line: every lap recorded
+  * since the line shipped carries one, and the fastest lap is usually recent.
+  */
+const MAX_LINE_PROBE = 5;
+
+/**
+ * The fastest chaseable lap for a combo, loaded and ready.
+ *
+ * Prefers a lap that carries a driven LINE, because that is what Ghost HUD
+ * draws on the road; a lap without one can still be counted against, but it
+ * can only produce the numbers. Laps recorded while shared memory was silent
+ * have no position at all (see `TraceChannels.x`), and so do laps from before
+ * the line shipped.
+ *
+ * It falls back to the fastest loadable lap rather than refusing: a driver
+ * whose only quick lap predates the line should still get a delta, and the
+ * widget is told which it got via {@link ghostHasLine} rather than discovering
+ * it half way through a draw.
+ */
 export function loadBestGhost(q: GhostQuery, dirs: GhostDirs = {}): GhostLap | null {
-  const best = bestGhostCandidate(q, dirs);
-  return best ? loadGhost(best, dirs) : null;
+  const list = ghostCandidates(q, dirs);
+  let fallback: GhostLap | null = null;
+  for (let i = 0; i < list.length && i < MAX_LINE_PROBE; i += 1) {
+    const lap = loadGhost(list[i]!, dirs);
+    if (!lap) continue;
+    if (ghostHasLine(lap)) return lap;
+    if (!fallback) fallback = lap;
+  }
+  return fallback;
 }
 
 /* ------------------------------- internals -------------------------------- */
