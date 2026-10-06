@@ -78,6 +78,7 @@ import {
   type TrackLimitsState,
   type TrackMapCar,
   type TrackMapState,
+  type GhostState,
 } from './types';
 import { decodeDamage, type RawRepairPayload } from './damage';
 import { buildMfdState, notePitMenuPoll, type RawGarageVal, type RawPitRow } from './mfdControl';
@@ -86,10 +87,13 @@ import {
   LocalPaceDeltaTracker,
   RoadPosition,
   refKeyOf,
+  trackKeyOf,
   type LapValidity,
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
-import { LapRecorder, appendLap, type LapRecord } from './lapLog';
+import { LapRecorder, appendLap, conditionOf, type LapRecord, type TrackCondition } from './lapLog';
+import { ghostGap, type GhostLap } from './ghostLap';
+import { loadBestGhost } from './ghostStore';
 import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
@@ -526,6 +530,21 @@ export class LmuRestProvider implements TelemetryProvider {
    * widget and the single-value Delta widget. Built on the REST watch feed.
    */
   private readonly paceDelta = new LocalPaceDeltaTracker();
+  /**
+   * The lap Ghost HUD is chasing, and the combo it was chosen for.
+   *
+   * Loaded from disk on a combo change and never on the hot path: picking it
+   * reads the lap database and one trace file, which is milliseconds but not
+   * something to do thirty times a second. Per frame it costs two binary
+   * searches over the chosen curve.
+   *
+   * Default behaviour with no UI yet: chase your own fastest clean lap for
+   * this car class, circuit and surface. That IS the agreed "auto-record,
+   * keep fastest" behaviour, and it needs no recording and no pruning —
+   * every lap is already on disk.
+   */
+  private ghostLap: GhostLap | null = null;
+  private ghostKey = '';
   /** The delta engine's distance axis — see {@link RoadPosition}. */
   private readonly roadPos = new RoadPosition();
   /** Accumulated seconds on the spectated delta clock — see {@link stepDeltaClock}. */
@@ -1828,6 +1847,7 @@ export class LmuRestProvider implements TelemetryProvider {
     );
     let deltaSec: number;
     let paceDeltas: PaceDeltas | undefined;
+    let ghost: GhostState | undefined;
     if (
       localIsFocus &&
       trackLen > 0 &&
@@ -1892,6 +1912,15 @@ export class LmuRestProvider implements TelemetryProvider {
         // losing it.
         this.pendingTraces = this.pendingTraces.filter((p) => nowMs - p.wallMs < 120_000).slice(-4);
       }
+      // Ghost HUD rides the delta engine's own clock and road position, at
+      // full precision and already gated on a seen start/finish crossing —
+      // see `paceDelta.lapClock`. A mid-lap join therefore places no ghost,
+      // rather than placing one against a clock that started wherever the
+      // car happened to be.
+      this.syncGhost(si.trackName || '', trackLen, playerCar?.carClass, si.maxPathWetness);
+      const ghostAt = this.paceDelta.lapClock();
+      ghost = ghostAt ? ghostGap(this.ghostLap, ghostAt.t, ghostAt.d) : undefined;
+
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
       deltaSec =
@@ -1924,6 +1953,7 @@ export class LmuRestProvider implements TelemetryProvider {
       displayLocal,
       deltaSec,
       paceDeltas,
+      ghost,
       trackLimits,
       paceScore,
       session.onTrack !== false,
@@ -3234,12 +3264,53 @@ export class LmuRestProvider implements TelemetryProvider {
     };
   }
 
+  /**
+   * Keep {@link ghostLap} pointed at the right lap for the combo being driven.
+   *
+   * Keyed on the same identity the lap database ranks bests by, so the key
+   * built here and the `trackKey` written on every lap come from one
+   * function (`trackKeyOf`) and cannot drift apart.
+   *
+   * The disk read — the lap database plus one trace file — happens only when
+   * that key changes: a new circuit, a different class, or the surface
+   * crossing one of `conditionOf`'s bands. A steady-state poll does nothing
+   * here. It is wrapped because a poll loop must never take an exception
+   * from a missing or half-written file.
+   *
+   * Surface changes mid-session do reload, and that is the intent: a dry
+   * reference is the wrong thing to chase once it rains. `maxPathWetness`
+   * moves slowly enough that band crossings are not a thrash risk.
+   */
+  private syncGhost(
+    trackName: string,
+    trackLenM: number,
+    carClass: string | undefined,
+    wetness: number | undefined,
+  ): void {
+    if (!carClass || trackLenM <= 0) {
+      this.ghostLap = null;
+      this.ghostKey = '';
+      return;
+    }
+    const trackKey = trackKeyOf(trackName, trackLenM);
+    const condition: TrackCondition = conditionOf(wetness);
+    const key = `lmu|${trackKey}|${carClass}|${condition}`;
+    if (key === this.ghostKey) return;
+    this.ghostKey = key;
+    try {
+      this.ghostLap = loadBestGhost({ sim: 'lmu', trackKey, carClass, condition });
+    } catch {
+      this.ghostLap = null;
+    }
+  }
+
   private buildPlayer(
     focus: RestStanding | undefined,
     standings: StandingEntry[],
     local: LocalCarPhysics | null,
     deltaSec: number,
     paceDeltas: PaceDeltas | undefined,
+    ghost: GhostState | undefined,
     trackLimits: TrackLimitsState | undefined,
     paceScore: PaceScoreState | undefined,
     atWheel: boolean,
@@ -3359,6 +3430,7 @@ export class LmuRestProvider implements TelemetryProvider {
         rearRight: tyre(3),
       },
       ...(paceDeltas ? { paceDeltas } : {}),
+      ...(ghost ? { ghost } : {}),
       // Unlike the blocks below, this one is sent even when it has nothing to
       // report: `ok: false` carries the REASON there is no score, and "Monza has
       // two layouts and the sim didn't say which" is the single most useful
