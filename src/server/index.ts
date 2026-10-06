@@ -30,6 +30,7 @@ import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
+import { getPublishedGhost, ghostHasLine } from '../telemetry/ghostLap';
 import { handleMfdCommand } from './mfdRoutes';
 import { handleSetupCommand } from './setupRoutes';
 import { SetupController } from '../telemetry/setupControl';
@@ -645,6 +646,53 @@ function serveTrackMap(res: ServerResponse): void {
   res.end(body);
 }
 
+const GHOST_PATH = '/ghost.json';
+
+/**
+ * Serves the lap Ghost HUD is chasing — its driven line and the inputs along
+ * it — as JSON.
+ *
+ * Same bargain as `/trackmap.json` above, and for the same reason: this is
+ * ~800 points that change only when the SELECTED LAP changes, and putting it
+ * on a 30 Hz wire would repeat tens of kilobytes a second to say something
+ * still true. The frame carries `player.ghost.sourceLapId`, which moves
+ * exactly when the selection does, and the widget refetches on that.
+ *
+ * `204` — not `404` — when there is no ghost or it has no line: neither is an
+ * error. No ghost means none has been selected for this combo yet, and no
+ * line means the lap was recorded with shared memory silent. In both cases
+ * the widget draws its numbers and says why there is no road.
+ */
+function serveGhost(res: ServerResponse): void {
+  const lap = getPublishedGhost();
+  if (!lap || !ghostHasLine(lap)) {
+    res.writeHead(204, { 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+  // Flattened to plain columns rather than the in-memory shape: the widget
+  // wants arrays it can index, and `trace` is an array of objects.
+  const body = JSON.stringify({
+    lapId: lap.lapId,
+    label: lap.label,
+    lapSec: lap.lapSec,
+    trackLengthM: lap.trackLengthM,
+    full: lap.full,
+    d: lap.trace.map((s) => s.d),
+    t: lap.trace.map((s) => s.t),
+    x: lap.x,
+    z: lap.z,
+    ...(lap.brake ? { brake: lap.brake } : {}),
+    ...(lap.throttle ? { throttle: lap.throttle } : {}),
+  });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
 /** URL prefix the manufacturer brand badges are served under. */
 const BADGE_PREFIX = '/carbadges/';
 /**
@@ -793,6 +841,11 @@ async function serveStatic(
   // Likewise the learned circuit — it lives in the running provider.
   if (relPath === TRACKMAP_PATH) {
     serveTrackMap(res);
+    return;
+  }
+  // Likewise the ghost's line — it lives in the running provider too.
+  if (relPath === GHOST_PATH) {
+    serveGhost(res);
     return;
   }
 

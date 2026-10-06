@@ -92,7 +92,7 @@ import {
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, conditionOf, type LapRecord, type TrackCondition } from './lapLog';
-import { ghostGap, type GhostLap } from './ghostLap';
+import { ghostGap, setPublishedGhost, type GhostLap } from './ghostLap';
 import { loadBestGhost } from './ghostStore';
 import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
@@ -3291,6 +3291,7 @@ export class LmuRestProvider implements TelemetryProvider {
     if (!carClass || trackLenM <= 0) {
       this.ghostLap = null;
       this.ghostKey = '';
+      setPublishedGhost(null);
       return;
     }
     const trackKey = trackKeyOf(trackName, trackLenM);
@@ -3303,6 +3304,10 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch {
       this.ghostLap = null;
     }
+    // The widget fetches the line over HTTP, keyed on the lap id it sees on
+    // the frame — so this must be published in the same breath as the
+    // selection changes, or the two disagree for a poll.
+    setPublishedGhost(this.ghostLap);
   }
 
   private buildPlayer(

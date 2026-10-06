@@ -128,9 +128,9 @@ const OVERLAY_CATALOG = [
     id: 'ghosthud',
     label: 'Ghost HUD',
     gated: 'beta',
-    description: 'Chase a captured fast lap — perspective gate + live delta (Powered by Alien-GT)',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
     ingameDefault: false,
-    obs: { w: 420, h: 247, note: 'Height follows width — the corridor, the gate room below it and the readout strip have to add up.' },
+    obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
   },
   {
     id: 'refpace',

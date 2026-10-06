@@ -207,11 +207,11 @@
       // sized it.
       standings: { x: 24, y: 24, w: 560 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
-      // Centred, and sat at 40% of screen height so the corridor's far end
-      // lands near where the real horizon is in a cockpit view. Its height
-      // is derived from its width (the near rails must be exactly K/Z_NEAR
-      // below the horizon), so only w is worth setting here.
-      ghosthud: { x: Math.round(vw / 2 - 210), y: Math.round(vh * 0.4), w: 420 },
+      // Centred and low, so the drawn horizon sits near the real one. Height
+      // is derived from width (the camera's field of view fixes the two
+      // together), so only w is worth setting here. 640 because a road that
+      // bends needs room to show it — at 420 a corner had nowhere to go.
+      ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.44), w: 640 },
       // Docked into the speedo cluster's top-centre notch, on the same centre
       // line (both widgets are centred on vw/2, so x needs no coupling). The y
       // here is only a pre-measurement guess — the cluster's own default top

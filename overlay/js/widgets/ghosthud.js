@@ -1,162 +1,109 @@
 /**
- * ghosthud.js — Ghost HUD: the gap to a chosen reference lap, as geometry.
+ * ghosthud.js — Ghost HUD: a fast lap's racing line, on the road ahead of you.
  * -----------------------------------------------------------------------------
- * A perspective corridor drawn on the driver's screen, with a bright cross-bar
- * — the GATE — sitting where the chosen reference lap is on the road. Hold
- * station and the picture is still. Lose drive out of a corner and the gate
- * shrinks away toward the vanishing point. The gap is read as geometry, with
- * the seconds readout as a confirmation rather than the primary channel.
+ * The road in front of the car, drawn from the learned circuit so it bends the
+ * way the circuit bends, with a chosen lap's racing line painted on it — green
+ * where that lap was on the power, amber off it, red under braking. A marker
+ * shows where that lap is on the clock right now, the line you have just driven
+ * trails behind you for comparison, and the signed seconds sit in the corner.
  *
- * Fed by `frame.player.ghost` (see `telemetry/ghostLap.ts`), whose `gapM` is a
- * signed distance: positive means the ghost is up the road.
+ * ## What v1 got wrong
+ * The first version drew a fixed trapezoid with a bar whose height encoded the
+ * gap. Its header said "screen-space rails need only 1-D data" — true, and the
+ * exact reason it read as a delta bar turned on its side. One degree of
+ * freedom, one moving part, and a hairpin drawn identically to a straight.
  *
- * ## This is a gauge drawn in perspective space, not a camera
- * The obvious implementation — project the gate with true perspective,
- * `y = f*h/z` — was built first and then thrown away, because it spends
- * almost all of its pixels on the first few metres. At a 420 px width the
- * gate sat 189 px below the horizon at 3 m and 20 px at 28 m, so the whole
- * 10-28 m range — the part a driver is actually training against — moved it
- * 36 px out of 189. Shortening the corridor truncated that problem without
- * fixing it; the 144:1 gradient ratio is intrinsic to `1/z`.
+ * Nothing about chasing a lap is one-dimensional. The information is lateral
+ * and angular: where across the road the line goes, how early it turns in, how
+ * soon it straightens. All of that was thrown away before anything was drawn.
  *
- * So depth is LINEAR in distance here. The rails still converge and the
- * picture still reads as a road going away, but a metre of gap is worth the
- * same number of pixels wherever it falls. That is not a fudge: egocentric
- * distance has a Stevens exponent of about 0.97-1.0, so a linear
- * metres-to-length mapping is within a percentage point of perceptually
- * uniform. What would be wrong is MIXING the two — drawing the gate on a
- * ground plane that renders as `1/d` while intending its travel to read as
- * `d`. Position and width are both linear here, so they agree.
+ * ## Why a line and not a car
+ * A car was prototyped and dropped. A line uses the whole lap rather than one
+ * sample of it, stays legible at 60 m where a car is a dot near the horizon,
+ * and is a convention drivers already read from every racing game. It also
+ * answers the actual question — "where did it get more drive?" — directly: its
+ * line turns green earlier out of the corner than yours does.
  *
- * The axis is signed and centred on your own car: +/-GAP_RANGE_M fills the
- * corridor, with a datum line across the middle for where you are. Past that
- * the gate pins and a chevron says which way it ran out; the readout carries
- * the number.
+ * ## Only the road AHEAD can carry the ghost; only the road BEHIND can carry you
+ * The ghost's line is drawn forward, because that is the part a driver can act
+ * on. Your own line can only be drawn backward, and not because of taste: you
+ * have not driven the road ahead yet this lap, so there is no line of yours
+ * there to show. The trail behind comes from where the car has actually been.
  *
- * Worth knowing why the overlay earns its place at all: looming detection sits
- * around 0.003-0.008 rad/s, so a car closing at 1 m/s is below threshold
- * beyond roughly 14-25 m. Over much of this range the eye cannot read the gap
- * changing on its own.
- *
- * ## Continuous rails, sparse rungs
- * A floating mark reads as FARTHER than its ground point, and every texture
- * discontinuity adds a small compensating slant bias that compounds with
- * distance. Continuous ground-contacting rails are therefore more veridical
- * than a ladder of rungs. The rungs that remain are a scale at 5 m intervals,
- * not the channel.
- *
- * ## Colour is the redundant label
- * Position carries the gap; colour only says which side of level it is on.
- * That ordering is deliberate — position ranks first among visual encodings
- * and hue ranks last, and several standards advise against putting meaning on
- * a red/green axis alone. With the information already in the geometry, the
- * familiar green/red reads as a label rather than as a single point of
- * failure for a colour-blind driver. The "red" is vermillion, not pure red,
- * and the three states separate in luminance as well as hue so they survive
- * greyscale.
- *
- * ## Throttled, and why that is enough
- * `throttleMs: 33` rather than full rate. The runtime is rAF-coalesced and
- * latest-wins and the default broadcast is 30 Hz, so at stock settings this is
- * every frame anyway; the smoothness comes from the easing below, not from the
- * sample rate. It also keeps `scripts/test-bench.js`'s frozen full-rate set
- * ("the five instruments, not the whole HUD") meaningful.
+ * ## Where the data comes from
+ * Nothing here is new telemetry. The player's world position rides
+ * `frame.trackMap.cars[isPlayer]`, their heading `frame.player.motion.heading`,
+ * the circuit `/trackmap.json`, and the ghost's line `/ghost.json` — all four
+ * in the sim's own world axes, so a lap recorded weeks ago lands on today's
+ * road with no fitting. The maths lives in `ghost-geom.js`, which is pure and
+ * tested headlessly; this file is the painting.
  */
 
 (function () {
   "use strict";
 
-  /* ------------------------------- geometry ------------------------------- */
+  var GEO = window.ApexGhostGeom;
+
+  /* ------------------------------- framing -------------------------------- */
+
+  /** How much road is drawn, metres. Behind must stay inside CAM_BACK. */
+  var VIEW_AHEAD_M = 95;
+  var VIEW_BEHIND_M = 12;
+
+  /** Chase camera: metres behind and above the car, and its downward tilt. */
+  var CAM_BACK = 14;
+  var CAM_H = 3.1;
+  var CAM_PITCH = 0.105;
+  var FOV_DEG = 52;
+  /** The horizon's share of the canvas height. */
+  var HORIZON = 0.3;
+  /** Canvas height as a fraction of its width. */
+  var ASPECT = 0.48;
 
   /**
-   * The corridor is a SIGNED gap axis centred on your own car, not a stretch
-   * of road ahead of it. The datum line across the middle is you; the gate
-   * rises above it when the ghost is up the road and falls below it when the
-   * ghost is behind.
-   *
-   * The first version ran the axis forward-only and mirrored a negative gap
-   * back into it, which put the gate in the SAME place for 21 m ahead and 21 m
-   * behind and left colour as the only thing telling them apart. That is
-   * precisely the failure the rest of this file is written to avoid: position
-   * is the channel, colour is the label. Signed about a datum, position alone
-   * answers it.
-   *
-   * +/-20 m fills the corridor, which is about +/-0.4 s at racing speed and
-   * covers the training case; 5 m then reads as a quarter of the half-height.
+   * Step between drawn points, metres. Two metres was visibly faceted in the
+   * prototype: traces are rounded to 10 cm at ~10 Hz, so the stored line is a
+   * polyline of real corners and sampling coarsely keeps every one of them.
    */
-  var GAP_RANGE_M = 20;
+  var STEP_M = 1;
 
-  /**
-   * Corridor height and rail half-widths, as fractions of widget width, so the
-   * geometry is identical at any size. The near end is nearly full width and
-   * the far end is narrow — the taper is what makes it read as a road rather
-   * than as a ladder, and it is linear so it agrees with the linear depth.
-   */
-  var H_PER_PX = 0.45;
-  var HW_NEAR_PER_PX = 0.46;
-  var HW_FAR_PER_PX = 0.055;
+  /** Ribbon widths in METRES, so they narrow with distance like paint would. */
+  var GHOST_W = 0.45;
+  var TRAIL_W = 0.22;
 
-  /** Rung spacing, metres. Evenly spaced now, so they read as a scale. */
-  var RUNG_M = 5;
-
-  /** Chrome above the corridor, and the strip the readout gets below. */
-  var PAD_TOP = 8;
-  var READOUT_H = 30;
-  /**
-   * Clear space between the corridor's bottom edge and the readout. A gate
-   * pinned at the far-behind end sits ON that edge and still has to fit its
-   * uprights and its chevron somewhere; without this they are drawn through
-   * the number.
-   */
-  var GATE_ROOM = 20;
+  /** How far back the driven trail is kept, and how finely it is sampled. */
+  var TRAIL_STEP_M = 1.5;
+  var TRAIL_MAX = Math.ceil(VIEW_BEHIND_M / TRAIL_STEP_M) + 4;
 
   /* -------------------------------- colour -------------------------------- */
 
-  /**
-   * Three states, separated in luminance as well as hue so the picture still
-   * reads in greyscale: vermillion (~0.46) < green (~0.62) < white (~0.91).
-   * Vermillion rather than pure red on purpose — `#FF0000` is the worst case
-   * for a protanope and vibrates against a dark track.
-   */
-  var C_GHOST_AHEAD = "#D55E00";
-  var C_LEVEL = "#E8EAED";
-  var C_YOU_AHEAD = "#2FBF71";
-  var C_RAIL = "#8A9099";
-  var C_INK = "#0B0D10";
+  var C_ROAD = "#191d24";
+  var C_EDGE = "#3a414d";
+  var C_TRAIL = "#7f8794";
+  var C_INK = "#0b0d10";
+  var C_LEVEL = "#e8eaed";
+  var C_BEHIND = "#d55e00";
+  var C_AHEAD = "#2fbf71";
 
   /** |gapSec| at or under this is a dead heat. */
   var LEVEL_SEC = 0.05;
 
-  /**
-   * Band hysteresis. A raw threshold crossing flickers the colour whenever the
-   * gap sits near level, and a band change is the most visually loud thing
-   * this widget does. Entering a band needs 8% more than the threshold,
-   * leaving it needs to fall 15% below — plus a dwell, short to arm and long
-   * to disarm. The band index itself is never low-passed: filtering an
-   * integer state produces values that mean nothing.
-   */
-  var BAND_ENTER = 1.08;
-  var BAND_LEAVE = 0.85;
-  var DWELL_ENTER_MS = 60;
-  var DWELL_LEAVE_MS = 250;
-  /** Cross-fade on a band change. A hard cut at 2-5 Hz reads as a pulse. */
-  var BAND_FADE_MS = 120;
-
   /* ------------------------------- smoothing ------------------------------ */
 
   /**
-   * Low-pass time constant for the gate's position, seconds.
-   *
-   * Applied with a dt-DERIVED coefficient — `a = 1 - exp(-dt / TAU)` — and not
-   * a fixed per-frame fraction. A hard-coded fraction silently assumes a fixed
-   * frame interval; this widget is throttled and frames drop, so the same
-   * constant would mean different smoothing at different rates. Tau depends
-   * only on the cutoff, so it stays correct when the rate moves. Same form as
+   * Low-pass on the player's pose, seconds, applied with a dt-DERIVED
+   * coefficient (`a = 1 - exp(-dt / TAU)`) and never a fixed per-frame
+   * fraction: a fixed fraction silently assumes a fixed frame interval, and
+   * this widget is throttled and drops frames. Same form as
    * `paceDelta.Channel` server-side.
+   *
+   * Short on purpose. The pose only needs the jitter taken off it; more lag
+   * than this and the road swims behind the car through a quick change of
+   * direction.
    */
-  var TAU_SEC = 0.1;
-  /** Below this the eased value snaps, so it cannot creep forever. */
-  var SNAP_M = 0.02;
+  var POSE_TAU = 0.06;
+  /** A heading change larger than this in one sample is a reset, not a corner. */
+  var HEADING_JUMP_DEG = 90;
 
   /* -------------------------------- state --------------------------------- */
 
@@ -166,121 +113,115 @@
   var cssW = 0;
   var cssH = 0;
   var dpr = 1;
-  var H = 180;
-  var HW_NEAR = 184;
-  var HW_FAR = 22;
-  var horizonY = PAD_TOP;
 
-  /**
-   * The static corridor, rendered once to an offscreen canvas. Per frame the
-   * widget blits this and draws the gate and the readout over it.
-   *
-   * `chrome` and `chromeKey` are nulled TOGETHER, always. Dropping the canvas
-   * while leaving the key set lands on `drawImage(null, ...)`, which throws
-   * every frame for the rest of the session — the same trap `trackmap.js`
-   * warns about twice.
-   */
-  var chrome = null;
-  var chromeKey = "";
+  /** The circuit, from `/trackmap.json`. */
+  var shape = null;
+  var haveKey = "";
+  var haveRevision = -1;
+  var shapeFetching = false;
 
-  var easedM = 0;
-  var easedAt = -1;
-  /** -1 = you ahead, 0 = level, 1 = ghost ahead. */
-  var band = 0;
-  var bandPending = 0;
-  var bandPendingAt = 0;
-  var bandFadeFrom = 0;
-  var bandFadeAt = -1;
+  /** The ghost's line, from `/ghost.json`. */
+  var line = null;
+  var haveLapId = "";
+  var lineFetching = false;
+
+  var poseX = 0;
+  var poseZ = 0;
+  var poseH = 0;
+  var poseAt = -1;
+
+  /** Where the car has actually been, newest last. */
+  var trail = [];
+
   var lastLabel = "";
-  var lastText = "";
 
-  /* ------------------------------- helpers -------------------------------- */
-
-  /**
-   * Signed gap in metres -> corridor coordinate, `0` at the bottom (ghost a
-   * full range BEHIND) through `0.5` at the datum to `1` at the top (a full
-   * range AHEAD). Linear, and clamped: past the range the gate pins and the
-   * chevron says so.
-   */
-  function vOfGap(m) {
-    return clamp(0.5 + (0.5 * m) / GAP_RANGE_M, 0, 1);
-  }
-
-  /** Screen y for a corridor coordinate. */
-  function yOfV(v) {
-    return horizonY + H * (1 - v);
-  }
-
-  /** Rail half-width there, tapering linearly so position and width agree. */
-  function halfOfV(v) {
-    return HW_NEAR + (HW_FAR - HW_NEAR) * v;
-  }
-
-  function clamp(v, lo, hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
-
-  function mix(a, b, f) {
-    return a + (b - a) * f;
-  }
-
-  /** `#rrggbb` -> [r,g,b]. Only ever called on the literals above. */
-  function rgb(hex) {
-    return [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
-  }
-
-  function mixHex(a, b, f) {
-    var x = rgb(a);
-    var y = rgb(b);
-    return (
-      "rgb(" +
-      Math.round(mix(x[0], y[0], f)) +
-      "," +
-      Math.round(mix(x[1], y[1], f)) +
-      "," +
-      Math.round(mix(x[2], y[2], f)) +
-      ")"
-    );
-  }
-
-  function colourOf(b) {
-    return b > 0 ? C_GHOST_AHEAD : b < 0 ? C_YOU_AHEAD : C_LEVEL;
-  }
-
-  /** `+0.24` / `-1.08` / `0.00`, always signed and always two decimals. */
-  function fmtDelta(sec) {
-    var s = Math.abs(sec) < 0.005 ? 0 : sec;
-    return (s > 0 ? "+" : s < 0 ? "-" : "") + Math.abs(s).toFixed(2);
-  }
-
-  /* ------------------------------- sizing --------------------------------- */
+  /* ------------------------------- fetching -------------------------------- */
 
   /**
-   * Height is DERIVED from width, not set as an aspect ratio, so the corridor,
-   * the chrome above it and the readout strip below it always add up exactly
-   * and the near rails cannot be cut off by a rounding error.
+   * Keep the circuit in step with the frame.
+   *
+   * Lifted from `trackmap.js`, including the parts that look redundant: a shape
+   * can be WITHDRAWN as well as replaced, there is one in-flight flag and no
+   * queue, `204` means "not learned yet" rather than an error, and the cached
+   * value and its key always die together — nulling one without the other is
+   * how a stale shape outlives the circuit it describes.
    */
+  function ensureShape(map) {
+    if (!map) return;
+    if (shape && (!map.ready || map.key !== haveKey)) {
+      shape = null;
+      haveKey = "";
+      haveRevision = -1;
+    }
+    if (!map.ready || shapeFetching) return;
+    if (shape && map.key === haveKey && map.revision === haveRevision) return;
+    shapeFetching = true;
+    var wantKey = map.key;
+    var wantRev = map.revision;
+    fetch("/trackmap.json", { cache: "no-store" })
+      .then(function (r) {
+        if (r.status === 204) return null;
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        shapeFetching = false;
+        if (!data || !data.points || data.points.length < 8) return;
+        shape = data;
+        haveKey = wantKey;
+        haveRevision = wantRev;
+      })
+      .catch(function () {
+        shapeFetching = false;
+      });
+  }
+
+  /**
+   * Keep the ghost's line in step with the selection.
+   *
+   * `sourceLapId` moves exactly when the provider picks a different lap, so it
+   * is the cache key and no new wire field was needed for any of this.
+   */
+  function ensureLine(ghost) {
+    var id = ghost && ghost.sourceLapId ? ghost.sourceLapId : "";
+    if (!id) {
+      line = null;
+      haveLapId = "";
+      return;
+    }
+    if (line && haveLapId === id) return;
+    if (lineFetching) return;
+    lineFetching = true;
+    fetch("/ghost.json", { cache: "no-store" })
+      .then(function (r) {
+        if (r.status === 204) return null; // no ghost, or a lap with no line
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        lineFetching = false;
+        if (!data || !data.d || !data.x || data.d.length < 8) return;
+        line = data;
+        haveLapId = data.lapId || id;
+      })
+      .catch(function () {
+        lineFetching = false;
+      });
+  }
+
+  /* -------------------------------- sizing -------------------------------- */
+
   function sizeCanvas() {
     if (!canvas) return;
-    var w = canvas.clientWidth || 400;
-    var hh = Math.round(w * H_PER_PX);
-    var h = Math.round(PAD_TOP + hh + GATE_ROOM + READOUT_H);
+    var w = canvas.clientWidth || 640;
+    var h = Math.round(w * ASPECT);
     var d = window.ApexRaster.backingScale(canvas);
     var bw = Math.round(w * d);
     var bh = Math.round(h * d);
     if (bw === canvas.width && bh === canvas.height && w === cssW) return;
-
     cssW = w;
     cssH = h;
     dpr = d;
-    H = hh;
-    HW_NEAR = w * HW_NEAR_PER_PX;
-    HW_FAR = w * HW_FAR_PER_PX;
-    horizonY = PAD_TOP;
     canvas.style.height = cssH + "px";
     // Put the border chrome back so the content box is exactly cssH tall and
     // the bitmap is never squashed to fit (same fix as motion.js / radar.js).
@@ -289,9 +230,6 @@
     canvas.width = bw;
     canvas.height = bh;
     if (gctx) gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Together. Always.
-    chrome = null;
-    chromeKey = "";
   }
 
   var sizeTick = 0;
@@ -306,331 +244,380 @@
     window.addEventListener("resize", sizeCanvas, { passive: true });
   }
 
-  /* ------------------------------- the chrome ----------------------------- */
+  /* -------------------------------- helpers -------------------------------- */
+
+  function playerCar(frame) {
+    var cars = frame && frame.trackMap && frame.trackMap.cars;
+    if (!cars) return null;
+    for (var i = 0; i < cars.length; i++) {
+      if (cars[i].isPlayer) return cars[i];
+    }
+    return null;
+  }
+
+  /** Shortest signed difference between two headings, degrees. */
+  function headingDelta(a, b) {
+    return ((a - b + 540) % 360) - 180;
+  }
 
   /**
-   * The corridor: two continuous rails from the near end to the far end, a
-   * closing bar at the far end, and 5 m rungs as a scale.
-   *
-   * Drawn once per size into an offscreen canvas. Every coordinate is rounded
-   * to a whole pixel plus a half-pixel stroke offset — this never moves, and
-   * sub-pixel jitter on something that should look nailed down is exactly what
-   * makes a HUD tiring to sit behind.
+   * Ease the pose. Position eases straight; heading eases the SHORT way round,
+   * or a car at 179° and one at −179° would swing the whole world through 358°
+   * to travel two.
    */
-  function renderChrome() {
-    var key = cssW + "x" + cssH + "@" + dpr;
-    if (chrome && chromeKey === key) return;
-
-    var c = document.createElement("canvas");
-    c.width = Math.round(cssW * dpr);
-    c.height = Math.round(cssH * dpr);
-    var x = c.getContext("2d");
-    if (!x) {
-      chrome = null;
-      chromeKey = "";
+  function easePose(x, z, h, nowMs) {
+    var dt = poseAt < 0 ? -1 : (nowMs - poseAt) / 1000;
+    poseAt = nowMs;
+    if (dt <= 0 || dt > 0.5) {
+      poseX = x;
+      poseZ = z;
+      poseH = h;
       return;
     }
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    var cx = Math.round(cssW / 2) + 0.5;
-    var nearY = Math.round(yOfV(0)) + 0.5;
-    var nearH = Math.round(halfOfV(0));
-    var farY = Math.round(yOfV(1)) + 0.5;
-    var farH = Math.round(halfOfV(1));
-
-    // Rungs first, so the rails sit on top of their ends.
-    x.lineWidth = 1;
-    for (var m = -GAP_RANGE_M + RUNG_M; m <= GAP_RANGE_M - RUNG_M; m += RUNG_M) {
-      if (m === 0) continue; // the datum is drawn separately, and louder
-      var rv = vOfGap(m);
-      var ry = Math.round(yOfV(rv)) + 0.5;
-      var rh = Math.round(halfOfV(rv));
-      // Fade with distance from the datum: the rungs nearest you matter most.
-      x.globalAlpha = 0.1 + 0.2 * (1 - Math.abs(m) / GAP_RANGE_M);
-      x.strokeStyle = C_RAIL;
-      x.beginPath();
-      x.moveTo(cx - rh, ry);
-      x.lineTo(cx + rh, ry);
-      x.stroke();
-    }
-
-    // The rails. Straight lines in screen space, because a straight line on
-    // the ground plane projects to a straight line.
-    x.globalAlpha = 0.5;
-    x.strokeStyle = C_RAIL;
-    x.lineWidth = 1.5;
-    x.beginPath();
-    x.moveTo(cx - nearH, nearY);
-    x.lineTo(cx - farH, farY);
-    x.moveTo(cx + nearH, nearY);
-    x.lineTo(cx + farH, farY);
-    x.stroke();
-
-    // The far edge — the corridor ends here rather than running to a vanishing
-    // point it would reach only at infinity.
-    x.globalAlpha = 0.35;
-    x.lineWidth = 1;
-    x.beginPath();
-    x.moveTo(cx - farH, farY);
-    x.lineTo(cx + farH, farY);
-    x.stroke();
-
-    // The datum: YOU. Everything the gate does is read against this line, so
-    // it is the brightest thing in the static chrome and the only part drawn
-    // with ticks. Without it a gate sitting mid-corridor says nothing — there
-    // would be no zero to be above or below.
-    var dv = 0.5;
-    var dy = Math.round(yOfV(dv)) + 0.5;
-    var dh = Math.round(halfOfV(dv));
-    x.globalAlpha = 0.85;
-    x.strokeStyle = C_RAIL;
-    x.lineWidth = 1;
-    x.beginPath();
-    x.moveTo(cx - dh, dy);
-    x.lineTo(cx + dh, dy);
-    x.stroke();
-    // Inward ticks, so the datum reads as a mark on the corridor rather than
-    // as one more rung in the scale.
-    x.lineWidth = 2;
-    x.beginPath();
-    x.moveTo(cx - dh, dy - 5);
-    x.lineTo(cx - dh, dy + 5);
-    x.moveTo(cx + dh, dy - 5);
-    x.lineTo(cx + dh, dy + 5);
-    x.stroke();
-
-    x.globalAlpha = 1;
-    chrome = c;
-    chromeKey = key;
+    var a = 1 - Math.exp(-dt / POSE_TAU);
+    poseX += (x - poseX) * a;
+    poseZ += (z - poseZ) * a;
+    var dh = headingDelta(h, poseH);
+    // A reset, a tow, or a spin: adopt it rather than sweeping the world round.
+    if (Math.abs(dh) > HEADING_JUMP_DEG) poseH = h;
+    else poseH += dh * a;
   }
 
-  /* -------------------------------- bands --------------------------------- */
+  /** Remember where the car has been, at a roughly fixed spacing. */
+  function noteTrail(x, z) {
+    var last = trail.length ? trail[trail.length - 1] : null;
+    if (last && Math.hypot(x - last.x, z - last.z) < TRAIL_STEP_M) return;
+    // A jump means a reset or a teleport; a trail across it would be a line
+    // the car never drove.
+    if (last && Math.hypot(x - last.x, z - last.z) > 60) trail.length = 0;
+    trail.push({ x: x, z: z });
+    if (trail.length > TRAIL_MAX) trail.shift();
+  }
+
+  function bandColour(gapSec) {
+    if (Math.abs(gapSec) <= LEVEL_SEC) return C_LEVEL;
+    return gapSec > 0 ? C_BEHIND : C_AHEAD;
+  }
+
+  function fmtDelta(sec) {
+    var s = Math.abs(sec) < 0.005 ? 0 : sec;
+    return (s > 0 ? "+" : s < 0 ? "-" : "") + Math.abs(s).toFixed(2);
+  }
+
+  /* -------------------------------- drawing -------------------------------- */
 
   /**
-   * Resolve the colour band with hysteresis and dwell. Returns the settled
-   * band; `band` only ever moves one step at a time and only after the new
-   * state has persisted.
+   * Draw a ribbon of real world width through a list of world points.
+   *
+   * Width is in METRES, not pixels, so it narrows with distance. A constant
+   * pixel stroke reads as a wire floating above the road; a quad strip sits on
+   * it. `colourFn` is handed each point's index so a ribbon can change colour
+   * along its length in one pass.
    */
-  function settleBand(gapSec, nowMs) {
-    var want;
-    if (band === 0) {
-      // Leaving level needs a clear margin over the threshold.
-      want = gapSec > LEVEL_SEC * BAND_ENTER ? 1 : gapSec < -LEVEL_SEC * BAND_ENTER ? -1 : 0;
-    } else {
-      // Returning to level needs the gap to fall well inside it.
-      want = Math.abs(gapSec) < LEVEL_SEC * BAND_LEAVE ? 0 : band;
-      // A straight flip through level (hard to do, but possible on a reset).
-      if (band > 0 && gapSec < -LEVEL_SEC * BAND_ENTER) want = -1;
-      if (band < 0 && gapSec > LEVEL_SEC * BAND_ENTER) want = 1;
+  function ribbon(cam, pts, widthM, colourFn, alpha) {
+    if (!pts || pts.length < 2) return;
+    var half = widthM / 2;
+    var prev = null;
+    gctx.globalAlpha = alpha;
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i];
+      var b = pts[i + 1] || pts[i - 1];
+      if (!a || !b) {
+        prev = null;
+        continue;
+      }
+      var tx = (pts[i + 1] ? b.x - a.x : a.x - b.x);
+      var tz = (pts[i + 1] ? b.z - a.z : a.z - b.z);
+      var len = Math.hypot(tx, tz);
+      if (len < 1e-6) {
+        prev = null;
+        continue;
+      }
+      var nx = tz / len;
+      var nz = -tx / len;
+      var wl = GEO.worldToLocal(poseH, poseX, poseZ, a.x + nx * half, a.z + nz * half);
+      var wr = GEO.worldToLocal(poseH, poseX, poseZ, a.x - nx * half, a.z - nz * half);
+      var ql = GEO.project(cam, wl.lat, a.e, wl.lon);
+      var qr = GEO.project(cam, wr.lat, a.e, wr.lon);
+      var cur = ql && qr ? { l: ql, r: qr, i: i } : null;
+      if (prev && cur) {
+        gctx.beginPath();
+        gctx.moveTo(prev.l.x, prev.l.y);
+        gctx.lineTo(cur.l.x, cur.l.y);
+        gctx.lineTo(cur.r.x, cur.r.y);
+        gctx.lineTo(prev.r.x, prev.r.y);
+        gctx.closePath();
+        gctx.fillStyle = colourFn(prev.i);
+        gctx.fill();
+      }
+      prev = cur;
     }
-
-    if (want === band) {
-      bandPending = band;
-      return band;
-    }
-    if (want !== bandPending) {
-      bandPending = want;
-      bandPendingAt = nowMs;
-      return band;
-    }
-    // Short to arm, long to disarm: a real change should show quickly, but a
-    // return to neutral should not race a wobble.
-    var need = want === 0 ? DWELL_LEAVE_MS : DWELL_ENTER_MS;
-    if (nowMs - bandPendingAt < need) return band;
-
-    bandFadeFrom = band;
-    bandFadeAt = nowMs;
-    band = want;
-    return band;
+    gctx.globalAlpha = 1;
   }
 
-  /** The band colour, cross-faded across a change. */
-  function bandColour(nowMs) {
-    if (bandFadeAt < 0) return colourOf(band);
-    var f = (nowMs - bandFadeAt) / BAND_FADE_MS;
-    if (f >= 1) {
-      bandFadeAt = -1;
-      return colourOf(band);
+  /** Sample the ghost's stored line over a window of road, as world points. */
+  function ghostPoints(baseD, fromM, toM) {
+    var lapM = shape.lengthM || 1;
+    var out = [];
+    for (var m = fromM; m <= toM; m += STEP_M) {
+      var d = baseD + m / lapM;
+      d -= Math.floor(d); // wrap, so the ribbon survives the start/finish line
+      var a = GEO.lineAtSmooth(line, d);
+      if (!a) continue;
+      out.push({ x: a.x, z: a.z, e: GEO.roadElevation(shape, d * lapM) + 0.05, d: d });
     }
-    return mixHex(colourOf(bandFadeFrom), colourOf(band), f < 0 ? 0 : f);
+    return out;
   }
 
-  /* ------------------------------- drawing -------------------------------- */
+  /** The road surface and its edges, from the learned circuit. */
+  function drawRoad(cam, myDistM) {
+    var slice = GEO.roadSlice(shape, myDistM - VIEW_BEHIND_M, myDistM + VIEW_AHEAD_M);
+    if (slice.length < 2) return false;
+    var half = shape.halfWidthM > 0 ? shape.halfWidthM : 6;
+    var L = [];
+    var R = [];
+    for (var i = 0; i < slice.length; i++) {
+      var s = slice[i];
+      var wl = GEO.worldToLocal(poseH, poseX, poseZ, s.x + s.nx * half, s.z + s.nz * half);
+      var wr = GEO.worldToLocal(poseH, poseX, poseZ, s.x - s.nx * half, s.z - s.nz * half);
+      L.push(GEO.project(cam, wl.lat, s.y, wl.lon));
+      R.push(GEO.project(cam, wr.lat, s.y, wr.lon));
+    }
+    var started = false;
+    gctx.beginPath();
+    for (var a = L.length - 1; a >= 0; a--) {
+      if (!L[a]) continue;
+      if (!started) {
+        gctx.moveTo(L[a].x, L[a].y);
+        started = true;
+      } else gctx.lineTo(L[a].x, L[a].y);
+    }
+    if (!started) return false;
+    for (var b = 0; b < R.length; b++) if (R[b]) gctx.lineTo(R[b].x, R[b].y);
+    gctx.closePath();
+    gctx.fillStyle = C_ROAD;
+    gctx.fill();
 
-  function drawGate(x, v, colour, beyond) {
-    var cx = cssW / 2;
-    var y = yOfV(v);
-    var half = halfOfV(v);
-
-    // Outlined, because an outline is required for a readable mark over a
-    // DYNAMIC background and ours is the track going past at 250 km/h.
-    x.lineCap = "round";
-    x.strokeStyle = C_INK;
-    x.lineWidth = 6;
-    x.globalAlpha = 0.55;
-    x.beginPath();
-    x.moveTo(cx - half, y);
-    x.lineTo(cx + half, y);
-    x.stroke();
-
-    x.globalAlpha = 1;
-    x.strokeStyle = colour;
-    x.lineWidth = 3;
-    x.beginPath();
-    x.moveTo(cx - half, y);
-    x.lineTo(cx + half, y);
-    x.stroke();
-
-    // Short uprights at the gate's ends, so it reads as a gate standing ON the
-    // road rather than as a line floating across it. Ground contact is what
-    // makes a mark's distance legible at all.
-    // Capped: at the wide end 0.22 of the half-width is ~42 px of post,
-    // which hangs a pinned gate straight through the readout below it.
-    var postLen = Math.max(3, Math.min(13, half * 0.22));
-    var post = postLen * (v >= 0.5 ? 1 : -1);
-    x.lineWidth = 2;
-    x.beginPath();
-    x.moveTo(cx - half, y);
-    x.lineTo(cx - half, y - post);
-    x.moveTo(cx + half, y);
-    x.lineTo(cx + half, y - post);
-    x.stroke();
-
-    if (!beyond) return;
-    // Past the corridor's reach: say so, instead of pinning the gate and
-    // letting the pinned position read as the distance. The chevron points
-    // the way it ran out of room, so a pegged gate at the top and one at the
-    // bottom still cannot be confused.
-    var up = v >= 0.5;
-    x.globalAlpha = 0.8;
-    x.fillStyle = colour;
-    var ty = up ? y - postLen - 4 : y + postLen + 4;
-    x.beginPath();
-    x.moveTo(cx, ty + (up ? -5 : 5));
-    x.lineTo(cx - 5, ty);
-    x.lineTo(cx + 5, ty);
-    x.closePath();
-    x.fill();
-    x.globalAlpha = 1;
+    gctx.strokeStyle = C_EDGE;
+    gctx.lineWidth = 2;
+    for (var e = 0; e < 2; e++) {
+      var side = e ? R : L;
+      gctx.beginPath();
+      var on = false;
+      for (var k = 0; k < side.length; k++) {
+        if (!side[k]) {
+          on = false;
+          continue;
+        }
+        if (!on) {
+          gctx.moveTo(side[k].x, side[k].y);
+          on = true;
+        } else gctx.lineTo(side[k].x, side[k].y);
+      }
+      gctx.stroke();
+    }
+    return true;
   }
 
-  /** The signed seconds, outlined, centred under the corridor. */
-  function drawReadout(x, text, colour) {
-    var cx = Math.round(cssW / 2);
-    var y = Math.round(cssH - READOUT_H / 2 + 1);
-    // ~20 arcmin of character height at a normal viewing distance is the
-    // recommended minimum for in-vehicle text; this tracks widget width so it
-    // holds when the driver scales the HUD up.
-    var size = Math.max(13, Math.round(cssW * 0.075));
-    x.font = "600 " + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
-    x.textAlign = "center";
-    x.textBaseline = "middle";
-    x.lineJoin = "round";
-    // Stroke-to-cap-height stays under 0.08 — thicker starts eating the glyph.
-    x.lineWidth = Math.max(2, size * 0.075) * 2;
-    x.strokeStyle = C_INK;
-    x.globalAlpha = 0.75;
-    x.strokeText(text, cx, y);
-    x.globalAlpha = 1;
-    x.fillStyle = colour;
-    x.fillText(text, cx, y);
+  /**
+   * Where the ghost is on the clock right now, as a gate STANDING on its line.
+   *
+   * It was an arrow lying on the road first. A flat shape seen from a camera
+   * barely above the surface foreshortens into a sliver — at 7 m it read as a
+   * white smear across the track rather than as a marker. Anything meant to be
+   * found at a glance has to have height.
+   */
+  function drawGhostMark(cam, atD, gapM) {
+    var lapM = shape.lengthM || 1;
+    var d = atD + gapM / lapM;
+    d -= Math.floor(d);
+    var a = GEO.lineAtSmooth(line, d);
+    var b = GEO.lineAtSmooth(line, (d + 0.0008) % 1);
+    if (!a || !b) return;
+    var tx = b.x - a.x;
+    var tz = b.z - a.z;
+    var len = Math.hypot(tx, tz);
+    if (len < 1e-6) return;
+    // Across the line, so the gate faces the driver rather than edge-on.
+    var nx = tz / len;
+    var nz = -tx / len;
+    var e = GEO.roadElevation(shape, d * lapM);
+    var HALF = 1.1;
+    var TOP = 1.3;
+    var bl = GEO.worldToLocal(poseH, poseX, poseZ, a.x + nx * HALF, a.z + nz * HALF);
+    var br = GEO.worldToLocal(poseH, poseX, poseZ, a.x - nx * HALF, a.z - nz * HALF);
+    var p1 = GEO.project(cam, bl.lat, e, bl.lon);
+    var p2 = GEO.project(cam, br.lat, e, br.lon);
+    var p3 = GEO.project(cam, br.lat, e + TOP, br.lon);
+    var p4 = GEO.project(cam, bl.lat, e + TOP, bl.lon);
+    if (!p1 || !p2 || !p3 || !p4) return;
+    gctx.beginPath();
+    gctx.moveTo(p1.x, p1.y);
+    gctx.lineTo(p2.x, p2.y);
+    gctx.lineTo(p3.x, p3.y);
+    gctx.lineTo(p4.x, p4.y);
+    gctx.closePath();
+    gctx.globalAlpha = 0.3;
+    gctx.fillStyle = C_LEVEL;
+    gctx.fill();
+    gctx.globalAlpha = 1;
+    // The posts carry the read; the panel between them is only a hint of body.
+    gctx.strokeStyle = C_LEVEL;
+    gctx.lineWidth = 2.5;
+    gctx.lineCap = 'round';
+    gctx.beginPath();
+    gctx.moveTo(p1.x, p1.y);
+    gctx.lineTo(p4.x, p4.y);
+    gctx.moveTo(p2.x, p2.y);
+    gctx.lineTo(p3.x, p3.y);
+    gctx.moveTo(p4.x, p4.y);
+    gctx.lineTo(p3.x, p3.y);
+    gctx.stroke();
+  }
+  /** Signed seconds, outlined — an outline is required over a moving picture. */
+  function drawReadout(text, colour) {
+    var size = Math.max(16, Math.round(cssW * 0.045));
+    gctx.font = "600 " + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
+    gctx.textAlign = "left";
+    gctx.textBaseline = "alphabetic";
+    gctx.lineJoin = "round";
+    gctx.lineWidth = Math.max(2, size * 0.075) * 2;
+    gctx.strokeStyle = C_INK;
+    gctx.globalAlpha = 0.75;
+    gctx.strokeText(text, 14, cssH - 14);
+    gctx.globalAlpha = 1;
+    gctx.fillStyle = colour;
+    gctx.fillText(text, 14, cssH - 14);
   }
 
-  function drawIdle(x, note) {
-    var cx = Math.round(cssW / 2);
-    var y = Math.round(cssH - READOUT_H / 2 + 1);
-    var size = Math.max(10, Math.round(cssW * 0.034));
-    x.font = "500 " + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
-    x.textAlign = "center";
-    x.textBaseline = "middle";
-    x.globalAlpha = 0.55;
-    x.fillStyle = C_RAIL;
-    x.fillText(note, cx, y);
-    x.globalAlpha = 1;
+  function drawNote(note) {
+    var size = Math.max(11, Math.round(cssW * 0.021));
+    gctx.font = "500 " + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
+    gctx.textAlign = "center";
+    gctx.textBaseline = "middle";
+    gctx.globalAlpha = 0.6;
+    gctx.fillStyle = C_EDGE;
+    gctx.fillText(note, cssW / 2, cssH / 2);
+    gctx.globalAlpha = 1;
   }
 
   /* -------------------------------- update -------------------------------- */
 
   function update(frame) {
-    if (!gctx || !canvas) return;
+    if (!gctx || !canvas || !GEO) return;
     if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
     if (!cssW || !cssH) return;
 
-    renderChrome();
+    var ghost = frame && frame.player ? frame.player.ghost : null;
+    ensureShape(frame ? frame.trackMap : null);
+    ensureLine(ghost);
 
-    var g = frame && frame.player ? frame.player.ghost : null;
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gctx.clearRect(0, 0, cssW, cssH);
+
+    if (headerMeta) {
+      var label = ghost && ghost.sourceLabel ? ghost.sourceLabel : "—";
+      if (label !== lastLabel) {
+        headerMeta.textContent = label;
+        lastLabel = label;
+      }
+    }
+
+    if (!ghost) {
+      drawNote("no ghost lap");
+      trail.length = 0;
+      return;
+    }
+
+    var me = playerCar(frame);
+    var motion = frame.player.motion;
+    var havePose =
+      !!me &&
+      typeof me.x === "number" &&
+      typeof me.z === "number" &&
+      typeof me.lapFraction === "number" &&
+      !!motion &&
+      typeof motion.heading === "number";
+
+    // Both pose channels come and go together: spectating, no plugin, or the
+    // sim sitting in a menu. `lapFraction` survives on its own but is
+    // one-dimensional, and pinning the line to the centreline would throw away
+    // the lateral channel that is the entire point — so say why instead of
+    // drawing a road that is half true.
+    if (!havePose || !shape || !line) {
+      drawNote(
+        !havePose
+          ? "waiting for car position"
+          : !shape
+            ? "learning the circuit"
+            : "this lap has no driven line",
+      );
+      if (ghost.active) drawReadout(fmtDelta(ghost.gapSec), bandColour(ghost.gapSec));
+      return;
+    }
+
     var nowMs =
       typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    easePose(me.x, me.z, motion.heading, nowMs);
+    noteTrail(me.x, me.z);
 
-    var x = gctx;
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
-    x.clearRect(0, 0, cssW, cssH);
+    var lapM = shape.lengthM || 1;
+    var atD = me.lapFraction;
+    var myDistM = atD * lapM;
 
-    // No ghost at all — nothing selected, or spectating.
-    if (!g) {
-      x.globalAlpha = 0.3;
-      if (chrome) x.drawImage(chrome, 0, 0, cssW, cssH);
-      x.globalAlpha = 1;
-      drawIdle(x, "no ghost lap");
-      if (headerMeta && lastLabel !== "") {
-        headerMeta.textContent = "—";
-        lastLabel = "";
+    var cam = GEO.camera({
+      cx: cssW / 2,
+      cy: cssH * HORIZON,
+      f: cssW / 2 / Math.tan(((FOV_DEG / 2) * Math.PI) / 180),
+      back: CAM_BACK,
+      height: CAM_H,
+      pitch: CAM_PITCH,
+      // The eye rides the player's OWN road height. Pinned to absolute world Y
+      // it sits underground on a climb and in the air on a descent, and the
+      // frame goes empty — which is exactly what the prototype did on Road
+      // Atlanta's 8 m of elevation change.
+      roadY: GEO.roadElevation(shape, myDistM),
+    });
+
+    if (!drawRoad(cam, myDistM)) {
+      drawNote("off the circuit");
+      return;
+    }
+
+    // Where you have actually just been. Only backwards: there is no line of
+    // yours on road you have not driven yet.
+    if (trail.length > 1) {
+      var tpts = [];
+      for (var i = 0; i < trail.length; i++) {
+        tpts.push({
+          x: trail[i].x,
+          z: trail[i].z,
+          e: GEO.roadElevation(shape, myDistM) + 0.03,
+        });
       }
-      easedAt = -1;
-      return;
+      ribbon(cam, tpts, TRAIL_W, function () {
+        return C_TRAIL;
+      }, 0.45);
     }
 
-    if (headerMeta && g.sourceLabel !== lastLabel) {
-      headerMeta.textContent = g.sourceLabel || "—";
-      lastLabel = g.sourceLabel || "—";
+    // The ghost's line, ahead only: running it behind the car puts its widest,
+    // closest segment in the driver's face for no information.
+    var gpts = ghostPoints(atD, 0, VIEW_AHEAD_M);
+    ribbon(
+      cam,
+      gpts,
+      GHOST_W,
+      function (i) {
+        var d = gpts[i].d;
+        return GEO.pedalColour(GEO.channelAt(line, "brake", d), GEO.channelAt(line, "throttle", d));
+      },
+      0.92,
+    );
+
+    if (ghost.active) {
+      drawGhostMark(cam, atD, ghost.gapM);
+      drawReadout(fmtDelta(ghost.gapSec), bandColour(ghost.gapSec));
     }
-
-    // Loaded but out of reach: off the end of the trace's covered span, or in
-    // the pits. Show the corridor empty rather than a stale gate.
-    if (!g.active) {
-      x.globalAlpha = 0.45;
-      if (chrome) x.drawImage(chrome, 0, 0, cssW, cssH);
-      x.globalAlpha = 1;
-      drawIdle(x, "waiting for the line");
-      easedAt = -1;
-      return;
-    }
-
-    // Ease the distance, with a dt-derived coefficient. A lap boundary resets
-    // the gap discontinuously, so the first sample after a gap in time is
-    // adopted rather than ramped into — ramping would sweep the gate the whole
-    // length of the corridor for no physical reason.
-    var dt = easedAt < 0 ? -1 : (nowMs - easedAt) / 1000;
-    if (dt <= 0 || dt > 0.5) {
-      easedM = g.gapM;
-    } else {
-      var a = 1 - Math.exp(-dt / TAU_SEC);
-      easedM += (g.gapM - easedM) * a;
-      if (Math.abs(g.gapM - easedM) < SNAP_M) easedM = g.gapM;
-    }
-    easedAt = nowMs;
-
-    var b = settleBand(g.gapSec, nowMs);
-    var colour = bandColour(nowMs);
-
-    x.drawImage(chrome, 0, 0, cssW, cssH);
-
-    // The corridor is forward-facing, so a ghost BEHIND cannot be placed in
-    // it. Mirror the position about the near end and dim it: the driver is
-    // ahead, the gate is in the mirror, and the number is the authority.
-    // Signed, so ahead and behind are different PLACES rather than the same
-    // place in two colours. No dimming for the behind case either — that would
-    // put meaning back into something other than position.
-    var beyond = Math.abs(easedM) > GAP_RANGE_M;
-    drawGate(x, vOfGap(easedM), colour, beyond);
-
-    var text = fmtDelta(g.gapSec);
-    // Quantise, compare, then write — the house rule, and the reason the
-    // readout does not re-layout on every frame.
-    if (text !== lastText) lastText = text;
-    drawReadout(x, text, colour);
-
-    void b;
   }
 
   /* --------------------------------- init --------------------------------- */
