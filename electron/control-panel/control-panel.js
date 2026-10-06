@@ -6371,6 +6371,80 @@
     }
   }
 
+  /* ---- Race / Training mode ---------------------------------------------
+   *
+   * The segmented control in the top bar shipped DISABLED and `data-mode` was
+   * read by nothing: it was a placeholder for a training module that did not
+   * exist. Ghost HUD is the first thing to land in it, so the toggle is now
+   * real.
+   *
+   * Two gates, not one. The Fuel and VR tabs answer only to `followingBeta`;
+   * the Training tab needs the beta channel AND Training mode selected, since
+   * the mode is the thing the driver is choosing. Off the beta channel the
+   * mode cannot be entered at all and any stored preference is dropped rather
+   * than silently kept — a driver who moves to stable should not have an
+   * invisible mode still set.
+   *
+   * Deliberately NOT built here: the lap database and audio markers the
+   * original markup comment promised. Those are the rest of Phase 5 of
+   * docs/STINT-REVIEW-PLAN.md and should not ride along with a first beta of
+   * one HUD.
+   */
+  const MODE_STORAGE_KEY = 'apex.panel.mode';
+  let panelMode = 'race';
+
+  /** Paint the segmented control. Separated so the gate can reset the mode
+   *  without calling setMode and recursing back into itself. */
+  function paintMode() {
+    for (const b of document.querySelectorAll('#mode-seg button[data-mode]')) {
+      b.setAttribute('data-active', String(b.dataset.mode === panelMode));
+    }
+  }
+
+  function applyTrainingVisibility() {
+    const btn = document.querySelector('#mode-seg button[data-mode="training"]');
+    if (btn) btn.disabled = !followingBeta;
+    if (!followingBeta && panelMode !== 'race') {
+      panelMode = 'race';
+      paintMode();
+      try { localStorage.setItem(MODE_STORAGE_KEY, 'race'); } catch { }
+    }
+    const on = followingBeta && panelMode === 'training';
+    const tab = tabButtons.find((t) => t.dataset.tab === 'training');
+    if (tab) tab.hidden = !on;
+    if (!on) {
+      const view = views.find((v) => v.dataset.view === 'training');
+      if (view && view.getAttribute('data-active') === 'true') showView('dashboard');
+    }
+  }
+
+  function setMode(next) {
+    const target = next === 'training' ? 'training' : 'race';
+    if (target === 'training' && !followingBeta) return;
+    panelMode = target;
+    paintMode();
+    try { localStorage.setItem(MODE_STORAGE_KEY, target); } catch { }
+    applyTrainingVisibility();
+    // Choosing the mode is the whole gesture — land on the tab it opens
+    // rather than making the driver find it.
+    if (target === 'training') showView('training');
+  }
+
+  for (const b of document.querySelectorAll('#mode-seg button[data-mode]')) {
+    b.addEventListener('click', () => setMode(b.dataset.mode));
+  }
+  // Restore the stored mode now and paint it; `applyTrainingVisibility` runs
+  // again once the update state lands and will drop it if this install is not
+  // on beta after all.
+  try {
+    const saved = localStorage.getItem(MODE_STORAGE_KEY);
+    if (saved === 'training') panelMode = 'training';
+  } catch { }
+  paintMode();
+
+  const openOverlays = document.getElementById('training-open-overlays');
+  if (openOverlays) openOverlays.addEventListener('click', () => showView('overlays'));
+
   /*
    * The Team tab used to sit behind the same `followingBeta` gate as Fuel
    * above, because its endgame is multi-machine and none of those failure
@@ -7921,6 +7995,7 @@
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
     applyVrTabVisibility();
+    applyTrainingVisibility();
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';

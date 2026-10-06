@@ -54,10 +54,14 @@
 
     <span class="nav__spacer"></span>
 
-    <!-- Race / Training. Training gates the lap database and audio markers,
-         which are not built — so it is shown disabled rather than hidden. -->
-    <div class="seg"
-         title="Race = lightweight. Training (coming soon) = full data + lap database.">
+    <!-- Race / Training. Training opens the Training tab, which is where
+         Ghost HUD lives. Beta-channel only for now, so the button is ENABLED
+         by control-panel.js (setMode / applyTrainingVisibility) rather than in
+         the markup — it ships disabled so a stable install never offers a mode
+         that has nothing in it. The lap database and audio markers this toggle
+         was originally drawn for are still unbuilt. -->
+    <div class="seg" id="mode-seg"
+         title="Race = lightweight. Training = Ghost HUD and the tools for chasing a reference lap.">
       <button type="button" data-mode="race" data-active="true">
         <svg class="icon"><use href="#i-zap" /></svg><span class="seg__label">Race</span>
       </button>
@@ -149,6 +153,13 @@
            by default so a stable install never flashes a tab it can't keep. -->
       <button class="tab" type="button" data-tab="fuel" hidden>
         <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
+      </button>
+      <!-- Shown only on the beta channel AND only in Training mode, so this
+           one answers to two gates rather than Fuel's one — see
+           applyTrainingVisibility. Hidden in the markup for the same reason as
+           Fuel: a stable install must never flash a tab it cannot keep. -->
+      <button class="tab" type="button" data-tab="training" hidden>
+        <svg class="icon"><use href="#i-graduation-cap" /></svg><span class="tab__label">Training</span>
       </button>
       <!-- The pit-wall view (docs/TEAM-ENGINEER-PAGE.md). Beta-gated from
            v0.91.0 and visible to everyone since v0.96.0, so unlike the Fuel
@@ -2428,6 +2439,47 @@
               </div>
             </footer>
           </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" data-view="training">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Training</h1>
+            <p class="view__sub">
+              Drive against a lap you have already set. Ghost HUD puts the car you are chasing on screen as a gate on a corridor, so you read the gap as a picture rather than a number.
+            </p>
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-graduation-cap" /></svg>Ghost HUD</h2>
+            <p class="card__desc">A corridor with a line across the middle for your own car. The gate rises above it when the ghost is up the road and drops below it when the ghost is behind.</p>
+          </div>
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field__label">Which lap it chases</span>
+              <span class="field__hint" id="training-ghost-rule">Your fastest clean lap for the car class, circuit and surface you are on. Laps are grouped by the setup they were driven on, so a reference set on a different setup is not offered against this one.</span>
+            </label>
+            <label class="field">
+              <span class="field__label">Turning it on</span>
+              <span class="field__hint">Ghost HUD is an overlay. Enable it on the <button class="btn btn--ghost btn--sm" id="training-open-overlays" type="button">Overlays</button> tab, then drive a lap through the start/finish line — it stays blank until the line is crossed, because before that the lap clock has no honest zero.</span>
+            </label>
+          </div>
+        </section>
+
+        <!-- ATTRIBUTION. Copy and links are placeholders until the Alien-GT
+             details land; the block follows the same shape as the Ohne Speed
+             pace credit so the two read alike. -->
+        <div class="credit" id="training-credit">
+          <span class="credit__icon"><svg class="icon"><use href="#i-info" /></svg></span>
+          <p class="credit__text">
+            Ghost HUD is <strong id="training-credit-title">Powered by Alien-GT</strong>.
+            <span class="credit__meta" id="training-credit-meta"></span>
+          </p>
         </div>
       </div>
     </section>
