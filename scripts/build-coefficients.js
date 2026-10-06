@@ -23,11 +23,20 @@
  *      ELMS and WEC both fit `silverstone_gp_wec`. Length is therefore a CHECK
  *      (a loud warning past LENGTH_TOLERANCE_M), never the matcher.
  *
- *   3. **Units are converted at build time, not at read time.** The fit works
- *      in litres because that is what the rig delivers; LMGT3 and Hypercar plan
- *      in Virtual Energy percent. The conversion is `(L/s ÷ capacity) × 100`,
- *      the same shape fuel-data.js already uses in getDefaultEnergyPerLap, and
- *      it is done here so the panel never holds a number in an unknown unit.
+ *   3. **Every rate ships in the unit its class plans in, and is MEASURED in
+ *      it.** Litre classes get litres per second. LMGT3 and Hypercar plan in
+ *      Virtual Energy percent, and get the energy rate the fitter measured
+ *      directly from energy added (`refuelByClass[c].ve`). This used to be a
+ *      conversion, `(L/s ÷ fuel tank) × 100`, and that was wrong: 100 % of
+ *      energy is ~82 L of a GT3's fuel, not the 120 L tank, and litres per
+ *      second varies by car (fuel ratio) where energy per second does not. The
+ *      conversion priced a GT3 refuel at roughly twice its real length.
+ *
+ *   4. **Pit lane loss is per circuit, class-free** (`byLayout` for the Fuel
+ *      tab, `byTrackKey` for anything keyed like the lap log). It is the
+ *      fitter's `pitLaneByTrack` — measured race stops' lane time minus their
+ *      stationary time — and below its sample bar the circuit is simply absent,
+ *      so the planner falls back to its estimate.
  *
  * Run: node scripts/build-coefficients.js [--check]
  *   --check  verify the committed output matches this input and exit non-zero
@@ -56,18 +65,25 @@ const LENGTH_TOLERANCE_M = 250;
 // tarmac) — the merge rule below decides which fit wins.
 const TRACK_ALIASES = {
   'algarve-international-circuit_4635': 'portimao_gp',
+  'aut-dromo-jos-carlos-pace_4273': 'interlagos_gp',
   'autodromo-enzo-e-dino-ferrari_4901': 'imola_gp',
   'autodromo-nazionale-monza_5781': 'monza_gp',
   'bahrain-international-circuit_5387': 'bahrain_gp',
   'circuit-de-barcelona_4655': 'barcelona_gp',
   'circuit-de-la-sarthe_13624': 'lemans_full',
   'circuit-de-spa-francorchamps_6982': 'spa_gp',
+  'circuit-de-spa-francorchamps-endurance_6982': 'spa_endurance',
   'circuit-of-the-americas_5497': 'cota_gp',
   'daytona-international-speedway-road-course_5734': 'daytona_road',
+  'fuji-speedway_4536': 'fuji_gp',
+  'fuji-speedway-classic_4502': 'fuji_classic',
   'grand-prix-of-long-beach_3187': 'long_beach',
   'michelin-raceway-road-atlanta_4083': 'road_atlanta',
   'lusail-international-circuit_5405': 'qatar_gp',
+  'lusail-short-circuit_3676': 'qatar_short',
   'monza-curva-grande-circuit_5745': 'monza_curva_grande',
+  'paul-ricard-1a_5699': 'paul_ricard_1a',
+  'paul-ricard-1a-v2_5758': 'paul_ricard_1av2',
   'paul-ricard-elms_5807': 'paul_ricard_gp',
   'sebring-international-raceway_5820': 'sebring_full',
   'silverstone-grand-prix-circuit-elms_5869': 'silverstone_gp_wec',
@@ -113,18 +129,6 @@ function layoutIndex(DATA) {
   return out;
 }
 
-/**
- * Tank capacity for a corpus class, as the corpus measured it. Used only to
- * convert a litres-per-second rig rate into percent-per-second for the Virtual
- * Energy classes. Refuses when the corpus disagrees with itself.
- */
-function capacityFor(rows, carClass) {
-  const caps = new Set(
-    rows.filter((r) => r.carClass === carClass && r.capacityL).map((r) => r.capacityL),
-  );
-  return caps.size === 1 ? [...caps][0] : null;
-}
-
 // ── Projection ─────────────────────────────────────────────────────────────
 
 /**
@@ -145,47 +149,52 @@ function projectClasses(table, DATA, warn) {
       warn(`refuelByClass has class '${corpusClass}' with no entry in CLASS_ALIASES — dropped`);
       continue;
     }
-    if (entry.confidence !== 'measured' || entry.refuelLPerSec == null) {
-      // Keep the refusal: it is what the panel shows instead of a number.
-      const reason = entry.stops === 0
-        ? 'no clean fuel-only race stop recorded for this class yet'
-        : `only ${entry.stops} clean fuel-only race stop${entry.stops === 1 ? '' : 's'} recorded — the fit wants 5`;
-      const prev = unresolved[classId];
-      if (!prev || (entry.stops || 0) > (prev.stops || 0)) {
-        unresolved[classId] = { field: 'refuel', reason, stops: entry.stops || 0 };
-      }
-      continue;
-    }
-
+    // A Virtual Energy class is priced from the ENERGY fit and nothing else —
+    // its litres-per-second number is the car's fuel ratio talking, not the rig.
     const usesVE = DATA.classUsesVirtualEnergy(classId);
-    const capacityL = capacityFor(table.rows, corpusClass);
-    if (usesVE && !capacityL) {
-      warn(`${corpusClass} plans in Virtual Energy but the corpus has no single tank capacity — refuel rate dropped`);
-      unresolved[classId] = {
-        field: 'refuel',
-        reason: 'the corpus disagrees about this class’s tank size, so litres cannot be turned into energy percent',
-        stops: entry.stops,
-      };
+    const fit = usesVE
+      ? (entry.ve && entry.ve.confidence === 'measured' && entry.ve.pctPerSec != null
+        ? { rate: entry.ve.pctPerSec, fixed: entry.ve.fixedSec || 0, stops: entry.ve.stops, tracks: entry.ve.tracks, p25: entry.ve.p25, p75: entry.ve.p75 }
+        : null)
+      : (entry.confidence === 'measured' && entry.refuelLPerSec != null
+        ? { rate: entry.refuelLPerSec, fixed: 0, stops: entry.stops, tracks: entry.tracks, p25: entry.p25, p75: entry.p75 }
+        : null);
+
+    if (!fit) {
+      // Keep the refusal: it is what the panel shows instead of a number.
+      const stops = (usesVE ? entry.ve && entry.ve.stops : entry.stops) || 0;
+      const reason = stops === 0
+        ? 'no clean fuel-only race stop recorded for this class yet'
+        : `only ${stops} clean fuel-only race stop${stops === 1 ? '' : 's'} recorded — the fit wants 5`;
+      const prev = unresolved[classId];
+      if (!prev || stops > (prev.stops || 0)) {
+        unresolved[classId] = { field: 'refuel', reason, stops };
+      }
       continue;
     }
 
     const candidate = {
       // What the engine consumes: units per second, in the class's own unit.
-      // Two decimals, deliberately. The p25-p75 spread on the best-populated
-      // class is 1.34-1.87 L/s, so a third decimal would be precision the
-      // corpus has not earned — and the pit box steps in hundredths.
-      refuelPerSec: usesVE
-        ? round((entry.refuelLPerSec / capacityL) * 100, 2)
-        : round(entry.refuelLPerSec, 2),
+      // Two decimals, deliberately: the pit box steps in hundredths, and the
+      // middle half of the best-populated class spans 2.45-2.48 %/s, so a
+      // third decimal would be precision the corpus has not earned.
+      refuelPerSec: round(fit.rate, 2),
       unit: usesVE ? 'pct' : 'l',
-      // What the panel shows, so the driver can sanity-check the conversion.
-      refuelLPerSec: round(entry.refuelLPerSec, 3),
-      capacityL: usesVE ? capacityL : null,
+      // Hose on, hose off: paid once per stop that takes fuel. Zero where the
+      // fit could not carry it (always, for the litre classes).
+      refuelFixedSec: round(fit.fixed, 1),
       from: corpusClass,
-      stops: entry.stops,
-      tracks: entry.tracks,
-      spread: [round(entry.p25, 3), round(entry.p75, 3)],
+      stops: fit.stops,
+      tracks: fit.tracks,
+      spread: [round(fit.p25, 3), round(fit.p75, 3)],
     };
+    // Tyre change time rides on the class: it is what a tyre stop holds beyond
+    // the fuel at THIS rate, so it only exists where the rate does.
+    if (entry.tyre && entry.tyre.confidence === 'measured' && entry.tyre.tyreChangeSec != null) {
+      candidate.tyreChangeSec = round(entry.tyre.tyreChangeSec, 1);
+      candidate.tyreStops = entry.tyre.stops;
+      candidate.tyreSpread = [round(entry.tyre.p25, 1), round(entry.tyre.p75, 1)];
+    }
 
     // Two corpus classes can map to one Fuel tab class (LMP2 and LMP2_ELMS).
     // More clean stops wins; ties go to the wider track spread, because a rate
@@ -220,13 +229,13 @@ function projectClasses(table, DATA, warn) {
 }
 
 /**
- * Per class-and-track coefficients.
+ * Per class-and-track coefficients: burn and kFuel.
  *
- * Only `measured` values cross over. Note the arithmetic on pit loss: the fit
- * measures `pitCycleLossSec`, the WHOLE cost of a pit cycle including the car
- * standing still, while fuel-strategy.js wants the lane loss ALONE and adds
- * service time itself. Subtracting the reference stationary time converts one
- * into the other; getting this wrong would double-count the service.
+ * Only `measured` values cross over. Pit lane loss used to be derived here
+ * from the row's `pitCycleLossSec` minus its stationary time; it no longer
+ * is. Those two numbers come from different stops (unmatched in-lap and
+ * out-lap medians against a stop median) and disagreed badly — Monza came out
+ * at 6.8 s of lane. The lane is now its own per-circuit fit: projectLanes().
  */
 function projectPairs(table, layouts, warn) {
   const byPair = {};
@@ -257,13 +266,6 @@ function projectPairs(table, layouts, warn) {
     if (conf.kFuel === 'measured' && row.kFuelSecPerL != null) {
       out.kFuelSecPerL = round(row.kFuelSecPerL, 5);
     }
-    if (conf.pit === 'measured' && row.pitCycleLossSec != null && row.referenceStationarySec != null) {
-      // See the docblock: cycle loss MINUS stationary time is the lane loss.
-      out.pitLaneLossSec = round(row.pitCycleLossSec - row.referenceStationarySec, 2);
-      out.referenceStationarySec = round(row.referenceStationarySec, 2);
-      out.pitStops = row.n?.stops ?? null;
-    }
-
     if (!Object.keys(out).length) continue;
     const key = `${layoutId}|${classId}`;
     const prev = byPair[key];
@@ -275,6 +277,35 @@ function projectPairs(table, layouts, warn) {
     warn(`fitted track key '${key}' has no entry in TRACK_ALIASES — its rows are not shipped`);
   }
   return byPair;
+}
+
+/**
+ * Pit lane loss per circuit, class-free.
+ *
+ * Two doors onto the same numbers: `byLayout` (the Fuel tab's layout ids, via
+ * TRACK_ALIASES) and `byTrackKey` (the lap log's own keys, which is what live
+ * telemetry can derive). `measured` only — a circuit under the fitter's sample
+ * bar is absent, and the planner keeps its estimate there. Two track keys can
+ * share a layout (Silverstone ELMS and WEC); the one with more stops wins.
+ */
+function projectLanes(table, layouts) {
+  const byLayout = {};
+  const byTrackKey = {};
+  for (const [trackKey, lane] of Object.entries(table.pitLaneByTrack || {})) {
+    if (lane.confidence !== 'measured' || lane.laneSec == null) continue;
+    const entry = {
+      pitLaneLossSec: round(lane.laneSec, 1),
+      spread: [round(lane.p25, 1), round(lane.p75, 1)],
+      stops: lane.stops,
+      drivers: lane.drivers,
+    };
+    byTrackKey[trackKey] = entry;
+    const layoutId = TRACK_ALIASES[trackKey];
+    if (!layoutId || !layouts.has(layoutId)) continue;
+    const prev = byLayout[layoutId];
+    if (!prev || entry.stops > prev.stops) byLayout[layoutId] = entry;
+  }
+  return { byLayout, byTrackKey };
 }
 
 // ── Emit ───────────────────────────────────────────────────────────────────
@@ -293,8 +324,10 @@ function render(payload) {
  *
  * Everything here was MEASURED from the shared corpus — a coefficient the fit
  * refused is absent, and its reason sits in \`unresolved\` so the panel can say
- * why it is still showing an estimate. Rates are already in the unit their
- * class plans in (litres/second, or Virtual Energy percent/second).
+ * why it is still showing an estimate. Rates are measured in the unit their
+ * class plans in (litres/second, or Virtual Energy percent/second), with
+ * \`refuelFixedSec\` paid once per stop that takes fuel. Pit lane loss is per
+ * circuit: \`byLayout\` (Fuel tab ids) and \`byTrackKey\` (lap-log keys).
  *
  * Loaded as a classic script by the panel (window.APEX_STRATEGY_COEFFS) and
  * require()d by scripts/test-coefficients.js — keep it dependency-free.
@@ -320,6 +353,7 @@ function build(warn) {
 
   const { byClass, byCorpusClass, unresolved } = projectClasses(table, DATA, warn);
   const byPair = projectPairs(table, layouts, warn);
+  const { byLayout, byTrackKey } = projectLanes(table, layouts);
 
   return {
     version: 1,
@@ -329,6 +363,8 @@ function build(warn) {
     byClass,
     byCorpusClass,
     byPair,
+    byLayout,
+    byTrackKey,
     unresolved,
   };
 }
@@ -359,7 +395,12 @@ function main() {
   if (!classes.length) console.log('    (none — every class was refused)');
   for (const [id, c] of classes) {
     const unit = c.unit === 'pct' ? '%/s' : 'L/s';
-    console.log(`    ${id.padEnd(9)} ${String(c.refuelPerSec).padStart(6)} ${unit.padEnd(4)} from ${c.stops} stops across ${c.tracks} tracks${c.unit === 'pct' ? `  (${c.refuelLPerSec} L/s ÷ ${c.capacityL} L)` : ''}`);
+    console.log(`    ${id.padEnd(9)} ${String(c.refuelPerSec).padStart(6)} ${unit.padEnd(4)} from ${c.stops} stops across ${c.tracks} tracks${c.refuelFixedSec ? `  (+ ${c.refuelFixedSec} s per stop)` : ''}${c.tyreChangeSec != null ? `  · tyres ${c.tyreChangeSec} s from ${c.tyreStops} stops` : ''}`);
+  }
+  const lanes = Object.entries(payload.byLayout);
+  console.log(`\n  Pit lane loss, measured (${lanes.length} layouts; ${Object.keys(payload.byTrackKey).length} track keys):`);
+  for (const [id, l] of lanes) {
+    console.log(`    ${id.padEnd(20)} ${String(l.pitLaneLossSec).padStart(5)} s  (${l.spread[0]}–${l.spread[1]})  from ${l.stops} stops`);
   }
   const unres = Object.entries(payload.unresolved);
   if (unres.length) {

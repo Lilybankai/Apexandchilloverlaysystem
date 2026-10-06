@@ -26,6 +26,7 @@ const {
   writeTrace,
   readTrace,
   traceFilePath,
+  AID_CHANNELS_VERSION,
 } = require('../dist/telemetry/lapTrace');
 const { LapRecorder, VERDICT_HOLD_MS } = require('../dist/telemetry/lapLog');
 
@@ -335,6 +336,32 @@ console.log('\n— sector splits on the lap record (live-probed shapes) —');
 
   const torn = runStint({ sector1Sec: 29.09, sector2Sec: -1 });
   check('a torn pair is dropped whole, not half-kept', !!torn && torn.s1Ms === undefined && torn.s2Ms === undefined);
+}
+
+console.log('\n— the lap says how far to trust its aids, and its wheel lock —');
+{
+  const rec = new LapTraceRecorder();
+  const car = rig(rec, 0.4);
+  car.lap(90, { channels: () => ({ steerRangeDeg: 719 }) });
+  const lap = car.lap(90, { channels: () => ({ steerRangeDeg: 719 }) });
+  check('a new lap is marked with the current aid method',
+    lap && lap.aids === AID_CHANNELS_VERSION && AID_CHANNELS_VERSION === 2, lap && lap.aids);
+  check('…and carries the lock-to-lock once, for the whole lap',
+    lap && lap.steerRangeDeg === 719, lap && lap.steerRangeDeg);
+
+  const bare = new LapTraceRecorder();
+  const car2 = rig(bare, 0.4);
+  car2.lap(90);
+  const noRange = car2.lap(90);
+  check('a sim that publishes no lock leaves the field out rather than guessing',
+    noRange && !('steerRangeDeg' in noRange));
+  check('…but its aid columns are still from the current method', noRange && noRange.aids === 2);
+
+  const junk = new LapTraceRecorder();
+  const car3 = rig(junk, 0.4);
+  car3.lap(90, { channels: () => ({ steerRangeDeg: 0 }) });
+  const zeroRange = car3.lap(90, { channels: () => ({ steerRangeDeg: 0 }) });
+  check('a lock of 0 (not published) is not recorded as 0°', zeroRange && !('steerRangeDeg' in zeroRange));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

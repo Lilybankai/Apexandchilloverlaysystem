@@ -42,11 +42,41 @@
  *   engine can adjust it for a fuel load different from the stops observed,
  *   exactly as §5 says. `lane_sec` cannot give this — entry-to-exit is not the
  *   time lost against staying out, and LMU publishes no pit lane length.
+ *   DIAGNOSTIC ONLY since 2026-10: the medians come from different stops, so
+ *   they disagree with the stationary time they are compared to (Monza read a
+ *   40 s cycle around a 33 s service). build-coefficients.js no longer ships
+ *   it; the lane loss the planners use is `pitLaneByTrack`, below.
  *
  * - **refuelLPerSec** — pooled per CLASS, never per track: litres per second is
  *   the car's fuel rig (migration 0019, and §6's status note). Contaminated
  *   stops are dropped first — `tyres_changed = false` does NOT mean fuel-only,
  *   and a driver swap sitting inside the filter drags the rate down.
+ *
+ * - **vePctPerSec + veFixedSec** — the same stops, measured in Virtual Energy.
+ *   For a class that plans in VE (LMGT3, Hypercar) the rig refills ENERGY at a
+ *   fixed rate and the litres follow from each car's fuel ratio, so litres per
+ *   second differs car to car (GT3: 1.39–2.21 L/s by model in the 2026-10-06
+ *   corpus) while percent per second does not (2.43–2.49 %/s across six
+ *   models). Dividing litres per second by the 120 L FUEL tank — what the
+ *   build step used to do — priced a 70 % fill at ~55 s when it takes ~28 s:
+ *   100 % of energy is ~82 L of fuel, not 120. So the energy rate is fitted
+ *   directly: stationary = veFixedSec + vePct / vePctPerSec, one regression
+ *   over the stops inside a tight band around the class median.
+ *
+ * - **tyreChangeSec** — per CLASS, from stops that DID change tyres: whatever
+ *   the stationary time holds beyond the fuel that went in, priced at the
+ *   class's own measured rate. Needs that rate first, so a class with no
+ *   measured refuel has no tyre time either.
+ *
+ * - **pitLaneByTrack** — per CIRCUIT, every class pooled: race stops' lane time
+ *   minus their stationary time, i.e. the time spent driving the pit lane. It
+ *   is the pit lane's length at the limiter, which is the track's and not the
+ *   car's, and it is tight — Le Mans reads 34.5–35.8 s across 68 stops and 19
+ *   drivers. This, not `pitCycleLossSec`, is what the planners use as lane
+ *   loss: the unmatched in-lap/out-lap medians above mix stops of different
+ *   lengths and produced 6.8 s of lane at Monza. Checked against stops whose
+ *   own in-lap and out-lap were recorded (87 of them), the two agree within
+ *   about five seconds at every circuit with enough of both.
  *
  * - **kLift / saveFractionMax** — NOT fitted, and not for want of rows. It
  *   needs deliberate lift-and-coast variation at matched load and tyre age;
@@ -126,6 +156,29 @@ const ROBUST_MAD = 3;
 // a driver swap or a repair held the car. High side: a torn stationary read.
 const REFUEL_LO = 0.70;
 const REFUEL_HI = 1.60;
+// The energy-rate band is much tighter, because the energy rate is a physical
+// constant of the rig: the clean GT3 stops sit at 2.31–2.50 %/s, and the next
+// cluster down (~1.7 %/s) is stops that changed tyres the recorder could not
+// see. ±15 % keeps the first and drops the second.
+const VE_BAND_LO = 0.85;
+const VE_BAND_HI = 1.15;
+// The fixed part of an energy refuel (hose on, hose off) has to be small and
+// non-negative to be believed. Outside this the regression is fitting
+// contamination, and the plain median rate is used with no fixed term.
+const VE_FIXED_MAX_SEC = 5;
+// Pit lane transit: race stops per CIRCUIT before the median is used. Eight
+// because a lane is a constant — the IQR at the populated circuits is about a
+// second — so eight agreeing stops say more than the bar for a rate.
+const PIT_LANE_MIN = 8;
+// A lane drive outside this band is a garage visit, a penalty or a torn read.
+const PIT_LANE_MIN_SEC = 5;
+const PIT_LANE_MAX_SEC = 120;
+// Tyre change time: stops per CLASS, and the band each must fall in. Above
+// TYRE_EXCESS_MAX the car was held for something else (a swap, a repair).
+const TYRE_MIN = 8;
+const TYRE_EXCESS_MAX = 40;
+const TYRE_BAND_LO = 0.70;
+const TYRE_BAND_HI = 1.30;
 
 const SUPABASE_URL = process.env.APEX_SUPABASE_URL || 'https://svtyxuhbsbbodsecbnsc.supabase.co';
 // Read at call time, not at import time: a caller that sets the variable after
@@ -305,8 +358,8 @@ async function readCloud() {
   );
   const stopRows = await page(
     'pit_stops',
-    'id,track_id,car_class,car,session_type,lane_sec,stationary_sec,booked_sec,'
-    + 'fuel_added_l,tyres_changed,compound_fitted,stopped_at',
+    'id,driver_id,track_id,car_class,car,session_type,lane_sec,stationary_sec,booked_sec,'
+    + 'fuel_added_l,ve_added_pct,tyres_changed,compound_fitted,stopped_at',
   );
   const t = (id) => tracks.get(id) || { key: null, name: '?', lengthM: null };
   return {
@@ -320,10 +373,13 @@ async function readCloud() {
       isOutLap: r.is_out_lap, isInLap: r.is_in_lap, wet: r.wet,
     })),
     stops: stopRows.map((r) => ({
-      carClass: r.car_class, car: r.car,
+      // driverId is only ever COUNTED (how many people a lane figure stands
+      // on); it never reaches the written table.
+      driverId: r.driver_id, carClass: r.car_class, car: r.car,
       trackKey: t(r.track_id).key, track: t(r.track_id).name,
       sessionType: r.session_type, laneSec: r.lane_sec, stationarySec: r.stationary_sec,
-      bookedSec: r.booked_sec, fuelAddedL: r.fuel_added_l, tyresChanged: r.tyres_changed,
+      bookedSec: r.booked_sec, fuelAddedL: r.fuel_added_l, veAddedPct: r.ve_added_pct,
+      tyresChanged: r.tyres_changed,
     })),
   };
 
@@ -369,13 +425,14 @@ function readLocal(dirs) {
     isOutLap: !!l.isOutLap, isInLap: !!l.isInLap, wet: l.wet,
   }));
   const stops = read('stops').map((s) => ({
-    carClass: s.carClass, car: s.car, trackKey: s.trackKey, track: s.track,
+    driverId: 'local', carClass: s.carClass, car: s.car, trackKey: s.trackKey, track: s.track,
     sessionType: s.sessionType, laneSec: s.laneSec,
     // The client writes UNKNOWN_VALUE (-1) when it had no speed channel; the
     // cloud stores that as NULL and so must this, or a negative duration
     // becomes an infinitely fast refuel.
     stationarySec: Number(s.stationarySec) >= 0 ? s.stationarySec : null,
-    bookedSec: s.bookedSec, fuelAddedL: s.fuelAddedL, tyresChanged: !!s.tyresChanged,
+    bookedSec: s.bookedSec, fuelAddedL: s.fuelAddedL, veAddedPct: s.veAddedPct,
+    tyresChanged: !!s.tyresChanged,
   }));
   return { source: 'local', laps, stops };
 }
@@ -427,6 +484,169 @@ function fitRefuelByClass(stops) {
       p25: round(percentile(kept.map((r) => r.lps), 0.25), 3),
       p75: round(percentile(kept.map((r) => r.lps), 0.75), 3),
       confidence: kept.length >= REFUEL_MIN ? 'measured' : 'none',
+      ve: fitEnergyRate(rows.map((r) => r.stop)),
+    });
+  }
+  return out;
+}
+
+/**
+ * The Virtual Energy refill rate for one class's fuel-only stops, or a refusal.
+ *
+ * Model: stationarySec = fixedSec + vePct / pctPerSec. Fitted as a straight
+ * line over the stops inside VE_BAND of the class median rate; the slope's
+ * reciprocal is the rate and the intercept the fixed cost. When the intercept
+ * is not a believable fixed cost (negative, or more than VE_FIXED_MAX_SEC) the
+ * line is fitting contamination, so the median rate stands alone with no
+ * fixed term — still measured, just simpler.
+ *
+ * @param {object[]} stops fuel-only race stops of ONE class
+ * @returns {{pctPerSec:number|null, fixedSec:number, stops:number, stopsBeforeFilter:number,
+ *            dropped:number, tracks:number, p25:number|null, p75:number|null,
+ *            r2:number|null, model:string, confidence:string}}
+ */
+function fitEnergyRate(stops) {
+  const rows = [];
+  for (const s of stops) {
+    const ve = Number(s.veAddedPct);
+    const stat = Number(s.stationarySec);
+    if (!(ve >= 5) || !(stat > 0)) continue;
+    rows.push({ ve, stat, pps: ve / stat, track: s.trackKey || s.track });
+  }
+  const refuse = (extra) => ({
+    pctPerSec: null, fixedSec: 0, stopsBeforeFilter: rows.length, tracks: 0,
+    p25: null, p75: null, r2: null, model: 'none', confidence: 'none', ...extra,
+  });
+  if (!rows.length) return refuse({ stops: 0, dropped: 0 });
+
+  const provisional = median(rows.map((r) => r.pps));
+  const kept = rows.filter((r) => r.pps >= VE_BAND_LO * provisional && r.pps <= VE_BAND_HI * provisional);
+  const base = {
+    stops: kept.length,
+    stopsBeforeFilter: rows.length,
+    dropped: rows.length - kept.length,
+    tracks: new Set(kept.map((r) => r.track)).size,
+    p25: round(percentile(kept.map((r) => r.pps), 0.25), 3),
+    p75: round(percentile(kept.map((r) => r.pps), 0.75), 3),
+  };
+  if (kept.length < REFUEL_MIN) return refuse(base);
+
+  const line = ols(kept.map((r) => [r.ve]), kept.map((r) => r.stat));
+  const slope = line ? line.coef[0] : null;
+  if (line && slope > 0 && line.intercept >= 0 && line.intercept <= VE_FIXED_MAX_SEC) {
+    return {
+      ...base,
+      pctPerSec: round(1 / slope, 3),
+      fixedSec: round(line.intercept, 2),
+      r2: round(line.r2, 3),
+      model: 'line',
+      confidence: 'measured',
+    };
+  }
+  return {
+    ...base,
+    pctPerSec: round(median(kept.map((r) => r.pps)), 3),
+    fixedSec: 0,
+    r2: line ? round(line.r2, 3) : null,
+    model: 'median',
+    confidence: 'measured',
+  };
+}
+
+/**
+ * Tyre change time per class: what a tyre stop's stationary time holds beyond
+ * the fuel that went in, priced at the class's own measured rate.
+ *
+ * Energy is used where the class has a measured energy rate and the stop
+ * recorded energy; litres otherwise. A class with neither has no tyre time —
+ * the subtraction would be against a guess.
+ *
+ * @param {object[]} stops every stop in the corpus
+ * @param {Map<string, object>} refuelByClass from fitRefuelByClass
+ */
+function fitTyreChangeByClass(stops, refuelByClass) {
+  const byClass = new Map();
+  for (const s of stops) {
+    if (String(s.sessionType || '').toLowerCase() !== 'race') continue;
+    if (!s.tyresChanged || !(Number(s.stationarySec) >= 5)) continue;
+    const cls = String(s.carClass || '').toUpperCase();
+    const refuel = refuelByClass.get(cls);
+    if (!refuel) continue;
+    const ve = Number(s.veAddedPct);
+    const litres = Number(s.fuelAddedL);
+    let fuelSec = null;
+    if (refuel.ve && refuel.ve.confidence === 'measured' && Number.isFinite(ve)) {
+      fuelSec = ve > 0 ? refuel.ve.fixedSec + ve / refuel.ve.pctPerSec : 0;
+    } else if (refuel.confidence === 'measured' && Number.isFinite(litres)) {
+      fuelSec = litres > 0 ? litres / refuel.refuelLPerSec : 0;
+    }
+    if (fuelSec == null) continue;
+    const excess = Number(s.stationarySec) - fuelSec;
+    if (!(excess > 0 && excess <= TYRE_EXCESS_MAX)) continue;
+    if (!byClass.has(cls)) byClass.set(cls, []);
+    byClass.get(cls).push({ excess, track: s.trackKey || s.track });
+  }
+  const out = new Map();
+  for (const [cls, rows] of byClass) {
+    const provisional = median(rows.map((r) => r.excess));
+    const kept = rows.filter((r) => r.excess >= TYRE_BAND_LO * provisional && r.excess <= TYRE_BAND_HI * provisional);
+    out.set(cls, {
+      tyreChangeSec: round(median(kept.map((r) => r.excess)), 2),
+      stops: kept.length,
+      stopsBeforeFilter: rows.length,
+      dropped: rows.length - kept.length,
+      tracks: new Set(kept.map((r) => r.track)).size,
+      p25: round(percentile(kept.map((r) => r.excess), 0.25), 2),
+      p75: round(percentile(kept.map((r) => r.excess), 0.75), 2),
+      confidence: kept.length >= TYRE_MIN ? 'measured' : 'none',
+    });
+  }
+  return out;
+}
+
+/**
+ * Pit lane transit per CIRCUIT: race stops' lane time minus their stationary
+ * time, every class pooled (the lane and its limiter are the track's).
+ *
+ * A stop with no stationary read, or one under five seconds (a drive-through,
+ * a stop-go), is not a stop and is skipped. Outliers beyond ROBUST_MAD MADs of
+ * the circuit median go next — a lane that took a minute longer than the rest
+ * was a car held at pit exit, not a longer lane.
+ *
+ * @returns {Map<string, object>} trackKey → {laneSec, p25, p75, stops, …}
+ */
+function fitPitLaneByTrack(stops) {
+  const byTrack = new Map();
+  for (const s of stops) {
+    if (String(s.sessionType || '').toLowerCase() !== 'race') continue;
+    const stat = Number(s.stationarySec);
+    const lane = Number(s.laneSec);
+    if (!(stat >= 5) || !Number.isFinite(lane)) continue;
+    const transit = lane - stat;
+    if (!(transit >= PIT_LANE_MIN_SEC && transit <= PIT_LANE_MAX_SEC)) continue;
+    const key = s.trackKey || s.track;
+    if (!key) continue;
+    if (!byTrack.has(key)) byTrack.set(key, { track: s.track || null, rows: [] });
+    byTrack.get(key).rows.push({ transit, driver: s.driverId || '?' });
+  }
+  const out = new Map();
+  for (const [key, { track, rows }] of byTrack) {
+    const centre = median(rows.map((r) => r.transit));
+    // A floor on the spread: a lane is so constant that several stops can share
+    // one reading, and a MAD of zero would then throw out every honest neighbour.
+    // One second keeps the ±4.4 s a limiter-speed lane honestly varies by.
+    const spread = Math.max(mad(rows.map((r) => r.transit), centre) || 0, 1);
+    const kept = rows.filter((r) => Math.abs(r.transit - centre) <= ROBUST_MAD * 1.4826 * spread);
+    out.set(key, {
+      track,
+      laneSec: round(median(kept.map((r) => r.transit)), 2),
+      p25: round(percentile(kept.map((r) => r.transit), 0.25), 2),
+      p75: round(percentile(kept.map((r) => r.transit), 0.75), 2),
+      stops: kept.length,
+      stopsBeforeFilter: rows.length,
+      dropped: rows.length - kept.length,
+      drivers: new Set(kept.map((r) => r.driver)).size,
+      confidence: kept.length >= PIT_LANE_MIN ? 'measured' : 'none',
     });
   }
   return out;
@@ -736,6 +956,9 @@ const groupKey = (r) => `${String(r.carClass || '?').toUpperCase()}|${r.trackKey
 function buildTable({ laps, stops, source }, opts = {}) {
   const minLaps = opts.minLaps != null ? opts.minLaps : 1;
   const refuelByClass = fitRefuelByClass(stops);
+  const tyreByClass = fitTyreChangeByClass(stops, refuelByClass);
+  for (const [cls, tyre] of tyreByClass) refuelByClass.get(cls).tyre = tyre;
+  const pitLaneByTrack = fitPitLaneByTrack(stops);
 
   const lapGroups = new Map();
   for (const l of laps) {
@@ -777,9 +1000,12 @@ function buildTable({ laps, stops, source }, opts = {}) {
       burnLaps: BURN_MIN, refuelStops: REFUEL_MIN, paceLaps: PACE_MIN,
       loadSpreadFraction: SPREAD_FRAC, cliffMinStint: CLIFF_MIN_STINT,
       collinearityRefuse: COLLIN_REFUSE,
+      pitLaneStops: PIT_LANE_MIN, tyreStops: TYRE_MIN,
     },
     corpus: { laps: laps.length, stops: stops.length, pairs: rows.length },
     refuelByClass: Object.fromEntries(refuelByClass),
+    // Keyed by the lap log's track key, sorted so a refit diffs cleanly.
+    pitLaneByTrack: Object.fromEntries([...pitLaneByTrack].sort((a, b) => a[0].localeCompare(b[0]))),
     ready: rows.filter(usable).map((r) => `${r.carClass} @ ${r.track || r.trackKey}`),
     rows,
   };
@@ -856,6 +1082,27 @@ function report(table) {
       + (r.dropped ? ` (${r.dropped} contaminated dropped)` : '')
       + `  ${r.confidence}`,
     );
+    if (r.ve && r.ve.stopsBeforeFilter) {
+      console.log(
+        `  ${''.padEnd(12)} ${String(r.ve.pctPerSec ?? '—').padStart(6)} %/s  `
+        + `energy, + ${r.ve.fixedSec} s fixed, from ${String(r.ve.stops).padStart(3)} stops`
+        + ` (${r.ve.model})  ${r.ve.confidence}`,
+      );
+    }
+    if (r.tyre) {
+      console.log(
+        `  ${''.padEnd(12)} ${String(r.tyre.tyreChangeSec ?? '—').padStart(6)} s    `
+        + `tyre change, from ${String(r.tyre.stops).padStart(3)} stops  ${r.tyre.confidence}`,
+      );
+    }
+  }
+  console.log('\nPit lane transit, per circuit (race stops, lane minus stationary):');
+  for (const [key, p] of Object.entries(table.pitLaneByTrack || {})) {
+    if (!p.stops) continue;
+    console.log(
+      `  ${(p.track || key).padEnd(48).slice(0, 48)} ${String(p.laneSec).padStart(6)} s`
+      + `  (${p.p25}–${p.p75})  ${String(p.stops).padStart(3)} stops  ${p.confidence}`,
+    );
   }
   const blocked = table.rows.filter((r) => r.confidence.kFuel === 'none' && r.n.paceLaps >= PACE_MIN);
   if (blocked.length) {
@@ -880,8 +1127,10 @@ async function main() {
 
 module.exports = {
   median, mad, corr, solve, ols, robustOls, percentile,
-  isFuelStop, fitRefuelByClass, fitGroup, fitCliff, buildTable, readLocal, groupKey,
+  isFuelStop, fitRefuelByClass, fitEnergyRate, fitTyreChangeByClass, fitPitLaneByTrack,
+  fitGroup, fitCliff, buildTable, readLocal, groupKey,
   BURN_MIN, REFUEL_MIN, PACE_MIN, SPREAD_FRAC, CLIFF_MIN_STINT, COLLIN_REFUSE,
+  PIT_LANE_MIN, TYRE_MIN,
   // Argument handling is behaviour too — it decides which corpus gets fitted
   // and where the answer lands — so the test can reach it.
   readCloud,

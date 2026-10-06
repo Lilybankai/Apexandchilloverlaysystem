@@ -10,8 +10,9 @@
  *
  * The tests worth having here are the ones that catch a SILENT wrong number:
  * a coefficient that is `partial` slipping through as if measured, a Virtual
- * Energy class being handed litres per second, the pit-cycle loss reaching the
- * engine without its stationary time subtracted, and a track alias quietly
+ * Energy class being handed litres per second (or litres pushed through the
+ * fuel tank and called energy), the diagnostic pit cycle reaching the engine
+ * as a lane loss, a circuit under its sample bar shipping a lane, and a track alias quietly
  * pointing at the wrong layout. Each of those produces a confident plan that is
  * wrong, which docs/RACE-STRATEGY-ENGINE.md §11 exists to prevent.
  */
@@ -55,22 +56,50 @@ section('Nothing unmeasured crosses into the app');
 {
   const fitted = require(path.join(__dirname, '..', 'data', 'strategy-coefficients.json'));
 
-  // The whole honesty argument in one assertion: the fit has a Barcelona GT3
-  // pit cycle at 'partial' confidence, and it must NOT be in the shipped table.
-  const partialPit = fitted.rows.filter((r) => r.confidence.pit === 'partial');
-  check('the fit does have a partial pit cycle to be tempted by', partialPit.length > 0,
-    partialPit.length);
+  // The unmatched in-lap/out-lap pit cycle is a diagnostic now (it read 6.8 s
+  // of lane at Monza). Measured or not, it must never reach the app as a lane.
+  const cycles = fitted.rows.filter((r) => r.pitCycleLossSec != null);
+  check('the fit still carries pit-cycle diagnostics to be tempted by', cycles.length > 0,
+    cycles.length);
   const anyPitLoss = Object.values(SHIPPED.byPair).some((p) => p.pitLaneLossSec != null);
-  check('…and no partial pit cycle reached the shipped table', !anyPitLoss);
+  check('…and no pit cycle reached the shipped table as a lane loss', !anyPitLoss);
 
-  // Same rule for the class rates.
+  // The lane that DOES ship is the per-circuit fit, and only above its bar.
+  const lanes = Object.entries(fitted.pitLaneByTrack || {});
+  const bar = fitted.bars.pitLaneStops;
+  check('the fit carries a per-circuit pit lane table with a sample bar',
+    lanes.length > 0 && bar >= 8, { lanes: lanes.length, bar });
+  const under = lanes.filter(([, l]) => l.confidence !== 'measured');
+  check('the fit has circuits under the bar to be tempted by', under.length > 0, under.length);
+  const leaked = under.filter(([key]) => SHIPPED.byTrackKey[key] != null);
+  check('…and none of them shipped a lane', leaked.length === 0, leaked.map(([k]) => k));
+  const thin = Object.entries(SHIPPED.byTrackKey).filter(([, l]) => !(l.stops >= bar));
+  check('every shipped lane stands on at least the bar of stops', thin.length === 0, thin);
+  const layoutsBacked = Object.values(SHIPPED.byLayout)
+    .every((l) => Object.values(SHIPPED.byTrackKey).some((t) => JSON.stringify(t) === JSON.stringify(l)));
+  check('every per-layout lane is one of the per-track-key lanes', layoutsBacked);
+
+  // Same rule for the class rates — judged in the unit the class plans in: a
+  // Virtual Energy class ships only off a measured ENERGY fit, whatever its
+  // litre figure says.
   for (const [corpusClass, entry] of Object.entries(fitted.refuelByClass)) {
     const classId = builder.CLASS_ALIASES[corpusClass];
-    if (entry.confidence === 'measured') continue;
+    const usesVE = DATA.classUsesVirtualEnergy(classId);
+    const conf = usesVE ? (entry.ve && entry.ve.confidence) || 'none' : entry.confidence;
+    if (conf === 'measured') continue;
     const shipped = SHIPPED.byClass[classId];
     const supersededByAnother = shipped && shipped.from !== corpusClass;
-    check(`${corpusClass} is refused (${entry.confidence}) so it ships no rate of its own`,
+    check(`${corpusClass} is refused (${conf}) so it ships no rate of its own`,
       !shipped || supersededByAnother, shipped && shipped.from);
+  }
+
+  // Tyre time likewise: only a measured class fit crosses.
+  for (const [corpusClass, entry] of Object.entries(fitted.refuelByClass)) {
+    if (!entry.tyre || entry.tyre.confidence === 'measured') continue;
+    const shipped = SHIPPED.byCorpusClass[corpusClass];
+    check(`${corpusClass} tyre time is refused (${entry.tyre.stops} stops) so none ships`,
+      !shipped || shipped.from !== corpusClass || shipped.tyreChangeSec == null,
+      shipped && shipped.tyreChangeSec);
   }
 
   // Every burn figure present must be backed by laps, or it is not a measurement.
@@ -118,20 +147,45 @@ section('Track and class identity');
 // ── Units ──────────────────────────────────────────────────────────────────
 section('A Virtual Energy class never receives litres');
 {
+  const fitted = require(path.join(__dirname, '..', 'data', 'strategy-coefficients.json'));
   for (const [classId, entry] of Object.entries(SHIPPED.byClass)) {
     const usesVE = DATA.classUsesVirtualEnergy(classId);
     check(`${classId} ships its rate as ${usesVE ? 'percent' : 'litres'} per second`,
       entry.unit === (usesVE ? 'pct' : 'l'), entry.unit);
-    if (!usesVE) continue;
-    const expected = Math.round((entry.refuelLPerSec / entry.capacityL) * 100 * 100) / 100;
-    check(`${classId}'s percent rate is its litre rate over its tank`,
-      entry.refuelPerSec === expected, { got: entry.refuelPerSec, expected });
-    // A percent-per-second rate above the litre figure would mean a tank under
-    // 100 L, which no VE class in LMU has — a cheap guard against a flipped
-    // conversion that would otherwise look plausible.
-    check(`${classId}'s conversion went the right way`, entry.refuelPerSec < entry.refuelLPerSec,
-      entry.refuelPerSec);
+    check(`${classId}'s fixed per-stop refuel time is small and non-negative`,
+      entry.refuelFixedSec >= 0 && entry.refuelFixedSec <= 5, entry.refuelFixedSec);
+    if (!usesVE) {
+      check(`${classId} (litres) carries no fixed term`, entry.refuelFixedSec === 0, entry.refuelFixedSec);
+      continue;
+    }
+    // The rate IS the energy fit, rounded — not a litre rate pushed through a
+    // tank size. Litres over the 120 L fuel tank gave 1.28 %/s for GT3, when
+    // 100 % of energy is ~82 L and the rig refills ~2.5 %/s.
+    const ve = fitted.refuelByClass[entry.from].ve;
+    check(`${classId}'s percent rate is the measured energy rate`,
+      ve && entry.refuelPerSec === Math.round(ve.pctPerSec * 100) / 100,
+      { got: entry.refuelPerSec, fitted: ve && ve.pctPerSec });
+    const viaTank = Math.round((fitted.refuelByClass[entry.from].refuelLPerSec / 120) * 100 * 100) / 100;
+    check(`${classId}'s rate is not litres over the 120 L tank`, entry.refuelPerSec !== viaTank,
+      { got: entry.refuelPerSec, viaTank });
+    // A plausibility band for a VE rig: a full refill between ~25 s and ~70 s.
+    check(`${classId}'s energy rate is a plausible rig (1.5–4 %/s)`,
+      entry.refuelPerSec >= 1.5 && entry.refuelPerSec <= 4, entry.refuelPerSec);
   }
+}
+
+section('Pricing a Virtual Energy refuel');
+{
+  const gt3 = SHIPPED.byClass.lmgt3;
+  // A 70 % fill: fixed time plus fill over rate, and nothing else.
+  const sec = ENGINE.refuelSeconds(70, gt3.refuelPerSec, gt3.refuelFixedSec);
+  check('a 70 % GT3 fill costs fixed + 70 / rate',
+    Math.abs(sec - (gt3.refuelFixedSec + 70 / gt3.refuelPerSec)) < 1e-9, sec);
+  check('…which is under 35 s (the old tank conversion said ~55 s)', sec < 35 && sec > 20, sec);
+  check('no fuel, no fixed time', ENGINE.refuelSeconds(0, gt3.refuelPerSec, gt3.refuelFixedSec) === 0);
+  check('no rate, no time rather than infinity', ENGINE.refuelSeconds(50, 0, 1) === 0);
+  check('a negative fixed term is ignored, not subtracted',
+    ENGINE.refuelSeconds(50, 2.5, -3) === 20);
 }
 
 // ── Resolution order ───────────────────────────────────────────────────────
@@ -169,13 +223,42 @@ section('pitParamsFor picks in the right order and says so');
     && silent.provenance.refuelRatePerSec.short.length > 0,
     silent.provenance.refuelRatePerSec);
 
-  // Pit loss and tyres are unmeasured everywhere today; they must say so
-  // rather than quietly presenting the constants as fact.
-  check('pit lane loss is an estimate everywhere today',
-    measured.provenance.pitLaneLossSec.source === 'estimate');
-  check('…and explains what measuring it would take',
-    /in-laps/.test(measured.provenance.pitLaneLossSec.why), measured.provenance.pitLaneLossSec.why);
-  check('tyre change time is an estimate', measured.provenance.tyreChangeSec.source === 'estimate');
+  // Monza has enough race stops for a measured lane; the number is the
+  // circuit's, whatever the class asking.
+  check('a measured circuit lane is used', measured.pitLaneLossSec === coeffs.byLayout.monza_gp.pitLaneLossSec,
+    measured.pitLaneLossSec);
+  check('…marked measured, with its spread', measured.provenance.pitLaneLossSec.source === 'measured'
+    && Array.isArray(measured.provenance.pitLaneLossSec.spread), measured.provenance.pitLaneLossSec);
+  const otherClass = ENGINE.pitParamsFor({ coeffs, classId: 'lmp2', layoutId: 'monza_gp' });
+  check('…and the same lane for every class', otherClass.pitLaneLossSec === measured.pitLaneLossSec,
+    otherClass.pitLaneLossSec);
+
+  // Below the bar: the estimate, saying what measuring it would take.
+  const thinLayout = ['spa_gp', 'sebring_full', 'bahrain_gp', 'imola_gp'].find((id) => !coeffs.byLayout[id]);
+  const thin = ENGINE.pitParamsFor({ coeffs, classId: 'lmgt3', layoutId: thinLayout, useVirtualEnergy: true });
+  check(`a circuit under the sample bar (${thinLayout}) falls back to the 25 s estimate`,
+    thin.pitLaneLossSec === ENGINE.DEFAULT_PIT_PARAMS.pitLaneLossSec, thin.pitLaneLossSec);
+  check('…marked estimate, explaining what measuring it would take',
+    thin.provenance.pitLaneLossSec.source === 'estimate'
+    && /race stops/.test(thin.provenance.pitLaneLossSec.why), thin.provenance.pitLaneLossSec);
+
+  // The lap-log door onto the same lanes, for callers keyed like live data.
+  const byKey = ENGINE.pitParamsFor({ coeffs, classId: 'lmgt3', trackKey: 'autodromo-nazionale-monza_5781', useVirtualEnergy: true });
+  check('a lap-log track key finds the same lane', byKey.pitLaneLossSec === measured.pitLaneLossSec,
+    byKey.pitLaneLossSec);
+
+  // Tyres: measured for GT3, the estimate where the class is too thin.
+  check('GT3 tyre change time is measured', measured.tyreChangeSec === coeffs.byClass.lmgt3.tyreChangeSec
+    && measured.provenance.tyreChangeSec.source === 'measured', measured.tyreChangeSec);
+  check('…and well under the old 30 s guess', measured.tyreChangeSec < 20, measured.tyreChangeSec);
+  check('a class without enough tyre stops keeps the estimate',
+    otherClass.tyreChangeSec === ENGINE.DEFAULT_PIT_PARAMS.tyreChangeSec
+    && otherClass.provenance.tyreChangeSec.source === 'estimate', otherClass.provenance.tyreChangeSec);
+
+  // The fixed refuel term rides with the measured rate, and only with it.
+  check('a measured VE rate brings its fixed per-stop time',
+    measured.refuelFixedSec === coeffs.byClass.lmgt3.refuelFixedSec, measured.refuelFixedSec);
+  check('…a driver-typed rate does not', overridden.refuelFixedSec === 0, overridden.refuelFixedSec);
 
   // The unit guard: asking for litres must not hand back a percent rate.
   const wrongUnit = ENGINE.pitParamsFor({ coeffs, classId: 'lmgt3', layoutId: 'monza_gp', useVirtualEnergy: false });
@@ -203,9 +286,9 @@ section('The calculator survives without the table at all');
 // ── The measured rate actually changes a plan ──────────────────────────────
 section('The measurement reaches the plan, not just the label');
 {
-  // A four-hour LMGT3 race: long enough that the rig rate is paid several
-  // times over, which is exactly when a 2.0 %/s guess against a measured
-  // 1.28 %/s stops being a rounding error and starts costing a lap.
+  // A four-hour LMGT3 race at Monza: long enough that every pit parameter is
+  // paid several times over. The guesses (2.0 %/s, 30 s tyres) are slower than
+  // the measured rig and crew, so the guessed plan spends minutes it will not.
   const base = {
     raceMode: 'time', raceMinutes: 240, lapTimeSec: 105, consumptionPerLap: 3.4,
     tankCapacity: 100, useVirtualEnergy: true,
@@ -219,18 +302,27 @@ section('The measurement reaches the plan, not just the label');
     pit: ENGINE.pitParamsFor({ coeffs: SHIPPED, classId: 'lmgt3', layoutId: 'monza_gp', useVirtualEnergy: true }),
   });
   check('both plans build', !!guessed && !!measured);
-  // The measured rig is slower than the guess, so a stop costs more time.
-  check('the measured rig makes a stop cost more than the guess did',
-    measured.totalPitTimeSec > guessed.totalPitTimeSec,
+  check('the measured rig and crew make the stops cheaper than the guess did',
+    measured.totalPitTimeSec < guessed.totalPitTimeSec,
     { measured: measured.totalPitTimeSec, guessed: guessed.totalPitTimeSec });
   check('…by more than a minute over a four-hour race',
-    measured.totalPitTimeSec - guessed.totalPitTimeSec > 60,
+    guessed.totalPitTimeSec - measured.totalPitTimeSec > 60,
     { measured: measured.totalPitTimeSec, guessed: guessed.totalPitTimeSec });
   // The consequence that matters on the pit wall: the guessed plan thinks you
-  // finish a lap further up the road than you actually will.
-  check('…and the guessed plan over-counts the laps you will complete',
-    guessed.raceLaps > measured.raceLaps,
+  // complete fewer laps than you actually will.
+  check('…and the guessed plan under-counts the laps you will complete',
+    guessed.raceLaps < measured.raceLaps,
     { measuredLaps: measured.raceLaps, guessedLaps: guessed.raceLaps });
+
+  // Each stop's refuel line is the fixed term plus fill over rate, rounded up.
+  const stop = measured.stints.find((s) => s.stopAfter);
+  const next = measured.stints[stop.index];
+  const gt3 = SHIPPED.byClass.lmgt3;
+  check('a planned stop prices its refuel with the fixed term',
+    stop.stopAfter.refuelSec === Math.ceil(gt3.refuelFixedSec + next.fill / gt3.refuelPerSec),
+    { refuelSec: stop.stopAfter.refuelSec, fill: next.fill });
+  check('…and its lane at the measured Monza figure',
+    stop.stopAfter.pitLaneSec === SHIPPED.byLayout.monza_gp.pitLaneLossSec, stop.stopAfter.pitLaneSec);
 }
 
 // ── Measured burn ──────────────────────────────────────────────────────────
@@ -299,6 +391,45 @@ section('byCorpusClass: the door live telemetry comes through');
     live.refuelRatePerSec === gt3.refuelPerSec, live.refuelRatePerSec);
   check('…and is labelled measured, so the page can say so',
     live.provenance.refuelRatePerSec.source === 'measured');
+  check('…bringing the fixed refuel time and the measured tyre time with it',
+    live.refuelFixedSec === gt3.refuelFixedSec && live.tyreChangeSec === gt3.tyreChangeSec,
+    { fixed: live.refuelFixedSec, tyres: live.tyreChangeSec });
+  check('…while the lane, with no circuit given, stays the estimate',
+    live.provenance.pitLaneLossSec.source === 'estimate');
+
+  // The lane on the Team tab: the live session's track + length rebuild the
+  // very key every corpus stop was filed under. Pinned against the recorder's
+  // own trackKeyOf so the two can never drift apart unnoticed.
+  const { trackKeyOf } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'paceDelta.js'));
+  for (const [name, len] of [['Circuit de la Sarthe', 13624.4], ['Autodromo Nazionale Monza', 5781], ['  Weird -- Name!! ', 0], ['', 4000]]) {
+    check(`liveTrackKey matches trackKeyOf for "${name}" / ${len}`,
+      ENGINE.liveTrackKey(name, len) === trackKeyOf(name, len),
+      { panel: ENGINE.liveTrackKey(name, len), recorder: trackKeyOf(name, len) });
+  }
+  const lmKey = ENGINE.liveTrackKey('Circuit de la Sarthe', 13624);
+  check('the shipped table has a measured lane for Le Mans under the live key',
+    !!SHIPPED.byTrackKey && !!SHIPPED.byTrackKey[lmKey], lmKey);
+  const atLeMans = ENGINE.pitParamsFor({
+    coeffs: { byClass: { live: gt3 }, byTrackKey: SHIPPED.byTrackKey, unresolved: {} },
+    classId: 'live',
+    trackKey: lmKey,
+    useVirtualEnergy: true,
+  });
+  check('…and the Team tab’s lookup resolves it as measured',
+    atLeMans.provenance.pitLaneLossSec.source === 'measured'
+      && atLeMans.pitLaneLossSec === SHIPPED.byTrackKey[lmKey].pitLaneLossSec,
+    atLeMans.pitLaneLossSec);
+  const unknownTrack = ENGINE.pitParamsFor({
+    coeffs: { byClass: {}, byTrackKey: SHIPPED.byTrackKey, unresolved: {} },
+    classId: 'live',
+    trackKey: ENGINE.liveTrackKey('Nowhere Ring', 4321),
+    useVirtualEnergy: true,
+  });
+  check('a circuit without enough stops keeps the 25 s estimate',
+    unknownTrack.provenance.pitLaneLossSec.source === 'estimate'
+      && unknownTrack.pitLaneLossSec === ENGINE.DEFAULT_PIT_PARAMS.pitLaneLossSec
+      && unknownTrack.provenance.refuelRatePerSec.source === 'estimate',
+    unknownTrack.pitLaneLossSec);
 
   // The unit guard again, from the live side: a VE class must never be priced
   // in litres per second just because the session was read wrong.

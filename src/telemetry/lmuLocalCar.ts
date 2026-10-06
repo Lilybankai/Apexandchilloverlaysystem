@@ -42,6 +42,8 @@ import { decodeMotion } from './motion';
 import type { Vec3 } from './motion';
 import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
+import { AidInterventionTracker } from './aidIntervention';
+import type { AidRawInputs } from './aidIntervention';
 
 /* Verified rF2VehicleTelemetry field offsets (bytes), x64, #pragma pack(4). */
 const VT = {
@@ -103,6 +105,14 @@ const VT = {
   // intervention. They sit directly after the unfiltered block in the struct.
   mFilteredThrottle: 420,
   mFilteredBrake: 428,
+  /**
+   * `mVisualSteeringWheelRange` — float, DEGREES lock-to-lock of the in-car
+   * wheel. Read 719 on a GT3 live 2026-10-06; the input overlay's wheel turns by
+   * `steer × range / 2` so it matches the cockpit. 0 / garbage → the widget
+   * falls back to a typical range. (`mPhysicalSteeringWheelRange` at 692 reads
+   * 0 in LMU — not used.)
+   */
+  mVisualSteeringWheelRange: 660,
   mFuel: 524,
   mEngineMaxRPM: 532,
   // uint8 pit-speed-limiter state, 0 = off / 1 = on. NOT the documented rF2
@@ -283,6 +293,14 @@ const VT = {
    * garage (like the temps' 0 K), so implausible values become unknown.
    */
   mWheelPressureRel: 120,
+  /**
+   * `mBrakePressure` — per-wheel brake pressure, a double 0..1 at wheel-start
+   * +32, directly after the disc temp anchor. Probed live 2026-10-06: about
+   * half the pedal at each wheel on clean braking, equal across an axle, and
+   * the ONLY channel that moves when ABS works (one wheel fell to 0.04 against
+   * its partner's 0.38 mid-stop). See telemetry/aidIntervention.ts.
+   */
+  mWheelBrakePressureRel: 32,
 } as const;
 
 /** Kelvin → Celsius. LMU stores tyre temps in Kelvin. */
@@ -366,10 +384,23 @@ export interface LocalCarPhysics {
   brake: number; // 0..1
   clutch: number; // 0..1
   steer: number; // -1..1
-  /** Live traction-control intervention (unfiltered − filtered throttle), 0..1. */
+  /**
+   * Live traction-control intervention, 0..1 of full pedal. Filled in by
+   * {@link LmuLocalCarReader} from {@link aidRaw} — see telemetry/aidIntervention.
+   */
   tc: number;
-  /** Live ABS intervention (unfiltered − filtered brake), 0..1. */
+  /** Live ABS intervention, 0..1 of full pedal. Filled in like {@link tc}. */
   abs: number;
+  /**
+   * The raw channels {@link tc} and {@link abs} are derived from. Raw for the
+   * same reason as {@link rawCorners}: the decode needs cross-frame state.
+   */
+  aidRaw: AidRawInputs;
+  /**
+   * The in-car wheel's lock-to-lock rotation in degrees, or `UNKNOWN_VALUE`
+   * when the record does not carry a plausible one.
+   */
+  steerRangeDeg: number;
   gear: number; // -1 reverse, 0 neutral, 1..n
   rpm: number;
   maxRpm: number;
@@ -647,6 +678,8 @@ export class LmuLocalCarReader {
    * and so must survive between reads.
    */
   private readonly chassis = new ChassisTracker();
+  /** Cross-frame state for the live TC / ABS intervention channels. */
+  private readonly aids = new AidInterventionTracker();
 
   public constructor() {
     this.win32 = loadWin32();
@@ -853,6 +886,9 @@ export class LmuLocalCarReader {
         if (car.rawCorners) {
           car.chassis = this.chassis.update(car.rawCorners, car.elapsedSec);
         }
+        const aid = this.aids.update(car.aidRaw);
+        car.tc = aid.tc;
+        car.abs = aid.abs;
         return car;
       }
       return null;
@@ -1015,14 +1051,22 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
   const fwdVel = rec.readDoubleLE(VT.mLocalVelZ);
   const brake = clamp01(rec.readDoubleLE(VT.mUnfilteredBrake));
 
-  // TC/ABS intervention = driver input minus what the aids let through. A
-  // filtered channel stuck at exactly 0 while the pedal is pressed means the
-  // sim isn't populating it — report no intervention rather than a full cut.
-  const fltThrottle = rec.readDoubleLE(VT.mFilteredThrottle);
-  const fltBrake = rec.readDoubleLE(VT.mFilteredBrake);
-  const tc =
-    fltThrottle > 0 && fltThrottle <= 1.05 ? clamp01(clamp01(throttle) - fltThrottle) : 0;
-  const abs = fltBrake > 0 && fltBrake <= 1.05 ? clamp01(brake - fltBrake) : 0;
+  // TC/ABS intervention needs cross-frame state (an envelope, and a learned
+  // per-wheel brake ratio), so only the raw channels are read here — see
+  // telemetry/aidIntervention.ts for why "unfiltered − filtered" was wrong.
+  const wheelBrakeFits = VT.mWheelBase + 4 * VT.mWheelStride <= rec.length;
+  const wheelBrake = (w: number): number =>
+    rec.readDoubleLE(VT.mWheelBase + w * VT.mWheelStride + VT.mWheelBrakePressureRel);
+  const aidRaw: AidRawInputs = {
+    t: rec.readDoubleLE(VT.mElapsedTime),
+    throttle: clamp01(throttle),
+    filteredThrottle: rec.readDoubleLE(VT.mFilteredThrottle),
+    brake,
+    wheelBrake: wheelBrakeFits ? [wheelBrake(0), wheelBrake(1), wheelBrake(2), wheelBrake(3)] : null,
+    tcActive: (rec[VT.mTCActive] ?? 0) !== 0,
+    absActive: (rec[VT.mABSActive] ?? 0) !== 0,
+  };
+  const steerRange = rec.readFloatLE(VT.mVisualSteeringWheelRange);
 
   // Per-corner tyre temp = mean of the three (Kelvin) bands, converted to °C —
   // but only over bands that fall in a plausible *tyre* range. This rejects:
@@ -1175,8 +1219,11 @@ function parseRecord(rec: Buffer): LocalCarPhysics | null {
     brake,
     clutch: clamp01(rec.readDoubleLE(VT.mUnfilteredClutch)),
     steer: clamp(rec.readDoubleLE(VT.mUnfilteredSteering), -1, 1),
-    tc,
-    abs,
+    // Filled in by LmuLocalCarReader from aidRaw.
+    tc: 0,
+    abs: 0,
+    aidRaw,
+    steerRangeDeg: steerRange >= 90 && steerRange <= 1440 ? Math.round(steerRange) : UNKNOWN_VALUE,
     gear: rec.readInt32LE(VT.mGear),
     rpm: Math.round(rpm),
     maxRpm: Math.round(rec.readDoubleLE(VT.mEngineMaxRPM)) || 8000,

@@ -77,6 +77,12 @@ export interface TraceChannels {
   /** ABS intervention 0..1. */
   abs: number;
   /**
+   * The car's lock-to-lock wheel rotation in degrees, when the sim publishes
+   * it. Constant for a car, so it is kept once per lap as
+   * {@link CompletedTrace.steerRangeDeg}, not per point.
+   */
+  steerRangeDeg?: number;
+  /**
    * The car's world position on the ground plane, metres, in the sim's own
    * axes — the same `[x, z]` a {@link TrackMapPath} point is drawn at, so a
    * trace and a learned map render in one coordinate system with no fitting.
@@ -173,6 +179,22 @@ export interface CompletedTrace {
   tc: number[];
   abs: number[];
   /**
+   * Which method produced `tc` / `abs`; absent on every lap recorded before
+   * {@link AID_CHANNELS_VERSION}. Those older laps read "unfiltered − filtered
+   * pedal", which counted gear shifts and the pit limiter as TC and never saw
+   * ABS at all (see telemetry/aidIntervention.ts), and nothing can repair them
+   * after the fact — so a reader shows their aid columns as NOT RECORDED
+   * rather than drawing the shift cuts as traction control.
+   */
+  aids?: number;
+  /**
+   * Lock-to-lock wheel rotation in degrees, so `steer` (-1..1) can be read as
+   * an angle: `steer × steerRangeDeg / 2`. Absent when the sim did not publish
+   * one, and on laps recorded before 2026-10-06; a reader then shows steering
+   * as a fraction of lock, which compares fairly only within one car.
+   */
+  steerRangeDeg?: number;
+  /**
    * World position per point, metres — the driven LINE, which `d` alone cannot
    * express (two laps with identical distance curves can be a metre apart at
    * the apex). Present together or not at all, and index-aligned with the rest
@@ -181,6 +203,13 @@ export interface CompletedTrace {
   x?: number[];
   z?: number[];
 }
+
+/**
+ * The current method behind the `tc` / `abs` columns — `aidIntervention.ts`,
+ * from the sim's own TC flag and the per-wheel brake pressure. Bump it if that
+ * method changes in a way that makes older laps' aid columns incomparable.
+ */
+export const AID_CHANNELS_VERSION = 2;
 
 /** Round helpers — wire precision per channel, chosen to keep files small
  *  without quantising anything a training overlay would show. */
@@ -218,6 +247,8 @@ export class LapTraceRecorder {
    * cleared at the line: position is continuous through a lap crossing.
    */
   private lastPos: { x: number; z: number } | null = null;
+  /** The last lock-to-lock range seen, degrees; 0 = none published yet. */
+  private steerRange = 0;
 
   /** Drop everything — session change, feed loss, spectating. */
   public reset(): void {
@@ -228,6 +259,7 @@ export class LapTraceRecorder {
     this.points = [];
     this.truncated = false;
     this.lastPos = null;
+    this.steerRange = 0;
   }
 
   /**
@@ -286,6 +318,8 @@ export class LapTraceRecorder {
     if (Number.isFinite(ch.x as number) && Number.isFinite(ch.z as number)) {
       this.lastPos = { x: r1(ch.x as number), z: r1(ch.z as number) };
     }
+    const range = ch.steerRangeDeg;
+    if (typeof range === 'number' && range >= 90 && range <= 1440) this.steerRange = Math.round(range);
 
     const t = elapsedSec - this.lapStartElapsed;
     if (t < 0) return done;
@@ -354,6 +388,8 @@ export class LapTraceRecorder {
       lonG: [],
       tc: [],
       abs: [],
+      aids: AID_CHANNELS_VERSION,
+      ...(this.steerRange > 0 ? { steerRangeDeg: this.steerRange } : {}),
     };
     // Position is all-or-nothing for a lap. Carry-forward means that once a
     // position is seen it is present on every later point, so the only way to

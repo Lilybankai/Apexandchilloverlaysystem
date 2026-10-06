@@ -13,9 +13,11 @@
  * measuredBurnFor(input)    -> what the class actually burned there, or null.
  *
  * The last two are the only additions to the ported file. They exist because
- * DEFAULT_PIT_PARAMS below are guesses, the shared corpus can now measure some
- * of them (fuel-coefficients.js), and the difference is not cosmetic: a
- * measured 1.28 %/s against a guessed 2.0 %/s costs a lap over four hours.
+ * DEFAULT_PIT_PARAMS below are guesses, the shared corpus can now measure them
+ * (fuel-coefficients.js), and the difference is not cosmetic: a GT3 refills
+ * Virtual Energy at 2.52 %/s plus under a second of fixed time, its pit lane
+ * costs anywhere from 24 s (Silverstone) to 50 s (Daytona) rather than a flat
+ * 25, and a set of tyres adds 12 s rather than 30.
  *
  * LMU pit rule encoded here: refuelling and tyre changes are SEQUENTIAL, so a
  * stop costs pit-lane loss + refuel + tyres. Timed races solve lap count and
@@ -48,7 +50,16 @@
     energyRefuelRate: 2.0,  // %/s for Virtual Energy classes
     tyreChangeSec: 30,      // full set of tyres
     tyresEveryStints: 1,    // change tyres every N stops (0 = never)
+    refuelFixedSec: 0,      // hose on/off, paid once per stop that takes fuel
   };
+
+  // Seconds a refuel of `fill` units takes: the fixed part (only when fuel
+  // actually goes in) plus the fill at the rig's rate. One function so the
+  // grid planner, the Team tab and the tests all price a refuel identically.
+  function refuelSeconds(fill, ratePerSec, fixedSec) {
+    if (!(fill > 0) || !(ratePerSec > 0)) return 0;
+    return (Number.isFinite(fixedSec) && fixedSec > 0 ? fixedSec : 0) + fill / ratePerSec;
+  }
 
   const MAX_ITER = 20;
 
@@ -79,16 +90,16 @@
   // the fitter — "the corpus does not have them" beats "n < 5".
   const ESTIMATE_REASONS = {
     pitLaneLossSec: {
-      short: 'no pit cycle measured yet',
-      why: 'Measuring a pit lane needs five timed in-laps and five out-laps at the same '
-        + 'circuit, so the lost time can be read against normal laps. The shared corpus '
-        + 'does not have that anywhere yet.',
+      short: 'not enough race stops recorded at this circuit yet',
+      why: 'The pit lane is measured from race stops at this circuit: the time each car '
+        + 'spent in the lane minus the time it stood still. It needs eight of them, and '
+        + 'the shared corpus does not have that many here yet.',
     },
     tyreChangeSec: {
-      short: 'tyre time is not fitted yet',
-      why: 'Almost every recorded stop changed tyres AND took fuel at the same time, so '
-        + 'there is no way to tell the two apart. Until fuel-only and tyre-only stops '
-        + 'both exist, this stays an estimate.',
+      short: 'not enough tyre stops recorded for this class yet',
+      why: 'Tyre time is what a tyre stop takes beyond the fuel that went in, priced at '
+        + 'the class’s measured refuelling rate. It needs eight such race stops in the '
+        + 'class, and the shared corpus does not have that many yet.',
     },
     refuelRatePerSec: {
       short: 'no measurement for this class yet',
@@ -104,21 +115,27 @@
    * @param {object} [input.coeffs]    window.APEX_STRATEGY_COEFFS, or nothing.
    * @param {string} [input.classId]   Fuel tab class id ('lmgt3', 'lmp2', …).
    * @param {string} [input.layoutId]  Fuel tab layout id ('spa_gp', …).
+   * @param {string} [input.trackKey]  Lap-log track key, for callers that know
+   *   the circuit the way live telemetry names it rather than by layout id.
    * @param {boolean} [input.useVirtualEnergy]  Picks the rate's unit.
    * @param {object} [input.overrides] The driver's own pit-box values.
-   * @returns {{pitLaneLossSec:number, refuelRatePerSec:number, tyreChangeSec:number,
-   *           tyresEveryStints:number, provenance:object}}
+   * @returns {{pitLaneLossSec:number, refuelRatePerSec:number, refuelFixedSec:number,
+   *           tyreChangeSec:number, tyresEveryStints:number, provenance:object}}
    */
   function pitParamsFor({
     coeffs = null,
     classId = '',
     layoutId = '',
+    trackKey = '',
     useVirtualEnergy = false,
     overrides = {},
   } = {}) {
     const provenance = {};
     const byClass = (coeffs && coeffs.byClass && coeffs.byClass[classId]) || null;
-    const byPair = (coeffs && coeffs.byPair && coeffs.byPair[`${layoutId}|${classId}`]) || null;
+    // The lane is the circuit's, not the class's: one entry per layout.
+    const lane = (layoutId && coeffs && coeffs.byLayout && coeffs.byLayout[layoutId])
+      || (trackKey && coeffs && coeffs.byTrackKey && coeffs.byTrackKey[trackKey])
+      || null;
 
     // One field, three ways. `measured` carries the sample size with it so the
     // panel can show what the number is standing on, not just that it exists.
@@ -140,9 +157,10 @@
       return fallback.value;
     };
 
-    // Refuelling: per class, because litres per second is a property of the
-    // rig and not of the circuit (fit-strategy.js pools it that way on purpose).
-    // The unit is already converted — a VE class holds percent per second.
+    // Refuelling: per class, because the rate is a property of the rig and not
+    // of the circuit (fit-strategy.js pools it that way on purpose). A VE class
+    // holds percent per second MEASURED from energy added — never litres over
+    // the tank, which priced a GT3 refuel at twice its length.
     const rateUnitMatches = byClass && byClass.unit === (useVirtualEnergy ? 'pct' : 'l');
     const refuelRatePerSec = resolve(
       'refuelRatePerSec',
@@ -154,8 +172,7 @@
             stops: byClass.stops,
             tracks: byClass.tracks,
             spread: byClass.spread,
-            litresPerSec: byClass.refuelLPerSec,
-            capacityL: byClass.capacityL,
+            fixedSec: byClass.refuelFixedSec || 0,
           },
         }
         : null,
@@ -171,33 +188,59 @@
       },
     );
 
-    // Pit lane loss: per class AND track, because it is the circuit's pit lane.
-    // build-coefficients.js has already subtracted the stationary time, so this
-    // is the lane alone and the engine may add service to it as it always has.
+    // The fixed part of a refuel travels with the rate it was fitted with: a
+    // driver who types their own rate gets no fixed term added behind their
+    // back, and an estimated rate never had one.
+    const refuelFixedSec = provenance.refuelRatePerSec.source === 'measured'
+      ? (byClass.refuelFixedSec || 0)
+      : DEFAULT_PIT_PARAMS.refuelFixedSec;
+
+    // Pit lane loss: per CIRCUIT — every class drives the same lane at the same
+    // limiter. The fit is lane time minus stationary time, so this is the lane
+    // alone and the engine adds the service to it as it always has.
     const pitLaneLossSec = resolve(
       'pitLaneLossSec',
       overrides.pitLaneLossSec,
-      byPair && byPair.pitLaneLossSec != null
-        ? { value: byPair.pitLaneLossSec, detail: { stops: byPair.pitStops } }
+      lane && Number.isFinite(lane.pitLaneLossSec)
+        ? { value: lane.pitLaneLossSec, detail: { stops: lane.stops, spread: lane.spread } }
         : null,
       { value: DEFAULT_PIT_PARAMS.pitLaneLossSec },
     );
 
-    // Tyres: never fitted. Always the driver's number or the estimate.
+    // Tyres: per class, where the corpus has enough tyre stops.
     const tyreChangeSec = resolve(
       'tyreChangeSec',
       overrides.tyreChangeSec,
-      null,
+      byClass && Number.isFinite(byClass.tyreChangeSec)
+        ? { value: byClass.tyreChangeSec, detail: { stops: byClass.tyreStops, spread: byClass.tyreSpread } }
+        : null,
       { value: DEFAULT_PIT_PARAMS.tyreChangeSec },
     );
 
     return {
       pitLaneLossSec,
       refuelRatePerSec,
+      refuelFixedSec,
       tyreChangeSec,
       tyresEveryStints: overrides.tyresEveryStints ?? DEFAULT_PIT_PARAMS.tyresEveryStints,
       provenance,
     };
+  }
+
+  /**
+   * The lap-log key for a live session's circuit: `<slug>_<metres>`, exactly
+   * as `trackKeyOf` (paceDelta.ts) builds it for every stop the corpus holds —
+   * the live session's `track` and `trackLengthM` are the same two values the
+   * stop recorder is handed. Keep the two in step; `byTrackKey` is keyed on it.
+   */
+  function liveTrackKey(trackName, lengthM) {
+    const name = String(trackName || 'unknown')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+    const len = lengthM > 1 ? Math.round(lengthM) : 0;
+    return `${name || 'unknown'}_${len}`;
   }
 
   /** The measured per-lap burn for a class at a layout, or null. */
@@ -274,7 +317,7 @@
         const nextIsLast = i + 1 === numStints - 1;
         const nextRequired = stintLaps[i + 1] * consumptionPerLap + (nextIsLast ? safetyUnits : 0);
         const nextFill = Math.min(round1(nextRequired), tankCapacity);
-        const refuelSec = Math.ceil(nextFill / pit.refuelRatePerSec);
+        const refuelSec = Math.ceil(refuelSeconds(nextFill, pit.refuelRatePerSec, pit.refuelFixedSec));
         const tyreSec = pit.tyresEveryStints > 0 && (i + 1) % pit.tyresEveryStints === 0
           ? pit.tyreChangeSec
           : 0;
@@ -337,6 +380,7 @@
         ?? (useVirtualEnergy ? DEFAULT_PIT_PARAMS.energyRefuelRate : DEFAULT_PIT_PARAMS.fuelRefuelRate),
       tyreChangeSec: pit.tyreChangeSec ?? DEFAULT_PIT_PARAMS.tyreChangeSec,
       tyresEveryStints: pit.tyresEveryStints ?? DEFAULT_PIT_PARAMS.tyresEveryStints,
+      refuelFixedSec: pit.refuelFixedSec ?? DEFAULT_PIT_PARAMS.refuelFixedSec,
     };
 
     const core = {
@@ -480,7 +524,9 @@
   return {
     DEFAULT_PIT_PARAMS,
     ESTIMATE_REASONS,
+    refuelSeconds,
     pitParamsFor,
+    liveTrackKey,
     measuredBurnFor,
     buildStrategy,
     compareStopOptions,

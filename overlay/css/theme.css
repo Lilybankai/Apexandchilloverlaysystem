@@ -93,9 +93,14 @@
   --pedal-brake: #ff5470;
   --pedal-clutch: #4f8bff;
 
-  /* Driver-aid intervention colours (TC on throttle, ABS on brake) */
+  /* Driver-aid intervention colours (TC on throttle, ABS on brake). ABS is
+     blue, the colour drivers know it by — a light sky blue so it never reads
+     as the clutch's #4f8bff in the bar next to it. */
   --aid-tc: #ffd23e;
-  --aid-abs: #ff9f1a;
+  --aid-abs: #3ec5ff;
+  /* Motion widget balance badge. Was borrowed from --aid-abs; kept amber so it
+     still contrasts with the cyan oversteer badge beside it. */
+  --balance-understeer: #ff9f1a;
 
   /* Tyre temperature ramp (cold -> optimal -> hot) */
   --tyre-cold: #4f8bff;

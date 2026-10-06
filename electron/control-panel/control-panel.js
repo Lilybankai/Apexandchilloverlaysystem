@@ -1094,6 +1094,37 @@
       foot.appendChild(obsDest);
       foot.appendChild(igDest);
 
+      /* -- reset position: for the widget that has gone missing rather than the
+       * layout that has gone wrong. Unplug a monitor or change a resolution or
+       * Windows Scale % and a widget can end up drawn where no screen shows it,
+       * with no handle left to drag it back by; Reset layout on the Dashboard
+       * fixes that but takes every other widget's placement with it. This moves
+       * just this one to the middle of the main screen, saved as a drag would
+       * be, so it can be dragged on from there. Under the switches because it
+       * belongs to the in-game half of the card — OBS sources are placed in OBS,
+       * not here. Works with the layer closed or the widget switched off: the
+       * position is stored and used the next time it is shown. */
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'ovcard__reset';
+      resetBtn.title = 'Lost this widget off screen? Bring it back to the middle of your main screen';
+      resetBtn.setAttribute('aria-label', `Reset ${o.label} position to the centre of the main screen`);
+      resetBtn.innerHTML = window.apexIcon ? window.apexIcon('rotate-ccw') : '';
+      resetBtn.appendChild(document.createTextNode('Reset position'));
+      resetBtn.addEventListener('click', async () => {
+        resetBtn.disabled = true;
+        try {
+          const done = await window.apex.ingameLayoutCentre(o.id);
+          showToast(
+            done
+              ? `${o.label} moved to the centre of your main screen`
+              : `Could not reset ${o.label}`,
+          );
+        } finally {
+          resetBtn.disabled = false;
+        }
+      });
+
       // Before the head so it reads as a band across the top of the card; the
       // CSS pulls it out to the card's edges through the card padding.
       if (bannerEl) li.appendChild(bannerEl);
@@ -1105,6 +1136,7 @@
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
       li.appendChild(foot);
+      li.appendChild(resetBtn);
       const mount = o.group === 'streaming' && streamersWidgetList ? streamersWidgetList : overlayList;
       mount.appendChild(li);
     }

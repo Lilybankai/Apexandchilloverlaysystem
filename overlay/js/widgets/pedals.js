@@ -5,8 +5,10 @@
  * (throttle/brake/clutch/steer 0..1, steer -1..1) as:
  *   - a scrolling Canvas trace overlaying throttle (green) and brake (red) so
  *     you can read brake-release vs throttle-application overlap;
+ *   - TC (yellow) and ABS (blue) strength lines rising from the floor of the
+ *     trace — how hard each aid is working, on the same time axis;
  *   - vertical bars for the live throttle/brake/clutch values;
- *   - a steering position dot.
+ *   - a GT-style steering wheel that turns with the real wheel.
  *
  * This widget runs at the full broadcast rate (throttleMs 0). The trace uses a
  * fixed-size ring buffer and redraws two short polylines per frame — cheap and
@@ -28,19 +30,23 @@
 
   /**
    * How the steering is drawn, from `?steer=` on the Browser Source URL:
-   *   trace — a centre-anchored line through the pedal trace (default). The
-   *           steering scrolls with the pedals on the same time axis, so a
-   *           corner reads as one shape: brake, turn-in, unwind, throttle.
+   *   wheel — a GT wheel beside the bars, rotated by the real steering angle
+   *           with a red arc for how much lock is wound on (default).
+   *   trace — a centre-anchored line through the pedal trace. Was the default
+   *           until 2026-10; drivers found a white line crossing the pedal
+   *           areas harder to read than a wheel, so it is opt-in now.
    *   dot   — the original left/right dot on a strip under the bars.
-   *   off   — neither.
-   * The line is the point of the change: a dot shows where the wheel is NOW but
-   * carries no history, so you cannot see the turn-in rate or a correction.
+   *   off   — none.
    */
-  var steerMode = "trace";
+  var steerMode = "wheel";
+  /** Lock-to-lock used when the sim does not publish one (`steerRangeDeg`). */
+  var DEFAULT_STEER_RANGE = 540;
   /** Fraction of the canvas half-height a full lock deflects the trace. */
   var STEER_GAIN = 0.9;
   // Frames left to keep drawing the aid lines after the last intervention
   // (avoids per-frame full-ring scans just to know if anything is visible).
+  // The channels arrive already smoothed into a strength envelope — see
+  // src/telemetry/aidIntervention.ts — so they are drawn as they come.
   var tcHot = 0;
   var absHot = 0;
 
@@ -49,6 +55,7 @@
   var valThrottle, valBrake, valClutch;
   var steerDot, headerGear;
   var chipTc, chipAbs;
+  var wheelCanvas, wctx, wheelDeg, wheelDpr = 1, wheelCss = 0;
   var cssW = 0, cssH = 0;
   var cache = {};
 
@@ -143,8 +150,8 @@
     mount.innerHTML = "";
 
     var params = new URLSearchParams(window.location.search);
-    var sm = (params.get("steer") || "trace").toLowerCase();
-    steerMode = sm === "dot" || sm === "off" ? sm : "trace";
+    var sm = (params.get("steer") || "wheel").toLowerCase();
+    steerMode = sm === "dot" || sm === "off" || sm === "trace" ? sm : "wheel";
 
     var wrap = document.createElement("div");
     wrap.className = "pedals__wrap";
@@ -179,6 +186,22 @@
     wrap.appendChild(trace);
     wrap.appendChild(bars);
 
+    if (steerMode === "wheel") {
+      var wheel = document.createElement("div");
+      wheel.className = "pedals__wheel";
+      wheelCanvas = document.createElement("canvas");
+      wheelCanvas.className = "pedals__wheel-canvas";
+      wheelDeg = document.createElement("div");
+      wheelDeg.className = "pedal-bar__val pedals__wheel-deg";
+      wheelDeg.textContent = "0°";
+      wheel.appendChild(wheelCanvas);
+      wheel.appendChild(wheelDeg);
+      wrap.appendChild(wheel);
+    } else {
+      wheelCanvas = null;
+      wheelDeg = null;
+    }
+
     mount.appendChild(wrap);
 
     // Legacy dot readout, only when explicitly asked for: the trace mode draws
@@ -204,6 +227,27 @@
     gctx = canvas.getContext("2d");
     sizeCanvas();
     watchSize(canvas);
+    if (wheelCanvas) {
+      wctx = wheelCanvas.getContext("2d");
+      sizeWheel();
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(sizeWheel).observe(wheelCanvas);
+      }
+    }
+  }
+
+  /** Same contract as {@link sizeCanvas}, for the square wheel canvas. */
+  function sizeWheel() {
+    if (!wheelCanvas) return;
+    var w = wheelCanvas.clientWidth || 84;
+    var d = window.ApexRaster.backingScale(wheelCanvas);
+    var bw = Math.round(w * d);
+    if (bw === wheelCanvas.width && w === wheelCss) return;
+    wheelCss = w;
+    wheelDpr = d;
+    wheelCanvas.width = bw;
+    wheelCanvas.height = bw;
+    cache.wheelAngle = null; // force a redraw at the new size
   }
 
   function drawArea(ctx2d, arr, color, alpha) {
@@ -246,32 +290,42 @@
   }
 
   /**
-   * Draws the post-aid ("what the car actually got") line in the aid colour,
-   * only over the stretches where the aid was cutting — so TC/ABS activity
-   * shows up as coloured notches under the pedal lines.
+   * An aid's strength as its own channel: a line rising from the floor of the
+   * trace, 0 = not working, full height = the whole pedal removed. Drawn only
+   * over the stretches where the aid was working, each closed back to the floor
+   * with a faint fill, so a TC burst out of a hairpin reads as one hump whose
+   * height is how hard it cut.
    */
-  function drawAidLine(ctx2d, arr, cut, color) {
+  function drawAidStrength(ctx2d, cut, color) {
     if (count < 2) return;
     var start = (head - count + CAP) % CAP;
     var stepX = cssW / (CAP - 1);
-    var open = false;
+    var h = cssH;
+    var inRun = false;
     ctx2d.beginPath();
-    for (var i = 0; i < count; i++) {
-      var idx = (start + i) % CAP;
-      var c = cut[idx];
-      if (c > 0.01) {
-        var v = arr[idx] - c;
-        if (v < 0) v = 0;
-        var x = i * stepX;
-        var y = cssH - v * cssH;
-        if (open) ctx2d.lineTo(x, y);
-        else { ctx2d.moveTo(x, y); open = true; }
-      } else {
-        open = false;
+    for (var i = 0; i <= count; i++) {
+      var c = i < count ? cut[(start + i) % CAP] : 0;
+      var x = i * stepX;
+      if (c > 0.005) {
+        if (c > 1) c = 1;
+        if (!inRun) {
+          inRun = true;
+          ctx2d.moveTo(x, h);
+        }
+        ctx2d.lineTo(x, h - c * h);
+      } else if (inRun) {
+        // Close the run back down to the floor at the previous sample.
+        ctx2d.lineTo(x - stepX, h);
+        inRun = false;
       }
     }
+    ctx2d.globalAlpha = 0.28;
+    ctx2d.fillStyle = color;
+    ctx2d.fill();
+    ctx2d.globalAlpha = 1;
     ctx2d.strokeStyle = color;
-    ctx2d.lineWidth = 1.5;
+    ctx2d.lineWidth = 2;
+    ctx2d.lineJoin = "round";
     ctx2d.stroke();
   }
 
@@ -328,11 +382,132 @@
     drawArea(gctx, brk, "#ff5470", 0.18);
     drawArea(gctx, thr, "#35d07f", 0.16);
     // Aid lines only while there's something to show in the window.
-    if (absHot > 0) drawAidLine(gctx, brk, brkCut, "#ff9f1a");
-    if (tcHot > 0) drawAidLine(gctx, thr, thrCut, "#ffd23e");
+    if (absHot > 0) drawAidStrength(gctx, brkCut, "#3ec5ff");
+    if (tcHot > 0) drawAidStrength(gctx, thrCut, "#ffd23e");
     // Steering on top: it is the thinnest line and must stay readable over the
     // filled pedal areas.
     if (steerMode === "trace") drawSteerTrace(gctx);
+  }
+
+  /** A point on a circle of radius r at `deg` (0 = 3 o'clock, clockwise). */
+  function polar(r, deg) {
+    var a = (deg * Math.PI) / 180;
+    return [r * Math.cos(a), r * Math.sin(a)];
+  }
+
+  /**
+   * The GT wheel, turned by `deg` (positive = right / clockwise).
+   *
+   * The outer ring is fixed and carries a red arc from 12 o'clock to the
+   * current angle — the amount of lock wound on, readable even at a glance
+   * where the wheel's own rotation is not (a GT rim at 180° looks much like
+   * one at 0°). The wheel inside is a flat-topped GT rim with a yellow centre
+   * marker, so straight-ahead is unmistakable.
+   */
+  function drawWheel(deg) {
+    if (!wctx) return;
+    if (wheelCss === 0) { sizeWheel(); if (wheelCss === 0) return; }
+    var S = wheelCss;
+    var c = S / 2;
+    var g = wctx;
+    g.setTransform(wheelDpr, 0, 0, wheelDpr, 0, 0);
+    g.clearRect(0, 0, S, S);
+    g.lineCap = "round";
+    g.lineJoin = "round";
+
+    // Fixed outer ring + lock arc.
+    var ringR = c - 3;
+    g.beginPath();
+    g.arc(c, c, ringR, 0, Math.PI * 2);
+    g.strokeStyle = "rgba(255,255,255,0.10)";
+    g.lineWidth = 3;
+    g.stroke();
+    var shown = deg > 360 ? 360 : deg < -360 ? -360 : deg;
+    if (Math.abs(shown) >= 0.5) {
+      var a0 = -Math.PI / 2;
+      var a1 = a0 + (shown * Math.PI) / 180;
+      g.beginPath();
+      g.arc(c, c, ringR, Math.min(a0, a1), Math.max(a0, a1));
+      g.strokeStyle = "#ff3b3b";
+      g.lineWidth = 3;
+      g.stroke();
+      // White tip marking where the arc ends.
+      var tip = polar(ringR, shown - 90);
+      g.save();
+      g.translate(c + tip[0], c + tip[1]);
+      g.rotate(a1);
+      g.beginPath();
+      g.moveTo(-3, 0); g.lineTo(0, -3); g.lineTo(3, 0); g.lineTo(0, 3);
+      g.closePath();
+      g.fillStyle = "#ffffff";
+      g.fill();
+      g.restore();
+    }
+
+    // The wheel, rotated about the centre.
+    var r = S * 0.36;
+    g.save();
+    g.translate(c, c);
+    g.rotate((deg * Math.PI) / 180);
+
+    var tl = polar(r, -125), tr = polar(r, -55);
+    var bl = polar(r, 125), br = polar(r, 55);
+
+    // Rim: grips joined by a flat top and a flat bottom — the GT silhouette.
+    // One closed path stroked twice (dark body, lighter core) so it reads as a
+    // padded rim against the dark panel rather than a flat outline.
+    g.beginPath();
+    g.moveTo(tl[0], tl[1]);
+    g.lineTo(tr[0], tr[1]);
+    g.arc(0, 0, r, (-55 * Math.PI) / 180, (55 * Math.PI) / 180);
+    g.lineTo(bl[0], bl[1]);
+    g.arc(0, 0, r, (125 * Math.PI) / 180, (235 * Math.PI) / 180);
+    g.closePath();
+    g.strokeStyle = "#4a505b";
+    g.lineWidth = S * 0.11;
+    g.stroke();
+    g.strokeStyle = "#2a2e35";
+    g.lineWidth = S * 0.06;
+    g.stroke();
+
+    // Spokes out to the grips.
+    g.fillStyle = "#3a3f48";
+    g.fillRect(0.55 * r, -0.1 * r, 0.42 * r, 0.2 * r);
+    g.fillRect(-0.97 * r, -0.1 * r, 0.42 * r, 0.2 * r);
+
+    // Centre plate with a dash screen and four buttons.
+    var pw = 1.2 * r, ph = 0.95 * r, py = -0.42 * r;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(-pw / 2, py, pw, ph, 0.18 * r);
+    else g.rect(-pw / 2, py, pw, ph);
+    g.fillStyle = "#16181d";
+    g.fill();
+    g.strokeStyle = "#4a505b";
+    g.lineWidth = 1;
+    g.stroke();
+    g.fillStyle = "#0c1f15";
+    g.fillRect(-0.3 * r, -0.3 * r, 0.6 * r, 0.28 * r);
+    g.strokeStyle = "rgba(53,208,127,0.8)";
+    g.strokeRect(-0.3 * r, -0.3 * r, 0.6 * r, 0.28 * r);
+    var dots = [
+      [-0.38, 0.16, "#ff5470"], [0.38, 0.16, "#3ec5ff"],
+      [-0.14, 0.32, "#ffd23e"], [0.14, 0.32, "#35d07f"],
+    ];
+    var dr = Math.max(1.3, 0.03 * S);
+    for (var i = 0; i < dots.length; i++) {
+      g.beginPath();
+      g.arc(dots[i][0] * r, dots[i][1] * r, dr, 0, Math.PI * 2);
+      g.fillStyle = dots[i][2];
+      g.fill();
+    }
+
+    // Yellow 12 o'clock marker on the top of the rim.
+    g.strokeStyle = "#ffd23e";
+    g.lineWidth = S * 0.11;
+    g.lineCap = "butt";
+    g.beginPath(); g.moveTo(-0.08 * r, tl[1]); g.lineTo(0.08 * r, tl[1]); g.stroke();
+    g.lineCap = "round";
+    g.restore();
   }
 
   function setFill(el, cacheKey, value) {
@@ -347,7 +522,7 @@
   function update(frame, ctx) {
     // Backstop for a resize that arrived while nothing was rendering. Cheap:
     // sizeCanvas() returns immediately unless the element has actually changed.
-    if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
+    if (++sizeTick % SIZE_CHECK_FRAMES === 0) { sizeCanvas(); sizeWheel(); }
     var fmt = ctx.fmt;
     var p = frame.player;
     if (!p || !p.pedals) return;
@@ -386,6 +561,22 @@
       chipAbs.setAttribute("data-on", String(absOn));
     }
     if (absOn) chipAbs.style.opacity = String(0.45 + 0.55 * Math.min(1, abs * 2.5));
+
+    // Wheel: steer -1..1 is half the lock-to-lock either way. Redrawn only when
+    // the angle moves by half a degree, so a held straight costs nothing.
+    if (wheelCanvas) {
+      var range = typeof ped.steerRangeDeg === "number" && ped.steerRangeDeg > 0
+        ? ped.steerRangeDeg : DEFAULT_STEER_RANGE;
+      var deg = (steer * range) / 2;
+      var key = Math.round(deg * 2);
+      if (cache.wheelAngle !== key) {
+        cache.wheelAngle = key;
+        drawWheel(deg);
+        var whole = Math.round(Math.abs(deg));
+        var label = whole === 0 ? "0°" : (deg < 0 ? "L " : "R ") + whole + "°";
+        if (cache.wheelDeg !== label) { cache.wheelDeg = label; wheelDeg.textContent = label; }
+      }
+    }
 
     // Steering dot: -1..1 -> 0%..100% across the track. Only present in the
     // legacy `?steer=dot` mode; the trace mode draws it on the canvas instead.

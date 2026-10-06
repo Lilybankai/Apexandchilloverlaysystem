@@ -13,6 +13,7 @@
 
 const path = require('path');
 const ENGINE = require(path.join(__dirname, '..', 'electron', 'control-panel', 'team-fuel.js'));
+const STRATEGY = require(path.join(__dirname, '..', 'electron', 'control-panel', 'fuel-strategy.js'));
 
 let failed = 0;
 let passed = 0;
@@ -150,6 +151,24 @@ function check(name, cond, detail) {
   const home = ENGINE.planRemaining({ level: 95, tank: 100, perLap: 5, lapsToGo: 10, safetyLaps: 1, pit: PIT });
   check('no stops left is priced zero, not null', home.stops === 0 && home.totalStopSec === 0,
     `${home.stops} / ${home.totalStopSec}`);
+
+  // The measured Virtual Energy rig: 2.52 %/s after 0.9 s of hose time.
+  const fixedPit = { ...PIT, refuelRatePerSec: 2.52, refuelFixedSec: 0.9 };
+  const fixed = ENGINE.planRemaining({ ...inputs, pit: fixedPit });
+  const fs1 = fixed.stints[1];
+  check('a fixed refuel term is paid once per stop that takes fuel',
+    Math.abs(fs1.stop.refuelSec - (0.9 + fs1.fill / 2.52)) < 0.1,
+    `${fs1.stop.refuelSec} vs ${0.9 + fs1.fill / 2.52}`);
+  check('…and matches the grid planner’s arithmetic exactly',
+    Math.abs(fs1.stop.refuelSec - Math.round(STRATEGY.refuelSeconds(fs1.fill, 2.52, 0.9) * 10) / 10) < 1e-9,
+    fs1.stop.refuelSec);
+  check('…without touching the fuel plan',
+    JSON.stringify(fixed.stints.map((s) => s.fill)) === JSON.stringify(priced.stints.map((s) => s.fill)));
+  // The old conversion (litres over the 120 L tank) said 1.28 %/s: the same
+  // stop priced at very nearly twice the time.
+  const oldWay = ENGINE.planRemaining({ ...inputs, pit: { ...PIT, refuelRatePerSec: 1.28 } }).stints[1].stop;
+  check('the measured rig prices a refuel at well under the old conversion',
+    fs1.stop.refuelSec < oldWay.refuelSec * 0.6, `${fs1.stop.refuelSec} vs ${oldWay.refuelSec}`);
 }
 
 // ── Targets become decisions ─────────────────────────────────────────────────

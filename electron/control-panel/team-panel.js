@@ -480,34 +480,46 @@
   /**
    * The pit parameters for OUR car, resolved the same way the Fuel tab does.
    *
-   * The only identity needed is the car class, because a refuelling rate is a
-   * property of the rig and is fitted per class, never per track — which is
-   * fortunate, since a live session names its circuit nothing like the lap log
-   * does. Live telemetry speaks the corpus's own canonical class names
-   * (carClass.ts), so `byCorpusClass` is the right door.
+   * The only identity needed is the car class, because a refuelling rate (and
+   * its fixed per-stop part) and the tyre change time are properties of the
+   * car and are fitted per class, never per track. A Virtual Energy class's
+   * entry is already in percent per second measured from energy added. Live
+   * telemetry speaks the corpus's own canonical class names (carClass.ts), so
+   * `byCorpusClass` is the right door.
+   *
+   * The pit LANE is the circuit's. The session's `track` and `trackLengthM`
+   * are the very two values every corpus stop was keyed on, so `liveTrackKey`
+   * rebuilds that key and `byTrackKey` answers for any circuit with enough
+   * race stops; anywhere else the lane stays the estimate.
    *
    * Everything is optional. No coefficients, no standings or a class nobody has
    * measured leaves the plan exactly as it was before: correct on fuel, and
    * simply unpriced.
    */
-  function pitParamsForCar(standings, isVE) {
+  function pitParamsForCar(standings, isVE, session) {
     if (!ENGINE) return null;
     const me = Array.isArray(standings) ? standings.find((r) => r.isPlayer) : null;
     const entry = me && me.carClass && COEFFS && COEFFS.byCorpusClass
       ? COEFFS.byCorpusClass[me.carClass]
       : null;
     const unitMatches = entry && entry.unit === (isVE ? 'pct' : 'l');
+    const trackKey = session && session.track && session.trackLengthM > 1
+      ? ENGINE.liveTrackKey(session.track, session.trackLengthM)
+      : '';
     return ENGINE.pitParamsFor({
       // Hand the resolver only what it can honour: a class whose measured rate
       // is in the wrong unit must fall through to the estimate, not be reshaped.
-      coeffs: unitMatches ? { byClass: { live: entry }, unresolved: {} } : null,
+      coeffs: COEFFS
+        ? { byClass: unitMatches ? { live: entry } : {}, byTrackKey: COEFFS.byTrackKey, unresolved: {} }
+        : null,
       classId: 'live',
+      trackKey,
       useVirtualEnergy: !!isVE,
     });
   }
 
   // ── Strategy: remaining-race plan ────────────────────────────────────────
-  function renderStrategy(fuel, standings) {
+  function renderStrategy(fuel, standings, session) {
     const li = liveFuelInputs(fuel);
     if (!li) {
       setCard(els.strategy, `<p class="team-note">No fuel data in this session.</p>`);
@@ -520,7 +532,7 @@
     const plan = PLANNER.planRemaining({
       level: li.level, tank: li.tank, perLap: li.perLap,
       lapsToGo: li.lapsToGo, safetyLaps: prefs.safetyLaps,
-      pit: pitParamsForCar(standings, li.ve),
+      pit: pitParamsForCar(standings, li.ve, session),
     });
     if (!plan) {
       setCard(els.strategy, `<p class="team-note">Waiting for a usable consumption figure.</p>`);
@@ -548,14 +560,20 @@
         ${st.stop ? `<span class="fuel-stint__cost" title="Lane ${st.stop.laneSec}s + fuel ${st.stop.refuelSec}s${st.stop.tyreSec ? ` + tyres ${st.stop.tyreSec}s` : ''}">+${st.stop.totalSec}s</span>` : ''}
       </div>`).join('');
 
-    // The time still to be spent stationary. Worth its own line: it is the part
-    // of the race nobody is driving, and it is now measured rather than guessed.
+    // The time still to be spent in the pits. Worth its own line: it is the part
+    // of the race nobody is driving. Say which parts of it are measured and
+    // which are still the estimate.
+    const measuredParts = [];
+    const prov = plan.pitProvenance || {};
+    if (prov.refuelRatePerSec && prov.refuelRatePerSec.source === 'measured') measuredParts.push('refuelling');
+    if (prov.tyreChangeSec && prov.tyreChangeSec.source === 'measured') measuredParts.push('tyre time');
+    if (prov.pitLaneLossSec && prov.pitLaneLossSec.source === 'measured') measuredParts.push('pit lane');
     const pitTime = plan.totalStopSec
       ? `<p class="team-note">Still to spend in the pits: ${fmtClock(plan.totalStopSec)}${
-        plan.pitProvenance && plan.pitProvenance.refuelRatePerSec
-        && plan.pitProvenance.refuelRatePerSec.source === 'measured'
-          ? ' · refuelling rate measured from the shared corpus'
-          : ' · refuelling rate is an estimate'}.</p>`
+        measuredParts.length
+          ? ` · ${measuredParts.join(', ')} measured from the shared corpus`
+          : ' · refuelling rate is an estimate'}${
+        prov.pitLaneLossSec && prov.pitLaneLossSec.source !== 'measured' ? ', pit lane estimated' : ''}.</p>`
       : '';
 
     const save = plan.saveTarget
@@ -1196,7 +1214,7 @@
     { id: 'fuel', title: 'Fuel & energy', icon: 'fuel', min: { w: 3, h: 6 },
       render: (s) => renderFuel(s.fuel) },
     { id: 'strategy', title: 'Strategy to the flag', icon: 'target', min: { w: 3, h: 5 },
-      render: (s) => renderStrategy(s.fuel, s && s.standings) },
+      render: (s) => renderStrategy(s.fuel, s && s.standings, s && s.session) },
     { id: 'tyreplan', title: 'Tyre plan', icon: 'timer', min: { w: 3, h: 5 },
       render: (s) => renderTyrePlan(s.tyrePlan, s.fuel) },
     { id: 'tyres', title: 'Tyres & brakes', icon: 'tyre', min: { w: 3, h: 7 },
@@ -1387,7 +1405,7 @@
       els.safety.value = prefs.safetyLaps;
       savePrefs();
       const s = viewSnap();
-      if (s) { renderStrategy(s.fuel, s.standings); renderTyrePlan(s.tyrePlan, s.fuel); }
+      if (s) { renderStrategy(s.fuel, s.standings, s.session); renderTyrePlan(s.tyrePlan, s.fuel); }
     });
   }
 

@@ -42,7 +42,7 @@
 
 import { UNKNOWN_VALUE } from './types';
 import type { DamageState, StandingEntry, TelemetryFrame } from './types';
-import { sessionKeyOf } from './triggers';
+import { playerLapForWindow, sessionKeyOf } from './triggers';
 import { damageGrade, gradeWorse, overallGrade } from './damage';
 import { PitLossModel } from './pitExit';
 import { findYellowCause, speakableWhere } from './yellowCause';
@@ -1091,7 +1091,9 @@ export class EngineerCommands {
         const f = frame.fuel;
         if (!f) return no('No pit window projection yet.');
         const open = f.pitWindowOpenLap;
-        const lap = frame.session.currentLap;
+        // The player's own lap — the window is counted in their laps, and the
+        // overall leader's lap would open it early for a lapped car.
+        const lap = playerLapForWindow(frame);
         if (!known(open) || !known(lap) || lap <= 0) return no('No pit window projection yet.');
         if (lap >= open!) {
           const left = known(f.lapsRemaining) ? ` Fuel for ${f.lapsRemaining.toFixed(1)} more laps.` : '';

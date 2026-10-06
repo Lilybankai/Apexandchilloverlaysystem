@@ -304,7 +304,7 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     onEngineerStatus: noopUnsub,
     wheelDevices: P({ devices: [{ name: 'MOZA R5 Base (128 buttons, 1 hats, 8 axes)' }], backgroundOk: true }),
     wheelCapture: P(null), wheelBind: P({ ok: true }), onWheelDevices: noopUnsub,
-    ingameEditStart: P({}), ingameEditStop: P({}), ingameLayoutReset: P({}),
+    ingameEditStart: P({}), ingameEditStop: P({}), ingameLayoutReset: P({}), ingameLayoutCentre: P(true),
     lapsWeek: P({ laps: 0, cleanLaps: 0, distanceM: 0, drivingMs: 0, tracks: 0, bests: [], days: [] }),
     lapsPace: P({ rows: [], best: null, credit: {}, sheetUpdated: '' }), lapsScore: P([]),
     setup: { state: P({ connected: false }), write: P({ ok: false }), writeBatch: P({ ok: false }),

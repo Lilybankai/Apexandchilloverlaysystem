@@ -217,14 +217,15 @@
       const where = p.tracks ? ` across ${p.tracks} track${p.tracks === 1 ? '' : 's'}` : '';
       const stops = p.stops ? `${p.stops} stop${p.stops === 1 ? '' : 's'}` : 'the shared corpus';
       el.textContent = `Measured — ${stops}${where}.`;
-      // Virtual Energy rates are converted from litres; show the sum so the
-      // number can be checked rather than taken on faith.
-      const conv = (unit === '%/s' && p.litresPerSec && p.capacityL)
-        ? ` Converted from ${p.litresPerSec} L/s on a ${p.capacityL} L tank.` : '';
+      // The middle half of the stops behind the number, in the field's own
+      // unit (seconds for the lane and tyres), so a driver can see how firm it
+      // is. A refuel rate also says what it pays once per stop on top.
+      const u = unit || 's';
       const spread = (p.spread && p.spread[0] != null)
-        ? ` Middle half of those stops fell between ${p.spread[0]} and ${p.spread[1]} L/s.` : '';
-      const t = `Measured from the shared corpus.${spread}${conv}`;
-      if (spread || conv) el.title = t;
+        ? ` Middle half of those stops fell between ${p.spread[0]} and ${p.spread[1]} ${u}.` : '';
+      const fixed = p.fixedSec > 0 ? ` Plus ${p.fixedSec} s per stop to start and stop the fuel.` : '';
+      const t = `Measured from the shared corpus.${spread}${fixed}`;
+      if (spread || fixed) el.title = t;
       return;
     }
     el.textContent = `Estimate — ${p.short}.`;

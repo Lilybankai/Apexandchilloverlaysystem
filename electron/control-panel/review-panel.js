@@ -859,6 +859,111 @@
   /*  One lap                                                               */
   /* ---------------------------------------------------------------------- */
 
+  /** Lock-to-lock assumed for drawing a wheel whose lap never recorded one. */
+  const WHEEL_FALLBACK_RANGE = 540;
+
+  /**
+   * The comparison lap's sample at the same point of the ROAD as the cursor.
+   * The two laps are sampled on their own grids, so index `i` of one is not
+   * index `i` of the other; distance is the one axis they share.
+   */
+  function vsIndexAt(view, dd) {
+    const vd = view.vs && view.vs.channels && view.vs.channels.d;
+    if (!Array.isArray(vd) || !vd.length || !known(dd)) return null;
+    let lo = 0;
+    let hi = vd.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (vd[mid] < dd) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0 && Math.abs(vd[lo - 1] - dd) < Math.abs(vd[lo] - dd)) lo--;
+    return lo;
+  }
+
+  /** Whether either lap on screen carries aid columns worth reading. */
+  function aidsShown(view) {
+    return CHARTS.aidsKnown(view.detail.channels) || !!(view.vs && CHARTS.aidsKnown(view.vs.channels));
+  }
+
+  /** Whether the steering can be read as degrees for every lap on screen. */
+  function steerInDegrees(view) {
+    return CHARTS.steerRangeOf(view.detail.channels) > 0
+      && (!view.vs || CHARTS.steerRangeOf(view.vs.channels) > 0);
+  }
+
+  /** Steering at one sample: degrees when the lap knows its lock, else % of lock. */
+  function steerText(cols, i, degrees) {
+    const v = cols && Array.isArray(cols.steer) ? cols.steer[i] : null;
+    if (!known(v)) return dash;
+    const side = v > 0.005 ? 'R' : v < -0.005 ? 'L' : '';
+    const range = CHARTS.steerRangeOf(cols);
+    return degrees && range > 0
+      ? `${Math.abs(Math.round((v * range) / 2))}°<u>${side}</u>`
+      : `${Math.abs(Math.round(v * 100))}<u>%${side ? ` ${side}` : ''}</u>`;
+  }
+
+  /**
+   * One aid's strength at one sample. A lap recorded before the aid columns
+   * could be believed says so, rather than showing its gear shifts as TC.
+   */
+  function aidText(cols, i, key) {
+    if (!CHARTS.aidsKnown(cols)) return '<u>not recorded</u>';
+    const v = Array.isArray(cols[key]) ? cols[key][i] : null;
+    return known(v) ? `${Math.round(v * 100)}<u>%</u>` : dash;
+  }
+
+  /**
+   * The wheel angle a lap's sample is drawn at, or null when there is none.
+   * A lap that never recorded its lock borrows `fallback` — the other lap's,
+   * when that one has it, since a comparison is almost always the same class.
+   */
+  function wheelDegAt(cols, i, fallback) {
+    const v = cols && Array.isArray(cols.steer) && i !== null && i !== undefined ? cols.steer[i] : null;
+    if (!known(v)) return null;
+    return (v * (CHARTS.steerRangeOf(cols) || fallback || WHEEL_FALLBACK_RANGE)) / 2;
+  }
+
+  /** The short name the comparison lap goes by on the map and in the strip. */
+  function vsShortName(view) {
+    if (!view.vsLap) return 'Them';
+    return isBoardRef(view.vsLap) ? `P${view.vsLap.rank}` : `L${view.vsLap.lapNo}`;
+  }
+
+  /**
+   * Your wheel and theirs, side by side, at the cursor. Canvases in the
+   * readout's markup; {@link paintWheels} draws them once it is in the page.
+   */
+  function wheelsHtml(view) {
+    const one = (who, name) => `
+      <span class="rv-wheel" data-who="${who}">
+        <canvas data-wheel="${who}"></canvas>
+        <em>${esc(name)}</em>
+      </span>`;
+    return `
+      <span class="rv-read__cell rv-read__wheels" data-key="wheels"
+            title="The wheel at this point of the lap${view.vs ? ' — yours, and theirs at the same point of the road' : ''}">
+        <b>Wheel</b>
+        <span class="rv-wheels">${one('mine', 'You')}${view.vs ? one('theirs', vsShortName(view)) : ''}</span>
+      </span>`;
+  }
+
+  /** Draw the readout's wheels at the cursor (straight and dimmed without one). */
+  function paintWheels(root, view) {
+    if (!root) return;
+    const i = view.cursor;
+    const ch = view.detail.channels;
+    const at = i === null || i === undefined ? null : ch.d[i];
+    const vsCols = view.vs ? view.vs.channels : null;
+    const mineCanvas = root.querySelector('canvas[data-wheel="mine"]');
+    if (mineCanvas) CHARTS.drawWheel(mineCanvas, wheelDegAt(ch, i, CHARTS.steerRangeOf(vsCols)), { who: 'mine' });
+    const theirsCanvas = root.querySelector('canvas[data-wheel="theirs"]');
+    if (theirsCanvas && vsCols) {
+      const j = at === null ? null : vsIndexAt(view, at);
+      CHARTS.drawWheel(theirsCanvas, j === null ? null : wheelDegAt(vsCols, j, CHARTS.steerRangeOf(ch)), { who: 'theirs' });
+    }
+  }
+
   /** The values at the cursor, or the lap's own headline when there is none. */
   function readoutHtml(view) {
     const d = view.detail;
@@ -881,14 +986,21 @@
           ${cell('throttle', 'Throttle', dash)}
           ${cell('brake', 'Brake', dash)}
           ${cell('steer', 'Steering', dash)}
+          ${aidsShown(view) ? `${cell('tc', 'TC', dash)}${cell('abs', 'ABS', dash)}` : ''}
           ${cell('where', 'Distance', dash)}
           ${cell('time', 'Time', dash)}
           ${cell('g', 'G lat / lon', dash)}
+          ${wheelsHtml(view)}
         </div>`;
     }
 
     const at = (key, dp) => (Array.isArray(ch[key]) && known(ch[key][i]) ? fix(ch[key][i], dp) : dash);
-    const steer = Array.isArray(ch.steer) && known(ch.steer[i]) ? ch.steer[i] : null;
+    // The other lap at the same point of the road, for the cells that show
+    // both drivers: yours first, theirs after it in the comparison colour.
+    const j = view.vs ? vsIndexAt(view, ch.d[i]) : null;
+    const vsCols = view.vs ? view.vs.channels : null;
+    const both = (mine, theirs) => (j === null ? mine : `${mine}<small class="rv-read__vs">${theirs}</small>`);
+    const degrees = steerInDegrees(view);
     const metres = d.channels.d[i] * (view.lengthM || 0);
     // The gap at the cursor comes off the delta trace by index, because the
     // delta was built on this lap's own grid — see lapDetail.deltaTrace.
@@ -901,11 +1013,14 @@
         ${cell('gear', 'Gear', String(ch.gear[i]))}
         ${cell('throttle', 'Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
         ${cell('brake', 'Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
-        ${cell('steer', 'Steering', steer === null ? dash
-          : `${Math.abs(Math.round(steer * 100))}<u>${steer > 0.005 ? 'R' : steer < -0.005 ? 'L' : ''}</u>`)}
+        ${cell('steer', 'Steering', both(steerText(ch, i, degrees), steerText(vsCols, j, degrees)))}
+        ${aidsShown(view) ? `
+        ${cell('tc', 'TC', both(aidText(ch, i, 'tc'), aidText(vsCols, j, 'tc')))}
+        ${cell('abs', 'ABS', both(aidText(ch, i, 'abs'), aidText(vsCols, j, 'abs')))}` : ''}
         ${cell('where', 'Distance', `${Math.round(metres)}<u>m</u>`)}
         ${cell('time', 'Time', `${fix(ch.t[i] - ch.t[0], 2)}<u>s</u>`)}
         ${cell('g', 'G lat / lon', `${at('latG', 2)} / ${at('lonG', 2)}`)}
+        ${wheelsHtml(view)}
         ${(() => {
           // In a braking zone with a lap to compare against: who braked later.
           const pair = view.vs ? brakePairAt(view, ch.d[i]) : null;
@@ -1657,7 +1772,12 @@
       const cursorD = view.cursor === null ? -1 : ch.d[view.cursor];
       geom = CHARTS.drawChannels(
         canvas, ch,
-        CHARTS.channelBands({ mph: speedUnit === 'mph', delta: !!view.delta }),
+        CHARTS.channelBands({
+          mph: speedUnit === 'mph',
+          delta: !!view.delta,
+          aids: aidsShown(view),
+          steerDeg: steerInDegrees(view),
+        }),
         {
           sectors: view.detail.sectors,
           lengthM: view.lengthM,
@@ -1691,7 +1811,10 @@
         // so it is set from the same fact the drag handler gates on.
         mapCanvas.dataset.pan = String(!!(out && out.zoom > 1.05));
       }
-      if (readout) readout.innerHTML = readoutHtml(view);
+      if (readout) {
+        readout.innerHTML = readoutHtml(view);
+        paintWheels(readout, view);
+      }
 
       // The window moved, so the two things that describe it have to move with
       // it. Rewritten in place rather than by re-rendering the card: a zoom
