@@ -35,6 +35,25 @@
  * repeated or backwards sample in the columns, which is a zero or negative
  * span to divide by. {@link cleanTrace} is that guarantee and nothing more.
  *
+ * ## The time origin is NOT rebased, and that is deliberate
+ * `lapDetail.timeAtDistance` subtracts the trace's own `t[0]` before answering.
+ * This module does not, and the difference is load-bearing.
+ *
+ * A stored trace's `t` is already seconds-into-lap measured from the
+ * interpolated start/finish crossing: a real lap on this disk has
+ * `t[0] = 0.0050 s` at `d[0] = 0.00009`, which is 0.37 m past the line at
+ * ~74 m/s — exactly 5 ms. So `t[0]` is not an offset to remove, it is when the
+ * first sample genuinely landed, and the live clock this is compared against
+ * shares that origin. Subtracting it would claim the car reached `d[0]`
+ * instantly, biasing every gap by up to one sample interval — which at Le
+ * Mans's 3.8 Hz is a quarter of a second.
+ *
+ * Cross-checked on 7 408 real samples from 11 Road Atlanta LMP2 laps: the two
+ * paths agree to 50 µs once `lapDetail`'s rebase is added back, and the whole
+ * residual is that one constant. `scripts/test-ghostlap.js` §7 pins it, because
+ * "make it match lapDetail" is a plausible-looking change that would silently
+ * bias the entire feature.
+ *
  * ## Dependency-free on purpose
  * Nothing here imports `fs`, and the lap-time formatter it would otherwise
  * borrow (`raceLog.formatLapTime`) drags in `fs`/`os`/`path` and a dozen

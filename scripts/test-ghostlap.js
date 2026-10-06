@@ -251,5 +251,27 @@ console.log('\n6) Sample rate — 4 Hz (Le Mans) must agree with 50 Hz');
   check('4 Hz still reads the ghost as ahead', late.active && late.gapM > 0, late.gapM);
 }
 
+console.log('\n7) The time origin must NOT be rebased');
+{
+  // `lapDetail.timeAtDistance` subtracts the trace's own t[0]; this must not.
+  // A stored trace's `t` is already measured from the start/finish crossing, so
+  // t[0] is when the first sample landed, not an offset to remove — and the
+  // live clock it is compared against shares that origin. Rebasing would bias
+  // every gap by up to one sample interval: a quarter of a second at Le Mans.
+  //
+  // This lap's samples start 2 s in, so a rebase would be unmissable.
+  const { d, t } = flatLap();
+  const from = t.findIndex((v) => v >= 2);
+  const late = ghostFromTrace(traceFile({ d: d.slice(from), t: t.slice(from) }), 'x');
+  check('a late-starting trace still builds', late !== null, late && late.trace[0].t);
+  check('its first sample really is at t=2', near(late.trace[0].t, 2, 1e-9), late.trace[0].t);
+
+  // The reference reached half distance at t=50 either way — dropping early
+  // samples changed nothing about that.
+  const g = ghostGap(late, 50, 0.5);
+  check('level stays level with a late first sample', g.active && near(g.gapSec, 0, 1e-6), g.gapSec);
+  check('it did NOT rebase by t[0] (would read 2 s)', Math.abs(g.gapSec) < 0.001, g.gapSec);
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);
