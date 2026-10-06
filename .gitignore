@@ -95,3 +95,6 @@ data/strategy-coefficients.local.json
 # Rendered lifecycle + transactional email (scripts/email-preview.js). A
 # rendering of committed source, not a source; regenerated on demand.
 .email-preview/
+
+# Local promo/marketing working files. Scratch assets, not project state.
+tools/promo/
