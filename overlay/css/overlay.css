@@ -95,7 +95,7 @@
    broadcast that is where the car is. */
 #widget-weather   { top: 24px;    left: 50%; transform: translateX(-50%); width: 440px; }
 #widget-delta     { top: 243px;   left: 50%; transform: translateX(-50%); width: 300px; }
-#widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 360px; }
+#widget-pedals    { bottom: 24px; left: 50%; transform: translateX(-50%); width: 440px; }
 
 /* --- RIGHT: the timing/strategy stack on the edge, damage inboard ---------
    Gaps are sized for the 120% text scale, not the default: relative and fuel
@@ -2204,6 +2204,24 @@
   color: var(--text-secondary);
 }
 
+/* GT steering wheel beside the bars (the default `?steer=wheel`). The canvas
+   is square and redrawn in JS at its displayed size. */
+.pedals__wheel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 76px;
+  flex: none;
+}
+.pedals__wheel-canvas {
+  display: block;
+  width: 76px;
+  height: 76px;
+}
+.pedals__wheel-deg { white-space: nowrap; }
+
 /* Steering readout under the trace. */
 .pedals__steer {
   display: flex;
@@ -2319,7 +2337,7 @@
   color: var(--text-muted);
   background: var(--bg-panel-2);
 }
-.motion__balance[data-state="understeer"] { background: var(--aid-abs); color: #0a0b12; }
+.motion__balance[data-state="understeer"] { background: var(--balance-understeer); color: #0a0b12; }
 .motion__balance[data-state="oversteer"] { background: var(--ac-cyan); color: #0a0b12; }
 
 /* --- Hover opacity control: the widget as a see-through practice HUD ------

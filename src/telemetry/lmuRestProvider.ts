@@ -3321,6 +3321,7 @@ export class LmuRestProvider implements TelemetryProvider {
             steer: local.steer,
             tc: local.tc,
             abs: local.abs,
+            ...(local.steerRangeDeg > 0 ? { steerRangeDeg: local.steerRangeDeg } : {}),
           }
         : { throttle: 0, brake: 0, clutch: 0, steer: 0 },
       gear: local ? local.gear : UNKNOWN_VALUE,

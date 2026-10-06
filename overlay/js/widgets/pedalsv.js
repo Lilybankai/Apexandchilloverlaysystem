@@ -364,7 +364,7 @@
     // value on its own.
     drawLevel(gctx, curBrk, "#ff5470", 0.26);
     drawLevel(gctx, curThr, "#35d07f", 0.24);
-    if (absHot > 0) drawAidLevel(gctx, curBrk, curAbs, "#ff9f1a");
+    if (absHot > 0) drawAidLevel(gctx, curBrk, curAbs, "#3ec5ff");
     if (tcHot > 0) drawAidLevel(gctx, curThr, curTc, "#ffd23e");
 
     var px = cssW / 2;

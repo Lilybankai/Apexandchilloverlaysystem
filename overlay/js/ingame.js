@@ -244,7 +244,9 @@
       // peripheral vision. An id with no entry here spawns at {24, 24} on top
       // of standings, which reads as the overlay having failed to load.
       speedo: { x: Math.round(vw / 2 - 245), y: vh - 210, w: 490 },
-      pedals: { x: Math.round(vw / 2 - 180), y: vh - 220, w: 360 },
+      // 440, not 360: the GT steering wheel beside the bars took ~86px, and
+      // the trace is the part that needs the width — it is a time axis.
+      pedals: { x: Math.round(vw / 2 - 220), y: vh - 220, w: 440 },
       // Clear of `pedals` on purpose: the two are alternates and get compared
       // side by side, so spawning them on the same centre line would stack one
       // on the other and read as a widget that failed to load.

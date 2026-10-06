@@ -6,6 +6,28 @@
 
 -->
 
+## 1.3.4-beta.1 — 2026-10-06
+
+### Added
+
+- **A steering wheel on the Inputs overlay.** The white steering line through
+  the pedal trace is gone. In its place, a GT wheel beside the pedal bars
+  turns with your real wheel, matched to the car's own lock-to-lock (719° in a
+  GT3). A red arc shows how much lock is wound on, with the angle written
+  underneath. The overlay is a little wider by default to make room. To
+  bring the old line back, add `?steer=trace` to a Browser Source URL.
+
+### Fixed
+
+- **TC and ABS on the Inputs overlay now show what the car is actually doing.**
+  The yellow "TC" marks on the trace were really your gear shifts (and the pit
+  limiter). ABS never showed at all, because LMU doesn't apply it to the
+  brake pedal reading we were watching. TC now comes from the game's own
+  TC signal, and ABS from the pressure at each wheel. Each one draws a line
+  rising from the bottom of the trace, yellow for TC and blue for ABS, and
+  the height of the line is how hard the aid is working. The TC and ABS
+  lights on the speedo and the vertical Inputs overlay use the same fix.
+
 ## 1.3.3 — 2026-10-03
 
 <!-- internal -->

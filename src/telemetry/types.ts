@@ -271,16 +271,23 @@ export interface PedalInputs {
   steer: number;
   /**
    * Traction-control intervention strength, `0` (none) .. `1` (fully cut):
-   * how much throttle TC is currently taking away from the driver's input
-   * (unfiltered − filtered). Omitted/`0` when the sim doesn't expose it.
+   * how much throttle TC is currently taking away from the driver's input,
+   * smoothed into a readable envelope. Gear-shift cuts and the pit limiter are
+   * NOT counted. Omitted/`0` when the sim doesn't expose it. See
+   * telemetry/aidIntervention.ts.
    */
   tc?: number;
   /**
    * ABS intervention strength, `0` (none) .. `1` (fully released): how much
-   * brake ABS is currently bleeding off the driver's input. Omitted/`0` when
-   * the sim doesn't expose it.
+   * brake ABS is releasing at the worst wheel, in pedal units, smoothed like
+   * {@link tc}. Omitted/`0` when the sim doesn't expose it.
    */
   abs?: number;
+  /**
+   * The in-car wheel's lock-to-lock rotation in degrees (e.g. 719 on a GT3), so
+   * a drawn wheel turns by `steer × steerRangeDeg / 2`. Omitted when unknown.
+   */
+  steerRangeDeg?: number;
 }
 
 /**
