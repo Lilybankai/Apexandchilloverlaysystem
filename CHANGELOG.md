@@ -6,10 +6,21 @@
 
 -->
 
-## Unreleased
+## 1.3.4-beta.2 — 2026-10-06
 
 ### Added
 
+- **Compare TC, ABS and steering against anyone's lap in Review.** When you
+  compare two laps, a new TC / ABS chart under the throttle and brake shows
+  where each of you had the aids working and how hard, with theirs dashed.
+  The steering chart now shows their lap too, in degrees of wheel angle. As
+  you move along the lap, the readout gives both drivers' TC, ABS and
+  steering, e.g. "R 42°" against their "R 38°". Two small steering wheels
+  turn to show your hands and theirs at that point of the track.
+- Only laps driven on 1.3.4-beta.1 or later have proper TC and ABS data.
+  Older laps show "not recorded" rather than the old readings, which were
+  really gear shifts. Steering shows as a percentage of lock when either lap
+  is older than this release.
 - **Reset position, on every overlay.** Each overlay on the Overlays screen
   now has a Reset position button under its switches. If an overlay has gone
   off your screen — you unplugged a monitor, changed your resolution or your

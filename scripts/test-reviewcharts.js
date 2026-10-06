@@ -241,12 +241,20 @@ function chans(n, over) {
 {
   const bands = CHARTS.channelBands({ mph: false });
   check('four bands, in reading order',
-    bands.map((b) => b.label).join() === 'Speed,Throttle / brake,Gear,Steering',
+    bands.map((b) => b.label).join() === 'Speed,Throttle / brake,Gear,Steering, % of lock',
     bands.map((b) => b.label).join());
   check('throttle and brake share one band',
     bands[1].series.length === 2 && bands[1].series.map((s) => s.key).join() === 'throttle,brake');
-  check('TC and ABS are ticks on that band, not bands of their own',
-    (bands[1].marks || []).map((m) => m.key).join() === 'tc,abs');
+  check('no TC/ABS band when no lap on screen has aid columns worth reading',
+    !bands.some((b) => /TC/.test(b.label)));
+  const withAids = CHARTS.channelBands({ mph: false, aids: true });
+  check('with them, one TC/ABS band straight under the pedals',
+    /^TC \/ ABS/.test(withAids[2].label) && withAids[2].series.map((s) => s.key).join() === 'tc,abs',
+    withAids.map((b) => b.label).join());
+  check('…comparing both laps, on a fixed 0-100% axis',
+    withAids[2].compare === true && withAids[2].min === 0 && withAids[2].max === 100);
+  check('…and each lap is gated on its own aid columns being believable',
+    withAids[2].series.every((s) => s.when === CHARTS.aidsKnown));
   check('gear is stepped', bands[2].series[0].step === true);
   check('mph rescales the speed series, not the axis label',
     Math.abs(CHARTS.channelBands({ mph: true })[0].series[0].scale - 0.621371) < 1e-6);
@@ -701,9 +709,28 @@ function squareMap(rise) {
   check('it keeps zero in the middle', withDelta[0].symmetric === true && withDelta[0].zero === true);
   check('with a floor, so two matched laps are not drawn as a mountain range',
     withDelta[0].floor === 0.1);
-  check('speed and the pedals accept a second lap', plain[0].compare === true && plain[1].compare === true);
-  check('gear and steering do not — two staircases are unreadable',
-    !plain[2].compare && !plain[3].compare);
+  check('speed, the pedals and the steering accept a second lap',
+    plain[0].compare === true && plain[1].compare === true && plain[3].compare === true);
+  check('gear does not — two staircases are unreadable', !plain[2].compare);
+}
+
+{
+  // Aid columns are believed only from the build that records them properly;
+  // an older lap's "TC" is its gear shifts.
+  check('a lap with no aids marker is not believed', CHARTS.aidsKnown({ tc: [0.3] }) === false);
+  check('a lap marked with the current method is', CHARTS.aidsKnown({ tc: [0.3], aids: 2 }) === true);
+  check('no lap at all is not', CHARTS.aidsKnown(null) === false);
+
+  // Steering in degrees scales each lap by ITS OWN lock: half of a 719° wheel
+  // and half of a 540° one are different angles for the same fraction.
+  const deg = CHARTS.channelBands({ steerDeg: true });
+  const st = deg[deg.length - 1];
+  check('steering band says degrees when every lap knows its lock', st.label === 'Steering, degrees', st.label);
+  const s0 = st.series[0];
+  check('a 719° wheel at full right lock reads 359.5°', s0.scaleOf({ steerRangeDeg: 719 }) === 359.5);
+  check('a 540° wheel reads 270° at the same fraction', s0.scaleOf({ steerRangeDeg: 540 }) === 270);
+  check('the axis label carries the degree sign', st.fmt(42) === '42°R' && st.fmt(-42) === '42°L', st.fmt(42));
+  check('steerRangeOf reads 0 for a lap that never recorded one', CHARTS.steerRangeOf({}) === 0);
 }
 
 {

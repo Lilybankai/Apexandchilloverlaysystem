@@ -1880,6 +1880,23 @@
 .rv-read[data-idle='true'] .rv-read__cell[data-key='delta'][data-band='gain'] i { color: var(--ok); }
 .rv-read[data-idle='true'] .rv-read__cell[data-key='delta'][data-band='loss'] i { color: var(--bad); }
 .rv-read__pin { grid-column: 1 / -1; justify-self: start; }
+/* The other lap's figure, after yours, in the comparison violet the charts
+   and the map already use for it — so no label is needed to say whose it is. */
+.rv-read__vs {
+  margin-left: 7px;
+  font-size: 12px;
+  color: #a99dff;
+}
+.rv-read__vs u { color: #8b7dff; }
+/* Your wheel and theirs at the cursor. Two columns wide so the pair sits at a
+   size where a few degrees of difference is visible, not a pair of icons. */
+.rv-read__wheels { grid-column: span 2; }
+.rv-wheels { display: flex; gap: 14px; align-items: flex-end; }
+.rv-wheel { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.rv-wheel canvas { display: block; width: 58px; height: 58px; }
+.rv-wheel em { font-style: normal; font-size: 10px; letter-spacing: 0.06em; color: var(--text-3); }
+.rv-wheel[data-who='mine'] em { color: #26bbf4; }
+.rv-wheel[data-who='theirs'] em { color: #a99dff; }
 
 .rv-vitals {
   display: flex;

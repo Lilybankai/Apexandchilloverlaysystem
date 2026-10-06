@@ -1880,6 +1880,7 @@ export class LmuRestProvider implements TelemetryProvider {
         lonG: m ? m.lonG : 0,
         tc: local!.tc,
         abs: local!.abs,
+        ...(local!.steerRangeDeg > 0 ? { steerRangeDeg: local!.steerRangeDeg } : {}),
         // Where the car actually was, so the lap can be drawn as a LINE on the
         // learned map instead of on its centreline. Omitted (not zeroed) when
         // shared memory is silent — see TraceChannels.x.

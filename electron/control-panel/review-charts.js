@@ -61,6 +61,33 @@
   };
 
   /**
+   * Whether a lap's `tc` / `abs` columns can be believed. Laps recorded before
+   * 1.3.4-beta.2 carry no `aids` marker, and their TC column is really gear
+   * shifts and the pit limiter (see src/telemetry/aidIntervention.ts) — drawn,
+   * it would tell a driver the electronics saved them at every upshift.
+   */
+  function aidsKnown(cols) {
+    return !!cols && typeof cols.aids === 'number' && cols.aids >= 2;
+  }
+
+  /** A lap's lock-to-lock in degrees, or 0 when it never recorded one. */
+  function steerRangeOf(cols) {
+    const r = cols && cols.steerRangeDeg;
+    return typeof r === 'number' && r > 0 ? r : 0;
+  }
+
+  /**
+   * The factor one series is drawn at for one lap, or `null` to leave that
+   * lap's series out. Per lap rather than per band because two laps can need
+   * different ones — two cars with different steering locks put the same
+   * `steer` fraction at different angles.
+   */
+  function seriesScale(s, cols) {
+    if (s.when && !s.when(cols)) return null;
+    return typeof s.scaleOf === 'function' ? s.scaleOf(cols) : (s.scale || 1);
+  }
+
+  /**
    * The session's lap times, in order, with the stints marked.
    *
    * The y-scale is set by the CLEAN laps alone and everything else is clamped
@@ -462,10 +489,11 @@
         const reach = (cols, dd) => {
           for (const s of band.series) {
             const col = cols[s.key];
-            if (!Array.isArray(col) || col.length !== dd.length) continue;
+            const scale = seriesScale(s, cols);
+            if (scale === null || !Array.isArray(col) || col.length !== dd.length) continue;
             for (let i = 0; i < col.length; i++) {
               if (!inWindow(dd[i])) continue;
-              const q = col[i] * (s.scale || 1);
+              const q = col[i] * scale;
               if (q < mn) mn = q;
               if (q > mx) mx = q;
             }
@@ -511,8 +539,8 @@
       /** One series of one lap's columns, as a path. */
       const stroke = (cols, dd, s, style) => {
         const col = cols[s.key];
-        if (!Array.isArray(col) || col.length !== dd.length || !dd.length) return;
-        const scale = s.scale || 1;
+        const scale = seriesScale(s, cols);
+        if (scale === null || !Array.isArray(col) || col.length !== dd.length || !dd.length) return;
         const path = () => {
           let started = false;
           for (let i = 0; i < col.length; i++) {
@@ -575,24 +603,6 @@
 
       for (const s of band.series) stroke(src, dcol, s);
 
-      // Intervention ticks along the floor of the band: where the electronics
-      // were doing the driving. Nothing else on the page says this, it costs no
-      // vertical space, and "the car saved me there" is exactly the sort of
-      // thing a driver cannot feel afterwards.
-      for (const mark of band.marks || []) {
-        const col = src[mark.key];
-        if (!Array.isArray(col) || col.length !== dcol.length) continue;
-        ctx.strokeStyle = mark.color;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let i = 0; i < col.length; i++) {
-          if (!(col[i] > 0.02) || !inWindow(dcol[i])) continue;
-          const mx = px(dcol[i]);
-          ctx.moveTo(mx, y1 - 3);
-          ctx.lineTo(mx, y1);
-        }
-        ctx.stroke();
-      }
       ctx.restore();
 
       // Scale: the two ends of the axis, and the band's name.
@@ -1999,10 +2009,16 @@
    * together. Gear and steering follow because they qualify what the pedals
    * did.
    *
-   * TC and ABS are ticks along the floor of the pedal band rather than bands of
-   * their own. They are almost always zero, so a band each would be two empty
-   * stripes; as ticks they cost nothing and say the one thing that matters —
-   * where the car was driving instead of the driver.
+   * TC and ABS share one short band under the pedals, both laps on it, drawn
+   * as strength — how much pedal the aid took away — so "they were on TC out
+   * of this hairpin and you were not" is one glance. It used to be ticks along
+   * the pedal band's floor, which could not be compared and drew the old
+   * recorder's gear shifts as TC. The band is left out entirely when neither
+   * lap's aid columns can be believed ({@link aidsKnown}).
+   *
+   * Steering is in DEGREES when every lap on screen recorded its lock-to-lock,
+   * so two cars with different racks compare as wheel angle; otherwise as a
+   * fraction of lock, which is only fair within one car.
    *
    * With a comparison lap loaded the DELTA goes on top, above speed. It is the
    * answer to the question the driver opened the comparison to ask, and the
@@ -2015,6 +2031,7 @@
    */
   function channelBands(opts) {
     const mph = opts && opts.mph;
+    const degrees = !!(opts && opts.steerDeg);
     const bands = [];
     if (opts && opts.delta) {
       bands.push({
@@ -2062,12 +2079,26 @@
           { key: 'throttle', color: CSS.ok, cmp: '#b6f0cf', scale: 100, fill: 'rgba(53,208,127,0.12)' },
           { key: 'brake', color: CSS.bad, cmp: '#ffbcc8', scale: 100, fill: 'rgba(255,84,112,0.12)' },
         ],
-        marks: [
-          { key: 'tc', color: 'rgba(255,176,32,0.9)' },
-          { key: 'abs', color: 'rgba(167,139,250,0.9)' },
-        ],
         fmt: (v) => `${Math.round(v)}%`,
       },
+    );
+    if (opts && opts.aids) {
+      bands.push({
+        // Yellow and sky blue, the colours the Inputs overlay draws them in, so
+        // a driver who has watched them live reads them here without a key.
+        label: 'TC / ABS — pedal the aid took away',
+        weight: 0.6,
+        min: 0,
+        max: 100,
+        compare: true,
+        series: [
+          { key: 'tc', color: '#ffd23e', cmp: '#ffe9a0', scale: 100, fill: 'rgba(255,210,62,0.16)', when: aidsKnown },
+          { key: 'abs', color: '#3ec5ff', cmp: '#b3e8ff', scale: 100, fill: 'rgba(62,197,255,0.16)', when: aidsKnown },
+        ],
+        fmt: (v) => `${Math.round(v)}%`,
+      });
+    }
+    bands.push(
       {
         label: 'Gear',
         weight: 0.8,
@@ -2079,21 +2110,123 @@
         // Scaled to the lap rather than to full lock. A GT car uses a few
         // degrees of the wheel almost everywhere, so a fixed -100..100 axis
         // draws every lap as a flat line with a wobble at the hairpin.
-        label: 'Steering',
+        label: degrees ? 'Steering, degrees' : 'Steering, % of lock',
         weight: 0.85,
         zero: true,
         symmetric: true,
-        floor: 12,
-        series: [{ key: 'steer', color: CSS.text2, scale: 100 }],
-        fmt: (v) => `${Math.abs(Math.round(v))}${v > 0.5 ? 'R' : v < -0.5 ? 'L' : ''}`,
+        // 12% of lock is ~43° on a 719° GT3 wheel — the same floor either way.
+        floor: degrees ? 40 : 12,
+        compare: true,
+        series: [{
+          key: 'steer', color: CSS.text2, cmp: '#c9c2ff',
+          ...(degrees ? { scaleOf: (cols) => steerRangeOf(cols) / 2 } : { scale: 100 }),
+        }],
+        fmt: (v) => `${Math.abs(Math.round(v))}${degrees ? '°' : ''}${v > 0.5 ? 'R' : v < -0.5 ? 'L' : ''}`,
       },
     );
     return bands;
+  }
+
+  /**
+   * A GT steering wheel turned to `deg` (positive = right), for the readout's
+   * side-by-side pair of your wheel and theirs.
+   *
+   * The same drawing as the Inputs overlay's wheel (overlay/js/widgets/
+   * pedals.js) — a flat-topped rim, yellow centre marker, and a fixed outer
+   * ring carrying an arc from 12 o'clock to the current angle — so a driver
+   * who knows the overlay knows this. `who` ('mine' | 'theirs') colours the
+   * arc cyan or comparison violet: it is the one thing that says whose wheel
+   * this is. Copied rather than shared because the
+   * overlay and the panel ship as separate pages with no common script.
+   * A `deg` that is not a number draws the wheel straight and dimmed.
+   */
+  function drawWheel(canvas, deg, opts) {
+    const { ctx: g, w, h } = surface(canvas);
+    const o = opts || {};
+    const S = Math.min(w, h);
+    const c = S / 2;
+    g.save();
+    g.translate((w - S) / 2, (h - S) / 2);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+
+    const ringR = c - 3;
+    g.beginPath();
+    g.arc(c, c, ringR, 0, Math.PI * 2);
+    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    g.lineWidth = 3;
+    g.stroke();
+    const known = typeof deg === 'number' && Number.isFinite(deg);
+    const a = known ? deg : 0;
+    const shown = Math.max(-360, Math.min(360, a));
+    if (known && Math.abs(shown) >= 0.5) {
+      const a0 = -Math.PI / 2;
+      const a1 = a0 + (shown * Math.PI) / 180;
+      g.beginPath();
+      g.arc(c, c, ringR, Math.min(a0, a1), Math.max(a0, a1));
+      g.strokeStyle = o.who === 'theirs' ? CSS.compare : CSS.cyan;
+      g.lineWidth = 3;
+      g.stroke();
+    }
+
+    const r = S * 0.36;
+    const polar = (dg) => [r * Math.cos((dg * Math.PI) / 180), r * Math.sin((dg * Math.PI) / 180)];
+    g.translate(c, c);
+    g.rotate((a * Math.PI) / 180);
+    g.globalAlpha = known ? 1 : 0.45;
+    const tl = polar(-125);
+    const tr = polar(-55);
+    const bl = polar(125);
+    g.beginPath();
+    g.moveTo(tl[0], tl[1]);
+    g.lineTo(tr[0], tr[1]);
+    g.arc(0, 0, r, (-55 * Math.PI) / 180, (55 * Math.PI) / 180);
+    g.lineTo(bl[0], bl[1]);
+    g.arc(0, 0, r, (125 * Math.PI) / 180, (235 * Math.PI) / 180);
+    g.closePath();
+    g.strokeStyle = '#4a505b';
+    g.lineWidth = S * 0.11;
+    g.stroke();
+    g.strokeStyle = '#2a2e35';
+    g.lineWidth = S * 0.06;
+    g.stroke();
+    g.fillStyle = '#3a3f48';
+    g.fillRect(0.55 * r, -0.1 * r, 0.42 * r, 0.2 * r);
+    g.fillRect(-0.97 * r, -0.1 * r, 0.42 * r, 0.2 * r);
+    const pw = 1.2 * r;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(-pw / 2, -0.42 * r, pw, 0.95 * r, 0.18 * r);
+    else g.rect(-pw / 2, -0.42 * r, pw, 0.95 * r);
+    g.fillStyle = '#16181d';
+    g.fill();
+    g.strokeStyle = '#4a505b';
+    g.lineWidth = 1;
+    g.stroke();
+    g.fillStyle = '#0c1f15';
+    g.fillRect(-0.3 * r, -0.3 * r, 0.6 * r, 0.28 * r);
+    g.strokeStyle = 'rgba(53,208,127,0.8)';
+    g.strokeRect(-0.3 * r, -0.3 * r, 0.6 * r, 0.28 * r);
+    const dots = [[-0.38, 0.16, '#ff5470'], [0.38, 0.16, '#3ec5ff'], [-0.14, 0.32, '#ffd23e'], [0.14, 0.32, '#35d07f']];
+    for (const [dx, dy, col] of dots) {
+      g.beginPath();
+      g.arc(dx * r, dy * r, Math.max(1.3, 0.03 * S), 0, Math.PI * 2);
+      g.fillStyle = col;
+      g.fill();
+    }
+    g.strokeStyle = '#ffd23e';
+    g.lineWidth = S * 0.11;
+    g.lineCap = 'butt';
+    g.beginPath();
+    g.moveTo(-0.08 * r, tl[1]);
+    g.lineTo(0.08 * r, tl[1]);
+    g.stroke();
+    g.restore();
   }
 
   return {
     drawLapChart, drawTrend, drawPositions, drawChannels, drawLapMap, drawWear,
     channelBands, distanceAtPoint, stationNear, holdPlan,
     brakePoints, brakePointPairs,
+    aidsKnown, steerRangeOf, drawWheel,
   };
 });
