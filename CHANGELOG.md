@@ -5,6 +5,35 @@
      app until it is renamed.
 -->
 
+## 1.3.5-beta.2 — 2026-10-06
+
+### Changed
+
+- **Ghost HUD is a racing line on the road now, not a bar.** The first cut
+  drew a fixed corridor with a marker that slid up and down it, and the
+  verdict after driving it was fair: a delta bar stood on its end. One thing
+  moved, in one direction, and a hairpin looked the same as a straight.
+
+  It draws the road itself now, taken from the circuit the app has already
+  learned, so it bends where the track bends. Your chosen lap’s line is
+  painted along it the way a driving-aid line is in any racing game: green
+  where that lap was on the power, amber where it was coasting, red where it
+  was braking. A gate marks where the lap is on the clock right now, and the
+  line you have just driven trails behind you.
+
+  That makes the thing you actually want to know visible rather than
+  calculable: where the quick lap got on the throttle before you did, which
+  side of the road it took, and how much earlier it turned in. The braking
+  point shows up as the line going red some way up the road, so you see it
+  coming instead of being told about it afterwards.
+
+  Nothing new is recorded for any of this — it is all in laps already on
+  your disk. It needs a lap with a driven line, which every lap since the
+  line shipped has, and it waits for the circuit to be learned before it can
+  draw anything. Where it cannot, it says so instead of drawing half a road.
+
+Beta channel only, as before.
+
 ## 1.3.5-beta.1 — 2026-10-06
 
 ### Added
