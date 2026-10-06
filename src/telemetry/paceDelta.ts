@@ -31,8 +31,14 @@ import { UNKNOWN_VALUE, type PaceDeltas } from './types';
 
 export type { PaceDeltas };
 
-/** One point on a lap's distance→time curve (distance as a 0..1 fraction). */
-interface Sample {
+/**
+ * One point on a lap's distance→time curve (distance as a 0..1 fraction).
+ *
+ * Exported because Ghost HUD builds a {@link Reference} of its own from a
+ * stored lap trace rather than from laps driven this session — see
+ * `ghostLap.ts`. Same curve, acquired a different way.
+ */
+export interface Sample {
   d: number;
   t: number;
 }
@@ -335,6 +341,8 @@ export class LocalPaceDeltaTracker {
   private lastLapSec: number = UNKNOWN_VALUE;
   /** The last answer given, re-served whenever the sim clock doesn't advance. */
   private lastOut: PaceDeltas = EMPTY_PACE_DELTAS;
+  /** The last armed (t, d) — see {@link lapClock}. */
+  private lastAt: { t: number; d: number } | null = null;
 
   /** Track key the all-time best was loaded for (reloads on track change). */
   private trackKey = '';
@@ -350,6 +358,7 @@ export class LocalPaceDeltaTracker {
     this.last = null;
     this.lastLapSec = UNKNOWN_VALUE;
     this.lastOut = EMPTY_PACE_DELTAS;
+    this.lastAt = null;
     this.startLapValidity();
     // allTime is NOT cleared on a session reset — it spans sessions.
   }
@@ -425,7 +434,16 @@ export class LocalPaceDeltaTracker {
     lap?: LapValidity,
   ): PaceDeltas {
     const at = this.advance(d, elapsedSec, restBest, trackKey, lap);
-    if (at === null) return this.lastOut;
+    if (at === null) {
+      // No usable sample this poll — a bad position, a rewound clock, a
+      // reset. The latched clock must not outlive it, or the ghost would
+      // keep placing its gate from a stale instant.
+      this.lastAt = null;
+      return this.lastOut;
+    }
+    // Latched at full precision for Ghost HUD, which needs the same (t, d)
+    // this is about to compute from — see {@link lapClock}.
+    this.lastAt = this.fromLine ? { t: at.t, d: at.d } : null;
     this.lastOut = this.compute(at.t, at.d);
     return this.lastOut;
   }
@@ -619,6 +637,23 @@ export class LocalPaceDeltaTracker {
   }
 
   /**
+   * Where this engine's clock and road position stand, at full precision, or
+   * `null` before a start/finish crossing has been seen.
+   *
+   * Exists for Ghost HUD. It needs exactly the pair this engine computes from:
+   * the published {@link PaceDeltas.lapTimeSec} is the same clock but rounded
+   * to two decimals for display, and feeding a 10 ms-quantised time into the
+   * ghost's gap would quantise the corridor's motion to match. The `null`
+   * carries the `fromLine` gate outward, so a mid-lap join cannot place a
+   * ghost against a clock that started wherever the car happened to be.
+   *
+   * Returned by value: the caller must not be able to move this engine's axes.
+   */
+  public lapClock(): { t: number; d: number } | null {
+    return this.lastAt ? { t: this.lastAt.t, d: this.lastAt.d } : null;
+  }
+
+  /**
    * Compute all six deltas at the current (t, d), each conditioned by its own
    * {@link Channel} so the readout moves at a physically believable rate.
    */
@@ -681,7 +716,7 @@ function deltaV(ref: Reference | null, t: number, d: number): number {
  * Returns `-1` when `d` is OUTSIDE the trace's covered span (so a partial
  * reference never compares against a span edge and produces nonsense).
  */
-function interpTime(ref: Sample[], d: number): number {
+export function interpTime(ref: Sample[], d: number): number {
   const n = ref.length;
   const EDGE = 0.005; // float noise tolerance at the span edges (~0.5% of a lap)
   if (d < ref[0]!.d - EDGE || d > ref[n - 1]!.d + EDGE) return -1;
@@ -708,7 +743,7 @@ function interpTime(ref: Sample[], d: number): number {
  * trace is sorted by `d`, and `t` rises monotonically with `d`, so it is also
  * sorted by `t`. Returns `-1` when `t` is outside the covered time span.
  */
-function interpDist(ref: Sample[], t: number): number {
+export function interpDist(ref: Sample[], t: number): number {
   const n = ref.length;
   const EDGE = 0.05; // seconds of tolerance at the span edges
   if (t < ref[0]!.t - EDGE || t > ref[n - 1]!.t + EDGE) return -1;

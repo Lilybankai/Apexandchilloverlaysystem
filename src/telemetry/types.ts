@@ -407,6 +407,54 @@ export interface PaceDeltas {
 }
 
 /**
+ * Ghost HUD — where the chosen reference lap is on the road right now.
+ *
+ * The HUD this feeds draws a perspective corridor with a bright cross-rung at
+ * the ghost's distance, so a driver reads the gap as geometry instead of as a
+ * number. That needs the gap in METRES, which nothing else publishes:
+ * {@link PaceDeltas} is entirely in seconds, and seconds cannot be placed on a
+ * road without also knowing how fast the reference was travelling there.
+ *
+ * Both gaps are signed the same way, and it is the same way {@link PaceDeltas}
+ * signs Delta T: {@link gapSec} is the identical arithmetic. What differs is
+ * only the point of view it is described from — the delta channels say
+ * "negative = you are faster" because they answer *how is your lap going*,
+ * while these say "positive = the ghost is up the road" because they answer
+ * *where is the car you are chasing*. Same numbers, and deliberately so: a
+ * driver running both must never see them disagree.
+ *
+ * Omitted when spectating, when no ghost lap has been selected, and before a
+ * start/finish crossing has been seen — until then the lap clock started
+ * wherever the car happened to be when the overlay attached, which would place
+ * the ghost tens of metres from where it really is. Same gate as
+ * {@link PaceDeltas.lapTimeSec}.
+ */
+export interface GhostState {
+  /**
+   * Whether {@link gapSec} and {@link gapM} are live.
+   *
+   * `false` with a ghost still loaded is a normal, common state: the reference
+   * trace only covers the span it was recorded over, so a driver who is a long
+   * way off its pace, or sitting in the pits, is simply off the end of it. The
+   * widget then shows the corridor empty rather than a stale gate.
+   */
+  active: boolean;
+  /** Time gap, seconds. Positive = ghost ahead of you; negative = you ahead. */
+  gapSec: number;
+  /**
+   * Signed distance to the ghost, metres, at this instant. Positive = ahead.
+   * This is the channel the corridor geometry is built from.
+   */
+  gapM: number;
+  /** The ghost lap's own time, seconds. */
+  refLapSec: number;
+  /** `LapRecord.id` of the lap being chased, so a surface can link to it. */
+  sourceLapId: string;
+  /** Ready-made label for the overlay, e.g. `"your best · 1:13.730 · dry"`. */
+  sourceLabel: string;
+}
+
+/**
  * How the driver's pace compares to the reference for their class at this track.
  *
  * The numbers come from **Ohne Speed's LMU laptimes spreadsheet** (times by
@@ -849,6 +897,12 @@ export interface PlayerState {
    * physics for a car not driven on this PC). See {@link PaceDeltas}.
    */
   paceDeltas?: PaceDeltas;
+  /**
+   * The ghost lap being chased and where it is on the road, for Ghost HUD.
+   * Omitted when spectating, when no ghost has been selected, or before a
+   * start/finish crossing arms the lap clock. See {@link GhostState}.
+   */
+  ghost?: GhostState;
   /**
    * Where this driver's best clean lap sits against the reference pace for their
    * class at this track — the Alien → Offline ladder from Ohne Speed's

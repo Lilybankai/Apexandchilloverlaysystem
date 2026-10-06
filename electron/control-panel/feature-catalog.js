@@ -55,6 +55,7 @@
     { id: 'engineer', label: 'Race Engineer' },
     { id: 'setups', label: 'Setups' },
     { id: 'fuel', label: 'Fuel & Strategy', gated: 'beta' },
+    { id: 'training', label: 'Training (Ghost HUD)', gated: 'beta' },
     { id: 'team', label: 'Team' },
     { id: 'review', label: 'Review (Analyse)' },
     { id: 'racelog', label: 'Race log' },

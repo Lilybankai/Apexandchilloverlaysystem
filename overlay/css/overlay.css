@@ -2753,6 +2753,18 @@
 /* =========================================================================
  * RADAR — spatial proximity strip (widgets/radar.js)
  * ========================================================================= */
+/* --- Ghost HUD. The canvas is the whole widget; its height is set in JS
+   from its width, because the projection fixes the two together. */
+.ghosthud__wrap {
+  display: flex;
+  flex-direction: column;
+}
+.ghosthud__canvas {
+  display: block;
+  width: 100%;
+  background: transparent;
+}
+
 .radar__wrap {
   display: flex;
   flex-direction: column;

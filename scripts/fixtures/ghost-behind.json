@@ -1,0 +1,9 @@
+{
+  "_note": "Ghost HUD: the ghost is up the road. Positive gapM, so the gate sits mid-corridor and the colour is the ghost-ahead band.",
+  "player": {
+    "ghost": {
+      "active": true, "gapSec": 0.34, "gapM": 17.8,
+      "refLapSec": 73.73, "sourceLapId": "fixture-behind", "sourceLabel": "your best · 1:13.730"
+    }
+  }
+}

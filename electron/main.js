@@ -121,6 +121,17 @@ const OVERLAY_CATALOG = [
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
+  // Training-mode widget: a perspective corridor with a gate where a chosen
+  // reference lap is on the road. Kept out of the click-through layer's
+  // defaults because it is a deliberate training tool, not race furniture.
+  {
+    id: 'ghosthud',
+    label: 'Ghost HUD',
+    gated: 'beta',
+    description: 'Chase a captured fast lap — perspective gate + live delta (Powered by Alien-GT)',
+    ingameDefault: false,
+    obs: { w: 420, h: 247, note: 'Height follows width — the corridor, the gate room below it and the readout strip have to add up.' },
+  },
   {
     id: 'refpace',
     label: 'Reference Pace',
@@ -2196,15 +2207,39 @@ function baseUrl() {
  * rather than being force-enabled.
  */
 function isIngame(settings, o) {
+  // Off-channel is never in-game, whatever the stored toggle says. Folded in
+  // here rather than at each call site because every id list that drives the
+  // layer goes through this function, and a widget the panel will not show
+  // must not keep drawing itself over the game.
+  if (!overlayOnThisChannel(settings, o)) return false;
   if (o.id in settings.ingameOverlays) return settings.ingameOverlays[o.id] !== false;
   return o.ingameDefault !== false;
+}
+
+/**
+ * Whether a catalog entry is offered on the channel this install follows.
+ *
+ * Generic, unlike `vrOnThisChannel`: an entry opts in with `gated: 'beta'` and
+ * nothing here names a widget. Same rule as the panel's `followingBeta` and as
+ * VR — the beta channel chosen, or a beta build running, because someone who
+ * installed a beta and then set the channel back to stable is still on it
+ * until the stable feed catches up.
+ *
+ * Not a security boundary, and not meant to be: beta releases are public on
+ * GitHub and `docs/RELEASING.md` says so. It decides what is OFFERED.
+ */
+function overlayOnThisChannel(settings, o) {
+  if (o.gated !== 'beta') return true;
+  return (
+    settings.updateChannel === 'beta' || updateChannel.isPrereleaseVersion(app.getVersion())
+  );
 }
 
 /** Full catalog with per-overlay OBS URLs and enabled state for the UI. */
 function overlaysForUi() {
   const settings = loadSettings();
   const base = baseUrl();
-  return OVERLAY_CATALOG.map((o) => ({
+  return OVERLAY_CATALOG.filter((o) => overlayOnThisChannel(settings, o)).map((o) => ({
     ...o,
     enabled: settings.enabledOverlays[o.id] !== false,
     ingame: isIngame(settings, o),

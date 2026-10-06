@@ -1,0 +1,9 @@
+{
+  "_note": "Ghost HUD: a ghost is selected but out of reach - off the end of the trace's covered span, or in the pits. Corridor dim, no gate, the lap still named.",
+  "player": {
+    "ghost": {
+      "active": false, "gapSec": -1, "gapM": -1,
+      "refLapSec": 73.73, "sourceLapId": "fixture-idle", "sourceLabel": "your best · 1:13.730"
+    }
+  }
+}

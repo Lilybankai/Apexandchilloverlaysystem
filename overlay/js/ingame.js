@@ -207,6 +207,11 @@
       // sized it.
       standings: { x: 24, y: 24, w: 560 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
+      // Centred, and sat at 40% of screen height so the corridor's far end
+      // lands near where the real horizon is in a cockpit view. Its height
+      // is derived from its width (the near rails must be exactly K/Z_NEAR
+      // below the horizon), so only w is worth setting here.
+      ghosthud: { x: Math.round(vw / 2 - 210), y: Math.round(vh * 0.4), w: 420 },
       // Docked into the speedo cluster's top-centre notch, on the same centre
       // line (both widgets are centred on vw/2, so x needs no coupling). The y
       // here is only a pre-measurement guess — the cluster's own default top

@@ -465,8 +465,10 @@ check('it wraps the content in a row', /<div class="body">/.test(html));
   // A frozen count, so a tab lost to a bad merge fails here rather than
   // quietly disappearing. 12 through v0.99.1; 13 with Review (0.99.2); 14
   // with VR, off the Dashboard (1.2.0-beta.5); 15 with the Race log, out of
-  // Review's rail (1.2.0-beta.7).
-  check('nothing was dropped in the move', tabs.length === 15, `${tabs.length} items`);
+  // Review's rail (1.2.0-beta.7); 16 with Training, which carries Ghost HUD
+  // and is the first tab behind two gates — the beta channel AND Training
+  // mode (applyTrainingVisibility).
+  check('nothing was dropped in the move', tabs.length === 16, `${tabs.length} items`);
   // Under Review, in the Driving group, where Carl put it.
   check('the Race log sits directly under Review',
     tabs.indexOf('racelog') === tabs.indexOf('review') + 1, tabs.join(','));

@@ -1,0 +1,9 @@
+{
+  "_note": "Ghost HUD: you are ahead. Negative gapM, so the gate is mirrored and dimmed - a forward corridor cannot place a car behind you.",
+  "player": {
+    "ghost": {
+      "active": true, "gapSec": -0.42, "gapM": -21.5,
+      "refLapSec": 73.73, "sourceLapId": "fixture-ahead", "sourceLabel": "your best · 1:13.730"
+    }
+  }
+}

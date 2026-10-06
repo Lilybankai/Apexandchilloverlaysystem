@@ -211,6 +211,7 @@
     relative: 'timer',
     delta: 'trending-up',
     pacedelta: 'activity',
+    ghosthud: 'graduation-cap',
     refpace: 'target',
     weather: 'cloud-rain',
     fuel: 'fuel',

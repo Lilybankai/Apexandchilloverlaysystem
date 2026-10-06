@@ -272,7 +272,8 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
    */
   const overlayCatalog = [
     ['standings', 'Standings'], ['relative', 'Relative / Timing'], ['delta', 'Delta'],
-    ['pacedelta', 'Pace Delta'], ['refpace', 'Reference Pace'], ['weather', 'Weather'],
+    ['pacedelta', 'Pace Delta'], ['ghosthud', 'Ghost HUD'],
+    ['refpace', 'Reference Pace'], ['weather', 'Weather'],
     ['fuel', 'Fuel Calculator'], ['fuelplan', 'Fuel & Stint Plan'], ['tyres', 'Tyre Temps'],
     ['speedo', 'Speedometer'], ['pedals', 'Pedal Inputs'], ['pedalsv', 'Pedal Inputs (Vertical)'],
     ['motion', 'Motion (G / Rotation / Attitude)'], ['damage', 'Damage & Repair'],
