@@ -31,8 +31,14 @@ import { UNKNOWN_VALUE, type PaceDeltas } from './types';
 
 export type { PaceDeltas };
 
-/** One point on a lap's distance→time curve (distance as a 0..1 fraction). */
-interface Sample {
+/**
+ * One point on a lap's distance→time curve (distance as a 0..1 fraction).
+ *
+ * Exported because Ghost HUD builds a {@link Reference} of its own from a
+ * stored lap trace rather than from laps driven this session — see
+ * `ghostLap.ts`. Same curve, acquired a different way.
+ */
+export interface Sample {
   d: number;
   t: number;
 }
@@ -681,7 +687,7 @@ function deltaV(ref: Reference | null, t: number, d: number): number {
  * Returns `-1` when `d` is OUTSIDE the trace's covered span (so a partial
  * reference never compares against a span edge and produces nonsense).
  */
-function interpTime(ref: Sample[], d: number): number {
+export function interpTime(ref: Sample[], d: number): number {
   const n = ref.length;
   const EDGE = 0.005; // float noise tolerance at the span edges (~0.5% of a lap)
   if (d < ref[0]!.d - EDGE || d > ref[n - 1]!.d + EDGE) return -1;
@@ -708,7 +714,7 @@ function interpTime(ref: Sample[], d: number): number {
  * trace is sorted by `d`, and `t` rises monotonically with `d`, so it is also
  * sorted by `t`. Returns `-1` when `t` is outside the covered time span.
  */
-function interpDist(ref: Sample[], t: number): number {
+export function interpDist(ref: Sample[], t: number): number {
   const n = ref.length;
   const EDGE = 0.05; // seconds of tolerance at the span edges
   if (t < ref[0]!.t - EDGE || t > ref[n - 1]!.t + EDGE) return -1;
