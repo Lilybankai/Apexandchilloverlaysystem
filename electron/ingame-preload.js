@@ -76,6 +76,15 @@ contextBridge.exposeInMainWorld('apexIngame', {
   },
 
   /**
+   * One widget was sent back to the middle of the main screen from its card in
+   * the control panel: `{ id, entry }`, where `entry` is the placement main has
+   * already saved (centred on a guessed size — main cannot measure the widget).
+   */
+  onLayoutCentre: (callback) => {
+    ipcRenderer.on('ingame:layout-centre', (_evt, msg) => callback(msg));
+  },
+
+  /**
    * Transient feedback for a bound button: `{ kind: 'ok'|'error', text }`.
    * Pushed by main when an action fails (or confirms something invisible,
    * like a pit request), so the result lands on the layer the driver is

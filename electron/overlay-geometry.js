@@ -165,4 +165,84 @@ function overlayGeometryFrom(displays, primary, toWindow) {
   };
 }
 
-module.exports = { overlayGeometryFrom };
+/**
+ * Where a widget has to be placed to sit in the middle of the PRIMARY display —
+ * the per-card "Reset position" button on the Overlays screen, for a widget that
+ * has ended up somewhere nobody can see it (a monitor unplugged, a resolution or
+ * Scale % changed, a drag that went too far).
+ *
+ * The answer is in LAYOUT coordinates, the space `ingameLayout` is stored in,
+ * whose (0, 0) is the primary display's top-left. That is why there is no
+ * window-origin subtraction here even on a rig whose layer starts a screen to
+ * the left: the stored x never had the window's origin in it, and the page adds
+ * `padX`/`padY` when it draws (see applyItem in overlay/js/ingame.js). Centring
+ * on the primary display is therefore just half of what is left over on it.
+ *
+ * `screens` is the `screens` half of overlayGeometryFrom's answer, so on a
+ * mixed-scaling desktop the primary's size is already in the overlay window's
+ * pixels — the same units the page measures widgets in.
+ *
+ * `box` is the widget AS DRAWN: its width and height with any corner scale
+ * already applied. A widget bigger than the screen in either direction pins to
+ * the primary's top-left on that axis rather than going negative: that is the
+ * corner whose resize handles can then still be reached, the same rule the
+ * page's ensureOnScreen follows.
+ *
+ * The page carries a copy of these lines (centreItem in overlay/js/ingame.js)
+ * because it is a plain browser script and cannot require this file;
+ * scripts/test-overlay-centre.js holds the two to the same answer.
+ *
+ * @param {{primary?: {width:number, height:number}}} screens
+ * @param {{width:number, height:number}} box
+ * @returns {{x:number, y:number}}
+ */
+function centreOnPrimary(screens, box) {
+  const p = screens && screens.primary;
+  const pw = p && p.width > 0 ? p.width : 0;
+  const ph = p && p.height > 0 ? p.height : 0;
+  const bw = box && box.width > 0 ? box.width : 0;
+  const bh = box && box.height > 0 ? box.height : 0;
+  return {
+    x: Math.max(0, Math.round((pw - bw) / 2)),
+    y: Math.max(0, Math.round((ph - bh) / 2)),
+  };
+}
+
+/**
+ * The size main assumes for a widget it cannot measure. Main never has the
+ * widget in front of it — only the layer page does — so when the button is
+ * pressed with the layer closed, or for a widget that is not on it, the stored
+ * width/height stand in where they exist and these where they do not. 400 is
+ * the page's own fallback design width (defaultsFor in ingame.js); 240 is a
+ * typical readout panel's height. Being off by a hundred pixels still lands the
+ * widget well inside the main screen, which is the whole of the job, and the
+ * page re-centres on its real measured size whenever it is open (centreItem).
+ */
+const CENTRE_GUESS = { width: 400, height: 240 };
+
+/**
+ * A stored layout entry moved to the middle of the primary display, keeping
+ * everything else about it — scale, stretched width, boxed height — exactly as
+ * the operator left it. Only the position was lost; the size was theirs.
+ *
+ * @param {{primary?: {width:number, height:number}}} screens
+ * @param {{x?:number, y?:number, scale?:number, w?:number, h?:number}|null} entry
+ *   The widget's current stored placement, or nothing if it has never been moved.
+ * @returns {{x:number, y:number, scale:number, w?:number, h?:number}}
+ */
+function centredLayoutEntry(screens, entry) {
+  const prev = entry && typeof entry === 'object' ? entry : {};
+  const scale = Number.isFinite(prev.scale) && prev.scale > 0 ? prev.scale : 1;
+  const w = Number.isFinite(prev.w) && prev.w > 0 ? prev.w : null;
+  const h = Number.isFinite(prev.h) && prev.h > 0 ? prev.h : null;
+  const at = centreOnPrimary(screens, {
+    width: (w || CENTRE_GUESS.width) * scale,
+    height: (h || CENTRE_GUESS.height) * scale,
+  });
+  const out = { x: at.x, y: at.y, scale };
+  if (w) out.w = w;
+  if (h) out.h = h;
+  return out;
+}
+
+module.exports = { overlayGeometryFrom, centreOnPrimary, centredLayoutEntry, CENTRE_GUESS };

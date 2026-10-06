@@ -916,6 +916,31 @@ html, body { height: 100%; overflow: hidden; }
 .ovcard__dest[data-on="true"] .ovcard__dest-label { color: var(--cyan); }
 .ovcard__dest .switch { transform: scale(0.8); transform-origin: right center; }
 
+/* "Reset position", under the switches. The same quiet chip as the BG row's
+ * Auto button — it is a rescue for a lost widget, used once in a blue moon, so
+ * it must not compete with the switches above it — stretched across the card so
+ * it lines up from card to card down the grid. */
+.ovcard__reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ovcard__reset .icon { width: 12px; height: 12px; }
+.ovcard__reset:hover:not(:disabled) { color: var(--cyan); border-color: var(--cyan); }
+.ovcard__reset:disabled { opacity: 0.4; cursor: default; }
+
 /* -------------------------- card titles with icons ---------------------- */
 /*
  * The kit's card headers carry an icon beside the title (card__t in

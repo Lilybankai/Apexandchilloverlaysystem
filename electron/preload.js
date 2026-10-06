@@ -201,6 +201,12 @@ contextBridge.exposeInMainWorld('apex', {
   ingameRefresh: () => ipcRenderer.invoke('ingame:refresh'),
   /** Reset every in-game widget to its default position. */
   ingameLayoutReset: () => ipcRenderer.invoke('ingame:layoutReset'),
+  /**
+   * Move ONE in-game widget to the middle of the primary display and keep it
+   * there — for a widget that has ended up off every screen. Saved whether or
+   * not the layer is open. Resolves true once written.
+   */
+  ingameLayoutCentre: (id) => ipcRenderer.invoke('ingame:layoutCentre', id),
 
   /* ---- Lap database ---- */
 

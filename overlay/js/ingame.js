@@ -497,6 +497,54 @@
     applyAll();
   }
 
+  /**
+   * One widget back to the middle of the PRIMARY display — the "Reset position"
+   * button on its card in the control panel (`ingame:layout-centre`).
+   *
+   * `entry` is what main has already saved: the widget centred on its stored
+   * size, or on a guess, because main cannot see the widget. It is adopted
+   * first and unconditionally — this page saves every widget's placement on the
+   * next drag, so keeping the old off-screen entry in memory would write it
+   * straight back over main's. Then, if the widget is on this layer and has a
+   * size, the position is redone on the size actually drawn and saved through
+   * the same path a drag uses.
+   *
+   * Layout coordinates start at the primary's top-left, so the centre is half
+   * of what the widget leaves over on that screen — no window origin involved;
+   * applyItem adds padX/padY when it draws. A widget bigger than the screen
+   * pins to its top-left, where its handles can be reached. The same maths as
+   * centreOnPrimary in electron/overlay-geometry.js, which this page cannot
+   * require; scripts/test-overlay-centre.js holds the two to one answer.
+   */
+  function centreItem(id, entry) {
+    if (!id || !entry || !isFinite(entry.x) || !isFinite(entry.y)) return;
+    var l = {
+      x: Math.round(entry.x),
+      y: Math.round(entry.y),
+      scale: isFinite(entry.scale) ? clampNum(entry.scale, MIN_SCALE, MAX_SCALE) : 1,
+    };
+    if (isFinite(entry.w) && entry.w > 0) l.w = Math.round(clampNum(entry.w, MIN_W, MAX_ITEM));
+    if (isFinite(entry.h) && entry.h > 0) l.h = Math.round(clampNum(entry.h, MIN_H, MAX_ITEM));
+    layout[id] = l;
+    var el = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getAttribute("data-id") === id) el = items[i];
+    }
+    if (!el) return;
+    applyItem(el);
+    // offsetWidth/offsetHeight are the UNSCALED box; a widget not laid out yet
+    // (or hidden) reports 0 and keeps main's centring.
+    if (el.offsetWidth && el.offsetHeight) {
+      var bw = el.offsetWidth * l.scale;
+      var bh = el.offsetHeight * l.scale;
+      l.x = Math.max(0, Math.round((span.primary.width - bw) / 2));
+      l.y = Math.max(0, Math.round((span.primary.height - bh) / 2));
+      applyItem(el);
+      saveLayout();
+    }
+    nudgeCanvasSizes();
+  }
+
   /* -------------------------------- editing ------------------------------ */
 
   var toolbar = document.getElementById("ig-toolbar");
@@ -1152,6 +1200,13 @@
     bridge.onLayoutReset(function () {
       resetLayout();
     });
+    // Guarded like getDocking below: the page is served over HTTP and can be
+    // opened by an older main whose preload has no such method.
+    if (bridge.onLayoutCentre) {
+      bridge.onLayoutCentre(function (msg) {
+        if (msg) centreItem(msg.id, msg.entry);
+      });
+    }
     // Magnetic docking: read once, then follow the switch. Guarded because an
     // older preload will not have it — the layer is served over HTTP and can be
     // opened by a build whose main process predates this bridge method.

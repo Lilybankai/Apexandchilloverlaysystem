@@ -51,7 +51,7 @@ const lmuTrackmaps = require('./lmu-trackmaps');
 const scheduleCloud = require('./schedule-cloud');
 const scheduleCore = require('./control-panel/schedule-core.js');
 const raceReminders = require('./race-reminders');
-const { overlayGeometryFrom } = require('./overlay-geometry');
+const { overlayGeometryFrom, centredLayoutEntry } = require('./overlay-geometry');
 const stallWatch = require('./stall-watch');
 // Before anything schedules a timer. The census can only name callbacks that
 // were scheduled through the patched functions, so a poller started during a
@@ -3333,6 +3333,40 @@ function registerIpc() {
     saveSettings({ ...settings, ingameLayout: {} });
     if (overlayWin && !overlayWin.isDestroyed()) {
       overlayWin.webContents.send('ingame:layout-reset');
+    }
+    return true;
+  });
+
+  /**
+   * One widget back to the middle of the main screen — the "Reset position"
+   * button on its Overlays card. For the widget that has gone missing rather
+   * than the layout that has gone wrong: a monitor unplugged, a resolution or
+   * Scale % changed, and it is now drawn somewhere no screen shows. Reset
+   * layout fixes that too, but takes every other widget's placement with it.
+   *
+   * Written here FIRST, whether or not the layer is open, so the move survives
+   * a restart and applies to a widget that is switched off in game — the next
+   * time it is shown, it is shown in the middle. Main cannot measure the
+   * widget, so this position is centred on its stored size or a guess (see
+   * centredLayoutEntry); an open layer is then handed the same entry and
+   * re-centres on the size it can actually see, saving through the ordinary
+   * drag path.
+   *
+   * The entry goes to the page even for a widget that is not on it. The page
+   * holds every widget's placement in memory and saves all of them on the next
+   * drag, so a page left with the old off-screen entry would quietly write it
+   * straight back over this one.
+   */
+  ipcMain.handle('ingame:layoutCentre', (_evt, id) => {
+    if (!OVERLAY_CATALOG.some((o) => o.id === id)) return false;
+    const settings = loadSettings();
+    const entry = normalizeLayoutEntry(
+      centredLayoutEntry(overlayGeometry().screens, settings.ingameLayout[id]),
+    );
+    if (!entry) return false;
+    saveSettings({ ...settings, ingameLayout: { ...settings.ingameLayout, [id]: entry } });
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      overlayWin.webContents.send('ingame:layout-centre', { id, entry });
     }
     return true;
   });

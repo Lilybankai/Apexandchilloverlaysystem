@@ -6,6 +6,18 @@
 
 -->
 
+## Unreleased
+
+### Added
+
+- **Reset position, on every overlay.** Each overlay on the Overlays screen
+  now has a Reset position button under its switches. If an overlay has gone
+  off your screen — you unplugged a monitor, changed your resolution or your
+  Windows display scaling — click it and that overlay jumps to the middle of
+  your main screen, ready to drag wherever you want it. Only that one overlay
+  moves; the rest of your layout stays put. It works with the overlay switched
+  off too: it will be in the middle the next time you turn it on.
+
 ## 1.3.4-beta.1 — 2026-10-06
 
 ### Added
