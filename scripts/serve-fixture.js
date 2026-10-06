@@ -70,11 +70,40 @@ function merge(base, patch) {
   return out;
 }
 
+/**
+ * Keys a fixture may carry that are NOT part of the frame.
+ *
+ * Some widgets read a second source over HTTP rather than off the wire — the
+ * circuit at `/trackmap.json`, the ghost's line at `/ghost.json` — because
+ * those are hundreds of points that change rarely and would otherwise repeat
+ * thirty times a second. A fixture that cannot supply them can only pin half
+ * of such a widget's state, so it can carry them under these keys and they are
+ * served alongside instead of being broadcast.
+ */
+const SIDECARS = { _trackmap: '/trackmap.json', _ghost: '/ghost.json' };
+
+function readFixture() {
+  return JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+}
+
 function frame() {
-  const patch = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  const patch = readFixture();
+  for (const k of Object.keys(SIDECARS)) delete patch[k];
   const f = merge(baseline(), patch);
   f.timestamp = Date.now();
   return f;
+}
+
+/** The sidecar for this path, or `undefined` when the fixture has none. */
+function sidecar(rel) {
+  const key = Object.keys(SIDECARS).find((k) => SIDECARS[k] === rel);
+  if (!key) return undefined;
+  try {
+    const v = readFixture()[key];
+    return v === undefined ? null : v;   // null => answer 204, like the real route
+  } catch {
+    return null;
+  }
 }
 
 const TYPES = {
@@ -84,6 +113,26 @@ const TYPES = {
 
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent((req.url || '/').split('?')[0]);
+
+  // Re-read per request, like the frame, so editing the JSON retunes the page
+  // without a restart.
+  const side = sidecar(rel);
+  if (side !== undefined) {
+    if (side === null) {
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    const body = JSON.stringify(side);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(body),
+      'Cache-Control': 'no-store',
+    });
+    res.end(body);
+    return;
+  }
+
   const file = path.join(ROOT, rel === '/' ? 'index.html' : rel);
   // Same path-traversal guard as the real static server.
   if (!path.resolve(file).startsWith(path.resolve(ROOT) + path.sep)) {
