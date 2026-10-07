@@ -253,6 +253,40 @@ console.log('\ntraining layer: recovery touches this window only');
   check('recreate() with no window builds nothing', built.length === before && layer.window() === null);
 }
 
+console.log('\ntraining layer: Stop takes it down');
+{
+  // Wired as main wires them: the gate's flips drive layer.sync, with the
+  // window wanted while the gate is open and a training widget is on.
+  const { createTrainingGate } = require('../electron/trainingGate');
+  const gate = createTrainingGate();
+  const ids = ['ghosthud'];
+  const syncWindow = () =>
+    layer.sync({ wanted: gate.state().active && ids.length > 0, url: URL_A, visible: true });
+  gate.subscribe((next, prev) => {
+    if (next.active !== prev.active) syncWindow();
+  });
+  built.length = 0;
+  gate.update({ mode: true, beta: true, running: true, session: { type: 'practice', demo: false } }, 0);
+  const w = layer.window();
+  check('practice with the server running → the window is up', !!w && built.length === 1);
+  // What stopServer now does after `status.running = false`.
+  gate.update({ running: false }, 100);
+  check('Stop → the gate says stopped', !gate.state().active && gate.state().reason === 'stopped');
+  check('→ and the window is gone', w.destroyed && layer.window() === null);
+
+  // main.js is not loadable here, so the wiring is pinned in its source: every
+  // place `status.running` changes must reach the gate before its function
+  // ends — directly, or through syncOverlayWindow, which re-syncs it.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  const sites = Array.from(main.matchAll(/status\.running = (true|false);/g));
+  const unsynced = sites.filter((m) => {
+    const rest = main.slice(m.index, main.indexOf('\n}\n', m.index));
+    return !/syncTrainingLayerFenced\(|syncOverlayWindow\(/.test(rest);
+  });
+  check('every change of status.running re-syncs the training gate', sites.length >= 3 && unsynced.length === 0,
+    `${sites.length} sites, unsynced at ${unsynced.map((m) => main.slice(0, m.index).split('\n').length).join(',')}`);
+}
+
 console.log('\ntraining layer: the pages');
 {
   const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'overlay', f), 'utf8');

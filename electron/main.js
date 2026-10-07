@@ -1229,6 +1229,9 @@ async function startServer() {
   } catch (err) {
     status.running = false;
     status.feed = 'stopped';
+    // A failure after the server came up must take the training layer down
+    // with it, as stopServer does.
+    syncTrainingLayerFenced();
     // Every port we tried was refused. Say which failure it was, because the two
     // have completely different fixes and the raw Node message ("listen EACCES:
     // permission denied 127.0.0.1:8080") tells a driver nothing at all.
@@ -1267,6 +1270,10 @@ async function stopServer() {
   }
   status.running = false;
   status.feed = 'stopped';
+  // The training gate reads `running`, and nothing else would tell it: the
+  // feed watchdog bails while the server is stopped. Without this a Stop left
+  // the training window up over a dead feed, still asking for a ghost.
+  syncTrainingLayerFenced();
   pushStatus();
 }
 
@@ -3165,6 +3172,19 @@ function syncTrainingLayer(settings) {
   );
   // A flip has already re-synced the window through the subscriber above.
   if (trainingActive() === was) syncTrainingWindow(s);
+}
+
+/**
+ * syncTrainingLayer for callers with work of their own to finish — the race
+ * layer, the server's start and stop. A training fault is logged to
+ * stalls.log and goes no further: it must never be the reason they stop.
+ */
+function syncTrainingLayerFenced(settings) {
+  try {
+    syncTrainingLayer(settings);
+  } catch (err) {
+    stallWatch.note(`TRAINING sync failed: ${(err && err.message) || err}`);
+  }
 }
 
 /** Training widgets switched on for the training layer. */
