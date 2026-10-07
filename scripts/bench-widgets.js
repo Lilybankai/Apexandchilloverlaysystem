@@ -37,7 +37,16 @@ const {
 const WIDGET_DIR = path.join(ROOT, 'overlay', 'js', 'widgets');
 
 /** Catalog defaults from electron/main.js — HUD on, control pages off. */
-const INGAME_OFF_BY_DEFAULT = new Set(['fuelplan', 'mfd', 'chat']);
+const INGAME_OFF_BY_DEFAULT = new Set([
+  'fuelplan',
+  'mfd',
+  'chat',
+  // The training widgets are hosted by the training window (training.html),
+  // never the race layer, so they add nothing to the race dispatcher's load.
+  'traininginputs',
+  'trainingcorner',
+  'trainingsectors',
+]);
 
 const ORIGINALLY_FULL_RATE = ['pedals'];
 

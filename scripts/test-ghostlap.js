@@ -37,6 +37,7 @@ const {
 } = require('../dist/telemetry/ghostLap');
 const { brakePoints } = require('../dist/telemetry/brakePoints');
 const { findCorners } = require('../dist/telemetry/corners');
+const { sectorMarks } = require('../dist/telemetry/lapDetail');
 const { UNKNOWN_VALUE } = require('../dist/telemetry/types');
 
 let passed = 0;
@@ -441,12 +442,21 @@ console.log('14) /ghost.json — the contract');
   const g = ghostFromTrace(f, '1:21.275');
   const j = ghostJson(g);
   const keys = Object.keys(j).sort().join(',');
-  check('the exact key set', keys === 'brake,brakes,corners,d,full,gear,label,lapId,lapSec,speedKph,steer,t,throttle,trackLengthM,x,z', keys);
+  check('the exact key set', keys === 'brake,brakes,corners,d,full,gear,label,lapId,lapSec,sectorD,speedKph,steer,t,throttle,trackLengthM,x,z', keys);
   check('every column is index-aligned with d', ['t', 'x', 'z', 'brake', 'throttle', 'steer', 'gear', 'speedKph'].every((k) => j[k].length === j.d.length));
   check('brakes are {d, x, z}', j.brakes.every((b) => Object.keys(b).sort().join(',') === 'd,x,z'));
   const ck = Object.keys(j.corners[0]).sort().join(',');
   check('corners are {entryD, apexD, exitD, apexX, apexZ, minKph} and nothing else', ck === 'apexD,apexX,apexZ,entryD,exitD,minKph', ck);
   check('corners in order, entry < apex < exit', j.corners.every((c, i) => c.entryD < c.apexD && c.apexD < c.exitD && (i === 0 || c.entryD >= j.corners[i - 1].exitD)));
+  // The sector lines must land where the Review tab puts them: the same
+  // derivation, run on the cleaned curve rather than the raw columns.
+  const marks = sectorMarks(f.trace, f.lapMs, f.s1Ms, f.s2Ms);
+  check('sectorD is [S1, S2] where the Review tab draws the lines',
+    Array.isArray(j.sectorD) && j.sectorD.length === 2 &&
+      Math.abs(j.sectorD[0] - marks.s1) < 1e-3 && Math.abs(j.sectorD[1] - marks.s2) < 1e-3,
+    `${j.sectorD} vs ${marks.s1},${marks.s2}`);
+  const unsplit = ghostJson(ghostFromTrace(Object.assign({}, f, { s1Ms: undefined, s2Ms: undefined }), 'x'));
+  check('a lap with no sector times has no sectorD, not a guess', !('sectorD' in unsplit));
   check('the body survives a JSON round trip unchanged', JSON.stringify(JSON.parse(JSON.stringify(j))) === JSON.stringify(j));
   check('the body is a sensible size', JSON.stringify(j).length < 150_000, `${(JSON.stringify(j).length / 1024).toFixed(1)} KB`);
 
@@ -455,7 +465,7 @@ console.log('14) /ghost.json — the contract');
   check('no ghost is no body', ghostJson(null) === null);
   const lineOnly = ghostJson(ghostFromTrace(traceFile({ d, t, x: d.map(() => 1), z: d.map(() => 2) }), 'x'));
   check('optional arrays are absent, not empty, when the trace lacks them',
-    ['brake', 'throttle', 'steer', 'gear', 'speedKph', 'brakes', 'corners'].every((k) => !(k in lineOnly)));
+    ['brake', 'throttle', 'steer', 'gear', 'speedKph', 'brakes', 'corners', 'sectorD'].every((k) => !(k in lineOnly)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

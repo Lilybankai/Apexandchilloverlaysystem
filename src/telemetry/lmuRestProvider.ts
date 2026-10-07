@@ -94,6 +94,7 @@ import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, conditionOf, type LapRecord } from './lapLog';
 import { ghostGap, setPublishedGhost } from './ghostLap';
 import { GhostSelector } from './ghostSelector';
+import { CornerTracker } from './cornerTracker';
 import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
@@ -543,6 +544,12 @@ export class LmuRestProvider implements TelemetryProvider {
    * every lap is already on disk. See `ghostSelector.ts`.
    */
   private readonly ghost = new GhostSelector({ publish: setPublishedGhost });
+  /**
+   * The live lap scored corner by corner against {@link ghost}, for the
+   * training widgets. Driven only while a ghost is being chased; a few
+   * numbers of state, O(1) a tick. See `cornerTracker.ts`.
+   */
+  private readonly ghostCorners = new CornerTracker();
   /** The delta engine's distance axis — see {@link RoadPosition}. */
   private readonly roadPos = new RoadPosition();
   /** Accumulated seconds on the spectated delta clock — see {@link stepDeltaClock}. */
@@ -1927,6 +1934,16 @@ export class LmuRestProvider implements TelemetryProvider {
       this.syncGhost(si.trackName || '', trackLen, playerCar?.carClass, si.maxPathWetness, nowMs);
       const ghostAt = this.paceDelta.lapClock();
       ghost = ghostAt ? ghostGap(this.ghost.lap, ghostAt.t, ghostAt.d) : undefined;
+      if (ghost && ghostAt && this.ghost.lap) {
+        const corner = this.ghostCorners.update(
+          this.ghost.lap,
+          ghostAt.d,
+          ghost.active ? ghost.gapSec : NaN,
+          local!.brake,
+          local!.speedKph,
+        );
+        if (corner) ghost.corner = corner;
+      }
 
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
@@ -1940,6 +1957,9 @@ export class LmuRestProvider implements TelemetryProvider {
       paceDeltas = restDeltas;
       deltaSec = restDeltas.tSession;
     }
+    // No ghost placed this tick (spectating, none chosen, no line crossing
+    // yet): whatever the tracker held describes a lap that is not running.
+    if (!ghost) this.ghostCorners.reset();
     // Which LAYOUT is loaded — read before the pace score, which cannot resolve
     // Monza, Le Mans, Fuji or Paul Ricard without it.
     this.refreshSimTrackName(session.track, nowMs);

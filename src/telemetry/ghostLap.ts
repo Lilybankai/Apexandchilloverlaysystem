@@ -148,6 +148,13 @@ export interface GhostLap {
    * when the lap has no speed channel. See `corners.ts`.
    */
   corners?: Corner[];
+  /**
+   * Where the sim's S1 and S2 lines fell on this lap, as lap fractions, so a
+   * sector readout can split the reference at the real sector lines rather
+   * than learn them from a live car crossing them. Absent when the lap record
+   * carried no sector times (an invalidated lap, an older trace).
+   */
+  sectorD?: [number, number];
 }
 
 /** One braking point on the ghost's lap. `x`/`z` are `null` without a line. */
@@ -291,6 +298,8 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
       z: bp.z === null ? null : round2(bp.z),
     }));
   }
+  const sectorD = sectorLines(trace, lapSec, file.lapMs, file.s1Ms, file.s2Ms);
+  if (sectorD) lap.sectorD = sectorD;
   if (speedKph) {
     lap.corners = findCorners(
       { d, speedKph, ...(brake ? { brake } : {}), ...(throttle ? { throttle } : {}), ...line },
@@ -298,6 +307,32 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
     );
   }
   return lap;
+}
+
+/**
+ * Where the sim's sector lines fell on a lap, as lap fractions.
+ *
+ * The derivation `lapDetail.sectorMarks` uses, and for its reasons: the
+ * record's `s1Ms`/`s2Ms` are DURATIONS on the sim's clock, so they are summed
+ * into boundary times and scaled onto the trace's own clock by the ratio of
+ * the two lap times before the distance is read off. Redone here on the
+ * cleaned curve rather than imported, so this module stays free of the lap
+ * store's file I/O. `null` rather than a guess when either line cannot be
+ * placed — a sector split at the wrong place misjudges every lap against it.
+ */
+function sectorLines(
+  trace: Sample[],
+  lapSec: number,
+  lapMs: number,
+  s1Ms: number | undefined,
+  s2Ms: number | undefined,
+): [number, number] | null {
+  if (!(lapMs > 0) || !(lapSec > 0) || !(Number(s1Ms) > 0) || !(Number(s2Ms) > 0)) return null;
+  const scale = lapSec / lapMs;
+  const d1 = interpDist(trace, s1Ms! * scale);
+  const d2 = interpDist(trace, (s1Ms! + s2Ms!) * scale);
+  if (!(d1 > 0) || !(d2 > d1) || !(d2 < 1)) return null;
+  return [round6(d1), round6(d2)];
 }
 
 /**
@@ -461,6 +496,8 @@ export interface GhostJson {
   speedKph?: number[];
   brakes?: GhostBrake[];
   corners?: GhostJsonCorner[];
+  /** The reference's S1 and S2 lines as lap fractions; see {@link GhostLap.sectorD}. */
+  sectorD?: [number, number];
 }
 
 /**
@@ -502,6 +539,7 @@ export function ghostJson(lap: GhostLap | null): GhostJson | null {
           })),
         }
       : {}),
+    ...(lap.sectorD ? { sectorD: lap.sectorD } : {}),
   };
 }
 

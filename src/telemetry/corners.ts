@@ -192,8 +192,12 @@ export interface CornerResult {
   apexKphDelta: number | null;
 }
 
-/** How far before a corner's entry to look for a braking point, metres. */
-const BRAKE_SEARCH_M = 100;
+/**
+ * How far before a corner's entry to look for a braking point, metres.
+ * Exported for `cornerTracker.ts`, which scores the same windows live and
+ * must agree with {@link cornerResult} on which press belongs to which corner.
+ */
+export const BRAKE_SEARCH_M = 100;
 
 /**
  * Score a live lap through one corner against the reference lap the corners
