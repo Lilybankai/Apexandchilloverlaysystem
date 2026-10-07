@@ -280,6 +280,12 @@
   var shownNote = null;
   var shownNoteGap = NaN;
   var shownNoteVer = -1;
+  /**
+   * What the last full paint drew from: the pose, the gap and `paintVer`.
+   * The same again (a parked car) is not repainted. `ver: -1` = nothing
+   * reusable on the canvas (a note is showing).
+   */
+  var drawn = { ver: -1, x: 0, z: 0, h: 0, gapM: 0, active: false, gap: NaN };
 
   /* ---------------------- per-frame scratch (no garbage) ------------------- */
 
@@ -1263,6 +1269,7 @@
    * @returns {boolean} Always false — nothing here needs the next display frame.
    */
   function paintNote(note) {
+    drawn.ver = -1;
     var withGap = !!(ghostState && ghostState.active);
     var gapKey = withGap ? Math.round(ghostState.gapSec * 100) : NaN;
     if (note === shownNote && same(gapKey, shownNoteGap) && shownNoteVer === paintVer) return false;
@@ -1300,6 +1307,21 @@
     }
     if (!shape) return paintNote(NOTE_LEARNING);
     if (!prep || !prepElev) return paintNote(NOTE_NO_LINE);
+    // Parked in the pits, or anything else where nothing drawn would move:
+    // the canvas already shows this picture. Stop the loop instead of
+    // painting it again; the next frame wakes it.
+    var gapKey = ghostState.active ? Math.round(ghostState.gapSec * 100) : NaN;
+    if (
+      drawn.ver === paintVer &&
+      pose.x === drawn.x &&
+      pose.z === drawn.z &&
+      pose.h === drawn.h &&
+      pose.gapM === drawn.gapM &&
+      !!ghostState.active === drawn.active &&
+      same(gapKey, drawn.gap)
+    ) {
+      return false;
+    }
     var at = locate(pose.x, pose.z);
     if (at < 0) return paintNote(NOTE_OFF);
     myM = at;
@@ -1328,6 +1350,14 @@
     if (active) drawGapChip();
     if (active && !gateDrawn && pose.gapM < 0) drawBehindChip();
     else if (nextBrake <= BRAKE_CUE_M) drawBrakeChip(nextBrake);
+
+    drawn.ver = paintVer;
+    drawn.x = pose.x;
+    drawn.z = pose.z;
+    drawn.h = pose.h;
+    drawn.gapM = pose.gapM;
+    drawn.active = active;
+    drawn.gap = gapKey;
     return true;
   }
 

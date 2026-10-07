@@ -134,6 +134,12 @@
   var rafId = 0;
   var shownNote = null;
   var shownNoteVer = -1;
+  /**
+   * What the last full paint drew from: the car's metre, the newest inputs
+   * written to the trail, and `paintVer`. The same again (a parked car) is
+   * not repainted. `ver: -1` = a note is showing.
+   */
+  var drawn = { ver: -1, m: NaN, thr: NaN, brk: NaN, str: NaN };
 
   /* ---------------------- per-paint scratch (no garbage) ------------------- */
 
@@ -538,6 +544,7 @@
   var NOTE_WAITING = "WAITING FOR CAR POSITION";
 
   function paintNote(note) {
+    drawn.ver = -1;
     if (note === shownNote && shownNoteVer === paintVer) return false;
     shownNote = note;
     shownNoteVer = paintVer;
@@ -558,6 +565,17 @@
     if (!grid) return paintNote(NOTE_NO_INPUTS);
     var st = POSE.sample(poseBuf, nowMs, pose);
     if (st === POSE.NONE || st === POSE.STALE) return paintNote(NOTE_WAITING);
+    // Parked: the same metre and the same pedals under the car line draw the
+    // same strip. Stop the loop instead of repainting it; a frame wakes it.
+    if (
+      drawn.ver === paintVer &&
+      pose.x === drawn.m &&
+      trail.lastThr === drawn.thr &&
+      trail.lastBrk === drawn.brk &&
+      trail.lastStr === drawn.str
+    ) {
+      return false;
+    }
     shownNote = null;
 
     var nowM = pose.x;
@@ -618,6 +636,12 @@
     drawTags(m0, nowM);
     fadeEdge();
     drawNow(nextBrake);
+
+    drawn.ver = paintVer;
+    drawn.m = nowM;
+    drawn.thr = trail.lastThr;
+    drawn.brk = trail.lastBrk;
+    drawn.str = trail.lastStr;
     return true;
   }
 
