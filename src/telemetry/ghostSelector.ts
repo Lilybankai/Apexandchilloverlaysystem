@@ -28,9 +28,19 @@
  * lap is still being read. Each load carries the generation it was started
  * under, and a result from an older generation is dropped, so a slow read can
  * never put the wrong lap back.
+ *
+ * ## An injected reference comes first
+ * The Training tab can point the ghost at a league board lap instead
+ * ({@link GhostSelector.setReference}; fetched and cached by the desktop app).
+ * While one is set FOR THE COMBO BEING DRIVEN it is chased in place of the
+ * local best; for any other combo it is ignored, and the local best is chased
+ * as before. A reference that cannot be built falls back to the local best in
+ * the same load. Setting or clearing one starts a new generation like any
+ * other change of question.
  */
 
 import type { GhostLap } from './ghostLap';
+import { ghostFromReference, referenceMatches, type GhostReference } from './ghostReference';
 import { GhostIndex, loadBestGhost, type GhostDirs, type GhostQuery } from './ghostStore';
 import type { LapRecord, TrackCondition } from './lapLog';
 
@@ -52,6 +62,12 @@ export interface GhostCombo {
   /** Normalised class (`normalizeClass`), as lap records store it. */
   carClass: string;
   condition: TrackCondition;
+  /**
+   * Live track length in metres. Not part of the key (`trackKey` already
+   * embeds it, rounded); needed only to build an injected reference, whose
+   * payload carries no length of its own.
+   */
+  trackLengthM?: number;
 }
 
 export interface GhostSelectorOptions {
@@ -74,6 +90,10 @@ export class GhostSelector {
   private combo: GhostCombo | null = null;
   private key = '';
   private current: GhostLap | null = null;
+  /** Whether {@link current} was built from the injected reference. */
+  private currentFromRef = false;
+  /** The injected reference, whichever combo it is for. See {@link setReference}. */
+  private reference: GhostReference | null = null;
 
   /** Bumped whenever an in-flight load's answer stops being wanted. */
   private generation = 0;
@@ -104,6 +124,25 @@ export class GhostSelector {
     if (on === this.wanted) return;
     this.wanted = on;
     if (!on) this.reset();
+  }
+
+  /**
+   * Chase this lap instead of the local best while the combo being driven is
+   * the one it was fetched for; `null` goes back to the local best. Cheap and
+   * synchronous: it only re-arms the selection when the answer could change,
+   * and the build runs on the next load like any other.
+   */
+  public setReference(ref: GhostReference | null): void {
+    if (ref === this.reference) return;
+    const before = this.activeReference();
+    this.reference = ref;
+    const after = this.activeReference();
+    if (!this.wanted || !this.combo) return;
+    // Neither the old nor the new reference concerns this combo: nothing to do.
+    if (!before && !after) return;
+    if (before && after && before.refId === after.refId) return;
+    this.retries = 0;
+    this.start();
   }
 
   /**
@@ -143,6 +182,8 @@ export class GhostSelector {
   public noteLap(rec: LapRecord): void {
     const c = this.combo;
     if (!this.wanted || !c || !rec || !rec.id || !rec.clean) return;
+    // Chasing a chosen reference: a new local best does not replace it.
+    if (this.activeReference()) return;
     if (rec.sim !== c.sim || rec.trackKey !== c.trackKey || rec.carClass !== c.carClass) return;
     if ((rec.condition || 'dry') !== c.condition) return;
     const beats =
@@ -167,8 +208,14 @@ export class GhostSelector {
     this.retryAt = 0;
     if (this.current) {
       this.current = null;
+      this.currentFromRef = false;
       this.publish(null);
     }
+  }
+
+  /** The injected reference, when it is for the combo being driven. */
+  private activeReference(): GhostReference | null {
+    return referenceMatches(this.reference, this.combo) ? this.reference : null;
   }
 
   private start(): void {
@@ -177,14 +224,39 @@ export class GhostSelector {
     const gen = ++this.generation;
     this.loadingGen = gen;
     this.rearm = false;
-    const q: GhostQuery = { ...combo };
-    const index = (this.index ??= new GhostIndex(this.dirs.laps));
-    this.inflight = loadBestGhost(index, q, this.dirs, this.current)
+    const ref = this.activeReference();
+    const current = this.current;
+    // The reference is built off the loop like a local load, and reused when
+    // it is already the one selected. One that cannot be built (no usable
+    // columns, no live length) falls through to the local best.
+    const fromRef: Promise<GhostLap | null> = ref
+      ? Promise.resolve().then(() =>
+          current && this.currentFromRef && current.lapId === ref.refId
+            ? current
+            : ghostFromReference(ref, combo.trackLengthM ?? 0),
+        )
+      : Promise.resolve(null);
+    this.inflight = fromRef
       .catch(() => null)
-      .then((lap) => this.finish(gen, lap));
+      .then((lap) => {
+        if (lap) return { lap, fromRef: true };
+        if (gen !== this.generation) return { lap: null, fromRef: false };
+        const q: GhostQuery = {
+          sim: combo.sim,
+          trackKey: combo.trackKey,
+          carClass: combo.carClass,
+          condition: combo.condition,
+        };
+        const index = (this.index ??= new GhostIndex(this.dirs.laps));
+        const local = this.currentFromRef ? null : this.current;
+        return loadBestGhost(index, q, this.dirs, local)
+          .catch(() => null)
+          .then((l) => ({ lap: l, fromRef: false }));
+      })
+      .then(({ lap, fromRef: isRef }) => this.finish(gen, lap, isRef));
   }
 
-  private finish(gen: number, lap: GhostLap | null): void {
+  private finish(gen: number, lap: GhostLap | null, fromRef = false): void {
     // Superseded: the combo changed, or the ghost stopped being wanted, while
     // this was reading. Whatever it found belongs to a question nobody is
     // asking any more.
@@ -194,12 +266,21 @@ export class GhostSelector {
       this.retries = 0;
       if (lap !== this.current) {
         this.current = lap;
+        this.currentFromRef = fromRef;
         // The widget fetches the line over HTTP, keyed on the lap id it sees
         // on the frame — so this is published in the same breath as the
         // selection changes, or the two disagree for a poll.
         this.publish(lap);
       }
       return;
+    }
+    // A reference ghost that is no longer the answer (cleared, or replaced by
+    // one that would not build) must not outlive it when there is no local
+    // lap to take its place.
+    if (this.current && this.currentFromRef) {
+      this.current = null;
+      this.currentFromRef = false;
+      this.publish(null);
     }
     // A miss with a ghost already loaded (a re-check after a new lap whose
     // trace would not read) keeps the ghost; only an empty selection retries.
