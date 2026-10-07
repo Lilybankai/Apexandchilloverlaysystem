@@ -5,6 +5,53 @@
      app until it is renamed.
 -->
 
+## 1.3.5-beta.4 — 2026-10-07
+
+### Added
+
+- **Training overlays have a home of their own.** Switch the Training tab to
+  Training mode and its overlays live there: their own list of widgets, their
+  own layout (Edit training layout), and a line that says whether they are
+  running right now. They only come up in practice and test days, in a window
+  of their own, so a race never loads a line of them — and because practice is
+  where they live, they are allowed to work harder than the race overlays do.
+
+- **Three new training widgets**, all comparing you with the lap you are
+  chasing:
+  - **Trace** — your throttle, brake and steering drawn over the reference
+    lap's, by distance, with its next braking zone coming up on the right.
+  - **Corner Card** — a verdict as you leave each corner: the time it cost or
+    gained, how much earlier or later you braked than the reference, and your
+    minimum speed against its.
+  - **Lap Strip** — your sectors against the reference, and every corner of the
+    lap coloured by where you won or lost time.
+
+- **Chase someone off the leaderboard.** The Training tab's Chase card picks
+  the lap the ghost runs: **Auto** (the quickest board lap in your class that
+  has a driven line), **Your best**, or any driver on the board you tap. When
+  it can't — signed out, a damp or wet track, a lap that is no longer on the
+  board — it says why and chases your own best instead.
+
+### Changed
+
+- **Ghost HUD is smooth.** The stop-start, flickery look wasn't the overlay
+  being held back. It was placing itself from a number LMU only updates about
+  seven times a second, so the view lurched forward each time it arrived. It
+  now works out where you are on the road every frame and moves between
+  updates, so it glides. The road is drawn properly over crests and dips,
+  and the reference lap's braking points are painted on the road with a
+  countdown — "BRAKE 63 m" — as you approach them.
+
+### Fixed
+
+- **Hypercar found no ghost lap.** The class name didn't match the one saved
+  with your laps, so Ghost HUD said there was nothing to chase.
+- **One failed lookup stopped the ghost for the session.** It retries now, and
+  a new personal best becomes the ghost as soon as you set it.
+
+Beta channel only. Ghost HUD has moved from the race overlays to the Training
+tab — turn on Training mode to find it.
+
 ## 1.3.5-beta.3 — 2026-10-07
 <!-- internal -->
 
