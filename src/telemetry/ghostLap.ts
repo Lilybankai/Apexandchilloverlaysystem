@@ -487,8 +487,14 @@ export interface GhostJson {
   full: boolean;
   d: number[];
   t: number[];
-  x: number[];
-  z: number[];
+  /**
+   * The driven line — both or neither, present only when {@link ghostHasLine}.
+   * A lap recorded without one is still served: the selector falls back to
+   * such laps, and the training widgets that need only distance, time and the
+   * inputs (Trace, Lap strip) can use it; Ghost HUD says it has no line.
+   */
+  x?: number[];
+  z?: number[];
   brake?: number[];
   throttle?: number[];
   steer?: number[];
@@ -501,8 +507,10 @@ export interface GhostJson {
 }
 
 /**
- * Shape a ghost for `/ghost.json`, or `null` when it has no line to draw —
- * the route answers `204` for that, as before.
+ * Shape a ghost for `/ghost.json`, or `null` when no ghost is selected — the
+ * route answers `204` for that. A lap with no driven line is served without
+ * `x`/`z` rather than refused: it used to answer 204 too, which left Trace
+ * and the Lap strip blank for exactly the laps the selector falls back to.
  *
  * Flattened to plain columns rather than the in-memory shape: the widget
  * wants arrays it can index, and `trace` is an array of objects. Corners lose
@@ -510,7 +518,7 @@ export interface GhostJson {
  * to anyone else.
  */
 export function ghostJson(lap: GhostLap | null): GhostJson | null {
-  if (!lap || !ghostHasLine(lap)) return null;
+  if (!lap) return null;
   return {
     lapId: lap.lapId,
     label: lap.label,
@@ -519,8 +527,7 @@ export function ghostJson(lap: GhostLap | null): GhostJson | null {
     full: lap.full,
     d: lap.trace.map((s) => s.d),
     t: lap.trace.map((s) => s.t),
-    x: lap.x!,
-    z: lap.z!,
+    ...(ghostHasLine(lap) ? { x: lap.x!, z: lap.z! } : {}),
     ...(lap.brake ? { brake: lap.brake } : {}),
     ...(lap.throttle ? { throttle: lap.throttle } : {}),
     ...(lap.steer ? { steer: lap.steer } : {}),

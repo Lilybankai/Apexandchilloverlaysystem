@@ -698,10 +698,10 @@ const GHOST_PATH = '/ghost.json';
  * still true. The frame carries `player.ghost.sourceLapId`, which moves
  * exactly when the selection does, and the widget refetches on that.
  *
- * `204` — not `404` — when there is no ghost or it has no line: neither is an
- * error. No ghost means none has been selected for this combo yet, and no
- * line means the lap was recorded with shared memory silent. In both cases
- * the widget draws its numbers and says why there is no road.
+ * `204` — not `404` — when there is no ghost: not an error, just none
+ * selected for this combo yet. A lap with no line (recorded with shared
+ * memory silent) is served without `x`/`z`: Trace and the Lap strip need only
+ * its distance, time and inputs, and Ghost HUD says why there is no road.
  */
 function serveGhost(res: ServerResponse): void {
   const body = ghostBody(getPublishedGhost());

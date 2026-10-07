@@ -461,8 +461,17 @@ console.log('14) /ghost.json — the contract');
   check('the body is a sensible size', JSON.stringify(j).length < 150_000, `${(JSON.stringify(j).length / 1024).toFixed(1)} KB`);
 
   const { d, t } = flatLap();
-  check('no line is no body (the route answers 204)', ghostJson(ghostFromTrace(traceFile({ d, t }), 'x')) === null);
-  check('no ghost is no body', ghostJson(null) === null);
+  // A lap with no driven line is still a reference for Trace and the Lap
+  // strip: served without x/z, never refused (it used to answer 204).
+  const unlined = ghostJson(ghostFromTrace(Object.assign({}, f, { trace: Object.assign({}, f.trace, { x: undefined, z: undefined }) }), 'x'));
+  const unlinedKeys = unlined ? Object.keys(unlined).sort().join(',') : '';
+  check('no line: a body all the same, without x and z',
+    unlinedKeys === 'brake,brakes,corners,d,full,gear,label,lapId,lapSec,sectorD,speedKph,steer,t,throttle,trackLengthM', unlinedKeys);
+  check('…its columns still index-aligned with d', unlined && ['t', 'brake', 'throttle', 'steer', 'gear', 'speedKph'].every((k) => unlined[k].length === unlined.d.length));
+  check('…and its brakes have no position', unlined && unlined.brakes.length > 0 && unlined.brakes.every((b) => b.x === null && b.z === null));
+  const bare = ghostJson(ghostFromTrace(traceFile({ d, t }), 'x'));
+  check('a bare d/t lap: just the curve', bare && Object.keys(bare).sort().join(',') === 'd,full,label,lapId,lapSec,t,trackLengthM');
+  check('no ghost is no body (the route answers 204)', ghostJson(null) === null);
   const lineOnly = ghostJson(ghostFromTrace(traceFile({ d, t, x: d.map(() => 1), z: d.map(() => 2) }), 'x'));
   check('optional arrays are absent, not empty, when the trace lacks them',
     ['brake', 'throttle', 'steer', 'gear', 'speedKph', 'brakes', 'corners', 'sectorD'].every((k) => !(k in lineOnly)));

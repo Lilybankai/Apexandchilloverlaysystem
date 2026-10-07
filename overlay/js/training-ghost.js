@@ -8,9 +8,13 @@
  * The rules are Ghost HUD's (`ghosthud.js` `ensureLine`), for the same
  * reasons: `frame.player.ghost.sourceLapId` is the cache key and moves exactly
  * when the provider picks another lap; one request in flight and no queue;
- * `204` means "no ghost, or a lap with no line" rather than an error; and a
- * miss is not asked again for MISS_RETRY_MS, or a lap with no line would be
- * asked for on every frame.
+ * `204` means "no ghost selected" rather than an error; and a miss is not
+ * asked again for MISS_RETRY_MS, or a frame that names a lap the server has
+ * not published yet would ask on every frame.
+ *
+ * A lap with no driven line arrives WITHOUT `x`/`z` and is published like any
+ * other: it is a whole answer, so it is never asked for again. Whoever needs
+ * the line (Ghost HUD) checks for it.
  *
  * Loaded as a classic script before the widgets (`window.ApexTrainingGhost`).
  */
