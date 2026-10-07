@@ -225,7 +225,7 @@ console.log('6) clocks — the server\'s stamp, never trusted across machines');
 console.log('');
 console.log('7) hosts — both pages load it, in order');
 {
-  for (const page of ['ingame.html', 'widget.html']) {
+  for (const page of ['training.html', 'widget.html']) {
     const html = fs.readFileSync(path.join(__dirname, '..', 'overlay', page), 'utf8');
     const geom = html.indexOf('src="js/ghost-geom.js"');
     const pose = html.indexOf('src="js/ghost-pose.js"');

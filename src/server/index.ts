@@ -496,8 +496,10 @@ export interface OverlayLoad {
    * `ingame`   — `/ingame.html?widgets=a,b,c`. This is OUR OWN window, not an
    *              OBS source, and the desktop app counts it as time on screen
    *              rather than as a browser-source load.
+   * `training` — `/training.html?widgets=a,b`. The training layer: our own
+   *              window too, counted the same way as `ingame`.
    */
-  page: 'combined' | 'widget' | 'ingame';
+  page: 'combined' | 'widget' | 'ingame' | 'training';
   /** Widget ids the URL names. Empty for `combined`. */
   widgets: string[];
 }
@@ -541,6 +543,9 @@ export function classifyOverlayLoad(rawUrl: string): OverlayLoad | null {
   if (p === '/' || p === '/index.html') return { page: 'combined', widgets: [] };
   if (p === '/ingame.html') {
     return { page: 'ingame', widgets: splitWidgetList(url.searchParams.get('widgets')) };
+  }
+  if (p === '/training.html') {
+    return { page: 'training', widgets: splitWidgetList(url.searchParams.get('widgets')) };
   }
   if (p === '/widget.html') {
     const w = (url.searchParams.get('w') || '').trim().toLowerCase();

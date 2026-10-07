@@ -383,8 +383,12 @@ function makeElement(tag) {
  * bridge reporting `screens` and `saved`. Returns handles on the pieces the
  * tests drive: the item elements, the document listeners the layer installed
  * (so pointer gestures can be replayed), and whatever it last saved.
+ *
+ * `search` is the page's query string (`?layer=training` makes it the training
+ * layer). `plainBrowser` drops the app bridge, as when the page is opened in a
+ * browser: layout then lives in `storage`, a fake localStorage.
  */
-function loadLayer({ screens, saved, ids, magneticDock }) {
+function loadLayer({ screens, saved, ids, magneticDock, search, plainBrowser, storage }) {
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'overlay', 'js', 'ingame.js'),
     'utf8',
@@ -455,7 +459,8 @@ function loadLayer({ screens, saved, ids, magneticDock }) {
     window: {
       innerWidth: 1920,
       innerHeight: 1080,
-      apexIngame: bridge,
+      apexIngame: plainBrowser ? undefined : bridge,
+      location: { search: search || '' },
       dispatchEvent: (ev) => {
         if (ev && ev.type === 'resize') state.resizes++;
       },
@@ -474,6 +479,11 @@ function loadLayer({ screens, saved, ids, magneticDock }) {
     JSON,
     isFinite,
     console,
+    localStorage: storage || {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    },
   };
   sandbox.window.window = sandbox.window;
   sandbox.globalThis = sandbox;
@@ -963,6 +973,91 @@ async function run() {
     layer.state.dockCb(true);
     layer.drag('delta', 0, 0, -45, 0);
     eq('switched on mid-session: snaps', layer.layoutX('delta'), 550);
+  }
+
+  console.log('\ningame.js — one layout manager, two layers');
+
+  {
+    // Ghost HUD moved to the training layer, so its default placement moved
+    // with it: on the training page it lands where it always did, centred and
+    // low on the primary screen.
+    const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
+    const t = loadLayer({ screens: g.screens, saved: {}, ids: ['ghosthud'], search: '?layer=training&widgets=ghosthud' });
+    await settle();
+    eq('training: Ghost HUD default x is centred', t.layoutX('ghosthud'), Math.round(1920 / 2 - 320));
+    eq('training: Ghost HUD default y is low', t.layoutY('ghosthud'), Math.round(1080 * 0.44));
+    eq('training: Ghost HUD default width', t.item('ghosthud').style.width, '640px');
+  }
+
+  {
+    // The race layer is unchanged for every race widget — the same default as
+    // before the training layer existed — and with no ?layer= at all.
+    const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
+    const r = loadLayer({ screens: g.screens, saved: {}, ids: ['relative', 'speedo'] });
+    await settle();
+    eq('race: relative default unchanged', r.layoutX('relative'), 1920 - 424);
+    eq('race: speedo default unchanged', r.layoutY('speedo'), 1080 - 210);
+    // A layer name the page does not know is the race layer, not a third one.
+    const odd = loadLayer({ screens: g.screens, saved: {}, ids: ['relative'], search: '?layer=bogus' });
+    await settle();
+    eq('an unknown ?layer= is the race layer', odd.layoutX('relative'), 1920 - 424);
+    // Ghost HUD is not a race widget any more: on the race page it would get
+    // the generic fallback, not the training default.
+    const gh = loadLayer({ screens: g.screens, saved: {}, ids: ['ghosthud'] });
+    await settle();
+    eq('race: Ghost HUD has no race default', gh.layoutX('ghosthud'), 24);
+  }
+
+  {
+    // Opened in a plain browser, each layer keeps its own localStorage key, so
+    // laying out one never moves the other.
+    const store = {};
+    const storage = {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => {
+        store[k] = String(v);
+      },
+      removeItem: (k) => {
+        delete store[k];
+      },
+    };
+    const race = loadLayer({ ids: ['relative'], plainBrowser: true, storage });
+    await settle();
+    race.drag('relative', 1600, 40, 1500, 40);
+    const training = loadLayer({ ids: ['ghosthud'], plainBrowser: true, storage, search: '?layer=training' });
+    await settle();
+    training.drag('ghosthud', 960, 500, 900, 500);
+    await race.waitSave();
+    check(
+      'race layout saves under the original key',
+      'apex-ingame-layout' in store && JSON.parse(store['apex-ingame-layout']).relative !== undefined,
+      Object.keys(store).join(','),
+    );
+    check(
+      'training layout saves under its own key',
+      'apex-training-layout' in store && JSON.parse(store['apex-training-layout']).ghosthud !== undefined,
+      Object.keys(store).join(','),
+    );
+    check(
+      'neither layer writes the other one\'s widgets',
+      !JSON.parse(store['apex-ingame-layout']).ghosthud && !JSON.parse(store['apex-training-layout']).relative,
+    );
+  }
+
+  {
+    // In the app the bridge is the store, and main answers each window for its
+    // own layer — so the training page saves through the very same call.
+    const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
+    const t = loadLayer({ screens: g.screens, saved: {}, ids: ['ghosthud'], search: '?layer=training' });
+    await settle();
+    t.setEditing(true);
+    t.drag('ghosthud', 960, 500, 1000, 500);
+    await t.waitSave();
+    check(
+      'training page saves through the bridge',
+      t.state.savedLayout && t.state.savedLayout.ghosthud && t.state.savedLayout.ghosthud.x === Math.round(1920 / 2 - 320) + 40,
+      JSON.stringify(t.state.savedLayout),
+    );
   }
 
   console.log('');

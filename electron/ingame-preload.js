@@ -4,6 +4,12 @@
  * Loaded by the transparent always-on-top window that renders widgets over the
  * sim (overlay/ingame.html, served from the local telemetry server). Exposes
  * only the layout/edit surface the page needs; everything else stays isolated.
+ *
+ * The training layer's window (overlay/training.html — see
+ * electron/trainingLayer.js) loads this same bridge. Nothing here names a
+ * layer: main answers each message for the window that SENT it, so the
+ * training page reads and writes `trainingLayout` with the very calls the race
+ * page uses for `ingameLayout`, and neither page can reach the other's.
  */
 
 'use strict';

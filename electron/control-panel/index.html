@@ -2449,24 +2449,38 @@
           <div>
             <h1 class="view__title">Training</h1>
             <p class="view__sub">
-              Drive against a lap you have already set. Ghost HUD puts the car you are chasing on screen as a gate on a corridor, so you read the gap as a picture rather than a number.
+              Overlays for practice. They run in a window of their own, only in practice sessions and test days, and only while Training mode is on — a race never loads them.
             </p>
           </div>
+          <!-- Disabled until the training layer is actually up: it only exists
+               in a practice session (control-panel.js renderTrainingStatus). -->
+          <button class="btn btn--accent" id="training-edit-btn" type="button" disabled>Edit training layout</button>
         </div>
+
+        <!-- Live or not, and why not. Rewritten on every status push. -->
+        <p class="field__hint training-status" id="training-status" aria-live="polite"></p>
+        <!-- Shown only when Chromium is compositing without the graphics card. -->
+        <p class="field__hint training-status" id="training-gpu-note" hidden>
+          Your PC is drawing overlays without the graphics card (software compositing), so the training layer will cost more here than it would elsewhere.
+        </p>
+
+        <!-- The training widgets' cards: the Overlays tab's card, mounted here
+             (group:'training' in TRAINING_CATALOG, main.js). -->
+        <ul class="overlay-list" id="training-widget-list"><!-- cards injected by JS --></ul>
 
         <section class="card">
           <div class="card__head">
             <h2 class="card__title"><svg class="icon"><use href="#i-graduation-cap" /></svg>Ghost HUD</h2>
-            <p class="card__desc">A corridor with a line across the middle for your own car. The gate rises above it when the ghost is up the road and drops below it when the ghost is behind.</p>
+            <p class="card__desc">The road ahead, drawn from the circuit, with a faster lap's racing line painted on it and a marker where that lap is right now.</p>
           </div>
           <div class="settings-grid">
             <label class="field">
               <span class="field__label">Which lap it chases</span>
-              <span class="field__hint" id="training-ghost-rule">Your fastest clean lap for the car class, circuit and surface you are on. Laps are grouped by the setup they were driven on, so a reference set on a different setup is not offered against this one.</span>
+              <span class="field__hint" id="training-ghost-rule">Your fastest clean lap in this car class, at this circuit, on the same surface — dry, damp or wet. Every lap you drive is already kept, so there is nothing to record first.</span>
             </label>
             <label class="field">
-              <span class="field__label">Turning it on</span>
-              <span class="field__hint">Ghost HUD is an overlay. Enable it on the <button class="btn btn--ghost btn--sm" id="training-open-overlays" type="button">Overlays</button> tab, then drive a lap through the start/finish line — it stays blank until the line is crossed, because before that the lap clock has no honest zero.</span>
+              <span class="field__label">When it starts</span>
+              <span class="field__hint">On your first lap through the start/finish line. Before that the lap clock has no zero to measure from, so it waits.</span>
             </label>
           </div>
         </section>

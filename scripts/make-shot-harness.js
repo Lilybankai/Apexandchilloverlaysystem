@@ -268,11 +268,13 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
    * can only show the ones the fixture already mentions, which is exactly the
    * half it is not meant to be checked on.
    *
-   * Ids and labels mirror OVERLAY_CATALOG in electron/main.js.
+   * Ids and labels mirror OVERLAY_CATALOG in electron/main.js; the training
+   * widgets (TRAINING_CATALOG) ride after them with group 'training', which
+   * mounts their cards in the Training tab.
    */
   const overlayCatalog = [
     ['standings', 'Standings'], ['relative', 'Relative / Timing'], ['delta', 'Delta'],
-    ['pacedelta', 'Pace Delta'], ['ghosthud', 'Ghost HUD'],
+    ['pacedelta', 'Pace Delta'],
     ['refpace', 'Reference Pace'], ['weather', 'Weather'],
     ['fuel', 'Fuel Calculator'], ['fuelplan', 'Fuel & Stint Plan'], ['tyres', 'Tyre Temps'],
     ['speedo', 'Speedometer'], ['pedals', 'Pedal Inputs'], ['pedalsv', 'Pedal Inputs (Vertical)'],
@@ -281,10 +283,35 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     ['racecontrol', 'Race Control'], ['mfd', 'MFD Control'],
   ].map(([id, label]) => ({ id, label, enabled: true, url: '' }));
   const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
-  const overlays = overlayCatalog.concat(streamingOverlays);
+  const trainingOverlays = [{ id: 'ghosthud', label: 'Ghost HUD', enabled: true, ingame: true,
+    url: 'http://127.0.0.1:8082/widget.html?w=ghosthud', group: 'training', gated: 'beta',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    obs: { w: 640, h: 307 } }];
+  const overlays = overlayCatalog.concat(streamingOverlays, trainingOverlays);
+  /*
+   * The Training tab's status line: ?training=live|no-session|session|stopped|
+   * race-mode|idle (idle = live, nothing switched on), plus &gpu=software for
+   * the software-compositing note. ?tab=training also needs ?beta=1, or the
+   * channel gate hides the tab, and selects Training mode for the shot.
+   */
+  const trainingReason = q.get('training') || 'live';
+  const trainingStatus = {
+    active: trainingReason === 'live' || trainingReason === 'idle',
+    reason: trainingReason === 'idle' ? 'live' : trainingReason,
+    sessionType: trainingReason === 'session' ? 'race' : 'practice',
+    windowOpen: trainingReason === 'live',
+    editing: false,
+    softwareCompositing: q.get('gpu') === 'software',
+  };
+  if (q.get('tab') === 'training') {
+    settings.trainingMode = true;
+    localStorage.setItem('apex.panel.mode', 'training');
+    localStorage.setItem('apex.panel.mode.main', '1');
+  }
 
   window.apex = {
-    getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—' } }),
+    getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—', training: trainingStatus } }),
+    trainingEditStart: P({ training: trainingStatus }), trainingEditStop: P({ training: trainingStatus }),
     updateSettings: (p) => Promise.resolve({ settings: Object.assign(settings, p), overlays, status: {} }),
     startServer: P({}), stopServer: P({}), copy: P(true), openInBrowser: P(true),
     sponsorsList: P([]), sponsorsAdd: P([]), sponsorsRemove: P([]),
