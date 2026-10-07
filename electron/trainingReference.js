@@ -269,7 +269,10 @@ class TrainingReference {
    */
   async options() {
     const combo = this.currentCombo();
-    const base = { ok: true, status: this.getStatus() };
+    // Signed out is said whatever else is true — off a circuit, in demo, with
+    // training off — because it is the one thing the driver can fix from here.
+    const signedOut = this.deps.isSignedIn() !== true;
+    const base = { ok: true, status: this.getStatus(), ...(signedOut ? { signedOut: true } : {}) };
     if (!combo) return { ...base, combo: null, choice: 'auto', rows: [] };
     const choice = this.choiceFor(combo);
     const head = {
@@ -277,7 +280,7 @@ class TrainingReference {
       combo: { track: combo.track, trackKey: combo.trackKey, carClass: combo.carClass, condition: combo.condition },
       choice,
     };
-    if (!this.deps.isSignedIn()) return { ...head, signedOut: true, rows: [] };
+    if (signedOut) return { ...head, rows: [] };
     if (combo.condition !== 'dry') return { ...head, rows: [] };
     const board = await this.boardFor(combo, this.now());
     const fmt = this.deps.helpers().formatLapTime;
@@ -405,8 +408,9 @@ class TrainingReference {
     const gen = this.gen;
     const combo = this.combo;
     if (!this.wanted) return this.settle(gen, null, { state: 'off' });
-    if (!combo) return this.settle(gen, null, { state: 'no-combo' });
+    // Before no-combo: signing in is what the driver can do about it.
     if (!this.signedIn) return this.settle(gen, null, { state: 'signed-out' });
+    if (!combo) return this.settle(gen, null, { state: 'no-combo' });
     if (combo.condition !== 'dry') return this.settle(gen, null, { state: 'not-dry' });
 
     const choice = this.choiceFor(combo);

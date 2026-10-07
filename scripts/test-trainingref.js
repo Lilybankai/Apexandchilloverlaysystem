@@ -409,6 +409,28 @@ async function main() {
     check('no frame yet: no combo, so nothing is chased', R.ctl.getStatus().state === 'no-combo' && R.last() === null);
   }
 
+  console.log('\n4c) Signed out is said first, on a circuit or not');
+  {
+    // The smoke test's case: demo mode (no combo), signed out. The picker
+    // showed the no-combo line when the fix is to sign in.
+    const demo = frame({ connected: false });
+    const R = rig({ signedIn: false, getFrame: () => demo });
+    const off = await R.ctl.options();
+    check('training off, no combo: options say signed out', off.signedOut === true && off.combo === null, JSON.stringify(off));
+    R.ctl.setWanted(true);
+    await R.settle();
+    check('training on, no combo: the status is signed-out, not no-combo', R.ctl.getStatus().state === 'signed-out', R.ctl.getStatus().state);
+    check('…and still no league call', R.league.calls.board_for_lap + R.league.calls.get_lap_trace === 0);
+    const on = await R.ctl.options();
+    check('…options agree', on.signedOut === true && on.status.state === 'signed-out');
+
+    const S = rig({ signedIn: false, getFrame: () => frame() });
+    const onCircuit = await S.ctl.options();
+    check('on a circuit, signed out: signed out, with the combo', onCircuit.signedOut === true && onCircuit.combo && onCircuit.rows.length === 0);
+    const I = rig({ getFrame: () => demo });
+    check('signed in, no combo: no signedOut flag', !('signedOut' in (await I.ctl.options())));
+  }
+
   console.log('\n5) The cache');
   {
     const dir = newDir();

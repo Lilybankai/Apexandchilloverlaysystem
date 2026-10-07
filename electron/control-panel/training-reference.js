@@ -67,7 +67,10 @@ window.apexTrainingRef = (function () {
   function render() {
     if (!root) return;
     const d = data || {};
-    const st = statusText(d.status);
+    // Signed out outranks every other state, on a circuit or not: the board
+    // needs a sign-in, and "drive onto a circuit" would send the driver to
+    // fix the wrong thing.
+    const st = statusText(d.signedOut ? { state: 'signed-out' } : d.status);
     const choice = choiceOf(d);
     const rows = Array.isArray(d.rows) ? d.rows : [];
     const lined = rows.filter((r) => r.hasLine);
