@@ -5,6 +5,16 @@
      app until it is renamed.
 -->
 
+## 1.3.5-beta.3 — 2026-10-07
+<!-- internal -->
+
+### Fixed
+
+- **The same build as 1.3.5-beta.2, signed.** beta.2 was built on a machine
+  without the code-signing certificate and went out unsigned, so installs
+  refused it as an update. Nothing in the app has changed; this is the Ghost
+  HUD racing-line build again, signed and timestamped.
+
 ## 1.3.5-beta.2 — 2026-10-06
 
 ### Changed
