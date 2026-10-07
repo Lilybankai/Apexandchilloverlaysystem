@@ -79,6 +79,18 @@ function createTrainingLayer(deps) {
     } else {
       win.hide();
     }
+    tellShown();
+  }
+
+  /**
+   * Tell the page whether it is on screen. With backgroundThrottling off a
+   * hidden window still reports `document.hidden === false`, so this is the
+   * only way its paint loops learn to stop. A channel of its own: the race
+   * window shares the bridge but is never sent it.
+   */
+  function tellShown() {
+    if (!alive()) return;
+    win.webContents.send('training:shown', win.isVisible());
   }
 
   function startWatch() {
@@ -155,6 +167,8 @@ function createTrainingLayer(deps) {
       if (w.isDestroyed()) return;
       w.webContents.send('ingame:appearance', deps.appearance());
       w.webContents.send('ingame:edit', editing);
+      // A fresh page assumes it is shown; one loaded hidden must hear otherwise.
+      w.webContents.send('training:shown', w.isVisible());
     });
     w.webContents.on('render-process-gone', (_evt, details) => {
       const reason = (details && details.reason) || 'unknown';

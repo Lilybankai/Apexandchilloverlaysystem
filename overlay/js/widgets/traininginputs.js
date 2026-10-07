@@ -293,9 +293,26 @@
     document.addEventListener("visibilitychange", wake);
   }
 
-  /** Hidden widget, minimised layer, or an OBS source auto-hidden off-track. */
+  /**
+   * Whether the training window is on screen, as main last said over the
+   * bridge — Ghost HUD's rule and for its reason: a hidden window's document
+   * still reads as visible with background throttling off. True with no
+   * bridge (OBS).
+   */
+  var layerShown = true;
+
+  function watchLayer() {
+    var bridge = window.apexIngame;
+    if (!bridge || typeof bridge.onTrainingShown !== "function") return;
+    bridge.onTrainingShown(function (on) {
+      layerShown = on;
+      if (on) wake();
+    });
+  }
+
+  /** Hidden widget, hidden window, minimised layer, or an OBS source auto-hidden off-track. */
   function shown() {
-    if (document.hidden || boxW === 0) return false;
+    if (!layerShown || document.hidden || boxW === 0) return false;
     return document.documentElement.getAttribute("data-autohidden") !== "true";
   }
 
@@ -693,6 +710,7 @@
     readTokens();
     sizeCanvas();
     watchSize(canvas);
+    watchLayer();
     GHOST.subscribe(setLine);
   }
 

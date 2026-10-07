@@ -116,4 +116,15 @@ contextBridge.exposeInMainWorld('apexIngame', {
   onAppearance: (callback) => {
     ipcRenderer.on('ingame:appearance', (_evt, appearance) => callback(appearance));
   },
+
+  /**
+   * The training window was shown or hidden (auto show/hide, edit mode).
+   * Sent only to the training window (electron/trainingLayer.js); the race
+   * page never hears it. Needed because with background throttling off the
+   * page's own `document.hidden` stays false after `win.hide()`, and the
+   * training widgets' paint loops would run on in a hidden window.
+   */
+  onTrainingShown: (callback) => {
+    ipcRenderer.on('training:shown', (_evt, shown) => callback(!!shown));
+  },
 });

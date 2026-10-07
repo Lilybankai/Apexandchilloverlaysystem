@@ -602,12 +602,31 @@
   }
 
   /**
+   * Whether the training window is on screen, as main last said over the
+   * bridge (`training:shown`). The document cannot tell: with background
+   * throttling off it stays "visible" after the window is hidden, and the
+   * loop would paint a hidden window at display rate. True wherever nobody
+   * says otherwise — an OBS source has no bridge.
+   */
+  var layerShown = true;
+
+  function watchLayer() {
+    var bridge = window.apexIngame;
+    if (!bridge || typeof bridge.onTrainingShown !== "function") return;
+    bridge.onTrainingShown(function (on) {
+      layerShown = on;
+      if (on) wake();
+    });
+  }
+
+  /**
    * Whether painting can be seen at all. A widget switched off is
-   * `display:none` (zero width), a minimised layer is a hidden document, and
-   * an OBS source auto-hidden off-track fades the whole page out.
+   * `display:none` (zero width), a minimised layer is a hidden document, a
+   * hidden training window says so over the bridge, and an OBS source
+   * auto-hidden off-track fades the whole page out.
    */
   function shown() {
-    if (document.hidden || boxW === 0) return false;
+    if (!layerShown || document.hidden || boxW === 0) return false;
     return document.documentElement.getAttribute("data-autohidden") !== "true";
   }
 
@@ -1417,6 +1436,7 @@
     buildGradients();
     sizeCanvas();
     watchSize(canvas);
+    watchLayer();
     GHOST.subscribe(setLine);
   }
 

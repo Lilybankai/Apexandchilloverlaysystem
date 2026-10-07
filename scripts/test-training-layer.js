@@ -192,6 +192,27 @@ console.log('\ntraining layer: built like the race layer');
   check('a fresh page is told the appearance and the edit state', sent.includes('ingame:appearance') && sent.includes('ingame:edit'));
 }
 
+console.log('\ntraining layer: the page hears when it is hidden');
+{
+  // The page cannot see win.hide() (backgroundThrottling:false keeps its
+  // document "visible"), so its paint loops stop only on this message.
+  const w = layer.window();
+  const shownMsgs = () => w.webContents.sent.filter((s) => s[0] === 'training:shown').map((s) => s[1]);
+  w.webContents.sent.length = 0;
+  layer.setVisible(false);
+  check('hidden → the page is told false', shownMsgs().join() === 'false', shownMsgs().join());
+  layer.setVisible(false);
+  check('…once, not on every repeat', shownMsgs().length === 1);
+  layer.setVisible(true);
+  check('shown → told true', shownMsgs().join() === 'false,true', shownMsgs().join());
+  layer.setVisible(false);
+  w.webContents.sent.length = 0;
+  w.webContents.emit('did-finish-load');
+  check('a page that loads while hidden is told so at once', shownMsgs().join() === 'false', shownMsgs().join());
+  layer.setVisible(true);
+  check('the race window is never sent it', !raceWin.webContents.sent.some((s) => s[0] === 'training:shown'));
+}
+
 console.log('\ntraining layer: editing');
 {
   const w = layer.window();
