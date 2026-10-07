@@ -83,6 +83,11 @@ function choiceKey(combo) {
   return combo ? `${combo.trackKey}|${combo.carClass}` : '';
 }
 
+/** Everything that changes the answer, condition included; '' for no combo. */
+function fullKeyOf(combo) {
+  return combo ? `${combo.sim}|${combo.trackKey}|${combo.carClass}|${combo.condition}` : '';
+}
+
 /** One stored choice, checked: 'auto' | 'own' | { driverId, trackId }. */
 function normalizeChoice(v) {
   if (v === 'own' || v === 'auto') return v;
@@ -214,6 +219,12 @@ class TrainingReference {
     }
     this.wanted = on;
     this.signedIn = this.deps.isSignedIn() === true;
+    // The combo is only kept up to date while wanted, so whatever is held is
+    // from the last time training was on — another track, another car. Start
+    // from the newest frame instead; noteFrame takes over from here. Off, it
+    // is dropped, so nothing stale is left to start from next time.
+    this.combo = on ? this.comboOf(this.deps.getFrame ? this.deps.getFrame() : null) : null;
+    this.comboFullKey = fullKeyOf(this.combo);
     this.bump();
   }
 
@@ -224,7 +235,7 @@ class TrainingReference {
   noteFrame(frame) {
     if (!this.wanted) return;
     const combo = this.comboOf(frame);
-    const full = combo ? `${combo.sim}|${combo.trackKey}|${combo.carClass}|${combo.condition}` : '';
+    const full = fullKeyOf(combo);
     const signedIn = this.deps.isSignedIn() === true;
     if (full !== this.comboFullKey || signedIn !== this.signedIn) {
       this.combo = combo;

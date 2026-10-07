@@ -164,6 +164,7 @@ function rig(opts = {}) {
     saveChoices: (m) => saved.push(JSON.parse(JSON.stringify(m))),
     helpers: () => HELPERS,
     onChange: (s) => statuses.push(s),
+    getFrame: opts.getFrame,
     now: () => now,
   });
   const settle = async () => {
@@ -368,6 +369,44 @@ async function main() {
     M.ctl.noteFrame(frame());
     await M.settle();
     check('trace/row time mismatch: not chased, not cached', M.delivered.length === 0 && (() => { try { return fs.readdirSync(M.cache.dir).length === 0; } catch { return true; } })());
+  }
+
+  console.log('\n4b) Switched back on: the combo is read afresh, not remembered');
+  {
+    // Training on at Monza, off, then the driver loads another circuit. The
+    // combo is only tracked while wanted, so switching back on must not start
+    // from Monza.
+    const SPA = 'Circuit de Spa-Francorchamps';
+    const SPA_LEN = 7004;
+    let latest = frame();
+    const R = rig({ getFrame: () => latest });
+    R.ctl.setWanted(true);
+    R.ctl.noteFrame(latest);
+    await R.settle();
+    check('on at Monza: the Monza board', R.league.lastBoardArgs && R.league.lastBoardArgs.p_track_key === trackKeyOf(TRACK, LEN));
+    R.ctl.setWanted(false);
+    await R.settle();
+    latest = frame({ session: { track: SPA, trackLengthM: SPA_LEN } });
+    R.ctl.noteFrame(latest); // unwanted: not even looked at
+    const boards = R.league.calls.board_for_lap;
+    R.ctl.setWanted(true);
+    await R.settle();
+    check('on again at Spa, before any frame: the Spa board, not Monza\'s',
+      R.league.calls.board_for_lap === boards + 1 && R.league.lastBoardArgs.p_track_key === trackKeyOf(SPA, SPA_LEN),
+      R.league.lastBoardArgs && R.league.lastBoardArgs.p_track_key);
+    const d = R.last();
+    check('…and the reference is stamped for Spa', d && d.meta.trackKey === trackKeyOf(SPA, SPA_LEN));
+    R.ctl.noteFrame(latest);
+    await R.settle();
+    check('the first frame after agrees, so nothing is re-resolved', R.league.calls.board_for_lap === boards + 1);
+
+    // With no frame at all, it waits for one rather than guessing.
+    latest = null;
+    R.ctl.setWanted(false);
+    await R.settle();
+    R.ctl.setWanted(true);
+    await R.settle();
+    check('no frame yet: no combo, so nothing is chased', R.ctl.getStatus().state === 'no-combo' && R.last() === null);
   }
 
   console.log('\n5) The cache');
