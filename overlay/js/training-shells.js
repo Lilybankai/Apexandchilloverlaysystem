@@ -19,9 +19,7 @@
   "use strict";
 
   var shells = window.ApexShells || (window.ApexShells = {});
-  // Ghost HUD's shell stays in shells.js, where it was before the training
-  // layer existed; the id is still a training widget's.
-  var ids = ["ghosthud"];
+  var ids = [];
 
   function shell(id, title, label) {
     return (
@@ -38,6 +36,7 @@
     ids.push(id);
   }
 
+  add("ghosthud", "Ghost HUD", "Ghost HUD — the gap to a chosen reference lap");
   add("traininginputs", "Trace", "Trace — your throttle, brake and steering against the reference lap, by distance");
   add("trainingcorner", "Corner", "Corner card — how the last corner went against the reference lap");
   add("trainingsectors", "Lap Strip", "Lap strip — sectors and every corner of this lap against the reference");
