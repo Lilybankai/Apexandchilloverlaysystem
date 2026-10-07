@@ -3645,6 +3645,9 @@ function registerIpc() {
       if (overlayWin && !overlayWin.isDestroyed()) {
         overlayWin.webContents.send('ingame:dock', !!next.ingameMagneticDock);
       }
+      // The training layout editor docks by the same switch.
+      const trainingWin = trainingLayer.window();
+      if (trainingWin) trainingWin.webContents.send('ingame:dock', !!next.ingameMagneticDock);
     }
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map

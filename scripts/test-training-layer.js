@@ -310,6 +310,9 @@ console.log('\ntraining layer: routing bridge messages by sender');
   check('every layer handler routes through layerOf', unrouted.length === 0, unrouted.join(','));
   check("the Dashboard's Reset still reaches the race layer (panel allowed)", /layerOf\(evt, \{ panel: true \}\)/.test(handler('ingame:layoutReset')));
   check('the old by-elimination helper is gone', !/fromTraining/.test(main));
+  const dock = main.slice(main.indexOf('if (next.ingameMagneticDock !== current.ingameMagneticDock)'));
+  check('the magnetic-dock switch is pushed to the training window too',
+    /trainingLayer\.window\(\)[\s\S]{0,120}send\('ingame:dock'/.test(dock.slice(0, 600)));
 }
 
 console.log('\ntraining layer: Stop takes it down');
