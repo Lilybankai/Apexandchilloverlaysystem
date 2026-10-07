@@ -1,7 +1,9 @@
 /**
  * ingame.js — layout + edit-mode manager for the in-game overlay layer.
  * -----------------------------------------------------------------------------
- * Runs only on ingame.html. Owns the .ig-item wrappers around each widget:
+ * Runs on ingame.html (the race layer) and training.html (the training layer,
+ * `?layer=training` — see LAYERS below). Owns the .ig-item wrappers around
+ * each widget:
  *   - applies saved placement ({x, y, scale, w, h} per widget) or sensible
  *     defaults mirroring the OBS combined page;
  *   - in edit mode (toggled by the app through window.apexIngame) lets the
@@ -37,7 +39,26 @@
   "use strict";
 
   var bridge = window.apexIngame || null;
-  var LS_KEY = "apex-ingame-layout";
+
+  /**
+   * Which layer this page lays out: "race" (ingame.html, the default and the
+   * only layer there was) or "training" (training.html, its own window). Taken
+   * from `?layer=`; anything else is the race layer, so an ingame.html URL
+   * that never heard of layers behaves exactly as it always has.
+   *
+   * The layer picks the default placements and, opened in a plain browser, the
+   * localStorage key. In the app the bridge needs no telling — main answers
+   * each window for its own layer.
+   */
+  var LAYERS = {
+    race: { lsKey: "apex-ingame-layout" },
+    training: { lsKey: "apex-training-layout" },
+  };
+  var LAYER = (function () {
+    var m = /[?&]layer=([a-z]+)/.exec((window.location && window.location.search) || "");
+    return m && LAYERS.hasOwnProperty(m[1]) ? m[1] : "race";
+  })();
+  var LS_KEY = LAYERS[LAYER].lsKey;
   var MIN_SCALE = 0.4;
   var MAX_SCALE = 3;
   /** Floors for edge resizing — small enough to be useful, never unclickable. */
@@ -191,8 +212,20 @@
     return { x: l, y: t, width: r - l, height: b - t };
   }
 
+  /** The training layer's default placements — its own screen, its own table. */
+  function trainingDefaults(vw, vh) {
+    return {
+      // Centred and low, so the drawn horizon sits near the real one. Height
+      // is derived from width (the camera's field of view fixes the two
+      // together), so only w is worth setting here. 640 because a road that
+      // bends needs room to show it — at 420 a corner had nowhere to go.
+      ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.44), w: 640 },
+    };
+  }
+
   /** Default placement per widget id (px, for a generic 16:9 screen). */
   function defaultsFor(id, vw, vh) {
+    if (LAYER === "training") return trainingDefaults(vw, vh)[id] || { x: 24, y: 24, w: 400 };
     var D = {
       // 560, not the 474 it shipped at: the driver cell carries the class tag,
       // the brand badge and the DR/SR rating pair as well as the name, and those
@@ -207,11 +240,6 @@
       // sized it.
       standings: { x: 24, y: 24, w: 560 },
       weather: { x: Math.round(vw / 2 - 220), y: 24, w: 440 },
-      // Centred and low, so the drawn horizon sits near the real one. Height
-      // is derived from width (the camera's field of view fixes the two
-      // together), so only w is worth setting here. 640 because a road that
-      // bends needs room to show it — at 420 a corner had nowhere to go.
-      ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.44), w: 640 },
       // Docked into the speedo cluster's top-centre notch, on the same centre
       // line (both widgets are centred on vw/2, so x needs no coupling). The y
       // here is only a pre-measurement guess — the cluster's own default top

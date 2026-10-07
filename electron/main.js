@@ -60,6 +60,9 @@ const stallWatch = require('./stall-watch');
 // ordering is the guarantee, so it stays at the top rather than in whenReady.
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
+const { createTrainingGate, sessionOfFrame } = require('./trainingGate');
+const { createTrainingLayer } = require('./trainingLayer');
+const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
@@ -121,17 +124,6 @@ const OVERLAY_CATALOG = [
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
-  // Training-mode widget: a perspective corridor with a gate where a chosen
-  // reference lap is on the road. Kept out of the click-through layer's
-  // defaults because it is a deliberate training tool, not race furniture.
-  {
-    id: 'ghosthud',
-    label: 'Ghost HUD',
-    gated: 'beta',
-    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
-    ingameDefault: false,
-    obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
-  },
   {
     id: 'refpace',
     label: 'Reference Pace',
@@ -261,6 +253,38 @@ const OVERLAY_CATALOG = [
   },
 ];
 
+/**
+ * The training widgets. Drawn by their OWN window (the training layer), never
+ * the race layer above, and only while Training mode is on in a practice
+ * session — see electron/trainingGate.js. Their on/off lives in
+ * `trainingOverlays` and their placement in `trainingLayout`, so nothing here
+ * can reach a race.
+ *
+ * Same entry shape as OVERLAY_CATALOG, so the Overlays card builder renders
+ * them unchanged: `group: 'training'` mounts the cards in the Training tab the
+ * way 'streaming' mounts chat in the Streamers tab. `ingameDefault: false`
+ * means off on the training layer until the driver switches it on.
+ */
+const TRAINING_CATALOG = [
+  {
+    id: 'ghosthud',
+    label: 'Ghost HUD',
+    gated: 'beta',
+    group: 'training',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    ingameDefault: false,
+    obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
+  },
+];
+const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);
+
+/**
+ * Every widget the app has, race layer then training layer. For questions about
+ * a widget EXISTING — its OBS source, its background override, what the usage
+ * counters list — rather than about which window draws it.
+ */
+const ALL_WIDGETS = [...OVERLAY_CATALOG, ...TRAINING_CATALOG];
+
 /* -------------------------------------------------------------------------- */
 /*  Persisted settings                                                        */
 /* -------------------------------------------------------------------------- */
@@ -277,6 +301,13 @@ function defaultSettings() {
   for (const o of OVERLAY_CATALOG) {
     enabledOverlays[o.id] = true;
     ingameOverlays[o.id] = o.ingameDefault !== false;
+  }
+  // Training widgets are OBS sources like any other, so they keep an OBS
+  // switch; their on-screen switch is in the training map, not the race one.
+  const trainingOverlays = {};
+  for (const o of TRAINING_CATALOG) {
+    enabledOverlays[o.id] = true;
+    trainingOverlays[o.id] = o.ingameDefault !== false;
   }
   return {
     /*
@@ -351,6 +382,16 @@ function defaultSettings() {
     // mileage on it.
     ingameMagneticDock: false,
     ingameOverlays,
+    // Training mode: the Race/Training switch in the top bar. Main owns it,
+    // because main decides whether the training layer exists (trainingGate.js);
+    // the panel's localStorage copy only paints the switch before this arrives.
+    // Off by default — the training layer costs more than the race one.
+    trainingMode: false,
+    // The training layer's own widget switches and placement, shaped exactly
+    // like ingameOverlays / ingameLayout. Kept apart from them so a race never
+    // draws a training widget, whatever the switches say.
+    trainingOverlays,
+    trainingLayout: {},
     // The VR headset panel: on/off plus where it sits in the seated space, in
     // metres. World-locked — see electron/vr/placement.js. Off by default and
     // costs nothing until switched on. Each widget has its own switch and
@@ -702,6 +743,8 @@ function loadSettings() {
   } catch {
     stored = {}; // first run or unreadable — use defaults
   }
+  // Ghost HUD's switch and placement move out of the race maps, once.
+  stored = migrateTrainingSettings(stored, TRAINING_IDS);
   const enabledOverlays = { ...defaults.enabledOverlays };
   const ingameOverlays = { ...defaults.ingameOverlays };
   for (const o of OVERLAY_CATALOG) {
@@ -718,6 +761,21 @@ function loadSettings() {
       const entry = normalizeLayoutEntry(stored.ingameLayout[o.id]);
       if (entry) ingameLayout[o.id] = entry;
     }
+  }
+  const trainingOverlays = { ...defaults.trainingOverlays };
+  const trainingLayout = {};
+  for (const o of TRAINING_CATALOG) {
+    if (stored.enabledOverlays && typeof stored.enabledOverlays[o.id] === 'boolean') {
+      enabledOverlays[o.id] = stored.enabledOverlays[o.id];
+    }
+    if (stored.trainingOverlays && typeof stored.trainingOverlays[o.id] === 'boolean') {
+      trainingOverlays[o.id] = stored.trainingOverlays[o.id];
+    }
+    const entry =
+      stored.trainingLayout && typeof stored.trainingLayout === 'object'
+        ? normalizeLayoutEntry(stored.trainingLayout[o.id])
+        : null;
+    if (entry) trainingLayout[o.id] = entry;
   }
   return {
     httpPort: clamp(stored.httpPort, MIN_PORT, MAX_PORT, defaults.httpPort),
@@ -743,6 +801,10 @@ function loadSettings() {
         : defaults.ingameMagneticDock,
     ingameOverlays,
     ingameLayout,
+    trainingMode:
+      typeof stored.trainingMode === 'boolean' ? stored.trainingMode : defaults.trainingMode,
+    trainingOverlays,
+    trainingLayout,
     vr: normalizeVr(stored.vr),
     engineerEnabled:
       typeof stored.engineerEnabled === 'boolean' ? stored.engineerEnabled : defaults.engineerEnabled,
@@ -861,7 +923,7 @@ function normalizeWidgetOpacity(stored) {
   const out = {};
   const from = stored && typeof stored.widgetOpacity === 'object' ? stored.widgetOpacity : null;
   if (!from) return out;
-  for (const o of OVERLAY_CATALOG) {
+  for (const o of ALL_WIDGETS) {
     const v = Number(from[o.id]);
     if (Number.isFinite(v)) out[o.id] = Math.min(100, Math.max(0, Math.round(v)));
   }
@@ -937,6 +999,11 @@ function reportEnabledOverlays(settings) {
     const ids = OVERLAY_CATALOG.filter(
       (o) => s.enabledOverlays[o.id] !== false || (s.ingameEnabled && isIngame(s, o)),
     ).map((o) => o.id);
+    // Training widgets by the same rule, with Training mode standing in for
+    // "Show in game": it is the training layer's own on switch.
+    for (const o of TRAINING_CATALOG) {
+      if (s.enabledOverlays[o.id] !== false || (s.trainingMode && isTraining(s, o))) ids.push(o.id);
+    }
     featureUsage.overlaysEnabled(ids);
   } catch {
     /* a counter must never be the thing that fails a settings save */
@@ -1366,6 +1433,7 @@ function setFeedOnTrack(onTrack) {
   if (onTrack === feedOnTrack) return;
   feedOnTrack = onTrack;
   applyIngameVisibility();
+  applyTrainingLayerVisibility();
   // Leaving the track is the moment a deferred "better ears" fetch may run.
   if (!onTrack) maybeFetchBetterEars();
 }
@@ -1476,6 +1544,9 @@ function dialStatusFeed() {
       // is up and being driven, so the results poll knows there is any point
       // spending a request — see electron/results-harvest.js.
       resultsHarvest.noteFrame(frame);
+      // Which session this is decides whether the training layer runs. A
+      // field read and a compare; it does work only when the answer changes.
+      trainingGate.update({ session: sessionOfFrame(frame) }, now);
     } catch {
       /* ignore malformed frame */
     }
@@ -1500,6 +1571,9 @@ function dialStatusFeed() {
       if (!status.running) return;
       const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
       if (stale) setFeedOnTrack(false);
+      // A silent feed is no session; this beat is also what lets the training
+      // gate's held answer run out between sessions.
+      trainingGate.update(stale ? { session: null } : {}, Date.now());
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -1572,7 +1646,7 @@ function disconnectStatusFeed() {
 
 /** Status snapshot for the UI, including the in-game edit state. */
 function statusForUi() {
-  return { ...status, ingameEditing, vr: vrOverlay.status() };
+  return { ...status, ingameEditing, vr: vrOverlay.status(), training: trainingStatusForUi() };
 }
 
 /** Push the current status object to the renderer (if the window is open). */
@@ -1743,8 +1817,23 @@ function cycleIngame() {
  * is picked up from the config at the next start).
  */
 function applyAppearance(settings) {
-  const s = settings || loadSettings();
-  const payload = {
+  const payload = appearancePayload(settings || loadSettings());
+  try {
+    requireServer().setAppearance(payload);
+  } catch (err) {
+    // Not built / not started yet — buildServerConfig() carries the value in.
+  }
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.webContents.send('ingame:appearance', payload);
+  }
+  // The training layer reads the same channel through the same bridge.
+  const trainingWin = trainingLayer.window();
+  if (trainingWin) trainingWin.webContents.send('ingame:appearance', payload);
+}
+
+/** What applyAppearance hands every consumer, built from settings `s`. */
+function appearancePayload(s) {
+  return {
     panelOpacity: s.panelOpacity,
     textScale: s.textScale,
     changeGlow: s.changeGlow,
@@ -1763,14 +1852,6 @@ function applyAppearance(settings) {
     speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
     tempUnit: s.tempUnit === 'f' ? 'f' : 'c',
   };
-  try {
-    requireServer().setAppearance(payload);
-  } catch (err) {
-    // Not built / not started yet — buildServerConfig() carries the value in.
-  }
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.webContents.send('ingame:appearance', payload);
-  }
 }
 
 // An applyTuning() sat here, the telemetry-side counterpart to applyAppearance():
@@ -2216,6 +2297,18 @@ function isIngame(settings, o) {
   return o.ingameDefault !== false;
 }
 
+/** isIngame's counterpart for TRAINING_CATALOG and the training layer. */
+function isTraining(settings, o) {
+  if (!overlayOnThisChannel(settings, o)) return false;
+  if (o.id in settings.trainingOverlays) return settings.trainingOverlays[o.id] !== false;
+  return o.ingameDefault !== false;
+}
+
+/** Whether a widget id belongs to the training layer rather than the race one. */
+function isTrainingWidget(id) {
+  return TRAINING_IDS.includes(id);
+}
+
 /**
  * Whether a catalog entry is offered on the channel this install follows.
  *
@@ -2235,14 +2328,18 @@ function overlayOnThisChannel(settings, o) {
   );
 }
 
-/** Full catalog with per-overlay OBS URLs and enabled state for the UI. */
+/**
+ * Full catalog with per-overlay OBS URLs and enabled state for the UI. The
+ * training widgets come last, carrying `group: 'training'`; for them `ingame`
+ * is the training layer's switch.
+ */
 function overlaysForUi() {
   const settings = loadSettings();
   const base = baseUrl();
-  return OVERLAY_CATALOG.filter((o) => overlayOnThisChannel(settings, o)).map((o) => ({
+  return ALL_WIDGETS.filter((o) => overlayOnThisChannel(settings, o)).map((o) => ({
     ...o,
     enabled: settings.enabledOverlays[o.id] !== false,
-    ingame: isIngame(settings, o),
+    ingame: isTrainingWidget(o.id) ? isTraining(settings, o) : isIngame(settings, o),
     url: `${base}/widget.html?w=${o.id}`,
     // The widget's own background, and the global it would otherwise follow.
     // `undefined` opacity is the card's "Auto" state — it has no override, and
@@ -2323,8 +2420,13 @@ function physicalDisplayBounds() {
  * nothing to pass and the nearest display is the best guess going; the call
  * straight after construction gets it right, and that one is the one that sizes
  * the layer.
+ *
+ * `target` is the layer window being sized — the race layer unless told
+ * otherwise. The training layer passes its own window, so its rectangle is in
+ * ITS scale factor (the two can differ on a mixed-scaling desktop while one of
+ * them is mid-resize).
  */
-function overlayGeometry() {
+function overlayGeometry(target = overlayWin) {
   const phys = physicalDisplayBounds();
   if (!phys || typeof screen.screenToDipRect !== 'function') {
     return overlayGeometryFrom(
@@ -2332,7 +2434,7 @@ function overlayGeometry() {
       screen.getPrimaryDisplay().bounds,
     );
   }
-  const win = overlayWin && !overlayWin.isDestroyed() ? overlayWin : null;
+  const win = target && !target.isDestroyed() ? target : null;
   return overlayGeometryFrom(phys.all, phys.primary, (r) => screen.screenToDipRect(win, r));
 }
 
@@ -2369,12 +2471,15 @@ function overlayGeometry() {
  * ones. Converges immediately on every rig whose screens share a scale factor,
  * which is all of them bar the mixed ones; the cap is there so a pathological
  * arrangement oscillates twice rather than forever.
+ *
+ * `win` is the layer window to size: the race layer by default, the training
+ * layer when it passes its own.
  */
-function applyOverlayGeometry({ notify = true } = {}) {
-  if (!overlayWin || overlayWin.isDestroyed()) return;
-  let geom = overlayGeometry();
+function applyOverlayGeometry({ notify = true, win = overlayWin } = {}) {
+  if (!win || win.isDestroyed()) return;
+  let geom = overlayGeometry(win);
   for (let pass = 0; pass < 3; pass++) {
-    const cur = overlayWin.getBounds();
+    const cur = win.getBounds();
     const changed =
       cur.x !== geom.bounds.x ||
       cur.y !== geom.bounds.y ||
@@ -2385,16 +2490,16 @@ function applyOverlayGeometry({ notify = true } = {}) {
     // never drag or stretch the layer itself. Windows enforces that against
     // setBounds too, so both are lifted for the width of the call.
     try {
-      overlayWin.setResizable(true);
-      overlayWin.setMovable(true);
-      overlayWin.setBounds(geom.bounds);
+      win.setResizable(true);
+      win.setMovable(true);
+      win.setBounds(geom.bounds);
     } finally {
-      overlayWin.setResizable(false);
-      overlayWin.setMovable(false);
+      win.setResizable(false);
+      win.setMovable(false);
     }
-    geom = overlayGeometry();
+    geom = overlayGeometry(win);
   }
-  if (notify) overlayWin.webContents.send('ingame:screens', geom.screens);
+  if (notify) win.webContents.send('ingame:screens', geom.screens);
 }
 
 /**
@@ -2409,6 +2514,7 @@ function watchDisplays() {
     overlayGeometryTimer = setTimeout(() => {
       overlayGeometryTimer = null;
       applyOverlayGeometry();
+      applyOverlayGeometry({ win: trainingLayer.window() });
     }, 400);
   };
   screen.on('display-added', onChange);
@@ -2460,6 +2566,8 @@ function syncOverlayWindow() {
   const settings = loadSettings();
   // Everything that re-syncs the desktop layer re-syncs the headset panel.
   syncVr(settings);
+  // ...and the training layer, which keeps its own window and its own rules.
+  syncTrainingLayer(settings);
   const wanted =
     status.running &&
     settings.ingameEnabled &&
@@ -2631,17 +2739,17 @@ function refreshOverlays(source) {
  * is being written, and on the watch tick so the CPU share covers ~2 s rather
  * than everything since the last line.
  */
-function layerProcessContext() {
+function layerProcessContext(win = overlayWin, label = 'layer') {
   try {
     const metrics = app.getAppMetrics();
-    const pid = overlayWin && !overlayWin.isDestroyed() ? overlayWin.webContents.getOSProcessId() : 0;
+    const pid = win && !win.isDestroyed() ? win.webContents.getOSProcessId() : 0;
     const gpu = metrics.find((m) => m.type === 'GPU');
     const rend = metrics.find((m) => m.pid === pid);
     const part = (name, m) =>
       m
         ? ` ${name}=${Math.round(m.cpu.percentCPUUsage)}%/${Math.round((m.memory.workingSetSize || 0) / 1024)}MB`
         : ` ${name}=none`;
-    return part('gpu', gpu) + part('layer', rend);
+    return part('gpu', gpu) + part(label, rend);
   } catch {
     return '';
   }
@@ -2815,6 +2923,7 @@ let ingameUsageTimer = null;
 function startIngameUsageTicker() {
   if (ingameUsageTimer) return;
   ingameUsageTimer = setInterval(() => {
+    creditTrainingScreenTime(INGAME_USAGE_TICK_MS / 1000);
     try {
       if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
       const settings = loadSettings();
@@ -2848,6 +2957,9 @@ function applyIngameMouse() {
 /** Locks/unlocks the layer for on-screen editing and tells both windows. */
 function setIngameEdit(editing) {
   ingameEditing = !!editing;
+  // One layer in edit mode at a time: the two windows overlap, and handles on
+  // both would leave the driver dragging whichever happened to be on top.
+  if (ingameEditing && trainingLayer.editing()) setTrainingEdit(false);
   if (overlayWin && !overlayWin.isDestroyed()) {
     applyIngameMouse();
     // Editing forces the layer on screen even when auto show/hide has it
@@ -2887,6 +2999,201 @@ function setIngameInteract(on) {
 function toggleIngameInteract() {
   syncOverlayWindow();
   setIngameInteract(!ingameInteractive);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Training layer (electron/trainingGate.js + electron/trainingLayer.js)    */
+/* -------------------------------------------------------------------------- */
+/*
+ * Training widgets get their own window, built only while Training mode is on,
+ * the install follows beta, the server runs and the sim is in practice. The
+ * race layer above knows nothing of it: the only shared pieces are the
+ * geometry functions (passed this window) and the bridge (ingame-preload.js),
+ * whose messages main routes by sender — see `fromTraining` in registerIpc.
+ */
+
+const trainingGate = createTrainingGate();
+
+const trainingLayer = createTrainingLayer({
+  BrowserWindow,
+  preload: path.join(__dirname, 'ingame-preload.js'),
+  applyGeometry: (opts) => applyOverlayGeometry(opts),
+  // Nearest-display guess, as for the race layer: there is no window yet.
+  initialBounds: () => overlayGeometry(null).bounds,
+  appearance: () => appearancePayload(loadSettings()),
+  feedLive: layerFeedLive,
+  log: (line) => stallWatch.note(line),
+  processContext: (win) => layerProcessContext(win, 'training'),
+  onChange: () => pushStatus(),
+});
+
+/** Training is beta-only, by the rule every `gated: 'beta'` entry follows. */
+function trainingOnThisChannel(settings) {
+  return overlayOnThisChannel(settings, { gated: 'beta' });
+}
+
+/** Whether the training overlays are running right now. */
+function trainingActive() {
+  return trainingGate.state().active;
+}
+
+/**
+ * Hear training switch on and off: `fn(active)` on every change, never on a
+ * repeat. Returns the unsubscribe. The seam for work that should only happen
+ * while training is live, so it costs nothing in a race.
+ */
+function onTrainingActiveChanged(fn) {
+  return trainingGate.subscribe((next, prev) => {
+    if (next.active !== prev.active) fn(next.active);
+  });
+}
+
+// The window follows the gate; the panel's status line follows the reason too.
+onTrainingActiveChanged(() => syncTrainingWindow());
+trainingGate.subscribe(() => pushStatus());
+
+/**
+ * Feed the gate the inputs that come from settings and the server, then make
+ * the window match. Called from syncOverlayWindow, so everything that re-syncs
+ * the race layer re-syncs this one too.
+ */
+function syncTrainingLayer(settings) {
+  const s = settings || loadSettings();
+  const was = trainingActive();
+  trainingGate.update(
+    {
+      mode: !!s.trainingMode,
+      beta: trainingOnThisChannel(s),
+      running: !!status.running,
+      preview: !!(s.forceSimulator || s.provider === 'simulator'),
+    },
+    Date.now(),
+  );
+  // A flip has already re-synced the window through the subscriber above.
+  if (trainingActive() === was) syncTrainingWindow(s);
+}
+
+/** Training widgets switched on for the training layer. */
+function trainingIds(settings) {
+  return TRAINING_CATALOG.filter((o) => isTraining(settings, o)).map((o) => o.id);
+}
+
+/**
+ * The training page. It reads the ordinary /ws feed — a measured 30 Hz is
+ * enough once the widget interpolates, and a feed of its own would be more
+ * work on this thread. Should one ever be wanted, `&path=/ws/training` is the
+ * whole change: overlay/js/client.js already honours `path`.
+ */
+function trainingUrl(ids) {
+  return `${baseUrl()}/training.html?layer=training&widgets=${ids.join(',')}`;
+}
+
+/**
+ * On screen right now? The race layer's auto show/hide, read the same way
+ * (ingameShouldBeVisible) minus what is the race layer's own business: Show in
+ * game, interact mode and race reminders. Edit mode is handled inside the layer.
+ */
+function trainingShouldBeVisible(s) {
+  if (!s.ingameAutoHide) return true;
+  if (s.forceSimulator || s.provider === 'simulator') return true;
+  return feedOnTrack;
+}
+
+function syncTrainingWindow(settings) {
+  const s = settings || loadSettings();
+  const ids = trainingIds(s);
+  trainingLayer.sync({
+    wanted: trainingActive() && ids.length > 0,
+    url: trainingUrl(ids),
+    visible: trainingShouldBeVisible(s),
+  });
+}
+
+/** Auto show/hide moved. Free when there is no training window. */
+function applyTrainingLayerVisibility() {
+  if (!trainingLayer.window()) return;
+  trainingLayer.setVisible(trainingShouldBeVisible(loadSettings()));
+}
+
+/** Edit the training layout. Leaves race edit mode first — one at a time. */
+function setTrainingEdit(on) {
+  if (on && ingameEditing) setIngameEdit(false);
+  trainingLayer.setEditing(on);
+  pushStatus();
+}
+
+/** Persist the training page's placement — ingame:layoutSave's training half. */
+function saveTrainingLayout(layout) {
+  const settings = loadSettings();
+  const merged = { ...settings.trainingLayout };
+  for (const o of TRAINING_CATALOG) {
+    const entry = normalizeLayoutEntry(layout[o.id]);
+    if (entry) merged[o.id] = entry;
+  }
+  saveSettings({ ...settings, trainingLayout: merged });
+  return true;
+}
+
+/** The training toolbar's Reset: this layer's placements only. */
+function resetTrainingLayout() {
+  const settings = loadSettings();
+  saveSettings({ ...settings, trainingLayout: {} });
+  const win = trainingLayer.window();
+  if (win) win.webContents.send('ingame:layout-reset');
+  return true;
+}
+
+/** A training card's "Reset position" — ingame:layoutCentre for this layer. */
+function centreTrainingWidget(id) {
+  const settings = loadSettings();
+  const win = trainingLayer.window();
+  const entry = normalizeLayoutEntry(
+    centredLayoutEntry(overlayGeometry(win).screens, settings.trainingLayout[id]),
+  );
+  if (!entry) return false;
+  saveSettings({ ...settings, trainingLayout: { ...settings.trainingLayout, [id]: entry } });
+  if (win) win.webContents.send('ingame:layout-centre', { id, entry });
+  return true;
+}
+
+/** The usage counters' minute, for the training layer (see the race ticker). */
+function creditTrainingScreenTime(seconds) {
+  try {
+    const win = trainingLayer.window();
+    if (!win || !win.isVisible()) return;
+    const ids = trainingIds(loadSettings());
+    if (ids.length) featureUsage.overlaysOnScreen(ids, seconds);
+  } catch {
+    /* a counter must never be the thing that stops the layer */
+  }
+}
+
+/**
+ * Is Chromium compositing in software? A transparent window the size of the
+ * desktop is far dearer that way, and the training layer is a second one — so
+ * the Training tab says so. Same reading noteGpuOnce logs.
+ */
+function gpuCompositingIsSoftware() {
+  try {
+    const c = String(app.getGPUFeatureStatus().gpu_compositing || '');
+    return c.includes('software') || c.startsWith('disabled') || c.startsWith('unavailable');
+  } catch {
+    return false;
+  }
+}
+
+/** The Training tab's status line, delivered with every status push. */
+function trainingStatusForUi() {
+  const g = trainingGate.state();
+  return {
+    active: g.active,
+    // 'live' | 'channel' | 'race-mode' | 'stopped' | 'session' | 'no-session'
+    reason: g.reason,
+    sessionType: g.sessionType,
+    windowOpen: !!trainingLayer.window(),
+    editing: trainingLayer.editing(),
+    softwareCompositing: gpuCompositingIsSoftware(),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3032,6 +3339,19 @@ function registerIpc() {
       }
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
+      }
+      if (typeof partial.trainingMode === 'boolean') {
+        next.trainingMode = partial.trainingMode;
+      }
+      // Same shape as ingameOverlays, but only training ids, only booleans: a
+      // race widget id here would be a switch nothing reads.
+      if (partial.trainingOverlays && typeof partial.trainingOverlays === 'object') {
+        next.trainingOverlays = { ...current.trainingOverlays };
+        for (const id of TRAINING_IDS) {
+          if (typeof partial.trainingOverlays[id] === 'boolean') {
+            next.trainingOverlays[id] = partial.trainingOverlays[id];
+          }
+        }
       }
       // Merged widget by widget, field by field, so a slider can send just its
       // own number (see mergeVr).
@@ -3304,6 +3624,14 @@ function registerIpc() {
 
   /* ---- In-game overlay layer ---- */
 
+  /*
+   * Both layer windows load the same bridge (ingame-preload.js), so the page
+   * messages below can come from either. The SENDER says which — a page cannot
+   * name the other layer and write into its layout — and anything not from the
+   * training window is the race layer's, exactly as before training existed.
+   */
+  const fromTraining = (evt) => !!evt && trainingLayer.owns(evt.sender);
+
   ipcMain.handle('ingame:editStart', () => {
     syncOverlayWindow(); // make sure the layer exists before unlocking it
     setIngameEdit(true);
@@ -3316,8 +3644,9 @@ function registerIpc() {
   });
 
   /** Called by the in-game page itself (Done button in the edit toolbar). */
-  ipcMain.handle('ingame:editDone', () => {
-    setIngameEdit(false);
+  ipcMain.handle('ingame:editDone', (evt) => {
+    if (fromTraining(evt)) setTrainingEdit(false);
+    else setIngameEdit(false);
     return true;
   });
 
@@ -3331,13 +3660,17 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('ingame:layoutGet', () => loadSettings().ingameLayout);
+  ipcMain.handle('ingame:layoutGet', (evt) =>
+    fromTraining(evt) ? loadSettings().trainingLayout : loadSettings().ingameLayout,
+  );
 
   // Desktop geometry for the layer: how many screens there are, where they sit
   // relative to the primary one, and how far the window's own top-left is from
   // it. Fetched once at boot; pushed again over 'ingame:screens' if the desktop
   // changes shape underneath a running layer.
-  ipcMain.handle('ingame:screensGet', () => overlayGeometry().screens);
+  ipcMain.handle('ingame:screensGet', (evt) =>
+    fromTraining(evt) ? overlayGeometry(trainingLayer.window()).screens : overlayGeometry().screens,
+  );
 
   // Whether widgets snap to each other while being laid out. Read once at boot
   // and pushed on 'ingame:dock' when the switch moves, so a layer already open
@@ -3347,8 +3680,9 @@ function registerIpc() {
   // being broadcast to them.
   ipcMain.handle('ingame:dockGet', () => !!loadSettings().ingameMagneticDock);
 
-  ipcMain.handle('ingame:layoutSave', (_evt, layout) => {
+  ipcMain.handle('ingame:layoutSave', (evt, layout) => {
     if (!layout || typeof layout !== 'object') return false;
+    if (fromTraining(evt)) return saveTrainingLayout(layout);
     const settings = loadSettings();
     const merged = { ...settings.ingameLayout };
     for (const o of OVERLAY_CATALOG) {
@@ -3363,7 +3697,10 @@ function registerIpc() {
 
   ipcMain.handle('ingame:refresh', () => refreshOverlays('the panel'));
 
-  ipcMain.handle('ingame:layoutReset', () => {
+  // From the Dashboard's Reset (the panel — always the race layer) or from a
+  // layer's own edit toolbar, which resets only the layer it is on.
+  ipcMain.handle('ingame:layoutReset', (evt) => {
+    if (fromTraining(evt)) return resetTrainingLayout();
     const settings = loadSettings();
     saveSettings({ ...settings, ingameLayout: {} });
     if (overlayWin && !overlayWin.isDestroyed()) {
@@ -3393,6 +3730,8 @@ function registerIpc() {
    * straight back over this one.
    */
   ipcMain.handle('ingame:layoutCentre', (_evt, id) => {
+    // A training widget's card: its placement is the training layer's.
+    if (isTrainingWidget(id)) return centreTrainingWidget(id);
     if (!OVERLAY_CATALOG.some((o) => o.id === id)) return false;
     const settings = loadSettings();
     const entry = normalizeLayoutEntry(
@@ -3404,6 +3743,26 @@ function registerIpc() {
       overlayWin.webContents.send('ingame:layout-centre', { id, entry });
     }
     return true;
+  });
+
+  /* ---- Training layer ---- */
+
+  /** "Edit training layout" in the Training tab. */
+  ipcMain.handle('training:editStart', () => {
+    syncTrainingWindow(); // the window exists only while training is live
+    setTrainingEdit(true);
+    return statusForUi();
+  });
+
+  ipcMain.handle('training:editStop', () => {
+    setTrainingEdit(false);
+    return statusForUi();
+  });
+
+  // The training page's once-a-second paint report. A second listener on the
+  // race layer's channel: each one keeps only its own window's reports.
+  ipcMain.on('ingame:health', (evt, r) => {
+    if (fromTraining(evt)) trainingLayer.health(r);
   });
 
   /* ---- Lap database ---- */
@@ -5766,6 +6125,8 @@ function setupAutoUpdate() {
     applyUpdateChannel(next);
     // VR follows the channel (vrOnThisChannel): start or stop it now.
     syncVr();
+    // So does the training layer (trainingOnThisChannel).
+    syncTrainingLayer();
     // Whatever was found on the old feed no longer applies to this one.
     updateState.status = 'idle';
     updateState.version = null;
@@ -6105,6 +6466,7 @@ async function captureWindowsAndQuit(dir) {
   const shots = [
     ['panel', mainWindow],
     ['ingame', overlayWin],
+    ['training', trainingLayer.window()],
   ];
   const snap = async (name, win) => {
     if (!win || win.isDestroyed()) return;
@@ -6145,6 +6507,12 @@ async function captureWindowsAndQuit(dir) {
     setIngameEdit(true);
     await new Promise((r) => setTimeout(r, 600));
     await snap('ingame-edit', overlayWin);
+  }
+  // And the training layer's, when training is live.
+  if (trainingLayer.window()) {
+    setTrainingEdit(true);
+    await new Promise((r) => setTimeout(r, 600));
+    await snap('training-edit', trainingLayer.window());
   }
   app.quit();
 }
@@ -6422,7 +6790,8 @@ app.whenReady().then(async () => {
     // widget list needs this side's settings, and skipping our own in-game
     // window needs to know that it is ours.
     requireServer().setOverlayLoadHandler((load) => {
-      if (!load || load.page === 'ingame') return; // ours, counted by the ticker
+      // Ours, both of them — counted by the ticker.
+      if (!load || load.page === 'ingame' || load.page === 'training') return;
       const settings = loadSettings();
       const ids =
         load.page === 'combined'
@@ -6443,6 +6812,7 @@ app.whenReady().then(async () => {
     if (!details || details.type !== 'GPU') return;
     stallWatch.note(`GPU process gone reason=${details.reason} exit=${details.exitCode}`);
     if (overlayWin && !overlayWin.isDestroyed()) recreateOverlayWindow('GPU process restarted');
+    trainingLayer.recreate('GPU process restarted'); // its own window only, if there is one
   });
 
   if (process.env.APEX_SHOT) {

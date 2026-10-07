@@ -208,6 +208,13 @@ contextBridge.exposeInMainWorld('apex', {
    */
   ingameLayoutCentre: (id) => ipcRenderer.invoke('ingame:layoutCentre', id),
 
+  /* ---- Training layer (its own window — see electron/trainingLayer.js) ---- */
+
+  /** Unlock the training layer for dragging. Leaves race edit mode first. */
+  trainingEditStart: () => ipcRenderer.invoke('training:editStart'),
+  /** Re-lock the training layer. */
+  trainingEditStop: () => ipcRenderer.invoke('training:editStop'),
+
   /* ---- Lap database ---- */
 
   /**

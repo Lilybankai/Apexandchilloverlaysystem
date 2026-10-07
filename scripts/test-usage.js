@@ -354,6 +354,9 @@ console.log('\nOverlay page loads — which widget was fetched');
       ['/widget.html?w=DELTA&port=17080', 'widget', ['delta']],
       ['/ingame.html?widgets=delta,fuel,tyres', 'ingame', ['delta', 'fuel', 'tyres']],
       ['/ingame.html?widgets=delta,,fuel', 'ingame', ['delta', 'fuel']],
+      // The training layer's own window: ours, like ingame, so main counts it
+      // as time on screen and never as an OBS load.
+      ['/training.html?layer=training&widgets=ghosthud', 'training', ['ghosthud']],
     ];
     for (const [url, page, widgets] of cases) {
       const got = classify(url);

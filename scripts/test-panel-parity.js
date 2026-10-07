@@ -290,6 +290,15 @@ const PANEL_CONTRACT = {
   'overlay-list': 'ul',
   'combined-url': 'input:text',
 
+  // Training tab — the training layer's own widget cards, its status line and
+  // its layout button. Contracted because the whole tab is hidden outside
+  // Training mode on beta: a broken id here looks exactly like the tab
+  // correctly staying away.
+  'training-widget-list': 'ul',
+  'training-edit-btn': 'button',
+  'training-status': 'p',
+  'training-gpu-note': 'p',
+
   // Streamers tab — account linking (moved here from Overlays) + StreamBot
   'streamers-seg': 'nav',
   'streamers-widget-list': 'ul',
