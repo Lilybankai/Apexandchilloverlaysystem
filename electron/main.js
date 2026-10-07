@@ -2664,11 +2664,17 @@ function ingameUrl(settings) {
 /** Creates/reloads/destroys the in-game window to match settings + status. */
 function syncOverlayWindow() {
   const settings = loadSettings();
-  // Everything that re-syncs the desktop layer re-syncs the headset panel,
-  // and whether the server should be keeping a ghost lap ready for it.
+  // Everything that re-syncs the desktop layer re-syncs the headset panel.
   syncVr(settings);
+  syncRaceLayerWindow(settings);
   // ...and the training layer, which keeps its own window and its own rules.
-  syncTrainingLayer(settings);
+  // After the race layer and fenced, so nothing in it can keep the race
+  // layer from being built, reloaded or closed.
+  syncTrainingLayerFenced(settings);
+}
+
+/** The race half of syncOverlayWindow: the in-game window itself. */
+function syncRaceLayerWindow(settings) {
   const wanted =
     status.running &&
     settings.ingameEnabled &&
