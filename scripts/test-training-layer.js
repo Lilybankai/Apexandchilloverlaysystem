@@ -274,6 +274,44 @@ console.log('\ntraining layer: recovery touches this window only');
   check('recreate() with no window builds nothing', built.length === before && layer.window() === null);
 }
 
+console.log('\ntraining layer: routing bridge messages by sender');
+{
+  const { layerOfSender } = require('../electron/trainingLayer');
+  built.length = 0;
+  layer.sync({ wanted: true, url: URL_A, visible: true });
+  const tw = layer.window();
+  const panel = { id: 'panel' };
+  const route = (sender, withPanel) =>
+    layerOfSender(sender, {
+      race: raceWin.webContents,
+      panel: withPanel ? panel : null,
+      isTraining: (s) => layer.owns(s),
+    });
+  check('the race page → race', route(raceWin.webContents) === 'race');
+  check('the live training page → training', route(tw.webContents) === 'training');
+  check('the panel → race, where the handler takes panel calls', route(panel, true) === 'race');
+  check('…and nowhere where it does not', route(panel, false) === null);
+  check('no sender → nowhere', route(null, true) === null);
+  check('a stranger → nowhere', route({ id: 'other' }, true) === null);
+  // The bug: a training page being torn down is no longer owns(), and was
+  // routed to the race layer by elimination — its Reset wiped ingameLayout.
+  layer.sync({ wanted: false, url: URL_A, visible: true });
+  check('a training page whose window is gone → nowhere, never race', route(tw.webContents, true) === null);
+
+  // main.js wires every page handler through it, and no handler routes by
+  // elimination any more.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  const handler = (ch) => {
+    const at = main.indexOf(`'${ch}', (evt`);
+    return at < 0 ? '' : main.slice(at, main.indexOf('\n  });', at));
+  };
+  const routed = ['ingame:editDone', 'ingame:layoutGet', 'ingame:screensGet', 'ingame:layoutSave', 'ingame:layoutReset'];
+  const unrouted = routed.filter((ch) => !/layerOf\(evt/.test(handler(ch)));
+  check('every layer handler routes through layerOf', unrouted.length === 0, unrouted.join(','));
+  check("the Dashboard's Reset still reaches the race layer (panel allowed)", /layerOf\(evt, \{ panel: true \}\)/.test(handler('ingame:layoutReset')));
+  check('the old by-elimination helper is gone', !/fromTraining/.test(main));
+}
+
 console.log('\ntraining layer: Stop takes it down');
 {
   // Wired as main wires them: the gate's flips drive layer.sync, with the

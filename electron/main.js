@@ -62,7 +62,7 @@ const stallWatch = require('./stall-watch');
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
 const { createTrainingGate, sessionOfFrame } = require('./trainingGate');
-const { createTrainingLayer } = require('./trainingLayer');
+const { createTrainingLayer, layerOfSender } = require('./trainingLayer');
 const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
@@ -3119,7 +3119,7 @@ function toggleIngameInteract() {
  * the install follows beta, the server runs and the sim is in practice. The
  * race layer above knows nothing of it: the only shared pieces are the
  * geometry functions (passed this window) and the bridge (ingame-preload.js),
- * whose messages main routes by sender — see `fromTraining` in registerIpc.
+ * whose messages main routes by sender — see `layerOf` in registerIpc.
  */
 
 const trainingGate = createTrainingGate();
@@ -3754,10 +3754,17 @@ function registerIpc() {
   /*
    * Both layer windows load the same bridge (ingame-preload.js), so the page
    * messages below can come from either. The SENDER says which — a page cannot
-   * name the other layer and write into its layout — and anything not from the
-   * training window is the race layer's, exactly as before training existed.
+   * name the other layer and write into its layout. Routed explicitly, never
+   * by elimination: 'race' is the race window (or the panel, for a handler
+   * it calls), 'training' the live training window, and anything else — a
+   * window being torn down — is ignored. See layerOfSender in trainingLayer.js.
    */
-  const fromTraining = (evt) => !!evt && trainingLayer.owns(evt.sender);
+  const layerOf = (evt, { panel = false } = {}) =>
+    layerOfSender(evt && evt.sender, {
+      race: overlayWin && !overlayWin.isDestroyed() ? overlayWin.webContents : null,
+      panel: panel && mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
+      isTraining: (sender) => trainingLayer.owns(sender),
+    });
 
   ipcMain.handle('ingame:editStart', () => {
     syncOverlayWindow(); // make sure the layer exists before unlocking it
@@ -3772,8 +3779,9 @@ function registerIpc() {
 
   /** Called by the in-game page itself (Done button in the edit toolbar). */
   ipcMain.handle('ingame:editDone', (evt) => {
-    if (fromTraining(evt)) setTrainingEdit(false);
-    else setIngameEdit(false);
+    const layer = layerOf(evt);
+    if (layer === 'training') setTrainingEdit(false);
+    else if (layer === 'race') setIngameEdit(false);
     return true;
   });
 
@@ -3787,17 +3795,21 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('ingame:layoutGet', (evt) =>
-    fromTraining(evt) ? loadSettings().trainingLayout : loadSettings().ingameLayout,
-  );
+  ipcMain.handle('ingame:layoutGet', (evt) => {
+    const layer = layerOf(evt);
+    if (layer === 'training') return loadSettings().trainingLayout;
+    return layer === 'race' ? loadSettings().ingameLayout : null;
+  });
 
   // Desktop geometry for the layer: how many screens there are, where they sit
   // relative to the primary one, and how far the window's own top-left is from
   // it. Fetched once at boot; pushed again over 'ingame:screens' if the desktop
   // changes shape underneath a running layer.
-  ipcMain.handle('ingame:screensGet', (evt) =>
-    fromTraining(evt) ? overlayGeometry(trainingLayer.window()).screens : overlayGeometry().screens,
-  );
+  ipcMain.handle('ingame:screensGet', (evt) => {
+    const layer = layerOf(evt);
+    if (layer === 'training') return overlayGeometry(trainingLayer.window()).screens;
+    return layer === 'race' ? overlayGeometry().screens : null;
+  });
 
   // Whether widgets snap to each other while being laid out. Read once at boot
   // and pushed on 'ingame:dock' when the switch moves, so a layer already open
@@ -3809,7 +3821,9 @@ function registerIpc() {
 
   ipcMain.handle('ingame:layoutSave', (evt, layout) => {
     if (!layout || typeof layout !== 'object') return false;
-    if (fromTraining(evt)) return saveTrainingLayout(layout);
+    const layer = layerOf(evt);
+    if (layer === 'training') return saveTrainingLayout(layout);
+    if (layer !== 'race') return false;
     const settings = loadSettings();
     const merged = { ...settings.ingameLayout };
     for (const o of OVERLAY_CATALOG) {
@@ -3827,7 +3841,9 @@ function registerIpc() {
   // From the Dashboard's Reset (the panel — always the race layer) or from a
   // layer's own edit toolbar, which resets only the layer it is on.
   ipcMain.handle('ingame:layoutReset', (evt) => {
-    if (fromTraining(evt)) return resetTrainingLayout();
+    const layer = layerOf(evt, { panel: true });
+    if (layer === 'training') return resetTrainingLayout();
+    if (layer !== 'race') return false;
     const settings = loadSettings();
     saveSettings({ ...settings, ingameLayout: {} });
     if (overlayWin && !overlayWin.isDestroyed()) {
@@ -3889,7 +3905,7 @@ function registerIpc() {
   // The training page's once-a-second paint report. A second listener on the
   // race layer's channel: each one keeps only its own window's reports.
   ipcMain.on('ingame:health', (evt, r) => {
-    if (fromTraining(evt)) trainingLayer.health(r);
+    if (layerOf(evt) === 'training') trainingLayer.health(r);
   });
 
   /* ---- Lap database ---- */

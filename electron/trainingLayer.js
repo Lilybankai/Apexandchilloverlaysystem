@@ -292,4 +292,25 @@ function createTrainingLayer(deps) {
   };
 }
 
-module.exports = { createTrainingLayer, WATCH_TICK_MS };
+/**
+ * Which layer a message on the shared bridge came from, by its sender.
+ *
+ *   'training' — the training window, while it is alive (`isTraining`);
+ *   'race'     — the race window's page, or the panel when the handler
+ *                takes calls from it (pass `panel`);
+ *   null       — anything else, notably a window mid-teardown. Its message
+ *                belongs to no layer: routed by elimination, a dying training
+ *                page's Reset used to land on the race layer and wipe
+ *                `ingameLayout`.
+ *
+ * @param {object|null} sender  evt.sender
+ * @param {{ race: object|null, panel?: object|null, isTraining: (s: object) => boolean }} o
+ */
+function layerOfSender(sender, o) {
+  if (!sender) return null;
+  if (o.isTraining(sender)) return 'training';
+  if (sender === o.race || (o.panel && sender === o.panel)) return 'race';
+  return null;
+}
+
+module.exports = { createTrainingLayer, layerOfSender, WATCH_TICK_MS };
