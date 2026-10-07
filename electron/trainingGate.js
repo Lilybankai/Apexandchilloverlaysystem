@@ -18,9 +18,10 @@
  * A session that says what it is — a race, qualifying, warm-up — ends the hold
  * at once: that is the case the gate exists for.
  *
- * Demo frames (the simulator) carry a made-up session. They count only when the
- * driver chose demo mode on purpose (`preview`); the fallback to the simulator
- * when LMU closes is "no sim", not a session.
+ * Demo frames (the simulator) are never a session, whether demo mode was chosen
+ * or LMU closed and the simulator stood in. The simulator labels every frame a
+ * race, so the only honest reading is "no sim": a gap, which a practice answer
+ * may be held across. Training is not previewable in demo mode.
  *
  * Pure: no Electron, an injected clock. scripts/test-training-gate.js drives it.
  */
@@ -48,7 +49,7 @@ function sessionOfFrame(frame) {
  * Evaluate the gate once. Exported for the tests; the stateful wrapper below is
  * what main uses.
  *
- * @param {{ mode: boolean, beta: boolean, running: boolean, preview: boolean,
+ * @param {{ mode: boolean, beta: boolean, running: boolean,
  *           session: { type: string, demo: boolean } | null }} inputs
  * @param {number} now
  * @param {number} lastEligibleAt  when the session was last seen eligible (0 = never)
@@ -57,8 +58,8 @@ function sessionOfFrame(frame) {
  */
 function evaluate(inputs, now, lastEligibleAt) {
   const s = inputs.session;
-  // A demo frame is only a session when demo mode was chosen on purpose.
-  const seen = s && (!s.demo || inputs.preview) ? s.type : null;
+  // A demo frame is no session at all (see the header).
+  const seen = s && !s.demo ? s.type : null;
   let eligibleAt = lastEligibleAt;
   let sessionOk;
   let sessionType = seen;
@@ -100,7 +101,7 @@ function evaluate(inputs, now, lastEligibleAt) {
  * Subscribers hear every change of `active` or `reason`, with the old state.
  */
 function createTrainingGate() {
-  const inputs = { mode: false, beta: false, running: false, preview: false, session: null };
+  const inputs = { mode: false, beta: false, running: false, session: null };
   let lastEligibleAt = 0;
   let state = { active: false, reason: 'channel', sessionType: null, heldUntil: 0 };
   const listeners = new Set();

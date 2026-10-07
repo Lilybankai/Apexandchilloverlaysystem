@@ -3178,7 +3178,6 @@ function syncTrainingLayer(settings) {
       mode: !!s.trainingMode,
       beta: trainingOnThisChannel(s),
       running: !!status.running,
-      preview: !!(s.forceSimulator || s.provider === 'simulator'),
     },
     Date.now(),
   );
@@ -3217,11 +3216,12 @@ function trainingUrl(ids) {
 /**
  * On screen right now? The race layer's auto show/hide, read the same way
  * (ingameShouldBeVisible) minus what is the race layer's own business: Show in
- * game, interact mode and race reminders. Edit mode is handled inside the layer.
+ * game, interact mode and race reminders — and demo mode's always-show, since
+ * training never runs on demo frames (trainingGate.js). Edit mode is handled
+ * inside the layer.
  */
 function trainingShouldBeVisible(s) {
   if (!s.ingameAutoHide) return true;
-  if (s.forceSimulator || s.provider === 'simulator') return true;
   return feedOnTrack;
 }
 

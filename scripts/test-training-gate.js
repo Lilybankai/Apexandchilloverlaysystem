@@ -11,7 +11,8 @@
  *   2. the hold-over: a practice answer survives ~10 s of no session (loading
  *      screens, a session change) and then expires; a session that says it is
  *      a race ends it at once;
- *   3. demo frames count only when demo mode was chosen on purpose;
+ *   3. demo frames are never a session (the simulator calls every frame a
+ *      race), only a gap a practice answer is held across;
  *   4. subscribers hear changes, not repeats.
  *
  * Pure: invented clocks, no Electron. Run: node scripts/test-training-gate.js
@@ -35,7 +36,7 @@ function check(name, cond, detail) {
 }
 
 const live = (type, demo = false) => ({ type, demo });
-const ALL_ON = { mode: true, beta: true, running: true, preview: false, session: live('practice') };
+const ALL_ON = { mode: true, beta: true, running: true, session: live('practice') };
 
 console.log('\ntraining gate: the matrix');
 {
@@ -48,7 +49,7 @@ console.log('\ntraining gate: the matrix');
         for (const type of sessions) {
           combos++;
           const r = evaluate(
-            { mode, beta, running, preview: false, session: type ? live(type) : null },
+            { mode, beta, running, session: type ? live(type) : null },
             1000,
             0,
           );
@@ -117,17 +118,20 @@ console.log('\ntraining gate: holding a practice answer between sessions');
 console.log('\ntraining gate: demo frames');
 {
   check(
-    'the simulator standing in for a closed sim is no session',
+    'a demo frame is no session, whatever it calls itself',
     evaluate({ ...ALL_ON, session: live('practice', true) }, 0, 0).reason === 'no-session',
   );
   check(
-    'demo mode chosen on purpose counts its session',
-    evaluate({ ...ALL_ON, preview: true, session: live('practice', true) }, 0, 0).active,
+    "the simulator's race is not a race either (it labels every frame one)",
+    evaluate({ ...ALL_ON, session: live('race', true) }, 0, 0).reason === 'no-session',
   );
-  check(
-    'and its race still is not practice',
-    !evaluate({ ...ALL_ON, preview: true, session: live('race', true) }, 0, 0).active,
-  );
+  // LMU closed mid-practice and the simulator stood in: a gap, not a race.
+  const g = createTrainingGate();
+  g.update({ mode: true, beta: true, running: true, session: live('practice') }, 1000);
+  g.update({ session: live('race', true) }, 2000);
+  check('demo frames after practice are a gap: the answer is held', g.state().active, g.state().reason);
+  g.update({ session: live('race', true) }, 1000 + HOLD_MS);
+  check('…and runs out like any gap', !g.state().active && g.state().reason === 'no-session', g.state().reason);
 }
 
 console.log('\ntraining gate: reading a frame');
