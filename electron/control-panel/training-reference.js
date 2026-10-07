@@ -51,7 +51,8 @@ window.apexTrainingRef = (function () {
       case 'no-combo':
         return { text: 'Drive onto a circuit and the board for your car class shows here.', tone: 'idle' };
       default:
-        return { text: 'Ghost HUD is off. Turn it on to chase a lap.', tone: 'idle' };
+        // 'off': the training layer is not up, so nothing is chasing anything.
+        return { text: 'Training overlays aren’t running. Your choice here applies the next time they are.', tone: 'idle' };
     }
   }
 

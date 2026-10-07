@@ -21,6 +21,8 @@
   <link rel="stylesheet" href="review-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
+  <!-- Training ▸ Chase picker (training-reference.js). -->
+  <link rel="stylesheet" href="training-reference.css" />
   <!-- Get started checklist. Last, because its arrival flash ([data-pulse])
        lands on cards styled by every one of the files above. -->
   <link rel="stylesheet" href="onboarding.css" />
@@ -2470,13 +2472,22 @@
 
         <section class="card">
           <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-trophy" /></svg>Chase</h2>
+            <p class="card__desc">Which lap the training overlays measure you against: the quickest board lap with a line in your class, your own best, or a driver you pick.</p>
+          </div>
+          <!-- Rendered by training-reference.js. -->
+          <div data-training-chase></div>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
             <h2 class="card__title"><svg class="icon"><use href="#i-graduation-cap" /></svg>Ghost HUD</h2>
             <p class="card__desc">The road ahead, drawn from the circuit, with a faster lap's racing line painted on it and a marker where that lap is right now.</p>
           </div>
           <div class="settings-grid">
             <label class="field">
               <span class="field__label">Which lap it chases</span>
-              <span class="field__hint" id="training-ghost-rule">Your fastest clean lap in this car class, at this circuit, on the same surface — dry, damp or wet. Every lap you drive is already kept, so there is nothing to record first.</span>
+              <span class="field__hint" id="training-ghost-rule">The one picked under Chase above. Your own best is your fastest clean lap in this car class, at this circuit, on the same surface — every lap you drive is already kept, so there is nothing to record first. Board laps are dry only, so on a damp or wet track it is always your own.</span>
             </label>
             <label class="field">
               <span class="field__label">When it starts</span>
@@ -4508,6 +4519,9 @@
 <script src="review-racelog.js"></script>
 <script src="review-panel.js"></script>
 <script src="review-guide.js"></script>
+<!-- Training ▸ Chase: which lap the training overlays chase. Mounted by
+     control-panel.js the first time the Training tab opens. -->
+<script src="training-reference.js"></script>
 <!-- Race log tab: review-racelog.js paints it (and hands Review the "Race
      log" button on a race session); this is the tab that hosts it. -->
 <script src="racelog-panel.js"></script>

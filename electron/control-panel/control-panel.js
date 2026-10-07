@@ -6599,6 +6599,20 @@
     });
   }
 
+  /** Training ▸ Chase (training-reference.js): mount once, refresh after. */
+  let trainingChaseMounted = false;
+  function showTrainingChase() {
+    const api = window.apexTrainingRef;
+    const el = document.querySelector('[data-training-chase]');
+    if (!api || !el) return;
+    if (trainingChaseMounted) {
+      api.refresh();
+      return;
+    }
+    trainingChaseMounted = true;
+    api.mount(el);
+  }
+
   for (const b of document.querySelectorAll('#mode-seg button[data-mode]')) {
     b.addEventListener('click', () => setMode(b.dataset.mode));
   }
@@ -6726,6 +6740,9 @@
       void loadAdmin();
     }
     if (target === 'schedule') window.apexSchedule?.shown();
+    // Training ▸ Chase: mounted on first visit, re-read on each one after — the
+    // board moves while the driver is in the sim, not while they are here.
+    if (target === 'training') showTrainingChase();
     // The daily countdown ticks once a second, so it starts when the tab opens
     // and stops the moment it does not — in both directions, which is why this
     // is not inside the branch above.
