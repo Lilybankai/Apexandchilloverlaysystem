@@ -59,11 +59,17 @@ check('trackmap is throttled', byId.trackmap && byId.trackmap.throttleMs > 0, by
 // from interpolated poses and a throttle there would drop the very samples the
 // interpolation needs. Its drawing is not in dispatch at all; client.js's
 // `noteWidgetWork` keeps that cost visible to the layer health report.
+// The training Trace (`traininginputs`) is the same arrangement for the same
+// reason, and lives in the training window, not the race layer.
 const fullRate = widgets.filter((w) => w.fullRate).map((w) => w.id).sort();
 check(
-  'the 30 Hz set is the five instruments and Ghost HUD\'s intake, not the whole HUD',
-  fullRate.join(',') === 'ghosthud,motion,pedals,pedalsv,radar,speedo',
+  'the 30 Hz set is the five instruments and the two pose intakes, not the whole HUD',
+  fullRate.join(',') === 'ghosthud,motion,pedals,pedalsv,radar,speedo,traininginputs',
   fullRate.join(','),
+);
+check(
+  'no training widget is counted against the race layer',
+  widgets.filter((w) => w.id.startsWith('training')).every((w) => !w.ingameDefault),
 );
 
 console.log('\nfield expansion — a 6-hour grid is representable');

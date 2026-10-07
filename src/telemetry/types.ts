@@ -460,6 +460,64 @@ export interface GhostState {
    * cannot place the car itself. Absent when that position is not known.
    */
   atD?: number;
+  /**
+   * The live lap scored corner by corner against this ghost, for the training
+   * widgets. Absent when the ghost lap has no corners (no speed channel) or
+   * before the car has a road position. See `cornerTracker.ts` and
+   * {@link GhostCornerState}.
+   */
+  corner?: GhostCornerState;
+}
+
+/**
+ * Where the driver is among the ghost lap's corners, and how the corners
+ * already driven went. Corner indices are positions in `/ghost.json`'s
+ * `corners` list — the reference's own order, numbered C1..Cn on screen; they
+ * are not official corner names and must never be presented as such.
+ */
+export interface GhostCornerState {
+  /**
+   * The corner the car is in, or else the next one ahead (wrapping to the
+   * first after the last). Always a valid index.
+   */
+  index: number;
+  /** Whether the car is between that corner's entry and exit. */
+  inside: boolean;
+  /** Metres to that corner's entry; `0` while inside it. */
+  toEntryM: number;
+  /**
+   * Metres to where the REFERENCE started braking for that corner. Absent
+   * when it did not brake there (a lift or a flat corner), while inside, or
+   * once the point is behind the car.
+   */
+  toBrakeM?: number;
+  /** The most recently completed corner. Absent until one has been. */
+  last?: GhostCornerVerdict;
+  /**
+   * This lap's time lost per corner so far, seconds, positive = slower (the
+   * same sign as {@link GhostCornerVerdict.deltaSec}); `null` for a corner not
+   * reached yet or that could not be scored. One entry per corner.
+   */
+  lapCorners: (number | null)[];
+  /** The previous lap's, complete. All `null` before a lap has been driven. */
+  prevLapCorners: (number | null)[];
+}
+
+/** How one corner went against the ghost — `corners.ts`'s `CornerResult`, live. */
+export interface GhostCornerVerdict {
+  /** Index into `/ghost.json`'s `corners`. */
+  index: number;
+  /**
+   * Bumped for every corner scored, so a widget can tell a new verdict from
+   * the same one repeated on every frame.
+   */
+  seq: number;
+  /** Gap at exit minus gap at entry, seconds. Positive = slower. */
+  deltaSec: number | null;
+  /** Metres; positive = braked LATER than the reference. */
+  brakeDeltaM: number | null;
+  /** Minimum-speed difference through the corner, km/h. Positive = faster. */
+  apexKphDelta: number | null;
 }
 
 /**
