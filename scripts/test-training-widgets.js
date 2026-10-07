@@ -184,6 +184,46 @@ console.log('\n6) Hosts');
   check('a shell for each', ['traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => shells.includes('shells.' + id + ' =')));
   check('the race overlay never loads the training shells, scripts or styles', !/training-|training\.css|widgets\/training/.test(read('overlay', 'ingame.html')));
   check('shells.js itself has no training shells', !/traininginputs|trainingcorner|trainingsectors/.test(read('overlay', 'js', 'shells.js')));
+  // widget.html (OBS) loads every training script whichever widget ?w= names.
+  // Loaded on a page with no training shell, they must register and nothing
+  // else: no fetch, no timer, no paint loop, no listener.
+  {
+    const vm = require('node:vm');
+    const did = [];
+    const registered = [];
+    const spy = (name) => () => {
+      did.push(name);
+      return 0;
+    };
+    const page = {
+      fetch: spy('fetch'),
+      requestAnimationFrame: spy('requestAnimationFrame'),
+      setTimeout: spy('setTimeout'),
+      setInterval: spy('setInterval'),
+      addEventListener: spy('window.addEventListener'),
+      ResizeObserver: function () {
+        did.push('ResizeObserver');
+        this.observe = () => {};
+      },
+      getComputedStyle: spy('getComputedStyle'),
+      performance: { now: () => 0 },
+      console,
+      ApexOverlay: { registerWidget: (id) => registered.push(id) },
+      ApexRaster: { backingScale: () => 1 },
+      document: {
+        addEventListener: spy('document.addEventListener'),
+        querySelector: () => null,
+        documentElement: { getAttribute: () => null },
+      },
+    };
+    page.window = page;
+    vm.createContext(page);
+    const order = ['ghost-geom.js', 'ghost-pose.js', 'training-trace.js', 'training-laps.js', 'training-ghost.js',
+      'widgets/ghosthud.js', 'widgets/traininginputs.js', 'widgets/trainingcorner.js', 'widgets/trainingsectors.js'];
+    for (const f of order) vm.runInContext(read('overlay', 'js', ...f.split('/')), page, { filename: f });
+    check('loaded without a shell, all four register', ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => registered.includes(id)), registered.join(','));
+    check('…and do nothing else until a widget inits (no fetch, timer, loop or listener)', did.length === 0, did.join(','));
+  }
   const trace = read('overlay', 'js', 'widgets', 'traininginputs.js');
   check('Trace reads its theme once, not per paint', (trace.match(/getComputedStyle/g) || []).length === 1);
   check('Trace reports its paint cost to the layer health', trace.includes('noteWork("traininginputs"'));

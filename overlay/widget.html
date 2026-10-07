@@ -18,7 +18,9 @@
 
     Valid names: standings, relative, delta, pacedelta, weather, fuel, fuelplan,
                  tyres, pedals, pedalsv, motion, damage, radar, trackmap, limits,
-                 racecontrol, mfd
+                 racecontrol, mfd — and the training widgets: ghosthud,
+                 traininginputs, trainingcorner, trainingsectors, which have
+                 data only while Training mode is live in a practice session
 
     It reuses the exact same widget runtime (client.js) and widget modules as
     the combined page. client.js binds a widget only if its section is present,
@@ -27,6 +29,8 @@
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/overlay.css" />
   <link rel="stylesheet" href="css/single.css" />
+  <!-- The training widgets' styles, scoped to their own classes. -->
+  <link rel="stylesheet" href="css/training.css" />
 
   <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
        the operator's on/off + volume. Add ?audio=off to silence just this
@@ -46,6 +50,8 @@
   <!-- Shared per-widget shell markup (synchronous — used by the inline
        injector below before the deferred runtime scripts run). -->
   <script src="js/shells.js"></script>
+  <!-- The training widgets' shells, which ingame.html deliberately lacks. -->
+  <script src="js/training-shells.js"></script>
   <script>
     // -----------------------------------------------------------------------
     // Inject the requested widget's section shell BEFORE the deferred runtime
@@ -99,10 +105,19 @@
   <script src="js/widgets/radar.js" defer></script>
   <script src="js/widgets/trackmap.js" defer></script>
   <script src="js/widgets/limits.js" defer></script>
+  <!-- The training widgets, in training.html's order: their maths, the one
+       shared /ghost.json fetch, then the widgets. Inert unless ?w= names one:
+       client.js inits only the widget whose shell is on the page, and nothing
+       in these files fetches or paints before a widget's init. -->
   <script src="js/ghost-geom.js" defer></script>
   <script src="js/ghost-pose.js" defer></script>
+  <script src="js/training-trace.js" defer></script>
+  <script src="js/training-laps.js" defer></script>
   <script src="js/training-ghost.js" defer></script>
   <script src="js/widgets/ghosthud.js" defer></script>
+  <script src="js/widgets/traininginputs.js" defer></script>
+  <script src="js/widgets/trainingcorner.js" defer></script>
+  <script src="js/widgets/trainingsectors.js" defer></script>
   <script src="js/widgets/racecontrol.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
   <script src="js/widgets/chat.js" defer></script>

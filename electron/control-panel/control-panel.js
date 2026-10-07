@@ -1054,6 +1054,18 @@
             "— OBS's own default (800 × 600) is not big enough for it.";
       }
 
+      /* -- a training widget's OBS source draws only what training feeds it:
+       * the ghost is chosen only while Training mode is live in a practice
+       * session. Said under its address, or a source added in a race looks
+       * broken. */
+      let obsNoteEl = null;
+      if (training) {
+        obsNoteEl = document.createElement('p');
+        obsNoteEl.className = 'ovcard__obsnote';
+        obsNoteEl.textContent =
+          'In OBS too, this widget has data only while Training mode is live in a practice session.';
+      }
+
       /* -- footer: the two destinations, each labelled --
        *
        * Both switches live here side by side rather than one in the header,
@@ -1156,6 +1168,7 @@
       li.appendChild(desc);
       li.appendChild(urlWrap);
       if (sizeEl) li.appendChild(sizeEl);
+      if (obsNoteEl) li.appendChild(obsNoteEl);
       li.appendChild(opacityRow(o));
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));

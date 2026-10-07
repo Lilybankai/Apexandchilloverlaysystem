@@ -319,6 +319,18 @@ console.log('\ntraining layer: the pages');
     'widget.html (OBS) still offers Ghost HUD',
     widget.includes('js/ghost-geom.js') && widget.includes('js/widgets/ghosthud.js'),
   );
+  // OBS hosts every training widget, loaded exactly as the training page does.
+  const trainingScripts = (list) => list.filter((s) => /ghost|training/.test(s));
+  check(
+    "widget.html loads the training scripts in training.html's order",
+    trainingScripts(widget).join() === trainingScripts(training).join(),
+    trainingScripts(widget).join(','),
+  );
+  const widgetHtml = read('widget.html');
+  check(
+    'widget.html has the training shells and styles',
+    widgetHtml.includes('src="js/training-shells.js"') && widgetHtml.includes('href="css/training.css"'),
+  );
   check(
     'ghost-geom.js loads before ghosthud.js on the training page',
     training.indexOf('js/ghost-geom.js') < training.indexOf('js/widgets/ghosthud.js'),
