@@ -452,6 +452,14 @@ export interface GhostState {
   sourceLapId: string;
   /** Ready-made label for the overlay, e.g. `"your best · 1:13.730 · dry"`. */
   sourceLabel: string;
+  /**
+   * The driver's road position as a lap fraction 0..1 — the delta engine's
+   * filtered distance (`paceDelta.lapClock().d`), the same axis {@link gapM}
+   * is measured on. Far smoother than the raw REST `lapFraction` on the track
+   * map, which is ~7 Hz and metres stale. A widget may fall back to it when it
+   * cannot place the car itself. Absent when that position is not known.
+   */
+  atD?: number;
 }
 
 /**

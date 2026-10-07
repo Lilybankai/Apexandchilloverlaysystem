@@ -30,7 +30,7 @@ import { RF2Provider } from '../telemetry/rf2Provider';
 import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
-import { getPublishedGhost, ghostHasLine } from '../telemetry/ghostLap';
+import { getPublishedGhost, ghostJson, type GhostLap } from '../telemetry/ghostLap';
 import { handleMfdCommand } from './mfdRoutes';
 import { handleSetupCommand } from './setupRoutes';
 import { SetupController } from '../telemetry/setupControl';
@@ -605,6 +605,20 @@ export function setTeammateRelay(next: TeammateRelay | null): void {
   teammateRelay = next && Array.isArray(next.sources) ? next : null;
 }
 
+/**
+ * Whether anything is showing Ghost HUD, set by the desktop app. While it is
+ * false the provider chooses no ghost and never reads the lap store, so a
+ * driver who has never turned the widget on pays nothing for it. Kept here so
+ * it survives a server restart, and handed to each provider as it starts.
+ * Safe before {@link start}.
+ */
+let ghostWanted = false;
+let ghostProvider: LmuRestProvider | null = null;
+export function setGhostWanted(on: boolean): void {
+  ghostWanted = on === true;
+  ghostProvider?.setGhostWanted(ghostWanted);
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -664,33 +678,35 @@ const GHOST_PATH = '/ghost.json';
  * the widget draws its numbers and says why there is no road.
  */
 function serveGhost(res: ServerResponse): void {
-  const lap = getPublishedGhost();
-  if (!lap || !ghostHasLine(lap)) {
+  const body = ghostBody(getPublishedGhost());
+  if (!body) {
     res.writeHead(204, { 'Cache-Control': 'no-store' });
     res.end();
     return;
   }
-  // Flattened to plain columns rather than the in-memory shape: the widget
-  // wants arrays it can index, and `trace` is an array of objects.
-  const body = JSON.stringify({
-    lapId: lap.lapId,
-    label: lap.label,
-    lapSec: lap.lapSec,
-    trackLengthM: lap.trackLengthM,
-    full: lap.full,
-    d: lap.trace.map((s) => s.d),
-    t: lap.trace.map((s) => s.t),
-    x: lap.x,
-    z: lap.z,
-    ...(lap.brake ? { brake: lap.brake } : {}),
-    ...(lap.throttle ? { throttle: lap.throttle } : {}),
-  });
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     'Cache-Control': 'no-store',
   });
   res.end(body);
+}
+
+/**
+ * The serialised `/ghost.json` body for a lap, made once per selected lap. The
+ * body is ~40 KB and never changes while the lap is selected, so every widget
+ * refetch after the first is a lookup. Weak, so a lap that is no longer
+ * selected takes its body with it.
+ */
+const ghostBodies = new WeakMap<GhostLap, string>();
+function ghostBody(lap: GhostLap | null): string | null {
+  if (!lap) return null;
+  const hit = ghostBodies.get(lap);
+  if (hit !== undefined) return hit;
+  const json = ghostJson(lap);
+  const body = json ? JSON.stringify(json) : '';
+  ghostBodies.set(lap, body);
+  return body || null;
 }
 
 /** URL prefix the manufacturer brand badges are served under. */
@@ -1091,6 +1107,10 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // panel is open. Races only; async appends; the incident poll only runs
   // during one. Other providers get flags alone: no team identity, no list.
   const lmu = provider instanceof LmuRestProvider ? provider : null;
+  // The desktop app may have said whether Ghost HUD is showing before this
+  // provider existed; hand that on, and route later changes to it.
+  ghostProvider = lmu;
+  lmu?.setGhostWanted(ghostWanted);
   const raceLog = new LiveRaceLog(
     lmu ? { identity: () => lmu.raceIdentity(), fetchIncidents: () => lmu.fetchIncidents() } : {},
   );
@@ -1179,6 +1199,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
     if (stopped) return;
     stopped = true;
     clearInterval(loop);
+    if (ghostProvider === lmu) ghostProvider = null;
     cancelPluginInstall();
     await raceLog.stop();
     await provider.stop();
