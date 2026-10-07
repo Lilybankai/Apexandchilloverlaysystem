@@ -368,6 +368,28 @@ contextBridge.exposeInMainWorld('apex', {
    */
   reviewBestLap: (req) => ipcRenderer.invoke('review:bestLap', req),
 
+  /* ---- Training ▸ Chase (electron/trainingReference.js) ---- */
+
+  /**
+   * Which lap Ghost HUD chases on the combo being driven:
+   * `{ ok, combo: { track, trackKey, carClass, condition } | null,
+   *    choice: 'auto' | 'own' | { driverId, trackId }, selected: driverId | null,
+   *    rows: [{ driverId, trackId, name, lapMs, time, car, rank, hasLine, isYou }],
+   *    status, signedOut?, error? }`. `status.state` is off | no-combo |
+   * signed-out | not-dry | loading | board | own (with `reason`).
+   */
+  trainingRefOptions: () => ipcRenderer.invoke('training:refOptions'),
+
+  /** `{ choice: 'auto' | 'own' | { driverId, trackId } }` → the same answer as above. */
+  trainingSetRef: (req) => ipcRenderer.invoke('training:setRef', req),
+
+  /** Subscribe to the chase status changing. Returns an unsubscribe function. */
+  onTrainingRef: (callback) => {
+    const listener = (_evt, status) => callback(status);
+    ipcRenderer.on('training:refChanged', listener);
+    return () => ipcRenderer.removeListener('training:refChanged', listener);
+  },
+
   /**
    * Show a race-log event in the game's replay: `{ raceId, slot, et }` →
    * `{ ok, status }`, where `status` is a `ReplayStatus` (`phase` idle |

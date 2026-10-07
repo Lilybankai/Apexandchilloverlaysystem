@@ -31,6 +31,7 @@ import { LmuRestProvider } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
 import { getPublishedGhost, ghostJson, type GhostLap } from '../telemetry/ghostLap';
+import { makeGhostReference, type GhostReference } from '../telemetry/ghostReference';
 import { handleMfdCommand } from './mfdRoutes';
 import { handleSetupCommand } from './setupRoutes';
 import { SetupController } from '../telemetry/setupControl';
@@ -619,6 +620,26 @@ export function setGhostWanted(on: boolean): void {
   ghostProvider?.setGhostWanted(ghostWanted);
 }
 
+/**
+ * A league board lap for Ghost HUD to chase instead of the driver's own best,
+ * set by the desktop app's Training reference (`electron/trainingReference.js`),
+ * which fetches and caches it. `trace` is the board lap's trace columns
+ * (`lap_traces.data`); `meta` says which combo it was fetched for, its unique
+ * id and its label — see `GhostReferenceMeta`. `null` goes back to the own
+ * best. The provider uses it only while that exact combo is being driven.
+ *
+ * Kept here, like {@link setGhostWanted}, so it survives a server restart and
+ * reaches each provider as it starts. Safe before {@link start}. Returns
+ * whether the reference was accepted (`null` always is).
+ */
+let ghostReference: GhostReference | null = null;
+export function setGhostReference(trace: unknown, meta?: unknown): boolean {
+  const next = trace ? makeGhostReference(trace, meta) : null;
+  ghostReference = next;
+  ghostProvider?.setGhostReference(next);
+  return !trace || next !== null;
+}
+
 /** Serves the current {@link Appearance} as JSON (never cached). */
 function serveAppearance(res: ServerResponse): void {
   const body = JSON.stringify(appearance);
@@ -1111,6 +1132,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // provider existed; hand that on, and route later changes to it.
   ghostProvider = lmu;
   lmu?.setGhostWanted(ghostWanted);
+  lmu?.setGhostReference(ghostReference);
   const raceLog = new LiveRaceLog(
     lmu ? { identity: () => lmu.raceIdentity(), fetchIncidents: () => lmu.fetchIncidents() } : {},
   );

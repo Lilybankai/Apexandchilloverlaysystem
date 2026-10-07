@@ -41,6 +41,7 @@ const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
 const lapUpload = require('./lapUpload');
+const trainingReference = require('./trainingReference');
 const usageReporter = require('./usageReporter');
 const featureUsage = require('./featureUsage');
 const chatLink = require('./chatLink');
@@ -799,6 +800,9 @@ function loadSettings() {
       typeof stored.teamActiveId === 'string' && stored.teamActiveId
         ? stored.teamActiveId
         : null,
+    // Training: which lap Ghost HUD chases, per `trackKey|CLASS`. See
+    // electron/trainingReference.js.
+    trainingRefs: trainingReference.normalizeTrainingRefs(stored.trainingRefs),
   };
 }
 
@@ -1476,6 +1480,13 @@ function dialStatusFeed() {
       // is up and being driven, so the results poll knows there is any point
       // spending a request — see electron/results-harvest.js.
       resultsHarvest.noteFrame(frame);
+      // A string compare while Ghost HUD is wanted, nothing otherwise. Last,
+      // and fenced, so it can never cost the consumers above their frame.
+      try {
+        trainingRefService().noteFrame(frame);
+      } catch {
+        /* the Training reference must never be the feed's problem */
+      }
     } catch {
       /* ignore malformed frame */
     }
@@ -2461,11 +2472,48 @@ function syncGhostWanted(settings) {
   if (!serverModule || typeof serverModule.setGhostWanted !== 'function') return;
   const s = settings || loadSettings();
   const ghosthud = OVERLAY_CATALOG.find((o) => o.id === 'ghosthud');
+  const wanted = !!ghosthud && isIngame(s, ghosthud);
   try {
-    serverModule.setGhostWanted(!!ghosthud && isIngame(s, ghosthud));
+    serverModule.setGhostWanted(wanted);
   } catch {
     /* never the layer's problem */
   }
+  // The board-lap reference follows the same switch.
+  try {
+    trainingRefService().setWanted(wanted);
+  } catch {
+    /* never the layer's problem */
+  }
+}
+
+/**
+ * The Training reference — which lap Ghost HUD chases (your best, or a board
+ * lap). Built on first use; see electron/trainingReference.js.
+ */
+let trainingRef = null;
+function trainingRefService() {
+  if (trainingRef) return trainingRef;
+  trainingRef = trainingReference.create({
+    userData: app.getPath('userData'),
+    auth: authService,
+    getServer: () => serverModule,
+    getFrame: () => lastFeedFrame,
+    loadChoices: () => loadSettings().trainingRefs,
+    saveChoices: (map) => {
+      const s = loadSettings();
+      s.trainingRefs = map;
+      saveSettings(s);
+    },
+    onChange: (status) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        mainWindow.webContents.send('training:refChanged', status);
+      } catch {
+        /* window mid-teardown */
+      }
+    },
+  });
+  return trainingRef;
 }
 
 /** URL of the in-game layer page, carrying the enabled widget list. */
@@ -4115,6 +4163,29 @@ function registerIpc() {
       };
     }
     return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /**
+   * Training ▸ Chase: the board for the combo being driven, which lap is
+   * chosen and what the ghost is doing about it. See trainingReference.options.
+   */
+  ipcMain.handle('training:refOptions', async () => {
+    try {
+      return await trainingRefService().options();
+    } catch (err) {
+      return { ok: false, rows: [], error: err.message };
+    }
+  });
+
+  /** Chase `{ choice: 'auto' | 'own' | { driverId, trackId } }` on the combo being driven. */
+  ipcMain.handle('training:setRef', async (_evt, req) => {
+    try {
+      const res = trainingRefService().setChoice(req || {});
+      if (!res.ok) return res;
+      return await trainingRefService().options();
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   /**

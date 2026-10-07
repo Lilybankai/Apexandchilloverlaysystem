@@ -93,6 +93,7 @@ import {
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
 import { LapRecorder, appendLap, conditionOf, type LapRecord } from './lapLog';
 import { ghostGap, setPublishedGhost } from './ghostLap';
+import type { GhostReference } from './ghostReference';
 import { GhostSelector } from './ghostSelector';
 import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
@@ -1003,6 +1004,15 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   public setGhostWanted(on: boolean): void {
     this.ghost.setWanted(on);
+  }
+
+  /**
+   * A lap chosen in the Training tab for Ghost HUD to chase instead of the
+   * local best, or `null` for the local best. Used only while the combo being
+   * driven is the one it was fetched for; see `GhostSelector.setReference`.
+   */
+  public setGhostReference(ref: GhostReference | null): void {
+    this.ghost.setReference(ref);
   }
 
   public stop(): void {
@@ -3300,7 +3310,10 @@ export class LmuRestProvider implements TelemetryProvider {
       return;
     }
     const trackKey = trackKeyOf(trackName, trackLenM);
-    this.ghost.sync({ sim: 'lmu', trackKey, carClass, condition: conditionOf(wetness) }, nowMs);
+    this.ghost.sync(
+      { sim: 'lmu', trackKey, carClass, condition: conditionOf(wetness), trackLengthM: trackLenM },
+      nowMs,
+    );
   }
 
   private buildPlayer(
