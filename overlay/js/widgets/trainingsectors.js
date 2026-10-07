@@ -86,7 +86,7 @@
   var drawn = { lap: null, prev: null, index: -2, inside: false, caret: -1, ver: -1, lines: "" };
   var stripVer = 0;
 
-  var cur = { label: "", ready: "false" };
+  var cur = { label: "", ready: "false", empty: "false" };
   var fontCell = "";
 
   /* -------------------------------- tokens -------------------------------- */
@@ -375,6 +375,9 @@
     setText(lapEl.deltaEl, lapEl, "text", LAPS.fmtSigned(gap));
     setData(lapEl.root, lapEl, "tone", "data-tone", LAPS.toneOf(gap));
     setData(el, cur, "ready", "data-ready", line ? "true" : "false");
+    // No ghost (or its lap not here yet): say so, as Trace and the Corner
+    // card do, rather than leave dashes and a bare strip that read as idle.
+    setData(el, cur, "empty", "data-empty", ghost && line ? "false" : "true");
     drawStrip(ghost ? ghost.corner : null, d);
   }
 
@@ -394,7 +397,7 @@
     headerMeta = root.querySelector('[data-role="meta"]');
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML =
-      '<div class="tlap" data-ready="false">' +
+      '<div class="tlap" data-ready="false" data-empty="false">' +
       '<div class="tlap__row">' +
       sectorCell("S1") +
       sectorCell("S2") +
@@ -403,6 +406,7 @@
       "</div>" +
       '<canvas class="tlap__strip" role="img" aria-label="The lap as a bar, one cell per corner of the reference lap, ' +
       'green where this lap gained time there and red where it lost it; last lap faint beneath; sector lines across both."></canvas>' +
+      '<p class="tlap__note">No ghost lap</p>' +
       "</div>";
     el = mount.firstChild;
     var cells = el.querySelectorAll(".tlap__sec");

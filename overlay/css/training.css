@@ -137,6 +137,7 @@
 
 /* --- Lap strip. Three sectors and the lap over a barcode of corners. */
 .tlap {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -204,4 +205,23 @@
 }
 .tlap[data-ready="false"] .tlap__strip {
   opacity: 0.4;
+}
+/* No ghost: the Corner card's quiet "none" line, centred over the strip's
+   own footprint so the widget keeps its size and nothing jumps when a ghost
+   arrives. (.tlap is position: relative for it.) */
+.tlap__note {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+}
+.tlap[data-empty="true"] .tlap__note {
+  display: flex;
+}
+.tlap[data-empty="true"] > :not(.tlap__note) {
+  visibility: hidden;
 }
