@@ -2449,6 +2449,25 @@ function syncVr(settings) {
   vrOverlay.setVisible(ingameShouldBeVisible(s));
 }
 
+/**
+ * Tell the server whether Ghost HUD is showing, so it chooses a ghost lap —
+ * and reads the lap store to do it — only when something will draw one.
+ *
+ * Today that means the in-game Ghost HUD is switched on and offered on this
+ * channel. It is one function on purpose: Training mode will become the
+ * deciding switch later, and this is the only line that changes when it does.
+ */
+function syncGhostWanted(settings) {
+  if (!serverModule || typeof serverModule.setGhostWanted !== 'function') return;
+  const s = settings || loadSettings();
+  const ghosthud = OVERLAY_CATALOG.find((o) => o.id === 'ghosthud');
+  try {
+    serverModule.setGhostWanted(!!ghosthud && isIngame(s, ghosthud));
+  } catch {
+    /* never the layer's problem */
+  }
+}
+
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
   const ids = OVERLAY_CATALOG.filter((o) => isIngame(settings, o)).map((o) => o.id);
@@ -2458,8 +2477,10 @@ function ingameUrl(settings) {
 /** Creates/reloads/destroys the in-game window to match settings + status. */
 function syncOverlayWindow() {
   const settings = loadSettings();
-  // Everything that re-syncs the desktop layer re-syncs the headset panel.
+  // Everything that re-syncs the desktop layer re-syncs the headset panel,
+  // and whether the server should be keeping a ghost lap ready for it.
   syncVr(settings);
+  syncGhostWanted(settings);
   const wanted =
     status.running &&
     settings.ingameEnabled &&
@@ -5764,8 +5785,11 @@ function setupAutoUpdate() {
       saveSettings({ ...settings, updateChannel: next });
     }
     applyUpdateChannel(next);
-    // VR follows the channel (vrOnThisChannel): start or stop it now.
+    // VR follows the channel (vrOnThisChannel): start or stop it now. So does
+    // Ghost HUD, which is beta-gated — told from the settings just saved
+    // rather than read back off the disk.
     syncVr();
+    syncGhostWanted({ ...settings, updateChannel: next });
     // Whatever was found on the old feed no longer applies to this one.
     updateState.status = 'idle';
     updateState.version = null;
