@@ -229,6 +229,18 @@
   var line = null;
   var haveLapId = "";
   var lineFetching = false;
+  /**
+   * The last lap id asked for and came back empty or failed, and when it may
+   * be asked for again. A lap recorded with no line answers `204` for as long
+   * as it stays selected, and without this the widget asked again on every
+   * frame — 60 requests a second into the server on Electron's main thread.
+   */
+  var missLapId = "";
+  var missUntil = 0;
+  var MISS_RETRY_MS = 5000;
+  /** Same back-off for the circuit, keyed on `key|revision`. */
+  var missShape = "";
+  var missShapeUntil = 0;
 
   /**
    * Built once per lap or circuit, never per frame: the prepared line, its
@@ -449,9 +461,16 @@
     }
     if (!map.ready || shapeFetching) return;
     if (shape && map.key === haveKey && map.revision === haveRevision) return;
-    shapeFetching = true;
     var wantKey = map.key;
     var wantRev = map.revision;
+    var want = wantKey + "|" + wantRev;
+    if (want === missShape && Date.now() < missShapeUntil) return;
+    shapeFetching = true;
+    function miss() {
+      shapeFetching = false;
+      missShape = want;
+      missShapeUntil = Date.now() + MISS_RETRY_MS;
+    }
     fetch("/trackmap.json", { cache: "no-store" })
       .then(function (r) {
         if (r.status === 204) return null;
@@ -459,15 +478,13 @@
         return r.json();
       })
       .then(function (data) {
+        if (!data || !data.points || data.points.length < 8) return miss();
         shapeFetching = false;
-        if (!data || !data.points || data.points.length < 8) return;
         haveKey = wantKey;
         haveRevision = wantRev;
         setShape(data);
       })
-      .catch(function () {
-        shapeFetching = false;
-      });
+      .catch(miss);
   }
 
   /**
@@ -485,7 +502,13 @@
     }
     if (line && haveLapId === id) return;
     if (lineFetching) return;
+    if (id === missLapId && Date.now() < missUntil) return;
     lineFetching = true;
+    function miss() {
+      lineFetching = false;
+      missLapId = id;
+      missUntil = Date.now() + MISS_RETRY_MS;
+    }
     fetch("/ghost.json", { cache: "no-store" })
       .then(function (r) {
         if (r.status === 204) return null; // no ghost, or a lap with no line
@@ -493,14 +516,12 @@
         return r.json();
       })
       .then(function (data) {
+        if (!data || !data.d || !data.x || data.d.length < 8) return miss();
         lineFetching = false;
-        if (!data || !data.d || !data.x || data.d.length < 8) return;
         haveLapId = data.lapId || id;
         setLine(data);
       })
-      .catch(function () {
-        lineFetching = false;
-      });
+      .catch(miss);
   }
 
   function setShape(data) {
