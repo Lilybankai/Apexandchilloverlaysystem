@@ -43,6 +43,8 @@ const INGAME_OFF_BY_DEFAULT = new Set([
   'chat',
   // The training widgets are hosted by the training window (training.html),
   // never the race layer, so they add nothing to the race dispatcher's load.
+  // scripts/test-training-layer.js keeps this list in step with main.js.
+  'ghosthud',
   'traininginputs',
   'trainingcorner',
   'trainingsectors',

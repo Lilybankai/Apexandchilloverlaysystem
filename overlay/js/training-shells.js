@@ -8,12 +8,20 @@
  * saying "Awaiting telemetry…" in the race overlay. Keeping them in their own
  * file is what keeps them out.
  *
+ * It also publishes `window.ApexTrainingWidgets`, the training widget ids, so
+ * training.html's whitelist is read from here rather than copied.
+ * scripts/test-training-layer.js checks that list against main.js's
+ * TRAINING_CATALOG, ingame.js's training placements and the bench.
+ *
  * Synchronous, after shells.js and before the page's inline injector.
  */
 (function () {
   "use strict";
 
   var shells = window.ApexShells || (window.ApexShells = {});
+  // Ghost HUD's shell stays in shells.js, where it was before the training
+  // layer existed; the id is still a training widget's.
+  var ids = ["ghosthud"];
 
   function shell(id, title, label) {
     return (
@@ -25,19 +33,14 @@
     );
   }
 
-  shells.traininginputs = shell(
-    "traininginputs",
-    "Trace",
-    "Trace — your throttle, brake and steering against the reference lap, by distance",
-  );
-  shells.trainingcorner = shell(
-    "trainingcorner",
-    "Corner",
-    "Corner card — how the last corner went against the reference lap",
-  );
-  shells.trainingsectors = shell(
-    "trainingsectors",
-    "Lap Strip",
-    "Lap strip — sectors and every corner of this lap against the reference",
-  );
+  function add(id, title, label) {
+    shells[id] = shell(id, title, label);
+    ids.push(id);
+  }
+
+  add("traininginputs", "Trace", "Trace — your throttle, brake and steering against the reference lap, by distance");
+  add("trainingcorner", "Corner", "Corner card — how the last corner went against the reference lap");
+  add("trainingsectors", "Lap Strip", "Lap strip — sectors and every corner of this lap against the reference");
+
+  window.ApexTrainingWidgets = ids;
 })();

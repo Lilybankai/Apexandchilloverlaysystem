@@ -181,7 +181,7 @@ console.log('\n6) Hosts');
   check('Trace takes every frame (its loop interpolates them)', reg('traininginputs') === 0);
   check('Corner card and Lap strip are throttled', reg('trainingcorner') > 0 && reg('trainingsectors') > 0);
   const shells = read('overlay', 'js', 'training-shells.js');
-  check('a shell for each', ['traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => shells.includes('shells.' + id + ' =')));
+  check('a shell for each', ['traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => shells.includes('add("' + id + '"')));
   check('the race overlay never loads the training shells, scripts or styles', !/training-|training\.css|widgets\/training/.test(read('overlay', 'ingame.html')));
   check('shells.js itself has no training shells', !/traininginputs|trainingcorner|trainingsectors/.test(read('overlay', 'js', 'shells.js')));
   // widget.html (OBS) loads every training script whichever widget ?w= names.

@@ -353,5 +353,38 @@ console.log('\ntraining layer: the pages');
     !/fetch\(\s*["']\/ghost\.json/.test(read('js/widgets/ghosthud.js')));
 }
 
+console.log('\ntraining layer: one list of training widgets');
+{
+  // The ids live in four places that cannot share code: main.js (the
+  // catalog), training-shells.js (the browser pages), ingame.js (default
+  // placements) and the bench. training.html reads training-shells.js's
+  // list; the rest are held to it here.
+  const vm = require('node:vm');
+  const root = path.join(__dirname, '..');
+  const src = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
+  const page = { ApexShells: {} };
+  page.window = page;
+  vm.runInNewContext(src('overlay', 'js', 'training-shells.js'), page);
+  const pageIds = (page.ApexTrainingWidgets || []).slice().sort().join(',');
+
+  const main = src('electron', 'main.js');
+  const cat = /const TRAINING_CATALOG = \[([\s\S]*?)\n\];/.exec(main);
+  const catalogIds = cat ? Array.from(cat[1].matchAll(/^ {4}id: '([^']+)'/gm), (m) => m[1]).sort().join(',') : '';
+
+  const ing = /function trainingDefaults\(vw, vh\) \{([\s\S]*?)\n {2}\}/.exec(src('overlay', 'js', 'ingame.js'));
+  const placedIds = ing ? Array.from(ing[1].matchAll(/^ {6}([a-z0-9]+): \{/gm), (m) => m[1]).sort().join(',') : '';
+
+  const bench = /const INGAME_OFF_BY_DEFAULT = new Set\(\[([\s\S]*?)\]\);/.exec(src('scripts', 'bench-widgets.js'));
+  const benchOff = bench ? Array.from(bench[1].replace(/\/\/.*$/gm, '').matchAll(/'([^']+)'/g), (m) => m[1]) : [];
+
+  check('training-shells.js lists the four training widgets', pageIds === 'ghosthud,trainingcorner,traininginputs,trainingsectors', pageIds);
+  check("…and every one has a shell on the training page", (page.ApexTrainingWidgets || []).every((id) => id === 'ghosthud' || !!page.ApexShells[id]));
+  check("main.js's TRAINING_CATALOG is the same list", catalogIds === pageIds, catalogIds);
+  check("ingame.js places the same list on the training layer", placedIds === pageIds, placedIds);
+  check('the bench keeps every one off the race layer', pageIds.split(',').every((id) => benchOff.includes(id)), benchOff.join(','));
+  check('training.html takes its whitelist from training-shells.js', /window\.ApexTrainingWidgets/.test(src('overlay', 'training.html')) &&
+    !/"traininginputs"/.test(src('overlay', 'training.html')));
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);
