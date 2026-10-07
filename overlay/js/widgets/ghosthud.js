@@ -49,7 +49,8 @@
  * ## Where the data comes from
  * Nothing here is new telemetry. The player's world position rides
  * `frame.trackMap.cars[isPlayer]`, their heading `frame.player.motion.heading`,
- * the circuit `/trackmap.json`, and the ghost's line `/ghost.json` — all four
+ * the circuit `/trackmap.json`, and the ghost's line `/ghost.json` (fetched
+ * once for every training widget by `training-ghost.js`) — all four
  * in the sim's own world axes, so a lap recorded weeks ago lands on today's
  * road with no fitting. `/ghost.json` may also carry the server's `brakes` and
  * `corners`; without them (an older server, a fixture) the same marks are
@@ -62,6 +63,7 @@
 
   var GEO = window.ApexGhostGeom;
   var POSE = window.ApexGhostPose;
+  var GHOST = window.ApexTrainingGhost;
 
   /* ------------------------------- framing -------------------------------- */
 
@@ -225,20 +227,19 @@
   var lapM = 0;
   var halfW = 6;
 
-  /** The ghost's line, from `/ghost.json`. */
-  var line = null;
-  var haveLapId = "";
-  var lineFetching = false;
   /**
-   * The last lap id asked for and came back empty or failed, and when it may
-   * be asked for again. A lap recorded with no line answers `204` for as long
-   * as it stays selected, and without this the widget asked again on every
-   * frame — 60 requests a second into the server on Electron's main thread.
+   * The ghost's lap, from `/ghost.json` through `training-ghost.js` — one
+   * fetch shared with every other training widget on the page, with its
+   * back-off for a lap the server has not published. A lap with no driven
+   * line arrives without `x`/`z`; it is kept, and painted as a note.
    */
-  var missLapId = "";
-  var missUntil = 0;
+  var line = null;
+  /**
+   * The circuit that came back empty or failed (`key|revision`), and when it
+   * may be asked for again; without this a circuit not learned yet was asked
+   * for on every frame, into the server on Electron's main thread.
+   */
   var MISS_RETRY_MS = 5000;
-  /** Same back-off for the circuit, keyed on `key|revision`. */
   var missShape = "";
   var missShapeUntil = 0;
 
@@ -487,43 +488,6 @@
       .catch(miss);
   }
 
-  /**
-   * Keep the ghost's line in step with the selection.
-   *
-   * `sourceLapId` moves exactly when the provider picks a different lap, so it
-   * is the cache key and no new wire field was needed for any of this.
-   */
-  function ensureLine(ghost) {
-    var id = ghost && ghost.sourceLapId ? ghost.sourceLapId : "";
-    if (!id) {
-      if (line) setLine(null);
-      haveLapId = "";
-      return;
-    }
-    if (line && haveLapId === id) return;
-    if (lineFetching) return;
-    if (id === missLapId && Date.now() < missUntil) return;
-    lineFetching = true;
-    function miss() {
-      lineFetching = false;
-      missLapId = id;
-      missUntil = Date.now() + MISS_RETRY_MS;
-    }
-    fetch("/ghost.json", { cache: "no-store" })
-      .then(function (r) {
-        if (r.status === 204) return null; // no ghost, or a lap with no line
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        if (!data || !data.d || !data.x || data.d.length < 8) return miss();
-        lineFetching = false;
-        haveLapId = data.lapId || id;
-        setLine(data);
-      })
-      .catch(miss);
-  }
-
   function setShape(data) {
     shape = data;
     lapM = data ? GEO.mapLength(data) : 0;
@@ -536,8 +500,10 @@
 
   function setLine(data) {
     line = data;
-    // The expensive half, once per lap selection (~5 ms for a 4 km lap).
-    prep = data ? GEO.prepareLine(data, STEP_M, SMOOTH_SIGMA_M, data.trackLengthM || lapM) : null;
+    // The expensive half, once per lap selection (~5 ms for a 4 km lap). A lap
+    // with no driven line prepares nothing, and `paint` says so.
+    var drawable = !!(data && data.x && data.z);
+    prep = drawable ? GEO.prepareLine(data, STEP_M, SMOOTH_SIGMA_M, data.trackLengthM || lapM) : null;
     prepKind = null;
     if (prep) {
       prepKind = new Uint8Array(prep.n);
@@ -1384,14 +1350,14 @@
    * make sure a paint is coming. All drawing is in `tick`, at display rate.
    */
   function update(frame) {
-    if (!gctx || !GEO || !POSE) return;
+    if (!gctx || !GEO || !POSE || !GHOST) return;
     if (++sizeTick % SIZE_CHECK_FRAMES === 0) sizeCanvas();
     if (alphaTick++ % ALPHA_CHECK_FRAMES === 0) pollPanelAlpha();
 
     var player = frame && frame.player;
     var ghost = player ? player.ghost : null;
     ensureShape(frame ? frame.trackMap : null);
-    ensureLine(ghost);
+    GHOST.sync(ghost);
 
     if (headerMeta) {
       var label = ghost && ghost.sourceLabel ? ghost.sourceLabel : "—";
@@ -1441,8 +1407,8 @@
     mount.appendChild(wrap);
 
     gctx = canvas.getContext("2d");
-    if (!GEO || !POSE) {
-      console.error("[Apex] Ghost HUD needs ghost-geom.js and ghost-pose.js loaded first");
+    if (!GEO || !POSE || !GHOST) {
+      console.error("[Apex] Ghost HUD needs ghost-geom.js, ghost-pose.js and training-ghost.js loaded first");
       return;
     }
     var api = window.ApexOverlay;
@@ -1451,6 +1417,7 @@
     buildGradients();
     sizeCanvas();
     watchSize(canvas);
+    GHOST.subscribe(setLine);
   }
 
   window.ApexOverlay.registerWidget("ghosthud", {

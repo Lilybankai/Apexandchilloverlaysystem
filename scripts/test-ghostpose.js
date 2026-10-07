@@ -230,7 +230,9 @@ console.log('7) hosts — both pages load it, in order');
     const geom = html.indexOf('src="js/ghost-geom.js"');
     const pose = html.indexOf('src="js/ghost-pose.js"');
     const hud = html.indexOf('src="js/widgets/ghosthud.js"');
+    const shared = html.indexOf('src="js/training-ghost.js"');
     check(page + ' loads ghost-pose.js between ghost-geom.js and the widget', geom > 0 && pose > geom && hud > pose, [geom, pose, hud].join(' < '));
+    check(page + ' loads the shared ghost fetch before Ghost HUD', shared > 0 && hud > shared, [shared, hud].join(' < '));
   }
 }
 

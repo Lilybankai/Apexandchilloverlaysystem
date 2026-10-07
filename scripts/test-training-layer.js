@@ -323,6 +323,22 @@ console.log('\ntraining layer: the pages');
     'ghost-geom.js loads before ghosthud.js on the training page',
     training.indexOf('js/ghost-geom.js') < training.indexOf('js/widgets/ghosthud.js'),
   );
+  // Every widget reads its modules at load, so each must come after them.
+  const needs = {
+    'js/widgets/ghosthud.js': ['js/ghost-geom.js', 'js/ghost-pose.js', 'js/training-ghost.js'],
+    'js/widgets/traininginputs.js': ['js/ghost-pose.js', 'js/training-trace.js', 'js/training-laps.js', 'js/training-ghost.js'],
+    'js/widgets/trainingcorner.js': ['js/training-laps.js'],
+    'js/widgets/trainingsectors.js': ['js/training-laps.js', 'js/training-ghost.js'],
+  };
+  const late = [];
+  for (const [w, deps] of Object.entries(needs)) {
+    for (const d of deps) {
+      if (!(training.indexOf(d) >= 0 && training.indexOf(d) < training.indexOf(w))) late.push(`${d}→${w}`);
+    }
+  }
+  check('training.html loads every module before the widgets that read it', late.length === 0, late.join(','));
+  check('Ghost HUD has no /ghost.json fetch of its own (one shared fetch per page)',
+    !/fetch\(\s*["']\/ghost\.json/.test(read('js/widgets/ghosthud.js')));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

@@ -99,15 +99,16 @@
   </script>
 
   <script src="js/client.js" defer></script>
+  <!-- The training widgets' maths, then the one shared /ghost.json fetch, then
+       the widgets: each module is read by the widgets after it at load. The
+       same order in widget.html (scripts/test-training-layer.js holds both). -->
   <script src="js/ghost-geom.js" defer></script>
-  <!-- The interpolated pose Ghost HUD paints from, between the maths and the widget. -->
+  <!-- The interpolated pose Ghost HUD and Trace paint from. -->
   <script src="js/ghost-pose.js" defer></script>
-  <script src="js/widgets/ghosthud.js" defer></script>
-  <!-- Trace, Corner card and Lap strip: their maths, the one shared /ghost.json
-       fetch, then the widgets. -->
   <script src="js/training-trace.js" defer></script>
   <script src="js/training-laps.js" defer></script>
   <script src="js/training-ghost.js" defer></script>
+  <script src="js/widgets/ghosthud.js" defer></script>
   <script src="js/widgets/traininginputs.js" defer></script>
   <script src="js/widgets/trainingcorner.js" defer></script>
   <script src="js/widgets/trainingsectors.js" defer></script>
