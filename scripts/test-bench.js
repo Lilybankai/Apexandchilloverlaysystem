@@ -5,7 +5,8 @@
  * because a poll took 0.4 ms instead of 0.2. What it pins down is the suite:
  *
  *   - every overlay widget declares a throttleMs we can inventory
- *   - the known 30 Hz set is still exactly the five canvas instruments
+ *   - the known 30 Hz set is still exactly the five canvas instruments (plus
+ *     Ghost HUD's sample intake — see below)
  *   - field expansion produces N standings (the 6-hour-grid question)
  *   - a short pipeline sample returns finite stats
  *   - the assessment function emits the verdict ids the report is built on
@@ -53,10 +54,15 @@ check('speedo is full-rate', byId.speedo && byId.speedo.throttleMs === 0);
 check('standings is throttled', byId.standings && byId.standings.throttleMs > 0, byId.standings && byId.standings.throttleMs);
 check('trackmap is throttled', byId.trackmap && byId.trackmap.throttleMs > 0, byId.trackmap && byId.trackmap.throttleMs);
 
+// Ghost HUD is in the set on purpose and differently: its update() only files
+// a timestamped pose sample (~0.2 ms), because it paints on its own rAF loop
+// from interpolated poses and a throttle there would drop the very samples the
+// interpolation needs. Its drawing is not in dispatch at all; client.js's
+// `noteWidgetWork` keeps that cost visible to the layer health report.
 const fullRate = widgets.filter((w) => w.fullRate).map((w) => w.id).sort();
 check(
-  'the 30 Hz set is the five instruments, not the whole HUD',
-  fullRate.join(',') === 'motion,pedals,pedalsv,radar,speedo',
+  'the 30 Hz set is the five instruments and Ghost HUD\'s intake, not the whole HUD',
+  fullRate.join(',') === 'ghosthud,motion,pedals,pedalsv,radar,speedo',
   fullRate.join(','),
 );
 
