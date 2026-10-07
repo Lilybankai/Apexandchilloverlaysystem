@@ -220,6 +220,11 @@
       // together), so only w is worth setting here. 640 because a road that
       // bends needs room to show it — at 420 a corner had nowhere to go.
       ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.44), w: 640 },
+      // Trace under it, the Lap strip at the top out of the road's way, and
+      // the Corner card beside the Ghost HUD where the eye already is.
+      traininginputs: { x: Math.round(vw / 2 - 300), y: Math.round(vh * 0.7), w: 600 },
+      trainingcorner: { x: Math.round(vw / 2 + 340), y: Math.round(vh * 0.44), w: 340 },
+      trainingsectors: { x: Math.round(vw / 2 - 300), y: Math.round(vh * 0.04), w: 600 },
     };
   }
 

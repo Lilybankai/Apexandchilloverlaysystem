@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="css/theme.css" />
   <link rel="stylesheet" href="css/overlay.css" />
   <link rel="stylesheet" href="css/ingame.css" />
+  <link rel="stylesheet" href="css/training.css" />
 
   <!-- Widget-background opacity and text scale, pushed over the bridge. -->
   <script src="js/appearance.js"></script>
@@ -56,12 +57,14 @@
   </div>
 
   <script src="js/shells.js"></script>
+  <!-- The training widgets' shells: a file of their own, so ingame.html can never offer them. -->
+  <script src="js/training-shells.js"></script>
   <script>
     (function () {
       "use strict";
       // Training widgets only. A race widget's shell would have no script on
       // this page to drive it, so it is not offered here at all.
-      var TRAINING = ["ghosthud"];
+      var TRAINING = ["ghosthud", "traininginputs", "trainingcorner", "trainingsectors"];
       var params = new URLSearchParams(window.location.search);
       var wanted = (params.get("widgets") || "")
         .split(",")
@@ -100,6 +103,14 @@
   <!-- The interpolated pose Ghost HUD paints from, between the maths and the widget. -->
   <script src="js/ghost-pose.js" defer></script>
   <script src="js/widgets/ghosthud.js" defer></script>
+  <!-- Trace, Corner card and Lap strip: their maths, the one shared /ghost.json
+       fetch, then the widgets. -->
+  <script src="js/training-trace.js" defer></script>
+  <script src="js/training-laps.js" defer></script>
+  <script src="js/training-ghost.js" defer></script>
+  <script src="js/widgets/traininginputs.js" defer></script>
+  <script src="js/widgets/trainingcorner.js" defer></script>
+  <script src="js/widgets/trainingsectors.js" defer></script>
   <!-- Layout + edit-mode manager, last: it operates on the wrappers above. -->
   <script src="js/ingame.js" defer></script>
 </body>

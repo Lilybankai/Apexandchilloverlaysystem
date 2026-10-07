@@ -276,6 +276,33 @@ const TRAINING_CATALOG = [
     ingameDefault: false,
     obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
   },
+  {
+    id: 'traininginputs',
+    label: 'Trace',
+    gated: 'beta',
+    group: 'training',
+    description: 'Your throttle, brake and steering over the reference lap’s, by distance — with its next braking point coming',
+    ingameDefault: false,
+    obs: { w: 600, h: 250, note: 'Height follows width.' },
+  },
+  {
+    id: 'trainingcorner',
+    label: 'Corner Card',
+    gated: 'beta',
+    group: 'training',
+    description: 'How the corner you just left went against the reference: time, braking point, apex speed',
+    ingameDefault: false,
+    obs: { w: 340, h: 110 },
+  },
+  {
+    id: 'trainingsectors',
+    label: 'Lap Strip',
+    gated: 'beta',
+    group: 'training',
+    description: 'Sectors against the reference, and every corner of the lap coloured by time won or lost',
+    ingameDefault: false,
+    obs: { w: 600, h: 120 },
+  },
 ];
 const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);
 

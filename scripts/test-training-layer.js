@@ -269,7 +269,13 @@ console.log('\ntraining layer: the pages');
     'training.html loads Ghost HUD and its maths',
     training.includes('js/ghost-geom.js') && training.includes('js/widgets/ghosthud.js'),
   );
-  const raceWidgets = training.filter((s) => s.startsWith('js/widgets/') && s !== 'js/widgets/ghosthud.js');
+  const TRAINING_WIDGETS = ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors'].map((id) => 'js/widgets/' + id + '.js');
+  const raceWidgets = training.filter((s) => s.startsWith('js/widgets/') && !TRAINING_WIDGETS.includes(s));
+  check('training.html loads every training widget', TRAINING_WIDGETS.every((w) => training.includes(w)));
+  check(
+    'ingame.html loads no training widget',
+    !ingame.some((s) => TRAINING_WIDGETS.includes(s) || s.startsWith('js/training-')),
+  );
   check('training.html loads no race widget', raceWidgets.length === 0, raceWidgets.join(','));
   check(
     'training.html runs the shared runtime and layout manager, layout manager last',
