@@ -3239,7 +3239,13 @@ function syncTrainingWindow(settings) {
 /** Auto show/hide moved. Free when there is no training window. */
 function applyTrainingLayerVisibility() {
   if (!trainingLayer.window()) return;
-  trainingLayer.setVisible(trainingShouldBeVisible(loadSettings()));
+  // Called from setFeedOnTrack between the race layer and the better-ears
+  // fetch: a training fault must not cost either of them.
+  try {
+    trainingLayer.setVisible(trainingShouldBeVisible(loadSettings()));
+  } catch (err) {
+    stallWatch.note(`TRAINING visibility failed: ${(err && err.message) || err}`);
+  }
 }
 
 /** Edit the training layout. Leaves race edit mode first — one at a time. */
@@ -6289,12 +6295,13 @@ function setupAutoUpdate() {
       saveSettings({ ...settings, updateChannel: next });
     }
     applyUpdateChannel(next);
-    // VR follows the channel (vrOnThisChannel): start or stop it now. So does
-    // Ghost HUD, which is beta-gated — told from the settings just saved
-    // rather than read back off the disk.
+    // VR follows the channel (vrOnThisChannel): start or stop it now.
     syncVr();
-    // So does the training layer (trainingOnThisChannel).
-    syncTrainingLayer();
+    // So does the training layer (trainingOnThisChannel), and with it the
+    // ghost-lap switch. Like syncVr it reads the settings back from disk,
+    // where the channel was saved above. Fenced: the update check below must
+    // run whatever training does.
+    syncTrainingLayerFenced();
     // Whatever was found on the old feed no longer applies to this one.
     updateState.status = 'idle';
     updateState.version = null;
