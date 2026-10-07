@@ -2604,10 +2604,13 @@ function syncVr(settings) {
  * Tell the server whether anything will draw a ghost, so it chooses a ghost
  * lap — and reads the lap store to do it — only then.
  *
- * That is exactly "the training layer is up": every training widget chases the
- * reference lap, and nothing outside Training mode does. So a race, Race mode,
- * or a driver who never switched a training widget on costs the server nothing.
- * Called by syncTrainingWindow with the same answer it gives the window.
+ * That is exactly "training is live" (trainingActive): Training mode, the beta
+ * channel, the server running and a practice session. Every training widget
+ * chases the reference lap and nothing outside Training mode does, so a race
+ * or Race mode costs the server nothing. It does NOT wait for the training
+ * window or a widget switched on in it: a training widget added to OBS draws
+ * from the same ghost under the same rule as the one on screen.
+ * Called from onTrainingActiveChanged, so once per flip, never per sync.
  */
 function syncGhostWanted(wanted) {
   try {
@@ -3157,6 +3160,9 @@ function onTrainingActiveChanged(fn) {
 
 // The window follows the gate; the panel's status line follows the reason too.
 onTrainingActiveChanged(() => syncTrainingWindow());
+// The ghost lap is chosen while, and only while, training is live — window or
+// no window, so a training widget in OBS has one as well.
+onTrainingActiveChanged((active) => syncGhostWanted(active));
 trainingGate.subscribe(() => pushStatus());
 
 /**
@@ -3228,8 +3234,6 @@ function syncTrainingWindow(settings) {
     url: trainingUrl(ids),
     visible: trainingShouldBeVisible(s),
   });
-  // The ghost lap is chosen while, and only while, a training widget is up.
-  syncGhostWanted(wanted);
 }
 
 /** Auto show/hide moved. Free when there is no training window. */
