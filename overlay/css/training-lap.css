@@ -1,0 +1,98 @@
+/* training-lap.css: the Lap Strip (trainingsectors) — its own file so the training widgets can be restyled independently.
+   Linked from training.html and widget.html after training.css. */
+
+:is(.tcorner, .tlap__sec)[data-tone="gain"] { --tc: var(--pos-gain); }
+:is(.tcorner, .tlap__sec)[data-tone="loss"] { --tc: var(--pos-loss); }
+:is(.tcorner, .tlap__sec)[data-tone="level"] { --tc: var(--text-primary); }
+:is(.tcorner, .tlap__sec)[data-tone="none"] { --tc: var(--text-muted); }
+
+/* --- Lap strip. Three sectors and the lap over a barcode of corners. */
+.tlap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-display);
+}
+.tlap__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.2fr);
+  gap: 4px;
+}
+.tlap__sec {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 3px 7px 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  box-shadow: inset 0 2px 0 var(--tc);
+}
+.tlap__name {
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+}
+.tlap__delta {
+  text-align: right;
+  color: var(--tc);
+  font-size: var(--fs-value);
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tlap__ref {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  min-height: 1em;
+}
+/* Not reached yet this lap: last lap's figure, stepped back. */
+.tlap__sec[data-state="prev"] {
+  opacity: 0.45;
+  box-shadow: none;
+}
+/* The sector being driven: lifted, its name in the brand cyan. */
+.tlap__sec[data-state="live"] {
+  background: var(--bg-panel-3);
+}
+.tlap__sec[data-state="live"] .tlap__name {
+  color: var(--ac-cyan);
+}
+.tlap__sec--lap,
+.tlap__sec--lap[data-state="prev"] {
+  opacity: 1;
+  background: var(--bg-panel-3);
+}
+.tlap__strip {
+  display: block;
+  width: 100%;
+  height: 30px;
+}
+.tlap[data-ready="false"] .tlap__strip {
+  opacity: 0.4;
+}
+/* No ghost: the Corner card's quiet "none" line, centred over the strip's
+   own footprint so the widget keeps its size and nothing jumps when a ghost
+   arrives. (.tlap is position: relative for it.) */
+.tlap__note {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+}
+.tlap[data-empty="true"] .tlap__note {
+  display: flex;
+}
+.tlap[data-empty="true"] > :not(.tlap__note) {
+  visibility: hidden;
+}

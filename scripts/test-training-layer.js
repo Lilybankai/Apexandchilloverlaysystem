@@ -365,7 +365,7 @@ console.log('\ntraining layer: the pages');
     'training.html loads Ghost HUD and its maths',
     training.includes('js/ghost-geom.js') && training.includes('js/widgets/ghosthud.js'),
   );
-  const TRAINING_WIDGETS = ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors'].map((id) => 'js/widgets/' + id + '.js');
+  const TRAINING_WIDGETS = ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors', 'trainingcoach', 'trainingbrake'].map((id) => 'js/widgets/' + id + '.js');
   const raceWidgets = training.filter((s) => s.startsWith('js/widgets/') && !TRAINING_WIDGETS.includes(s));
   check('training.html loads every training widget', TRAINING_WIDGETS.every((w) => training.includes(w)));
   check(
@@ -439,7 +439,7 @@ console.log('\ntraining layer: one list of training widgets');
   const bench = /const INGAME_OFF_BY_DEFAULT = new Set\(\[([\s\S]*?)\]\);/.exec(src('scripts', 'bench-widgets.js'));
   const benchOff = bench ? Array.from(bench[1].replace(/\/\/.*$/gm, '').matchAll(/'([^']+)'/g), (m) => m[1]) : [];
 
-  check('training-shells.js lists the four training widgets', pageIds === 'ghosthud,trainingcorner,traininginputs,trainingsectors', pageIds);
+  check('training-shells.js lists the six training widgets', pageIds === 'ghosthud,trainingbrake,trainingcoach,trainingcorner,traininginputs,trainingsectors', pageIds);
   check("…and every one has a shell on the training page", (page.ApexTrainingWidgets || []).every((id) => id === 'ghosthud' || !!page.ApexShells[id]));
   check("main.js's TRAINING_CATALOG is the same list", catalogIds === pageIds, catalogIds);
   check("ingame.js places the same list on the training layer", placedIds === pageIds, placedIds);

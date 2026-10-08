@@ -1,0 +1,116 @@
+/* training-corner.css: Corner Analysis (trainingcorner) — its own file so the training widgets can be restyled independently.
+   Linked from training.html and widget.html after training.css. */
+
+:is(.tcorner, .tlap__sec)[data-tone="gain"] { --tc: var(--pos-gain); }
+:is(.tcorner, .tlap__sec)[data-tone="loss"] { --tc: var(--pos-loss); }
+:is(.tcorner, .tlap__sec)[data-tone="level"] { --tc: var(--text-primary); }
+:is(.tcorner, .tlap__sec)[data-tone="none"] { --tc: var(--text-muted); }
+
+/* --- Corner card. Two faces on one element: the verdict for four seconds
+   after a corner, the quiet "next" line the rest of the time. */
+.tcorner {
+  position: relative;
+  font-family: var(--font-display);
+  min-height: calc(44px * var(--fs-scale));
+  display: flex;
+  align-items: center;
+}
+.tcorner__card {
+  display: none;
+  position: relative;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 2px 2px 7px;
+}
+.tcorner[data-mode="verdict"] .tcorner__card {
+  display: flex;
+  animation: tcorner-in 160ms ease-out;
+}
+.tcorner[data-mode="verdict"] .tcorner__next {
+  display: none;
+}
+/* The corner's number on a plate with the verdict's colour down its edge:
+   found first, read second. */
+.tcorner__name {
+  flex: none;
+  min-width: 2.4em;
+  text-align: center;
+  padding: 3px 7px 2px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--tc);
+  background: var(--bg-panel-3);
+  color: var(--text-primary);
+  font-size: var(--fs-value);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.tcorner__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tcorner__delta {
+  color: var(--tc);
+  font-size: var(--fs-crit);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tcorner__notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 10px;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+.tcorner__note:empty {
+  display: none;
+}
+/* How long the verdict has left: a hairline in its own colour, running down. */
+.tcorner__clock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tc);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+/* Two identical runs, alternated by the widget, restart the bar for every
+   corner without forcing a layout. 4 s = VERDICT_MS in trainingcorner.js. */
+.tcorner__clock[data-run="1"] { animation: tcorner-clock-a 4s linear forwards; }
+.tcorner__clock[data-run="2"] { animation: tcorner-clock-b 4s linear forwards; }
+@keyframes tcorner-clock-a { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes tcorner-clock-b { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes tcorner-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.tcorner__next {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-data);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tcorner__label {
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+}
+.tcorner[data-mode="none"] .tcorner__label {
+  display: none;
+}
+.tcorner[data-mode="none"] .tcorner__next {
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+}
+

@@ -181,7 +181,7 @@ console.log('\n6) Hosts');
   check('Trace takes every frame (its loop interpolates them)', reg('traininginputs') === 0);
   check('Corner card and Lap strip are throttled', reg('trainingcorner') > 0 && reg('trainingsectors') > 0);
   const shells = read('overlay', 'js', 'training-shells.js');
-  check('a shell for each', ['traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => shells.includes('add("' + id + '"')));
+  check('a shell for each', ['traininginputs', 'trainingcorner', 'trainingsectors', 'trainingcoach', 'trainingbrake'].every((id) => shells.includes('add("' + id + '"')));
   check('the race overlay never loads the training shells, scripts or styles', !/training-|training\.css|widgets\/training/.test(read('overlay', 'ingame.html')));
   check('shells.js itself has no training shells', !/traininginputs|trainingcorner|trainingsectors/.test(read('overlay', 'js', 'shells.js')));
   // widget.html (OBS) loads every training script whichever widget ?w= names.
@@ -219,9 +219,10 @@ console.log('\n6) Hosts');
     page.window = page;
     vm.createContext(page);
     const order = ['ghost-geom.js', 'ghost-pose.js', 'training-trace.js', 'training-laps.js', 'training-ghost.js',
-      'widgets/ghosthud.js', 'widgets/traininginputs.js', 'widgets/trainingcorner.js', 'widgets/trainingsectors.js'];
+      'widgets/ghosthud.js', 'widgets/traininginputs.js', 'widgets/trainingcorner.js', 'widgets/trainingsectors.js',
+      'widgets/trainingcoach.js', 'widgets/trainingbrake.js'];
     for (const f of order) vm.runInContext(read('overlay', 'js', ...f.split('/')), page, { filename: f });
-    check('loaded without a shell, all four register', ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors'].every((id) => registered.includes(id)), registered.join(','));
+    check('loaded without a shell, all six register', ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors', 'trainingcoach', 'trainingbrake'].every((id) => registered.includes(id)), registered.join(','));
     check('…and do nothing else until a widget inits (no fetch, timer, loop or listener)', did.length === 0, did.join(','));
   }
   const trace = read('overlay', 'js', 'widgets', 'traininginputs.js');

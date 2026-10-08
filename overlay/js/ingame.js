@@ -219,12 +219,16 @@
       // is derived from width (the camera's field of view fixes the two
       // together), so only w is worth setting here. 640 because a road that
       // bends needs room to show it — at 420 a corner had nowhere to go.
-      ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.44), w: 640 },
-      // Trace under it, the Lap strip at the top out of the road's way, and
-      // the Corner card beside the Ghost HUD where the eye already is.
-      traininginputs: { x: Math.round(vw / 2 - 300), y: Math.round(vh * 0.7), w: 600 },
-      trainingcorner: { x: Math.round(vw / 2 + 340), y: Math.round(vh * 0.44), w: 340 },
-      trainingsectors: { x: Math.round(vw / 2 - 300), y: Math.round(vh * 0.04), w: 600 },
+      ghosthud: { x: Math.round(vw / 2 - 320), y: Math.round(vh * 0.2), w: 640 },
+      // The approved mockup's arrangement (2026-10-08), on a 2560×1440
+      // screen: the Lap strip across the top out of the road's way; the Brake
+      // cue just above the dash, the Coach card under it; Corner analysis to
+      // the left and Telemetry to the right, both low, beside the wheel.
+      trainingsectors: { x: Math.round(vw / 2 - 400), y: Math.round(vh * 0.024), w: 800 },
+      trainingbrake: { x: Math.round(vw / 2 - 180), y: Math.round(vh * 0.568), w: 360 },
+      trainingcoach: { x: Math.round(vw / 2 - 330), y: Math.round(vh * 0.645), w: 660 },
+      trainingcorner: { x: Math.round(vw / 2 - 900), y: Math.round(vh * 0.6), w: 430 },
+      traininginputs: { x: Math.round(vw / 2 + 410), y: Math.round(vh * 0.63), w: 830 },
     };
   }
 

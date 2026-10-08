@@ -1,227 +1,170 @@
 /* =========================================================================
- * training.css — the training widgets: Trace, Corner card, Lap strip.
+ * training.css — the training widgets' shared look.
  * -------------------------------------------------------------------------
  * Its own file so the race overlay's stylesheet is untouched: only pages that
- * host training widgets (training.html, widget.html) link it. Colours come
- * from theme.css tokens; every panel surface goes through --panel-alpha like
- * the rest of the HUD.
+ * host training widgets (training.html, widget.html) link it. Each widget's
+ * own rules are in a file of its own after this one (training-lap.css,
+ * training-corner.css, training-telemetry.css, training-coach.css,
+ * training-brake.css, training-ghost.css).
  *
- * One convention runs through all three: a delta's colour is carried as
- * --tc on the element whose data-tone says gain / loss / level / none, so the
- * number, its rail and its run-down bar can never disagree.
+ * The look (approved 2026-10-08 from a mockup): a dark card with a brand
+ * hairline on its top edge, no title bar, one big number per card. Brand
+ * colours are for identity only; red and green mean losing and gaining time
+ * and nothing else. The reference lap is always a dotted white line, the
+ * driver a solid colour.
+ *
+ * No backdrop-filter anywhere: the overlay is a separate window over the game
+ * and has nothing behind it to blur. Contrast, type and glow do the work.
+ *
+ * Every surface still goes through --panel-alpha, so the operator's "Widget
+ * background" slider fades the training cards like every other panel.
  * ========================================================================= */
 
-:is(.tcorner, .tlap__sec)[data-tone="gain"] { --tc: var(--pos-gain); }
-:is(.tcorner, .tlap__sec)[data-tone="loss"] { --tc: var(--pos-loss); }
-:is(.tcorner, .tlap__sec)[data-tone="level"] { --tc: var(--text-primary); }
-:is(.tcorner, .tlap__sec)[data-tone="none"] { --tc: var(--text-muted); }
+:root {
+  /* Surfaces. */
+  --tw-top: rgba(15, 17, 28, calc(0.97 * var(--panel-alpha, 1)));
+  --tw-bot: rgba(8, 9, 16, calc(0.96 * var(--panel-alpha, 1)));
+  --tw-hair: rgba(255, 255, 255, calc(0.07 * var(--panel-alpha, 1)));
+  --tw-well: rgba(255, 255, 255, 0.03);
+  --tw-grid: rgba(255, 255, 255, 0.06);
+  --tw-radius: 16px;
+  /* The reference lap, wherever it is drawn: dotted white. */
+  --tw-ref: rgba(244, 246, 251, 0.78);
+  /* Type. Numbers are Bahnschrift (DIN-like, tabular); labels Segoe UI. */
+  --tw-num: "Bahnschrift", "DIN Alternate", "Arial Narrow", var(--font-display);
+  --tw-ui: "Segoe UI", system-ui, sans-serif;
+  --tw-glow-loss: 0 0 24px rgba(255, 84, 112, 0.45);
+  --tw-glow-gain: 0 0 24px rgba(53, 208, 127, 0.4);
+}
 
-/* --- Trace. The canvas is the whole widget; its height follows its width. */
-.ttrace {
-  display: flex;
-  flex-direction: column;
-}
-.ttrace__canvas {
-  display: block;
-  width: 100%;
-  background: transparent;
-}
+/* --- The card ------------------------------------------------------------ */
 
-/* --- Corner card. Two faces on one element: the verdict for four seconds
-   after a corner, the quiet "next" line the rest of the time. */
-.tcorner {
+.tw {
   position: relative;
-  font-family: var(--font-display);
-  min-height: calc(44px * var(--fs-scale));
-  display: flex;
-  align-items: center;
-}
-.tcorner__card {
-  display: none;
-  position: relative;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 2px 2px 7px;
-}
-.tcorner[data-mode="verdict"] .tcorner__card {
-  display: flex;
-  animation: tcorner-in 160ms ease-out;
-}
-.tcorner[data-mode="verdict"] .tcorner__next {
-  display: none;
-}
-/* The corner's number on a plate with the verdict's colour down its edge:
-   found first, read second. */
-.tcorner__name {
-  flex: none;
-  min-width: 2.4em;
-  text-align: center;
-  padding: 3px 7px 2px;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--tc);
-  background: var(--bg-panel-3);
   color: var(--text-primary);
-  font-size: var(--fs-value);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-family: var(--tw-ui);
+  -webkit-font-smoothing: antialiased;
 }
-.tcorner__body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.tw--card {
+  background: linear-gradient(180deg, var(--tw-top), var(--tw-bot));
+  border: 1px solid var(--tw-hair);
+  border-radius: var(--tw-radius);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, calc(0.45 * var(--panel-alpha, 1))),
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.05 * var(--panel-alpha, 1)));
 }
-.tcorner__delta {
-  color: var(--tc);
-  font-size: var(--fs-crit);
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tcorner__notes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px 10px;
-  margin-top: 3px;
-  color: var(--text-secondary);
-  font-size: var(--fs-body);
-}
-.tcorner__note:empty {
-  display: none;
-}
-/* How long the verdict has left: a hairline in its own colour, running down. */
-.tcorner__clock {
+/* The brand hairline: the only gradient on a card. */
+.tw--card::before {
+  content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 22px;
+  right: 22px;
+  top: -1px;
   height: 2px;
-  border-radius: 1px;
-  background: var(--tc);
-  transform-origin: left center;
-  transform: scaleX(0);
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--ac-cyan) 18%, var(--ac-purple) 62%, var(--ac-magenta) 85%, transparent);
+  opacity: 0.75;
+  pointer-events: none;
 }
-/* Two identical runs, alternated by the widget, restart the bar for every
-   corner without forcing a layout. 4 s = VERDICT_MS in trainingcorner.js. */
-.tcorner__clock[data-run="1"] { animation: tcorner-clock-a 4s linear forwards; }
-.tcorner__clock[data-run="2"] { animation: tcorner-clock-b 4s linear forwards; }
-@keyframes tcorner-clock-a { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-@keyframes tcorner-clock-b { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-@keyframes tcorner-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
-}
-
-.tcorner__next {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: var(--fs-data);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tcorner__label {
-  color: var(--text-muted);
-  font-size: var(--fs-label);
-  letter-spacing: 0.08em;
-}
-.tcorner[data-mode="none"] .tcorner__label {
-  display: none;
-}
-.tcorner[data-mode="none"] .tcorner__next {
-  color: var(--text-muted);
-  font-size: var(--fs-body);
-}
-
-/* --- Lap strip. Three sectors and the lap over a barcode of corners. */
-.tlap {
+.tw__body {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-family: var(--font-display);
 }
-.tlap__row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.2fr);
-  gap: 4px;
+.tw--card > .tw__body {
+  padding: 16px 20px;
 }
-.tlap__sec {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 6px;
-  align-items: baseline;
-  padding: 3px 7px 3px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel-2);
-  box-shadow: inset 0 2px 0 var(--tc);
-}
-.tlap__name {
-  grid-row: 1 / span 2;
-  align-self: center;
+.tw__wait {
+  padding: 8px 0;
   color: var(--text-muted);
-  font-size: var(--fs-label);
-  letter-spacing: 0.06em;
+  font: 500 14px/1.2 var(--tw-ui);
+  letter-spacing: 0.04em;
 }
-.tlap__delta {
-  text-align: right;
-  color: var(--tc);
-  font-size: var(--fs-value);
-  font-weight: 700;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tlap__ref {
-  text-align: right;
-  color: var(--text-muted);
-  font-size: var(--fs-micro);
-  font-variant-numeric: tabular-nums;
-  min-height: 1em;
-}
-/* Not reached yet this lap: last lap's figure, stepped back. */
-.tlap__sec[data-state="prev"] {
-  opacity: 0.45;
-  box-shadow: none;
-}
-/* The sector being driven: lifted, its name in the brand cyan. */
-.tlap__sec[data-state="live"] {
-  background: var(--bg-panel-3);
-}
-.tlap__sec[data-state="live"] .tlap__name {
-  color: var(--ac-cyan);
-}
-.tlap__sec--lap,
-.tlap__sec--lap[data-state="prev"] {
-  opacity: 1;
-  background: var(--bg-panel-3);
-}
-.tlap__strip {
-  display: block;
-  width: 100%;
-  height: 30px;
-}
-.tlap[data-ready="false"] .tlap__strip {
-  opacity: 0.4;
-}
-/* No ghost: the Corner card's quiet "none" line, centred over the strip's
-   own footprint so the widget keeps its size and nothing jumps when a ghost
-   arrives. (.tlap is position: relative for it.) */
-.tlap__note {
+
+/* The widget's name: only in edit mode, as a tag sitting on the top edge. */
+.tw__name {
   display: none;
   position: absolute;
-  inset: 0;
-  margin: 0;
-  align-items: center;
-  justify-content: center;
+  left: 14px;
+  top: -11px;
+  z-index: 2;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: #121524;
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.45);
+  color: var(--ac-cyan);
+  font: 600 11px/1 var(--tw-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+body.ig-editing .tw__name {
+  display: block;
+}
+/* A bare widget must still be findable while editing. */
+body.ig-editing .tw--bare {
+  outline: 1px dashed rgba(34, 211, 238, 0.35);
+  outline-offset: 2px;
+  border-radius: var(--tw-radius);
+}
+
+/* --- Shared parts -------------------------------------------------------- */
+
+/* Small caps label: "CORNER ANALYSIS", "S1", "VS". */
+.tw-label {
+  font: 600 13px/1 var(--tw-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  font-size: var(--fs-body);
 }
-.tlap[data-empty="true"] .tlap__note {
-  display: flex;
+.tw-num {
+  font-family: var(--tw-num);
+  font-variant-numeric: tabular-nums;
 }
-.tlap[data-empty="true"] > :not(.tlap__note) {
-  visibility: hidden;
+/* The one big number a card is about. */
+.tw-big {
+  font: 600 46px/0.9 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tw-big[data-tone="loss"] { color: var(--pos-loss); text-shadow: var(--tw-glow-loss); }
+.tw-big[data-tone="gain"] { color: var(--pos-gain); text-shadow: var(--tw-glow-gain); }
+.tw-big[data-tone="level"] { color: var(--text-primary); }
+.tw-big[data-tone="none"] { color: var(--text-muted); }
+
+/* A delta in a pill. */
+.tw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  font: 600 18px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.tw-chip[data-tone="loss"] {
+  color: var(--pos-loss);
+  background: rgba(255, 84, 112, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 84, 112, 0.35);
+}
+.tw-chip[data-tone="gain"] {
+  color: var(--pos-gain);
+  background: rgba(53, 208, 127, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(53, 208, 127, 0.32);
+}
+
+/* Words that colour themselves by tone. */
+[data-tone="loss"] > .tw-tone, .tw-tone[data-tone="loss"] { color: var(--pos-loss); }
+[data-tone="gain"] > .tw-tone, .tw-tone[data-tone="gain"] { color: var(--pos-gain); }
+[data-tone="level"] > .tw-tone, .tw-tone[data-tone="level"] { color: var(--text-primary); }
+[data-tone="none"] > .tw-tone, .tw-tone[data-tone="none"] { color: var(--text-muted); }
+
+/* The quiet line a card shows when it has nothing to say yet. */
+.tw-empty {
+  color: var(--text-muted);
+  font: 500 15px/1.3 var(--tw-ui);
+  letter-spacing: 0.02em;
 }

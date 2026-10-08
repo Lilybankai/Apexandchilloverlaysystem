@@ -215,6 +215,8 @@
     traininginputs: 'activity',
     trainingcorner: 'target',
     trainingsectors: 'list-ordered',
+    trainingcoach: 'gauge',
+    trainingbrake: 'alert',
     refpace: 'target',
     weather: 'cloud-rain',
     fuel: 'fuel',

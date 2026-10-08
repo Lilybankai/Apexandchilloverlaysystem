@@ -1,0 +1,14 @@
+/* training-telemetry.css: the Telemetry widget (traininginputs) — its own file so the training widgets can be restyled independently.
+   Linked from training.html and widget.html after training.css. */
+
+/* --- Trace. The canvas is the whole widget; its height follows its width. */
+.ttrace {
+  display: flex;
+  flex-direction: column;
+}
+.ttrace__canvas {
+  display: block;
+  width: 100%;
+  background: transparent;
+}
+

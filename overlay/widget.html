@@ -19,7 +19,8 @@
     Valid names: standings, relative, delta, pacedelta, weather, fuel, fuelplan,
                  tyres, pedals, pedalsv, motion, damage, radar, trackmap, limits,
                  racecontrol, mfd — and the training widgets: ghosthud,
-                 traininginputs, trainingcorner, trainingsectors, which have
+                 traininginputs, trainingcorner, trainingsectors, trainingcoach,
+                 trainingbrake, which have
                  data only while Training mode is live in a practice session
 
     It reuses the exact same widget runtime (client.js) and widget modules as
@@ -31,6 +32,12 @@
   <link rel="stylesheet" href="css/single.css" />
   <!-- The training widgets' styles, scoped to their own classes. -->
   <link rel="stylesheet" href="css/training.css" />
+  <link rel="stylesheet" href="css/training-lap.css" />
+  <link rel="stylesheet" href="css/training-corner.css" />
+  <link rel="stylesheet" href="css/training-telemetry.css" />
+  <link rel="stylesheet" href="css/training-coach.css" />
+  <link rel="stylesheet" href="css/training-brake.css" />
+  <link rel="stylesheet" href="css/training-ghost.css" />
 
   <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
        the operator's on/off + volume. Add ?audio=off to silence just this
@@ -118,6 +125,8 @@
   <script src="js/widgets/traininginputs.js" defer></script>
   <script src="js/widgets/trainingcorner.js" defer></script>
   <script src="js/widgets/trainingsectors.js" defer></script>
+  <script src="js/widgets/trainingcoach.js" defer></script>
+  <script src="js/widgets/trainingbrake.js" defer></script>
   <script src="js/widgets/racecontrol.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
   <script src="js/widgets/chat.js" defer></script>

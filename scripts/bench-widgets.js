@@ -48,6 +48,8 @@ const INGAME_OFF_BY_DEFAULT = new Set([
   'traininginputs',
   'trainingcorner',
   'trainingsectors',
+  'trainingcoach',
+  'trainingbrake',
 ]);
 
 const ORIGINALLY_FULL_RATE = ['pedals'];
