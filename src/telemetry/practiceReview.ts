@@ -141,7 +141,7 @@ export const CONSISTENCY_WINDOW = 1.07;
 /* -------------------------------------------------------------------------- */
 
 /** One lap's columns, cleaned so every interpolator can trust them. */
-interface Cols {
+export interface PracticeColumns {
   d: number[];
   t: number[];
   speedKph?: number[];
@@ -157,7 +157,7 @@ interface Cols {
  * (`ghostLap.cleanTraceIndexed`'s rule, restated here so this module does not
  * load the pace engine and its file store).
  */
-function cleanCols(src: {
+export function cleanCols(src: {
   d: readonly number[];
   t: readonly number[];
   speedKph?: readonly number[];
@@ -165,7 +165,7 @@ function cleanCols(src: {
   throttle?: readonly number[];
   x?: readonly number[];
   z?: readonly number[];
-}): Cols | null {
+}): PracticeColumns | null {
   if (!src || !Array.isArray(src.d) || !Array.isArray(src.t)) return null;
   const n = Math.min(src.d.length, src.t.length);
   const keep: number[] = [];
@@ -183,7 +183,7 @@ function cleanCols(src: {
   if (keep.length < 2) return null;
   const pick = (col: readonly number[] | undefined): number[] | undefined =>
     Array.isArray(col) && col.length >= n ? keep.map((i) => col[i]!) : undefined;
-  const out: Cols = { d: keep.map((i) => src.d[i]!), t: keep.map((i) => src.t[i]!) };
+  const out: PracticeColumns = { d: keep.map((i) => src.d[i]!), t: keep.map((i) => src.t[i]!) };
   const speedKph = pick(src.speedKph);
   const brake = pick(src.brake);
   const throttle = pick(src.throttle);
@@ -206,7 +206,7 @@ function cleanCols(src: {
  * without the pins the first and last segments would lose those metres and
  * the segments would not add up to the lap.
  */
-function timeAtLap(c: Cols, lapSec: number, d: number): number | null {
+function timeAtLap(c: PracticeColumns, lapSec: number, d: number): number | null {
   if (d <= 0) return 0;
   if (d >= 1) return lapSec;
   const n = c.d.length;
@@ -233,12 +233,12 @@ function timeAtLap(c: Cols, lapSec: number, d: number): number | null {
 }
 
 /** A trace that covers the lap from line to line (a few metres' slack either end). */
-function coversLap(c: Cols): boolean {
+function coversLap(c: PracticeColumns): boolean {
   return c.d[0]! <= 0.02 && c.d[c.d.length - 1]! >= 0.98;
 }
 
 /** The reference's corners, or none when it has no speed channel to cut them from. */
-function cornersOf(c: Cols, lengthM: number): { entryD: number; apexD: number; exitD: number }[] {
+function cornersOf(c: PracticeColumns, lengthM: number): { entryD: number; apexD: number; exitD: number }[] {
   if (!c.speedKph) return [];
   return findCorners({ ...c, speedKph: c.speedKph } as CornerTrace, lengthM);
 }
@@ -278,6 +278,66 @@ const lapsOf = (s: ReviewSession): ReviewLap[] =>
 
 const isValid = (l: ReviewLap): boolean => l.clean === true && l.timed === true && l.lapMs > 0;
 
+/** What a session is measured against, with the corners that cut it up. */
+export interface PracticeReference {
+  target: PracticeTargetInfo;
+  /** The reference's cleaned columns. */
+  ref: PracticeColumns;
+  corners: { entryD: number; apexD: number; exitD: number }[];
+}
+
+/**
+ * The reference for a session: the chased lap when it was snapshotted, else
+ * the session's best valid lap among those in `cols`. Shared by the debrief
+ * and the lap deep dive (`practiceLap.ts`) so "C5" is the same corner in both
+ * — and the C5 the driver saw on track when the snapshot carries the served
+ * corner list.
+ */
+export function practiceReference(
+  s: ReviewSession,
+  cols: Map<string, PracticeColumns>,
+  snapshot: PracticeTargetSnapshot | null,
+): PracticeReference | null {
+  const L = s.trackLengthM > 0 ? s.trackLengthM : 0;
+  if (snapshot) {
+    const ref = cleanCols(snapshot.columns);
+    if (ref) {
+      const served = snapshot.columns.corners;
+      return {
+        target: { kind: snapshot.kind, label: snapshot.label, lapId: snapshot.lapId, lapSec: snapshot.lapSec },
+        ref,
+        corners:
+          Array.isArray(served) && served.length > 0
+            ? served.map((c) => ({ entryD: c.entryD, apexD: c.apexD, exitD: c.exitD }))
+            : cornersOf(ref, L > 0 ? L : snapshot.columns.trackLengthM || 0),
+      };
+    }
+  }
+  let best: ReviewLap | null = null;
+  for (const lap of lapsOf(s)) {
+    if (!isValid(lap) || !lap.id || !cols.has(lap.id)) continue;
+    if (!best || lap.lapMs < best.lapMs) best = lap;
+  }
+  if (!best || !best.id) return null;
+  const ref = cols.get(best.id)!;
+  const lapSec = best.lapMs / 1000;
+  return {
+    target: { kind: 'sessionBest', label: `Session best · ${fmtLap(lapSec)}`, lapId: best.id, lapSec },
+    ref,
+    corners: cornersOf(ref, L),
+  };
+}
+
+/** The session's best valid lap (the `sessionBest` reference), or null. */
+export function bestValidLap(s: ReviewSession): ReviewLap | null {
+  let best: ReviewLap | null = null;
+  for (const lap of lapsOf(s)) {
+    if (!isValid(lap) || !lap.id || !lap.hasTrace) continue;
+    if (!best || lap.lapMs < best.lapMs) best = lap;
+  }
+  return best;
+}
+
 /**
  * Build the debrief. Never throws on missing data: a session with no traced
  * lap and no target still lists its laps, with every comparison `null`.
@@ -288,7 +348,7 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
   const L = s.trackLengthM > 0 ? s.trackLengthM : 0;
 
   // Every lap's own columns, once.
-  const cols = new Map<string, Cols>();
+  const cols = new Map<string, PracticeColumns>();
   for (const lap of laps) {
     if (!lap.id) continue;
     const file = input.traces.get(lap.id);
@@ -297,45 +357,10 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     if (c) cols.set(lap.id, c);
   }
 
-  // The reference: the chased lap, or the session's best traced valid lap.
-  let target: PracticeTargetInfo | null = null;
-  let ref: Cols | null = null;
-  let refCorners: { entryD: number; apexD: number; exitD: number }[] = [];
-  if (input.target) {
-    ref = cleanCols(input.target.columns);
-    if (ref) {
-      target = {
-        kind: input.target.kind,
-        label: input.target.label,
-        lapId: input.target.lapId,
-        lapSec: input.target.lapSec,
-      };
-      const served = input.target.columns.corners;
-      refCorners =
-        Array.isArray(served) && served.length > 0
-          ? served.map((c) => ({ entryD: c.entryD, apexD: c.apexD, exitD: c.exitD }))
-          : cornersOf(ref, L > 0 ? L : input.target.columns.trackLengthM || 0);
-    }
-  }
-  if (!target) {
-    let best: ReviewLap | null = null;
-    for (const lap of laps) {
-      if (!isValid(lap) || !lap.id || !cols.has(lap.id)) continue;
-      if (!best || lap.lapMs < best.lapMs) best = lap;
-    }
-    if (best && best.id) {
-      ref = cols.get(best.id)!;
-      const lapSec = best.lapMs / 1000;
-      target = {
-        kind: 'sessionBest',
-        label: `Session best · ${fmtLap(lapSec)}`,
-        lapId: best.id,
-        lapSec,
-      };
-      refCorners = cornersOf(ref, L);
-    }
-  }
-  const refColumns: LapColumns | null = ref;
+  const reference = practiceReference(s, cols, input.target);
+  const target: PracticeTargetInfo | null = reference ? reference.target : null;
+  const refCorners = reference ? reference.corners : [];
+  const refColumns: LapColumns | null = reference ? reference.ref : null;
 
   // Laps.
   const outLaps: PracticeLap[] = laps.map((lap) => {

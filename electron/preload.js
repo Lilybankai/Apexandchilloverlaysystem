@@ -390,6 +390,12 @@ contextBridge.exposeInMainWorld('apex', {
   /** One practice session's debrief: `sessionId` → `{ ok, review: PracticeReview | null, error? }`. */
   reviewPractice: (sessionId) => ipcRenderer.invoke('review:practice', sessionId),
 
+  /**
+   * One practice lap against its session's target: `{ sessionId, lapId, at, haveMapKey }`
+   * → `{ ok, result: PracticeLapResult | null, error? }` (docs/PRACTICE-REVIEW-PLAN.md, phase 2).
+   */
+  practiceLap: (args) => ipcRenderer.invoke('practice:lap', args),
+
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {
     const listener = (_evt, pending) => callback(pending);

@@ -1006,6 +1006,9 @@ verifyPage({
     // to this scanner, which is why the painters live in their own file.
     'review-panel.js',
     'review-guide.js',
+    // The Practice tab: the Review frame with its own ids (pr-*) and no
+    // painters of its own — it draws with review-charts.js.
+    'practice-panel.js',
     // The VR tab's walkthrough; the tab's controls themselves live in
     // control-panel.js with the rest of the settings.
     'vr-guide.js',

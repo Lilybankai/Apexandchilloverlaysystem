@@ -4706,6 +4706,28 @@ function registerIpc() {
     }
   });
 
+  /**
+   * One practice lap studied against what its session was measured against
+   * (Practice Review phase 2): the Review tab's lap comparison — delta,
+   * micro-sectors, both laps' channels — plus a row per corner. The circuit
+   * is not resent when the panel already holds `haveMapKey`, as `review:lap`.
+   */
+  ipcMain.handle('practice:lap', (_evt, req) => {
+    const sessionId = req && typeof req.sessionId === 'string' ? req.sessionId : '';
+    const lapId = req && typeof req.lapId === 'string' ? req.lapId : '';
+    const at = req && typeof req.at === 'string' ? req.at : '';
+    if (!sessionId || !lapId) return { ok: false, result: null, error: 'no lap' };
+    try {
+      const { loadPracticeLap } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceLap.js'));
+      const haveMapKey = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
+      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey }, { reviewDir: practiceReviewsDir() });
+      return result ? { ok: true, result } : { ok: false, result: null, error: 'lap not found' };
+    } catch (err) {
+      console.error('[app] practice lap unavailable:', err.message);
+      return { ok: false, result: null, error: err.message };
+    }
+  });
+
   ipcMain.handle('review:sessions', () => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));

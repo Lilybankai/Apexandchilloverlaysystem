@@ -19,6 +19,7 @@
   <!-- Review tab styles. After team-panel.css: the session report reuses the
        tile shapes the pit wall established and restyles on top of them. -->
   <link rel="stylesheet" href="review-panel.css" />
+  <link rel="stylesheet" href="practice-panel.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
   <!-- Training ▸ Chase picker (training-reference.js). -->
@@ -184,6 +185,14 @@
            reason: the results files are on every PC that has raced. -->
       <button class="tab" type="button" data-tab="racelog">
         <svg class="icon"><use href="#i-scroll-text" /></svg><span class="tab__label">Race log</span>
+      </button>
+      <!-- Practice review (docs/PRACTICE-REVIEW-PLAN.md): every practice session
+           against the lap the driver chased, and where the time went. Its own
+           tab, not a view inside Review (Carl, 2026-10-08), under the Race log
+           so that one stays directly under Review where Carl put it. Not gated, for
+           Review's reason: it reads this machine's own lap files. -->
+      <button class="tab" type="button" data-tab="practice">
+        <svg class="icon"><use href="#i-target" /></svg><span class="tab__label">Practice</span>
       </button>
 
       <p class="rail__group">Broadcast</p>
@@ -2374,6 +2383,41 @@
       </div>
     </section>
 
+    <!-- ======================= PRACTICE REVIEW ========================= -->
+    <!-- docs/PRACTICE-REVIEW-PLAN.md. The Review tab's frame and classes, its
+         own ids and its own painter (practice-panel.js): the rail lists
+         practice and test-day sessions only, the pane is the debrief or one
+         lap studied against the session's target. -->
+    <section class="view" data-view="practice">
+      <div class="wrap wrap--wide">
+        <div class="view__head">
+          <div>
+            <h1>Practice</h1>
+            <p>Every practice session against the lap you chased — every lap, every corner,
+               and exactly where the time went.</p>
+          </div>
+          <div class="view__head-actions">
+            <button class="btn btn--ghost btn--sm" id="pr-refresh" type="button"
+                    title="Re-read the lap files">
+              <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="rv">
+          <aside class="rv__rail">
+            <div class="rv__find">
+              <input id="pr-search" type="search" placeholder="Find a track or car"
+                     aria-label="Filter practice sessions by track or car" />
+            </div>
+            <div class="rv__list" id="pr-sessions"></div>
+          </aside>
+
+          <div class="rv__detail" id="pr-detail"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ========================= RACE LOG ============================= -->
     <!-- docs/RACE-LOG-PLAN.md. The game's results files, one race at a time,
          as a timeline. The Review tab's frame and classes on purpose — it was
@@ -4518,6 +4562,7 @@
 <script src="review-charts.js"></script>
 <script src="review-racelog.js"></script>
 <script src="review-panel.js"></script>
+<script src="practice-panel.js"></script>
 <script src="review-guide.js"></script>
 <!-- Training ▸ Chase: which lap the training overlays chase. Mounted by
      control-panel.js the first time the Training tab opens. -->

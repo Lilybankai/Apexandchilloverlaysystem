@@ -6818,6 +6818,11 @@
       window.apexReview?.hidden();
       window.APEX_REVIEW_GUIDE?.cancelAutoOpen();
     }
+    // The Practice tab (docs/PRACTICE-REVIEW-PLAN.md), same contract: arriving
+    // re-reads the practice sessions and opens a review that is waiting;
+    // leaving drops the lap view's listeners.
+    if (target === 'practice') window.apexPractice?.shown();
+    else window.apexPractice?.hidden();
     // The Race log tab, same contract: arriving lists the game's results and
     // resumes the replay pushes for an open race; leaving drops them. Nothing
     // on it reaches the game while it is hidden.

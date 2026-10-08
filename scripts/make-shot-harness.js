@@ -107,6 +107,32 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     }, 50);
   }
 
+  // ?tab=practice&plap=1 opens the first studiable lap of the Practice tab's
+  // debrief (docs/PRACTICE-REVIEW-PLAN.md), and &pc=5 then clicks corner row
+  // C5 of its corner table, which frames that corner on the map and charts.
+  if (new URLSearchParams(location.search).get('plap')) {
+    const pStop = Date.now() + 8000;
+    const pTick = () => {
+      const row = document.querySelector('[data-view="practice"] tr[data-prlap][data-trace="true"]');
+      if (row) {
+        row.click();
+        const pc = Number(new URLSearchParams(location.search).get('pc'));
+        if (pc > 0) {
+          const cStop = Date.now() + 6000;
+          const cTick = () => {
+            const cr = document.querySelector('[data-view="practice"] tr[data-prcorner="' + (pc - 1) + '"]');
+            if (cr) { cr.click(); return; }
+            if (Date.now() < cStop) setTimeout(cTick, 120);
+          };
+          setTimeout(cTick, 200);
+        }
+        return;
+      }
+      if (Date.now() < pStop) setTimeout(pTick, 120);
+    };
+    setTimeout(pTick, 300);
+  }
+
   // ?lap=1 opens the first studiable lap once the Review tab has painted, so the
   // lap-detail view can be screenshotted: the harness cannot click, and that
   // view is two clicks deep. Gives up after five seconds rather than polling
@@ -831,6 +857,10 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // decoration on the same one: the delta trace and the micro-sector splits
     // only exist when a second lap was asked for.
     reviewLap: (req) => Promise.resolve(req && req.vs ? REVIEW.lapVs : REVIEW.lap),
+    // The Practice tab's lap deep dive: the real two-lap comparison above,
+    // with the second lap standing in as the session's target and its corners
+    // scored by the compiled corners module (see practiceLapFixture below).
+    practiceLap: () => Promise.resolve({ ok: true, result: PRACTICE_LAP_FIXTURE }),
     // The race log's replay jump. No game here, so every race has a replay and
     // a click lands straight on 'ready'; ?replay=<phase> shows another state:
     // loading | ready | blocked | error | closed answer the click (closed is
@@ -1058,6 +1088,77 @@ function practiceFixture(byId) {
 }
 
 /**
+ * The Practice tab's lap deep dive, in the plan's PracticeLapResult shape:
+ * the real comparison reviewLapFixture() found, its second lap standing in as
+ * the target, and every corner of that target scored for real — the compiled
+ * findCorners() and cornerResult() over the two traces — so the table and the
+ * framing it drives are tested on a real circuit's corners. Line offset is
+ * the mean lateral distance between the two driven lines, entry to exit.
+ */
+function practiceLapFixture(pair) {
+  if (!pair || !pair.detail || !pair.vs) return null;
+  let C;
+  let lapVs = pair;
+  try {
+    C = require(path.join(__dirname, '..', 'dist', 'telemetry', 'corners.js'));
+    // The target is the QUICKER lap, as a chased lap is: studying the faster
+    // one against the slower would show every corner as a gain.
+    if (pair.detail.lapMs < pair.vs.lapMs) {
+      const LD = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
+      const swapped = LD.loadLapCompare(pair.vs.lapId, pair.vs.at, { id: pair.detail.lapId, at: pair.detail.at });
+      if (swapped && swapped.detail && swapped.vs) lapVs = { ...swapped, map: swapped.map || pair.map };
+    }
+  } catch {
+    return null;
+  }
+  const L = lapVs.lengthM || 4000;
+  const me = lapVs.detail.channels;
+  const ref = lapVs.vs.channels;
+  const near = (cols, dd) => {
+    let lo = 0;
+    let hi = cols.d.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (cols.d[m] < dd) lo = m + 1; else hi = m; }
+    return lo;
+  };
+  const lineOffset = (a, b) => {
+    if (!Array.isArray(me.x) || !Array.isArray(ref.x)) return null;
+    let sum = 0;
+    let n = 0;
+    for (let i = near(me, a); i < me.d.length && me.d[i] <= b; i += 1) {
+      const j = near(ref, me.d[i]);
+      sum += Math.hypot(me.x[i] - ref.x[j], me.z[i] - ref.z[j]);
+      n += 1;
+    }
+    return n ? Math.round((sum / n) * 10) / 10 : null;
+  };
+  const corners = C.findCorners(ref, L).map((c, index) => {
+    const r = C.cornerResult(c, ref, me, L);
+    const exitMe = me.speedKph[near(me, c.exitD)];
+    const exitRef = ref.speedKph[near(ref, c.exitD)];
+    let minMe = Infinity;
+    for (let i = near(me, c.entryD); i < me.d.length && me.d[i] <= c.exitD; i += 1) minMe = Math.min(minMe, me.speedKph[i]);
+    const parts = [];
+    if (r.brakeDeltaM !== null && r.brakeDeltaM <= -3) parts.push('brake ' + Math.round(-r.brakeDeltaM) + ' m later');
+    if (r.brakeDeltaM !== null && r.brakeDeltaM >= 3) parts.push('brake ' + Math.round(r.brakeDeltaM) + ' m earlier');
+    if (r.apexKphDelta !== null && r.apexKphDelta <= -1) parts.push('carry ' + Math.round(-r.apexKphDelta) + ' km/h more to the apex');
+    const tip = parts.length ? parts.join(', ').replace(/^./, (m) => m.toUpperCase()) + '.'
+      : (r.deltaSec !== null && r.deltaSec > 0.02 ? 'Entry matches — the time goes on the exit. Pick the throttle up earlier.' : 'Matched the target here.');
+    return {
+      index, entryD: c.entryD, apexD: c.apexD, exitD: c.exitD,
+      deltaSec: r.deltaSec, brakeDeltaM: r.brakeDeltaM, apexKphDelta: r.apexKphDelta,
+      exitKphDelta: Number.isFinite(exitMe) && Number.isFinite(exitRef) ? Math.round((exitMe - exitRef) * 10) / 10 : null,
+      minKph: Number.isFinite(minMe) ? Math.round(minMe) : null, refMinKph: Math.round(c.minKph),
+      lineOffsetM: lineOffset(c.entryD, c.exitD), tip,
+    };
+  });
+  return {
+    ...lapVs,
+    target: { kind: 'chased', label: 'A. Winters · ' + (lapVs.vs.lapMs / 1000).toFixed(3) + ' · board', lapId: lapVs.vs.lapId, lapSec: lapVs.vs.lapMs / 1000 },
+    corners,
+  };
+}
+
+/**
  * A real lap for the detail view: the newest clean lap on this machine that
  * still has its trace, plus the circuit it was driven on.
  *
@@ -1185,6 +1286,8 @@ if (!html.includes(marker)) {
   const { lap, lapVs } = reviewLapFixture();
   const raceLogs = raceLogFixture();
   const practice = practiceFixture(fixture.byId);
+  const practiceLap = practiceLapFixture(lapVs);
+  console.log('  practice lap: ' + (practiceLap ? practiceLap.corners.length + ' corners scored on ' + practiceLap.detail.track : 'none (no two-lap comparison here)'));
   console.log(`  practice review: ${Object.keys(practice.byId).length} session(s)`);
   console.log(`  racelog: ${raceLogs.races.length} races, ${Object.keys(raceLogs.picks).length} pickable cars`);
   fs.writeFileSync(
@@ -1193,6 +1296,7 @@ if (!html.includes(marker)) {
     // would read as a pattern.
     STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
         .replace('PRACTICE_FIXTURE', () => JSON.stringify(practice.byId))
+        .replace('PRACTICE_LAP_FIXTURE', () => JSON.stringify(practiceLap))
         .split('PENDING_FIXTURE').join(JSON.stringify(practice.pending))
         .replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
