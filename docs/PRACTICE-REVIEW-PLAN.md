@@ -141,6 +141,40 @@ guessed), **Speed** (minimum speed). Weights calibrated on real laps so that a
 higher score means a faster lap. A trend across laps and sessions, and "points
 to gain" per corner. Stored locally.
 
+Rules that keep it honest:
+- **Every part is an error against the target, mapped to 0–100 by a published
+  curve** (`100 · exp(−error / scale)`, or a one-sided version where only one
+  direction costs time — a faster apex is not an error). The scales are
+  constants in one file, chosen by calibration, and written up in
+  `docs/ACCURACY-SCORE.md` with the evidence.
+- **Calibration is against lap time.** On the laps on this machine, a corner's
+  score must fall as its `deltaSec` rises, and a lap's score must fall as its
+  delta to the target rises. The correlation is measured and recorded; a part
+  that does not predict time loss is down-weighted, not kept for show.
+- A part that cannot be measured (no x/z for Line, no brake zone in a flat
+  corner) is `null` and drops out of the weighting — never scored 0 or 100.
+- The lap score weights each corner by the time the target spends in it, so a
+  hairpin counts for more than a kink.
+
+```ts
+interface AccuracyScore {               // integers 0..100
+  total: number;                        // weighted mean of the non-null parts
+  braking: number | null; throttle: number | null; line: number | null; speed: number | null;
+}
+// Added to the phase 1 / 2 shapes:
+PracticeLap.score: AccuracyScore | null;                  // null without a trace
+PracticeLap.corners[i].score: AccuracyScore | null;
+CornerSummary.avgScore: number | null;
+PracticeReview.score: { avg: number | null; best: number | null; bestLapNo: number | null };
+PracticeLapResult.score: AccuracyScore | null;
+PracticeCornerRow.score: AccuracyScore | null;
+PracticeCornerRow.pointsToGain: number;   // how far the lap total would rise if this corner scored 100
+// New IPC — the trend across sessions at one track in one class:
+// practice:trend({ trackKey, carClass }) →
+//   { ok, sessions: { sessionId: string; at: string; laps: number; avgScore: number | null;
+//                     bestScore: number | null; bestLapSec: number | null }[] }
+```
+
 ## Not in scope
 
 A shared accuracy board; race and qualifying reviews; anything for laps
