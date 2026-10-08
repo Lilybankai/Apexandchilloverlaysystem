@@ -5,7 +5,36 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.3.6-beta.1 — 2026-10-08
+
+Everything from the 1.3.5 betas (Ghost HUD and Training) is still here. If your
+app moved you onto the 1.3.5 stable release for a few minutes today, this build
+puts them back.
+
+### Added
+
+- **Mature radio: the engineer can swear at you now.** A new setting on the
+  Engineer tab, off by default. **Banter** gives you a bit of mild swearing and
+  takes the mick when you make contact, cut the track, get a lap deleted, pick
+  up a penalty or lose a place. **Savage** is strong language with no mercy,
+  F-words included.
+
+  The roast always comes with the facts. You still hear how bad the damage is,
+  how long a repair takes, what a cut cost, which penalty you got and what
+  position you are now in. Flags, yellows, "box this lap", blue flags and every
+  other call stay exactly as they were, and if you have said "keep quiet" the
+  engineer goes back to clean language for anything that still gets through.
+  Questions you ask on the radio get the same attitude when the setting is on.
+
+- **The engineer tells you what a track-limits cut cost.** In a race, when the
+  stewards charge you for a cut, the engineer says how much it was and where
+  your total stands against the session's allowance: "Track limits — a quarter
+  point. That's 2.25 of 5." Within a point of the drive-through it warns you
+  that one more is a penalty. It's on the Essential radio setting, and it waits
+  for a straight like other calls. Practice and qualifying are unchanged:
+  there a cut deletes the lap, and the engineer already says so.
+
+## 1.3.5 — 2026-10-08
 
 ### Added
 
