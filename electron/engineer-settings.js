@@ -10,6 +10,9 @@
 
 const READOUT_PRESETS = Object.freeze(['off', 'essential', 'standard']);
 const PRACTICE_PACE_REMINDER_LAPS = Object.freeze([2, 4, 6]);
+// Mature radio (2026-10-08): how rude the engineer may be when you mess up.
+// Mirrors engineerPhrases.ts RADIO_TONES; anything else reads as clean.
+const RADIO_TONES = Object.freeze(['clean', 'banter', 'savage']);
 const DEFAULT_ENGINEER_SETTINGS = Object.freeze({
   readouts: 'essential',
   volume: 100,
@@ -17,6 +20,7 @@ const DEFAULT_ENGINEER_SETTINGS = Object.freeze({
   // Radio etiquette: proactive calls wait for a straight (urgent ones never
   // wait). Off = the old rule, quiet only while braking hard or side by side.
   onlyStraights: true,
+  radioTone: 'clean',
 });
 
 function normalizePracticePaceReminderLaps(value, fallback = 4) {
@@ -52,12 +56,18 @@ function sanitizeEngineer(stored, defaults = DEFAULT_ENGINEER_SETTINGS) {
       : typeof base.onlyStraights === 'boolean'
         ? base.onlyStraights
         : DEFAULT_ENGINEER_SETTINGS.onlyStraights,
+    radioTone: RADIO_TONES.includes(s.radioTone)
+      ? s.radioTone
+      : RADIO_TONES.includes(base.radioTone)
+        ? base.radioTone
+        : DEFAULT_ENGINEER_SETTINGS.radioTone,
   };
 }
 
 module.exports = {
   DEFAULT_ENGINEER_SETTINGS,
   PRACTICE_PACE_REMINDER_LAPS,
+  RADIO_TONES,
   READOUT_PRESETS,
   normalizePracticePaceReminderLaps,
   sanitizeEngineer,
