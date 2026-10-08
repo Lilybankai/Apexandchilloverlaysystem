@@ -2689,6 +2689,18 @@
                         placeholder="What would you like to see, or what went wrong?"></textarea>
               <span class="field__hint">Signed in only — so we can follow up if we need to.</span>
             </label>
+            <!-- Bug reports only (THE-32): the two logs we otherwise ask
+                 testers to dig out of %APPDATA%. Tail only, Windows user name
+                 removed — see electron/problemReport.js. -->
+            <label class="field field--toggle" id="fb-logs-row" hidden>
+              <span class="field__label">Attach my logs</span>
+              <span class="switch">
+                <input type="checkbox" id="fb-logs" checked />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+              </span>
+              <span class="field__hint">The end of the app's stall and updater logs, so we can
+                see what happened. Your Windows user name is removed first.</span>
+            </label>
             <div class="field">
               <button class="btn btn--accent" id="fb-submit" type="button">
                 <svg class="icon"><use href="#i-send" /></svg> Send

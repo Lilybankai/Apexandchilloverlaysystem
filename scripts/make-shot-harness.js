@@ -372,7 +372,7 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           lockoutAt: new Date(Date.now() + Number(q.get('overdue')) * 86400000).toISOString() }),
       checkout: P({ ok: true }), portal: P({ ok: true }), redeemCode: P({ ok: true }), onChange: noopUnsub },
     // ?replies=1 seeds one unread league reply, so the alert sheet can be shot.
-    feedback: { submit: P({ ok: true }), markReplySeen: P({ ok: true }),
+    feedback: { submit: P({ ok: true }), report: P({ ok: true, logs: 2 }), markReplySeen: P({ ok: true }),
       unreadReplies: P({ ok: true, rows: q.get('replies') ? [
         { id: 1, kind: 'idea', status: 'planned', replied_at: '2026-08-22T09:00:00.000Z',
           message: 'Could the fuel tab show laps remaining as well as litres?',

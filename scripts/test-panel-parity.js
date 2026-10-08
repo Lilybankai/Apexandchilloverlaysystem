@@ -421,6 +421,9 @@ const PANEL_CONTRACT = {
   'fb-message': 'textarea',
   'fb-submit': 'button',
   'fb-status': 'span',
+  // Bug reports carry the logs (THE-32)
+  'fb-logs-row': 'label',
+  'fb-logs': 'input:checkbox',
 
   // Schedule tab (SimGrid championships). The cards themselves are built at
   // runtime; the frame (filter, refresh, empty/error) is static and contracted

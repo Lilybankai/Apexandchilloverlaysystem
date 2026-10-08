@@ -32,6 +32,7 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const WebSocket = require('ws');
 const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
@@ -42,6 +43,7 @@ const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
 const lapUpload = require('./lapUpload');
 const usageReporter = require('./usageReporter');
+const problemReport = require('./problemReport');
 const featureUsage = require('./featureUsage');
 const chatLink = require('./chatLink');
 const streamBot = require('./streamBot');
@@ -4417,6 +4419,48 @@ function registerIpc() {
       };
     }
     return { ok: true, id: res.body };
+  });
+
+  /**
+   * File a bug report (THE-32): the same feedback row as above, plus a Linear
+   * issue the report-problem edge function opens with the logs attached. The
+   * logs are read here — tail only, Windows user name scrubbed — and only when
+   * the driver left "Attach my logs" ticked.
+   *
+   * A 404 means the function is not deployed yet (an app newer than the
+   * cloud), so the report falls back to the plain RPC rather than being lost.
+   */
+  ipcMain.handle('feedback:report', async (_evt, payload) => {
+    const p = payload || {};
+    const message = typeof p.message === 'string' ? p.message.trim().slice(0, 4000) : '';
+    if (!message) return { ok: false, error: 'Type a message first.' };
+    const logs = p.attachLogs ? await problemReport.collectReportLogs(app.getPath('userData')) : [];
+    const version = app.getVersion();
+    const res = await authService.functionsInvoke(
+      'report-problem',
+      {
+        message,
+        appVersion: version,
+        os: `${process.platform} ${os.release()}`,
+        channel: updateChannel.channelForVersion(version),
+        logs,
+      },
+      { timeoutMs: 45000 },
+    );
+    if (res.ok) return { ok: true, id: res.body.id, logs: res.body.logs || 0 };
+    if (res.status === 404) {
+      const fallback = await authService.rpc('submit_feedback', {
+        p_kind: 'bug',
+        p_message: message,
+        p_app_version: version,
+      });
+      if (fallback.ok) return { ok: true, id: fallback.body, logs: 0 };
+    }
+    return {
+      ok: false,
+      signedOut: !!res.signedOut,
+      error: res.signedOut ? 'Sign in to send a bug report.' : res.error || 'Could not send.',
+    };
   });
 
   /**

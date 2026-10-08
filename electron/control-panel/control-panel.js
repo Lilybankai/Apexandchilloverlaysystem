@@ -3723,10 +3723,16 @@
    * app version attached, so the admin inbox reads it in context. Signed-in only
    * (the RPC needs a session); a signed-out driver is told to sign in rather than
    * silently dropped.
+   *
+   * A bug report goes through feedback.report instead (THE-32): the same row,
+   * plus a Linear issue with the stall/updater logs attached if "Attach my
+   * logs" is left on. That switch only shows for bug reports.
    */
   const fbKind = $('#fb-kind');
   const fbMessage = $('#fb-message');
   const fbSubmit = $('#fb-submit');
+  const fbLogsRow = $('#fb-logs-row');
+  const fbLogs = $('#fb-logs');
 
   function setFbStatus(text, state) {
     const el = $('#fb-status');
@@ -3734,6 +3740,12 @@
     el.textContent = text || '';
     el.setAttribute('data-state', state || 'idle');
   }
+
+  function syncFbLogsRow() {
+    if (fbLogsRow && fbKind) fbLogsRow.hidden = fbKind.value !== 'bug';
+  }
+  if (fbKind) fbKind.addEventListener('change', syncFbLogsRow);
+  syncFbLogsRow();
 
   if (fbSubmit) {
     fbSubmit.addEventListener('click', async () => {
@@ -3746,11 +3758,17 @@
       fbSubmit.disabled = true;
       setFbStatus('Sending…', 'idle');
       try {
-        const res = await window.apex.feedback.submit({ kind: fbKind.value, message });
+        const isBug = fbKind.value === 'bug';
+        const res = isBug
+          ? await window.apex.feedback.report({ message, attachLogs: !!(fbLogs && fbLogs.checked) })
+          : await window.apex.feedback.submit({ kind: fbKind.value, message });
         if (res && res.ok) {
           fbMessage.value = '';
           CATALOG?.note('action:app.feedback');
-          setFbStatus('Thanks — sent to the league.', 'ok');
+          setFbStatus(
+            isBug && res.logs > 0 ? 'Thanks — sent to the league with your logs.' : 'Thanks — sent to the league.',
+            'ok',
+          );
         } else {
           setFbStatus((res && res.error) || 'Could not send.', 'error');
         }

@@ -5,6 +5,17 @@
      app until it is renamed.
 -->
 
+## Unreleased
+
+### Added
+
+- **Bug reports can bring your logs with them.** Pick "Bug report" on the
+  Suggestions tab and an "Attach my logs" switch appears, on by default. It
+  sends the end of the app's stall and updater logs along with your message,
+  so you no longer have to dig them out of your AppData folder and post them
+  in Discord. Your Windows user name is taken out of the logs before they
+  leave your PC, and replies still pop up in the app as before.
+
 ## 1.3.7 — 2026-10-08
 
 ### Changed

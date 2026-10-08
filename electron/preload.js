@@ -497,6 +497,11 @@ contextBridge.exposeInMainWorld('apex', {
     /** File one suggestion/bug: `{ kind, message }` → `{ ok, id?, signedOut?, error? }`. */
     submit: (payload) => ipcRenderer.invoke('feedback:submit', payload),
     /**
+     * File a bug report, optionally with the app's logs, which also opens a
+     * Linear issue: `{ message, attachLogs }` → `{ ok, id?, logs?, signedOut?, error? }`.
+     */
+    report: (payload) => ipcRenderer.invoke('feedback:report', payload),
+    /**
      * League replies this driver has not read: `{ ok, rows[], signedOut? }`.
      * Signed out comes back as an empty list, not an error — the panel asks
      * this at boot, before a session necessarily exists.
