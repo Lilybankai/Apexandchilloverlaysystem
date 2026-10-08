@@ -38,6 +38,7 @@
  */
 
 import { cornerResult, findCorners, type CornerTrace, type LapColumns } from './corners';
+import { scoreLap, type AccuracyScore } from './accuracyScore';
 import type { ReviewLap, ReviewSession } from './stintReview';
 import type { TraceFile } from './lapTrace';
 
@@ -57,6 +58,8 @@ export interface PracticeLapCorner {
   deltaSec: number | null;
   brakeDeltaM: number | null;
   apexKphDelta: number | null;
+  /** How closely this corner copied the target, 0..100 (accuracyScore.ts). */
+  score: AccuracyScore | null;
 }
 
 export interface PracticeLap {
@@ -68,6 +71,8 @@ export interface PracticeLap {
   /** `lapSec − target.lapSec`; positive = slower. `null` without a target or a real time. */
   deltaSec: number | null;
   corners: PracticeLapCorner[];
+  /** The lap's accuracy score; null without a trace. */
+  score: AccuracyScore | null;
 }
 
 export interface CornerSummary {
@@ -83,6 +88,15 @@ export interface CornerSummary {
   worstSec: number | null;
   avgBrakeDeltaM: number | null;
   avgApexKphDelta: number | null;
+  /** Mean corner score over the valid laps scored here. */
+  avgScore: number | null;
+}
+
+/** The session's accuracy, over its valid laps (the target lap itself excluded). */
+export interface PracticeSessionScore {
+  avg: number | null;
+  best: number | null;
+  bestLapNo: number | null;
 }
 
 export interface PracticeReview {
@@ -99,6 +113,7 @@ export interface PracticeReview {
   theoreticalBestSec: number | null;
   consistencySec: number | null;
   corners: CornerSummary[];
+  score: PracticeSessionScore;
 }
 
 /**
@@ -368,10 +383,19 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     const lapSec = lap.lapMs > 0 ? lap.lapMs / 1000 : 0;
     const c = lap.id ? cols.get(lap.id) : undefined;
     const corners: PracticeLapCorner[] = [];
-    if (c && refColumns && L > 0) {
+    let score: AccuracyScore | null = null;
+    if (c && reference && refColumns && L > 0) {
+      const scored = scoreLap(c, reference.ref, refCorners, L);
+      score = scored.score;
       refCorners.forEach((corner, index) => {
         const r = cornerResult(corner, refColumns, c, L);
-        corners.push({ index, deltaSec: r.deltaSec, brakeDeltaM: r.brakeDeltaM, apexKphDelta: r.apexKphDelta });
+        corners.push({
+          index,
+          deltaSec: r.deltaSec,
+          brakeDeltaM: r.brakeDeltaM,
+          apexKphDelta: r.apexKphDelta,
+          score: scored.corners[index] ?? null,
+        });
       });
     }
     return {
@@ -382,8 +406,13 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
       hasTrace: !!c,
       deltaSec: target && lap.timed && lapSec > 0 ? round3(lapSec - target.lapSec) : null,
       corners,
+      score,
     };
   });
+  // The lap that IS the target scores 100 against itself; it says nothing
+  // about accuracy, so it is left out of every average and of "best".
+  const isTargetLap = (i: number): boolean =>
+    !!target && target.kind === 'sessionBest' && laps[i]!.id === target.lapId;
 
   // Best and consistency over valid laps.
   const validTimes = laps.filter(isValid).map((l) => l.lapMs / 1000);
@@ -429,17 +458,20 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     const losses: number[] = [];
     const brakes: number[] = [];
     const apexes: number[] = [];
-    outLaps.forEach((lap) => {
+    const scores: number[] = [];
+    outLaps.forEach((lap, li) => {
       if (!lap.valid) return;
       const r = lap.corners[index];
       if (!r) return;
       if (r.deltaSec !== null) losses.push(r.deltaSec);
       if (r.brakeDeltaM !== null) brakes.push(r.brakeDeltaM);
       if (r.apexKphDelta !== null) apexes.push(r.apexKphDelta);
+      if (r.score && !isTargetLap(li)) scores.push(r.score.total);
     });
     const avgLoss = mean(losses);
     const avgBrake = mean(brakes);
     const avgApex = mean(apexes);
+    const avgScore = mean(scores);
     return {
       index,
       entryD: c.entryD,
@@ -451,8 +483,28 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
       worstSec: losses.length ? round4(Math.max(...losses)) : null,
       avgBrakeDeltaM: avgBrake === null ? null : round1(avgBrake),
       avgApexKphDelta: avgApex === null ? null : round1(avgApex),
+      avgScore: avgScore === null ? null : Math.round(avgScore),
     };
   });
+
+  // The session's accuracy: valid laps only, the target lap excluded.
+  let best: number | null = null;
+  let bestLapNo: number | null = null;
+  const lapScores: number[] = [];
+  outLaps.forEach((lap, i) => {
+    if (!lap.valid || !lap.score || isTargetLap(i)) return;
+    lapScores.push(lap.score.total);
+    if (best === null || lap.score.total > best) {
+      best = lap.score.total;
+      bestLapNo = lap.lapNo;
+    }
+  });
+  const avgLapScore = mean(lapScores);
+  const score: PracticeSessionScore = {
+    avg: avgLapScore === null ? null : Math.round(avgLapScore),
+    best,
+    bestLapNo,
+  };
 
   return {
     id: s.id,
@@ -468,5 +520,6 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     theoreticalBestSec,
     consistencySec,
     corners,
+    score,
   };
 }

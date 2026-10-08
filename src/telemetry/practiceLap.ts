@@ -23,6 +23,7 @@
  */
 
 import { cornerResult, type LapColumns } from './corners';
+import { colAt, lineOffset, minSpeed, scoreLap, type AccuracyScore } from './accuracyScore';
 import { lapDir as defaultLapDir } from './lapLog';
 import {
   compareWith,
@@ -72,11 +73,17 @@ export interface PracticeCornerRow {
   lineOffsetM: number | null;
   /** The Corner Analysis card's words. */
   tip: string;
+  /** How closely this corner copied the target, 0..100 (accuracyScore.ts). */
+  score: AccuracyScore | null;
+  /** How far the lap's score would rise if this corner scored 100. */
+  pointsToGain: number;
 }
 
 export interface PracticeLapResult extends LapCompareResult {
   target: PracticeTargetInfo;
   corners: PracticeCornerRow[];
+  /** The lap's accuracy score; null without a trace. */
+  score: AccuracyScore | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -84,101 +91,9 @@ export interface PracticeLapResult extends LapCompareResult {
 /* -------------------------------------------------------------------------- */
 
 const round1 = (v: number): number => Math.round(v * 10) / 10;
-const round2 = (v: number): number => Math.round(v * 100) / 100;
 
-/** Index of the first sample at or past `d` (1..n-1), for interpolating between it and the one before. */
-function upper(c: { d: number[] }, d: number): number {
-  let lo = 1;
-  let hi = c.d.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (c.d[mid]! >= d) hi = mid;
-    else lo = mid + 1;
-  }
-  return lo;
-}
-
-/** A column read at lap fraction `d`, linearly; null outside the trace or without the column. */
-function colAt(c: PracticeColumns, col: number[] | undefined, d: number): number | null {
-  if (!col) return null;
-  const n = c.d.length;
-  if (d < c.d[0]! || d > c.d[n - 1]!) return null;
-  const i = upper(c, d);
-  const d0 = c.d[i - 1]!;
-  const d1 = c.d[i]!;
-  const f = d1 > d0 ? (d - d0) / (d1 - d0) : 0;
-  return col[i - 1]! + (col[i]! - col[i - 1]!) * f;
-}
-
-/** Lowest speed between two fractions, including the interpolated ends. */
-function minSpeed(c: PracticeColumns, from: number, to: number): number | null {
-  if (!c.speedKph) return null;
-  let m = Infinity;
-  for (const end of [from, to]) {
-    const v = colAt(c, c.speedKph, end);
-    if (v !== null) m = Math.min(m, v);
-  }
-  for (let i = 0; i < c.d.length; i += 1) {
-    const d = c.d[i]!;
-    if (d >= from && d <= to) m = Math.min(m, c.speedKph[i]!);
-  }
-  return Number.isFinite(m) ? m : null;
-}
-
-/** Distance from point p to segment ab, in the x/z plane. */
-function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
-  const vx = bx - ax;
-  const vz = bz - az;
-  const len2 = vx * vx + vz * vz;
-  let f = len2 > 0 ? ((px - ax) * vx + (pz - az) * vz) / len2 : 0;
-  if (f < 0) f = 0;
-  else if (f > 1) f = 1;
-  const dx = px - (ax + vx * f);
-  const dz = pz - (az + vz * f);
-  return Math.sqrt(dx * dx + dz * dz);
-}
-
-/** Metres of the reference line searched either side of the matching distance. */
-const LINE_WINDOW_M = 40;
-/** Spacing of the samples taken through a corner, metres. */
-const LINE_STEP_M = 2;
-
-/**
- * How far the lap ran from the reference's line through a corner, on average.
- * Each sample point on the lap (every {@link LINE_STEP_M} from entry to exit)
- * is measured to the nearest segment of the reference line within
- * {@link LINE_WINDOW_M} of the same distance — never the whole lap, or a
- * point on one side of a hairpin could match the other side.
- */
-export function lineOffset(
-  lap: PracticeColumns,
-  ref: PracticeColumns,
-  entryD: number,
-  exitD: number,
-  lengthM: number,
-): number | null {
-  if (!lap.x || !lap.z || !ref.x || !ref.z || !(lengthM > 0) || !(exitD > entryD)) return null;
-  const step = LINE_STEP_M / lengthM;
-  const win = LINE_WINDOW_M / lengthM;
-  let sum = 0;
-  let n = 0;
-  for (let d = entryD; d <= exitD + 1e-12; d += step) {
-    const px = colAt(lap, lap.x, d);
-    const pz = colAt(lap, lap.z, d);
-    if (px === null || pz === null) continue;
-    const a = Math.max(1, upper(ref, d - win));
-    const b = Math.min(ref.d.length - 1, upper(ref, d + win));
-    let best = Infinity;
-    for (let i = a; i <= b; i += 1) {
-      best = Math.min(best, segDist(px, pz, ref.x[i - 1]!, ref.z[i - 1]!, ref.x[i]!, ref.z[i]!));
-    }
-    if (Number.isFinite(best)) {
-      sum += best;
-      n += 1;
-    }
-  }
-  return n > 0 ? round2(sum / n) : null;
-}
+// colAt, minSpeed and lineOffset live in accuracyScore.ts, which scores with them.
+export { lineOffset };
 
 /* -------------------------------------------------------------------------- */
 /*  Words                                                                     */
@@ -224,6 +139,7 @@ export function cornerRows(
   corners: { entryD: number; apexD: number; exitD: number }[],
   lengthM: number,
 ): PracticeCornerRow[] {
+  const scored = scoreLap(lap, ref, corners, lengthM);
   return corners.map((c, index) => {
     const r = cornerResult(c, ref as LapColumns, lap as LapColumns, lengthM);
     const exitYou = colAt(lap, lap.speedKph, c.exitD);
@@ -243,6 +159,8 @@ export function cornerRows(
       refMinKph: refMinKph === null ? null : round1(refMinKph),
       lineOffsetM: lineOffset(lap, ref, c.entryD, c.exitD, lengthM),
       tip: cornerTip(r),
+      score: scored.corners[index] ?? null,
+      pointsToGain: scored.pointsToGain[index] ?? 0,
     };
   });
 }
@@ -309,7 +227,7 @@ export function loadPracticeLap(args: PracticeLapArgs, deps: PracticeReviewDeps)
   const reference = practiceReference(session, cols, snap ? snap.target : null);
   if (!reference) return null;
 
-  const out: PracticeLapResult = { ...base, target: reference.target, corners: [] };
+  const out: PracticeLapResult = { ...base, target: reference.target, corners: [], score: null };
   if (!base.detail) return out;
 
   let other: LapDetail | null = null;
@@ -323,5 +241,6 @@ export function loadPracticeLap(args: PracticeLapArgs, deps: PracticeReviewDeps)
   const L = base.lengthM > 0 ? base.lengthM : session.trackLengthM;
   const mine = cleanCols(base.detail.channels);
   const corners = mine && L > 0 ? cornerRows(mine, reference.ref, reference.corners, L) : [];
-  return { ...compared, target: reference.target, corners };
+  const score = mine && L > 0 ? scoreLap(mine, reference.ref, reference.corners, L).score : null;
+  return { ...compared, target: reference.target, corners, score };
 }

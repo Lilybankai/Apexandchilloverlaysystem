@@ -70,6 +70,13 @@
   /** The circuit last sent by main, kept so the next lap need not resend it. */
   let heldMap = null;
   let heldMapKey = '';
+  /** The corner grid colours by time lost (`time`) or by accuracy (`acc`). */
+  let gridMode = 'time';
+  /**
+   * Accuracy over time at this track in this class (`practice:trend`): `key`
+   * is `trackKey|class`, `state` idle / loading / ok / none / unavailable.
+   */
+  let trend = { key: '', state: 'idle', sessions: [] };
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -143,6 +150,119 @@
   const strengthOf = (sec) => (known(sec) ? Math.max(0.3, Math.min(1, Math.abs(sec) / 0.2)) : 0);
 
   const cornerLabel = (index) => `C${Number(index) + 1}`;
+
+  /* ---------------------------------------------------------------------- */
+  /*  Accuracy (phase 3)                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  /*
+   * The score is the plan's AccuracyScore: integers 0..100, a total and four
+   * parts, any part `null` when it could not be measured (Line without a
+   * driven line on both laps, Braking in a flat corner). A null part is shown
+   * as "—" and explained, never drawn as 0. Colours come from the band, in
+   * practice-panel.css — no colour literals here (test-panel-parity).
+   */
+  const scoreOf = (s) => (s && known(s.total) ? s.total : null);
+  function bandOf(v) {
+    if (!known(v)) return 'none';
+    if (v >= 85) return 'great';
+    if (v >= 70) return 'good';
+    if (v >= 55) return 'fair';
+    return 'poor';
+  }
+  const BAND_WORD = { great: 'Great', good: 'Good', fair: 'Fair', poor: 'Work on it', none: 'Not scored' };
+  const PARTS = [
+    { key: 'braking', label: 'Braking', short: 'B', help: 'Brake point and release, against the lap you chased' },
+    { key: 'throttle', label: 'Throttle', short: 'T', help: 'Throttle pick-up and time flat out' },
+    { key: 'line', label: 'Line', short: 'L', help: 'Distance off the target’s line through the corner' },
+    { key: 'speed', label: 'Speed', short: 'S', help: 'Minimum speed through the corner' },
+  ];
+  const LINE_NULL = 'Needs a lap recorded with the driven line';
+  function partTitle(p, v) {
+    if (known(v)) return `${p.label} ${Math.round(v)} — ${p.help}`;
+    return p.key === 'line' ? `${p.label}: ${LINE_NULL}` : `${p.label}: not measurable here`;
+  }
+  const scoreText = (v) => (known(v) ? String(Math.round(v)) : dash);
+
+  /** A score ring: the band's colour round the edge, the number inside. */
+  function ringHtml(value, size, extra) {
+    const stroke = size >= 72 ? 7 : size >= 44 ? 5 : 4;
+    const r = (size - stroke) / 2;
+    const len = 2 * Math.PI * r;
+    const frac = known(value) ? Math.max(0, Math.min(1, value / 100)) : 0;
+    const c = size / 2;
+    return `
+      <span class="pr-ring${extra ? ` ${extra}` : ''}" data-band="${bandOf(value)}" style="--size:${size}px">
+        <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+          <circle class="pr-ring__track" cx="${c}" cy="${c}" r="${r.toFixed(2)}" stroke-width="${stroke}" />
+          <circle class="pr-ring__arc" cx="${c}" cy="${c}" r="${r.toFixed(2)}" stroke-width="${stroke}"
+                  stroke-dasharray="${(len * frac).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 ${c} ${c})" />
+        </svg>
+        <b>${esc(scoreText(value))}</b>
+      </span>`;
+  }
+
+  /** The four parts as labelled horizontal bars (the lap header's breakdown). */
+  function partBarsHtml(score) {
+    return `<div class="pr-parts">${PARTS.map((p) => {
+      const v = score ? score[p.key] : null;
+      return `
+        <div class="pr-parts__row" data-band="${bandOf(v)}" title="${esc(partTitle(p, v))}">
+          <span class="pr-parts__label">${esc(p.label)}</span>
+          <span class="pr-parts__bar"><i style="width:${known(v) ? Math.max(2, Math.min(100, v)) : 0}%"></i></span>
+          <b class="pr-parts__val">${esc(scoreText(v))}</b>
+        </div>`;
+    }).join('')}</div>`;
+  }
+
+  /** The four parts as four tiny vertical bars (corner table, compact). */
+  function partMiniHtml(score) {
+    return `<span class="pr-mini" aria-hidden="true">${PARTS.map((p) => {
+      const v = score ? score[p.key] : null;
+      return `<i data-band="${bandOf(v)}" title="${esc(partTitle(p, v))}"><s style="height:${known(v) ? Math.max(8, Math.min(100, v)) : 0}%"></s><em>${p.short}</em></i>`;
+    }).join('')}</span>`;
+  }
+
+  /** "B 81 · T 77 · L — · S 88": the parts in one line of text. */
+  const partsLine = (score) => PARTS.map((p) => `${p.short} ${scoreText(score ? score[p.key] : null)}`).join(' · ');
+
+  /** A score as a number with a thin bar under it (the lap list). */
+  function scoreCellHtml(v) {
+    return `<span class="pr-scorecell" data-band="${bandOf(v)}">
+      <b>${esc(scoreText(v))}</b><span class="pr-scorecell__bar"><i style="width:${known(v) ? Math.max(2, Math.min(100, v)) : 0}%"></i></span></span>`;
+  }
+
+  /** Each part averaged over the session's scored valid laps. */
+  function avgParts(r) {
+    const out = { total: null };
+    const laps = (r.laps || []).filter((l) => l.valid && l.score);
+    for (const p of PARTS.concat([{ key: 'total' }])) {
+      const vals = laps.map((l) => l.score[p.key]).filter(known);
+      out[p.key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    }
+    return out;
+  }
+
+  /** "How is this scored?" — a popover in plain words, nothing external. */
+  function howHtml() {
+    return `
+      <details class="pr-how">
+        <summary><svg class="icon"><use href="#i-info" /></svg>How is this scored?</summary>
+        <div class="pr-how__pop">
+          <b>Accuracy, 0–100, corner by corner</b>
+          <p>Every corner is compared with the same corner on the lap you chased, in four parts:</p>
+          <ul>
+            <li><span>Braking</span>where you start braking, and where you come off the brake</li>
+            <li><span>Throttle</span>where you pick the throttle up, and how long you stay flat out</li>
+            <li><span>Line</span>how far you are from the target's line through the corner</li>
+            <li><span>Speed</span>your minimum speed against theirs</li>
+          </ul>
+          <p>A lap's score weighs each corner by the time spent in it, so a hairpin counts for more than a kink.
+            The scoring is calibrated on real laps, so a higher score means a faster lap.
+            A part that cannot be measured — Line on a lap recorded without the driven line — is left out, never counted as zero.</p>
+        </div>
+      </details>`;
+  }
 
   /** Practice and test days get a debrief; races and qualifying do not. */
   function isPracticeType(t) {
@@ -276,6 +396,8 @@
         <div class="rv-pr-loss__top">
           <span class="rv-pr-loss__rank">${rank}</span>
           <span class="rv-pr-loss__name">${esc(cornerLabel(c.index))}</span>
+          ${known(c.avgScore) ? `<span class="pr-scorechip" data-band="${bandOf(c.avgScore)}"
+            title="Average accuracy here: ${esc(scoreText(c.avgScore))} — ${esc(BAND_WORD[bandOf(c.avgScore)])}">${esc(scoreText(c.avgScore))}</span>` : ''}
           <span class="rv-pr-loss__avg">${esc(secSigned(c.avgLossSec))}<small> s a lap</small></span>
         </div>
         <div class="rv-pr-loss__fault">${faults.length ? esc(faults.join(' · ')) : 'Lost between entry and exit'}</div>
@@ -291,18 +413,35 @@
       </div>`;
   }
 
+  /** The lap number with the session's highest score, as main reports it (or worked out). */
+  function topScoreLapNo(r) {
+    if (r.score && known(r.score.bestLapNo)) return r.score.bestLapNo;
+    let best = null;
+    for (const lap of r.laps || []) {
+      const v = scoreOf(lap.score);
+      if (lap.valid && known(v) && (!best || v > scoreOf(best.score))) best = lap;
+    }
+    return best ? best.lapNo : null;
+  }
+
   function practiceLapsHtml(r) {
     const n = (r.corners || []).length;
     const best = r.bestLapSec;
+    const top = topScoreLapNo(r);
+    const anyScore = (r.laps || []).some((l) => l.score);
     const rows = (r.laps || []).map((lap) => {
       const isBest = known(best) && lap.valid && Math.abs(lap.lapSec - best) < 0.0005;
+      const isTop = known(top) && lap.lapNo === top;
       const studiable = lap.hasTrace;
+      const v = scoreOf(lap.score);
       return `
         <tr data-prlap="${esc(lap.at)}" data-valid="${String(!!lap.valid)}" data-best="${String(isBest)}"
             data-trace="${String(!!studiable)}" ${studiable ? 'tabindex="0" role="button" title="Study this lap"' : 'title="No telemetry was kept for this lap"'}>
           <td class="rv-pr-laps__no">${esc(String(lap.lapNo))}</td>
           <td class="rv-pr-laps__time">${esc(lapFromSec(lap.lapSec))}</td>
           <td class="rv-pr-laps__delta" data-tone="${toneOfSec(lap.deltaSec)}">${esc(fmtSec(lap.deltaSec, 3))}</td>
+          ${anyScore ? `<td class="rv-pr-laps__score" title="${esc(lap.score ? `Accuracy ${scoreText(v)} — ${partsLine(lap.score)}` : 'Not scored')}">
+            ${scoreCellHtml(v)}${isTop ? '<span class="pr-top" title="The most accurate lap of the session">Top</span>' : ''}</td>` : ''}
           <td class="rv-pr-laps__strip">${studiable && n ? cornerStripHtml(lap, n) : '<span class="rv-pr-muted">no trace</span>'}</td>
           <td class="rv-pr-laps__flag">${lap.valid ? (isBest ? '<span class="rv-pr-tag rv-pr-tag--best">Best</span>' : '')
             : '<span class="rv-pr-tag">Invalid</span>'}</td>
@@ -310,7 +449,7 @@
     }).join('');
     return `
       <table class="rv-pr-laps">
-        <thead><tr><th>Lap</th><th>Time</th><th>vs target</th><th>Corners${n ? ` · C1–C${n}` : ''}</th><th></th></tr></thead>
+        <thead><tr><th>Lap</th><th>Time</th><th>vs target</th>${anyScore ? '<th>Score</th>' : ''}<th>Corners${n ? ` · C1–C${n}` : ''}</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
   }
@@ -321,29 +460,63 @@
     if (!laps.length || !corners.length) return '';
     const head = laps.map((lap) =>
       `<span class="rv-pr-grid__lap" data-valid="${String(!!lap.valid)}">${esc(String(lap.lapNo))}</span>`).join('');
+    const acc = gridMode === 'acc';
     const rows = corners.map((c) => {
       const cells = laps.map((lap) => {
         const hit = (lap.corners || []).find((x) => x.index === c.index);
         const d = hit ? hit.deltaSec : null;
+        const s = hit ? scoreOf(hit.score) : null;
         const tip = [
           `${cornerLabel(c.index)} · lap ${lap.lapNo}`,
-          known(d) ? `${secSigned(d)} s` : 'not scored',
-          hit ? brakeWords(hit.brakeDeltaM) : '',
-          hit ? apexWords(hit.apexKphDelta) : '',
+          acc ? (known(s) ? `Accuracy ${scoreText(s)} — ${BAND_WORD[bandOf(s)]}` : 'not scored') : (known(d) ? `${secSigned(d)} s` : 'not scored'),
+          acc && hit && hit.score ? partsLine(hit.score) : '',
+          !acc && hit ? brakeWords(hit.brakeDeltaM) : '',
+          !acc && hit ? apexWords(hit.apexKphDelta) : '',
+          acc && known(d) ? `${secSigned(d)} s against the target` : '',
         ].filter(Boolean).join('\n');
-        return `<button type="button" class="rv-pr-cell" data-tone="${toneOfSec(d)}" data-valid="${String(!!lap.valid)}"
-                  style="--a:${strengthOf(d).toFixed(2)}" data-prlap="${esc(lap.at)}" data-prcorner="${c.index}"
+        // By accuracy the cell carries a band, not a tone: the time tones'
+        // own background rules (level, none) must not repaint it.
+        const look = acc
+          ? `data-band="${bandOf(s)}" data-tiptone="${s === null ? 'none' : s >= 70 ? 'gain' : s >= 55 ? 'level' : 'loss'}"
+             style="--a:${known(s) ? (0.45 + 0.55 * Math.min(1, Math.abs(s - 70) / 30)).toFixed(2) : '0'}"`
+          : `data-tone="${toneOfSec(d)}" style="--a:${strengthOf(d).toFixed(2)}"`;
+        return `<button type="button" class="rv-pr-cell" ${look} data-valid="${String(!!lap.valid)}"
+                  data-prlap="${esc(lap.at)}" data-prcorner="${c.index}"
                   data-tip="${esc(tip)}" aria-label="${esc(tip.replace(/\n/g, ', '))}"></button>`;
       }).join('');
+      const avg = acc
+        ? `<span class="rv-pr-grid__avg pr-grid__avgscore" data-band="${bandOf(c.avgScore)}">${esc(scoreText(c.avgScore))}</span>`
+        : `<span class="rv-pr-grid__avg" data-tone="${toneOfSec(c.avgLossSec)}">${esc(secSigned(c.avgLossSec))}</span>`;
       return `
         <span class="rv-pr-grid__name">${esc(cornerLabel(c.index))}</span>
         ${cells}
-        <span class="rv-pr-grid__avg" data-tone="${toneOfSec(c.avgLossSec)}">${esc(secSigned(c.avgLossSec))}</span>`;
+        ${avg}`;
     }).join('');
     return `
-      <div class="rv-pr-grid" style="--cols:${laps.length}">
+      <div class="rv-pr-grid" data-mode="${acc ? 'acc' : 'time'}" style="--cols:${laps.length}">
         <span class="rv-pr-grid__corner">Lap</span>${head}<span class="rv-pr-grid__avghead">Avg</span>
         ${rows}
+      </div>`;
+  }
+
+  /** The debrief's Accuracy stat: the session average in a ring, the best lap's beside it. */
+  function accuracyStatHtml(r, parts) {
+    const avg = r.score && known(r.score.avg) ? r.score.avg : parts.total;
+    const best = r.score && known(r.score.best) ? r.score.best : null;
+    const bestNo = topScoreLapNo(r);
+    const breakdown = PARTS.map((p) => `${p.label} ${scoreText(parts[p.key])}`).join(' · ');
+    return `
+      <div class="rv-pr-stat pr-accstat" title="${esc(`Session average, by part: ${breakdown}`)}">
+        <div class="rv-pr-stat__label">Accuracy</div>
+        <div class="pr-accstat__row">
+          ${ringHtml(avg, 58)}
+          <div class="pr-accstat__text">
+            <span class="pr-accstat__word" data-band="${bandOf(avg)}">${esc(BAND_WORD[bandOf(avg)])}</span>
+            <span class="pr-accstat__best">${known(best) ? `Best <b>${esc(scoreText(best))}</b>${known(bestNo) ? ` · lap ${esc(String(bestNo))}` : ''}` : 'session average'}</span>
+          </div>
+        </div>
+        <div class="pr-accstat__parts">${PARTS.map((p) =>
+          `<span data-band="${bandOf(parts[p.key])}" title="${esc(partTitle(p, parts[p.key]))}"><em>${p.short}</em>${esc(scoreText(parts[p.key]))}</span>`).join('')}</div>
       </div>`;
   }
 
@@ -375,6 +548,8 @@
     const worst = worstCorners(r);
     const lostTotal = worst.reduce((sum, c) => sum + c.avgLossSec, 0);
     const scored = (r.laps || []).filter((l) => l.hasTrace).length;
+    const hasScore = (r.laps || []).some((l) => l.score);
+    const parts = hasScore ? avgParts(r) : null;
 
     const stat = (label, value, note, tone, big) => `
       <div class="rv-pr-stat${big ? ' rv-pr-stat--hero' : ''}">
@@ -389,9 +564,11 @@
           <span class="rv-pr__badge"><svg class="icon"><use href="#i-target" /></svg>Practice review</span>
           ${t ? `<span class="rv-pr__vs">vs <b>${esc(targetName(t))}</b><span class="rv-pr__vstime">${esc(lapFromSec(t.lapSec))}</span></span>` : ''}
           <span class="rv-pr__meta">${esc(r.track || '')}${r.car ? ` · ${esc(r.car)}` : ''} · ${esc(String((r.laps || []).length))} laps · ${esc(String((r.corners || []).length))} corners</span>
+          ${hasScore ? howHtml() : ''}
         </div>
 
-        <div class="rv-pr__stats">
+        <div class="rv-pr__stats${hasScore ? ' rv-pr__stats--acc' : ''}">
+          ${hasScore ? accuracyStatHtml(r, parts) : ''}
           ${stat('Best lap', esc(lapFromSec(r.bestLapSec)),
             known(gapBest) ? `<span data-tone="${toneOfSec(gapBest)}">${esc(fmtSec(gapBest, 3))}</span> to the target` : '', '', true)}
           ${stat('Theoretical best', esc(lapFromSec(r.theoreticalBestSec)),
@@ -418,19 +595,164 @@
         </div>
 
         ${(r.corners || []).length && scored ? `
-        <section class="rv-pr__gridbox">
-          <div class="rv-pr__gridhead">
-            <span class="rv-pr__title">Corner by corner</span>
-            <span class="rv-pr__legend">
-              <span><i data-tone="gain"></i>Faster than the target</span>
-              <span><i data-tone="loss"></i>Slower</span>
-              <span class="rv-pr-muted">Click a cell to study that corner on that lap</span>
-            </span>
-          </div>
-          ${practiceGridHtml(r)}
-          <div class="rv-pr-tipbox" hidden></div>
-        </section>` : ''}
+        <section class="rv-pr__gridbox">${gridBoxInnerHtml(r)}</section>` : ''}
+
+        ${trendHtml(r)}
       </div>`;
+  }
+
+  /** The corner grid's head, legend, toggle and cells — re-rendered alone on a toggle. */
+  function gridBoxInnerHtml(r) {
+    const anyScore = (r.laps || []).some((l) => l.score);
+    if (gridMode === 'acc' && !anyScore) gridMode = 'time';
+    const acc = gridMode === 'acc';
+    const legend = acc
+      ? `<span><i data-band="great"></i>85+</span><span><i data-band="good"></i>70–84</span>
+         <span><i data-band="fair"></i>55–69</span><span><i data-band="poor"></i>Under 55</span>`
+      : `<span><i data-tone="gain"></i>Faster than the target</span><span><i data-tone="loss"></i>Slower</span>`;
+    return `
+      <div class="rv-pr__gridhead">
+        <span class="rv-pr__title">Corner by corner</span>
+        ${anyScore ? `
+        <span class="pr-seg" role="group" aria-label="Colour the grid by">
+          <button type="button" data-prgridmode="time" aria-pressed="${String(!acc)}">Time</button>
+          <button type="button" data-prgridmode="acc" aria-pressed="${String(acc)}">Accuracy</button>
+        </span>` : ''}
+        <span class="rv-pr__legend">
+          ${legend}
+          <span class="rv-pr-muted">Click a cell to study that corner on that lap</span>
+        </span>
+      </div>
+      ${practiceGridHtml(r)}
+      <div class="rv-pr-tipbox" hidden></div>`;
+  }
+
+  /* ---- accuracy over time ---------------------------------------------- */
+
+  /** The open session's track key, for the trend: the session, else its list row. */
+  function trackKeyOfOpen() {
+    if (session && session.trackKey) return session.trackKey;
+    const row = summaries.find((s) => s.id === currentId);
+    return (row && row.trackKey) || '';
+  }
+
+  async function loadTrend(r) {
+    const trackKey = trackKeyOfOpen();
+    const carClass = (r && r.carClass) || (session && session.carClass) || '';
+    const key = `${trackKey}|${carClass}`;
+    if (!trackKey) { trend = { key, state: 'none', sessions: [] }; return; }
+    if (trend.key === key && (trend.state === 'ok' || trend.state === 'loading')) return;
+    if (!window.apex || typeof window.apex.practiceTrend !== 'function') {
+      trend = { key, state: 'unavailable', sessions: [] };
+      return;
+    }
+    trend = { key, state: 'loading', sessions: [] };
+    let res = null;
+    try { res = await window.apex.practiceTrend({ trackKey, carClass }); } catch { res = null; }
+    if (trend.key !== key) return;
+    const sessions = res && Array.isArray(res.sessions) ? res.sessions.slice() : [];
+    sessions.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    trend = { key, state: sessions.length ? 'ok' : 'none', sessions };
+    if (!lapView && practice.state === 'ok') {
+      const slot = els.detail && els.detail.querySelector('.pr-trendslot');
+      if (slot) slot.outerHTML = trendHtml(practice.review);
+      else render();
+    }
+  }
+
+  /** "6 Sep" for the trend's axis. */
+  function shortDay(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  /** The "Accuracy over time" card: average and best per session, here, in this class. */
+  function trendHtml(r) {
+    const anyScore = r && (r.laps || []).some((l) => l.score);
+    if (!anyScore) return '<div class="pr-trendslot"></div>';
+    const head = (note) => `
+      <div class="rv-pr__gridhead">
+        <span class="rv-pr__title">Accuracy over time <span class="rv-pr-muted">· ${esc(r.track || 'this track')}${r.carClass ? ` · ${esc(r.carClass)}` : ''}</span></span>
+        <span class="rv-pr__legend">${note || ''}</span>
+      </div>`;
+    if (trend.state === 'loading' || trend.state === 'idle') {
+      return `<section class="pr-trendslot pr-trend">${head()}<p class="rv-pr__note">Reading your sessions here…</p></section>`;
+    }
+    if (trend.state === 'unavailable') {
+      return `<section class="pr-trendslot pr-trend">${head()}<p class="rv-pr__note">This version of the app cannot chart accuracy over time yet.</p></section>`;
+    }
+    const pts = trend.sessions.filter((s) => known(s.avgScore) || known(s.bestScore));
+    if (pts.length < 2) {
+      return `<section class="pr-trendslot pr-trend">${head()}
+        <p class="rv-pr__note">Your first scored session here — the trend starts with your next one.</p></section>`;
+    }
+
+    const W = 760;
+    const H = 196;
+    const L = 34;
+    const R = 14;
+    const T = 14;
+    const B = 46;
+    const vals = pts.flatMap((s) => [s.avgScore, s.bestScore]).filter(known);
+    const lo = Math.max(0, Math.floor((Math.min(...vals) - 8) / 10) * 10);
+    const hi = 100;
+    const x = (i) => (pts.length === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (pts.length - 1));
+    const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+    const grid = [];
+    for (let g = lo; g <= hi; g += 10) {
+      grid.push(`<line class="pr-trend__grid" x1="${L}" x2="${W - R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" />
+        <text class="pr-trend__axis" x="${L - 8}" y="${(y(g) + 4).toFixed(1)}" text-anchor="end">${g}</text>`);
+    }
+    const path = (key) => pts.map((s, i) => (known(s[key]) ? `${x(i).toFixed(1)},${y(s[key]).toFixed(1)}` : null)).filter(Boolean);
+    const avgLine = path('avgScore');
+    const bestLine = path('bestScore');
+    const area = avgLine.length > 1
+      ? `<polygon class="pr-trend__area" points="${x(0).toFixed(1)},${(H - B).toFixed(1)} ${avgLine.join(' ')} ${x(pts.length - 1).toFixed(1)},${(H - B).toFixed(1)}" />`
+      : '';
+    const openable = new Set(summaries.map((s) => s.id));
+    const marks = pts.map((s, i) => {
+      const cur = s.sessionId === currentId;
+      const cx = x(i).toFixed(1);
+      const title = [
+        `${shortDay(s.at)} · ${known(s.laps) ? `${s.laps} laps` : ''}`,
+        `Average ${scoreText(s.avgScore)} · best ${scoreText(s.bestScore)}`,
+        known(s.bestLapSec) ? `Best lap ${lapFromSec(s.bestLapSec)}` : '',
+        cur ? 'This session' : openable.has(s.sessionId) ? 'Click to open' : '',
+      ].filter(Boolean).join('\n');
+      const hit = openable.has(s.sessionId) && !cur;
+      const colW = pts.length > 1 ? (W - L - R) / (pts.length - 1) : W;
+      return `
+        <g class="pr-trend__pt${cur ? ' pr-trend__pt--cur' : ''}"${hit ? ` data-prtrend="${esc(s.sessionId)}" role="button" tabindex="0"` : ''}>
+          <title>${esc(title)}</title>
+          <rect class="pr-trend__hit" x="${(x(i) - colW / 2).toFixed(1)}" y="${T - 6}" width="${colW.toFixed(1)}" height="${H - T}" rx="6" />
+          ${cur ? `<line class="pr-trend__curline" x1="${cx}" x2="${cx}" y1="${T - 4}" y2="${H - B}" />` : ''}
+          ${known(s.bestScore) ? `<circle class="pr-trend__best" cx="${cx}" cy="${y(s.bestScore).toFixed(1)}" r="${cur ? 5 : 3.5}" />` : ''}
+          ${known(s.avgScore) ? `<circle class="pr-trend__avg" cx="${cx}" cy="${y(s.avgScore).toFixed(1)}" r="${cur ? 6.5 : 4.5}" />` : ''}
+          ${known(s.avgScore) && cur ? `<text class="pr-trend__curval" x="${cx}" y="${(y(s.avgScore) - 12).toFixed(1)}" text-anchor="middle">${esc(scoreText(s.avgScore))}</text>` : ''}
+          <text class="pr-trend__day" x="${cx}" y="${H - B + 17}" text-anchor="middle">${esc(shortDay(s.at))}</text>
+          <text class="pr-trend__lap" x="${cx}" y="${H - B + 32}" text-anchor="middle">${esc(known(s.bestLapSec) ? lapFromSec(s.bestLapSec) : '')}</text>
+        </g>`;
+    }).join('');
+    const first = pts.find((s) => known(s.avgScore));
+    const here = pts.find((s) => s.sessionId === currentId) || pts[pts.length - 1];
+    const moved = first && here && known(here.avgScore) && first !== here ? here.avgScore - first.avgScore : null;
+    const note = `
+      <span><i class="pr-trend__key pr-trend__key--avg"></i>Session average</span>
+      <span><i class="pr-trend__key pr-trend__key--best"></i>Best lap's score</span>
+      ${known(moved) ? `<span class="pr-trend__moved" data-band="${moved >= 0 ? 'great' : 'poor'}">${moved >= 0 ? '+' : '−'}${Math.round(Math.abs(moved))} since your first session here</span>` : ''}`;
+    return `
+      <section class="pr-trendslot pr-trend">
+        ${head(note)}
+        <svg class="pr-trend__svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="Accuracy over your sessions here">
+          ${grid.join('')}
+          ${area}
+          ${bestLine.length > 1 ? `<polyline class="pr-trend__bestline" points="${bestLine.join(' ')}" />` : ''}
+          ${avgLine.length > 1 ? `<polyline class="pr-trend__avgline" points="${avgLine.join(' ')}" />` : ''}
+          ${marks}
+        </svg>
+      </section>`;
   }
 
   /** The banner for a review that arrived while the tab is open. */
@@ -585,6 +907,16 @@
       return `${u > 0 ? '+' : '−'}${Math.round(Math.abs(u))}`;
     };
     const speedTone = (v) => (!known(v) ? 'none' : v <= -1 ? 'loss' : v >= 1 ? 'gain' : 'level');
+    const scoredRows = rows.some((c) => c.score);
+    const scoreTds = (c) => {
+      if (!scoredRows) return '';
+      const v = scoreOf(c.score);
+      const pts = known(c.pointsToGain) ? c.pointsToGain : null;
+      return `
+          <td class="pr-ct__score" title="${esc(c.score ? `Accuracy ${scoreText(v)} — ${partsLine(c.score)}` : 'Not scored')}">
+            <span class="pr-ct__scorewrap"><b data-band="${bandOf(v)}">${esc(scoreText(v))}</b>${partMiniHtml(c.score)}</span></td>
+          <td class="pr-ct__gain" data-big="${String(known(pts) && pts >= 1)}">${known(pts) && pts >= 0.5 ? `+${esc(fix(pts, 1))}` : dash}</td>`;
+    };
     const body = rows.map((c) => {
       const brake = known(c.brakeDeltaM) && Math.abs(c.brakeDeltaM) >= 1
         ? `${Math.round(Math.abs(c.brakeDeltaM))} m ${c.brakeDeltaM < 0 ? 'early' : 'late'}`
@@ -602,6 +934,7 @@
             ${esc(speedDelta(c.apexKphDelta))}<small>${known(c.minKph) ? ` · ${esc(speedOf(c.minKph))}` : ''}</small></td>
           <td class="pr-ct__speed" data-tone="${speedTone(c.exitKphDelta)}">${esc(speedDelta(c.exitKphDelta))}</td>
           <td class="pr-ct__line" data-tone="${lineTone}">${esc(line)}</td>
+          ${scoreTds(c)}
           <td class="pr-ct__tip">${esc(tipText(c.tip))}</td>
         </tr>`;
     }).join('');
@@ -612,10 +945,57 @@
           <th title="Minimum speed: you against the target, then yours">Apex ${esc(speedUnitLabel())}</th>
           <th title="Speed where the corner ends, against the target">Exit</th>
           <th title="How far from the target's line, on average, between entry and exit">Line</th>
+          ${scoredRows ? `<th title="Accuracy here: Braking, Throttle, Line, Speed">Score</th>
+          <th title="How far the lap's score would rise if this corner scored 100">Gain</th>` : ''}
           <th>What to try</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>`;
+  }
+
+  /** The lap's accuracy: a ring with the total, the four parts as bars. */
+  function lapScoreHtml(res) {
+    if (!res || !res.score) return '';
+    const s = res.score;
+    const weakest = PARTS.filter((p) => known(s[p.key])).sort((a, b) => s[a.key] - s[b.key])[0];
+    return `
+      <div class="rv-card pr-score">
+        <div class="pr-score__ring">
+          ${ringHtml(s.total, 92, 'pr-ring--big')}
+          <div class="pr-score__words">
+            <span class="rv-pr-stat__label">Accuracy</span>
+            <span class="pr-score__band" data-band="${bandOf(s.total)}">${esc(BAND_WORD[bandOf(s.total)])}</span>
+            ${weakest ? `<span class="pr-score__hint">Most to find in <b>${esc(weakest.label.toLowerCase())}</b></span>` : ''}
+          </div>
+        </div>
+        ${partBarsHtml(s)}
+        <div class="pr-score__how">${howHtml()}</div>
+      </div>`;
+  }
+
+  /** The three corners whose perfect score would lift the lap most. */
+  function gainsHtml(res) {
+    const rows = ((res && res.corners) || [])
+      .filter((c) => known(c.pointsToGain) && c.pointsToGain >= 0.5)
+      .sort((a, b) => b.pointsToGain - a.pointsToGain)
+      .slice(0, 3);
+    if (!rows.length) return '';
+    const worstPart = (sc) => {
+      if (!sc) return null;
+      const p = PARTS.filter((x) => known(sc[x.key])).sort((a, b) => sc[a.key] - sc[b.key])[0];
+      return p ? p.label.toLowerCase() : null;
+    };
+    return `
+      <div class="pr-gains">
+        <span class="pr-gains__title"><svg class="icon"><use href="#i-trending-up" /></svg>Biggest gains</span>
+        ${rows.map((c, i) => `
+          <button type="button" class="pr-gain" data-prgain="${c.index}" title="Frame ${esc(cornerLabel(c.index))} on the map and the charts">
+            <span class="pr-gain__rank">${i + 1}</span>
+            <span class="pr-gain__name">${esc(cornerLabel(c.index))}</span>
+            <span class="pr-gain__pts">+${esc(fix(c.pointsToGain, 1))}<small> pts</small></span>
+            <span class="pr-gain__why">${worstPart(c.score) ? `mostly ${esc(worstPart(c.score))}` : ''}</span>
+          </button>`).join('')}
+      </div>`;
   }
 
   function lapViewHtml(view) {
@@ -652,6 +1032,8 @@
           </span>
         </div>
 
+        ${lapScoreHtml(res)}
+
         <div class="rv-lap__body">
           <div class="rv-lap__charts">
             <div class="rv-chan" title="Move to read · click to hold a point · drag across a stretch to zoom · scroll to zoom"><canvas></canvas></div>
@@ -671,6 +1053,7 @@
             <span class="rv-pr__title">Corner by corner · lap ${esc(String(lap.lapNo))}</span>
             <span class="rv-pr__legend"><span class="rv-pr-muted">Click a corner to frame it on the map and every chart</span></span>
           </div>
+          ${gainsHtml(res)}
           ${cornerTableHtml(view)}
         </div>
       </div>`;
@@ -1028,6 +1411,7 @@
     if (currentId !== id) return;
     practice = { id, state: review ? 'ok' : (failed ? 'error' : 'none'), review };
     render();
+    if (review && (review.laps || []).some((l) => l.score)) void loadTrend(review);
   }
 
   /** What main has waiting, in either IPC shape: `{ sessionId, … }`. */
@@ -1114,7 +1498,7 @@
       tip.hidden = false;
       tip.style.left = `${Math.round(c.left - b.left + c.width / 2)}px`;
       tip.style.top = `${Math.round(c.top - b.top)}px`;
-      tip.setAttribute('data-tone', cell.dataset.tone || 'none');
+      tip.setAttribute('data-tone', cell.dataset.tiptone || cell.dataset.tone || 'none');
     });
     root.addEventListener('mouseout', (evt) => {
       const cell = evt.target.closest && evt.target.closest('.rv-pr-cell');
@@ -1141,6 +1525,23 @@
       return;
     }
     if (t.closest('[data-propen]') && pendingBanner) { void openPending(pendingBanner); return; }
+    // The grid's Time | Accuracy toggle: only the grid redraws.
+    const modeBtn = t.closest('[data-prgridmode]');
+    if (modeBtn) {
+      const next = modeBtn.dataset.prgridmode === 'acc' ? 'acc' : 'time';
+      if (next !== gridMode && practice.review) {
+        gridMode = next;
+        const box = els.detail.querySelector('.rv-pr__gridbox');
+        if (box) box.innerHTML = gridBoxInnerHtml(practice.review);
+      }
+      return;
+    }
+    // A "Biggest gains" chip frames its corner, as its table row does.
+    const gain = lapView && t.closest('[data-prgain]');
+    if (gain) { focusCorner(Number(gain.dataset.prgain)); return; }
+    // A point on the accuracy trend opens that session.
+    const tp = !lapView && t.closest('[data-prtrend]');
+    if (tp) { void openSession(tp.dataset.prtrend); return; }
     if (t.closest('[data-prdismiss]') && pendingBanner) {
       const sid = pendingBanner.sessionId;
       pendingBanner = null;
@@ -1173,6 +1574,12 @@
     if (row) {
       evt.preventDefault();
       void openLap(row.dataset.prlap, null);
+      return;
+    }
+    const tp = !lapView && t.closest('[data-prtrend]');
+    if (tp) {
+      evt.preventDefault();
+      void openSession(tp.dataset.prtrend);
     }
   }
 
@@ -1187,7 +1594,12 @@
     els.tab = document.querySelector('.tab[data-tab="practice"]');
 
     if (els.search) els.search.addEventListener('input', renderList);
-    if (els.refresh) els.refresh.addEventListener('click', () => { void loadList(true); });
+    if (els.refresh) {
+      els.refresh.addEventListener('click', () => {
+        trend = { key: '', state: 'idle', sessions: [] };
+        void loadList(true);
+      });
+    }
     if (els.list) {
       els.list.addEventListener('click', (evt) => {
         const card = evt.target.closest && evt.target.closest('[data-prsession]');

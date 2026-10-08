@@ -49,8 +49,9 @@ target: { kind: 'chased', label, lapId, lapSec, columns: <ghost.json body> } | n
    `scripts/test-practicesession.js`). Fed from every frame like the training
    gate. A practice/testday session with at least one timed lap has ended when
    the feed says plainly it is another session, or says nothing for
-   `END_HOLD_MS` (20 s: longer than a loading screen, and the training gate's
-   10 s hold already proves those gaps exist). One end per session.
+   `END_HOLD_MS` (10 s, the training gate's own hold, which already rides out
+   loading screens; it shipped at 20 s and the notice arrived after Carl had
+   stopped looking). One end per session.
 2. **Snapshot the target** whenever the published ghost's `sourceLapId`
    changes during an eligible session (the last one chased wins).
 3. **On end:** write the snapshot; `sendIngameNotice("Practice review ready —

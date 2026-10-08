@@ -861,6 +861,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // with the second lap standing in as the session's target and its corners
     // scored by the compiled corners module (see practiceLapFixture below).
     practiceLap: () => Promise.resolve({ ok: true, result: PRACTICE_LAP_FIXTURE }),
+    // Accuracy over time at the debrief's track: five earlier sessions and
+    // this one, a driver getting better (see practiceTrendFixture below).
+    practiceTrend: () => Promise.resolve({ ok: true, sessions: PRACTICE_TREND_FIXTURE }),
     // The race log's replay jump. No game here, so every race has a replay and
     // a click lands straight on 'ready'; ?replay=<phase> shows another state:
     // loading | ready | blocked | error | closed answer the click (closed is
@@ -1024,6 +1027,30 @@ function reviewFixture() {
  * braked late) and a driver who improves through the session. Seeded, so two
  * runs of the harness draw the same picture.
  */
+function fxScore(brakeM, apexKph, deltaSec, lineM) {
+  const curve = (err, scale) => Math.round(100 * Math.exp(-err / scale));
+  const out = {
+    braking: brakeM === null || brakeM === undefined ? null : curve(Math.abs(brakeM), 18),
+    throttle: deltaSec === null || deltaSec === undefined ? null : curve(Math.max(0, deltaSec), 0.22),
+    line: lineM === null || lineM === undefined ? null : curve(lineM, 2.5),
+    speed: apexKph === null || apexKph === undefined ? null : curve(Math.max(0, -apexKph), 7),
+  };
+  const vals = [out.braking, out.throttle, out.line, out.speed].filter((v) => v !== null);
+  out.total = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  return out;
+}
+
+/** A lap's score: its corners' scores averaged, part by part. */
+function fxLapScore(scores) {
+  const out = {};
+  for (const k of ['total', 'braking', 'throttle', 'line', 'speed']) {
+    const vals = scores.map((s) => s && s[k]).filter((v) => v !== null && v !== undefined);
+    out[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  }
+  if (out.total === null) out.total = 0;
+  return out;
+}
+
 function practiceFixture(byId) {
   const byIdOut = {};
   let pending = null;
@@ -1050,15 +1077,20 @@ function practiceFixture(byId) {
       if (lap.isOutLap || lap.isInLap || !(lap.lapMs > 0)) continue;
       n += 1;
       const learn = 1 - 0.35 * (n / all.length);
-      const corners = SHAPE.map(([loss, brake, apex], index) => ({
-        index,
-        deltaSec: r4(loss * learn + rnd() * 0.07),
-        brakeDeltaM: r2(brake * learn + rnd() * 4),
-        apexKphDelta: Math.round((apex * learn + rnd() * 2) * 10) / 10,
-      }));
+      const corners = SHAPE.map(([loss, brake, apex], index) => {
+        const c = {
+          index,
+          deltaSec: r4(loss * learn + rnd() * 0.07),
+          brakeDeltaM: r2(brake * learn + rnd() * 4),
+          apexKphDelta: Math.round((apex * learn + rnd() * 2) * 10) / 10,
+        };
+        // Line: the costly corners are the ones driven off the target's line.
+        c.score = fxScore(c.brakeDeltaM, c.apexKphDelta, c.deltaSec, index === 3 ? null : Math.abs(loss) * 9 * learn + 0.4 + Math.abs(rnd()));
+        return c;
+      });
       laps.push({
         at: lap.at, lapNo: lap.lapNo || n, lapSec: lap.lapMs / 1000, valid: !!lap.clean, hasTrace: true,
-        deltaSec: r4(lap.lapMs / 1000 - target.lapSec), corners,
+        deltaSec: r4(lap.lapMs / 1000 - target.lapSec), corners, score: fxLapScore(corners.map((c) => c.score)),
       });
     }
     const valid = laps.filter((l) => l.valid).map((l) => l.lapSec);
@@ -1074,13 +1106,21 @@ function practiceFixture(byId) {
         index, entryD: 0.05 + index * 0.09, apexD: 0.075 + index * 0.09, exitD: 0.1 + index * 0.09,
         laps: ds.length, avgLossSec: avg('deltaSec'), bestSec: Math.min(...vals), worstSec: Math.max(...vals),
         avgBrakeDeltaM: r2(avg('brakeDeltaM')), avgApexKphDelta: Math.round(avg('apexKphDelta') * 10) / 10,
+        avgScore: Math.round(ds.reduce((a, c) => a + c.score.total, 0) / ds.length),
       };
     });
     const theo = target.lapSec + corners.reduce((a, c) => a + c.bestSec, 0) + 0.31;
+    const scoredLaps = laps.filter((l) => l.valid);
+    const top = scoredLaps.reduce((b, l) => (!b || l.score.total > b.score.total ? l : b), null);
     byIdOut[s.id] = {
       id: s.id, track: s.track, car: s.car, carClass: s.carClass, trackLengthM: 6980,
       startedAt: s.startedAt, endedAt: s.endedAt, target, laps,
       bestLapSec: best, theoreticalBestSec: r4(theo), consistencySec: r4(spread), corners,
+      score: {
+        avg: scoredLaps.length ? Math.round(scoredLaps.reduce((a, l) => a + l.score.total, 0) / scoredLaps.length) : null,
+        best: top ? top.score.total : null,
+        bestLapNo: top ? top.lapNo : null,
+      },
     };
     pending = { sessionId: s.id, at: s.endedAt, track: s.track, laps: laps.length, bestLapSec: best };
   }
@@ -1151,10 +1191,13 @@ function practiceLapFixture(pair) {
       lineOffsetM: lineOffset(c.entryD, c.exitD), tip,
     };
   });
+  for (const row of corners) row.score = fxScore(row.brakeDeltaM, row.apexKphDelta, row.deltaSec, row.lineOffsetM);
+  for (const row of corners) row.pointsToGain = Math.round(((100 - row.score.total) / Math.max(1, corners.length)) * 10) / 10;
   return {
     ...lapVs,
     target: { kind: 'chased', label: 'A. Winters · ' + (lapVs.vs.lapMs / 1000).toFixed(3) + ' · board', lapId: lapVs.vs.lapId, lapSec: lapVs.vs.lapMs / 1000 },
     corners,
+    score: fxLapScore(corners.map((r) => r.score)),
   };
 }
 
@@ -1287,6 +1330,27 @@ if (!html.includes(marker)) {
   const raceLogs = raceLogFixture();
   const practice = practiceFixture(fixture.byId);
   const practiceLap = practiceLapFixture(lapVs);
+  // The trend: five invented earlier sessions at the same track, then the
+  // fixture's own practice with its real average — improving, with a dip.
+  const practiceTrend = [];
+  {
+    const own = Object.values(practice.byId)[0];
+    const start = own ? new Date(own.startedAt).getTime() : Date.now();
+    const AVG = [61, 64, 63, 68, 71];
+    const LAP = [110.84, 109.92, 110.03, 108.71, 108.2];
+    for (let i = 0; i < AVG.length; i += 1) {
+      practiceTrend.push({
+        sessionId: 'fx-trend-' + i, at: new Date(start - (AVG.length - i) * 4 * 86400000).toISOString(),
+        laps: 9 + i * 2, avgScore: AVG[i], bestScore: AVG[i] + 7 + (i % 2), bestLapSec: LAP[i],
+      });
+    }
+    if (own) {
+      practiceTrend.push({
+        sessionId: own.id, at: own.startedAt, laps: own.laps.length,
+        avgScore: own.score.avg, bestScore: own.score.best, bestLapSec: own.bestLapSec,
+      });
+    }
+  }
   console.log('  practice lap: ' + (practiceLap ? practiceLap.corners.length + ' corners scored on ' + practiceLap.detail.track : 'none (no two-lap comparison here)'));
   console.log(`  practice review: ${Object.keys(practice.byId).length} session(s)`);
   console.log(`  racelog: ${raceLogs.races.length} races, ${Object.keys(raceLogs.picks).length} pickable cars`);
@@ -1297,6 +1361,7 @@ if (!html.includes(marker)) {
     STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
         .replace('PRACTICE_FIXTURE', () => JSON.stringify(practice.byId))
         .replace('PRACTICE_LAP_FIXTURE', () => JSON.stringify(practiceLap))
+        .replace('PRACTICE_TREND_FIXTURE', () => JSON.stringify(practiceTrend))
         .split('PENDING_FIXTURE').join(JSON.stringify(practice.pending))
         .replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)

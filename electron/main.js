@@ -3338,7 +3338,7 @@ function finishPracticeSession(ended) {
     // visible off track — the driver is in the menus when this fires.
     race: true,
     text: `Practice review ready — ${laps} lap${laps === 1 ? '' : 's'}${best}`,
-    dwellMs: 12000,
+    dwellMs: 20000,
   });
   setPendingPracticeReview({
     sessionId: summary.id,
@@ -4725,6 +4725,24 @@ function registerIpc() {
     } catch (err) {
       console.error('[app] practice lap unavailable:', err.message);
       return { ok: false, result: null, error: err.message };
+    }
+  });
+
+  /**
+   * The accuracy score across practice sessions at one track in one class,
+   * oldest first (Practice Review phase 3). Ended sessions are remembered in
+   * the loader, so after the first ask this costs the newest session only.
+   */
+  ipcMain.handle('practice:trend', (_evt, req) => {
+    const trackKey = req && typeof req.trackKey === 'string' ? req.trackKey : '';
+    const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
+    if (!trackKey) return { ok: false, sessions: [], error: 'no track' };
+    try {
+      const { loadPracticeTrend } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceTrend.js'));
+      return { ok: true, sessions: loadPracticeTrend({ trackKey, carClass }, { reviewDir: practiceReviewsDir() }) };
+    } catch (err) {
+      console.error('[app] practice trend unavailable:', err.message);
+      return { ok: false, sessions: [], error: err.message };
     }
   });
 

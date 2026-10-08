@@ -396,6 +396,13 @@ contextBridge.exposeInMainWorld('apex', {
    */
   practiceLap: (args) => ipcRenderer.invoke('practice:lap', args),
 
+  /**
+   * The accuracy score across practice sessions at one track in one class:
+   * `{ trackKey, carClass }` → `{ ok, sessions: { sessionId, at, laps, avgScore,
+   * bestScore, bestLapSec }[], error? }`, oldest first (phase 3).
+   */
+  practiceTrend: (args) => ipcRenderer.invoke('practice:trend', args),
+
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {
     const listener = (_evt, pending) => callback(pending);

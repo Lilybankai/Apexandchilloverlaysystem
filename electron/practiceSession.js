@@ -28,8 +28,12 @@
 
 'use strict';
 
-/** How long the feed may say nothing before a practice session is over. */
-const END_HOLD_MS = 20000;
+/**
+ * How long the feed may say nothing before a practice session is over. The
+ * training gate's hold (10 s) already rides out loading screens; at 20 s the
+ * "review ready" notice landed after Carl had stopped looking (2026-10-08).
+ */
+const END_HOLD_MS = 10000;
 
 /** Sessions that are reviewed as practice. */
 const PRACTICE_SESSIONS = new Set(['practice', 'testday']);
