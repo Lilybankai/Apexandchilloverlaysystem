@@ -607,7 +607,8 @@ export const RADIO_TONES: readonly RadioTone[] = ['clean', 'banter', 'savage'];
 /**
  * The mature line for a driver's MISTAKE, or null to say the clean one. The
  * mistakes the trigger layer can see: damage, a penalty, a lost place, a
- * track-limits charge and a lap deleted for limits. Every line here still
+ * track-limits charge and a lap deleted for limits — plus blue flags, where
+ * the roast is the order to get out of the way. Every line here still
  * carries the clean line's facts (severity, repair time, penalty type, the new
  * position, the points): the roast rides on the information, it never
  * replaces it. Same ≤ {@link MAX_SPOKEN_WORDS} rule.
@@ -626,7 +627,11 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         return pick(
           v,
           savage
-            ? [`${again ? 'Again?! ' : ''}Critical damage. You've fucking destroyed it.${fix}`, `Critical damage. For fuck's sake, mate.${fix}`]
+            ? [
+                `${again ? 'Again?! ' : ''}Critical damage. You've fucking destroyed it, you muppet.${fix}`,
+                `Critical damage. Car's fucked, and so's your race.${fix}`,
+                `Critical damage. You absolute wrecking ball.${fix}`,
+              ]
             : [`${again ? 'Again? ' : ''}Critical damage. Bloody marvellous.${fix}`, `Critical damage. Well, that was daft.${fix}`],
         );
       }
@@ -635,7 +640,11 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         return pick(
           v,
           savage
-            ? [`${again ? 'More contact' : 'Contact'} — major damage. What the fuck?${fix}`, `${again ? 'Again?! ' : ''}Major damage. Shit driving, that.${fix}`]
+            ? [
+                `${again ? 'More contact' : 'Contact'} — major damage. Fucking hell, you absolute bellend.${fix}`,
+                `${again ? 'Again?! ' : ''}Major damage. Shit driving. Utter shit.${fix}`,
+                `Major damage. You've fucked the car, genius.${fix}`,
+              ]
             : [`${again ? 'More contact' : 'Contact'} — major damage. Bloody hell.${fix}`, `${again ? 'Again? ' : ''}Major damage. Well, that was stupid.${fix}`],
         );
       }
@@ -643,9 +652,10 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         v,
         savage
           ? [
-              `${again ? 'Again?! ' : ''}Contact — minor damage. What the fuck was that?`,
-              `${again ? 'More contact' : 'Contact'} — minor. Stop driving like a twat.`,
-              `${again ? 'Contact again' : 'Contact'} — minor damage. For fuck's sake, keep going.`,
+              `${again ? 'Again?! ' : ''}Contact — minor damage. What the fuck was that, you clown?`,
+              `${again ? 'More contact' : 'Contact'} — minor. Are you fucking blind?`,
+              `${again ? 'Contact again' : 'Contact'} — minor damage. For fuck's sake. Keep going.`,
+              `${again ? 'More contact' : 'Contact'} — minor. Drive like a twat, get hit like one.`,
             ]
           : [
               `${again ? 'Again? ' : ''}Contact — minor damage. Bloody hell, keep going.`,
@@ -661,8 +671,12 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         return pick(
           v,
           type
-            ? [`Penalty — ${type}. For fuck's sake.`, `Stewards have given us a ${type}. Nice one, genius.`, `Penalty — ${type}. Shit. We'll deal with it.`]
-            : ["Penalty from race control. For fuck's sake.", "Stewards' decision against us — penalty. Unbelievable."],
+            ? [
+                `Penalty — ${type}. For fuck's sake, you absolute weapon.`,
+                `Stewards gave us a ${type}. Nice fucking work, genius.`,
+                `Penalty — ${type}. Shit. Fucking brilliant. We'll deal with it.`,
+              ]
+            : ["Penalty from race control. For fuck's sake, you clown.", "Stewards' decision — penalty. Fucking unbelievable."],
         );
       }
       return pick(
@@ -679,7 +693,12 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
       return pick(
         v,
         savage
-          ? [`P${to} now. What the fuck was that?`, `Back to P${to}. Wake the fuck up.`, `P${to}. My nan's quicker. Get it back.`]
+          ? [
+              `P${to} now. What the fuck was that? Get it back.`,
+              `Back to P${to}. Wake the fuck up.`,
+              `P${to}. My nan's quicker, and she's in a shopping trolley.`,
+              `P${to}. You just got mugged. Fucking get it back.`,
+            ]
           : [`P${to} now. Bloody hell, get it back.`, `Back to P${to}. Asleep at the wheel, mate?`, `P${to}. Well, that was crap — next corner.`],
       );
     }
@@ -691,14 +710,14 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         return pick(
           v,
           savage
-            ? [`Track limits — ${t.tally}. One more fucking cut and it's a penalty.`, `Track limits, ${t.cost}. ${t.tally}. Are you trying to get penalised?`]
+            ? [`Track limits — ${t.tally}. One more fucking cut and it's a penalty.`, `Track limits, ${t.cost}. ${t.tally}. Trying to get penalised, dickhead?`]
             : [`Track limits — ${t.tally}. One more and it's a penalty. Behave.`, `Track limits, ${t.cost}. ${t.tally}. Living dangerously, mate.`],
         );
       }
       return pick(
         v,
         savage
-          ? [`Track limits — ${t.cost}. ${t.tally}. Stay on the fucking track.`, `Cut charged, ${t.cost}. ${t.tally}. Can you not see the lines?`, `Cut charged — ${t.cost}. ${t.tally}. Stop cutting, you muppet.`]
+          ? [`Track limits — ${t.cost}. ${t.tally}. Stay on the fucking track.`, `Cut charged, ${t.cost}. ${t.tally}. Can't you see the fucking lines?`, `Cut charged — ${t.cost}. ${t.tally}. Stop cutting, you muppet.`]
           : [`Track limits — ${t.cost}. ${t.tally}. Stay on the bloody track.`, `Cut charged, ${t.cost}. ${t.tally}. The white lines aren't decoration.`, `That cut cost ${t.cost}. ${t.tally}. Use the road, mate.`],
       );
     }
@@ -712,8 +731,47 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
       return pick(
         v,
         savage
-          ? ["Lap's deleted — track limits. Fucking pointless lap, that.", "That one's deleted. Track limits, you absolute weapon.", 'Track limits — lap deleted. Shit. Go again.']
+          ? ["Lap's deleted — track limits. Fucking pointless lap, that.", "That one's deleted. Track limits, you absolute weapon.", 'Track limits — lap deleted. Shit. Do it properly this time.']
           : ["Lap's deleted — track limits. Bloody hell.", "That one's deleted, track limits. What a waste.", 'Track limits — lap deleted. Use the road next time.'],
+      );
+    }
+
+    // Blue flags: a faster car is behind you. The order to let it by and its
+    // name and gap stay in every line; the sector suffix still rides after
+    // (phraseForCue), so these keep to nine words with a name and gap.
+    case 'yieldTo': {
+      const gap = num(f.gapSec);
+      const who = typeof f.name === 'string' && f.name ? surname(f.name) : null;
+      const g = gap !== undefined ? speakableGap(gap) : null;
+      if (f.lapping === true) {
+        if (who && g) {
+          return pick(
+            v,
+            savage
+              ? [`Blue flags — ${who} lapping you, ${g}. Get out the fucking way.`, `${who}'s lapping you, ${g} back. Move, mobile chicane.`]
+              : [`Blue flags — ${who} lapping you, ${g}. Shift over, mate.`, `${who}'s lapping you, ${g} back. Let them by, you're traffic.`],
+          );
+        }
+        return pick(
+          v,
+          savage
+            ? ["Blue flags — you're being lapped. Get out the fucking way.", "Car behind's a lap up. Move, you fucking mobile chicane."]
+            : ["Blue flags — you're being lapped, mate. Let them through.", "Car behind's a lap up. You're traffic now — let them by."],
+        );
+      }
+      if (who && g) {
+        return pick(
+          v,
+          savage
+            ? [`Blue flags — ${who}, ${g} back. Hold your fucking line.`, `Faster class — ${who}, ${g}. Don't do anything stupid.`]
+            : [`Blue flags — ${who}, ${g} back. Hold your line, mate.`, `Faster class — ${who}, ${g}. Don't do anything daft.`],
+        );
+      }
+      return pick(
+        v,
+        savage
+          ? ['Blue flags — faster car closing. Hold your fucking line.', "Faster class behind. Stay predictable, for fuck's sake."]
+          : ['Blue flags — faster car closing. Hold your line, mate.', "Faster class behind. Don't do anything daft."],
       );
     }
 
@@ -770,8 +828,7 @@ export function phraseForCue(
   const v = variant ?? (Math.imul(Math.floor(cue.atMs / 200), 2654435761) >>> 13);
   const hasAddon = cue.triggers.slice(1).some((t) => addonFor(t.kind) !== null);
   const rude = hasAddon ? null : matureSentence(lead, tone, v, cue.triggers.length === 1);
-  if (rude) return rude;
-  const said = leadSentence(cue, lead, frame, v);
+  const said = rude ?? leadSentence(cue, lead, frame, v);
   if (!said) return null;
   // A blue flag the traffic tracker could place gains where it lands.
   const sentence = lead.kind === 'yieldTo' ? said + yieldWhereSuffix(lead.facts) : said;

@@ -733,6 +733,22 @@ function lineDiscipline() {
   if (unswept.length) console.log(`  INFO  no line facts yet for: ${unswept.join(', ')} — add a row to LINE_FACTS`);
 }
 
+/* A crash call is never held by the straights rule or a car alongside. */
+function crashCalls() {
+  console.log('\nC) A crash is called at once, even crawling in a pile-up');
+  const g = new RadioGate();
+  const on = { onlyStraights: true, kind: 'incident', text: 'Contact — major damage.' };
+  const crawl = frame({ kph: 25, throttle: 0.3, steer: 0.6, latG: 0.8, alongside: true });
+  check('crawling, wheel turned, car alongside: clear', g.verdict(crawl, on).clear === true, g.verdict(crawl, on).reason);
+  const stopped = frame({ kph: 0, throttle: 0.8, alongside: true });
+  check('stopped and flooring it out of the gravel: clear', g.verdict(stopped, on).clear === true, g.verdict(stopped, on).reason);
+  const brk = frame({ kph: 40, brake: 0.9, throttle: 0 });
+  check('…but still not mid-stop on the brakes', g.verdict(brk, on).clear === false, g.verdict(brk, on).reason);
+  const fast = frame({ kph: 180, steer: 0.5, latG: 2 });
+  check('back up to speed it waits for a straight like before', g.verdict(fast, on).clear === false, g.verdict(fast, on).reason);
+  check('other calls still wait while crawling alongside', g.verdict(crawl, { onlyStraights: true, kind: 'positionChange' }).clear === false);
+}
+
 /* "Mature radio": the engineer may swear at a mistake, and only at a mistake. */
 async function matureRadio() {
   console.log('\nM) Mature radio: roasts ride on the facts, never on a safety call');
@@ -782,6 +798,25 @@ async function matureRadio() {
     const del = [0, 1, 2].map((v) => say('qualiLap', { verdict: 'deleted' }, tone, v));
     check(`${tone}: a deleted lap is roasted and still says deleted`, del.every((t) => /deleted/.test(t) && t !== say('qualiLap', { verdict: 'deleted' }, 'clean')), del.join(' | '));
   }
+  // Blue flags: the roast IS the order to move, and who and how far stay in.
+  for (const tone of ['banter', 'savage']) {
+    const lap = [0, 1].map((v) => say('yieldTo', { lapping: true, name: 'Riccardo Agostini', gapSec: 12.4, contactSector: 2 }, tone, v));
+    check(`${tone}: blue flag keeps the name, the gap and the sector`, lap.every((t) => /Agostini/.test(t) && /12\.4/.test(t) && /sector two/.test(t)), lap.join(' | '));
+    const lap2 = [0, 1].map((v) => say('yieldTo', { lapping: true, name: 'Riccardo Agostini', gapSec: 12.4 }, tone, v));
+    check(`${tone}: blue flag differs from the clean call`, lap2.every((t, v) => t !== say('yieldTo', { lapping: true, name: 'Riccardo Agostini', gapSec: 12.4 }, 'clean', v)), lap2.join(' | '));
+  }
+  // The sector suffix ("With you into sector two.") already takes the clean
+  // blue-flag calls past 14 words; a rude one must never be longer than them.
+  const longest = (tone, facts) => Math.max(...[0, 1, 2].map((v) => phrases.spokenWordCount(say('yieldTo', facts, tone, v))));
+  const blueSets = [
+    { lapping: true, name: 'Riccardo Agostini', gapSec: 12.4, contactSector: 2 },
+    { name: 'Riccardo Agostini', gapSec: 2.4, contactSector: 3 },
+    { lapping: true, contactSector: 1 },
+    {},
+  ];
+  const longer = blueSets.filter((f) => ['banter', 'savage'].some((t) => longest(t, f) > longest('clean', f)));
+  check('a rude blue flag is never longer than the clean one', longer.length === 0, JSON.stringify(longer));
+  check('savage blue flags swear', [0, 1].some((v) => /fuck/.test(say('yieldTo', { lapping: true }, 'savage', v))));
   const bundle = cueOf('qualiLap', { verdict: 'deleted' });
   bundle.triggers.push({ kind: 'qualiTimeLeft', atMs: 0, priority: 35, detail: 'qualiTimeLeft', facts: { verdict: 'last', timeLeftSec: 50 } });
   check('a deleted lap bundled with the clock keeps the session wording', phrases.phraseForCue(bundle, null, 0, 'savage') === phrases.phraseForCue(bundle, null, 0, 'clean'));
@@ -791,7 +826,7 @@ async function matureRadio() {
 
   // Safety and everything else: the same words whatever the tone.
   const isMistake = ([k, f]) =>
-    ['incident', 'penalty', 'trackLimits'].includes(k) ||
+    ['incident', 'penalty', 'trackLimits', 'yieldTo'].includes(k) ||
     (k === 'positionChange' && f.gained === false) ||
     ((k === 'qualiLap' || k === 'practiceLap') && f.verdict === 'deleted');
   const notMistakes = sweep.filter((e) => !isMistake(e));
@@ -864,6 +899,7 @@ radioControls()
     trafficHold();
     settingsAndPanel();
     lineDiscipline();
+    crashCalls();
     return matureRadio();
   })
   .then(() => {

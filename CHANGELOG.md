@@ -6,6 +6,30 @@
 
 -->
 
+## 1.3.7 — 2026-10-08
+
+### Changed
+
+- **Savage radio is properly savage now.** Harder swearing on every mistake,
+  and it now covers blue flags too: when a faster car is behind or lapping
+  you, Savage tells you exactly where to go, and who it is and how far back
+  are still in the line. Banter gets a gentler version of the blue-flag calls.
+  Questions you ask on the radio get the same treatment.
+
+### Fixed
+
+- **Crashes get called.** Drivers said they could crash and hear nothing.
+  Three reasons, all fixed:
+  - A second hit on a different corner of the car was missed when the first
+    hit had done more damage.
+  - The damage call was dropped if another call (a yellow flag, a lost
+    place, a penalty) had gone out in the last 15 seconds — which is exactly
+    what an accident causes.
+  - After a crash the call waited for a straight. A car that was stopped,
+    crawling out of the gravel or limping with other cars around it could
+    run out the clock before it got one. Below 60 km/h a damage call now
+    goes out straight away, unless you're hard on the brakes.
+
 ## 1.3.6 — 2026-10-08
 
 ### Fixed

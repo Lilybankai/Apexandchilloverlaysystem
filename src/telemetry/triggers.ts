@@ -335,6 +335,23 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
  */
 const DAMAGE_WORSENED_STEP = 0.15;
 
+/**
+ * Kinds that skip the global 15 s gate. A crash is the one call a driver
+ * reliably notices missing ("I crashed and it said nothing", 2026-10-08), and
+ * it is the call most likely to arrive just after another one: the same
+ * accident raises a yellow or costs places first, and the damage block lags
+ * the impact by up to a 3 s REST poll — outside the coalesce window. Its own
+ * 25 s cooldown still stops repeats; the radio's one-slot hold still stops two
+ * lines talking over each other.
+ */
+const GLOBAL_GATE_EXEMPT: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>(['incident']);
+
+/** The whole car's damage as one number: aero plus the four corners. */
+function damageTotal(d: { aero?: number; suspension?: readonly number[] }): number {
+  const parts = [d.aero, ...(d.suspension ?? [])];
+  return parts.reduce<number>((sum, v) => sum + (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0), 0);
+}
+
 /** Tunables, all optional — anything omitted takes the default above. */
 export interface EngineerTriggerConfig {
   /** Buffer window before a cue is emitted, ms. */
@@ -854,6 +871,8 @@ export class EngineerTriggers {
   private prevHasDamage: boolean | undefined;
   /** Last frame's worst-component severity — the baseline a second impact jumps from. */
   private prevDamageWorst = 0;
+  /** Last frame's {@link damageTotal} — a hit to ANOTHER corner moves this, not `worst`. */
+  private prevDamageTotal = 0;
   private prevPenalties: number = UNKNOWN_VALUE;
   /** The stewards' cut count (`trackLimits.charged`) last frame. */
   private prevCharged: number = UNKNOWN_VALUE;
@@ -969,6 +988,7 @@ export class EngineerTriggers {
     this.prevNotStarted = true;
     this.prevHasDamage = undefined;
     this.prevDamageWorst = 0;
+    this.prevDamageTotal = 0;
     this.prevPenalties = UNKNOWN_VALUE;
     this.prevCharged = UNKNOWN_VALUE;
     this.prevPitThisLap = false;
@@ -1165,7 +1185,12 @@ export class EngineerTriggers {
 
     const worst = known(damage.worst) ? damage.worst : 0;
     const appeared = damage.hasDamage && !this.prevHasDamage;
-    const struckAgain = damage.hasDamage && worst - this.prevDamageWorst >= DAMAGE_WORSENED_STEP;
+    // `worst` is the max of the parts, so a second hit to a DIFFERENT corner
+    // that stays below the first never moves it; the total does.
+    const struckAgain =
+      damage.hasDamage &&
+      (worst - this.prevDamageWorst >= DAMAGE_WORSENED_STEP ||
+        damageTotal(damage) - this.prevDamageTotal >= DAMAGE_WORSENED_STEP);
     if (!appeared && !struckAgain) return;
 
     // The HUD's scale (damage.ts), bucketed rather than `0..1` because 0.31 vs
@@ -1548,7 +1573,15 @@ export class EngineerTriggers {
     if (this.pending.length === 0) return null;
     if (now - this.pendingSince < this.coalesceMs) return null;
 
-    if (this.lastCueAt !== 0 && now - this.lastCueAt < this.globalMinIntervalMs) {
+    const gated = this.lastCueAt !== 0 && now - this.lastCueAt < this.globalMinIntervalMs;
+    if (gated && this.pending.some((t) => GLOBAL_GATE_EXEMPT.has(t.kind))) {
+      // Send the exempt call now, alone; the rest keep waiting on the gate.
+      const go = this.pending.filter((t) => GLOBAL_GATE_EXEMPT.has(t.kind));
+      this.pending = this.pending.filter((t) => !GLOBAL_GATE_EXEMPT.has(t.kind));
+      if (this.pending.length) this.pendingSince = Math.min(...this.pending.map((t) => t.atMs));
+      return this.emit(frame, now, go);
+    }
+    if (gated) {
       if (now - this.pendingSince > this.maxHoldMs) {
         this.stats.suppressed.stale += this.pending.length;
         this.pending = [];
@@ -1558,8 +1591,14 @@ export class EngineerTriggers {
       return null;
     }
 
-    const triggers = this.pending.sort((a, b) => b.priority - a.priority || a.atMs - b.atMs);
+    const all = this.pending;
     this.pending = [];
+    return this.emit(frame, now, all);
+  }
+
+  /** Turn candidates into one cue: order, stamp the cooldowns, render. */
+  private emit(frame: TelemetryFrame, now: number, candidates: EngineerTrigger[]): EngineerCue | null {
+    const triggers = candidates.sort((a, b) => b.priority - a.priority || a.atMs - b.atMs);
     const lead = triggers[0];
     if (!lead) return null;
 
@@ -1598,6 +1637,7 @@ export class EngineerTriggers {
     if (damage) {
       this.prevHasDamage = damage.hasDamage;
       this.prevDamageWorst = known(damage.worst) ? damage.worst : 0;
+      this.prevDamageTotal = damageTotal(damage);
     }
 
     const penalties = frame.player?.trackLimits?.penalties;
