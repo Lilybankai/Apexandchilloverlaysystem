@@ -837,7 +837,7 @@ async function matureRadio() {
   const html = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
   check('the Engineer tab has the picker, Off first', /<select class="field__input" id="eng-tone">\s*<option value="clean">/.test(html));
-  check('the panel persists it', /radioTone:\s*tone\.value/.test(panel));
+  check('the panel persists it', /radioTone:\s*toneSelect\.value/.test(panel));
   const fn = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'engineer', 'index.ts'), 'utf8');
   check('the cloud prompt takes the addendum only for banter / savage', /body\.tone === 'banter' \|\| body\.tone === 'savage'/.test(fn) && /SYSTEM \+ toneAddendum/.test(fn));
 }
