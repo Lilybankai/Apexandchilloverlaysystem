@@ -556,6 +556,48 @@ console.log('\n4) Penalties, both directions');
   check('an unavailable penalty channel is silent', r.cues.length === 0, r.kinds().join(','));
 }
 
+console.log('\n4b) Track limits — what a cut cost (2026-10-08)');
+
+{
+  const tl = (o) => ({ player: { trackLimits: { penalties: 0, pointsLimitEnforced: true, pointsLimit: 5, ...o } } });
+  // Attaching mid-race with cuts already on the sheet is a baseline, not news.
+  const r = rig({}, tl({ charged: 3, points: 2, charges: [1, 0.5, 0.5] }));
+  r.hold(3000);
+  check('cuts already charged when we attach say nothing', r.cues.length === 0, r.kinds().join(','));
+
+  r.fire(tl({ charged: 4, points: 2.25, charges: [0.25, 1, 0.5, 0.5] }));
+  check('a new charge fires trackLimits', r.last?.kind === 'trackLimits', r.last?.kind);
+  const f = r.last?.triggers[0].facts || {};
+  check('…with the charge, the total and the allowance', f.charge === 0.25 && f.points === 2.25 && f.pointsLimit === 5, JSON.stringify(f));
+
+  const before = r.cues.length;
+  r.fire(tl({ charged: 5, points: 2.5, charges: [0.25, 0.25, 1, 0.5, 0.5] }));
+  check('a second cut inside the cooldown is not a second call', r.cues.length === before, `${r.cues.length - before}`);
+  r.hold(25_000);
+  r.fire(tl({ charged: 6, points: 3.5, charges: [1, 0.25, 0.25, 1, 0.5] }));
+  check('…the next one after it carries the up-to-date total', r.last?.kind === 'trackLimits' && r.last.triggers[0].facts.points === 3.5);
+}
+
+{
+  // Practice/qualifying delete the lap instead (the session calls say so).
+  const r = rig({}, { player: { trackLimits: { penalties: 0, charged: 0, points: 0, pointsLimitEnforced: false } } });
+  r.fire({ player: { trackLimits: { charged: 1, points: 1, charges: [1] } } });
+  check('a session that does not enforce the allowance is silent', !r.kinds().includes('trackLimits'), r.kinds().join(','));
+}
+
+{
+  // A teammate's cuts are invisible to us; never read our total as theirs.
+  const r = rig({}, { player: { trackLimits: { penalties: 0, charged: 0, points: 0, pointsLimitEnforced: true, teammateDriving: true } } });
+  r.fire({ player: { trackLimits: { charged: 1, points: 1, charges: [1] } } });
+  check('a teammate in the car is silent', !r.kinds().includes('trackLimits'), r.kinds().join(','));
+}
+
+{
+  const r = rig({}, { player: { trackLimits: { penalties: 0, charged: UNKNOWN, points: UNKNOWN } } });
+  r.fire({ player: { trackLimits: { charged: UNKNOWN, points: UNKNOWN } } });
+  check('no trace (UNKNOWN) is silent', r.cues.length === 0, r.kinds().join(','));
+}
+
 /* -------------------------------------------------------------------------- */
 /*  5) Fuel                                                                    */
 /* -------------------------------------------------------------------------- */

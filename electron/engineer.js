@@ -418,6 +418,8 @@ const TRIGGER_TIERS = {
   checkered: 'essential',
   incident: 'essential',
   penalty: 'essential',
+  // What a cut cost and how close the drive-through is — a rule, not story.
+  trackLimits: 'essential',
   penaltyServed: 'essential',
   fuelWindow: 'essential',
   fuelCritical: 'essential',
@@ -1353,6 +1355,13 @@ class EngineerService {
     return !(settings.engineer && settings.engineer.onlyStraights === false);
   }
 
+  /** Mature radio: 'clean' unless the driver picked Banter or Savage. */
+  radioTone() {
+    const settings = this.loadSettings();
+    const tone = settings.engineer && settings.engineer.radioTone;
+    return tone === 'banter' || tone === 'savage' ? tone : 'clean';
+  }
+
   /** Completed laps between unchanged practice-pace reminders. */
   practicePaceReminderLaps() {
     const settings = this.loadSettings();
@@ -1400,6 +1409,7 @@ class EngineerService {
       readouts: this.readoutsPreset(),
       practicePaceReminderLaps: this.practicePaceReminderLaps(),
       onlyStraights: this.onlyStraights(),
+      radioTone: this.radioTone(),
       radioQuiet: this.radioQuiet,
       volume: this.volumePct(),
       running: this.running,
@@ -1956,7 +1966,10 @@ class EngineerService {
     const tier = TRIGGER_TIERS[cue.kind];
     if (!tier) return; // unknown kind never speaks by accident
     if (tier === 'standard' && preset !== 'standard') return;
-    const text = this.phrasesMod.phraseForCue(cue, frame);
+    // A driver who asked for quiet gets the plain line on whatever still
+    // breaks through it (a penalty): they asked for less radio, not more.
+    const tone = this.radioQuiet ? 'clean' : this.radioTone();
+    const text = this.phrasesMod.phraseForCue(cue, frame, undefined, tone);
     const lead = cue.triggers && cue.triggers[0];
     if (text) this.sayReadout(text, { kind: cue.kind, priority: lead ? lead.priority : 0 });
   }
@@ -2363,7 +2376,11 @@ class EngineerService {
         : undefined;
     let res;
     try {
-      res = await this.cloudAsk(previous ? { question, summary, sttMs, previous } : { question, summary, sttMs });
+      const request = previous ? { question, summary, sttMs, previous } : { question, summary, sttMs };
+      // Mature radio reaches the free-form answers too (engineer function v15);
+      // a clean driver's request is byte-for-byte what it was before.
+      const tone = this.radioTone();
+      res = await this.cloudAsk(tone === 'clean' ? request : { ...request, tone });
     } catch {
       this.speak('No answer from the pit wall.');
       return this.noteOutcome('cloud-fail');

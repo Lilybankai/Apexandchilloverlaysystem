@@ -34,6 +34,8 @@
   const readoutsHint = $('#eng-readouts-hint');
   const paceReminder = $('#eng-pace-reminder');
   const straights = $('#eng-straights');
+  const tone = $('#eng-tone');
+  const toneHint = $('#eng-tone-hint');
   const volume = $('#eng-volume');
   const volumeEcho = $('#eng-volume-echo');
   const sttStatus = $('#eng-stt-status');
@@ -51,7 +53,8 @@
     off: 'Nothing unprompted — the engineer only speaks when you press a button.',
     essential:
       'Calls the things that change the rules or end races: flags, fuel, ' +
-      'penalties, damage. In qualifying: your lap and position, pole changes, ' +
+      'penalties, damage, and what each track-limits cut cost you in a race. ' +
+      'In qualifying: your lap and position, pole changes, ' +
       'time for another go and your grid slot; in practice, personal bests and ' +
       'deleted laps. Never reads out what your screen already shows, and ' +
       'holds a call while you are braking, cornering or side by side.',
@@ -65,6 +68,24 @@
 
   function renderReadoutsHint() {
     readoutsHint.textContent = READOUT_HINTS[readouts.value] || READOUT_HINTS.essential;
+  }
+
+  /** Mature radio, spelled out — what changes and what never does. */
+  const TONE_HINTS = {
+    clean: 'The engineer keeps it clean.',
+    banter:
+      'When you make contact, cut the track, get a lap deleted, pick up a ' +
+      'penalty or lose a place, the engineer swears a bit and takes the mick. The facts are always in the line, and ' +
+      'flags, "box this lap" and every other call stay clean.',
+    savage:
+      'Strong language, no mercy: contact, track-limit cuts, deleted laps, ' +
+      'penalties and lost places get a proper roasting, F-words included. The facts are always in the line, and flags, ' +
+      '"box this lap" and every other call stay clean. Not for the stream if ' +
+      'your viewers are young.',
+  };
+
+  function renderToneHint() {
+    if (tone && toneHint) toneHint.textContent = TONE_HINTS[tone.value] || TONE_HINTS.clean;
   }
 
   /** What a driver would call each intent — keys mirror engineerCommands.ts. */
@@ -332,6 +353,8 @@
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
     if (straights && typeof s.onlyStraights === 'boolean') straights.checked = s.onlyStraights;
+    if (tone && s.radioTone && tone.value !== s.radioTone) tone.value = s.radioTone;
+    renderToneHint();
     if (
       typeof s.practicePaceReminderLaps === 'number' &&
       paceReminder.value !== String(s.practicePaceReminderLaps)
@@ -574,6 +597,12 @@
   if (straights) {
     straights.addEventListener('change', () => {
       void api.updateSettings({ engineer: { onlyStraights: straights.checked } });
+    });
+  }
+  if (tone) {
+    tone.addEventListener('change', () => {
+      renderToneHint();
+      void api.updateSettings({ engineer: { radioTone: tone.value } });
     });
   }
   paceReminder.addEventListener('change', () => {

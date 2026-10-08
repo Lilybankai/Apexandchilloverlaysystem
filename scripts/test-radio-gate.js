@@ -12,7 +12,9 @@
  *   3. the driver's radio controls on push-to-talk: "keep quiet", "talk to
  *      me", "repeat that" — routing, state, session reset, repeat-last;
  *   4. the "Only talk on straights" setting (whitelist + panel) and line
- *      discipline: every existing phrase-bank line ≤ MAX_SPOKEN_WORDS.
+ *      discipline: every existing phrase-bank line ≤ MAX_SPOKEN_WORDS;
+ *   5. "Mature radio" (2026-10-08): banter/savage roasts on mistakes only,
+ *      facts kept, safety calls never touched, "keep quiet" reads clean.
  *
  * Audio is stubbed at the Piper stdin, so the real speak() runs (it is what
  * remembers the last line for "repeat that").
@@ -645,6 +647,12 @@ const LINE_FACTS = {
   ],
   penalty: [{}, { penaltyType: 'drive-through' }, { penaltyType: 'stop and go 10 seconds' }],
   penaltyServed: [{}],
+  trackLimits: [
+    { charge: 0.25, points: 2.25, pointsLimit: 5 },
+    { charge: 1, points: 4.5, pointsLimit: 5 },
+    { charge: 0.5, points: 5, pointsLimit: 5 },
+    { points: 1.75 },
+  ],
   fuelWindow: [{ lapsLeft: 2.4 }, { lapsLeft: 2.4, budget: 'energy' }, {}],
   fuelCritical: [{}, { reason: 'energy' }],
   fastestLapSelf: [{ lapSec: 103.456 }, {}],
@@ -699,14 +707,16 @@ function lineDiscipline() {
   let lines = 0;
   for (const [kind, list] of Object.entries(LINE_FACTS)) {
     for (const facts of list) {
-      for (let v = 0; v < 6; v++) {
-        const cue = cueOf(kind, facts);
-        cue.context.classPosition = 12;
-        cue.context.numCars = 24;
-        const t = phrases.phraseForCue(cue, ctxFrame, v);
-        if (!t) continue;
-        lines++;
-        if (phrases.lineTooLong(t)) tooLong.push(`${phrases.spokenWordCount(t)}: ${t}`);
+      for (const tone of phrases.RADIO_TONES) {
+        for (let v = 0; v < 6; v++) {
+          const cue = cueOf(kind, facts);
+          cue.context.classPosition = 12;
+          cue.context.numCars = 24;
+          const t = phrases.phraseForCue(cue, ctxFrame, v, tone);
+          if (!t) continue;
+          lines++;
+          if (phrases.lineTooLong(t)) tooLong.push(`${tone} ${phrases.spokenWordCount(t)}: ${t}`);
+        }
       }
     }
   }
@@ -721,6 +731,115 @@ function lineDiscipline() {
   check('addons are ≤ 7 words', addonLens.every((n) => n > 0 && n <= 7), addonLens.join(','));
   const unswept = Object.keys(TRIGGER_TIERS).filter((k) => !LINE_FACTS[k]);
   if (unswept.length) console.log(`  INFO  no line facts yet for: ${unswept.join(', ')} — add a row to LINE_FACTS`);
+}
+
+/* "Mature radio": the engineer may swear at a mistake, and only at a mistake. */
+async function matureRadio() {
+  console.log('\nM) Mature radio: roasts ride on the facts, never on a safety call');
+  check('default is clean', DEFAULT_ENGINEER_SETTINGS.radioTone === 'clean');
+  check('banter / savage survive sanitize', sanitizeEngineer({ radioTone: 'banter' }).radioTone === 'banter' && sanitizeEngineer({ radioTone: 'savage' }).radioTone === 'savage');
+  check('junk falls back to the stored value', sanitizeEngineer({ radioTone: 'filthy' }, { radioTone: 'banter' }).radioTone === 'banter');
+  check('older settings (no field) read as clean', sanitizeEngineer({ readouts: 'standard' }).radioTone === 'clean');
+  check('the settings list matches the phrasebook', JSON.stringify(require('../electron/engineer-settings').RADIO_TONES) === JSON.stringify(phrases.RADIO_TONES));
+
+  const say = (kind, facts, tone, v = 0) => phrases.phraseForCue(cueOf(kind, facts), null, v, tone);
+  const swears = /fuck|shit|twat|bloody|hell|crap|daft|stupid|brilliant|lovely|cheers|asleep|marvellous|nan's/i;
+  // Clean is the old radio, word for word.
+  const sweep = Object.entries(LINE_FACTS).flatMap(([k, list]) => list.map((f) => [k, f]));
+  const changed = sweep.filter(([k, f]) => [0, 1, 2].some((v) => say(k, f, 'clean', v) !== phrases.phraseForCue(cueOf(k, f), null, v)));
+  check('clean = the line without a tone, every kind', changed.length === 0, changed.map(([k]) => k).join(',') || 'identical');
+
+  // The three mistakes get roasted, and keep every fact.
+  for (const tone of ['banter', 'savage']) {
+    const lines = [0, 1, 2].map((v) => [
+      say('incident', { severity: 'minor' }, tone, v),
+      say('incident', { severity: 'major', repairSeconds: 45 }, tone, v),
+      say('incident', { severity: 'critical', repairSeconds: 120 }, tone, v),
+      say('penalty', { penaltyType: 'drive-through' }, tone, v),
+      say('positionChange', { to: 12, gained: false }, tone, v),
+    ]);
+    const clean = [0, 1, 2].map((v) => [
+      say('incident', { severity: 'minor' }, 'clean', v),
+      say('incident', { severity: 'major', repairSeconds: 45 }, 'clean', v),
+      say('incident', { severity: 'critical', repairSeconds: 120 }, 'clean', v),
+      say('penalty', { penaltyType: 'drive-through' }, 'clean', v),
+      say('positionChange', { to: 12, gained: false }, 'clean', v),
+    ]);
+    const same = lines.flat().filter((t, i) => t === clean.flat()[i]);
+    check(`${tone}: every mistake line differs from the clean one`, same.length === 0, same.join(' | ') || 'all');
+    check(`${tone}: severity, repair time, penalty and place survive`, lines.every(([mi, ma, cr, pe, pc]) =>
+      /minor/i.test(mi) && /major/i.test(ma) && /45 seconds/.test(ma) && /critical/i.test(cr) && /120 seconds/.test(cr) && /drive-through/.test(pe) && /P12\b/.test(pc)));
+  }
+  check('savage swears properly, banter never does', [0, 1, 2].some((v) => /fuck/.test(say('incident', { severity: 'minor' }, 'savage', v))) &&
+    sweep.every(([k, f]) => [0, 1, 2].every((v) => !/fuck|shit|twat/i.test(say(k, f, 'banter', v) || ''))));
+  // Track limits: the cost and the tally survive the roast, the warning too.
+  for (const tone of ['banter', 'savage']) {
+    const cut = [0, 1, 2].map((v) => say('trackLimits', { charge: 0.25, points: 2.25, pointsLimit: 5 }, tone, v));
+    check(`${tone}: a cut keeps "a quarter point" and "2.25 of 5"`, cut.every((t) => /a quarter point/.test(t) && /2\.25 of 5/.test(t)), cut.join(' | '));
+    const near = [0, 1].map((v) => say('trackLimits', { charge: 1, points: 4.5, pointsLimit: 5 }, tone, v));
+    check(`${tone}: one point from the penalty still says so`, near.every((t) => /4\.5 of 5/.test(t) && (/penalty|penalised|dangerously/.test(t))), near.join(' | '));
+    check(`${tone}: the allowance gone keeps the clean line`, say('trackLimits', { charge: 0.5, points: 5, pointsLimit: 5 }, tone) === say('trackLimits', { charge: 0.5, points: 5, pointsLimit: 5 }, 'clean'));
+    const del = [0, 1, 2].map((v) => say('qualiLap', { verdict: 'deleted' }, tone, v));
+    check(`${tone}: a deleted lap is roasted and still says deleted`, del.every((t) => /deleted/.test(t) && t !== say('qualiLap', { verdict: 'deleted' }, 'clean')), del.join(' | '));
+  }
+  const bundle = cueOf('qualiLap', { verdict: 'deleted' });
+  bundle.triggers.push({ kind: 'qualiTimeLeft', atMs: 0, priority: 35, detail: 'qualiTimeLeft', facts: { verdict: 'last', timeLeftSec: 50 } });
+  check('a deleted lap bundled with the clock keeps the session wording', phrases.phraseForCue(bundle, null, 0, 'savage') === phrases.phraseForCue(bundle, null, 0, 'clean'));
+  check('trackLimits speaks on Essential, waits for a straight, not a safety call',
+    TRIGGER_TIERS.trackLimits === 'essential' && urgencyOf('trackLimits') === 'priority' && !gateMod.breaksQuiet('trackLimits'));
+  check('a gained place is not roasted', say('positionChange', { to: 6, gained: true }, 'savage') === say('positionChange', { to: 6, gained: true }, 'clean'));
+
+  // Safety and everything else: the same words whatever the tone.
+  const isMistake = ([k, f]) =>
+    ['incident', 'penalty', 'trackLimits'].includes(k) ||
+    (k === 'positionChange' && f.gained === false) ||
+    ((k === 'qualiLap' || k === 'practiceLap') && f.verdict === 'deleted');
+  const notMistakes = sweep.filter((e) => !isMistake(e));
+  const touched = notMistakes.filter(([k, f]) => [0, 1, 2].some((v) => say(k, f, 'savage', v) !== say(k, f, 'clean', v)));
+  check('flags, fuel, blue flags and the rest are never roasted', touched.length === 0, touched.map(([k]) => k).join(',') || `${notMistakes.length} fact sets clean`);
+
+  // A must-not-miss addon keeps the clean wording, so it still fits the line.
+  const both = cueOf('incident', { severity: 'minor' });
+  both.triggers.push({ kind: 'fuelCritical', atMs: 0, priority: 70, detail: 'fuelCritical', facts: {} });
+  check('damage + box this lap stays clean', phrases.phraseForCue(both, null, 0, 'savage') === phrases.phraseForCue(both, null, 0, 'clean'));
+
+  // The service: the setting reaches the radio; "keep quiet" gets it clean.
+  const r = service({ radioTone: 'savage' });
+  r.feed(3000, {});
+  r.svc.onCue(cueOf('penalty', { penaltyType: 'drive-through' }), r.svc.lastFrame);
+  check('savage reaches the radio', r.spoken.length === 1 && swears.test(r.spoken[0]) && /drive-through/.test(r.spoken[0]), r.spoken.join('|'));
+  check('status() echoes the tone for the panel', r.svc.status().radioTone === 'savage');
+  r.spoken.length = 0;
+  r.svc.radioQuiet = true;
+  r.advance(30_000);
+  r.feed(3000, {});
+  r.svc.onCue(cueOf('penalty', { penaltyType: 'drive-through' }), r.svc.lastFrame);
+  check('under "keep quiet" a penalty still speaks, but clean', r.spoken.length === 1 && !swears.test(r.spoken[0]), r.spoken.join('|'));
+  r.set({ radioTone: 'nonsense' });
+  check('a corrupt stored tone reads as clean', r.svc.radioTone() === 'clean');
+
+  // The free-form answers: the tone rides the cloud request only when chosen.
+  const bodies = [];
+  for (const tone of ['clean', 'banter']) {
+    const c = service({ radioTone: tone });
+    c.svc.lastFrame = frame({});
+    c.svc.summaryMod = { engineerSummary: () => ({ connected: true }) };
+    c.svc.cloudAsk = async (b) => {
+      bodies.push(b);
+      return null;
+    };
+    await c.svc.askTier2('how is my pace looking', 5);
+  }
+  check('clean sends no tone field (the old request)', !!bodies[0] && !('tone' in bodies[0]));
+  check('banter sends tone: banter', !!bodies[1] && bodies[1].tone === 'banter');
+
+  // The panel and the cloud prompt.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
+  const panel = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
+  check('the Engineer tab has the picker, Off first', /<select class="field__input" id="eng-tone">\s*<option value="clean">/.test(html));
+  check('the panel persists it', /radioTone:\s*tone\.value/.test(panel));
+  const fn = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'engineer', 'index.ts'), 'utf8');
+  check('the cloud prompt takes the addendum only for banter / savage', /body\.tone === 'banter' \|\| body\.tone === 'savage'/.test(fn) && /SYSTEM \+ toneAddendum/.test(fn));
 }
 
 /* A traffic countdown is frozen into its words: urgent, and a 750 ms cap. */
@@ -745,6 +864,9 @@ radioControls()
     trafficHold();
     settingsAndPanel();
     lineDiscipline();
+    return matureRadio();
+  })
+  .then(() => {
     console.log('\n' + pass + ' passed, ' + fail + ' failed');
     process.exit(fail ? 1 : 0);
   })
