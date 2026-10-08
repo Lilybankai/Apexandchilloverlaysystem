@@ -53,7 +53,8 @@
     off: 'Nothing unprompted — the engineer only speaks when you press a button.',
     essential:
       'Calls the things that change the rules or end races: flags, fuel, ' +
-      'penalties, damage. In qualifying: your lap and position, pole changes, ' +
+      'penalties, damage, and what each track-limits cut cost you in a race. ' +
+      'In qualifying: your lap and position, pole changes, ' +
       'time for another go and your grid slot; in practice, personal bests and ' +
       'deleted laps. Never reads out what your screen already shows, and ' +
       'holds a call while you are braking, cornering or side by side.',
@@ -73,12 +74,12 @@
   const TONE_HINTS = {
     clean: 'The engineer keeps it clean.',
     banter:
-      'When you make contact, pick up a penalty or lose a place, the engineer ' +
-      'swears a bit and takes the mick. The facts are always in the line, and ' +
+      'When you make contact, cut the track, get a lap deleted, pick up a ' +
+      'penalty or lose a place, the engineer swears a bit and takes the mick. The facts are always in the line, and ' +
       'flags, "box this lap" and every other call stay clean.',
     savage:
-      'Strong language, no mercy: contact, penalties and lost places get a proper ' +
-      'roasting, F-words included. The facts are always in the line, and flags, ' +
+      'Strong language, no mercy: contact, track-limit cuts, deleted laps, ' +
+      'penalties and lost places get a proper roasting, F-words included. The facts are always in the line, and flags, ' +
       '"box this lap" and every other call stay clean. Not for the stream if ' +
       'your viewers are young.',
   };
