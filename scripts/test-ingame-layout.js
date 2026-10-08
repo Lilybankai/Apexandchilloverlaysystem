@@ -979,13 +979,14 @@ async function run() {
 
   {
     // Ghost HUD moved to the training layer, so its default placement moved
-    // with it: on the training page it lands where it always did, centred and
-    // low on the primary screen.
+    // with it: centred on the primary screen, in the upper half since the
+    // 2026-10-08 layout — the Brake Cue and Coach card sit below it, above the
+    // dash.
     const g = overlayGeometryFrom(SINGLE.displays, SINGLE.primary);
     const t = loadLayer({ screens: g.screens, saved: {}, ids: ['ghosthud'], search: '?layer=training&widgets=ghosthud' });
     await settle();
     eq('training: Ghost HUD default x is centred', t.layoutX('ghosthud'), Math.round(1920 / 2 - 320));
-    eq('training: Ghost HUD default y is low', t.layoutY('ghosthud'), Math.round(1080 * 0.44));
+    eq('training: Ghost HUD default y clears the Brake Cue below it', t.layoutY('ghosthud'), Math.round(1080 * 0.2));
     eq('training: Ghost HUD default width', t.item('ghosthud').style.width, '640px');
   }
 
