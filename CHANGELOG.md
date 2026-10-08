@@ -5,6 +5,22 @@
      app until it is renamed.
 -->
 
+## Unreleased
+
+### Added
+
+- **Mature radio: the engineer can swear at you now.** A new setting on the
+  Engineer tab, off by default. **Banter** gives you a bit of mild swearing and
+  takes the mick when you make contact, pick up a penalty or lose a place.
+  **Savage** is strong language with no mercy, F-words included.
+
+  The roast always comes with the facts. You still hear how bad the damage is,
+  how long a repair takes, which penalty you got and what position you are now
+  in. Flags, yellows, "box this lap", blue flags and every other call stay
+  exactly as they were, and if you have said "keep quiet" the engineer goes
+  back to clean language for anything that still gets through. Questions you
+  ask on the radio get the same attitude when the setting is on.
+
 ## 1.3.5-beta.3 — 2026-10-07
 <!-- internal -->
 

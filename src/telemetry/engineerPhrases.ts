@@ -537,6 +537,102 @@ function rivalStopSentence(
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Mature radio                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How rude the engineer is allowed to be (Engineer tab → "Mature radio"; a
+ * Discord request, 2026-10-08). `clean` is every line above and the default;
+ * `banter` swears mildly and takes the mick; `savage` swears properly.
+ */
+export type RadioTone = 'clean' | 'banter' | 'savage';
+export const RADIO_TONES: readonly RadioTone[] = ['clean', 'banter', 'savage'];
+
+/**
+ * The mature line for a driver's MISTAKE, or null to say the clean one. Only
+ * three kinds are mistakes the trigger layer can see today — damage, a penalty,
+ * a lost place — and every line here still carries the clean line's facts
+ * (severity, repair time, penalty type, the new position): the roast rides on
+ * the information, it never replaces it. Same ≤ {@link MAX_SPOKEN_WORDS} rule.
+ */
+function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number): string | null {
+  if (tone === 'clean') return null;
+  const savage = tone === 'savage';
+  const f = lead.facts;
+  switch (lead.kind) {
+    case 'incident': {
+      const severity = String(f.severity ?? 'minor');
+      const repair = num(f.repairSeconds);
+      const again = f.repeat === true;
+      if (severity === 'critical') {
+        const fix = repair ? ` ${Math.round(repair)} seconds to fix — box.` : ' Think about boxing.';
+        return pick(
+          v,
+          savage
+            ? [`${again ? 'Again?! ' : ''}Critical damage. You've fucking destroyed it.${fix}`, `Critical damage. For fuck's sake, mate.${fix}`]
+            : [`${again ? 'Again? ' : ''}Critical damage. Bloody marvellous.${fix}`, `Critical damage. Well, that was daft.${fix}`],
+        );
+      }
+      if (severity === 'major') {
+        const fix = repair ? ` ${Math.round(repair)} seconds if you box.` : '';
+        return pick(
+          v,
+          savage
+            ? [`${again ? 'More contact' : 'Contact'} — major damage. What the fuck?${fix}`, `${again ? 'Again?! ' : ''}Major damage. Shit driving, that.${fix}`]
+            : [`${again ? 'More contact' : 'Contact'} — major damage. Bloody hell.${fix}`, `${again ? 'Again? ' : ''}Major damage. Well, that was stupid.${fix}`],
+        );
+      }
+      return pick(
+        v,
+        savage
+          ? [
+              `${again ? 'Again?! ' : ''}Contact — minor damage. What the fuck was that?`,
+              `${again ? 'More contact' : 'Contact'} — minor. Stop driving like a twat.`,
+              `${again ? 'Contact again' : 'Contact'} — minor damage. For fuck's sake, keep going.`,
+            ]
+          : [
+              `${again ? 'Again? ' : ''}Contact — minor damage. Bloody hell, keep going.`,
+              `${again ? 'More contact' : 'Contact'} — minor. Car's fine, my nerves aren't.`,
+              `${again ? 'Contact again' : 'Contact'} — minor damage. What the hell was that?`,
+            ],
+      );
+    }
+
+    case 'penalty': {
+      const type = typeof f.penaltyType === 'string' && f.penaltyType ? f.penaltyType : null;
+      if (savage) {
+        return pick(
+          v,
+          type
+            ? [`Penalty — ${type}. For fuck's sake.`, `Stewards have given us a ${type}. Nice one, genius.`, `Penalty — ${type}. Shit. We'll deal with it.`]
+            : ["Penalty from race control. For fuck's sake.", "Stewards' decision against us — penalty. Unbelievable."],
+        );
+      }
+      return pick(
+        v,
+        type
+          ? [`Penalty — ${type}. Brilliant. Absolutely brilliant.`, `Stewards have given us a ${type}. Cheers for that.`, `Penalty — ${type}. Bloody hell, mate.`]
+          : ['Penalty from race control. Lovely, just lovely.', "Stewards' decision against us — penalty. Bloody hell."],
+      );
+    }
+
+    case 'positionChange': {
+      const to = num(f.to);
+      if (to === undefined || f.gained === true) return null;
+      return pick(
+        v,
+        savage
+          ? [`P${to} now. What the fuck was that?`, `Back to P${to}. Wake the fuck up.`, `P${to}. My nan's quicker. Get it back.`]
+          : [`P${to} now. Bloody hell, get it back.`, `Back to P${to}. Asleep at the wheel, mate?`, `P${to}. Well, that was crap — next corner.`],
+      );
+    }
+
+    default:
+      return null;
+  }
+}
+
 /**
  * The short must-not-miss addon for a secondary trigger folded into the same
  * cue. Deliberately tiny: coalescing exists so simultaneous events become one
@@ -565,11 +661,15 @@ function addonFor(kind: EngineerTrigger['kind']): string | null {
  * @param variant - Which line of each kind's bank to use. Omit it and the
  *   choice is derived from the cue's timestamp — stable in replays, varied
  *   live. Tests pass `0` to pin the canonical wording.
+ * @param tone - The driver's "Mature radio" setting. Only a lone mistake is
+ *   roasted: a cue carrying a must-not-miss addon (damage + fuel, say) keeps
+ *   the clean wording so the extra fact still fits in the line.
  */
 export function phraseForCue(
   cue: EngineerCue,
   frame: TelemetryFrame | null = null,
   variant?: number,
+  tone: RadioTone = 'clean',
 ): string | null {
   const lead = cue.triggers[0];
   if (!lead) return null;
@@ -579,6 +679,9 @@ export function phraseForCue(
   // low bits merely echo the input. Still a pure function of the cue, so a
   // replay reads the same radio every run.
   const v = variant ?? (Math.imul(Math.floor(cue.atMs / 200), 2654435761) >>> 13);
+  const hasAddon = cue.triggers.slice(1).some((t) => addonFor(t.kind) !== null);
+  const rude = hasAddon ? null : matureSentence(lead, tone, v);
+  if (rude) return rude;
   const said = leadSentence(cue, lead, frame, v);
   if (!said) return null;
   // A blue flag the traffic tracker could place gains where it lands.

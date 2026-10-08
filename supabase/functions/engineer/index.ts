@@ -126,6 +126,13 @@
 //     acknowledged and re-read, meta questions answered from `previous`.
 //   - a complaint ("you didn't give me any sector updates") was deflected; it
 //     now gets a brief acknowledgement.
+//
+// v15 (2026-10-08, "Mature radio" — a Discord request):
+//   - an optional `tone` rides the request: 'banter' (mild swearing, taking
+//     the mick) or 'savage' (strong language). Absent or anything else = the
+//     prompt as it was. The addendum only changes the WORDS around an answer;
+//     every figure rule, outcome and the number guard apply unchanged, and it
+//     never turns a safety fact into a joke.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { clockify, guardAnswer, noReadLine, speakable } from './guard.ts';
@@ -202,6 +209,19 @@ Summary field legend (gaps and deltas in seconds; lap times as "m:ss.s" strings,
 - fuelLastLapL / energyLastLapPct: burn on the LAST lap alone — compare with the fuelPerLapL / energyPerLapPct averages to judge whether saving is working.
 - pitLossSec: measured total cost of a pit stop this session (lane + stop), the median of pitLossSamples observed stops. pitExitPosition: projected class position if the driver boxed right now; pitExitBehind / pitExitBehindGapSec: who they would come out behind and by how much; pitExitAheadOf / pitExitAheadOfGapSec: who they would come out ahead of. These are measured projections — prefer them to doing pit arithmetic yourself.`;
 
+/**
+ * The "Mature radio" addendum (v15), appended to SYSTEM when the driver opted
+ * in. Wording only: it must not loosen a single rule above it.
+ */
+const TONE_ADDENDUM: Record<string, string> = {
+  banter: `
+
+TONE — the driver has chosen BANTER radio. You may swear mildly (bloody, hell, damn, crap, arse) and take the mick out of the driver's mistakes, like a mate on the pit wall. Keep it to a few words on top of the answer, never instead of it. Every rule above still applies in full: the same outcome, the same figures, the same length.`,
+  savage: `
+
+TONE — the driver has chosen SAVAGE radio. You may swear properly (including fuck and shit) and roast the driver's mistakes and pace, like a brutally honest engineer who has had enough. Aim it at their driving, never at who they are: no slurs, nothing about race, religion, sexuality, gender or disability. Keep it to a few words on top of the answer, never instead of it. Every rule above still applies in full: the same outcome, the same figures, the same length.`,
+};
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
@@ -220,7 +240,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Not entitled.', code: 'entitled' }, 403);
   }
 
-  let body: { question?: unknown; summary?: unknown; sttMs?: unknown; previous?: unknown };
+  let body: { question?: unknown; summary?: unknown; sttMs?: unknown; previous?: unknown; tone?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -250,6 +270,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Summary too large.', code: 'bad' }, 400);
   }
   const sttMs = Number.isFinite(Number(body.sttMs)) ? Math.round(Number(body.sttMs)) : null;
+  const toneAddendum = body.tone === 'banter' || body.tone === 'savage' ? TONE_ADDENDUM[body.tone] : '';
 
   const db = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -294,7 +315,7 @@ Deno.serve(async (req) => {
   // the answer against this same view; the row logs the app's raw summary.
   const modelSummary = clockify(summary);
   const messages: { role: string; content: string }[] = [
-    { role: 'system', content: SYSTEM },
+    { role: 'system', content: SYSTEM + toneAddendum },
     {
       role: 'user',
       content:
