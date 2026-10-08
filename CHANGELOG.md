@@ -5,18 +5,106 @@
      app until it is renamed.
 -->
 
-## 1.3.7-beta.1 — 2026-10-08
+## 1.3.8-beta.1 — 2026-10-08
+
+The training overlays and the Practice tab, back for everyone on the beta, with
+the Engineer tab's voices, harder Savage radio and crash calls from 1.3.6 and
+1.3.7 included.
+
+### Added
+
+- **Practice Review: a debrief every time you leave practice.** Leave a
+  practice or test-day session with a timed lap and "Practice review ready"
+  comes up on screen. The new **Practice** tab then opens on it. Every lap is
+  measured against the lap you were chasing in Training, or your own best if
+  you weren't chasing one. You get:
+  - your best lap, your theoretical best (your best corners added up) and how
+    consistent you were;
+  - **Where the time went**: the three corners that cost you most, what you
+    did there ("braking 22 m early", "9 km/h down at the apex") and what to try;
+  - a table of every lap against the target, and a corner-by-lap grid that
+    shows where each lap lost and gained.
+
+  The Practice tab lists every practice session, not just the latest, so you
+  can go back to any of them.
+
+- **Study any lap, corner by corner.** Click a lap in the Practice tab for its
+  full telemetry against the target: the map, speed, throttle and brake, gear,
+  steering and the time gap. Underneath is a table of every corner with the
+  time it cost, your braking point, your apex and exit speed, and how far you
+  were off the target's line. Click a corner and the map and every chart zoom
+  to it.
+
+- **An accuracy score for every lap.** 0–100 per corner and per lap, from four
+  things compared with the lap you chased: your braking, your throttle, your
+  line and your speed through the corner. It was tuned on real laps so that a
+  higher score means a faster lap, not just a tidier one. The Practice tab
+  shows the score for each lap, the corners where you have the most points to
+  find, and how your score has moved session by session at that track.
+
+- **Two new training widgets.** **Coach** shows your pedals, speed, gear and
+  steering against the reference right now, with the last few seconds of
+  inputs. **Brake Cue** is a red BRAKE light that comes on as you reach the
+  reference's braking point, with the metres left. Switch them on in the
+  Training tab.
+
+### Changed
+
+- **The training overlays have a new look.** No more title bars on every
+  widget: each one is a clean dark card with one big number, red for time lost
+  and green for time gained, and the lap you're chasing drawn as a dotted line
+  against your solid one.
+  - **Trace is now Telemetry**: throttle, brake, speed and the gap by distance,
+    with the reference carrying on past your car so you see the next braking
+    zone coming.
+  - **Corner Card is now Corner Analysis**: the corner and its time big, your
+    speed through it against the reference, and a tip.
+  - **Lap Strip** shows your sector times as well as the gaps.
+  - **Ghost HUD** loses its box: the racing line glows, braking points and
+    apexes are marked on the road, and the ghost and you are arrows.
+
+  Telemetry and Corner Analysis are bigger than before, so if you set your own
+  layout you may want to move them (Edit training layout, or Reset).
 
 ### Fixed
 
-- **The Engineer tab's voices were missing.** Since 1.3.5 the tab stopped
-  drawing below its status line, so the voice picker and every setting under
-  it had gone. The engineer itself kept working the whole time; only the tab
-  was broken. It draws again.
+- **The training overlays flickered constantly in LMU.** About one frame in
+  four arrived without the ghost, and every training widget blanked and
+  redrew for it. LMU often sends the same moment twice; those repeats now keep
+  the ghost.
 
-Everything from 1.3.6-beta.2 is here too: the training overlays' new look, the
-Coach and Brake Cue widgets, and the Practice tab with its debrief, lap deep
-dive and accuracy score.
+## 1.3.7 — 2026-10-08
+
+### Changed
+
+- **Savage radio is properly savage now.** Harder swearing on every mistake,
+  and it now covers blue flags too: when a faster car is behind or lapping
+  you, Savage tells you exactly where to go, and who it is and how far back
+  are still in the line. Banter gets a gentler version of the blue-flag calls.
+  Questions you ask on the radio get the same treatment.
+
+### Fixed
+
+- **Crashes get called.** Drivers said they could crash and hear nothing.
+  Three reasons, all fixed:
+  - A second hit on a different corner of the car was missed when the first
+    hit had done more damage.
+  - The damage call was dropped if another call (a yellow flag, a lost
+    place, a penalty) had gone out in the last 15 seconds — which is exactly
+    what an accident causes.
+  - After a crash the call waited for a straight. A car that was stopped,
+    crawling out of the gravel or limping with other cars around it could
+    run out the clock before it got one. Below 60 km/h a damage call now
+    goes out straight away, unless you're hard on the brakes.
+
+## 1.3.6 — 2026-10-08
+
+### Fixed
+
+- **The Engineer tab shows your voices again.** In 1.3.5 the tab stopped
+  drawing partway down, so the voice list, the radio settings and everything
+  below them were missing. The engineer itself kept working the whole time;
+  only the tab was broken. Your chosen voice and settings were never lost.
 
 ## 1.3.6-beta.2 — 2026-10-08
 
