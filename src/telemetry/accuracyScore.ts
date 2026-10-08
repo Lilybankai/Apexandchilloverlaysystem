@@ -49,8 +49,13 @@ export const SCORING = {
   // 70/30 splits): mean held-out lap agreement 0.76, against 0.67 for the
   // hand-picked starting values. docs/ACCURACY-SCORE.md has the table.
   scales: {
-    /** Braking point, metres. Strict: 10 m early costs a third of the part. */
-    brakeOnM: 10,
+    /**
+     * Braking point, metres, counted from the end of {@link SCORING.brakeOnGraceM}.
+     * Softened 2026-10-08 at Carl's request: at 10 m with no grace, braking
+     * 20 m off a quicker driver's point read 13/100 — honest, but a number that
+     * discourages. Now 20 m off reads about 55 and 50 m off about 17.
+     */
+    brakeOnM: 25,
     /** Brake release point, metres. Loose: release predicts little on its own. */
     brakeOffM: 90,
     /** Full-throttle pick-up point, metres (late counts fully, early half). */
@@ -62,6 +67,8 @@ export const SCORING = {
     /** Minimum speed BELOW the target's, km/h. */
     apexKph: 25,
   },
+  /** Metres off the target's braking point that cost nothing: within a car length or so, nobody can tell. */
+  brakeOnGraceM: 5,
   /** How much each part counts towards a corner's total. */
   weights: {
     braking: 0.5,
@@ -358,7 +365,7 @@ function part(terms: (number | null)[]): number | null {
 export function scoreCorner(e: CornerErrors, k: ScoringConstants = SCORING): AccuracyScore | null {
   const s = k.scales;
   const braking = part([
-    e.brakeOnM === null ? null : e.brakeOnM / s.brakeOnM,
+    e.brakeOnM === null ? null : Math.max(0, e.brakeOnM - k.brakeOnGraceM) / s.brakeOnM,
     e.brakeOnM === null || e.brakeOffM === null ? null : e.brakeOffM / s.brakeOffM,
   ]);
   const pick =

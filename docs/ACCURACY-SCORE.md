@@ -41,7 +41,7 @@ before the curve.
 
 | Part | Error | Scale |
 |---|---|---|
-| Braking | \|your braking point − target's\| (m), plus \|your release − target's\| (m) | 10 m, 90 m |
+| Braking | \|your braking point − target's\| (m) less a 5 m grace, plus \|your release − target's\| (m) | 25 m, 90 m |
 | Throttle | full-throttle pick-up: metres later than the target (or ½ × metres earlier); plus percentage points of the following straight the target spent flat and you did not | 90 m, 35 pts |
 | Line | mean distance from the target's line, entry → exit (m) | 4 m |
 | Speed | km/h *below* the target's minimum speed (0 if faster) | 25 km/h |
@@ -100,7 +100,8 @@ way:
 | | lap agreement, train | lap agreement, held out |
 |---|---|---|
 | Hand-picked starting constants | 0.64 | 0.67 |
-| **Chosen constants** | **0.71** | **0.76** |
+| Constants chosen by the search (braking 10 m, no grace) | 0.71 | 0.76 |
+| **Shipped: braking softened (5 m grace, 25 m)** | **0.71** | **0.75** |
 
 Per part, alone (split 0; 39 sessions train / 11 held out):
 
@@ -126,6 +127,17 @@ the total beats every part alone.
   *corner's* time (≈0). That is expected, not a flaw: a late pick-up costs time
   on the straight AFTER the corner, and a corner's own time stops at its exit.
   It is kept at full weight for the lap.
+
+## Braking, softened (2026-10-08)
+
+The search's braking scale was 10 m with no grace, which marked a driver 20 m
+off a quicker driver's braking point at 13/100 — fair, since braking carries
+little weight, but a number that discourages. At Carl's request the first 5 m
+off the point are now free and the scale is 25 m: 20 m off reads about 55,
+50 m off about 17. Re-measured over the same five splits, lap agreement is
+0.71 train / 0.75 held out against 0.71 / 0.76 — inside the ±0.02 a single
+split moves by — and the search, started from the softened constants, keeps
+them.
 
 ## Re-running it
 
