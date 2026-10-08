@@ -647,6 +647,12 @@ const LINE_FACTS = {
   ],
   penalty: [{}, { penaltyType: 'drive-through' }, { penaltyType: 'stop and go 10 seconds' }],
   penaltyServed: [{}],
+  trackLimits: [
+    { charge: 0.25, points: 2.25, pointsLimit: 5 },
+    { charge: 1, points: 4.5, pointsLimit: 5 },
+    { charge: 0.5, points: 5, pointsLimit: 5 },
+    { points: 1.75 },
+  ],
   fuelWindow: [{ lapsLeft: 2.4 }, { lapsLeft: 2.4, budget: 'energy' }, {}],
   fuelCritical: [{}, { reason: 'energy' }],
   fastestLapSelf: [{ lapSec: 103.456 }, {}],
@@ -766,10 +772,29 @@ async function matureRadio() {
   }
   check('savage swears properly, banter never does', [0, 1, 2].some((v) => /fuck/.test(say('incident', { severity: 'minor' }, 'savage', v))) &&
     sweep.every(([k, f]) => [0, 1, 2].every((v) => !/fuck|shit|twat/i.test(say(k, f, 'banter', v) || ''))));
+  // Track limits: the cost and the tally survive the roast, the warning too.
+  for (const tone of ['banter', 'savage']) {
+    const cut = [0, 1, 2].map((v) => say('trackLimits', { charge: 0.25, points: 2.25, pointsLimit: 5 }, tone, v));
+    check(`${tone}: a cut keeps "a quarter point" and "2.25 of 5"`, cut.every((t) => /a quarter point/.test(t) && /2\.25 of 5/.test(t)), cut.join(' | '));
+    const near = [0, 1].map((v) => say('trackLimits', { charge: 1, points: 4.5, pointsLimit: 5 }, tone, v));
+    check(`${tone}: one point from the penalty still says so`, near.every((t) => /4\.5 of 5/.test(t) && (/penalty|penalised|dangerously/.test(t))), near.join(' | '));
+    check(`${tone}: the allowance gone keeps the clean line`, say('trackLimits', { charge: 0.5, points: 5, pointsLimit: 5 }, tone) === say('trackLimits', { charge: 0.5, points: 5, pointsLimit: 5 }, 'clean'));
+    const del = [0, 1, 2].map((v) => say('qualiLap', { verdict: 'deleted' }, tone, v));
+    check(`${tone}: a deleted lap is roasted and still says deleted`, del.every((t) => /deleted/.test(t) && t !== say('qualiLap', { verdict: 'deleted' }, 'clean')), del.join(' | '));
+  }
+  const bundle = cueOf('qualiLap', { verdict: 'deleted' });
+  bundle.triggers.push({ kind: 'qualiTimeLeft', atMs: 0, priority: 35, detail: 'qualiTimeLeft', facts: { verdict: 'last', timeLeftSec: 50 } });
+  check('a deleted lap bundled with the clock keeps the session wording', phrases.phraseForCue(bundle, null, 0, 'savage') === phrases.phraseForCue(bundle, null, 0, 'clean'));
+  check('trackLimits speaks on Essential, waits for a straight, not a safety call',
+    TRIGGER_TIERS.trackLimits === 'essential' && urgencyOf('trackLimits') === 'priority' && !gateMod.breaksQuiet('trackLimits'));
   check('a gained place is not roasted', say('positionChange', { to: 6, gained: true }, 'savage') === say('positionChange', { to: 6, gained: true }, 'clean'));
 
   // Safety and everything else: the same words whatever the tone.
-  const notMistakes = sweep.filter(([k, f]) => !['incident', 'penalty'].includes(k) && !(k === 'positionChange' && f.gained === false));
+  const isMistake = ([k, f]) =>
+    ['incident', 'penalty', 'trackLimits'].includes(k) ||
+    (k === 'positionChange' && f.gained === false) ||
+    ((k === 'qualiLap' || k === 'practiceLap') && f.verdict === 'deleted');
+  const notMistakes = sweep.filter((e) => !isMistake(e));
   const touched = notMistakes.filter(([k, f]) => [0, 1, 2].some((v) => say(k, f, 'savage', v) !== say(k, f, 'clean', v)));
   check('flags, fuel, blue flags and the rest are never roasted', touched.length === 0, touched.map(([k]) => k).join(',') || `${notMistakes.length} fact sets clean`);
 

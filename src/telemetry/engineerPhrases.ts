@@ -75,6 +75,44 @@ function spokenPosition(cue: EngineerCue): string | null {
   return overall !== undefined ? `P${overall}` : null;
 }
 
+/**
+ * One track-limits charge as the radio says it. LMU charges in quarter points,
+ * and "nought point two five" is three words of noise for "a quarter".
+ */
+function speakableCharge(pts: number): string {
+  if (pts === 0.25) return 'a quarter point';
+  if (pts === 0.5) return 'half a point';
+  if (pts === 0.75) return 'three quarters';
+  if (pts === 1) return 'a full point';
+  return `${+pts.toFixed(2)} points`;
+}
+
+/**
+ * The track-limits call's facts, read once for every tone: what the cut cost
+ * ("a quarter point — "), the running total ("2.5 of 5"), and how close the
+ * drive-through is. `near` = within one point of the allowance; `gone` = at or
+ * past it (the penalty line normally leads that cue instead).
+ */
+function limitsFacts(f: Readonly<Record<string, string | number | boolean>>): {
+  cost: string;
+  tally: string;
+  near: boolean;
+  gone: boolean;
+} | null {
+  const points = num(f.points);
+  if (points === undefined) return null;
+  const charge = num(f.charge);
+  const limit = num(f.pointsLimit);
+  const total = `${+points.toFixed(2)}`;
+  const left = limit !== undefined ? limit - points : undefined;
+  return {
+    cost: charge !== undefined ? speakableCharge(charge) : 'points charged',
+    tally: limit !== undefined ? `${total} of ${+limit.toFixed(2)}` : `${total} points`,
+    near: left !== undefined && left > 0 && left <= 1,
+    gone: left !== undefined && left <= 0,
+  };
+}
+
 /** The lead trigger's sentence. Returns null only for a kind with no words yet. */
 function leadSentence(
   cue: EngineerCue,
@@ -250,6 +288,23 @@ function leadSentence(
           ? [`Penalty — ${type}.`, `Stewards have given us a ${type}.`, `That's a penalty — ${type}. We'll deal with it.`]
           : ['Penalty from race control.', "Stewards' decision against us — penalty."],
       );
+    }
+
+    case 'trackLimits': {
+      const t = limitsFacts(f);
+      if (!t) return null;
+      if (t.gone) return pick(v, [`Track limits — ${t.tally}. That's the allowance gone.`]);
+      if (t.near) {
+        return pick(v, [
+          `Track limits, ${t.cost}. ${t.tally} — one more and it's a penalty.`,
+          `That cut cost ${t.cost}. ${t.tally} now — you're on the limit.`,
+        ]);
+      }
+      return pick(v, [
+        `Track limits — ${t.cost}. That's ${t.tally}.`,
+        `Cut charged, ${t.cost}. ${t.tally} points now.`,
+        `That cut cost ${t.cost}. ${t.tally} — keep it tidy.`,
+      ]);
     }
 
     case 'penaltyServed':
@@ -550,13 +605,14 @@ export type RadioTone = 'clean' | 'banter' | 'savage';
 export const RADIO_TONES: readonly RadioTone[] = ['clean', 'banter', 'savage'];
 
 /**
- * The mature line for a driver's MISTAKE, or null to say the clean one. Only
- * three kinds are mistakes the trigger layer can see today — damage, a penalty,
- * a lost place — and every line here still carries the clean line's facts
- * (severity, repair time, penalty type, the new position): the roast rides on
- * the information, it never replaces it. Same ≤ {@link MAX_SPOKEN_WORDS} rule.
+ * The mature line for a driver's MISTAKE, or null to say the clean one. The
+ * mistakes the trigger layer can see: damage, a penalty, a lost place, a
+ * track-limits charge and a lap deleted for limits. Every line here still
+ * carries the clean line's facts (severity, repair time, penalty type, the new
+ * position, the points): the roast rides on the information, it never
+ * replaces it. Same ≤ {@link MAX_SPOKEN_WORDS} rule.
  */
-function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number): string | null {
+function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone: boolean): string | null {
   if (tone === 'clean') return null;
   const savage = tone === 'savage';
   const f = lead.facts;
@@ -628,6 +684,39 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number): stri
       );
     }
 
+    case 'trackLimits': {
+      const t = limitsFacts(f);
+      if (!t || t.gone) return null; // the allowance gone is the penalty's line
+      if (t.near) {
+        return pick(
+          v,
+          savage
+            ? [`Track limits — ${t.tally}. One more fucking cut and it's a penalty.`, `Track limits, ${t.cost}. ${t.tally}. Are you trying to get penalised?`]
+            : [`Track limits — ${t.tally}. One more and it's a penalty. Behave.`, `Track limits, ${t.cost}. ${t.tally}. Living dangerously, mate.`],
+        );
+      }
+      return pick(
+        v,
+        savage
+          ? [`Track limits — ${t.cost}. ${t.tally}. Stay on the fucking track.`, `Cut charged, ${t.cost}. ${t.tally}. Can you not see the lines?`, `Cut charged — ${t.cost}. ${t.tally}. Stop cutting, you muppet.`]
+          : [`Track limits — ${t.cost}. ${t.tally}. Stay on the bloody track.`, `Cut charged, ${t.cost}. ${t.tally}. The white lines aren't decoration.`, `That cut cost ${t.cost}. ${t.tally}. Use the road, mate.`],
+      );
+    }
+
+    // A lap deleted for track limits in practice or qualifying — only when it
+    // is the whole call (alone): a bundle with the grid or the clock keeps the
+    // session phrasing, which already fits two facts in the line.
+    case 'qualiLap':
+    case 'practiceLap': {
+      if (!alone || f.verdict !== 'deleted') return null;
+      return pick(
+        v,
+        savage
+          ? ["Lap's deleted — track limits. Fucking pointless lap, that.", "That one's deleted. Track limits, you absolute weapon.", 'Track limits — lap deleted. Shit. Go again.']
+          : ["Lap's deleted — track limits. Bloody hell.", "That one's deleted, track limits. What a waste.", 'Track limits — lap deleted. Use the road next time.'],
+      );
+    }
+
     default:
       return null;
   }
@@ -680,7 +769,7 @@ export function phraseForCue(
   // replay reads the same radio every run.
   const v = variant ?? (Math.imul(Math.floor(cue.atMs / 200), 2654435761) >>> 13);
   const hasAddon = cue.triggers.slice(1).some((t) => addonFor(t.kind) !== null);
-  const rude = hasAddon ? null : matureSentence(lead, tone, v);
+  const rude = hasAddon ? null : matureSentence(lead, tone, v, cue.triggers.length === 1);
   if (rude) return rude;
   const said = leadSentence(cue, lead, frame, v);
   if (!said) return null;
