@@ -141,6 +141,9 @@ const PANEL_CONTRACT = {
   'eng-voice-reclaim-btn': 'button',
   // Radio etiquette (2026-10-02): the "Only talk on straights" switch.
   'eng-straights': 'input:checkbox',
+  // Mature radio (2026-10-08): off by default, so an unwired picker would
+  // look fine — and quietly leave a driver who chose Savage on clean.
+  'eng-tone': 'select',
 
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop
