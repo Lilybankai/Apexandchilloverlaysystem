@@ -34,7 +34,7 @@
   const readoutsHint = $('#eng-readouts-hint');
   const paceReminder = $('#eng-pace-reminder');
   const straights = $('#eng-straights');
-  const tone = $('#eng-tone');
+  const toneSelect = $('#eng-tone'); // not `tone`: render() has its own
   const toneHint = $('#eng-tone-hint');
   const volume = $('#eng-volume');
   const volumeEcho = $('#eng-volume-echo');
@@ -85,7 +85,7 @@
   };
 
   function renderToneHint() {
-    if (tone && toneHint) toneHint.textContent = TONE_HINTS[tone.value] || TONE_HINTS.clean;
+    if (toneSelect && toneHint) toneHint.textContent = TONE_HINTS[toneSelect.value] || TONE_HINTS.clean;
   }
 
   /** What a driver would call each intent — keys mirror engineerCommands.ts. */
@@ -353,7 +353,7 @@
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
     if (straights && typeof s.onlyStraights === 'boolean') straights.checked = s.onlyStraights;
-    if (tone && s.radioTone && tone.value !== s.radioTone) tone.value = s.radioTone;
+    if (toneSelect && s.radioTone && toneSelect.value !== s.radioTone) toneSelect.value = s.radioTone;
     renderToneHint();
     if (
       typeof s.practicePaceReminderLaps === 'number' &&
@@ -599,10 +599,10 @@
       void api.updateSettings({ engineer: { onlyStraights: straights.checked } });
     });
   }
-  if (tone) {
-    tone.addEventListener('change', () => {
+  if (toneSelect) {
+    toneSelect.addEventListener('change', () => {
       renderToneHint();
-      void api.updateSettings({ engineer: { radioTone: tone.value } });
+      void api.updateSettings({ engineer: { radioTone: toneSelect.value } });
     });
   }
   paceReminder.addEventListener('change', () => {
