@@ -154,8 +154,12 @@ const SLOW_MIN_RECEIVED = 10;
  * Episodes are logged when they start and when they end, with the duration,
  * so a freeze that heals itself leaves exactly two lines and one that does
  * not leaves the line that says what it was.
+ *
+ * `label` heads every line. The race layer keeps the default, so its lines read
+ * exactly as before; the training layer passes `TRAINING`, so a log can tell
+ * which window it was.
  */
-function createLayerDiagnosis() {
+function createLayerDiagnosis({ label = 'LAYER' } = {}) {
   let lastReportAt = 0;
   /** Current episode: null, or `{ kind, since }`. */
   let episode = null;
@@ -188,18 +192,18 @@ function createLayerDiagnosis() {
       lastReportAt = sentAt;
       if (late >= BLOCKED_FLOOR_MS && facts.visible) {
         const worst = r.worstWidget ? ` worst=${r.worstWidget}/${r.worstMs}ms` : '';
-        lines.push(`LAYER STALL ${late}ms blocked${worst} long=${r.longMs}ms`);
+        lines.push(`${label} STALL ${late}ms blocked${worst} long=${r.longMs}ms`);
       }
       const kind = classify(r, facts);
       const counts = `received=${r.received} painted=${r.painted} page=${r.visibility}`;
       if (episode && episode.kind !== kind) {
-        lines.push(`LAYER ${episode.kind} ended after ${now - episode.since}ms`);
+        lines.push(`${label} ${episode.kind} ended after ${now - episode.since}ms`);
         episode = null;
       }
       if (kind && !episode) {
         // The report covers the second just gone, so that is when it started.
         episode = { kind, since: now - REPORT_MS };
-        lines.push(`LAYER ${kind} (${counts})`);
+        lines.push(`${label} ${kind} (${counts})`);
       }
       return lines;
     },

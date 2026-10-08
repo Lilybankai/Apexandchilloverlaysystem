@@ -91,9 +91,11 @@ import {
   type LapValidity,
 } from './paceDelta';
 import { referenceCredit, referenceFor, scoreLap } from './referencePace';
-import { LapRecorder, appendLap, conditionOf, type LapRecord, type TrackCondition } from './lapLog';
-import { ghostGap, setPublishedGhost, type GhostLap } from './ghostLap';
-import { loadBestGhost } from './ghostStore';
+import { LapRecorder, appendLap, conditionOf, type LapRecord } from './lapLog';
+import { ghostGap, setPublishedGhost } from './ghostLap';
+import type { GhostReference } from './ghostReference';
+import { GhostSelector } from './ghostSelector';
+import { CornerTracker } from './cornerTracker';
 import { begin as stallBegin, end as stallEnd, around as stallAround } from './stallMark';
 import { StopRecorder, appendStop } from './stopLog';
 import { fingerprintGarageData } from './setupFingerprint';
@@ -531,20 +533,24 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   private readonly paceDelta = new LocalPaceDeltaTracker();
   /**
-   * The lap Ghost HUD is chasing, and the combo it was chosen for.
+   * The lap Ghost HUD is chasing, chosen for the combo being driven.
    *
-   * Loaded from disk on a combo change and never on the hot path: picking it
-   * reads the lap database and one trace file, which is milliseconds but not
-   * something to do thirty times a second. Per frame it costs two binary
-   * searches over the chosen curve.
+   * Loaded asynchronously, beside the poll loop and never inside it, and only
+   * while something is showing the ghost ({@link setGhostWanted}). Per frame
+   * it costs a key compare plus two binary searches over the chosen curve.
    *
    * Default behaviour with no UI yet: chase your own fastest clean lap for
    * this car class, circuit and surface. That IS the agreed "auto-record,
    * keep fastest" behaviour, and it needs no recording and no pruning —
-   * every lap is already on disk.
+   * every lap is already on disk. See `ghostSelector.ts`.
    */
-  private ghostLap: GhostLap | null = null;
-  private ghostKey = '';
+  private readonly ghost = new GhostSelector({ publish: setPublishedGhost });
+  /**
+   * The live lap scored corner by corner against {@link ghost}, for the
+   * training widgets. Driven only while a ghost is being chased; a few
+   * numbers of state, O(1) a tick. See `cornerTracker.ts`.
+   */
+  private readonly ghostCorners = new CornerTracker();
   /** The delta engine's distance axis — see {@link RoadPosition}. */
   private readonly roadPos = new RoadPosition();
   /** Accumulated seconds on the spectated delta clock — see {@link stepDeltaClock}. */
@@ -997,6 +1003,23 @@ export class LmuRestProvider implements TelemetryProvider {
 
   public isConnected(): boolean {
     return this.live;
+  }
+
+  /**
+   * Whether anything is showing Ghost HUD. While it is not, no ghost is chosen
+   * and the lap store is never read; see `GhostSelector.setWanted`.
+   */
+  public setGhostWanted(on: boolean): void {
+    this.ghost.setWanted(on);
+  }
+
+  /**
+   * A lap chosen in the Training tab for Ghost HUD to chase instead of the
+   * local best, or `null` for the local best. Used only while the combo being
+   * driven is the one it was fetched for; see `GhostSelector.setReference`.
+   */
+  public setGhostReference(ref: GhostReference | null): void {
+    this.ghost.setReference(ref);
   }
 
   public stop(): void {
@@ -1918,9 +1941,19 @@ export class LmuRestProvider implements TelemetryProvider {
       // see `paceDelta.lapClock`. A mid-lap join therefore places no ghost,
       // rather than placing one against a clock that started wherever the
       // car happened to be.
-      this.syncGhost(si.trackName || '', trackLen, playerCar?.carClass, si.maxPathWetness);
+      this.syncGhost(si.trackName || '', trackLen, playerCar?.carClass, si.maxPathWetness, nowMs);
       const ghostAt = this.paceDelta.lapClock();
-      ghost = ghostAt ? ghostGap(this.ghostLap, ghostAt.t, ghostAt.d) : undefined;
+      ghost = ghostAt ? ghostGap(this.ghost.lap, ghostAt.t, ghostAt.d) : undefined;
+      if (ghost && ghostAt && this.ghost.lap) {
+        const corner = this.ghostCorners.update(
+          this.ghost.lap,
+          ghostAt.d,
+          ghost.active ? ghost.gapSec : NaN,
+          local!.brake,
+          local!.speedKph,
+        );
+        if (corner) ghost.corner = corner;
+      }
 
       // The single-value Delta widget mirrors the pace widget's session-best
       // Delta T so both agree; fall back to the REST tracker until it arms.
@@ -1934,6 +1967,9 @@ export class LmuRestProvider implements TelemetryProvider {
       paceDeltas = restDeltas;
       deltaSec = restDeltas.tSession;
     }
+    // No ghost placed this tick (spectating, none chosen, no line crossing
+    // yet): whatever the tracker held describes a lap that is not running.
+    if (!ghost) this.ghostCorners.reset();
     // Which LAYOUT is loaded — read before the pace score, which cannot resolve
     // Monza, Le Mans, Fuji or Paul Ricard without it.
     this.refreshSimTrackName(session.track, nowMs);
@@ -3266,17 +3302,16 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   /**
-   * Keep {@link ghostLap} pointed at the right lap for the combo being driven.
+   * Keep {@link ghost} pointed at the right lap for the combo being driven.
    *
    * Keyed on the same identity the lap database ranks bests by, so the key
-   * built here and the `trackKey` written on every lap come from one
-   * function (`trackKeyOf`) and cannot drift apart.
+   * built here and the `trackKey` and `carClass` written on every lap come
+   * from the same functions (`trackKeyOf`, `normalizeClass`) and cannot drift
+   * apart. The class MUST be normalised: LMU says "Hyper", every lap record
+   * says "HYPERCAR", and the raw name found no ghost for any Hypercar.
    *
-   * The disk read — the lap database plus one trace file — happens only when
-   * that key changes: a new circuit, a different class, or the surface
-   * crossing one of `conditionOf`'s bands. A steady-state poll does nothing
-   * here. It is wrapped because a poll loop must never take an exception
-   * from a missing or half-written file.
+   * No I/O happens here. A changed key starts an asynchronous load and a
+   * steady-state poll does nothing; with the ghost not wanted, not even that.
    *
    * Surface changes mid-session do reload, and that is the intent: a dry
    * reference is the wrong thing to chase once it rains. `maxPathWetness`
@@ -3285,29 +3320,20 @@ export class LmuRestProvider implements TelemetryProvider {
   private syncGhost(
     trackName: string,
     trackLenM: number,
-    carClass: string | undefined,
+    rawClass: string | undefined,
     wetness: number | undefined,
+    nowMs: number,
   ): void {
+    const carClass = normalizeClass(rawClass);
     if (!carClass || trackLenM <= 0) {
-      this.ghostLap = null;
-      this.ghostKey = '';
-      setPublishedGhost(null);
+      this.ghost.sync(null, nowMs);
       return;
     }
     const trackKey = trackKeyOf(trackName, trackLenM);
-    const condition: TrackCondition = conditionOf(wetness);
-    const key = `lmu|${trackKey}|${carClass}|${condition}`;
-    if (key === this.ghostKey) return;
-    this.ghostKey = key;
-    try {
-      this.ghostLap = loadBestGhost({ sim: 'lmu', trackKey, carClass, condition });
-    } catch {
-      this.ghostLap = null;
-    }
-    // The widget fetches the line over HTTP, keyed on the lap id it sees on
-    // the frame — so this must be published in the same breath as the
-    // selection changes, or the two disagree for a poll.
-    setPublishedGhost(this.ghostLap);
+    this.ghost.sync(
+      { sim: 'lmu', trackKey, carClass, condition: conditionOf(wetness), trackLengthM: trackLenM },
+      nowMs,
+    );
   }
 
   private buildPlayer(
@@ -3929,6 +3955,8 @@ export class LmuRestProvider implements TelemetryProvider {
     if (lap) {
       appendLap(lap);
       this.attachTrace(lap);
+      // After the trace is on disk, so a re-check this triggers can read it.
+      this.ghost.noteLap(lap);
     }
   }
 

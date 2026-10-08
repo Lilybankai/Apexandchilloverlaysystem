@@ -61,6 +61,8 @@
  * this module stays testable headlessly — see `scripts/test-ghostlap.js`.
  */
 
+import { brakePoints } from './brakePoints';
+import { findCorners, type Corner } from './corners';
 import { interpDist, interpTime, type Sample } from './paceDelta';
 import type { TraceFile } from './lapTrace';
 import { UNKNOWN_VALUE, type GhostState } from './types';
@@ -126,6 +128,40 @@ export interface GhostLap {
   z?: number[];
   brake?: number[];
   throttle?: number[];
+  /**
+   * The rest of the inputs, for a training view that shows what the hands and
+   * feet did: steering (-1..1 of lock), gear, and speed in km/h. Each is
+   * present only when the stored trace carries it, filtered by the same pass
+   * as the line.
+   */
+  steer?: number[];
+  gear?: number[];
+  speedKph?: number[];
+  /**
+   * Where each braking zone begins, computed once when the ghost is built —
+   * never per frame or per request. Absent when the lap has no brake channel.
+   * See `brakePoints.ts`.
+   */
+  brakes?: GhostBrake[];
+  /**
+   * The lap cut into corners, computed once when the ghost is built. Absent
+   * when the lap has no speed channel. See `corners.ts`.
+   */
+  corners?: Corner[];
+  /**
+   * Where the sim's S1 and S2 lines fell on this lap, as lap fractions, so a
+   * sector readout can split the reference at the real sector lines rather
+   * than learn them from a live car crossing them. Absent when the lap record
+   * carried no sector times (an invalidated lap, an older trace).
+   */
+  sectorD?: [number, number];
+}
+
+/** One braking point on the ghost's lap. `x`/`z` are `null` without a line. */
+export interface GhostBrake {
+  d: number;
+  x: number | null;
+  z: number | null;
 }
 
 /** Whether this ghost can be drawn on the road, as opposed to only counted. */
@@ -228,19 +264,75 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
 
   const first = trace[0]!;
   const last = trace[trace.length - 1]!;
-  return {
+  const brake = pick(tr.brake);
+  const throttle = pick(tr.throttle);
+  const steer = pick(tr.steer);
+  const gear = pick(tr.gear);
+  const speedKph = pick(tr.speedKph);
+  // Position is all-or-nothing: half a line is worse than none, because the
+  // drawn half would look authoritative.
+  const line = x && z ? { x, z } : {};
+  const lap: GhostLap = {
     trace,
     lapSec,
     trackLengthM,
     lapId: String(file.lapId || ''),
     label,
     full: first.d <= FULL_LAP_EDGE && last.d >= 1 - FULL_LAP_EDGE,
-    // Position is all-or-nothing: half a line is worse than none, because the
-    // drawn half would look authoritative.
-    ...(x && z ? { x, z } : {}),
-    ...(pick(tr.brake) ? { brake: pick(tr.brake) } : {}),
-    ...(pick(tr.throttle) ? { throttle: pick(tr.throttle) } : {}),
+    ...line,
+    ...(brake ? { brake } : {}),
+    ...(throttle ? { throttle } : {}),
+    ...(steer ? { steer } : {}),
+    ...(gear ? { gear } : {}),
+    ...(speedKph ? { speedKph } : {}),
   };
+
+  // Braking points and corners are properties of the LAP, so they are worked
+  // out here, once, from the cleaned columns. Being index-aligned with `trace`,
+  // every position they report sits on the line the widget draws.
+  const d = trace.map((sm) => sm.d);
+  if (brake) {
+    lap.brakes = brakePoints({ d, brake, ...line }, trackLengthM).map((bp) => ({
+      d: round6(bp.d),
+      x: bp.x === null ? null : round2(bp.x),
+      z: bp.z === null ? null : round2(bp.z),
+    }));
+  }
+  const sectorD = sectorLines(trace, lapSec, file.lapMs, file.s1Ms, file.s2Ms);
+  if (sectorD) lap.sectorD = sectorD;
+  if (speedKph) {
+    lap.corners = findCorners(
+      { d, speedKph, ...(brake ? { brake } : {}), ...(throttle ? { throttle } : {}), ...line },
+      trackLengthM,
+    );
+  }
+  return lap;
+}
+
+/**
+ * Where the sim's sector lines fell on a lap, as lap fractions.
+ *
+ * The derivation `lapDetail.sectorMarks` uses, and for its reasons: the
+ * record's `s1Ms`/`s2Ms` are DURATIONS on the sim's clock, so they are summed
+ * into boundary times and scaled onto the trace's own clock by the ratio of
+ * the two lap times before the distance is read off. Redone here on the
+ * cleaned curve rather than imported, so this module stays free of the lap
+ * store's file I/O. `null` rather than a guess when either line cannot be
+ * placed — a sector split at the wrong place misjudges every lap against it.
+ */
+function sectorLines(
+  trace: Sample[],
+  lapSec: number,
+  lapMs: number,
+  s1Ms: number | undefined,
+  s2Ms: number | undefined,
+): [number, number] | null {
+  if (!(lapMs > 0) || !(lapSec > 0) || !(Number(s1Ms) > 0) || !(Number(s2Ms) > 0)) return null;
+  const scale = lapSec / lapMs;
+  const d1 = interpDist(trace, s1Ms! * scale);
+  const d2 = interpDist(trace, (s1Ms! + s2Ms!) * scale);
+  if (!(d1 > 0) || !(d2 > d1) || !(d2 < 1)) return null;
+  return [round6(d1), round6(d2)];
 }
 
 /**
@@ -266,6 +358,7 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
 export function ghostGap(lap: GhostLap | null, t: number, d: number): GhostState | undefined {
   if (!lap) return undefined;
 
+  const dOk = Number.isFinite(d) && d >= 0 && d <= 1;
   const idle: GhostState = {
     active: false,
     gapSec: UNKNOWN_VALUE,
@@ -273,15 +366,19 @@ export function ghostGap(lap: GhostLap | null, t: number, d: number): GhostState
     refLapSec: round2(lap.lapSec),
     sourceLapId: lap.lapId,
     sourceLabel: lap.label,
+    // The driver's own road position, on the same filtered axis the gap is
+    // worked out on. Present even when the gap is not: a surface drawing the
+    // road needs to know where the car is either way.
+    ...(dOk ? { atD: round6(d) } : {}),
   };
   if (lap.trace.length < 2) return idle;
-  if (!Number.isFinite(t) || !Number.isFinite(d) || t < 0 || d < 0 || d > 1) return idle;
+  if (!Number.isFinite(t) || !dOk || t < 0) return idle;
 
-  // Both interpolators answer -1 outside the span the trace covers, which is a
-  // routine state and not a fault: a fragment of a lap, or a driver far enough
-  // off the reference pace that this instant has no counterpart on it.
+  // Both answer -1 outside the span the trace covers, which is a routine state
+  // and not a fault: a fragment of a lap, or a driver far enough off the
+  // reference pace that this instant has no counterpart on it.
   const refT = interpTime(lap.trace, d);
-  const refD = interpDist(lap.trace, t);
+  const refD = ghostDistAt(lap, t);
   if (refT < 0 || refD < 0) return idle;
 
   // Positive = the ghost is up the road. `gapSec` is the same arithmetic as
@@ -304,6 +401,41 @@ export function ghostGap(lap: GhostLap | null, t: number, d: number): GhostState
     gapSec: round4(gapSec),
     gapM: round2(gapM),
   };
+}
+
+/**
+ * How far round the ghost has got `t` seconds into the lap, as a lap fraction.
+ * It may exceed 1, and is `-1` when there is no honest answer.
+ *
+ * Within the trace this is plain {@link interpDist}. The case it exists for is
+ * the end of the lap: a driver slower than the reference is still short of the
+ * line when the reference's lap time runs out, and `interpDist` answers -1
+ * there, so the ghost used to vanish for the last gap-seconds of every lap —
+ * just as the driver closes on the line and most wants to see it. The ghost has
+ * crossed the line and gone on, so it is carried over onto a repeat of its own
+ * lap: first the short run from its last sample to the line, then the start of
+ * the lap again, at 1 + the distance.
+ *
+ * Only a FULL lap wraps. A fragment's end is not the line, and carrying it on
+ * would invent a position for a car that was never recorded there.
+ */
+export function ghostDistAt(lap: GhostLap, t: number): number {
+  const tr = lap.trace;
+  const first = tr[0]!;
+  const last = tr[tr.length - 1]!;
+  if (t <= last.t || !lap.full) return interpDist(tr, t);
+  // Between the last sample and the line: the trace stops a sample short of
+  // d = 1, and the lap's own duration says when the line was reached.
+  if (t <= lap.lapSec) {
+    const span = lap.lapSec - last.t;
+    return span > 0 ? last.d + (1 - last.d) * ((t - last.t) / span) : 1;
+  }
+  // On into the next lap. More than a whole lap behind is no gap the corridor
+  // can draw, and `ghostGap` refuses it on distance anyway.
+  const tw = t - lap.lapSec;
+  if (tw > last.t) return -1;
+  if (tw < first.t) return 1 + (first.t > 0 ? first.d * (tw / first.t) : first.d);
+  return 1 + interpDist(tr, tw);
 }
 
 /* ----------------------------- what HTTP serves --------------------------- */
@@ -332,10 +464,100 @@ export function getPublishedGhost(): GhostLap | null {
   return publishedGhost;
 }
 
+/** A corner as `/ghost.json` serves it. See `corners.ts` for how each is found. */
+export interface GhostJsonCorner {
+  entryD: number;
+  apexD: number;
+  exitD: number;
+  apexX: number | null;
+  apexZ: number | null;
+  minKph: number;
+}
+
+/**
+ * The body of `/ghost.json`: the lap's columns, flattened, index-aligned with
+ * `d`. Every optional array is present only when the stored trace carried it,
+ * so a widget tests for it rather than for a placeholder.
+ */
+export interface GhostJson {
+  lapId: string;
+  label: string;
+  lapSec: number;
+  trackLengthM: number;
+  full: boolean;
+  d: number[];
+  t: number[];
+  /**
+   * The driven line — both or neither, present only when {@link ghostHasLine}.
+   * A lap recorded without one is still served: the selector falls back to
+   * such laps, and the training widgets that need only distance, time and the
+   * inputs (Trace, Lap strip) can use it; Ghost HUD says it has no line.
+   */
+  x?: number[];
+  z?: number[];
+  brake?: number[];
+  throttle?: number[];
+  steer?: number[];
+  gear?: number[];
+  speedKph?: number[];
+  brakes?: GhostBrake[];
+  corners?: GhostJsonCorner[];
+  /** The reference's S1 and S2 lines as lap fractions; see {@link GhostLap.sectorD}. */
+  sectorD?: [number, number];
+}
+
+/**
+ * Shape a ghost for `/ghost.json`, or `null` when no ghost is selected — the
+ * route answers `204` for that. A lap with no driven line is served without
+ * `x`/`z` rather than refused: it used to answer 204 too, which left Trace
+ * and the Lap strip blank for exactly the laps the selector falls back to.
+ *
+ * Flattened to plain columns rather than the in-memory shape: the widget
+ * wants arrays it can index, and `trace` is an array of objects. Corners lose
+ * their sample indices, which point into the server's copy and mean nothing
+ * to anyone else.
+ */
+export function ghostJson(lap: GhostLap | null): GhostJson | null {
+  if (!lap) return null;
+  return {
+    lapId: lap.lapId,
+    label: lap.label,
+    lapSec: lap.lapSec,
+    trackLengthM: lap.trackLengthM,
+    full: lap.full,
+    d: lap.trace.map((s) => s.d),
+    t: lap.trace.map((s) => s.t),
+    ...(ghostHasLine(lap) ? { x: lap.x!, z: lap.z! } : {}),
+    ...(lap.brake ? { brake: lap.brake } : {}),
+    ...(lap.throttle ? { throttle: lap.throttle } : {}),
+    ...(lap.steer ? { steer: lap.steer } : {}),
+    ...(lap.gear ? { gear: lap.gear } : {}),
+    ...(lap.speedKph ? { speedKph: lap.speedKph } : {}),
+    ...(lap.brakes ? { brakes: lap.brakes } : {}),
+    ...(lap.corners
+      ? {
+          corners: lap.corners.map((c) => ({
+            entryD: round6(c.entryD),
+            apexD: round6(c.apexD),
+            exitD: round6(c.exitD),
+            apexX: c.apexX,
+            apexZ: c.apexZ,
+            minKph: c.minKph,
+          })),
+        }
+      : {}),
+    ...(lap.sectorD ? { sectorD: lap.sectorD } : {}),
+  };
+}
+
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
 function round4(v: number): number {
   return Math.round(v * 10000) / 10000;
+}
+
+function round6(v: number): number {
+  return Math.round(v * 1e6) / 1e6;
 }

@@ -293,6 +293,15 @@ const PANEL_CONTRACT = {
   'overlay-list': 'ul',
   'combined-url': 'input:text',
 
+  // Training tab — the training layer's own widget cards, its status line and
+  // its layout button. Contracted because the whole tab is hidden outside
+  // Training mode on beta: a broken id here looks exactly like the tab
+  // correctly staying away.
+  'training-widget-list': 'ul',
+  'training-edit-btn': 'button',
+  'training-status': 'p',
+  'training-gpu-note': 'p',
+
   // Streamers tab — account linking (moved here from Overlays) + StreamBot
   'streamers-seg': 'nav',
   'streamers-widget-list': 'ul',
@@ -1000,6 +1009,9 @@ verifyPage({
     // to this scanner, which is why the painters live in their own file.
     'review-panel.js',
     'review-guide.js',
+    // The Practice tab: the Review frame with its own ids (pr-*) and no
+    // painters of its own — it draws with review-charts.js.
+    'practice-panel.js',
     // The VR tab's walkthrough; the tab's controls themselves live in
     // control-panel.js with the rest of the settings.
     'vr-guide.js',

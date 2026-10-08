@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex AIO — Training Overlays</title>
+
+  <!--
+    The training layer.
+    Loaded ONLY by the desktop app, into a second transparent, click-through,
+    always-on-top window of its own (electron/trainingLayer.js) — and only while
+    Training mode is on in a practice session. The race overlays are on
+    ingame.html, in a different window and a different renderer, and never load
+    anything below.
+
+    The page is ingame.html cut down to the training widgets: the same shells,
+    the same runtime and the same layout manager (js/ingame.js), told which layer
+    it is by ?layer=training. Main passes ?widgets=… as for the race layer.
+
+    It reads the ordinary /ws feed. A training channel of its own would be
+    ?path=/ws/training — js/client.js already honours `path` — and nothing here
+    would change.
+  -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/overlay.css" />
+  <link rel="stylesheet" href="css/ingame.css" />
+  <link rel="stylesheet" href="css/training.css" />
+  <link rel="stylesheet" href="css/training-lap.css" />
+  <link rel="stylesheet" href="css/training-corner.css" />
+  <link rel="stylesheet" href="css/training-telemetry.css" />
+  <link rel="stylesheet" href="css/training-coach.css" />
+  <link rel="stylesheet" href="css/training-brake.css" />
+  <link rel="stylesheet" href="css/training-ghost.css" />
+
+  <!-- Widget-background opacity and text scale, pushed over the bridge. -->
+  <script src="js/appearance.js"></script>
+  <!-- Canvas backing-store scale (see js/raster.js); Ghost HUD is a canvas. -->
+  <script src="js/raster.js"></script>
+</head>
+<body class="ingame">
+  <!-- Screen outlines in edit mode (js/ingame.js); before the stage so the
+       widgets draw over them. -->
+  <div class="ig-screens" id="ig-screens" aria-hidden="true"></div>
+
+  <div id="ig-stage"></div>
+
+  <!-- Edit-mode chrome (hidden while locked). -->
+  <div class="ig-toolbar" id="ig-toolbar" hidden>
+    <img class="ig-toolbar__brand" src="img/apex-aio-icon.svg" alt="" />
+    <span class="ig-toolbar__text">
+      Editing training overlays — drag to move · side edge = width · top/bottom
+      edge = height · corner = scale (double-click a handle to reset it)
+    </span>
+    <button class="ig-btn ig-btn--ghost" id="ig-reset" type="button">Reset</button>
+    <button class="ig-btn" id="ig-done" type="button">Done</button>
+  </div>
+
+  <!-- js/ingame.js wires these; the training layer has no interact mode, so
+       the banner simply never shows. -->
+  <div class="ig-interact-hint" id="ig-interact-hint" hidden>
+    <span class="ig-toolbar__text"></span>
+    <button class="ig-btn" id="ig-interact-done" type="button">Done</button>
+  </div>
+
+  <script src="js/shells.js"></script>
+  <!-- The training widgets' shells: a file of their own, so ingame.html can never offer them. -->
+  <script src="js/training-shells.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      // Training widgets only, as training-shells.js lists them. A race
+      // widget's shell would have no script on this page to drive it, so it
+      // is not offered here at all.
+      var TRAINING = window.ApexTrainingWidgets || [];
+      var params = new URLSearchParams(window.location.search);
+      var wanted = (params.get("widgets") || "")
+        .split(",")
+        .map(function (s) { return s.trim().toLowerCase(); })
+        .filter(function (s) { return TRAINING.indexOf(s) !== -1 && !!window.ApexShells[s]; });
+      if (wanted.length === 0) wanted = TRAINING.slice();
+
+      // The same six resize handles as ingame.html.
+      var handles =
+        '<div class="ig-item__handle ig-item__handle--e" data-resize="width"' +
+        ' title="Drag to set width — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--w" data-resize="width-w"' +
+        ' title="Drag to set width — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--s" data-resize="height"' +
+        ' title="Drag to set height — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--n" data-resize="height-n"' +
+        ' title="Drag to set height — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--se" data-resize="scale"' +
+        ' title="Drag to scale — double-click to reset"></div>' +
+        '<div class="ig-item__handle ig-item__handle--nw" data-resize="scale-nw"' +
+        ' title="Drag to scale — double-click to reset"></div>';
+      var html = "";
+      for (var i = 0; i < wanted.length; i++) {
+        html +=
+          '<div class="ig-item" data-id="' + wanted[i] + '">' +
+          window.ApexShells[wanted[i]] +
+          handles +
+          "</div>";
+      }
+      document.getElementById("ig-stage").innerHTML = html;
+    })();
+  </script>
+
+  <script src="js/client.js" defer></script>
+  <!-- The training widgets' maths, then the one shared /ghost.json fetch, then
+       the widgets: each module is read by the widgets after it at load. The
+       same order in widget.html (scripts/test-training-layer.js holds both). -->
+  <script src="js/ghost-geom.js" defer></script>
+  <!-- The interpolated pose Ghost HUD and Trace paint from. -->
+  <script src="js/ghost-pose.js" defer></script>
+  <script src="js/training-trace.js" defer></script>
+  <script src="js/training-laps.js" defer></script>
+  <script src="js/training-ghost.js" defer></script>
+  <script src="js/widgets/ghosthud.js" defer></script>
+  <script src="js/widgets/traininginputs.js" defer></script>
+  <script src="js/widgets/trainingcorner.js" defer></script>
+  <script src="js/widgets/trainingsectors.js" defer></script>
+  <script src="js/widgets/trainingcoach.js" defer></script>
+  <script src="js/widgets/trainingbrake.js" defer></script>
+  <!-- Layout + edit-mode manager, last: it operates on the wrappers above. -->
+  <script src="js/ingame.js" defer></script>
+</body>
+</html>

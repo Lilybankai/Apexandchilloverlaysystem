@@ -200,5 +200,46 @@ console.log('\nlayer diagnosis: the log says which kind of freeze it was');
   );
 }
 
+console.log('\nlayer-watch: the training layer has a watch of its own');
+{
+  // The race layer and the training layer each own one watch and one
+  // diagnosis (main.js, electron/trainingLayer.js). Nothing is shared, so a
+  // frozen training layer spends its own budget and never the race layer's.
+  const race = createLayerWatch();
+  const training = createLayerWatch();
+  race.painted(0);
+  training.painted(0);
+  const tr = run(training, 2000, QUIET_MS + 2000);
+  const rc = run(race, 2000, QUIET_MS + 2000, LIVE, 1000);
+  check(
+    'a frozen training layer is reloaded while a painting race layer is left alone',
+    tr.length === 1 && tr[0].action === 'reload' && rc.length === 0,
+    `training=${tr.map((a) => a.action)} race=${rc.map((a) => a.action)}`,
+  );
+  const tr2 = run(training, QUIET_MS + 4000, QUIET_MS * 2 + 4000);
+  const rcFrozen = run(race, QUIET_MS + 4000, QUIET_MS * 2 + 4000);
+  check(
+    "the training layer's escalation does not move the race layer's",
+    tr2.length === 1 && tr2[0].action === 'recreate' &&
+      rcFrozen.length === 1 && rcFrozen[0].action === 'reload',
+    `training=${tr2.map((a) => a.action)} race=${rcFrozen.map((a) => a.action)}`,
+  );
+
+  const ON = { visible: true, feedLive: true };
+  const stalled = { received: 30, painted: 0, worstMs: 1, worstWidget: '', longMs: 0, visibility: 'visible' };
+  const raceLines = createLayerDiagnosis().report(5000, stalled, ON);
+  const trainingLines = createLayerDiagnosis({ label: 'TRAINING' }).report(5000, stalled, ON);
+  check(
+    'race diagnosis lines read exactly as before (LAYER …)',
+    raceLines.length === 1 && raceLines[0] === 'LAYER not drawing (received=30 painted=0 page=visible)',
+    raceLines.join(' | '),
+  );
+  check(
+    'training diagnosis lines say which window (TRAINING …)',
+    trainingLines.length === 1 && trainingLines[0] === 'TRAINING not drawing (received=30 painted=0 page=visible)',
+    trainingLines.join(' | '),
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

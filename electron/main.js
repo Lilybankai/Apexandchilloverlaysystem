@@ -41,6 +41,7 @@ const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
 const lapUpload = require('./lapUpload');
+const trainingReference = require('./trainingReference');
 const usageReporter = require('./usageReporter');
 const featureUsage = require('./featureUsage');
 const chatLink = require('./chatLink');
@@ -60,6 +61,10 @@ const stallWatch = require('./stall-watch');
 // ordering is the guarantee, so it stays at the top rather than in whenReady.
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
+const { createTrainingGate, sessionOfFrame } = require('./trainingGate');
+const { createPracticeWatch } = require('./practiceSession');
+const { createTrainingLayer, layerOfSender } = require('./trainingLayer');
+const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
@@ -121,17 +126,6 @@ const OVERLAY_CATALOG = [
   { id: 'relative', label: 'Relative / Timing', description: 'Nearest cars, live delta' },
   { id: 'delta', label: 'Delta', description: 'Live gap to your best lap' },
   { id: 'pacedelta', label: 'Pace Delta', description: 'Δt + Δv vs session/all-time/last (Pacelogic-style)' },
-  // Training-mode widget: a perspective corridor with a gate where a chosen
-  // reference lap is on the road. Kept out of the click-through layer's
-  // defaults because it is a deliberate training tool, not race furniture.
-  {
-    id: 'ghosthud',
-    label: 'Ghost HUD',
-    gated: 'beta',
-    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
-    ingameDefault: false,
-    obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
-  },
   {
     id: 'refpace',
     label: 'Reference Pace',
@@ -261,6 +255,83 @@ const OVERLAY_CATALOG = [
   },
 ];
 
+/**
+ * The training widgets. Drawn by their OWN window (the training layer), never
+ * the race layer above, and only while Training mode is on in a practice
+ * session — see electron/trainingGate.js. Their on/off lives in
+ * `trainingOverlays` and their placement in `trainingLayout`, so nothing here
+ * can reach a race.
+ *
+ * Same entry shape as OVERLAY_CATALOG, so the Overlays card builder renders
+ * them unchanged: `group: 'training'` mounts the cards in the Training tab the
+ * way 'streaming' mounts chat in the Streamers tab. `ingameDefault: false`
+ * means off on the training layer until the driver switches it on.
+ */
+const TRAINING_CATALOG = [
+  {
+    id: 'ghosthud',
+    label: 'Ghost HUD',
+    gated: 'beta',
+    group: 'training',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    ingameDefault: false,
+    obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
+  },
+  {
+    id: 'traininginputs',
+    label: 'Telemetry',
+    gated: 'beta',
+    group: 'training',
+    description: 'Throttle, brake, speed and the gap against the reference lap by distance — with its next braking zone coming',
+    ingameDefault: false,
+    obs: { w: 830, h: 418 },
+  },
+  {
+    id: 'trainingcorner',
+    label: 'Corner Analysis',
+    gated: 'beta',
+    group: 'training',
+    description: 'How the corner you just left went against the reference: time, speed through it, and what to change',
+    ingameDefault: false,
+    obs: { w: 430, h: 352 },
+  },
+  {
+    id: 'trainingsectors',
+    label: 'Lap Strip',
+    gated: 'beta',
+    group: 'training',
+    description: 'Sectors against the reference, and every corner of the lap coloured by time won or lost',
+    ingameDefault: false,
+    obs: { w: 800, h: 136 },
+  },
+  {
+    id: 'trainingcoach',
+    label: 'Coach',
+    gated: 'beta',
+    group: 'training',
+    description: 'Your pedals, speed and gear against the reference right now, with the last few seconds of inputs',
+    ingameDefault: false,
+    obs: { w: 660, h: 236 },
+  },
+  {
+    id: 'trainingbrake',
+    label: 'Brake Cue',
+    gated: 'beta',
+    group: 'training',
+    description: 'A red light that comes on at the reference lap’s braking point',
+    ingameDefault: false,
+    obs: { w: 360, h: 84 },
+  },
+];
+const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);
+
+/**
+ * Every widget the app has, race layer then training layer. For questions about
+ * a widget EXISTING — its OBS source, its background override, what the usage
+ * counters list — rather than about which window draws it.
+ */
+const ALL_WIDGETS = [...OVERLAY_CATALOG, ...TRAINING_CATALOG];
+
 /* -------------------------------------------------------------------------- */
 /*  Persisted settings                                                        */
 /* -------------------------------------------------------------------------- */
@@ -277,6 +348,13 @@ function defaultSettings() {
   for (const o of OVERLAY_CATALOG) {
     enabledOverlays[o.id] = true;
     ingameOverlays[o.id] = o.ingameDefault !== false;
+  }
+  // Training widgets are OBS sources like any other, so they keep an OBS
+  // switch; their on-screen switch is in the training map, not the race one.
+  const trainingOverlays = {};
+  for (const o of TRAINING_CATALOG) {
+    enabledOverlays[o.id] = true;
+    trainingOverlays[o.id] = o.ingameDefault !== false;
   }
   return {
     /*
@@ -351,6 +429,16 @@ function defaultSettings() {
     // mileage on it.
     ingameMagneticDock: false,
     ingameOverlays,
+    // Training mode: the Race/Training switch in the top bar. Main owns it,
+    // because main decides whether the training layer exists (trainingGate.js);
+    // the panel's localStorage copy only paints the switch before this arrives.
+    // Off by default — the training layer costs more than the race one.
+    trainingMode: false,
+    // The training layer's own widget switches and placement, shaped exactly
+    // like ingameOverlays / ingameLayout. Kept apart from them so a race never
+    // draws a training widget, whatever the switches say.
+    trainingOverlays,
+    trainingLayout: {},
     // The VR headset panel: on/off plus where it sits in the seated space, in
     // metres. World-locked — see electron/vr/placement.js. Off by default and
     // costs nothing until switched on. Each widget has its own switch and
@@ -702,6 +790,8 @@ function loadSettings() {
   } catch {
     stored = {}; // first run or unreadable — use defaults
   }
+  // Ghost HUD's switch and placement move out of the race maps, once.
+  stored = migrateTrainingSettings(stored, TRAINING_IDS);
   const enabledOverlays = { ...defaults.enabledOverlays };
   const ingameOverlays = { ...defaults.ingameOverlays };
   for (const o of OVERLAY_CATALOG) {
@@ -718,6 +808,21 @@ function loadSettings() {
       const entry = normalizeLayoutEntry(stored.ingameLayout[o.id]);
       if (entry) ingameLayout[o.id] = entry;
     }
+  }
+  const trainingOverlays = { ...defaults.trainingOverlays };
+  const trainingLayout = {};
+  for (const o of TRAINING_CATALOG) {
+    if (stored.enabledOverlays && typeof stored.enabledOverlays[o.id] === 'boolean') {
+      enabledOverlays[o.id] = stored.enabledOverlays[o.id];
+    }
+    if (stored.trainingOverlays && typeof stored.trainingOverlays[o.id] === 'boolean') {
+      trainingOverlays[o.id] = stored.trainingOverlays[o.id];
+    }
+    const entry =
+      stored.trainingLayout && typeof stored.trainingLayout === 'object'
+        ? normalizeLayoutEntry(stored.trainingLayout[o.id])
+        : null;
+    if (entry) trainingLayout[o.id] = entry;
   }
   return {
     httpPort: clamp(stored.httpPort, MIN_PORT, MAX_PORT, defaults.httpPort),
@@ -743,6 +848,10 @@ function loadSettings() {
         : defaults.ingameMagneticDock,
     ingameOverlays,
     ingameLayout,
+    trainingMode:
+      typeof stored.trainingMode === 'boolean' ? stored.trainingMode : defaults.trainingMode,
+    trainingOverlays,
+    trainingLayout,
     vr: normalizeVr(stored.vr),
     engineerEnabled:
       typeof stored.engineerEnabled === 'boolean' ? stored.engineerEnabled : defaults.engineerEnabled,
@@ -799,6 +908,9 @@ function loadSettings() {
       typeof stored.teamActiveId === 'string' && stored.teamActiveId
         ? stored.teamActiveId
         : null,
+    // Training: which lap Ghost HUD chases, per `trackKey|CLASS`. See
+    // electron/trainingReference.js.
+    trainingRefs: trainingReference.normalizeTrainingRefs(stored.trainingRefs),
   };
 }
 
@@ -861,7 +973,7 @@ function normalizeWidgetOpacity(stored) {
   const out = {};
   const from = stored && typeof stored.widgetOpacity === 'object' ? stored.widgetOpacity : null;
   if (!from) return out;
-  for (const o of OVERLAY_CATALOG) {
+  for (const o of ALL_WIDGETS) {
     const v = Number(from[o.id]);
     if (Number.isFinite(v)) out[o.id] = Math.min(100, Math.max(0, Math.round(v)));
   }
@@ -937,6 +1049,11 @@ function reportEnabledOverlays(settings) {
     const ids = OVERLAY_CATALOG.filter(
       (o) => s.enabledOverlays[o.id] !== false || (s.ingameEnabled && isIngame(s, o)),
     ).map((o) => o.id);
+    // Training widgets by the same rule, with Training mode standing in for
+    // "Show in game": it is the training layer's own on switch.
+    for (const o of TRAINING_CATALOG) {
+      if (s.enabledOverlays[o.id] !== false || (s.trainingMode && isTraining(s, o))) ids.push(o.id);
+    }
     featureUsage.overlaysEnabled(ids);
   } catch {
     /* a counter must never be the thing that fails a settings save */
@@ -1131,6 +1248,9 @@ async function startServer() {
   } catch (err) {
     status.running = false;
     status.feed = 'stopped';
+    // A failure after the server came up must take the training layer down
+    // with it, as stopServer does.
+    syncTrainingLayerFenced();
     // Every port we tried was refused. Say which failure it was, because the two
     // have completely different fixes and the raw Node message ("listen EACCES:
     // permission denied 127.0.0.1:8080") tells a driver nothing at all.
@@ -1169,6 +1289,10 @@ async function stopServer() {
   }
   status.running = false;
   status.feed = 'stopped';
+  // The training gate reads `running`, and nothing else would tell it: the
+  // feed watchdog bails while the server is stopped. Without this a Stop left
+  // the training window up over a dead feed, still asking for a ghost.
+  syncTrainingLayerFenced();
   pushStatus();
 }
 
@@ -1366,6 +1490,7 @@ function setFeedOnTrack(onTrack) {
   if (onTrack === feedOnTrack) return;
   feedOnTrack = onTrack;
   applyIngameVisibility();
+  applyTrainingLayerVisibility();
   // Leaving the track is the moment a deferred "better ears" fetch may run.
   if (!onTrack) maybeFetchBetterEars();
 }
@@ -1476,6 +1601,19 @@ function dialStatusFeed() {
       // is up and being driven, so the results poll knows there is any point
       // spending a request — see electron/results-harvest.js.
       resultsHarvest.noteFrame(frame);
+      // Which session this is decides whether the training layer runs. A
+      // field read and a compare; it does work only when the answer changes.
+      trainingGate.update({ session: sessionOfFrame(frame) }, now);
+      // Whether a practice session just finished (the Practice Review). A
+      // type compare and a lap-time compare per frame.
+      practiceWatch.update(frame, now);
+      // A string compare while Ghost HUD is wanted, nothing otherwise. Last,
+      // and fenced, so it can never cost the consumers above their frame.
+      try {
+        trainingRefService().noteFrame(frame);
+      } catch {
+        /* the Training reference must never be the feed's problem */
+      }
     } catch {
       /* ignore malformed frame */
     }
@@ -1500,6 +1638,11 @@ function dialStatusFeed() {
       if (!status.running) return;
       const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
       if (stale) setFeedOnTrack(false);
+      // A silent feed is no session; this beat is also what lets the training
+      // gate's held answer run out between sessions.
+      trainingGate.update(stale ? { session: null } : {}, Date.now());
+      // The same beat lets a silent feed end a practice session.
+      if (stale) practiceWatch.update(null, Date.now());
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -1572,7 +1715,7 @@ function disconnectStatusFeed() {
 
 /** Status snapshot for the UI, including the in-game edit state. */
 function statusForUi() {
-  return { ...status, ingameEditing, vr: vrOverlay.status() };
+  return { ...status, ingameEditing, vr: vrOverlay.status(), training: trainingStatusForUi() };
 }
 
 /** Push the current status object to the renderer (if the window is open). */
@@ -1743,8 +1886,23 @@ function cycleIngame() {
  * is picked up from the config at the next start).
  */
 function applyAppearance(settings) {
-  const s = settings || loadSettings();
-  const payload = {
+  const payload = appearancePayload(settings || loadSettings());
+  try {
+    requireServer().setAppearance(payload);
+  } catch (err) {
+    // Not built / not started yet — buildServerConfig() carries the value in.
+  }
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    overlayWin.webContents.send('ingame:appearance', payload);
+  }
+  // The training layer reads the same channel through the same bridge.
+  const trainingWin = trainingLayer.window();
+  if (trainingWin) trainingWin.webContents.send('ingame:appearance', payload);
+}
+
+/** What applyAppearance hands every consumer, built from settings `s`. */
+function appearancePayload(s) {
+  return {
     panelOpacity: s.panelOpacity,
     textScale: s.textScale,
     changeGlow: s.changeGlow,
@@ -1763,14 +1921,6 @@ function applyAppearance(settings) {
     speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
     tempUnit: s.tempUnit === 'f' ? 'f' : 'c',
   };
-  try {
-    requireServer().setAppearance(payload);
-  } catch (err) {
-    // Not built / not started yet — buildServerConfig() carries the value in.
-  }
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    overlayWin.webContents.send('ingame:appearance', payload);
-  }
 }
 
 // An applyTuning() sat here, the telemetry-side counterpart to applyAppearance():
@@ -2216,6 +2366,18 @@ function isIngame(settings, o) {
   return o.ingameDefault !== false;
 }
 
+/** isIngame's counterpart for TRAINING_CATALOG and the training layer. */
+function isTraining(settings, o) {
+  if (!overlayOnThisChannel(settings, o)) return false;
+  if (o.id in settings.trainingOverlays) return settings.trainingOverlays[o.id] !== false;
+  return o.ingameDefault !== false;
+}
+
+/** Whether a widget id belongs to the training layer rather than the race one. */
+function isTrainingWidget(id) {
+  return TRAINING_IDS.includes(id);
+}
+
 /**
  * Whether a catalog entry is offered on the channel this install follows.
  *
@@ -2235,14 +2397,18 @@ function overlayOnThisChannel(settings, o) {
   );
 }
 
-/** Full catalog with per-overlay OBS URLs and enabled state for the UI. */
+/**
+ * Full catalog with per-overlay OBS URLs and enabled state for the UI. The
+ * training widgets come last, carrying `group: 'training'`; for them `ingame`
+ * is the training layer's switch.
+ */
 function overlaysForUi() {
   const settings = loadSettings();
   const base = baseUrl();
-  return OVERLAY_CATALOG.filter((o) => overlayOnThisChannel(settings, o)).map((o) => ({
+  return ALL_WIDGETS.filter((o) => overlayOnThisChannel(settings, o)).map((o) => ({
     ...o,
     enabled: settings.enabledOverlays[o.id] !== false,
-    ingame: isIngame(settings, o),
+    ingame: isTrainingWidget(o.id) ? isTraining(settings, o) : isIngame(settings, o),
     url: `${base}/widget.html?w=${o.id}`,
     // The widget's own background, and the global it would otherwise follow.
     // `undefined` opacity is the card's "Auto" state — it has no override, and
@@ -2323,8 +2489,13 @@ function physicalDisplayBounds() {
  * nothing to pass and the nearest display is the best guess going; the call
  * straight after construction gets it right, and that one is the one that sizes
  * the layer.
+ *
+ * `target` is the layer window being sized — the race layer unless told
+ * otherwise. The training layer passes its own window, so its rectangle is in
+ * ITS scale factor (the two can differ on a mixed-scaling desktop while one of
+ * them is mid-resize).
  */
-function overlayGeometry() {
+function overlayGeometry(target = overlayWin) {
   const phys = physicalDisplayBounds();
   if (!phys || typeof screen.screenToDipRect !== 'function') {
     return overlayGeometryFrom(
@@ -2332,7 +2503,7 @@ function overlayGeometry() {
       screen.getPrimaryDisplay().bounds,
     );
   }
-  const win = overlayWin && !overlayWin.isDestroyed() ? overlayWin : null;
+  const win = target && !target.isDestroyed() ? target : null;
   return overlayGeometryFrom(phys.all, phys.primary, (r) => screen.screenToDipRect(win, r));
 }
 
@@ -2369,12 +2540,15 @@ function overlayGeometry() {
  * ones. Converges immediately on every rig whose screens share a scale factor,
  * which is all of them bar the mixed ones; the cap is there so a pathological
  * arrangement oscillates twice rather than forever.
+ *
+ * `win` is the layer window to size: the race layer by default, the training
+ * layer when it passes its own.
  */
-function applyOverlayGeometry({ notify = true } = {}) {
-  if (!overlayWin || overlayWin.isDestroyed()) return;
-  let geom = overlayGeometry();
+function applyOverlayGeometry({ notify = true, win = overlayWin } = {}) {
+  if (!win || win.isDestroyed()) return;
+  let geom = overlayGeometry(win);
   for (let pass = 0; pass < 3; pass++) {
-    const cur = overlayWin.getBounds();
+    const cur = win.getBounds();
     const changed =
       cur.x !== geom.bounds.x ||
       cur.y !== geom.bounds.y ||
@@ -2385,16 +2559,16 @@ function applyOverlayGeometry({ notify = true } = {}) {
     // never drag or stretch the layer itself. Windows enforces that against
     // setBounds too, so both are lifted for the width of the call.
     try {
-      overlayWin.setResizable(true);
-      overlayWin.setMovable(true);
-      overlayWin.setBounds(geom.bounds);
+      win.setResizable(true);
+      win.setMovable(true);
+      win.setBounds(geom.bounds);
     } finally {
-      overlayWin.setResizable(false);
-      overlayWin.setMovable(false);
+      win.setResizable(false);
+      win.setMovable(false);
     }
-    geom = overlayGeometry();
+    geom = overlayGeometry(win);
   }
-  if (notify) overlayWin.webContents.send('ingame:screens', geom.screens);
+  if (notify) win.webContents.send('ingame:screens', geom.screens);
 }
 
 /**
@@ -2409,6 +2583,7 @@ function watchDisplays() {
     overlayGeometryTimer = setTimeout(() => {
       overlayGeometryTimer = null;
       applyOverlayGeometry();
+      applyOverlayGeometry({ win: trainingLayer.window() });
     }, 400);
   };
   screen.on('display-added', onChange);
@@ -2449,6 +2624,64 @@ function syncVr(settings) {
   vrOverlay.setVisible(ingameShouldBeVisible(s));
 }
 
+/**
+ * Tell the server whether anything will draw a ghost, so it chooses a ghost
+ * lap — and reads the lap store to do it — only then.
+ *
+ * That is exactly "training is live" (trainingActive): Training mode, the beta
+ * channel, the server running and a practice session. Every training widget
+ * chases the reference lap and nothing outside Training mode does, so a race
+ * or Race mode costs the server nothing. It does NOT wait for the training
+ * window or a widget switched on in it: a training widget added to OBS draws
+ * from the same ghost under the same rule as the one on screen.
+ * Called from onTrainingActiveChanged, so once per flip, never per sync.
+ */
+function syncGhostWanted(wanted) {
+  try {
+    if (serverModule && typeof serverModule.setGhostWanted === 'function') {
+      serverModule.setGhostWanted(!!wanted);
+    }
+  } catch {
+    /* never the layer's problem */
+  }
+  // The board-lap reference follows the same switch.
+  try {
+    trainingRefService().setWanted(wanted);
+  } catch {
+    /* never the layer's problem */
+  }
+}
+
+/**
+ * The Training reference — which lap Ghost HUD chases (your best, or a board
+ * lap). Built on first use; see electron/trainingReference.js.
+ */
+let trainingRef = null;
+function trainingRefService() {
+  if (trainingRef) return trainingRef;
+  trainingRef = trainingReference.create({
+    userData: app.getPath('userData'),
+    auth: authService,
+    getServer: () => serverModule,
+    getFrame: () => lastFeedFrame,
+    loadChoices: () => loadSettings().trainingRefs,
+    saveChoices: (map) => {
+      const s = loadSettings();
+      s.trainingRefs = map;
+      saveSettings(s);
+    },
+    onChange: (status) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        mainWindow.webContents.send('training:refChanged', status);
+      } catch {
+        /* window mid-teardown */
+      }
+    },
+  });
+  return trainingRef;
+}
+
 /** URL of the in-game layer page, carrying the enabled widget list. */
 function ingameUrl(settings) {
   const ids = OVERLAY_CATALOG.filter((o) => isIngame(settings, o)).map((o) => o.id);
@@ -2460,6 +2693,15 @@ function syncOverlayWindow() {
   const settings = loadSettings();
   // Everything that re-syncs the desktop layer re-syncs the headset panel.
   syncVr(settings);
+  syncRaceLayerWindow(settings);
+  // ...and the training layer, which keeps its own window and its own rules.
+  // After the race layer and fenced, so nothing in it can keep the race
+  // layer from being built, reloaded or closed.
+  syncTrainingLayerFenced(settings);
+}
+
+/** The race half of syncOverlayWindow: the in-game window itself. */
+function syncRaceLayerWindow(settings) {
   const wanted =
     status.running &&
     settings.ingameEnabled &&
@@ -2631,17 +2873,17 @@ function refreshOverlays(source) {
  * is being written, and on the watch tick so the CPU share covers ~2 s rather
  * than everything since the last line.
  */
-function layerProcessContext() {
+function layerProcessContext(win = overlayWin, label = 'layer') {
   try {
     const metrics = app.getAppMetrics();
-    const pid = overlayWin && !overlayWin.isDestroyed() ? overlayWin.webContents.getOSProcessId() : 0;
+    const pid = win && !win.isDestroyed() ? win.webContents.getOSProcessId() : 0;
     const gpu = metrics.find((m) => m.type === 'GPU');
     const rend = metrics.find((m) => m.pid === pid);
     const part = (name, m) =>
       m
         ? ` ${name}=${Math.round(m.cpu.percentCPUUsage)}%/${Math.round((m.memory.workingSetSize || 0) / 1024)}MB`
         : ` ${name}=none`;
-    return part('gpu', gpu) + part('layer', rend);
+    return part('gpu', gpu) + part(label, rend);
   } catch {
     return '';
   }
@@ -2815,6 +3057,7 @@ let ingameUsageTimer = null;
 function startIngameUsageTicker() {
   if (ingameUsageTimer) return;
   ingameUsageTimer = setInterval(() => {
+    creditTrainingScreenTime(INGAME_USAGE_TICK_MS / 1000);
     try {
       if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
       const settings = loadSettings();
@@ -2848,6 +3091,9 @@ function applyIngameMouse() {
 /** Locks/unlocks the layer for on-screen editing and tells both windows. */
 function setIngameEdit(editing) {
   ingameEditing = !!editing;
+  // One layer in edit mode at a time: the two windows overlap, and handles on
+  // both would leave the driver dragging whichever happened to be on top.
+  if (ingameEditing && trainingLayer.editing()) setTrainingEdit(false);
   if (overlayWin && !overlayWin.isDestroyed()) {
     applyIngameMouse();
     // Editing forces the layer on screen even when auto show/hide has it
@@ -2887,6 +3133,436 @@ function setIngameInteract(on) {
 function toggleIngameInteract() {
   syncOverlayWindow();
   setIngameInteract(!ingameInteractive);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Training layer (electron/trainingGate.js + electron/trainingLayer.js)    */
+/* -------------------------------------------------------------------------- */
+/*
+ * Training widgets get their own window, built only while Training mode is on,
+ * the install follows beta, the server runs and the sim is in practice. The
+ * race layer above knows nothing of it: the only shared pieces are the
+ * geometry functions (passed this window) and the bridge (ingame-preload.js),
+ * whose messages main routes by sender — see `layerOf` in registerIpc.
+ */
+
+/* -------------------------------------------------------------------------- */
+/*  Practice Review (docs/PRACTICE-REVIEW-PLAN.md, phase 1)                   */
+/* -------------------------------------------------------------------------- */
+/*
+ * electron/practiceSession.js decides when a practice session the driver
+ * actually drove has finished. Here: snapshot the lap they were chasing while
+ * they chase it, and when the session ends write the review's record, say so
+ * on the in-game layer, and leave it pending for the Review tab to open the
+ * next time the app is looked at. Never a window popped over the sim.
+ */
+
+/** Where each session's review record lives: `<userData>/practice-reviews/`. */
+function practiceReviewsDir() {
+  return path.join(app.getPath('userData'), 'practice-reviews');
+}
+
+/**
+ * The file a session's record is kept in. A session id is `<ISO time>~<track
+ * key>` and Windows will not take the colons, so every character outside
+ * `[A-Za-z0-9._-]` becomes `_`. The id itself is inside the file as
+ * `sessionKey`, so nothing has to reverse this.
+ */
+function practiceReviewFileOf(sessionId) {
+  let key;
+  try {
+    // The loader's own naming, so writer and reader cannot drift apart.
+    key = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js')).sessionFileKey(sessionId);
+  } catch {
+    key = String(sessionId).replace(/[^A-Za-z0-9._-]/g, '_');
+  }
+  return path.join(practiceReviewsDir(), key + '.json');
+}
+
+/** The lap being chased this session, as `/ghost.json` serves it, or null. */
+let practiceTarget = null;
+/** The review waiting to be opened: `{ sessionId, at, track, laps, bestLapSec }` or null. */
+let pendingPracticeReview = null;
+/** How long after an end the lap log is read: the last lap's record lands a moment after the line. */
+const PRACTICE_END_SETTLE_MS = 4000;
+
+/**
+ * Snapshot the ghost the server is publishing, if it is the lap the frame says
+ * is being chased. Read from the same module instance the in-process server
+ * publishes through, so this is the exact body `/ghost.json` serves.
+ */
+function snapshotPracticeTarget(sourceLapId) {
+  try {
+    const ghostLap = require(path.join(__dirname, '..', 'dist', 'telemetry', 'ghostLap.js'));
+    const lap = ghostLap.getPublishedGhost();
+    if (!lap) return;
+    const columns = ghostLap.ghostJson(lap);
+    if (!columns) return;
+    if (sourceLapId && columns.lapId && columns.lapId !== sourceLapId) return;
+    practiceTarget = {
+      kind: 'chased',
+      label: String(columns.label || ''),
+      lapId: String(columns.lapId || sourceLapId || ''),
+      lapSec: Number(columns.lapSec) || 0,
+      columns,
+    };
+  } catch (err) {
+    console.warn('[practice] could not snapshot the chased lap:', err.message);
+  }
+}
+
+function loadPendingPracticeReview() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(practiceReviewsDir(), 'pending.json'), 'utf8'));
+    pendingPracticeReview = raw && typeof raw.sessionId === 'string' && raw.sessionId ? raw : null;
+  } catch {
+    pendingPracticeReview = null;
+  }
+}
+
+/** Set or clear the pending review, on disk too (it outlives an app restart), and tell the panel. */
+function setPendingPracticeReview(next) {
+  pendingPracticeReview = next;
+  const file = path.join(practiceReviewsDir(), 'pending.json');
+  try {
+    if (next) {
+      fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(next), 'utf8');
+    } else {
+      fs.rmSync(file, { force: true });
+    }
+  } catch (err) {
+    console.warn('[practice] could not save the pending review:', err.message);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('review:pendingChanged', next);
+  }
+}
+
+/**
+ * The lap-log session a finished practice session became: same track, of a
+ * practice type, overlapping the time it was watched. Newest wins.
+ */
+function findPracticeSessionId(ended) {
+  const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+  const from = Date.parse(ended.startedAt) - 60_000;
+  const to = Date.parse(ended.endedAt) + 120_000;
+  const track = String(ended.track || '').toLowerCase();
+  const rows = review.listSessions(undefined, 40) || [];
+  let best = null;
+  for (const s of rows) {
+    if (s.sessionType !== 'practice' && s.sessionType !== 'testday') continue;
+    const a = Date.parse(s.startedAt);
+    const b = Date.parse(s.endedAt);
+    if (!(b >= from && a <= to)) continue;
+    if (track && s.track && String(s.track).toLowerCase() !== track) continue;
+    if (!best || Date.parse(best.endedAt) < b) best = s;
+  }
+  return best;
+}
+
+function finishPracticeSession(ended) {
+  let summary = null;
+  try {
+    summary = findPracticeSessionId(ended);
+  } catch (err) {
+    console.warn('[practice] lap log unreadable at session end:', err.message);
+  }
+  // The snapshot is only this session's target if it is the lap the session
+  // ended chasing. A session that never chased anything has none — it is
+  // measured against its own best — whatever an earlier session left here.
+  if (ended.ghostLapId && (!practiceTarget || practiceTarget.lapId !== ended.ghostLapId)) {
+    snapshotPracticeTarget(ended.ghostLapId); // still published just after the session
+  }
+  const target =
+    ended.ghostLapId && practiceTarget && practiceTarget.lapId === ended.ghostLapId ? practiceTarget : null;
+  if (!summary) {
+    // The lap log has not shown the session (yet). Keep the target anyway,
+    // under the frame's own track and class and the time it ended: the loader
+    // finds a snapshot by content when the name does not match — see
+    // findSnapshot in practiceReviewLoad.ts. No notice: there is nothing to open.
+    console.warn(`[practice] ${ended.laps} lap(s) at ${ended.track} ended, but no logged practice session matches`);
+    if (target) {
+      try {
+        fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+        fs.writeFileSync(
+          practiceReviewFileOf(`${ended.startedAt}~${ended.track}`),
+          JSON.stringify({
+            v: 1,
+            track: ended.track,
+            car: ended.car,
+            carClass: ended.carClass,
+            trackLengthM: Number(target.columns.trackLengthM) || 0,
+            startedAt: ended.startedAt,
+            endedAt: ended.endedAt,
+            target,
+          }),
+          'utf8',
+        );
+      } catch (err) {
+        console.warn('[practice] could not write the review record:', err.message);
+      }
+    }
+    practiceTarget = null;
+    return;
+  }
+  const record = {
+    v: 1,
+    sessionKey: summary.id,
+    track: summary.track || ended.track,
+    car: summary.car || ended.car,
+    carClass: summary.carClass || ended.carClass,
+    trackLengthM: target && target.columns ? Number(target.columns.trackLengthM) || 0 : 0,
+    startedAt: summary.startedAt,
+    endedAt: summary.endedAt,
+    target,
+  };
+  try {
+    fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+    fs.writeFileSync(practiceReviewFileOf(summary.id), JSON.stringify(record), 'utf8');
+  } catch (err) {
+    console.warn('[practice] could not write the review record:', err.message);
+  }
+  const laps = summary.laps || ended.laps;
+  const bestSec = summary.bestMs ? summary.bestMs / 1000 : ended.bestLapSec;
+  let best = '';
+  try {
+    const { formatLapTime } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+    if (bestSec > 0) best = ` · best ${formatLapTime(bestSec)}`;
+  } catch {
+    /* the notice reads fine without it */
+  }
+  sendIngameNotice({
+    kind: 'ok',
+    // Through race control's banner when it is on the layer, which main holds
+    // visible off track — the driver is in the menus when this fires.
+    race: true,
+    text: `Practice review ready — ${laps} lap${laps === 1 ? '' : 's'}${best}`,
+    dwellMs: 20000,
+  });
+  setPendingPracticeReview({
+    sessionId: summary.id,
+    at: new Date().toISOString(),
+    track: record.track,
+    laps,
+    bestLapSec: bestSec || null,
+  });
+  practiceTarget = null;
+}
+
+const practiceWatch = createPracticeWatch({
+  onGhost: (g) => snapshotPracticeTarget(g.sourceLapId),
+  onEnded: (ended) => {
+    const t = setTimeout(() => finishPracticeSession(ended), PRACTICE_END_SETTLE_MS);
+    if (typeof t.unref === 'function') t.unref();
+  },
+});
+
+const trainingGate = createTrainingGate();
+
+const trainingLayer = createTrainingLayer({
+  BrowserWindow,
+  preload: path.join(__dirname, 'ingame-preload.js'),
+  applyGeometry: (opts) => applyOverlayGeometry(opts),
+  // Nearest-display guess, as for the race layer: there is no window yet.
+  initialBounds: () => overlayGeometry(null).bounds,
+  appearance: () => appearancePayload(loadSettings()),
+  feedLive: layerFeedLive,
+  log: (line) => stallWatch.note(line),
+  processContext: (win) => layerProcessContext(win, 'training'),
+  onChange: () => pushStatus(),
+});
+
+/** Training is beta-only, by the rule every `gated: 'beta'` entry follows. */
+function trainingOnThisChannel(settings) {
+  return overlayOnThisChannel(settings, { gated: 'beta' });
+}
+
+/** Whether the training overlays are running right now. */
+function trainingActive() {
+  return trainingGate.state().active;
+}
+
+/**
+ * Hear training switch on and off: `fn(active)` on every change, never on a
+ * repeat. Returns the unsubscribe. The seam for work that should only happen
+ * while training is live, so it costs nothing in a race.
+ */
+function onTrainingActiveChanged(fn) {
+  return trainingGate.subscribe((next, prev) => {
+    if (next.active !== prev.active) fn(next.active);
+  });
+}
+
+// The window follows the gate; the panel's status line follows the reason too.
+onTrainingActiveChanged(() => syncTrainingWindow());
+// The ghost lap is chosen while, and only while, training is live — window or
+// no window, so a training widget in OBS has one as well.
+onTrainingActiveChanged((active) => syncGhostWanted(active));
+trainingGate.subscribe(() => pushStatus());
+
+/**
+ * Feed the gate the inputs that come from settings and the server, then make
+ * the window match. Called from syncOverlayWindow, so everything that re-syncs
+ * the race layer re-syncs this one too.
+ */
+function syncTrainingLayer(settings) {
+  const s = settings || loadSettings();
+  const was = trainingActive();
+  trainingGate.update(
+    {
+      mode: !!s.trainingMode,
+      beta: trainingOnThisChannel(s),
+      running: !!status.running,
+    },
+    Date.now(),
+  );
+  // A flip has already re-synced the window through the subscriber above.
+  if (trainingActive() === was) syncTrainingWindow(s);
+}
+
+/**
+ * syncTrainingLayer for callers with work of their own to finish — the race
+ * layer, the server's start and stop. A training fault is logged to
+ * stalls.log and goes no further: it must never be the reason they stop.
+ */
+function syncTrainingLayerFenced(settings) {
+  try {
+    syncTrainingLayer(settings);
+  } catch (err) {
+    stallWatch.note(`TRAINING sync failed: ${(err && err.message) || err}`);
+  }
+}
+
+/** Training widgets switched on for the training layer. */
+function trainingIds(settings) {
+  return TRAINING_CATALOG.filter((o) => isTraining(settings, o)).map((o) => o.id);
+}
+
+/**
+ * The training page. It reads the ordinary /ws feed — a measured 30 Hz is
+ * enough once the widget interpolates, and a feed of its own would be more
+ * work on this thread. Should one ever be wanted, `&path=/ws/training` is the
+ * whole change: overlay/js/client.js already honours `path`.
+ */
+function trainingUrl(ids) {
+  return `${baseUrl()}/training.html?layer=training&widgets=${ids.join(',')}`;
+}
+
+/**
+ * On screen right now? The race layer's auto show/hide, read the same way
+ * (ingameShouldBeVisible) minus what is the race layer's own business: Show in
+ * game, interact mode and race reminders — and demo mode's always-show, since
+ * training never runs on demo frames (trainingGate.js). Edit mode is handled
+ * inside the layer.
+ */
+function trainingShouldBeVisible(s) {
+  if (!s.ingameAutoHide) return true;
+  return feedOnTrack;
+}
+
+function syncTrainingWindow(settings) {
+  const s = settings || loadSettings();
+  const ids = trainingIds(s);
+  const wanted = trainingActive() && ids.length > 0;
+  trainingLayer.sync({
+    wanted,
+    url: trainingUrl(ids),
+    visible: trainingShouldBeVisible(s),
+  });
+}
+
+/** Auto show/hide moved. Free when there is no training window. */
+function applyTrainingLayerVisibility() {
+  if (!trainingLayer.window()) return;
+  // Called from setFeedOnTrack between the race layer and the better-ears
+  // fetch: a training fault must not cost either of them.
+  try {
+    trainingLayer.setVisible(trainingShouldBeVisible(loadSettings()));
+  } catch (err) {
+    stallWatch.note(`TRAINING visibility failed: ${(err && err.message) || err}`);
+  }
+}
+
+/** Edit the training layout. Leaves race edit mode first — one at a time. */
+function setTrainingEdit(on) {
+  if (on && ingameEditing) setIngameEdit(false);
+  trainingLayer.setEditing(on);
+  pushStatus();
+}
+
+/** Persist the training page's placement — ingame:layoutSave's training half. */
+function saveTrainingLayout(layout) {
+  const settings = loadSettings();
+  const merged = { ...settings.trainingLayout };
+  for (const o of TRAINING_CATALOG) {
+    const entry = normalizeLayoutEntry(layout[o.id]);
+    if (entry) merged[o.id] = entry;
+  }
+  saveSettings({ ...settings, trainingLayout: merged });
+  return true;
+}
+
+/** The training toolbar's Reset: this layer's placements only. */
+function resetTrainingLayout() {
+  const settings = loadSettings();
+  saveSettings({ ...settings, trainingLayout: {} });
+  const win = trainingLayer.window();
+  if (win) win.webContents.send('ingame:layout-reset');
+  return true;
+}
+
+/** A training card's "Reset position" — ingame:layoutCentre for this layer. */
+function centreTrainingWidget(id) {
+  const settings = loadSettings();
+  const win = trainingLayer.window();
+  const entry = normalizeLayoutEntry(
+    centredLayoutEntry(overlayGeometry(win).screens, settings.trainingLayout[id]),
+  );
+  if (!entry) return false;
+  saveSettings({ ...settings, trainingLayout: { ...settings.trainingLayout, [id]: entry } });
+  if (win) win.webContents.send('ingame:layout-centre', { id, entry });
+  return true;
+}
+
+/** The usage counters' minute, for the training layer (see the race ticker). */
+function creditTrainingScreenTime(seconds) {
+  try {
+    const win = trainingLayer.window();
+    if (!win || !win.isVisible()) return;
+    const ids = trainingIds(loadSettings());
+    if (ids.length) featureUsage.overlaysOnScreen(ids, seconds);
+  } catch {
+    /* a counter must never be the thing that stops the layer */
+  }
+}
+
+/**
+ * Is Chromium compositing in software? A transparent window the size of the
+ * desktop is far dearer that way, and the training layer is a second one — so
+ * the Training tab says so. Same reading noteGpuOnce logs.
+ */
+function gpuCompositingIsSoftware() {
+  try {
+    const c = String(app.getGPUFeatureStatus().gpu_compositing || '');
+    return c.includes('software') || c.startsWith('disabled') || c.startsWith('unavailable');
+  } catch {
+    return false;
+  }
+}
+
+/** The Training tab's status line, delivered with every status push. */
+function trainingStatusForUi() {
+  const g = trainingGate.state();
+  return {
+    active: g.active,
+    // 'live' | 'channel' | 'race-mode' | 'stopped' | 'session' | 'no-session'
+    reason: g.reason,
+    sessionType: g.sessionType,
+    windowOpen: !!trainingLayer.window(),
+    editing: trainingLayer.editing(),
+    softwareCompositing: gpuCompositingIsSoftware(),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -3032,6 +3708,19 @@ function registerIpc() {
       }
       if (partial.ingameOverlays && typeof partial.ingameOverlays === 'object') {
         next.ingameOverlays = { ...current.ingameOverlays, ...partial.ingameOverlays };
+      }
+      if (typeof partial.trainingMode === 'boolean') {
+        next.trainingMode = partial.trainingMode;
+      }
+      // Same shape as ingameOverlays, but only training ids, only booleans: a
+      // race widget id here would be a switch nothing reads.
+      if (partial.trainingOverlays && typeof partial.trainingOverlays === 'object') {
+        next.trainingOverlays = { ...current.trainingOverlays };
+        for (const id of TRAINING_IDS) {
+          if (typeof partial.trainingOverlays[id] === 'boolean') {
+            next.trainingOverlays[id] = partial.trainingOverlays[id];
+          }
+        }
       }
       // Merged widget by widget, field by field, so a slider can send just its
       // own number (see mergeVr).
@@ -3192,6 +3881,9 @@ function registerIpc() {
       if (overlayWin && !overlayWin.isDestroyed()) {
         overlayWin.webContents.send('ingame:dock', !!next.ingameMagneticDock);
       }
+      // The training layout editor docks by the same switch.
+      const trainingWin = trainingLayer.window();
+      if (trainingWin) trainingWin.webContents.send('ingame:dock', !!next.ingameMagneticDock);
     }
 
     // Re-register hotkeys whenever any binding changed. Compared as a whole map
@@ -3304,6 +3996,21 @@ function registerIpc() {
 
   /* ---- In-game overlay layer ---- */
 
+  /*
+   * Both layer windows load the same bridge (ingame-preload.js), so the page
+   * messages below can come from either. The SENDER says which — a page cannot
+   * name the other layer and write into its layout. Routed explicitly, never
+   * by elimination: 'race' is the race window (or the panel, for a handler
+   * it calls), 'training' the live training window, and anything else — a
+   * window being torn down — is ignored. See layerOfSender in trainingLayer.js.
+   */
+  const layerOf = (evt, { panel = false } = {}) =>
+    layerOfSender(evt && evt.sender, {
+      race: overlayWin && !overlayWin.isDestroyed() ? overlayWin.webContents : null,
+      panel: panel && mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
+      isTraining: (sender) => trainingLayer.owns(sender),
+    });
+
   ipcMain.handle('ingame:editStart', () => {
     syncOverlayWindow(); // make sure the layer exists before unlocking it
     setIngameEdit(true);
@@ -3316,8 +4023,10 @@ function registerIpc() {
   });
 
   /** Called by the in-game page itself (Done button in the edit toolbar). */
-  ipcMain.handle('ingame:editDone', () => {
-    setIngameEdit(false);
+  ipcMain.handle('ingame:editDone', (evt) => {
+    const layer = layerOf(evt);
+    if (layer === 'training') setTrainingEdit(false);
+    else if (layer === 'race') setIngameEdit(false);
     return true;
   });
 
@@ -3331,13 +4040,21 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle('ingame:layoutGet', () => loadSettings().ingameLayout);
+  ipcMain.handle('ingame:layoutGet', (evt) => {
+    const layer = layerOf(evt);
+    if (layer === 'training') return loadSettings().trainingLayout;
+    return layer === 'race' ? loadSettings().ingameLayout : null;
+  });
 
   // Desktop geometry for the layer: how many screens there are, where they sit
   // relative to the primary one, and how far the window's own top-left is from
   // it. Fetched once at boot; pushed again over 'ingame:screens' if the desktop
   // changes shape underneath a running layer.
-  ipcMain.handle('ingame:screensGet', () => overlayGeometry().screens);
+  ipcMain.handle('ingame:screensGet', (evt) => {
+    const layer = layerOf(evt);
+    if (layer === 'training') return overlayGeometry(trainingLayer.window()).screens;
+    return layer === 'race' ? overlayGeometry().screens : null;
+  });
 
   // Whether widgets snap to each other while being laid out. Read once at boot
   // and pushed on 'ingame:dock' when the switch moves, so a layer already open
@@ -3347,8 +4064,11 @@ function registerIpc() {
   // being broadcast to them.
   ipcMain.handle('ingame:dockGet', () => !!loadSettings().ingameMagneticDock);
 
-  ipcMain.handle('ingame:layoutSave', (_evt, layout) => {
+  ipcMain.handle('ingame:layoutSave', (evt, layout) => {
     if (!layout || typeof layout !== 'object') return false;
+    const layer = layerOf(evt);
+    if (layer === 'training') return saveTrainingLayout(layout);
+    if (layer !== 'race') return false;
     const settings = loadSettings();
     const merged = { ...settings.ingameLayout };
     for (const o of OVERLAY_CATALOG) {
@@ -3363,7 +4083,12 @@ function registerIpc() {
 
   ipcMain.handle('ingame:refresh', () => refreshOverlays('the panel'));
 
-  ipcMain.handle('ingame:layoutReset', () => {
+  // From the Dashboard's Reset (the panel — always the race layer) or from a
+  // layer's own edit toolbar, which resets only the layer it is on.
+  ipcMain.handle('ingame:layoutReset', (evt) => {
+    const layer = layerOf(evt, { panel: true });
+    if (layer === 'training') return resetTrainingLayout();
+    if (layer !== 'race') return false;
     const settings = loadSettings();
     saveSettings({ ...settings, ingameLayout: {} });
     if (overlayWin && !overlayWin.isDestroyed()) {
@@ -3393,6 +4118,8 @@ function registerIpc() {
    * straight back over this one.
    */
   ipcMain.handle('ingame:layoutCentre', (_evt, id) => {
+    // A training widget's card: its placement is the training layer's.
+    if (isTrainingWidget(id)) return centreTrainingWidget(id);
     if (!OVERLAY_CATALOG.some((o) => o.id === id)) return false;
     const settings = loadSettings();
     const entry = normalizeLayoutEntry(
@@ -3404,6 +4131,26 @@ function registerIpc() {
       overlayWin.webContents.send('ingame:layout-centre', { id, entry });
     }
     return true;
+  });
+
+  /* ---- Training layer ---- */
+
+  /** "Edit training layout" in the Training tab. */
+  ipcMain.handle('training:editStart', () => {
+    syncTrainingWindow(); // the window exists only while training is live
+    setTrainingEdit(true);
+    return statusForUi();
+  });
+
+  ipcMain.handle('training:editStop', () => {
+    setTrainingEdit(false);
+    return statusForUi();
+  });
+
+  // The training page's once-a-second paint report. A second listener on the
+  // race layer's channel: each one keeps only its own window's reports.
+  ipcMain.on('ingame:health', (evt, r) => {
+    if (layerOf(evt) === 'training') trainingLayer.health(r);
   });
 
   /* ---- Lap database ---- */
@@ -3921,6 +4668,84 @@ function registerIpc() {
    * unbuilt `dist/` must cost this tab its content, not take down the window
    * that starts the server.
    */
+  /*
+   * The Practice Review (docs/PRACTICE-REVIEW-PLAN.md). `review:pending` says
+   * whether a finished practice session is waiting to be opened (the Review
+   * tab asks when it is shown, and hears `review:pendingChanged` while open);
+   * `review:pendingAck` is the tab saying it has opened it. Read from disk the
+   * first time, so a review left unopened survives an app restart.
+   */
+  let pendingPracticeLoaded = false;
+  ipcMain.handle('review:pending', () => {
+    if (!pendingPracticeLoaded) {
+      pendingPracticeLoaded = true;
+      if (!pendingPracticeReview) loadPendingPracticeReview();
+    }
+    return pendingPracticeReview;
+  });
+
+  ipcMain.handle('review:pendingAck', (_evt, sessionId) => {
+    pendingPracticeLoaded = true;
+    // Only the review that was opened: a newer one that arrived meanwhile stays.
+    if (pendingPracticeReview && (!sessionId || pendingPracticeReview.sessionId === sessionId)) {
+      setPendingPracticeReview(null);
+    }
+    return { ok: true };
+  });
+
+  /** One practice session's debrief: laps against the lap that was chased. */
+  ipcMain.handle('review:practice', (_evt, sessionId) => {
+    if (typeof sessionId !== 'string' || !sessionId) return { ok: false, review: null, error: 'no session' };
+    try {
+      const { loadPracticeReview } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js'));
+      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() });
+      return review ? { ok: true, review } : { ok: false, review: null, error: 'session not found' };
+    } catch (err) {
+      console.error('[app] practice review unavailable:', err.message);
+      return { ok: false, review: null, error: err.message };
+    }
+  });
+
+  /**
+   * One practice lap studied against what its session was measured against
+   * (Practice Review phase 2): the Review tab's lap comparison — delta,
+   * micro-sectors, both laps' channels — plus a row per corner. The circuit
+   * is not resent when the panel already holds `haveMapKey`, as `review:lap`.
+   */
+  ipcMain.handle('practice:lap', (_evt, req) => {
+    const sessionId = req && typeof req.sessionId === 'string' ? req.sessionId : '';
+    const lapId = req && typeof req.lapId === 'string' ? req.lapId : '';
+    const at = req && typeof req.at === 'string' ? req.at : '';
+    if (!sessionId || !lapId) return { ok: false, result: null, error: 'no lap' };
+    try {
+      const { loadPracticeLap } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceLap.js'));
+      const haveMapKey = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
+      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey }, { reviewDir: practiceReviewsDir() });
+      return result ? { ok: true, result } : { ok: false, result: null, error: 'lap not found' };
+    } catch (err) {
+      console.error('[app] practice lap unavailable:', err.message);
+      return { ok: false, result: null, error: err.message };
+    }
+  });
+
+  /**
+   * The accuracy score across practice sessions at one track in one class,
+   * oldest first (Practice Review phase 3). Ended sessions are remembered in
+   * the loader, so after the first ask this costs the newest session only.
+   */
+  ipcMain.handle('practice:trend', (_evt, req) => {
+    const trackKey = req && typeof req.trackKey === 'string' ? req.trackKey : '';
+    const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
+    if (!trackKey) return { ok: false, sessions: [], error: 'no track' };
+    try {
+      const { loadPracticeTrend } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceTrend.js'));
+      return { ok: true, sessions: loadPracticeTrend({ trackKey, carClass }, { reviewDir: practiceReviewsDir() }) };
+    } catch (err) {
+      console.error('[app] practice trend unavailable:', err.message);
+      return { ok: false, sessions: [], error: err.message };
+    }
+  });
+
   ipcMain.handle('review:sessions', () => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
@@ -4094,6 +4919,29 @@ function registerIpc() {
       };
     }
     return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
+  /**
+   * Training ▸ Chase: the board for the combo being driven, which lap is
+   * chosen and what the ghost is doing about it. See trainingReference.options.
+   */
+  ipcMain.handle('training:refOptions', async () => {
+    try {
+      return await trainingRefService().options();
+    } catch (err) {
+      return { ok: false, rows: [], error: err.message };
+    }
+  });
+
+  /** Chase `{ choice: 'auto' | 'own' | { driverId, trackId } }` on the combo being driven. */
+  ipcMain.handle('training:setRef', async (_evt, req) => {
+    try {
+      const res = trainingRefService().setChoice(req || {});
+      if (!res.ok) return res;
+      return await trainingRefService().options();
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   /**
@@ -5766,6 +6614,11 @@ function setupAutoUpdate() {
     applyUpdateChannel(next);
     // VR follows the channel (vrOnThisChannel): start or stop it now.
     syncVr();
+    // So does the training layer (trainingOnThisChannel), and with it the
+    // ghost-lap switch. Like syncVr it reads the settings back from disk,
+    // where the channel was saved above. Fenced: the update check below must
+    // run whatever training does.
+    syncTrainingLayerFenced();
     // Whatever was found on the old feed no longer applies to this one.
     updateState.status = 'idle';
     updateState.version = null;
@@ -6105,6 +6958,7 @@ async function captureWindowsAndQuit(dir) {
   const shots = [
     ['panel', mainWindow],
     ['ingame', overlayWin],
+    ['training', trainingLayer.window()],
   ];
   const snap = async (name, win) => {
     if (!win || win.isDestroyed()) return;
@@ -6145,6 +6999,12 @@ async function captureWindowsAndQuit(dir) {
     setIngameEdit(true);
     await new Promise((r) => setTimeout(r, 600));
     await snap('ingame-edit', overlayWin);
+  }
+  // And the training layer's, when training is live.
+  if (trainingLayer.window()) {
+    setTrainingEdit(true);
+    await new Promise((r) => setTimeout(r, 600));
+    await snap('training-edit', trainingLayer.window());
   }
   app.quit();
 }
@@ -6422,7 +7282,8 @@ app.whenReady().then(async () => {
     // widget list needs this side's settings, and skipping our own in-game
     // window needs to know that it is ours.
     requireServer().setOverlayLoadHandler((load) => {
-      if (!load || load.page === 'ingame') return; // ours, counted by the ticker
+      // Ours, both of them — counted by the ticker.
+      if (!load || load.page === 'ingame' || load.page === 'training') return;
       const settings = loadSettings();
       const ids =
         load.page === 'combined'
@@ -6443,6 +7304,7 @@ app.whenReady().then(async () => {
     if (!details || details.type !== 'GPU') return;
     stallWatch.note(`GPU process gone reason=${details.reason} exit=${details.exitCode}`);
     if (overlayWin && !overlayWin.isDestroyed()) recreateOverlayWindow('GPU process restarted');
+    trainingLayer.recreate('GPU process restarted'); // its own window only, if there is one
   });
 
   if (process.env.APEX_SHOT) {

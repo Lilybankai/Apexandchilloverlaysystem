@@ -208,6 +208,13 @@ contextBridge.exposeInMainWorld('apex', {
    */
   ingameLayoutCentre: (id) => ipcRenderer.invoke('ingame:layoutCentre', id),
 
+  /* ---- Training layer (its own window — see electron/trainingLayer.js) ---- */
+
+  /** Unlock the training layer for dragging. Leaves race edit mode first. */
+  trainingEditStart: () => ipcRenderer.invoke('training:editStart'),
+  /** Re-lock the training layer. */
+  trainingEditStop: () => ipcRenderer.invoke('training:editStop'),
+
   /* ---- Lap database ---- */
 
   /**
@@ -367,6 +374,63 @@ contextBridge.exposeInMainWorld('apex', {
    * Leaderboard tab opens in Review when a row is compared against.
    */
   reviewBestLap: (req) => ipcRenderer.invoke('review:bestLap', req),
+
+  /* ---- Practice Review (docs/PRACTICE-REVIEW-PLAN.md) ---- */
+
+  /**
+   * The finished practice session waiting to be opened, or null:
+   * `{ sessionId, at, track, laps, bestLapSec }`. Set when the driver leaves a
+   * practice session with at least one timed lap; survives an app restart.
+   */
+  reviewPending: () => ipcRenderer.invoke('review:pending'),
+
+  /** The Review tab has opened it: clears it (only if it is still `sessionId`). */
+  reviewPendingAck: (sessionId) => ipcRenderer.invoke('review:pendingAck', sessionId),
+
+  /** One practice session's debrief: `sessionId` → `{ ok, review: PracticeReview | null, error? }`. */
+  reviewPractice: (sessionId) => ipcRenderer.invoke('review:practice', sessionId),
+
+  /**
+   * One practice lap against its session's target: `{ sessionId, lapId, at, haveMapKey }`
+   * → `{ ok, result: PracticeLapResult | null, error? }` (docs/PRACTICE-REVIEW-PLAN.md, phase 2).
+   */
+  practiceLap: (args) => ipcRenderer.invoke('practice:lap', args),
+
+  /**
+   * The accuracy score across practice sessions at one track in one class:
+   * `{ trackKey, carClass }` → `{ ok, sessions: { sessionId, at, laps, avgScore,
+   * bestScore, bestLapSec }[], error? }`, oldest first (phase 3).
+   */
+  practiceTrend: (args) => ipcRenderer.invoke('practice:trend', args),
+
+  /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
+  onReviewPending: (callback) => {
+    const listener = (_evt, pending) => callback(pending);
+    ipcRenderer.on('review:pendingChanged', listener);
+    return () => ipcRenderer.removeListener('review:pendingChanged', listener);
+  },
+
+  /* ---- Training ▸ Chase (electron/trainingReference.js) ---- */
+
+  /**
+   * Which lap Ghost HUD chases on the combo being driven:
+   * `{ ok, combo: { track, trackKey, carClass, condition } | null,
+   *    choice: 'auto' | 'own' | { driverId, trackId }, selected: driverId | null,
+   *    rows: [{ driverId, trackId, name, lapMs, time, car, rank, hasLine, isYou }],
+   *    status, signedOut?, error? }`. `status.state` is off | no-combo |
+   * signed-out | not-dry | loading | board | own (with `reason`).
+   */
+  trainingRefOptions: () => ipcRenderer.invoke('training:refOptions'),
+
+  /** `{ choice: 'auto' | 'own' | { driverId, trackId } }` → the same answer as above. */
+  trainingSetRef: (req) => ipcRenderer.invoke('training:setRef', req),
+
+  /** Subscribe to the chase status changing. Returns an unsubscribe function. */
+  onTrainingRef: (callback) => {
+    const listener = (_evt, status) => callback(status);
+    ipcRenderer.on('training:refChanged', listener);
+    return () => ipcRenderer.removeListener('training:refChanged', listener);
+  },
 
   /**
    * Show a race-log event in the game's replay: `{ raceId, slot, et }` →

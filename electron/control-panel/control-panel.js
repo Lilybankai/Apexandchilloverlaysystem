@@ -102,6 +102,11 @@
   // Widgets whose catalog entry says group:'streaming' render inside the
   // Streamers tab instead of the main grid — same cards, different mount.
   const streamersWidgetList = $('#streamers-widget-list');
+  // ...and group:'training' cards inside the Training tab, the same way.
+  const trainingWidgetList = $('#training-widget-list');
+  const trainingEditBtn = $('#training-edit-btn');
+  const trainingStatusEl = $('#training-status');
+  const trainingGpuNote = $('#training-gpu-note');
   const combinedUrl = $('#combined-url');
   const toast = $('#toast');
   const errorBanner = $('#error-banner');
@@ -124,6 +129,9 @@
   // revealed.
   let isStaffAccount = false;
   let followingBeta = false;
+  // Whether the update state has landed at all. Until it has, followingBeta is
+  // only its boot-time `false`, not an answer (see adoptTrainingMode).
+  let updateStateSeen = false;
 
   /** League staff can switch channel; anyone already ON beta can switch back. */
   function applyUpdatesCardVisibility() {
@@ -243,6 +251,7 @@
     }
     syncIngameControls();
     renderVrStatus(status);
+    renderTrainingStatus(status);
     renderShellStatus(status, feed);
   }
 
@@ -420,6 +429,7 @@
     syncIngameControls();
     renderVrSettings(settings);
     renderShellSettings(settings);
+    adoptTrainingMode(settings);
   }
 
   // --- In-game toggle hotkey capture --------------------------------------
@@ -946,7 +956,12 @@
     lastOverlays = Array.isArray(overlays) ? overlays : [];
     overlayList.innerHTML = '';
     if (streamersWidgetList) streamersWidgetList.innerHTML = '';
+    if (trainingWidgetList) trainingWidgetList.innerHTML = '';
     for (const o of overlays) {
+      // A training widget's on-screen switch is the training layer's, not the
+      // race layer's (TRAINING_CATALOG in main.js) — the card is otherwise
+      // the same card.
+      const training = o.group === 'training';
       const li = document.createElement('li');
       li.className = 'card ovcard';
       li.setAttribute('data-enabled', String(o.enabled));
@@ -1039,6 +1054,18 @@
             "— OBS's own default (800 × 600) is not big enough for it.";
       }
 
+      /* -- a training widget's OBS source draws only what training feeds it:
+       * the ghost is chosen only while Training mode is live in a practice
+       * session. Said under its address, or a source added in a race looks
+       * broken. */
+      let obsNoteEl = null;
+      if (training) {
+        obsNoteEl = document.createElement('p');
+        obsNoteEl.className = 'ovcard__obsnote';
+        obsNoteEl.textContent =
+          'In OBS too, this widget has data only while Training mode is live in a practice session.';
+      }
+
       /* -- footer: the two destinations, each labelled --
        *
        * Both switches live here side by side rather than one in the header,
@@ -1082,14 +1109,23 @@
         toggleOverlay(o.id, on),
       );
 
-      const igDest = destination(
-        'In game',
-        o.ingame,
-        'Show on screen in game (needs "Show in game" on the Dashboard)',
-        async (on) => {
-          await window.apex.updateSettings({ ingameOverlays: { [o.id]: on } });
-        },
-      );
+      const igDest = training
+        ? destination(
+          'In practice',
+          o.ingame,
+          'Show on screen in practice sessions while Training mode is on',
+          async (on) => {
+            await window.apex.updateSettings({ trainingOverlays: { [o.id]: on } });
+          },
+        )
+        : destination(
+          'In game',
+          o.ingame,
+          'Show on screen in game (needs "Show in game" on the Dashboard)',
+          async (on) => {
+            await window.apex.updateSettings({ ingameOverlays: { [o.id]: on } });
+          },
+        );
 
       foot.appendChild(obsDest);
       foot.appendChild(igDest);
@@ -1132,12 +1168,18 @@
       li.appendChild(desc);
       li.appendChild(urlWrap);
       if (sizeEl) li.appendChild(sizeEl);
+      if (obsNoteEl) li.appendChild(obsNoteEl);
       li.appendChild(opacityRow(o));
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
       li.appendChild(foot);
       li.appendChild(resetBtn);
-      const mount = o.group === 'streaming' && streamersWidgetList ? streamersWidgetList : overlayList;
+      const mount =
+        o.group === 'streaming' && streamersWidgetList
+          ? streamersWidgetList
+          : training && trainingWidgetList
+            ? trainingWidgetList
+            : overlayList;
       mount.appendChild(li);
     }
     combinedUrl.value = combined;
@@ -6421,15 +6463,31 @@
    * original markup comment promised. Those are the rest of Phase 5 of
    * docs/STINT-REVIEW-PLAN.md and should not ride along with a first beta of
    * one HUD.
+   *
+   * The mode is MAIN's (settings.trainingMode): main decides whether the
+   * training layer's window exists, so it has to know. localStorage only
+   * paints the switch before the settings arrive; adoptTrainingMode then
+   * takes main's answer. The channel gate below still repaints the panel to
+   * Race off beta, and main's own gate ignores the mode off beta, so nothing
+   * here needs to write the mode back when the gate closes.
    */
   const MODE_STORAGE_KEY = 'apex.panel.mode';
+  /** Set once the localStorage mode has been handed to main (adoptTrainingMode). */
+  const MODE_HANDOFF_KEY = 'apex.panel.mode.main';
   let panelMode = 'race';
+  /** settings.trainingMode as main last said it; null until it has. */
+  let mainTrainingMode = null;
 
   /** Paint the segmented control. Separated so the gate can reset the mode
    *  without calling setMode and recursing back into itself. */
   function paintMode() {
     for (const b of document.querySelectorAll('#mode-seg button[data-mode]')) {
       b.setAttribute('data-active', String(b.dataset.mode === panelMode));
+    }
+    // The status bar names the mode too; its Race text is the markup's own.
+    const foot = document.querySelector('.foot__mode');
+    if (foot) {
+      foot.textContent = panelMode === 'training' ? 'TRAINING MODE · practice only' : 'RACE MODE · lightweight';
     }
   }
 
@@ -6453,13 +6511,119 @@
   function setMode(next) {
     const target = next === 'training' ? 'training' : 'race';
     if (target === 'training' && !followingBeta) return;
+    const changed = target !== panelMode;
     panelMode = target;
     paintMode();
     try { localStorage.setItem(MODE_STORAGE_KEY, target); } catch { }
     applyTrainingVisibility();
+    // Main owns the mode: it builds or drops the training layer on this.
+    // Only on a change — pressing the lit button again just re-opens the tab.
+    if (changed) {
+      mainTrainingMode = target === 'training';
+      void window.apex.updateSettings({ trainingMode: mainTrainingMode });
+    }
     // Choosing the mode is the whole gesture — land on the tab it opens
     // rather than making the driver find it.
     if (target === 'training') showView('training');
+  }
+
+  /**
+   * Take main's mode. Called with every settings render, so a change made
+   * elsewhere — or simply main's answer arriving after the localStorage paint —
+   * lands on the switch. Off beta it stays Race, by the same gate as above;
+   * until the update state has landed there is no answer to that yet, so the
+   * gate is left for renderUpdatesCard to apply.
+   */
+  function adoptTrainingMode(settings) {
+    if (settings && typeof settings.trainingMode === 'boolean') {
+      mainTrainingMode = settings.trainingMode;
+      // Once: before main owned the mode it lived only in localStorage, and a
+      // driver who left the panel in Training should still be in it after the
+      // update. Hand that choice to main instead of taking main's default.
+      let handedOff = true;
+      try {
+        handedOff = localStorage.getItem(MODE_HANDOFF_KEY) === '1';
+        if (!handedOff) localStorage.setItem(MODE_HANDOFF_KEY, '1');
+      } catch { }
+      if (!handedOff && panelMode === 'training' && !mainTrainingMode) {
+        mainTrainingMode = true;
+        void window.apex.updateSettings({ trainingMode: true });
+      }
+    }
+    if (mainTrainingMode === null) return;
+    const target =
+      mainTrainingMode && (followingBeta || !updateStateSeen) ? 'training' : 'race';
+    if (target === panelMode) return;
+    panelMode = target;
+    paintMode();
+    try { localStorage.setItem(MODE_STORAGE_KEY, target); } catch { }
+    if (updateStateSeen) applyTrainingVisibility();
+  }
+
+  /** Training-layer copy for the status line, by the gate's reason. */
+  const TRAINING_SESSION_NAMES = { qualifying: 'qualifying', race: 'a race', warmup: 'warm-up' };
+
+  /**
+   * The Training tab's status line and its Edit button, from main's status
+   * push (`status.training` — trainingStatusForUi in main.js).
+   */
+  function renderTrainingStatus(status) {
+    const t = status && status.training;
+    if (!t || !trainingStatusEl) return;
+    let text;
+    switch (t.reason) {
+      case 'live':
+        text = t.windowOpen
+          ? `Live — on screen in this ${t.sessionType === 'testday' ? 'test day' : 'practice session'}.`
+          : 'Live in this session, but no training overlay is switched on. Turn one on below.';
+        break;
+      case 'race-mode':
+        text = 'Off — Race mode is selected.';
+        break;
+      case 'stopped':
+        text = 'Off — the overlays are stopped. Press Start on the Dashboard.';
+        break;
+      case 'session':
+        text = `Off in ${TRAINING_SESSION_NAMES[t.sessionType] || 'this session'}. Training overlays run in practice and test days only.`;
+        break;
+      case 'no-session':
+        text = 'Waiting for the sim. Training overlays come up when you join a practice session or a test day.';
+        break;
+      default:
+        text = 'Training is on the beta channel only.';
+    }
+    trainingStatusEl.textContent = text;
+    trainingStatusEl.setAttribute('data-live', String(!!t.windowOpen));
+    if (trainingGpuNote) trainingGpuNote.hidden = !t.softwareCompositing;
+    if (trainingEditBtn) {
+      trainingEditBtn.disabled = !t.windowOpen;
+      trainingEditBtn.textContent = t.editing ? 'Finish editing' : 'Edit training layout';
+      trainingEditBtn.setAttribute('data-active', String(!!t.editing));
+    }
+  }
+
+  if (trainingEditBtn) {
+    trainingEditBtn.addEventListener('click', async () => {
+      const editing = !!(lastStatus.training && lastStatus.training.editing);
+      const status = editing
+        ? await window.apex.trainingEditStop()
+        : await window.apex.trainingEditStart();
+      renderStatus(status);
+    });
+  }
+
+  /** Training ▸ Chase (training-reference.js): mount once, refresh after. */
+  let trainingChaseMounted = false;
+  function showTrainingChase() {
+    const api = window.apexTrainingRef;
+    const el = document.querySelector('[data-training-chase]');
+    if (!api || !el) return;
+    if (trainingChaseMounted) {
+      api.refresh();
+      return;
+    }
+    trainingChaseMounted = true;
+    api.mount(el);
   }
 
   for (const b of document.querySelectorAll('#mode-seg button[data-mode]')) {
@@ -6473,9 +6637,6 @@
     if (saved === 'training') panelMode = 'training';
   } catch { }
   paintMode();
-
-  const openOverlays = document.getElementById('training-open-overlays');
-  if (openOverlays) openOverlays.addEventListener('click', () => showView('overlays'));
 
   /*
    * The Team tab used to sit behind the same `followingBeta` gate as Fuel
@@ -6592,6 +6753,9 @@
       void loadAdmin();
     }
     if (target === 'schedule') window.apexSchedule?.shown();
+    // Training ▸ Chase: mounted on first visit, re-read on each one after — the
+    // board moves while the driver is in the sim, not while they are here.
+    if (target === 'training') showTrainingChase();
     // The daily countdown ticks once a second, so it starts when the tab opens
     // and stops the moment it does not — in both directions, which is why this
     // is not inside the branch above.
@@ -6654,6 +6818,11 @@
       window.apexReview?.hidden();
       window.APEX_REVIEW_GUIDE?.cancelAutoOpen();
     }
+    // The Practice tab (docs/PRACTICE-REVIEW-PLAN.md), same contract: arriving
+    // re-reads the practice sessions and opens a review that is waiting;
+    // leaving drops the lap view's listeners.
+    if (target === 'practice') window.apexPractice?.shown();
+    else window.apexPractice?.hidden();
     // The Race log tab, same contract: arriving lists the game's results and
     // resumes the replay pushes for an open race; leaving drops them. Nothing
     // on it reaches the game while it is hidden.
@@ -8024,10 +8193,13 @@
     // Running a beta build counts as being on it, even if the setting has since
     // been put back to stable and the stable feed has not caught up yet.
     followingBeta = beta || !!u.runningIsBeta;
+    updateStateSeen = true;
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
     applyVrTabVisibility();
     applyTrainingVisibility();
+    // The channel is known now, so main's mode can be taken at its word.
+    adoptTrainingMode(null);
     updateChannelHint.textContent = beta
       ? 'Prereleases included. These are ours to test — expect them to be rough.'
       : 'Only full releases. This is what the league is running.';
