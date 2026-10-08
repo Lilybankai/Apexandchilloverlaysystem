@@ -5,6 +5,19 @@
      app until it is renamed.
 -->
 
+## 1.3.7-beta.1 — 2026-10-08
+
+### Fixed
+
+- **The Engineer tab's voices were missing.** Since 1.3.5 the tab stopped
+  drawing below its status line, so the voice picker and every setting under
+  it had gone. The engineer itself kept working the whole time; only the tab
+  was broken. It draws again.
+
+Everything from 1.3.6-beta.2 is here too: the training overlays' new look, the
+Coach and Brake Cue widgets, and the Practice tab with its debrief, lap deep
+dive and accuracy score.
+
 ## 1.3.6-beta.2 — 2026-10-08
 
 ### Added
