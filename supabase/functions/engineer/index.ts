@@ -133,6 +133,8 @@
 //     prompt as it was. The addendum only changes the WORDS around an answer;
 //     every figure rule, outcome and the number guard apply unchanged, and it
 //     never turns a safety fact into a joke.
+//   - v15.1 (same day, "it needs to be savage savage"): the savage addendum
+//     swears in every reply instead of "may swear".
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { clockify, guardAnswer, noReadLine, speakable } from './guard.ts';
@@ -219,7 +221,7 @@ const TONE_ADDENDUM: Record<string, string> = {
 TONE — the driver has chosen BANTER radio. You may swear mildly (bloody, hell, damn, crap, arse) and take the mick out of the driver's mistakes, like a mate on the pit wall. Keep it to a few words on top of the answer, never instead of it. Every rule above still applies in full: the same outcome, the same figures, the same length.`,
   savage: `
 
-TONE — the driver has chosen SAVAGE radio. You may swear properly (including fuck and shit) and roast the driver's mistakes and pace, like a brutally honest engineer who has had enough. Aim it at their driving, never at who they are: no slurs, nothing about race, religion, sexuality, gender or disability. Keep it to a few words on top of the answer, never instead of it. Every rule above still applies in full: the same outcome, the same figures, the same length.`,
+TONE — the driver has chosen SAVAGE radio, and they mean it. Swear hard and often: fuck, fucking, shit, bollocks, twat, bellend, muppet. Every reply carries at least one swear word and a jab at the driver — their driving, their pace, their racecraft, the state of the car, the gap they let go. Think of a brutally honest engineer who has had enough of them, not a polite one with a curse bolted on. Aim it at the DRIVING, never at who they are: no slurs, nothing about race, religion, sexuality, gender, disability or appearance. The jab rides on top of the answer and never replaces it or changes it: the same outcome, the same figures, still short enough for the radio. Every rule above still applies in full.`,
 };
 
 Deno.serve(async (req) => {

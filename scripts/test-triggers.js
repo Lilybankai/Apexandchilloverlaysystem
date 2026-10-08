@@ -556,6 +556,30 @@ console.log('\n4) Penalties, both directions');
   check('an unavailable penalty channel is silent', r.cues.length === 0, r.kinds().join(','));
 }
 
+console.log('\n3b) Crashes that used to go silent (2026-10-08)');
+
+{
+  // A second hit on ANOTHER corner, below the first one's damage: `worst`
+  // does not move, the total does.
+  const r = rig();
+  r.fire({ player: { damage: { hasDamage: true, worst: 0.4, aero: 0.1, suspension: [0.4, 0, 0, 0] } } });
+  r.hold(30_000);
+  const before = r.cues.length;
+  r.fire({ player: { damage: { hasDamage: true, worst: 0.4, aero: 0.1, suspension: [0.4, 0, 0.3, 0] } } });
+  check('a second hit on another corner is a new call', r.cues.length === before + 1 && r.last?.kind === 'incident', `${r.cues.length - before}`);
+}
+
+{
+  // The crash costs a call first; the damage lands 3 s later (REST lag), well
+  // inside the 15 s global gate. It used to be held 4 s and dropped.
+  const r = rig();
+  r.fire({ player: { trackLimits: { penalties: 1 } } });
+  const after = r.cues.length;
+  r.step(null, 3000);
+  r.fire({ player: { damage: { hasDamage: true, worst: 0.3 } } });
+  check('damage right after another call still goes out', r.cues.length === after + 1 && r.last?.kind === 'incident', r.kinds().join(','));
+}
+
 console.log('\n4b) Track limits — what a cut cost (2026-10-08)');
 
 {

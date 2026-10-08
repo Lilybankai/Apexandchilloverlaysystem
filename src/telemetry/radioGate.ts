@@ -222,6 +222,13 @@ export const GATE = {
   startQuietMs: 8000,
   /** Below this the car is parked or crawling: nothing to interrupt. */
   stoppedKph: 10,
+  /**
+   * Below this a damage call goes out at once, cars alongside or not: after a
+   * crash the car is stopped, crawling out of the gravel or limping, often in
+   * the middle of the pile-up — the straights rule and the radar would hold
+   * "you've picked up damage" until it no longer matters (2026-10-08).
+   */
+  crashCrawlKph: 60,
   /** Lap-distance bins for the learned straights. */
   learnBins: 200,
   /** A bin is trusted once it has been driven through this many times. */
@@ -255,6 +262,7 @@ export const GATE = {
 /** Why the gate said what it said — for tests, logs and the replay report. */
 export type GateReason =
   | 'clear'
+  | 'crash'
   | 'noFrame'
   | 'stopped'
   | 'caution'
@@ -501,8 +509,15 @@ export class RadioGate {
    */
   verdict(frame: TelemetryFrame | null | undefined, opts: GateOptions): GateVerdict {
     if (!frame) return { clear: true, reason: 'noFrame' };
-    if (alongside(frame)) return { clear: false, reason: 'alongside' };
     const p = frame.player?.pedals;
+    if (opts.kind === 'incident') {
+      const kph = frame.player?.speedKph;
+      if (finite(kph) && kph >= 0 && kph < GATE.crashCrawlKph) {
+        if (p && finite(p.brake) && p.brake > GATE.busyBrake) return { clear: false, reason: 'braking' };
+        return { clear: true, reason: 'crash' };
+      }
+    }
+    if (alongside(frame)) return { clear: false, reason: 'alongside' };
     if (!opts.onlyStraights) {
       // The old rule: deep in the brakes, or side by side.
       if (p && finite(p.brake) && p.brake > GATE.busyBrake) return { clear: false, reason: 'braking' };
