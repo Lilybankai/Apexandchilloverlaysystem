@@ -5,7 +5,7 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.3.7 — 2026-10-08
 
 ### Changed
 
@@ -28,6 +28,15 @@
     crawling out of the gravel or limping with other cars around it could
     run out the clock before it got one. Below 60 km/h a damage call now
     goes out straight away, unless you're hard on the brakes.
+
+## 1.3.6 — 2026-10-08
+
+### Fixed
+
+- **The Engineer tab shows your voices again.** In 1.3.5 the tab stopped
+  drawing partway down, so the voice list, the radio settings and everything
+  below them were missing. The engineer itself kept working the whole time;
+  only the tab was broken. Your chosen voice and settings were never lost.
 
 ## 1.3.6-beta.1 — 2026-10-08
 
