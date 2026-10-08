@@ -61,6 +61,9 @@ export const EMPTY_PACE_DELTAS: PaceDeltas = {
 /** Beyond this |delta| (seconds) the reference is assumed bad → report unknown. */
 const SANE_LIMIT_SEC = 30;
 
+/** `advance()`'s answer when the clock has not moved: keep everything as it is. */
+const HOLD = Symbol('hold');
+
 /**
  * Output conditioning. The two inputs arrive at very different rates: the time
  * axis (`mElapsedTime`, shared memory) is fresh every frame at ~30-60 Hz, while
@@ -434,6 +437,14 @@ export class LocalPaceDeltaTracker {
     lap?: LapValidity,
   ): PaceDeltas {
     const at = this.advance(d, elapsedSec, restBest, trackKey, lap);
+    if (at === HOLD) {
+      // The clock did not move — LMU had not written a new physics sample
+      // since the last poll, which live is one frame in four. The last
+      // answer still stands, and so does the latched clock: dropping it here
+      // took the ghost off every such frame and the training widgets blinked
+      // at ~16 Hz.
+      return this.lastOut;
+    }
     if (at === null) {
       // No usable sample this poll — a bad position, a rewound clock, a
       // reset. The latched clock must not outlive it, or the ghost would
@@ -471,7 +482,8 @@ export class LocalPaceDeltaTracker {
    * Advance the lap state by one sample.
    * @returns The `(t, d)` to compute deltas at, or `null` when this sample
    *          produced no usable point — in which case {@link lastOut} already
-   *          holds the right answer (held over, or blanked).
+   *          holds the right answer (blanked) — or {@link HOLD} when the clock
+   *          simply has not moved and the previous point still stands.
    */
   private advance(
     d: number,
@@ -479,7 +491,7 @@ export class LocalPaceDeltaTracker {
     restBest: number,
     trackKey: string,
     lap?: LapValidity,
-  ): { t: number; d: number } | null {
+  ): { t: number; d: number } | typeof HOLD | null {
     if (d < 0 || d > 1 || typeof elapsedSec !== 'number' || elapsedSec <= 0) {
       this.lastOut = EMPTY_PACE_DELTAS;
       return null;
@@ -507,7 +519,7 @@ export class LocalPaceDeltaTracker {
     // position that is still moving, so the readout falls at a full second per
     // second and snaps back when the clock catches up. At a few percent of torn
     // reads that alone was ±0.09 s of twitch, frame to frame. Hold instead.
-    if (this.prevElapsed >= 0 && elapsedSec <= this.prevElapsed) return null;
+    if (this.prevElapsed >= 0 && elapsedSec <= this.prevElapsed) return HOLD;
 
     // A long gap: the car was in the garage, or dropped out of the feed, or the
     // provider stopped feeding it. Whatever the in-progress lap was, it is not a
