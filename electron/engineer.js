@@ -418,6 +418,8 @@ const TRIGGER_TIERS = {
   checkered: 'essential',
   incident: 'essential',
   penalty: 'essential',
+  // What a cut cost and how close the drive-through is — a rule, not story.
+  trackLimits: 'essential',
   penaltyServed: 'essential',
   fuelWindow: 'essential',
   fuelCritical: 'essential',

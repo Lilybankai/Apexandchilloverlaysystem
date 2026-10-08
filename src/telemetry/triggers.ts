@@ -106,6 +106,12 @@ export type EngineerTriggerKind =
   | 'incident'
   /** The sim has issued a penalty. */
   | 'penalty'
+  /**
+   * The stewards charged track-limit points for a cut, in a race (where the
+   * points are spent on a drive-through). Practice and qualifying delete the
+   * lap instead, which the session calls already say.
+   */
+  | 'trackLimits'
   /** The sim's penalty count came back down — one has been discharged. */
   | 'penaltyServed'
   /** Fuel or energy is down to the last few laps; the pit window is here. */
@@ -165,6 +171,9 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   sectorYellow: 80, // timely: the driver may be arriving at it this corner
   penalty: 75,
   fuelCritical: 70,
+  // Below the penalty a cut can tip over into (that line already says it),
+  // above the race story. The trace reports a charge up to ~25 s late anyway.
+  trackLimits: 58,
   checkered: 65,
   finalLap: 60,
   penaltyServed: 55,
@@ -229,6 +238,7 @@ const RACE_ONLY: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>
   'rivalStop',
   'rivalRejoin',
   'pitWindowOpen',
+  'trackLimits',
 ]);
 
 /* -------------------------------------------------------------------------- */
@@ -275,6 +285,9 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   incident: 25_000,
   penalty: 20_000,
   penaltyServed: 20_000,
+  // A kerb clipped every lap is one call a lap at most; the next one that
+  // gets through carries the up-to-date total.
+  trackLimits: 20_000,
   fuelWindow: 90_000,
   fuelCritical: 60_000,
   fullCourseYellow: 30_000,
@@ -842,6 +855,8 @@ export class EngineerTriggers {
   /** Last frame's worst-component severity — the baseline a second impact jumps from. */
   private prevDamageWorst = 0;
   private prevPenalties: number = UNKNOWN_VALUE;
+  /** The stewards' cut count (`trackLimits.charged`) last frame. */
+  private prevCharged: number = UNKNOWN_VALUE;
   private prevPitThisLap = false;
   /** `true` once the fuel-window call has been made and not yet re-armed. */
   private fuelWindowArmed = true;
@@ -955,6 +970,7 @@ export class EngineerTriggers {
     this.prevHasDamage = undefined;
     this.prevDamageWorst = 0;
     this.prevPenalties = UNKNOWN_VALUE;
+    this.prevCharged = UNKNOWN_VALUE;
     this.prevPitThisLap = false;
     this.fuelWindowArmed = true;
     this.seenGreen = false;
@@ -1044,6 +1060,7 @@ export class EngineerTriggers {
     this.detectSessionFlags(frame, now);
     this.detectDamage(frame, now);
     this.detectPenalties(frame, now);
+    this.detectTrackLimits(frame, now);
     this.detectFuel(frame, now);
     this.detectTraffic(frame, now); // before the blue flag, which asks it who is called
     this.detectRaceStory(frame, now);
@@ -1193,6 +1210,35 @@ export class EngineerTriggers {
     } else if (penalties < this.prevPenalties) {
       this.offer('penaltyServed', now, 'penalty served', { outstanding: penalties });
     }
+  }
+
+  /**
+   * A cut the stewards charged for. The driver knows they ran wide; what they
+   * cannot see is what it cost, so the call carries the charge, the running
+   * total and the allowance (trackLimits.ts / lmuTraceLimits.ts).
+   *
+   * Only when the count goes UP from a known value — the first frame after
+   * attaching mid-session is a baseline, not a fresh cut — only in a session
+   * that enforces the allowance, and never while a teammate is in the car:
+   * their cuts are invisible to us and the total would be ours alone.
+   */
+  private detectTrackLimits(frame: TelemetryFrame, now: number): void {
+    const tl = frame.player?.trackLimits;
+    const charged = tl?.charged;
+    if (!tl || !known(charged) || !known(this.prevCharged)) return;
+    if (charged <= this.prevCharged) return;
+    if (tl.pointsLimitEnforced === false || tl.teammateDriving === true) return;
+    if (!known(tl.points)) return;
+    const facts: Record<string, string | number | boolean> = { points: tl.points };
+    const charge = tl.charges?.[0];
+    if (known(charge) && charge > 0) facts.charge = charge;
+    if (known(tl.pointsLimit) && tl.pointsLimit > 0) facts.pointsLimit = tl.pointsLimit;
+    this.offer(
+      'trackLimits',
+      now,
+      `track limits — ${known(charge) ? `${charge} pt, ` : ''}${tl.points}${facts.pointsLimit ? `/${facts.pointsLimit}` : ''}`,
+      facts,
+    );
   }
 
   /**
@@ -1556,6 +1602,8 @@ export class EngineerTriggers {
 
     const penalties = frame.player?.trackLimits?.penalties;
     if (known(penalties)) this.prevPenalties = penalties;
+    const charged = frame.player?.trackLimits?.charged;
+    if (known(charged)) this.prevCharged = charged;
 
     this.prevPitThisLap = frame.fuel?.pitThisLap === true;
 
