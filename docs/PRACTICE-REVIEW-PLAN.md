@@ -93,13 +93,43 @@ interface CornerSummary {
 }
 ```
 
+## Its own tab (Carl, 2026-10-08)
+
+Practice Review is **its own top-level tab, "Practice"**, not part of Review:
+the Review tab stays the general stint reviewer it was. The Practice tab lists
+practice and test-day sessions only (from `review:sessions`, filtered by
+`sessionType`), opens on the debrief, and holds the lap deep dive. The pending
+review opens the Practice tab, not Review.
+
 ## Phase 2 — the deep dive
 
-`review:lap` gains `vs: { practice: sessionId }`, comparing against the
-session's saved target columns. The lap view adds a **corner table**
-(C1..Cn: time, braking point, apex speed, exit speed, line offset, a tip in the
-Corner Analysis card's words); clicking a corner moves the one zoom window, so
-map and every chart frame that corner.
+A lap opened from the debrief is studied **in the Practice tab** against the
+session's saved target (or its best lap), with the Review tab's painters
+(`review-charts.js`: map, speed/inputs/delta charts, one zoom window) and a
+**corner table**; clicking a corner moves the one zoom window, so the map and
+every chart frame that corner.
+
+`practice:lap({ sessionId, lapId, at, haveMapKey })` →
+`{ ok, result: PracticeLapResult | null, error? }`, built from
+`lapDetail.loadLapAlone` + `compareWith(base, <the target as a LapDetail>)`:
+
+```ts
+interface PracticeLapResult extends LapCompareResult {   // detail, map, vs, delta, micro, lengthM
+  target: { kind: 'chased' | 'sessionBest'; label: string; lapId: string; lapSec: number };
+  corners: PracticeCornerRow[];
+}
+interface PracticeCornerRow {
+  index: number;                         // C(index+1)
+  entryD: number; apexD: number; exitD: number;
+  deltaSec: number | null;               // positive = slower
+  brakeDeltaM: number | null;            // positive = braked LATER
+  apexKphDelta: number | null;           // positive = faster
+  exitKphDelta: number | null;           // speed at exitD, you − target
+  minKph: number | null; refMinKph: number | null;
+  lineOffsetM: number | null;            // mean lateral distance from the target's line, entry→exit; null without x/z on both
+  tip: string;                           // the Corner Analysis card's words
+}
+```
 
 ## Phase 3 — the accuracy score
 
